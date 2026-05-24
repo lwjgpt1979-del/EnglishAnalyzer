@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v1.0 | 日期：2026-05-24 | 状态：Section 1-3 已确认，Section 4+ 进行中
+> 版本：v1.3 | 日期：2026-05-24 | 状态：Section 1-4 已确认，Section 5+ 进行中
 
 ---
 
@@ -503,8 +503,382 @@ notifications（站内消息中心）
 
 ---
 
-## Section 4-6（进行中）
+## Section 4：API 设计约定
 
-> Section 4：API 设计约定 — 待确认
-> Section 5：OCR Pipeline 架构 — 待确认
+---
+
+### 4.1 基础结构与版本管理
+
+```
+Base URL：https://api.enggramer.com/api/v1
+
+路由目录：
+/api/v1/
+├── auth/                 ← 登录 & Token 刷新
+├── users/me              ← 当前登录用户信息
+├── upload/               ← COS 预签名上传
+├── students/             ← 学生扩展操作
+├── teachers/             ← 老师扩展操作
+├── relatives/            ← 亲人操作
+├── wrong-questions/      ← 错题（核心）
+├── ocr-tasks/            ← OCR 任务状态轮询
+├── analyses/             ← AI 诊断结果
+├── vocabulary/           ← 词力通
+├── essays/               ← 作文精修
+├── listening/            ← 听力跟读
+├── practice/             ← AI 题库练习（Module 8）
+├── classes/              ← 班级（老师端）
+├── assignments/          ← 出卷任务
+├── memberships/          ← 会员状态
+├── orders/               ← 订单
+├── refunds/              ← 退款
+├── reports/              ← 学情报告快照
+├── notifications/        ← 站内消息
+└── admin/                ← 平台/机构后台（P2 完整 UI）
+
+├── knowledge-points/     ← 知识点树（筛选用）
+├── curriculum/           ← 教材单元列表
+├── webhooks/             ← 微信支付服务端回调
+└── admin/                ← 平台/机构后台
+
+版本策略：URL 带版本号（/v1/）；破坏性变更升 v2，v1 保持 6 个月兼容期。
+```
+
+---
+
+### 4.2 认证方案（微信登录 → JWT）
+
+```
+流程：
+① 小程序调用 wx.login() 拿到 code（有效期 5 分钟）
+② POST /api/v1/auth/wx-login { "code": "..." }
+③ 后端用 code 换取微信 openid（不持久化 session_key）
+④ 按 openid 查或创建 users 记录
+⑤ 返回 access_token（JWT，2h 有效）+ refresh_token（30天有效）
+⑥ 后续所有请求 Header：Authorization: Bearer <access_token>
+
+JWT Payload：
+{
+  "sub":            "user_uuid",
+  "role":           "student",          ← 角色，用于路由权限
+  "institution_id": "uuid | null",      ← 机构 ID，行级隔离用
+  "tier":           "pro",              ← 会员档位，减少 DB 查询
+  "exp":            1234567890
+}
+
+Token 刷新：
+POST /api/v1/auth/refresh { "refresh_token": "..." }
+→ 返回新的 access_token（refresh_token 不变，滑动续期）
+```
+
+---
+
+### 4.3 统一响应格式
+
+**成功响应：**
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": { }
+}
+```
+
+**列表响应（分页）：**
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "items": [],
+    "pagination": {
+      "page":      1,
+      "page_size": 20,
+      "total":     158,
+      "has_next":  true
+    }
+  }
+}
+```
+
+**错误响应：**
+```json
+{
+  "code": 1301,
+  "message": "今日 OCR 次数已达上限",
+  "data": {
+    "limit":    10,
+    "used":     10,
+    "reset_at": "2026-05-25T00:00:00+08:00"
+  }
+}
+```
+
+> `data` 在错误时可选填补充信息（如剩余配额、重置时间），方便前端展示引导文案。
+
+---
+
+### 4.4 错误码规范
+
+| 范围 | 类型 | 常用码 |
+|------|------|--------|
+| **1000–1099** | 认证/权限 | 1001 未登录或 Token 过期；1002 权限不足；1003 账号已封禁 |
+| **1100–1199** | 资源 | 1101 资源不存在；1102 资源已删除 |
+| **1200–1299** | 参数 | 1201 参数缺失；1202 参数格式错误；1203 参数值越界 |
+| **1300–1399** | 配额限制 | 1301 日 OCR 次数超限；1302 日练习次数超限；1303 月作文次数超限；1304 月变更次数超限；1305 日听力次数超限 |
+| **1400–1499** | 会员档位 | 1401 功能需要 Pro；1402 功能需要 ProMax |
+| **2000–2099** | 外部服务 | 2001 OCR 识别失败；2002 AI 诊断失败；2003 微信支付失败；2004 COS 上传失败 |
+| **3000–3099** | 业务逻辑 | 3001 退款条件不满足；3002 亲人绑定已达上限（4位）；3003 邀请码无效或过期；3004 老师绑定冲突（机构学生不可自主换绑）|
+| **5000** | 服务器 | 5000 内部错误（对外不暴露细节，写入日志） |
+
+---
+
+### 4.5 分页约定
+
+```
+请求参数（Query String）：
+  page       INT  默认 1
+  page_size  INT  默认 20，最大 100
+
+示例：
+  GET /api/v1/wrong-questions?page=2&page_size=20&type=单选&mastered=false
+```
+
+---
+
+### 4.6 核心端点速览
+
+#### 认证
+```
+POST   /auth/wx-login                  微信登录，返回 JWT
+POST   /auth/refresh                   刷新 access_token
+DELETE /auth/logout                    登出（使 refresh_token 失效）
+POST   /auth/bind-phone                绑定/验证手机号（微信 wx.getPhoneNumber 流程）
+                                       Request: { "wx_phone_code": "..." }
+                                       → 后端调微信 API 解密，写入 users.phone
+POST   /auth/guardian/send-code        向监护人手机号发送授权验证码（< 14 岁注册）
+                                       Request: { "guardian_phone": "138xxxx" }
+POST   /auth/guardian/verify           监护人验证码核验，通过后激活账号
+                                       Request: { "guardian_phone": "138xxxx", "code": "123456" }
+```
+
+#### 文件上传（COS 预签名）
+```
+POST   /upload/sign                    获取 COS 预签名上传 URL
+
+Request：{ "file_type": "image/jpeg", "usage": "wrong_question" }
+Response：{
+  "upload_url": "https://cos.ap-guangzhou...",   ← 前端直接 PUT 此地址
+  "cos_key":    "students/uuid/2026/05/xxx.jpg", ← 上传成功后回传给后端
+  "expires_in": 300
+}
+
+usage 枚举：wrong_question / essay / listening / cert_doc
+```
+
+#### 全局用量查询
+```
+GET    /users/me/quota                 查询当前用户所有配额剩余
+
+Response：{
+  "ocr_daily":            { "used": 3, "limit": 10, "reset_at": "..." },
+  "practice_daily":       { "used": 1, "limit": 3,  "reset_at": "..." },
+  "essay_monthly":        { "used": 2, "limit": 3,  "reset_at": "..." },
+  "listening_daily":      { "used": 5, "limit": 20, "reset_at": "..." },
+  "grade_change_monthly": { "used": 1, "limit": 3,  "reset_at": "..." }
+}
+```
+
+#### 错题（核心链路）
+```
+POST   /wrong-questions/               上传错题（cos_key）→ 触发 OCR，返回 {id, task_id}
+GET    /wrong-questions/               错题列表（支持 type/mastered/knowledge_point 过滤）
+GET    /wrong-questions/{id}           错题详情（含 AI 诊断结果）
+PATCH  /wrong-questions/{id}/mastered  标记已掌握 / 取消掌握
+DELETE /wrong-questions/{id}           删除错题
+GET    /ocr-tasks/{task_id}/status     轮询 OCR 状态（pending/processing/completed/failed）
+```
+
+#### 词力通
+```
+GET    /vocabulary/today               今日待复习词 + 新词（按 SM-2 调度）
+POST   /vocabulary/{word_id}/review    提交复习结果（quality 0-5），更新 SM-2 状态
+GET    /vocabulary/progress            掌握词数、连续打卡天数、今日完成率
+GET    /vocabulary/words               词库搜索（按年级/单元/关键字）
+```
+
+#### 作文精修
+```
+POST   /essays/                        提交作文（原文 + 可选 wrong_question_id）→ 触发 AI 精修
+GET    /essays/                        历史精修列表
+GET    /essays/{id}                    精修详情（各维度评分 + AI 改写内容）
+GET    /essays/quota                   当月剩余精修次数（Pro 3次/月上限）
+```
+
+#### 听力跟读
+```
+POST   /listening/submit               上传跟读录音（cos_key）→ 触发评分，返回 task_id
+GET    /listening/{id}                 评分结果（score + feedback）
+GET    /listening/today-stats          今日已跟读次数 / 剩余配额
+```
+
+#### AI 题库练习（Module 8）
+```
+GET    /practice/questions             拉取练习题（按 knowledge_point/difficulty/type 筛选）
+POST   /practice/submit                提交答案，返回正误 + 解析；错题自动归集错题库
+GET    /practice/today-stats           今日已练题数 / 剩余配额
+```
+
+#### 学情报告
+```
+GET    /reports/weekly/latest          最新周报快照
+GET    /reports/weekly                 历史周报列表（分页）
+GET    /reports/monthly/latest         最新月报快照
+POST   /reports/generate               手动触发生成（节流：同类型 1h 内限触发 1 次）
+POST   /analyses/{id}/feedback         提交 AI 诊断结果反馈（学生/老师均可）
+                                       Request: { "content": "该题错误类型识别有误..." }
+                                       → 写入反馈队列，不修改当前报告内容
+```
+
+#### 老师端
+```
+GET    /teachers/students              我的学生列表（含学情概况）
+GET    /teachers/students/{id}/report  查看指定学生的学情报告
+POST   /teachers/certification         提交认证申请（上传材料 cos_key）
+GET    /teachers/certification/status  查看当前认证审核进度
+GET    /teachers/search                搜索认证老师（学生用，按 school/name 过滤）
+POST   /classes/                       创建班级
+POST   /assignments/                   创建出卷任务
+PATCH  /assignments/{id}/publish       发布任务给学生
+GET    /assignments/{id}/submissions   查看学生提交情况
+```
+
+#### 学生-老师绑定
+```
+POST   /students/bind-teacher          学生自主绑定认证老师（self_bound 类型）
+DELETE /students/unbind-teacher/{teacher_id}  学生换绑/解绑老师（仅 self_bound 可操作）
+POST   /students/invite-code           生成邀请码（type=relative_bind，24h 有效）
+GET    /students/invite-code/current   查看当前有效邀请码（未使用时复用）
+```
+
+#### 亲人端
+```
+GET    /relatives/students             我绑定的学生列表
+GET    /relatives/students/{id}        学生学情（学情报告 + 打卡记录 + 会员状态）
+GET    /relatives/students/{id}/checkins  学生打卡历史（连续天数 + 每日完成情况）
+POST   /relatives/bind                 绑定学生（输入邀请码）
+DELETE /relatives/bind/{student_id}    解绑学生
+POST   /orders/                        为学生代付（payer=亲人，beneficiary=学生）
+```
+
+#### 会员与支付
+```
+GET    /memberships/me                 当前会员状态（tier + expires_at）
+POST   /orders/                        创建订单（new/renew/upgrade）
+POST   /orders/{id}/pay                发起微信支付，返回 wx.requestPayment 参数
+GET    /orders/{id}                    订单详情
+POST   /refunds/                       发起退款申请
+GET    /refunds/{id}                   退款进度查询
+```
+
+#### 通知
+```
+GET    /notifications/                 通知列表（未读优先，分页）
+PATCH  /notifications/{id}/read        标记单条已读
+PATCH  /notifications/read-all         全部标记已读
+```
+
+#### WebSocket（站内实时通知）
+```
+WS     /ws?token=<access_token>        建立 WebSocket 连接
+
+服务端推送格式：
+{
+  "type":    "analysis_done",          ← 事件类型
+  "payload": { "wrong_question_id": "uuid", "analysis_id": "uuid" }
+}
+
+事件类型：
+  analysis_done       AI 诊断完成
+  report_ready        学情报告生成完成
+  assignment_new      收到新任务（学生）
+  membership_expired  会员即将到期（3天前）
+
+连接维护：客户端每 30s 发 ping，服务端回 pong；
+          access_token 过期后连接断开，前端用 refresh_token 换新 token 后重连。
+```
+
+#### 微信支付回调（Webhook，微信服务器调用）
+```
+POST   /webhooks/wx-pay                微信支付完成后，微信服务器主动回调
+
+处理逻辑：
+  1. 验证微信签名（必须，防伪造）
+  2. 幂等检查（wx_transaction_id 是否已处理，防重复）
+  3. 更新 orders.status = paid，写入 wx_transaction_id + paid_at
+  4. 激活 / 续费 / 升级 memberships 记录
+  5. 向受益学生 + 付款亲人推送「购买成功」通知
+  6. 返回 {"code": "SUCCESS"} ← 必须，否则微信会持续重试 24h
+
+安全：白名单限制来源 IP（微信服务器 IP 段），其他来源返回 403
+```
+
+#### 知识点 & 教材单元（筛选用）
+```
+GET    /knowledge-points               知识点树列表
+  Query: grade=8&textbook=人教版&category=grammar
+  Response: 树形结构（parent_id 嵌套），前端缓存 24h
+
+GET    /curriculum/units               教材单元列表
+  Query: grade=8&textbook_version=人教版&semester=上
+```
+
+#### 学生信息更新
+```
+PATCH  /students/me                    更新年级 / 教材版本 / 学期
+  Request: { "grade": "8", "textbook_ver": "人教版", "semester": "上" }
+  → Service 层校验月度变更次数（daily_usage grade_change_monthly）
+  → 超限返回 1304，附 reset_at
+```
+
+#### 账号注销
+```
+POST   /users/me/deactivate            发起注销申请（进入 7 天冷静期）
+DELETE /users/me/deactivate            取消注销申请（冷静期内有效）
+GET    /users/me/deactivate/status     查询注销进度（冷静期剩余天数）
+```
+
+#### 机构管理员（P1 最小集，归入 /admin/institutions/me/）
+```
+POST   /admin/institutions/me/teachers              创建老师子账号
+GET    /admin/institutions/me/teachers              机构老师列表 + 额度使用
+PATCH  /admin/institutions/me/teachers/{id}/quota   设置老师月度出卷/批改上限
+
+POST   /admin/institutions/me/students              分配学生（手机号 或 批量 Excel）
+PATCH  /admin/institutions/me/students/{id}/teacher 调整学生所属老师
+
+GET    /admin/institutions/me/report                机构整体学情汇总报告
+GET    /admin/institutions/me/usage                 本月 AI 资源配额使用情况
+```
+
+---
+
+### 4.7 其他约定
+
+| 项目 | 约定 |
+|------|------|
+| HTTP 方法语义 | GET 查询（幂等）；POST 创建；PATCH 局部更新；DELETE 删除；PUT 不用 |
+| 时间格式 | 统一 ISO 8601 + 时区：`2026-05-24T10:30:00+08:00` |
+| 金额单位 | 统一用**分**（INT），前端展示时 ÷ 100 |
+| 空值处理 | 字段不存在时返回 `null`，不省略字段 |
+| 文件上传 | 前端直传 COS（预签名 URL），不走 FastAPI 中转，节省带宽 |
+| 幂等性 | 支付、退款接口支持幂等 Key（Header: `X-Idempotency-Key`），防重复提交 |
+| 限流 | 网关层：100 req/min/用户；OCR/作文/听力额外受 daily_usage 配额约束 |
+| CORS | 仅允许微信小程序域名 + 管理后台域名，其他来源一律拒绝 |
+
+---
+
+## Section 5-6（进行中）
+
+> Section 5：OCR Pipeline 异步架构 — 待确认
 > Section 6：腾讯云部署架构 — 待确认
