@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.8 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.9 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -413,7 +413,7 @@ users（所有角色共用基础表）
 │                              institution /   ← 加入机构时以机构城市覆盖
 │                              cert_verified / ← 老师认证审核核实的学校城市
 │                              manual) (nullable)  ← 平台超管手动修正；city_code 为 NULL 时同为 NULL
-├── ip_at_registration    INET                 ← 注册时原始 IP，仅作城市选择器预填推荐，审计留存
+├── ip_at_registration    INET (nullable)       ← 注册时原始 IP，仅作城市选择器预填推荐，审计留存；代理/VPN 或 LB 丢头时为 NULL
 ├── created_at            TIMESTAMPTZ
 └── updated_at            TIMESTAMPTZ
 
@@ -603,7 +603,7 @@ knowledge_points（语法/能力知识点树）
 ├── code            VARCHAR UNIQUE       ← 固定编码，如 "GRAM_PRES_PERFECT"
 ├── name            VARCHAR              ← "现在完成时"
 ├── category        ENUM(grammar / vocabulary / reading / writing / listening)
-├── description     TEXT
+├── description     TEXT (nullable)      ← 顶层分类节点（"语法"/"词汇"）无需描述，叶节点才有意义
 ├── applicable_grades     VARCHAR[]      ← ["7","8","9"]
 ├── applicable_textbooks  VARCHAR[]      ← ["人教版","外研版","北师大版"]
 ├── parent_id       UUID FK → knowledge_points (nullable)  ← 树形结构
@@ -695,6 +695,7 @@ listening_records（听力跟读记录）
 ├── status          ENUM(processing / completed / failed)  ← AI 发音评分流程状态
 ├── score           DECIMAL (nullable)   ← 发音评分（0-100）；status=completed 后写入
 ├── feedback        JSONB (nullable)     ← AI 反馈详情；status=completed 后写入
+├── updated_at      TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ
 
 study_checkins（每日打卡记录）
@@ -734,7 +735,7 @@ practice_records（AI 题库练习记录，Module 8）
 ├── is_correct      BOOLEAN
 ├── wrong_question_id UUID FK (nullable)  ← 来源错题（触发同类题时有值）
 ├── practiced_at    TIMESTAMPTZ
-└── time_spent_sec  INT
+└── time_spent_sec  INT (nullable)       ← 前端计时失败（切后台/锁屏/断网重连）时为 NULL；0 会污染统计故不用 0 替代
 ```
 
 ---
@@ -850,7 +851,7 @@ branch_companies（分公司）
 ├── id                UUID PK
 ├── name              VARCHAR              ← 分公司名称（如「华南区」「西南区」）
 ├── contact_phone     VARCHAR
-├── manager_user_id   UUID FK → users      ← 分公司负责人（role=branch_admin）
+├── manager_user_id   UUID FK → users (nullable)  ← 分公司负责人（role=branch_admin）；MVP 预留建表时账号未指定，为 NULL
 ├── commission_rate   DECIMAL (nullable)   ← 平台向分公司的分成比例；MVP 预留建表时尚未谈定，为 NULL
 │
 │   ── 财税法务字段（分公司成立时填入）────────────────────────────────────
