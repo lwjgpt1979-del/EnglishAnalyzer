@@ -316,3 +316,101 @@ async def test_analyze_wrong_question_service(db_session, test_student):
     assert analysis.tokens_used == 280
     assert analysis.confidence_score == 0.95
     assert analysis.wrong_question_id == wq.id
+
+
+@pytest.mark.asyncio
+async def test_analyze_endpoint(client: AsyncClient, auth_headers):
+    """POST /wrong-questions/{id}/analyze 应返回 AiAnalysisOut。"""
+    create_resp = await client.post(
+        "/api/v1/wrong-questions/",
+        json={
+            "source_image_url": "https://cdn.example.com/analyze_test.jpg",
+            "question_text": "She don't like coffee.",
+            "student_answer": "don't",
+            "correct_answer": "doesn't",
+            "question_type": "单选",
+        },
+        headers=auth_headers,
+    )
+    wq_id = create_resp.json()["data"]["id"]
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock()]
+    mock_response.content[0].text = (
+        '{"error_types": ["主谓一致"], "knowledge_points": ["does/doesn\'t"], '
+        '"diagnosis": "主谓不一致错误。", "suggestions": "复习第三人称单数。", '
+        '"confidence_score": 0.9}'
+    )
+    mock_response.usage = MagicMock()
+    mock_response.usage.input_tokens = 150
+    mock_response.usage.output_tokens = 60
+
+    with patch("app.services.ai_service.anthropic.AsyncAnthropic") as MockClient:
+        mock_instance = AsyncMock()
+        MockClient.return_value = mock_instance
+        mock_instance.messages.create = AsyncMock(return_value=mock_response)
+
+        resp = await client.post(
+            f"/api/v1/wrong-questions/{wq_id}/analyze", headers=auth_headers
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["llm_provider"] == "claude"
+    assert body["data"]["error_types"] == ["主谓一致"]
+    assert body["data"]["tokens_used"] == 210
+    assert body["data"]["wrong_question_id"] == wq_id
+
+
+@pytest.mark.asyncio
+async def test_analyze_not_found(client: AsyncClient, auth_headers):
+    """不存在的 wq_id → 404。"""
+    resp = await client.post(
+        f"/api/v1/wrong-questions/{uuid.uuid4()}/analyze", headers=auth_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_analyses_endpoint(client: AsyncClient, auth_headers):
+    """GET /wrong-questions/{id}/analyses 返回分析列表。"""
+    create_resp = await client.post(
+        "/api/v1/wrong-questions/",
+        json={
+            "source_image_url": "https://cdn.example.com/analyses_test.jpg",
+            "question_text": "I has a dog.",
+            "student_answer": "has",
+            "correct_answer": "have",
+        },
+        headers=auth_headers,
+    )
+    wq_id = create_resp.json()["data"]["id"]
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock()]
+    mock_response.content[0].text = (
+        '{"error_types": ["助动词错误"], "knowledge_points": ["have/has"], '
+        '"diagnosis": "主谓一致错误。", "suggestions": "复习助动词。", '
+        '"confidence_score": 0.88}'
+    )
+    mock_response.usage = MagicMock()
+    mock_response.usage.input_tokens = 100
+    mock_response.usage.output_tokens = 50
+
+    with patch("app.services.ai_service.anthropic.AsyncAnthropic") as MockClient:
+        mock_instance = AsyncMock()
+        MockClient.return_value = mock_instance
+        mock_instance.messages.create = AsyncMock(return_value=mock_response)
+        for _ in range(2):
+            await client.post(
+                f"/api/v1/wrong-questions/{wq_id}/analyze", headers=auth_headers
+            )
+
+    resp = await client.get(
+        f"/api/v1/wrong-questions/{wq_id}/analyses", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert len(body["data"]) == 2
