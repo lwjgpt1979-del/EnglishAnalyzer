@@ -71,10 +71,10 @@ async def get_rls_db(
 
     SET LOCAL 作用域为当前事务，连接归还连接池时自动清除。
     """
-    await session.execute(
-        sa.text("SET LOCAL app.current_user_id = :uid"),
-        {"uid": user_id},
-    )
+    # PostgreSQL SET LOCAL does not support parameterised values ($1 / :uid);
+    # the value must be embedded as a literal.  user_id is always a UUID
+    # string (hex + hyphens), so it is safe to interpolate directly.
+    await session.execute(sa.text(f"SET LOCAL app.current_user_id = '{user_id}'"))
 
 
 async def close_async_engine() -> None:

@@ -192,3 +192,41 @@ async def test_refresh_token_returns_new_access_token(client: AsyncClient):
     assert resp.status_code == 200
     new_access = resp.json()["data"]["access_token"]
     assert new_access != ""
+
+
+@pytest.mark.asyncio
+async def test_users_me_returns_profile(client: AsyncClient):
+    """携带有效 access_token 可以访问 /users/me。"""
+    with patch(
+        "app.services.auth_service.wechat_code2session",
+        new_callable=AsyncMock,
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"wx_me_test_{uuid.uuid4().hex[:8]}"}
+        login_resp = await client.post("/api/v1/auth/wx-login", json={"code": "t"})
+
+    token = login_resp.json()["data"]["access_token"]
+
+    me_resp = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_resp.status_code == 200
+    body = me_resp.json()
+    assert body["code"] == 200
+    assert body["data"]["role"] == "student"
+    assert body["data"]["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_users_me_without_token_returns_401(client: AsyncClient):
+    response = await client.get("/api/v1/users/me")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_users_me_with_bad_token_returns_401(client: AsyncClient):
+    response = await client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": "Bearer totally_invalid_token"},
+    )
+    assert response.status_code == 401
