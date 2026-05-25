@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.1 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.2 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -498,8 +498,9 @@ memberships（会员状态，每用户永远只有 1 条 active 记录）
 ├── user_id         UUID FK → users
 ├── tier            ENUM(free / basic / pro / promax)
 ├── started_at      TIMESTAMPTZ
-├── expires_at      TIMESTAMPTZ
+├── expires_at      TIMESTAMPTZ (nullable)  ← free 档无过期时间，置 NULL
 └── is_active       BOOLEAN
+    [UNIQUE: (user_id) WHERE is_active = true]  ← DB 层强制"每用户唯一 active 记录"
 
 orders（订单）
 ├── id                       UUID PK
@@ -529,7 +530,6 @@ refund_records（退款记录）
 ├── order_id              UUID FK → orders
 ├── amount_fen            INT
 ├── refund_type           ENUM(standard_7d / prorated / appeal)
-├── appeal_no_this_year   INT DEFAULT 0  ← 年度申诉计数（独立计数器，见 PRD 4.5.1）
 ├── status                ENUM(pending / approved / rejected / completed)
 ├── reason                TEXT
 ├── branch_company_id     UUID FK → branch_companies (nullable)
@@ -562,7 +562,10 @@ ocr_tasks（OCR 异步任务状态）
 ├── id              UUID PK
 ├── wrong_question_id  UUID FK → wrong_questions
 ├── status          ENUM(pending / processing / completed / failed)
-├── provider        ENUM(aliyun_print / tencent_handwrite)
+├── provider        ENUM(aliyun_print /      ← 印刷体主选
+│                        baidu_print /       ← 印刷体备选（故障转移）
+│                        tencent_handwrite / ← 手写体主选
+│                        google_handwrite)   ← 手写体备选（故障转移）
 ├── raw_result      JSONB                ← 原始 OCR 响应备存
 ├── retry_count     SMALLINT DEFAULT 0
 ├── created_at      TIMESTAMPTZ
@@ -575,10 +578,12 @@ ai_analyses（AI 诊断结果）
 ├── llm_provider    ENUM(deepseek / claude)
 ├── error_types     JSONB                ← ["语法错误","词汇混淆"]
 ├── knowledge_points  JSONB             ← 关联知识点（冗余存，方便展示）
-├── diagnosis       TEXT                ← AI 诊断正文
-├── suggestions     TEXT                ← 学习建议
-├── tokens_used     INT
-└── created_at      TIMESTAMPTZ
+├── diagnosis         TEXT                ← AI 诊断正文
+├── suggestions       TEXT                ← 学习建议
+├── confidence_score  DECIMAL (nullable)  ← LLM 自评置信度（0-1）；低于阈值时前端展示"AI把握度较低"提示
+│                                           （见 §1.1：置信度低时标注，不输出强结论）
+├── tokens_used       INT
+└── created_at        TIMESTAMPTZ
 ```
 
 ---
@@ -768,7 +773,8 @@ daily_usage（用量配额持久化计数器）
 ├── user_id         UUID FK → users
 ├── usage_type      VARCHAR              ← "ocr_daily" / "practice_daily" /
 │                                          "essay_monthly" / "listening_daily" /
-│                                          "grade_change_monthly"
+│                                          "grade_change_monthly" /
+│                                          "appeal_annual"  ← 年度退款申诉次数（period=当年1月1日）
 ├── period          DATE                 ← 自然日（日配额）或月第一天（月配额）
 └── count           INT DEFAULT 0
     [UNIQUE: (user_id, usage_type, period)]
@@ -838,9 +844,11 @@ branch_company_cities（分公司管辖城市映射，M:N）
 ├── id                    UUID PK
 ├── branch_company_id     UUID FK → branch_companies
 ├── city_code             VARCHAR          ← 城市行政区划代码（对应 users/institutions.city_code）
-└── effective_from        DATE             ← 该城市归该分公司管辖的起始日期
-    [UNIQUE: (branch_company_id, city_code)]
-    [NOTE: 同一城市同一时间只能归属一个分公司]
+├── effective_from        DATE             ← 该城市归该分公司管辖的起始日期
+└── effective_to          DATE (nullable)  ← 管辖结束日期（NULL=当前有效）；城市划区调整时填写
+    [UNIQUE: (city_code) WHERE effective_to IS NULL]
+    ← 同一城市在同一时刻只能归属一个分公司；历史记录通过 effective_to 标记失效，不硬删除
+    [NOTE: 划区变更流程：先将旧记录 effective_to=变更日，再插入新分公司新记录]
 
 branch_settlements（分公司周期结算账单）
 ├── id                        UUID PK
