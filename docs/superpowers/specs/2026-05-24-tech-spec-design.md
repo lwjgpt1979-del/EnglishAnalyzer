@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.6 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.7 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -401,8 +401,8 @@ users（所有角色共用基础表）
 ├── id                    UUID PK
 ├── openid                VARCHAR UNIQUE       ← 微信 openid，登录唯一标识
 ├── phone                 VARCHAR (nullable)   ← 微信登录不强制绑手机，注册后可补填
-├── nickname              VARCHAR
-├── avatar_url            VARCHAR
+├── nickname              VARCHAR (nullable)   ← 微信新隐私政策需用户主动授权，注册时可为空
+├── avatar_url            VARCHAR (nullable)   ← 微信新隐私政策需用户主动授权，注册时可为空
 ├── role                  ENUM(student / teacher / relative /
 │                              institution_admin / branch_admin /  ← 分公司管理员（预留）
 │                              platform_admin)
@@ -421,7 +421,7 @@ institutions（机构）
 ├── id              UUID PK
 ├── name            VARCHAR
 ├── contact_phone   VARCHAR
-├── commission_rate DECIMAL              ← 分成比例（见 PRD 5.8）
+├── commission_rate DECIMAL (nullable)   ← 分成比例（见 PRD 5.8）；status=pending 时尚未谈定，为 NULL
 ├── province_code   VARCHAR NOT NULL     ← 省份行政区划代码（审核时核实）
 ├── city_code       VARCHAR NOT NULL     ← 城市行政区划代码（审核通过后锁定）
 ├── address         VARCHAR              ← 详细地址（与营业执照注册地一致）
@@ -431,15 +431,15 @@ institutions（机构）
 
 students（学生扩展，1:1 users）
 ├── id              UUID PK → users.id
-├── institution_id  UUID FK → institutions  ← NULL = C 端独立用户
-├── grade           VARCHAR              ← 年级（7/8/9/10/11/12）
-├── textbook_ver    VARCHAR              ← 教材版本（人教版/外研版/北师大版…）
-└── semester        ENUM(上/下)
+├── institution_id  UUID FK → institutions (nullable)  ← NULL = C 端独立用户
+├── grade           VARCHAR (nullable)   ← 年级（7/8/9/10/11/12）；注册后在个人设置补填
+├── textbook_ver    VARCHAR (nullable)   ← 教材版本（人教版/外研版/北师大版…）；注册后补填
+└── semester        ENUM(上/下) (nullable)  ← 注册后补填
     [NOTE: 年级/教材变更次数上限由 daily_usage（usage_type="grade_change_monthly"）统一管理，不在本表重复计数]
 
 teachers（老师扩展，1:1 users）
 ├── id                  UUID PK → users.id
-├── institution_id      UUID FK → institutions  ← NULL = C 端认证老师
+├── institution_id      UUID FK → institutions (nullable)  ← NULL = C 端认证老师
 ├── cert_status         ENUM(uncertified / pending / certified / rejected)
 ├── cert_doc_url        VARCHAR (nullable)   ← 认证材料 COS 路径；cert_status=uncertified 时为 NULL
 ├── subject             VARCHAR (nullable)   ← 任教学科（英语/数学…，搜索区分度）；注册后可补填
@@ -455,7 +455,7 @@ student_relatives（学生-亲人绑定，M:N，每学生最多 4 位亲人）
 ├── student_id      UUID FK → users
 ├── relative_id     UUID FK → users
 ├── relationship    VARCHAR              ← 爸爸 / 妈妈 / 爷爷…
-├── is_active       BOOLEAN
+├── is_active       BOOLEAN DEFAULT true
 └── bound_at        TIMESTAMPTZ
     [NOTE: 每学生最多 4 位亲人，Service 层在 INSERT 前 SELECT COUNT 校验，超限返回 3002 错误]
 
@@ -572,6 +572,7 @@ ocr_tasks（OCR 异步任务状态）
 │                        tencent_handwrite / ← 手写体主选
 │                        google_handwrite)   ← 手写体备选（故障转移）
 ├── raw_result      JSONB (nullable)     ← 原始 OCR 响应备存；pending/processing 时为 NULL
+├── error_message   TEXT (nullable)      ← status=failed 时的错误详情（超时/认证失败/配额超限等）
 ├── retry_count     SMALLINT DEFAULT 0
 ├── created_at      TIMESTAMPTZ
 └── completed_at    TIMESTAMPTZ (nullable)  ← status=pending/processing 时为 NULL
@@ -656,9 +657,9 @@ AI诊断：LLM 输出 knowledge_point.code → wrong_question_knowledge_points
 vocabulary_words（全局词库）
 ├── id              UUID PK
 ├── word            VARCHAR
-├── phonetic        VARCHAR
+├── phonetic        VARCHAR (nullable)   ← 部分词汇无 IPA 音标（专有名词/缩写词）
 ├── definitions     JSONB                ← [{pos:"n.", meaning:"苹果"}]
-├── examples        JSONB                ← 例句列表
+├── examples        JSONB (nullable)     ← 例句列表；部分词汇暂无例句
 └── difficulty      SMALLINT (1-5)
 
 vocabulary_learning（SM-2 学习状态，per 学生 per 词）
@@ -682,6 +683,7 @@ essays（作文精修）
 ├── dimensions      JSONB (nullable)     ← {语法:85, 词汇:90, 逻辑:78, 内容:88}；status=draft/processing 时为 NULL
 ├── round_count     SMALLINT DEFAULT 1   ← 精修轮次（Pro 上限见 5.6）
 ├── status          ENUM(draft / processing / completed)
+├── updated_at      TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ
 
 listening_records（听力跟读记录）
@@ -758,7 +760,7 @@ assignments（出卷任务）
 ├── class_id        UUID FK → classes (nullable)
 ├── title           VARCHAR
 ├── questions       JSONB (nullable)     ← AI 生成题目内容；status=draft 时 AI 尚未生成，为 NULL
-├── due_at          TIMESTAMPTZ
+├── due_at          TIMESTAMPTZ (nullable)  ← 草稿阶段可不填，发布前确定
 ├── status          ENUM(draft / published / closed)
 └── created_at      TIMESTAMPTZ
 
@@ -855,6 +857,7 @@ branch_companies（分公司）
 ├── bank_account      VARCHAR (nullable)   ← 收款银行账号（落库前加密，展示时脱敏）；分公司成立时填入
 │
 ├── is_active         BOOLEAN DEFAULT true
+├── updated_at        TIMESTAMPTZ
 └── created_at        TIMESTAMPTZ
 
 branch_company_cities（分公司管辖城市映射，M:N）
