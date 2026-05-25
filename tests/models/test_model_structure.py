@@ -275,3 +275,40 @@ def test_branch_company_city_partial_unique_index():
         if i.unique and "effective_to" in str(getattr(i, "dialect_kwargs", {}).get("postgresql_where", ""))
     ]
     assert len(partial) == 1, "branch_company_cities 缺少 UNIQUE WHERE effective_to IS NULL 部分索引"
+
+
+def test_all_37_tables_in_metadata():
+    """确保 Base.metadata 包含全部 37 张表。"""
+    # 导入 __init__ 触发所有模型注册
+    import app.models  # noqa: F401
+    from app.models.base import Base
+
+    expected_tables = {
+        # 域1
+        "users", "institutions", "students", "teachers",
+        "relatives", "student_relatives", "teacher_students", "invite_codes",
+        # 域2
+        "memberships", "orders", "refund_records",
+        # 域3
+        "wrong_questions", "ocr_tasks", "ai_analyses",
+        # 域4
+        "knowledge_points", "curriculum_units", "unit_knowledge_points",
+        "curriculum_words", "wrong_question_knowledge_points",
+        # 域5
+        "vocabulary_words", "vocabulary_learning", "essays",
+        "listening_records", "study_checkins",
+        # 域6
+        "ai_questions", "practice_records",
+        # 域7
+        "classes", "class_students", "assignments", "assignment_submissions",
+        # 域8
+        "daily_usage", "learning_report_snapshots",
+        # 域9
+        "system_configs", "notifications",
+        # 域10
+        "branch_companies", "branch_company_cities", "branch_settlements",
+    }
+    actual_tables = set(Base.metadata.tables.keys())
+    missing = expected_tables - actual_tables
+    assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
+    assert len(actual_tables) == 37, f"期望 37 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
