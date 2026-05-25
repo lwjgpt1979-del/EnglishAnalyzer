@@ -1,8 +1,14 @@
-import os
-from pathlib import Path
-from dotenv import load_dotenv
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient, ASGITransport
 
-# Load .env from backend/ so os.getenv() picks up ASYNC_DATABASE_URL
-# before any app module (e.g. database.py) is imported at collection time.
-_env_file = Path(__file__).parent.parent.parent / "backend" / ".env"
-load_dotenv(_env_file, override=False)
+from app.main import app
+
+
+@pytest_asyncio.fixture
+async def client() -> AsyncClient:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as ac:
+        yield ac

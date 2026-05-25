@@ -1,3 +1,5 @@
+from httpx import AsyncClient
+
 from app.core.config import settings
 
 
@@ -54,3 +56,11 @@ async def test_get_db_yields_async_session():
         await gen.aclose()
     except StopAsyncIteration:
         pass
+
+
+@pytest.mark.asyncio
+async def test_health_check(client: AsyncClient):
+    response = await client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
