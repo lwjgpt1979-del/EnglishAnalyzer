@@ -1,6 +1,8 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v3.0 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v3.1 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+>
+> v3.1 (2026-05-25) — 应用 G14-G22，定版 37 张表
 
 ---
 
@@ -473,7 +475,9 @@ teacher_students（老师-学生直接绑定关系）
 │                        institution_assigned)   ← 机构后台分配
 ├── status          ENUM(pending /               ← 等待老师确认（self_bound 初始态）
 │                        active /                ← 绑定生效
-│                        rejected)              ← 老师拒绝
+│                        rejected /             ← 老师拒绝
+│                        inactive)              ← 已解绑（unbound_at 有值时 status→inactive）
+│                   [NOTE: unbound_at 有值时 status→inactive；UNIQUE WHERE status='active' 允许重新绑定]
 ├── institution_id  UUID FK → institutions (nullable)
 ├── requested_at    TIMESTAMPTZ                  ← 学生发起申请时间
 ├── bound_at        TIMESTAMPTZ (nullable)        ← 老师确认时间
@@ -501,6 +505,7 @@ invite_codes（邀请码）
 memberships（会员状态，每用户永远只有 1 条 active 记录）
 ├── id              UUID PK
 ├── user_id         UUID FK → users
+├── order_id        UUID FK → orders (nullable)  ← 激活/续费关联订单；免费档置 NULL
 ├── tier            ENUM(free / basic / pro / promax)
 ├── started_at      TIMESTAMPTZ
 ├── expires_at      TIMESTAMPTZ (nullable)  ← free 档无过期时间，置 NULL
@@ -541,6 +546,7 @@ refund_records（退款记录）
 ├── wx_refund_id          VARCHAR (nullable)   ← 微信退款单号；退款 API 成功后写入，用于对账及状态查询
 ├── branch_company_id     UUID FK → branch_companies (nullable)
 │                                    ← 继承自关联订单，用于分公司退款冲抵结算
+├── reviewed_by           UUID FK → users (nullable)  ← 审核人（appeal 类型退款时由运营填写）
 ├── updated_at            TIMESTAMPTZ
 └── created_at            TIMESTAMPTZ
 ```
@@ -676,7 +682,8 @@ vocabulary_learning（SM-2 学习状态，per 学生 per 词）
 ├── easiness_factor DECIMAL DEFAULT 2.5  ← SM-2 难度因子
 ├── next_review_at  TIMESTAMPTZ
 ├── last_reviewed_at  TIMESTAMPTZ (nullable)  ← 新词首次加入时尚未复习，初始为 NULL
-└── level           ENUM(new / learning / review / mastered)
+├── level           ENUM(new / learning / review / mastered)
+└── created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
     [UNIQUE: (student_id, word_id)]
 
 essays（作文精修）
@@ -727,7 +734,8 @@ ai_questions（AI 仿真题库，预生成存库）
 ├── content         JSONB                ← {stem:"…", options:[…], answer:"A", explanation:"…"}
 ├── is_active       BOOLEAN DEFAULT true
 ├── generated_at    TIMESTAMPTZ
-└── usage_count     INT DEFAULT 0        ← 被使用次数（运营参考）
+├── usage_count     INT DEFAULT 0        ← 被使用次数（运营参考）
+└── updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 
 practice_records（AI 题库练习记录，Module 8）
 ├── id              UUID PK
@@ -769,6 +777,7 @@ assignments（出卷任务）
 ├── questions       JSONB (nullable)     ← AI 生成题目内容；status=draft 时 AI 尚未生成，为 NULL
 ├── due_at          TIMESTAMPTZ (nullable)  ← 草稿阶段可不填，发布前确定
 ├── status          ENUM(draft / published / closed)
+├── published_at    TIMESTAMPTZ (nullable)  ← status=draft 时为 NULL；发布时填入
 ├── updated_at      TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ
 
@@ -842,6 +851,7 @@ notifications（站内消息中心）
 ├── title           VARCHAR
 ├── content         TEXT
 ├── is_read         BOOLEAN DEFAULT false
+├── read_at         TIMESTAMPTZ (nullable)
 └── created_at      TIMESTAMPTZ
 ```
 
@@ -875,7 +885,8 @@ branch_company_cities（分公司管辖城市映射，M:N）
 ├── branch_company_id     UUID FK → branch_companies
 ├── city_code             VARCHAR          ← 城市行政区划代码（对应 users/institutions.city_code）
 ├── effective_from        DATE             ← 该城市归该分公司管辖的起始日期
-└── effective_to          DATE (nullable)  ← 管辖结束日期（NULL=当前有效）；城市划区调整时填写
+├── effective_to          DATE (nullable)  ← 管辖结束日期（NULL=当前有效）；城市划区调整时填写
+└── created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
     [UNIQUE: (city_code) WHERE effective_to IS NULL]
     ← 同一城市在同一时刻只能归属一个分公司；历史记录通过 effective_to 标记失效，不硬删除
     [NOTE: 划区变更流程：先将旧记录 effective_to=变更日，再插入新分公司新记录]
@@ -897,6 +908,7 @@ branch_settlements（分公司周期结算账单）
 ├── confirmed_at              TIMESTAMPTZ (nullable)
 ├── paid_at                   TIMESTAMPTZ (nullable)
 ├── note                      TEXT (nullable)  ← 备注（如含争议项说明）
+├── updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 └── created_at                TIMESTAMPTZ
     [UNIQUE: (branch_company_id, period_start, period_end)]
 ```
