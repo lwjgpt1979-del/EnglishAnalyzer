@@ -66,3 +66,34 @@ def test_teacher_students_partial_unique_index():
     indexes = TeacherStudent.__table__.indexes
     partial = [i for i in indexes if i.unique and "active" in str(getattr(i, "dialect_kwargs", {}).get("postgresql_where", ""))]
     assert len(partial) == 1, "缺少 UNIQUE WHERE status='active' 部分唯一索引"
+
+
+def test_d2_payment_tables():
+    from app.models.d2_payments import Membership, Order, RefundRecord
+    assert Membership.__tablename__ == "memberships"
+    assert Order.__tablename__ == "orders"
+    assert RefundRecord.__tablename__ == "refund_records"
+
+
+def test_membership_has_order_id():
+    """G19: memberships 必须有 order_id 字段。"""
+    from app.models.d2_payments import Membership
+    cols = {c.name for c in Membership.__table__.columns}
+    assert "order_id" in cols, "G19 修复未应用: memberships 缺少 order_id"
+
+
+def test_memberships_partial_unique_index():
+    from app.models.d2_payments import Membership
+    indexes = Membership.__table__.indexes
+    partial = [
+        i for i in indexes
+        if i.unique and "is_active" in str(getattr(i, "dialect_kwargs", {}).get("postgresql_where", ""))
+    ]
+    assert len(partial) == 1, "缺少 UNIQUE WHERE is_active=true 部分唯一索引"
+
+
+def test_refund_record_has_reviewed_by():
+    """G22: refund_records 必须有 reviewed_by 字段。"""
+    from app.models.d2_payments import RefundRecord
+    cols = {c.name for c in RefundRecord.__table__.columns}
+    assert "reviewed_by" in cols, "G22 修复未应用: refund_records 缺少 reviewed_by"
