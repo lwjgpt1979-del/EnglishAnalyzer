@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.0 | 日期：2026-05-25 | 状态：Section 1-5 已确认，Section 6 进行中
+> 版本：v2.1 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -1564,6 +1564,276 @@ ARQ keep_result = 3600（1h）：
 
 ---
 
-## Section 6（进行中）
+## Section 6：腾讯云部署架构
 
-> Section 6：腾讯云部署架构 — 待确认
+> 部署区域：华南（广州）ap-guangzhou，主可用区 ap-guangzhou-3 + 备可用区 ap-guangzhou-4。
+> MVP 阶段以 CVM + Docker Compose 快速上线；流量增长后平滑迁移至 TKE 容器化部署。
+
+---
+
+### 6.1 整体网络拓扑
+
+```
+外部流量（微信小程序 / 管理员浏览器）
+        │ HTTPS 443 / WSS 443
+        ▼
+┌─────────────────────────────────────────┐
+│         腾讯云 CLB（公网负载均衡）        │
+│   SSL 卸载 + HTTP→HTTPS 跳转            │
+│   WebSocket 长连接透传                   │
+└──────────────────┬──────────────────────┘
+                   │
+        ┌──────────▼──────────┐
+        │   腾讯云 API 网关    │
+        │  限流 100 req/min/用户│
+        │  路由转发 + 访问日志  │
+        └──────────┬──────────┘
+                   │
+═══════════════════╪══════════════════════════════
+        VPC  10.0.0.0/16（广州）
+                   │
+   ┌───────────────┴────────────────┐
+   │                                │
+   ▼  私有子网 A（ap-guangzhou-3）   ▼  私有子网 B（ap-guangzhou-4）
+┌──────────────────────┐        ┌──────────────────────┐
+│  TKE Node Pool       │        │  TKE Node Pool（备）  │
+│                      │        │                      │
+│  FastAPI Pods        │        │  FastAPI Pods        │
+│  （2-8，HPA）        │        │  （跨 AZ 副本）       │
+│                      │        │                      │
+│  ARQ Worker Pods     │        │  ARQ Worker Pods     │
+│  （4-16，HPA）       │        │  （跨 AZ 副本）       │
+└──────────┬───────────┘        └──────────┬───────────┘
+           │                               │
+           └──────────────┬────────────────┘
+                          │ VPC 内网访问
+                          ▼
+        ┌─────────────────────────────────┐
+        │         数据子网（双 AZ）        │
+        │                                 │
+        │  CDB PostgreSQL                 │
+        │  主实例（AZ3）+ 只读副本（AZ4） │
+        │                                 │
+        │  TencentDB Redis                │
+        │  主节点（AZ3）+ 副本（AZ4）     │
+        └─────────────────────────────────┘
+
+═══════════════════════════════════════════════
+        腾讯云托管服务（VPC 内网直连）
+        │
+        ├── COS（图片 / 音频存储，私有桶）
+        ├── CLS（日志采集与检索）
+        ├── KMS（密钥管理，加密 bank_account）
+        └── SMS（腾讯云短信，老师邀请）
+
+        外部 API（公网调用，走 NAT 网关出口）
+        │
+        ├── 微信支付 API（Webhook 回调入口在 CLB）
+        ├── 阿里云 OCR（印刷体主）
+        ├── 百度 OCR（印刷体备）
+        ├── 腾讯云 OCR（手写主，内网直连）
+        ├── Google Document AI（手写备）
+        ├── DeepSeek API（LLM 主）
+        ├── Claude API（LLM 备）
+        └── 企业微信 API（通知 + 告警机器人）
+```
+
+---
+
+### 6.2 计算层
+
+#### MVP 路径（CVM + Docker Compose，快速上线）
+
+```
+单台 CVM（标准型 S5，4C8G，广州3区）
+├── FastAPI 容器        ← 对外服务，UVICORN 4 worker
+├── ARQ Worker 容器     ← 4 并发协程
+├── Nginx 反向代理      ← SSL + 静态文件（admin 前端）
+└── 部署方式：docker compose up -d
+
+数据库：CDB PostgreSQL（独立实例，不在 CVM 上）
+Redis：TencentDB Redis（独立实例）
+```
+
+> MVP 目标：单台 CVM 撑住冷启动期（< 1000 DAU）；不需改代码即可迁移 TKE。
+
+#### 生产路径（TKE 容器化）
+
+```
+TKE 集群（托管版，跨 AZ3 + AZ4 双可用区）
+│
+├── FastAPI Deployment
+│   ├── 镜像：enggramer/api:latest（TCR 私有仓库）
+│   ├── Resources: requests 0.5C/512Mi，limits 2C/1Gi
+│   ├── Replicas: 2~8（HPA 目标 CPU 70%）
+│   ├── ReadinessProbe: GET /health，5s 间隔
+│   └── 滚动更新：maxSurge=1，maxUnavailable=0
+│
+├── ARQ Worker Deployment
+│   ├── 镜像：enggramer/worker:latest（与 API 同基础镜像）
+│   ├── Resources: requests 0.5C/256Mi，limits 2C/1Gi
+│   ├── Replicas: 4~16（KEDA，基于 Redis 队列深度）
+│   │     scaleOn: Redis list length(arq:jobs:default) > 10 → +1 Pod
+│   │     scaleDown: 队列空闲 3min → 缩至 minReplicas=4
+│   └── 无 ReadinessProbe（Worker 直接从队列取任务，无需对外暴露端口）
+│
+└── 节点池配置
+    ├── 通用节点池：SA2.MEDIUM4（2C4G）× 3 起步
+    └── 弹性节点池：按量付费，峰值自动扩缩
+```
+
+---
+
+### 6.3 数据层
+
+| 组件 | 规格（MVP） | 规格（生产） | 说明 |
+|------|------------|------------|------|
+| **CDB PostgreSQL** | 2C4G，100GB SSD | 4C8G，主+只读副本，双 AZ | 自动备份，7天保留 |
+| **TencentDB Redis** | 1G 标准版 | 4G 主从版，双 AZ | ARQ 队列 + 用量计数 + Token 黑名单 |
+| **腾讯云 COS** | 标准存储 | 标准存储 + CDN 加速 | 私有桶，预签名 URL 访问，生命周期 180 天 |
+
+**COS 目录结构**：
+```
+enggramer-prod/
+├── students/{user_id}/{YYYY}/{MM}/         ← 错题图片（OCR 源文件）
+├── listening/{user_id}/{YYYY}/{MM}/        ← 跟读录音
+├── essays/{user_id}/                       ← 作文（如有附件）
+└── certs/teachers/{user_id}/              ← 老师认证材料（仅平台可读）
+```
+
+**COS 安全策略**：
+```
+- 桶权限：私有（禁止匿名访问）
+- 上传：前端通过 /upload/sign 获取预签名 PUT URL，直传，有效期 300s
+- 读取：后端生成预签名 GET URL，有效期按业务（图片 24h，认证材料 1h）
+- cert_doc 目录：额外限制仅 platform_admin 角色的 API 服务账号可签发读 URL
+```
+
+---
+
+### 6.4 网络接入层
+
+```
+CLB 监听规则：
+  443（HTTPS） → FastAPI Service（K8s NodePort 或 LoadBalancer 类型）
+  443（WSS）   → FastAPI Service（同一 Service，Nginx 识别 Upgrade: websocket）
+
+API 网关限流规则：
+  全局：100 req/min/IP
+  /wrong-questions POST：10 req/min/用户（配合 daily_usage 配额）
+  /auth/wx-login：30 req/min/IP（防刷）
+  /webhooks/wx-pay：仅白名单微信 IP 段（其余 403）
+
+安全组（Security Group）：
+  CLB SG       → Inbound: 443/TCP from 0.0.0.0/0
+  FastAPI SG   → Inbound: 仅来自 CLB SG；Outbound: 全放行（调用外部 API）
+  CDB SG       → Inbound: 5432/TCP 仅来自 FastAPI SG
+  Redis SG     → Inbound: 6379/TCP 仅来自 FastAPI SG
+```
+
+---
+
+### 6.5 弹性扩缩容策略
+
+```
+FastAPI HPA（基于 CPU）：
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+  scaleUp:   stabilizationWindowSeconds: 60    ← 防抖，避免瞬时流量误扩容
+  scaleDown: stabilizationWindowSeconds: 300   ← 缩容保守，防频繁重启
+
+ARQ Worker HPA（基于 Redis 队列深度，使用 KEDA）：
+  minReplicas: 4
+  maxReplicas: 16
+  trigger:
+    type: redis
+    metadata:
+      address: redis://10.0.x.x:6379/1
+      listName: arq:jobs:default
+      listLength: "10"                          ← 队列深度 > 10 → 触发扩容
+  scaleDown: stabilizationWindowSeconds: 180
+
+节点池弹性（Cluster Autoscaler）：
+  Pod 因资源不足 Pending 超过 1min → 触发节点扩容
+  节点利用率 < 50% 持续 10min → 触发节点缩容（cordon + drain + 回收）
+```
+
+---
+
+### 6.6 多环境隔离
+
+| 环境 | 计算 | 数据库 | Redis | 说明 |
+|------|------|--------|-------|------|
+| **Dev（本地）** | Docker Compose | PostgreSQL 容器 | Redis 容器 | 开发自测，无云资源 |
+| **Staging** | TKE 单节点 | CDB 共享实例（独立 Schema） | TencentDB 1G | PR 合并后自动部署，功能验证 |
+| **Prod** | TKE 双 AZ | CDB 主+只读副本 | TencentDB 4G 主从 | 正式流量，独立资源 |
+
+**环境变量与配置隔离**：
+```
+所有配置通过环境变量注入，禁止硬编码：
+  DATABASE_URL / REDIS_URL / COS_BUCKET / KMS_KEY_ID / ...
+
+Staging 与 Prod 使用 TKE ConfigMap + Secret（KMS 加密存储）
+Dev 使用本地 .env 文件（.gitignore 排除，不提交）
+```
+
+---
+
+### 6.7 CI/CD 流水线
+
+```
+开发者 push → GitHub main 分支
+        │
+        ▼
+GitHub Actions 触发：
+  1. 单元测试（pytest）+ Lint（ruff）
+  2. Docker 镜像构建（multi-stage build）
+  3. 推送至腾讯云 TCR（容器镜像服务）
+        │
+        ├── 分支：feature/* → 仅跑测试，不部署
+        ├── 分支：main     → 自动部署 Staging
+        └── Tag：v*.*.*    → 人工审批后部署 Prod
+
+Prod 部署步骤：
+  kubectl set image deployment/api api=tcr.../enggramer/api:<tag>
+  kubectl rollout status deployment/api --timeout=5m
+  失败自动回滚：kubectl rollout undo deployment/api
+
+数据库迁移：
+  部署前 Job 执行：python -m alembic upgrade head
+  迁移失败 → 终止部署流水线，不更新 Deployment
+```
+
+---
+
+### 6.8 安全配置
+
+| 配置项 | 方案 |
+|--------|------|
+| 传输加密 | CLB 终结 TLS 1.3，内网 HTTP（VPC 内可信） |
+| 静态数据加密 | CDB 存储加密（腾讯云托管密钥）；bank_account 字段 AES-256-GCM + KMS（§1.8） |
+| 密钥管理 | KMS 集中管理，应用层无明文密钥；轮转周期 1 年 |
+| 容器安全 | 非 root 用户运行；只读根文件系统；禁止特权容器 |
+| COS 访问 | 私有桶 + 预签名 URL；cert_doc 目录仅 API 服务账号可签发读 URL |
+| DDoS 防护 | CLB 接入腾讯云 Anti-DDoS Basic（自动，免费） |
+| 微信支付回调 | 白名单微信服务器 IP；验签（HMAC-SHA256）；幂等防重放 |
+| 日志合规 | CLS 日志保留 180 天；敏感字段（phone、bank_account）在落日志前脱敏 |
+
+---
+
+### 6.9 MVP 阶段资源清单与估算成本
+
+| 资源 | 规格 | 月费估算（按量） |
+|------|------|----------------|
+| CVM（FastAPI + Worker） | SA2.MEDIUM4 2C4G × 1 | ≈ ¥150 |
+| CDB PostgreSQL | 2C4G 100GB SSD | ≈ ¥300 |
+| TencentDB Redis | 1G 标准版 | ≈ ¥80 |
+| CLB | 按流量计费 | ≈ ¥30 |
+| COS | 标准存储 50GB + 流量 | ≈ ¥20 |
+| CLS | 日志采集 5GB/天 | ≈ ¥50 |
+| 腾讯云 SMS | 按条计费（0.045元/条） | 按实际发送量 |
+| **MVP 合计（不含短信）** | | **≈ ¥630/月** |
+
+> 生产阶段迁移 TKE 后，主要增量为 TKE 节点（3 节点起步约 ¥600-900/月）和 CDB 只读副本（约 +¥150/月）。
+> 腾讯云 OCR / 阿里云 OCR / DeepSeek / Claude 按调用量单独计费，不含在上表中。
