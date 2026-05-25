@@ -97,3 +97,35 @@ def test_wrong_token_type_raises():
     access_token = create_access_token(user_id=user_id, role="student")
     with pytest.raises(JWTError):
         decode_token(access_token, expected_type="refresh")
+
+
+import pytest_asyncio
+from unittest.mock import AsyncMock, patch
+
+from app.services.auth_service import upsert_user
+from app.core.database import _async_session_factory
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    async with _async_session_factory() as session:
+        yield session
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_upsert_user_creates_new_user(db_session):
+    openid = f"test_openid_{uuid.uuid4().hex[:8]}"
+    user = await upsert_user(db_session, openid=openid)
+    assert user.openid == openid
+    assert user.role == "student"
+    assert user.is_active is True
+    assert user.id is not None
+
+
+@pytest.mark.asyncio
+async def test_upsert_user_returns_existing(db_session):
+    openid = f"test_openid_{uuid.uuid4().hex[:8]}"
+    user1 = await upsert_user(db_session, openid=openid)
+    user2 = await upsert_user(db_session, openid=openid)
+    assert user1.id == user2.id
