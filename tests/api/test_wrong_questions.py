@@ -63,3 +63,98 @@ def test_ai_analysis_out_serializes():
     )
     assert out.llm_provider == "claude"
     assert out.confidence_score == 0.92
+
+
+import pytest
+import pytest_asyncio
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import _async_session_factory
+from app.schemas.wrong_questions import WrongQuestionCreate
+from app.services.wrong_question_service import (
+    create_wrong_question,
+    get_wrong_question,
+    list_wrong_questions,
+    mark_mastered,
+)
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    async with _async_session_factory() as session:
+        yield session
+        await session.rollback()
+
+
+@pytest_asyncio.fixture
+async def test_student(db_session):
+    from app.services.auth_service import upsert_user
+    user = await upsert_user(db_session, openid=f"wq_test_{uuid.uuid4().hex[:8]}")
+    await db_session.flush()
+    return user
+
+
+@pytest.mark.asyncio
+async def test_create_wrong_question(db_session, test_student):
+    data = WrongQuestionCreate(
+        source_image_url="https://cdn.example.com/test.jpg",
+        question_text="She __ to school every day.",
+        student_answer="go",
+        correct_answer="goes",
+        question_type="单选",
+        difficulty=2,
+        tags=["主谓一致"],
+    )
+    wq = await create_wrong_question(db_session, student_id=test_student.id, data=data)
+    assert wq.id is not None
+    assert wq.student_id == test_student.id
+    assert wq.question_text == "She __ to school every day."
+    assert wq.tags == ["主谓一致"]
+    assert wq.is_mastered is False
+
+
+@pytest.mark.asyncio
+async def test_get_wrong_question_owned(db_session, test_student):
+    data = WrongQuestionCreate(source_image_url="https://cdn.example.com/a.jpg")
+    wq = await create_wrong_question(db_session, student_id=test_student.id, data=data)
+    found = await get_wrong_question(db_session, wq_id=wq.id, student_id=test_student.id)
+    assert found is not None
+    assert found.id == wq.id
+
+
+@pytest.mark.asyncio
+async def test_get_wrong_question_not_owned_returns_none(db_session, test_student):
+    data = WrongQuestionCreate(source_image_url="https://cdn.example.com/b.jpg")
+    wq = await create_wrong_question(db_session, student_id=test_student.id, data=data)
+    other_id = uuid.uuid4()
+    found = await get_wrong_question(db_session, wq_id=wq.id, student_id=other_id)
+    assert found is None
+
+
+@pytest.mark.asyncio
+async def test_list_wrong_questions(db_session, test_student):
+    for i in range(3):
+        await create_wrong_question(
+            db_session,
+            student_id=test_student.id,
+            data=WrongQuestionCreate(source_image_url=f"https://cdn.example.com/{i}.jpg"),
+        )
+    items, total = await list_wrong_questions(
+        db_session, student_id=test_student.id, skip=0, limit=10
+    )
+    assert total >= 3
+    assert len(items) >= 3
+
+
+@pytest.mark.asyncio
+async def test_mark_mastered(db_session, test_student):
+    data = WrongQuestionCreate(source_image_url="https://cdn.example.com/c.jpg")
+    wq = await create_wrong_question(db_session, student_id=test_student.id, data=data)
+    updated = await mark_mastered(db_session, wq=wq, is_mastered=True)
+    assert updated.is_mastered is True
+    assert updated.mastered_at is not None
+    un = await mark_mastered(db_session, wq=updated, is_mastered=False)
+    assert un.is_mastered is False
+    assert un.mastered_at is None
