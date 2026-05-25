@@ -10,6 +10,13 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import Session, sessionmaker
 
+# Import settings here so pydantic-settings loads .env before the module-level
+# _build_async_engine() call below.  database.py is imported early in the chain
+# (main → router → auth → database) before any explicit load_dotenv(); reading
+# from `settings` instead of os.getenv() guarantees the .env file is parsed by
+# pydantic-settings regardless of working directory.
+from app.core.config import settings as _settings
+
 # ── Sync engine（Alembic 迁移专用）────────────────────────────────────────────
 
 
@@ -38,13 +45,10 @@ def create_session_factory(engine: Engine) -> "sessionmaker[Session]":
 
 
 def _build_async_engine():
-    url = os.getenv("ASYNC_DATABASE_URL")
-    if not url:
-        raise RuntimeError(
-            "ASYNC_DATABASE_URL 环境变量未设置。"
-            "请复制 .env.example 为 .env 并填写真实数据库连接。"
-        )
-    return create_async_engine(url, echo=os.getenv("DEBUG", "false").lower() == "true")
+    return create_async_engine(
+        _settings.async_database_url,
+        echo=_settings.debug,
+    )
 
 
 _async_engine = _build_async_engine()
