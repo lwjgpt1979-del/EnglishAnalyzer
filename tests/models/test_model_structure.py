@@ -316,12 +316,13 @@ def test_all_37_tables_in_metadata():
 
 def test_migration_file_exists():
     """初始迁移文件必须存在（文件名含 initial_schema）。"""
-    import os
-    versions_dir = os.path.join(
-        os.path.dirname(__file__), "../../backend/alembic/versions"
+    from pathlib import Path
+    versions_dir = Path(__file__).parents[2] / "backend" / "alembic" / "versions"
+    assert versions_dir.is_dir(), (
+        f"alembic/versions 目录不存在: {versions_dir}"
     )
-    files = os.listdir(versions_dir)
-    migration_files = [f for f in files if "initial_schema" in f and f.endswith(".py")]
+    migration_files = [f.name for f in versions_dir.iterdir()
+                       if "initial_schema" in f.name and f.suffix == ".py"]
     assert len(migration_files) == 1, (
         f"期望 1 个 initial_schema 迁移文件，实际找到: {migration_files}"
     )

@@ -676,4 +676,4 @@ def downgrade() -> None:
         "bind_type", "cert_status", "semester", "institution_status",
         "city_source", "user_role",
     ]:
-        op.execute(f"DROP TYPE IF EXISTS {enum_name}")
+        op.execute(sa.text(f"DROP TYPE IF EXISTS {enum_name}"))
