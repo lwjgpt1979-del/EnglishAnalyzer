@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.4 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.5 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -441,8 +441,8 @@ teachers（老师扩展，1:1 users）
 ├── id                  UUID PK → users.id
 ├── institution_id      UUID FK → institutions  ← NULL = C 端认证老师
 ├── cert_status         ENUM(uncertified / pending / certified / rejected)
-├── cert_doc_url        VARCHAR              ← 认证材料 COS 路径
-├── subject             VARCHAR              ← 任教学科（英语/数学…，搜索区分度）
+├── cert_doc_url        VARCHAR (nullable)   ← 认证材料 COS 路径；cert_status=uncertified 时为 NULL
+├── subject             VARCHAR (nullable)   ← 任教学科（英语/数学…，搜索区分度）；注册后可补填
 ├── max_students        INT DEFAULT 50       ← 最大绑定学生数上限，防止无限接单
 └── enterprise_userid   VARCHAR (nullable)   ← 企业微信 userid，首次企业微信 OAuth 后写入
                                                用于企业微信推送，避免每次按手机号反查 API
@@ -525,6 +525,7 @@ orders（订单）
 ├── branch_commission_fen    INT (nullable)        ← 分公司应得金额快照
 ├── institution_commission_fen INT (nullable)      ← 机构应得金额快照（如有）
 │   [NOTE: 三方金额在 paid_at 时按当时分成比例计算并冻结，后续比例调整不影响历史单]
+├── updated_at               TIMESTAMPTZ
 └── created_at               TIMESTAMPTZ
 
 refund_records（退款记录）
@@ -534,8 +535,10 @@ refund_records（退款记录）
 ├── refund_type           ENUM(standard_7d / prorated / appeal)
 ├── status                ENUM(pending / approved / rejected / completed)
 ├── reason                TEXT
+├── wx_refund_id          VARCHAR (nullable)   ← 微信退款单号；退款 API 成功后写入，用于对账及状态查询
 ├── branch_company_id     UUID FK → branch_companies (nullable)
 │                                    ← 继承自关联订单，用于分公司退款冲抵结算
+├── updated_at            TIMESTAMPTZ
 └── created_at            TIMESTAMPTZ
 ```
 
@@ -549,9 +552,9 @@ wrong_questions（错题主记录）
 ├── student_id      UUID FK → users
 ├── institution_id  UUID FK → institutions (nullable)  ← NULL = C 端
 ├── source_image_url  VARCHAR             ← COS 路径
-├── question_text   TEXT                 ← OCR 识别后文本
-├── student_answer  TEXT
-├── correct_answer  TEXT
+├── question_text   TEXT (nullable)      ← OCR 识别后文本；图片上传后先建记录，OCR 完成前为 NULL
+├── student_answer  TEXT (nullable)      ← OCR 完成前为 NULL
+├── correct_answer  TEXT (nullable)      ← OCR 完成前为 NULL
 ├── question_type   ENUM(单选/完型/阅读/作文/其他)
 ├── difficulty      SMALLINT (1-5)
 ├── tags            JSONB                ← AI 自由标签（如"审题失误"）
@@ -568,7 +571,7 @@ ocr_tasks（OCR 异步任务状态）
 │                        baidu_print /       ← 印刷体备选（故障转移）
 │                        tencent_handwrite / ← 手写体主选
 │                        google_handwrite)   ← 手写体备选（故障转移）
-├── raw_result      JSONB                ← 原始 OCR 响应备存
+├── raw_result      JSONB (nullable)     ← 原始 OCR 响应备存；pending/processing 时为 NULL
 ├── retry_count     SMALLINT DEFAULT 0
 ├── created_at      TIMESTAMPTZ
 └── completed_at    TIMESTAMPTZ (nullable)  ← status=pending/processing 时为 NULL
@@ -666,7 +669,7 @@ vocabulary_learning（SM-2 学习状态，per 学生 per 词）
 ├── repetitions     INT DEFAULT 0        ← SM-2 重复次数
 ├── easiness_factor DECIMAL DEFAULT 2.5  ← SM-2 难度因子
 ├── next_review_at  TIMESTAMPTZ
-├── last_reviewed_at  TIMESTAMPTZ
+├── last_reviewed_at  TIMESTAMPTZ (nullable)  ← 新词首次加入时尚未复习，初始为 NULL
 └── level           ENUM(new / learning / review / mastered)
     [UNIQUE: (student_id, word_id)]
 
@@ -675,8 +678,8 @@ essays（作文精修）
 ├── student_id      UUID FK → users
 ├── wrong_question_id  UUID FK (nullable)  ← 可关联来源错题
 ├── original_text   TEXT
-├── polished_text   TEXT                 ← AI 精修后
-├── dimensions      JSONB                ← {语法:85, 词汇:90, 逻辑:78, 内容:88}
+├── polished_text   TEXT (nullable)      ← AI 精修后；status=draft/processing 时为 NULL
+├── dimensions      JSONB (nullable)     ← {语法:85, 词汇:90, 逻辑:78, 内容:88}；status=draft/processing 时为 NULL
 ├── round_count     SMALLINT DEFAULT 1   ← 精修轮次（Pro 上限见 5.6）
 ├── status          ENUM(draft / processing / completed)
 └── created_at      TIMESTAMPTZ
@@ -686,8 +689,8 @@ listening_records（听力跟读记录）
 ├── student_id      UUID FK → users
 ├── audio_url       VARCHAR              ← 学生录音 COS 路径
 ├── reference_url   VARCHAR              ← 原始参考音频 COS 路径
-├── score           DECIMAL              ← 发音评分（0-100）
-├── feedback        JSONB                ← AI 反馈详情
+├── score           DECIMAL (nullable)   ← 发音评分（0-100）；AI 评分完成前为 NULL
+├── feedback        JSONB (nullable)     ← AI 反馈详情；AI 评分完成前为 NULL
 └── created_at      TIMESTAMPTZ
 
 study_checkins（每日打卡记录）
