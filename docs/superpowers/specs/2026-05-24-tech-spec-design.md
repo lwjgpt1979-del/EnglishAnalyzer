@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v1.4 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
+> 版本：v1.5 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
 
 ---
 
@@ -51,6 +51,7 @@
 │              其他外部服务                                 │
 │  DeepSeek / Claude（LLM 诊断）                           │
 │  微信支付（Webhook）                                      │
+│  ip2region（离线 IP 解析，注册时城市预填，详见 §1.7）       │
 ├─────────────────────────────────────────────────────────┤
 │              NotificationService 路由目标（详见 §1.4）    │
 │  小程序订阅消息 │ 企业微信推送 │ 站内 WebSocket │ 腾讯云SMS │
@@ -75,6 +76,7 @@
 | 图片存储 | **腾讯云 COS** | 同云内网传输免费，支持图片处理 URL |
 | 后台管理 UI | P2 再做，MVP 用接口 + 直接操作 DB | 降低 MVP 开发量 |
 | 短信服务 | **腾讯云 SMS** | 同云生态，老师绑定邀请短信的唯一下发渠道 |
+| IP 解析 | **ip2region**（离线库） | 零外部依赖、零接口成本；注册时城市预填，不作强制归属 |
 
 ---
 
@@ -217,6 +219,84 @@
 | CVM/Pod CPU | 持续 10 分钟 > 80% | 触发 TKE HPA 自动扩容 |
 
 **故障赔付触发**：平台 CLS 日志可证明核心功能（AI分析/试卷上传/错题管理）连续 ≥ 48 小时不可用时，自动触发赔付流程（见 PRD § 8.4）。
+
+---
+
+### 1.7 城市归属与分公司路由
+
+> 横切关注点，影响注册、机构加入、老师认证、订单四个服务。MVP 阶段分公司表为空，逻辑自动降级（branch_company_id = NULL）。
+
+#### 城市归属写入时机
+
+```
+触发点                    服务层操作
+──────────────────────────────────────────────────────────
+用户注册                  ip2region 解析注册 IP → 作为城市选择器默认值
+                          用户确认/修改后 → 写入 users.city_code
+                          city_source = self_selected
+                          ip_at_registration = 原始 IP（审计留存，不可改）
+
+学生/老师加入机构           institutions.city_code → 覆盖 users.city_code
+                          city_source = institution
+
+老师认证审核通过            审核核实的学校城市 → 覆盖 users.city_code
+                          city_source = cert_verified
+
+平台超管手动修正            后台操作 → 覆盖 users.city_code
+                          city_source = manual
+```
+
+#### 分公司路由（MVP 为空表，分公司成立时自动生效）
+
+```
+订单 paid_at 时：
+  users.city_code
+      │
+      ▼
+  branch_company_cities（city_code = ?）
+      │  找到 → branch_company_id 快照写入 orders
+      │  找不到 → orders.branch_company_id = NULL（平台直营）
+      ▼
+  三方分成金额同步冻结：
+    platform_income_fen / branch_commission_fen / institution_commission_fen
+```
+
+#### 优先级规则（高优先级覆盖低优先级，不可逆）
+
+```
+机构城市（institution）
+    > 认证核实城市（cert_verified）
+    > 用户自选城市（self_selected）
+    > 平台手动修正（manual，超管介入时使用）
+```
+
+**注**：城市归属变更后，**历史订单的 branch_company_id 不受影响**（下单时已快照）；仅影响变更后的新订单归属。
+
+---
+
+### 1.8 敏感数据加密策略
+
+> 当前涉及敏感字段：`branch_companies.bank_account`（银行账号）。后续如扩展机构银行账号、用户身份证号等，统一遵循本策略。
+
+#### 加密方案
+
+| 层次 | 方案 | 说明 |
+|------|------|------|
+| 加密算法 | **AES-256-GCM** | 对称加密，支持认证标签，防篡改 |
+| 密钥管理 | **腾讯云 KMS** | 密钥不落地代码/DB，通过 KMS API 加解密；轮转周期 1 年 |
+| 存储形式 | `encrypted_value::iv::tag` 拼接字符串 | IV 随机生成，每次加密独立 |
+| 展示脱敏 | 银行账号：显示前 4 位 + `****` + 后 4 位 | Service 层解密后脱敏，不返回明文 |
+
+#### 操作规范
+
+```
+写入：Service 层调 KMS 加密 → 存 encrypted 字符串 → DB 不存明文
+读取：Service 层从 DB 取 encrypted 字符串 → 调 KMS 解密 → 脱敏后返回前端
+导出/对账：需二次授权（branch_admin 申请 → platform_admin 审批）→ 生成临时解密令牌
+审计：所有解密操作记录到 CLS（操作人、时间、字段、用途）
+```
+
+**MVP 说明**：分公司银行账号字段 MVP 阶段为 NULL，KMS 集成可在分公司成立前完成，不影响当前开发进度。
 
 ---
 
