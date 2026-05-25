@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.5 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.6 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -400,7 +400,7 @@ branch_admin 角色不使用 BYPASSRLS，通过显式 institution_id IN (...)
 users（所有角色共用基础表）
 ├── id                    UUID PK
 ├── openid                VARCHAR UNIQUE       ← 微信 openid，登录唯一标识
-├── phone                 VARCHAR
+├── phone                 VARCHAR (nullable)   ← 微信登录不强制绑手机，注册后可补填
 ├── nickname              VARCHAR
 ├── avatar_url            VARCHAR
 ├── role                  ENUM(student / teacher / relative /
@@ -555,9 +555,9 @@ wrong_questions（错题主记录）
 ├── question_text   TEXT (nullable)      ← OCR 识别后文本；图片上传后先建记录，OCR 完成前为 NULL
 ├── student_answer  TEXT (nullable)      ← OCR 完成前为 NULL
 ├── correct_answer  TEXT (nullable)      ← OCR 完成前为 NULL
-├── question_type   ENUM(单选/完型/阅读/作文/其他)
-├── difficulty      SMALLINT (1-5)
-├── tags            JSONB                ← AI 自由标签（如"审题失误"）
+├── question_type   ENUM(单选/完型/阅读/作文/其他) (nullable)  ← LLM 判断题型后写入；OCR 完成前为 NULL
+├── difficulty      SMALLINT (nullable)  ← AI 诊断后写入（1-5）；分析前为 NULL
+├── tags            JSONB (nullable)     ← AI 自由标签（如"审题失误"）；分析前为 NULL
 │                                          知识点关联见 wrong_question_knowledge_points
 ├── is_mastered     BOOLEAN DEFAULT false
 ├── mastered_at     TIMESTAMPTZ (nullable)  ← is_mastered=false 时为 NULL
@@ -689,8 +689,9 @@ listening_records（听力跟读记录）
 ├── student_id      UUID FK → users
 ├── audio_url       VARCHAR              ← 学生录音 COS 路径
 ├── reference_url   VARCHAR              ← 原始参考音频 COS 路径
-├── score           DECIMAL (nullable)   ← 发音评分（0-100）；AI 评分完成前为 NULL
-├── feedback        JSONB (nullable)     ← AI 反馈详情；AI 评分完成前为 NULL
+├── status          ENUM(processing / completed / failed)  ← AI 发音评分流程状态
+├── score           DECIMAL (nullable)   ← 发音评分（0-100）；status=completed 后写入
+├── feedback        JSONB (nullable)     ← AI 反馈详情；status=completed 后写入
 └── created_at      TIMESTAMPTZ
 
 study_checkins（每日打卡记录）
@@ -756,7 +757,7 @@ assignments（出卷任务）
 ├── teacher_id      UUID FK → users
 ├── class_id        UUID FK → classes (nullable)
 ├── title           VARCHAR
-├── questions       JSONB                ← AI 生成题目内容
+├── questions       JSONB (nullable)     ← AI 生成题目内容；status=draft 时 AI 尚未生成，为 NULL
 ├── due_at          TIMESTAMPTZ
 ├── status          ENUM(draft / published / closed)
 └── created_at      TIMESTAMPTZ
@@ -848,10 +849,10 @@ branch_companies（分公司）
 ├── commission_rate   DECIMAL              ← 平台向分公司的分成比例
 │
 │   ── 财税法务字段（分公司成立时填入）────────────────────────────────────
-├── legal_name        VARCHAR              ← 营业执照法定名称（开票抬头）
-├── tax_number        VARCHAR              ← 统一社会信用代码（税号）
-├── bank_name         VARCHAR              ← 收款开户行名称
-├── bank_account      VARCHAR              ← 收款银行账号（落库前加密，展示时脱敏）
+├── legal_name        VARCHAR (nullable)   ← 营业执照法定名称（开票抬头）；分公司成立时填入
+├── tax_number        VARCHAR (nullable)   ← 统一社会信用代码（税号）；分公司成立时填入
+├── bank_name         VARCHAR (nullable)   ← 收款开户行名称；分公司成立时填入
+├── bank_account      VARCHAR (nullable)   ← 收款银行账号（落库前加密，展示时脱敏）；分公司成立时填入
 │
 ├── is_active         BOOLEAN DEFAULT true
 └── created_at        TIMESTAMPTZ
