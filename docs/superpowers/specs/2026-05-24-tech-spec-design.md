@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.2 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.3 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -433,9 +433,8 @@ students（学生扩展，1:1 users）
 ├── institution_id  UUID FK → institutions  ← NULL = C 端独立用户
 ├── grade           VARCHAR              ← 年级（7/8/9/10/11/12）
 ├── textbook_ver    VARCHAR              ← 教材版本（人教版/外研版/北师大版…）
-├── semester        ENUM(上/下)
-├── info_change_count_month  INT DEFAULT 0   ← 防滥用计数（5.6 后台配置上限）
-└── info_change_reset_date   DATE
+└── semester        ENUM(上/下)
+    [NOTE: 年级/教材变更次数上限由 daily_usage（usage_type="grade_change_monthly"）统一管理，不在本表重复计数]
 
 teachers（老师扩展，1:1 users）
 ├── id                  UUID PK → users.id
@@ -443,7 +442,9 @@ teachers（老师扩展，1:1 users）
 ├── cert_status         ENUM(uncertified / pending / certified / rejected)
 ├── cert_doc_url        VARCHAR              ← 认证材料 COS 路径
 ├── subject             VARCHAR              ← 任教学科（英语/数学…，搜索区分度）
-└── max_students        INT DEFAULT 50       ← 最大绑定学生数上限，防止无限接单
+├── max_students        INT DEFAULT 50       ← 最大绑定学生数上限，防止无限接单
+└── enterprise_userid   VARCHAR (nullable)   ← 企业微信 userid，首次企业微信 OAuth 后写入
+                                               用于企业微信推送，避免每次按手机号反查 API
 
 relatives（亲人扩展，1:1 users）
 └── id              UUID PK → users.id
@@ -752,15 +753,17 @@ assignments（出卷任务）
 ├── title           VARCHAR
 ├── questions       JSONB                ← AI 生成题目内容
 ├── due_at          TIMESTAMPTZ
-└── status          ENUM(draft / published / closed)
+├── status          ENUM(draft / published / closed)
+└── created_at      TIMESTAMPTZ
 
 assignment_submissions（学生提交）
 ├── id              UUID PK
 ├── assignment_id   UUID FK → assignments
 ├── student_id      UUID FK → users
 ├── answers         JSONB
-├── score           DECIMAL
+├── score           DECIMAL (nullable)   ← 批改后填入，未批改时为 NULL
 └── submitted_at    TIMESTAMPTZ
+    [UNIQUE: (assignment_id, student_id)]  ← 防止重复提交
 ```
 
 ---
@@ -809,7 +812,15 @@ system_configs（对应 PRD 5.6，所有限额后台可调）
 notifications（站内消息中心）
 ├── id              UUID PK
 ├── user_id         UUID FK → users
-├── type            ENUM(system / membership / assignment / analysis_done / report_ready)
+├── type            ENUM(system /          ← 平台公告
+│                        membership /      ← 会员到期 / 续费成功
+│                        assignment /      ← 新作业发布（学生）
+│                        analysis_done /   ← AI 诊断完成（学生）
+│                        report_ready /    ← 学情报告生成（学生/亲人）
+│                        bind_request /    ← 学生发起绑定申请（老师收）
+│                        bind_accepted /   ← 老师接受绑定（学生收）
+│                        bind_rejected /   ← 老师拒绝绑定（学生收）
+│                        ocr_failed)       ← OCR 3次重试全失败（学生收，提示重新上传）
 ├── title           VARCHAR
 ├── content         TEXT
 ├── is_read         BOOLEAN DEFAULT false
