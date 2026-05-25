@@ -223,3 +223,55 @@ def test_assignment_submission_unique_constraint():
         if hasattr(c, "columns") and len(list(c.columns)) == 2
     ]
     assert len(unique_constraints) >= 1, "assignment_submissions 缺少复合唯一约束"
+
+
+def test_d8_usage_tables():
+    from app.models.d8_usage import DailyUsage, LearningReportSnapshot
+    assert DailyUsage.__tablename__ == "daily_usage"
+    assert LearningReportSnapshot.__tablename__ == "learning_report_snapshots"
+
+
+def test_d9_system_tables():
+    from app.models.d9_system import SystemConfig, Notification
+    assert SystemConfig.__tablename__ == "system_configs"
+    assert Notification.__tablename__ == "notifications"
+
+
+def test_notification_has_read_at():
+    """G15: notifications 必须有 read_at 字段。"""
+    from app.models.d9_system import Notification
+    cols = {c.name for c in Notification.__table__.columns}
+    assert "read_at" in cols, "G15 修复未应用: notifications 缺少 read_at"
+
+
+def test_d10_branch_tables():
+    from app.models.d10_branch import (
+        BranchCompany, BranchCompanyCity, BranchSettlement,
+    )
+    assert BranchCompany.__tablename__ == "branch_companies"
+    assert BranchCompanyCity.__tablename__ == "branch_company_cities"
+    assert BranchSettlement.__tablename__ == "branch_settlements"
+
+
+def test_branch_company_city_has_created_at():
+    """G16: branch_company_cities 必须有 created_at 字段。"""
+    from app.models.d10_branch import BranchCompanyCity
+    cols = {c.name for c in BranchCompanyCity.__table__.columns}
+    assert "created_at" in cols, "G16 修复未应用: branch_company_cities 缺少 created_at"
+
+
+def test_branch_settlement_has_updated_at():
+    """G18: branch_settlements 必须有 updated_at 字段。"""
+    from app.models.d10_branch import BranchSettlement
+    cols = {c.name for c in BranchSettlement.__table__.columns}
+    assert "updated_at" in cols, "G18 修复未应用: branch_settlements 缺少 updated_at"
+
+
+def test_branch_company_city_partial_unique_index():
+    from app.models.d10_branch import BranchCompanyCity
+    indexes = BranchCompanyCity.__table__.indexes
+    partial = [
+        i for i in indexes
+        if i.unique and "effective_to" in str(getattr(i, "dialect_kwargs", {}).get("postgresql_where", ""))
+    ]
+    assert len(partial) == 1, "branch_company_cities 缺少 UNIQUE WHERE effective_to IS NULL 部分索引"
