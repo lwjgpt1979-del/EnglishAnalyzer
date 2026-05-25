@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.7 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.8 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -407,12 +407,12 @@ users（所有角色共用基础表）
 │                              institution_admin / branch_admin /  ← 分公司管理员（预留）
 │                              platform_admin)
 ├── is_active             BOOLEAN DEFAULT true
-├── city_code             VARCHAR              ← 归属城市行政区划代码（如 440100=广州）
+├── city_code             VARCHAR (nullable)   ← 归属城市行政区划代码（如 440100=广州）；ip2region 失败或用户跳过时为 NULL
 │                                                优先级：机构城市 > 认证城市 > 平台手动修正 > 用户自选城市
 ├── city_source           ENUM(self_selected / ← 注册时用户自行选择（非机构用户主路径）
 │                              institution /   ← 加入机构时以机构城市覆盖
 │                              cert_verified / ← 老师认证审核核实的学校城市
-│                              manual)         ← 平台超管手动修正
+│                              manual) (nullable)  ← 平台超管手动修正；city_code 为 NULL 时同为 NULL
 ├── ip_at_registration    INET                 ← 注册时原始 IP，仅作城市选择器预填推荐，审计留存
 ├── created_at            TIMESTAMPTZ
 └── updated_at            TIMESTAMPTZ
@@ -561,6 +561,7 @@ wrong_questions（错题主记录）
 │                                          知识点关联见 wrong_question_knowledge_points
 ├── is_mastered     BOOLEAN DEFAULT false
 ├── mastered_at     TIMESTAMPTZ (nullable)  ← is_mastered=false 时为 NULL
+├── updated_at      TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ
 
 ocr_tasks（OCR 异步任务状态）
@@ -746,6 +747,7 @@ classes（班级）
 ├── teacher_id      UUID FK → users
 ├── institution_id  UUID FK → institutions (nullable)
 ├── name            VARCHAR
+├── updated_at      TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ
 
 class_students（班级-学生关联）
@@ -762,6 +764,7 @@ assignments（出卷任务）
 ├── questions       JSONB (nullable)     ← AI 生成题目内容；status=draft 时 AI 尚未生成，为 NULL
 ├── due_at          TIMESTAMPTZ (nullable)  ← 草稿阶段可不填，发布前确定
 ├── status          ENUM(draft / published / closed)
+├── updated_at      TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ
 
 assignment_submissions（学生提交）
@@ -848,7 +851,7 @@ branch_companies（分公司）
 ├── name              VARCHAR              ← 分公司名称（如「华南区」「西南区」）
 ├── contact_phone     VARCHAR
 ├── manager_user_id   UUID FK → users      ← 分公司负责人（role=branch_admin）
-├── commission_rate   DECIMAL              ← 平台向分公司的分成比例
+├── commission_rate   DECIMAL (nullable)   ← 平台向分公司的分成比例；MVP 预留建表时尚未谈定，为 NULL
 │
 │   ── 财税法务字段（分公司成立时填入）────────────────────────────────────
 ├── legal_name        VARCHAR (nullable)   ← 营业执照法定名称（开票抬头）；分公司成立时填入
