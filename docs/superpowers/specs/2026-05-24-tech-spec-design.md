@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v1.7 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
+> 版本：v1.8 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
 
 ---
 
@@ -408,7 +408,7 @@ users（所有角色共用基础表）
 │                              platform_admin)
 ├── is_active             BOOLEAN DEFAULT true
 ├── city_code             VARCHAR              ← 归属城市行政区划代码（如 440100=广州）
-│                                                优先级：机构城市 > 认证城市 > 用户自选城市
+│                                                优先级：机构城市 > 认证城市 > 平台手动修正 > 用户自选城市
 ├── city_source           ENUM(self_selected / ← 注册时用户自行选择（非机构用户主路径）
 │                              institution /   ← 加入机构时以机构城市覆盖
 │                              cert_verified / ← 老师认证审核核实的学校城市
@@ -520,8 +520,8 @@ orders（订单）
 │                                         即使后续城市划区调整，历史订单归属不变
 ├── platform_income_fen      INT (nullable)        ← 平台应得金额快照
 ├── branch_commission_fen    INT (nullable)        ← 分公司应得金额快照
-└── institution_commission_fen INT (nullable)      ← 机构应得金额快照（如有）
-    [NOTE: 三方金额在 paid_at 时按当时分成比例计算并冻结，后续比例调整不影响历史单]
+├── institution_commission_fen INT (nullable)      ← 机构应得金额快照（如有）
+│   [NOTE: 三方金额在 paid_at 时按当时分成比例计算并冻结，后续比例调整不影响历史单]
 └── created_at               TIMESTAMPTZ
 
 refund_records（退款记录）
@@ -884,19 +884,21 @@ WHERE bc.city_code = :user_city_code
 
 ---
 
-## 完整表清单（34 张）
+## 完整表清单（37 张）
 
 | 域 | 张数 | 表名 |
 |----|------|------|
-| 用户与租户 | 8 | users, institutions, students, teachers, relatives, student_relatives, teacher_students, invite_codes |
-| 会员与支付 | 3 | memberships, orders, refund_records |
-| 错题与 AI 诊断 | 3 | wrong_questions, ocr_tasks, ai_analyses |
-| 知识体系 | 5 | knowledge_points, curriculum_units, unit_knowledge_points, curriculum_words, wrong_question_knowledge_points |
-| 学习功能 | 5 | vocabulary_words, vocabulary_learning, essays, listening_records, study_checkins |
-| AI 题库与练习 | 2 | ai_questions, practice_records |
-| 老师端 | 4 | classes, class_students, assignments, assignment_submissions |
-| 用量与报告 | 2 | daily_usage, learning_report_snapshots |
-| 系统配置与通知 | 2 | system_configs, notifications |
+| 域1 用户与租户 | 8 | users, institutions, students, teachers, relatives, student_relatives, teacher_students, invite_codes |
+| 域2 会员与支付 | 3 | memberships, orders, refund_records |
+| 域3 错题与 AI 诊断 | 3 | wrong_questions, ocr_tasks, ai_analyses |
+| 域4 知识体系 | 5 | knowledge_points, curriculum_units, unit_knowledge_points, curriculum_words, wrong_question_knowledge_points |
+| 域5 学习功能 | 5 | vocabulary_words, vocabulary_learning, essays, listening_records, study_checkins |
+| 域6 AI 题库与练习 | 2 | ai_questions, practice_records |
+| 域7 老师端 | 4 | classes, class_students, assignments, assignment_submissions |
+| 域8 用量与报告 | 2 | daily_usage, learning_report_snapshots |
+| 域9 系统配置与通知 | 2 | system_configs, notifications |
+| 域10 分公司扩展（预留） | 3 | branch_companies, branch_company_cities, branch_settlements |
+| **合计** | **37** | |
 
 ---
 
