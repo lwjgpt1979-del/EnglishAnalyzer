@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.3 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v2.4 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -426,6 +426,7 @@ institutions（机构）
 ├── city_code       VARCHAR NOT NULL     ← 城市行政区划代码（审核通过后锁定）
 ├── address         VARCHAR              ← 详细地址（与营业执照注册地一致）
 ├── status          ENUM(pending / active / suspended)
+├── updated_at      TIMESTAMPTZ
 └── created_at      TIMESTAMPTZ
 
 students（学生扩展，1:1 users）
@@ -456,7 +457,7 @@ student_relatives（学生-亲人绑定，M:N，每学生最多 4 位亲人）
 ├── relationship    VARCHAR              ← 爸爸 / 妈妈 / 爷爷…
 ├── is_active       BOOLEAN
 └── bound_at        TIMESTAMPTZ
-    [CONSTRAINT: COUNT(relative_id) WHERE student_id <= 4]
+    [NOTE: 每学生最多 4 位亲人，Service 层在 INSERT 前 SELECT COUNT 校验，超限返回 3002 错误]
 
 teacher_students（老师-学生直接绑定关系）
 ├── id              UUID PK
@@ -513,8 +514,8 @@ orders（订单）
 ├── duration_months          INT                  ← 6 / 12 / 24 / 36
 ├── amount_fen               INT                  ← 实收金额（分）
 ├── status                   ENUM(pending / paid / refunded / partial_refunded)
-├── wx_transaction_id        VARCHAR
-├── paid_at                  TIMESTAMPTZ
+├── wx_transaction_id        VARCHAR (nullable)   ← status=pending 时为 NULL，微信回调后写入
+├── paid_at                  TIMESTAMPTZ (nullable)  ← status=pending 时为 NULL，微信回调后写入
 │
 │   ── 分公司财务隔离预留字段（分公司未成立时均为 NULL）──────────────────
 ├── branch_company_id        UUID FK → branch_companies (nullable)
@@ -556,7 +557,7 @@ wrong_questions（错题主记录）
 ├── tags            JSONB                ← AI 自由标签（如"审题失误"）
 │                                          知识点关联见 wrong_question_knowledge_points
 ├── is_mastered     BOOLEAN DEFAULT false
-├── mastered_at     TIMESTAMPTZ
+├── mastered_at     TIMESTAMPTZ (nullable)  ← is_mastered=false 时为 NULL
 └── created_at      TIMESTAMPTZ
 
 ocr_tasks（OCR 异步任务状态）
@@ -570,7 +571,7 @@ ocr_tasks（OCR 异步任务状态）
 ├── raw_result      JSONB                ← 原始 OCR 响应备存
 ├── retry_count     SMALLINT DEFAULT 0
 ├── created_at      TIMESTAMPTZ
-└── completed_at    TIMESTAMPTZ
+└── completed_at    TIMESTAMPTZ (nullable)  ← status=pending/processing 时为 NULL
 
 ai_analyses（AI 诊断结果）
 ├── id              UUID PK
@@ -614,6 +615,7 @@ curriculum_units（教材单元目录）
 ├── semester        ENUM(上/下)
 ├── unit_no         INT
 └── unit_title      VARCHAR             ← "Unit 3 I'm more outgoing than…"
+    [UNIQUE: (textbook_version, grade, semester, unit_no)]  ← 防止同学期同单元号重复录入
 
 unit_knowledge_points（单元 ↔ 知识点）
 ├── unit_id         UUID FK → curriculum_units
