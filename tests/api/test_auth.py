@@ -129,3 +129,66 @@ async def test_upsert_user_returns_existing(db_session):
     user1 = await upsert_user(db_session, openid=openid)
     user2 = await upsert_user(db_session, openid=openid)
     assert user1.id == user2.id
+
+
+@pytest.mark.asyncio
+async def test_wx_login_returns_tokens(client: AsyncClient):
+    """wx-login: mock 微信 API，验证返回 JWT 双 token。"""
+    with patch(
+        "app.services.auth_service.wechat_code2session",
+        new_callable=AsyncMock,
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"wx_login_test_{uuid.uuid4().hex[:8]}"}
+        response = await client.post(
+            "/api/v1/auth/wx-login",
+            json={"code": "fake_wx_code"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["code"] == 200
+    assert body["data"]["access_token"] != ""
+    assert body["data"]["refresh_token"] != ""
+    assert body["data"]["token_type"] == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_wx_login_bad_wechat_code_returns_401(client: AsyncClient):
+    """微信 API 返回错误时，接口返回 401。"""
+    with patch(
+        "app.services.auth_service.wechat_code2session",
+        new_callable=AsyncMock,
+    ) as mock_wx:
+        from app.core.exceptions import AppError
+        mock_wx.side_effect = AppError(code=401, message="微信登录失败")
+        response = await client.post(
+            "/api/v1/auth/wx-login",
+            json={"code": "bad_code"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_returns_new_access_token(client: AsyncClient):
+    """用有效 refresh_token 换取新 access_token。"""
+    with patch(
+        "app.services.auth_service.wechat_code2session",
+        new_callable=AsyncMock,
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"wx_refresh_test_{uuid.uuid4().hex[:8]}"}
+        login_resp = await client.post(
+            "/api/v1/auth/wx-login",
+            json={"code": "test_code"},
+        )
+
+    refresh_token = login_resp.json()["data"]["refresh_token"]
+
+    resp = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert resp.status_code == 200
+    new_access = resp.json()["data"]["access_token"]
+    assert new_access != ""
