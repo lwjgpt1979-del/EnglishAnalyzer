@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 120   # 2 小时
     refresh_token_expire_days: int = 30
 
+    # AI 分析（Anthropic Claude）
+    anthropic_api_key: str = "sk-ant-placeholder-for-dev"
+
     # 应用
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
