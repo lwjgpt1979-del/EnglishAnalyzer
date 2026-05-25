@@ -37,3 +37,20 @@ def test_app_error_fields():
     err = AppError(code=403, message="无权限")
     assert err.code == 403
     assert err.message == "无权限"
+
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import get_db
+
+
+@pytest.mark.asyncio
+async def test_get_db_yields_async_session():
+    """get_db() 应当 yield 一个 AsyncSession。"""
+    gen = get_db()
+    session = await gen.__anext__()
+    assert isinstance(session, AsyncSession)
+    try:
+        await gen.aclose()
+    except StopAsyncIteration:
+        pass
