@@ -147,3 +147,40 @@ def test_curriculum_unit_unique_constraint():
         if hasattr(c, "columns") and len(list(c.columns)) > 1
     ]
     assert len(unique_constraints) >= 1, "curriculum_units 缺少复合唯一约束"
+
+
+def test_d5_learning_tables():
+    from app.models.d5_learning import (
+        VocabularyWord, VocabularyLearning, Essay,
+        ListeningRecord, StudyCheckin,
+    )
+    assert VocabularyWord.__tablename__ == "vocabulary_words"
+    assert VocabularyLearning.__tablename__ == "vocabulary_learning"
+    assert Essay.__tablename__ == "essays"
+    assert ListeningRecord.__tablename__ == "listening_records"
+    assert StudyCheckin.__tablename__ == "study_checkins"
+
+
+def test_vocabulary_learning_has_created_at():
+    """G14: vocabulary_learning 必须有 created_at 字段。"""
+    from app.models.d5_learning import VocabularyLearning
+    cols = {c.name for c in VocabularyLearning.__table__.columns}
+    assert "created_at" in cols, "G14 修复未应用: vocabulary_learning 缺少 created_at"
+
+
+def test_vocabulary_learning_unique_constraint():
+    from app.models.d5_learning import VocabularyLearning
+    unique_constraints = [
+        c for c in VocabularyLearning.__table__.constraints
+        if hasattr(c, "columns") and len(list(c.columns)) == 2
+    ]
+    assert len(unique_constraints) >= 1, "vocabulary_learning 缺少 (student_id, word_id) 唯一约束"
+
+
+def test_study_checkin_unique_constraint():
+    from app.models.d5_learning import StudyCheckin
+    unique_constraints = [
+        c for c in StudyCheckin.__table__.constraints
+        if hasattr(c, "columns") and len(list(c.columns)) == 2
+    ]
+    assert len(unique_constraints) >= 1, "study_checkins 缺少 (student_id, checkin_date) 唯一约束"
