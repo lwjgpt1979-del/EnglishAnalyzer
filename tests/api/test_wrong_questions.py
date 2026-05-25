@@ -158,3 +158,115 @@ async def test_mark_mastered(db_session, test_student):
     un = await mark_mastered(db_session, wq=updated, is_mastered=False)
     assert un.is_mastered is False
     assert un.mastered_at is None
+
+
+import pytest_asyncio
+from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, patch
+from app.main import app
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client: AsyncClient):
+    with patch(
+        "app.services.auth_service.wechat_code2session", new_callable=AsyncMock
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"wq_api_test_{uuid.uuid4().hex[:8]}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    token = resp.json()["data"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_create_wrong_question_api(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/v1/wrong-questions/",
+        json={
+            "source_image_url": "https://cdn.example.com/test.jpg",
+            "question_text": "She __ to school every day.",
+            "student_answer": "go",
+            "correct_answer": "goes",
+            "question_type": "单选",
+            "difficulty": 2,
+            "tags": ["主谓一致"],
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["question_type"] == "单选"
+    assert body["data"]["is_mastered"] is False
+    assert body["data"]["id"] != ""
+
+
+@pytest.mark.asyncio
+async def test_create_wrong_question_requires_auth(client: AsyncClient):
+    resp = await client.post(
+        "/api/v1/wrong-questions/",
+        json={"source_image_url": "https://cdn.example.com/test.jpg"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_wrong_questions_api(client: AsyncClient, auth_headers):
+    for i in range(2):
+        await client.post(
+            "/api/v1/wrong-questions/",
+            json={"source_image_url": f"https://cdn.example.com/{i}.jpg"},
+            headers=auth_headers,
+        )
+    resp = await client.get("/api/v1/wrong-questions/", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["total"] >= 2
+    assert isinstance(body["data"]["items"], list)
+
+
+@pytest.mark.asyncio
+async def test_get_wrong_question_api(client: AsyncClient, auth_headers):
+    create_resp = await client.post(
+        "/api/v1/wrong-questions/",
+        json={"source_image_url": "https://cdn.example.com/get_test.jpg"},
+        headers=auth_headers,
+    )
+    wq_id = create_resp.json()["data"]["id"]
+    resp = await client.get(f"/api/v1/wrong-questions/{wq_id}", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["data"]["id"] == wq_id
+
+
+@pytest.mark.asyncio
+async def test_get_wrong_question_not_found(client: AsyncClient, auth_headers):
+    resp = await client.get(
+        f"/api/v1/wrong-questions/{uuid.uuid4()}", headers=auth_headers
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_mark_mastered_api(client: AsyncClient, auth_headers):
+    create_resp = await client.post(
+        "/api/v1/wrong-questions/",
+        json={"source_image_url": "https://cdn.example.com/mastered.jpg"},
+        headers=auth_headers,
+    )
+    wq_id = create_resp.json()["data"]["id"]
+    resp = await client.patch(
+        f"/api/v1/wrong-questions/{wq_id}/mastered",
+        json={"is_mastered": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["is_mastered"] is True
+    assert resp.json()["data"]["mastered_at"] is not None

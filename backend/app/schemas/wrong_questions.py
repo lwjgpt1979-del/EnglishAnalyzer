@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -33,8 +34,8 @@ class MarkMasteredRequest(BaseModel):
 
 
 class WrongQuestionOut(BaseModel):
-    id: str
-    student_id: str
+    id: uuid.UUID
+    student_id: uuid.UUID
     source_image_url: str
     question_text: str | None
     student_answer: str | None
@@ -56,8 +57,8 @@ class WrongQuestionListOut(BaseModel):
 
 
 class AiAnalysisOut(BaseModel):
-    id: str
-    wrong_question_id: str
+    id: uuid.UUID
+    wrong_question_id: uuid.UUID
     llm_provider: str
     error_types: list[str]
     knowledge_points: list[str]
