@@ -1,6 +1,6 @@
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 
 def get_engine_url() -> str | None:
@@ -8,7 +8,7 @@ def get_engine_url() -> str | None:
     return os.getenv("DATABASE_URL")
 
 
-def create_sync_engine(url: str | None = None):
+def create_sync_engine(url: str | None = None) -> Engine:
     """创建同步 SQLAlchemy engine（供 Alembic 迁移使用）。"""
     db_url = url or get_engine_url()
     if not db_url:
@@ -19,6 +19,6 @@ def create_sync_engine(url: str | None = None):
     return create_engine(db_url, echo=False)
 
 
-def create_session_factory(engine):
+def create_session_factory(engine: Engine) -> "sessionmaker[Session]":
     """返回 SessionLocal 工厂。"""
-    return sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    return sessionmaker(engine, autocommit=False, autoflush=False)

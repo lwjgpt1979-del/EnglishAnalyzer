@@ -2,8 +2,6 @@
 Model structure tests — no live database required.
 Tests run by importing models and inspecting SQLAlchemy Table objects.
 """
-import pytest
-
 
 def test_sqlalchemy_importable():
     import sqlalchemy as sa
