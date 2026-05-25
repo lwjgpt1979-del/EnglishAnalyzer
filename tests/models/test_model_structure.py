@@ -312,3 +312,16 @@ def test_all_37_tables_in_metadata():
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
     assert len(actual_tables) == 37, f"期望 37 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+
+
+def test_migration_file_exists():
+    """初始迁移文件必须存在（文件名含 initial_schema）。"""
+    import os
+    versions_dir = os.path.join(
+        os.path.dirname(__file__), "../../backend/alembic/versions"
+    )
+    files = os.listdir(versions_dir)
+    migration_files = [f for f in files if "initial_schema" in f and f.endswith(".py")]
+    assert len(migration_files) == 1, (
+        f"期望 1 个 initial_schema 迁移文件，实际找到: {migration_files}"
+    )
