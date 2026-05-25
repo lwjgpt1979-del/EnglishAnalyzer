@@ -262,22 +262,32 @@ CREATE POLICY student_isolation ON wrong_questions
 
 ```
 users（所有角色共用基础表）
-├── id              UUID PK
-├── openid          VARCHAR UNIQUE       ← 微信 openid，登录唯一标识
-├── phone           VARCHAR
-├── nickname        VARCHAR
-├── avatar_url      VARCHAR
-├── role            ENUM(student / teacher / relative /
-│                        institution_admin / platform_admin)
-├── is_active       BOOLEAN DEFAULT true
-├── created_at      TIMESTAMPTZ
-└── updated_at      TIMESTAMPTZ
+├── id                    UUID PK
+├── openid                VARCHAR UNIQUE       ← 微信 openid，登录唯一标识
+├── phone                 VARCHAR
+├── nickname              VARCHAR
+├── avatar_url            VARCHAR
+├── role                  ENUM(student / teacher / relative /
+│                              institution_admin / platform_admin)
+├── is_active             BOOLEAN DEFAULT true
+├── city_code             VARCHAR              ← 归属城市行政区划代码（如 440100=广州）
+│                                                优先级：机构城市 > 认证城市 > IP城市
+├── city_source           ENUM(ip_detection /  ← 注册时 IP 解析（默认）
+│                              institution /   ← 加入机构时以机构城市覆盖
+│                              cert_verified / ← 老师认证审核核实的学校城市
+│                              manual)         ← 平台超管手动修正
+├── ip_at_registration    INET                 ← 注册时原始 IP，仅写一次，审计留存
+├── created_at            TIMESTAMPTZ
+└── updated_at            TIMESTAMPTZ
 
 institutions（机构）
 ├── id              UUID PK
 ├── name            VARCHAR
 ├── contact_phone   VARCHAR
 ├── commission_rate DECIMAL              ← 分成比例（见 PRD 5.8）
+├── province_code   VARCHAR NOT NULL     ← 省份行政区划代码（审核时核实）
+├── city_code       VARCHAR NOT NULL     ← 城市行政区划代码（审核通过后锁定）
+├── address         VARCHAR              ← 详细地址（与营业执照注册地一致）
 ├── status          ENUM(pending / active / suspended)
 └── created_at      TIMESTAMPTZ
 
