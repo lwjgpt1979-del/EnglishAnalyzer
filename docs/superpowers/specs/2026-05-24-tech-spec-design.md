@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v1.6 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
+> 版本：v1.7 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
 
 ---
 
@@ -326,15 +326,45 @@ CREATE POLICY student_isolation ON wrong_questions
     USING (student_id = current_setting('app.current_user_id')::UUID);
 ```
 
+**RLS 会话变量注入（FastAPI 中间件必须实现）**：
+
+```python
+# 每个请求进入时，中间件在数据库连接上执行：
+await conn.execute(
+    "SET LOCAL app.current_user_id = $1", str(current_user.id)
+)
+# SET LOCAL 作用域为当前事务，连接归还连接池时自动清除，防止跨请求污染
+```
+
+`current_setting('app.current_user_id')` 依赖此变量存在；若中间件未注入，RLS 表达式返回空值，所有行均被过滤（查询静默返回空集）或抛出异常——**是隔离失效的根本风险点，必须有集成测试覆盖**。
+
 ### 实施原则
 
 ```
-1. 所有业务表必须有 user_id 或 institution_id（至少一个）
+1. 所有租户数据表必须有 user_id 或 institution_id（至少一个）
+   豁免：平台级配置/管理表（branch_companies、branch_company_cities、
+         branch_settlements、system_configs 等）不含租户字段，由 API 层
+         权限校验（platform_admin / branch_admin 角色）替代 RLS
 2. 所有查询必须带租户过滤条件（Service 层强制，不依赖调用方）
 3. C 端独立用户：institution_id = NULL
 4. 机构学生：institution_id = 所属机构 ID
-5. FastAPI 中间件在每个请求注入 current_user，Service 层用它过滤
+5. FastAPI 中间件在每个请求中执行 SET LOCAL app.current_user_id，
+   PostgreSQL RLS 通过 current_setting('app.current_user_id') 读取
 6. 接口层 + RLS 双重校验，防止代码 Bug 导致跨租户泄漏
+```
+
+**platform_admin RLS 穿透策略（选型：BYPASSRLS 专用连接池）**：
+
+```
+platform_admin 需要跨租户访问（数据大盘、内容审核、账号封禁等），
+采用独立 DB 用户 + BYPASSRLS 属性，通过专用连接池下发：
+
+  普通业务连接池（app_user）    → RLS 生效，所有租户数据隔离
+  平台管理连接池（app_admin）   → BYPASSRLS，可读全库
+
+FastAPI 路由层根据 JWT 中的 role == platform_admin 切换连接池。
+branch_admin 角色不使用 BYPASSRLS，通过显式 institution_id IN (...)
+过滤其管辖城市的机构数据，保留 RLS 层保护。
 ```
 
 ### 租户层级
@@ -353,7 +383,7 @@ CREATE POLICY student_isolation ON wrong_questions
 ```
 
 分公司层不侵入现有业务逻辑：`users.city_code` 与 `institutions.city_code` 已就位，
-启用分公司时只需建 `branch_companies` + `branch_company_cities` 两张表，查询一条 JOIN 即可完成归属反推，无需修改已有表结构。
+域 10 三张表（`branch_companies` / `branch_company_cities` / `branch_settlements`）**MVP 阶段随主库迁移脚本一并建好（空表）**，分公司成立时直接填数据即可生效，无需再改表结构或补写迁移脚本。
 
 ---
 
