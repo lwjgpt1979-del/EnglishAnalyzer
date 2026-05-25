@@ -270,3 +270,49 @@ async def test_mark_mastered_api(client: AsyncClient, auth_headers):
     assert resp.status_code == 200
     assert resp.json()["data"]["is_mastered"] is True
     assert resp.json()["data"]["mastered_at"] is not None
+
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+@pytest.mark.asyncio
+async def test_analyze_wrong_question_service(db_session, test_student):
+    """ai_service.analyze_wrong_question 应写入 AiAnalysis 并返回对象。"""
+    from app.services.ai_service import analyze_wrong_question
+
+    data = WrongQuestionCreate(
+        source_image_url="https://cdn.example.com/svc_test.jpg",
+        question_text="He don't like apples.",
+        student_answer="don't",
+        correct_answer="doesn't",
+        question_type="单选",
+    )
+    wq = await create_wrong_question(db_session, student_id=test_student.id, data=data)
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock()]
+    mock_response.content[0].text = (
+        '{"error_types": ["主谓一致错误"], "knowledge_points": ["第三人称单数助动词"], '
+        '"diagnosis": "学生对第三人称单数助动词使用错误。", '
+        '"suggestions": "复习主谓一致规则，重点记忆 does/doesn\'t。", '
+        '"confidence_score": 0.95}'
+    )
+    mock_response.usage = MagicMock()
+    mock_response.usage.input_tokens = 200
+    mock_response.usage.output_tokens = 80
+
+    with patch("app.services.ai_service.anthropic.AsyncAnthropic") as MockClient:
+        mock_instance = AsyncMock()
+        MockClient.return_value = mock_instance
+        mock_instance.messages.create = AsyncMock(return_value=mock_response)
+
+        analysis = await analyze_wrong_question(
+            db_session, wq=wq, student_id=test_student.id
+        )
+
+    assert analysis.llm_provider == "claude"
+    assert analysis.error_types == ["主谓一致错误"]
+    assert analysis.knowledge_points == ["第三人称单数助动词"]
+    assert analysis.tokens_used == 280
+    assert analysis.confidence_score == 0.95
+    assert analysis.wrong_question_id == wq.id
