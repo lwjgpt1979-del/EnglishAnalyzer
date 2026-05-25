@@ -97,3 +97,24 @@ def test_refund_record_has_reviewed_by():
     from app.models.d2_payments import RefundRecord
     cols = {c.name for c in RefundRecord.__table__.columns}
     assert "reviewed_by" in cols, "G22 修复未应用: refund_records 缺少 reviewed_by"
+
+
+def test_d3_wrong_question_tables():
+    from app.models.d3_wrong_questions import (
+        WrongQuestion, OcrTask, AiAnalysis,
+    )
+    assert WrongQuestion.__tablename__ == "wrong_questions"
+    assert OcrTask.__tablename__ == "ocr_tasks"
+    assert AiAnalysis.__tablename__ == "ai_analyses"
+
+
+def test_wrong_question_columns():
+    from app.models.d3_wrong_questions import WrongQuestion
+    cols = {c.name for c in WrongQuestion.__table__.columns}
+    required = {
+        "id", "student_id", "institution_id", "source_image_url",
+        "question_text", "student_answer", "correct_answer",
+        "question_type", "difficulty", "tags", "is_mastered",
+        "mastered_at", "updated_at", "created_at",
+    }
+    assert required <= cols, f"缺失: {required - cols}"
