@@ -53,7 +53,7 @@
 │  微信支付（Webhook）                                      │
 ├─────────────────────────────────────────────────────────┤
 │              NotificationService 路由目标（详见 §1.4）    │
-│  小程序订阅消息 │ 企业微信推送 │ 站内 WebSocket            │
+│  小程序订阅消息 │ 企业微信推送 │ 站内 WebSocket │ 腾讯云SMS │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
@@ -74,6 +74,7 @@
 | 实时通知 | WebSocket（站内）+ 微信订阅消息（离线）| 覆盖在线/离线两种场景 |
 | 图片存储 | **腾讯云 COS** | 同云内网传输免费，支持图片处理 URL |
 | 后台管理 UI | P2 再做，MVP 用接口 + 直接操作 DB | 降低 MVP 开发量 |
+| 短信服务 | **腾讯云 SMS** | 同云生态，老师绑定邀请短信的唯一下发渠道 |
 
 ---
 
@@ -168,7 +169,11 @@
        ├──→ 企业微信推送                      ← 机构老师/机构管理员
        │       └── 主推渠道，无需额外授权
        │
-       └──→ （P2）短信 / App Push             ← 预留，底层可切换
+       ├──→ 腾讯云 SMS（短信）               ← 老师绑定邀请专用
+       │       └── 向未在平台内的老师手机号发送邀请短信
+       │           老师无需事先注册，收到短信后通过链接进入注册/确认流程
+       │
+       └──→ （P2）App Push                   ← 预留，底层可切换
 ```
 
 **每条推送同步写入 `notifications` 表**，用户错过实时推送后可在站内消息中心查看历史，不依赖 subscribeMessage 授权。
@@ -291,8 +296,7 @@ teachers（老师扩展，1:1 users）
 ├── cert_status         ENUM(uncertified / pending / certified / rejected)
 ├── cert_doc_url        VARCHAR              ← 认证材料 COS 路径
 ├── subject             VARCHAR              ← 任教学科（英语/数学…，搜索区分度）
-├── max_students        INT DEFAULT 50       ← 最大绑定学生数，防止无限接单
-└── phone_searchable    BOOLEAN DEFAULT true ← 是否允许学生通过手机号搜索到本人
+└── max_students        INT DEFAULT 50       ← 最大绑定学生数上限，防止无限接单
 
 relatives（亲人扩展，1:1 users）
 └── id              UUID PK → users.id
@@ -312,7 +316,7 @@ teacher_students（老师-学生直接绑定关系）
 ├── student_id      UUID FK → users
 ├── bind_type       ENUM(institution_assigned /  ← 机构分配（直接 active，无需确认）
 │                        self_bound)             ← 学生自主发起（需老师确认）
-├── bind_source     ENUM(phone_search /          ← 学生搜手机号发起
+├── bind_source     ENUM(sms_invite /             ← 学生输入手机号→系统发短信→老师点链接确认
 │                        miniprogram_link /      ← 点击老师分享的小程序链接发起
 │                        institution_assigned)   ← 机构后台分配
 ├── status          ENUM(pending /               ← 等待老师确认（self_bound 初始态）
@@ -909,11 +913,11 @@ GET    /teachers/students              我的学生列表（含学情概况）
 GET    /teachers/students/{id}/report  查看指定学生的学情报告
 POST   /teachers/certification         提交认证申请（上传材料 cos_key）
 GET    /teachers/certification/status  查看当前认证审核进度
-GET    /teachers/search                搜索认证老师（学生用）
-                                       ?phone=xxx      按手机号精确查找（主路径，phone_searchable=true 才返回）
-                                       ?school=xxx     按学校名模糊搜索（辅助路径）
-                                       ?name=xxx       按老师姓名模糊搜索（辅助路径）
+GET    /teachers/search                搜索认证老师（辅助路径，非主路径）
+                                       ?school=xxx     按学校名模糊搜索
+                                       ?name=xxx       按老师姓名模糊搜索
                                        返回：teacher_id / 昵称 / 学科 / 学校 / 头像 / 当前学生数/上限
+                                       [注：主绑定路径为短信邀请，此接口仅辅助确认老师信息]
 POST   /classes/                       创建班级
 POST   /assignments/                   创建出卷任务
 PATCH  /assignments/{id}/publish       发布任务给学生
@@ -922,34 +926,40 @@ GET    /assignments/{id}/submissions   查看学生提交情况
 
 #### 学生-老师绑定
 ```
--- 学生侧（发起请求）
-POST   /students/bind-teacher          发起绑定申请（self_bound）
-                                       body: { teacher_id, bind_source: phone_search|miniprogram_link }
-                                       → 创建 teacher_students 记录，status=pending
-                                       → 推送通知给老师："有学生申请绑定，请确认"
-                                       → 校验 max_students 上限，已满返回 1301 错误
+-- 主路径：学生发起短信邀请
+POST   /students/invite-teacher        学生输入老师手机号，系统向该号码发送邀请短信
+                                       body: { phone: "13800138000" }
+                                       服务端逻辑：
+                                         1. 校验该手机号已达 max_students 上限 → 返回 1301 错误
+                                         2. 生成邀请 Token（UUID），存 Redis，TTL 48h
+                                         3. 调腾讯云 SMS，发送短信模板：
+                                            「[学生昵称] 邀请您成为他的英语老师。
+                                              点击确认绑定：[小程序链接?token=xxx]
+                                              48小时内有效，如非本人操作请忽略。」
+                                         4. 在 teacher_students 写入 status=pending，bind_source=sms_invite
+                                         5. 若该手机号尚未注册 → 短信引导注册，注册完成后自动完成绑定
 
-GET    /students/bind-teacher/status   查询当前绑定申请状态（pending/active/rejected）
+GET    /students/invite-teacher/status  查询当前邀请状态（pending/active/rejected/expired）
 
 DELETE /students/unbind-teacher/{teacher_id}  换绑/解绑（仅 self_bound + active 可操作）
 
--- 老师侧（处理申请）
-GET    /teachers/bind-requests         待确认的绑定申请列表（status=pending）
+-- 辅助路径：老师分享小程序链接（老师主动拉学生）
+POST   /teachers/bind-link             生成专属绑定小程序链接（含 teacher_id + 签名参数）
+                                       老师在微信/家长群分享，学生点击后进入确认页
+                                       → 链接 7 天有效，过期自动失效
+                                       → 学生确认后同样走 bind_source=miniprogram_link
+
+-- 老师侧（处理所有来源的绑定申请）
+GET    /teachers/bind-requests         待确认列表（status=pending，含两种来源）
                                        返回：学生昵称 / 头像 / 年级 / 申请时间 / bind_source
 
-POST   /teachers/bind-requests/{id}/accept   接受绑定 → status=active，bound_at=now()
-                                              → 推送通知给学生："老师已接受你的绑定申请"
+POST   /teachers/bind-requests/{id}/accept
+                                       接受 → status=active，bound_at=now()
+                                       → 通知学生："老师已接受你的绑定申请"
 
-POST   /teachers/bind-requests/{id}/reject   拒绝绑定 → status=rejected
-                                              → 推送通知给学生："老师暂未接受绑定申请"
-
--- 老师侧（生成分享链接）
-POST   /teachers/bind-link             生成专属绑定小程序链接（含 teacher_id 参数）
-                                       老师复制后在微信/群里分享给学生，学生点击直接跳绑定页
-                                       → 链接 7 天有效，过期自动失效
-
--- 老师隐私设置
-PATCH  /teachers/me/settings           更新 phone_searchable（true/false）
+POST   /teachers/bind-requests/{id}/reject
+                                       拒绝 → status=rejected
+                                       → 通知学生："老师暂未接受绑定申请，可重新邀请"
 ```
 
 #### 亲人端
