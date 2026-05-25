@@ -246,15 +246,28 @@ CREATE POLICY student_isolation ON wrong_questions
 
 ### 租户层级
 
+**当前（MVP）**：
 ```
 平台（1）→ 机构（N）→ 老师（N）→ 学生（N）→ 亲人（N，最多4位）
 ```
 
+**扩展预留（分公司启用后）**：
+```
+平台（1）→ 分公司（N，每家覆盖多个城市）→ 机构（N）→ 老师（N）→ 学生（N）→ 亲人（N）
+                    ↑
+          通过 city_code 自动归属
+          用户/机构 city_code → branch_company_cities → branch_companies
+```
+
+分公司层不侵入现有业务逻辑：`users.city_code` 与 `institutions.city_code` 已就位，
+启用分公司时只需建 `branch_companies` + `branch_company_cities` 两张表，查询一条 JOIN 即可完成归属反推，无需修改已有表结构。
+
 ---
 
-## Section 3：核心数据模型（34 张表）
+## Section 3：核心数据模型（36 张表）
 
-> 共 9 个业务域，所有表使用 UUID 主键，时间戳字段统一用 TIMESTAMPTZ。
+> 共 10 个业务域，所有表使用 UUID 主键，时间戳字段统一用 TIMESTAMPTZ。
+> 域 10 为分公司扩展预留，MVP 阶段建表但不启用业务逻辑；分公司成立时直接填数据即可。
 
 ---
 
@@ -268,7 +281,8 @@ users（所有角色共用基础表）
 ├── nickname              VARCHAR
 ├── avatar_url            VARCHAR
 ├── role                  ENUM(student / teacher / relative /
-│                              institution_admin / platform_admin)
+│                              institution_admin / branch_admin /  ← 分公司管理员（预留）
+│                              platform_admin)
 ├── is_active             BOOLEAN DEFAULT true
 ├── city_code             VARCHAR              ← 归属城市行政区划代码（如 440100=广州）
 │                                                优先级：机构城市 > 认证城市 > 用户自选城市
@@ -661,6 +675,48 @@ notifications（站内消息中心）
 ├── is_read         BOOLEAN DEFAULT false
 └── created_at      TIMESTAMPTZ
 ```
+
+---
+
+### 域 10：分公司扩展（预留，2 张表）
+
+> MVP 阶段建表，表内无数据；分公司正式成立时直接填入城市映射即可，无需改表结构。
+> 归属反查：`users.city_code` / `institutions.city_code` → `branch_company_cities.city_code` → `branch_companies`
+
+```
+branch_companies（分公司）
+├── id                UUID PK
+├── name              VARCHAR              ← 分公司名称（如「华南区」「西南区」）
+├── contact_phone     VARCHAR
+├── manager_user_id   UUID FK → users      ← 分公司负责人（role=branch_admin）
+├── commission_rate   DECIMAL              ← 平台向分公司的分成比例（覆盖默认值）
+├── is_active         BOOLEAN DEFAULT true
+└── created_at        TIMESTAMPTZ
+
+branch_company_cities（分公司管辖城市映射，M:N）
+├── id                    UUID PK
+├── branch_company_id     UUID FK → branch_companies
+├── city_code             VARCHAR          ← 城市行政区划代码（对应 users/institutions.city_code）
+└── effective_from        DATE             ← 该城市归该分公司管辖的起始日期
+    [UNIQUE: (branch_company_id, city_code)]
+    [NOTE: 同一城市同一时间只能归属一个分公司]
+```
+
+**启用分公司后的归属查询（单条 JOIN，零改造）**：
+```sql
+-- 查询某用户归属哪个分公司
+SELECT b.name AS branch_name
+FROM branch_companies b
+JOIN branch_company_cities bc ON b.id = bc.branch_company_id
+WHERE bc.city_code = :user_city_code
+  AND bc.effective_from <= CURRENT_DATE
+  AND b.is_active = true;
+```
+
+**分公司业务分离支持的场景**：
+- 分公司管理员（`branch_admin`）可查看其管辖城市内的所有机构、老师、学生数据
+- 收入统计按城市归属分公司，分成结算以 `branch_companies.commission_rate` 为准
+- 同一城市可在不同时段归属不同分公司（`effective_from` 支持城市划区调整）
 
 ---
 
