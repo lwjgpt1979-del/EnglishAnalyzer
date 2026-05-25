@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v1.9 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
+> 版本：v2.0 | 日期：2026-05-25 | 状态：Section 1-5 已确认，Section 6 进行中
 
 ---
 
@@ -1327,7 +1327,243 @@ GET    /admin/institutions/me/usage                 本月 AI 资源配额使用
 
 ---
 
-## Section 5-6（进行中）
+## Section 5：OCR Pipeline 异步架构
 
-> Section 5：OCR Pipeline 异步架构 — 待确认
+> 本节描述 OCR 任务从学生上传到结果推送的完整异步链路。
+> 四层管道内容见 §1.1；性能 SLA 见 §1.3；通知路由见 §1.4。
+
+---
+
+### 5.1 端到端任务流
+
+```
+学生在小程序上传试卷图片
+        │
+        │ ① 前端直传 COS（预签名 URL，不经 FastAPI）
+        ▼
+   腾讯云 COS
+        │
+        │ ② 上传成功后，前端 POST /wrong-questions/ { cos_key }
+        ▼
+┌──────────────────────────────────────────────┐
+│              FastAPI 主进程                   │
+│                                              │
+│  1. 校验配额（daily_usage ocr_daily）         │
+│     超限 → 返回 1301，流程终止                │
+│                                              │
+│  2. 创建 wrong_questions 记录                 │
+│     （question_text / student_answer 暂为空）  │
+│                                              │
+│  3. 创建 ocr_tasks 记录（status=pending）     │
+│                                              │
+│  4. 将任务 ID enqueue → ARQ Redis 队列        │
+│                                              │
+│  5. 立即返回 { wrong_question_id, task_id }   │
+│     ← 接口响应 < 300ms，不等待 OCR 结果       │
+└──────────────────┬───────────────────────────┘
+                   │ ⑥ ARQ Worker 从队列取任务
+                   ▼
+┌──────────────────────────────────────────────┐
+│              ARQ Worker 进程                  │
+│                                              │
+│  更新 ocr_tasks.status = processing          │
+│                                              │
+│  ┌─────────────────────────────────────────┐ │
+│  │         OCR 四层管道（见 §1.1）          │ │
+│  │  Layer 0 → Layer 1 → Layer 2 → Layer 3 │ │
+│  └─────────────────────────────────────────┘ │
+│                                              │
+│  成功：                                      │
+│    写入 wrong_questions（text / answer）      │
+│    写入 ai_analyses（诊断结果）               │
+│    更新 ocr_tasks.status = completed         │
+│    → NotificationService → 推送结果          │
+│                                              │
+│  失败：                                      │
+│    retry_count++，按退避策略重入队列          │
+│    达到上限 → status = failed → 通知用户     │
+└──────────────────────────────────────────────┘
+                   │
+                   ▼
+        前端收到 WebSocket "analysis_done" 事件
+        （或离线用户收到 subscribeMessage）
+        → 拉取 GET /wrong-questions/{id} 展示结果
+```
+
+---
+
+### 5.2 ARQ Worker 配置
+
+```
+队列后端：Redis（与主应用共用同一 Redis 实例，不同 DB 编号隔离）
+Worker 数量：MVP 默认 4 个并发 Worker；TKE HPA 峰值自动扩展至 16
+每 Worker 并发协程：1（ARQ asyncio 原生，无需多线程）
+任务 TTL：入队后最长等待 10 分钟，超时视为失败（防僵尸任务）
+任务硬超时：90 秒（单次执行；> SLA 60s 以留出重试空间）
+```
+
+**Worker 启动命令**：
+```bash
+arq app.workers.ocr_worker.WorkerSettings
+```
+
+**WorkerSettings 关键参数**：
+```python
+class WorkerSettings:
+    functions = [run_ocr_pipeline]
+    redis_settings = RedisSettings(host=REDIS_HOST, db=1)   # DB 1 专用
+    max_jobs = 1          # 每 Worker 同时跑 1 个任务，避免内存争用
+    job_timeout = 90      # 秒
+    keep_result = 3600    # 任务结果保留 1h（轮询兜底）
+```
+
+---
+
+### 5.3 任务状态机
+
+```
+                  ┌─────────┐
+     入队时        │ pending │
+                  └────┬────┘
+                       │ Worker 取到任务
+                  ┌────▼──────┐
+                  │ processing│
+                  └────┬──────┘
+          ┌────────────┴───────────┐
+          │ 成功                   │ 失败
+   ┌──────▼──────┐         ┌──────▼──────────────────┐
+   │  completed  │         │ retry_count < 3          │
+   └─────────────┘         │   → 退避重入队 → pending │
+                           │ retry_count ≥ 3          │
+                           │   → failed（终态）        │
+                           └──────────────────────────┘
+
+退避策略：
+  第 1 次重试：等待 10s
+  第 2 次重试：等待 30s
+  第 3 次重试：等待 60s
+  3 次全失败 → ocr_tasks.status = failed
+             → NotificationService 通知学生"识别失败，请重新上传清晰图片"
+             → 告警：若 1h 窗口失败率 > 5%，触发 §1.6 企业微信告警
+```
+
+**状态字段说明**（对应 Section 3 `ocr_tasks` 表）：
+
+| 字段 | 说明 |
+|------|------|
+| `status` | 当前状态（pending / processing / completed / failed） |
+| `retry_count` | 当前已重试次数（0–3） |
+| `provider` | 最后使用的 OCR 供应商（aliyun_print / tencent_handwrite） |
+| `raw_result` | 原始 OCR JSON 响应备存（调试 & 审计用） |
+| `completed_at` | 任务完成时间（计算端到端耗时，监控用） |
+
+---
+
+### 5.4 各层超时与供应商故障转移
+
+```
+Layer 0（图像预处理）          本地计算，无外部调用，超时 5s
+        │
+        ▼
+Layer 1（PaddleLayout 版面分析）本地模型推理，超时 10s
+        │
+        ▼
+Layer 2（分区 OCR）
+  ├── 印刷体区域
+  │     主：阿里云 OCR         超时 15s
+  │     ↓ 超时 / HTTP 5xx     ← 触发切换条件
+  │     备：百度 OCR           超时 15s
+  │     ↓ 备选也失败 → 抛出异常，进入重试流程
+  │
+  └── 手写作答区域
+        主：腾讯云 OCR          超时 15s
+        ↓ 超时 / HTTP 5xx
+        备：Google Document AI  超时 15s
+        ↓ 备选也失败 → 抛出异常，进入重试流程
+        │
+        ▼
+Layer 3（LLM 诊断）
+  主：DeepSeek               超时 30s
+  ↓ 超时 / 错误
+  备：Claude                 超时 30s
+  ↓ 备选也失败 → 抛出异常，进入重试流程
+
+单次总预算：5 + 10 + 15 + 30 = 60s（正常路径）
+Worker 硬超时 90s：覆盖一次供应商切换的额外耗时
+```
+
+**切换记录**：每次供应商切换写入结构化日志（CLS），字段包含 `primary_provider`、`fallback_reason`、`latency_ms`，供运营分析各供应商稳定性。
+
+---
+
+### 5.5 并发控制
+
+```
+两层保护，互为补充：
+
+① 用户级配额（daily_usage，FastAPI 接口层）
+   同一用户当日 OCR 次数上限（system_configs 可调，Basic 默认 10 次/天）
+   → 超限返回 1301，不进入队列
+
+② 用户级并发锁（Redis，ARQ Worker 层）
+   同一用户最多 2 个任务同时处于 processing 状态
+   → Worker 取任务前检查 Redis key: ocr:inflight:{user_id}（计数器）
+   → 计数 ≥ 2 → 任务延迟 30s 后重新入队（不报错，静默等待）
+   → 任务完成 / 失败后计数器自动 decrement
+
+意义：防止单用户连续上传多张图片打满 Worker，保证队列公平性
+```
+
+---
+
+### 5.6 前端轮询与 WebSocket 双保险
+
+```
+主通道：WebSocket 实时推送（见 §1.4 / §4.6 WebSocket 节）
+  服务端 ARQ Worker 完成后 → NotificationService
+  → WS push: { "type": "analysis_done", "payload": { task_id, wrong_question_id } }
+  → 前端收到后立即拉取 GET /wrong-questions/{id}
+
+兜底通道：前端轮询（WebSocket 断开时自动切换）
+  前端每 3 秒轮询 GET /ocr-tasks/{task_id}/status
+  status = completed → 拉取结果
+  status = failed    → 展示失败提示
+  status = pending / processing → 继续轮询（最多 120s，超出提示"请稍后刷新"）
+
+ARQ keep_result = 3600（1h）：
+  即使 Worker 已完成，轮询接口仍能在 1h 内拿到最终状态，防止前端错过推送
+```
+
+---
+
+### 5.7 图像质量预检（Layer 0 拒绝逻辑）
+
+```
+预检维度                   拒绝阈值            返回提示
+──────────────────────────────────────────────────────
+分辨率过低                 短边 < 600px        "图片太模糊，请重拍"
+文件过大                   > 10 MB             "图片过大，请压缩后上传"
+图像过暗 / 过曝            亮度均值 < 30       "光线不足，请在明亮处重拍"
+                           or 亮度均值 > 230
+倾斜角度过大               > 30°（矫正后仍超限）"试卷倾斜过大，请正对摄像头"
+非图片格式                 MIME 非 image/*     "不支持的文件格式"
+```
+
+**拒绝流程**：Layer 0 预检失败 → `ocr_tasks.status = failed`（retry_count 不增加，因非服务故障）→ 向用户返回具体拒绝原因（通过 NotificationService 或 WebSocket）→ **不消耗用户当日 OCR 配额**（日配额在 FastAPI 接口层扣减，图像预检在 Worker 层，失败后回滚配额计数）
+
+---
+
+### 5.8 与其他模块的接口约定
+
+| 触发方 | 调用形式 | 说明 |
+|--------|---------|------|
+| FastAPI 接口层 | `await arq_pool.enqueue_job('run_ocr_pipeline', task_id)` | 将 task_id 入队，Worker 自行从 DB 读取详情 |
+| ARQ Worker | 直接写 DB（wrong_questions / ai_analyses / ocr_tasks） | 不调用 FastAPI HTTP 接口，避免循环依赖 |
+| ARQ Worker → 通知 | `await NotificationService.send(user_id, 'analysis_done', payload)` | 统一推送，不直接操作 WebSocket |
+| 监控 | Worker 完成后写自定义指标到 CLS | 字段：task_id / duration_ms / provider / status |
+
+---
+
+## Section 6（进行中）
+
 > Section 6：腾讯云部署架构 — 待确认
