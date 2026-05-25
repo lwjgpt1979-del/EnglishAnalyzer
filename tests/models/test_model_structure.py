@@ -197,3 +197,29 @@ def test_ai_question_has_updated_at():
     from app.models.d6_ai_questions import AiQuestion
     cols = {c.name for c in AiQuestion.__table__.columns}
     assert "updated_at" in cols, "G20 修复未应用: ai_questions 缺少 updated_at"
+
+
+def test_d7_teacher_tables():
+    from app.models.d7_teacher import (
+        Class, ClassStudent, Assignment, AssignmentSubmission,
+    )
+    assert Class.__tablename__ == "classes"
+    assert ClassStudent.__tablename__ == "class_students"
+    assert Assignment.__tablename__ == "assignments"
+    assert AssignmentSubmission.__tablename__ == "assignment_submissions"
+
+
+def test_assignment_has_published_at():
+    """G21: assignments 必须有 published_at 字段。"""
+    from app.models.d7_teacher import Assignment
+    cols = {c.name for c in Assignment.__table__.columns}
+    assert "published_at" in cols, "G21 修复未应用: assignments 缺少 published_at"
+
+
+def test_assignment_submission_unique_constraint():
+    from app.models.d7_teacher import AssignmentSubmission
+    unique_constraints = [
+        c for c in AssignmentSubmission.__table__.constraints
+        if hasattr(c, "columns") and len(list(c.columns)) == 2
+    ]
+    assert len(unique_constraints) >= 1, "assignment_submissions 缺少复合唯一约束"
