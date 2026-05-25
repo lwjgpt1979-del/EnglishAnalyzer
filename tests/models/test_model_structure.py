@@ -184,3 +184,16 @@ def test_study_checkin_unique_constraint():
         if hasattr(c, "columns") and len(list(c.columns)) == 2
     ]
     assert len(unique_constraints) >= 1, "study_checkins 缺少 (student_id, checkin_date) 唯一约束"
+
+
+def test_d6_ai_question_tables():
+    from app.models.d6_ai_questions import AiQuestion, PracticeRecord
+    assert AiQuestion.__tablename__ == "ai_questions"
+    assert PracticeRecord.__tablename__ == "practice_records"
+
+
+def test_ai_question_has_updated_at():
+    """G20: ai_questions 必须有 updated_at 字段。"""
+    from app.models.d6_ai_questions import AiQuestion
+    cols = {c.name for c in AiQuestion.__table__.columns}
+    assert "updated_at" in cols, "G20 修复未应用: ai_questions 缺少 updated_at"
