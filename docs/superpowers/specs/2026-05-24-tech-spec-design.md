@@ -271,12 +271,12 @@ users（所有角色共用基础表）
 │                              institution_admin / platform_admin)
 ├── is_active             BOOLEAN DEFAULT true
 ├── city_code             VARCHAR              ← 归属城市行政区划代码（如 440100=广州）
-│                                                优先级：机构城市 > 认证城市 > IP城市
-├── city_source           ENUM(ip_detection /  ← 注册时 IP 解析（默认）
+│                                                优先级：机构城市 > 认证城市 > 用户自选城市
+├── city_source           ENUM(self_selected / ← 注册时用户自行选择（非机构用户主路径）
 │                              institution /   ← 加入机构时以机构城市覆盖
 │                              cert_verified / ← 老师认证审核核实的学校城市
 │                              manual)         ← 平台超管手动修正
-├── ip_at_registration    INET                 ← 注册时原始 IP，仅写一次，审计留存
+├── ip_at_registration    INET                 ← 注册时原始 IP，仅作城市选择器预填推荐，审计留存
 ├── created_at            TIMESTAMPTZ
 └── updated_at            TIMESTAMPTZ
 
