@@ -286,10 +286,13 @@ students（学生扩展，1:1 users）
 └── info_change_reset_date   DATE
 
 teachers（老师扩展，1:1 users）
-├── id              UUID PK → users.id
-├── institution_id  UUID FK → institutions  ← NULL = C 端认证老师
-├── cert_status     ENUM(uncertified / pending / certified / rejected)
-└── cert_doc_url    VARCHAR              ← 认证材料 COS 路径
+├── id                  UUID PK → users.id
+├── institution_id      UUID FK → institutions  ← NULL = C 端认证老师
+├── cert_status         ENUM(uncertified / pending / certified / rejected)
+├── cert_doc_url        VARCHAR              ← 认证材料 COS 路径
+├── subject             VARCHAR              ← 任教学科（英语/数学…，搜索区分度）
+├── max_students        INT DEFAULT 50       ← 最大绑定学生数，防止无限接单
+└── phone_searchable    BOOLEAN DEFAULT true ← 是否允许学生通过手机号搜索到本人
 
 relatives（亲人扩展，1:1 users）
 └── id              UUID PK → users.id
@@ -307,13 +310,20 @@ teacher_students（老师-学生直接绑定关系）
 ├── id              UUID PK
 ├── teacher_id      UUID FK → users
 ├── student_id      UUID FK → users
-├── bind_type       ENUM(institution_assigned /  ← 机构分配（不可自主换绑）
-│                        self_bound)             ← 学生自主绑定（可换绑）
+├── bind_type       ENUM(institution_assigned /  ← 机构分配（直接 active，无需确认）
+│                        self_bound)             ← 学生自主发起（需老师确认）
+├── bind_source     ENUM(phone_search /          ← 学生搜手机号发起
+│                        miniprogram_link /      ← 点击老师分享的小程序链接发起
+│                        institution_assigned)   ← 机构后台分配
+├── status          ENUM(pending /               ← 等待老师确认（self_bound 初始态）
+│                        active /                ← 绑定生效
+│                        rejected)              ← 老师拒绝
 ├── institution_id  UUID FK → institutions (nullable)
-├── is_active       BOOLEAN
-├── bound_at        TIMESTAMPTZ
+├── requested_at    TIMESTAMPTZ                  ← 学生发起申请时间
+├── bound_at        TIMESTAMPTZ (nullable)        ← 老师确认时间
 └── unbound_at      TIMESTAMPTZ (nullable)
-    [UNIQUE: (teacher_id, student_id) WHERE is_active = true]
+    [UNIQUE: (teacher_id, student_id) WHERE status = 'active']
+    [NOTE: institution_assigned 类型由后台直接写入 status='active'，跳过 pending]
 
 invite_codes（邀请码）
 ├── id              UUID PK
@@ -899,7 +909,11 @@ GET    /teachers/students              我的学生列表（含学情概况）
 GET    /teachers/students/{id}/report  查看指定学生的学情报告
 POST   /teachers/certification         提交认证申请（上传材料 cos_key）
 GET    /teachers/certification/status  查看当前认证审核进度
-GET    /teachers/search                搜索认证老师（学生用，按 school/name 过滤）
+GET    /teachers/search                搜索认证老师（学生用）
+                                       ?phone=xxx      按手机号精确查找（主路径，phone_searchable=true 才返回）
+                                       ?school=xxx     按学校名模糊搜索（辅助路径）
+                                       ?name=xxx       按老师姓名模糊搜索（辅助路径）
+                                       返回：teacher_id / 昵称 / 学科 / 学校 / 头像 / 当前学生数/上限
 POST   /classes/                       创建班级
 POST   /assignments/                   创建出卷任务
 PATCH  /assignments/{id}/publish       发布任务给学生
@@ -908,10 +922,34 @@ GET    /assignments/{id}/submissions   查看学生提交情况
 
 #### 学生-老师绑定
 ```
-POST   /students/bind-teacher          学生自主绑定认证老师（self_bound 类型）
-DELETE /students/unbind-teacher/{teacher_id}  学生换绑/解绑老师（仅 self_bound 可操作）
-POST   /students/invite-code           生成邀请码（type=relative_bind，24h 有效）
-GET    /students/invite-code/current   查看当前有效邀请码（未使用时复用）
+-- 学生侧（发起请求）
+POST   /students/bind-teacher          发起绑定申请（self_bound）
+                                       body: { teacher_id, bind_source: phone_search|miniprogram_link }
+                                       → 创建 teacher_students 记录，status=pending
+                                       → 推送通知给老师："有学生申请绑定，请确认"
+                                       → 校验 max_students 上限，已满返回 1301 错误
+
+GET    /students/bind-teacher/status   查询当前绑定申请状态（pending/active/rejected）
+
+DELETE /students/unbind-teacher/{teacher_id}  换绑/解绑（仅 self_bound + active 可操作）
+
+-- 老师侧（处理申请）
+GET    /teachers/bind-requests         待确认的绑定申请列表（status=pending）
+                                       返回：学生昵称 / 头像 / 年级 / 申请时间 / bind_source
+
+POST   /teachers/bind-requests/{id}/accept   接受绑定 → status=active，bound_at=now()
+                                              → 推送通知给学生："老师已接受你的绑定申请"
+
+POST   /teachers/bind-requests/{id}/reject   拒绝绑定 → status=rejected
+                                              → 推送通知给学生："老师暂未接受绑定申请"
+
+-- 老师侧（生成分享链接）
+POST   /teachers/bind-link             生成专属绑定小程序链接（含 teacher_id 参数）
+                                       老师复制后在微信/群里分享给学生，学生点击直接跳绑定页
+                                       → 链接 7 天有效，过期自动失效
+
+-- 老师隐私设置
+PATCH  /teachers/me/settings           更新 phone_searchable（true/false）
 ```
 
 #### 亲人端
