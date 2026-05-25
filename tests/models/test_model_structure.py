@@ -118,3 +118,32 @@ def test_wrong_question_columns():
         "mastered_at", "updated_at", "created_at",
     }
     assert required <= cols, f"缺失: {required - cols}"
+
+
+def test_d4_knowledge_tables():
+    from app.models.d4_knowledge import (
+        KnowledgePoint, CurriculumUnit, UnitKnowledgePoint,
+        CurriculumWord, WrongQuestionKnowledgePoint,
+    )
+    assert KnowledgePoint.__tablename__ == "knowledge_points"
+    assert CurriculumUnit.__tablename__ == "curriculum_units"
+    assert UnitKnowledgePoint.__tablename__ == "unit_knowledge_points"
+    assert CurriculumWord.__tablename__ == "curriculum_words"
+    assert WrongQuestionKnowledgePoint.__tablename__ == "wrong_question_knowledge_points"
+
+
+def test_knowledge_point_self_fk():
+    from app.models.d4_knowledge import KnowledgePoint
+    cols = {c.name for c in KnowledgePoint.__table__.columns}
+    assert "parent_id" in cols, "knowledge_points 缺少 parent_id 自引用 FK"
+    assert "applicable_grades" in cols
+    assert "applicable_textbooks" in cols
+
+
+def test_curriculum_unit_unique_constraint():
+    from app.models.d4_knowledge import CurriculumUnit
+    unique_constraints = [
+        c for c in CurriculumUnit.__table__.constraints
+        if hasattr(c, "columns") and len(list(c.columns)) > 1
+    ]
+    assert len(unique_constraints) >= 1, "curriculum_units 缺少复合唯一约束"
