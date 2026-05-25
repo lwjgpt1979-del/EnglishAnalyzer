@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v2.9 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
+> 版本：v3.0 | 日期：2026-05-25 | 状态：Section 1-6 全部完成
 
 ---
 
@@ -434,7 +434,8 @@ students（学生扩展，1:1 users）
 ├── institution_id  UUID FK → institutions (nullable)  ← NULL = C 端独立用户
 ├── grade           VARCHAR (nullable)   ← 年级（7/8/9/10/11/12）；注册后在个人设置补填
 ├── textbook_ver    VARCHAR (nullable)   ← 教材版本（人教版/外研版/北师大版…）；注册后补填
-└── semester        ENUM(上/下) (nullable)  ← 注册后补填
+├── semester        ENUM(上/下) (nullable)  ← 注册后补填
+└── updated_at      TIMESTAMPTZ              ← grade / textbook_ver / semester 变更时同步更新
     [NOTE: 年级/教材变更次数上限由 daily_usage（usage_type="grade_change_monthly"）统一管理，不在本表重复计数]
 
 teachers（老师扩展，1:1 users）
@@ -444,8 +445,9 @@ teachers（老师扩展，1:1 users）
 ├── cert_doc_url        VARCHAR (nullable)   ← 认证材料 COS 路径；cert_status=uncertified 时为 NULL
 ├── subject             VARCHAR (nullable)   ← 任教学科（英语/数学…，搜索区分度）；注册后可补填
 ├── max_students        INT DEFAULT 50       ← 最大绑定学生数上限，防止无限接单
-└── enterprise_userid   VARCHAR (nullable)   ← 企业微信 userid，首次企业微信 OAuth 后写入
-                                               用于企业微信推送，避免每次按手机号反查 API
+├── enterprise_userid   VARCHAR (nullable)   ← 企业微信 userid，首次企业微信 OAuth 后写入
+│                                              用于企业微信推送，避免每次按手机号反查 API
+└── updated_at          TIMESTAMPTZ              ← cert_status 等关键字段变更时同步更新，支持认证审计
 
 relatives（亲人扩展，1:1 users）
 └── id              UUID PK → users.id
@@ -456,7 +458,8 @@ student_relatives（学生-亲人绑定，M:N，每学生最多 4 位亲人）
 ├── relative_id     UUID FK → users
 ├── relationship    VARCHAR              ← 爸爸 / 妈妈 / 爷爷…
 ├── is_active       BOOLEAN DEFAULT true
-└── bound_at        TIMESTAMPTZ
+├── bound_at        TIMESTAMPTZ
+└── unbound_at      TIMESTAMPTZ (nullable)   ← is_active=false 时填入；对应 teacher_students.unbound_at 设计
     [NOTE: 每学生最多 4 位亲人，Service 层在 INSERT 前 SELECT COUNT 校验，超限返回 3002 错误]
 
 teacher_students（老师-学生直接绑定关系）
@@ -501,7 +504,7 @@ memberships（会员状态，每用户永远只有 1 条 active 记录）
 ├── tier            ENUM(free / basic / pro / promax)
 ├── started_at      TIMESTAMPTZ
 ├── expires_at      TIMESTAMPTZ (nullable)  ← free 档无过期时间，置 NULL
-└── is_active       BOOLEAN
+└── is_active       BOOLEAN DEFAULT true
     [UNIQUE: (user_id) WHERE is_active = true]  ← DB 层强制"每用户唯一 active 记录"
 
 orders（订单）
@@ -534,7 +537,7 @@ refund_records（退款记录）
 ├── amount_fen            INT
 ├── refund_type           ENUM(standard_7d / prorated / appeal)
 ├── status                ENUM(pending / approved / rejected / completed)
-├── reason                TEXT
+├── reason                TEXT (nullable)          ← standard_7d 退款无需填写理由；appeal 类型由用户填写
 ├── wx_refund_id          VARCHAR (nullable)   ← 微信退款单号；退款 API 成功后写入，用于对账及状态查询
 ├── branch_company_id     UUID FK → branch_companies (nullable)
 │                                    ← 继承自关联订单，用于分公司退款冲抵结算
@@ -571,11 +574,12 @@ ocr_tasks（OCR 异步任务状态）
 ├── provider        ENUM(aliyun_print /      ← 印刷体主选
 │                        baidu_print /       ← 印刷体备选（故障转移）
 │                        tencent_handwrite / ← 手写体主选
-│                        google_handwrite)   ← 手写体备选（故障转移）
+│                        google_handwrite) (nullable)  ← Layer 2 运行后确定；status=pending/processing 时为 NULL
 ├── raw_result      JSONB (nullable)     ← 原始 OCR 响应备存；pending/processing 时为 NULL
 ├── error_message   TEXT (nullable)      ← status=failed 时的错误详情（超时/认证失败/配额超限等）
 ├── retry_count     SMALLINT DEFAULT 0
 ├── created_at      TIMESTAMPTZ
+├── updated_at      TIMESTAMPTZ              ← status / retry_count 每次变更时同步更新，支持中间态转换耗时分析
 └── completed_at    TIMESTAMPTZ (nullable)  ← status=pending/processing 时为 NULL
 
 ai_analyses（AI 诊断结果）
@@ -678,7 +682,7 @@ vocabulary_learning（SM-2 学习状态，per 学生 per 词）
 essays（作文精修）
 ├── id              UUID PK
 ├── student_id      UUID FK → users
-├── wrong_question_id  UUID FK (nullable)  ← 可关联来源错题
+├── wrong_question_id  UUID FK → wrong_questions (nullable)  ← 可关联来源错题
 ├── original_text   TEXT
 ├── polished_text   TEXT (nullable)      ← AI 精修后；status=draft/processing 时为 NULL
 ├── dimensions      JSONB (nullable)     ← {语法:85, 词汇:90, 逻辑:78, 内容:88}；status=draft/processing 时为 NULL
@@ -733,7 +737,7 @@ practice_records（AI 题库练习记录，Module 8）
 │                        wrong_q_followup)    ← 错题复盘触发同类题
 ├── student_answer  JSONB
 ├── is_correct      BOOLEAN
-├── wrong_question_id UUID FK (nullable)  ← 来源错题（触发同类题时有值）
+├── wrong_question_id UUID FK → wrong_questions (nullable)  ← 来源错题（触发同类题时有值）
 ├── practiced_at    TIMESTAMPTZ
 └── time_spent_sec  INT (nullable)       ← 前端计时失败（切后台/锁屏/断网重连）时为 NULL；0 会污染统计故不用 0 替代
 ```
@@ -774,7 +778,8 @@ assignment_submissions（学生提交）
 ├── student_id      UUID FK → users
 ├── answers         JSONB
 ├── score           DECIMAL (nullable)   ← 批改后填入，未批改时为 NULL
-└── submitted_at    TIMESTAMPTZ
+├── submitted_at    TIMESTAMPTZ
+└── updated_at      TIMESTAMPTZ          ← 批改后写入 score 时同步更新；与 wrong_questions / essays / listening_records 异步写入模式对齐
     [UNIQUE: (assignment_id, student_id)]  ← 防止重复提交
 ```
 
@@ -817,9 +822,10 @@ system_configs（对应 PRD 5.6，所有限额后台可调）
 ├── id              UUID PK
 ├── key             VARCHAR UNIQUE       ← "daily_ocr_limit_basic" / "essay_monthly_pro"…
 ├── value           JSONB                ← 值（数字/字符串/布尔）
-├── description     TEXT
+├── description     TEXT (nullable)             ← 自解释的 key 无需描述（如 "daily_ocr_limit_basic"）
 ├── updated_by      UUID FK → users
-└── updated_at      TIMESTAMPTZ
+├── updated_at      TIMESTAMPTZ
+└── created_at      TIMESTAMPTZ
 
 notifications（站内消息中心）
 ├── id              UUID PK
@@ -850,7 +856,7 @@ notifications（站内消息中心）
 branch_companies（分公司）
 ├── id                UUID PK
 ├── name              VARCHAR              ← 分公司名称（如「华南区」「西南区」）
-├── contact_phone     VARCHAR
+├── contact_phone     VARCHAR (nullable)   ← 分公司成立时填入；MVP 预留建表时为 NULL，与其他预留字段保持一致
 ├── manager_user_id   UUID FK → users (nullable)  ← 分公司负责人（role=branch_admin）；MVP 预留建表时账号未指定，为 NULL
 ├── commission_rate   DECIMAL (nullable)   ← 平台向分公司的分成比例；MVP 预留建表时尚未谈定，为 NULL
 │
