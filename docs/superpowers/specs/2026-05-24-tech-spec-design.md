@@ -1,6 +1,6 @@
 # engGramer Tech Spec — 技术规格书
 
-> 版本：v1.8 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
+> 版本：v1.9 | 日期：2026-05-25 | 状态：Section 1-4 已确认，Section 5+ 进行中
 
 ---
 
@@ -933,12 +933,10 @@ Base URL：https://api.enggramer.com/api/v1
 ├── refunds/              ← 退款
 ├── reports/              ← 学情报告快照
 ├── notifications/        ← 站内消息
-└── admin/                ← 平台/机构后台（P2 完整 UI）
-
 ├── knowledge-points/     ← 知识点树（筛选用）
 ├── curriculum/           ← 教材单元列表
 ├── webhooks/             ← 微信支付服务端回调
-└── admin/                ← 平台/机构后台
+└── admin/                ← 平台/机构后台（P2 完整 UI）
 
 版本策略：URL 带版本号（/v1/）；破坏性变更升 v2，v1 保持 6 个月兼容期。
 ```
@@ -968,6 +966,24 @@ JWT Payload：
 Token 刷新：
 POST /api/v1/auth/refresh { "refresh_token": "..." }
 → 返回新的 access_token（refresh_token 不变，滑动续期）
+
+tier 字段时效性策略（方案 B：黑名单失效）：
+JWT 中缓存 tier 可减少 DB 查询，但 access_token 2h 有效期内若会员状态变更，
+JWT 中的 tier 会产生脏读。处理方式：
+
+触发场景（仅三类，低频）：
+  1. 微信支付 Webhook 回调成功（升级/续费）
+  2. 退款完成（降档至 free）
+  3. 平台管理员手动调整档位
+
+处理逻辑：
+  MemberService 变更 memberships 后：
+  → 将该用户所有有效 access_token 的 jti（JWT ID）写入 Redis 黑名单
+  → TTL = 原 token 剩余有效期（最多 2h）
+  → 客户端下次请求中间件校验 jti 是否在黑名单 → 命中则返回 1001（Token 过期）
+  → 客户端静默用 refresh_token 换新 access_token（携带最新 tier）
+
+前提：JWT Payload 须额外包含 "jti": "uuid"（每次签发唯一 ID）
 ```
 
 ---
@@ -1024,7 +1040,7 @@ POST /api/v1/auth/refresh { "refresh_token": "..." }
 | **1000–1099** | 认证/权限 | 1001 未登录或 Token 过期；1002 权限不足；1003 账号已封禁 |
 | **1100–1199** | 资源 | 1101 资源不存在；1102 资源已删除 |
 | **1200–1299** | 参数 | 1201 参数缺失；1202 参数格式错误；1203 参数值越界 |
-| **1300–1399** | 配额限制 | 1301 日 OCR 次数超限；1302 日练习次数超限；1303 月作文次数超限；1304 月变更次数超限；1305 日听力次数超限 |
+| **1300–1399** | 配额限制 | 1301 日 OCR 次数超限；1302 日练习次数超限；1303 月作文次数超限；1304 月变更次数超限；1305 日听力次数超限；1306 老师绑定学生数已达上限（max_students） |
 | **1400–1499** | 会员档位 | 1401 功能需要 Pro；1402 功能需要 ProMax |
 | **2000–2099** | 外部服务 | 2001 OCR 识别失败；2002 AI 诊断失败；2003 微信支付失败；2004 COS 上传失败 |
 | **3000–3099** | 业务逻辑 | 3001 退款条件不满足；3002 亲人绑定已达上限（4位）；3003 邀请码无效或过期；3004 老师绑定冲突（机构学生不可自主换绑）|
@@ -1162,7 +1178,7 @@ GET    /assignments/{id}/submissions   查看学生提交情况
 POST   /students/invite-teacher        学生输入老师手机号，系统向该号码发送邀请短信
                                        body: { phone: "13800138000" }
                                        服务端逻辑：
-                                         1. 校验该手机号已达 max_students 上限 → 返回 1301 错误
+                                         1. 校验该手机号已达 max_students 上限 → 返回 1306 错误
                                          2. 生成邀请 Token（UUID），存 Redis，TTL 48h
                                          3. 调腾讯云 SMS，发送短信模板：
                                             「[学生昵称] 邀请您成为他的英语老师。
