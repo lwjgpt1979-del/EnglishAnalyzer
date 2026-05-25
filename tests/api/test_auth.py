@@ -1,6 +1,19 @@
+import time
+import uuid
+
+import pytest
+import pytest_asyncio
 from httpx import AsyncClient
+from jose import JWTError
+from unittest.mock import AsyncMock, patch
 
 from app.core.config import settings
+from app.core.database import _async_session_factory, get_db
+from app.core.exceptions import AppError
+from app.core.security import create_access_token, create_refresh_token, decode_token
+from app.schemas.base import BaseResponse, make_ok, make_error
+from app.services.auth_service import upsert_user
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def test_settings_loads_database_url():
@@ -13,11 +26,6 @@ def test_settings_loads_async_database_url():
 
 def test_settings_has_jwt_secret():
     assert len(settings.jwt_secret_key) >= 8
-
-
-import time
-from app.schemas.base import BaseResponse, make_ok, make_error
-from app.core.exceptions import AppError
 
 
 def test_make_ok_structure():
@@ -41,11 +49,6 @@ def test_app_error_fields():
     assert err.message == "无权限"
 
 
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db
-
-
 @pytest.mark.asyncio
 async def test_get_db_yields_async_session():
     """get_db() 应当 yield 一个 AsyncSession。"""
@@ -64,15 +67,6 @@ async def test_health_check(client: AsyncClient):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-
-
-import uuid
-from jose import JWTError
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    decode_token,
-)
 
 
 def test_access_token_round_trip():
@@ -97,13 +91,6 @@ def test_wrong_token_type_raises():
     access_token = create_access_token(user_id=user_id, role="student")
     with pytest.raises(JWTError):
         decode_token(access_token, expected_type="refresh")
-
-
-import pytest_asyncio
-from unittest.mock import AsyncMock, patch
-
-from app.services.auth_service import upsert_user
-from app.core.database import _async_session_factory
 
 
 @pytest_asyncio.fixture
@@ -215,6 +202,7 @@ async def test_users_me_returns_profile(client: AsyncClient):
     assert body["code"] == 200
     assert body["data"]["role"] == "student"
     assert body["data"]["is_active"] is True
+    assert body["data"]["id"] != ""  # UUID string present
 
 
 @pytest.mark.asyncio
