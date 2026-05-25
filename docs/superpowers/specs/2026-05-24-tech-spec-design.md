@@ -264,7 +264,7 @@ CREATE POLICY student_isolation ON wrong_questions
 
 ---
 
-## Section 3：核心数据模型（36 张表）
+## Section 3：核心数据模型（37 张表）
 
 > 共 10 个业务域，所有表使用 UUID 主键，时间戳字段统一用 TIMESTAMPTZ。
 > 域 10 为分公司扩展预留，MVP 阶段建表但不启用业务逻辑；分公司成立时直接填数据即可。
@@ -379,28 +379,39 @@ memberships（会员状态，每用户永远只有 1 条 active 记录）
 └── is_active       BOOLEAN
 
 orders（订单）
-├── id              UUID PK
-├── order_no        VARCHAR UNIQUE       ← 业务单号（展示用）
-├── payer_id        UUID FK → users      ← 付款人（可能是亲人）
-├── beneficiary_id  UUID FK → users      ← 受益学生
-├── order_type      ENUM(new / renew / upgrade)
-├── tier            ENUM(basic / pro / promax)
-├── duration_months INT                  ← 6 / 12 / 24 / 36
-├── amount_fen      INT                  ← 金额（分，避免浮点精度问题）
-├── status          ENUM(pending / paid / refunded / partial_refunded)
-├── wx_transaction_id  VARCHAR
-├── paid_at         TIMESTAMPTZ
-└── created_at      TIMESTAMPTZ
+├── id                       UUID PK
+├── order_no                 VARCHAR UNIQUE       ← 业务单号（展示用）
+├── payer_id                 UUID FK → users      ← 付款人（可能是亲人）
+├── beneficiary_id           UUID FK → users      ← 受益学生
+├── order_type               ENUM(new / renew / upgrade)
+├── tier                     ENUM(basic / pro / promax)
+├── duration_months          INT                  ← 6 / 12 / 24 / 36
+├── amount_fen               INT                  ← 实收金额（分）
+├── status                   ENUM(pending / paid / refunded / partial_refunded)
+├── wx_transaction_id        VARCHAR
+├── paid_at                  TIMESTAMPTZ
+│
+│   ── 分公司财务隔离预留字段（分公司未成立时均为 NULL）──────────────────
+├── branch_company_id        UUID FK → branch_companies (nullable)
+│                                       ← 下单时快照（city_code→分公司解析后冻结）
+│                                         即使后续城市划区调整，历史订单归属不变
+├── platform_income_fen      INT (nullable)        ← 平台应得金额快照
+├── branch_commission_fen    INT (nullable)        ← 分公司应得金额快照
+└── institution_commission_fen INT (nullable)      ← 机构应得金额快照（如有）
+    [NOTE: 三方金额在 paid_at 时按当时分成比例计算并冻结，后续比例调整不影响历史单]
+└── created_at               TIMESTAMPTZ
 
 refund_records（退款记录）
-├── id              UUID PK
-├── order_id        UUID FK → orders
-├── amount_fen      INT
-├── refund_type     ENUM(standard_7d / prorated / appeal)
-├── appeal_no_this_year  INT DEFAULT 0  ← 年度申诉计数（独立计数器，见 PRD 4.5.1）
-├── status          ENUM(pending / approved / rejected / completed)
-├── reason          TEXT
-└── created_at      TIMESTAMPTZ
+├── id                    UUID PK
+├── order_id              UUID FK → orders
+├── amount_fen            INT
+├── refund_type           ENUM(standard_7d / prorated / appeal)
+├── appeal_no_this_year   INT DEFAULT 0  ← 年度申诉计数（独立计数器，见 PRD 4.5.1）
+├── status                ENUM(pending / approved / rejected / completed)
+├── reason                TEXT
+├── branch_company_id     UUID FK → branch_companies (nullable)
+│                                    ← 继承自关联订单，用于分公司退款冲抵结算
+└── created_at            TIMESTAMPTZ
 ```
 
 ---
@@ -678,7 +689,7 @@ notifications（站内消息中心）
 
 ---
 
-### 域 10：分公司扩展（预留，2 张表）
+### 域 10：分公司扩展（预留，3 张表）
 
 > MVP 阶段建表，表内无数据；分公司正式成立时直接填入城市映射即可，无需改表结构。
 > 归属反查：`users.city_code` / `institutions.city_code` → `branch_company_cities.city_code` → `branch_companies`
@@ -689,7 +700,14 @@ branch_companies（分公司）
 ├── name              VARCHAR              ← 分公司名称（如「华南区」「西南区」）
 ├── contact_phone     VARCHAR
 ├── manager_user_id   UUID FK → users      ← 分公司负责人（role=branch_admin）
-├── commission_rate   DECIMAL              ← 平台向分公司的分成比例（覆盖默认值）
+├── commission_rate   DECIMAL              ← 平台向分公司的分成比例
+│
+│   ── 财税法务字段（分公司成立时填入）────────────────────────────────────
+├── legal_name        VARCHAR              ← 营业执照法定名称（开票抬头）
+├── tax_number        VARCHAR              ← 统一社会信用代码（税号）
+├── bank_name         VARCHAR              ← 收款开户行名称
+├── bank_account      VARCHAR              ← 收款银行账号（落库前加密，展示时脱敏）
+│
 ├── is_active         BOOLEAN DEFAULT true
 └── created_at        TIMESTAMPTZ
 
@@ -700,6 +718,26 @@ branch_company_cities（分公司管辖城市映射，M:N）
 └── effective_from        DATE             ← 该城市归该分公司管辖的起始日期
     [UNIQUE: (branch_company_id, city_code)]
     [NOTE: 同一城市同一时间只能归属一个分公司]
+
+branch_settlements（分公司周期结算账单）
+├── id                        UUID PK
+├── branch_company_id         UUID FK → branch_companies
+├── period_start              DATE             ← 结算周期开始（通常为月初）
+├── period_end                DATE             ← 结算周期结束（通常为月末）
+├── gross_revenue_fen         INT              ← 周期内归属该分公司的总收入
+├── refund_deduction_fen      INT DEFAULT 0    ← 退款冲抵金额
+├── net_revenue_fen           INT              ← 净收入（gross - refund）
+├── platform_share_fen        INT              ← 平台应得（按 commission_rate 快照计算）
+├── branch_payable_fen        INT              ← 应付分公司净额
+├── commission_rate_snapshot  DECIMAL          ← 结算时分成比例快照（防后续改率影响历史）
+├── status                    ENUM(draft /     ← 系统自动生成草稿
+│                                  confirmed / ← 双方确认
+│                                  paid)       ← 已打款
+├── confirmed_at              TIMESTAMPTZ (nullable)
+├── paid_at                   TIMESTAMPTZ (nullable)
+├── note                      TEXT (nullable)  ← 备注（如含争议项说明）
+└── created_at                TIMESTAMPTZ
+    [UNIQUE: (branch_company_id, period_start, period_end)]
 ```
 
 **启用分公司后的归属查询（单条 JOIN，零改造）**：
@@ -715,7 +753,10 @@ WHERE bc.city_code = :user_city_code
 
 **分公司业务分离支持的场景**：
 - 分公司管理员（`branch_admin`）可查看其管辖城市内的所有机构、老师、学生数据
-- 收入统计按城市归属分公司，分成结算以 `branch_companies.commission_rate` 为准
+- 订单在 `paid_at` 时快照 `branch_company_id` + 三方分成金额，城市划区调整不影响历史订单归属
+- 退款记录继承订单的 `branch_company_id`，在周期结算时自动冲抵对应分公司收入
+- 系统按月生成 `branch_settlements` 草稿，双方确认后按 `branch_payable_fen` 打款
+- 财税字段（`legal_name`、`tax_number`）支持分公司作为独立法人开票报税
 - 同一城市可在不同时段归属不同分公司（`effective_from` 支持城市划区调整）
 
 ---
