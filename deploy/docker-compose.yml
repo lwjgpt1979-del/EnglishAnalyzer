@@ -1,0 +1,61 @@
+# deploy/docker-compose.yml
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: enggramer_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: enggramer
+      POSTGRES_USER: enggramer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enggramer -d enggramer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: enggramer-backend:latest
+    container_name: enggramer_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - /opt/enggramer/.env
+    networks:
+      - internal
+      - web
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: enggramer_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - backend
+    networks:
+      - web
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
+    internal: true
+  web:
