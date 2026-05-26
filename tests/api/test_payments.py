@@ -454,3 +454,160 @@ async def test_create_order_invalid_order_type(client: AsyncClient, auth_headers
         headers=auth_headers,
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_pay_order_api(client: AsyncClient, auth_headers):
+    """POST /orders/{id}/pay 应调用微信 API 并返回 PayParamsOut。"""
+    create_resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "basic", "duration_months": 1, "order_type": "new"},
+        headers=auth_headers,
+    )
+    order_id = create_resp.json()["data"]["id"]
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"prepay_id": "wx_test_pay_12345"}
+
+    with patch("app.services.wechat_pay_service.httpx.AsyncClient") as MockHttpx:
+        mock_instance = AsyncMock()
+        MockHttpx.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+        MockHttpx.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.post = AsyncMock(return_value=mock_resp)
+
+        resp = await client.post(f"/api/v1/orders/{order_id}/pay", headers=auth_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["package"] == "prepay_id=wx_test_pay_12345"
+    assert body["data"]["signType"] == "RSA"
+    assert "timeStamp" in body["data"]
+
+
+@pytest.mark.asyncio
+async def test_pay_order_already_paid(client: AsyncClient, auth_headers):
+    """已付款订单不能重复发起支付，应返回 400。"""
+    import json as _json
+
+    create_resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "basic", "duration_months": 1, "order_type": "new"},
+        headers=auth_headers,
+    )
+    order_id = create_resp.json()["data"]["id"]
+    order_no = create_resp.json()["data"]["order_no"]
+
+    # Simulate webhook marking the order as paid
+    wx_callback = _json.dumps({
+        "event_type": "TRANSACTION.SUCCESS",
+        "resource": {
+            "mock_decrypted": {
+                "out_trade_no": order_no,
+                "transaction_id": "4200002test999",
+                "trade_state": "SUCCESS",
+            }
+        },
+    }).encode()
+    await client.post(
+        "/api/v1/webhooks/wx-pay",
+        content=wx_callback,
+        headers={
+            "content-type": "application/json",
+            "wechatpay-timestamp": "1716739200",
+            "wechatpay-nonce": "testnonce",
+            "wechatpay-signature": "dev",
+        },
+    )
+
+    # Try to pay again
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"prepay_id": "wx_xxx"}
+    with patch("app.services.wechat_pay_service.httpx.AsyncClient") as MockHttpx:
+        mock_instance = AsyncMock()
+        MockHttpx.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+        MockHttpx.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.post = AsyncMock(return_value=mock_resp)
+        resp = await client.post(f"/api/v1/orders/{order_id}/pay", headers=auth_headers)
+
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_wx_pay_webhook_activates_membership(client: AsyncClient, auth_headers):
+    """微信回调成功后会员应被激活。"""
+    import json as _json
+
+    # Create order
+    create_resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "pro", "duration_months": 1, "order_type": "new"},
+        headers=auth_headers,
+    )
+    order_no = create_resp.json()["data"]["order_no"]
+
+    # Simulate WeChat callback
+    wx_callback = _json.dumps({
+        "event_type": "TRANSACTION.SUCCESS",
+        "resource": {
+            "mock_decrypted": {
+                "out_trade_no": order_no,
+                "transaction_id": f"4200002wx{uuid.uuid4().hex[:8]}",
+                "trade_state": "SUCCESS",
+            }
+        },
+    }).encode()
+    cb_resp = await client.post(
+        "/api/v1/webhooks/wx-pay",
+        content=wx_callback,
+        headers={
+            "content-type": "application/json",
+            "wechatpay-timestamp": "1716739200",
+            "wechatpay-nonce": "testnonce",
+            "wechatpay-signature": "dev",
+        },
+    )
+    assert cb_resp.status_code == 200
+    assert cb_resp.json() == {"code": "SUCCESS"}
+
+    # Check membership
+    membership_resp = await client.get("/api/v1/memberships/me", headers=auth_headers)
+    assert membership_resp.json()["data"]["tier"] == "pro"
+
+
+@pytest.mark.asyncio
+async def test_wx_pay_webhook_idempotent(client: AsyncClient, auth_headers):
+    """重复回调同一 wx_transaction_id 应幂等（返回 SUCCESS，不报错）。"""
+    import json as _json
+
+    create_resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "basic", "duration_months": 1, "order_type": "new"},
+        headers=auth_headers,
+    )
+    order_no = create_resp.json()["data"]["order_no"]
+    wx_tid = f"4200002idem{uuid.uuid4().hex[:6]}"
+
+    payload = _json.dumps({
+        "event_type": "TRANSACTION.SUCCESS",
+        "resource": {
+            "mock_decrypted": {
+                "out_trade_no": order_no,
+                "transaction_id": wx_tid,
+                "trade_state": "SUCCESS",
+            }
+        },
+    }).encode()
+    headers_cb = {
+        "content-type": "application/json",
+        "wechatpay-timestamp": "1716739200",
+        "wechatpay-nonce": "testnonce",
+        "wechatpay-signature": "dev",
+    }
+
+    resp1 = await client.post("/api/v1/webhooks/wx-pay", content=payload, headers=headers_cb)
+    resp2 = await client.post("/api/v1/webhooks/wx-pay", content=payload, headers=headers_cb)
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert resp1.json() == {"code": "SUCCESS"}
+    assert resp2.json() == {"code": "SUCCESS"}
