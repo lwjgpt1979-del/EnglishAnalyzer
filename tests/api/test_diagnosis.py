@@ -1,9 +1,20 @@
+import uuid
+
+import pytest
+import pytest_asyncio
+
+from app.core.database import _async_session_factory
+from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
 from app.schemas.diagnosis import (
     DailyActivity,
     DiagnosisReport,
     ErrorTypeCount,
     KnowledgePointCount,
 )
+from app.services.auth_service import upsert_user
+from app.services.diagnosis_service import get_diagnosis_report
+
+# ── Schema 单元测试（同步）────────────────────────────────────────────────────
 
 
 def test_error_type_count_schema():
@@ -60,17 +71,12 @@ def test_diagnosis_report_schema_with_data():
     assert report.top_error_types[0].error_type == "语法错误"
 
 
-import uuid
-
-import pytest
-import pytest_asyncio
-
-from app.core.database import _async_session_factory
-from app.services.diagnosis_service import get_diagnosis_report
+# ── Service 集成测试（异步，需要真实 DB）──────────────────────────────────────
 
 
 @pytest_asyncio.fixture
 async def db_session():
+    # 使用私有工厂直接创建 session，避免 get_db 中的 RLS 注入影响 service 层单测。
     async with _async_session_factory() as session:
         yield session
         await session.rollback()
@@ -78,7 +84,6 @@ async def db_session():
 
 @pytest_asyncio.fixture
 async def test_student(db_session):
-    from app.services.auth_service import upsert_user
     user = await upsert_user(db_session, openid=f"diag_test_{uuid.uuid4().hex[:8]}")
     await db_session.flush()
     return user
@@ -103,8 +108,6 @@ async def test_get_diagnosis_report_empty(db_session, test_student):
 @pytest.mark.asyncio
 async def test_get_diagnosis_report_with_data(db_session, test_student):
     """有错题+分析时，聚合结果正确。"""
-    from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
-
     # 创建2道错题
     wq1 = WrongQuestion(
         id=uuid.uuid4(),
@@ -160,8 +163,6 @@ async def test_get_diagnosis_report_with_data(db_session, test_student):
 @pytest.mark.asyncio
 async def test_get_diagnosis_report_error_type_ordering(db_session, test_student):
     """error_types 按频次降序排列。"""
-    from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
-
     wq = WrongQuestion(
         id=uuid.uuid4(),
         student_id=test_student.id,
@@ -180,13 +181,14 @@ async def test_get_diagnosis_report_error_type_ordering(db_session, test_student
         diagnosis="d", suggestions="s1",
         confidence_score=0.8, tokens_used=100,
     )
-    # 分析2：语法错误（重复出现）
     wq2 = WrongQuestion(
         id=uuid.uuid4(), student_id=test_student.id,
         source_image_url="https://example.com/img2.jpg", is_mastered=False,
     )
     db_session.add(wq2)
     await db_session.flush()
+
+    # 分析2：语法错误（重复出现，使其排第一）
     a2 = AiAnalysis(
         id=uuid.uuid4(), wrong_question_id=wq2.id, student_id=test_student.id,
         llm_provider="claude",

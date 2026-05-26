@@ -95,7 +95,7 @@ async def get_diagnosis_report(
 
     daily_counts: dict[str, int] = {}
     for wq in wqs:
-        wq_date = wq.created_at.date()
+        wq_date = wq.created_at.astimezone(timezone.utc).date()
         if wq_date >= start_date:
             key = wq_date.isoformat()
             daily_counts[key] = daily_counts.get(key, 0) + 1
