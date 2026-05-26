@@ -205,3 +205,78 @@ async def test_get_diagnosis_report_error_type_ordering(db_session, test_student
     # 语法错误出现2次，应排第一
     assert report.top_error_types[0].error_type == "语法错误"
     assert report.top_error_types[0].count == 2
+
+
+# ── API 集成测试 ──────────────────────────────────────────────────────────────
+
+import unittest.mock
+from unittest.mock import AsyncMock, patch
+
+from httpx import ASGITransport, AsyncClient
+
+from app.main import app
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client: AsyncClient):
+    with patch(
+        "app.services.auth_service.wechat_code2session", new_callable=AsyncMock
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"diag_api_{uuid.uuid4().hex[:8]}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    token = resp.json()["data"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_get_diagnosis_report_api_requires_auth(client: AsyncClient):
+    """未登录返回 401。"""
+    resp = await client.get("/api/v1/diagnosis/report")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_diagnosis_report_api_empty(client: AsyncClient, auth_headers):
+    """新用户无数据时，返回全零报告 + 30天活跃度数组。"""
+    resp = await client.get("/api/v1/diagnosis/report", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    data = body["data"]
+    assert data["total_questions"] == 0
+    assert data["total_analyzed"] == 0
+    assert data["mastered_count"] == 0
+    assert data["mastery_rate"] == 0.0
+    assert data["top_error_types"] == []
+    assert data["top_weak_knowledge_points"] == []
+    assert data["question_type_distribution"] == {}
+    assert len(data["recent_daily_activity"]) == 30
+    assert data["top_suggestions"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_diagnosis_report_api_structure(client: AsyncClient, auth_headers):
+    """响应结构正确：所有字段存在，类型正确。"""
+    resp = await client.get("/api/v1/diagnosis/report", headers=auth_headers)
+    data = resp.json()["data"]
+    # 所有必需字段存在
+    assert "total_questions" in data
+    assert "total_analyzed" in data
+    assert "mastered_count" in data
+    assert "mastery_rate" in data
+    assert "top_error_types" in data
+    assert "top_weak_knowledge_points" in data
+    assert "question_type_distribution" in data
+    assert "difficulty_distribution" in data
+    assert "recent_daily_activity" in data
+    assert "top_suggestions" in data
+    # recent_daily_activity 每条有 date 和 count
+    assert all("date" in d and "count" in d for d in data["recent_daily_activity"])
