@@ -1,6 +1,11 @@
+import uuid
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from app.core.config import settings
+
+# ── Config 单元测试 ───────────────────────────────────────────────────────────
 
 
 def test_cos_config_fields_exist():
@@ -17,8 +22,7 @@ def test_cos_dev_mode_default():
     assert settings.cos_secret_key.startswith("placeholder")
 
 
-import uuid
-from unittest.mock import MagicMock, patch
+# ── Upload Service 单元测试 ───────────────────────────────────────────────────
 
 
 def test_generate_presign_dev_mode_structure():
@@ -39,7 +43,7 @@ def test_generate_presign_dev_mode_structure():
 
 def test_generate_presign_key_format():
     """key 格式为 uploads/{user_id}/{YYYYMMDD}/{8chars}.{ext}。"""
-    from app.services.upload_service import generate_presign
+    from app.services.upload_service import ALLOWED_CONTENT_TYPES, generate_presign
 
     user_id = uuid.uuid4()
     result = generate_presign(user_id=user_id, content_type="image/png")
@@ -48,10 +52,11 @@ def test_generate_presign_key_format():
     parts = key.split("/")
     assert parts[0] == "uploads"
     assert parts[1] == str(user_id)
-    assert len(parts[2]) == 8 and parts[2].isdigit()   # YYYYMMDD
+    assert len(parts[2]) == 8 and parts[2].isdigit()  # YYYYMMDD
     filename = parts[3]
-    assert filename.endswith(".png")
-    assert len(filename) == 12   # 8 chars + "." + 3 chars
+    ext = ALLOWED_CONTENT_TYPES["image/png"]
+    assert filename.endswith(f".{ext}")
+    assert len(filename) == 8 + 1 + len(ext)  # 8-char hex + "." + extension
 
 
 def test_generate_presign_all_content_types():
@@ -68,7 +73,6 @@ def test_generate_presign_dev_mode_mock_urls():
     from app.services.upload_service import generate_presign
 
     result = generate_presign(user_id=uuid.uuid4(), content_type="image/jpeg")
-    # dev 模式 URL 包含 mock 或 dev 标识
     assert "mock" in result["presign_url"] or "dev" in result["presign_url"]
 
 
