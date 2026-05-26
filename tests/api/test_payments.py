@@ -194,3 +194,83 @@ async def test_mark_order_paid(db_session, test_user):
     assert updated.status == "paid"
     assert updated.wx_transaction_id == "4200002test"
     assert updated.paid_at is not None
+
+
+# ── Membership Service Tests ───────────────────────────────────────────────────
+
+from app.services.membership_service import activate_membership, get_active_membership
+
+
+@pytest.mark.asyncio
+async def test_get_active_membership_none_when_no_membership(db_session, test_user):
+    result = await get_active_membership(db_session, user_id=test_user.id)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_activate_new_membership(db_session, test_user):
+    order = await create_order(
+        db_session,
+        payer_id=test_user.id,
+        beneficiary_id=test_user.id,
+        tier="basic",
+        duration_months=1,
+        order_type="new",
+    )
+    membership = await activate_membership(db_session, order=order)
+    assert membership.tier == "basic"
+    assert membership.is_active is True
+    assert membership.user_id == test_user.id
+    assert membership.order_id == order.id
+    # expires_at should be roughly 1 month from now
+    delta = membership.expires_at - datetime.now(timezone.utc)
+    assert 25 <= delta.days <= 35  # 1 month ≈ 28-31 days
+
+
+@pytest.mark.asyncio
+async def test_renew_membership_extends_expiry(db_session, test_user):
+    # First activation
+    order1 = await create_order(
+        db_session, payer_id=test_user.id, beneficiary_id=test_user.id,
+        tier="basic", duration_months=1, order_type="new",
+    )
+    m1 = await activate_membership(db_session, order=order1)
+    original_expires = m1.expires_at
+
+    # Renew
+    order2 = await create_order(
+        db_session, payer_id=test_user.id, beneficiary_id=test_user.id,
+        tier="basic", duration_months=3, order_type="renew",
+    )
+    m2 = await activate_membership(db_session, order=order2)
+
+    # Same membership record (in-place update)
+    assert m2.id == m1.id
+    # expires_at extended by ~3 months
+    delta = m2.expires_at - original_expires
+    assert 85 <= delta.days <= 95  # 3 months ≈ 88-92 days
+
+
+@pytest.mark.asyncio
+async def test_upgrade_membership_deactivates_old(db_session, test_user):
+    # Start with basic
+    order1 = await create_order(
+        db_session, payer_id=test_user.id, beneficiary_id=test_user.id,
+        tier="basic", duration_months=1, order_type="new",
+    )
+    m1 = await activate_membership(db_session, order=order1)
+
+    # Upgrade to pro
+    order2 = await create_order(
+        db_session, payer_id=test_user.id, beneficiary_id=test_user.id,
+        tier="pro", duration_months=1, order_type="upgrade",
+    )
+    m2 = await activate_membership(db_session, order=order2)
+
+    # Old membership deactivated
+    await db_session.refresh(m1)
+    assert m1.is_active is False
+    # New membership is pro
+    assert m2.tier == "pro"
+    assert m2.is_active is True
+    assert m2.id != m1.id
