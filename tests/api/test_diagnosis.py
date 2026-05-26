@@ -1,9 +1,12 @@
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 
 from app.core.database import _async_session_factory
+from app.main import app
 from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
 from app.schemas.diagnosis import (
     DailyActivity,
@@ -209,13 +212,6 @@ async def test_get_diagnosis_report_error_type_ordering(db_session, test_student
 
 # ── API 集成测试 ──────────────────────────────────────────────────────────────
 
-import unittest.mock
-from unittest.mock import AsyncMock, patch
-
-from httpx import ASGITransport, AsyncClient
-
-from app.main import app
-
 
 @pytest_asyncio.fixture
 async def client():
@@ -232,6 +228,7 @@ async def auth_headers(client: AsyncClient):
     ) as mock_wx:
         mock_wx.return_value = {"openid": f"diag_api_{uuid.uuid4().hex[:8]}"}
         resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    assert resp.status_code == 200, f"wx-login failed: {resp.text}"
     token = resp.json()["data"]["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
