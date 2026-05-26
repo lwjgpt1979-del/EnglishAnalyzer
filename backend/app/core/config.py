@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # dev 模式跳过微信签名验证（生产环境必须设为 false）
     wechat_pay_skip_sig_verify: bool = True
 
+    # 腾讯云 COS 图片存储
+    cos_secret_id: str = "placeholder_secret_id"
+    cos_secret_key: str = "placeholder_secret_key"
+    cos_bucket: str = "enggramer-dev-1234567890"
+    cos_region: str = "ap-guangzhou"
+    cos_base_url: str = "https://enggramer-dev-1234567890.cos.ap-guangzhou.myqcloud.com"
+
     # 应用
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
