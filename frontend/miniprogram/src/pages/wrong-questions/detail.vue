@@ -72,7 +72,10 @@ import {
   listAnalyses,
   markMastered,
 } from '@/api/wrongQuestions'
+import { useAuthStore } from '@/stores/auth'
 import type { AiAnalysisOut, WrongQuestionOut } from '@/types/api'
+
+const auth = useAuthStore()
 
 // uni-app 小程序获取路由参数方式
 const pages = getCurrentPages()
@@ -84,6 +87,9 @@ const latestAnalysis = ref<AiAnalysisOut | null>(null)
 const analyzing = ref(false)
 
 onMounted(async () => {
+  if (!auth.isLoggedIn()) {
+    await auth.login()
+  }
   try {
     wq.value = await getWrongQuestion(wqId)
     const analyses = await listAnalyses(wqId)

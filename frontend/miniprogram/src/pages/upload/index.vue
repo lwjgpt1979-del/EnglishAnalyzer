@@ -35,8 +35,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { useUpload } from '@/composables/useUpload'
 
+const auth = useAuthStore()
 const questionTypes = ['单选', '完型', '阅读', '作文', '其他']
 const difficulties = ['1', '2', '3', '4', '5']
 
@@ -67,6 +69,10 @@ const uploadBtnText = computed(() => {
 })
 
 async function onUpload() {
+  if (!auth.isLoggedIn()) {
+    await auth.login()
+    return
+  }
   const wq = await uploadAndCreate({
     questionType: selectedType.value || undefined,
     difficulty: selectedDiff.value,
