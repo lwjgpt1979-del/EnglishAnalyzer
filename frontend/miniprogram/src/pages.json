@@ -1,0 +1,64 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": { "navigationBarTitleText": "engGramer" }
+    },
+    {
+      "path": "pages/upload/index",
+      "style": { "navigationBarTitleText": "上传错题" }
+    },
+    {
+      "path": "pages/wrong-questions/list",
+      "style": { "navigationBarTitleText": "我的错题" }
+    },
+    {
+      "path": "pages/wrong-questions/detail",
+      "style": { "navigationBarTitleText": "错题详情" }
+    },
+    {
+      "path": "pages/diagnosis/index",
+      "style": { "navigationBarTitleText": "学情报告" }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": { "navigationBarTitleText": "我的" }
+    }
+  ],
+  "tabBar": {
+    "color": "#999",
+    "selectedColor": "#1677ff",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页",
+        "iconPath": "static/tab-home.png",
+        "selectedIconPath": "static/tab-home-active.png"
+      },
+      {
+        "pagePath": "pages/wrong-questions/list",
+        "text": "错题",
+        "iconPath": "static/tab-wrong.png",
+        "selectedIconPath": "static/tab-wrong-active.png"
+      },
+      {
+        "pagePath": "pages/diagnosis/index",
+        "text": "报告",
+        "iconPath": "static/tab-report.png",
+        "selectedIconPath": "static/tab-report-active.png"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的",
+        "iconPath": "static/tab-profile.png",
+        "selectedIconPath": "static/tab-profile-active.png"
+      }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "engGramer",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f5f5f5"
+  }
+}
