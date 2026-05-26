@@ -25,15 +25,19 @@ export function request<T>(url: string, options: RequestOptions = {}): Promise<T
       data: options.data,
       header,
       success(res) {
-        const body = res.data as { code: number; message: string; data: T }
         if (res.statusCode === 401) {
           uni.removeStorageSync('access_token')
           uni.reLaunch({ url: '/pages/index/index' })
           reject(new Error('未登录或登录已过期'))
           return
         }
+        if (typeof res.data !== 'object' || res.data === null) {
+          reject(new Error(`无法解析响应 (HTTP ${res.statusCode})`))
+          return
+        }
+        const body = res.data as { code: number; message: string; data: T }
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          reject(new Error(body?.message || `HTTP ${res.statusCode}`))
+          reject(new Error(body.message || `HTTP ${res.statusCode}`))
           return
         }
         if (body.code !== 200) {

@@ -9,15 +9,20 @@ export interface BaseResponse<T> {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
-export interface LoginData {
+/** 对应后端 TokenResponse — POST /api/v1/auth/wx-login 返回 */
+export interface TokenResponse {
   access_token: string
+  refresh_token: string
   token_type: string
-  user: {
-    id: string
-    openid: string
-    nickname: string | null
-    avatar_url: string | null
-  }
+}
+
+/** 对应后端 UserProfileOut — GET /api/v1/users/me 返回 */
+export interface UserProfileOut {
+  id: string
+  role: string
+  nickname: string | null
+  avatar_url: string | null
+  is_active: boolean
 }
 
 // ── Upload ───────────────────────────────────────────────────────────────────
