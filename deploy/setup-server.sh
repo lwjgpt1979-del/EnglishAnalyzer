@@ -33,7 +33,7 @@ certbot certonly --standalone \
   -d api.goodgrammar.top
 
 echo "=== [6/6] Schedule certificate auto-renewal ==="
-(crontab -l 2>/dev/null; echo "0 3 * * 1 certbot renew --quiet && docker exec enggramer_nginx nginx -s reload") \
+(crontab -l 2>/dev/null; echo "0 3 * * 1 docker stop enggramer_nginx && certbot renew --standalone --quiet && docker start enggramer_nginx") \
   | crontab -
 
 echo ""
