@@ -27,6 +27,7 @@ PRICE_TABLE: dict[str, dict[int, int]] = {
 
 ALLOWED_TIERS = frozenset(PRICE_TABLE.keys())
 ALLOWED_DURATIONS = frozenset({1, 3, 12})
+ALLOWED_ORDER_TYPES = frozenset({"new", "renew", "upgrade"})
 
 
 def get_price(tier: str, duration_months: int) -> int:

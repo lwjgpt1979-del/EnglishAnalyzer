@@ -36,7 +36,7 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         raise AppError(
             code=400, message=f"无效时长：{body.duration_months}，可选：1/3/12"
         )
-    if body.order_type not in ("new", "renew", "upgrade"):
+    if body.order_type not in order_service.ALLOWED_ORDER_TYPES:
         raise AppError(code=400, message=f"无效订单类型：{body.order_type}")
 
     order = await order_service.create_order(

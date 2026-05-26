@@ -444,3 +444,13 @@ async def test_get_order_api(client: AsyncClient, auth_headers):
 async def test_get_order_not_found(client: AsyncClient, auth_headers):
     resp = await client.get(f"/api/v1/orders/{uuid.uuid4()}", headers=auth_headers)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_order_invalid_order_type(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "basic", "duration_months": 1, "order_type": "gift"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
