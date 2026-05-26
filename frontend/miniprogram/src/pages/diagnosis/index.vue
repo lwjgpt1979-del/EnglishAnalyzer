@@ -95,7 +95,7 @@ import type { DiagnosisReport } from '@/types/api'
 
 const auth = useAuthStore()
 const report = ref<DiagnosisReport | null>(null)
-const loading = ref(false)
+const loading = ref(true)  // true until first fetch completes, prevents "暂无数据" flash
 
 const maxErrorCount = computed(() => {
   if (!report.value || report.value.top_error_types.length === 0) return 1
