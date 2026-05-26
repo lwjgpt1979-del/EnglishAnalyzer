@@ -86,8 +86,15 @@ async function loadItems() {
 
 async function loadMore() {
   if (loading.value || !hasMore.value) return
-  skip.value += LIMIT
-  await loadItems()
+  // Advance skip only after confirming success inside loadItems
+  const nextSkip = skip.value + LIMIT
+  skip.value = nextSkip
+  try {
+    await loadItems()
+  } catch {
+    // Roll back skip on failure so the same page can be retried
+    skip.value = nextSkip - LIMIT
+  }
 }
 
 function goDetail(id: string) {
