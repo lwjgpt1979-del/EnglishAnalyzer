@@ -21,8 +21,8 @@ _JSAPI_URL = "https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi"
 
 
 def _is_dev_mode() -> bool:
-    """Dev mode: either the skip-verify flag is set, or the key is a placeholder."""
-    return settings.wechat_pay_skip_sig_verify or settings.wechat_pay_private_key_pem.startswith("placeholder")
+    """True when the private key is a placeholder — real RSA signing is not possible."""
+    return settings.wechat_pay_private_key_pem.startswith("placeholder")
 
 
 def _sign_rsa(message: str) -> str:
@@ -82,7 +82,7 @@ async def get_prepay_id(order: Order, openid: str) -> str:
                     "Accept": "application/json",
                 },
             )
-        data = resp.json()
+            data = resp.json()
     except Exception as exc:
         raise AppError(code=2003, message=f"微信支付服务请求失败：{exc}") from exc
 
