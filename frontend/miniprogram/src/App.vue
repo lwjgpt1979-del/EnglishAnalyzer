@@ -1,13 +1,14 @@
+<!-- src/App.vue -->
 <script setup lang="ts">
-import { onLaunch, onShow, onHide } from "@dcloudio/uni-app";
+import { onLaunch } from '@dcloudio/uni-app'
+
 onLaunch(() => {
-  console.log("App Launch");
-});
-onShow(() => {
-  console.log("App Show");
-});
-onHide(() => {
-  console.log("App Hide");
-});
+  // Token is restored from storage by the Pinia auth store on init.
+  // We do NOT force-login on launch — let users explore the home page first.
+  console.log('[App] launched')
+})
 </script>
-<style></style>
+
+<template>
+  <layout />
+</template>
