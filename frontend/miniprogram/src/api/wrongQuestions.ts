@@ -9,7 +9,7 @@ import type {
 export function createWrongQuestion(data: WrongQuestionCreate): Promise<WrongQuestionOut> {
   return request<WrongQuestionOut>('/api/v1/wrong-questions/', {
     method: 'POST',
-    data: data as unknown as Record<string, unknown>,
+    data,
   })
 }
 

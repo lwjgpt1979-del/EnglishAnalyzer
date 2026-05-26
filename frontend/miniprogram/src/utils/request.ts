@@ -4,7 +4,7 @@ const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localh
 
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-  data?: Record<string, unknown>
+  data?: unknown
   header?: Record<string, string>
 }
 
