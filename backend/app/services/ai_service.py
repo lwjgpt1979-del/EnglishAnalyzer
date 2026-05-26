@@ -1,6 +1,6 @@
-"""AI 分析服务：调用 Anthropic Claude API 生成英语错题诊断报告。
+"""AI 分析服务：调用 DeepSeek API（OpenAI 兼容协议）生成英语错题诊断报告。
 
-- 使用 AsyncAnthropic（异步 client）。
+- 使用 AsyncOpenAI client，base_url 指向 https://api.deepseek.com。
 - LLM 返回 JSON 字符串，解析后写入 ai_analyses 表。
 - 调用方需 await db.commit() 才真正落库。
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 
-import anthropic
+from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -44,10 +44,10 @@ async def analyze_wrong_question(
     wq: WrongQuestion,
     student_id: uuid.UUID,
 ) -> AiAnalysis:
-    """调用 Claude API 分析错题，写入 ai_analyses 表，返回 ORM 对象（未 commit）。
+    """调用 DeepSeek API 分析错题，写入 ai_analyses 表，返回 ORM 对象（未 commit）。
 
     异常处理：
-    - Anthropic API 错误 → AppError(502, "AI服务暂时不可用，请稍后重试")
+    - DeepSeek API 错误 → AppError(502, "AI服务暂时不可用，请稍后重试")
     - JSON 解析失败   → AppError(500, "AI分析返回格式异常")
     """
     prompt = _USER_PROMPT_TEMPLATE.format(
@@ -58,17 +58,23 @@ async def analyze_wrong_question(
     )
 
     try:
-        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        response = await client.messages.create(
-            model="claude-3-5-haiku-20241022",
+        client = AsyncOpenAI(
+            api_key=settings.deepseek_api_key,
+            base_url="https://api.deepseek.com",
+        )
+        response = await client.chat.completions.create(
+            model="deepseek-chat",
             max_tokens=1024,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
         )
     except Exception as exc:
         raise AppError(code=502, message=f"AI服务暂时不可用，请稍后重试（{exc}）") from exc
 
-    raw_text = response.content[0].text.strip()
+    raw_text = response.choices[0].message.content or ""
+    raw_text = raw_text.strip()
 
     try:
         data = json.loads(raw_text)
@@ -79,13 +85,17 @@ async def analyze_wrong_question(
         id=uuid.uuid4(),
         wrong_question_id=wq.id,
         student_id=student_id,
-        llm_provider="claude",
+        llm_provider="deepseek",
         error_types=data.get("error_types", []),
         knowledge_points=data.get("knowledge_points", []),
         diagnosis=data["diagnosis"],
         suggestions=data["suggestions"],
         confidence_score=data.get("confidence_score"),
-        tokens_used=response.usage.input_tokens + response.usage.output_tokens,
+        tokens_used=(
+            response.usage.prompt_tokens + response.usage.completion_tokens
+            if response.usage
+            else None
+        ),
     )
     db.add(analysis)
     await db.flush()

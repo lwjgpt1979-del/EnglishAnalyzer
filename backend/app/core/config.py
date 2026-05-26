@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 120   # 2 小时
     refresh_token_expire_days: int = 30
 
-    # AI 分析（Anthropic Claude）
-    anthropic_api_key: str = "sk-ant-placeholder-for-dev"
+    # AI 分析（DeepSeek，OpenAI 兼容协议）
+    deepseek_api_key: str = "sk-placeholder-for-dev"
 
     # 微信支付 v3
     wechat_pay_mch_id: str = "placeholder_mch_id"

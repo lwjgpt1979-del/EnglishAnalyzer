@@ -116,7 +116,7 @@ async def analyze_wrong_question(
     if wq is None:
         raise AppError(code=404, message="错题不存在或无权访问")
 
-    from app.services import ai_service  # 延迟导入，避免启动时加载 anthropic
+    from app.services import ai_service  # 延迟导入，避免启动时加载 openai
 
     analysis = await ai_service.analyze_wrong_question(db, wq=wq, student_id=current_user.id)
     await db.commit()
