@@ -56,6 +56,7 @@ class WrongQuestion(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+    ocr_status = mapped_column(ocr_status_enum, nullable=True)
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),
         nullable=False,

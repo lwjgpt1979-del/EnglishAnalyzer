@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     cos_region: str = "ap-guangzhou"
     cos_base_url: str = "https://enggramer-dev-1234567890.cos.ap-guangzhou.myqcloud.com"
 
+    # 阿里云 OCR（印刷体识别）
+    # 在 https://ram.console.aliyun.com 创建 RAM 子账号并授予 OCR 权限
+    aliyun_ocr_access_key_id: str = "placeholder_aliyun_ak_id"
+    aliyun_ocr_access_key_secret: str = "placeholder_aliyun_ak_secret"
+
+    # 腾讯云 OCR（手写体识别）
+    # 使用与 COS 相同的子账号即可（需开通 OCR 服务权限）
+    tencent_ocr_secret_id: str = "placeholder_tencent_ocr_sid"
+    tencent_ocr_secret_key: str = "placeholder_tencent_ocr_skey"
+
     # 应用
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
