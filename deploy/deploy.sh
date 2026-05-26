@@ -21,7 +21,8 @@ echo "=== [3/5] Ensure postgres is running ==="
 cd "$REPO_DIR/deploy"
 export POSTGRES_PASSWORD
 POSTGRES_PASSWORD=$(grep -E '^POSTGRES_PASSWORD=' /opt/enggramer/.env | cut -d= -f2-)
-docker compose up -d postgres
+[ -n "$POSTGRES_PASSWORD" ] || { echo "ERROR: POSTGRES_PASSWORD not found in /opt/enggramer/.env"; exit 1; }
+docker compose -p deploy up -d postgres
 echo "Waiting for postgres to be healthy..."
 timeout 60 bash -c 'until docker exec enggramer_postgres pg_isready -U enggramer -d enggramer; do sleep 2; done'
 
@@ -33,7 +34,7 @@ docker run --rm \
   alembic upgrade head
 
 echo "=== [5/5] Restart all services ==="
-docker compose up -d --remove-orphans
+docker compose -p deploy up -d --remove-orphans
 
 echo ""
 echo "Verifying health..."
@@ -41,6 +42,6 @@ sleep 5
 if curl -sf https://api.goodgrammar.top/health > /dev/null; then
   echo "Deployment successful!"
 else
-  echo "Health check failed. Check logs: docker compose logs backend"
+  echo "Health check failed. Check logs: docker compose -p deploy logs backend"
   exit 1
 fi
