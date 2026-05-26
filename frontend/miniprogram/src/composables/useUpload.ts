@@ -32,14 +32,19 @@ export function useUpload() {
     errorMsg.value = ''
 
     try {
-      // Step 1: 选图
+      // Step 1: 选图（用户取消时静默重置，不视为错误）
       const tempFilePath = await new Promise<string>((resolve, reject) => {
         uni.chooseImage({
           count: 1,
           sizeType: ['compressed'],
           sourceType: ['album', 'camera'],
           success: (res) => resolve(res.tempFilePaths[0]),
-          fail: (err) => reject(new Error(err.errMsg || '选图失败')),
+          fail: (err) => {
+            const msg = err.errMsg || ''
+            const cancelled = new Error(msg || '选图取消') as Error & { isCancelled?: boolean }
+            cancelled.isCancelled = msg.includes('cancel')
+            reject(cancelled)
+          },
         })
       })
 
@@ -60,7 +65,13 @@ export function useUpload() {
       const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
         wx.getFileSystemManager().readFile({
           filePath: tempFilePath,
-          success: (res) => resolve(res.data as ArrayBuffer),
+          success: (res) => {
+            if (!(res.data instanceof ArrayBuffer)) {
+              reject(new Error('读取文件返回非 ArrayBuffer，请重试'))
+              return
+            }
+            resolve(res.data)
+          },
           fail: (err) => reject(new Error(err.errMsg || '读取文件失败')),
         })
       })
@@ -94,6 +105,11 @@ export function useUpload() {
       progress.value = 'done'
       return wq
     } catch (e) {
+      // 用户主动取消选图：静默重置，不显示错误
+      if ((e as { isCancelled?: boolean }).isCancelled) {
+        progress.value = 'idle'
+        return null
+      }
       progress.value = 'error'
       errorMsg.value = (e as Error).message || '上传失败'
       return null
