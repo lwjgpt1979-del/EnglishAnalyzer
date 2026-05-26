@@ -45,8 +45,8 @@ class OrderOut(BaseModel):
     duration_months: int
     amount_fen: int = Field(..., description="实收金额（分）")
     status: str = Field(..., description="pending | paid | refunded | partial_refunded")
-    wx_transaction_id: str | None
-    paid_at: datetime | None
+    wx_transaction_id: str | None = None
+    paid_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
