@@ -348,3 +348,99 @@ async def test_get_prepay_id_calls_wx_api(db_session, test_user):
         result = await get_prepay_id(order, openid="test_openid")
 
     assert result == "wx_test_prepay_id_9999"
+
+
+# ── API Endpoint Tests ─────────────────────────────────────────────────────────
+
+from httpx import AsyncClient, ASGITransport
+from app.main import app
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client: AsyncClient):
+    with patch(
+        "app.services.auth_service.wechat_code2session", new_callable=AsyncMock
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"pay_api_{uuid.uuid4().hex[:8]}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    token = resp.json()["data"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_get_membership_returns_free_when_none(client: AsyncClient, auth_headers):
+    resp = await client.get("/api/v1/memberships/me", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["tier"] == "free"
+    assert body["data"]["expires_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_membership_requires_auth(client: AsyncClient):
+    resp = await client.get("/api/v1/memberships/me")
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_order_api(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "basic", "duration_months": 1, "order_type": "new"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["tier"] == "basic"
+    assert body["data"]["amount_fen"] == 2900
+    assert body["data"]["status"] == "pending"
+    assert body["data"]["order_no"].startswith("ORD-")
+
+
+@pytest.mark.asyncio
+async def test_create_order_invalid_tier(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "free", "duration_months": 1, "order_type": "new"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_order_invalid_duration(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "basic", "duration_months": 6, "order_type": "new"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_get_order_api(client: AsyncClient, auth_headers):
+    create_resp = await client.post(
+        "/api/v1/orders/",
+        json={"tier": "pro", "duration_months": 3, "order_type": "new"},
+        headers=auth_headers,
+    )
+    order_id = create_resp.json()["data"]["id"]
+    resp = await client.get(f"/api/v1/orders/{order_id}", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["data"]["id"] == order_id
+
+
+@pytest.mark.asyncio
+async def test_get_order_not_found(client: AsyncClient, auth_headers):
+    resp = await client.get(f"/api/v1/orders/{uuid.uuid4()}", headers=auth_headers)
+    assert resp.status_code == 404
