@@ -274,3 +274,77 @@ async def test_upgrade_membership_deactivates_old(db_session, test_user):
     assert m2.tier == "pro"
     assert m2.is_active is True
     assert m2.id != m1.id
+
+
+# ── WeChat Pay Service Tests ───────────────────────────────────────────────────
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.services.wechat_pay_service import (
+    build_pay_params,
+    verify_and_decrypt_callback,
+)
+
+
+def test_build_pay_params_returns_all_fields():
+    """build_pay_params 应返回 wx.requestPayment 所需的 5 个字段。"""
+    params = build_pay_params("wx_test_prepay_id_12345")
+    assert "timeStamp" in params
+    assert "nonceStr" in params
+    assert params["package"] == "prepay_id=wx_test_prepay_id_12345"
+    assert params["signType"] == "RSA"
+    assert "paySign" in params
+    # In dev mode (placeholder key), paySign is the dev placeholder
+    assert len(params["paySign"]) > 0
+
+
+def test_verify_and_decrypt_callback_dev_mode():
+    """dev 模式：resource 含 mock_decrypted 时直接返回，无需真实解密。"""
+    import json
+    body = json.dumps({
+        "event_type": "TRANSACTION.SUCCESS",
+        "resource": {
+            "mock_decrypted": {
+                "out_trade_no": "ORD-20260526-ABCD1234",
+                "transaction_id": "4200002test",
+                "trade_state": "SUCCESS",
+            }
+        },
+    }).encode()
+    headers = {
+        "wechatpay-timestamp": "1716739200",
+        "wechatpay-nonce": "abc123",
+        "wechatpay-signature": "dev_sig",
+    }
+    result = verify_and_decrypt_callback(headers, body)
+    assert result["out_trade_no"] == "ORD-20260526-ABCD1234"
+    assert result["trade_state"] == "SUCCESS"
+
+
+@pytest.mark.asyncio
+async def test_get_prepay_id_calls_wx_api(db_session, test_user):
+    """get_prepay_id 应调用微信 API 并返回 prepay_id 字符串。"""
+    from app.services.wechat_pay_service import get_prepay_id
+    from app.services.order_service import create_order
+
+    order = await create_order(
+        db_session,
+        payer_id=test_user.id,
+        beneficiary_id=test_user.id,
+        tier="basic",
+        duration_months=1,
+        order_type="new",
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"prepay_id": "wx_test_prepay_id_9999"}
+
+    with patch("app.services.wechat_pay_service.httpx.AsyncClient") as MockClient:
+        mock_instance = AsyncMock()
+        MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_instance)
+        MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_instance.post = AsyncMock(return_value=mock_resp)
+
+        result = await get_prepay_id(order, openid="test_openid")
+
+    assert result == "wx_test_prepay_id_9999"
