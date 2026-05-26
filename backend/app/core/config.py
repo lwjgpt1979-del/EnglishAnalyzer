@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     # AI 分析（Anthropic Claude）
     anthropic_api_key: str = "sk-ant-placeholder-for-dev"
 
+    # 微信支付 v3
+    wechat_pay_mch_id: str = "placeholder_mch_id"
+    wechat_pay_api_key_v3: str = "placeholder32charsapikey12345678"  # 32 chars
+    wechat_pay_cert_serial: str = "placeholder_cert_serial"
+    wechat_pay_private_key_pem: str = "placeholder_private_key_pem"
+    wechat_pay_notify_url: str = "https://api.example.com/api/v1/webhooks/wx-pay"
+    # dev 模式跳过微信签名验证（生产环境必须设为 false）
+    wechat_pay_skip_sig_verify: bool = True
+
     # 应用
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
