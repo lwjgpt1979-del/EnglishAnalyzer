@@ -49,13 +49,29 @@ _USER_PROMPT_TEMPLATE = """以下是从英语试卷图片中识别到的文字�
 若无法判断某字段，设为 null。"""
 
 
+def _is_deepseek_dev_mode() -> bool:
+    return settings.deepseek_api_key.startswith("sk-placeholder")
+
+
 async def parse_ocr_result(ocr_result: OcrResult) -> ParsedQuestion:
     """将 OCR 原始文字送入 DeepSeek，返回结构化 ParsedQuestion。
+
+    Dev 模式（deepseek_api_key 以 'sk-placeholder' 开头）跳过真实 API，
+    直接从 OCR mock 文字返回固定解析结果，让整条链路可在无账号时完整测试。
 
     异常处理：
     - API 错误 → AppError(502, "OCR解析服务暂时不可用")
     - JSON 解析失败 → AppError(500, "OCR解析返回格式异常")
     """
+    if _is_deepseek_dev_mode():
+        # Dev mock：直接返回从 OCR mock 文字解析的固定结果
+        return ParsedQuestion(
+            question_text=ocr_result.printed_text or None,
+            student_answer=ocr_result.handwritten_text or None,
+            correct_answer=None,
+            question_type="单选",
+        )
+
     prompt = _USER_PROMPT_TEMPLATE.format(
         printed_text=ocr_result.printed_text or "(无印刷体识别结果)",
         handwritten_text=ocr_result.handwritten_text or "(无手写体识别结果)",
