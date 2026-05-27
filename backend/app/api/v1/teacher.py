@@ -152,5 +152,7 @@ async def get_comments(
     未授权则返回空列表（不报错，前端容错更友好）。
     """
     await get_rls_db(db, str(current_user.id))
-    comments = await teacher_service.get_comments_for_wq(db, wq_id=wq_id)
+    comments = await teacher_service.get_comments_for_wq_authorized(
+        db, wq_id=wq_id, caller_id=current_user.id
+    )
     return make_ok([TeacherCommentOut.model_validate(c) for c in comments])

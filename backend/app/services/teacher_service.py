@@ -223,3 +223,41 @@ async def get_comments_for_wq(
         .order_by(TeacherComment.created_at.asc())
     )
     return list(result.scalars().all())
+
+
+async def get_comments_for_wq_authorized(
+    db: AsyncSession,
+    *,
+    wq_id: uuid.UUID,
+    caller_id: uuid.UUID,
+) -> list[TeacherComment]:
+    """查询某道错题所有批注（按创建时间升序）。
+
+    仅允许：该错题所属学生 本人，或 与该学生有活跃绑定关系的教师。
+    其他用户返回空列表（不报错，前端容错更友好）。
+    """
+    # 查 WQ 的归属学生
+    wq_result = await db.execute(
+        select(WrongQuestion).where(WrongQuestion.id == wq_id)
+    )
+    wq = wq_result.scalar_one_or_none()
+    if wq is None:
+        return []
+
+    # 学生本人可读
+    if wq.student_id == caller_id:
+        return await get_comments_for_wq(db, wq_id=wq_id)
+
+    # 绑定该学生的老师可读
+    binding = await db.execute(
+        select(TeacherStudent).where(
+            TeacherStudent.teacher_id == caller_id,
+            TeacherStudent.student_id == wq.student_id,
+            TeacherStudent.status == "active",
+        )
+    )
+    if binding.scalar_one_or_none() is not None:
+        return await get_comments_for_wq(db, wq_id=wq_id)
+
+    # 其他用户返回空列表
+    return []
