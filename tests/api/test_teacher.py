@@ -285,3 +285,160 @@ async def test_get_student_wrong_questions(db_session, teacher_user, student_use
             db_session, teacher_id=other_teacher.id, student_id=student_user.id
         )
     assert exc_info.value.code == 403
+
+# ── API 集成测试 ──────────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def student_headers(client: AsyncClient):
+    with patch(
+        "app.services.auth_service.wechat_code2session", new_callable=AsyncMock
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"teacher_api_stu_{uuid.uuid4().hex[:8]}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
+
+
+@pytest_asyncio.fixture
+async def teacher_headers(client: AsyncClient):
+    """学生登录后立即升级为教师，返回 headers。"""
+    with patch(
+        "app.services.auth_service.wechat_code2session", new_callable=AsyncMock
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"teacher_api_tch_{uuid.uuid4().hex[:8]}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    assert resp.status_code == 200, resp.text
+    token = resp.json()["data"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    # 升级为教师
+    become_resp = await client.post(
+        "/api/v1/teacher/profile", json={"subject": "英语"}, headers=headers
+    )
+    assert become_resp.status_code == 200, become_resp.text
+    return headers
+
+
+@pytest.mark.asyncio
+async def test_become_teacher_api(client: AsyncClient, student_headers):
+    resp = await client.post(
+        "/api/v1/teacher/profile",
+        json={"subject": "英语"},
+        headers=student_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["cert_status"] == "uncertified"
+    assert data["subject"] == "英语"
+    assert data["max_students"] == 50
+
+
+@pytest.mark.asyncio
+async def test_create_invite_code_requires_teacher(client: AsyncClient, student_headers):
+    """未升级为教师的用户不能生成邀请码。"""
+    resp = await client.post("/api/v1/teacher/invite-code", headers=student_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_invite_code_api(client: AsyncClient, teacher_headers):
+    resp = await client.post("/api/v1/teacher/invite-code", headers=teacher_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data["code"]) == 6
+    assert "expires_at" in data
+
+
+@pytest.mark.asyncio
+async def test_bind_teacher_api(client: AsyncClient, teacher_headers, student_headers):
+    """学生用邀请码绑定老师。"""
+    # 教师生成邀请码
+    invite_resp = await client.post(
+        "/api/v1/teacher/invite-code", headers=teacher_headers
+    )
+    code = invite_resp.json()["data"]["code"]
+
+    # 学生绑定
+    bind_resp = await client.post(
+        "/api/v1/teacher/bind", json={"code": code}, headers=student_headers
+    )
+    assert bind_resp.status_code == 200
+    data = bind_resp.json()["data"]
+    assert "student_id" in data
+    assert "bound_at" in data
+
+
+@pytest.mark.asyncio
+async def test_list_students_api(client: AsyncClient, teacher_headers, student_headers):
+    """绑定后教师可查看学生列表。"""
+    invite_resp = await client.post(
+        "/api/v1/teacher/invite-code", headers=teacher_headers
+    )
+    code = invite_resp.json()["data"]["code"]
+    await client.post(
+        "/api/v1/teacher/bind", json={"code": code}, headers=student_headers
+    )
+
+    list_resp = await client.get("/api/v1/teacher/students", headers=teacher_headers)
+    assert list_resp.status_code == 200
+    students = list_resp.json()["data"]
+    assert len(students) >= 1
+
+
+@pytest.mark.asyncio
+async def test_add_comment_and_get_comments_api(
+    client: AsyncClient, teacher_headers, student_headers
+):
+    """老师批注 + 学生/老师读批注。"""
+    # 绑定
+    invite_resp = await client.post(
+        "/api/v1/teacher/invite-code", headers=teacher_headers
+    )
+    code = invite_resp.json()["data"]["code"]
+    await client.post(
+        "/api/v1/teacher/bind", json={"code": code}, headers=student_headers
+    )
+
+    # 学生创建错题
+    wq_resp = await client.post(
+        "/api/v1/wrong-questions/",
+        json={"source_image_url": "https://example.com/teacher_comment_test.jpg"},
+        headers=student_headers,
+    )
+    assert wq_resp.status_code == 200, wq_resp.text
+    wq_id = wq_resp.json()["data"]["id"]
+
+    # 老师批注
+    comment_resp = await client.post(
+        f"/api/v1/teacher/wrong-questions/{wq_id}/comments",
+        json={"comment_text": "注意主谓一致"},
+        headers=teacher_headers,
+    )
+    assert comment_resp.status_code == 200
+    assert comment_resp.json()["data"]["comment_text"] == "注意主谓一致"
+
+    # 读取批注（老师读）
+    get_resp = await client.get(
+        f"/api/v1/teacher/wrong-questions/{wq_id}/comments",
+        headers=teacher_headers,
+    )
+    assert get_resp.status_code == 200
+    comments = get_resp.json()["data"]
+    assert len(comments) == 1
+    assert comments[0]["comment_text"] == "注意主谓一致"
+
+    # 读取批注（学生读）
+    student_get = await client.get(
+        f"/api/v1/teacher/wrong-questions/{wq_id}/comments",
+        headers=student_headers,
+    )
+    assert student_get.status_code == 200
+    assert len(student_get.json()["data"]) == 1
