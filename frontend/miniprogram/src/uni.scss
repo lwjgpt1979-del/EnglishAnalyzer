@@ -74,3 +74,46 @@ $uni-color-subtitle: #555; // 二级标题颜色
 $uni-font-size-subtitle: 18px;
 $uni-color-paragraph: #3f536e; // 文章段落颜色
 $uni-font-size-paragraph: 15px;
+
+/* ====================================================================
+   engGramer 设计系统 —— 黄油相机风 v0.2（决策 D-071）SCSS 变量镜像
+   运行期请优先用 App.vue 中定义的 CSS 变量 var(--c-primary) 等；
+   下列 SCSS 变量供 <style lang="scss"> 编译期使用，值与 CSS 变量一致。
+   规范详见 docs/design/style-guide.html
+   ==================================================================== */
+/* 品牌 / 黄系 */
+$eg-primary: #fbe26b;        // 主按钮底（文字用墨黑）
+$eg-primary-soft: #fcefa9;   // 禁用 / 浅填充 / 黄标签底
+$eg-primary-faint: #fffbe8;  // 选中底 / 批注底
+$eg-gold: #fbc53d;           // 激活 / 图标 / 下划线 / 进度
+$eg-olive: #c9c96e;          // 二级按钮 / 标签
+$eg-orange: #f2913e;         // 点赞 / 通知
+
+/* 墨色 / 文字 */
+$eg-ink: #1f1f1f;            // 大标题 / 黄按钮上的字
+$eg-surface-dark: #1c1c1c;   // 深色编辑区块（白字）
+$eg-text-body: #333333;
+$eg-text-second: #7a7a7a;
+$eg-text-hint: #b5b5b5;
+
+/* 背景 / 描边 */
+$eg-bg-page: #f6f5f1;
+$eg-bg-card: #ffffff;
+$eg-bg-soft: #f5f4f1;
+$eg-border: #ededeb;
+
+/* 语义色 */
+$eg-success: #5fb878;
+$eg-success-bg: #eef8f0;
+$eg-success-dark: #3f9159;
+$eg-danger: #f0603c;
+$eg-danger-bg: #fdeee9;
+$eg-danger-dark: #c8401f;
+
+/* 圆角（rpx） */
+$eg-r-sm: 16rpx;
+$eg-r-md: 28rpx;
+$eg-r-btn: 32rpx;
+$eg-r-lg: 40rpx;
+$eg-r-xl: 56rpx;
+$eg-r-pill: 999rpx;

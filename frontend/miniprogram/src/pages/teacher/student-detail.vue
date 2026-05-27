@@ -109,18 +109,18 @@ async function submitComment(wqId: string) {
 </script>
 
 <style scoped>
-.student-detail-page { padding: 16rpx; background: #f5f5f5; min-height: 100vh; }
-.tip { text-align: center; padding: 60rpx; font-size: 26rpx; color: #aaa; }
-.wq-card { background: #fff; border-radius: 12rpx; padding: 24rpx; margin-bottom: 16rpx; }
-.wq-image { width: 100%; border-radius: 8rpx; margin-bottom: 12rpx; }
-.wq-text { font-size: 28rpx; color: #333; line-height: 1.6; margin-bottom: 8rpx; white-space: pre-wrap; }
-.wq-meta { font-size: 24rpx; color: #888; margin-bottom: 16rpx; }
-.comment-section { border-top: 1rpx solid #f0f0f0; padding-top: 16rpx; }
-.comment-input { width: 100%; border: 1rpx solid #e8e8e8; border-radius: 8rpx; padding: 12rpx; font-size: 26rpx; min-height: 80rpx; box-sizing: border-box; margin-bottom: 8rpx; }
-.btn-comment { background: #1677ff; color: #fff; border-radius: 6rpx; font-size: 24rpx; }
-.btn-comment[disabled] { opacity: 0.5; }
+.student-detail-page { padding: 16rpx; background: var(--c-bg-page); min-height: 100vh; }
+.tip { text-align: center; padding: 60rpx; font-size: 26rpx; color: var(--c-text-hint); }
+.wq-card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
+.wq-image { width: 100%; border-radius: var(--r-md); margin-bottom: 12rpx; }
+.wq-text { font-size: 28rpx; color: var(--c-text-body); line-height: 1.6; margin-bottom: 8rpx; white-space: pre-wrap; }
+.wq-meta { font-size: 24rpx; color: var(--c-text-second); margin-bottom: 16rpx; }
+.comment-section { border-top: 1rpx solid var(--c-border); padding-top: 16rpx; }
+.comment-input { width: 100%; border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 12rpx; font-size: 26rpx; min-height: 80rpx; box-sizing: border-box; margin-bottom: 8rpx; }
+.btn-comment { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-sm); font-size: 24rpx; font-weight: 600; }
+.btn-comment[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
 .existing-comments { margin-top: 16rpx; }
-.comment-item { background: #fffbe6; border-radius: 8rpx; padding: 12rpx 16rpx; margin-bottom: 8rpx; }
-.comment-text { font-size: 26rpx; color: #333; display: block; margin-bottom: 4rpx; }
-.comment-time { font-size: 22rpx; color: #aaa; }
+.comment-item { background: var(--c-primary-faint); border-radius: var(--r-md); padding: 14rpx 18rpx; margin-bottom: 8rpx; border-left: 4rpx solid var(--c-gold); }
+.comment-text { font-size: 26rpx; color: var(--c-text-body); display: block; margin-bottom: 4rpx; }
+.comment-time { font-size: 22rpx; color: var(--c-text-hint); }
 </style>

@@ -51,25 +51,27 @@ const auth = useAuthStore()
 </script>
 
 <style scoped>
-.home-page { padding: 40rpx 24rpx; background: #f5f5f5; min-height: 100vh; }
+.home-page { padding: 40rpx 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .hero { text-align: center; padding: 60rpx 0 48rpx; }
-.hero-title { font-size: 60rpx; font-weight: bold; color: #1677ff; display: block; }
-.hero-sub { font-size: 30rpx; color: #888; display: block; margin-top: 12rpx; }
+.hero-title { font-size: var(--fs-display); font-weight: 800; color: var(--c-ink); display: block; }
+.hero-sub { font-size: var(--fs-h2); color: var(--c-text-hint); display: block; margin-top: 12rpx; }
 .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-bottom: 32rpx; }
 .quick-card {
-  background: #fff;
-  border-radius: 20rpx;
+  background: var(--c-bg-card);
+  border-radius: var(--r-lg);
   padding: 40rpx 0;
   text-align: center;
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
 }
 .quick-icon { font-size: 56rpx; display: block; margin-bottom: 16rpx; }
-.quick-label { font-size: 28rpx; color: #333; }
+.quick-label { font-size: var(--fs-body); color: var(--c-text-body); }
 .login-banner {
-  background: #fff;
-  border-radius: 20rpx;
+  background: var(--c-bg-card);
+  border-radius: var(--r-lg);
   padding: 36rpx 32rpx;
   text-align: center;
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
 }
-.login-tip { font-size: 28rpx; color: #666; display: block; margin-bottom: 24rpx; }
-.btn-login { background: #1677ff; color: #fff; border-radius: 12rpx; font-size: 30rpx; }
+.login-tip { font-size: var(--fs-body); color: var(--c-text-second); display: block; margin-bottom: 24rpx; }
+.btn-login { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); font-size: var(--fs-h2); font-weight: 700; }
 </style>

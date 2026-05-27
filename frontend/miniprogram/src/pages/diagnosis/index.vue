@@ -138,60 +138,62 @@ function activityClass(count: number): string {
 </script>
 
 <style scoped>
-.diag-page { padding: 24rpx; background: #f5f5f5; min-height: 100vh; }
-.center-tip { text-align: center; padding: 120rpx; color: #999; }
-.card { background: #fff; border-radius: 16rpx; padding: 28rpx; margin-bottom: 20rpx; }
-.card-title { font-size: 30rpx; font-weight: bold; margin-bottom: 20rpx; color: #222; }
+.diag-page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
+.center-tip { text-align: center; padding: 120rpx; color: var(--c-text-hint); }
+.card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
+.card-title { font-size: var(--fs-h2); font-weight: 700; margin-bottom: 20rpx; color: var(--c-ink); }
 
 /* 总览 */
 .stat-row { display: flex; justify-content: space-around; }
 .stat-item { text-align: center; }
-.stat-num { font-size: 56rpx; font-weight: bold; color: #1677ff; display: block; }
-.stat-label { font-size: 24rpx; color: #999; }
+.stat-num { font-size: 56rpx; font-weight: 800; color: var(--c-ink); display: block; }
+.stat-label { font-size: 24rpx; color: var(--c-text-hint); }
 
 /* 进度条 */
 .bar-item { display: flex; align-items: center; margin-bottom: 16rpx; }
-.bar-label { width: 160rpx; font-size: 26rpx; color: #333; flex-shrink: 0; }
-.bar-track { flex: 1; background: #f0f0f0; height: 16rpx; border-radius: 8rpx; margin: 0 16rpx; }
-.bar-fill { height: 100%; background: #1677ff; border-radius: 8rpx; }
-.bar-count { font-size: 24rpx; color: #666; width: 48rpx; text-align: right; }
+.bar-label { width: 160rpx; font-size: 26rpx; color: var(--c-text-body); flex-shrink: 0; }
+.bar-track { flex: 1; background: var(--c-bg-soft); height: 16rpx; border-radius: var(--r-pill); margin: 0 16rpx; }
+.bar-fill { height: 100%; background: var(--c-gold); border-radius: var(--r-pill); }
+.bar-count { font-size: 24rpx; color: var(--c-text-second); width: 48rpx; text-align: right; }
 
 /* 知识点标签 */
 .tags { display: flex; flex-wrap: wrap; gap: 12rpx; }
 .tag-kp {
-  background: #f5f0ff;
-  color: #722ed1;
+  background: #eaeac4;
+  color: #6b6b2e;
   font-size: 24rpx;
+  font-weight: 600;
   padding: 6rpx 16rpx;
-  border-radius: 8rpx;
+  border-radius: var(--r-pill);
 }
 
 /* 活跃度方格 */
 .activity-grid { display: flex; flex-wrap: wrap; gap: 6rpx; margin-bottom: 12rpx; }
-.activity-cell { width: 28rpx; height: 28rpx; border-radius: 4rpx; }
-.activity-0 { background: #eee; }
-.activity-1 { background: #bce7ff; }
-.activity-2 { background: #69c0ff; }
-.activity-3 { background: #1677ff; }
-.activity-hint { font-size: 22rpx; color: #bbb; }
+.activity-cell { width: 28rpx; height: 28rpx; border-radius: 6rpx; }
+.activity-0 { background: var(--c-bg-soft); }
+.activity-1 { background: #fdf0b4; }
+.activity-2 { background: var(--c-primary); }
+.activity-3 { background: var(--c-gold); }
+.activity-hint { font-size: 22rpx; color: var(--c-text-hint); }
 
 /* 建议 */
 .suggestion-item { display: flex; align-items: flex-start; margin-bottom: 20rpx; }
 .suggestion-num {
   width: 44rpx;
   height: 44rpx;
-  background: #1677ff;
-  color: #fff;
+  background: var(--c-primary);
+  color: var(--c-ink);
   border-radius: 50%;
   font-size: 24rpx;
+  font-weight: 700;
   line-height: 44rpx;
   text-align: center;
   flex-shrink: 0;
   margin-right: 16rpx;
 }
-.suggestion-text { flex: 1; font-size: 28rpx; color: #333; line-height: 1.7; }
+.suggestion-text { flex: 1; font-size: 28rpx; color: var(--c-text-body); line-height: 1.7; }
 
 .practice-entry { }
-.practice-desc { font-size: 24rpx; color: #888; display: block; margin-bottom: 12rpx; line-height: 1.5; }
-.btn-practice { background: #1677ff; color: #fff; border-radius: 8rpx; padding: 16rpx; font-size: 28rpx; text-align: center; }
+.practice-desc { font-size: 24rpx; color: var(--c-text-second); display: block; margin-bottom: 12rpx; line-height: 1.5; }
+.btn-practice { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 700; text-align: center; }
 </style>

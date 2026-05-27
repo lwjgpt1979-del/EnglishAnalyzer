@@ -172,24 +172,24 @@ function goToStudent(studentId: string) {
 </script>
 
 <style scoped>
-.teacher-page { padding: 16rpx; background: #f5f5f5; min-height: 100vh; }
-.card { background: #fff; border-radius: 12rpx; padding: 24rpx; margin-bottom: 16rpx; }
-.card-title { font-size: 28rpx; font-weight: 600; color: #333; margin-bottom: 16rpx; }
+.teacher-page { padding: 16rpx; background: var(--c-bg-page); min-height: 100vh; }
+.card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
+.card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
 .teacher-badge { display: flex; flex-direction: column; gap: 8rpx; }
-.badge-text { font-size: 28rpx; color: #52c41a; }
-.subject-text { font-size: 24rpx; color: #888; }
-.input { border: 1rpx solid #e8e8e8; border-radius: 8rpx; padding: 16rpx; font-size: 28rpx; margin-bottom: 16rpx; width: 100%; box-sizing: border-box; }
-.btn-primary { background: #1677ff; color: #fff; border-radius: 8rpx; padding: 20rpx; font-size: 28rpx; text-align: center; margin-top: 8rpx; }
-.btn-primary[disabled] { opacity: 0.5; }
-.btn-secondary { background: #f0f7ff; color: #1677ff; border: 1rpx solid #1677ff; border-radius: 8rpx; padding: 20rpx; font-size: 28rpx; text-align: center; }
-.invite-box { margin-top: 16rpx; background: #f9f9f9; border-radius: 8rpx; padding: 20rpx; display: flex; align-items: center; gap: 16rpx; }
-.invite-code { font-size: 48rpx; font-weight: 700; letter-spacing: 8rpx; color: #1677ff; flex: 1; }
-.invite-expire { font-size: 22rpx; color: #aaa; }
-.btn-copy { background: #1677ff; color: #fff; font-size: 24rpx; border-radius: 6rpx; padding: 8rpx 16rpx; }
-.tip { font-size: 26rpx; color: #aaa; text-align: center; padding: 24rpx 0; }
-.student-item { display: flex; align-items: center; padding: 20rpx 0; border-bottom: 1rpx solid #f0f0f0; }
+.badge-text { font-size: 28rpx; color: var(--c-success); }
+.subject-text { font-size: 24rpx; color: var(--c-text-hint); }
+.input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; margin-bottom: 16rpx; width: 100%; box-sizing: border-box; }
+.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; text-align: center; margin-top: 8rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-secondary { background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 20rpx; font-size: 28rpx; font-weight: 600; text-align: center; }
+.invite-box { margin-top: 16rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx; display: flex; align-items: center; gap: 16rpx; }
+.invite-code { font-size: 48rpx; font-weight: 800; letter-spacing: 8rpx; color: var(--c-ink); flex: 1; }
+.invite-expire { font-size: 22rpx; color: var(--c-text-hint); }
+.btn-copy { background: var(--c-primary); color: var(--c-ink); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
+.tip { font-size: 26rpx; color: var(--c-text-hint); text-align: center; padding: 24rpx 0; }
+.student-item { display: flex; align-items: center; padding: 20rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .student-item:last-child { border-bottom: none; }
-.student-id { flex: 1; font-size: 28rpx; color: #333; }
-.student-bind-date { font-size: 24rpx; color: #aaa; margin-right: 8rpx; }
-.arrow { font-size: 32rpx; color: #bbb; }
+.student-id { flex: 1; font-size: 28rpx; color: var(--c-text-body); }
+.student-bind-date { font-size: 24rpx; color: var(--c-text-hint); margin-right: 8rpx; }
+.arrow { font-size: 32rpx; color: var(--c-text-hint); }
 </style>

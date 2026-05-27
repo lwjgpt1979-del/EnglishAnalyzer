@@ -90,25 +90,26 @@ async function onUpload() {
 
 <style scoped>
 .upload-page { padding: 24rpx; }
-.card { background: #fff; border-radius: 16rpx; padding: 32rpx; }
-.card-title { font-size: 32rpx; font-weight: bold; margin-bottom: 32rpx; color: #222; }
+.card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 32rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
+.card-title { font-size: 32rpx; font-weight: 700; margin-bottom: 32rpx; color: var(--c-ink); }
 .form-item {
   display: flex;
   align-items: center;
   padding: 20rpx 0;
-  border-bottom: 1rpx solid #f0f0f0;
+  border-bottom: 1rpx solid var(--c-border);
 }
-.label { width: 120rpx; color: #666; font-size: 28rpx; }
-.picker-val { flex: 1; color: #333; font-size: 28rpx; padding-left: 16rpx; }
+.label { width: 120rpx; color: var(--c-text-second); font-size: 28rpx; }
+.picker-val { flex: 1; color: var(--c-text-body); font-size: 28rpx; padding-left: 16rpx; }
 .btn-upload {
   margin-top: 48rpx;
-  background: #1677ff;
-  color: #fff;
-  border-radius: 12rpx;
+  background: var(--c-primary);
+  color: var(--c-ink);
+  border-radius: var(--r-btn);
   font-size: 32rpx;
+  font-weight: 700;
   height: 96rpx;
   line-height: 96rpx;
 }
-.btn-upload[disabled] { opacity: 0.5; }
-.error-msg { margin-top: 20rpx; color: #ff4d4f; font-size: 26rpx; text-align: center; }
+.btn-upload[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.error-msg { margin-top: 20rpx; color: var(--c-danger); font-size: 26rpx; text-align: center; }
 </style>
