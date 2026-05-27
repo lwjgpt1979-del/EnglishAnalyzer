@@ -1,10 +1,10 @@
 from app.core.config import settings
 
 
-def test_settings_has_anthropic_api_key():
-    """settings 必须有 anthropic_api_key 字段（值可为 placeholder）。"""
-    assert hasattr(settings, "anthropic_api_key")
-    assert isinstance(settings.anthropic_api_key, str)
+def test_settings_has_deepseek_api_key():
+    """settings 必须有 deepseek_api_key 字段（值可为 placeholder）。"""
+    assert hasattr(settings, "deepseek_api_key")
+    assert isinstance(settings.deepseek_api_key, str)
 
 
 import uuid
@@ -290,27 +290,29 @@ async def test_analyze_wrong_question_service(db_session, test_student):
     wq = await create_wrong_question(db_session, student_id=test_student.id, data=data)
 
     mock_response = MagicMock()
-    mock_response.content = [MagicMock()]
-    mock_response.content[0].text = (
+    mock_choice = MagicMock()
+    mock_choice.message.content = (
         '{"error_types": ["主谓一致错误"], "knowledge_points": ["第三人称单数助动词"], '
         '"diagnosis": "学生对第三人称单数助动词使用错误。", '
         '"suggestions": "复习主谓一致规则，重点记忆 does/doesn\'t。", '
         '"confidence_score": 0.95}'
     )
+    mock_response.choices = [mock_choice]
     mock_response.usage = MagicMock()
-    mock_response.usage.input_tokens = 200
-    mock_response.usage.output_tokens = 80
+    mock_response.usage.prompt_tokens = 200
+    mock_response.usage.completion_tokens = 80
 
-    with patch("app.services.ai_service.anthropic.AsyncAnthropic") as MockClient:
-        mock_instance = AsyncMock()
+    with patch("app.services.ai_service._is_deepseek_dev_mode", return_value=False), \
+         patch("app.services.ai_service.AsyncOpenAI") as MockClient:
+        mock_instance = MagicMock()
         MockClient.return_value = mock_instance
-        mock_instance.messages.create = AsyncMock(return_value=mock_response)
+        mock_instance.chat.completions.create = AsyncMock(return_value=mock_response)
 
         analysis = await analyze_wrong_question(
             db_session, wq=wq, student_id=test_student.id
         )
 
-    assert analysis.llm_provider == "claude"
+    assert analysis.llm_provider == "deepseek"
     assert analysis.error_types == ["主谓一致错误"]
     assert analysis.knowledge_points == ["第三人称单数助动词"]
     assert analysis.tokens_used == 280
@@ -335,20 +337,22 @@ async def test_analyze_endpoint(client: AsyncClient, auth_headers):
     wq_id = create_resp.json()["data"]["id"]
 
     mock_response = MagicMock()
-    mock_response.content = [MagicMock()]
-    mock_response.content[0].text = (
+    mock_choice = MagicMock()
+    mock_choice.message.content = (
         '{"error_types": ["主谓一致"], "knowledge_points": ["does/doesn\'t"], '
         '"diagnosis": "主谓不一致错误。", "suggestions": "复习第三人称单数。", '
         '"confidence_score": 0.9}'
     )
+    mock_response.choices = [mock_choice]
     mock_response.usage = MagicMock()
-    mock_response.usage.input_tokens = 150
-    mock_response.usage.output_tokens = 60
+    mock_response.usage.prompt_tokens = 150
+    mock_response.usage.completion_tokens = 60
 
-    with patch("app.services.ai_service.anthropic.AsyncAnthropic") as MockClient:
-        mock_instance = AsyncMock()
+    with patch("app.services.ai_service._is_deepseek_dev_mode", return_value=False), \
+         patch("app.services.ai_service.AsyncOpenAI") as MockClient:
+        mock_instance = MagicMock()
         MockClient.return_value = mock_instance
-        mock_instance.messages.create = AsyncMock(return_value=mock_response)
+        mock_instance.chat.completions.create = AsyncMock(return_value=mock_response)
 
         resp = await client.post(
             f"/api/v1/wrong-questions/{wq_id}/analyze", headers=auth_headers
@@ -357,7 +361,7 @@ async def test_analyze_endpoint(client: AsyncClient, auth_headers):
     assert resp.status_code == 200
     body = resp.json()
     assert body["code"] == 200
-    assert body["data"]["llm_provider"] == "claude"
+    assert body["data"]["llm_provider"] == "deepseek"
     assert body["data"]["error_types"] == ["主谓一致"]
     assert body["data"]["tokens_used"] == 210
     assert body["data"]["wrong_question_id"] == wq_id
@@ -388,20 +392,22 @@ async def test_list_analyses_endpoint(client: AsyncClient, auth_headers):
     wq_id = create_resp.json()["data"]["id"]
 
     mock_response = MagicMock()
-    mock_response.content = [MagicMock()]
-    mock_response.content[0].text = (
+    mock_choice = MagicMock()
+    mock_choice.message.content = (
         '{"error_types": ["助动词错误"], "knowledge_points": ["have/has"], '
         '"diagnosis": "主谓一致错误。", "suggestions": "复习助动词。", '
         '"confidence_score": 0.88}'
     )
+    mock_response.choices = [mock_choice]
     mock_response.usage = MagicMock()
-    mock_response.usage.input_tokens = 100
-    mock_response.usage.output_tokens = 50
+    mock_response.usage.prompt_tokens = 100
+    mock_response.usage.completion_tokens = 50
 
-    with patch("app.services.ai_service.anthropic.AsyncAnthropic") as MockClient:
-        mock_instance = AsyncMock()
+    with patch("app.services.ai_service._is_deepseek_dev_mode", return_value=False), \
+         patch("app.services.ai_service.AsyncOpenAI") as MockClient:
+        mock_instance = MagicMock()
         MockClient.return_value = mock_instance
-        mock_instance.messages.create = AsyncMock(return_value=mock_response)
+        mock_instance.chat.completions.create = AsyncMock(return_value=mock_response)
         for _ in range(2):
             await client.post(
                 f"/api/v1/wrong-questions/{wq_id}/analyze", headers=auth_headers
