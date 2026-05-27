@@ -1,6 +1,8 @@
 import { request } from '@/utils/request'
 import type {
   AiAnalysisOut,
+  ConfirmOcrTextRequest,
+  OcrStatusOut,
   WrongQuestionCreate,
   WrongQuestionListOut,
   WrongQuestionOut,
@@ -38,4 +40,27 @@ export function analyzeWrongQuestion(id: string): Promise<AiAnalysisOut> {
 
 export function listAnalyses(id: string): Promise<AiAnalysisOut[]> {
   return request<AiAnalysisOut[]>(`/api/v1/wrong-questions/${id}/analyses`)
+}
+
+/** 触发 OCR 识别 */
+export function triggerOcr(id: string): Promise<WrongQuestionOut> {
+  return request<WrongQuestionOut>(`/api/v1/wrong-questions/${id}/ocr`, {
+    method: 'POST',
+  })
+}
+
+/** 查询 OCR 任务状态 */
+export function getOcrStatus(id: string): Promise<OcrStatusOut> {
+  return request<OcrStatusOut>(`/api/v1/wrong-questions/${id}/ocr`)
+}
+
+/** 手动确认/覆盖 OCR 识别结果 */
+export function confirmOcrText(
+  id: string,
+  data: ConfirmOcrTextRequest,
+): Promise<WrongQuestionOut> {
+  return request<WrongQuestionOut>(`/api/v1/wrong-questions/${id}/text`, {
+    method: 'PATCH',
+    data,
+  })
 }

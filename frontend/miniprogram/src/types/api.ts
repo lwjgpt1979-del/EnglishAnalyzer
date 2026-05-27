@@ -60,6 +60,7 @@ export interface WrongQuestionOut {
   mastered_at: string | null
   created_at: string
   updated_at: string
+  ocr_status: 'pending' | 'processing' | 'completed' | 'failed' | null
 }
 
 export interface WrongQuestionListOut {
@@ -145,4 +146,22 @@ export interface PayParamsOut {
   package: string       // prepay_id=wx...
   signType: string      // RSA
   paySign: string
+}
+
+/** OCR 任务状态 — GET /wrong-questions/{id}/ocr */
+export interface OcrStatusOut {
+  wrong_question_id: string
+  ocr_status: 'pending' | 'processing' | 'completed' | 'failed' | null
+  printed_text: string | null
+  handwritten_text: string | null
+  error_message: string | null
+  updated_at: string | null
+}
+
+/** 手动确认 OCR 文字 — PATCH /wrong-questions/{id}/text */
+export interface ConfirmOcrTextRequest {
+  question_text?: string | null
+  student_answer?: string | null
+  correct_answer?: string | null
+  question_type?: string | null
 }
