@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>engGramer 设计系统 · 黄油相机风 · Style Guide v0.2</title>
+<style>
+  /* ===================================================================
+     engGramer 设计系统 Style Guide v0.2
+     参考：黄油相机（Butter Camera）UI 风格与色系（来自用户提供的截图）
+     特征：奶油黄主色 + 深色字按钮 · 超大圆角 · 白底为主 + 近黑区块 ·
+           粗体黑标题 · 充足留白 · 黄色下划线激活态 · 暖色调 · 友好圆润
+     小程序 750rpx = 屏宽；本页按 375px 手机宽度还原，1rpx = 0.5px。
+     =================================================================== */
+
+  :root {
+    /* —— 品牌 / 主色（黄油黄）—— */
+    --c-primary:        #fbe26b;   /* 主色：主按钮底（按钮文字用深墨色！）*/
+    --c-primary-soft:   #fcefa9;   /* 主色浅：禁用 / 浅填充 / 选中底 */
+    --c-primary-faint:  #fffbe8;   /* 主色极浅：卡片强调底 */
+    --c-gold:           #fbc53d;   /* 金黄强调：激活态 / 图标 / VIP / 下划线 */
+    --c-olive:          #c9c96e;   /* 橄榄黄：二级标签 / 次按钮（深字 #6b6b2e）*/
+    --c-orange:         #f2913e;   /* 暖橙：吉祥物 / 点赞 / 通知 */
+
+    /* —— 墨色 / 文字（深色为主，呼应黑底白字的编辑感）—— */
+    --c-ink:            #1f1f1f;   /* 墨黑：大标题 / 黄按钮上的字 / 深色区块底 */
+    --c-text-body:      #333333;   /* 正文 */
+    --c-text-second:    #7a7a7a;   /* 次要文字 */
+    --c-text-hint:      #b5b5b5;   /* 提示 / 占位 / 弱信息 */
+
+    /* —— 背景 & 描边（白底为主 + 深色区块）—— */
+    --c-bg-page:        #ffffff;   /* 页面背景：白 */
+    --c-bg-soft:        #f5f4f1;   /* 浅暖灰：搜索框 / chips / 浅块 */
+    --c-surface-dark:   #1c1c1c;   /* 深色区块（编辑感 hero）白字 */
+    --c-border:         #ededeb;   /* 描边 / 分割线 */
+
+    /* —— 语义色（暖调微调，用于做题对错 / 状态）—— */
+    --c-success:        #5fb878;   --c-success-bg: #eef8f0;  --c-success-dark: #3f9159;
+    --c-danger:         #f0603c;   --c-danger-bg:  #fdeee9;  --c-danger-dark:  #c8401f;
+
+    /* —— 字号（px = rpx ÷ 2）标题偏粗 —— */
+    --fs-display: 30px;  /* 60rpx 统计大数字 */
+    --fs-h1:      18px;  /* 36rpx 页面大标题（粗）*/
+    --fs-h2:      15px;  /* 30rpx 卡片标题 */
+    --fs-body:    14px;  /* 28rpx 正文 */
+    --fs-sm:      13px;  /* 26rpx 小正文 */
+    --fs-aux:     12px;  /* 24rpx 辅助 / 标签 */
+    --fs-tiny:    11px;  /* 22rpx 角标 / 时间 */
+
+    /* —— 间距（黄油相机偏宽松，px = rpx ÷ 2）—— */
+    --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;   --sp-4: 16px;   --sp-5: 24px;
+
+    /* —— 圆角（显著加大，黄油相机标志特征）—— */
+    --r-sm:   8px;    /* 16rpx 小标签 */
+    --r-md:   14px;   /* 28rpx 输入框 / 控件 */
+    --r-btn:  16px;   /* 32rpx 按钮 */
+    --r-lg:   20px;   /* 40rpx 卡片 */
+    --r-xl:   28px;   /* 56rpx 弹窗 / 大卡片 */
+    --r-pill: 999px;  /* 胶囊：悬浮按钮 / chips */
+  }
+
+  /* —— 文档外壳（非规范，仅本页排版）—— */
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: #f3f2ee; color: #1f1f1f; line-height: 1.6; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.doc-head { background: var(--c-surface-dark); color: #fff; border-radius: 24px; padding: 34px 38px; margin-bottom: 32px; position: relative; overflow: hidden; }
+  header.doc-head::after { content: "🧈"; position: absolute; right: 28px; top: 24px; font-size: 56px; opacity: .9; }
+  header.doc-head h1 { margin: 0 0 8px; font-size: 26px; }
+  header.doc-head h1 .pill { background: var(--c-primary); color: var(--c-ink); font-size: 13px; padding: 2px 12px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  header.doc-head p { margin: 4px 0; opacity: .85; font-size: 14px; max-width: 760px; }
+  header.doc-head code { background: rgba(255,255,255,.16); padding: 1px 6px; border-radius: 5px; }
+
+  h2.sec { font-size: 20px; margin: 46px 0 8px; padding-bottom: 8px; border-bottom: 3px solid var(--c-primary); display: inline-block; }
+  .sec-note { color: #6b7280; font-size: 13px; margin: 6px 0 18px; }
+
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 12px; }
+  .swatch { border: 1px solid #e7e6e2; border-radius: 14px; overflow: hidden; background: #fff; }
+  .swatch .chip { height: 66px; }
+  .swatch .meta { padding: 9px 11px; font-size: 12px; }
+  .swatch .meta b { display: block; font-size: 12.5px; }
+  .swatch .meta .hex { color: #6b7280; font-family: ui-monospace, Menlo, monospace; }
+  .swatch .meta .use { color: #9aa3af; display: block; margin-top: 2px; line-height: 1.35; }
+  .grp-title { font-size: 14px; font-weight: 700; color: #374151; margin: 22px 0 10px; }
+
+  table.scale { width: 100%; border-collapse: collapse; background: #fff; border-radius: 14px; overflow: hidden; }
+  table.scale th, table.scale td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #f0efea; font-size: 13px; }
+  table.scale th { background: #faf9f5; color: #6b7280; font-weight: 700; }
+  table.scale code { font-family: ui-monospace, Menlo, monospace; color: #a8810a; background: #fffbe8; padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+
+  .bars { display: flex; flex-direction: column; gap: 10px; }
+  .bar-row { display: flex; align-items: center; gap: 14px; font-size: 13px; }
+  .bar-row .b { background: var(--c-gold); height: 16px; border-radius: 4px; }
+  .bar-row code { font-family: ui-monospace, Menlo, monospace; color: #6b7280; min-width: 170px; }
+  .radii { display: flex; gap: 18px; flex-wrap: wrap; }
+  .radii .r { width: 90px; height: 64px; background: var(--c-primary); color: var(--c-ink); display: flex; align-items: flex-end; justify-content: center; font-size: 11px; padding-bottom: 6px; font-weight: 600; }
+
+  .phones { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .phone { width: 375px; background: var(--c-bg-page); border-radius: 30px; border: 10px solid #1c1f23; box-shadow: 0 14px 44px rgba(0,0,0,.20); overflow: hidden; }
+  .phone .statusbar { height: 28px; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #888; font-weight: 600; }
+  .phone .navbar { height: 42px; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: var(--c-ink); }
+  .phone .screen { padding: 12px; }
+  .phone-label { font-size: 12px; color: #6b7280; margin: 8px 0 0; text-align: center; }
+
+  /* ===== 组件规范（取值全部来自 :root 变量，可直接对照 rpx）===== */
+  .ui-card { background: var(--c-bg-card, #fff); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: var(--sp-3); box-shadow: 0 2px 12px rgba(0,0,0,.04); }
+  .ui-card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: var(--sp-3); }
+  .ui-hint { font-size: var(--fs-aux); color: var(--c-text-hint); display: block; line-height: 1.55; }
+
+  /* 按钮：主按钮 = 黄底深字（黄油相机标志）；次 = 橄榄；幽灵 = 描边 */
+  .ui-btn { display: block; width: 100%; text-align: center; border: none; border-radius: var(--r-btn); padding: 13px; font-size: var(--fs-body); font-weight: 700; margin-top: var(--sp-2); cursor: pointer; }
+  .ui-btn-primary { background: var(--c-primary); color: var(--c-ink); }
+  .ui-btn-olive   { background: var(--c-olive); color: #4f4f1d; }
+  .ui-btn-ghost   { background: #fff; color: var(--c-ink); border: 1.5px solid var(--c-ink); }
+  .ui-btn[disabled], .ui-btn.disabled { background: var(--c-primary-soft); color: #b9a94e; }
+
+  /* 悬浮胶囊操作按钮 */
+  .ui-fab { display: inline-flex; align-items: center; gap: 6px; background: var(--c-primary); color: var(--c-ink); font-weight: 700; font-size: var(--fs-body); padding: 10px 22px; border-radius: var(--r-pill); box-shadow: 0 6px 18px rgba(251,197,61,.45); }
+
+  /* 输入：底线式（登录页风格）+ 框式 */
+  .ui-input-line { border: none; border-bottom: 2px solid var(--c-border); padding: 10px 2px; font-size: var(--fs-body); width: 100%; margin-bottom: var(--sp-4); }
+  .ui-input-box { width: 100%; border: 1.5px solid var(--c-border); border-radius: var(--r-md); padding: 11px 12px; font-size: var(--fs-body); margin-bottom: var(--sp-3); }
+
+  /* 验证码 / 分段：激活态用金黄下划线 */
+  .ui-otp { display: flex; gap: 14px; }
+  .ui-otp .d { flex: 1; text-align: center; font-size: 22px; font-weight: 700; color: var(--c-ink); border-bottom: 3px solid var(--c-border); padding-bottom: 6px; }
+  .ui-otp .d.filled { border-color: var(--c-gold); }
+  .ui-tabs { display: flex; gap: 22px; }
+  .ui-tab { font-size: var(--fs-body); color: var(--c-text-second); padding-bottom: 6px; }
+  .ui-tab.active { color: var(--c-ink); font-weight: 700; border-bottom: 3px solid var(--c-gold); }
+
+  .ui-seg { display: flex; gap: 8px; }
+  .ui-seg-item { flex: 1; text-align: center; padding: 8px 0; border: 1.5px solid var(--c-border); border-radius: var(--r-md); font-size: var(--fs-sm); color: var(--c-text-second); }
+  .ui-seg-item.active { border-color: var(--c-gold); color: var(--c-ink); background: var(--c-primary-faint); font-weight: 600; }
+
+  /* 标签：黄油 pill / 橄榄 pill / 知识点 */
+  .ui-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ui-tag { font-size: var(--fs-aux); padding: 4px 12px; border-radius: var(--r-pill); font-weight: 600; }
+  .ui-tag-butter { background: var(--c-primary-soft); color: #8a7212; }
+  .ui-tag-olive  { background: #eaeac4; color: #6b6b2e; }
+  .ui-tag-kp     { background: var(--c-bg-soft); color: var(--c-text-second); }
+
+  /* 搜索框 / chips */
+  .ui-search { background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 9px 16px; font-size: var(--fs-sm); color: var(--c-text-hint); }
+  .ui-chip { display: inline-block; background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 6px 14px; font-size: var(--fs-aux); color: var(--c-text-body); margin: 4px 6px 0 0; }
+
+  /* 做题选项三态 */
+  .ui-option { border: 1.5px solid var(--c-border); border-radius: var(--r-md); padding: 11px 12px; font-size: var(--fs-body); color: var(--c-text-body); margin-bottom: 8px; }
+  .ui-option.selected { border-color: var(--c-gold); background: var(--c-primary-faint); }
+  .ui-option.correct  { border-color: var(--c-success); background: var(--c-success-bg); color: var(--c-success-dark); }
+  .ui-option.wrong    { border-color: var(--c-danger);  background: var(--c-danger-bg);  color: var(--c-danger-dark); }
+  .ui-result { border-radius: var(--r-md); padding: 11px 12px; margin: 10px 0; display: flex; flex-direction: column; gap: 4px; }
+  .ui-result.ok  { background: var(--c-success-bg); }
+  .ui-result.bad { background: var(--c-danger-bg); }
+  .ui-result .t { font-size: var(--fs-body); font-weight: 700; }
+  .ui-result .e { font-size: var(--fs-sm); color: var(--c-text-second); }
+
+  /* 空 / 统计 / 进度 / 热力 / 批注 */
+  .ui-empty { text-align: center; padding: 32px 0; font-size: var(--fs-sm); color: var(--c-text-hint); }
+  .ui-stat-row { display: flex; justify-content: space-around; }
+  .ui-stat { text-align: center; }
+  .ui-stat .num { font-size: var(--fs-display); font-weight: 800; color: var(--c-ink); display: block; }
+  .ui-stat .num.gold { color: var(--c-gold); }
+  .ui-stat .lbl { font-size: var(--fs-aux); color: var(--c-text-hint); }
+  .ui-bar-item { display: flex; align-items: center; margin-bottom: 9px; }
+  .ui-bar-label { width: 84px; font-size: var(--fs-sm); color: var(--c-text-body); }
+  .ui-bar-track { flex: 1; background: var(--c-bg-soft); height: 10px; border-radius: var(--r-pill); margin: 0 8px; }
+  .ui-bar-fill { height: 100%; background: var(--c-gold); border-radius: var(--r-pill); }
+  .ui-bar-count { font-size: var(--fs-aux); color: var(--c-text-second); width: 26px; text-align: right; }
+  .ui-heat { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ui-heat .cell { width: 15px; height: 15px; border-radius: 4px; }
+  .h0 { background: var(--c-bg-soft); } .h1 { background: #fdf0b4; } .h2 { background: #fbe26b; } .h3 { background: #fbc53d; }
+  .ui-comment { background: var(--c-primary-faint); border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 8px; border-left: 3px solid var(--c-gold); }
+  .ui-comment .ct { font-size: var(--fs-sm); color: var(--c-text-body); display: block; }
+  .ui-comment .cm { font-size: var(--fs-tiny); color: var(--c-text-hint); }
+
+  /* 深色编辑感区块（黄油相机 hero） */
+  .ui-hero-dark { background: var(--c-surface-dark); color: #fff; border-radius: var(--r-lg); padding: 18px 16px; margin-bottom: var(--sp-3); }
+  .ui-hero-dark .ht { font-size: var(--fs-h1); font-weight: 800; margin-bottom: 6px; }
+  .ui-hero-dark .hs { font-size: var(--fs-sm); opacity: .8; line-height: 1.5; }
+
+  .comp-label { font-size: 12px; color: #9aa3af; margin: 14px 0 6px; font-weight: 700; }
+  .legend { font-size: 13px; color: #555; background: #fff; border: 1px solid #e7e6e2; border-radius: 14px; padding: 12px 16px; margin-top: 12px; line-height: 1.9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc-head">
+    <h1>engGramer 设计系统 <span class="pill">v0.2 · 黄油相机风</span></h1>
+    <p>参考<b style="color:var(--c-primary)">黄油相机</b>的风格与色系（来自你提供的截图）：奶油黄主色 + 深色字按钮 · 超大圆角 · 白底为主 + 近黑编辑区块 · 粗体黑标题 · 充足留白 · 金黄下划线激活态。</p>
+    <p style="margin-top:10px">手机框按 <code>375px</code> 宽还原（<code>1rpx = 0.5px</code>），组件全部由顶部 <code>:root</code> Design Tokens 驱动。</p>
+  </header>
+
+  <!-- ================= 颜色 ================= -->
+  <h2 class="sec">1 · 色彩 Color</h2>
+  <p class="sec-note">核心是「奶油黄主色 + 深墨色文字」的组合。按钮一律黄底深字，不是白字。</p>
+
+  <div class="grp-title">品牌 / 黄系</div>
+  <div class="swatches">
+    <div class="swatch"><div class="chip" style="background:#fbe26b"></div><div class="meta"><b>Primary 奶油黄</b><span class="hex">#fbe26b</span><span class="use">主按钮底（文字用墨黑）</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#fcefa9"></div><div class="meta"><b>Primary Soft</b><span class="hex">#fcefa9</span><span class="use">禁用 / 浅填充 / 黄标签底</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#fffbe8;border-bottom:1px solid #eee"></div><div class="meta"><b>Primary Faint</b><span class="hex">#fffbe8</span><span class="use">选中底 / 批注底</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#fbc53d"></div><div class="meta"><b>Gold 金黄</b><span class="hex">#fbc53d</span><span class="use">激活 / 图标 / 下划线 / 进度</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#c9c96e"></div><div class="meta"><b>Olive 橄榄黄</b><span class="hex">#c9c96e</span><span class="use">二级按钮 / 标签（深字 #6b6b2e）</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#f2913e"></div><div class="meta"><b>Orange 暖橙</b><span class="hex">#f2913e</span><span class="use">点赞 / 通知 / 吉祥物</span></div></div>
+  </div>
+
+  <div class="grp-title">墨色 / 文字 + 深色区块</div>
+  <div class="swatches">
+    <div class="swatch"><div class="chip" style="background:#1f1f1f"></div><div class="meta"><b>Ink 墨黑</b><span class="hex">#1f1f1f</span><span class="use">大标题 / 黄按钮上的字</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#1c1c1c"></div><div class="meta"><b>Surface Dark</b><span class="hex">#1c1c1c</span><span class="use">编辑感深色区块（白字）</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#333"></div><div class="meta"><b>Body</b><span class="hex">#333</span><span class="use">正文</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#7a7a7a"></div><div class="meta"><b>Secondary</b><span class="hex">#7a7a7a</span><span class="use">次要文字</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#b5b5b5"></div><div class="meta"><b>Hint</b><span class="hex">#b5b5b5</span><span class="use">提示 / 占位</span></div></div>
+  </div>
+
+  <div class="grp-title">背景 / 描边</div>
+  <div class="swatches">
+    <div class="swatch"><div class="chip" style="background:#fff;border-bottom:1px solid #eee"></div><div class="meta"><b>BG Page 白</b><span class="hex">#ffffff</span><span class="use">页面/卡片背景（白为主）</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#f5f4f1"></div><div class="meta"><b>BG Soft 暖灰</b><span class="hex">#f5f4f1</span><span class="use">搜索框 / chips / 浅块</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#ededeb"></div><div class="meta"><b>Border</b><span class="hex">#ededeb</span><span class="use">描边 / 分割线</span></div></div>
+  </div>
+
+  <div class="grp-title">语义色（暖调，用于做题对错 / 状态）</div>
+  <div class="swatches">
+    <div class="swatch"><div class="chip" style="background:#5fb878"></div><div class="meta"><b>Success</b><span class="hex">#5fb878</span><span class="use">答对 · 底 #eef8f0</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#f0603c"></div><div class="meta"><b>Danger</b><span class="hex">#f0603c</span><span class="use">答错 · 底 #fdeee9</span></div></div>
+  </div>
+
+  <!-- ================= 字体 ================= -->
+  <h2 class="sec">2 · 字号 Typography</h2>
+  <p class="sec-note">标题偏粗（700~800），呼应黄油相机的粗体黑标题。括号为小程序 rpx 原值。</p>
+  <table class="scale">
+    <tr><th>层级</th><th>Token</th><th>rpx / px</th><th>用途</th><th>示例</th></tr>
+    <tr><td>Display</td><td><code>--fs-display</code></td><td>60rpx / 30px</td><td>统计大数字</td><td style="font-size:30px;font-weight:800;color:#fbc53d">86%</td></tr>
+    <tr><td>H1</td><td><code>--fs-h1</code></td><td>36rpx / 18px</td><td>页面大标题</td><td style="font-size:18px;font-weight:800;color:#1f1f1f">手机登录</td></tr>
+    <tr><td>H2</td><td><code>--fs-h2</code></td><td>30rpx / 15px</td><td>卡片标题</td><td style="font-size:15px;font-weight:700">AI 诊断分析</td></tr>
+    <tr><td>Body</td><td><code>--fs-body</code></td><td>28rpx / 14px</td><td>正文（默认）</td><td style="font-size:14px">这是正文示例文字。</td></tr>
+    <tr><td>Small</td><td><code>--fs-sm</code></td><td>26rpx / 13px</td><td>小正文 / 选项</td><td style="font-size:13px">这是小正文示例。</td></tr>
+    <tr><td>Aux</td><td><code>--fs-aux</code></td><td>24rpx / 12px</td><td>辅助 / 标签</td><td style="font-size:12px;color:#7a7a7a">辅助说明文字</td></tr>
+    <tr><td>Tiny</td><td><code>--fs-tiny</code></td><td>22rpx / 11px</td><td>角标 / 时间</td><td style="font-size:11px;color:#b5b5b5">2026-05-27</td></tr>
+  </table>
+
+  <!-- ================= 间距 / 圆角 ================= -->
+  <h2 class="sec">3 · 间距 Spacing &amp; 圆角 Radius</h2>
+  <p class="sec-note">圆角是黄油相机最显眼的特征 —— 按钮 16px、卡片 20px、弹窗 28px，比常规更圆。</p>
+  <div class="bars">
+    <div class="bar-row"><code>--sp-1 · 8rpx/4px</code><span class="b" style="width:4px"></span></div>
+    <div class="bar-row"><code>--sp-2 · 16rpx/8px</code><span class="b" style="width:8px"></span></div>
+    <div class="bar-row"><code>--sp-3 · 24rpx/12px ★常用</code><span class="b" style="width:12px"></span></div>
+    <div class="bar-row"><code>--sp-4 · 32rpx/16px ★卡片内边距</code><span class="b" style="width:16px"></span></div>
+    <div class="bar-row"><code>--sp-5 · 48rpx/24px</code><span class="b" style="width:24px"></span></div>
+  </div>
+  <div class="grp-title">圆角</div>
+  <div class="radii">
+    <div class="r" style="border-radius:8px">sm 16rpx<br>标签</div>
+    <div class="r" style="border-radius:14px">md 28rpx<br>输入/控件</div>
+    <div class="r" style="border-radius:16px">btn 32rpx<br>按钮</div>
+    <div class="r" style="border-radius:20px">lg 40rpx<br>卡片</div>
+    <div class="r" style="border-radius:28px">xl 56rpx<br>弹窗</div>
+    <div class="r" style="border-radius:999px">pill<br>胶囊</div>
+  </div>
+
+  <!-- ================= 组件 ================= -->
+  <h2 class="sec">4 · 组件 Components</h2>
+  <p class="sec-note">放进 375px 手机框还原真机观感。第 1 框直接对照你发的登录页，验证风格一致。</p>
+
+  <div class="phones">
+
+    <!-- 手机 1：表单 & 按钮（对照黄油相机登录页）-->
+    <div>
+      <div class="phone">
+        <div class="statusbar">15:33</div>
+        <div class="navbar">登录 / 表单</div>
+        <div class="screen" style="padding:16px">
+          <div style="font-size:18px;font-weight:800;color:#1f1f1f;margin:8px 0 24px">手机登录</div>
+          <input class="ui-input-line" placeholder="输入手机号" style="margin-bottom:28px">
+          <button class="ui-btn ui-btn-primary">获取验证码</button>
+
+          <div style="font-size:18px;font-weight:800;color:#1f1f1f;margin:28px 0 16px">输入验证码</div>
+          <div class="ui-otp" style="margin-bottom:24px">
+            <span class="d filled">9</span><span class="d filled">3</span><span class="d filled">8</span>
+            <span class="d"></span><span class="d"></span><span class="d"></span>
+          </div>
+          <button class="ui-btn disabled">重新获取 (37)</button>
+
+          <div class="comp-label">按钮族</div>
+          <button class="ui-btn ui-btn-primary">主按钮 Primary（黄底深字）</button>
+          <button class="ui-btn ui-btn-olive">次按钮 Olive</button>
+          <button class="ui-btn ui-btn-ghost">幽灵 Ghost（描边）</button>
+
+          <div class="comp-label">分段选择 / 题量难度</div>
+          <div class="ui-seg" style="margin-bottom:10px">
+            <span class="ui-seg-item">3</span><span class="ui-seg-item active">5</span><span class="ui-seg-item">8</span>
+          </div>
+          <div class="ui-seg">
+            <span class="ui-seg-item">易</span><span class="ui-seg-item active">中</span><span class="ui-seg-item">难</span>
+          </div>
+        </div>
+      </div>
+      <p class="phone-label">表单 & 按钮（对照登录页）</p>
+    </div>
+
+    <!-- 手机 2：内容 / 卡片 / 标签 / 深色 hero -->
+    <div>
+      <div class="phone">
+        <div class="statusbar">10:31</div>
+        <div class="navbar">错题 / 内容</div>
+        <div class="screen">
+          <div class="ui-search">🔍 搜索我的错题…</div>
+          <div style="margin:10px 0 4px">
+            <span class="ui-chip">全部</span><span class="ui-chip">时态</span><span class="ui-chip">主谓一致</span><span class="ui-chip">待掌握</span>
+          </div>
+
+          <div class="comp-label">深色编辑感区块（可选 hero）</div>
+          <div class="ui-hero-dark">
+            <div class="ht">本周薄弱点</div>
+            <div class="hs">一般过去时 · 第三人称单数 —— AI 已为你生成针对练习</div>
+          </div>
+
+          <div class="comp-label">卡片 + 标题 + 标签</div>
+          <div class="ui-card">
+            <div class="ui-card-title">She ___ to school every day.</div>
+            <div class="ui-tags" style="margin-bottom:10px">
+              <span class="ui-tag ui-tag-butter">单选</span>
+              <span class="ui-tag ui-tag-olive">时态错误</span>
+              <span class="ui-tag ui-tag-kp">一般现在时</span>
+            </div>
+            <span class="ui-hint">学生答案：go　|　正确答案：goes</span>
+          </div>
+
+          <div class="comp-label">老师批注 Comment</div>
+          <div class="ui-card">
+            <div class="ui-comment"><span class="ct">注意主谓一致，第三人称单数动词加 s。</span><span class="cm">王老师 · 2026-05-27 14:30</span></div>
+          </div>
+
+          <div class="comp-label">空状态</div>
+          <div class="ui-card"><div class="ui-empty">还没有错题，去拍一张试试 📷</div></div>
+        </div>
+      </div>
+      <p class="phone-label">内容 / 卡片 / 标签 / 深色 hero</p>
+    </div>
+
+    <!-- 手机 3：学情报告 + 练习答题 -->
+    <div>
+      <div class="phone">
+        <div class="statusbar">15:35</div>
+        <div class="navbar">学情 / 练习</div>
+        <div class="screen">
+          <div class="comp-label">统计总览 + 进度 + 热力</div>
+          <div class="ui-card">
+            <div class="ui-stat-row">
+              <div class="ui-stat"><span class="num">42</span><span class="lbl">累计错题</span></div>
+              <div class="ui-stat"><span class="num">31</span><span class="lbl">已分析</span></div>
+              <div class="ui-stat"><span class="num gold">86%</span><span class="lbl">掌握率</span></div>
+            </div>
+          </div>
+          <div class="ui-card">
+            <div class="ui-card-title">高频错误类型</div>
+            <div class="ui-bar-item"><span class="ui-bar-label">时态错误</span><span class="ui-bar-track"><span class="ui-bar-fill" style="width:100%"></span></span><span class="ui-bar-count">12</span></div>
+            <div class="ui-bar-item"><span class="ui-bar-label">主谓一致</span><span class="ui-bar-track"><span class="ui-bar-fill" style="width:58%"></span></span><span class="ui-bar-count">7</span></div>
+            <div class="ui-bar-item"><span class="ui-bar-label">介词搭配</span><span class="ui-bar-track"><span class="ui-bar-fill" style="width:33%"></span></span><span class="ui-bar-count">4</span></div>
+            <div style="margin-top:12px"><div class="ui-heat">
+              <span class="cell h0"></span><span class="cell h1"></span><span class="cell h2"></span><span class="cell h3"></span><span class="cell h1"></span>
+              <span class="cell h2"></span><span class="cell h3"></span><span class="cell h0"></span><span class="cell h1"></span><span class="cell h2"></span>
+              <span class="cell h3"></span><span class="cell h2"></span><span class="cell h1"></span><span class="cell h0"></span><span class="cell h3"></span>
+            </div></div>
+          </div>
+
+          <div class="comp-label">练习答题（选项三态 + 即时判分）</div>
+          <div class="ui-card">
+            <div style="font-size:12px;color:#7a7a7a;margin-bottom:8px">第 1 / 5 题 · 一般现在时</div>
+            <div style="font-size:14px;color:#1f1f1f;line-height:1.6;margin-bottom:10px">She ___ to school every day.</div>
+            <div class="ui-option">go</div>
+            <div class="ui-option correct">goes ✓</div>
+            <div class="ui-option wrong">going</div>
+            <div class="ui-option">gone</div>
+            <div class="ui-result ok"><span class="t" style="color:#3f9159">✅ 回答正确</span><span class="e">主语 She 第三人称单数，动词用 goes。</span></div>
+          </div>
+
+          <div style="text-align:center;margin-top:6px"><span class="ui-fab">🧈 开始 AI 练习</span></div>
+        </div>
+      </div>
+      <p class="phone-label">学情报告 + 练习答题</p>
+    </div>
+
+  </div>
+
+  <h2 class="sec">5 · 落地建议 Next Steps</h2>
+  <div class="legend">
+    1. <b>定稿本规范</b> → 把 <code style="background:#fffbe8;padding:1px 5px;border-radius:4px">:root</code> 这套 token 转成小程序 <code style="background:#fffbe8;padding:1px 5px;border-radius:4px">uni.scss</code> / 全局 CSS 变量（rpx 版）。<br>
+    2. <b>抽公共组件</b>：<code>&lt;AppButton&gt;</code>（黄底深字主按钮）、<code>&lt;AppCard&gt;</code>（大圆角）、<code>&lt;AppTag&gt;</code>（pill）、<code>&lt;EmptyState&gt;</code>。<br>
+    3. <b>回填翻新</b>：把现有 9 个页面的蓝色主调 <code>#1677ff</code> 全量替换为黄油黄体系，圆角加大，按钮改黄底深字。<br>
+    4. <b>真机验证</b>：微信开发者工具跑一遍确认 rpx 渲染。<br>
+    <span style="color:#9aa3af">＊关键差异：原 v0.1 是科技蓝（#1677ff），v0.2 改为黄油相机的奶油黄 + 深字 + 超大圆角 + 暖色调。这是一次主色与气质的整体切换。</span><br>
+    <span style="color:#9aa3af">＊提示：黄油相机是相机/生活方式 App，奶油黄活泼友好；用在英语错题工具上，做题区建议保持高对比（深字/白底）以护眼专注，黄色主要用于按钮、激活、强调，避免大面积铺黄。</span>
+  </div>
+
+</div>
+</body>
+</html>
