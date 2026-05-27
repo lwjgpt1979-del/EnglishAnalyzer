@@ -77,3 +77,240 @@ def test_practice_stats_out_schema():
     )
     assert out.correct_rate == 0.7
     assert out.by_knowledge_point["一般现在时"]["correct"] == 3
+
+
+# ── Service 集成测试（需要真实 DB）─────────────────────────────────────────────
+
+from app.core.database import _async_session_factory
+from app.core.exceptions import AppError
+from app.services.auth_service import upsert_user
+from app.services.practice_service import (
+    generate_practice_questions,
+    get_or_create_knowledge_point,
+    get_practice_history,
+    get_practice_stats,
+    get_question,
+    submit_answer,
+)
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    async with _async_session_factory() as session:
+        yield session
+        await session.rollback()
+
+
+@pytest_asyncio.fixture
+async def student_user(db_session):
+    user = await upsert_user(db_session, openid=f"practice_svc_{uuid.uuid4().hex[:8]}")
+    await db_session.flush()
+    return user
+
+
+_MOCK_QUESTIONS_JSON = (
+    '[{"stem": "She ___ to school.", "options": ["go", "goes", "going", "gone"], '
+    '"answer": "goes", "explanation": "第三人称单数。"}, '
+    '{"stem": "They ___ happy.", "options": ["is", "am", "are", "be"], '
+    '"answer": "are", "explanation": "复数主语用 are。"}, '
+    '{"stem": "I ___ a student.", "options": ["is", "am", "are", "be"], '
+    '"answer": "am", "explanation": "第一人称单数用 am。"}]'
+)
+
+
+def _make_mock_response(json_text: str):
+    from unittest.mock import MagicMock
+    resp = MagicMock()
+    choice = MagicMock()
+    choice.message.content = json_text
+    resp.choices = [choice]
+    resp.usage = MagicMock()
+    resp.usage.prompt_tokens = 100
+    resp.usage.completion_tokens = 200
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_knowledge_point_creates(db_session):
+    kp = await get_or_create_knowledge_point(db_session, name="一般现在时")
+    await db_session.flush()
+    assert kp.name == "一般现在时"
+    assert kp.id is not None
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_knowledge_point_is_idempotent(db_session):
+    kp1 = await get_or_create_knowledge_point(db_session, name="时态混淆")
+    await db_session.flush()
+    kp2 = await get_or_create_knowledge_point(db_session, name="时态混淆")
+    assert kp1.id == kp2.id
+
+
+@pytest.mark.asyncio
+async def test_generate_practice_questions(db_session, student_user):
+    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=False), \
+         patch("app.services.practice_service.AsyncOpenAI") as MockClient:
+        from unittest.mock import MagicMock
+        inst = MagicMock()
+        MockClient.return_value = inst
+        inst.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response(_MOCK_QUESTIONS_JSON)
+        )
+        questions = await generate_practice_questions(
+            db_session,
+            student_id=student_user.id,
+            knowledge_point="一般现在时",
+            count=3,
+            difficulty=2,
+        )
+    await db_session.flush()
+    assert len(questions) == 3
+    assert questions[0].content["stem"] == "She ___ to school."
+    assert questions[0].content["answer"] == "goes"
+    assert questions[0].question_type == "单选"
+    assert questions[0].difficulty == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_uses_dev_mock_when_placeholder_key(db_session, student_user):
+    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+        questions = await generate_practice_questions(
+            db_session,
+            student_id=student_user.id,
+            knowledge_point="主谓一致",
+            count=2,
+            difficulty=3,
+        )
+    await db_session.flush()
+    assert len(questions) == 2
+    for q in questions:
+        assert "stem" in q.content
+        assert "answer" in q.content
+        assert "options" in q.content
+
+
+@pytest.mark.asyncio
+async def test_generate_no_knowledge_point_no_diagnosis_raises(db_session, student_user):
+    with pytest.raises(AppError) as exc_info:
+        await generate_practice_questions(
+            db_session,
+            student_id=student_user.id,
+            knowledge_point=None,
+            count=3,
+            difficulty=3,
+        )
+    assert exc_info.value.code == 400
+
+
+@pytest.mark.asyncio
+async def test_get_question(db_session, student_user):
+    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+        questions = await generate_practice_questions(
+            db_session, student_id=student_user.id,
+            knowledge_point="时态", count=1, difficulty=2,
+        )
+    await db_session.flush()
+    q = await get_question(db_session, question_id=questions[0].id)
+    assert q is not None
+    assert q.id == questions[0].id
+
+
+@pytest.mark.asyncio
+async def test_submit_answer_correct(db_session, student_user):
+    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=False), \
+         patch("app.services.practice_service.AsyncOpenAI") as MockClient:
+        from unittest.mock import MagicMock
+        inst = MagicMock()
+        MockClient.return_value = inst
+        inst.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response(_MOCK_QUESTIONS_JSON)
+        )
+        questions = await generate_practice_questions(
+            db_session, student_id=student_user.id,
+            knowledge_point="一般现在时", count=3, difficulty=2,
+        )
+    await db_session.flush()
+    record = await submit_answer(
+        db_session,
+        student_id=student_user.id,
+        question_id=questions[0].id,
+        answer="goes",
+        time_spent_sec=10,
+    )
+    await db_session.flush()
+    assert record.is_correct is True
+    assert record.student_id == student_user.id
+    assert record.trigger_type == "module8_free"
+
+
+@pytest.mark.asyncio
+async def test_submit_answer_wrong(db_session, student_user):
+    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=False), \
+         patch("app.services.practice_service.AsyncOpenAI") as MockClient:
+        from unittest.mock import MagicMock
+        inst = MagicMock()
+        MockClient.return_value = inst
+        inst.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response(_MOCK_QUESTIONS_JSON)
+        )
+        questions = await generate_practice_questions(
+            db_session, student_id=student_user.id,
+            knowledge_point="一般现在时", count=3, difficulty=2,
+        )
+    await db_session.flush()
+    record = await submit_answer(
+        db_session, student_id=student_user.id,
+        question_id=questions[0].id, answer="go",
+    )
+    await db_session.flush()
+    assert record.is_correct is False
+
+
+@pytest.mark.asyncio
+async def test_submit_answer_question_not_found_raises(db_session, student_user):
+    with pytest.raises(AppError) as exc_info:
+        await submit_answer(
+            db_session, student_id=student_user.id,
+            question_id=uuid.uuid4(), answer="x",
+        )
+    assert exc_info.value.code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_practice_history(db_session, student_user):
+    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+        questions = await generate_practice_questions(
+            db_session, student_id=student_user.id,
+            knowledge_point="时态", count=2, difficulty=2,
+        )
+    await db_session.flush()
+    for q in questions:
+        await submit_answer(
+            db_session, student_id=student_user.id,
+            question_id=q.id, answer=q.content["answer"],
+        )
+    await db_session.flush()
+    items, total = await get_practice_history(
+        db_session, student_id=student_user.id, skip=0, limit=10
+    )
+    assert total >= 2
+    assert len(items) >= 2
+
+
+@pytest.mark.asyncio
+async def test_get_practice_stats(db_session, student_user):
+    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+        questions = await generate_practice_questions(
+            db_session, student_id=student_user.id,
+            knowledge_point="主谓一致", count=2, difficulty=2,
+        )
+    await db_session.flush()
+    await submit_answer(db_session, student_id=student_user.id,
+                        question_id=questions[0].id, answer=questions[0].content["answer"])
+    await submit_answer(db_session, student_id=student_user.id,
+                        question_id=questions[1].id, answer="__definitely_wrong__")
+    await db_session.flush()
+    stats = await get_practice_stats(db_session, student_id=student_user.id)
+    assert stats["total_practiced"] >= 2
+    assert stats["total_correct"] >= 1
+    assert 0.0 <= stats["correct_rate"] <= 1.0
