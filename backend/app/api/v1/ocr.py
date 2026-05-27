@@ -31,7 +31,7 @@ UserDep = Annotated[User, Depends(get_current_user)]
 
 async def _run_ocr_pipeline(wq_id: uuid.UUID) -> None:
     """后台任务：执行 OCR + DeepSeek 解析，写回 WrongQuestion。"""
-    from app.core.database import _async_session_factory
+    from app.core.database import async_session_factory as _async_session_factory
     from app.services.ocr_service import run_ocr
     from app.services.ocr_parser_service import parse_ocr_result
     from datetime import datetime, timezone

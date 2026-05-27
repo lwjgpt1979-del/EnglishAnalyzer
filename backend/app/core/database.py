@@ -54,6 +54,9 @@ def _build_async_engine():
 _async_engine = _build_async_engine()
 _async_session_factory = async_sessionmaker(_async_engine, expire_on_commit=False)
 
+# Public alias used by background tasks (e.g., OCR pipeline)
+async_session_factory = _async_session_factory
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI 依赖：yield 一个 AsyncSession，请求结束自动关闭。"""

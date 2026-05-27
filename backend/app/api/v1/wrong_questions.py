@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
@@ -33,6 +33,7 @@ UserDep = Annotated[User, Depends(get_current_user)]
 @router.post("/", response_model=BaseResponse[WrongQuestionOut])
 async def create_wrong_question(
     body: WrongQuestionCreate,
+    background_tasks: BackgroundTasks,
     db: DbDep,
     current_user: UserDep,
 ):
@@ -41,8 +42,14 @@ async def create_wrong_question(
     wq = await wrong_question_service.create_wrong_question(
         db, student_id=current_user.id, data=body
     )
+    # 初始化 ocr_status = pending 并触发后台 OCR
+    wq.ocr_status = "pending"  # type: ignore[assignment]
     await db.commit()
     await db.refresh(wq)
+
+    from app.api.v1.ocr import _run_ocr_pipeline
+    background_tasks.add_task(_run_ocr_pipeline, wq.id)
+
     return make_ok(WrongQuestionOut.model_validate(wq))
 
 
@@ -115,6 +122,13 @@ async def analyze_wrong_question(
     )
     if wq is None:
         raise AppError(code=404, message="错题不存在或无权访问")
+
+    # OCR 尚未完成时拒绝触发 AI 分析
+    if wq.ocr_status not in ("completed", None):
+        raise AppError(
+            code=400,
+            message=f"OCR 识别尚未完成（当前状态：{wq.ocr_status}），请稍后再试",
+        )
 
     from app.services import ai_service  # 延迟导入，避免启动时加载 openai
 
