@@ -73,14 +73,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useAuthStore } from '../../stores/auth'
+import { useAuthStore } from '@/stores/auth'
 import {
   becomeTeacher,
   createInviteCode,
   bindTeacher,
   getMyStudents,
-} from '../../api/teacher'
-import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut } from '../../types/api'
+} from '@/api/teacher'
+import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut } from '@/types/api'
 
 const auth = useAuthStore()
 
@@ -109,14 +109,11 @@ onMounted(async () => {
 async function handleBecomeTeacher() {
   becoming.value = true
   try {
-    const res = await becomeTeacher(subjectInput.value || undefined)
-    if (res.code === 200) {
-      profile.value = res.data
-      isTeacher.value = true
-      if (auth.user) auth.user.role = 'teacher'
-      await loadStudents()
-      uni.showToast({ title: '已成为教师', icon: 'success' })
-    }
+    profile.value = await becomeTeacher(subjectInput.value || undefined)
+    isTeacher.value = true
+    if (auth.user) auth.user.role = 'teacher'
+    await loadStudents()
+    uni.showToast({ title: '已成为教师', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '操作失败', icon: 'none' })
   } finally {
@@ -127,8 +124,7 @@ async function handleBecomeTeacher() {
 async function handleGenerateCode() {
   generatingCode.value = true
   try {
-    const res = await createInviteCode()
-    if (res.code === 200) inviteCode.value = res.data
+    inviteCode.value = await createInviteCode()
   } catch (e: any) {
     uni.showToast({ title: e?.message || '生成失败', icon: 'none' })
   } finally {
@@ -147,8 +143,7 @@ function copyCode() {
 async function loadStudents() {
   loadingStudents.value = true
   try {
-    const res = await getMyStudents()
-    if (res.code === 200) students.value = res.data
+    students.value = await getMyStudents()
   } finally {
     loadingStudents.value = false
   }
@@ -161,11 +156,9 @@ async function handleBind() {
   }
   binding.value = true
   try {
-    const res = await bindTeacher(bindCodeInput.value)
-    if (res.code === 200) {
-      bindCodeInput.value = ''
-      uni.showToast({ title: '绑定成功', icon: 'success' })
-    }
+    await bindTeacher(bindCodeInput.value)
+    bindCodeInput.value = ''
+    uni.showToast({ title: '绑定成功', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '绑定失败', icon: 'none' })
   } finally {

@@ -55,8 +55,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
-import { getStudentWrongQuestions, addComment, getComments } from '../../api/teacher'
-import type { WrongQuestionOut, TeacherCommentOut } from '../../types/api'
+import { getStudentWrongQuestions, addComment, getComments } from '@/api/teacher'
+import type { WrongQuestionOut, TeacherCommentOut } from '@/types/api'
 
 const wqs = ref<WrongQuestionOut[]>([])
 const loading = ref(true)
@@ -74,18 +74,14 @@ onMounted(async () => {
   }
 
   try {
-    const res = await getStudentWrongQuestions(sid)
-    if (res.code === 200) {
-      wqs.value = res.data
-      await Promise.all(
-        res.data.map(async (wq) => {
-          try {
-            const cr = await getComments(wq.id)
-            if (cr.code === 200) existingComments[wq.id] = cr.data
-          } catch { /* 忽略 */ }
-        })
-      )
-    }
+    wqs.value = await getStudentWrongQuestions(sid)
+    await Promise.all(
+      wqs.value.map(async (wq) => {
+        try {
+          existingComments[wq.id] = await getComments(wq.id)
+        } catch { /* 忽略 */ }
+      })
+    )
   } finally {
     loading.value = false
   }
@@ -99,13 +95,11 @@ async function submitComment(wqId: string) {
   }
   submitting[wqId] = true
   try {
-    const res = await addComment(wqId, text)
-    if (res.code === 200) {
-      commentDraft[wqId] = ''
-      if (!existingComments[wqId]) existingComments[wqId] = []
-      existingComments[wqId].push(res.data)
-      uni.showToast({ title: '批注成功', icon: 'success' })
-    }
+    const newComment = await addComment(wqId, text)
+    commentDraft[wqId] = ''
+    if (!existingComments[wqId]) existingComments[wqId] = []
+    existingComments[wqId].push(newComment)
+    uni.showToast({ title: '批注成功', icon: 'success' })
   } catch (e: any) {
     uni.showToast({ title: e?.message || '提交失败', icon: 'none' })
   } finally {

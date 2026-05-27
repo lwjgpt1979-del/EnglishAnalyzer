@@ -262,8 +262,7 @@ onMounted(async () => {
     const analyses = await listAnalyses(wqId)
     if (analyses.length > 0) latestAnalysis.value = analyses[0]
     try {
-      const cr = await getComments(wqId)
-      if (cr.code === 200) teacherComments.value = cr.data
+      teacherComments.value = await getComments(wqId)
     } catch { /* 无批注也不报错 */ }
       // OCR 预填 + 自动轮询
       if (wq.value?.ocr_status === 'completed') {
