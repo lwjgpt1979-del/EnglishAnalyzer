@@ -6,9 +6,12 @@ Dev 模式（access_key 以 'placeholder' 开头）返回 mock 文字，无需�
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────
@@ -115,28 +118,26 @@ async def run_ocr(image_url: str) -> OcrResult:
             handwritten_text=_MOCK_HANDWRITTEN,
         )
 
-    # 至少一路为真实 API
-    printed_coro = (
-        asyncio.sleep(0) if _is_aliyun_dev_mode()
-        else _aliyun_recognize(image_url)
-    )
-    handwritten_coro = (
-        asyncio.sleep(0) if _is_tencent_ocr_dev_mode()
-        else _tencent_handwriting(image_url)
-    )
+    # 至少一路为真实 API — 用 _noop() 作占位，保证 gather 两槽类型一致 (str)
+    async def _noop() -> str:
+        return ""
+
+    printed_coro = _noop() if _is_aliyun_dev_mode() else _aliyun_recognize(image_url)
+    handwritten_coro = _noop() if _is_tencent_ocr_dev_mode() else _tencent_handwriting(image_url)
 
     printed_result, handwritten_result = await asyncio.gather(
         printed_coro, handwritten_coro, return_exceptions=True
     )
 
-    printed_text = (
-        _MOCK_PRINTED if _is_aliyun_dev_mode()
-        else (printed_result if isinstance(printed_result, str) else "")
-    )
-    handwritten_text = (
-        _MOCK_HANDWRITTEN if _is_tencent_ocr_dev_mode()
-        else (handwritten_result if isinstance(handwritten_result, str) else "")
-    )
+    if isinstance(printed_result, Exception):
+        _log.error("Aliyun OCR failed: %s", printed_result, exc_info=printed_result)
+        printed_result = ""
+    if isinstance(handwritten_result, Exception):
+        _log.error("Tencent OCR failed: %s", handwritten_result, exc_info=handwritten_result)
+        handwritten_result = ""
+
+    printed_text = _MOCK_PRINTED if _is_aliyun_dev_mode() else printed_result
+    handwritten_text = _MOCK_HANDWRITTEN if _is_tencent_ocr_dev_mode() else handwritten_result
 
     return OcrResult(
         printed_text=printed_text,
