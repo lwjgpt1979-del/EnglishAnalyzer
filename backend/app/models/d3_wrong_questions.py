@@ -115,3 +115,27 @@ class AiAnalysis(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class TeacherComment(Base):
+    """教师对错题的批注。"""
+
+    __tablename__ = "teacher_comments"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    wrong_question_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("wrong_questions.id"), nullable=False
+    )
+    teacher_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+    )
+    comment_text = mapped_column(sa.Text, nullable=False)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )

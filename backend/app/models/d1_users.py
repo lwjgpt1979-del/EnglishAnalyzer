@@ -46,7 +46,7 @@ teacher_student_status_enum = sa.Enum(
     name="teacher_student_status",
 )
 invite_code_type_enum = sa.Enum(
-    "relative_bind", "institution_join",
+    "relative_bind", "institution_join", "teacher_bind",
     name="invite_code_type",
 )
 

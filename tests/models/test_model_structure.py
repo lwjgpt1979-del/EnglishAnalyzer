@@ -278,7 +278,7 @@ def test_branch_company_city_partial_unique_index():
 
 
 def test_all_37_tables_in_metadata():
-    """确保 Base.metadata 包含全部 37 张表。"""
+    """确保 Base.metadata 包含全部 38 张表。"""
     # 导入 __init__ 触发所有模型注册
     import app.models  # noqa: F401
     from app.models.base import Base
@@ -290,7 +290,7 @@ def test_all_37_tables_in_metadata():
         # 域2
         "memberships", "orders", "refund_records",
         # 域3
-        "wrong_questions", "ocr_tasks", "ai_analyses",
+        "wrong_questions", "ocr_tasks", "ai_analyses", "teacher_comments",
         # 域4
         "knowledge_points", "curriculum_units", "unit_knowledge_points",
         "curriculum_words", "wrong_question_knowledge_points",
@@ -311,7 +311,7 @@ def test_all_37_tables_in_metadata():
     actual_tables = set(Base.metadata.tables.keys())
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
-    assert len(actual_tables) == 37, f"期望 37 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+    assert len(actual_tables) == 38, f"期望 38 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
 
 
 def test_migration_file_exists():
