@@ -14,7 +14,13 @@ async def wechat_code2session(code: str) -> dict:
 
     文档: https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/user-login/code2Session.html
     session_key 不落库，不透传业务层（Tech Spec §1.2）。
+
+    Dev 模式（WECHAT_APPID 以 'wx_dev' 开头）：跳过真实 API，返回固定 mock openid。
     """
+    if settings.wechat_appid.startswith("wx_dev"):
+        # 本地测试 mock：code 作为 openid 的 suffix，每个 code 对应固定用户
+        return {"openid": f"dev_openid_{code}", "session_key": "dev_session_key"}
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(
             settings.wechat_code2session_url,

@@ -1,0 +1,48 @@
+# deploy/docker-compose.local.yml
+# 本机 Docker 开发测试用。不包含 nginx，后端直接暴露在 localhost:8000。
+# 使用：
+#   cd deploy
+#   docker compose -f docker-compose.local.yml up -d
+# 然后运行迁移（只需第一次）：
+#   docker exec enggramer_local_backend alembic upgrade head
+# 验证：
+#   curl http://localhost:8000/health
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: enggramer_local_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: enggramer
+      POSTGRES_USER: enggramer
+      POSTGRES_PASSWORD: local_dev_password
+    volumes:
+      - pgdata_local:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"   # 5433 避免与本机 PostgreSQL 冲突
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enggramer -d enggramer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: enggramer-backend:latest
+    container_name: enggramer_local_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env.local
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata_local:

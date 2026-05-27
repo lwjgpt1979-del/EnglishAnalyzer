@@ -38,6 +38,10 @@ _USER_PROMPT_TEMPLATE = """请分析以下英语错题，给出诊断报告。
 }}"""
 
 
+def _is_deepseek_dev_mode() -> bool:
+    return settings.deepseek_api_key.startswith("sk-placeholder")
+
+
 async def analyze_wrong_question(
     db: AsyncSession,
     *,
@@ -46,10 +50,31 @@ async def analyze_wrong_question(
 ) -> AiAnalysis:
     """调用 DeepSeek API 分析错题，写入 ai_analyses 表，返回 ORM 对象（未 commit）。
 
+    Dev 模式（DEEPSEEK_API_KEY 以 'sk-placeholder' 开头）：跳过真实 API，
+    返回固定 mock 诊断结果，让整条链路可在无账号时完整测试。
+
     异常处理：
     - DeepSeek API 错误 → AppError(502, "AI服务暂时不可用，请稍后重试")
     - JSON 解析失败   → AppError(500, "AI分析返回格式异常")
     """
+    if _is_deepseek_dev_mode():
+        # Dev mock：返回固定诊断结果
+        analysis = AiAnalysis(
+            id=uuid.uuid4(),
+            wrong_question_id=wq.id,
+            student_id=student_id,
+            llm_provider="deepseek",
+            error_types=["词义辨析错误", "动词短语混淆"],
+            knowledge_points=["动词短语 hand in/out/over/up", "语境理解"],
+            diagnosis="学生将 hand in（上交）误选为 hand out（分发）。两者意思相反，是常见的动词短语混淆错误。",
+            suggestions="建议重点记忆 hand 系列短语：hand in=上交，hand out=分发，hand over=移交，hand up=举手。多做语境题加深记忆。",
+            confidence_score=0.92,
+            tokens_used=0,
+        )
+        db.add(analysis)
+        await db.flush()
+        return analysis
+
     prompt = _USER_PROMPT_TEMPLATE.format(
         question_text=wq.question_text or "(暂无文字内容)",
         student_answer=wq.student_answer or "(未提供)",
