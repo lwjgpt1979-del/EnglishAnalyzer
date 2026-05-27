@@ -70,6 +70,13 @@
       </button>
     </view>
 
+    <!-- 教师中心 -->
+    <view class="card" style="margin-top:16rpx;">
+      <view class="card-title">教师中心</view>
+      <text class="menu-desc">教师功能：生成邀请码、查看学生错题、添加批注；学生功能：绑定老师</text>
+      <button class="btn-menu" @tap="goTeacher">进入教师中心</button>
+    </view>
+
   </view>
 </template>
 
@@ -161,6 +168,10 @@ async function onPay() {
     paying.value = false
   }
 }
+
+function goTeacher() {
+  uni.navigateTo({ url: '/pages/teacher/students' })
+}
 </script>
 
 <style scoped>
@@ -237,4 +248,6 @@ async function onPay() {
 }
 .btn-pay[disabled] { opacity: 0.5; }
 .center-tip { color: #999; font-size: 28rpx; }
+.menu-desc { font-size: 24rpx; color: #888; margin-bottom: 12rpx; display: block; }
+.btn-menu { background: #f0f7ff; color: #1677ff; border: 1rpx solid #1677ff; border-radius: 8rpx; padding: 16rpx; font-size: 28rpx; text-align: center; }
 </style>

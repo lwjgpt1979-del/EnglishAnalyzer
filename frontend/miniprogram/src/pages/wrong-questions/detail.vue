@@ -114,6 +114,19 @@
           <text class="analysis-text">{{ latestAnalysis.suggestions }}</text>
         </view>
       </view>
+
+      <!-- 老师批注 -->
+      <view v-if="teacherComments.length > 0" class="card">
+        <view class="card-title">老师批注</view>
+        <view
+          v-for="c in teacherComments"
+          :key="c.id"
+          class="teacher-comment-item"
+        >
+          <text class="tc-text">{{ c.comment_text }}</text>
+          <text class="tc-time">{{ c.created_at.slice(0, 16).replace('T', ' ') }}</text>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -129,7 +142,8 @@ import {
   triggerOcr,
 } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
-import type { AiAnalysisOut, ConfirmOcrTextRequest, WrongQuestionOut } from '@/types/api'
+import { getComments } from '@/api/teacher'
+import type { AiAnalysisOut, ConfirmOcrTextRequest, TeacherCommentOut, WrongQuestionOut } from '@/types/api'
 
 const auth = useAuthStore()
 
@@ -141,6 +155,7 @@ const wqId = currentPage.options.id
 const wq = ref<WrongQuestionOut | null>(null)
 const latestAnalysis = ref<AiAnalysisOut | null>(null)
 const analyzing = ref(false)
+const teacherComments = ref<TeacherCommentOut[]>([])
 
 // OCR 编辑状态
 const editQuestion = ref('')
@@ -246,6 +261,10 @@ onMounted(async () => {
     wq.value = await getWrongQuestion(wqId)
     const analyses = await listAnalyses(wqId)
     if (analyses.length > 0) latestAnalysis.value = analyses[0]
+    try {
+      const cr = await getComments(wqId)
+      if (cr.code === 200) teacherComments.value = cr.data
+    } catch { /* 无批注也不报错 */ }
       // OCR 预填 + 自动轮询
       if (wq.value?.ocr_status === 'completed') {
         editQuestion.value = wq.value.question_text ?? ''
@@ -364,4 +383,7 @@ function previewImg() {
   font-size: 28rpx; height: 80rpx; line-height: 80rpx; width: 100%;
 }
 .btn-confirm[disabled] { opacity: 0.5; }
+.teacher-comment-item { background: #fffbe6; border-radius: 8rpx; padding: 12rpx 16rpx; margin-bottom: 8rpx; }
+.tc-text { font-size: 28rpx; color: #333; display: block; margin-bottom: 4rpx; }
+.tc-time { font-size: 22rpx; color: #aaa; }
 </style>

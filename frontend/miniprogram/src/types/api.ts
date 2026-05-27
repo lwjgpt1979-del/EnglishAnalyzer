@@ -165,3 +165,30 @@ export interface ConfirmOcrTextRequest {
   correct_answer?: string | null
   question_type?: string | null
 }
+
+// ── Teacher ──────────────────────────────────────────────────────────────────
+
+export interface TeacherProfileOut {
+  user_id: string
+  subject: string | null
+  cert_status: string
+  max_students: number
+}
+
+export interface InviteCodeOut {
+  code: string
+  expires_at: string
+}
+
+export interface TeacherStudentOut {
+  student_id: string
+  bound_at: string | null
+}
+
+export interface TeacherCommentOut {
+  id: string
+  wrong_question_id: string
+  teacher_id: string
+  comment_text: string
+  created_at: string
+}
