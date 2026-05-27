@@ -78,11 +78,18 @@ async def parse_ocr_result(ocr_result: OcrResult) -> ParsedQuestion:
         raise AppError(code=502, message=f"OCR解析服务暂时不可用（{exc}）") from exc
 
     raw_text = (response.choices[0].message.content or "").strip()
+    # Strip markdown code fences if the model returns them despite instructions
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("```")[-2] if raw_text.count("```") >= 2 else raw_text
+        raw_text = raw_text.lstrip("json").strip()
 
     try:
         data = json.loads(raw_text)
     except json.JSONDecodeError as exc:
         raise AppError(code=500, message="OCR解析返回格式异常") from exc
+
+    if not isinstance(data, dict):
+        raise AppError(code=500, message="OCR解析返回格式异常")
 
     valid_types = {"单选", "完型", "阅读", "作文", "其他"}
     question_type = data.get("question_type")
