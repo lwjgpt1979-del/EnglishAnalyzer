@@ -192,3 +192,56 @@ export interface TeacherCommentOut {
   comment_text: string
   created_at: string
 }
+
+// ── Practice (AI 仿真题) ──────────────────────────────────────────────────────
+
+export interface GenerateQuestionsRequest {
+  knowledge_point?: string | null
+  count?: number
+  difficulty?: number
+}
+
+export interface PracticeQuestionOut {
+  id: string
+  knowledge_point_id: string
+  knowledge_point_name: string
+  question_type: string
+  difficulty: number
+  stem: string
+  options: string[]
+}
+
+export interface SubmitAnswerRequest {
+  question_id: string
+  answer: string
+  time_spent_sec?: number | null
+}
+
+export interface SubmitAnswerResult {
+  record_id: string
+  question_id: string
+  is_correct: boolean
+  correct_answer: string
+  explanation: string
+}
+
+export interface PracticeRecordOut {
+  id: string
+  question_id: string
+  is_correct: boolean
+  student_answer: string
+  practiced_at: string
+  time_spent_sec: number | null
+}
+
+export interface PracticeHistoryOut {
+  total: number
+  items: PracticeRecordOut[]
+}
+
+export interface PracticeStatsOut {
+  total_practiced: number
+  total_correct: number
+  correct_rate: number
+  by_knowledge_point: Record<string, { practiced: number; correct: number }>
+}

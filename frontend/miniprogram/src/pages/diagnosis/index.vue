@@ -83,6 +83,13 @@
         </view>
       </view>
 
+      <!-- 针对薄弱点练习入口 -->
+      <view class="card practice-entry">
+        <view class="card-title">智能练习</view>
+        <text class="practice-desc">基于你的薄弱知识点，AI 实时生成针对性练习题。</text>
+        <button class="btn-practice" @tap="goPractice">开始 AI 练习</button>
+      </view>
+
     </view>
   </view>
 </template>
@@ -113,6 +120,10 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+function goPractice() {
+  uni.navigateTo({ url: '/pages/practice/index' })
+}
 
 function barWidth(count: number, max: number): number {
   return max === 0 ? 0 : Math.round((count / max) * 100)
@@ -179,4 +190,8 @@ function activityClass(count: number): string {
   margin-right: 16rpx;
 }
 .suggestion-text { flex: 1; font-size: 28rpx; color: #333; line-height: 1.7; }
+
+.practice-entry { }
+.practice-desc { font-size: 24rpx; color: #888; display: block; margin-bottom: 12rpx; line-height: 1.5; }
+.btn-practice { background: #1677ff; color: #fff; border-radius: 8rpx; padding: 16rpx; font-size: 28rpx; text-align: center; }
 </style>

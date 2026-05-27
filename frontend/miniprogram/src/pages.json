@@ -31,6 +31,10 @@
     {
       "path": "pages/teacher/student-detail",
       "style": { "navigationBarTitleText": "学生错题" }
+    },
+    {
+      "path": "pages/practice/index",
+      "style": { "navigationBarTitleText": "AI 练习" }
     }
   ],
   "tabBar": {
