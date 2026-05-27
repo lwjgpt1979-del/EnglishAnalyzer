@@ -47,6 +47,7 @@ class WrongQuestionOut(BaseModel):
     mastered_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    ocr_status: str | None = None
 
     model_config = {"from_attributes": True}
 
