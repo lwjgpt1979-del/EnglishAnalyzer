@@ -252,3 +252,36 @@ async def test_get_comments_for_wq(db_session, teacher_user, student_user):
     comments = await get_comments_for_wq(db_session, wq_id=wq.id)
     assert len(comments) == 2
     assert comments[0].comment_text == "批注1"
+
+
+@pytest.mark.asyncio
+async def test_get_student_wrong_questions(db_session, teacher_user, student_user):
+    # 绑定师生
+    invite = await generate_invite_code(db_session, teacher_id=teacher_user.id)
+    await db_session.flush()
+    await bind_with_teacher(db_session, student=student_user, code=invite.code)
+    await db_session.flush()
+
+    # 创建2道错题
+    for i in range(2):
+        wq = WrongQuestion(
+            id=uuid.uuid4(),
+            student_id=student_user.id,
+            source_image_url=f"https://example.com/img_svc_{i}.jpg",
+            is_mastered=False,
+        )
+        db_session.add(wq)
+    await db_session.flush()
+
+    wqs = await get_student_wrong_questions(
+        db_session, teacher_id=teacher_user.id, student_id=student_user.id
+    )
+    assert len(wqs) == 2
+    # 验证未绑定教师无法查看
+    other_teacher = await upsert_user(db_session, openid=f"other_t_{uuid.uuid4().hex[:8]}")
+    await db_session.flush()
+    with pytest.raises(AppError) as exc_info:
+        await get_student_wrong_questions(
+            db_session, teacher_id=other_teacher.id, student_id=student_user.id
+        )
+    assert exc_info.value.code == 403
