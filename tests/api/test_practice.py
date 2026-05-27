@@ -314,3 +314,123 @@ async def test_get_practice_stats(db_session, student_user):
     assert stats["total_practiced"] >= 2
     assert stats["total_correct"] >= 1
     assert 0.0 <= stats["correct_rate"] <= 1.0
+
+
+# ── API 集成测试 ──────────────────────────────────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def auth_headers(client: AsyncClient):
+    with patch(
+        "app.services.auth_service.wechat_code2session", new_callable=AsyncMock
+    ) as mock_wx:
+        mock_wx.return_value = {"openid": f"practice_api_{uuid.uuid4().hex[:8]}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    assert resp.status_code == 200, resp.text
+    return {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
+
+
+@pytest.mark.asyncio
+async def test_generate_requires_auth(client: AsyncClient):
+    resp = await client.post(
+        "/api/v1/practice/generate",
+        json={"knowledge_point": "一般现在时", "count": 3, "difficulty": 2},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_generate_questions_api(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/v1/practice/generate",
+        json={"knowledge_point": "一般现在时", "count": 3, "difficulty": 2},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["code"] == 200
+    questions = body["data"]
+    assert len(questions) == 3
+    assert "answer" not in questions[0]
+    assert "explanation" not in questions[0]
+    assert "options" in questions[0]
+    assert questions[0]["knowledge_point_name"] == "一般现在时"
+
+
+@pytest.mark.asyncio
+async def test_submit_answer_api(client: AsyncClient, auth_headers):
+    gen_resp = await client.post(
+        "/api/v1/practice/generate",
+        json={"knowledge_point": "一般现在时", "count": 1, "difficulty": 2},
+        headers=auth_headers,
+    )
+    q = gen_resp.json()["data"][0]
+    submit_resp = await client.post(
+        "/api/v1/practice/submit",
+        json={"question_id": q["id"], "answer": "goes", "time_spent_sec": 8},
+        headers=auth_headers,
+    )
+    assert submit_resp.status_code == 200, submit_resp.text
+    data = submit_resp.json()["data"]
+    assert data["is_correct"] is True
+    assert data["correct_answer"] == "goes"
+    assert "explanation" in data
+
+
+@pytest.mark.asyncio
+async def test_submit_answer_not_found_api(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/v1/practice/submit",
+        json={"question_id": str(uuid.uuid4()), "answer": "x"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_practice_history_api(client: AsyncClient, auth_headers):
+    gen_resp = await client.post(
+        "/api/v1/practice/generate",
+        json={"knowledge_point": "时态", "count": 2, "difficulty": 2},
+        headers=auth_headers,
+    )
+    for q in gen_resp.json()["data"]:
+        await client.post(
+            "/api/v1/practice/submit",
+            json={"question_id": q["id"], "answer": "goes"},
+            headers=auth_headers,
+        )
+    resp = await client.get("/api/v1/practice/history", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["data"]["total"] >= 2
+    assert isinstance(body["data"]["items"], list)
+
+
+@pytest.mark.asyncio
+async def test_practice_stats_api(client: AsyncClient, auth_headers):
+    gen_resp = await client.post(
+        "/api/v1/practice/generate",
+        json={"knowledge_point": "主谓一致", "count": 2, "difficulty": 2},
+        headers=auth_headers,
+    )
+    questions = gen_resp.json()["data"]
+    await client.post(
+        "/api/v1/practice/submit",
+        json={"question_id": questions[0]["id"], "answer": "goes"},
+        headers=auth_headers,
+    )
+    resp = await client.get("/api/v1/practice/stats", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert "total_practiced" in data
+    assert "correct_rate" in data
+    assert "by_knowledge_point" in data
