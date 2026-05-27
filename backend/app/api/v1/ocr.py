@@ -95,7 +95,7 @@ async def trigger_ocr(
         raise AppError(code=404, message="错题不存在或无权访问")
     if wq.ocr_status == "completed":
         return make_ok(WrongQuestionOut.model_validate(wq))
-    if wq.ocr_status == "processing":
+    if wq.ocr_status in ("processing", "pending"):
         raise AppError(code=409, message="OCR 识别正在进行中，请稍后查询状态")
 
     # 标记 pending
