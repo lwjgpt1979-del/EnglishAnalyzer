@@ -59,6 +59,9 @@ class Notification(Base):
     type = mapped_column(notification_type_enum, nullable=False)
     title = mapped_column(sa.String, nullable=False)
     content = mapped_column(sa.Text, nullable=False)
+    channel = mapped_column(sa.String(20), nullable=False, server_default=sa.text("'system'"))
+    expires_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    meta = mapped_column(JSONB, nullable=True)
     is_read = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.text("false")
     )
