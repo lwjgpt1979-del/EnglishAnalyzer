@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     tencent_ocr_secret_id: str = "placeholder_tencent_ocr_sid"
     tencent_ocr_secret_key: str = "placeholder_tencent_ocr_skey"
 
+    # SMS 短信服务
+    sms_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填真实 provider 名
+
     # 应用
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
