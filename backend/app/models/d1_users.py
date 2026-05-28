@@ -71,6 +71,30 @@ class User(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+    # —— 合规：年龄核验 + 协议确认（D-073 / 需求文档 §4.1）——
+    birth_year = mapped_column(sa.SmallInteger, nullable=True)
+    guardian_phone = mapped_column(sa.String(20), nullable=True)
+    guardian_verified_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    agreement_version = mapped_column(sa.String(16), nullable=True)
+    agreement_agreed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    profile_completed = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    minor_purchase_consent_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+
+    # —— 合规：账号注销（D-073 / 需求文档 §4.2）——
+    deactivation_requested_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    deactivation_scheduled_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    is_anonymized = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+
+    # —— SMS 验证码临时态（任意 purpose 复用）——
+    phone_verify_code = mapped_column(sa.String(6), nullable=True)
+    phone_verify_purpose = mapped_column(sa.String(32), nullable=True)
+    phone_verify_target = mapped_column(sa.String(20), nullable=True)
+    phone_verify_expires_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),
         nullable=False,
