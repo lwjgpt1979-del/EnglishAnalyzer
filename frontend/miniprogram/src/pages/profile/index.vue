@@ -2,6 +2,12 @@
 <template>
   <view class="profile-page">
 
+    <!-- 待注销横幅 -->
+    <view v-if="cancelInfo" class="cancel-banner" @tap="goCancelPage">
+      <text class="cb-text">⏳ 账号将于 {{ cancelInfo.days }} 天后注销</text>
+      <text class="cb-action">撤销 ›</text>
+    </view>
+
     <!-- 用户信息 -->
     <view class="card user-card">
       <view v-if="auth.user" class="user-row">
@@ -61,6 +67,11 @@
         </view>
       </view>
 
+      <view v-if="isMinor1417 && !alreadyConsented" class="consent-row">
+        <checkbox :checked="minorConsent" @tap="minorConsent = !minorConsent" />
+        <text class="consent-text">我已告知监护人并获得同意（14-17岁首次购买必勾）</text>
+      </view>
+
       <button
         class="btn-pay"
         :disabled="paying || !auth.isLoggedIn()"
@@ -75,6 +86,13 @@
       <view class="card-title">教师中心</view>
       <text class="menu-desc">教师功能：生成邀请码、查看学生错题、添加批注；学生功能：绑定老师</text>
       <button class="btn-menu" @tap="goTeacher">进入教师中心</button>
+    </view>
+
+    <!-- 账号设置 -->
+    <view class="card" @tap="goSettings">
+      <view class="card-title">账号设置</view>
+      <text class="menu-desc">注销账号、用户协议、隐私政策</text>
+      <button class="btn-menu" @tap.stop="goSettings">进入账号设置</button>
     </view>
 
   </view>
@@ -93,6 +111,21 @@ const loadingMembership = ref(false)
 const paying = ref(false)
 const selectedPlan = ref('basic')
 const selectedDuration = ref(1)
+const minorConsent = ref(false)
+
+const isMinor1417 = computed(() => {
+  const u: any = auth.user
+  if (!u?.birth_year) return false
+  const age = new Date().getFullYear() - u.birth_year
+  return age >= 14 && age <= 17
+})
+const alreadyConsented = computed(() => !!(auth.user as any)?.minor_purchase_consent_at)
+
+const cancelInfo = computed(() => {
+  const u: any = auth.user
+  if (!u?.deactivation_scheduled_at) return null
+  return { days: u.days_until_cancellation ?? 0 }
+})
 
 const memberPlans = [
   { tier: 'basic', label: '基础版', price: 9 },
@@ -141,7 +174,8 @@ async function onPay() {
       tier: selectedPlan.value,
       duration_months: selectedDuration.value,
       order_type: orderType,
-    })
+      minor_consent: isMinor1417.value && !alreadyConsented.value ? minorConsent.value : undefined,
+    } as any)
     const params = await payOrder(order.id)
 
     await new Promise<void>((resolve, reject) => {
@@ -171,6 +205,14 @@ async function onPay() {
 
 function goTeacher() {
   uni.navigateTo({ url: '/pages/teacher/students' })
+}
+
+function goSettings() {
+  uni.navigateTo({ url: '/pages/account/settings' })
+}
+
+function goCancelPage() {
+  uni.navigateTo({ url: '/pages/account/cancel' })
 }
 </script>
 
@@ -251,4 +293,9 @@ function goTeacher() {
 .center-tip { color: var(--c-text-hint); font-size: 28rpx; }
 .menu-desc { font-size: 24rpx; color: var(--c-text-second); margin-bottom: 12rpx; display: block; }
 .btn-menu { background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; }
+.cancel-banner { background: var(--c-orange); color: #fff; border-radius: var(--r-md); padding: 16rpx 24rpx; margin-bottom: 16rpx; display: flex; align-items: center; }
+.cb-text { flex: 1; font-size: 26rpx; font-weight: 700; }
+.cb-action { font-size: 26rpx; }
+.consent-row { display: flex; align-items: center; gap: 8rpx; margin-bottom: 16rpx; font-size: 24rpx; color: var(--c-text-second); }
+.consent-text { flex: 1; }
 </style>

@@ -23,6 +23,10 @@ export interface UserProfileOut {
   nickname: string | null
   avatar_url: string | null
   is_active: boolean
+  profile_completed?: boolean
+  birth_year?: number | null
+  deactivation_scheduled_at?: string | null
+  days_until_cancellation?: number | null
 }
 
 // ── Upload ───────────────────────────────────────────────────────────────────
@@ -244,4 +248,18 @@ export interface PracticeStatsOut {
   total_correct: number
   correct_rate: number
   by_knowledge_point: Record<string, { practiced: number; correct: number }>
+}
+
+// ── Compliance ────────────────────────────────────────────────────────────────
+
+export interface CompleteProfileResponse {
+  profile_completed: boolean
+  needs_guardian_verify: boolean
+  age: number
+}
+
+export interface CancellationStatus {
+  requested_at: string | null
+  scheduled_at: string | null
+  days_remaining: number | null
 }

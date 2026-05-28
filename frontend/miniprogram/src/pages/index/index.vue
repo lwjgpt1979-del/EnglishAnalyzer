@@ -45,9 +45,17 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+
+onMounted(() => {
+  if (auth.isLoggedIn() && auth.user && (auth.user as any).profile_completed === false) {
+    uni.redirectTo({ url: '/pages/auth/complete-profile' })
+    return
+  }
+})
 </script>
 
 <style scoped>
