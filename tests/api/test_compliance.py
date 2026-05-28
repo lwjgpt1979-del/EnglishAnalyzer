@@ -154,3 +154,71 @@ async def test_execute_cancellation_if_due_anonymizes(db_session, new_user):
     assert new_user.nickname is None
     assert new_user.phone is None
     assert new_user.openid.startswith("deleted_")
+
+
+# ── API 测试 ──────────────────────────────────────────────────────────────────
+from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, patch
+from app.main import app
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
+        yield ac
+
+
+async def _login(client: AsyncClient, openid_suffix: str) -> dict:
+    with patch("app.services.auth_service.wechat_code2session", new_callable=AsyncMock) as mock_wx:
+        mock_wx.return_value = {"openid": f"cmp_api_{openid_suffix}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    return {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
+
+
+@pytest.mark.asyncio
+async def test_complete_profile_api_adult(client):
+    headers = await _login(client, f"adult_{uuid.uuid4().hex[:6]}")
+    resp = await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 1990, "agreement_version": "v1.0", "user_phone": "13800001111"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["profile_completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_complete_profile_api_minor(client):
+    headers = await _login(client, f"minor_{uuid.uuid4().hex[:6]}")
+    resp = await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 2020, "guardian_phone": "13800002222", "agreement_version": "v1.0"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["needs_guardian_verify"] is True
+    assert resp.json()["data"]["profile_completed"] is False
+
+
+@pytest.mark.asyncio
+async def test_cancel_account_full_flow(client):
+    headers = await _login(client, f"cancel_{uuid.uuid4().hex[:6]}")
+    # 先完善 profile 拿到 phone
+    await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 1990, "agreement_version": "v1.0", "user_phone": "13900009999"},
+        headers=headers,
+    )
+    # 申请
+    r1 = await client.post("/api/v1/auth/cancel-account/request", headers=headers)
+    assert r1.status_code == 200
+    # 确认（dev 固定码 123456）
+    r2 = await client.post(
+        "/api/v1/auth/cancel-account/confirm",
+        json={"code": "123456"}, headers=headers,
+    )
+    assert r2.status_code == 200
+    assert r2.json()["data"]["days_remaining"] is not None
+    # 撤销
+    r3 = await client.post("/api/v1/auth/cancel-account/revoke", headers=headers)
+    assert r3.status_code == 200

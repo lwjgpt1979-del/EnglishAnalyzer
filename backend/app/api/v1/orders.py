@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -14,6 +15,7 @@ from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.payments import OrderCreate, OrderOut, PayParamsOut
 from app.services import order_service, wechat_pay_service
+from app.services.auth_service import is_minor_14_to_17
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -28,6 +30,13 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
     档位只能是 basic/pro/promax；时长只能是 1/3/12 个月。
     """
     await get_rls_db(db, str(current_user.id))
+
+    # 14-17 岁用户首次购买须勾选监护人同意
+    if is_minor_14_to_17(current_user) and current_user.minor_purchase_consent_at is None:
+        if not body.minor_consent:
+            raise AppError(code=400, message="14-17岁用户首次购买请勾选「已告知监护人并获得同意」")
+        current_user.minor_purchase_consent_at = datetime.now(timezone.utc)
+
     if body.tier not in order_service.ALLOWED_TIERS:
         raise AppError(
             code=400, message=f"无效档位：{body.tier}，可选：basic/pro/promax"

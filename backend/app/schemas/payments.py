@@ -34,6 +34,7 @@ class OrderCreate(BaseModel):
     tier: str = Field(..., description="basic | pro | promax")
     duration_months: int = Field(..., description="1 | 3 | 12")
     order_type: str = Field(..., description="new | renew | upgrade")
+    minor_consent: bool = Field(default=False, description="14-17岁用户首次购买必须为 True（已告知监护人并获得同意）")
 
 
 class OrderOut(BaseModel):

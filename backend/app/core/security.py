@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.d1_users import User
+from app.core.exceptions import AppError
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -87,7 +88,19 @@ async def get_current_user(
     if user is None:
         raise unauthorized
 
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已被封禁")
+    # 注销懒触发：在 is_active 校验前执行（避免循环引用，函数内 import）
+    if user.deactivation_scheduled_at is not None and not user.is_anonymized:
+        from app.services.cancellation_service import execute_cancellation_if_due
+        executed = await execute_cancellation_if_due(db, user=user)
+        if executed:
+            await db.commit()
+
+    # 冷静期内（已申请注销但尚未执行）允许通过，以便 revoke/me 等端点正常工作
+    if not user.is_active and not (
+        user.deactivation_scheduled_at is not None
+        and not user.is_anonymized
+        and user.deactivation_scheduled_at > datetime.now(timezone.utc)
+    ):
+        raise AppError(code=401, message="用户不存在或已被封禁")
 
     return user

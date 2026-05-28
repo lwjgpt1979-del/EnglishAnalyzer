@@ -1,20 +1,37 @@
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated
 
 import app.services.auth_service as auth_service
 from app.core.database import get_db
 from app.core.exceptions import AppError
-from app.core.security import create_access_token, create_refresh_token, decode_token
+from app.core.security import create_access_token, create_refresh_token, decode_token, get_current_user
 from app.models.d1_users import User
 from app.schemas.auth import RefreshRequest, TokenResponse, WxLoginRequest
 from app.schemas.base import BaseResponse, make_ok
+from app.schemas.compliance import (
+    CompleteProfileRequest,
+    CompleteProfileResponse,
+    GuardianVerifyRequest,
+    CancelAccountConfirm,
+    CancellationStatusOut,
+)
+from app.services.auth_service import complete_profile, guardian_verify
+from app.services.cancellation_service import (
+    request_cancellation,
+    confirm_cancellation,
+    revoke_cancellation,
+    status_for,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+UserDep = Annotated[User, Depends(get_current_user)]
+DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 @router.post("/wx-login", response_model=BaseResponse[TokenResponse])
@@ -66,3 +83,49 @@ async def refresh_token(
             refresh_token=create_refresh_token(str(user.id)),
         )
     )
+
+
+@router.post("/complete-profile", response_model=BaseResponse[CompleteProfileResponse])
+async def complete_profile_api(body: CompleteProfileRequest, db: DbDep, current_user: UserDep):
+    """完善用户档案（年龄 + 协议 + 手机号）。"""
+    res = await complete_profile(
+        db, user=current_user,
+        birth_year=body.birth_year,
+        guardian_phone=body.guardian_phone,
+        user_phone=body.user_phone,
+        agreement_version=body.agreement_version,
+    )
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/guardian-verify", response_model=BaseResponse[dict])
+async def guardian_verify_api(body: GuardianVerifyRequest, db: DbDep, current_user: UserDep):
+    """验证监护人手机验证码，完成未成年人档案。"""
+    await guardian_verify(db, user=current_user, code=body.code)
+    await db.commit()
+    return make_ok({"profile_completed": True})
+
+
+@router.post("/cancel-account/request", response_model=BaseResponse[dict])
+async def cancel_request_api(db: DbDep, current_user: UserDep):
+    """申请注销账号（发送短信验证码）。"""
+    await request_cancellation(db, user=current_user)
+    await db.commit()
+    return make_ok({"sent": True})
+
+
+@router.post("/cancel-account/confirm", response_model=BaseResponse[CancellationStatusOut])
+async def cancel_confirm_api(body: CancelAccountConfirm, db: DbDep, current_user: UserDep):
+    """确认注销（验证码核对），进入 15 天冷静期。"""
+    await confirm_cancellation(db, user=current_user, code=body.code)
+    await db.commit()
+    return make_ok(status_for(current_user))
+
+
+@router.post("/cancel-account/revoke", response_model=BaseResponse[dict])
+async def cancel_revoke_api(db: DbDep, current_user: UserDep):
+    """撤销注销申请（冷静期内有效）。"""
+    await revoke_cancellation(db, user=current_user)
+    await db.commit()
+    return make_ok({"revoked": True})
