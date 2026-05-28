@@ -69,6 +69,17 @@ async def activate_membership(
         )
         existing.expires_at = _add_months(base, order.duration_months)
         await db.flush()
+        # —— 发"会员开通成功"通知（D-074 Module 7B）——
+        from app.services.notification_service import emit_membership
+        try:
+            await emit_membership(
+                db, user_id=user_id,
+                title="会员续费成功",
+                content=f"您的{existing.tier}会员已续费，到期 {existing.expires_at.strftime('%Y-%m-%d')}。",
+                order_id=order.id,
+            )
+        except Exception:
+            pass
         return existing
 
     # new 或 upgrade：停用旧记录
@@ -88,4 +99,15 @@ async def activate_membership(
     )
     db.add(membership)
     await db.flush()
+    # —— 发"会员开通成功"通知（D-074 Module 7B）——
+    from app.services.notification_service import emit_membership
+    try:
+        await emit_membership(
+            db, user_id=user_id,
+            title="会员开通成功",
+            content=f"您的{membership.tier}会员已激活，到期 {membership.expires_at.strftime('%Y-%m-%d')}。",
+            order_id=order.id,
+        )
+    except Exception:
+        pass
     return membership

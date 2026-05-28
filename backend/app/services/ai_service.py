@@ -73,6 +73,12 @@ async def analyze_wrong_question(
         )
         db.add(analysis)
         await db.flush()
+        # —— 发"AI分析完成"通知（D-074 Module 7B）——
+        from app.services.notification_service import emit_analysis_done
+        try:
+            await emit_analysis_done(db, user_id=student_id, wq_id=wq.id)
+        except Exception:
+            pass  # 通知失败不影响主链路
         return analysis
 
     prompt = _USER_PROMPT_TEMPLATE.format(
@@ -124,4 +130,10 @@ async def analyze_wrong_question(
     )
     db.add(analysis)
     await db.flush()
+    # —— 发"AI分析完成"通知（D-074 Module 7B）——
+    from app.services.notification_service import emit_analysis_done
+    try:
+        await emit_analysis_done(db, user_id=student_id, wq_id=wq.id)
+    except Exception:
+        pass  # 通知失败不影响主链路
     return analysis

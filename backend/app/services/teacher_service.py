@@ -208,6 +208,12 @@ async def add_comment(
     )
     db.add(comment)
     await db.flush()
+    # —— 发"老师批注"通知给学生（D-074 Module 7B）——
+    from app.services.notification_service import emit_teacher_comment
+    try:
+        await emit_teacher_comment(db, user_id=wq.student_id, wq_id=wq.id, teacher_id=teacher_id)
+    except Exception:
+        pass  # 通知失败不影响主链路
     return comment
 
 
