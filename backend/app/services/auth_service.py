@@ -65,3 +65,95 @@ async def upsert_user(db: AsyncSession, *, openid: str) -> User:
         await db.flush()  # get id without committing
 
     return user
+
+
+# ─── 合规扩展：年龄核验 + 协议确认（D-073 / 需求文档 §4.1）────────────────────
+from datetime import datetime, timezone
+
+from app.schemas.compliance import CompleteProfileResponse
+from app.services.sms_service import (
+    generate_code,
+    expires_at_from_now,
+    send_sms_code,
+)
+
+GUARDIAN_AGE_THRESHOLD = 14
+
+
+def compute_age(birth_year: int) -> int:
+    return datetime.now(timezone.utc).year - birth_year
+
+
+async def complete_profile(
+    db: AsyncSession,
+    *,
+    user: User,
+    birth_year: int,
+    guardian_phone: str | None,
+    user_phone: str | None,
+    agreement_version: str,
+) -> CompleteProfileResponse:
+    """首次登录完善资料。<14岁需监护人手机号 + 发码（profile_completed=False 直到 guardian_verify）。"""
+    age = compute_age(birth_year)
+    needs_guardian = age < GUARDIAN_AGE_THRESHOLD
+
+    if needs_guardian and not guardian_phone:
+        raise AppError(code=400, message=f"未满 {GUARDIAN_AGE_THRESHOLD} 岁需提供监护人手机号")
+
+    user.birth_year = birth_year
+    user.agreement_version = agreement_version
+    user.agreement_agreed_at = datetime.now(timezone.utc)
+    if user_phone:
+        user.phone = user_phone
+
+    if needs_guardian:
+        user.guardian_phone = guardian_phone
+        code = generate_code()
+        user.phone_verify_code = code
+        user.phone_verify_purpose = "guardian_verify"
+        user.phone_verify_target = guardian_phone
+        user.phone_verify_expires_at = expires_at_from_now()
+        await send_sms_code(phone=guardian_phone, code=code, purpose="guardian_verify")
+        user.profile_completed = False
+    else:
+        user.profile_completed = True
+
+    await db.flush()
+    return CompleteProfileResponse(
+        profile_completed=user.profile_completed,
+        needs_guardian_verify=needs_guardian,
+        age=age,
+    )
+
+
+async def guardian_verify(
+    db: AsyncSession,
+    *,
+    user: User,
+    code: str,
+) -> None:
+    """监护人填写验证码确认。"""
+    if user.phone_verify_purpose != "guardian_verify":
+        raise AppError(code=400, message="无待确认的监护人验证")
+    if (
+        user.phone_verify_code != code
+        or user.phone_verify_expires_at is None
+        or user.phone_verify_expires_at < datetime.now(timezone.utc)
+    ):
+        raise AppError(code=400, message="验证码错误或已过期")
+
+    user.guardian_verified_at = datetime.now(timezone.utc)
+    user.profile_completed = True
+    user.phone_verify_code = None
+    user.phone_verify_purpose = None
+    user.phone_verify_target = None
+    user.phone_verify_expires_at = None
+    await db.flush()
+
+
+def is_minor_14_to_17(user: User) -> bool:
+    """14-17 岁返回 True（购买会员需勾选监护人同意）。"""
+    if user.birth_year is None:
+        return False
+    age = compute_age(user.birth_year)
+    return 14 <= age <= 17
