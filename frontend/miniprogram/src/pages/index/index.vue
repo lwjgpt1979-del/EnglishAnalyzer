@@ -1,6 +1,12 @@
 <!-- src/pages/index/index.vue -->
 <template>
   <view class="home-page">
+    <view class="topbar">
+      <view class="bell-wrap" @tap="goMessages">
+        <text class="bell">🔔</text>
+        <text v-if="unreadCount > 0" class="badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</text>
+      </view>
+    </view>
     <view class="hero">
       <text class="hero-title">engGramer</text>
       <text class="hero-sub">英语 AI 错题诊断</text>
@@ -45,16 +51,27 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { onShow } from '@dcloudio/uni-app'
+import { getUnreadCount } from '@/api/notifications'
 
 const auth = useAuthStore()
+
+const unreadCount = ref(0)
+async function loadUnread() {
+  if (!auth.isLoggedIn()) { unreadCount.value = 0; return }
+  try { const r = await getUnreadCount(); unreadCount.value = r.data?.count || 0 } catch { /* ignore */ }
+}
+function goMessages() { uni.navigateTo({ url: '/pages/messages/index' }) }
+onShow(loadUnread)
 
 onMounted(() => {
   if (auth.isLoggedIn() && auth.user && (auth.user as any).profile_completed === false) {
     uni.redirectTo({ url: '/pages/auth/complete-profile' })
     return
   }
+  loadUnread()
 })
 </script>
 
@@ -82,4 +99,8 @@ onMounted(() => {
 }
 .login-tip { font-size: var(--fs-body); color: var(--c-text-second); display: block; margin-bottom: 24rpx; }
 .btn-login { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); font-size: var(--fs-h2); font-weight: 700; }
+.topbar { display: flex; justify-content: flex-end; padding: 8rpx 0 16rpx; }
+.bell-wrap { position: relative; padding: 8rpx; }
+.bell { font-size: 40rpx; }
+.badge { position: absolute; top: 0; right: 0; background: var(--c-danger); color: #fff; font-size: 20rpx; min-width: 28rpx; height: 28rpx; line-height: 28rpx; padding: 0 6rpx; border-radius: 999rpx; text-align: center; font-weight: 700; }
 </style>

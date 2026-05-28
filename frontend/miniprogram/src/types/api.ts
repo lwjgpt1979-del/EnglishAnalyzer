@@ -263,3 +263,24 @@ export interface CancellationStatus {
   scheduled_at: string | null
   days_remaining: number | null
 }
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface NotificationOut {
+  id: string
+  type: string
+  channel: 'study' | 'membership' | 'system' | 'relative' | 'teacher'
+  title: string
+  content: string
+  is_read: boolean
+  read_at: string | null
+  created_at: string
+  expires_at: string | null
+  meta: Record<string, any> | null
+}
+
+export interface NotificationListOut {
+  items: NotificationOut[]
+  total: number
+  unread_count: number
+}

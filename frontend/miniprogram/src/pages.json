@@ -38,7 +38,8 @@
     },
     { "path": "pages/auth/complete-profile", "style": { "navigationBarTitleText": "完善资料" } },
     { "path": "pages/account/settings", "style": { "navigationBarTitleText": "账号设置" } },
-    { "path": "pages/account/cancel", "style": { "navigationBarTitleText": "注销账号" } }
+    { "path": "pages/account/cancel", "style": { "navigationBarTitleText": "注销账号" } },
+    { "path": "pages/messages/index", "style": { "navigationBarTitleText": "消息中心" } }
   ],
   "tabBar": {
     "color": "#999",
