@@ -117,3 +117,78 @@ async def test_emit_membership_with_order(db_session, user):
     await db_session.flush()
     assert n.meta == {"order_id": str(oid)}
     assert n.channel == "membership"
+
+
+# ── API 测试 ──────────────────────────────────────────────────────────────────
+from httpx import AsyncClient, ASGITransport
+from unittest.mock import AsyncMock, patch
+from app.main import app
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
+        yield ac
+
+
+async def _login(client: AsyncClient, suffix: str) -> dict:
+    with patch("app.services.auth_service.wechat_code2session", new_callable=AsyncMock) as mock_wx:
+        mock_wx.return_value = {"openid": f"notif_api_{suffix}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    return {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
+
+
+@pytest.mark.asyncio
+async def test_notifications_list_empty(client):
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    # 完善 profile 避免被 is_active gate 拦
+    await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 1990, "agreement_version": "v1.0"}, headers=headers,
+    )
+
+    r1 = await client.get("/api/v1/notifications/", headers=headers)
+    assert r1.status_code == 200
+    assert r1.json()["data"]["total"] == 0
+    assert r1.json()["data"]["unread_count"] == 0
+
+    r2 = await client.get("/api/v1/notifications/unread-count", headers=headers)
+    assert r2.json()["data"]["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_notifications_full_flow(client):
+    suffix = uuid.uuid4().hex[:6]
+    headers = await _login(client, suffix)
+    await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 1990, "agreement_version": "v1.0"}, headers=headers,
+    )
+
+    # 直插 3 条通知（绕过 API，模拟业务侧 emit）
+    from app.core.database import _async_session_factory
+    from app.services.notification_service import emit_analysis_done
+    from sqlalchemy import select
+    from app.models.d1_users import User as UserModel
+    async with _async_session_factory() as s:
+        user = (await s.execute(
+            select(UserModel).where(UserModel.openid == f"notif_api_{suffix}")
+        )).scalar_one()
+        for _ in range(3):
+            await emit_analysis_done(s, user_id=user.id, wq_id=uuid.uuid4())
+        await s.commit()
+
+    r1 = await client.get("/api/v1/notifications/", headers=headers)
+    assert r1.json()["data"]["total"] == 3
+    assert r1.json()["data"]["unread_count"] == 3
+
+    first_id = r1.json()["data"]["items"][0]["id"]
+    r2 = await client.patch(f"/api/v1/notifications/{first_id}/read", headers=headers)
+    assert r2.status_code == 200
+    assert r2.json()["data"]["is_read"] is True
+
+    r3 = await client.post("/api/v1/notifications/read-all", headers=headers)
+    assert r3.json()["data"]["affected"] == 2
+
+    r4 = await client.delete("/api/v1/notifications/read", headers=headers)
+    assert r4.json()["data"]["deleted"] == 3
