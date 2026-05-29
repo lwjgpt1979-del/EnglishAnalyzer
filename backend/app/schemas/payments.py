@@ -35,6 +35,7 @@ class OrderCreate(BaseModel):
     duration_months: int = Field(..., description="1 | 3 | 12")
     order_type: str = Field(..., description="new | renew | upgrade")
     minor_consent: bool = Field(default=False, description="14-17岁用户首次购买必须为 True（已告知监护人并获得同意）")
+    target_student_id: uuid.UUID | None = Field(None, description="代付时指定学生 ID；为空则为本人购买")
 
 
 class OrderOut(BaseModel):

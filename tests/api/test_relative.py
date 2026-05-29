@@ -167,3 +167,48 @@ async def test_relative_view_unbound_student_403(client):
         f"/api/v1/relative/students/{rnd_sid}/diagnosis-report", headers=p_h,
     )
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_relative_pays_for_student(client):
+    """亲人代付：order 创建 + 14-17 minor_consent 自动写入。"""
+    s_h, sid = await _setup_user(client, f"pay_s_{uuid.uuid4().hex[:6]}", 2012)  # 14岁
+    p_h, _ = await _setup_user(client, f"pay_p_{uuid.uuid4().hex[:6]}", 1985)
+
+    iv = await client.post("/api/v1/relative/invite-code", headers=s_h)
+    await client.post(
+        "/api/v1/relative/bind",
+        json={"code": iv.json()["data"]["code"], "relationship": "母亲"}, headers=p_h,
+    )
+
+    r = await client.post(
+        "/api/v1/orders/",
+        json={
+            "tier": "basic", "duration_months": 1, "order_type": "new",
+            "target_student_id": sid,
+        },
+        headers=p_h,
+    )
+    assert r.status_code == 200
+    assert "id" in r.json()["data"]
+    # 14-17 岁 minor_purchase_consent_at 应已写入
+    async with _async_session_factory() as s:
+        student = (await s.execute(
+            select(User).where(User.id == uuid.UUID(sid))
+        )).scalar_one()
+        assert student.minor_purchase_consent_at is not None
+
+
+@pytest.mark.asyncio
+async def test_pay_for_unbound_student_403(client):
+    p_h, _ = await _setup_user(client, f"upay_p_{uuid.uuid4().hex[:6]}", 1985)
+    rnd_sid = str(uuid.uuid4())
+    r = await client.post(
+        "/api/v1/orders/",
+        json={
+            "tier": "basic", "duration_months": 1, "order_type": "new",
+            "target_student_id": rnd_sid,
+        },
+        headers=p_h,
+    )
+    assert r.status_code == 403

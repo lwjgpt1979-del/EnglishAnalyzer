@@ -25,17 +25,37 @@ UserDep = Annotated[User, Depends(get_current_user)]
 
 @router.post("/", response_model=BaseResponse[OrderOut])
 async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
-    """创建待支付订单。自付（payer = beneficiary = 当前用户）。
+    """创建待支付订单。支持自付（payer = beneficiary = 当前用户）和亲人代付。
 
     档位只能是 basic/pro/promax；时长只能是 1/3/12 个月。
+    代付时 target_student_id 须为已绑定学生；14-17 岁学生由亲人代付视为已获监护人同意（§4.1 / D-073）。
     """
     await get_rls_db(db, str(current_user.id))
 
-    # 14-17 岁用户首次购买须勾选监护人同意
-    if is_minor_14_to_17(current_user) and current_user.minor_purchase_consent_at is None:
-        if not body.minor_consent:
-            raise AppError(code=400, message="14-17岁用户首次购买请勾选「已告知监护人并获得同意」")
-        current_user.minor_purchase_consent_at = datetime.now(timezone.utc)
+    # 解析 beneficiary_id
+    beneficiary_id = body.target_student_id or current_user.id
+
+    if body.target_student_id and body.target_student_id != current_user.id:
+        # 代付：必须是绑定的亲人
+        from app.services import relative_service
+        await relative_service.assert_bound(
+            db, relative_id=current_user.id, student_id=body.target_student_id,
+        )
+        # 14-17 岁学生由亲人代付视为已获监护人同意（§4.1 / D-073）
+        from sqlalchemy import select as _sel
+        from app.models.d1_users import User as _U
+        bu_r = await db.execute(_sel(_U).where(_U.id == body.target_student_id))
+        beneficiary = bu_r.scalar_one_or_none()
+        if beneficiary and beneficiary.birth_year:
+            age = datetime.now(timezone.utc).year - beneficiary.birth_year
+            if 14 <= age <= 17 and beneficiary.minor_purchase_consent_at is None:
+                beneficiary.minor_purchase_consent_at = datetime.now(timezone.utc)
+    else:
+        # 本人购买：14-17 岁首次购买须勾选监护人同意
+        if is_minor_14_to_17(current_user) and current_user.minor_purchase_consent_at is None:
+            if not body.minor_consent:
+                raise AppError(code=400, message="14-17岁用户首次购买请勾选「已告知监护人并获得同意」")
+            current_user.minor_purchase_consent_at = datetime.now(timezone.utc)
 
     if body.tier not in order_service.ALLOWED_TIERS:
         raise AppError(
@@ -51,7 +71,7 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
     order = await order_service.create_order(
         db,
         payer_id=current_user.id,
-        beneficiary_id=current_user.id,
+        beneficiary_id=beneficiary_id,
         tier=body.tier,
         duration_months=body.duration_months,
         order_type=body.order_type,
