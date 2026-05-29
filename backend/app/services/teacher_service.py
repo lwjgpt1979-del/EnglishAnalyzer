@@ -308,3 +308,23 @@ def ensure_certified(teacher: Teacher | None) -> None:
     """权限 gate：未认证（uncertified/pending/rejected）禁止教师写操作。"""
     if teacher is None or str(teacher.cert_status) != "certified":
         raise AppError(code=403, message="老师认证未通过，无法执行此操作")
+
+
+async def get_student_diagnosis_report(
+    db: AsyncSession,
+    *,
+    teacher_id: uuid.UUID,
+    student_id: uuid.UUID,
+):
+    """老师查指定学生的学情报告。需绑定关系；cert gate 由 endpoint 层做。"""
+    binding = await db.execute(
+        select(TeacherStudent).where(
+            TeacherStudent.teacher_id == teacher_id,
+            TeacherStudent.student_id == student_id,
+            TeacherStudent.status == "active",
+        )
+    )
+    if binding.scalar_one_or_none() is None:
+        raise AppError(code=403, message="无权查看该学生数据")
+    from app.services.diagnosis_service import get_diagnosis_report
+    return await get_diagnosis_report(db, student_id=student_id)

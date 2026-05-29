@@ -22,6 +22,7 @@ from app.schemas.teacher import (
     TeacherProfileOut,
     TeacherStudentOut,
 )
+from app.schemas.diagnosis import DiagnosisReport
 from app.schemas.wrong_questions import WrongQuestionOut
 from app.services import teacher_service
 
@@ -178,6 +179,26 @@ async def get_comments(
         db, wq_id=wq_id, caller_id=current_user.id
     )
     return make_ok([TeacherCommentOut.model_validate(c) for c in comments])
+
+
+@router.get(
+    "/students/{student_id}/diagnosis-report",
+    response_model=BaseResponse[DiagnosisReport],
+)
+async def student_diagnosis_api(student_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    if str(current_user.role) != "teacher":
+        raise AppError(code=403, message="仅教师可访问")
+    await get_rls_db(db, str(current_user.id))
+    # cert gate
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import Teacher as _T
+    _r = await db.execute(_sel(_T).where(_T.id == current_user.id))
+    teacher_service.ensure_certified(_r.scalar_one_or_none())
+
+    report = await teacher_service.get_student_diagnosis_report(
+        db, teacher_id=current_user.id, student_id=student_id,
+    )
+    return make_ok(report)
 
 
 @router.post("/cert/submit", response_model=BaseResponse[TeacherProfileOut])

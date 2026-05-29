@@ -104,3 +104,52 @@ async def test_admin_review_certifies_teacher(client):
         assert r2.status_code == 200
     finally:
         settings.auto_approve_teacher_cert = original
+
+
+@pytest.mark.asyncio
+async def test_teacher_view_student_diagnosis(client):
+    """老师通过绑定关系查看学生学情报告。"""
+    t_headers = await _make_teacher(client, f"diag_t_{uuid.uuid4().hex[:6]}")
+    # cert auto-approve（dev 默认）但还是显式提交一次确保 certified
+    await client.post(
+        "/api/v1/teacher/cert/submit",
+        json={"cert_doc_url": "https://cdn.test.com/c.jpg"}, headers=t_headers,
+    )
+
+    s_suffix = f"diag_s_{uuid.uuid4().hex[:6]}"
+    s_headers = await _login_as(client, s_suffix)
+    await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 2010, "guardian_phone": "13800001234", "agreement_version": "v1.0"},
+        headers=s_headers,
+    )
+    await client.post("/api/v1/auth/guardian-verify", json={"code": "123456"}, headers=s_headers)
+
+    iv = await client.post("/api/v1/teacher/invite-code", headers=t_headers)
+    code = iv.json()["data"]["code"]
+    await client.post("/api/v1/teacher/bind", json={"code": code}, headers=s_headers)
+
+    async with _async_session_factory() as s:
+        stu = (await s.execute(
+            select(User).where(User.openid == f"t_p0_{s_suffix}")
+        )).scalar_one()
+        sid = stu.id
+
+    r = await client.get(f"/api/v1/teacher/students/{sid}/diagnosis-report", headers=t_headers)
+    assert r.status_code == 200
+    d = r.json()["data"]
+    assert "total_questions" in d
+    assert "mastery_rate" in d
+    assert "top_error_types" in d
+
+
+@pytest.mark.asyncio
+async def test_teacher_view_unbound_student_403(client):
+    t_headers = await _make_teacher(client, f"diag_ub_{uuid.uuid4().hex[:6]}")
+    await client.post(
+        "/api/v1/teacher/cert/submit",
+        json={"cert_doc_url": "https://cdn.test.com/c.jpg"}, headers=t_headers,
+    )
+    rnd_sid = uuid.uuid4()
+    r = await client.get(f"/api/v1/teacher/students/{rnd_sid}/diagnosis-report", headers=t_headers)
+    assert r.status_code == 403
