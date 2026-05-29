@@ -25,6 +25,11 @@ from app.schemas.teacher import (
 from app.schemas.diagnosis import DiagnosisReport
 from app.schemas.wrong_questions import WrongQuestionOut
 from app.services import teacher_service
+from app.schemas.classes import (
+    ClassCreateRequest, ClassOut,
+    ClassStudentAddRequest, ClassStudentOut,
+)
+from app.services import class_service
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
 
@@ -221,3 +226,81 @@ async def submit_cert_api(body: CertSubmitRequest, db: DbDep, current_user: User
         cert_doc_url=teacher.cert_doc_url,
         max_students=teacher.max_students,
     ))
+
+
+# ─── 班级管理端点（D-075 Task 2）────────────────────────────────────────────────
+
+
+async def _require_certified_teacher(db: AsyncSession, current_user: User) -> None:
+    """老师认证检查 helper（统一 cert gate 调用）。"""
+    if str(current_user.role) != "teacher":
+        raise AppError(code=403, message="仅教师可访问")
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import Teacher as _T
+    r = await db.execute(_sel(_T).where(_T.id == current_user.id))
+    teacher_service.ensure_certified(r.scalar_one_or_none())
+
+
+@router.post("/classes", response_model=BaseResponse[ClassOut])
+async def create_class_api(body: ClassCreateRequest, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    cls = await class_service.create_class(db, teacher_id=current_user.id, name=body.name)
+    await db.commit()
+    return make_ok(ClassOut(id=cls.id, name=cls.name, student_count=0, created_at=cls.created_at))
+
+
+@router.get("/classes", response_model=BaseResponse[list[ClassOut]])
+async def list_classes_api(db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    pairs = await class_service.list_classes(db, teacher_id=current_user.id)
+    return make_ok([
+        ClassOut(id=c.id, name=c.name, student_count=cnt, created_at=c.created_at)
+        for c, cnt in pairs
+    ])
+
+
+@router.delete("/classes/{class_id}", response_model=BaseResponse[dict])
+async def delete_class_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    await class_service.delete_class(db, teacher_id=current_user.id, class_id=class_id)
+    await db.commit()
+    return make_ok({"deleted": True})
+
+
+@router.post("/classes/{class_id}/students", response_model=BaseResponse[dict])
+async def add_class_students_api(
+    class_id: uuid.UUID, body: ClassStudentAddRequest, db: DbDep, current_user: UserDep,
+):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    added = await class_service.add_students(
+        db, teacher_id=current_user.id, class_id=class_id, student_ids=body.student_ids,
+    )
+    await db.commit()
+    return make_ok({"added": added})
+
+
+@router.delete("/classes/{class_id}/students/{student_id}", response_model=BaseResponse[dict])
+async def remove_class_student_api(
+    class_id: uuid.UUID, student_id: uuid.UUID, db: DbDep, current_user: UserDep,
+):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    await class_service.remove_student(
+        db, teacher_id=current_user.id, class_id=class_id, student_id=student_id,
+    )
+    await db.commit()
+    return make_ok({"removed": True})
+
+
+@router.get("/classes/{class_id}/students", response_model=BaseResponse[list[ClassStudentOut]])
+async def list_class_students_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    items = await class_service.list_class_students(
+        db, teacher_id=current_user.id, class_id=class_id,
+    )
+    return make_ok([ClassStudentOut(student_id=cs.student_id, joined_at=cs.joined_at) for cs in items])

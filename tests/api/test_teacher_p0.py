@@ -153,3 +153,71 @@ async def test_teacher_view_unbound_student_403(client):
     rnd_sid = uuid.uuid4()
     r = await client.get(f"/api/v1/teacher/students/{rnd_sid}/diagnosis-report", headers=t_headers)
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_class_crud_full_flow(client):
+    """创建→列表→加学生→列学生→移除→删班。"""
+    t_headers = await _make_teacher(client, f"cls_{uuid.uuid4().hex[:6]}")
+    await client.post(
+        "/api/v1/teacher/cert/submit",
+        json={"cert_doc_url": "https://cdn.test.com/c.jpg"}, headers=t_headers,
+    )
+
+    r = await client.post("/api/v1/teacher/classes", json={"name": "三年级2班"}, headers=t_headers)
+    assert r.status_code == 200
+    class_id = r.json()["data"]["id"]
+
+    r2 = await client.get("/api/v1/teacher/classes", headers=t_headers)
+    assert any(c["id"] == class_id for c in r2.json()["data"])
+
+    s_suffix = f"cls_s_{uuid.uuid4().hex[:6]}"
+    s_headers = await _login_as(client, s_suffix)
+    await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 1990, "agreement_version": "v1.0"}, headers=s_headers,
+    )
+    iv = await client.post("/api/v1/teacher/invite-code", headers=t_headers)
+    await client.post("/api/v1/teacher/bind", json={"code": iv.json()["data"]["code"]}, headers=s_headers)
+
+    async with _async_session_factory() as s:
+        stu = (await s.execute(
+            select(User).where(User.openid == f"t_p0_{s_suffix}")
+        )).scalar_one()
+        sid = str(stu.id)
+
+    r3 = await client.post(
+        f"/api/v1/teacher/classes/{class_id}/students",
+        json={"student_ids": [sid]}, headers=t_headers,
+    )
+    assert r3.status_code == 200
+    assert r3.json()["data"]["added"] == 1
+
+    r4 = await client.get(f"/api/v1/teacher/classes/{class_id}/students", headers=t_headers)
+    assert len(r4.json()["data"]) == 1
+
+    r5 = await client.delete(
+        f"/api/v1/teacher/classes/{class_id}/students/{sid}", headers=t_headers,
+    )
+    assert r5.json()["data"]["removed"] is True
+
+    r6 = await client.delete(f"/api/v1/teacher/classes/{class_id}", headers=t_headers)
+    assert r6.json()["data"]["deleted"] is True
+
+
+@pytest.mark.asyncio
+async def test_class_add_unbound_student_400(client):
+    t_headers = await _make_teacher(client, f"cls_e_{uuid.uuid4().hex[:6]}")
+    await client.post(
+        "/api/v1/teacher/cert/submit",
+        json={"cert_doc_url": "https://cdn.test.com/c.jpg"}, headers=t_headers,
+    )
+    r = await client.post("/api/v1/teacher/classes", json={"name": "X班"}, headers=t_headers)
+    class_id = r.json()["data"]["id"]
+
+    rnd_sid = str(uuid.uuid4())
+    r2 = await client.post(
+        f"/api/v1/teacher/classes/{class_id}/students",
+        json={"student_ids": [rnd_sid]}, headers=t_headers,
+    )
+    assert r2.status_code == 400
