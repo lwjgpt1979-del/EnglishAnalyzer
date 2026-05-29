@@ -15,6 +15,7 @@ from app.schemas.base import BaseResponse, make_ok
 from app.schemas.teacher import (
     BecomeTeacherRequest,
     BindTeacherRequest,
+    CertSubmitRequest,
     InviteCodeOut,
     TeacherCommentCreate,
     TeacherCommentOut,
@@ -45,6 +46,7 @@ async def become_teacher(
             user_id=teacher.id,
             subject=teacher.subject,
             cert_status=str(teacher.cert_status),
+            cert_doc_url=teacher.cert_doc_url,
             max_students=teacher.max_students,
         )
     )
@@ -56,6 +58,11 @@ async def create_invite_code(db: DbDep, current_user: UserDep):
     if str(current_user.role) != "teacher":
         raise AppError(code=403, message="仅教师可生成邀请码")
     await get_rls_db(db, str(current_user.id))
+    # cert 认证 gate（D-075）
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import Teacher as _T
+    _r = await db.execute(_sel(_T).where(_T.id == current_user.id))
+    teacher_service.ensure_certified(_r.scalar_one_or_none())
     invite = await teacher_service.generate_invite_code(
         db, teacher_id=current_user.id
     )
@@ -89,6 +96,11 @@ async def list_my_students(db: DbDep, current_user: UserDep):
     if str(current_user.role) != "teacher":
         raise AppError(code=403, message="仅教师可查看学生列表")
     await get_rls_db(db, str(current_user.id))
+    # cert 认证 gate（D-075）
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import Teacher as _T
+    _r = await db.execute(_sel(_T).where(_T.id == current_user.id))
+    teacher_service.ensure_certified(_r.scalar_one_or_none())
     students = await teacher_service.get_my_students(
         db, teacher_id=current_user.id
     )
@@ -110,6 +122,11 @@ async def get_student_wrong_questions(
     if str(current_user.role) != "teacher":
         raise AppError(code=403, message="仅教师可查看学生错题")
     await get_rls_db(db, str(current_user.id))
+    # cert 认证 gate（D-075）
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import Teacher as _T
+    _r = await db.execute(_sel(_T).where(_T.id == current_user.id))
+    teacher_service.ensure_certified(_r.scalar_one_or_none())
     wqs = await teacher_service.get_student_wrong_questions(
         db, teacher_id=current_user.id, student_id=student_id
     )
@@ -130,6 +147,11 @@ async def add_comment(
     if str(current_user.role) != "teacher":
         raise AppError(code=403, message="仅教师可添加批注")
     await get_rls_db(db, str(current_user.id))
+    # cert 认证 gate（D-075）
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import Teacher as _T
+    _r = await db.execute(_sel(_T).where(_T.id == current_user.id))
+    teacher_service.ensure_certified(_r.scalar_one_or_none())
     comment = await teacher_service.add_comment(
         db, teacher_id=current_user.id, wq_id=wq_id, data=body
     )
@@ -156,3 +178,25 @@ async def get_comments(
         db, wq_id=wq_id, caller_id=current_user.id
     )
     return make_ok([TeacherCommentOut.model_validate(c) for c in comments])
+
+
+@router.post("/cert/submit", response_model=BaseResponse[TeacherProfileOut])
+async def submit_cert_api(body: CertSubmitRequest, db: DbDep, current_user: UserDep):
+    """教师提交认证材料。dev 模式自动通过，生产模式进入 pending。"""
+    if str(current_user.role) != "teacher":
+        raise AppError(code=403, message="请先成为教师")
+    await get_rls_db(db, str(current_user.id))
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import Teacher as _T
+    r = await db.execute(_sel(_T).where(_T.id == current_user.id))
+    teacher = r.scalar_one_or_none()
+    if teacher is None:
+        raise AppError(code=400, message="教师扩展记录缺失，请先调用 /teacher/profile")
+    teacher = await teacher_service.submit_cert(db, teacher=teacher, cert_doc_url=body.cert_doc_url)
+    await db.commit()
+    return make_ok(TeacherProfileOut(
+        user_id=teacher.id, subject=teacher.subject,
+        cert_status=str(teacher.cert_status),
+        cert_doc_url=teacher.cert_doc_url,
+        max_students=teacher.max_students,
+    ))

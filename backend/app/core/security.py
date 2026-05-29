@@ -104,3 +104,15 @@ async def get_current_user(
         raise AppError(code=401, message="用户不存在或已被封禁")
 
     return user
+
+
+from typing import Callable, Awaitable
+
+
+def require_role(*allowed_roles: str) -> Callable[..., Awaitable[User]]:
+    """生成依赖：要求 current_user.role 在 allowed_roles 中，否则 403。"""
+    async def _dep(current_user: User = Depends(get_current_user)) -> User:
+        if str(current_user.role) not in allowed_roles:
+            raise AppError(code=403, message="权限不足")
+        return current_user
+    return _dep

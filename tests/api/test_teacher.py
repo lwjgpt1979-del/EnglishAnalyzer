@@ -90,7 +90,8 @@ async def teacher_user(db_session):
     user = await upsert_user(db_session, openid=f"teacher_svc_teacher_{uuid.uuid4().hex[:8]}")
     await db_session.flush()
     data = BecomeTeacherRequest(subject="英语")
-    await become_teacher(db_session, user=user, data=data)
+    teacher = await become_teacher(db_session, user=user, data=data)
+    teacher.cert_status = "certified"  # type: ignore[assignment]
     await db_session.flush()
     return user
 
@@ -324,6 +325,12 @@ async def teacher_headers(client: AsyncClient):
         "/api/v1/teacher/profile", json={"subject": "英语"}, headers=headers
     )
     assert become_resp.status_code == 200, become_resp.text
+    # 提交认证（dev auto_approve=True 直接 certified）
+    await client.post(
+        "/api/v1/teacher/cert/submit",
+        json={"cert_doc_url": "https://cdn.test.com/cert.jpg"},
+        headers=headers,
+    )
     return headers
 
 

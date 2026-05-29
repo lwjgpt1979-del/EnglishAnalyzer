@@ -15,6 +15,7 @@ class TeacherProfileOut(BaseModel):
     user_id: uuid.UUID
     subject: str | None
     cert_status: str
+    cert_doc_url: str | None = None
     max_students: int
 
     model_config = {"from_attributes": True}
@@ -48,3 +49,12 @@ class TeacherCommentOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CertSubmitRequest(BaseModel):
+    cert_doc_url: str = Field(..., min_length=1, description="证书文档 URL（已上传至 COS）")
+
+
+class CertReviewRequest(BaseModel):
+    approve: bool
+    reason: str | None = Field(None, description="拒绝时填理由")

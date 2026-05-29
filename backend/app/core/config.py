@@ -62,5 +62,8 @@ class Settings(BaseSettings):
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
 
+    # 老师认证
+    auto_approve_teacher_cert: bool = True  # dev 自动通过；生产置 False 由 admin 审核
+
 
 settings = Settings()

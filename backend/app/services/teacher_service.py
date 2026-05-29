@@ -267,3 +267,44 @@ async def get_comments_for_wq_authorized(
 
     # 其他用户返回空列表
     return []
+
+
+# ─── cert 流程 + gate（D-075 / P0 老师端）────────────────────────────────────
+async def submit_cert(
+    db: AsyncSession,
+    *,
+    teacher: Teacher,
+    cert_doc_url: str,
+) -> Teacher:
+    """老师提交认证材料。auto_approve=True 直接 certified；否则 pending。"""
+    from app.core.config import settings
+    teacher.cert_doc_url = cert_doc_url
+    if settings.auto_approve_teacher_cert:
+        teacher.cert_status = "certified"  # type: ignore[assignment]
+    else:
+        teacher.cert_status = "pending"  # type: ignore[assignment]
+    await db.flush()
+    return teacher
+
+
+async def review_cert(
+    db: AsyncSession,
+    *,
+    teacher_id: uuid.UUID,
+    approve: bool,
+    reason: str | None = None,
+) -> Teacher:
+    """admin 审核老师认证。"""
+    r = await db.execute(select(Teacher).where(Teacher.id == teacher_id))
+    teacher = r.scalar_one_or_none()
+    if teacher is None:
+        raise AppError(code=404, message="老师不存在")
+    teacher.cert_status = ("certified" if approve else "rejected")  # type: ignore[assignment]
+    await db.flush()
+    return teacher
+
+
+def ensure_certified(teacher: Teacher | None) -> None:
+    """权限 gate：未认证（uncertified/pending/rejected）禁止教师写操作。"""
+    if teacher is None or str(teacher.cert_status) != "certified":
+        raise AppError(code=403, message="老师认证未通过，无法执行此操作")
