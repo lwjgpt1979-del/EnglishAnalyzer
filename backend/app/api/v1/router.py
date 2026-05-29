@@ -13,6 +13,7 @@ from app.api.v1.practice import router as practice_router
 from app.api.v1.teacher import router as teacher_router
 from app.api.v1.wrong_questions import router as wrong_questions_router
 from app.api.v1.notifications import router as notifications_router
+from app.api.v1.relative import router as relative_router
 
 v1_router = APIRouter()
 
@@ -28,4 +29,5 @@ v1_router.include_router(ocr_router)
 v1_router.include_router(teacher_router)
 v1_router.include_router(practice_router)
 v1_router.include_router(notifications_router)
+v1_router.include_router(relative_router)
 v1_router.include_router(admin_router)
