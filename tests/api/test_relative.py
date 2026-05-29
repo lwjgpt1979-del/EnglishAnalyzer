@@ -139,3 +139,31 @@ async def test_unbind_relative(client):
     assert r.status_code == 200
     r2 = await client.get("/api/v1/relative/my-relatives", headers=s_h)
     assert all(item["student_id"] != pid for item in r2.json()["data"])
+
+
+@pytest.mark.asyncio
+async def test_relative_view_student_diagnosis(client):
+    s_h, sid = await _setup_user(client, f"vd_s_{uuid.uuid4().hex[:6]}", 2010)
+    p_h, _ = await _setup_user(client, f"vd_p_{uuid.uuid4().hex[:6]}", 1985)
+
+    iv = await client.post("/api/v1/relative/invite-code", headers=s_h)
+    await client.post(
+        "/api/v1/relative/bind",
+        json={"code": iv.json()["data"]["code"], "relationship": "父亲"}, headers=p_h,
+    )
+
+    r = await client.get(f"/api/v1/relative/students/{sid}/diagnosis-report", headers=p_h)
+    assert r.status_code == 200
+    d = r.json()["data"]
+    assert "total_questions" in d
+    assert "mastery_rate" in d
+
+
+@pytest.mark.asyncio
+async def test_relative_view_unbound_student_403(client):
+    p_h, _ = await _setup_user(client, f"vd_ub_{uuid.uuid4().hex[:6]}", 1985)
+    rnd_sid = uuid.uuid4()
+    r = await client.get(
+        f"/api/v1/relative/students/{rnd_sid}/diagnosis-report", headers=p_h,
+    )
+    assert r.status_code == 403

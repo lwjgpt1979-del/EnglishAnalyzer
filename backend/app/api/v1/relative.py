@@ -74,3 +74,44 @@ async def unbind_my_relative(relative_id: uuid.UUID, db: DbDep, current_user: Us
     )
     await db.commit()
     return make_ok({"unbound": True})
+
+
+from app.schemas.diagnosis import DiagnosisReport
+from app.schemas.wrong_questions import WrongQuestionOut
+
+
+@router.get(
+    "/students/{student_id}/diagnosis-report",
+    response_model=BaseResponse[DiagnosisReport],
+)
+async def relative_view_student_diagnosis(
+    student_id: uuid.UUID, db: DbDep, current_user: UserDep,
+):
+    await get_rls_db(db, str(current_user.id))
+    await relative_service.assert_bound(
+        db, relative_id=current_user.id, student_id=student_id,
+    )
+    from app.services.diagnosis_service import get_diagnosis_report
+    report = await get_diagnosis_report(db, student_id=student_id)
+    return make_ok(report)
+
+
+@router.get(
+    "/students/{student_id}/wrong-questions",
+    response_model=BaseResponse[list[WrongQuestionOut]],
+)
+async def relative_view_student_wqs(
+    student_id: uuid.UUID, db: DbDep, current_user: UserDep,
+):
+    await get_rls_db(db, str(current_user.id))
+    await relative_service.assert_bound(
+        db, relative_id=current_user.id, student_id=student_id,
+    )
+    from sqlalchemy import select as _sel
+    from app.models.d3_wrong_questions import WrongQuestion
+    r = await db.execute(
+        _sel(WrongQuestion).where(WrongQuestion.student_id == student_id)
+        .order_by(WrongQuestion.created_at.desc())
+    )
+    items = list(r.scalars().all())
+    return make_ok([WrongQuestionOut.model_validate(wq) for wq in items])
