@@ -43,3 +43,11 @@ export function addComment(wqId: string, commentText: string): Promise<TeacherCo
 export function getComments(wqId: string): Promise<TeacherCommentOut[]> {
   return request<TeacherCommentOut[]>(`/api/v1/teacher/wrong-questions/${wqId}/comments`)
 }
+
+export function submitCert(certDocUrl: string) {
+  return request('/api/v1/teacher/cert/submit', { method: 'POST', data: { cert_doc_url: certDocUrl } })
+}
+
+export function getStudentDiagnosis(studentId: string) {
+  return request(`/api/v1/teacher/students/${studentId}/diagnosis-report`, { method: 'GET' })
+}

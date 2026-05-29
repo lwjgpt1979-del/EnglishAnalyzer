@@ -2,6 +2,14 @@
 <template>
   <view class="teacher-page">
 
+    <view v-if="isTeacher && certStatus !== 'certified'" class="cert-banner" @tap="goCert">
+      <text>⚠️ 教师未认证（{{ certStatusLabel }}）—— 点击去认证</text>
+    </view>
+    <view v-if="isTeacher" class="quick-row">
+      <text class="quick-btn" @tap="goCert">📋 认证</text>
+      <text class="quick-btn" @tap="goClasses">🏫 班级管理</text>
+    </view>
+
     <!-- 成为教师 / 教师信息 -->
     <view class="card">
       <view class="card-title">教师身份</view>
@@ -72,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   becomeTeacher,
@@ -80,6 +88,7 @@ import {
   bindTeacher,
   getMyStudents,
 } from '@/api/teacher'
+import { request } from '@/utils/request'
 import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut } from '@/types/api'
 
 const auth = useAuthStore()
@@ -98,12 +107,22 @@ const loadingStudents = ref(false)
 const bindCodeInput = ref('')
 const binding = ref(false)
 
+const certStatus = ref<string>('uncertified')
+const certStatusLabel = computed(() => ({ uncertified: '未认证', pending: '审核中', rejected: '已拒绝', certified: '已认证' } as any)[certStatus.value] || certStatus.value)
+function goCert() { uni.navigateTo({ url: '/pages/teacher/cert' }) }
+function goClasses() { uni.navigateTo({ url: '/pages/teacher/classes' }) }
+async function loadCertStatus() {
+  if (!isTeacher.value) return
+  try { const r: any = await request('/api/v1/teacher/profile', { method: 'POST', data: {} }); certStatus.value = r.data?.cert_status || 'uncertified' } catch {}
+}
+
 onMounted(async () => {
   if (!auth.user) return
   isTeacher.value = auth.user.role === 'teacher'
   if (isTeacher.value) {
     await loadStudents()
   }
+  loadCertStatus()
 })
 
 async function handleBecomeTeacher() {
@@ -192,4 +211,7 @@ function goToStudent(studentId: string) {
 .student-id { flex: 1; font-size: 28rpx; color: var(--c-text-body); }
 .student-bind-date { font-size: 24rpx; color: var(--c-text-hint); margin-right: 8rpx; }
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }
+.cert-banner { background: var(--c-orange); color: #fff; font-size: 24rpx; font-weight: 700; padding: 16rpx 24rpx; border-radius: var(--r-md); margin-bottom: 12rpx; text-align: center; }
+.quick-row { display: flex; gap: 12rpx; margin-bottom: 12rpx; }
+.quick-btn { flex: 1; text-align: center; background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 16rpx; font-size: 26rpx; font-weight: 600; }
 </style>

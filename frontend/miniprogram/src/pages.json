@@ -39,7 +39,11 @@
     { "path": "pages/auth/complete-profile", "style": { "navigationBarTitleText": "完善资料" } },
     { "path": "pages/account/settings", "style": { "navigationBarTitleText": "账号设置" } },
     { "path": "pages/account/cancel", "style": { "navigationBarTitleText": "注销账号" } },
-    { "path": "pages/messages/index", "style": { "navigationBarTitleText": "消息中心" } }
+    { "path": "pages/messages/index", "style": { "navigationBarTitleText": "消息中心" } },
+    { "path": "pages/teacher/cert", "style": { "navigationBarTitleText": "教师认证" } },
+    { "path": "pages/teacher/student-diagnosis", "style": { "navigationBarTitleText": "学生学情" } },
+    { "path": "pages/teacher/classes", "style": { "navigationBarTitleText": "班级管理" } },
+    { "path": "pages/teacher/class-detail", "style": { "navigationBarTitleText": "班级详情" } }
   ],
   "tabBar": {
     "color": "#999",

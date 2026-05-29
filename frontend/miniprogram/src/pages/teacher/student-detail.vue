@@ -5,6 +5,11 @@
     <view v-if="loading" class="tip">加载中…</view>
     <view v-else-if="wqs.length === 0" class="tip">该学生暂无错题记录。</view>
 
+    <view class="card report-entry" @tap="goReport">
+      <text class="report-text">📊 查看学情报告</text>
+      <text class="arrow">›</text>
+    </view>
+
     <view v-for="wq in wqs" :key="wq.id" class="wq-card">
       <image
         v-if="wq.source_image_url"
@@ -63,11 +68,15 @@ const loading = ref(true)
 const commentDraft = reactive<Record<string, string>>({})
 const submitting = reactive<Record<string, boolean>>({})
 const existingComments = reactive<Record<string, TeacherCommentOut[]>>({})
+const studentId = ref('')
+
+function goReport() { uni.navigateTo({ url: `/pages/teacher/student-diagnosis?studentId=${studentId.value}` }) }
 
 onMounted(async () => {
   const pages = getCurrentPages()
   const page = pages[pages.length - 1] as any
   const sid = page.options?.studentId || ''
+  studentId.value = sid
   if (!sid) {
     loading.value = false
     return
@@ -123,4 +132,8 @@ async function submitComment(wqId: string) {
 .comment-item { background: var(--c-primary-faint); border-radius: var(--r-md); padding: 14rpx 18rpx; margin-bottom: 8rpx; border-left: 4rpx solid var(--c-gold); }
 .comment-text { font-size: 26rpx; color: var(--c-text-body); display: block; margin-bottom: 4rpx; }
 .comment-time { font-size: 22rpx; color: var(--c-text-hint); }
+.card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
+.report-entry { display: flex; justify-content: space-between; align-items: center; }
+.report-text { font-size: 28rpx; color: var(--c-ink); font-weight: 700; }
+.arrow { font-size: 32rpx; color: var(--c-text-hint); }
 </style>

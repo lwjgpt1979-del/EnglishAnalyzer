@@ -177,6 +177,7 @@ export interface TeacherProfileOut {
   subject: string | null
   cert_status: string
   max_students: number
+  cert_doc_url?: string | null
 }
 
 export interface InviteCodeOut {
@@ -283,4 +284,29 @@ export interface NotificationListOut {
   items: NotificationOut[]
   total: number
   unread_count: number
+}
+
+// ── Classes ───────────────────────────────────────────────────────────────────
+
+export interface ClassOut {
+  id: string
+  name: string
+  student_count: number
+  created_at: string
+}
+
+export interface ClassStudentOut {
+  student_id: string
+  joined_at: string
+}
+
+export interface ClassReport {
+  class_id: string
+  class_name: string
+  student_count: number
+  avg_mastery_rate: number
+  total_questions: number
+  top_error_types: { type: string; count: number }[]
+  top_weak_knowledge_points: { kp: string; count: number }[]
+  students_ranking: { student_id: string; total_questions: number; mastery_rate: number }[]
 }
