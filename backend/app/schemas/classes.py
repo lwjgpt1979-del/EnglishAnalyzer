@@ -28,3 +28,30 @@ class ClassStudentOut(BaseModel):
     joined_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ClassReportStudent(BaseModel):
+    student_id: uuid.UUID
+    total_questions: int
+    mastery_rate: float
+
+
+class ClassReportErrorType(BaseModel):
+    type: str
+    count: int
+
+
+class ClassReportKp(BaseModel):
+    kp: str
+    count: int
+
+
+class ClassReport(BaseModel):
+    class_id: uuid.UUID
+    class_name: str
+    student_count: int
+    avg_mastery_rate: float
+    total_questions: int
+    top_error_types: list[ClassReportErrorType]
+    top_weak_knowledge_points: list[ClassReportKp]
+    students_ranking: list[ClassReportStudent]  # 按掌握率降序

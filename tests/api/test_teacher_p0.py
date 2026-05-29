@@ -221,3 +221,62 @@ async def test_class_add_unbound_student_400(client):
         json={"student_ids": [rnd_sid]}, headers=t_headers,
     )
     assert r2.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_class_report_empty(client):
+    """空班级也应返回有效结构。"""
+    t_headers = await _make_teacher(client, f"clsrpt_{uuid.uuid4().hex[:6]}")
+    await client.post(
+        "/api/v1/teacher/cert/submit",
+        json={"cert_doc_url": "https://cdn.test.com/c.jpg"}, headers=t_headers,
+    )
+    r = await client.post("/api/v1/teacher/classes", json={"name": "空班"}, headers=t_headers)
+    class_id = r.json()["data"]["id"]
+
+    rep = await client.get(f"/api/v1/teacher/classes/{class_id}/report", headers=t_headers)
+    assert rep.status_code == 200
+    d = rep.json()["data"]
+    assert d["student_count"] == 0
+    assert d["avg_mastery_rate"] == 0.0
+    assert d["students_ranking"] == []
+    assert d["top_error_types"] == []
+
+
+@pytest.mark.asyncio
+async def test_class_report_with_one_student(client):
+    """班级有 1 个学生时报告字段正确填充。"""
+    t_headers = await _make_teacher(client, f"clsrpt2_{uuid.uuid4().hex[:6]}")
+    await client.post(
+        "/api/v1/teacher/cert/submit",
+        json={"cert_doc_url": "https://cdn.test.com/c.jpg"}, headers=t_headers,
+    )
+    r = await client.post("/api/v1/teacher/classes", json={"name": "实验班"}, headers=t_headers)
+    class_id = r.json()["data"]["id"]
+
+    s_suffix = f"clsrpt_s_{uuid.uuid4().hex[:6]}"
+    s_headers = await _login_as(client, s_suffix)
+    await client.post(
+        "/api/v1/auth/complete-profile",
+        json={"birth_year": 1990, "agreement_version": "v1.0"}, headers=s_headers,
+    )
+    iv = await client.post("/api/v1/teacher/invite-code", headers=t_headers)
+    await client.post("/api/v1/teacher/bind", json={"code": iv.json()["data"]["code"]}, headers=s_headers)
+
+    async with _async_session_factory() as s:
+        stu = (await s.execute(
+            select(User).where(User.openid == f"t_p0_{s_suffix}")
+        )).scalar_one()
+        sid = str(stu.id)
+
+    await client.post(
+        f"/api/v1/teacher/classes/{class_id}/students",
+        json={"student_ids": [sid]}, headers=t_headers,
+    )
+
+    rep = await client.get(f"/api/v1/teacher/classes/{class_id}/report", headers=t_headers)
+    assert rep.status_code == 200
+    d = rep.json()["data"]
+    assert d["student_count"] == 1
+    assert len(d["students_ranking"]) == 1
+    assert d["students_ranking"][0]["student_id"] == sid

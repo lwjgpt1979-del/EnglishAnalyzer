@@ -121,3 +121,56 @@ async def list_class_students(
         .order_by(ClassStudent.joined_at.desc())
     )
     return list(r.scalars().all())
+
+
+from collections import Counter
+
+
+async def build_class_report(
+    db: AsyncSession,
+    *,
+    teacher_id: uuid.UUID,
+    class_id: uuid.UUID,
+) -> dict:
+    """聚合全班学生的 diagnosis 数据。MVP 班级规模 < 50 内存聚合可接受。"""
+    cls = await _get_owned_class(db, teacher_id=teacher_id, class_id=class_id)
+
+    cs_r = await db.execute(
+        select(ClassStudent.student_id).where(ClassStudent.class_id == cls.id)
+    )
+    student_ids = [row[0] for row in cs_r.all()]
+
+    from app.services.diagnosis_service import get_diagnosis_report
+    err_counter: Counter = Counter()
+    kp_counter: Counter = Counter()
+    total_questions = 0
+    rates: list[float] = []
+    rankings: list[dict] = []
+
+    for sid in student_ids:
+        report = await get_diagnosis_report(db, student_id=sid)
+        total_questions += report.total_questions
+        rates.append(report.mastery_rate)
+        rankings.append({
+            "student_id": sid,
+            "total_questions": report.total_questions,
+            "mastery_rate": report.mastery_rate,
+        })
+        for et in report.top_error_types:
+            err_counter[et.error_type] += et.count
+        for kp in report.top_weak_knowledge_points:
+            kp_counter[kp.knowledge_point] += kp.count
+
+    avg_rate = (sum(rates) / len(rates)) if rates else 0.0
+    rankings.sort(key=lambda x: x["mastery_rate"], reverse=True)
+
+    return {
+        "class_id": cls.id,
+        "class_name": cls.name,
+        "student_count": len(student_ids),
+        "avg_mastery_rate": round(avg_rate, 4),
+        "total_questions": total_questions,
+        "top_error_types": [{"type": t, "count": c} for t, c in err_counter.most_common(10)],
+        "top_weak_knowledge_points": [{"kp": k, "count": c} for k, c in kp_counter.most_common(10)],
+        "students_ranking": rankings,
+    }

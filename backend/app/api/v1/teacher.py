@@ -28,6 +28,7 @@ from app.services import teacher_service
 from app.schemas.classes import (
     ClassCreateRequest, ClassOut,
     ClassStudentAddRequest, ClassStudentOut,
+    ClassReport,
 )
 from app.services import class_service
 
@@ -304,3 +305,13 @@ async def list_class_students_api(class_id: uuid.UUID, db: DbDep, current_user: 
         db, teacher_id=current_user.id, class_id=class_id,
     )
     return make_ok([ClassStudentOut(student_id=cs.student_id, joined_at=cs.joined_at) for cs in items])
+
+
+@router.get("/classes/{class_id}/report", response_model=BaseResponse[ClassReport])
+async def class_report_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    data = await class_service.build_class_report(
+        db, teacher_id=current_user.id, class_id=class_id,
+    )
+    return make_ok(ClassReport(**data))
