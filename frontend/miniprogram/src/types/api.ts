@@ -130,6 +130,7 @@ export interface OrderCreate {
   tier: string          // basic | pro | promax
   duration_months: number  // 1 | 3 | 12
   order_type: string    // new | renew | upgrade
+  target_student_id?: string
 }
 
 export interface OrderOut {
@@ -309,4 +310,17 @@ export interface ClassReport {
   top_error_types: { type: string; count: number }[]
   top_weak_knowledge_points: { kp: string; count: number }[]
   students_ranking: { student_id: string; total_questions: number; mastery_rate: number }[]
+}
+
+// ── Relative ──────────────────────────────────────────────────────────────────
+
+export interface RelativeInviteCodeOut {
+  code: string
+  expires_at: string
+}
+
+export interface BoundStudent {
+  student_id: string
+  relationship: string
+  bound_at: string
 }

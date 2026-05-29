@@ -88,6 +88,25 @@
       <button class="btn-menu" @tap="goTeacher">进入教师中心</button>
     </view>
 
+    <!-- 家人中心 -->
+    <view class="card" @tap="goRelative">
+      <view class="card-title">家人中心</view>
+      <text class="menu-desc">家长侧：绑定孩子、查看孩子学情、代付会员</text>
+      <button class="btn-menu" @tap.stop="goRelative">进入家人中心</button>
+    </view>
+
+    <!-- 邀请家人（学生侧）-->
+    <view class="card">
+      <view class="card-title">邀请家人绑定</view>
+      <text class="menu-desc">生成 6 位邀请码，发给家长在"家人中心"输入完成绑定。</text>
+      <button class="btn-menu" @tap="genInviteCode">{{ myInvite ? '重新生成' : '生成邀请码' }}</button>
+      <view v-if="myInvite" class="invite-row">
+        <text class="inv-code">{{ myInvite.code }}</text>
+        <text class="inv-exp">24小时有效</text>
+        <button size="mini" class="btn-copy" @tap.stop="copyCode">复制</button>
+      </view>
+    </view>
+
     <!-- 账号设置 -->
     <view class="card" @tap="goSettings">
       <view class="card-title">账号设置</view>
@@ -102,10 +121,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { getMyMembership } from '@/api/memberships'
 import { createOrder, payOrder } from '@/api/orders'
+import { generateRelativeInviteCode } from '@/api/relative'
 import { useAuthStore } from '@/stores/auth'
 import type { CurrentMembershipOut } from '@/types/api'
 
 const auth = useAuthStore()
+const myInvite = ref<{ code: string; expires_at: string } | null>(null)
 const membership = ref<CurrentMembershipOut | null>(null)
 const loadingMembership = ref(false)
 const paying = ref(false)
@@ -207,6 +228,28 @@ function goTeacher() {
   uni.navigateTo({ url: '/pages/teacher/students' })
 }
 
+function goRelative() {
+  uni.navigateTo({ url: '/pages/relative/center' })
+}
+
+async function genInviteCode() {
+  try {
+    const r = await generateRelativeInviteCode()
+    myInvite.value = r || null
+    uni.showToast({ title: '已生成', icon: 'success' })
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '生成失败', icon: 'none' })
+  }
+}
+
+function copyCode() {
+  if (!myInvite.value) return
+  uni.setClipboardData({
+    data: myInvite.value.code,
+    success: () => uni.showToast({ title: '已复制', icon: 'success' }),
+  })
+}
+
 function goSettings() {
   uni.navigateTo({ url: '/pages/account/settings' })
 }
@@ -298,4 +341,8 @@ function goCancelPage() {
 .cb-action { font-size: 26rpx; }
 .consent-row { display: flex; align-items: center; gap: 8rpx; margin-bottom: 16rpx; font-size: 24rpx; color: var(--c-text-second); }
 .consent-text { flex: 1; }
+.invite-row { margin-top: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; display: flex; align-items: center; gap: 12rpx; }
+.inv-code { flex: 1; font-size: 40rpx; font-weight: 800; color: var(--c-ink); letter-spacing: 6rpx; }
+.inv-exp { font-size: 22rpx; color: var(--c-text-hint); }
+.btn-copy { background: var(--c-primary); color: var(--c-ink); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
 </style>
