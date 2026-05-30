@@ -31,3 +31,18 @@ class BoundStudentOut(BaseModel):
     student_id: uuid.UUID
     relationship: str
     bound_at: datetime
+
+
+class QRCodeOut(BaseModel):
+    code: str
+    expires_at: datetime
+    qrcode_base64: str = Field(..., description="PNG/JPEG base64")
+
+
+class SendInviteSmsRequest(BaseModel):
+    phone: str = Field(..., min_length=11, max_length=20)
+
+
+class SendInviteSmsOut(BaseModel):
+    sent: bool
+    code: str

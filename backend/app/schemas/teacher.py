@@ -58,3 +58,18 @@ class CertSubmitRequest(BaseModel):
 class CertReviewRequest(BaseModel):
     approve: bool
     reason: str | None = Field(None, description="拒绝时填理由")
+
+
+class QRCodeOut(BaseModel):
+    code: str
+    expires_at: datetime
+    qrcode_base64: str = Field(..., description="PNG/JPEG base64，前端用 data: 前缀展示")
+
+
+class SendInviteSmsRequest(BaseModel):
+    phone: str = Field(..., min_length=11, max_length=20)
+
+
+class SendInviteSmsOut(BaseModel):
+    sent: bool
+    code: str

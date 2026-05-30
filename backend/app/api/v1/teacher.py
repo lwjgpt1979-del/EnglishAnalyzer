@@ -17,11 +17,16 @@ from app.schemas.teacher import (
     BindTeacherRequest,
     CertSubmitRequest,
     InviteCodeOut,
+    QRCodeOut,
+    SendInviteSmsRequest,
+    SendInviteSmsOut,
     TeacherCommentCreate,
     TeacherCommentOut,
     TeacherProfileOut,
     TeacherStudentOut,
 )
+from app.services.qrcode_service import get_miniprogram_qrcode_base64
+from app.services.sms_service import send_invite_sms
 from app.schemas.diagnosis import DiagnosisReport
 from app.schemas.wrong_questions import WrongQuestionOut
 from app.services import teacher_service
@@ -315,3 +320,32 @@ async def class_report_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep
         db, teacher_id=current_user.id, class_id=class_id,
     )
     return make_ok(ClassReport(**data))
+
+
+@router.post("/invite-code/qrcode", response_model=BaseResponse[QRCodeOut])
+async def teacher_invite_qrcode(db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    invite = await teacher_service.generate_invite_code(db, teacher_id=current_user.id)
+    await db.commit()
+    qb64 = await get_miniprogram_qrcode_base64(
+        scene=f"t:{invite.code}",
+        page="pages/teacher/students",
+    )
+    return make_ok(QRCodeOut(
+        code=invite.code, expires_at=invite.expires_at, qrcode_base64=qb64,
+    ))
+
+
+@router.post("/invite-code/sms", response_model=BaseResponse[SendInviteSmsOut])
+async def teacher_invite_sms(body: SendInviteSmsRequest, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    invite = await teacher_service.generate_invite_code(db, teacher_id=current_user.id)
+    await db.commit()
+    await send_invite_sms(
+        phone=body.phone, code=invite.code,
+        inviter_name=current_user.nickname or "您的老师",
+        role="teacher",
+    )
+    return make_ok(SendInviteSmsOut(sent=True, code=invite.code))

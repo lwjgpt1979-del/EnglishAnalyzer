@@ -14,10 +14,15 @@ from app.schemas.base import BaseResponse, make_ok
 from app.schemas.relative import (
     BindRelativeRequest,
     BoundStudentOut,
+    QRCodeOut,
     RelativeInviteCodeOut,
+    SendInviteSmsRequest,
+    SendInviteSmsOut,
     StudentRelativeOut,
 )
 from app.services import relative_service
+from app.services.qrcode_service import get_miniprogram_qrcode_base64
+from app.services.sms_service import send_invite_sms
 
 router = APIRouter(prefix="/relative", tags=["relative"])
 
@@ -115,3 +120,30 @@ async def relative_view_student_wqs(
     )
     items = list(r.scalars().all())
     return make_ok([WrongQuestionOut.model_validate(wq) for wq in items])
+
+
+@router.post("/invite-code/qrcode", response_model=BaseResponse[QRCodeOut])
+async def relative_invite_qrcode(db: DbDep, current_user: UserDep):
+    await get_rls_db(db, str(current_user.id))
+    invite = await relative_service.generate_invite_code(db, student_id=current_user.id)
+    await db.commit()
+    qb64 = await get_miniprogram_qrcode_base64(
+        scene=f"r:{invite.code}",
+        page="pages/relative/center",
+    )
+    return make_ok(QRCodeOut(
+        code=invite.code, expires_at=invite.expires_at, qrcode_base64=qb64,
+    ))
+
+
+@router.post("/invite-code/sms", response_model=BaseResponse[SendInviteSmsOut])
+async def relative_invite_sms(body: SendInviteSmsRequest, db: DbDep, current_user: UserDep):
+    await get_rls_db(db, str(current_user.id))
+    invite = await relative_service.generate_invite_code(db, student_id=current_user.id)
+    await db.commit()
+    await send_invite_sms(
+        phone=body.phone, code=invite.code,
+        inviter_name=current_user.nickname or "您的家人",
+        role="relative",
+    )
+    return make_ok(SendInviteSmsOut(sent=True, code=invite.code))
