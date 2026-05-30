@@ -26,6 +26,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { bindRelative, getMyStudentsAsRelative } from '@/api/relative'
 import type { BoundStudent } from '@/types/api'
 const bindCode = ref('')
@@ -51,6 +52,35 @@ async function onBind() {
 }
 function goView(sid: string) { uni.navigateTo({ url: `/pages/relative/student-view?studentId=${sid}` }) }
 onMounted(load)
+
+// 扫码进入：scene 形如 r:CODE → prompt 关系名 → 自动调家人绑定
+onLoad((options) => {
+  const sceneRaw = (options as any)?.scene
+  if (!sceneRaw) return
+  const scene = decodeURIComponent(sceneRaw)
+  if (!scene.startsWith('r:')) return
+  const code = scene.slice(2)
+  if (!code) return
+  // 关系字段需要用户填，弹 editable modal
+  uni.showModal({
+    title: '请填写您与孩子的关系',
+    editable: true,
+    placeholderText: '如：母亲 / 父亲 / 祖父',
+    success: async (res) => {
+      if (!res.confirm || !res.content?.trim()) return
+      uni.showLoading({ title: '绑定中…' })
+      try {
+        await bindRelative(code, res.content.trim())
+        uni.hideLoading()
+        uni.showToast({ title: '已绑定孩子', icon: 'success' })
+        if (typeof load === 'function') load()
+      } catch (e: any) {
+        uni.hideLoading()
+        uni.showToast({ title: e?.message || '绑定失败', icon: 'none' })
+      }
+    },
+  })
+})
 </script>
 
 <style scoped>

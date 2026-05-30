@@ -106,6 +106,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { useAuthStore } from '@/stores/auth'
 import {
   becomeTeacher,
@@ -250,6 +251,28 @@ function copyQrCode() {
     success: () => uni.showToast({ title: '已复制', icon: 'success' }),
   })
 }
+
+// 扫码进入：scene 形如 t:CODE → 自动调老师绑定
+onLoad((options) => {
+  const sceneRaw = (options as any)?.scene
+  if (!sceneRaw) return
+  const scene = decodeURIComponent(sceneRaw)
+  if (!scene.startsWith('t:')) return
+  const code = scene.slice(2)
+  if (!code) return
+  uni.showLoading({ title: '正在绑定老师…' })
+  bindTeacher(code)
+    .then(() => {
+      uni.hideLoading()
+      uni.showToast({ title: '已绑定老师', icon: 'success' })
+      // 刷新学生侧"我的家人/我绑定的老师"列表（如果该页面有的话）
+      if (typeof loadStudents === 'function') loadStudents()
+    })
+    .catch((e: any) => {
+      uni.hideLoading()
+      uni.showToast({ title: e?.message || '绑定失败', icon: 'none' })
+    })
+})
 </script>
 
 <style scoped>
