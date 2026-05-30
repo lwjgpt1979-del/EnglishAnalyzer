@@ -278,7 +278,7 @@ def test_branch_company_city_partial_unique_index():
 
 
 def test_all_37_tables_in_metadata():
-    """确保 Base.metadata 包含全部 38 张表。"""
+    """确保 Base.metadata 包含全部 47 张表（38 旧 + 9 V2 新表）。"""
     # 导入 __init__ 触发所有模型注册
     import app.models  # noqa: F401
     from app.models.base import Base
@@ -307,11 +307,56 @@ def test_all_37_tables_in_metadata():
         "system_configs", "notifications",
         # 域10
         "branch_companies", "branch_company_cities", "branch_settlements",
+        # 域11: V2 教材深度内容
+        "knowledge_point_contents",
+        # 域12: V2 真题与仿真题
+        "exam_papers", "exam_questions", "exam_question_knowledge_points",
+        "simulated_questions",
+        # 域13: V2 学生整卷上传
+        "user_uploaded_papers", "user_paper_questions",
+        "user_paper_question_knowledge_points",
+        # 域14: V2 学期会员
+        "purchased_semesters",
     }
     actual_tables = set(Base.metadata.tables.keys())
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
-    assert len(actual_tables) == 38, f"期望 38 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+    assert len(actual_tables) == 47, f"期望 47 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+
+
+def test_d11_v2_curriculum_tables():
+    from app.models.d11_v2_curriculum import KnowledgePointContent
+    assert KnowledgePointContent.__tablename__ == "knowledge_point_contents"
+
+
+def test_d12_v2_exams_tables():
+    from app.models.d12_v2_exams import (
+        ExamPaper, ExamQuestion, ExamQuestionKnowledgePoint, SimulatedQuestion,
+    )
+    assert ExamPaper.__tablename__ == "exam_papers"
+    assert ExamQuestion.__tablename__ == "exam_questions"
+    assert ExamQuestionKnowledgePoint.__tablename__ == "exam_question_knowledge_points"
+    assert SimulatedQuestion.__tablename__ == "simulated_questions"
+
+
+def test_d13_v2_user_papers_tables():
+    from app.models.d13_v2_user_papers import (
+        UserUploadedPaper, UserPaperQuestion, UserPaperQuestionKnowledgePoint,
+    )
+    assert UserUploadedPaper.__tablename__ == "user_uploaded_papers"
+    assert UserPaperQuestion.__tablename__ == "user_paper_questions"
+    assert UserPaperQuestionKnowledgePoint.__tablename__ == "user_paper_question_knowledge_points"
+
+
+def test_d14_v2_semesters_tables():
+    from app.models.d14_v2_semesters import PurchasedSemester
+    assert PurchasedSemester.__tablename__ == "purchased_semesters"
+
+
+def test_purchased_semesters_has_index():
+    from app.models.d14_v2_semesters import PurchasedSemester
+    index_names = {i.name for i in PurchasedSemester.__table__.indexes}
+    assert "ix_purchased_semesters_user_lookup" in index_names
 
 
 def test_migration_file_exists():

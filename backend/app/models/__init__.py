@@ -1,5 +1,5 @@
 """
-统一导入所有 SQLAlchemy 模型，确保 Base.metadata 中注册全部 38 张表。
+统一导入所有 SQLAlchemy 模型，确保 Base.metadata 中注册全部 47 张表。
 Alembic env.py 中 `import app.models` 即可获取完整元数据。
 """
 
@@ -60,5 +60,21 @@ from .d9_system import SystemConfig, Notification  # noqa: F401
 
 # 域10: 分公司扩展 (3 张表)
 from .d10_branch import BranchCompany, BranchCompanyCity, BranchSettlement  # noqa: F401
+
+# 域11: V2 教材深度内容 (1 张表)
+from .d11_v2_curriculum import KnowledgePointContent  # noqa: F401
+
+# 域12: V2 真题与仿真题 (4 张表)
+from .d12_v2_exams import (  # noqa: F401
+    ExamPaper, ExamQuestion, ExamQuestionKnowledgePoint, SimulatedQuestion,
+)
+
+# 域13: V2 学生整卷上传 (3 张表)
+from .d13_v2_user_papers import (  # noqa: F401
+    UserUploadedPaper, UserPaperQuestion, UserPaperQuestionKnowledgePoint,
+)
+
+# 域14: V2 学期会员 (1 张表)
+from .d14_v2_semesters import PurchasedSemester  # noqa: F401
 
 __all__ = ["Base"]
