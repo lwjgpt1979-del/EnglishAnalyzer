@@ -1,6 +1,6 @@
 {
     "name" : "engGramer",
-    "appid" : "wx__REPLACE_WITH_REAL_APPID__",
+    "appid" : "wxb83d4e7d2f7e07fb",
     "description" : "",
     "versionName" : "1.0.0",
     "versionCode" : "100",
@@ -50,7 +50,7 @@
     "quickapp" : {},
     /* 小程序特有相关 */
     "mp-weixin" : {
-        "appid" : "wx__REPLACE_WITH_REAL_APPID__",
+        "appid" : "wxb83d4e7d2f7e07fb",
         "setting" : {
             "urlCheck" : true
         },
