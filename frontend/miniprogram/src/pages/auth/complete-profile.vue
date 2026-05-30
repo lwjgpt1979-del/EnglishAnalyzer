@@ -14,6 +14,24 @@
         <text class="label">本人手机号（可选）</text>
         <input v-model="userPhone" class="input" placeholder="用于注销验证" />
       </view>
+      <view class="row col">
+        <text class="label">教材版本</text>
+        <picker :range="textbookOptions" @change="onTextbookChange">
+          <view class="picker-val">{{ textbook || '请选择' }}</view>
+        </picker>
+      </view>
+      <view class="row col">
+        <text class="label">年级</text>
+        <picker :range="gradeOptions" @change="onGradeChange">
+          <view class="picker-val">{{ grade || '请选择' }}</view>
+        </picker>
+      </view>
+      <view class="row col">
+        <text class="label">学期</text>
+        <picker :range="semesterOptions" @change="onSemesterChange">
+          <view class="picker-val">{{ semester || '请选择' }}</view>
+        </picker>
+      </view>
       <view class="agree">
         <checkbox :checked="agreed" @tap="agreed = !agreed" /><text>我已阅读并同意《用户协议》《隐私政策》</text>
       </view>
@@ -47,10 +65,24 @@ const code = ref('')
 const currentYear = new Date().getFullYear()
 const age = computed(() => Number(birthYear.value) ? currentYear - Number(birthYear.value) : 0)
 const needGuardian = computed(() => age.value > 0 && age.value < 14)
+
+const textbookOptions = ['译林版', '人教PEP', '外研版']
+const gradeOptions = ['小学5年级', '小学6年级', '初中7年级', '初中8年级', '初中9年级']
+const semesterOptions = ['上', '下']
+
+const textbook = ref('')
+const grade = ref('')
+const semester = ref<'上' | '下' | ''>('')
+
+function onTextbookChange(e: any) { textbook.value = textbookOptions[e.detail.value] }
+function onGradeChange(e: any) { grade.value = gradeOptions[e.detail.value] }
+function onSemesterChange(e: any) { semester.value = semesterOptions[e.detail.value] as '上' | '下' }
+
 const canSubmit = computed(() =>
   Number(birthYear.value) >= 1900 && Number(birthYear.value) <= currentYear
   && agreed.value
-  && (!needGuardian.value || guardianPhone.value.length === 11),
+  && (!needGuardian.value || guardianPhone.value.length === 11)
+  && !!textbook.value && !!grade.value && !!semester.value,
 )
 async function onSubmit() {
   submitting.value = true
@@ -60,7 +92,10 @@ async function onSubmit() {
       guardian_phone: needGuardian.value ? guardianPhone.value : undefined,
       user_phone: userPhone.value || undefined,
       agreement_version: 'v1.0',
-    })
+      preferred_textbook_version: textbook.value || undefined,
+      preferred_grade: grade.value || undefined,
+      preferred_semester: semester.value || undefined,
+    } as any)
     if (r?.needs_guardian_verify) {
       codeSent.value = true
       uni.showToast({ title: '已向监护人发送验证码', icon: 'success' })
@@ -100,4 +135,5 @@ async function onVerify() {
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
 .dev-hint { font-size: 22rpx; color: var(--c-text-hint); }
+.picker-val { padding: 16rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }
 </style>

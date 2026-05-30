@@ -336,3 +336,23 @@ export interface SendInviteSmsOut {
   sent: boolean
   code: string
 }
+
+// ── V2 Semesters ──────────────────────────────────────────────────────────────
+
+export type Semester = '上' | '下'
+
+export interface SemesterIdentity {
+  textbook_version: string
+  grade: string
+  semester: Semester
+}
+
+export interface PurchasedSemesterOut {
+  id: string
+  textbook_version: string
+  grade: string
+  semester: string
+  tier: string
+  started_at: string
+  expires_at: string
+}

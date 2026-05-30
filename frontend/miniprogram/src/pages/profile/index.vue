@@ -25,60 +25,22 @@
       </view>
     </view>
 
-    <!-- 会员状态 + 升级 -->
+    <!-- V2 学期会员（D-079 / M1）-->
     <view class="card">
-      <view class="card-title">会员状态</view>
-
-      <view v-if="loadingMembership" class="center-tip">加载中…</view>
-      <view v-else-if="membership">
-        <view class="member-tier" :class="`tier-${membership.tier}`">
-          {{ tierLabel(membership.tier) }}
-        </view>
-        <text v-if="membership.expires_at" class="expires-tip">
-          到期：{{ membership.expires_at.slice(0, 10) }}
-        </text>
-      </view>
-
-      <!-- 档位选择 -->
-      <view class="tier-list">
-        <view
-          v-for="plan in memberPlans"
-          :key="plan.tier"
-          class="tier-card"
-          :class="{ selected: selectedPlan === plan.tier }"
-          @tap="selectedPlan = plan.tier"
-        >
-          <text class="tier-name">{{ plan.label }}</text>
-          <text class="tier-price">¥{{ plan.price }}/月</text>
+      <view class="card-title">学期会员</view>
+      <text class="menu-desc">按学期购买课程内容（基础 ¥39 / Pro ¥79 / ProMax ¥159 / 学期）。完整购买流程将在学期详情页推出（M3）。</text>
+      <view v-if="mySemesters.length" class="sem-list">
+        <view v-for="s in mySemesters" :key="s.id" class="sem-item">
+          <view class="sem-info">
+            <text class="sem-name">{{ s.textbook_version }} {{ s.grade }} {{ s.semester }}</text>
+            <text class="sem-tier" :class="`tier-${s.tier}`">{{ tierLabel(s.tier) }}</text>
+          </view>
+          <text class="sem-expires">至 {{ s.expires_at.slice(0, 10) }}</text>
         </view>
       </view>
-
-      <!-- 时长选择 -->
-      <view class="duration-row">
-        <view
-          v-for="d in [1, 3, 12]"
-          :key="d"
-          class="duration-btn"
-          :class="{ selected: selectedDuration === d }"
-          @tap="selectedDuration = d"
-        >
-          <text>{{ d }}个月</text>
-          <text v-if="d === 12" class="discount-tag">8折</text>
-        </view>
+      <view v-else>
+        <text class="empty-tip">尚未购买任何学期</text>
       </view>
-
-      <view v-if="isMinor1417 && !alreadyConsented" class="consent-row">
-        <checkbox :checked="minorConsent" @tap="minorConsent = !minorConsent" />
-        <text class="consent-text">我已告知监护人并获得同意（14-17岁首次购买必勾）</text>
-      </view>
-
-      <button
-        class="btn-pay"
-        :disabled="paying || !auth.isLoggedIn()"
-        @tap="onPay"
-      >
-        {{ paying ? '支付中…' : `立即升级 ¥${currentPrice}` }}
-      </button>
     </view>
 
     <!-- 教师中心 -->
@@ -143,28 +105,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getMyMembership } from '@/api/memberships'
-import { createOrder, payOrder } from '@/api/orders'
 import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms } from '@/api/relative'
+import { listMySemesters } from '@/api/semesters'
 import { useAuthStore } from '@/stores/auth'
-import type { CurrentMembershipOut, QRCodeOut } from '@/types/api'
+import type { PurchasedSemesterOut, QRCodeOut } from '@/types/api'
 
 const auth = useAuthStore()
 const myInvite = ref<{ code: string; expires_at: string } | null>(null)
-const membership = ref<CurrentMembershipOut | null>(null)
-const loadingMembership = ref(false)
-const paying = ref(false)
-const selectedPlan = ref('basic')
-const selectedDuration = ref(1)
-const minorConsent = ref(false)
 
-const isMinor1417 = computed(() => {
-  const u: any = auth.user
-  if (!u?.birth_year) return false
-  const age = new Date().getFullYear() - u.birth_year
-  return age >= 14 && age <= 17
-})
-const alreadyConsented = computed(() => !!(auth.user as any)?.minor_purchase_consent_at)
+const mySemesters = ref<PurchasedSemesterOut[]>([])
 
 const cancelInfo = computed(() => {
   const u: any = auth.user
@@ -172,80 +121,16 @@ const cancelInfo = computed(() => {
   return { days: u.days_until_cancellation ?? 0 }
 })
 
-const memberPlans = [
-  { tier: 'basic', label: '基础版', price: 9 },
-  { tier: 'pro', label: '专业版', price: 19 },
-  { tier: 'promax', label: '旗舰版', price: 39 },
-]
-
-// 12个月享8折
-const currentPrice = computed(() => {
-  const plan = memberPlans.find((p) => p.tier === selectedPlan.value)
-  if (!plan) return 0
-  const base = plan.price * selectedDuration.value
-  return selectedDuration.value === 12 ? Math.round(base * 0.8) : base
-})
-
 onMounted(async () => {
-  if (!auth.isLoggedIn()) return
-  loadingMembership.value = true
-  try {
-    membership.value = await getMyMembership()
-  } finally {
-    loadingMembership.value = false
+  if (auth.isLoggedIn()) {
+    try {
+      mySemesters.value = await listMySemesters() || []
+    } catch { /* 忽略：用户未购则空 */ }
   }
 })
 
 function tierLabel(tier: string): string {
-  const map: Record<string, string> = {
-    free: '免费版',
-    basic: '基础版',
-    pro: '专业版',
-    promax: '旗舰版',
-  }
-  return map[tier] || tier
-}
-
-async function onPay() {
-  if (!auth.isLoggedIn()) {
-    await auth.login()
-    return
-  }
-  if (paying.value) return  // prevent double-tap
-  paying.value = true
-  try {
-    const orderType = membership.value?.tier === 'free' ? 'new' : 'renew'
-    const order = await createOrder({
-      tier: selectedPlan.value,
-      duration_months: selectedDuration.value,
-      order_type: orderType,
-      minor_consent: isMinor1417.value && !alreadyConsented.value ? minorConsent.value : undefined,
-    } as any)
-    const params = await payOrder(order.id)
-
-    await new Promise<void>((resolve, reject) => {
-      wx.requestPayment({
-        timeStamp: params.timeStamp,
-        nonceStr: params.nonceStr,
-        package: params.package,
-        signType: params.signType as 'RSA' | 'MD5',
-        paySign: params.paySign,
-        success: () => resolve(),
-        fail: (err) => reject(new Error(err.errMsg || '支付取消')),
-      })
-    })
-
-    uni.showToast({ title: '支付成功！', icon: 'success' })
-    membership.value = await getMyMembership()
-  } catch (e) {
-    const msg = (e as Error).message
-    // 用户主动取消不提示错误
-    if (msg && !msg.includes('cancel')) {
-      uni.showToast({ title: msg || '支付失败', icon: 'error' })
-    }
-  } finally {
-    paying.value = false
-  }
+  return ({ basic: '基础版', pro: '专业版', promax: '旗舰版', free: '免费版' } as any)[tier] || tier
 }
 
 function goTeacher() {
@@ -398,8 +283,16 @@ function copyRelCode() {
 .cancel-banner { background: var(--c-orange); color: #fff; border-radius: var(--r-md); padding: 16rpx 24rpx; margin-bottom: 16rpx; display: flex; align-items: center; }
 .cb-text { flex: 1; font-size: 26rpx; font-weight: 700; }
 .cb-action { font-size: 26rpx; }
-.consent-row { display: flex; align-items: center; gap: 8rpx; margin-bottom: 16rpx; font-size: 24rpx; color: var(--c-text-second); }
-.consent-text { flex: 1; }
+.sem-list { display: flex; flex-direction: column; gap: 12rpx; }
+.sem-item { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; display: flex; justify-content: space-between; align-items: center; }
+.sem-info { display: flex; flex-direction: column; gap: 4rpx; }
+.sem-name { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
+.sem-tier { display: inline-block; font-size: 22rpx; padding: 2rpx 12rpx; border-radius: var(--r-pill); margin-top: 4rpx; width: fit-content; font-weight: 600; }
+.sem-tier.tier-basic { background: var(--c-primary-soft); color: #8a7212; }
+.sem-tier.tier-pro { background: #fcecd2; color: var(--c-orange); }
+.sem-tier.tier-promax { background: var(--c-danger-bg); color: var(--c-danger); }
+.sem-expires { font-size: 24rpx; color: var(--c-text-hint); }
+.empty-tip { font-size: 26rpx; color: var(--c-text-hint); }
 .invite-row { margin-top: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; display: flex; align-items: center; gap: 12rpx; }
 .inv-code { flex: 1; font-size: 40rpx; font-weight: 800; color: var(--c-ink); letter-spacing: 6rpx; }
 .inv-exp { font-size: 22rpx; color: var(--c-text-hint); }
