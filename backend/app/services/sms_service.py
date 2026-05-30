@@ -42,3 +42,24 @@ async def send_sms_code(*, phone: str, code: str, purpose: str) -> None:
 
 async def _send_real_sms(*, phone: str, code: str, purpose: str) -> None:
     raise NotImplementedError("生产 SMS provider 未接入")
+
+
+async def send_invite_sms(
+    *,
+    phone: str,
+    code: str,
+    inviter_name: str,
+    role: str,
+) -> None:
+    """发送邀请短信。dev mode 仅记日志；prod 走 _send_real_sms。"""
+    role_text = "老师" if role == "teacher" else "家人"
+    page_text = "教师中心" if role == "teacher" else "家人中心"
+    content = (
+        f"【engGramer】{inviter_name}邀请您加入"
+        f"，邀请码 {code}（24h有效）。"
+        f"请在小程序-我的-{page_text} 输入此码完成绑定。"
+    )
+    if _is_dev_mode():
+        logger.warning("[SMS DEV MOCK invite] phone=%s role=%s content=%s", phone, role, content)
+        return
+    await _send_real_sms(phone=phone, code=code, purpose=f"invite_{role}")
