@@ -7,11 +7,14 @@ from app.api.v1.router import v1_router
 from app.core.config import settings
 from app.core.database import close_async_engine
 from app.core.exceptions import register_exception_handlers
+from app.core.safety import run_production_safety_check
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup: async engine already initialized at module-level in database.py
+    # 生产环境配置安全检查（D-077）：debug=False 时检测 placeholder，命中则 fail-fast
+    run_production_safety_check(settings)
     yield
     # shutdown: release connection pool
     await close_async_engine()
