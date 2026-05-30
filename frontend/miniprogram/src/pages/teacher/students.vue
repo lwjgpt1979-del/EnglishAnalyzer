@@ -32,13 +32,38 @@
     <!-- 邀请学生（教师专用） -->
     <view v-if="isTeacher" class="card">
       <view class="card-title">邀请学生绑定</view>
-      <button class="btn-secondary" :disabled="generatingCode" @tap="handleGenerateCode">
-        {{ generatingCode ? '生成中…' : '生成邀请码' }}
-      </button>
-      <view v-if="inviteCode" class="invite-box">
-        <text class="invite-code">{{ inviteCode.code }}</text>
-        <text class="invite-expire">24小时内有效</text>
-        <button size="mini" class="btn-copy" @tap="copyCode">复制</button>
+      <view class="invite-actions">
+        <button class="btn-primary half" :disabled="loadingQr" @tap="onGenQr">
+          {{ loadingQr ? '生成中…' : '微信扫码' }}
+        </button>
+        <button class="btn-secondary half" @tap="showSmsDialog = true">短信邀请</button>
+      </view>
+
+      <!-- 二维码弹层 -->
+      <view v-if="qr" class="modal" @tap.self="qr = null">
+        <view class="modal-card">
+          <image class="qr-img" :src="'data:image/png;base64,' + qr.qrcode_base64" mode="aspectFit" />
+          <text class="qr-tip">让学生用微信扫一扫，自动打开小程序并绑定您。</text>
+          <view class="qr-fallback">
+            <text>或手动输入邀请码：</text>
+            <text class="qr-code">{{ qr.code }}</text>
+            <button size="mini" class="btn-copy" @tap="copyQrCode">复制</button>
+          </view>
+          <button class="btn-secondary" @tap="qr = null">关闭</button>
+        </view>
+      </view>
+
+      <!-- 短信弹层 -->
+      <view v-if="showSmsDialog" class="modal" @tap.self="showSmsDialog = false">
+        <view class="modal-card">
+          <view class="card-title">短信邀请学生</view>
+          <input v-model="smsPhone" class="input" placeholder="对方手机号" maxlength="11" />
+          <text class="dev-hint">将给该手机号发送邀请码短信。</text>
+          <button class="btn-primary" :disabled="smsSending || smsPhone.length !== 11" @tap="onSendSms">
+            {{ smsSending ? '发送中…' : '发送' }}
+          </button>
+          <button class="btn-secondary" @tap="showSmsDialog = false">取消</button>
+        </view>
       </view>
     </view>
 
@@ -87,9 +112,11 @@ import {
   createInviteCode,
   bindTeacher,
   getMyStudents,
+  teacherInviteQrcode,
+  teacherInviteSms,
 } from '@/api/teacher'
 import { request } from '@/utils/request'
-import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut } from '@/types/api'
+import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut, QRCodeOut } from '@/types/api'
 
 const auth = useAuthStore()
 
@@ -188,6 +215,41 @@ async function handleBind() {
 function goToStudent(studentId: string) {
   uni.navigateTo({ url: `/pages/teacher/student-detail?studentId=${studentId}` })
 }
+
+const qr = ref<QRCodeOut | null>(null)
+const loadingQr = ref(false)
+const showSmsDialog = ref(false)
+const smsPhone = ref('')
+const smsSending = ref(false)
+
+async function onGenQr() {
+  loadingQr.value = true
+  try {
+    qr.value = await teacherInviteQrcode() as any
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '失败', icon: 'none' })
+  } finally { loadingQr.value = false }
+}
+
+async function onSendSms() {
+  smsSending.value = true
+  try {
+    await teacherInviteSms(smsPhone.value)
+    uni.showToast({ title: '短信已发送', icon: 'success' })
+    showSmsDialog.value = false
+    smsPhone.value = ''
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '发送失败', icon: 'none' })
+  } finally { smsSending.value = false }
+}
+
+function copyQrCode() {
+  if (!qr.value) return
+  uni.setClipboardData({
+    data: qr.value.code,
+    success: () => uni.showToast({ title: '已复制', icon: 'success' }),
+  })
+}
 </script>
 
 <style scoped>
@@ -214,4 +276,13 @@ function goToStudent(studentId: string) {
 .cert-banner { background: var(--c-orange); color: #fff; font-size: 24rpx; font-weight: 700; padding: 16rpx 24rpx; border-radius: var(--r-md); margin-bottom: 12rpx; text-align: center; }
 .quick-row { display: flex; gap: 12rpx; margin-bottom: 12rpx; }
 .quick-btn { flex: 1; text-align: center; background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 16rpx; font-size: 26rpx; font-weight: 600; }
+.invite-actions { display: flex; gap: 12rpx; }
+.half { flex: 1; margin-top: 0; }
+.modal { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.modal-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: var(--sp-5); width: 80%; max-width: 600rpx; box-shadow: 0 8rpx 32rpx rgba(0,0,0,.2); }
+.qr-img { width: 100%; height: 480rpx; }
+.qr-tip { display: block; text-align: center; font-size: 26rpx; color: var(--c-text-second); margin: 16rpx 0; line-height: 1.5; }
+.qr-fallback { display: flex; align-items: center; gap: 12rpx; margin: 16rpx 0; padding: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); }
+.qr-code { flex: 1; font-size: 36rpx; font-weight: 800; letter-spacing: 4rpx; color: var(--c-ink); }
+.dev-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 </style>

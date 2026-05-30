@@ -51,3 +51,11 @@ export function submitCert(certDocUrl: string) {
 export function getStudentDiagnosis(studentId: string) {
   return request(`/api/v1/teacher/students/${studentId}/diagnosis-report`, { method: 'GET' })
 }
+
+export function teacherInviteQrcode() {
+  return request('/api/v1/teacher/invite-code/qrcode', { method: 'POST' })
+}
+
+export function teacherInviteSms(phone: string) {
+  return request('/api/v1/teacher/invite-code/sms', { method: 'POST', data: { phone } })
+}

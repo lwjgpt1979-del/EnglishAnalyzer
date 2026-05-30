@@ -19,3 +19,11 @@ export function unbindRelative(relativeId: string): Promise<{ unbound: boolean }
 export function getStudentDiagnosisAsRelative(studentId: string): Promise<any> {
   return request<any>(`/api/v1/relative/students/${studentId}/diagnosis-report`, { method: 'GET' })
 }
+
+export function relativeInviteQrcode() {
+  return request('/api/v1/relative/invite-code/qrcode', { method: 'POST' })
+}
+
+export function relativeInviteSms(phone: string) {
+  return request('/api/v1/relative/invite-code/sms', { method: 'POST', data: { phone } })
+}

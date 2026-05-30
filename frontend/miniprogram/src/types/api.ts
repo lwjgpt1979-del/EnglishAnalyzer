@@ -36,6 +36,7 @@ export interface PresignData {
   file_url: string
   key: string
   expires_in: number
+  is_mock?: boolean
 }
 
 // ── WrongQuestion ────────────────────────────────────────────────────────────
@@ -323,4 +324,15 @@ export interface BoundStudent {
   student_id: string
   relationship: string
   bound_at: string
+}
+
+export interface QRCodeOut {
+  code: string
+  expires_at: string
+  qrcode_base64: string
+}
+
+export interface SendInviteSmsOut {
+  sent: boolean
+  code: string
 }

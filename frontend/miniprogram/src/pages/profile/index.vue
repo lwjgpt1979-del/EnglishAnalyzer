@@ -95,15 +95,39 @@
       <button class="btn-menu" @tap.stop="goRelative">进入家人中心</button>
     </view>
 
-    <!-- 邀请家人（学生侧）-->
+    <!-- 邀请家人绑定 -->
     <view class="card">
       <view class="card-title">邀请家人绑定</view>
-      <text class="menu-desc">生成 6 位邀请码，发给家长在"家人中心"输入完成绑定。</text>
-      <button class="btn-menu" @tap="genInviteCode">{{ myInvite ? '重新生成' : '生成邀请码' }}</button>
-      <view v-if="myInvite" class="invite-row">
-        <text class="inv-code">{{ myInvite.code }}</text>
-        <text class="inv-exp">24小时有效</text>
-        <button size="mini" class="btn-copy" @tap.stop="copyCode">复制</button>
+      <text class="menu-desc">家长用微信扫码自动打开小程序绑定；或短信发邀请码。</text>
+      <view class="invite-actions">
+        <button class="btn-primary half" :disabled="loadingRelQr" @tap="onGenRelQr">
+          {{ loadingRelQr ? '生成中…' : '微信扫码' }}
+        </button>
+        <button class="btn-secondary half" @tap="showRelSms = true">短信邀请</button>
+      </view>
+
+      <view v-if="relQr" class="modal" @tap.self="relQr = null">
+        <view class="modal-card">
+          <image class="qr-img" :src="'data:image/png;base64,' + relQr.qrcode_base64" mode="aspectFit" />
+          <text class="qr-tip">家长用微信扫一扫，自动打开并绑定。</text>
+          <view class="qr-fallback">
+            <text>或手动输入：</text>
+            <text class="qr-code">{{ relQr.code }}</text>
+            <button size="mini" class="btn-copy" @tap="copyRelCode">复制</button>
+          </view>
+          <button class="btn-secondary" @tap="relQr = null">关闭</button>
+        </view>
+      </view>
+
+      <view v-if="showRelSms" class="modal" @tap.self="showRelSms = false">
+        <view class="modal-card">
+          <view class="card-title">短信邀请家人</view>
+          <input v-model="relSmsPhone" class="input" placeholder="家人手机号" maxlength="11" />
+          <button class="btn-primary" :disabled="relSmsSending || relSmsPhone.length !== 11" @tap="onSendRelSms">
+            {{ relSmsSending ? '发送中…' : '发送' }}
+          </button>
+          <button class="btn-secondary" @tap="showRelSms = false">取消</button>
+        </view>
       </view>
     </view>
 
@@ -121,9 +145,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { getMyMembership } from '@/api/memberships'
 import { createOrder, payOrder } from '@/api/orders'
-import { generateRelativeInviteCode } from '@/api/relative'
+import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms } from '@/api/relative'
 import { useAuthStore } from '@/stores/auth'
-import type { CurrentMembershipOut } from '@/types/api'
+import type { CurrentMembershipOut, QRCodeOut } from '@/types/api'
 
 const auth = useAuthStore()
 const myInvite = ref<{ code: string; expires_at: string } | null>(null)
@@ -257,6 +281,41 @@ function goSettings() {
 function goCancelPage() {
   uni.navigateTo({ url: '/pages/account/cancel' })
 }
+
+const relQr = ref<QRCodeOut | null>(null)
+const loadingRelQr = ref(false)
+const showRelSms = ref(false)
+const relSmsPhone = ref('')
+const relSmsSending = ref(false)
+
+async function onGenRelQr() {
+  loadingRelQr.value = true
+  try {
+    relQr.value = await relativeInviteQrcode() as any
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '失败', icon: 'none' })
+  } finally { loadingRelQr.value = false }
+}
+
+async function onSendRelSms() {
+  relSmsSending.value = true
+  try {
+    await relativeInviteSms(relSmsPhone.value)
+    uni.showToast({ title: '短信已发送', icon: 'success' })
+    showRelSms.value = false
+    relSmsPhone.value = ''
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '发送失败', icon: 'none' })
+  } finally { relSmsSending.value = false }
+}
+
+function copyRelCode() {
+  if (!relQr.value) return
+  uni.setClipboardData({
+    data: relQr.value.code,
+    success: () => uni.showToast({ title: '已复制', icon: 'success' }),
+  })
+}
 </script>
 
 <style scoped>
@@ -345,4 +404,16 @@ function goCancelPage() {
 .inv-code { flex: 1; font-size: 40rpx; font-weight: 800; color: var(--c-ink); letter-spacing: 6rpx; }
 .inv-exp { font-size: 22rpx; color: var(--c-text-hint); }
 .btn-copy { background: var(--c-primary); color: var(--c-ink); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
+.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; text-align: center; margin-top: 8rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-secondary { background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 20rpx; font-size: 28rpx; font-weight: 600; text-align: center; }
+.invite-actions { display: flex; gap: 12rpx; }
+.half { flex: 1; margin-top: 0; }
+.modal { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.modal-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: var(--sp-5); width: 80%; max-width: 600rpx; box-shadow: 0 8rpx 32rpx rgba(0,0,0,.2); }
+.qr-img { width: 100%; height: 480rpx; }
+.qr-tip { display: block; text-align: center; font-size: 26rpx; color: var(--c-text-second); margin: 16rpx 0; line-height: 1.5; }
+.qr-fallback { display: flex; align-items: center; gap: 12rpx; margin: 16rpx 0; padding: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); }
+.qr-code { flex: 1; font-size: 36rpx; font-weight: 800; letter-spacing: 4rpx; color: var(--c-ink); }
+.dev-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 </style>
