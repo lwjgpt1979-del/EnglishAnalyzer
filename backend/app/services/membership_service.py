@@ -50,12 +50,34 @@ async def activate_membership(
     db: AsyncSession,
     *,
     order: Order,
-) -> Membership:
-    """根据订单类型激活/续费/升级会员。调用方负责 commit。
+) -> "Membership | None":
+    """V1（旧 Membership）和 V2（PurchasedSemester）双模式。调用方负责 commit。
 
-    - new / upgrade：停用旧记录 → 创建新记录
-    - renew：在原记录上延长 expires_at
+    - V2：order.semester_count 非空 → 创建 PurchasedSemester，返回 None
+    - V1 new / upgrade：停用旧记录 → 创建新记录
+    - V1 renew：在原记录上延长 expires_at
     """
+    # V2 分支
+    if order.semester_count and order.purchased_semester_ids:
+        from app.services.semester_service import create_purchased_semesters
+        await create_purchased_semesters(
+            db, user_id=order.beneficiary_id, tier=str(order.tier),
+            semesters=order.purchased_semester_ids,
+            order_id=order.id,
+        )
+        # 通知
+        from app.services.notification_service import emit_membership
+        try:
+            await emit_membership(
+                db, user_id=order.beneficiary_id,
+                title="学期会员开通成功",
+                content=f"已开通 {order.semester_count} 个学期，6 个月有效。",
+                order_id=order.id,
+            )
+        except Exception:
+            pass
+        return None  # V2 不返回 Membership 对象（兼容调用方对 None 不报错）
+
     user_id = order.beneficiary_id
     existing = await get_active_membership(db, user_id=user_id)
     now = datetime.now(timezone.utc)

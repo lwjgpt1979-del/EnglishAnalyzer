@@ -29,13 +29,15 @@ class CurrentMembershipOut(BaseModel):
 
 
 class OrderCreate(BaseModel):
-    """POST /orders/ 请求体。"""
+    """POST /orders/ 请求体。V1（duration_months）和 V2（semesters）双模式。"""
 
     tier: str = Field(..., description="basic | pro | promax")
-    duration_months: int = Field(..., description="1 | 3 | 12")
+    duration_months: int | None = Field(None, description="V1：1 | 3 | 12；V2 学期模式时留空")
     order_type: str = Field(..., description="new | renew | upgrade")
     minor_consent: bool = Field(default=False, description="14-17岁用户首次购买必须为 True（已告知监护人并获得同意）")
     target_student_id: uuid.UUID | None = Field(None, description="代付时指定学生 ID；为空则为本人购买")
+    # V2 学期会员（D-079）。非空 → V2 计价；空则 V1 旧 duration_months
+    semesters: list[dict] | None = Field(None, description="V2：[{textbook_version,grade,semester}]")
 
 
 class OrderOut(BaseModel):

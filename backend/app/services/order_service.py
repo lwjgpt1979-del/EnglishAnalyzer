@@ -51,25 +51,47 @@ async def create_order(
     payer_id: uuid.UUID,
     beneficiary_id: uuid.UUID,
     tier: str,
-    duration_months: int,
+    duration_months: int | None = None,
     order_type: str,
+    semesters: list[dict] | None = None,  # V2 新增
 ) -> Order:
-    """创建待支付订单（status=pending）。调用方负责 commit。"""
-    amount_fen = get_price(tier, duration_months)
+    """V1（duration_months）和 V2（semesters）双模式共存。调用方负责 commit。"""
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     order_no = f"ORD-{today}-{uuid.uuid4().hex[:8].upper()}"
 
-    order = Order(
-        id=uuid.uuid4(),
-        order_no=order_no,
-        payer_id=payer_id,
-        beneficiary_id=beneficiary_id,
-        order_type=order_type,
-        tier=tier,
-        duration_months=duration_months,
-        amount_fen=amount_fen,
-        status="pending",
-    )
+    if semesters:
+        # V2：按学期计价
+        from app.services.pricing_service import get_semester_pricing, calc_total_fen
+        pricing = await get_semester_pricing(db)
+        semester_count = len(semesters)
+        amount_fen = calc_total_fen(pricing, tier=tier, semester_count=semester_count)
+        order = Order(
+            id=uuid.uuid4(),
+            order_no=order_no,
+            payer_id=payer_id,
+            beneficiary_id=beneficiary_id,
+            order_type=order_type,
+            tier=tier,
+            duration_months=0,  # V2 占位
+            amount_fen=amount_fen,
+            status="pending",
+            semester_count=semester_count,
+            purchased_semester_ids=semesters,
+        )
+    else:
+        # V1 旧逻辑
+        amount_fen = get_price(tier, duration_months)
+        order = Order(
+            id=uuid.uuid4(),
+            order_no=order_no,
+            payer_id=payer_id,
+            beneficiary_id=beneficiary_id,
+            order_type=order_type,
+            tier=tier,
+            duration_months=duration_months,
+            amount_fen=amount_fen,
+            status="pending",
+        )
     db.add(order)
     await db.flush()
     return order

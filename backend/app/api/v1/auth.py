@@ -94,6 +94,9 @@ async def complete_profile_api(body: CompleteProfileRequest, db: DbDep, current_
         guardian_phone=body.guardian_phone,
         user_phone=body.user_phone,
         agreement_version=body.agreement_version,
+        preferred_textbook_version=body.preferred_textbook_version,
+        preferred_grade=body.preferred_grade,
+        preferred_semester=body.preferred_semester,
     )
     await db.commit()
     return make_ok(res)

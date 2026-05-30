@@ -61,10 +61,16 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         raise AppError(
             code=400, message=f"无效档位：{body.tier}，可选：basic/pro/promax"
         )
-    if body.duration_months not in order_service.ALLOWED_DURATIONS:
-        raise AppError(
-            code=400, message=f"无效时长：{body.duration_months}，可选：1/3/12"
-        )
+    if body.semesters:
+        # V2 模式：不校验 duration_months
+        if not body.semesters:
+            raise AppError(code=400, message="V2 模式 semesters 不能为空列表")
+    else:
+        # V1 模式：校验 duration_months
+        if body.duration_months not in order_service.ALLOWED_DURATIONS:
+            raise AppError(
+                code=400, message=f"无效时长：{body.duration_months}，可选：1/3/12"
+            )
     if body.order_type not in order_service.ALLOWED_ORDER_TYPES:
         raise AppError(code=400, message=f"无效订单类型：{body.order_type}")
 
@@ -75,6 +81,7 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         tier=body.tier,
         duration_months=body.duration_months,
         order_type=body.order_type,
+        semesters=body.semesters,
     )
     await db.commit()
     await db.refresh(order)

@@ -92,8 +92,13 @@ async def complete_profile(
     guardian_phone: str | None,
     user_phone: str | None,
     agreement_version: str,
+    preferred_textbook_version: str | None = None,
+    preferred_grade: str | None = None,
+    preferred_semester: str | None = None,
 ) -> CompleteProfileResponse:
-    """首次登录完善资料。<14岁需监护人手机号 + 发码（profile_completed=False 直到 guardian_verify）。"""
+    """首次登录完善资料。<14岁需监护人手机号 + 发码（profile_completed=False 直到 guardian_verify）。
+    V2 教材偏好字段可选写入（D-079 / M1）。
+    """
     age = compute_age(birth_year)
     needs_guardian = age < GUARDIAN_AGE_THRESHOLD
 
@@ -105,6 +110,13 @@ async def complete_profile(
     user.agreement_agreed_at = datetime.now(timezone.utc)
     if user_phone:
         user.phone = user_phone
+    # V2 教材偏好
+    if preferred_textbook_version:
+        user.preferred_textbook_version = preferred_textbook_version
+    if preferred_grade:
+        user.preferred_grade = preferred_grade
+    if preferred_semester:
+        user.preferred_semester = preferred_semester  # type: ignore[assignment]
 
     if needs_guardian:
         user.guardian_phone = guardian_phone

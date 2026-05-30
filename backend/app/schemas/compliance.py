@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, Field
 
 CURRENT_AGREEMENT_VERSION = "v1.0"
@@ -12,6 +13,10 @@ class CompleteProfileRequest(BaseModel):
     guardian_phone: str | None = Field(None, min_length=11, max_length=20, description="<14岁必填监护人手机号")
     user_phone: str | None = Field(None, min_length=11, max_length=20, description="可选，用户本人手机号，注销时验证用")
     agreement_version: str = Field(..., description="同意的协议版本（当前 v1.0）")
+    # V2 教材偏好（D-079 / M1）
+    preferred_textbook_version: str | None = Field(None, description="V2: 教材版本")
+    preferred_grade: str | None = Field(None, description="V2: 年级")
+    preferred_semester: Literal["上", "下"] | None = Field(None, description="V2: 学期上/下")
 
 
 class CompleteProfileResponse(BaseModel):
