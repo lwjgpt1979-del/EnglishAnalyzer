@@ -8,7 +8,7 @@ branch_companies 在域10定义，FK 用字符串引用（SQLAlchemy 延迟解�
 
 import uuid
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import mapped_column
 
 from .base import Base
@@ -71,6 +71,10 @@ class Order(Base):
     platform_income_fen = mapped_column(sa.Integer, nullable=True)
     branch_commission_fen = mapped_column(sa.Integer, nullable=True)
     institution_commission_fen = mapped_column(sa.Integer, nullable=True)
+    # —— V2 学期会员（D-079 / M1）——
+    semester_count = mapped_column(sa.SmallInteger, nullable=True)
+    purchased_semester_ids = mapped_column(JSONB, nullable=True)
+
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )

@@ -95,6 +95,11 @@ class User(Base):
     phone_verify_target = mapped_column(sa.String(20), nullable=True)
     phone_verify_expires_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
 
+    # —— V2 教材偏好（D-079 / M1）——
+    preferred_textbook_version = mapped_column(sa.String, nullable=True)
+    preferred_grade = mapped_column(sa.String, nullable=True)
+    preferred_semester = mapped_column(semester_enum, nullable=True)
+
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),
         nullable=False,
