@@ -13,7 +13,7 @@ from .base import Base
 # ─── ENUM 定义 ────────────────────────────────────────────────────────────────
 
 ai_question_type_enum = sa.Enum(
-    "单选", "填空", "完型", "阅读", "写作",
+    "单选", "填空", "完型", "阅读", "写作", "判断",
     name="ai_question_type",
 )
 trigger_type_enum = sa.Enum(
