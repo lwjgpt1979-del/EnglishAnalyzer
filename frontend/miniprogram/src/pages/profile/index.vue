@@ -30,16 +30,25 @@
       <view class="card-title">学期会员</view>
       <text class="menu-desc">按学期购买课程内容（基础 ¥39 / Pro ¥79 / ProMax ¥159 / 学期）。完整购买流程将在学期详情页推出（M3）。</text>
       <view v-if="mySemesters.length" class="sem-list">
-        <view v-for="s in mySemesters" :key="s.id" class="sem-item">
+        <view
+          v-for="s in mySemesters"
+          :key="s.id"
+          class="sem-item"
+          @tap="goUnits(s)"
+        >
           <view class="sem-info">
             <text class="sem-name">{{ s.textbook_version }} {{ s.grade }} {{ s.semester }}</text>
             <text class="sem-tier" :class="`tier-${s.tier}`">{{ tierLabel(s.tier) }}</text>
           </view>
-          <text class="sem-expires">至 {{ s.expires_at.slice(0, 10) }}</text>
+          <view class="sem-right">
+            <text class="sem-expires">至 {{ s.expires_at.slice(0, 10) }}</text>
+            <text class="chevron">›</text>
+          </view>
         </view>
       </view>
       <view v-else>
         <text class="empty-tip">尚未购买任何学期</text>
+        <button class="btn-secondary" style="margin-top:16rpx" @tap="goPreviewUnits">免费试读第 1 单元</button>
       </view>
     </view>
 
@@ -201,6 +210,19 @@ function copyRelCode() {
     success: () => uni.showToast({ title: '已复制', icon: 'success' }),
   })
 }
+
+function goUnits(s: { textbook_version: string; grade: string; semester: string }) {
+  const url = `/pages/curriculum/units?textbook=${encodeURIComponent(s.textbook_version)}&grade=${encodeURIComponent(s.grade)}&semester=${encodeURIComponent(s.semester)}`
+  uni.navigateTo({ url })
+}
+function goPreviewUnits() {
+  // 引导未购用户先看免费的第 1 单元（用用户的 preferred_* 偏好；缺省走小学5上）
+  const t = (auth.user as any)?.preferred_textbook_version || '译林版'
+  const g = (auth.user as any)?.preferred_grade || '小学5年级'
+  const sem = (auth.user as any)?.preferred_semester || '上'
+  const url = `/pages/curriculum/units?textbook=${encodeURIComponent(t)}&grade=${encodeURIComponent(g)}&semester=${encodeURIComponent(sem)}`
+  uni.navigateTo({ url })
+}
 </script>
 
 <style scoped>
@@ -309,4 +331,6 @@ function copyRelCode() {
 .qr-fallback { display: flex; align-items: center; gap: 12rpx; margin: 16rpx 0; padding: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); }
 .qr-code { flex: 1; font-size: 36rpx; font-weight: 800; letter-spacing: 4rpx; color: var(--c-ink); }
 .dev-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
+.sem-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4rpx; }
+.chevron { color: var(--c-text-hint); font-size: 28rpx; }
 </style>
