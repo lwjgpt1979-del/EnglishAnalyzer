@@ -7,7 +7,14 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config import settings
 from app.services.curriculum_ai_service import generate_unit
+
+
+@pytest.fixture(autouse=True)
+def force_dev_mode(monkeypatch):
+    """强制 dev mock 路径；防止环境里有真 DEEPSEEK_API_KEY 时测试打到真实 API。"""
+    monkeypatch.setattr(settings, "deepseek_api_key", "sk-placeholder-for-test")
 
 
 @pytest.mark.asyncio

@@ -8,9 +8,16 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from app.core.config import settings
 from app.core.database import _async_session_factory
 from app.main import app
 from app.services import curriculum_ai_service, curriculum_service
+
+
+@pytest.fixture(autouse=True)
+def force_dev_mode(monkeypatch):
+    """强制 dev mock；防止环境里有真 DEEPSEEK_API_KEY 时 _seed_unit 打到真实 API。"""
+    monkeypatch.setattr(settings, "deepseek_api_key", "sk-placeholder-for-test")
 
 
 @pytest_asyncio.fixture

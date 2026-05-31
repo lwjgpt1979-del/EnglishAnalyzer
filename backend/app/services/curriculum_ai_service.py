@@ -31,7 +31,7 @@ _USER_PROMPT_TEMPLATE = """请为以下教材单元生成完整教学内容。
 2. 列出 5-10 个核心知识点（grammar/vocabulary/reading/writing/listening 任一类）
 3. 每个知识点提供 4 维度教学内容（listening/dictation/grammar/writing）markdown
 4. 列出 10-20 个核心单词
-5. code 字段格式：'yl-g{grade_short}s{sem_short}-u{unit_no}-kp{idx}'，必须全局唯一
+5. code 字段格式：'yl-g{grade_short}s{sem_short}-u{unit_no}-kp{{idx}}'，其中 {{idx}} 是 1 开始的知识点序号，必须全局唯一
 
 返回纯 JSON（不要 markdown）：
 {{
