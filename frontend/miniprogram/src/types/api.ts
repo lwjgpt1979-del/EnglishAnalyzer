@@ -356,3 +356,43 @@ export interface PurchasedSemesterOut {
   started_at: string
   expires_at: string
 }
+
+// ─── V2 课程浏览（D-079 / M2）──
+
+export interface UnitOut {
+  id: string
+  textbook_version: string
+  grade: string
+  semester: string
+  unit_no: number
+  unit_title: string
+  locked: boolean
+  kp_count: number
+}
+
+export interface KnowledgePointOut {
+  id: string
+  code: string
+  name: string
+  category: string
+  description: string | null
+}
+
+export interface WordOut {
+  id: string
+  word: string
+  phonetic: string | null
+  definitions: Array<{ pos?: string; meaning: string }>
+  difficulty: number
+}
+
+export interface UnitDetailOut extends UnitOut {
+  knowledge_points: KnowledgePointOut[]
+  words: WordOut[]
+}
+
+export interface KPContentOut {
+  dimension: string
+  content_md: string
+  audio_url: string | null
+}
