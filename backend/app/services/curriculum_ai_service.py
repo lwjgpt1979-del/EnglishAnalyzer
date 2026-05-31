@@ -67,7 +67,7 @@ _USER_PROMPT_TEMPLATE = """请为以下教材单元生成完整教学内容。
 }}"""
 
 
-def _is_dev_mode() -> bool:
+def _is_deepseek_dev_mode() -> bool:
     return settings.deepseek_api_key.startswith("sk-placeholder")
 
 
@@ -145,7 +145,7 @@ async def generate_unit(
     unit_no: int,
 ) -> AIGeneratedUnit:
     """生成 1 个单元的完整结构化内容。dev mock 或真实 DeepSeek 调用。"""
-    if _is_dev_mode():
+    if _is_deepseek_dev_mode():
         return _make_mock_unit(textbook_version, grade, semester, unit_no)
 
     grade_short = "5" if "5" in grade else "7"
@@ -176,12 +176,19 @@ async def generate_unit(
         raise AppError(code=502, message=f"AI 课程生成失败：{exc}") from exc
 
     raw = (response.choices[0].message.content or "").strip()
+    # DeepSeek sometimes wraps JSON in markdown fences despite the "no markdown" instruction.
+    # Strip them if present so JSON parse succeeds.
+    if raw.startswith("```"):
+        # Drop the opening fence line and trailing closing fence
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw
+        if raw.rstrip().endswith("```"):
+            raw = raw.rstrip()[:-3].rstrip()
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise AppError(code=500, message=f"AI 返回非 JSON：{raw[:200]}") from exc
+        raise AppError(code=500, message="AI 课程生成返回格式异常") from exc
 
     try:
         return AIGeneratedUnit(**data)
     except Exception as exc:
-        raise AppError(code=500, message=f"AI 输出 schema 不符：{exc}") from exc
+        raise AppError(code=500, message="AI 课程生成返回格式异常") from exc
