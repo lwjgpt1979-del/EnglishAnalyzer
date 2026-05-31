@@ -1,0 +1,81 @@
+"""V2 课程浏览 Pydantic schemas（D-079 / M2）。"""
+from __future__ import annotations
+
+import uuid
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+# ─── AI 生成输出结构（curriculum_ai_service → curriculum_service.persist_unit）─
+
+class AIWordItem(BaseModel):
+    word: str
+    phonetic: str | None = None
+    definitions: list[dict] = Field(
+        ..., description="[{pos: 'n.', meaning: '苹果'}, ...]"
+    )
+    examples: list[str] = []
+    difficulty: int = Field(..., ge=1, le=5)
+    is_core: bool = True
+
+
+class AIKnowledgePointItem(BaseModel):
+    code: str = Field(..., description="全局唯一编码，例如 'yl-g5s1-u1-kp1'")
+    name: str
+    category: Literal["grammar", "vocabulary", "reading", "writing", "listening"]
+    description: str
+    contents: dict[str, str] = Field(
+        ...,
+        description="key ∈ {listening, dictation, grammar, writing}, value 为 markdown",
+    )
+
+
+class AIGeneratedUnit(BaseModel):
+    textbook_version: str
+    grade: str
+    semester: Literal["上", "下"]
+    unit_no: int = Field(..., ge=1, le=20)
+    unit_title: str
+    knowledge_points: list[AIKnowledgePointItem] = Field(..., min_length=3)
+    words: list[AIWordItem] = Field(..., min_length=5)
+
+
+# ─── API 响应 ───────────────────────────────────────────────────────────────
+
+class UnitOut(BaseModel):
+    id: uuid.UUID
+    textbook_version: str
+    grade: str
+    semester: str
+    unit_no: int
+    unit_title: str
+    locked: bool = Field(..., description="是否需付费解锁（unit_no=1 永远 false）")
+    kp_count: int = 0
+
+
+class KnowledgePointOut(BaseModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    category: str
+    description: str | None = None
+
+
+class WordOut(BaseModel):
+    id: uuid.UUID
+    word: str
+    phonetic: str | None = None
+    definitions: list[dict] = []
+    difficulty: int
+
+
+class UnitDetailOut(UnitOut):
+    knowledge_points: list[KnowledgePointOut] = []
+    words: list[WordOut] = []
+
+
+class KPContentOut(BaseModel):
+    dimension: str  # listening | dictation | grammar | writing
+    content_md: str
+    audio_url: str | None = None
