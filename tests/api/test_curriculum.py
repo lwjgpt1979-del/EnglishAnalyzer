@@ -122,3 +122,39 @@ async def test_get_unit_detail_200_for_unit_1(client):
     assert detail["locked"] is False
     assert len(detail["knowledge_points"]) >= 3
     assert len(detail["words"]) >= 5
+
+
+@pytest.mark.asyncio
+async def test_get_kp_contents_returns_4_dimensions(client):
+    """GET /knowledge-points/{id}/contents 返回 4 维度内容，每条带 dimension/content_md。"""
+    await _seed_unit(1)
+
+    async with _async_session_factory() as s:
+        from sqlalchemy import select
+        from app.models.d4_knowledge import CurriculumUnit, UnitKnowledgePoint
+        cu = (await s.execute(
+            select(CurriculumUnit).where(
+                CurriculumUnit.textbook_version == "译林版",
+                CurriculumUnit.grade == "小学5年级",
+                CurriculumUnit.semester == "上",
+                CurriculumUnit.unit_no == 1,
+            )
+        )).scalar_one()
+        link = (await s.execute(
+            select(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id == cu.id)
+        )).scalars().first()
+        kp_id = link.knowledge_point_id
+
+    h = await _login(client, f"kpcontent_{uuid.uuid4().hex[:6]}")
+    resp = await client.get(
+        f"/api/v1/curriculum/knowledge-points/{kp_id}/contents",
+        headers=h,
+    )
+    assert resp.status_code == 200, resp.text
+    contents = resp.json()["data"]
+    assert len(contents) == 4
+    dims = {c["dimension"] for c in contents}
+    assert dims == {"listening", "dictation", "grammar", "writing"}
+    for c in contents:
+        assert c["content_md"]  # non-empty
+        assert "audio_url" in c  # key present (may be None)
