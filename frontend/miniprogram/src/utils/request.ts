@@ -26,8 +26,11 @@ export function request<T>(url: string, options: RequestOptions = {}): Promise<T
       header,
       success(res) {
         if (res.statusCode === 401) {
+          // 401：清 token + toast；不主动 reLaunch（避免在 tab 页面触发路由冲突
+          // 导致 "routeDone with a webviewId X is not found"）。由用户主动点登录。
           uni.removeStorageSync('access_token')
-          uni.reLaunch({ url: '/pages/index/index' })
+          uni.removeStorageSync('refresh_token')
+          uni.showToast({ title: '登录已过期，请回首页登录', icon: 'none', duration: 3000 })
           reject(new Error('未登录或登录已过期'))
           return
         }

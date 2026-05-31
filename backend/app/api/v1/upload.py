@@ -35,6 +35,7 @@ class PresignOut(BaseModel):
     file_url: str = Field(..., description="上传成功后的最终访问 URL")
     key: str = Field(..., description="COS 对象 Key")
     expires_in: int = Field(..., description=f"预签名 URL 有效期（秒），固定 {PRESIGN_EXPIRES}")
+    is_mock: bool = Field(False, description="dev 模式 mock：前端检测到 true 时跳过 PUT 上传步骤")
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────

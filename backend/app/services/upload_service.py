@@ -70,12 +70,15 @@ def generate_presign(
     key = _build_key(user_id, ext)
 
     if _is_cos_dev_mode():
-        mock_base = "https://mock-cos.dev"
+        # dev 模式：用 picsum.photos 公开占位图作为最终 URL（小程序详情页能真显示出图）
+        # presign_url 仍是 mock；前端检测 is_mock=True 时跳过 PUT 直接走 createWQ
+        seed = key.replace("/", "-").rsplit(".", 1)[0]  # 每张图随机
         return {
-            "presign_url": f"{mock_base}/{key}?X-Mock-Sig=dev",
-            "file_url": f"{mock_base}/{key}",
+            "presign_url": f"https://mock-cos.dev/{key}?X-Mock-Sig=dev",
+            "file_url": f"https://picsum.photos/seed/{seed}/600/800.jpg",
             "key": key,
             "expires_in": PRESIGN_EXPIRES,
+            "is_mock": True,
         }
 
     client = _make_cos_client()
@@ -91,4 +94,5 @@ def generate_presign(
         "file_url": file_url,
         "key": key,
         "expires_in": PRESIGN_EXPIRES,
+        "is_mock": False,
     }

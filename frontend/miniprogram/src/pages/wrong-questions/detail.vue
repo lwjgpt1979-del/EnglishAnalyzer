@@ -148,9 +148,14 @@ import type { AiAnalysisOut, ConfirmOcrTextRequest, TeacherCommentOut, WrongQues
 const auth = useAuthStore()
 
 // uni-app 小程序获取路由参数方式
+// 防御：DevTools 可能直接打开 detail 页而无 ?id= 参数 → 不再让 setup 崩溃
 const pages = getCurrentPages()
-const currentPage = pages[pages.length - 1] as UniApp.Page & { options: Record<string, string> }
-const wqId = currentPage.options.id
+const currentPage = pages[pages.length - 1] as (UniApp.Page & { options?: Record<string, string> }) | undefined
+const wqId = currentPage?.options?.id || ''
+if (!wqId) {
+  console.warn('[detail] 缺 ?id= 参数，将仅显示错误提示')
+  uni.showToast({ title: '错题 ID 缺失', icon: 'none' })
+}
 
 const wq = ref<WrongQuestionOut | null>(null)
 const latestAnalysis = ref<AiAnalysisOut | null>(null)
