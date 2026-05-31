@@ -42,10 +42,19 @@ const semester = ref('')
 const units = ref<UnitOut[]>([])
 const loading = ref(true)
 
+function safeDecode(s: string | undefined): string {
+  if (!s) return ''
+  try { return decodeURIComponent(s) } catch { return s }
+}
+
 onLoad(async (q: any) => {
-  textbookVersion.value = q.textbook || '译林版'
-  grade.value = q.grade || '小学5年级'
-  semester.value = q.semester || '上'
+  // profile 页用 encodeURIComponent 编码后通过 url 传过来；
+  // uni-app onLoad 不自动 decode → 必须手动 decodeURIComponent，
+  // 否则会把字面 %E8%AF%91... 当 textbook_version 发给后端，
+  // 后端 enum cast 失败 500。
+  textbookVersion.value = safeDecode(q.textbook) || '译林版'
+  grade.value = safeDecode(q.grade) || '小学5年级'
+  semester.value = safeDecode(q.semester) || '上'
   try {
     units.value = await listUnits(textbookVersion.value, grade.value, semester.value)
   } catch (e: any) {
