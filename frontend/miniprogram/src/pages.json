@@ -45,7 +45,10 @@
     { "path": "pages/teacher/classes", "style": { "navigationBarTitleText": "班级管理" } },
     { "path": "pages/teacher/class-detail", "style": { "navigationBarTitleText": "班级详情" } },
     { "path": "pages/relative/center", "style": { "navigationBarTitleText": "家人中心" } },
-    { "path": "pages/relative/student-view", "style": { "navigationBarTitleText": "孩子学情" } }
+    { "path": "pages/relative/student-view", "style": { "navigationBarTitleText": "孩子学情" } },
+    { "path": "pages/curriculum/units", "style": { "navigationBarTitleText": "课程单元" } },
+    { "path": "pages/curriculum/unit-detail", "style": { "navigationBarTitleText": "单元详情" } },
+    { "path": "pages/curriculum/kp-content", "style": { "navigationBarTitleText": "知识点" } }
   ],
   "tabBar": {
     "color": "#999",
