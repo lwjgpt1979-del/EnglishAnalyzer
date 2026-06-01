@@ -182,3 +182,124 @@ async def test_wrong_attempt_creates_wrong_question_with_kp_link(db_session, see
         )
     )).scalar_one_or_none()
     assert link is not None
+
+
+# ─── M3b: 4 new types + batch ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_grading_cloze_strict_upper_equal(db_session, seeded_kp):
+    """完型 同 单选 判分。"""
+    q = SimulatedQuestion(
+        id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+        question_type="完型", stem="Tom ___ to school.",
+        options=["A. go", "B. goes", "C. going", "D. went"],
+        answer="B", explanation="...", difficulty=1, status="published",
+    )
+    db_session.add(q)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    r_ok = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="b")
+    assert r_ok.correct is True
+    r_no = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="A")
+    assert r_no.correct is False
+
+
+@pytest.mark.asyncio
+async def test_grading_reading_strict_upper_equal(db_session, seeded_kp):
+    q = SimulatedQuestion(
+        id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+        question_type="阅读", stem="Long passage... Question: which?",
+        options=["A. x", "B. y", "C. z", "D. w"],
+        answer="C", explanation="...", difficulty=2, status="published",
+    )
+    db_session.add(q)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    r_ok = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="C")
+    assert r_ok.correct is True
+
+
+@pytest.mark.asyncio
+async def test_grading_writing_always_correct(db_session, seeded_kp):
+    """写作 不打分，任意非空答案视为完成。"""
+    q = SimulatedQuestion(
+        id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+        question_type="写作", stem="写 50 字短文。",
+        options=None,
+        answer="参考范文 sample...", explanation="...", difficulty=3, status="published",
+    )
+    db_session.add(q)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    r = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="My short essay here")
+    assert r.correct is True
+    assert r.wrong_question_id is None  # 永远不落错题
+
+
+@pytest.mark.asyncio
+async def test_grading_match_sort_equal(db_session, seeded_kp):
+    """连线 set 比较忽略顺序。"""
+    q = SimulatedQuestion(
+        id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+        question_type="连线", stem="...",
+        options=None,
+        answer="1-A|2-B|3-C", explanation="...", difficulty=1, status="published",
+    )
+    db_session.add(q)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    # 顺序不同也对
+    r_ok = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="3-C|1-A|2-B")
+    assert r_ok.correct is True
+    # 一对错了就 false
+    r_no = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="1-A|2-C|3-B")
+    assert r_no.correct is False
+
+
+@pytest.mark.asyncio
+async def test_submit_exam_attempts_batch(db_session, seeded_kp):
+    """3 题批量提交：2 对 1 错。"""
+    from app.schemas.questions import PracticeAttemptIn
+
+    qs_data = [
+        ("单选", ["A. x", "B. y", "C. z", "D. w"], "B"),
+        ("判断", None, "对"),
+        ("填空", None, "goes"),
+    ]
+    q_ids = []
+    for qtype, opts, ans in qs_data:
+        q = SimulatedQuestion(
+            id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+            question_type=qtype, stem=f"Q {qtype}",
+            options=opts, answer=ans, explanation="exp",
+            difficulty=1, status="published",
+        )
+        db_session.add(q)
+        q_ids.append(q.id)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    answers = [
+        PracticeAttemptIn(question_id=q_ids[0], user_answer="B"),       # 对
+        PracticeAttemptIn(question_id=q_ids[1], user_answer="错"),      # 错
+        PracticeAttemptIn(question_id=q_ids[2], user_answer="goes"),    # 对
+    ]
+    result = await question_service.submit_exam_attempts(
+        db_session, user_id=user.id, answers=answers,
+    )
+    assert result.total == 3
+    assert result.correct_count == 2
+    assert len(result.items) == 3
+    assert result.items[0].correct is True
+    assert result.items[1].correct is False
+    assert result.items[1].wrong_question_id is not None
+    assert result.items[2].correct is True

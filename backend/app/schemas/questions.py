@@ -43,3 +43,25 @@ class PracticeResultOut(BaseModel):
     wrong_question_id: uuid.UUID | None = Field(
         None, description="做错时自动落 wrong_questions 表，返回 id 方便前端跳错题详情"
     )
+
+
+# ─── 模拟考批量（M3b）─────────────────────────────────────────────────────
+
+class ExamAttemptIn(BaseModel):
+    items: list[PracticeAttemptIn] = Field(..., min_length=1)
+
+
+class ExamItemResult(BaseModel):
+    """单题批量结果（轻量版，不重复 explanation）。"""
+    question_id: uuid.UUID
+    correct: bool
+    correct_answer: str
+    user_answer: str
+    explanation: str
+    wrong_question_id: uuid.UUID | None = None
+
+
+class ExamResultOut(BaseModel):
+    total: int
+    correct_count: int
+    items: list[ExamItemResult]

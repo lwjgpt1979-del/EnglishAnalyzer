@@ -34,6 +34,7 @@ _WQ_QTYPE_MAP = {
     "完型": "完型",
     "阅读": "阅读",
     "写作": "作文",
+    "连线": "其他",
 }
 
 
@@ -105,13 +106,20 @@ async def list_questions_by_kp(
 def _grade(question_type: str, correct_answer: str, user_answer: str) -> bool:
     ua = user_answer.strip()
     ca = correct_answer.strip()
-    if question_type == "单选":
+    if question_type in ("单选", "完型", "阅读"):
         return ua.upper() == ca.upper()
     if question_type == "判断":
         return ua == ca
     if question_type == "填空":
         candidates = [c.strip().lower() for c in ca.split("|") if c.strip()]
         return ua.lower() in candidates
+    if question_type == "写作":
+        return True  # 写作不判分，永远视为完成（前端展示范文供对照）
+    if question_type == "连线":
+        # 答案格式 "1-A|2-B|3-C"，set 比较忽略顺序
+        ua_pairs = {p.strip() for p in ua.split("|") if p.strip()}
+        ca_pairs = {p.strip() for p in ca.split("|") if p.strip()}
+        return ua_pairs == ca_pairs
     return ua == ca
 
 
@@ -157,4 +165,71 @@ async def submit_attempt(
         correct_answer=q.answer,
         explanation=q.explanation or "",
         wrong_question_id=wq_id,
+    )
+
+
+# ─── 模拟考批量提交（M3b）─────────────────────────────────────────────────
+
+async def submit_exam_attempts(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    answers: list,  # list[PracticeAttemptIn]
+):
+    """批量判分 N 道题，错题统一落 wrong_questions。
+
+    与 submit_attempt 的区别：
+    - 一次性处理多题
+    - 中间不 commit（调用方在所有判分完后一次性 commit）
+    - 返回 ExamResultOut 含总分 + 每题结果
+    """
+    from app.schemas.questions import ExamItemResult, ExamResultOut
+
+    items: list = []
+    correct_count = 0
+    for atin in answers:
+        q = (await db.execute(
+            select(SimulatedQuestion).where(SimulatedQuestion.id == atin.question_id)
+        )).scalar_one_or_none()
+        if q is None:
+            raise AppError(code=404, message=f"题目 {atin.question_id} 不存在")
+
+        correct = _grade(str(q.question_type), q.answer, atin.user_answer)
+        if correct:
+            correct_count += 1
+
+        wq_id = None
+        if not correct:
+            wq_qtype = _WQ_QTYPE_MAP.get(str(q.question_type), "其他")
+            wq = WrongQuestion(
+                id=uuid.uuid4(),
+                student_id=user_id,
+                source_image_url="v2-practice",
+                question_text=q.stem,
+                student_answer=atin.user_answer,
+                correct_answer=q.answer,
+                question_type=wq_qtype,  # type: ignore[arg-type]
+            )
+            db.add(wq)
+            await db.flush()
+            db.add(WrongQuestionKnowledgePoint(
+                wrong_question_id=wq.id,
+                knowledge_point_id=q.knowledge_point_id,
+            ))
+            await db.flush()
+            wq_id = wq.id
+
+        items.append(ExamItemResult(
+            question_id=q.id,
+            correct=correct,
+            correct_answer=q.answer,
+            user_answer=atin.user_answer,
+            explanation=q.explanation or "",
+            wrong_question_id=wq_id,
+        ))
+
+    return ExamResultOut(
+        total=len(items),
+        correct_count=correct_count,
+        items=items,
     )
