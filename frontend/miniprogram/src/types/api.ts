@@ -396,3 +396,25 @@ export interface KPContentOut {
   content_md: string
   audio_url: string | null
 }
+
+// ─── V2 仿真题（D-079 / M3a）──
+
+export interface SimQuestionOut {
+  id: string
+  question_type: '单选' | '填空' | '判断'
+  stem: string
+  options: string[] | null
+  difficulty: number
+}
+
+export interface PracticeAttemptIn {
+  question_id: string
+  user_answer: string
+}
+
+export interface PracticeResultOut {
+  correct: boolean
+  correct_answer: string
+  explanation: string
+  wrong_question_id: string | null
+}
