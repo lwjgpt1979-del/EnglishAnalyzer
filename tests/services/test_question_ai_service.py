@@ -52,3 +52,54 @@ async def test_mock_deterministic_per_kp_name():
     q1 = await generate_questions(kp_name="X", kp_category="grammar", kp_description="d", count=5)
     q2 = await generate_questions(kp_name="X", kp_category="grammar", kp_description="d", count=5)
     assert sorted([q.question_type for q in q1]) == sorted([q.question_type for q in q2])
+
+
+@pytest.mark.asyncio
+async def test_listening_mock_is_comprehension_not_grammar():
+    """听力维度：题型只在 单选/阅读（文本近似理解题），题干含对话/短文。"""
+    qs = await generate_questions(
+        kp_name="一般现在时", kp_category="grammar", kp_description="d",
+        dimension="listening", count=4,
+    )
+    assert len(qs) == 4
+    assert all(q.question_type in ("单选", "阅读") for q in qs)
+    assert any("听" in q.stem for q in qs)
+    for q in qs:
+        assert q.options is not None and len(q.options) == 4
+        assert q.answer in ["A", "B", "C", "D"]
+
+
+@pytest.mark.asyncio
+async def test_dictation_mock_is_spelling_fill():
+    """听写维度：题型只在 填空（拼写），无选项。"""
+    qs = await generate_questions(
+        kp_name="单词拼写", kp_category="vocabulary", kp_description="d",
+        dimension="dictation", count=4,
+    )
+    assert len(qs) == 4
+    assert all(q.question_type == "填空" for q in qs)
+    for q in qs:
+        assert q.options is None
+        assert q.answer
+
+
+@pytest.mark.asyncio
+async def test_writing_mock_is_essay_or_match():
+    """写作维度：题型只在 写作/连线。"""
+    qs = await generate_questions(
+        kp_name="写一段自我介绍", kp_category="writing", kp_description="d",
+        dimension="writing", count=4,
+    )
+    assert len(qs) == 4
+    assert all(q.question_type in ("写作", "连线") for q in qs)
+
+
+@pytest.mark.asyncio
+async def test_grammar_dimension_unchanged_default():
+    """语法维度（默认）：保持原有混合题型行为，覆盖 7 类。"""
+    qs = await generate_questions(
+        kp_name="X", kp_category="grammar", kp_description="d",
+        dimension="grammar", count=9,
+    )
+    types = {q.question_type for q in qs}
+    assert types == {"单选", "填空", "判断", "完型", "阅读", "写作", "连线"}
