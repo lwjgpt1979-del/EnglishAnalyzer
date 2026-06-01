@@ -225,3 +225,57 @@ async def test_exam_history_endpoint(client):
     assert rec["correct_count"] == 3
     assert rec["accuracy"] == 0.6
     assert rec["created_at"]
+
+
+async def _seed_kp_with_dimension_questions() -> uuid.UUID:
+    """灌一个 KP：listening 3 题（单选/阅读）+ dictation 3 题（填空）。返回 kp_id。"""
+    async with _async_session_factory() as s:
+        kp = KnowledgePoint(
+            id=uuid.uuid4(),
+            code=f"m3-dim-{uuid.uuid4().hex[:8]}",
+            name="维度测试 KP",
+            category="grammar",
+            description="dim test",
+            applicable_grades=["小学5年级"],
+            applicable_textbooks=["译林版"],
+        )
+        s.add(kp)
+        await s.flush()
+        for dim in ("listening", "dictation"):
+            qs = await question_ai_service.generate_questions(
+                kp_name=kp.name, kp_category="grammar", kp_description="d",
+                dimension=dim, count=3,
+            )
+            await question_service.persist_questions(
+                s, kp_id=kp.id, questions=qs, dimension=dim,
+            )
+        await s.commit()
+        return kp.id
+
+
+@pytest.mark.asyncio
+async def test_practice_questions_filter_by_dimension(client):
+    """带 ?dimension=listening 只返回听力题（单选/阅读），不含听写填空。"""
+    kp_id = await _seed_kp_with_dimension_questions()
+    h = await _login(client, f"dim_{uuid.uuid4().hex[:6]}")
+    resp = await client.get(
+        f"/api/v1/questions/kp/{kp_id}/practice-questions?limit=10&dimension=listening",
+        headers=h,
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["data"]
+    assert len(items) == 3
+    assert all(it["question_type"] in ("单选", "阅读") for it in items)
+
+
+@pytest.mark.asyncio
+async def test_practice_questions_no_dimension_returns_all(client):
+    """不带 dimension 返回该 KP 全部题（向后兼容）。"""
+    kp_id = await _seed_kp_with_dimension_questions()
+    h = await _login(client, f"dim2_{uuid.uuid4().hex[:6]}")
+    resp = await client.get(
+        f"/api/v1/questions/kp/{kp_id}/practice-questions?limit=20",
+        headers=h,
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()["data"]) == 6

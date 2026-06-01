@@ -22,8 +22,11 @@ async def list_practice_questions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     limit: int = Query(5, ge=1, le=20),
+    dimension: str | None = Query(None, description="按维度过滤：listening/dictation/grammar/writing"),
 ):
-    items = await question_service.list_questions_by_kp(db, kp_id=kp_id, limit=limit)
+    items = await question_service.list_questions_by_kp(
+        db, kp_id=kp_id, dimension=dimension, limit=limit,
+    )
     return make_ok([i.model_dump(mode="json") for i in items])
 
 
