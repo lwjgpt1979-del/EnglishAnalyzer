@@ -40,10 +40,14 @@ async def _login(client: AsyncClient, suffix: str) -> dict:
     return {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
 
 
-async def _seed_unit(unit_no: int) -> None:
-    """Seed one curriculum unit with its own DB session (committed, not rolled back).
+async def _seed_unit(unit_no: int = 19) -> None:
+    """Seed one curriculum unit with its own DB session (committed).
 
-    The API request will open a separate DB session, so we must commit here.
+    Uses unit_no in 19..20 to avoid colliding with production seed data
+    (which uses 1..8 per semester) while staying within the AIGeneratedUnit
+    schema cap (unit_no <= 20). KP codes are tied to (grade_short,
+    sem_short, unit_no) so a high unit_no guarantees code uniqueness.
+    The API request will open a separate DB session, so commit is needed.
     """
     async with _async_session_factory() as s:
         ai = await curriculum_ai_service.generate_unit(
@@ -54,11 +58,51 @@ async def _seed_unit(unit_no: int) -> None:
         await s.commit()
 
 
+async def _seed_user_with_semester(openid: str) -> uuid.UUID:
+    """Create a user + grant them a PurchasedSemester for 译林版/小学5年级/上.
+    Returns the user_id. Used by tests that need an unlocked unit.
+
+    NB: PurchasedSemester.order_id is NOT NULL FK → we create a paid Order first.
+    """
+    from datetime import datetime, timezone
+    from app.services.auth_service import upsert_user
+    from app.models.d2_payments import Order
+    async with _async_session_factory() as s:
+        user = await upsert_user(s, openid=openid)
+        await s.flush()
+        order = Order(
+            id=uuid.uuid4(),
+            order_no=f"TEST-{uuid.uuid4().hex[:8]}",
+            payer_id=user.id,
+            beneficiary_id=user.id,
+            order_type="new",
+            tier="pro",
+            duration_months=6,
+            amount_fen=7900,
+            status="paid",
+            paid_at=datetime.now(timezone.utc),
+            semester_count=1,
+        )
+        s.add(order)
+        await s.flush()
+        from app.services.semester_service import create_purchased_semesters
+        await create_purchased_semesters(
+            s,
+            user_id=user.id,
+            tier="pro",
+            semesters=[{"textbook_version": "译林版", "grade": "小学5年级", "semester": "上"}],
+            order_id=order.id,
+        )
+        await s.commit()
+        return user.id
+
+
 @pytest.mark.asyncio
 async def test_list_units_returns_locked_field(client):
-    """GET /curriculum/units 必须返回 locked 字段，unit_no=1 永远 false。"""
-    await _seed_unit(1)
-    await _seed_unit(2)
+    """GET /curriculum/units 必须返回 locked 字段；非购买用户对 unit_no>=19 都 locked=true。
+    (unit_no=1 永久免费的逻辑在 test_curriculum_service.py 单测里覆盖。)"""
+    await _seed_unit(19)
+    await _seed_unit(20)
 
     h = await _login(client, f"list_{uuid.uuid4().hex[:6]}")
     resp = await client.get(
@@ -70,21 +114,19 @@ async def test_list_units_returns_locked_field(client):
     body = resp.json()
     assert body["code"] == 200
     units = body["data"]
-    assert len(units) >= 2
-
-    u1 = next(u for u in units if u["unit_no"] == 1)
-    u2 = next(u for u in units if u["unit_no"] == 2)
-    assert u1["locked"] is False
-    assert u2["locked"] is True
-    assert u1["kp_count"] >= 3
+    u19 = next(u for u in units if u["unit_no"] == 19)
+    u20 = next(u for u in units if u["unit_no"] == 20)
+    # 该 test 用户未购学期，u19/u20 都应 locked
+    assert u19["locked"] is True
+    assert u20["locked"] is True
+    assert u19["kp_count"] >= 3
 
 
 @pytest.mark.asyncio
 async def test_get_unit_detail_403_when_locked(client):
-    """unit_no=2 详情对无学期用户返回 403。"""
-    await _seed_unit(2)
+    """unit_no=19 详情对无学期用户返回 403。"""
+    await _seed_unit(19)
 
-    # Look up the seeded unit id via a fresh session
     async with _async_session_factory() as s:
         from sqlalchemy import select
         from app.models.d4_knowledge import CurriculumUnit
@@ -93,7 +135,7 @@ async def test_get_unit_detail_403_when_locked(client):
                 CurriculumUnit.textbook_version == "译林版",
                 CurriculumUnit.grade == "小学5年级",
                 CurriculumUnit.semester == "上",
-                CurriculumUnit.unit_no == 2,
+                CurriculumUnit.unit_no == 19,
             )
         )).scalar_one()
         unit_id = cu.id
@@ -104,9 +146,9 @@ async def test_get_unit_detail_403_when_locked(client):
 
 
 @pytest.mark.asyncio
-async def test_get_unit_detail_200_for_unit_1(client):
-    """unit_no=1 详情免费打开，返回 KP 列表 + 词汇列表。"""
-    await _seed_unit(1)
+async def test_get_unit_detail_200_for_owned_semester(client):
+    """购买了 (译林版,小学5年级,上) 学期的用户访问 unit_no=19 详情应 200，不受 unit_no>1 锁限制。"""
+    await _seed_unit(19)
 
     async with _async_session_factory() as s:
         from sqlalchemy import select
@@ -116,16 +158,20 @@ async def test_get_unit_detail_200_for_unit_1(client):
                 CurriculumUnit.textbook_version == "译林版",
                 CurriculumUnit.grade == "小学5年级",
                 CurriculumUnit.semester == "上",
-                CurriculumUnit.unit_no == 1,
+                CurriculumUnit.unit_no == 19,
             )
         )).scalar_one()
         unit_id = cu.id
 
-    h = await _login(client, f"detail200_{uuid.uuid4().hex[:6]}")
+    # 让本测试用户拥有该学期
+    suffix = f"d200_{uuid.uuid4().hex[:6]}"
+    await _seed_user_with_semester(f"m2_curriculum_{suffix}")
+
+    h = await _login(client, suffix)
     resp = await client.get(f"/api/v1/curriculum/units/{unit_id}", headers=h)
     assert resp.status_code == 200, resp.text
     detail = resp.json()["data"]
-    assert detail["unit_no"] == 1
+    assert detail["unit_no"] == 19
     assert detail["locked"] is False
     assert len(detail["knowledge_points"]) >= 3
     assert len(detail["words"]) >= 5
@@ -133,8 +179,9 @@ async def test_get_unit_detail_200_for_unit_1(client):
 
 @pytest.mark.asyncio
 async def test_get_kp_contents_returns_4_dimensions(client):
-    """GET /knowledge-points/{id}/contents 返回 4 维度内容，每条带 dimension/content_md。"""
-    await _seed_unit(1)
+    """GET /knowledge-points/{id}/contents 返回 4 维度内容，每条带 dimension/content_md。
+    KP 所属 unit_no=19 受 paywall，所以测试用户需先有学期。"""
+    await _seed_unit(19)
 
     async with _async_session_factory() as s:
         from sqlalchemy import select
@@ -144,7 +191,7 @@ async def test_get_kp_contents_returns_4_dimensions(client):
                 CurriculumUnit.textbook_version == "译林版",
                 CurriculumUnit.grade == "小学5年级",
                 CurriculumUnit.semester == "上",
-                CurriculumUnit.unit_no == 1,
+                CurriculumUnit.unit_no == 19,
             )
         )).scalar_one()
         link = (await s.execute(
@@ -152,7 +199,10 @@ async def test_get_kp_contents_returns_4_dimensions(client):
         )).scalars().first()
         kp_id = link.knowledge_point_id
 
-    h = await _login(client, f"kpcontent_{uuid.uuid4().hex[:6]}")
+    suffix = f"kpcontent_{uuid.uuid4().hex[:6]}"
+    await _seed_user_with_semester(f"m2_curriculum_{suffix}")
+
+    h = await _login(client, suffix)
     resp = await client.get(
         f"/api/v1/curriculum/knowledge-points/{kp_id}/contents",
         headers=h,
@@ -163,5 +213,5 @@ async def test_get_kp_contents_returns_4_dimensions(client):
     dims = {c["dimension"] for c in contents}
     assert dims == {"listening", "dictation", "grammar", "writing"}
     for c in contents:
-        assert c["content_md"]  # non-empty
-        assert "audio_url" in c  # key present (may be None)
+        assert c["content_md"]
+        assert "audio_url" in c
