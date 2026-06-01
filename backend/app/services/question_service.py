@@ -16,15 +16,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
+from app.models.d7_teacher import Class, ClassStudent
 from app.models.d12_v2_exams import SimExamSession, SimPracticeRecord, SimulatedQuestion
 from app.schemas.questions import (
-    AIGeneratedQuestion, ExamHistoryItem, ExamHistoryOut,
+    AIGeneratedQuestion, ExamHistoryItem, ExamHistoryOut, ExamRankOut,
     KPAccuracyItem, KPAccuracyOut, PracticeResultOut, SimQuestionOut,
 )
 
@@ -405,3 +406,78 @@ async def get_exam_history(
         for r in rows
     ]
     return ExamHistoryOut(total_exams=len(items), items=items)
+
+
+# ─── 班级排名（学生端百分位，不暴露他人姓名，D-088）──────────────────────────
+
+async def get_exam_rank(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+) -> ExamRankOut:
+    """计算学生在所属班级的模拟考排名（按平均正确率降序）。
+
+    隐私设计：只返回本人名次/百分位 + 班级聚合值，绝不返回其他同学姓名或成绩。
+    取该学生最近加入的一个班级作为对比人群（一个学生可能在多个班级，MVP 取其一）。
+    """
+    # 1. 取该学生最近加入的班级
+    class_id = (await db.execute(
+        select(ClassStudent.class_id)
+        .where(ClassStudent.student_id == user_id)
+        .order_by(ClassStudent.joined_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    if class_id is None:
+        return ExamRankOut(in_class=False, ranked=False)
+
+    cls = (await db.execute(
+        select(Class).where(Class.id == class_id)
+    )).scalar_one_or_none()
+    class_name = cls.name if cls else None
+
+    # 2. 班级全体学生
+    member_ids = [
+        row[0] for row in (await db.execute(
+            select(ClassStudent.student_id).where(ClassStudent.class_id == class_id)
+        )).all()
+    ]
+
+    # 3. 每位学生的模拟考平均正确率（无模拟考成绩的学生不进入排名）
+    agg_rows = (await db.execute(
+        select(
+            SimExamSession.student_id,
+            func.avg(SimExamSession.accuracy),
+        )
+        .where(SimExamSession.student_id.in_(member_ids))
+        .group_by(SimExamSession.student_id)
+    )).all()
+    avg_by_student: dict[uuid.UUID, float] = {sid: float(avg) for sid, avg in agg_rows}
+
+    # 本人没有模拟考成绩 → 在班级但未纳入排名
+    if user_id not in avg_by_student:
+        return ExamRankOut(in_class=True, ranked=False, class_name=class_name)
+
+    total_ranked = len(avg_by_student)
+    my_avg = avg_by_student[user_id]
+    class_avg = sum(avg_by_student.values()) / total_ranked
+    # 名次：平均正确率严格高于本人的人数 + 1（并列同名次）
+    my_rank = 1 + sum(1 for a in avg_by_student.values() if a > my_avg)
+    # 百分位：本人领先的同班同学比例（排除自己）；班级仅 1 人有成绩时无意义
+    if total_ranked > 1:
+        beat = sum(
+            1 for sid, a in avg_by_student.items() if sid != user_id and a < my_avg
+        )
+        percentile = round(beat / (total_ranked - 1), 4)
+    else:
+        percentile = None
+
+    return ExamRankOut(
+        in_class=True,
+        ranked=True,
+        class_name=class_name,
+        my_rank=my_rank,
+        total_ranked=total_ranked,
+        percentile=percentile,
+        my_avg_accuracy=round(my_avg, 4),
+        class_avg_accuracy=round(class_avg, 4),
+    )

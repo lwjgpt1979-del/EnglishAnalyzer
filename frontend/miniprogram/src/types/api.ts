@@ -475,3 +475,14 @@ export interface ExamHistoryOut {
   total_exams: number
   items: ExamHistoryItem[]
 }
+
+export interface ExamRankOut {
+  in_class: boolean
+  ranked: boolean
+  class_name: string | null
+  my_rank: number | null
+  total_ranked: number | null
+  percentile: number | null
+  my_avg_accuracy: number | null
+  class_avg_accuracy: number | null
+}

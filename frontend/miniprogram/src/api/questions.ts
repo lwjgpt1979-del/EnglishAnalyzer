@@ -7,6 +7,7 @@ import type {
   ExamResultOut,
   KPAccuracyOut,
   ExamHistoryOut,
+  ExamRankOut,
 } from '@/types/api'
 
 export function listPracticeQuestions(kpId: string, limit = 5): Promise<SimQuestionOut[]> {
@@ -39,4 +40,8 @@ export function getExamHistory(limit = 20): Promise<ExamHistoryOut> {
     method: 'GET',
     data: { limit },
   })
+}
+
+export function getExamRank(): Promise<ExamRankOut> {
+  return request<ExamRankOut>('/api/v1/questions/exam-rank')
 }

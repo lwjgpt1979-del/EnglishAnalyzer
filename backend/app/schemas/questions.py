@@ -101,3 +101,23 @@ class ExamHistoryOut(BaseModel):
     """学生的模拟考成绩历史，最新在前。"""
     total_exams: int
     items: list[ExamHistoryItem]
+
+
+# ─── 班级排名（学生端百分位，不暴露他人姓名，D-088）──────────────────────────
+
+class ExamRankOut(BaseModel):
+    """学生在所属班级的模拟考排名（百分位）。
+
+    隐私：仅返回本人名次/百分位与班级聚合值，绝不返回其他同学的姓名或个人成绩。
+    排名口径：按每位学生模拟考平均正确率降序。
+    """
+    in_class: bool = Field(..., description="是否在任一班级中")
+    ranked: bool = Field(..., description="是否已纳入排名（本人 + 班级均有模拟考成绩）")
+    class_name: str | None = Field(None, description="参与排名的班级名")
+    my_rank: int | None = Field(None, description="名次，1 为第一名（并列同名次）")
+    total_ranked: int | None = Field(None, description="班级内有模拟考成绩的学生数")
+    percentile: float | None = Field(
+        None, description="超过的同班同学比例 0~1（仅本人有成绩或班级仅 1 人时为 null）"
+    )
+    my_avg_accuracy: float | None = Field(None, description="本人模拟考平均正确率")
+    class_avg_accuracy: float | None = Field(None, description="班级模拟考平均正确率")

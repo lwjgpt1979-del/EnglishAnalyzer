@@ -23,6 +23,33 @@
         </view>
       </view>
 
+      <!-- 我的班级排名（学生端百分位，不显示他人姓名） -->
+      <view class="card rank-card" v-if="examRank && examRank.ranked">
+        <view class="card-title">我的班级排名</view>
+        <view class="rank-hero">
+          <text class="rank-num">第 {{ examRank.my_rank }} 名</text>
+          <text class="rank-total">/ {{ examRank.total_ranked }} 人</text>
+        </view>
+        <text class="rank-pct" v-if="examRank.percentile !== null">
+          超过班级 {{ Math.round(examRank.percentile * 100) }}% 的同学
+        </text>
+        <view class="rank-compare">
+          <view class="rank-compare-item">
+            <text class="rank-compare-label">我的平均</text>
+            <text class="rank-compare-val" :class="accClass(examRank.my_avg_accuracy || 0)">
+              {{ ((examRank.my_avg_accuracy || 0) * 100).toFixed(0) }}%
+            </text>
+          </view>
+          <view class="rank-compare-item">
+            <text class="rank-compare-label">班级平均</text>
+            <text class="rank-compare-val">
+              {{ ((examRank.class_avg_accuracy || 0) * 100).toFixed(0) }}%
+            </text>
+          </view>
+        </view>
+        <text class="rank-hint">基于模拟考平均正确率排名 · 仅展示你的名次，保护同学隐私</text>
+      </view>
+
       <!-- 高频错误类型（CSS 进度条） -->
       <view class="card" v-if="report.top_error_types.length > 0">
         <view class="card-title">高频错误类型 TOP 5</view>
@@ -80,9 +107,35 @@
         <text class="acc-hint">弱项（正确率低）排在前面，建议优先练习</text>
       </view>
 
-      <!-- 模拟考成绩历史 -->
+      <!-- 模拟考成绩趋势 + 历史 -->
       <view class="card" v-if="examHistory && examHistory.items.length > 0">
-        <view class="card-title">模拟考成绩历史</view>
+        <view class="card-title">模拟考成绩趋势</view>
+
+        <!-- CSS 柱状趋势图（左旧右新，高度=正确率） -->
+        <view class="trend-chart" v-if="examTrend.length > 1">
+          <view
+            v-for="(pt, i) in examTrend"
+            :key="pt.id"
+            class="trend-col"
+          >
+            <view class="trend-bar-wrap">
+              <text class="trend-val">{{ Math.round(pt.accuracy * 100) }}</text>
+              <view
+                class="trend-bar"
+                :class="accClass(pt.accuracy)"
+                :style="{ height: Math.max(pt.accuracy * 100, 4) + '%' }"
+              />
+            </view>
+            <text class="trend-x">{{ i + 1 }}</text>
+          </view>
+        </view>
+        <text class="trend-hint" v-if="examTrend.length > 1">
+          横轴为第几场模拟考（左早右新）· 纵轴为正确率
+        </text>
+        <text class="trend-hint" v-else>再考一场即可看到趋势曲线</text>
+
+        <view class="exam-divider" />
+
         <view
           v-for="ex in examHistory.items"
           :key="ex.id"
@@ -135,19 +188,29 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getDiagnosisReport } from '@/api/diagnosis'
-import { getKpAccuracy, getExamHistory } from '@/api/questions'
+import { getKpAccuracy, getExamHistory, getExamRank } from '@/api/questions'
 import { useAuthStore } from '@/stores/auth'
-import type { DiagnosisReport, KPAccuracyOut, ExamHistoryOut } from '@/types/api'
+import type { DiagnosisReport, KPAccuracyOut, ExamHistoryOut, ExamRankOut } from '@/types/api'
 
 const auth = useAuthStore()
 const report = ref<DiagnosisReport | null>(null)
 const kpAccuracy = ref<KPAccuracyOut | null>(null)
 const examHistory = ref<ExamHistoryOut | null>(null)
+const examRank = ref<ExamRankOut | null>(null)
 const loading = ref(true)  // true until first fetch completes, prevents "暂无数据" flash
 
 const maxErrorCount = computed(() => {
   if (!report.value || report.value.top_error_types.length === 0) return 1
   return Math.max(...report.value.top_error_types.map((e) => e.count))
+})
+
+// 趋势图按时间正序（最早→最新，左→右）；examHistory 本身最新在前，故反转
+const examTrend = computed(() => {
+  if (!examHistory.value) return []
+  return examHistory.value.items
+    .slice()
+    .reverse()
+    .map((ex) => ({ id: ex.id, accuracy: ex.accuracy }))
 })
 
 onMounted(async () => {
@@ -171,6 +234,12 @@ onMounted(async () => {
     examHistory.value = await getExamHistory()
   } catch {
     examHistory.value = null
+  }
+  // 班级排名独立拉取，失败不影响主报告
+  try {
+    examRank.value = await getExamRank()
+  } catch {
+    examRank.value = null
   }
 })
 
@@ -231,6 +300,34 @@ function activityClass(count: number): string {
 .bar-fill.acc-low { background: var(--c-danger); }
 .bar-fill.acc-mid { background: var(--c-gold); }
 .bar-fill.acc-high { background: #2ecc71; }
+
+/* 我的班级排名 */
+.rank-card { }
+.rank-hero { display: flex; align-items: baseline; }
+.rank-num { font-size: 52rpx; font-weight: 800; color: var(--c-ink); }
+.rank-total { font-size: 28rpx; color: var(--c-text-hint); margin-left: 12rpx; }
+.rank-pct { display: block; font-size: 26rpx; color: var(--c-gold); font-weight: 600; margin-top: 8rpx; }
+.rank-compare { display: flex; gap: 24rpx; margin-top: 20rpx; }
+.rank-compare-item { flex: 1; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; text-align: center; }
+.rank-compare-label { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 6rpx; }
+.rank-compare-val { font-size: 36rpx; font-weight: 700; color: var(--c-ink); }
+.rank-compare-val.acc-low { color: var(--c-danger); }
+.rank-compare-val.acc-mid { color: var(--c-gold); }
+.rank-compare-val.acc-high { color: #2ecc71; }
+.rank-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 16rpx; line-height: 1.5; }
+
+/* 模拟考成绩趋势图 */
+.trend-chart { display: flex; align-items: flex-end; height: 200rpx; gap: 8rpx; padding: 8rpx 0; }
+.trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.trend-bar-wrap { flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+.trend-val { font-size: 18rpx; color: var(--c-text-hint); margin-bottom: 4rpx; }
+.trend-bar { width: 70%; max-width: 40rpx; border-radius: 6rpx 6rpx 0 0; background: var(--c-gold); transition: height 0.3s; }
+.trend-bar.acc-low { background: var(--c-danger); }
+.trend-bar.acc-mid { background: var(--c-gold); }
+.trend-bar.acc-high { background: #2ecc71; }
+.trend-x { font-size: 20rpx; color: var(--c-text-hint); margin-top: 6rpx; }
+.trend-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
+.exam-divider { height: 1rpx; background: var(--c-bg-soft); margin: 20rpx 0; }
 
 /* 模拟考成绩历史 */
 .exam-row { display: flex; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-bg-soft); }

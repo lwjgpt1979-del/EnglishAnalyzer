@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -11,7 +12,8 @@ from app.core.config import settings
 from app.core.database import _async_session_factory
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
-from app.models.d12_v2_exams import SimulatedQuestion
+from app.models.d7_teacher import Class, ClassStudent
+from app.models.d12_v2_exams import SimExamSession, SimulatedQuestion
 from app.services import question_ai_service, question_service
 from app.services.auth_service import upsert_user
 
@@ -555,3 +557,113 @@ async def test_kp_accuracy_weakest_first(db_session, seeded_kp):
     assert out.items[0].accuracy == 0.0
     assert out.items[1].knowledge_point_id == seeded_kp.id
     assert out.items[1].accuracy == 1.0
+
+
+# ─── 班级排名（学生端百分位，D-088）─────────────────────────────────────────
+
+async def _make_class(db_session, *, teacher_id: uuid.UUID, name: str = "测试班级") -> Class:
+    cls = Class(id=uuid.uuid4(), teacher_id=teacher_id, name=name)
+    db_session.add(cls)
+    await db_session.flush()
+    return cls
+
+
+async def _enroll(db_session, *, class_id: uuid.UUID, student_id: uuid.UUID) -> None:
+    db_session.add(ClassStudent(
+        class_id=class_id, student_id=student_id,
+        joined_at=datetime.now(timezone.utc),
+    ))
+    await db_session.flush()
+
+
+async def _add_exam_session(db_session, *, student_id: uuid.UUID, accuracy: float) -> None:
+    """直接落一行模拟考成绩快照（total/correct_count 仅为占位，排名只看 accuracy）。"""
+    db_session.add(SimExamSession(
+        id=uuid.uuid4(), student_id=student_id,
+        total=10, correct_count=int(round(accuracy * 10)), accuracy=accuracy,
+    ))
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_exam_rank_not_in_class(db_session):
+    """不在任何班级 → in_class=False, ranked=False。"""
+    user = await upsert_user(db_session, openid=f"rk_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    out = await question_service.get_exam_rank(db_session, user_id=user.id)
+    assert out.in_class is False
+    assert out.ranked is False
+    assert out.my_rank is None
+    assert out.percentile is None
+
+
+@pytest.mark.asyncio
+async def test_exam_rank_in_class_no_exam(db_session):
+    """在班级但本人没有模拟考成绩 → in_class=True, ranked=False, 带 class_name。"""
+    teacher = await upsert_user(db_session, openid=f"rk_t_{uuid.uuid4().hex[:6]}")
+    student = await upsert_user(db_session, openid=f"rk_s_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+    cls = await _make_class(db_session, teacher_id=teacher.id, name="五年级一班")
+    await _enroll(db_session, class_id=cls.id, student_id=student.id)
+
+    out = await question_service.get_exam_rank(db_session, user_id=student.id)
+    assert out.in_class is True
+    assert out.ranked is False
+    assert out.class_name == "五年级一班"
+    assert out.my_rank is None
+
+
+@pytest.mark.asyncio
+async def test_exam_rank_ranks_by_avg_accuracy(db_session):
+    """三人同班，按平均正确率降序排名 + 百分位 + 班级均值（不暴露他人）。"""
+    teacher = await upsert_user(db_session, openid=f"rk_t_{uuid.uuid4().hex[:6]}")
+    me = await upsert_user(db_session, openid=f"rk_me_{uuid.uuid4().hex[:6]}")
+    higher = await upsert_user(db_session, openid=f"rk_hi_{uuid.uuid4().hex[:6]}")
+    lower = await upsert_user(db_session, openid=f"rk_lo_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    cls = await _make_class(db_session, teacher_id=teacher.id)
+    for sid in (me.id, higher.id, lower.id):
+        await _enroll(db_session, class_id=cls.id, student_id=sid)
+
+    # me：两场 0.4 + 0.6 → 平均 0.5
+    await _add_exam_session(db_session, student_id=me.id, accuracy=0.4)
+    await _add_exam_session(db_session, student_id=me.id, accuracy=0.6)
+    # higher：0.9（高于我）
+    await _add_exam_session(db_session, student_id=higher.id, accuracy=0.9)
+    # lower：0.3（低于我）
+    await _add_exam_session(db_session, student_id=lower.id, accuracy=0.3)
+
+    out = await question_service.get_exam_rank(db_session, user_id=me.id)
+    assert out.in_class is True
+    assert out.ranked is True
+    assert out.total_ranked == 3
+    assert out.my_rank == 2  # higher 在我前面
+    assert out.my_avg_accuracy == 0.5
+    # 班级均值 = (0.5 + 0.9 + 0.3) / 3 = 0.5667
+    assert out.class_avg_accuracy == round((0.5 + 0.9 + 0.3) / 3, 4)
+    # 百分位：我领先 1 人（lower），排除自己后 2 人里领先 1 → 0.5
+    assert out.percentile == 0.5
+
+
+@pytest.mark.asyncio
+async def test_exam_rank_single_ranked_student_null_percentile(db_session):
+    """班级里只有本人有模拟考成绩 → rank=1, percentile=None（无可比对象）。"""
+    teacher = await upsert_user(db_session, openid=f"rk_t_{uuid.uuid4().hex[:6]}")
+    me = await upsert_user(db_session, openid=f"rk_me_{uuid.uuid4().hex[:6]}")
+    other = await upsert_user(db_session, openid=f"rk_ot_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    cls = await _make_class(db_session, teacher_id=teacher.id)
+    await _enroll(db_session, class_id=cls.id, student_id=me.id)
+    await _enroll(db_session, class_id=cls.id, student_id=other.id)
+    # 只有 me 有成绩，other 没考
+    await _add_exam_session(db_session, student_id=me.id, accuracy=0.7)
+
+    out = await question_service.get_exam_rank(db_session, user_id=me.id)
+    assert out.ranked is True
+    assert out.total_ranked == 1
+    assert out.my_rank == 1
+    assert out.percentile is None
+    assert out.my_avg_accuracy == 0.7

@@ -80,3 +80,13 @@ async def get_exam_history(
         db, user_id=current_user.id, limit=limit,
     )
     return make_ok(result.model_dump(mode="json"))
+
+
+@router.get("/exam-rank")
+async def get_exam_rank(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """学生端：我在所属班级的模拟考排名（百分位，不显示他人姓名）。"""
+    result = await question_service.get_exam_rank(db, user_id=current_user.id)
+    return make_ok(result.model_dump(mode="json"))
