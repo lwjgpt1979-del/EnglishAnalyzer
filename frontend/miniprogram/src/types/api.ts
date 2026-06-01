@@ -399,9 +399,18 @@ export interface KPContentOut {
 
 // ─── V2 仿真题（D-079 / M3a）──
 
+export type SimQuestionType =
+  | '单选'
+  | '填空'
+  | '判断'
+  | '完型'
+  | '阅读'
+  | '写作'
+  | '连线'
+
 export interface SimQuestionOut {
   id: string
-  question_type: '单选' | '填空' | '判断'
+  question_type: SimQuestionType
   stem: string
   options: string[] | null
   difficulty: number
@@ -417,4 +426,25 @@ export interface PracticeResultOut {
   correct_answer: string
   explanation: string
   wrong_question_id: string | null
+}
+
+// ─── 模拟考批量（D-079 / M3b）──
+
+export interface ExamAttemptIn {
+  items: PracticeAttemptIn[]
+}
+
+export interface ExamItemResult {
+  question_id: string
+  correct: boolean
+  correct_answer: string
+  user_answer: string
+  explanation: string
+  wrong_question_id: string | null
+}
+
+export interface ExamResultOut {
+  total: number
+  correct_count: number
+  items: ExamItemResult[]
 }

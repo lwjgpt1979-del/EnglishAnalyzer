@@ -49,7 +49,8 @@
     { "path": "pages/curriculum/units", "style": { "navigationBarTitleText": "课程单元" } },
     { "path": "pages/curriculum/unit-detail", "style": { "navigationBarTitleText": "单元详情" } },
     { "path": "pages/curriculum/kp-content", "style": { "navigationBarTitleText": "知识点" } },
-    { "path": "pages/practice/v2-session", "style": { "navigationBarTitleText": "练习" } }
+    { "path": "pages/practice/v2-session", "style": { "navigationBarTitleText": "练习" } },
+    { "path": "pages/practice/v2-exam", "style": { "navigationBarTitleText": "模拟考" } }
   ],
   "tabBar": {
     "color": "#999",

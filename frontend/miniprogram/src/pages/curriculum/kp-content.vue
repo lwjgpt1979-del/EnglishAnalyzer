@@ -14,7 +14,8 @@
       <text class="md">{{ currentContent.content_md }}</text>
     </scroll-view>
     <view class="practice-bar">
-      <button class="btn-primary" @tap="goPractice">开始练习（5 题）</button>
+      <button class="btn-secondary" @tap="goPractice">练习（5 题）</button>
+      <button class="btn-primary" @tap="goExam">模拟考（10 题）</button>
     </view>
   </view>
 </template>
@@ -54,6 +55,10 @@ onLoad(async (q: any) => {
 function goPractice() {
   uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}` })
 }
+
+function goExam() {
+  uni.navigateTo({ url: `/pages/practice/v2-exam?kp=${kpId.value}&count=10` })
+}
 </script>
 
 <style scoped>
@@ -71,6 +76,8 @@ function goPractice() {
 .empty { text-align: center; padding: 80rpx 0; color: var(--c-text-hint); }
 .content { flex: 1; padding: 24rpx; }
 .md { font-size: 28rpx; line-height: 1.7; color: var(--c-text-body); white-space: pre-wrap; }
-.practice-bar { padding: 24rpx; background: var(--c-bg-card); border-top: 1rpx solid var(--c-border); }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
+.practice-bar { padding: 24rpx; background: var(--c-bg-card); border-top: 1rpx solid var(--c-border); display: flex; gap: 16rpx; }
+.btn-primary, .btn-secondary { flex: 1; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
+.btn-primary { background: var(--c-primary); color: var(--c-ink); }
+.btn-secondary { background: var(--c-bg-soft); color: var(--c-text-body); border: 2rpx solid var(--c-border); }
 </style>
