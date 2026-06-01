@@ -13,6 +13,9 @@
     <scroll-view v-else scroll-y class="content">
       <text class="md">{{ currentContent.content_md }}</text>
     </scroll-view>
+    <view class="practice-bar">
+      <button class="btn-primary" @tap="goPractice">开始练习（5 题）</button>
+    </view>
   </view>
 </template>
 
@@ -31,12 +34,14 @@ const dims = [
 const contents = ref<KPContentOut[]>([])
 const activeDim = ref('grammar')
 const loading = ref(true)
+const kpId = ref('')
 
 const currentContent = computed(
   () => contents.value.find(c => c.dimension === activeDim.value) || null,
 )
 
 onLoad(async (q: any) => {
+  kpId.value = q.id || ''
   try {
     contents.value = await getKpContents(q.id)
   } catch (e: any) {
@@ -45,6 +50,10 @@ onLoad(async (q: any) => {
     loading.value = false
   }
 })
+
+function goPractice() {
+  uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}` })
+}
 </script>
 
 <style scoped>
@@ -62,4 +71,6 @@ onLoad(async (q: any) => {
 .empty { text-align: center; padding: 80rpx 0; color: var(--c-text-hint); }
 .content { flex: 1; padding: 24rpx; }
 .md { font-size: 28rpx; line-height: 1.7; color: var(--c-text-body); white-space: pre-wrap; }
+.practice-bar { padding: 24rpx; background: var(--c-bg-card); border-top: 1rpx solid var(--c-border); }
+.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
 </style>
