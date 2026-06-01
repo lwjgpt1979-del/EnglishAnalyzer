@@ -169,8 +169,8 @@ function goBack() {
 .options, .judge { display: flex; flex-direction: column; gap: 12rpx; }
 .option { padding: 20rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }
 .option.selected { border-color: var(--c-gold); background: var(--c-primary-faint); font-weight: 600; }
-.fill-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 20rpx; font-size: 28rpx; box-sizing: border-box; width: 100%; }
-.essay-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 20rpx; font-size: 28rpx; box-sizing: border-box; width: 100%; min-height: 200rpx; }
+.fill-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); height: 72rpx; line-height: 72rpx; padding: 0 20rpx; font-size: 28rpx; box-sizing: border-box; width: 100%; }
+.essay-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx 20rpx; font-size: 28rpx; line-height: 1.5; box-sizing: border-box; width: 100%; min-height: 200rpx; }
 .practice-bar { padding: 24rpx; background: var(--c-bg-card); border-top: 1rpx solid var(--c-border); }
 .practice-bar.fixed { position: fixed; left: 0; right: 0; bottom: 0; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }

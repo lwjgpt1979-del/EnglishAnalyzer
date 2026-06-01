@@ -151,7 +151,7 @@ function goBack() {
 .option.selected { border-color: var(--c-gold); background: var(--c-primary-faint); font-weight: 600; }
 .option.correct { border-color: #2ecc71; background: #eafaf1; }
 .option.wrong { border-color: var(--c-danger); background: var(--c-danger-bg); }
-.fill-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 20rpx; font-size: 28rpx; margin-bottom: 24rpx; box-sizing: border-box; width: 100%; }
+.fill-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); height: 72rpx; line-height: 72rpx; padding: 0 20rpx; font-size: 28rpx; margin-bottom: 24rpx; box-sizing: border-box; width: 100%; }
 .feedback { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; margin-bottom: 16rpx; display: flex; flex-direction: column; gap: 8rpx; }
 .feedback.ok { background: #eafaf1; }
 .fb-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
