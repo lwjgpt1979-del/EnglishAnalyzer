@@ -28,9 +28,9 @@ _USER_PROMPT_TEMPLATE = """请为以下教材单元生成完整教学内容。
 
 要求：
 1. 推断该单元的标题（unit_title），符合该教材实际编排
-2. 列出 5-10 个核心知识点（grammar/vocabulary/reading/writing/listening 任一类）
-3. 每个知识点提供 4 维度教学内容（listening/dictation/grammar/writing）markdown
-4. 列出 10-20 个核心单词
+2. 列出 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任一类）
+3. 每个知识点提供 4 维度教学内容（listening/dictation/grammar/writing）markdown，每个维度内容简明（2-4 句即可，避免冗长）
+4. 列出 10-15 个核心单词
 5. code 字段格式：'yl-g{grade_short}s{sem_short}-u{unit_no}-kp{{idx}}'，其中 {{idx}} 是 1 开始的知识点序号，必须全局唯一
 
 返回纯 JSON（不要 markdown）：
@@ -166,7 +166,8 @@ async def generate_unit(
         )
         response = await client.chat.completions.create(
             model="deepseek-chat",
-            max_tokens=4096,
+            max_tokens=8192,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
@@ -184,7 +185,9 @@ async def generate_unit(
         if raw.rstrip().endswith("```"):
             raw = raw.rstrip()[:-3].rstrip()
     try:
-        data = json.loads(raw)
+        # strict=False 允许字符串内出现裸换行/制表符等控制字符
+        # （DeepSeek 偶尔在 markdown 内容里直接输出真实换行而非 \\n）
+        data = json.loads(raw, strict=False)
     except json.JSONDecodeError as exc:
         raise AppError(code=500, message="AI 课程生成返回格式异常") from exc
 
