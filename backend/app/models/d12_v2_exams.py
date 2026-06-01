@@ -9,6 +9,7 @@ from sqlalchemy.orm import mapped_column
 from .base import Base
 from .d1_users import semester_enum
 from .d6_ai_questions import ai_question_type_enum
+from .d11_v2_curriculum import dimension_enum
 
 exam_source_enum = sa.Enum("official_seed", "teacher_upload", name="exam_source")
 exam_status_enum = sa.Enum("draft", "published", "retired", name="exam_status")
@@ -66,6 +67,7 @@ class SimulatedQuestion(Base):
     answer = mapped_column(sa.Text, nullable=False)
     explanation = mapped_column(sa.Text, nullable=True)
     difficulty = mapped_column(sa.SmallInteger, nullable=False)
+    dimension = mapped_column(dimension_enum, nullable=True)
     generation_metadata = mapped_column(JSONB, nullable=True)
     status = mapped_column(sim_status_enum, nullable=False, server_default=sa.text("'draft'"))
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
