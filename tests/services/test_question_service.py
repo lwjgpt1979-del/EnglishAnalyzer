@@ -169,8 +169,8 @@ async def test_wrong_attempt_creates_wrong_question_with_kp_link(db_session, see
     assert "判断题干样本" in (wq.question_text or "")
     assert wq.student_answer == "错"
     assert wq.correct_answer == "对"
-    # 判断映射到 enum "其他"
-    assert str(wq.question_type) == "其他"
+    # 判断现在有独立 enum 值，不再降级 "其他"
+    assert str(wq.question_type) == "判断"
     # source_image_url 非空（满足 NOT NULL）
     assert wq.source_image_url
 
@@ -182,6 +182,29 @@ async def test_wrong_attempt_creates_wrong_question_with_kp_link(db_session, see
         )
     )).scalar_one_or_none()
     assert link is not None
+
+
+@pytest.mark.asyncio
+async def test_wrong_fill_blank_keeps_type(db_session, seeded_kp):
+    """填空错题映射到独立 enum "填空"，不再降级 "其他"。"""
+    q = SimulatedQuestion(
+        id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+        question_type="填空", stem="He ___ (go) to school.", options=None,
+        answer="goes", explanation="第三人称单数", difficulty=2, status="published",
+    )
+    db_session.add(q)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    r = await question_service.submit_attempt(
+        db_session, user_id=user.id, question_id=q.id, user_answer="go",
+    )
+    assert r.wrong_question_id is not None
+    wq = (await db_session.execute(
+        select(WrongQuestion).where(WrongQuestion.id == r.wrong_question_id)
+    )).scalar_one()
+    assert str(wq.question_type) == "填空"
 
 
 # ─── M3b: 4 new types + batch ─────────────────────────────────────────────

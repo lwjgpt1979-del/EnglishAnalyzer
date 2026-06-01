@@ -6,7 +6,8 @@
 3. submit_attempt() — 判分 + 错题落库（含 KP 链接）+ 返回结果
 
 WrongQuestion 映射规则：
-- 单选 → enum "单选"；填空/判断 → enum "其他"（d3_wrong_questions.question_type_enum 没有这两个值）
+- 单选/填空/判断/完型/阅读 → 同名 enum；写作 → "作文"；连线 → "其他"
+  （填空/判断 已于迁移 0012 加入 question_type enum，不再降级 "其他"）
 - source_image_url 是 NOT NULL，练习场景没有图片，写占位字符串 "v2-practice"
 - 没有 source_type 字段，所以来源标识体现在 source_image_url 的值上
 """
@@ -31,8 +32,8 @@ from app.schemas.questions import (
 # 映射 SimQuestion.question_type → WrongQuestion.question_type（合法 enum）
 _WQ_QTYPE_MAP = {
     "单选": "单选",
-    "填空": "其他",
-    "判断": "其他",
+    "填空": "填空",
+    "判断": "判断",
     "完型": "完型",
     "阅读": "阅读",
     "写作": "作文",

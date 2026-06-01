@@ -13,7 +13,7 @@ from .base import Base
 # ─── ENUM 定义 ────────────────────────────────────────────────────────────────
 
 question_type_enum = sa.Enum(
-    "单选", "完型", "阅读", "作文", "其他",
+    "单选", "完型", "阅读", "作文", "其他", "填空", "判断",
     name="question_type",
 )
 ocr_status_enum = sa.Enum(
