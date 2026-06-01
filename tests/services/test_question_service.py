@@ -83,6 +83,65 @@ async def test_persist_idempotent(db_session, seeded_kp):
 
 
 @pytest.mark.asyncio
+async def test_persist_writes_dimension(db_session, seeded_kp):
+    """persist_questions 传 dimension 时写入每行。"""
+    qs = await question_ai_service.generate_questions(
+        kp_name=seeded_kp.name, kp_category="vocabulary", kp_description="d",
+        dimension="dictation", count=3,
+    )
+    created = await question_service.persist_questions(
+        db_session, kp_id=seeded_kp.id, questions=qs, dimension="dictation",
+    )
+    await db_session.flush()
+    assert len(created) == 3
+    assert all(str(r.dimension) == "dictation" for r in created)
+
+
+@pytest.mark.asyncio
+async def test_list_filters_by_dimension(db_session, seeded_kp):
+    """list_questions_by_kp 给 dimension 时只返回该维度的题。"""
+    for dim, cat in (("listening", "grammar"), ("dictation", "vocabulary")):
+        qs = await question_ai_service.generate_questions(
+            kp_name=seeded_kp.name, kp_category=cat, kp_description="d",
+            dimension=dim, count=3,
+        )
+        await question_service.persist_questions(
+            db_session, kp_id=seeded_kp.id, questions=qs, dimension=dim,
+        )
+    await db_session.flush()
+
+    listening = await question_service.list_questions_by_kp(
+        db_session, kp_id=seeded_kp.id, dimension="listening", limit=20,
+    )
+    assert len(listening) == 3
+    assert all(q.question_type in ("单选", "阅读") for q in listening)
+
+    dictation = await question_service.list_questions_by_kp(
+        db_session, kp_id=seeded_kp.id, dimension="dictation", limit=20,
+    )
+    assert len(dictation) == 3
+    assert all(q.question_type == "填空" for q in dictation)
+
+
+@pytest.mark.asyncio
+async def test_list_without_dimension_returns_all(db_session, seeded_kp):
+    """不传 dimension 时不过滤（向后兼容）。"""
+    for dim in ("listening", "dictation"):
+        qs = await question_ai_service.generate_questions(
+            kp_name=seeded_kp.name, kp_category="grammar", kp_description="d",
+            dimension=dim, count=3,
+        )
+        await question_service.persist_questions(
+            db_session, kp_id=seeded_kp.id, questions=qs, dimension=dim,
+        )
+    await db_session.flush()
+    allq = await question_service.list_questions_by_kp(
+        db_session, kp_id=seeded_kp.id, limit=20,
+    )
+    assert len(allq) == 6
+
+
+@pytest.mark.asyncio
 async def test_grading_single_choice_strict_equal(db_session, seeded_kp):
     q = SimulatedQuestion(
         id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,

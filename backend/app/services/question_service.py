@@ -49,8 +49,9 @@ async def persist_questions(
     *,
     kp_id: uuid.UUID,
     questions: list[AIGeneratedQuestion],
+    dimension: str | None = None,
 ) -> list[SimulatedQuestion]:
-    """按 (kp_id, stem) 幂等 upsert。返回本次确保入库的所有行。"""
+    """按 (kp_id, stem) 幂等 upsert。dimension 写入新行（None 表示不分维度，向后兼容）。"""
     out: list[SimulatedQuestion] = []
     for q in questions:
         existing = (await db.execute(
@@ -71,6 +72,7 @@ async def persist_questions(
             answer=q.answer,
             explanation=q.explanation,
             difficulty=q.difficulty,
+            dimension=dimension,
             status="published",
         )
         db.add(sq)
@@ -85,16 +87,20 @@ async def list_questions_by_kp(
     db: AsyncSession,
     *,
     kp_id: uuid.UUID,
+    dimension: str | None = None,
     limit: int = 5,
 ) -> list[SimQuestionOut]:
-    rows = (await db.execute(
+    stmt = (
         select(SimulatedQuestion)
         .where(
             SimulatedQuestion.knowledge_point_id == kp_id,
             SimulatedQuestion.status == "published",
         )
-        .order_by(SimulatedQuestion.created_at)
-        .limit(limit)
+    )
+    if dimension is not None:
+        stmt = stmt.where(SimulatedQuestion.dimension == dimension)
+    rows = (await db.execute(
+        stmt.order_by(SimulatedQuestion.created_at).limit(limit)
     )).scalars().all()
     return [SimQuestionOut(
         id=r.id,
