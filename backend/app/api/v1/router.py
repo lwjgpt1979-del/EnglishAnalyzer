@@ -17,6 +17,7 @@ from app.api.v1.relative import router as relative_router
 from app.api.v1.semesters import router as semesters_router
 from app.api.v1.curriculum import router as curriculum_router
 from app.api.v1.questions import router as questions_router
+from app.api.v1.user_papers import router as user_papers_router
 
 v1_router = APIRouter()
 
@@ -36,4 +37,5 @@ v1_router.include_router(relative_router)
 v1_router.include_router(semesters_router)
 v1_router.include_router(curriculum_router)
 v1_router.include_router(questions_router)
+v1_router.include_router(user_papers_router)
 v1_router.include_router(admin_router)
