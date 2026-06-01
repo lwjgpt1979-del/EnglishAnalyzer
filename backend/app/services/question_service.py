@@ -13,6 +13,7 @@ WrongQuestion 映射规则：
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,6 +124,77 @@ def _grade(question_type: str, correct_answer: str, user_answer: str) -> bool:
     return ua == ca
 
 
+# ─── 错题闭环（去重 + 掌握标记）──────────────────────────────────────────────
+
+async def _record_wrong(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    question: SimulatedQuestion,
+    user_answer: str,
+) -> uuid.UUID:
+    """落库一条错题，按 (student_id, question_text, "v2-practice") 去重。
+
+    - 已存在：更新作答/正确答案，重置 is_mastered=False、mastered_at=None（重新错了重新进错题本），复用原 id。
+    - 不存在：新建 WrongQuestion + KP 链接。
+    """
+    existing = (await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.student_id == user_id,
+            WrongQuestion.question_text == question.stem,
+            WrongQuestion.source_image_url == "v2-practice",
+        )
+    )).scalars().first()
+
+    if existing is not None:
+        existing.student_answer = user_answer
+        existing.correct_answer = question.answer
+        existing.is_mastered = False
+        existing.mastered_at = None
+        await db.flush()
+        return existing.id
+
+    wq_qtype = _WQ_QTYPE_MAP.get(str(question.question_type), "其他")
+    wq = WrongQuestion(
+        id=uuid.uuid4(),
+        student_id=user_id,
+        source_image_url="v2-practice",  # NOT NULL placeholder
+        question_text=question.stem,
+        student_answer=user_answer,
+        correct_answer=question.answer,
+        question_type=wq_qtype,  # type: ignore[arg-type]
+    )
+    db.add(wq)
+    await db.flush()
+    db.add(WrongQuestionKnowledgePoint(
+        wrong_question_id=wq.id,
+        knowledge_point_id=question.knowledge_point_id,
+    ))
+    await db.flush()
+    return wq.id
+
+
+async def _mark_mastered(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    question_stem: str,
+) -> None:
+    """答对时，把之前未掌握的同题错题标记为已掌握。无记录则静默跳过。"""
+    existing = (await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.student_id == user_id,
+            WrongQuestion.question_text == question_stem,
+            WrongQuestion.source_image_url == "v2-practice",
+            WrongQuestion.is_mastered.is_(False),
+        )
+    )).scalars().first()
+    if existing is not None:
+        existing.is_mastered = True
+        existing.mastered_at = datetime.now(timezone.utc)
+        await db.flush()
+
+
 async def submit_attempt(
     db: AsyncSession,
     *,
@@ -140,25 +212,9 @@ async def submit_attempt(
 
     wq_id: uuid.UUID | None = None
     if not correct:
-        # 映射到合法的 question_type enum
-        wq_qtype = _WQ_QTYPE_MAP.get(str(q.question_type), "其他")
-        wq = WrongQuestion(
-            id=uuid.uuid4(),
-            student_id=user_id,
-            source_image_url="v2-practice",  # NOT NULL placeholder
-            question_text=q.stem,
-            student_answer=user_answer,
-            correct_answer=q.answer,
-            question_type=wq_qtype,  # type: ignore[arg-type]
-        )
-        db.add(wq)
-        await db.flush()
-        db.add(WrongQuestionKnowledgePoint(
-            wrong_question_id=wq.id,
-            knowledge_point_id=q.knowledge_point_id,
-        ))
-        await db.flush()
-        wq_id = wq.id
+        wq_id = await _record_wrong(db, user_id=user_id, question=q, user_answer=user_answer)
+    else:
+        await _mark_mastered(db, user_id=user_id, question_stem=q.stem)
 
     return PracticeResultOut(
         correct=correct,
@@ -200,24 +256,10 @@ async def submit_exam_attempts(
 
         wq_id = None
         if not correct:
-            wq_qtype = _WQ_QTYPE_MAP.get(str(q.question_type), "其他")
-            wq = WrongQuestion(
-                id=uuid.uuid4(),
-                student_id=user_id,
-                source_image_url="v2-practice",
-                question_text=q.stem,
-                student_answer=atin.user_answer,
-                correct_answer=q.answer,
-                question_type=wq_qtype,  # type: ignore[arg-type]
-            )
-            db.add(wq)
-            await db.flush()
-            db.add(WrongQuestionKnowledgePoint(
-                wrong_question_id=wq.id,
-                knowledge_point_id=q.knowledge_point_id,
-            ))
-            await db.flush()
-            wq_id = wq.id
+            wq_id = await _record_wrong(
+                db, user_id=user_id, question=q, user_answer=atin.user_answer)
+        else:
+            await _mark_mastered(db, user_id=user_id, question_stem=q.stem)
 
         items.append(ExamItemResult(
             question_id=q.id,

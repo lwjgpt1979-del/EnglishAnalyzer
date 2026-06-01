@@ -303,3 +303,84 @@ async def test_submit_exam_attempts_batch(db_session, seeded_kp):
     assert result.items[1].correct is False
     assert result.items[1].wrong_question_id is not None
     assert result.items[2].correct is True
+
+
+# ─── 练习闭环增强：错题查重 + 做对标 mastered ─────────────────────────────
+
+async def _make_single(db_session, seeded_kp, answer="B"):
+    q = SimulatedQuestion(
+        id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+        question_type="单选", stem=f"Dedup Q {uuid.uuid4().hex[:6]}",
+        options=["A. x", "B. y", "C. z", "D. w"],
+        answer=answer, explanation="exp", difficulty=1, status="published",
+    )
+    db_session.add(q)
+    await db_session.flush()
+    return q
+
+
+async def _count_wq(db_session, user_id, stem) -> int:
+    rows = (await db_session.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.student_id == user_id,
+            WrongQuestion.question_text == stem,
+        )
+    )).scalars().all()
+    return len(rows)
+
+
+@pytest.mark.asyncio
+async def test_wrong_twice_dedups_to_single_row(db_session, seeded_kp):
+    """同一用户同一题连错两次 → wrong_questions 只 1 行（查重）。"""
+    q = await _make_single(db_session, seeded_kp)
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    r1 = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="A")
+    r2 = await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="C")
+    assert r1.correct is False and r2.correct is False
+    # 两次返回同一个 wrong_question_id
+    assert r1.wrong_question_id == r2.wrong_question_id
+    assert await _count_wq(db_session, user.id, q.stem) == 1
+
+
+@pytest.mark.asyncio
+async def test_correct_after_wrong_marks_mastered(db_session, seeded_kp):
+    """先错后对 → 既存错题 is_mastered=True + mastered_at 落值。"""
+    q = await _make_single(db_session, seeded_kp)
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="A")
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="B")
+
+    wq = (await db_session.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.student_id == user.id,
+            WrongQuestion.question_text == q.stem,
+        )
+    )).scalar_one()
+    assert wq.is_mastered is True
+    assert wq.mastered_at is not None
+
+
+@pytest.mark.asyncio
+async def test_rewrong_unmasters(db_session, seeded_kp):
+    """错→对（mastered）→再错 → is_mastered 回退 False、mastered_at 清空，仍 1 行。"""
+    q = await _make_single(db_session, seeded_kp)
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="A")
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="B")  # 对 → mastered
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="D")  # 再错
+
+    wq = (await db_session.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.student_id == user.id,
+            WrongQuestion.question_text == q.stem,
+        )
+    )).scalar_one()
+    assert wq.is_mastered is False
+    assert wq.mastered_at is None
+    assert await _count_wq(db_session, user.id, q.stem) == 1
