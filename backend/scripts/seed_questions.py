@@ -30,9 +30,12 @@ from app.models.d4_knowledge import (  # noqa: E402
 )
 from app.services import question_ai_service, question_service  # noqa: E402
 
+# 4 个维度，各自生成专属题目（听力/听写文本近似，语法/写作原样）
+DIMENSIONS = ["listening", "dictation", "grammar", "writing"]
+
 
 async def seed_one_kp(kp_id: _uuid.UUID, count: int = 5) -> int:
-    """为 1 个 KP 生成 count 道题；返回返回的行数（含已存在的）。"""
+    """为 1 个 KP 的 4 个维度各生成 count 道题；返回累计行数（含已存在的）。"""
     async with _async_session_factory() as db:
         kp = (await db.execute(
             select(KnowledgePoint).where(KnowledgePoint.id == kp_id)
@@ -41,17 +44,26 @@ async def seed_one_kp(kp_id: _uuid.UUID, count: int = 5) -> int:
             print(f"  [skip] KP {kp_id} 不存在")
             return 0
 
-        print(f"  [gen]  {kp.name} ({str(kp.category)}) ...", end=" ", flush=True)
-        qs = await question_ai_service.generate_questions(
-            kp_name=kp.name,
-            kp_category=str(kp.category),
-            kp_description=kp.description,
-            count=count,
-        )
-        rows = await question_service.persist_questions(db, kp_id=kp.id, questions=qs)
+        total = 0
+        for dimension in DIMENSIONS:
+            print(
+                f"  [gen]  {kp.name} ({str(kp.category)}) [{dimension}] ...",
+                end=" ", flush=True,
+            )
+            qs = await question_ai_service.generate_questions(
+                kp_name=kp.name,
+                kp_category=str(kp.category),
+                kp_description=kp.description,
+                dimension=dimension,
+                count=count,
+            )
+            rows = await question_service.persist_questions(
+                db, kp_id=kp.id, questions=qs, dimension=dimension,
+            )
+            total += len(rows)
+            print(f"✓ {len(rows)} 道（含已存在）")
         await db.commit()
-        print(f"✓ {len(rows)} 道（含已存在）")
-        return len(rows)
+        return total
 
 
 async def list_kps_for_unit(
