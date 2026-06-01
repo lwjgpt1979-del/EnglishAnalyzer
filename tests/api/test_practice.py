@@ -7,6 +7,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from unittest.mock import AsyncMock, patch
 
+from app.core.config import settings
 from app.main import app
 from app.schemas.practice import (
     GenerateQuestionsRequest,
@@ -19,6 +20,13 @@ from app.schemas.practice import (
 
 
 # ── Schema 单元测试 ────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def force_dev_mode(monkeypatch):
+    """强制 dev mock；防止环境里有真 DEEPSEEK_API_KEY 时 API 集成测试打到真实 API
+    导致 mock 答案断言（answer=='goes'）不稳定。"""
+    monkeypatch.setattr(settings, "deepseek_api_key", "sk-placeholder-for-test")
 
 
 def test_generate_request_defaults():

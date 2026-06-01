@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import make_ok
-from app.schemas.questions import PracticeAttemptIn
+from app.schemas.questions import ExamAttemptIn, PracticeAttemptIn
 from app.services import question_service
 
 router = APIRouter(prefix="/questions", tags=["questions"])
@@ -38,6 +38,22 @@ async def submit_practice_attempt(
         user_id=current_user.id,
         question_id=body.question_id,
         user_answer=body.user_answer,
+    )
+    await db.commit()  # 错题落库要 commit
+    return make_ok(result.model_dump(mode="json"))
+
+
+@router.post("/exam-attempts")
+async def submit_exam_attempts(
+    body: ExamAttemptIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """模拟考批量提交：一次判 N 题，错题统一落库，返回总分 + 每题结果。"""
+    result = await question_service.submit_exam_attempts(
+        db,
+        user_id=current_user.id,
+        answers=body.items,
     )
     await db.commit()  # 错题落库要 commit
     return make_ok(result.model_dump(mode="json"))
