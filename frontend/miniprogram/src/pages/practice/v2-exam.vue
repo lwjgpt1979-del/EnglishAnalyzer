@@ -104,6 +104,7 @@ import { listPracticeQuestions, submitExam } from '@/api/questions'
 import type { SimQuestionOut, ExamResultOut } from '@/types/api'
 
 const kpId = ref('')
+const dim = ref('')
 const questions = ref<SimQuestionOut[]>([])
 const answers = reactive<Record<string, string>>({})
 const result = ref<ExamResultOut | null>(null)
@@ -120,6 +121,7 @@ function hasOptions(q: SimQuestionOut): boolean {
 
 onLoad(async (q: any) => {
   kpId.value = q.kp || ''
+  dim.value = q.dim || ''
   const count = Number(q.count) || 10
   if (!kpId.value) {
     uni.showToast({ title: '缺少 kp 参数', icon: 'none' })
@@ -127,7 +129,7 @@ onLoad(async (q: any) => {
     return
   }
   try {
-    questions.value = await listPracticeQuestions(kpId.value, count)
+    questions.value = await listPracticeQuestions(kpId.value, count, dim.value)
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
   } finally {

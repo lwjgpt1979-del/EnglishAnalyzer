@@ -53,11 +53,11 @@ onLoad(async (q: any) => {
 })
 
 function goPractice() {
-  uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}` })
+  uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}&dim=${activeDim.value}` })
 }
 
 function goExam() {
-  uni.navigateTo({ url: `/pages/practice/v2-exam?kp=${kpId.value}&count=10` })
+  uni.navigateTo({ url: `/pages/practice/v2-exam?kp=${kpId.value}&count=10&dim=${activeDim.value}` })
 }
 </script>
 

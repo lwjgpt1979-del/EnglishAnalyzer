@@ -10,10 +10,16 @@ import type {
   ExamRankOut,
 } from '@/types/api'
 
-export function listPracticeQuestions(kpId: string, limit = 5): Promise<SimQuestionOut[]> {
+export function listPracticeQuestions(
+  kpId: string,
+  limit = 5,
+  dimension?: string,
+): Promise<SimQuestionOut[]> {
+  const data: Record<string, unknown> = { limit }
+  if (dimension) data.dimension = dimension
   return request<SimQuestionOut[]>(
     `/api/v1/questions/kp/${kpId}/practice-questions`,
-    { method: 'GET', data: { limit } },
+    { method: 'GET', data },
   )
 }
 

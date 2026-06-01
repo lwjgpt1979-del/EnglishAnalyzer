@@ -78,6 +78,7 @@ import { listPracticeQuestions, submitAttempt } from '@/api/questions'
 import type { SimQuestionOut, PracticeResultOut } from '@/types/api'
 
 const kpId = ref('')
+const dim = ref('')
 const questions = ref<SimQuestionOut[]>([])
 const currentIdx = ref(0)
 const userAnswer = ref('')
@@ -96,13 +97,14 @@ function letter(i: number): string {
 
 onLoad(async (q: any) => {
   kpId.value = q.kp || ''
+  dim.value = q.dim || ''
   if (!kpId.value) {
     uni.showToast({ title: '缺少 kp 参数', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 800)
     return
   }
   try {
-    questions.value = await listPracticeQuestions(kpId.value, 5)
+    questions.value = await listPracticeQuestions(kpId.value, 5, dim.value)
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
   } finally {
