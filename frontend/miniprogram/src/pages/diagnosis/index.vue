@@ -56,6 +56,30 @@
         </view>
       </view>
 
+      <!-- 知识点正确率（V2 练习/模拟考） -->
+      <view class="card" v-if="kpAccuracy && kpAccuracy.items.length > 0">
+        <view class="card-title">知识点正确率</view>
+        <text class="acc-overall">
+          累计作答 {{ kpAccuracy.total_attempts }} 次 · 总正确率 {{ (kpAccuracy.overall_accuracy * 100).toFixed(0) }}%
+        </text>
+        <view
+          v-for="kp in kpAccuracy.items.slice(0, 10)"
+          :key="kp.knowledge_point_id"
+          class="bar-item"
+        >
+          <text class="bar-label">{{ kp.knowledge_point_name }}</text>
+          <view class="bar-track">
+            <view
+              class="bar-fill"
+              :class="accClass(kp.accuracy)"
+              :style="{ width: Math.round(kp.accuracy * 100) + '%' }"
+            />
+          </view>
+          <text class="bar-count">{{ (kp.accuracy * 100).toFixed(0) }}%</text>
+        </view>
+        <text class="acc-hint">弱项（正确率低）排在前面，建议优先练习</text>
+      </view>
+
       <!-- 近30天活跃度方格 -->
       <view class="card">
         <view class="card-title">近30天提交</view>
@@ -97,11 +121,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getDiagnosisReport } from '@/api/diagnosis'
+import { getKpAccuracy } from '@/api/questions'
 import { useAuthStore } from '@/stores/auth'
-import type { DiagnosisReport } from '@/types/api'
+import type { DiagnosisReport, KPAccuracyOut } from '@/types/api'
 
 const auth = useAuthStore()
 const report = ref<DiagnosisReport | null>(null)
+const kpAccuracy = ref<KPAccuracyOut | null>(null)
 const loading = ref(true)  // true until first fetch completes, prevents "暂无数据" flash
 
 const maxErrorCount = computed(() => {
@@ -119,7 +145,19 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  // 知识点正确率独立拉取，失败不影响主报告
+  try {
+    kpAccuracy.value = await getKpAccuracy()
+  } catch {
+    kpAccuracy.value = null
+  }
 })
+
+function accClass(accuracy: number): string {
+  if (accuracy < 0.6) return 'acc-low'
+  if (accuracy < 0.85) return 'acc-mid'
+  return 'acc-high'
+}
 
 function goPractice() {
   uni.navigateTo({ url: '/pages/practice/index' })
@@ -155,6 +193,13 @@ function activityClass(count: number): string {
 .bar-track { flex: 1; background: var(--c-bg-soft); height: 16rpx; border-radius: var(--r-pill); margin: 0 16rpx; }
 .bar-fill { height: 100%; background: var(--c-gold); border-radius: var(--r-pill); }
 .bar-count { font-size: 24rpx; color: var(--c-text-second); width: 48rpx; text-align: right; }
+
+/* 知识点正确率 */
+.acc-overall { display: block; font-size: 24rpx; color: var(--c-text-second); margin-bottom: 20rpx; }
+.acc-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
+.bar-fill.acc-low { background: var(--c-danger); }
+.bar-fill.acc-mid { background: var(--c-gold); }
+.bar-fill.acc-high { background: #2ecc71; }
 
 /* 知识点标签 */
 .tags { display: flex; flex-wrap: wrap; gap: 12rpx; }

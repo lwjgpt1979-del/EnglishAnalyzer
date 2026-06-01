@@ -1,5 +1,6 @@
-"""域12: V2 真题与仿真题 (4 张表)
+"""域12: V2 真题与仿真题 (5 张表)
   exam_papers · exam_questions · exam_question_knowledge_points · simulated_questions
+  · sim_practice_records
 """
 import uuid
 import sqlalchemy as sa
@@ -69,3 +70,19 @@ class SimulatedQuestion(Base):
     status = mapped_column(sim_status_enum, nullable=False, server_default=sa.text("'draft'"))
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())
+
+
+class SimPracticeRecord(Base):
+    """V2 仿真题逐题作答日志（练习 + 模拟考都写）。
+
+    用途：学情按知识点聚合正确率。knowledge_point_id 冗余自 simulated_questions，
+    避免聚合时 JOIN。每次作答（无论对错）写一行。
+    """
+    __tablename__ = "sim_practice_records"
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, index=True)
+    simulated_question_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("simulated_questions.id"), nullable=False)
+    knowledge_point_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), nullable=False, index=True)
+    is_correct = mapped_column(sa.Boolean, nullable=False)
+    user_answer = mapped_column(sa.Text, nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

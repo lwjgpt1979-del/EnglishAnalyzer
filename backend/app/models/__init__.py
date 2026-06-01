@@ -67,6 +67,7 @@ from .d11_v2_curriculum import KnowledgePointContent  # noqa: F401
 # 域12: V2 真题与仿真题 (4 张表)
 from .d12_v2_exams import (  # noqa: F401
     ExamPaper, ExamQuestion, ExamQuestionKnowledgePoint, SimulatedQuestion,
+    SimPracticeRecord,
 )
 
 # 域13: V2 学生整卷上传 (3 张表)

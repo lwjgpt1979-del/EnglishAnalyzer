@@ -57,3 +57,13 @@ async def submit_exam_attempts(
     )
     await db.commit()  # 错题落库要 commit
     return make_ok(result.model_dump(mode="json"))
+
+
+@router.get("/kp-accuracy")
+async def get_kp_accuracy(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """学情：按知识点聚合练习正确率，弱项（正确率低）在前。"""
+    result = await question_service.get_kp_accuracy(db, user_id=current_user.id)
+    return make_ok(result.model_dump(mode="json"))

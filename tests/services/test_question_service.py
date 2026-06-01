@@ -384,3 +384,80 @@ async def test_rewrong_unmasters(db_session, seeded_kp):
     assert wq.is_mastered is False
     assert wq.mastered_at is None
     assert await _count_wq(db_session, user.id, q.stem) == 1
+
+
+# ─── 学情：知识点正确率聚合（D-085）─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_attempt_logs_sim_practice_record(db_session, seeded_kp):
+    """每次作答（对/错都）落 sim_practice_records 一行。"""
+    from app.models.d12_v2_exams import SimPracticeRecord
+
+    q = await _make_single(db_session, seeded_kp)
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="A")  # 错
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="B")  # 对
+
+    recs = (await db_session.execute(
+        select(SimPracticeRecord).where(
+            SimPracticeRecord.student_id == user.id,
+            SimPracticeRecord.simulated_question_id == q.id,
+        )
+    )).scalars().all()
+    assert len(recs) == 2
+    assert {r.is_correct for r in recs} == {True, False}
+    assert all(r.knowledge_point_id == seeded_kp.id for r in recs)
+
+
+@pytest.mark.asyncio
+async def test_kp_accuracy_aggregates_rate(db_session, seeded_kp):
+    """get_kp_accuracy 按 KP 聚合：3 次作答 2 对 → accuracy=0.6667。"""
+    q = await _make_single(db_session, seeded_kp)
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="B")  # 对
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="A")  # 错
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q.id, user_answer="B")  # 对
+
+    out = await question_service.get_kp_accuracy(db_session, user_id=user.id)
+    assert out.total_attempts == 3
+    assert out.overall_accuracy == round(2 / 3, 4)
+    assert len(out.items) == 1
+    item = out.items[0]
+    assert item.knowledge_point_id == seeded_kp.id
+    assert item.knowledge_point_name == seeded_kp.name
+    assert item.attempts == 3
+    assert item.correct == 2
+    assert item.accuracy == round(2 / 3, 4)
+
+
+@pytest.mark.asyncio
+async def test_kp_accuracy_weakest_first(db_session, seeded_kp):
+    """多 KP 时按正确率升序（弱项在前）。"""
+    # 第二个 KP
+    kp2 = KnowledgePoint(
+        id=uuid.uuid4(), code=f"test-kp-{uuid.uuid4().hex[:6]}",
+        name="测试 KP 2", category="grammar", description="d",
+        applicable_grades=["小学5年级"], applicable_textbooks=["译林版"],
+    )
+    db_session.add(kp2)
+    await db_session.flush()
+
+    q1 = await _make_single(db_session, seeded_kp)   # KP1：全对
+    q2 = await _make_single(db_session, kp2)          # KP2：全错
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q1.id, user_answer="B")  # 对
+    await question_service.submit_attempt(db_session, user_id=user.id, question_id=q2.id, user_answer="A")  # 错
+
+    out = await question_service.get_kp_accuracy(db_session, user_id=user.id)
+    assert len(out.items) == 2
+    # 弱项（KP2 accuracy=0）在前
+    assert out.items[0].knowledge_point_id == kp2.id
+    assert out.items[0].accuracy == 0.0
+    assert out.items[1].knowledge_point_id == seeded_kp.id
+    assert out.items[1].accuracy == 1.0

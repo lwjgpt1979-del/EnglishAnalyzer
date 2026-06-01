@@ -65,3 +65,21 @@ class ExamResultOut(BaseModel):
     total: int
     correct_count: int
     items: list[ExamItemResult]
+
+
+# ─── 学情：知识点正确率（D-084 后续）────────────────────────────────────────
+
+class KPAccuracyItem(BaseModel):
+    """单个知识点的练习正确率聚合。"""
+    knowledge_point_id: uuid.UUID
+    knowledge_point_name: str
+    attempts: int = Field(..., description="该 KP 累计作答次数")
+    correct: int = Field(..., description="累计答对次数")
+    accuracy: float = Field(..., description="正确率，保留 4 位小数")
+
+
+class KPAccuracyOut(BaseModel):
+    """学生维度的逐 KP 正确率，弱项（正确率低）在前。"""
+    total_attempts: int
+    overall_accuracy: float
+    items: list[KPAccuracyItem]

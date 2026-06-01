@@ -448,3 +448,17 @@ export interface ExamResultOut {
   correct_count: number
   items: ExamItemResult[]
 }
+
+export interface KPAccuracyItem {
+  knowledge_point_id: string
+  knowledge_point_name: string
+  attempts: number
+  correct: number
+  accuracy: number
+}
+
+export interface KPAccuracyOut {
+  total_attempts: number
+  overall_accuracy: number
+  items: KPAccuracyItem[]
+}

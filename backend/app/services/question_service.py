@@ -20,10 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d3_wrong_questions import WrongQuestion
-from app.models.d4_knowledge import WrongQuestionKnowledgePoint
-from app.models.d12_v2_exams import SimulatedQuestion
+from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
+from app.models.d12_v2_exams import SimPracticeRecord, SimulatedQuestion
 from app.schemas.questions import (
-    AIGeneratedQuestion, PracticeResultOut, SimQuestionOut,
+    AIGeneratedQuestion, KPAccuracyItem, KPAccuracyOut,
+    PracticeResultOut, SimQuestionOut,
 )
 
 
@@ -195,6 +196,26 @@ async def _mark_mastered(
         await db.flush()
 
 
+async def _log_attempt(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    question: SimulatedQuestion,
+    user_answer: str,
+    correct: bool,
+) -> None:
+    """逐题作答日志（对错都写）—— 学情按 KP 聚合正确率的数据源。"""
+    db.add(SimPracticeRecord(
+        id=uuid.uuid4(),
+        student_id=user_id,
+        simulated_question_id=question.id,
+        knowledge_point_id=question.knowledge_point_id,
+        is_correct=correct,
+        user_answer=user_answer,
+    ))
+    await db.flush()
+
+
 async def submit_attempt(
     db: AsyncSession,
     *,
@@ -209,6 +230,8 @@ async def submit_attempt(
         raise AppError(code=404, message="题目不存在")
 
     correct = _grade(str(q.question_type), q.answer, user_answer)
+
+    await _log_attempt(db, user_id=user_id, question=q, user_answer=user_answer, correct=correct)
 
     wq_id: uuid.UUID | None = None
     if not correct:
@@ -254,6 +277,9 @@ async def submit_exam_attempts(
         if correct:
             correct_count += 1
 
+        await _log_attempt(
+            db, user_id=user_id, question=q, user_answer=atin.user_answer, correct=correct)
+
         wq_id = None
         if not correct:
             wq_id = await _record_wrong(
@@ -273,5 +299,66 @@ async def submit_exam_attempts(
     return ExamResultOut(
         total=len(items),
         correct_count=correct_count,
+        items=items,
+    )
+
+
+# ─── 学情：知识点正确率聚合（D-085）─────────────────────────────────────────
+
+async def get_kp_accuracy(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+) -> KPAccuracyOut:
+    """按知识点聚合该学生的练习正确率，弱项（正确率低）在前。
+
+    数据源：sim_practice_records（练习 + 模拟考逐题作答日志）。
+    内存聚合（MVP 单用户作答量小，够用）。
+    """
+    rows = (await db.execute(
+        select(
+            SimPracticeRecord.knowledge_point_id,
+            SimPracticeRecord.is_correct,
+        ).where(SimPracticeRecord.student_id == user_id)
+    )).all()
+
+    # KP id → [attempts, correct]
+    agg: dict[uuid.UUID, list[int]] = {}
+    total_attempts = 0
+    total_correct = 0
+    for kp_id, is_correct in rows:
+        total_attempts += 1
+        if is_correct:
+            total_correct += 1
+        slot = agg.setdefault(kp_id, [0, 0])
+        slot[0] += 1
+        if is_correct:
+            slot[1] += 1
+
+    # 取 KP 名
+    kp_ids = list(agg.keys())
+    name_map: dict[uuid.UUID, str] = {}
+    if kp_ids:
+        kp_rows = (await db.execute(
+            select(KnowledgePoint.id, KnowledgePoint.name).where(KnowledgePoint.id.in_(kp_ids))
+        )).all()
+        name_map = {kid: kname for kid, kname in kp_rows}
+
+    items = [
+        KPAccuracyItem(
+            knowledge_point_id=kp_id,
+            knowledge_point_name=name_map.get(kp_id, "未知知识点"),
+            attempts=attempts,
+            correct=correct,
+            accuracy=round(correct / attempts, 4) if attempts > 0 else 0.0,
+        )
+        for kp_id, (attempts, correct) in agg.items()
+    ]
+    # 弱项优先：正确率升序，正确率相同则作答数多的在前
+    items.sort(key=lambda it: (it.accuracy, -it.attempts))
+
+    return KPAccuracyOut(
+        total_attempts=total_attempts,
+        overall_accuracy=round(total_correct / total_attempts, 4) if total_attempts > 0 else 0.0,
         items=items,
     )
