@@ -13,30 +13,36 @@ def force_dev_mode(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_mock_returns_3_question_types():
-    """dev mock 必须包含 3 种题型（单选/填空/判断），每种至少 1 道。"""
+async def test_mock_returns_all_7_types_at_count_9():
+    """dev mock count=9 必须包含全部 7 种题型。"""
     qs = await generate_questions(
         kp_name="There be 句型",
         kp_category="grammar",
         kp_description="表示存在",
-        count=5,
+        count=9,
     )
-    assert len(qs) == 5
+    assert len(qs) == 9
     types = {q.question_type for q in qs}
-    assert types == {"单选", "填空", "判断"}
+    assert types == {"单选", "填空", "判断", "完型", "阅读", "写作", "连线"}
 
     for q in qs:
-        if q.question_type == "单选":
+        if q.question_type in ("单选", "完型", "阅读"):
             assert q.options is not None
             assert len(q.options) == 4
             assert q.answer in ["A", "B", "C", "D"]
         elif q.question_type == "填空":
             assert q.options is None
-            assert q.answer  # 非空字符串
+            assert q.answer
         elif q.question_type == "判断":
             assert q.options is None
             assert q.answer in ["对", "错"]
-        assert q.explanation  # 非空
+        elif q.question_type == "写作":
+            assert q.options is None
+            assert len(q.answer) >= 50  # 范文应较长
+        elif q.question_type == "连线":
+            assert q.options is None
+            assert "|" in q.answer and "-" in q.answer
+        assert q.explanation
         assert 1 <= q.difficulty <= 5
 
 

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 # ─── AI 生成输出（question_ai_service → question_service.persist）─
 
 class AIGeneratedQuestion(BaseModel):
-    question_type: Literal["单选", "填空", "判断"]
+    question_type: Literal["单选", "填空", "判断", "完型", "阅读", "写作", "连线"]
     stem: str = Field(..., min_length=5, description="题干文本")
     options: list[str] | None = Field(
         None, description="单选题为 4 个选项字符串；填空/判断为 null"
