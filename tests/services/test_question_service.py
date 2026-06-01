@@ -328,6 +328,77 @@ async def test_submit_exam_attempts_batch(db_session, seeded_kp):
     assert result.items[2].correct is True
 
 
+@pytest.mark.asyncio
+async def test_exam_attempts_records_session_history(db_session, seeded_kp):
+    """模拟考批量提交后落一行成绩快照，可经 get_exam_history 取回。"""
+    from app.schemas.questions import PracticeAttemptIn
+
+    qs_data = [
+        ("单选", ["A. x", "B. y", "C. z", "D. w"], "B"),
+        ("判断", None, "对"),
+    ]
+    q_ids = []
+    for qtype, opts, ans in qs_data:
+        q = SimulatedQuestion(
+            id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+            question_type=qtype, stem=f"Hist Q {qtype}",
+            options=opts, answer=ans, explanation="exp",
+            difficulty=1, status="published",
+        )
+        db_session.add(q)
+        q_ids.append(q.id)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    answers = [
+        PracticeAttemptIn(question_id=q_ids[0], user_answer="B"),   # 对
+        PracticeAttemptIn(question_id=q_ids[1], user_answer="错"),  # 错
+    ]
+    await question_service.submit_exam_attempts(
+        db_session, user_id=user.id, answers=answers,
+    )
+
+    hist = await question_service.get_exam_history(db_session, user_id=user.id)
+    assert hist.total_exams == 1
+    assert hist.items[0].total == 2
+    assert hist.items[0].correct_count == 1
+    assert hist.items[0].accuracy == 0.5
+
+
+@pytest.mark.asyncio
+async def test_exam_history_latest_first(db_session, seeded_kp):
+    """两场模拟考，get_exam_history 最新在前。"""
+    from app.schemas.questions import PracticeAttemptIn
+
+    q = SimulatedQuestion(
+        id=uuid.uuid4(), knowledge_point_id=seeded_kp.id,
+        question_type="单选", stem=f"Multi-exam Q {uuid.uuid4().hex[:6]}",
+        options=["A. x", "B. y", "C. z", "D. w"], answer="B",
+        explanation="exp", difficulty=1, status="published",
+    )
+    db_session.add(q)
+    await db_session.flush()
+    user = await upsert_user(db_session, openid=f"q_{uuid.uuid4().hex[:6]}")
+    await db_session.flush()
+
+    # 第一场答对，第二场答错
+    await question_service.submit_exam_attempts(
+        db_session, user_id=user.id,
+        answers=[PracticeAttemptIn(question_id=q.id, user_answer="B")],
+    )
+    await question_service.submit_exam_attempts(
+        db_session, user_id=user.id,
+        answers=[PracticeAttemptIn(question_id=q.id, user_answer="A")],
+    )
+
+    hist = await question_service.get_exam_history(db_session, user_id=user.id)
+    assert hist.total_exams == 2
+    # 最新（第二场，accuracy 0）在前
+    assert hist.items[0].accuracy == 0.0
+    assert hist.items[1].accuracy == 1.0
+
+
 # ─── 练习闭环增强：错题查重 + 做对标 mastered ─────────────────────────────
 
 async def _make_single(db_session, seeded_kp, answer="B"):

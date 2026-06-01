@@ -22,10 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
-from app.models.d12_v2_exams import SimPracticeRecord, SimulatedQuestion
+from app.models.d12_v2_exams import SimExamSession, SimPracticeRecord, SimulatedQuestion
 from app.schemas.questions import (
-    AIGeneratedQuestion, KPAccuracyItem, KPAccuracyOut,
-    PracticeResultOut, SimQuestionOut,
+    AIGeneratedQuestion, ExamHistoryItem, ExamHistoryOut,
+    KPAccuracyItem, KPAccuracyOut, PracticeResultOut, SimQuestionOut,
 )
 
 
@@ -297,8 +297,21 @@ async def submit_exam_attempts(
             wrong_question_id=wq_id,
         ))
 
+    # 落一次成绩快照（成绩历史），仅当本次确有作答
+    total = len(items)
+    if total > 0:
+        db.add(SimExamSession(
+            id=uuid.uuid4(),
+            student_id=user_id,
+            total=total,
+            correct_count=correct_count,
+            accuracy=round(correct_count / total, 4),
+            created_at=datetime.now(timezone.utc),
+        ))
+        await db.flush()
+
     return ExamResultOut(
-        total=len(items),
+        total=total,
         correct_count=correct_count,
         items=items,
     )
@@ -363,3 +376,32 @@ async def get_kp_accuracy(
         overall_accuracy=round(total_correct / total_attempts, 4) if total_attempts > 0 else 0.0,
         items=items,
     )
+
+
+# ─── 模拟考成绩历史（D-087）──────────────────────────────────────────────────
+
+async def get_exam_history(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    limit: int = 20,
+) -> ExamHistoryOut:
+    """返回该学生的模拟考成绩历史，最新在前。"""
+    rows = (await db.execute(
+        select(SimExamSession)
+        .where(SimExamSession.student_id == user_id)
+        .order_by(SimExamSession.created_at.desc())
+        .limit(limit)
+    )).scalars().all()
+
+    items = [
+        ExamHistoryItem(
+            id=r.id,
+            total=r.total,
+            correct_count=r.correct_count,
+            accuracy=r.accuracy,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+    return ExamHistoryOut(total_exams=len(items), items=items)

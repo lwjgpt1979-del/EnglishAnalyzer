@@ -6,6 +6,7 @@ import type {
   ExamAttemptIn,
   ExamResultOut,
   KPAccuracyOut,
+  ExamHistoryOut,
 } from '@/types/api'
 
 export function listPracticeQuestions(kpId: string, limit = 5): Promise<SimQuestionOut[]> {
@@ -31,4 +32,11 @@ export function submitExam(body: ExamAttemptIn): Promise<ExamResultOut> {
 
 export function getKpAccuracy(): Promise<KPAccuracyOut> {
   return request<KPAccuracyOut>('/api/v1/questions/kp-accuracy')
+}
+
+export function getExamHistory(limit = 20): Promise<ExamHistoryOut> {
+  return request<ExamHistoryOut>('/api/v1/questions/exam-history', {
+    method: 'GET',
+    data: { limit },
+  })
 }

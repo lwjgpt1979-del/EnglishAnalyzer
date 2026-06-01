@@ -311,7 +311,7 @@ def test_all_37_tables_in_metadata():
         "knowledge_point_contents",
         # 域12: V2 真题与仿真题
         "exam_papers", "exam_questions", "exam_question_knowledge_points",
-        "simulated_questions", "sim_practice_records",
+        "simulated_questions", "sim_practice_records", "sim_exam_sessions",
         # 域13: V2 学生整卷上传
         "user_uploaded_papers", "user_paper_questions",
         "user_paper_question_knowledge_points",
@@ -321,7 +321,7 @@ def test_all_37_tables_in_metadata():
     actual_tables = set(Base.metadata.tables.keys())
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
-    assert len(actual_tables) == 48, f"期望 48 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+    assert len(actual_tables) == 49, f"期望 49 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
 
 
 def test_d11_v2_curriculum_tables():

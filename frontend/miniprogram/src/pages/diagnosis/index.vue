@@ -80,6 +80,20 @@
         <text class="acc-hint">弱项（正确率低）排在前面，建议优先练习</text>
       </view>
 
+      <!-- 模拟考成绩历史 -->
+      <view class="card" v-if="examHistory && examHistory.items.length > 0">
+        <view class="card-title">模拟考成绩历史</view>
+        <view
+          v-for="ex in examHistory.items"
+          :key="ex.id"
+          class="exam-row"
+        >
+          <text class="exam-date">{{ formatDate(ex.created_at) }}</text>
+          <text class="exam-score">{{ ex.correct_count }}/{{ ex.total }}</text>
+          <text class="exam-acc" :class="accClass(ex.accuracy)">{{ (ex.accuracy * 100).toFixed(0) }}%</text>
+        </view>
+      </view>
+
       <!-- 近30天活跃度方格 -->
       <view class="card">
         <view class="card-title">近30天提交</view>
@@ -121,13 +135,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getDiagnosisReport } from '@/api/diagnosis'
-import { getKpAccuracy } from '@/api/questions'
+import { getKpAccuracy, getExamHistory } from '@/api/questions'
 import { useAuthStore } from '@/stores/auth'
-import type { DiagnosisReport, KPAccuracyOut } from '@/types/api'
+import type { DiagnosisReport, KPAccuracyOut, ExamHistoryOut } from '@/types/api'
 
 const auth = useAuthStore()
 const report = ref<DiagnosisReport | null>(null)
 const kpAccuracy = ref<KPAccuracyOut | null>(null)
+const examHistory = ref<ExamHistoryOut | null>(null)
 const loading = ref(true)  // true until first fetch completes, prevents "暂无数据" flash
 
 const maxErrorCount = computed(() => {
@@ -151,7 +166,23 @@ onMounted(async () => {
   } catch {
     kpAccuracy.value = null
   }
+  // 模拟考成绩历史独立拉取，失败不影响主报告
+  try {
+    examHistory.value = await getExamHistory()
+  } catch {
+    examHistory.value = null
+  }
 })
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${m}-${day} ${hh}:${mm}`
+}
 
 function accClass(accuracy: number): string {
   if (accuracy < 0.6) return 'acc-low'
@@ -200,6 +231,16 @@ function activityClass(count: number): string {
 .bar-fill.acc-low { background: var(--c-danger); }
 .bar-fill.acc-mid { background: var(--c-gold); }
 .bar-fill.acc-high { background: #2ecc71; }
+
+/* 模拟考成绩历史 */
+.exam-row { display: flex; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-bg-soft); }
+.exam-row:last-child { border-bottom: none; }
+.exam-date { flex: 1; font-size: 26rpx; color: var(--c-text-body); }
+.exam-score { font-size: 26rpx; color: var(--c-text-second); margin-right: 24rpx; }
+.exam-acc { font-size: 28rpx; font-weight: 700; width: 80rpx; text-align: right; }
+.exam-acc.acc-low { color: var(--c-danger); }
+.exam-acc.acc-mid { color: var(--c-gold); }
+.exam-acc.acc-high { color: #2ecc71; }
 
 /* 知识点标签 */
 .tags { display: flex; flex-wrap: wrap; gap: 12rpx; }

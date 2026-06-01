@@ -186,3 +186,36 @@ async def test_kp_accuracy_endpoint(client):
     assert item["attempts"] == 2
     assert item["correct"] == 1
     assert item["accuracy"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_exam_history_endpoint(client):
+    """模拟考批量提交后 GET /exam-history 返回成绩快照。"""
+    kp_id, _ = await _seed_kp_with_questions()
+    h = await _login(client, f"hist_{uuid.uuid4().hex[:6]}")
+
+    # 取该 KP 的题，造一场 3 对 2 错的模拟考
+    async with _async_session_factory() as s:
+        rows = (await s.execute(
+            select(SimulatedQuestion).where(
+                SimulatedQuestion.knowledge_point_id == kp_id
+            ).limit(5)
+        )).scalars().all()
+    items = []
+    for i, q in enumerate(rows):
+        ua = q.answer.split("|")[0].strip() if i < 3 else f"__wrong__{q.answer}"
+        items.append({"question_id": str(q.id), "user_answer": ua})
+
+    await client.post(
+        "/api/v1/questions/exam-attempts", json={"items": items}, headers=h,
+    )
+
+    resp = await client.get("/api/v1/questions/exam-history", headers=h)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["total_exams"] == 1
+    rec = data["items"][0]
+    assert rec["total"] == 5
+    assert rec["correct_count"] == 3
+    assert rec["accuracy"] == 0.6
+    assert rec["created_at"]

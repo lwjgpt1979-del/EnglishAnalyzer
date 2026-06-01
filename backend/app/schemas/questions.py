@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -83,3 +84,20 @@ class KPAccuracyOut(BaseModel):
     total_attempts: int
     overall_accuracy: float
     items: list[KPAccuracyItem]
+
+
+# ─── 模拟考成绩历史（D-086 后续）─────────────────────────────────────────────
+
+class ExamHistoryItem(BaseModel):
+    """一次模拟考的成绩快照。"""
+    id: uuid.UUID
+    total: int
+    correct_count: int
+    accuracy: float = Field(..., description="正确率，保留 4 位小数")
+    created_at: datetime
+
+
+class ExamHistoryOut(BaseModel):
+    """学生的模拟考成绩历史，最新在前。"""
+    total_exams: int
+    items: list[ExamHistoryItem]

@@ -462,3 +462,16 @@ export interface KPAccuracyOut {
   overall_accuracy: number
   items: KPAccuracyItem[]
 }
+
+export interface ExamHistoryItem {
+  id: string
+  total: number
+  correct_count: number
+  accuracy: number
+  created_at: string
+}
+
+export interface ExamHistoryOut {
+  total_exams: number
+  items: ExamHistoryItem[]
+}

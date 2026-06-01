@@ -1,6 +1,6 @@
-"""域12: V2 真题与仿真题 (5 张表)
+"""域12: V2 真题与仿真题 (6 张表)
   exam_papers · exam_questions · exam_question_knowledge_points · simulated_questions
-  · sim_practice_records
+  · sim_practice_records · sim_exam_sessions
 """
 import uuid
 import sqlalchemy as sa
@@ -85,4 +85,18 @@ class SimPracticeRecord(Base):
     knowledge_point_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), nullable=False, index=True)
     is_correct = mapped_column(sa.Boolean, nullable=False)
     user_answer = mapped_column(sa.Text, nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class SimExamSession(Base):
+    """V2 模拟考一次性批量提交的成绩快照（成绩历史）。
+
+    每次 submit_exam_attempts 落一行；逐题明细仍在 sim_practice_records。
+    """
+    __tablename__ = "sim_exam_sessions"
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, index=True)
+    total = mapped_column(sa.Integer, nullable=False)
+    correct_count = mapped_column(sa.Integer, nullable=False)
+    accuracy = mapped_column(sa.Float, nullable=False)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

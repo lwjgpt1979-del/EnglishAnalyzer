@@ -67,3 +67,16 @@ async def get_kp_accuracy(
     """学情：按知识点聚合练习正确率，弱项（正确率低）在前。"""
     result = await question_service.get_kp_accuracy(db, user_id=current_user.id)
     return make_ok(result.model_dump(mode="json"))
+
+
+@router.get("/exam-history")
+async def get_exam_history(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """模拟考成绩历史，最新在前。"""
+    result = await question_service.get_exam_history(
+        db, user_id=current_user.id, limit=limit,
+    )
+    return make_ok(result.model_dump(mode="json"))
