@@ -14,6 +14,13 @@ class SemesterPricing(BaseModel):
     promax: int
 
 
+class SemesterPricingUpdate(BaseModel):
+    """运营改定价请求（M5）：三档单价必须为正整数。"""
+    basic: int = Field(..., ge=1, description="basic 档单价（元/学期）")
+    pro: int = Field(..., ge=1, description="pro 档单价（元/学期）")
+    promax: int = Field(..., ge=1, description="promax 档单价（元/学期）")
+
+
 class SemesterIdentity(BaseModel):
     """一个学期的标识（教材+年级+上/下）。"""
     textbook_version: str

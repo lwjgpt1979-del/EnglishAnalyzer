@@ -24,8 +24,14 @@ from app.schemas.questions import (
     AdminQuestionListOut,
     QuestionReviewRequest,
 )
+from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.teacher import CertReviewRequest, TeacherProfileOut
-from app.services import curriculum_service, question_service, teacher_service
+from app.services import (
+    curriculum_service,
+    pricing_service,
+    question_service,
+    teacher_service,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -162,3 +168,22 @@ async def update_content(
     )
     await db.commit()
     return make_ok(_to_content_item(r))
+
+
+# ─── 学期定价配置（M5）────────────────────────────────────────────────────────
+
+@router.get("/pricing", response_model=BaseResponse[SemesterPricing])
+async def get_pricing(db: DbDep, admin: AdminDep):
+    """读当前学期会员定价（basic/pro/promax 元/学期）。"""
+    return make_ok(await pricing_service.get_semester_pricing(db))
+
+
+@router.put("/pricing", response_model=BaseResponse[SemesterPricing])
+async def update_pricing(body: SemesterPricingUpdate, db: DbDep, admin: AdminDep):
+    """运营改学期会员定价（三档单价，正整数）。"""
+    updated = await pricing_service.update_semester_pricing(
+        db, pricing=SemesterPricing(basic=body.basic, pro=body.pro, promax=body.promax),
+        updated_by=admin.id,
+    )
+    await db.commit()
+    return make_ok(updated)
