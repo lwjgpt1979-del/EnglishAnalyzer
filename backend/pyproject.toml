@@ -17,6 +17,7 @@ dependencies = [
     "alibabacloud-ocr-api20210707>=1.0.0",
     "tencentcloud-sdk-python-ocr>=3.0.0",
     "cos-python-sdk-v5>=1.9.30",
+    "passlib[bcrypt]>=1.7.4",
 ]
 
 [project.optional-dependencies]

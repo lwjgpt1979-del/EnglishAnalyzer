@@ -371,3 +371,11 @@ def test_migration_file_exists():
     assert len(migration_files) == 1, (
         f"期望 1 个 initial_schema 迁移文件，实际找到: {migration_files}"
     )
+
+
+def test_users_has_admin_login_fields():
+    """M5 / D-098: users 必须有 username + password_hash 字段（管理员登录）。"""
+    from app.models.d1_users import User
+    cols = set(User.__table__.columns.keys())
+    assert "username" in cols
+    assert "password_hash" in cols

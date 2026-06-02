@@ -59,6 +59,9 @@ class User(Base):
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     openid = mapped_column(sa.String, nullable=False, unique=True)
     phone = mapped_column(sa.String, nullable=True)
+    # —— 运营管理员账号密码登录（M5 / D-098；C 端用户这两列为 NULL）——
+    username = mapped_column(sa.String, nullable=True, unique=True)
+    password_hash = mapped_column(sa.String, nullable=True)
     nickname = mapped_column(sa.String, nullable=True)
     avatar_url = mapped_column(sa.String, nullable=True)
     role = mapped_column(user_role_enum, nullable=False)
