@@ -1,0 +1,45 @@
+<script setup lang="ts">
+import { useRoute, useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useAuthStore } from '../stores/auth'
+
+const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
+
+const active = computed(() => route.path)
+
+function onLogout() {
+  auth.logout()
+  router.push('/login')
+}
+</script>
+
+<template>
+  <el-container style="height: 100vh">
+    <el-aside width="200px" style="background: #001529">
+      <div class="logo">engGramer 运营</div>
+      <el-menu :default-active="active" router background-color="#001529"
+               text-color="#rgba(255,255,255,.75)" active-text-color="#fff">
+        <el-menu-item index="/questions">仿真题审核</el-menu-item>
+        <el-menu-item index="/contents">知识点内容</el-menu-item>
+        <el-menu-item index="/pricing">定价配置</el-menu-item>
+      </el-menu>
+    </el-aside>
+    <el-container>
+      <el-header class="header">
+        <span class="spacer" />
+        <el-button text @click="onLogout">退出登录</el-button>
+      </el-header>
+      <el-main>
+        <router-view />
+      </el-main>
+    </el-container>
+  </el-container>
+</template>
+
+<style scoped>
+.logo { color: #fff; font-weight: 700; text-align: center; padding: 18px 0; font-size: 16px; }
+.header { display: flex; align-items: center; background: #fff; border-bottom: 1px solid #eee; }
+.spacer { flex: 1; }
+</style>
