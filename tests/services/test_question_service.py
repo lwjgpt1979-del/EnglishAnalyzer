@@ -98,6 +98,32 @@ async def test_persist_writes_dimension(db_session, seeded_kp):
 
 
 @pytest.mark.asyncio
+async def test_persist_defaults_to_draft(db_session, seeded_kp):
+    """不传 status 时，新题默认进 draft（审核闸门，M5）。"""
+    qs = await question_ai_service.generate_questions(
+        kp_name=seeded_kp.name, kp_category="grammar", kp_description="d", count=3,
+    )
+    created = await question_service.persist_questions(
+        db_session, kp_id=seeded_kp.id, questions=qs,
+    )
+    await db_session.flush()
+    assert all(str(r.status) == "draft" for r in created)
+
+
+@pytest.mark.asyncio
+async def test_persist_accepts_explicit_status(db_session, seeded_kp):
+    """显式传 status='published' 时直接发布（seed / 可信内容用）。"""
+    qs = await question_ai_service.generate_questions(
+        kp_name=seeded_kp.name, kp_category="grammar", kp_description="d", count=2,
+    )
+    created = await question_service.persist_questions(
+        db_session, kp_id=seeded_kp.id, questions=qs, status="published",
+    )
+    await db_session.flush()
+    assert all(str(r.status) == "published" for r in created)
+
+
+@pytest.mark.asyncio
 async def test_list_filters_by_dimension(db_session, seeded_kp):
     """list_questions_by_kp 给 dimension 时只返回该维度的题。"""
     for dim, cat in (("listening", "grammar"), ("dictation", "vocabulary")):
@@ -107,6 +133,7 @@ async def test_list_filters_by_dimension(db_session, seeded_kp):
         )
         await question_service.persist_questions(
             db_session, kp_id=seeded_kp.id, questions=qs, dimension=dim,
+            status="published",
         )
     await db_session.flush()
 
@@ -133,6 +160,7 @@ async def test_list_without_dimension_returns_all(db_session, seeded_kp):
         )
         await question_service.persist_questions(
             db_session, kp_id=seeded_kp.id, questions=qs, dimension=dim,
+            status="published",
         )
     await db_session.flush()
     allq = await question_service.list_questions_by_kp(

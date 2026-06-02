@@ -59,6 +59,7 @@ async def seed_one_kp(kp_id: _uuid.UUID, count: int = 5) -> int:
             )
             rows = await question_service.persist_questions(
                 db, kp_id=kp.id, questions=qs, dimension=dimension,
+                status="published",  # seed 是可信 dev 内容，直接发布（M5 审核闸门只拦线上 AI 题）
             )
             total += len(rows)
             print(f"✓ {len(rows)} 道（含已存在）")

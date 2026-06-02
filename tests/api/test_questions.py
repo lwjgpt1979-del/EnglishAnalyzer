@@ -57,7 +57,7 @@ async def _seed_kp_with_questions() -> tuple[uuid.UUID, uuid.UUID]:
         qs = await question_ai_service.generate_questions(
             kp_name=kp.name, kp_category="grammar", kp_description="d", count=5,
         )
-        await question_service.persist_questions(s, kp_id=kp.id, questions=qs)
+        await question_service.persist_questions(s, kp_id=kp.id, questions=qs, status="published")
         await s.commit()
 
         single_b = (await s.execute(
@@ -247,7 +247,7 @@ async def _seed_kp_with_dimension_questions() -> uuid.UUID:
                 dimension=dim, count=3,
             )
             await question_service.persist_questions(
-                s, kp_id=kp.id, questions=qs, dimension=dim,
+                s, kp_id=kp.id, questions=qs, dimension=dim, status="published",
             )
         await s.commit()
         return kp.id

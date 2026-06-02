@@ -50,8 +50,13 @@ async def persist_questions(
     kp_id: uuid.UUID,
     questions: list[AIGeneratedQuestion],
     dimension: str | None = None,
+    status: str = "draft",
 ) -> list[SimulatedQuestion]:
-    """按 (kp_id, stem) 幂等 upsert。dimension 写入新行（None 表示不分维度，向后兼容）。"""
+    """按 (kp_id, stem) 幂等 upsert。dimension 写入新行（None 表示不分维度，向后兼容）。
+
+    status 默认 "draft"（M5 审核闸门）：AI 生成的新题先进草稿，需运营审核后才发布；
+    seed 脚本 / 可信内容可显式传 status="published" 直接发布。
+    """
     out: list[SimulatedQuestion] = []
     for q in questions:
         existing = (await db.execute(
@@ -73,7 +78,7 @@ async def persist_questions(
             explanation=q.explanation,
             difficulty=q.difficulty,
             dimension=dimension,
-            status="published",
+            status=status,
         )
         db.add(sq)
         await db.flush()
