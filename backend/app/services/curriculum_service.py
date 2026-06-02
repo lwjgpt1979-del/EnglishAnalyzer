@@ -34,8 +34,17 @@ from app.services import semester_service
 
 # ─── Persist ────────────────────────────────────────────────────────────────
 
-async def persist_unit(db: AsyncSession, *, ai_unit: AIGeneratedUnit) -> CurriculumUnit:
-    """把 AI 生成的单元结构 upsert 入 6 张表，返回 CurriculumUnit。幂等。"""
+async def persist_unit(
+    db: AsyncSession,
+    *,
+    ai_unit: AIGeneratedUnit,
+    content_status: str = "draft",
+) -> CurriculumUnit:
+    """把 AI 生成的单元结构 upsert 入 6 张表，返回 CurriculumUnit。幂等。
+
+    content_status 默认 "draft"（M5 审核闸门）：新生成的知识点内容先进草稿，
+    需运营审核后才对学生可见；seed 脚本 / 可信内容可显式传 "published"。
+    """
     # 1. curriculum_units（按 textbook+grade+semester+unit_no 唯一）
     cu_q = await db.execute(
         select(CurriculumUnit).where(
@@ -107,7 +116,7 @@ async def persist_unit(db: AsyncSession, *, ai_unit: AIGeneratedUnit) -> Curricu
                     knowledge_point_id=kp.id,
                     dimension=dim,  # type: ignore[arg-type]
                     content_md=md,
-                    status="published",
+                    status=content_status,
                     generated_by="ai_full",
                 ))
             else:
@@ -297,6 +306,7 @@ async def get_kp_contents(
     contents = (await db.execute(
         select(KnowledgePointContent).where(
             KnowledgePointContent.knowledge_point_id == kp_id,
+            KnowledgePointContent.status == "published",
         )
     )).scalars().all()
     return [KPContentOut(

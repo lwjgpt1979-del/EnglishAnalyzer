@@ -57,7 +57,7 @@ async def seed_one(textbook: str, grade: str, semester: str, unit_no: int) -> No
         ai = await curriculum_ai_service.generate_unit(
             textbook_version=textbook, grade=grade, semester=semester, unit_no=unit_no,
         )
-        await curriculum_service.persist_unit(db, ai_unit=ai)
+        await curriculum_service.persist_unit(db, ai_unit=ai, content_status="published")
         await db.commit()
         print(f"✓ {len(ai.knowledge_points)} KP, {len(ai.words)} 词")
 

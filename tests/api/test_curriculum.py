@@ -54,7 +54,7 @@ async def _seed_unit(unit_no: int = 19) -> None:
             textbook_version="译林版", grade="小学5年级", semester="上",
             unit_no=unit_no,
         )
-        await curriculum_service.persist_unit(s, ai_unit=ai)
+        await curriculum_service.persist_unit(s, ai_unit=ai, content_status="published")
         await s.commit()
 
 
@@ -215,3 +215,68 @@ async def test_get_kp_contents_returns_4_dimensions(client):
     for c in contents:
         assert c["content_md"]
         assert "audio_url" in c
+
+
+@pytest.mark.asyncio
+async def test_get_kp_contents_filters_published(client):
+    """get_kp_contents 只返回 published 内容；draft 不对学生可见（M5 闸门）。"""
+    from app.models.d4_knowledge import CurriculumUnit, KnowledgePoint, UnitKnowledgePoint
+    from app.models.d11_v2_curriculum import KnowledgePointContent
+    async with _async_session_factory() as s:
+        cu = CurriculumUnit(
+            id=uuid.uuid4(), textbook_version=f"测试版{uuid.uuid4().hex[:6]}",
+            grade="测试年级", semester="上", unit_no=1, unit_title="免费单元",
+        )
+        s.add(cu)
+        await s.flush()
+        kp = KnowledgePoint(
+            id=uuid.uuid4(), code=f"flt-{uuid.uuid4().hex[:6]}", name="过滤测试KP",
+            category="grammar", description="d",
+            applicable_grades=["小学5年级"], applicable_textbooks=["译林版"],
+        )
+        s.add(kp)
+        await s.flush()
+        s.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
+        s.add(KnowledgePointContent(
+            id=uuid.uuid4(), knowledge_point_id=kp.id, dimension="grammar",
+            content_md="published grammar", status="published", generated_by="ai_full",
+        ))
+        s.add(KnowledgePointContent(
+            id=uuid.uuid4(), knowledge_point_id=kp.id, dimension="listening",
+            content_md="draft listening", status="draft", generated_by="ai_full",
+        ))
+        await s.commit()
+        kp_id = kp.id
+
+    async with _async_session_factory() as s:
+        contents = await curriculum_service.get_kp_contents(
+            s, user_id=uuid.uuid4(), kp_id=kp_id,
+        )
+    dims = {c.dimension for c in contents}
+    assert dims == {"grammar"}
+
+
+@pytest.mark.asyncio
+async def test_persist_unit_content_defaults_draft(client):
+    """persist_unit 不传 content_status 时，内容默认进 draft。"""
+    from sqlalchemy import select
+    from app.models.d4_knowledge import UnitKnowledgePoint
+    from app.models.d11_v2_curriculum import KnowledgePointContent
+    # 用 g7（初中7年级）unit_no=11：生产只 seed 过小学5上(g5)，g7 码无人占用；
+    # 仅 flush 不 commit，退出上下文自动回滚，不污染库。
+    async with _async_session_factory() as s:
+        ai = await curriculum_ai_service.generate_unit(
+            textbook_version="译林版", grade="初中7年级", semester="上", unit_no=11,
+        )
+        cu = await curriculum_service.persist_unit(s, ai_unit=ai)  # 默认 draft
+        await s.flush()
+        rows = (await s.execute(
+            select(KnowledgePointContent)
+            .join(
+                UnitKnowledgePoint,
+                UnitKnowledgePoint.knowledge_point_id == KnowledgePointContent.knowledge_point_id,
+            )
+            .where(UnitKnowledgePoint.unit_id == cu.id)
+        )).scalars().all()
+        assert rows and all(str(r.status) == "draft" for r in rows)
+        await s.rollback()
