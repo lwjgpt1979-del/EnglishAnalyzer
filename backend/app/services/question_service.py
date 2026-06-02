@@ -116,6 +116,47 @@ async def list_questions_by_kp(
     ) for r in rows]
 
 
+# ─── 运营审核（M5）────────────────────────────────────────────────────────────
+
+async def list_questions_for_review(
+    db: AsyncSession,
+    *,
+    status: str = "draft",
+    kp_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 20,
+) -> tuple[list[SimulatedQuestion], int]:
+    """运营按状态分页查仿真题（返回完整 ORM 行，含 answer，仅运营可见）。"""
+    base = select(SimulatedQuestion).where(SimulatedQuestion.status == status)
+    if kp_id is not None:
+        base = base.where(SimulatedQuestion.knowledge_point_id == kp_id)
+    total: int = (await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one()
+    rows = (await db.execute(
+        base.order_by(SimulatedQuestion.created_at).offset(skip).limit(limit)
+    )).scalars().all()
+    return list(rows), total
+
+
+async def review_question(
+    db: AsyncSession,
+    *,
+    question_id: uuid.UUID,
+    approve: bool,
+) -> SimulatedQuestion:
+    """审核一道题：approve→published，reject→retired。题不存在抛 AppError(404)。"""
+    sq = (await db.execute(
+        select(SimulatedQuestion).where(SimulatedQuestion.id == question_id)
+    )).scalar_one_or_none()
+    if sq is None:
+        from app.core.exceptions import AppError
+        raise AppError(code=404, message="题目不存在")
+    sq.status = "published" if approve else "retired"
+    await db.flush()
+    return sq
+
+
 # ─── Grading ────────────────────────────────────────────────────────────────
 
 def _grade(question_type: str, correct_answer: str, user_answer: str) -> bool:

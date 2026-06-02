@@ -124,6 +124,66 @@ async def test_persist_accepts_explicit_status(db_session, seeded_kp):
 
 
 @pytest.mark.asyncio
+async def test_list_for_review_filters_status(db_session, seeded_kp):
+    """运营待审列表按 status 过滤；草稿题不出现在 published 列表里。"""
+    qs = await question_ai_service.generate_questions(
+        kp_name=seeded_kp.name, kp_category="grammar", kp_description="d", count=3,
+    )
+    await question_service.persist_questions(db_session, kp_id=seeded_kp.id, questions=qs)  # draft
+    await db_session.flush()
+    rows, total = await question_service.list_questions_for_review(
+        db_session, status="draft", kp_id=seeded_kp.id,
+    )
+    assert total == 3 and len(rows) == 3
+    rows_pub, total_pub = await question_service.list_questions_for_review(
+        db_session, status="published", kp_id=seeded_kp.id,
+    )
+    assert total_pub == 0 and rows_pub == []
+
+
+@pytest.mark.asyncio
+async def test_review_approve_publishes(db_session, seeded_kp):
+    """审核通过 → status=published。"""
+    qs = await question_ai_service.generate_questions(
+        kp_name=seeded_kp.name, kp_category="grammar", kp_description="d", count=1,
+    )
+    [sq] = await question_service.persist_questions(
+        db_session, kp_id=seeded_kp.id, questions=qs,
+    )
+    await db_session.flush()
+    reviewed = await question_service.review_question(
+        db_session, question_id=sq.id, approve=True,
+    )
+    assert str(reviewed.status) == "published"
+
+
+@pytest.mark.asyncio
+async def test_review_reject_retires(db_session, seeded_kp):
+    """审核驳回 → status=retired。"""
+    qs = await question_ai_service.generate_questions(
+        kp_name=seeded_kp.name, kp_category="grammar", kp_description="d", count=1,
+    )
+    [sq] = await question_service.persist_questions(
+        db_session, kp_id=seeded_kp.id, questions=qs,
+    )
+    await db_session.flush()
+    reviewed = await question_service.review_question(
+        db_session, question_id=sq.id, approve=False,
+    )
+    assert str(reviewed.status) == "retired"
+
+
+@pytest.mark.asyncio
+async def test_review_missing_question_raises(db_session):
+    """审核不存在的题抛 AppError。"""
+    from app.core.exceptions import AppError
+    with pytest.raises(AppError):
+        await question_service.review_question(
+            db_session, question_id=uuid.uuid4(), approve=True,
+        )
+
+
+@pytest.mark.asyncio
 async def test_list_filters_by_dimension(db_session, seeded_kp):
     """list_questions_by_kp 给 dimension 时只返回该维度的题。"""
     for dim, cat in (("listening", "grammar"), ("dictation", "vocabulary")):
