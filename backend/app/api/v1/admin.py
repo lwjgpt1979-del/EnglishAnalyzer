@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import require_role
+from app.core.exceptions import AppError
+from app.core.security import create_access_token, create_refresh_token, require_role
 from app.models.d1_users import User
+from app.schemas.auth import AdminLoginRequest, TokenResponse
 from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.models.d12_v2_exams import SimulatedQuestion
 from app.schemas.base import BaseResponse, make_ok
@@ -27,6 +29,7 @@ from app.schemas.questions import (
 from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.teacher import CertReviewRequest, TeacherProfileOut
 from app.services import (
+    admin_auth_service,
     curriculum_service,
     pricing_service,
     question_service,
@@ -37,6 +40,21 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 AdminDep = Annotated[User, Depends(require_role("platform_admin"))]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+# ─── 管理员登录（M5 / D-098）：账号密码 → JWT，无需 AdminDep（登录入口）──────
+
+@router.post("/auth/login", response_model=BaseResponse[TokenResponse])
+async def admin_login(body: AdminLoginRequest, db: DbDep):
+    user = await admin_auth_service.authenticate(
+        db, username=body.username, password=body.password,
+    )
+    if user is None:
+        raise AppError(code=401, message="用户名或密码错误")
+    return make_ok(TokenResponse(
+        access_token=create_access_token(str(user.id), str(user.role)),
+        refresh_token=create_refresh_token(str(user.id)),
+    ))
 
 
 def _to_content_item(r: KnowledgePointContent) -> AdminContentItem:

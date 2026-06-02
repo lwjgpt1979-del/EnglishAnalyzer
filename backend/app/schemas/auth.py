@@ -1,8 +1,14 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WxLoginRequest(BaseModel):
     code: str
+
+
+class AdminLoginRequest(BaseModel):
+    """运营管理员账号密码登录（M5 / D-098）。"""
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
 
 
 class RefreshRequest(BaseModel):
