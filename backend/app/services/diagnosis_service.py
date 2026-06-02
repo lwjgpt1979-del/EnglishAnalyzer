@@ -21,6 +21,8 @@ from app.schemas.diagnosis import (
     DiagnosisReport,
     ErrorTypeCount,
     KnowledgePointCount,
+    KpDimensionItem,
+    SemesterDimensionItem,
 )
 
 _TOP_N = 10          # error_types / knowledge_points 取前10
@@ -119,6 +121,11 @@ async def get_diagnosis_report(
         if len(top_suggestions) >= _SUGGESTION_N:
             break
 
+    # ── 7. 结构化维度：按知识点 / 按学期（来自 sim_practice_records，M3/D-094）──
+    kp_dimension, semester_dimension = await _aggregate_structured_dimensions(
+        db, student_id=student_id
+    )
+
     return DiagnosisReport(
         total_questions=total_questions,
         total_analyzed=total_analyzed,
@@ -130,4 +137,97 @@ async def get_diagnosis_report(
         difficulty_distribution=difficulty_distribution,
         recent_daily_activity=recent_daily_activity,
         top_suggestions=top_suggestions,
+        kp_dimension=kp_dimension,
+        semester_dimension=semester_dimension,
     )
+
+
+async def _aggregate_structured_dimensions(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+) -> tuple[list[KpDimensionItem], list[SemesterDimensionItem]]:
+    """按知识点 / 按学期聚合练习正确率（数据源：sim_practice_records）。
+
+    - 按知识点：直接按 knowledge_point_id 聚合，弱项（正确率低）在前。
+    - 按学期：经 unit_knowledge_points → curriculum_units 拿到 (grade, semester)；
+      一条作答记录计入其知识点命中的每个学期，同一学期内去重（避免同学期多单元重复计数）。
+    """
+    from app.models.d4_knowledge import (
+        CurriculumUnit,
+        KnowledgePoint,
+        UnitKnowledgePoint,
+    )
+    from app.models.d12_v2_exams import SimPracticeRecord
+
+    recs = (await db.execute(
+        select(SimPracticeRecord.knowledge_point_id, SimPracticeRecord.is_correct)
+        .where(SimPracticeRecord.student_id == student_id)
+    )).all()
+    if not recs:
+        return [], []
+
+    # 按 KP 聚合 [attempts, correct]
+    kp_agg: dict[uuid.UUID, list[int]] = {}
+    for kp_id, ok in recs:
+        slot = kp_agg.setdefault(kp_id, [0, 0])
+        slot[0] += 1
+        if ok:
+            slot[1] += 1
+    kp_ids = list(kp_agg.keys())
+
+    kp_meta: dict[uuid.UUID, tuple[str, str | None]] = {
+        kid: (name, str(cat) if cat is not None else None)
+        for kid, name, cat in (await db.execute(
+            select(KnowledgePoint.id, KnowledgePoint.name, KnowledgePoint.category)
+            .where(KnowledgePoint.id.in_(kp_ids))
+        )).all()
+    }
+
+    kp_dimension = [
+        KpDimensionItem(
+            knowledge_point_id=kid,
+            knowledge_point_name=kp_meta.get(kid, ("未知知识点", None))[0],
+            category=kp_meta.get(kid, (None, None))[1],
+            attempts=attempts,
+            correct=correct,
+            accuracy=round(correct / attempts, 4) if attempts else 0.0,
+        )
+        for kid, (attempts, correct) in kp_agg.items()
+    ]
+    kp_dimension.sort(key=lambda it: (it.accuracy, -it.attempts))  # 弱项在前
+
+    # KP → {(grade, semester)}
+    sem_map: dict[uuid.UUID, set[tuple[str, str]]] = {}
+    for kid, grade, sem in (await db.execute(
+        select(
+            UnitKnowledgePoint.knowledge_point_id,
+            CurriculumUnit.grade,
+            CurriculumUnit.semester,
+        )
+        .join(CurriculumUnit, CurriculumUnit.id == UnitKnowledgePoint.unit_id)
+        .where(UnitKnowledgePoint.knowledge_point_id.in_(kp_ids))
+    )).all():
+        sem_map.setdefault(kid, set()).add((grade, str(sem)))
+
+    sem_agg: dict[tuple[str, str], list[int]] = {}
+    for kp_id, ok in recs:
+        for key in sem_map.get(kp_id, set()):
+            slot = sem_agg.setdefault(key, [0, 0])
+            slot[0] += 1
+            if ok:
+                slot[1] += 1
+
+    semester_dimension = [
+        SemesterDimensionItem(
+            grade=grade,
+            semester=sem,
+            label=f"{grade}{sem}",
+            attempts=attempts,
+            correct=correct,
+            accuracy=round(correct / attempts, 4) if attempts else 0.0,
+        )
+        for (grade, sem), (attempts, correct) in sem_agg.items()
+    ]
+    semester_dimension.sort(key=lambda it: (it.grade, it.semester))
+    return kp_dimension, semester_dimension

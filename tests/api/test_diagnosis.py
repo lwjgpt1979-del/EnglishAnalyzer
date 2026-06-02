@@ -277,3 +277,133 @@ async def test_get_diagnosis_report_api_structure(client: AsyncClient, auth_head
     assert "top_suggestions" in data
     # recent_daily_activity 每条有 date 和 count
     assert all("date" in d and "count" in d for d in data["recent_daily_activity"])
+
+
+# ── M3 学情报告结构化维度（按知识点 / 按学期，D-094）──────────────────────────
+
+from app.schemas.diagnosis import KpDimensionItem, SemesterDimensionItem
+
+
+def test_kp_dimension_item_schema():
+    it = KpDimensionItem(
+        knowledge_point_id=uuid.uuid4(),
+        knowledge_point_name="一般过去时",
+        category="grammar",
+        attempts=4,
+        correct=1,
+        accuracy=0.25,
+    )
+    assert it.accuracy == 0.25
+    assert it.category == "grammar"
+
+
+def test_semester_dimension_item_schema():
+    it = SemesterDimensionItem(
+        grade="七年级", semester="上", label="七年级上",
+        attempts=10, correct=6, accuracy=0.6,
+    )
+    assert it.label == "七年级上"
+
+
+def test_diagnosis_report_dimensions_default_empty():
+    """新维度字段默认空列表，保持向后兼容。"""
+    report = DiagnosisReport(
+        total_questions=0,
+        total_analyzed=0,
+        mastered_count=0,
+        mastery_rate=0.0,
+        top_error_types=[],
+        top_weak_knowledge_points=[],
+        question_type_distribution={},
+        difficulty_distribution={},
+        recent_daily_activity=[],
+        top_suggestions=[],
+    )
+    assert report.kp_dimension == []
+    assert report.semester_dimension == []
+
+
+async def _make_kp_with_unit(db_session, *, accuracy_attempts, student_id):
+    """建 KP + 单元 + 关联，并按 accuracy_attempts=[(is_correct), ...] 写练习记录。"""
+    from app.models.d4_knowledge import (
+        CurriculumUnit, KnowledgePoint, UnitKnowledgePoint,
+    )
+    from app.models.d12_v2_exams import SimPracticeRecord, SimulatedQuestion
+
+    kp = KnowledgePoint(
+        id=uuid.uuid4(),
+        code=f"KP_{uuid.uuid4().hex[:8]}",
+        name="一般过去时",
+        category="grammar",
+        applicable_grades=["七年级"],
+        applicable_textbooks=["人教版"],
+    )
+    db_session.add(kp)
+    unit = CurriculumUnit(
+        id=uuid.uuid4(),
+        textbook_version="人教版",
+        grade="七年级",
+        semester="上",
+        unit_no=1,
+        unit_title="Unit 1",
+    )
+    db_session.add(unit)
+    await db_session.flush()
+    db_session.add(UnitKnowledgePoint(unit_id=unit.id, knowledge_point_id=kp.id))
+    # 一道仿真题（练习记录 FK 需要）
+    sq = SimulatedQuestion(
+        id=uuid.uuid4(),
+        knowledge_point_id=kp.id,
+        question_type="单选",
+        stem="She ___ to school yesterday.",
+        options=["go", "goes", "went", "going"],
+        answer="C",
+        explanation="过去时",
+        difficulty=2,
+        status="published",
+    )
+    db_session.add(sq)
+    await db_session.flush()
+    for ok in accuracy_attempts:
+        db_session.add(SimPracticeRecord(
+            id=uuid.uuid4(),
+            student_id=student_id,
+            simulated_question_id=sq.id,
+            knowledge_point_id=kp.id,
+            is_correct=ok,
+            user_answer="C" if ok else "A",
+        ))
+    await db_session.flush()
+    return kp, unit
+
+
+@pytest.mark.asyncio
+async def test_diagnosis_structured_dimensions_with_data(db_session, test_student):
+    # 4 次作答，1 对 3 错 → accuracy 0.25
+    await _make_kp_with_unit(
+        db_session, accuracy_attempts=[True, False, False, False],
+        student_id=test_student.id,
+    )
+    report = await get_diagnosis_report(db_session, student_id=test_student.id)
+
+    assert len(report.kp_dimension) == 1
+    kp_item = report.kp_dimension[0]
+    assert kp_item.knowledge_point_name == "一般过去时"
+    assert kp_item.attempts == 4
+    assert kp_item.correct == 1
+    assert kp_item.accuracy == 0.25
+
+    assert len(report.semester_dimension) == 1
+    sem_item = report.semester_dimension[0]
+    assert sem_item.label == "七年级上"
+    assert sem_item.attempts == 4
+    assert sem_item.correct == 1
+    assert sem_item.accuracy == 0.25
+
+
+@pytest.mark.asyncio
+async def test_diagnosis_structured_dimensions_empty(db_session, test_student):
+    """无练习记录时两个维度为空。"""
+    report = await get_diagnosis_report(db_session, student_id=test_student.id)
+    assert report.kp_dimension == []
+    assert report.semester_dimension == []

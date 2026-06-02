@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from pydantic import BaseModel, Field
 
 
@@ -22,6 +24,28 @@ class DailyActivity(BaseModel):
 
     date: str = Field(..., description="ISO 日期，如 '2026-05-26'")
     count: int = Field(..., description="当日提交的错题数量，无数据日为0")
+
+
+class KpDimensionItem(BaseModel):
+    """按知识点维度的练习正确率（来自 sim_practice_records，M3 / D-094）。"""
+
+    knowledge_point_id: uuid.UUID
+    knowledge_point_name: str
+    category: str | None = None
+    attempts: int = Field(..., description="该知识点累计作答次数")
+    correct: int = Field(..., description="累计答对次数")
+    accuracy: float = Field(..., ge=0.0, le=1.0, description="正确率，保留 4 位小数")
+
+
+class SemesterDimensionItem(BaseModel):
+    """按学期维度的练习正确率（M3 / D-094）。"""
+
+    grade: str = Field(..., description="年级，如'七年级'")
+    semester: str = Field(..., description="学期：上 / 下")
+    label: str = Field(..., description="展示标签，如'七年级上'")
+    attempts: int = Field(..., description="该学期累计作答次数")
+    correct: int = Field(..., description="累计答对次数")
+    accuracy: float = Field(..., ge=0.0, le=1.0, description="正确率，保留 4 位小数")
 
 
 class DiagnosisReport(BaseModel):
@@ -66,4 +90,12 @@ class DiagnosisReport(BaseModel):
     # ── 综合建议（最近5条不重复 AI 建议）────────────────────────────────────
     top_suggestions: list[str] = Field(
         ..., description="最近5条不重复的 AI 分析建议"
+    )
+
+    # ── M3 结构化维度（练习正确率，来自 sim_practice_records，D-094）──────────
+    kp_dimension: list[KpDimensionItem] = Field(
+        default_factory=list, description="按知识点维度的练习正确率（弱项在前）"
+    )
+    semester_dimension: list[SemesterDimensionItem] = Field(
+        default_factory=list, description="按学期维度的练习正确率"
     )
