@@ -79,3 +79,29 @@ class KPContentOut(BaseModel):
     dimension: str  # listening | dictation | grammar | writing
     content_md: str
     audio_url: str | None = None
+
+
+# ─── 运营审核/编辑（M5）：运营可见完整字段，仅 platform_admin 可访问 ────────────
+
+class AdminContentItem(BaseModel):
+    id: uuid.UUID
+    knowledge_point_id: uuid.UUID
+    dimension: str
+    content_md: str
+    audio_url: str | None = None
+    status: str
+    generated_by: str
+
+
+class AdminContentListOut(BaseModel):
+    total: int
+    items: list[AdminContentItem]
+
+
+class ContentReviewRequest(BaseModel):
+    approve: bool = Field(..., description="true=通过→published，false=驳回→retired")
+
+
+class ContentUpdateRequest(BaseModel):
+    content_md: str | None = Field(None, min_length=1, description="修订后的正文 Markdown")
+    audio_url: str | None = Field(None, description="音频 URL（可选）")

@@ -10,20 +10,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import require_role
 from app.models.d1_users import User
+from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.models.d12_v2_exams import SimulatedQuestion
 from app.schemas.base import BaseResponse, make_ok
+from app.schemas.curriculum import (
+    AdminContentItem,
+    AdminContentListOut,
+    ContentReviewRequest,
+    ContentUpdateRequest,
+)
 from app.schemas.questions import (
     AdminQuestionItem,
     AdminQuestionListOut,
     QuestionReviewRequest,
 )
 from app.schemas.teacher import CertReviewRequest, TeacherProfileOut
-from app.services import question_service, teacher_service
+from app.services import curriculum_service, question_service, teacher_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 AdminDep = Annotated[User, Depends(require_role("platform_admin"))]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+def _to_content_item(r: KnowledgePointContent) -> AdminContentItem:
+    return AdminContentItem(
+        id=r.id,
+        knowledge_point_id=r.knowledge_point_id,
+        dimension=str(r.dimension),
+        content_md=r.content_md,
+        audio_url=r.audio_url,
+        status=str(r.status),
+        generated_by=str(r.generated_by),
+    )
 
 
 def _to_admin_item(r: SimulatedQuestion) -> AdminQuestionItem:
@@ -93,3 +112,53 @@ async def review_question(
     )
     await db.commit()
     return make_ok(_to_admin_item(r))
+
+
+# ─── 知识点内容审核/编辑（M5）────────────────────────────────────────────────
+
+@router.get("/contents", response_model=BaseResponse[AdminContentListOut])
+async def list_contents_for_review(
+    db: DbDep,
+    admin: AdminDep,
+    status: str = "draft",
+    kp_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 20,
+):
+    """运营按状态分页查知识点内容（含正文）。默认看待审草稿。"""
+    rows, total = await curriculum_service.list_contents_for_review(
+        db, status=status, kp_id=kp_id, skip=skip, limit=limit,
+    )
+    return make_ok(AdminContentListOut(
+        total=total, items=[_to_content_item(r) for r in rows],
+    ))
+
+
+@router.post("/contents/{content_id}/review", response_model=BaseResponse[AdminContentItem])
+async def review_content(
+    content_id: uuid.UUID,
+    body: ContentReviewRequest,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """审核一条知识点内容：approve→published，reject→retired。"""
+    r = await curriculum_service.review_content(
+        db, content_id=content_id, approve=body.approve, reviewer_id=admin.id,
+    )
+    await db.commit()
+    return make_ok(_to_content_item(r))
+
+
+@router.put("/contents/{content_id}", response_model=BaseResponse[AdminContentItem])
+async def update_content(
+    content_id: uuid.UUID,
+    body: ContentUpdateRequest,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """编辑知识点内容正文 / 音频 URL（运营人工修订）。"""
+    r = await curriculum_service.update_content(
+        db, content_id=content_id, content_md=body.content_md, audio_url=body.audio_url,
+    )
+    await db.commit()
+    return make_ok(_to_content_item(r))
