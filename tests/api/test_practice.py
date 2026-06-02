@@ -156,14 +156,9 @@ async def test_get_or_create_knowledge_point_is_idempotent(db_session):
 
 @pytest.mark.asyncio
 async def test_generate_practice_questions(db_session, student_user):
-    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=False), \
-         patch("app.services.practice_service.AsyncOpenAI") as MockClient:
-        from unittest.mock import MagicMock
-        inst = MagicMock()
-        MockClient.return_value = inst
-        inst.chat.completions.create = AsyncMock(
-            return_value=_make_mock_response(_MOCK_QUESTIONS_JSON)
-        )
+    with patch("app.services.practice_service.is_llm_dev_mode", return_value=False), \
+         patch("app.services.practice_service.chat_completion",
+               new=AsyncMock(return_value=_make_mock_response(_MOCK_QUESTIONS_JSON))):
         questions = await generate_practice_questions(
             db_session,
             student_id=student_user.id,
@@ -181,7 +176,7 @@ async def test_generate_practice_questions(db_session, student_user):
 
 @pytest.mark.asyncio
 async def test_generate_uses_dev_mock_when_placeholder_key(db_session, student_user):
-    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+    with patch("app.services.practice_service.is_llm_dev_mode", return_value=True):
         questions = await generate_practice_questions(
             db_session,
             student_id=student_user.id,
@@ -212,7 +207,7 @@ async def test_generate_no_knowledge_point_no_diagnosis_raises(db_session, stude
 
 @pytest.mark.asyncio
 async def test_get_question(db_session, student_user):
-    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+    with patch("app.services.practice_service.is_llm_dev_mode", return_value=True):
         questions = await generate_practice_questions(
             db_session, student_id=student_user.id,
             knowledge_point="时态", count=1, difficulty=2,
@@ -225,14 +220,9 @@ async def test_get_question(db_session, student_user):
 
 @pytest.mark.asyncio
 async def test_submit_answer_correct(db_session, student_user):
-    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=False), \
-         patch("app.services.practice_service.AsyncOpenAI") as MockClient:
-        from unittest.mock import MagicMock
-        inst = MagicMock()
-        MockClient.return_value = inst
-        inst.chat.completions.create = AsyncMock(
-            return_value=_make_mock_response(_MOCK_QUESTIONS_JSON)
-        )
+    with patch("app.services.practice_service.is_llm_dev_mode", return_value=False), \
+         patch("app.services.practice_service.chat_completion",
+               new=AsyncMock(return_value=_make_mock_response(_MOCK_QUESTIONS_JSON))):
         questions = await generate_practice_questions(
             db_session, student_id=student_user.id,
             knowledge_point="一般现在时", count=3, difficulty=2,
@@ -253,14 +243,9 @@ async def test_submit_answer_correct(db_session, student_user):
 
 @pytest.mark.asyncio
 async def test_submit_answer_wrong(db_session, student_user):
-    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=False), \
-         patch("app.services.practice_service.AsyncOpenAI") as MockClient:
-        from unittest.mock import MagicMock
-        inst = MagicMock()
-        MockClient.return_value = inst
-        inst.chat.completions.create = AsyncMock(
-            return_value=_make_mock_response(_MOCK_QUESTIONS_JSON)
-        )
+    with patch("app.services.practice_service.is_llm_dev_mode", return_value=False), \
+         patch("app.services.practice_service.chat_completion",
+               new=AsyncMock(return_value=_make_mock_response(_MOCK_QUESTIONS_JSON))):
         questions = await generate_practice_questions(
             db_session, student_id=student_user.id,
             knowledge_point="一般现在时", count=3, difficulty=2,
@@ -286,7 +271,7 @@ async def test_submit_answer_question_not_found_raises(db_session, student_user)
 
 @pytest.mark.asyncio
 async def test_get_practice_history(db_session, student_user):
-    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+    with patch("app.services.practice_service.is_llm_dev_mode", return_value=True):
         questions = await generate_practice_questions(
             db_session, student_id=student_user.id,
             knowledge_point="时态", count=2, difficulty=2,
@@ -307,7 +292,7 @@ async def test_get_practice_history(db_session, student_user):
 
 @pytest.mark.asyncio
 async def test_get_practice_stats(db_session, student_user):
-    with patch("app.services.practice_service._is_deepseek_dev_mode", return_value=True):
+    with patch("app.services.practice_service.is_llm_dev_mode", return_value=True):
         questions = await generate_practice_questions(
             db_session, student_id=student_user.id,
             knowledge_point="主谓一致", count=2, difficulty=2,

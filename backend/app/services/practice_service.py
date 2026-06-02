@@ -21,15 +21,14 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from openai import AsyncOpenAI
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.exceptions import AppError
 from app.models.d4_knowledge import KnowledgePoint
 from app.models.d6_ai_questions import AiQuestion, PracticeRecord
 from app.services import diagnosis_service
+from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _SYSTEM_PROMPT = (
     "你是专业的英语出题老师，擅长围绕指定知识点生成高质量单选练习题。"
@@ -51,8 +50,6 @@ _USER_PROMPT_TEMPLATE = """请围绕英语知识点"{knowledge_point}"，生成 
 ]"""
 
 
-def _is_deepseek_dev_mode() -> bool:
-    return settings.deepseek_api_key.startswith("sk-placeholder")
 
 
 def _slugify_code(name: str) -> str:
@@ -142,24 +139,17 @@ async def generate_practice_questions(
 
     kp = await get_or_create_knowledge_point(db, name=kp_name)
 
-    if _is_deepseek_dev_mode():
+    if is_llm_dev_mode():
         raw_questions = _dev_mock_questions(kp_name, count)
     else:
         prompt = _USER_PROMPT_TEMPLATE.format(
             knowledge_point=kp_name, count=count, difficulty=difficulty
         )
         try:
-            client = AsyncOpenAI(
-                api_key=settings.deepseek_api_key,
-                base_url="https://api.deepseek.com",
-            )
-            response = await client.chat.completions.create(
-                model="deepseek-chat",
+            response = await chat_completion(
+                system_prompt=_SYSTEM_PROMPT,
+                user_prompt=prompt,
                 max_tokens=2048,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
             )
         except Exception as exc:  # noqa: BLE001
             raise AppError(code=502, message=f"AI出题服务暂时不可用，请稍后重试（{exc}）") from exc

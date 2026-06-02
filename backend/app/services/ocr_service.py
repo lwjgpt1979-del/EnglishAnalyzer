@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Protocol
 
 from app.core.config import settings
 
@@ -102,44 +103,78 @@ async def _tencent_handwriting(image_url: str) -> str:
     return await asyncio.to_thread(_tencent_handwriting_sync, image_url)
 
 
+# ── Provider 抽象 ─────────────────────────────────────────────────────────────
+
+
+class OcrProvider(Protocol):
+    """OCR 提供方接口。换厂商只需实现本协议并在 get_ocr_provider() 返回新实例。"""
+
+    async def recognize(self, image_url: str) -> OcrResult:
+        """对单张图片做 OCR，返回印刷体 + 手写体识别结果。"""
+        ...
+
+
+class DualEngineOcrProvider:
+    """默认实现：阿里云印刷体 + 腾讯云手写体双引擎并行识别。
+
+    Dev 模式（access_key 以 'placeholder' 开头）跳过真实 API 返回 mock 文字。
+    任一路命中 placeholder 即对该路用 mock，另一路仍走真实 API。
+    """
+
+    async def recognize(self, image_url: str) -> OcrResult:
+        if _is_aliyun_dev_mode() and _is_tencent_ocr_dev_mode():
+            # 两路均为 placeholder → 完整 dev mock
+            return OcrResult(
+                printed_text=_MOCK_PRINTED,
+                handwritten_text=_MOCK_HANDWRITTEN,
+            )
+
+        # 至少一路为真实 API — 用 _noop() 作占位，保证 gather 两槽类型一致 (str)
+        async def _noop() -> str:
+            return ""
+
+        printed_coro = _noop() if _is_aliyun_dev_mode() else _aliyun_recognize(image_url)
+        handwritten_coro = (
+            _noop() if _is_tencent_ocr_dev_mode() else _tencent_handwriting(image_url)
+        )
+
+        printed_result, handwritten_result = await asyncio.gather(
+            printed_coro, handwritten_coro, return_exceptions=True
+        )
+
+        if isinstance(printed_result, Exception):
+            _log.error("Aliyun OCR failed: %s", printed_result, exc_info=printed_result)
+            printed_result = ""
+        if isinstance(handwritten_result, Exception):
+            _log.error("Tencent OCR failed: %s", handwritten_result, exc_info=handwritten_result)
+            handwritten_result = ""
+
+        printed_text = _MOCK_PRINTED if _is_aliyun_dev_mode() else printed_result
+        handwritten_text = (
+            _MOCK_HANDWRITTEN if _is_tencent_ocr_dev_mode() else handwritten_result
+        )
+
+        return OcrResult(
+            printed_text=printed_text,
+            handwritten_text=handwritten_text,
+        )
+
+
 # ── 公开接口 ──────────────────────────────────────────────────────────────────
+
+# 模块级单例：换厂商时改这里返回的实例即可，run_ocr 与所有调用方零改动。
+_provider: OcrProvider = DualEngineOcrProvider()
+
+
+def get_ocr_provider() -> OcrProvider:
+    """返回当前 OCR provider。换厂商：实现新的 OcrProvider 并替换此处。"""
+    return _provider
 
 
 async def run_ocr(image_url: str) -> OcrResult:
-    """并行执行两路 OCR，返回 OcrResult。
+    """并行执行 OCR，返回 OcrResult（委托给当前 provider）。
 
-    Dev 模式：跳过真实 API，返回 mock 文字（用于本地测试）。
-    Prod 模式：两路并行 asyncio.gather()，节省等待时间。
+    保持稳定的公开接口：调用方（user_paper_service / ocr.py 等）只依赖此函数，
+    底层厂商切换对它们完全透明。
     """
-    if _is_aliyun_dev_mode() and _is_tencent_ocr_dev_mode():
-        # 两路均为 placeholder → 完整 dev mock
-        return OcrResult(
-            printed_text=_MOCK_PRINTED,
-            handwritten_text=_MOCK_HANDWRITTEN,
-        )
-
-    # 至少一路为真实 API — 用 _noop() 作占位，保证 gather 两槽类型一致 (str)
-    async def _noop() -> str:
-        return ""
-
-    printed_coro = _noop() if _is_aliyun_dev_mode() else _aliyun_recognize(image_url)
-    handwritten_coro = _noop() if _is_tencent_ocr_dev_mode() else _tencent_handwriting(image_url)
-
-    printed_result, handwritten_result = await asyncio.gather(
-        printed_coro, handwritten_coro, return_exceptions=True
-    )
-
-    if isinstance(printed_result, Exception):
-        _log.error("Aliyun OCR failed: %s", printed_result, exc_info=printed_result)
-        printed_result = ""
-    if isinstance(handwritten_result, Exception):
-        _log.error("Tencent OCR failed: %s", handwritten_result, exc_info=handwritten_result)
-        handwritten_result = ""
-
-    printed_text = _MOCK_PRINTED if _is_aliyun_dev_mode() else printed_result
-    handwritten_text = _MOCK_HANDWRITTEN if _is_tencent_ocr_dev_mode() else handwritten_result
-
-    return OcrResult(
-        printed_text=printed_text,
-        handwritten_text=handwritten_text,
-    )
+    return await get_ocr_provider().recognize(image_url)

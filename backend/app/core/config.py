@@ -26,8 +26,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 120   # 2 小时
     refresh_token_expire_days: int = 30
 
-    # AI 分析（DeepSeek，OpenAI 兼容协议）
-    deepseek_api_key: str = "sk-placeholder-for-dev"
+    # AI 大模型（默认 DeepSeek，OpenAI 兼容协议）
+    # 换厂商只需改 llm_base_url + llm_model + 对应 api_key，业务 service 零改动。
+    deepseek_api_key: str = "sk-placeholder-for-dev"  # LLM api key（dev 以 sk-placeholder 开头触发 mock）
+    llm_base_url: str = "https://api.deepseek.com"     # OpenAI 兼容 endpoint
+    llm_model: str = "deepseek-chat"                   # 模型名
 
     # 微信支付 v3
     wechat_pay_mch_id: str = "placeholder_mch_id"

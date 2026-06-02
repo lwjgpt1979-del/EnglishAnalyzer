@@ -12,10 +12,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from openai import AsyncOpenAI
-
-from app.core.config import settings
 from app.core.exceptions import AppError
+from app.services.llm_provider import chat_completion, is_llm_dev_mode
 from app.services.ocr_service import OcrResult
 
 # 与 ai_question_type_enum 对齐
@@ -59,10 +57,6 @@ _USER_PROMPT_TEMPLATE = """以下是从一整张英语试卷图片中识别到�
 }}
 
 要求：按题号顺序输出；识别不到任何题目时返回空数组 []。"""
-
-
-def _is_deepseek_dev_mode() -> bool:
-    return settings.deepseek_api_key.startswith("sk-placeholder")
 
 
 def _normalize_type(raw: object) -> str:
@@ -137,7 +131,7 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     - API 错误 → AppError(502, "整卷拆题服务暂时不可用")
     - JSON 解析失败 / 非数组 → AppError(500, "整卷拆题返回格式异常")
     """
-    if _is_deepseek_dev_mode():
+    if is_llm_dev_mode():
         return _dev_mock_split(ocr)
 
     if not (ocr.printed_text or "").strip():
@@ -149,17 +143,11 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     )
 
     try:
-        client = AsyncOpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url="https://api.deepseek.com",
-        )
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
-            max_tokens=4096,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
+        # 整卷可能含多道题，需较大输出预算（与课程/生题 service 对齐为 8192）
+        response = await chat_completion(
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=prompt,
+            max_tokens=8192,
         )
     except Exception as exc:
         raise AppError(code=502, message=f"整卷拆题服务暂时不可用（{exc}）") from exc

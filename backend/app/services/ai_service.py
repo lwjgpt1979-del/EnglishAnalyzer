@@ -1,6 +1,6 @@
 """AI 分析服务：调用 DeepSeek API（OpenAI 兼容协议）生成英语错题诊断报告。
 
-- 使用 AsyncOpenAI client，base_url 指向 https://api.deepseek.com。
+- 通过 llm_provider.chat_completion 统一调用 LLM（厂商配置集中在 llm_provider）。
 - LLM 返回 JSON 字符串，解析后写入 ai_analyses 表。
 - 调用方需 await db.commit() 才真正落库。
 """
@@ -9,12 +9,11 @@ from __future__ import annotations
 import json
 import uuid
 
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.exceptions import AppError
 from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
+from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _SYSTEM_PROMPT = (
     "你是一个专业的英语教学诊断助手，擅长分析英语错题并给出结构化诊断报告。"
@@ -38,10 +37,6 @@ _USER_PROMPT_TEMPLATE = """请分析以下英语错题，给出诊断报告。
 }}"""
 
 
-def _is_deepseek_dev_mode() -> bool:
-    return settings.deepseek_api_key.startswith("sk-placeholder")
-
-
 async def analyze_wrong_question(
     db: AsyncSession,
     *,
@@ -57,7 +52,7 @@ async def analyze_wrong_question(
     - DeepSeek API 错误 → AppError(502, "AI服务暂时不可用，请稍后重试")
     - JSON 解析失败   → AppError(500, "AI分析返回格式异常")
     """
-    if _is_deepseek_dev_mode():
+    if is_llm_dev_mode():
         # Dev mock：返回固定诊断结果
         analysis = AiAnalysis(
             id=uuid.uuid4(),
@@ -89,17 +84,10 @@ async def analyze_wrong_question(
     )
 
     try:
-        client = AsyncOpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url="https://api.deepseek.com",
-        )
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
+        response = await chat_completion(
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=prompt,
             max_tokens=1024,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
         )
     except Exception as exc:
         raise AppError(code=502, message=f"AI服务暂时不可用，请稍后重试（{exc}）") from exc

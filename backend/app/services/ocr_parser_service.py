@@ -8,10 +8,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from openai import AsyncOpenAI
-
-from app.core.config import settings
 from app.core.exceptions import AppError
+from app.services.llm_provider import chat_completion, is_llm_dev_mode
 from app.services.ocr_service import OcrResult
 
 
@@ -49,10 +47,6 @@ _USER_PROMPT_TEMPLATE = """以下是从英语试卷图片中识别到的文字�
 若无法判断某字段，设为 null。"""
 
 
-def _is_deepseek_dev_mode() -> bool:
-    return settings.deepseek_api_key.startswith("sk-placeholder")
-
-
 async def parse_ocr_result(ocr_result: OcrResult) -> ParsedQuestion:
     """将 OCR 原始文字送入 DeepSeek，返回结构化 ParsedQuestion。
 
@@ -63,7 +57,7 @@ async def parse_ocr_result(ocr_result: OcrResult) -> ParsedQuestion:
     - API 错误 → AppError(502, "OCR解析服务暂时不可用")
     - JSON 解析失败 → AppError(500, "OCR解析返回格式异常")
     """
-    if _is_deepseek_dev_mode():
+    if is_llm_dev_mode():
         # Dev mock：直接返回从 OCR mock 文字解析的固定结果
         return ParsedQuestion(
             question_text=ocr_result.printed_text or None,
@@ -78,17 +72,10 @@ async def parse_ocr_result(ocr_result: OcrResult) -> ParsedQuestion:
     )
 
     try:
-        client = AsyncOpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url="https://api.deepseek.com",
-        )
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
+        response = await chat_completion(
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=prompt,
             max_tokens=1024,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
         )
     except Exception as exc:
         raise AppError(code=502, message=f"OCR解析服务暂时不可用（{exc}）") from exc

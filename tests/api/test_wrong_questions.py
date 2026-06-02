@@ -302,11 +302,9 @@ async def test_analyze_wrong_question_service(db_session, test_student):
     mock_response.usage.prompt_tokens = 200
     mock_response.usage.completion_tokens = 80
 
-    with patch("app.services.ai_service._is_deepseek_dev_mode", return_value=False), \
-         patch("app.services.ai_service.AsyncOpenAI") as MockClient:
-        mock_instance = MagicMock()
-        MockClient.return_value = mock_instance
-        mock_instance.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("app.services.ai_service.is_llm_dev_mode", return_value=False), \
+         patch("app.services.ai_service.chat_completion",
+               new=AsyncMock(return_value=mock_response)):
 
         analysis = await analyze_wrong_question(
             db_session, wq=wq, student_id=test_student.id
@@ -348,11 +346,9 @@ async def test_analyze_endpoint(client: AsyncClient, auth_headers):
     mock_response.usage.prompt_tokens = 150
     mock_response.usage.completion_tokens = 60
 
-    with patch("app.services.ai_service._is_deepseek_dev_mode", return_value=False), \
-         patch("app.services.ai_service.AsyncOpenAI") as MockClient:
-        mock_instance = MagicMock()
-        MockClient.return_value = mock_instance
-        mock_instance.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("app.services.ai_service.is_llm_dev_mode", return_value=False), \
+         patch("app.services.ai_service.chat_completion",
+               new=AsyncMock(return_value=mock_response)):
 
         resp = await client.post(
             f"/api/v1/wrong-questions/{wq_id}/analyze", headers=auth_headers
@@ -403,11 +399,9 @@ async def test_list_analyses_endpoint(client: AsyncClient, auth_headers):
     mock_response.usage.prompt_tokens = 100
     mock_response.usage.completion_tokens = 50
 
-    with patch("app.services.ai_service._is_deepseek_dev_mode", return_value=False), \
-         patch("app.services.ai_service.AsyncOpenAI") as MockClient:
-        mock_instance = MagicMock()
-        MockClient.return_value = mock_instance
-        mock_instance.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("app.services.ai_service.is_llm_dev_mode", return_value=False), \
+         patch("app.services.ai_service.chat_completion",
+               new=AsyncMock(return_value=mock_response)):
         for _ in range(2):
             await client.post(
                 f"/api/v1/wrong-questions/{wq_id}/analyze", headers=auth_headers

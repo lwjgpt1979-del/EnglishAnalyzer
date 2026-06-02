@@ -11,11 +11,9 @@ from __future__ import annotations
 
 import json
 
-from openai import AsyncOpenAI
-
-from app.core.config import settings
 from app.core.exceptions import AppError
 from app.schemas.questions import AIGeneratedQuestion
+from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _SYSTEM_PROMPT = (
     "你是中国中小学英语命题老师，按知识点和指定维度出仿真题。"
@@ -103,10 +101,6 @@ _PROMPT_BY_DIMENSION = {
     "dictation": _DICTATION_PROMPT,
     "writing": _WRITING_PROMPT,
 }
-
-
-def _is_deepseek_dev_mode() -> bool:
-    return settings.deepseek_api_key.startswith("sk-placeholder")
 
 
 # ─── dev-mock 题集（按维度）────────────────────────────────────────────────
@@ -206,7 +200,7 @@ async def generate_questions(
     count: int = 5,
 ) -> list[AIGeneratedQuestion]:
     """为 1 个 KP 的指定维度生成 count 道仿真题。"""
-    if _is_deepseek_dev_mode():
+    if is_llm_dev_mode():
         return _make_mock_questions(kp_name, dimension, count)
 
     template = _PROMPT_BY_DIMENSION.get(dimension, _GRAMMAR_PROMPT)
@@ -218,17 +212,10 @@ async def generate_questions(
     )
 
     try:
-        client = AsyncOpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url="https://api.deepseek.com",
-        )
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
+        response = await chat_completion(
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=prompt,
             max_tokens=8192,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
         )
     except Exception as exc:
         raise AppError(code=502, message=f"AI 生题失败：{exc}") from exc

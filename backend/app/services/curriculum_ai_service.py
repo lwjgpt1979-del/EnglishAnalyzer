@@ -8,11 +8,9 @@ from __future__ import annotations
 
 import json
 
-from openai import AsyncOpenAI
-
-from app.core.config import settings
 from app.core.exceptions import AppError
 from app.schemas.curriculum import AIGeneratedUnit
+from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _SYSTEM_PROMPT = (
     "你是资深英语教材编辑，擅长按教材大纲为每个单元拆解知识点并生成教学解读。"
@@ -65,10 +63,6 @@ _USER_PROMPT_TEMPLATE = """请为以下教材单元生成完整教学内容。
     }}
   ]
 }}"""
-
-
-def _is_deepseek_dev_mode() -> bool:
-    return settings.deepseek_api_key.startswith("sk-placeholder")
 
 
 def _make_mock_unit(
@@ -145,7 +139,7 @@ async def generate_unit(
     unit_no: int,
 ) -> AIGeneratedUnit:
     """生成 1 个单元的完整结构化内容。dev mock 或真实 DeepSeek 调用。"""
-    if _is_deepseek_dev_mode():
+    if is_llm_dev_mode():
         return _make_mock_unit(textbook_version, grade, semester, unit_no)
 
     grade_short = "5" if "5" in grade else "7"
@@ -160,18 +154,11 @@ async def generate_unit(
     )
 
     try:
-        client = AsyncOpenAI(
-            api_key=settings.deepseek_api_key,
-            base_url="https://api.deepseek.com",
-        )
-        response = await client.chat.completions.create(
-            model="deepseek-chat",
+        response = await chat_completion(
+            system_prompt=_SYSTEM_PROMPT,
+            user_prompt=prompt,
             max_tokens=8192,
             response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
         )
     except Exception as exc:
         raise AppError(code=502, message=f"AI 课程生成失败：{exc}") from exc
