@@ -14,6 +14,7 @@ from app.models.d1_users import User
 from app.schemas.auth import AdminLoginRequest, TokenResponse
 from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.models.d12_v2_exams import SimulatedQuestion
+from app.schemas.admin import AdminOverviewOut
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.curriculum import (
     AdminContentItem,
@@ -30,6 +31,7 @@ from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.teacher import CertReviewRequest, TeacherProfileOut
 from app.services import (
     admin_auth_service,
+    admin_stats_service,
     curriculum_service,
     pricing_service,
     question_service,
@@ -55,6 +57,14 @@ async def admin_login(body: AdminLoginRequest, db: DbDep):
         access_token=create_access_token(str(user.id), str(user.role)),
         refresh_token=create_refresh_token(str(user.id)),
     ))
+
+
+# ─── 数据大盘概览（M5 / D-099）──────────────────────────────────────────────
+
+@router.get("/overview", response_model=BaseResponse[AdminOverviewOut])
+async def get_overview(db: DbDep, admin: AdminDep):
+    """运营概览：仿真题/内容各状态计数 + 用户数 + 已支付订单数。"""
+    return make_ok(await admin_stats_service.get_overview(db))
 
 
 def _to_content_item(r: KnowledgePointContent) -> AdminContentItem:

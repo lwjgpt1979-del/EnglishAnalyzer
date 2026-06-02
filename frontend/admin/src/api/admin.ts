@@ -4,9 +4,15 @@ import type {
   AdminQuestionItem,
   AdminContentListOut,
   AdminContentItem,
+  AdminOverview,
   SemesterPricing,
   ReviewStatus,
 } from '../types'
+
+// ── 数据大盘 ────────────────────────────────────────────────
+export function getOverview() {
+  return unwrap<AdminOverview>(request.get('/admin/overview'))
+}
 
 // ── 仿真题审核 ──────────────────────────────────────────────
 export function listQuestions(params: {

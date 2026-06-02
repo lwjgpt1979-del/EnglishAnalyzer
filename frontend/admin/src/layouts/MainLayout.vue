@@ -17,10 +17,17 @@ function onLogout() {
 
 <template>
   <el-container style="height: 100vh">
-    <el-aside width="200px" style="background: #001529">
+    <el-aside width="200px" class="aside">
       <div class="logo">engGramer 运营</div>
-      <el-menu :default-active="active" router background-color="#001529"
-               text-color="#rgba(255,255,255,.75)" active-text-color="#fff">
+      <el-menu
+        :default-active="active"
+        router
+        class="side-menu"
+        background-color="#001529"
+        text-color="rgba(255,255,255,0.75)"
+        active-text-color="#ffffff"
+      >
+        <el-menu-item index="/overview">数据大盘</el-menu-item>
         <el-menu-item index="/questions">仿真题审核</el-menu-item>
         <el-menu-item index="/contents">知识点内容</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
@@ -39,7 +46,9 @@ function onLogout() {
 </template>
 
 <style scoped>
+.aside { background: #001529; overflow: hidden; }
 .logo { color: #fff; font-weight: 700; text-align: center; padding: 18px 0; font-size: 16px; }
+.side-menu { width: 100%; border-right: none; }
 .header { display: flex; align-items: center; background: #fff; border-bottom: 1px solid #eee; }
 .spacer { flex: 1; }
 </style>

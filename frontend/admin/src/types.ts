@@ -52,3 +52,11 @@ export interface SemesterPricing {
 }
 
 export type ReviewStatus = 'draft' | 'reviewing' | 'published' | 'retired'
+
+// 数据大盘概览
+export interface AdminOverview {
+  questions_by_status: Record<ReviewStatus, number>
+  contents_by_status: Record<ReviewStatus, number>
+  total_users: number
+  paid_orders: number
+}
