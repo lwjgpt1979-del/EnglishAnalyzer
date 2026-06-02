@@ -28,13 +28,17 @@ request.interceptors.response.use(
   },
   (error) => {
     const status = error?.response?.status
-    if (status === 401) {
+    const url: string = error?.config?.url || ''
+    const serverMsg = error?.response?.data?.message
+    const isLoginReq = url.includes('/admin/auth/login')
+    if (status === 401 && !isLoginReq) {
+      // 已登录态的请求被拒 → 会话过期，清 token 跳登录
       localStorage.removeItem('admin_token')
       if (location.hash !== '#/login') location.hash = '#/login'
       ElMessage.error('登录已过期，请重新登录')
     } else {
-      const msg = error?.response?.data?.message || error.message || '网络错误'
-      ElMessage.error(msg)
+      // 登录失败 或 其它错误 → 展示后端真实信息（如"用户名或密码错误"）
+      ElMessage.error(serverMsg || error.message || '网络错误')
     }
     return Promise.reject(error)
   },
