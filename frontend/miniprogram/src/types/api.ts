@@ -103,6 +103,26 @@ export interface DailyActivity {
   count: number
 }
 
+// 按知识点维度的练习正确率（来自 sim_practice_records，M3 / D-094）
+export interface KpDimensionItem {
+  knowledge_point_id: string
+  knowledge_point_name: string
+  category: string | null
+  attempts: number
+  correct: number
+  accuracy: number
+}
+
+// 按学期维度的练习正确率（M3 / D-094）
+export interface SemesterDimensionItem {
+  grade: string
+  semester: string
+  label: string
+  attempts: number
+  correct: number
+  accuracy: number
+}
+
 export interface DiagnosisReport {
   total_questions: number
   total_analyzed: number
@@ -114,6 +134,8 @@ export interface DiagnosisReport {
   difficulty_distribution: Record<string, number>
   recent_daily_activity: DailyActivity[]
   top_suggestions: string[]
+  kp_dimension: KpDimensionItem[]
+  semester_dimension: SemesterDimensionItem[]
 }
 
 // ── Membership ───────────────────────────────────────────────────────────────

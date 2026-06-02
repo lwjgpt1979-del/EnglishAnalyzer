@@ -107,6 +107,52 @@
         <text class="acc-hint">弱项（正确率低）排在前面，建议优先练习</text>
       </view>
 
+      <!-- 按学期掌握情况（M3 / D-094，来自练习作答记录） -->
+      <view class="card" v-if="report.semester_dimension.length > 0">
+        <view class="card-title">按学期掌握情况</view>
+        <view
+          v-for="sem in report.semester_dimension"
+          :key="sem.label"
+          class="bar-item"
+        >
+          <text class="bar-label">{{ sem.label }}</text>
+          <view class="bar-track">
+            <view
+              class="bar-fill"
+              :class="accClass(sem.accuracy)"
+              :style="{ width: Math.round(sem.accuracy * 100) + '%' }"
+            />
+          </view>
+          <text class="bar-count">{{ (sem.accuracy * 100).toFixed(0) }}%</text>
+        </view>
+        <text class="acc-hint">基于各学期知识点练习作答统计</text>
+      </view>
+
+      <!-- 按知识点掌握情况（M3 / D-094，弱项高亮） -->
+      <view class="card" v-if="report.kp_dimension.length > 0">
+        <view class="card-title">按知识点掌握情况</view>
+        <view
+          v-for="kp in report.kp_dimension.slice(0, 10)"
+          :key="kp.knowledge_point_id"
+          class="kpdim-item"
+          :class="{ 'kpdim-weak': kp.accuracy < 0.6 }"
+        >
+          <view class="kpdim-head">
+            <text class="kpdim-name">{{ kp.knowledge_point_name }}</text>
+            <text class="kpdim-acc" :class="accClass(kp.accuracy)">{{ (kp.accuracy * 100).toFixed(0) }}%</text>
+          </view>
+          <view class="bar-track">
+            <view
+              class="bar-fill"
+              :class="accClass(kp.accuracy)"
+              :style="{ width: Math.round(kp.accuracy * 100) + '%' }"
+            />
+          </view>
+          <text class="kpdim-sub">作答 {{ kp.attempts }} 次 · 答对 {{ kp.correct }} 次</text>
+        </view>
+        <text class="acc-hint">弱项（正确率低于 60%）已高亮，建议优先攻克</text>
+      </view>
+
       <!-- 模拟考成绩趋势 + 历史 -->
       <view class="card" v-if="examHistory && examHistory.items.length > 0">
         <view class="card-title">模拟考成绩趋势</view>
@@ -300,6 +346,17 @@ function activityClass(count: number): string {
 .bar-fill.acc-low { background: var(--c-danger); }
 .bar-fill.acc-mid { background: var(--c-gold); }
 .bar-fill.acc-high { background: #2ecc71; }
+
+/* 按知识点掌握情况（D-094） */
+.kpdim-item { margin-bottom: 20rpx; padding: 16rpx; border-radius: var(--r-md); background: var(--c-bg-soft); }
+.kpdim-item.kpdim-weak { background: #fdecea; }
+.kpdim-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10rpx; }
+.kpdim-name { font-size: 26rpx; font-weight: 600; color: var(--c-ink); }
+.kpdim-acc { font-size: 28rpx; font-weight: 700; }
+.kpdim-acc.acc-low { color: var(--c-danger); }
+.kpdim-acc.acc-mid { color: var(--c-gold); }
+.kpdim-acc.acc-high { color: #2ecc71; }
+.kpdim-sub { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
 
 /* 我的班级排名 */
 .rank-card { }
