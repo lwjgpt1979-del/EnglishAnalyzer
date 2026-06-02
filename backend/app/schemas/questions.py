@@ -32,6 +32,30 @@ class SimQuestionOut(BaseModel):
     difficulty: int
 
 
+# ─── 运营审核（M5）：运营可见完整字段（含 answer），仅 platform_admin 可访问 ──
+
+class AdminQuestionItem(BaseModel):
+    id: uuid.UUID
+    knowledge_point_id: uuid.UUID
+    question_type: str
+    stem: str
+    options: list[str] | None = None
+    answer: str
+    explanation: str | None = None
+    difficulty: int
+    dimension: str | None = None
+    status: str
+
+
+class AdminQuestionListOut(BaseModel):
+    total: int
+    items: list[AdminQuestionItem]
+
+
+class QuestionReviewRequest(BaseModel):
+    approve: bool = Field(..., description="true=通过→published，false=驳回→retired")
+
+
 class PracticeAttemptIn(BaseModel):
     question_id: uuid.UUID
     user_answer: str = Field(..., min_length=1, max_length=500)
