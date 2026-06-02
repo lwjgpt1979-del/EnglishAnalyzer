@@ -280,3 +280,94 @@ async def test_persist_unit_content_defaults_draft(client):
         )).scalars().all()
         assert rows and all(str(r.status) == "draft" for r in rows)
         await s.rollback()
+
+
+async def _seed_draft_content() -> tuple[uuid.UUID, uuid.UUID]:
+    """建 1 个 KP + 1 条 draft 内容，返回 (kp_id, content_id)。"""
+    from app.models.d4_knowledge import KnowledgePoint
+    from app.models.d11_v2_curriculum import KnowledgePointContent
+    async with _async_session_factory() as s:
+        kp = KnowledgePoint(
+            id=uuid.uuid4(), code=f"rev-{uuid.uuid4().hex[:6]}", name="审核内容KP",
+            category="grammar", description="d",
+            applicable_grades=["小学5年级"], applicable_textbooks=["译林版"],
+        )
+        s.add(kp)
+        await s.flush()
+        c = KnowledgePointContent(
+            id=uuid.uuid4(), knowledge_point_id=kp.id, dimension="grammar",
+            content_md="待审草稿正文", status="draft", generated_by="ai_full",
+        )
+        s.add(c)
+        await s.commit()
+        return kp.id, c.id
+
+
+@pytest.mark.asyncio
+async def test_list_contents_for_review_filters_status(client):
+    kp_id, _ = await _seed_draft_content()
+    async with _async_session_factory() as s:
+        rows, total = await curriculum_service.list_contents_for_review(
+            s, status="draft", kp_id=kp_id,
+        )
+        assert total == 1 and len(rows) == 1
+        rows_pub, total_pub = await curriculum_service.list_contents_for_review(
+            s, status="published", kp_id=kp_id,
+        )
+        assert total_pub == 0 and rows_pub == []
+
+
+async def _make_reviewer() -> uuid.UUID:
+    from app.services.auth_service import upsert_user
+    async with _async_session_factory() as s:
+        u = await upsert_user(s, openid=f"rev_user_{uuid.uuid4().hex[:6]}")
+        await s.commit()
+        return u.id
+
+
+@pytest.mark.asyncio
+async def test_review_content_approve_publishes(client):
+    _, cid = await _seed_draft_content()
+    reviewer = await _make_reviewer()
+    async with _async_session_factory() as s:
+        c = await curriculum_service.review_content(
+            s, content_id=cid, approve=True, reviewer_id=reviewer,
+        )
+        assert str(c.status) == "published"
+        assert c.reviewed_by == reviewer
+        assert c.reviewed_at is not None
+        await s.rollback()
+
+
+@pytest.mark.asyncio
+async def test_review_content_reject_retires(client):
+    _, cid = await _seed_draft_content()
+    reviewer = await _make_reviewer()
+    async with _async_session_factory() as s:
+        c = await curriculum_service.review_content(
+            s, content_id=cid, approve=False, reviewer_id=reviewer,
+        )
+        assert str(c.status) == "retired"
+        await s.rollback()
+
+
+@pytest.mark.asyncio
+async def test_update_content_edits_body(client):
+    _, cid = await _seed_draft_content()
+    async with _async_session_factory() as s:
+        c = await curriculum_service.update_content(
+            s, content_id=cid, content_md="人工修订后的正文",
+        )
+        assert c.content_md == "人工修订后的正文"
+        assert str(c.generated_by) == "ai_with_human_review"
+        await s.rollback()
+
+
+@pytest.mark.asyncio
+async def test_review_content_missing_raises(client):
+    from app.core.exceptions import AppError
+    async with _async_session_factory() as s:
+        with pytest.raises(AppError):
+            await curriculum_service.review_content(
+                s, content_id=uuid.uuid4(), approve=True, reviewer_id=uuid.uuid4(),
+            )

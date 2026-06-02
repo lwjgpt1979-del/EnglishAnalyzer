@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from datetime import datetime, timezone
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
@@ -314,3 +316,71 @@ async def get_kp_contents(
         content_md=c.content_md,
         audio_url=c.audio_url,
     ) for c in contents]
+
+
+# ─── 运营审核/编辑（M5）────────────────────────────────────────────────────────
+
+async def list_contents_for_review(
+    db: AsyncSession,
+    *,
+    status: str = "draft",
+    kp_id: uuid.UUID | None = None,
+    skip: int = 0,
+    limit: int = 20,
+) -> tuple[list[KnowledgePointContent], int]:
+    """运营按状态分页查知识点内容（返回完整 ORM 行）。"""
+    base = select(KnowledgePointContent).where(KnowledgePointContent.status == status)
+    if kp_id is not None:
+        base = base.where(KnowledgePointContent.knowledge_point_id == kp_id)
+    total: int = (await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one()
+    rows = (await db.execute(
+        base.order_by(KnowledgePointContent.created_at).offset(skip).limit(limit)
+    )).scalars().all()
+    return list(rows), total
+
+
+async def review_content(
+    db: AsyncSession,
+    *,
+    content_id: uuid.UUID,
+    approve: bool,
+    reviewer_id: uuid.UUID,
+) -> KnowledgePointContent:
+    """审核一条内容：approve→published，reject→retired。记录 reviewed_by/at。"""
+    c = (await db.execute(
+        select(KnowledgePointContent).where(KnowledgePointContent.id == content_id)
+    )).scalar_one_or_none()
+    if c is None:
+        raise AppError(code=404, message="内容不存在")
+    c.status = "published" if approve else "retired"
+    c.reviewed_by = reviewer_id
+    c.reviewed_at = datetime.now(timezone.utc)
+    await db.flush()
+    return c
+
+
+async def update_content(
+    db: AsyncSession,
+    *,
+    content_id: uuid.UUID,
+    content_md: str | None = None,
+    audio_url: str | None = None,
+) -> KnowledgePointContent:
+    """编辑内容正文 / 音频 URL（运营人工修订）。仅更新传入字段。
+
+    一旦人工改过正文，generated_by 记为 ai_with_human_review。
+    """
+    c = (await db.execute(
+        select(KnowledgePointContent).where(KnowledgePointContent.id == content_id)
+    )).scalar_one_or_none()
+    if c is None:
+        raise AppError(code=404, message="内容不存在")
+    if content_md is not None:
+        c.content_md = content_md
+        c.generated_by = "ai_with_human_review"
+    if audio_url is not None:
+        c.audio_url = audio_url
+    await db.flush()
+    return c
