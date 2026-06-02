@@ -1,0 +1,80 @@
+"""词力通 API 测试（P1 / D-100）。"""
+import uuid
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from unittest.mock import AsyncMock, patch
+
+from app.core.database import _async_session_factory
+from app.main import app
+from app.models.d5_learning import VocabularyWord
+
+
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
+        yield ac
+
+
+async def _login(client: AsyncClient, suffix: str) -> dict:
+    with patch("app.services.auth_service.wechat_code2session", new_callable=AsyncMock) as mock_wx:
+        mock_wx.return_value = {"openid": f"vocabapi_{suffix}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    return {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
+
+
+async def _seed_word() -> uuid.UUID:
+    async with _async_session_factory() as s:
+        w = VocabularyWord(
+            id=uuid.uuid4(), word=f"apivocab_{uuid.uuid4().hex[:6]}",
+            phonetic="ˈtest", definitions=[{"pos": "n.", "meaning": "测试"}],
+            examples=None, difficulty=1,
+        )
+        s.add(w)
+        await s.commit()
+        return w.id
+
+
+@pytest.mark.asyncio
+async def test_daily_task_requires_auth(client):
+    r = await client.get("/api/v1/vocabulary/daily-task")
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_daily_task_and_answer_flow(client):
+    await _seed_word()
+    headers = await _login(client, uuid.uuid4().hex[:6])
+
+    r1 = await client.get("/api/v1/vocabulary/daily-task", headers=headers)
+    assert r1.status_code == 200
+    data = r1.json()["data"]
+    assert "new_words" in data and "review_words" in data
+    assert data["new_limit"] == 5  # free 档
+    assert len(data["new_words"]) >= 1
+
+    wid = data["new_words"][0]["word_id"]
+    r2 = await client.post(
+        "/api/v1/vocabulary/answer",
+        json={"word_id": wid, "correct": True, "hesitant": False},
+        headers=headers,
+    )
+    assert r2.status_code == 200
+    res = r2.json()["data"]
+    assert res["word_id"] == wid
+    assert res["repetitions"] == 1
+    assert res["level"] == "learning"
+
+
+@pytest.mark.asyncio
+async def test_answer_wrong_resets(client):
+    await _seed_word()
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    data = (await client.get("/api/v1/vocabulary/daily-task", headers=headers)).json()["data"]
+    wid = data["new_words"][0]["word_id"]
+    await client.post("/api/v1/vocabulary/answer", json={"word_id": wid, "correct": True}, headers=headers)
+    r = await client.post("/api/v1/vocabulary/answer", json={"word_id": wid, "correct": False}, headers=headers)
+    assert r.status_code == 200
+    assert r.json()["data"]["level"] == "new"
+    assert r.json()["data"]["repetitions"] == 0
