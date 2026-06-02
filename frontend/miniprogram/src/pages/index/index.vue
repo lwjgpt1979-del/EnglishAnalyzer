@@ -36,6 +36,13 @@
       </view>
       <view
         class="quick-card"
+        @tap="() => uni.navigateTo({ url: '/pages/vocabulary/index' })"
+      >
+        <text class="quick-icon">🔤</text>
+        <text class="quick-label">词力通</text>
+      </view>
+      <view
+        class="quick-card"
         @tap="() => uni.switchTab({ url: '/pages/profile/index' })"
       >
         <text class="quick-icon">👤</text>

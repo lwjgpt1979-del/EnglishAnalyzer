@@ -551,3 +551,31 @@ export interface UserPaperCreateResult {
   title: string | null
   ocr_status: PaperOcrStatus
 }
+
+// ── 词力通（P1 / D-100）──────────────────────────────────────────────
+export interface VocabWordCard {
+  word_id: string
+  word: string
+  phonetic: string | null
+  definitions: Array<{ pos?: string; meaning: string }> | Record<string, unknown>
+  examples: unknown[] | Record<string, unknown> | null
+  difficulty: number
+  level: string
+  is_new: boolean
+}
+
+export interface VocabDailyTask {
+  new_words: VocabWordCard[]
+  review_words: VocabWordCard[]
+  new_count: number
+  review_count: number
+  new_limit: number
+}
+
+export interface VocabAnswerResult {
+  word_id: string
+  level: string
+  repetitions: number
+  interval_days: number
+  next_review_at: string
+}
