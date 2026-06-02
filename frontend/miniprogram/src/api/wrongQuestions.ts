@@ -21,6 +21,17 @@ export function listWrongQuestions(skip = 0, limit = 20): Promise<WrongQuestionL
   )
 }
 
+/** M3 关联视图：按知识点查当前学生的相关错题（D-093） */
+export function listWrongQuestionsByKp(
+  kpId: string,
+  skip = 0,
+  limit = 20,
+): Promise<WrongQuestionListOut> {
+  return request<WrongQuestionListOut>(
+    `/api/v1/wrong-questions/by-kp/${kpId}?skip=${skip}&limit=${limit}`,
+  )
+}
+
 export function getWrongQuestion(id: string): Promise<WrongQuestionOut> {
   return request<WrongQuestionOut>(`/api/v1/wrong-questions/${id}`)
 }

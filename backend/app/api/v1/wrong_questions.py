@@ -73,6 +73,27 @@ async def list_wrong_questions(
     )
 
 
+@router.get("/by-kp/{kp_id}", response_model=BaseResponse[WrongQuestionListOut])
+async def list_wrong_questions_by_kp(
+    kp_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+    skip: int = Query(0, ge=0, description="分页偏移"),
+    limit: int = Query(20, ge=1, le=100, description="每页条数"),
+):
+    """按知识点查当前学生的相关错题（M3 关联视图，D-093）。"""
+    await get_rls_db(db, str(current_user.id))
+    items, total = await wrong_question_service.list_wrong_questions_by_kp(
+        db, student_id=current_user.id, kp_id=kp_id, skip=skip, limit=limit
+    )
+    return make_ok(
+        WrongQuestionListOut(
+            items=[WrongQuestionOut.model_validate(wq) for wq in items],
+            total=total,
+        )
+    )
+
+
 @router.get("/{wq_id}", response_model=BaseResponse[WrongQuestionOut])
 async def get_wrong_question(
     wq_id: uuid.UUID,

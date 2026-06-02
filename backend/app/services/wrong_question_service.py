@@ -77,6 +77,41 @@ async def list_wrong_questions(
     return list(rows.scalars().all()), total
 
 
+async def list_wrong_questions_by_kp(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    kp_id: uuid.UUID,
+    skip: int = 0,
+    limit: int = 20,
+) -> tuple[list[WrongQuestion], int]:
+    """按知识点查当前学生的错题（join 关联表 wrong_question_knowledge_points），
+
+    按创建时间倒序，返回 (items, total)。M3 关联视图用（D-093）。
+    """
+    from app.models.d4_knowledge import WrongQuestionKnowledgePoint
+
+    base = (
+        select(WrongQuestion)
+        .join(
+            WrongQuestionKnowledgePoint,
+            WrongQuestionKnowledgePoint.wrong_question_id == WrongQuestion.id,
+        )
+        .where(
+            WrongQuestion.student_id == student_id,
+            WrongQuestionKnowledgePoint.knowledge_point_id == kp_id,
+        )
+    )
+    total: int = (await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one()
+
+    rows = await db.execute(
+        base.order_by(WrongQuestion.created_at.desc()).offset(skip).limit(limit)
+    )
+    return list(rows.scalars().all()), total
+
+
 async def mark_mastered(
     db: AsyncSession,
     *,

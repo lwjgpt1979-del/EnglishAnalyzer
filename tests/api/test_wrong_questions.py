@@ -414,3 +414,93 @@ async def test_list_analyses_endpoint(client: AsyncClient, auth_headers):
     body = resp.json()
     assert body["code"] == 200
     assert len(body["data"]) == 2
+
+
+# ─── M3 关联视图：按知识点查错题（D-093）──────────────────────────────────────
+
+import pytest_asyncio as _pytest_asyncio_m3  # noqa: F401 (确保已导入)
+
+
+async def _make_kp(db_session):
+    """建一个最小知识点，返回 ORM 对象。"""
+    from app.models.d4_knowledge import KnowledgePoint
+    kp = KnowledgePoint(
+        id=uuid.uuid4(),
+        code=f"KP_{uuid.uuid4().hex[:8]}",
+        name="一般过去时",
+        category="grammar",
+        applicable_grades=["七年级"],
+        applicable_textbooks=["人教版"],
+    )
+    db_session.add(kp)
+    await db_session.flush()
+    return kp
+
+
+async def _link_wq_kp(db_session, wq_id, kp_id):
+    from app.models.d4_knowledge import WrongQuestionKnowledgePoint
+    db_session.add(WrongQuestionKnowledgePoint(
+        wrong_question_id=wq_id, knowledge_point_id=kp_id,
+    ))
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_list_wrong_questions_by_kp_service(db_session, test_student):
+    from app.services.wrong_question_service import list_wrong_questions_by_kp
+
+    kp = await _make_kp(db_session)
+    # 关联到该 KP 的错题
+    wq_linked = await create_wrong_question(
+        db_session, student_id=test_student.id,
+        data=WrongQuestionCreate(source_image_url="https://cdn.example.com/linked.jpg"),
+    )
+    await _link_wq_kp(db_session, wq_linked.id, kp.id)
+    # 未关联的错题（不应出现）
+    await create_wrong_question(
+        db_session, student_id=test_student.id,
+        data=WrongQuestionCreate(source_image_url="https://cdn.example.com/unlinked.jpg"),
+    )
+
+    items, total = await list_wrong_questions_by_kp(
+        db_session, student_id=test_student.id, kp_id=kp.id, skip=0, limit=20,
+    )
+    assert total == 1
+    assert len(items) == 1
+    assert items[0].id == wq_linked.id
+
+
+@pytest.mark.asyncio
+async def test_list_wrong_questions_by_kp_isolates_students(db_session, test_student):
+    """别的学生关联到同一 KP 的错题，不应被当前学生看到。"""
+    from app.services.auth_service import upsert_user
+    from app.services.wrong_question_service import list_wrong_questions_by_kp
+
+    kp = await _make_kp(db_session)
+    other = await upsert_user(db_session, openid=f"wq_other_{uuid.uuid4().hex[:8]}")
+    await db_session.flush()
+    other_wq = await create_wrong_question(
+        db_session, student_id=other.id,
+        data=WrongQuestionCreate(source_image_url="https://cdn.example.com/other.jpg"),
+    )
+    await _link_wq_kp(db_session, other_wq.id, kp.id)
+
+    items, total = await list_wrong_questions_by_kp(
+        db_session, student_id=test_student.id, kp_id=kp.id,
+    )
+    assert total == 0
+    assert items == []
+
+
+@pytest.mark.asyncio
+async def test_list_wrong_questions_by_kp_api(client: AsyncClient, auth_headers):
+    """空关联返回 0；接口可用。"""
+    random_kp_id = str(uuid.uuid4())
+    resp = await client.get(
+        f"/api/v1/wrong-questions/by-kp/{random_kp_id}", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 200
+    assert body["data"]["total"] == 0
+    assert body["data"]["items"] == []
