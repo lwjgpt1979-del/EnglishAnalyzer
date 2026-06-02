@@ -50,7 +50,10 @@
     { "path": "pages/curriculum/unit-detail", "style": { "navigationBarTitleText": "单元详情" } },
     { "path": "pages/curriculum/kp-content", "style": { "navigationBarTitleText": "知识点" } },
     { "path": "pages/practice/v2-session", "style": { "navigationBarTitleText": "练习" } },
-    { "path": "pages/practice/v2-exam", "style": { "navigationBarTitleText": "模拟考" } }
+    { "path": "pages/practice/v2-exam", "style": { "navigationBarTitleText": "模拟考" } },
+    { "path": "pages/user-papers/list", "style": { "navigationBarTitleText": "我的整卷" } },
+    { "path": "pages/user-papers/upload", "style": { "navigationBarTitleText": "上传整卷" } },
+    { "path": "pages/user-papers/detail", "style": { "navigationBarTitleText": "整卷详情" } }
   ],
   "tabBar": {
     "color": "#999",

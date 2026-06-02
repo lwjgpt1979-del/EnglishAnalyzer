@@ -19,6 +19,73 @@ interface UploadOptions {
   difficulty?: number
 }
 
+/** 读取本地图片为纯 ArrayBuffer（跨 realm 安全） */
+function readFileAsArrayBuffer(tempFilePath: string): Promise<ArrayBuffer> {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    wx.getFileSystemManager().readFile({
+      filePath: tempFilePath,
+      success: (res) => {
+        const d = res.data as unknown
+        const tag = Object.prototype.toString.call(d)
+        if (tag === '[object ArrayBuffer]') {
+          resolve(d as ArrayBuffer)
+        } else if (
+          tag === '[object Uint8Array]' ||
+          (d && typeof d === 'object' && 'byteLength' in d && 'buffer' in d)
+        ) {
+          const u8 = d as Uint8Array
+          const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
+          resolve(ab)
+        } else {
+          reject(new Error(`文件读取返回未知类型 ${tag}，请反馈给开发者`))
+        }
+      },
+      fail: (err) => reject(new Error(err.errMsg || '读取文件失败')),
+    })
+  })
+}
+
+/**
+ * 上传单张本地图片到 COS（presign → PUT），返回可访问的 file_url。
+ * 供整卷多图上传等场景复用。不创建任何业务记录。
+ */
+export async function uploadOneImage(tempFilePath: string): Promise<string> {
+  const lower = tempFilePath.toLowerCase()
+  const contentType: MimeType = lower.endsWith('.png')
+    ? 'image/png'
+    : lower.endsWith('.webp')
+      ? 'image/webp'
+      : 'image/jpeg'
+
+  const presign = await getPresignUrl(contentType)
+  const arrayBuffer = await readFileAsArrayBuffer(tempFilePath)
+
+  // dev 模式（is_mock=true）跳过实际 PUT：后端直接给了可访问的占位图 URL
+  if (!presign.is_mock) {
+    await new Promise<void>((resolve, reject) => {
+      wx.request({
+        url: presign.presign_url,
+        method: 'PUT',
+        data: arrayBuffer,
+        header: { 'Content-Type': contentType },
+        responseType: 'arraybuffer',
+        success: (res) => {
+          if (res.statusCode === 200 || res.statusCode === 204) {
+            resolve()
+          } else {
+            reject(new Error(`COS 上传失败：HTTP ${res.statusCode}`))
+          }
+        },
+        fail: (err) => reject(new Error(err.errMsg || 'COS 上传失败')),
+      })
+    })
+  } else {
+    console.warn('[uploadOneImage] dev mock 模式：跳过 COS PUT，直接用占位图 URL', presign.file_url)
+  }
+
+  return presign.file_url
+}
+
 export function useUpload() {
   const uploading = ref(false)
   const progress = ref<UploadProgress>('idle')

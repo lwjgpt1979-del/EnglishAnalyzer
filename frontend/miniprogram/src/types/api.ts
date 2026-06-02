@@ -486,3 +486,46 @@ export interface ExamRankOut {
   my_avg_accuracy: number | null
   class_avg_accuracy: number | null
 }
+
+// ─── V2 整卷上传 OCR 拆题（D-089 / M4）──
+
+export type PaperOcrStatus = 'pending' | 'processing' | 'completed' | 'failed' | null
+
+/** 拆出的单题 */
+export interface UserPaperQuestionOut {
+  id: string
+  question_no: string | null
+  question_type: string | null
+  stem: string | null
+  student_answer: string | null
+  correct_answer: string | null
+  explanation: string | null
+  is_wrong: boolean
+}
+
+/** 试卷概要（列表用） */
+export interface UserPaperOut {
+  id: string
+  title: string | null
+  source_image_urls: string[]
+  ocr_status: PaperOcrStatus
+  question_count: number
+  created_at: string
+}
+
+/** 试卷详情：概要 + 题目列表 */
+export interface UserPaperDetailOut extends UserPaperOut {
+  questions: UserPaperQuestionOut[]
+}
+
+export interface UserPaperListOut {
+  items: UserPaperOut[]
+  total: number
+}
+
+/** POST /user-papers 建卷返回 */
+export interface UserPaperCreateResult {
+  id: string
+  title: string | null
+  ocr_status: PaperOcrStatus
+}

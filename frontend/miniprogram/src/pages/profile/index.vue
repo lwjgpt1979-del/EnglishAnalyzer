@@ -52,6 +52,13 @@
       </view>
     </view>
 
+    <!-- 整卷上传（D-089 / M4）-->
+    <view class="card" @tap="goUserPapers">
+      <view class="card-title">整卷拆题</view>
+      <text class="menu-desc">拍下整张试卷（1~9 张图片），AI 自动识别并拆成单题，错题自动入库。</text>
+      <button class="btn-menu" @tap.stop="goUserPapers">拍试卷 / 我的整卷</button>
+    </view>
+
     <!-- 教师中心 -->
     <view class="card" style="margin-top:16rpx;">
       <view class="card-title">教师中心</view>
@@ -148,6 +155,10 @@ function goTeacher() {
 
 function goRelative() {
   uni.navigateTo({ url: '/pages/relative/center' })
+}
+
+function goUserPapers() {
+  uni.navigateTo({ url: '/pages/user-papers/list' })
 }
 
 async function genInviteCode() {
