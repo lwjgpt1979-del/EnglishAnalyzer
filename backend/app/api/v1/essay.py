@@ -15,6 +15,7 @@ from app.models.d5_learning import Essay
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.essay import (
     EssayCreate, EssayListItem, EssayListOut, EssayOut,
+    EssayRoundItem, EssayTemplatesOut, RepolishIn,
 )
 from app.services import essay_service
 
@@ -26,12 +27,14 @@ UserDep = Annotated[User, Depends(get_current_user)]
 
 def _to_out(e: Essay) -> EssayOut:
     dim = e.dimensions or {}
+    rounds = dim.get("rounds") or []
     return EssayOut(
         id=e.id, original_text=e.original_text, polished_text=e.polished_text,
         scores=dim.get("scores", []), total=dim.get("total", 0),
         issues=dim.get("issues", []), title=dim.get("title"),
         essay_type=dim.get("essay_type"), round_count=e.round_count,
         status=str(e.status), created_at=e.created_at.isoformat(),
+        rounds=[EssayRoundItem(round=i + 1, total=r.get("total", 0)) for i, r in enumerate(rounds)],
     )
 
 
@@ -59,6 +62,22 @@ async def list_my_essays(db: DbDep, current_user: UserDep):
         for e in rows
     ]
     return make_ok(EssayListOut(total=len(items), items=items))
+
+
+@router.get("/templates", response_model=BaseResponse[EssayTemplatesOut])
+async def essay_templates(db: DbDep, current_user: UserDep, essay_type: str | None = None):
+    await get_rls_db(db, str(current_user.id))
+    t = essay_service.get_templates(essay_type)
+    return make_ok(EssayTemplatesOut(essay_type=essay_type, template=t["template"], samples=t["samples"]))
+
+
+@router.post("/{essay_id}/repolish", response_model=BaseResponse[EssayOut])
+async def repolish(essay_id: uuid.UUID, body: RepolishIn, db: DbDep, current_user: UserDep):
+    await get_rls_db(db, str(current_user.id))
+    essay = await essay_service.repolish_essay(
+        db, student_id=current_user.id, essay_id=essay_id, revised_text=body.revised_text)
+    await db.commit()
+    return make_ok(_to_out(essay))
 
 
 @router.get("/{essay_id}", response_model=BaseResponse[EssayOut])

@@ -58,3 +58,38 @@ async def test_essay_flow(client):
     assert lst["total"] >= 1 and any(it["id"] == eid for it in lst["items"])
     detail = (await client.get(f"/api/v1/essays/{eid}", headers=headers)).json()["data"]
     assert detail["id"] == eid and len(detail["issues"]) >= 1
+
+
+async def _login_promax(client: AsyncClient, suffix: str) -> dict:
+    with patch("app.services.auth_service.wechat_code2session", new_callable=AsyncMock) as mock_wx:
+        mock_wx.return_value = {"openid": f"essaymax_{suffix}"}
+        resp = await client.post("/api/v1/auth/wx-login", json={"code": "test"})
+    headers = {"Authorization": f"Bearer {resp.json()['data']['access_token']}"}
+    me = (await client.get("/api/v1/users/me", headers=headers)).json()["data"]
+    async with _async_session_factory() as s:
+        s.add(Membership(id=uuid.uuid4(), user_id=uuid.UUID(me["id"]), tier="promax",
+                         started_at=datetime.now(timezone.utc), is_active=True))
+        await s.commit()
+    return headers
+
+
+@pytest.mark.asyncio
+async def test_repolish_via_api(client):
+    headers = await _login_promax(client, uuid.uuid4().hex[:6])
+    r = await client.post("/api/v1/essays",
+                          json={"original_text": "round1", "essay_type": "话题作文"}, headers=headers)
+    eid = r.json()["data"]["id"]
+    r2 = await client.post(f"/api/v1/essays/{eid}/repolish",
+                           json={"revised_text": "round2 better"}, headers=headers)
+    assert r2.status_code == 200
+    data = r2.json()["data"]
+    assert data["round_count"] == 2 and len(data["rounds"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_templates_via_api(client):
+    headers = await _login_pro(client, uuid.uuid4().hex[:6])
+    r = await client.get("/api/v1/essays/templates", params={"essay_type": "话题作文"}, headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["template"] and len(data["samples"]) >= 3
