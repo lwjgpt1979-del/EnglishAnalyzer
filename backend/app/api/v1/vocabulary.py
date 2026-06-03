@@ -11,7 +11,6 @@ from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.vocabulary import (
-    CheckinIn,
     CheckinResult,
     CheckinStatusOut,
     DailyTaskOut,
@@ -77,19 +76,27 @@ async def wrong_words(db: DbDep, current_user: UserDep, skip: int = 0, limit: in
 
 
 @router.post("/checkin", response_model=BaseResponse[CheckinResult])
-async def checkin(body: CheckinIn, db: DbDep, current_user: UserDep):
-    """词力通完成会话打卡，返回连续天数。"""
+async def checkin(db: DbDep, current_user: UserDep):
+    """词力通完成会话打卡：后端实算今日完成度，达标才发放。"""
     await get_rls_db(db, str(current_user.id))
-    row = await checkin_service.record_checkin(
-        db, student_id=current_user.id,
-        new_words_count=body.new_words_count, review_done=body.review_done,
-    )
+    row, progress = await checkin_service.record_checkin(db, student_id=current_user.id)
+    if row is None:
+        return make_ok(CheckinResult(
+            completed=False,
+            review_due=progress["review_due"],
+            new_learned_today=progress["new_learned_today"],
+            new_target=progress["new_target"],
+        ))
     await db.commit()
     return make_ok(CheckinResult(
+        completed=True,
         checkin_date=row.checkin_date.isoformat(),
         streak_days=row.streak_days,
         new_words_count=row.new_words_count,
         review_done=row.review_done,
+        review_due=progress["review_due"],
+        new_learned_today=progress["new_learned_today"],
+        new_target=progress["new_target"],
     ))
 
 

@@ -96,16 +96,16 @@ class WrongWordListOut(BaseModel):
 
 # ─── 打卡激励（P1 / D-104）────────────────────────────────────────────────────
 
-class CheckinIn(BaseModel):
+class CheckinResult(BaseModel):
+    completed: bool                  # 今日任务是否达标（打卡是否发放）
+    checkin_date: str | None = None  # 未达标时为 None
+    streak_days: int = 0
     new_words_count: int = 0
     review_done: bool = False
-
-
-class CheckinResult(BaseModel):
-    checkin_date: str
-    streak_days: int
-    new_words_count: int
-    review_done: bool
+    # 缺口（未完成时引导）
+    review_due: int = 0
+    new_learned_today: int = 0
+    new_target: int = 0
 
 
 class CheckinStatusOut(BaseModel):

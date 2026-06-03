@@ -109,14 +109,32 @@ async def test_checkin_status_requires_auth(client):
 
 
 @pytest.mark.asyncio
-async def test_checkin_flow(client):
+async def test_checkin_blocked_when_incomplete(client):
+    """未学满今日新词 → completed False、不写打卡。"""
+    await _seed_word()
     headers = await _login(client, uuid.uuid4().hex[:6])
-    r = await client.post("/api/v1/vocabulary/checkin",
-                          json={"new_words_count": 5, "review_done": True}, headers=headers)
+    r = await client.post("/api/v1/vocabulary/checkin", headers=headers)
     assert r.status_code == 200
-    assert r.json()["data"]["streak_days"] == 1
+    data = r.json()["data"]
+    assert data["completed"] is False
     st = await client.get("/api/v1/vocabulary/checkin/status", headers=headers)
-    assert st.status_code == 200
-    body = st.json()["data"]
-    assert body["checked_in_today"] is True
-    assert body["current_streak"] == 1 and body["longest_streak"] == 1
+    assert st.json()["data"]["checked_in_today"] is False
+
+
+@pytest.mark.asyncio
+async def test_checkin_completed_flow(client):
+    """学满今日新词后打卡 → completed True、streak=1。"""
+    for _ in range(5):
+        await _seed_word()
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    task = (await client.get("/api/v1/vocabulary/daily-task", headers=headers)).json()["data"]
+    assert len(task["new_words"]) == 5  # free 档上限
+    for w in task["new_words"]:
+        await client.post("/api/v1/vocabulary/answer", headers=headers,
+                          json={"word_id": w["word_id"], "correct": True})
+    r = await client.post("/api/v1/vocabulary/checkin", headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["completed"] is True and data["streak_days"] == 1
+    st = (await client.get("/api/v1/vocabulary/checkin/status", headers=headers)).json()["data"]
+    assert st["checked_in_today"] is True and st["current_streak"] == 1
