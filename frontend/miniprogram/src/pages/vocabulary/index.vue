@@ -40,9 +40,24 @@
     <!-- 测试阶段：4 选 1 -->
     <view v-else-if="phase === 'quiz'" class="card">
       <view class="progress-hint">测试 {{ quizIndex + 1 }} / {{ quizQueue.length }} · 正确 {{ correctCount }}</view>
-      <view class="quiz-type">{{ curQuiz.mode === 'w2m' ? '看词选义' : '看义选词' }}</view>
+      <view class="quiz-type">{{ quizTypeLabel }}</view>
       <view class="quiz-prompt">{{ curQuiz.prompt }}</view>
+
+      <!-- 看图选词：4 张图选 1 -->
+      <view v-if="curQuiz.mode === 'pic'" class="pic-grid">
+        <view
+          v-for="(opt, i) in curQuiz.options"
+          :key="i"
+          class="pic-option"
+          :class="optionClass(i)"
+          @tap="choose(i)"
+        >
+          <image :src="opt" mode="aspectFill" class="pic-option-img" />
+        </view>
+      </view>
+      <!-- 文本选项 -->
       <view
+        v-else
         v-for="(opt, i) in curQuiz.options"
         :key="i"
         class="option"
@@ -51,6 +66,7 @@
       >
         {{ opt }}
       </view>
+
       <button v-if="answered" class="btn-primary" @tap="nextQuiz">下一题</button>
     </view>
 
@@ -73,9 +89,9 @@ import type { VocabWordCard } from '@/types/api'
 
 interface Quiz {
   word_id: string
-  mode: 'w2m' | 'm2w'   // 看词选义 / 看义选词
+  mode: 'w2m' | 'm2w' | 'pic'   // 看词选义 / 看义选词 / 看图选词
   prompt: string
-  options: string[]
+  options: string[]   // 文本选项；mode==='pic' 时为图片 URL
   answerIndex: number
 }
 
@@ -96,6 +112,10 @@ const quizQueue = ref<Quiz[]>([])
 
 const curStudy = computed(() => newCards.value[studyIndex.value] || ({} as VocabWordCard))
 const curQuiz = computed(() => quizQueue.value[quizIndex.value] || ({} as Quiz))
+const quizTypeLabel = computed(() => {
+  const m = curQuiz.value.mode
+  return m === 'w2m' ? '看词选义' : m === 'm2w' ? '看义选词' : '看图选词'
+})
 
 function defList(card: VocabWordCard): string[] {
   const d = card.definitions
@@ -122,24 +142,37 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
-function buildQuiz(card: VocabWordCard, mode: 'w2m' | 'm2w'): Quiz {
+function firstImage(w: VocabWordCard): string | null {
+  return w.image_urls && w.image_urls.length ? w.image_urls[0] : null
+}
+
+function buildQuiz(card: VocabWordCard, mode: 'w2m' | 'm2w' | 'pic'): Quiz {
   const others = pool.value.filter((w) => w.word_id !== card.word_id)
+  if (mode === 'pic') {
+    // 看图选词：本词图 + 3 干扰词图，4 选 1（需本词有图 + ≥3 个有图干扰词，否则回退看词选义）
+    const correctImg = firstImage(card)
+    const imgOthers = shuffle(others.filter((w) => firstImage(w)))
+    if (correctImg && imgOthers.length >= 3) {
+      const opts = shuffle([correctImg, ...imgOthers.slice(0, 3).map((w) => firstImage(w) as string)])
+      return { word_id: card.word_id, mode: 'pic', prompt: card.word, options: opts, answerIndex: opts.indexOf(correctImg) }
+    }
+    mode = 'w2m'
+  }
   const distractors = shuffle(others).slice(0, 3)
   if (mode === 'w2m') {
     const correct = primaryMeaning(card)
     const opts = shuffle([correct, ...distractors.map((w) => primaryMeaning(w))])
-    return { word_id: card.word_id, mode, prompt: card.word, options: opts, answerIndex: opts.indexOf(correct) }
+    return { word_id: card.word_id, mode: 'w2m', prompt: card.word, options: opts, answerIndex: opts.indexOf(correct) }
   }
   const correct = card.word
   const opts = shuffle([correct, ...distractors.map((w) => w.word)])
-  return { word_id: card.word_id, mode, prompt: primaryMeaning(card), options: opts, answerIndex: opts.indexOf(correct) }
+  return { word_id: card.word_id, mode: 'm2w', prompt: primaryMeaning(card), options: opts, answerIndex: opts.indexOf(correct) }
 }
 
 function startQuiz() {
   const all = [...newCards.value, ...reviewCards.value]
-  quizQueue.value = all.map((card, i) =>
-    buildQuiz(card, i % 2 === 0 ? 'w2m' : 'm2w'),
-  )
+  const modes: Array<'w2m' | 'm2w' | 'pic'> = ['w2m', 'm2w', 'pic']
+  quizQueue.value = all.map((card, i) => buildQuiz(card, modes[i % 3]))
   quizIndex.value = 0
   correctCount.value = 0
   answered.value = false
@@ -246,6 +279,12 @@ onMounted(load)
 .option { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 28rpx 24rpx; font-size: 30rpx; color: var(--c-text-body); margin-bottom: 20rpx; }
 .opt-correct { background: #d8f3dc; color: #1b7a3d; }
 .opt-wrong { background: #fdecea; color: var(--c-danger); }
+/* 看图选词 2×2 */
+.pic-grid { display: flex; flex-wrap: wrap; justify-content: space-between; }
+.pic-option { width: 48%; height: 220rpx; border-radius: var(--r-md); overflow: hidden; margin-bottom: 16rpx; border: 4rpx solid transparent; background: var(--c-bg-soft); }
+.pic-option.opt-correct { border-color: #1b7a3d; }
+.pic-option.opt-wrong { border-color: var(--c-danger); }
+.pic-option-img { width: 100%; height: 100%; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; margin-top: 24rpx; }
 .done { text-align: center; }
 .done-emoji { font-size: 80rpx; }
