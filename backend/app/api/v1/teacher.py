@@ -349,3 +349,93 @@ async def teacher_invite_sms(body: SendInviteSmsRequest, db: DbDep, current_user
         role="teacher",
     )
     return make_ok(SendInviteSmsOut(sent=True, code=invite.code))
+
+
+# ─── 出卷下发闭环（D-113 / Module 5B）──────────────────────────────────────────
+from datetime import datetime as _dt  # noqa: E402
+from app.services import assignment_service  # noqa: E402
+from app.schemas.assignment import (  # noqa: E402
+    AssignmentCreate, AssignmentListItem, AssignmentOut,
+    GradeIn, SubmissionItem, TeacherAssignmentDetail,
+)
+
+
+def _assignment_out(a) -> AssignmentOut:
+    return AssignmentOut(
+        id=a.id, class_id=a.class_id, title=a.title, questions=a.questions or [],
+        due_at=a.due_at.isoformat() if a.due_at else None, status=str(a.status),
+        published_at=a.published_at.isoformat() if a.published_at else None,
+        created_at=a.created_at.isoformat(),
+    )
+
+
+@router.post("/assignments", response_model=BaseResponse[AssignmentOut])
+async def create_assignment_api(body: AssignmentCreate, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    due = _dt.fromisoformat(body.due_at) if body.due_at else None
+    a = await assignment_service.create_assignment(
+        db, teacher_id=current_user.id, class_id=body.class_id, title=body.title,
+        questions=[q.model_dump() for q in body.questions], due_at=due)
+    await db.commit()
+    return make_ok(_assignment_out(a))
+
+
+@router.post("/assignments/{assignment_id}/publish", response_model=BaseResponse[AssignmentOut])
+async def publish_assignment_api(assignment_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    a = await assignment_service.publish_assignment(db, teacher_id=current_user.id, assignment_id=assignment_id)
+    await db.commit()
+    return make_ok(_assignment_out(a))
+
+
+@router.post("/assignments/{assignment_id}/close", response_model=BaseResponse[AssignmentOut])
+async def close_assignment_api(assignment_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    a = await assignment_service.close_assignment(db, teacher_id=current_user.id, assignment_id=assignment_id)
+    await db.commit()
+    return make_ok(_assignment_out(a))
+
+
+@router.get("/assignments", response_model=BaseResponse[list[AssignmentListItem]])
+async def list_assignments_api(db: DbDep, current_user: UserDep, class_id: uuid.UUID | None = None):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    rows = await assignment_service.list_teacher_assignments(
+        db, teacher_id=current_user.id, class_id=class_id)
+    return make_ok([
+        AssignmentListItem(
+            id=a.id, class_id=a.class_id, title=a.title, status=str(a.status),
+            due_at=a.due_at.isoformat() if a.due_at else None, submission_count=cnt)
+        for a, cnt in rows
+    ])
+
+
+@router.get("/assignments/{assignment_id}", response_model=BaseResponse[TeacherAssignmentDetail])
+async def get_assignment_api(assignment_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    a, subs = await assignment_service.get_assignment_for_teacher(
+        db, teacher_id=current_user.id, assignment_id=assignment_id)
+    return make_ok(TeacherAssignmentDetail(
+        assignment=_assignment_out(a),
+        submissions=[
+            SubmissionItem(
+                id=su.id, student_id=su.student_id, answers=su.answers,
+                score=float(su.score) if su.score is not None else None,
+                submitted_at=su.submitted_at.isoformat())
+            for su in subs
+        ],
+    ))
+
+
+@router.post("/submissions/{submission_id}/grade", response_model=BaseResponse[dict])
+async def grade_submission_api(submission_id: uuid.UUID, body: GradeIn, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    sub = await assignment_service.grade_submission(
+        db, teacher_id=current_user.id, submission_id=submission_id, score=body.score)
+    await db.commit()
+    return make_ok({"id": str(sub.id), "score": float(sub.score)})
