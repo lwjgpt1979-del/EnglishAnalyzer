@@ -9,7 +9,7 @@ SM-2（SuperMemo 2）间隔重复调度，每名学生每个单词独立维护�
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +55,58 @@ async def _daily_new_limit(db: AsyncSession, *, student_id: uuid.UUID) -> int:
     m = await membership_service.get_active_membership(db, user_id=student_id)
     tier = str(m.tier) if m else "free"
     return _DAILY_NEW_LIMIT.get(tier, 5)
+
+
+def _new_target(new_limit: int, new_learned_today: int, new_words_remaining: int) -> int:
+    """今日新词目标：词库新词足够取档位上限；不足则学完所有可学即达标。"""
+    return min(new_limit, new_learned_today + new_words_remaining)
+
+
+async def compute_today_progress(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
+    """计算今日任务完成度（复习全完成 + 新词全学完）。"""
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    day_start = datetime.combine(today, time.min, tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+
+    review_due = (await db.execute(
+        select(func.count()).select_from(VocabularyLearning).where(
+            VocabularyLearning.student_id == student_id,
+            VocabularyLearning.next_review_at <= now,
+        )
+    )).scalar_one()
+
+    new_learned_today = (await db.execute(
+        select(func.count()).select_from(VocabularyLearning).where(
+            VocabularyLearning.student_id == student_id,
+            VocabularyLearning.created_at >= day_start,
+            VocabularyLearning.created_at < day_end,
+        )
+    )).scalar_one()
+
+    learned_subq = (
+        select(VocabularyLearning.word_id)
+        .where(VocabularyLearning.student_id == student_id)
+        .scalar_subquery()
+    )
+    new_words_remaining = (await db.execute(
+        select(func.count()).select_from(VocabularyWord).where(
+            VocabularyWord.id.not_in(learned_subq),
+        )
+    )).scalar_one()
+
+    new_limit = await _daily_new_limit(db, student_id=student_id)
+    target = _new_target(new_limit, int(new_learned_today), int(new_words_remaining))
+    review_done = int(review_due) == 0
+    new_done = int(new_learned_today) >= target
+    return {
+        "review_due": int(review_due),
+        "review_done": review_done,
+        "new_learned_today": int(new_learned_today),
+        "new_target": target,
+        "new_done": new_done,
+        "all_done": review_done and new_done,
+    }
 
 
 def _to_card(w: VocabularyWord, *, level: str, is_new: bool) -> WordCardOut:

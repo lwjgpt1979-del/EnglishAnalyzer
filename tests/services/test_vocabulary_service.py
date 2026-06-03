@@ -222,3 +222,73 @@ async def test_list_wrong_words(db_session):
     rows, total = await vocabulary_service.list_wrong_words(db_session, student_id=sid)
     assert total == 2
     assert rows[0][1].id == ids[1]  # 错 2 次的排最前
+
+
+# ─── D-105: 完成度计算 ────────────────────────────────────────────────
+
+def test_new_target_pure():
+    from app.services.vocabulary_service import _new_target
+    # 词库新词充足：取档位上限
+    assert _new_target(5, 0, 100) == 5
+    assert _new_target(5, 3, 100) == 5
+    # 词库新词不足：学完所有可学即收缩（已学3+剩0=3）
+    assert _new_target(5, 3, 0) == 3
+    assert _new_target(5, 1, 2) == 3
+
+
+@pytest.mark.asyncio
+async def test_progress_fresh_student_not_done(db_session):
+    """全新学生：无到期复习（review_done True），但今日未学新词 → all_done False。"""
+    from app.services import vocabulary_service
+    sid = await _make_student(db_session)
+    await _seed_words(db_session, 10)  # 词库有未学新词
+    p = await vocabulary_service.compute_today_progress(db_session, student_id=sid)
+    assert p["review_due"] == 0 and p["review_done"] is True
+    assert p["new_learned_today"] == 0
+    assert p["new_target"] == 5  # free 档上限
+    assert p["new_done"] is False and p["all_done"] is False
+
+
+@pytest.mark.asyncio
+async def test_progress_due_review_blocks(db_session):
+    """有到期复习词 → review_done False、all_done False。"""
+    from datetime import datetime, timedelta, timezone
+    from app.models.d5_learning import VocabularyLearning
+    from app.services import vocabulary_service
+    sid = await _make_student(db_session)
+    [wid] = await _seed_words(db_session, 1)
+    now = datetime.now(timezone.utc)
+    db_session.add(VocabularyLearning(
+        id=uuid.uuid4(), student_id=sid, word_id=wid,
+        interval_days=1, repetitions=1, easiness_factor=2.5,
+        next_review_at=now - timedelta(days=1),  # 已到期
+        level="learning",
+    ))
+    await db_session.flush()
+    p = await vocabulary_service.compute_today_progress(db_session, student_id=sid)
+    assert p["review_due"] >= 1 and p["review_done"] is False
+    assert p["all_done"] is False
+
+
+@pytest.mark.asyncio
+async def test_progress_all_done_when_new_learned(db_session):
+    """今日学满 free 上限(5)且无到期复习 → all_done True。"""
+    from datetime import datetime, timedelta, timezone
+    from app.models.d5_learning import VocabularyLearning
+    from app.services import vocabulary_service
+    sid = await _make_student(db_session)
+    wids = await _seed_words(db_session, 5)
+    now = datetime.now(timezone.utc)
+    for wid in wids:
+        db_session.add(VocabularyLearning(
+            id=uuid.uuid4(), student_id=sid, word_id=wid,
+            interval_days=1, repetitions=1, easiness_factor=2.5,
+            next_review_at=now + timedelta(days=1),  # 未到期
+            level="learning", created_at=now,
+        ))
+    await db_session.flush()
+    p = await vocabulary_service.compute_today_progress(db_session, student_id=sid)
+    assert p["review_due"] == 0
+    assert p["new_learned_today"] == 5
+    assert p["new_target"] == 5
+    assert p["new_done"] is True and p["all_done"] is True
