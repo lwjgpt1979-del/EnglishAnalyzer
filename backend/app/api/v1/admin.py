@@ -40,6 +40,7 @@ from app.services import (
     admin_auth_service,
     admin_stats_service,
     curriculum_service,
+    essay_service,
     pricing_service,
     question_service,
     teacher_service,
@@ -223,6 +224,20 @@ async def update_pricing(body: SemesterPricingUpdate, db: DbDep, admin: AdminDep
     )
     await db.commit()
     return make_ok(updated)
+
+
+@router.get("/essay-templates", response_model=BaseResponse[dict])
+async def get_essay_templates(db: DbDep, admin: AdminDep):
+    """读作文精修模板/范文配置（未配则返回内置）。"""
+    return make_ok(await essay_service.get_all_templates_config(db))
+
+
+@router.put("/essay-templates", response_model=BaseResponse[dict])
+async def update_essay_templates(body: dict, db: DbDep, admin: AdminDep):
+    """运营改作文精修模板/范文（题型→{template,samples}）。"""
+    v = await essay_service.set_all_templates_config(db, value=body, admin_id=admin.id)
+    await db.commit()
+    return make_ok(v)
 
 
 # ─── 词力通图背单词媒体（P1 / D-101）──────────────────────────────────────────

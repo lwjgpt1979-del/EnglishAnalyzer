@@ -15,7 +15,7 @@ from app.models.d5_learning import Essay
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.essay import (
     EssayCreate, EssayListItem, EssayListOut, EssayOut,
-    EssayRoundItem, EssayTemplatesOut, RepolishIn,
+    EssayProgressOut, EssayRoundItem, EssayTemplatesOut, RepolishIn,
 )
 from app.services import essay_service
 
@@ -67,8 +67,14 @@ async def list_my_essays(db: DbDep, current_user: UserDep):
 @router.get("/templates", response_model=BaseResponse[EssayTemplatesOut])
 async def essay_templates(db: DbDep, current_user: UserDep, essay_type: str | None = None):
     await get_rls_db(db, str(current_user.id))
-    t = essay_service.get_templates(essay_type)
+    t = await essay_service.get_configured_templates(db, essay_type)
     return make_ok(EssayTemplatesOut(essay_type=essay_type, template=t["template"], samples=t["samples"]))
+
+
+@router.get("/progress", response_model=BaseResponse[EssayProgressOut])
+async def my_progress(db: DbDep, current_user: UserDep):
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(EssayProgressOut(**await essay_service.get_progress(db, student_id=current_user.id)))
 
 
 @router.post("/{essay_id}/repolish", response_model=BaseResponse[EssayOut])

@@ -93,3 +93,14 @@ async def test_templates_via_api(client):
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["template"] and len(data["samples"]) >= 3
+
+
+@pytest.mark.asyncio
+async def test_progress_via_api(client):
+    headers = await _login_pro(client, uuid.uuid4().hex[:6])
+    for _ in range(2):
+        await client.post("/api/v1/essays", json={"original_text": "t", "essay_type": "话题作文"}, headers=headers)
+    r = await client.get("/api/v1/essays/progress", headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["total_essays"] == 2 and len(data["trend"]) == 2
