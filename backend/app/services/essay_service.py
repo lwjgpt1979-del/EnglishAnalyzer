@@ -11,12 +11,14 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.exceptions import AppError
 from app.models.d5_learning import Essay
+from app.models.d9_system import SystemConfig
 from app.services import membership_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _DIMENSIONS = [("内容", 25), ("语言", 25), ("结构", 25), ("词汇", 25)]
 _PRO_MONTHLY_LIMIT = 3
 _MAX_ROUNDS = 5
+_ESSAY_TEMPLATES_KEY = "essay_templates"
 
 _SYSTEM_PROMPT = (
     "你是专业英语作文批改老师。请对学生作文从内容/语言/结构/词汇四个维度各 25 分打分，"
@@ -175,3 +177,60 @@ _DEFAULT_TEMPLATE = {
 
 def get_templates(essay_type: str | None) -> dict:
     return _TEMPLATES_BY_TYPE.get(essay_type or "", _DEFAULT_TEMPLATE)
+
+
+async def get_configured_templates(db: AsyncSession, essay_type: str | None) -> dict:
+    """读 system_configs.essay_templates；命中题型→用之，否则 _default，再否则回落内置。"""
+    r = await db.execute(select(SystemConfig).where(SystemConfig.key == _ESSAY_TEMPLATES_KEY))
+    cfg = r.scalar_one_or_none()
+    if cfg is not None and isinstance(cfg.value, dict):
+        data = cfg.value
+        if essay_type and essay_type in data:
+            return data[essay_type]
+        if "_default" in data:
+            return data["_default"]
+    return get_templates(essay_type)
+
+
+async def get_all_templates_config(db: AsyncSession) -> dict:
+    """admin 读：当前完整配置；未配则返回内置（含 _default）。"""
+    r = await db.execute(select(SystemConfig).where(SystemConfig.key == _ESSAY_TEMPLATES_KEY))
+    cfg = r.scalar_one_or_none()
+    if cfg is not None and isinstance(cfg.value, dict):
+        return cfg.value
+    return {**_TEMPLATES_BY_TYPE, "_default": _DEFAULT_TEMPLATE}
+
+
+async def set_all_templates_config(db: AsyncSession, *, value: dict, admin_id: uuid.UUID) -> dict:
+    """admin 写：upsert system_configs.essay_templates。"""
+    r = await db.execute(select(SystemConfig).where(SystemConfig.key == _ESSAY_TEMPLATES_KEY))
+    cfg = r.scalar_one_or_none()
+    if cfg is None:
+        cfg = SystemConfig(id=uuid.uuid4(), key=_ESSAY_TEMPLATES_KEY, value=value,
+                           description="作文精修模板/范文（Module 5A）", updated_by=admin_id)
+        db.add(cfg)
+    else:
+        cfg.value = value
+        cfg.updated_by = admin_id
+    await db.flush()
+    return cfg.value
+
+
+async def get_progress(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
+    rows = await list_essays(db, student_id=student_id)  # 倒序
+    essays = list(reversed(rows))  # 时间正序
+    total_essays = len(essays)
+    totals = [(e.dimensions or {}).get("total", 0) for e in essays]
+    avg_total = round(sum(totals) / total_essays, 1) if total_essays else 0
+    trend = [{"date": e.created_at.date().isoformat(), "total": (e.dimensions or {}).get("total", 0)} for e in essays]
+    dim_sum: dict[str, list[int]] = {}
+    for e in essays:
+        for s in (e.dimensions or {}).get("scores", []):
+            dim_sum.setdefault(s["dimension"], []).append(s["score"])
+    dimension_avg = [{"dimension": d, "avg": round(sum(v) / len(v), 1)} for d, v in dim_sum.items()]
+    return {
+        "total_essays": total_essays,
+        "avg_total": avg_total,
+        "trend": trend,
+        "dimension_avg": dimension_avg,
+    }

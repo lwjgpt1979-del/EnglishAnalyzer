@@ -111,3 +111,45 @@ def test_get_templates():
     assert len(t["samples"]) >= 3
     d = essay_service.get_templates(None)
     assert d["template"] and len(d["samples"]) >= 3
+
+
+# ─── D-111: 配置化模板 + 进步聚合 ────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_configured_templates_fallback(db_session):
+    t = await essay_service.get_configured_templates(db_session, "话题作文")
+    assert t["template"] and len(t["samples"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_configured_templates_hit(db_session):
+    from app.models.d9_system import SystemConfig
+    sid = await _student(db_session, None)  # updated_by 需非空
+    db_session.add(SystemConfig(
+        id=uuid.uuid4(), key="essay_templates", updated_by=sid,
+        value={"话题作文": {"template": "自定义模板X", "samples": ["s1"]}, "_default": {"template": "兜底", "samples": ["d"]}},
+    ))
+    await db_session.flush()
+    t = await essay_service.get_configured_templates(db_session, "话题作文")
+    assert t["template"] == "自定义模板X"
+    t2 = await essay_service.get_configured_templates(db_session, "不存在题型")
+    assert t2["template"] == "兜底"
+
+
+@pytest.mark.asyncio
+async def test_get_progress(db_session):
+    sid = await _student(db_session, "promax")
+    for _ in range(3):
+        await essay_service.polish_essay(db_session, student_id=sid, original_text="text", essay_type="话题作文")
+    p = await essay_service.get_progress(db_session, student_id=sid)
+    assert p["total_essays"] == 3
+    assert p["avg_total"] == 88.0
+    assert len(p["trend"]) == 3
+    assert len(p["dimension_avg"]) == 4 and p["dimension_avg"][0]["avg"] == 22.0
+
+
+@pytest.mark.asyncio
+async def test_get_progress_empty(db_session):
+    sid = await _student(db_session, "pro")
+    p = await essay_service.get_progress(db_session, student_id=sid)
+    assert p["total_essays"] == 0 and p["avg_total"] == 0 and p["trend"] == []

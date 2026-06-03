@@ -69,3 +69,20 @@ class EssayListItem(BaseModel):
 class EssayListOut(BaseModel):
     total: int
     items: list[EssayListItem]
+
+
+class EssayTrendItem(BaseModel):
+    date: str
+    total: int
+
+
+class EssayDimensionAvg(BaseModel):
+    dimension: str
+    avg: float
+
+
+class EssayProgressOut(BaseModel):
+    total_essays: int
+    avg_total: float
+    trend: list[EssayTrendItem]
+    dimension_avg: list[EssayDimensionAvg]
