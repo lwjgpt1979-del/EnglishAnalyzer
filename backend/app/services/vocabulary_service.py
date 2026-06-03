@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import VocabularyLearning, VocabularyWord
@@ -87,7 +87,12 @@ async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTas
             VocabularyLearning.student_id == student_id,
             VocabularyLearning.next_review_at <= now,
         )
-        .order_by(VocabularyLearning.next_review_at)
+        # 错词优先复习（D-103）：错词最前、错得多的更靠前，再按到期时间
+        .order_by(
+            VocabularyLearning.is_wrong.desc(),
+            VocabularyLearning.wrong_count.desc(),
+            VocabularyLearning.next_review_at,
+        )
     )).all()
     review_words = [_to_card(w, level=str(lr.level), is_new=False) for lr, w in review_rows]
 
@@ -147,6 +152,8 @@ async def submit_answer(
             next_review_at=now + timedelta(days=interval),
             last_reviewed_at=now,
             level=_level_for(reps),
+            is_wrong=(not correct),               # 首学答错即入错词本（D-103）
+            wrong_count=(0 if correct else 1),
         )
         db.add(lr)
     else:
@@ -161,6 +168,12 @@ async def submit_answer(
         lr.next_review_at = now + timedelta(days=interval)
         lr.last_reviewed_at = now
         lr.level = _level_for(reps)
+        # 错词本联动（D-103）：答错入本+计数；答对升 mastered 移出
+        if not correct:
+            lr.is_wrong = True
+            lr.wrong_count = (lr.wrong_count or 0) + 1
+        elif _level_for(reps) == "mastered":
+            lr.is_wrong = False
 
     await db.flush()
     return VocabAnswerResult(
@@ -170,3 +183,24 @@ async def submit_answer(
         interval_days=interval,
         next_review_at=(now + timedelta(days=interval)).isoformat(),
     )
+
+
+async def list_wrong_words(
+    db: AsyncSession, *, student_id: uuid.UUID, skip: int = 0, limit: int = 50,
+) -> tuple[list[tuple[VocabularyLearning, VocabularyWord]], int]:
+    """该生错词本：is_wrong=True 的词，按 wrong_count 降序（错得多的在前）。"""
+    base = (
+        select(VocabularyLearning, VocabularyWord)
+        .join(VocabularyWord, VocabularyWord.id == VocabularyLearning.word_id)
+        .where(
+            VocabularyLearning.student_id == student_id,
+            VocabularyLearning.is_wrong.is_(True),
+        )
+    )
+    total: int = (await db.execute(
+        select(func.count()).select_from(base.subquery())
+    )).scalar_one()
+    rows = (await db.execute(
+        base.order_by(VocabularyLearning.wrong_count.desc()).offset(skip).limit(limit)
+    )).all()
+    return list(rows), total

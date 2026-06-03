@@ -178,3 +178,47 @@ async def test_daily_task_includes_published_media_only(db_session):
     assert by_id[w_pub.id].word_audio_url == "https://a/w.mp3"
     assert by_id[w_draft.id].image_urls is None
     assert by_id[w_draft.id].en_description is None
+
+
+# ─── 错词本（D-103）──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_wrong_answer_marks_wrong_book(db_session):
+    from sqlalchemy import select as _sel
+    from app.models.d5_learning import VocabularyLearning
+    from app.services import vocabulary_service
+    sid = await _make_student(db_session)
+    [wid] = await _seed_words(db_session, 1)
+    await vocabulary_service.submit_answer(db_session, student_id=sid, word_id=wid, correct=False)
+    lr = (await db_session.execute(_sel(VocabularyLearning).where(
+        VocabularyLearning.student_id == sid, VocabularyLearning.word_id == wid))).scalar_one()
+    assert lr.is_wrong is True and lr.wrong_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mastered_removes_from_wrong_book(db_session):
+    from sqlalchemy import select as _sel
+    from app.models.d5_learning import VocabularyLearning
+    from app.services import vocabulary_service
+    sid = await _make_student(db_session)
+    [wid] = await _seed_words(db_session, 1)
+    await vocabulary_service.submit_answer(db_session, student_id=sid, word_id=wid, correct=False)
+    for _ in range(5):
+        await vocabulary_service.submit_answer(db_session, student_id=sid, word_id=wid, correct=True)
+    lr = (await db_session.execute(_sel(VocabularyLearning).where(
+        VocabularyLearning.student_id == sid, VocabularyLearning.word_id == wid))).scalar_one()
+    assert lr.level == "mastered" and lr.is_wrong is False
+
+
+@pytest.mark.asyncio
+async def test_list_wrong_words(db_session):
+    from app.services import vocabulary_service
+    sid = await _make_student(db_session)
+    ids = await _seed_words(db_session, 3)
+    await vocabulary_service.submit_answer(db_session, student_id=sid, word_id=ids[0], correct=False)
+    await vocabulary_service.submit_answer(db_session, student_id=sid, word_id=ids[1], correct=False)
+    await vocabulary_service.submit_answer(db_session, student_id=sid, word_id=ids[1], correct=False)
+    await db_session.flush()
+    rows, total = await vocabulary_service.list_wrong_words(db_session, student_id=sid)
+    assert total == 2
+    assert rows[0][1].id == ids[1]  # 错 2 次的排最前
