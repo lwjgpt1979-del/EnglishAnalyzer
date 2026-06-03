@@ -76,6 +76,9 @@ class VocabularyLearning(Base):
     next_review_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
     last_reviewed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     level = mapped_column(vocab_level_enum, nullable=False)
+    # —— 错词本联动（P1 词力通深化 / D-103）——
+    is_wrong = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     # G14: 补充 created_at
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()

@@ -387,3 +387,11 @@ def test_vocabulary_words_has_media_fields():
     cols = set(VocabularyWord.__table__.columns.keys())
     for c in ["image_urls", "en_description", "word_audio_url", "en_desc_audio_url", "media_status"]:
         assert c in cols, f"VocabularyWord 缺字段 {c}"
+
+
+def test_vocabulary_learning_has_wrong_book_fields():
+    """P1 / D-103: vocabulary_learning 必须有错词本字段。"""
+    from app.models.d5_learning import VocabularyLearning
+    cols = set(VocabularyLearning.__table__.columns.keys())
+    assert "is_wrong" in cols
+    assert "wrong_count" in cols
