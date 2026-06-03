@@ -39,3 +39,31 @@ class VocabAnswerResult(BaseModel):
     repetitions: int
     interval_days: int
     next_review_at: str = Field(..., description="ISO 时间")
+
+
+# ─── 图背单词媒体（运营 admin，P1 / D-101）────────────────────────────────────
+
+class AdminVocabMediaItem(BaseModel):
+    word_id: uuid.UUID
+    word: str
+    image_urls: list[str] | None = None
+    en_description: str | None = None
+    word_audio_url: str | None = None
+    en_desc_audio_url: str | None = None
+    media_status: str
+
+
+class AdminVocabMediaListOut(BaseModel):
+    total: int
+    items: list[AdminVocabMediaItem]
+
+
+class VocabMediaReviewRequest(BaseModel):
+    approve: bool = Field(..., description="true=通过→published，false=驳回→retired")
+
+
+class VocabMediaUpdateRequest(BaseModel):
+    image_urls: list[str] | None = None
+    en_description: str | None = None
+    word_audio_url: str | None = None
+    en_desc_audio_url: str | None = None

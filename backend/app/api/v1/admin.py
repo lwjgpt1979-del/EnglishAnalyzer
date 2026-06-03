@@ -12,6 +12,7 @@ from app.core.exceptions import AppError
 from app.core.security import create_access_token, create_refresh_token, require_role
 from app.models.d1_users import User
 from app.schemas.auth import AdminLoginRequest, TokenResponse
+from app.models.d5_learning import VocabularyWord
 from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.models.d12_v2_exams import SimulatedQuestion
 from app.schemas.admin import AdminOverviewOut
@@ -29,6 +30,12 @@ from app.schemas.questions import (
 )
 from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.teacher import CertReviewRequest, TeacherProfileOut
+from app.schemas.vocabulary import (
+    AdminVocabMediaItem,
+    AdminVocabMediaListOut,
+    VocabMediaReviewRequest,
+    VocabMediaUpdateRequest,
+)
 from app.services import (
     admin_auth_service,
     admin_stats_service,
@@ -36,6 +43,7 @@ from app.services import (
     pricing_service,
     question_service,
     teacher_service,
+    vocab_media_service,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -215,3 +223,58 @@ async def update_pricing(body: SemesterPricingUpdate, db: DbDep, admin: AdminDep
     )
     await db.commit()
     return make_ok(updated)
+
+
+# ─── 词力通图背单词媒体（P1 / D-101）──────────────────────────────────────────
+
+def _to_vocab_media_item(w: VocabularyWord) -> AdminVocabMediaItem:
+    return AdminVocabMediaItem(
+        word_id=w.id,
+        word=w.word,
+        image_urls=w.image_urls,
+        en_description=w.en_description,
+        word_audio_url=w.word_audio_url,
+        en_desc_audio_url=w.en_desc_audio_url,
+        media_status=str(w.media_status),
+    )
+
+
+@router.post("/vocab/{word_id}/generate-media", response_model=BaseResponse[AdminVocabMediaItem])
+async def generate_vocab_media(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """为单词生成图背媒体（英文描述+多图+双音频，dev-mock）。默认进 draft。"""
+    w = await vocab_media_service.generate_for_word(db, word_id=word_id)
+    await db.commit()
+    return make_ok(_to_vocab_media_item(w))
+
+
+@router.get("/vocab", response_model=BaseResponse[AdminVocabMediaListOut])
+async def list_vocab_media(
+    db: DbDep, admin: AdminDep,
+    media_status: str = "draft", skip: int = 0, limit: int = 20,
+):
+    """按媒体状态分页查单词。默认看待审草稿。"""
+    rows, total = await vocab_media_service.list_words_for_media_review(
+        db, media_status=media_status, skip=skip, limit=limit,
+    )
+    return make_ok(AdminVocabMediaListOut(
+        total=total, items=[_to_vocab_media_item(w) for w in rows],
+    ))
+
+
+@router.post("/vocab/{word_id}/media/review", response_model=BaseResponse[AdminVocabMediaItem])
+async def review_vocab_media(word_id: uuid.UUID, body: VocabMediaReviewRequest, db: DbDep, admin: AdminDep):
+    """审核单词媒体：approve→published，reject→retired。"""
+    w = await vocab_media_service.review_word_media(db, word_id=word_id, approve=body.approve)
+    await db.commit()
+    return make_ok(_to_vocab_media_item(w))
+
+
+@router.put("/vocab/{word_id}/media", response_model=BaseResponse[AdminVocabMediaItem])
+async def update_vocab_media(word_id: uuid.UUID, body: VocabMediaUpdateRequest, db: DbDep, admin: AdminDep):
+    """编辑单词媒体（图/英文描述/音频）。"""
+    w = await vocab_media_service.update_word_media(
+        db, word_id=word_id, image_urls=body.image_urls, en_description=body.en_description,
+        word_audio_url=body.word_audio_url, en_desc_audio_url=body.en_desc_audio_url,
+    )
+    await db.commit()
+    return make_ok(_to_vocab_media_item(w))
