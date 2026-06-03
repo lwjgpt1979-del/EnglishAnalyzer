@@ -43,6 +43,13 @@
       </view>
       <view
         class="quick-card"
+        @tap="() => uni.navigateTo({ url: '/pages/essay/index' })"
+      >
+        <text class="quick-icon">✍️</text>
+        <text class="quick-label">作文精修</text>
+      </view>
+      <view
+        class="quick-card"
         @tap="() => uni.switchTab({ url: '/pages/profile/index' })"
       >
         <text class="quick-icon">👤</text>

@@ -650,3 +650,25 @@ export interface VocabMakeUpResult {
   current_streak: number
   longest_streak: number
 }
+
+// 作文精修（D-109）
+export interface EssayScoreItem { dimension: string; score: number; full: number }
+export interface EssayIssueItem { original: string; suggestion: string; type: string; color: string; explanation: string }
+export interface EssayDetail {
+  id: string
+  original_text: string
+  polished_text: string | null
+  scores: EssayScoreItem[]
+  total: number
+  issues: EssayIssueItem[]
+  title: string | null
+  essay_type: string | null
+  round_count: number
+  status: string
+  created_at: string
+}
+export interface EssayListItem {
+  id: string; title: string | null; essay_type: string | null
+  total: number; status: string; created_at: string
+}
+export interface EssayList { total: number; items: EssayListItem[] }
