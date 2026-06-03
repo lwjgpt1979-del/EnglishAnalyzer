@@ -128,3 +128,57 @@ async def test_record_checkin_writes_when_complete(db_session):
     assert progress["all_done"] is True
     assert row is not None and row.streak_days == 1
     assert row.new_words_count == 5 and row.review_done is True
+
+
+# ─── D-106: 当月打卡日历 ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_calendar_two_days_this_month(db_session):
+    """当月 2 天打卡 → days 长度 2、checked_count 2、按日期升序。"""
+    sid = await _student(db_session)
+    t = _today()
+    d1 = t.replace(day=1)
+    d2 = t.replace(day=2)
+    db_session.add_all([
+        StudyCheckin(id=uuid.uuid4(), student_id=sid, checkin_date=d1,
+                     new_words_count=5, review_done=True, streak_days=1),
+        StudyCheckin(id=uuid.uuid4(), student_id=sid, checkin_date=d2,
+                     new_words_count=3, review_done=True, streak_days=2),
+    ])
+    await db_session.flush()
+    cal = await checkin_service.get_month_calendar(
+        db_session, student_id=sid, year=t.year, month=t.month)
+    assert cal["year"] == t.year and cal["month"] == t.month
+    assert cal["checked_count"] == 2
+    assert [d["date"] for d in cal["days"]] == [d1.isoformat(), d2.isoformat()]
+    assert cal["days"][0]["new_words_count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_calendar_excludes_other_months(db_session):
+    """上月/下月行不计入当月。"""
+    from datetime import date
+    sid = await _student(db_session)
+    db_session.add_all([
+        StudyCheckin(id=uuid.uuid4(), student_id=sid, checkin_date=date(2026, 6, 15),
+                     new_words_count=5, review_done=True, streak_days=1),
+        StudyCheckin(id=uuid.uuid4(), student_id=sid, checkin_date=date(2026, 5, 31),
+                     new_words_count=5, review_done=True, streak_days=1),
+        StudyCheckin(id=uuid.uuid4(), student_id=sid, checkin_date=date(2026, 7, 1),
+                     new_words_count=5, review_done=True, streak_days=1),
+    ])
+    await db_session.flush()
+    cal = await checkin_service.get_month_calendar(
+        db_session, student_id=sid, year=2026, month=6)
+    assert cal["checked_count"] == 1
+    assert cal["days"][0]["date"] == "2026-06-15"
+
+
+@pytest.mark.asyncio
+async def test_calendar_empty_month(db_session):
+    """空月 → days 空、checked_count 0。"""
+    sid = await _student(db_session)
+    cal = await checkin_service.get_month_calendar(
+        db_session, student_id=sid, year=2099, month=1)
+    assert cal["days"] == [] and cal["checked_count"] == 0
+    assert cal["current_streak"] == 0 and cal["longest_streak"] == 0

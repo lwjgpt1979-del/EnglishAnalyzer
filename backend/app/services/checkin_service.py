@@ -97,3 +97,35 @@ async def get_checkin_status(db: AsyncSession, *, student_id: uuid.UUID) -> dict
         "today_new_words": today_row.new_words_count if today_row else 0,
         "today_review_done": today_row.review_done if today_row else False,
     }
+
+
+async def get_month_calendar(
+    db: AsyncSession, *, student_id: uuid.UUID, year: int, month: int,
+) -> dict:
+    """当月打卡日历：已打卡日列表 + 连续/最高天数（复用 status 摘要）。"""
+    month_start = date(year, month, 1)
+    next_month_start = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    rows = (await db.execute(
+        select(StudyCheckin).where(
+            StudyCheckin.student_id == student_id,
+            StudyCheckin.checkin_date >= month_start,
+            StudyCheckin.checkin_date < next_month_start,
+        ).order_by(StudyCheckin.checkin_date)
+    )).scalars().all()
+    days = [
+        {
+            "date": r.checkin_date.isoformat(),
+            "new_words_count": r.new_words_count,
+            "streak_days": r.streak_days,
+        }
+        for r in rows
+    ]
+    status = await get_checkin_status(db, student_id=student_id)
+    return {
+        "year": year,
+        "month": month,
+        "days": days,
+        "checked_count": len(days),
+        "current_streak": status["current_streak"],
+        "longest_streak": status["longest_streak"],
+    }
