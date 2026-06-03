@@ -7,6 +7,7 @@ from datetime import datetime, time, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.exceptions import AppError
 from app.models.d5_learning import Essay
@@ -15,6 +16,7 @@ from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _DIMENSIONS = [("内容", 25), ("语言", 25), ("结构", 25), ("词汇", 25)]
 _PRO_MONTHLY_LIMIT = 3
+_MAX_ROUNDS = 5
 
 _SYSTEM_PROMPT = (
     "你是专业英语作文批改老师。请对学生作文从内容/语言/结构/词汇四个维度各 25 分打分，"
@@ -85,6 +87,43 @@ async def polish_essay(
     return essay
 
 
+async def repolish_essay(
+    db: AsyncSession, *, student_id: uuid.UUID, essay_id: uuid.UUID, revised_text: str,
+) -> Essay:
+    essay = await get_essay(db, student_id=student_id, essay_id=essay_id)
+    if essay is None:
+        raise AppError(code=404, message="作文记录不存在")
+    m = await membership_service.get_active_membership(db, user_id=student_id)
+    tier = str(m.tier) if m else "free"
+    if tier != "promax":
+        raise AppError(code=403, message="多轮迭代精修为 ProMax 专属功能")
+    dim = dict(essay.dimensions or {})
+    rounds = list(dim.get("rounds") or [])
+    if not rounds:
+        rounds = [{
+            "text": essay.original_text,
+            "scores": dim.get("scores", []), "total": dim.get("total", 0),
+            "issues": dim.get("issues", []), "polished_text": essay.polished_text,
+        }]
+    if len(rounds) >= _MAX_ROUNDS:
+        raise AppError(code=403, message=f"已达最多 {_MAX_ROUNDS} 轮精修上限")
+    result = await _grade(original_text=revised_text, essay_type=dim.get("essay_type"))
+    rounds.append({
+        "text": revised_text, "scores": result["scores"], "total": result["total"],
+        "issues": result["issues"], "polished_text": result["polished_text"],
+    })
+    dim["rounds"] = rounds
+    dim["scores"] = result["scores"]
+    dim["total"] = result["total"]
+    dim["issues"] = result["issues"]
+    essay.dimensions = dim
+    essay.polished_text = result["polished_text"]
+    essay.round_count = len(rounds)
+    flag_modified(essay, "dimensions")
+    await db.flush()
+    return essay
+
+
 async def get_essay(db: AsyncSession, *, student_id: uuid.UUID, essay_id: uuid.UUID) -> Essay | None:
     return (await db.execute(
         select(Essay).where(Essay.id == essay_id, Essay.student_id == student_id)
@@ -95,3 +134,44 @@ async def list_essays(db: AsyncSession, *, student_id: uuid.UUID) -> list[Essay]
     return list((await db.execute(
         select(Essay).where(Essay.student_id == student_id).order_by(Essay.created_at.desc())
     )).scalars().all())
+
+
+_TEMPLATES_BY_TYPE = {
+    "话题作文": {
+        "template": "开头：亮明观点（In my opinion, ...）。中间：2-3 个理由 + 例证（Firstly... Secondly... For example...）。结尾：总结升华（In conclusion, ...）。",
+        "samples": [
+            "Many students think... I believe... Firstly,... Secondly,... In conclusion,...",
+            "With the development of technology,... On the one hand,... On the other hand,...",
+            "It is often said that... From my perspective,... Therefore,...",
+        ],
+    },
+    "书信作文": {
+        "template": "称呼（Dear ...）→ 自我介绍/写信目的 → 主体（分点说明）→ 结尾礼貌用语（Looking forward to your reply）→ 落款（Yours, XXX）。",
+        "samples": [
+            "Dear Tom, I'm writing to tell you about... Looking forward to your reply. Yours, Li Hua",
+            "Dear Sir or Madam, I am writing to apply for... I would appreciate it if... Yours sincerely, ...",
+            "Dear friend, How is everything going? I'd like to share... Best wishes, ...",
+        ],
+    },
+    "图片作文": {
+        "template": "描述图片内容（The picture shows...）→ 分析现象/原因 → 表达观点或建议（We should...）。",
+        "samples": [
+            "The picture shows... This reminds us that... We should...",
+            "As is shown in the picture,... The reason is that... Therefore,...",
+            "Looking at the picture, we can see... It tells us... In my view,...",
+        ],
+    },
+}
+
+_DEFAULT_TEMPLATE = {
+    "template": "三段式：开头点题 → 主体分点论述 + 例证 → 结尾总结。多用连接词（Firstly/However/In conclusion），避免中式表达。",
+    "samples": [
+        "In my opinion,... Firstly,... Secondly,... In conclusion,...",
+        "There is no doubt that... For one thing,... For another,... Therefore,...",
+        "As far as I am concerned,... On the one hand,... On the other hand,...",
+    ],
+}
+
+
+def get_templates(essay_type: str | None) -> dict:
+    return _TEMPLATES_BY_TYPE.get(essay_type or "", _DEFAULT_TEMPLATE)

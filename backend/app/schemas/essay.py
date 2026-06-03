@@ -27,6 +27,21 @@ class EssayIssueItem(BaseModel):
     explanation: str
 
 
+class EssayRoundItem(BaseModel):
+    round: int
+    total: int
+
+
+class RepolishIn(BaseModel):
+    revised_text: str = Field(..., min_length=1)
+
+
+class EssayTemplatesOut(BaseModel):
+    essay_type: str | None = None
+    template: str
+    samples: list[str]
+
+
 class EssayOut(BaseModel):
     id: uuid.UUID
     original_text: str
@@ -39,6 +54,7 @@ class EssayOut(BaseModel):
     round_count: int
     status: str
     created_at: str
+    rounds: list[EssayRoundItem] = []
 
 
 class EssayListItem(BaseModel):

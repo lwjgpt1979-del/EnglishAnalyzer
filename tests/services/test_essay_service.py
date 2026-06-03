@@ -69,3 +69,45 @@ async def test_promax_unlimited(db_session):
     for _ in range(5):
         e = await essay_service.polish_essay(db_session, student_id=sid, original_text="essay text")
     assert str(e.status) == "completed"
+
+
+# ─── D-110: 多轮迭代 + 模板 ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_repolish_promax(db_session):
+    sid = await _student(db_session, "promax")
+    e1 = await essay_service.polish_essay(db_session, student_id=sid, original_text="round1 text", essay_type="话题作文")
+    e2 = await essay_service.repolish_essay(db_session, student_id=sid, essay_id=e1.id, revised_text="round2 better text")
+    assert e2.round_count == 2
+    assert len(e2.dimensions["rounds"]) == 2
+    assert e2.dimensions["total"] == e2.dimensions["rounds"][-1]["total"]
+
+
+@pytest.mark.asyncio
+async def test_repolish_pro_forbidden(db_session):
+    sid = await _student(db_session, "pro")
+    e1 = await essay_service.polish_essay(db_session, student_id=sid, original_text="text")
+    with pytest.raises(AppError):
+        await essay_service.repolish_essay(db_session, student_id=sid, essay_id=e1.id, revised_text="v2")
+
+
+@pytest.mark.asyncio
+async def test_repolish_max_rounds(db_session):
+    from sqlalchemy.orm.attributes import flag_modified
+    sid = await _student(db_session, "promax")
+    e1 = await essay_service.polish_essay(db_session, student_id=sid, original_text="text", essay_type="话题作文")
+    e1.dimensions = {**e1.dimensions, "rounds": [
+        {"text": "t", "scores": [], "total": 80, "issues": [], "polished_text": "p"} for _ in range(5)]}
+    flag_modified(e1, "dimensions")
+    e1.round_count = 5
+    await db_session.flush()
+    with pytest.raises(AppError):
+        await essay_service.repolish_essay(db_session, student_id=sid, essay_id=e1.id, revised_text="v6")
+
+
+def test_get_templates():
+    t = essay_service.get_templates("书信作文")
+    assert ("Dear" in t["template"]) or ("称呼" in t["template"])
+    assert len(t["samples"]) >= 3
+    d = essay_service.get_templates(None)
+    assert d["template"] and len(d["samples"]) >= 3
