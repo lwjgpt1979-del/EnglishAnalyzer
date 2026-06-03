@@ -77,6 +77,7 @@
       <view class="done-stat">新学 {{ newCards.length }} 词 · 复习 {{ reviewCards.length }} 词</view>
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
       <button class="btn-primary" @tap="reload">再来一组</button>
+      <button class="btn-ghost" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">查看错词本</button>
     </view>
   </view>
 </template>
@@ -290,4 +291,5 @@ onMounted(load)
 .done-emoji { font-size: 80rpx; }
 .done-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); margin: 16rpx 0; }
 .done-stat { font-size: 30rpx; color: var(--c-text-second); line-height: 1.9; }
+.btn-ghost { background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; margin-top: 16rpx; text-align: center; }
 </style>

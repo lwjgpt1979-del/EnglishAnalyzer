@@ -1,5 +1,5 @@
 import { request } from '@/utils/request'
-import type { VocabDailyTask, VocabAnswerResult } from '@/types/api'
+import type { VocabDailyTask, VocabAnswerResult, VocabWrongList } from '@/types/api'
 
 export function getDailyTask(): Promise<VocabDailyTask> {
   return request<VocabDailyTask>('/api/v1/vocabulary/daily-task', { method: 'GET' })
@@ -14,4 +14,8 @@ export function submitVocabAnswer(
     method: 'POST',
     data: { word_id: wordId, correct, hesitant },
   })
+}
+
+export function getWrongWords(): Promise<VocabWrongList> {
+  return request<VocabWrongList>('/api/v1/vocabulary/wrong-words', { method: 'GET' })
 }

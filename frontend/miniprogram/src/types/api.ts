@@ -583,3 +583,21 @@ export interface VocabAnswerResult {
   interval_days: number
   next_review_at: string
 }
+
+// 错词本（D-103）
+export interface VocabWrongItem {
+  word_id: string
+  word: string
+  phonetic?: string | null
+  definitions: Array<{ pos?: string; meaning: string }> | Record<string, unknown>
+  wrong_count: number
+  level: string
+  image_urls?: string[] | null
+  en_description?: string | null
+  word_audio_url?: string | null
+  en_desc_audio_url?: string | null
+}
+export interface VocabWrongList {
+  total: number
+  items: VocabWrongItem[]
+}
