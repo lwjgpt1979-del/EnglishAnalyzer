@@ -208,3 +208,40 @@ def test_badges_thresholds():
     b100 = _badges(100)
     assert all(x["unlocked"] is True for x in b100)
     assert [x["level"] for x in b0] == ["bronze", "silver", "gold"]
+
+
+# ─── D-107: 补签 ──────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_make_up_restores_streak(db_session):
+    """今日已打 + 前日已打、昨日漏 → 补昨日后连续应为 3。"""
+    sid = await _student(db_session)
+    for n in (2, 0):  # 前天、今天
+        db_session.add(StudyCheckin(
+            id=uuid.uuid4(), student_id=sid, checkin_date=_today() - timedelta(days=n),
+            new_words_count=1, review_done=True, streak_days=0))
+    await db_session.flush()
+    res = await checkin_service.make_up_checkin(
+        db_session, student_id=sid, d=_today() - timedelta(days=1))
+    assert res["current_streak"] == 3
+    assert res["date"] == (_today() - timedelta(days=1)).isoformat()
+
+
+@pytest.mark.asyncio
+async def test_make_up_already_checked_rejected(db_session):
+    from app.core.exceptions import AppError
+    sid = await _student(db_session)
+    db_session.add(StudyCheckin(
+        id=uuid.uuid4(), student_id=sid, checkin_date=_today() - timedelta(days=1),
+        new_words_count=1, review_done=True, streak_days=1))
+    await db_session.flush()
+    with pytest.raises(AppError):
+        await checkin_service.make_up_checkin(db_session, student_id=sid, d=_today() - timedelta(days=1))
+
+
+@pytest.mark.asyncio
+async def test_make_up_future_rejected(db_session):
+    from app.core.exceptions import AppError
+    sid = await _student(db_session)
+    with pytest.raises(AppError):
+        await checkin_service.make_up_checkin(db_session, student_id=sid, d=_today() + timedelta(days=1))

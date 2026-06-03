@@ -174,3 +174,22 @@ async def get_month_calendar(
         "current_streak": status["current_streak"],
         "longest_streak": status["longest_streak"],
     }
+
+
+async def make_up_checkin(db: AsyncSession, *, student_id: uuid.UUID, d: date) -> dict:
+    """补签某漏签日（当月内、早于今天、未打卡）。恢复连续。返回 {date, current_streak, longest_streak}。"""
+    today = _today()
+    if d >= today:
+        raise AppError(code=400, message="只能补签今天之前的日期")
+    if d < today.replace(day=1):
+        raise AppError(code=400, message="只能补签本月内的日期")
+    if await _row_for(db, student_id, d) is not None:
+        raise AppError(code=400, message="该日已打卡")
+    await _upsert_checkin(db, student_id=student_id, new_words_count=0,
+                          review_done=False, checkin_date=d)
+    status = await get_checkin_status(db, student_id=student_id)
+    return {
+        "date": d.isoformat(),
+        "current_streak": status["current_streak"],
+        "longest_streak": status["longest_streak"],
+    }
