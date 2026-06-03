@@ -1,0 +1,70 @@
+"""作文精修 API（D-109）。"""
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db, get_rls_db
+from app.core.exceptions import AppError
+from app.core.security import get_current_user
+from app.models.d1_users import User
+from app.models.d5_learning import Essay
+from app.schemas.base import BaseResponse, make_ok
+from app.schemas.essay import (
+    EssayCreate, EssayListItem, EssayListOut, EssayOut,
+)
+from app.services import essay_service
+
+router = APIRouter(prefix="/essays", tags=["essays"])
+
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User, Depends(get_current_user)]
+
+
+def _to_out(e: Essay) -> EssayOut:
+    dim = e.dimensions or {}
+    return EssayOut(
+        id=e.id, original_text=e.original_text, polished_text=e.polished_text,
+        scores=dim.get("scores", []), total=dim.get("total", 0),
+        issues=dim.get("issues", []), title=dim.get("title"),
+        essay_type=dim.get("essay_type"), round_count=e.round_count,
+        status=str(e.status), created_at=e.created_at.isoformat(),
+    )
+
+
+@router.post("", response_model=BaseResponse[EssayOut])
+async def create_essay(body: EssayCreate, db: DbDep, current_user: UserDep):
+    await get_rls_db(db, str(current_user.id))
+    essay = await essay_service.polish_essay(
+        db, student_id=current_user.id, original_text=body.original_text,
+        title=body.title, essay_type=body.essay_type, wrong_question_id=body.wrong_question_id)
+    await db.commit()
+    return make_ok(_to_out(essay))
+
+
+@router.get("", response_model=BaseResponse[EssayListOut])
+async def list_my_essays(db: DbDep, current_user: UserDep):
+    await get_rls_db(db, str(current_user.id))
+    rows = await essay_service.list_essays(db, student_id=current_user.id)
+    items = [
+        EssayListItem(
+            id=e.id, title=(e.dimensions or {}).get("title"),
+            essay_type=(e.dimensions or {}).get("essay_type"),
+            total=(e.dimensions or {}).get("total", 0),
+            status=str(e.status), created_at=e.created_at.isoformat(),
+        )
+        for e in rows
+    ]
+    return make_ok(EssayListOut(total=len(items), items=items))
+
+
+@router.get("/{essay_id}", response_model=BaseResponse[EssayOut])
+async def get_my_essay(essay_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await get_rls_db(db, str(current_user.id))
+    e = await essay_service.get_essay(db, student_id=current_user.id, essay_id=essay_id)
+    if e is None:
+        raise AppError(code=404, message="作文记录不存在")
+    return make_ok(_to_out(e))
