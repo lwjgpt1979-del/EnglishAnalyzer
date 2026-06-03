@@ -683,3 +683,23 @@ export interface EssayProgress {
   trend: EssayTrendItem[]
   dimension_avg: EssayDimensionAvg[]
 }
+
+// 老师出卷（D-113）
+export interface AssignmentQuestion { stem: string; type?: string | null; options?: string[] | null; answer?: string | null }
+export interface AssignmentOut {
+  id: string; class_id: string; title: string; questions: AssignmentQuestion[]
+  due_at: string | null; status: string; published_at: string | null; created_at: string
+}
+export interface AssignmentListItem {
+  id: string; class_id: string; title: string; status: string; due_at: string | null; submission_count: number
+}
+export interface SubmissionItem {
+  id: string; student_id: string; answers: unknown; score: number | null; submitted_at: string
+}
+export interface TeacherAssignmentDetail { assignment: AssignmentOut; submissions: SubmissionItem[] }
+export interface StudentAssignmentItem {
+  id: string; title: string; status: string; due_at: string | null; submitted: boolean; score: number | null
+}
+export interface StudentAssignmentDetail {
+  assignment: AssignmentOut; submitted: boolean; answers: unknown; score: number | null
+}

@@ -48,6 +48,8 @@
     { "path": "pages/teacher/student-diagnosis", "style": { "navigationBarTitleText": "学生学情" } },
     { "path": "pages/teacher/classes", "style": { "navigationBarTitleText": "班级管理" } },
     { "path": "pages/teacher/class-detail", "style": { "navigationBarTitleText": "班级详情" } },
+    { "path": "pages/teacher/assignments", "style": { "navigationBarTitleText": "出卷中心" } },
+    { "path": "pages/teacher/assignment-detail", "style": { "navigationBarTitleText": "作业批改" } },
     { "path": "pages/relative/center", "style": { "navigationBarTitleText": "家人中心" } },
     { "path": "pages/relative/student-view", "style": { "navigationBarTitleText": "孩子学情" } },
     { "path": "pages/curriculum/units", "style": { "navigationBarTitleText": "课程单元" } },

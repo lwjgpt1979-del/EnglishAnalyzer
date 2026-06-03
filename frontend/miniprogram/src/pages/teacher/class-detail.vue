@@ -5,6 +5,8 @@
       <text class="tab" :class="{ active: tab === 'report' }" @tap="switchReport">综合报告</text>
     </view>
 
+    <button class="btn-assign" @tap="goAssignments">📋 出卷 / 作业</button>
+
     <view v-if="tab === 'students'">
       <view v-if="loading" class="tip">加载中…</view>
       <view v-else-if="students.length === 0" class="tip">班级暂无学生</view>
@@ -82,6 +84,7 @@ async function onRemove(sid: string) {
   try { await removeClassStudent(classId.value, sid); await loadStudents() }
   catch (e: any) { uni.showToast({ title: e?.message || '失败', icon: 'none' }) }
 }
+function goAssignments() { uni.navigateTo({ url: `/pages/teacher/assignments?classId=${classId.value}` }) }
 onMounted(() => {
   const pages = getCurrentPages()
   classId.value = (pages[pages.length - 1] as any).options?.classId || ''
@@ -100,6 +103,7 @@ onMounted(() => {
 .s-id { font-size: 26rpx; color: var(--c-text-body); }
 .s-rm { font-size: 24rpx; color: var(--c-danger); padding: 8rpx 16rpx; }
 .hint { font-size: 22rpx; color: var(--c-text-hint); display: block; margin-bottom: 12rpx; }
+.btn-assign { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 26rpx; font-weight: 700; margin-bottom: 16rpx; }
 .input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 26rpx; width: 100%; box-sizing: border-box; margin-bottom: 12rpx; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-weight: 700; font-size: 26rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
