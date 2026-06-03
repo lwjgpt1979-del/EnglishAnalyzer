@@ -11,13 +11,16 @@ from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.vocabulary import (
+    CheckinIn,
+    CheckinResult,
+    CheckinStatusOut,
     DailyTaskOut,
     VocabAnswerIn,
     VocabAnswerResult,
     WrongWordItem,
     WrongWordListOut,
 )
-from app.services import vocabulary_service
+from app.services import checkin_service, vocabulary_service
 
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
 
@@ -71,3 +74,28 @@ async def wrong_words(db: DbDep, current_user: UserDep, skip: int = 0, limit: in
         for lr, w in rows
     ]
     return make_ok(WrongWordListOut(total=total, items=items))
+
+
+@router.post("/checkin", response_model=BaseResponse[CheckinResult])
+async def checkin(body: CheckinIn, db: DbDep, current_user: UserDep):
+    """词力通完成会话打卡，返回连续天数。"""
+    await get_rls_db(db, str(current_user.id))
+    row = await checkin_service.record_checkin(
+        db, student_id=current_user.id,
+        new_words_count=body.new_words_count, review_done=body.review_done,
+    )
+    await db.commit()
+    return make_ok(CheckinResult(
+        checkin_date=row.checkin_date.isoformat(),
+        streak_days=row.streak_days,
+        new_words_count=row.new_words_count,
+        review_done=row.review_done,
+    ))
+
+
+@router.get("/checkin/status", response_model=BaseResponse[CheckinStatusOut])
+async def checkin_status(db: DbDep, current_user: UserDep):
+    """打卡状态：今日是否已打 + 当前连续 + 历史最高。"""
+    await get_rls_db(db, str(current_user.id))
+    st = await checkin_service.get_checkin_status(db, student_id=current_user.id)
+    return make_ok(CheckinStatusOut(**st))

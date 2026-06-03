@@ -100,3 +100,23 @@ async def test_wrong_words_flow(client):
     assert body["total"] >= 1
     item = next(it for it in body["items"] if it["word_id"] == wid)
     assert item["wrong_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_checkin_status_requires_auth(client):
+    r = await client.get("/api/v1/vocabulary/checkin/status")
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_checkin_flow(client):
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    r = await client.post("/api/v1/vocabulary/checkin",
+                          json={"new_words_count": 5, "review_done": True}, headers=headers)
+    assert r.status_code == 200
+    assert r.json()["data"]["streak_days"] == 1
+    st = await client.get("/api/v1/vocabulary/checkin/status", headers=headers)
+    assert st.status_code == 200
+    body = st.json()["data"]
+    assert body["checked_in_today"] is True
+    assert body["current_streak"] == 1 and body["longest_streak"] == 1

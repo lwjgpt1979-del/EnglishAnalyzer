@@ -92,3 +92,25 @@ class WrongWordItem(BaseModel):
 class WrongWordListOut(BaseModel):
     total: int
     items: list[WrongWordItem]
+
+
+# ─── 打卡激励（P1 / D-104）────────────────────────────────────────────────────
+
+class CheckinIn(BaseModel):
+    new_words_count: int = 0
+    review_done: bool = False
+
+
+class CheckinResult(BaseModel):
+    checkin_date: str
+    streak_days: int
+    new_words_count: int
+    review_done: bool
+
+
+class CheckinStatusOut(BaseModel):
+    checked_in_today: bool
+    current_streak: int
+    longest_streak: int
+    today_new_words: int
+    today_review_done: bool
