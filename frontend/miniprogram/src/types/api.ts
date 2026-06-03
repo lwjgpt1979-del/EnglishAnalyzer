@@ -651,9 +651,11 @@ export interface VocabMakeUpResult {
   longest_streak: number
 }
 
-// 作文精修（D-109）
+// 作文精修（D-109 / D-110）
 export interface EssayScoreItem { dimension: string; score: number; full: number }
 export interface EssayIssueItem { original: string; suggestion: string; type: string; color: string; explanation: string }
+export interface EssayRoundItem { round: number; total: number }
+export interface EssayTemplates { essay_type: string | null; template: string; samples: string[] }
 export interface EssayDetail {
   id: string
   original_text: string
@@ -666,6 +668,7 @@ export interface EssayDetail {
   round_count: number
   status: string
   created_at: string
+  rounds: EssayRoundItem[]
 }
 export interface EssayListItem {
   id: string; title: string | null; essay_type: string | null

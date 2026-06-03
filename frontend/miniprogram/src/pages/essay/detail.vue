@@ -27,6 +27,30 @@
           <text class="issue-exp">{{ it.explanation }}</text>
         </view>
       </view>
+
+      <view v-if="essay.rounds && essay.rounds.length > 1" class="card">
+        <view class="card-title">进步轨迹</view>
+        <view v-for="r in essay.rounds" :key="r.round" class="score-row">
+          <text class="dim">第 {{ r.round }} 轮</text>
+          <text class="sc">{{ r.total }} 分</text>
+        </view>
+      </view>
+
+      <view v-if="tpl" class="card">
+        <view class="card-title">模板与范文</view>
+        <text class="para">{{ tpl.template }}</text>
+        <view v-for="(s, i) in tpl.samples" :key="i" class="sample">{{ i + 1 }}. {{ s }}</view>
+      </view>
+
+      <view class="card">
+        <button v-if="!showRevise" class="btn-ghost" @tap="showRevise = true">再改一版（ProMax）</button>
+        <view v-else>
+          <textarea v-model="revised" class="essay-input" placeholder="粘贴你修改后的作文…" />
+          <button class="btn-primary" :disabled="repolishing || !revised.trim()" @tap="onRepolish">
+            {{ repolishing ? '批改中…' : '提交新一轮' }}
+          </button>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -34,17 +58,41 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { getEssay } from '@/api/essay'
-import type { EssayDetail } from '@/types/api'
+import { getEssay, repolishEssay, getEssayTemplates } from '@/api/essay'
+import type { EssayDetail, EssayTemplates } from '@/types/api'
 
 const essay = ref<EssayDetail | null>(null)
+const tpl = ref<EssayTemplates | null>(null)
+const revised = ref('')
+const showRevise = ref(false)
+const repolishing = ref(false)
+
+function loadEssay(id: string) {
+  getEssay(id).then((e) => {
+    essay.value = e
+    getEssayTemplates(e.essay_type || undefined).then((t) => { tpl.value = t }).catch(() => {})
+  }).catch((e) => uni.showToast({ title: (e as Error).message, icon: 'none' }))
+}
 
 onLoad((q) => {
   const id = (q as { id?: string })?.id
-  if (id) getEssay(id).then((e) => { essay.value = e }).catch((e) => {
-    uni.showToast({ title: (e as Error).message, icon: 'none' })
-  })
+  if (id) loadEssay(id)
 })
+
+async function onRepolish() {
+  if (!essay.value || !revised.value.trim()) return
+  repolishing.value = true
+  try {
+    essay.value = await repolishEssay(essay.value.id, revised.value)
+    revised.value = ''
+    showRevise.value = false
+    uni.showToast({ title: '已生成新一轮', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message, icon: 'none' })
+  } finally {
+    repolishing.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -61,4 +109,9 @@ onLoad((q) => {
 .issue.blue { border-left-color: #3b82f6; }
 .issue-head { display: block; font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
 .issue-exp { display: block; font-size: 24rpx; color: var(--c-text-second); margin-top: 6rpx; line-height: 1.6; }
+.sample { font-size: 24rpx; color: var(--c-text-second); line-height: 1.7; margin-top: 8rpx; }
+.essay-input { width: 100%; height: 240rpx; font-size: 28rpx; color: var(--c-text-body); line-height: 1.6; }
+.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 12rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-ghost { background: var(--c-bg-page); color: var(--c-text-body); border-radius: var(--r-btn); padding: 18rpx; font-size: 28rpx; }
 </style>
