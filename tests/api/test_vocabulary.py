@@ -78,3 +78,25 @@ async def test_answer_wrong_resets(client):
     assert r.status_code == 200
     assert r.json()["data"]["level"] == "new"
     assert r.json()["data"]["repetitions"] == 0
+
+
+@pytest.mark.asyncio
+async def test_wrong_words_requires_auth(client):
+    r = await client.get("/api/v1/vocabulary/wrong-words")
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_wrong_words_flow(client):
+    await _seed_word()
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    # 取今日任务，对第一个词答错 → 进错词本
+    data = (await client.get("/api/v1/vocabulary/daily-task", headers=headers)).json()["data"]
+    wid = data["new_words"][0]["word_id"]
+    await client.post("/api/v1/vocabulary/answer", json={"word_id": wid, "correct": False}, headers=headers)
+    r = await client.get("/api/v1/vocabulary/wrong-words", headers=headers)
+    assert r.status_code == 200
+    body = r.json()["data"]
+    assert body["total"] >= 1
+    item = next(it for it in body["items"] if it["word_id"] == wid)
+    assert item["wrong_count"] >= 1

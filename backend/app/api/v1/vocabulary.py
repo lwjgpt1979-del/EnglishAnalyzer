@@ -10,7 +10,13 @@ from app.core.database import get_db, get_rls_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
-from app.schemas.vocabulary import DailyTaskOut, VocabAnswerIn, VocabAnswerResult
+from app.schemas.vocabulary import (
+    DailyTaskOut,
+    VocabAnswerIn,
+    VocabAnswerResult,
+    WrongWordItem,
+    WrongWordListOut,
+)
 from app.services import vocabulary_service
 
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
@@ -40,3 +46,28 @@ async def answer(body: VocabAnswerIn, db: DbDep, current_user: UserDep):
     )
     await db.commit()
     return make_ok(result)
+
+
+@router.get("/wrong-words", response_model=BaseResponse[WrongWordListOut])
+async def wrong_words(db: DbDep, current_user: UserDep, skip: int = 0, limit: int = 50):
+    """错词本：列出该生答错且未掌握的词（错得多的在前）。"""
+    await get_rls_db(db, str(current_user.id))
+    rows, total = await vocabulary_service.list_wrong_words(
+        db, student_id=current_user.id, skip=skip, limit=limit,
+    )
+
+    def _pub(w) -> bool:
+        return str(getattr(w, "media_status", "draft")) == "published"
+
+    items = [
+        WrongWordItem(
+            word_id=w.id, word=w.word, phonetic=w.phonetic, definitions=w.definitions,
+            wrong_count=lr.wrong_count, level=str(lr.level),
+            image_urls=(w.image_urls if _pub(w) else None),
+            en_description=(w.en_description if _pub(w) else None),
+            word_audio_url=(w.word_audio_url if _pub(w) else None),
+            en_desc_audio_url=(w.en_desc_audio_url if _pub(w) else None),
+        )
+        for lr, w in rows
+    ]
+    return make_ok(WrongWordListOut(total=total, items=items))

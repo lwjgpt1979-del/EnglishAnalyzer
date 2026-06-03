@@ -72,3 +72,23 @@ class VocabMediaUpdateRequest(BaseModel):
     en_description: str | None = None
     word_audio_url: str | None = None
     en_desc_audio_url: str | None = None
+
+
+# ─── 错词本（P1 / D-103）──────────────────────────────────────────────────────
+
+class WrongWordItem(BaseModel):
+    word_id: uuid.UUID
+    word: str
+    phonetic: str | None = None
+    definitions: list[dict] | dict
+    wrong_count: int
+    level: str
+    image_urls: list[str] | None = None
+    en_description: str | None = None
+    word_audio_url: str | None = None
+    en_desc_audio_url: str | None = None
+
+
+class WrongWordListOut(BaseModel):
+    total: int
+    items: list[WrongWordItem]
