@@ -16,6 +16,11 @@ class WordCardOut(BaseModel):
     difficulty: int
     level: str = Field(..., description="new/learning/review/mastered")
     is_new: bool = Field(..., description="今日新词 True / 复习词 False")
+    # —— 图背单词媒体（仅 media_status='published' 时填充，D-101）——
+    image_urls: list[str] | None = None
+    en_description: str | None = None
+    word_audio_url: str | None = None
+    en_desc_audio_url: str | None = None
 
 
 class DailyTaskOut(BaseModel):

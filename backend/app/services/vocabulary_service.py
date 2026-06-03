@@ -58,6 +58,7 @@ async def _daily_new_limit(db: AsyncSession, *, student_id: uuid.UUID) -> int:
 
 
 def _to_card(w: VocabularyWord, *, level: str, is_new: bool) -> WordCardOut:
+    pub = str(getattr(w, "media_status", "draft")) == "published"
     return WordCardOut(
         word_id=w.id,
         word=w.word,
@@ -67,6 +68,10 @@ def _to_card(w: VocabularyWord, *, level: str, is_new: bool) -> WordCardOut:
         difficulty=w.difficulty,
         level=level,
         is_new=is_new,
+        image_urls=(w.image_urls if pub else None),
+        en_description=(w.en_description if pub else None),
+        word_audio_url=(w.word_audio_url if pub else None),
+        en_desc_audio_url=(w.en_desc_audio_url if pub else None),
     )
 
 

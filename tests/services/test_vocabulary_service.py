@@ -149,3 +149,32 @@ async def test_learned_word_not_in_new(db_session):
     task = await vocabulary_service.get_daily_task(db_session, student_id=sid)
     new_ids = {c.word_id for c in task.new_words}
     assert ids[0] not in new_ids
+
+
+@pytest.mark.asyncio
+async def test_daily_task_includes_published_media_only(db_session):
+    """daily-task 词卡只带 published 媒体；draft 媒体不下发。"""
+    from app.models.d5_learning import VocabularyWord
+    from app.services import vocabulary_service
+    sid = await _make_student(db_session)
+    w_pub = VocabularyWord(
+        id=uuid.uuid4(), word=f"pub_{uuid.uuid4().hex[:6]}", phonetic="p",
+        definitions=[{"pos": "n.", "meaning": "x"}], examples=None, difficulty=0,
+        image_urls=["https://i/1.png"], en_description="desc",
+        word_audio_url="https://a/w.mp3", en_desc_audio_url="https://a/d.mp3",
+        media_status="published",
+    )
+    w_draft = VocabularyWord(
+        id=uuid.uuid4(), word=f"dft_{uuid.uuid4().hex[:6]}", phonetic="d",
+        definitions=[{"pos": "n.", "meaning": "y"}], examples=None, difficulty=0,
+        image_urls=["https://i/2.png"], en_description="hidden", media_status="draft",
+    )
+    db_session.add_all([w_pub, w_draft])
+    await db_session.flush()
+    task = await vocabulary_service.get_daily_task(db_session, student_id=sid)
+    by_id = {c.word_id: c for c in task.new_words}
+    assert by_id[w_pub.id].image_urls == ["https://i/1.png"]
+    assert by_id[w_pub.id].en_description == "desc"
+    assert by_id[w_pub.id].word_audio_url == "https://a/w.mp3"
+    assert by_id[w_draft.id].image_urls is None
+    assert by_id[w_draft.id].en_description is None
