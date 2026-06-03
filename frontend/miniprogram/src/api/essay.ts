@@ -1,5 +1,5 @@
 import { request } from '@/utils/request'
-import type { EssayDetail, EssayList, EssayTemplates } from '@/types/api'
+import type { EssayDetail, EssayList, EssayTemplates, EssayProgress } from '@/types/api'
 
 export function createEssay(payload: { original_text: string; title?: string; essay_type?: string }): Promise<EssayDetail> {
   return request<EssayDetail>('/api/v1/essays', { method: 'POST', data: payload })
@@ -17,4 +17,7 @@ export function getEssayTemplates(essayType?: string): Promise<EssayTemplates> {
   const data: Record<string, string> = {}
   if (essayType) data.essay_type = essayType
   return request<EssayTemplates>('/api/v1/essays/templates', { method: 'GET', data })
+}
+export function getEssayProgress(): Promise<EssayProgress> {
+  return request<EssayProgress>('/api/v1/essays/progress', { method: 'GET' })
 }

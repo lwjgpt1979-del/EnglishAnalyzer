@@ -675,3 +675,11 @@ export interface EssayListItem {
   total: number; status: string; created_at: string
 }
 export interface EssayList { total: number; items: EssayListItem[] }
+export interface EssayTrendItem { date: string; total: number }
+export interface EssayDimensionAvg { dimension: string; avg: number }
+export interface EssayProgress {
+  total_essays: number
+  avg_total: number
+  trend: EssayTrendItem[]
+  dimension_avg: EssayDimensionAvg[]
+}

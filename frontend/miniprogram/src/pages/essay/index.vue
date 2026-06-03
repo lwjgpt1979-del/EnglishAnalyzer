@@ -1,5 +1,16 @@
 <template>
   <view class="page">
+    <view v-if="progress && progress.total_essays > 0" class="card">
+      <view class="card-title">我的进步</view>
+      <view class="prog-row">
+        <text>已精修 {{ progress.total_essays }} 篇</text>
+        <text class="prog-avg">平均 {{ progress.avg_total }} 分</text>
+      </view>
+      <view v-for="d in progress.dimension_avg" :key="d.dimension" class="prog-dim">
+        <text>{{ d.dimension }}</text><text class="prog-avg">{{ d.avg }}</text>
+      </view>
+    </view>
+
     <view class="card">
       <view class="card-title">作文 AI 精修</view>
       <textarea v-model="text" class="essay-input" placeholder="粘贴或输入你的英文作文…" :maxlength="-1" />
@@ -24,18 +35,22 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { createEssay, getEssays } from '@/api/essay'
-import type { EssayListItem } from '@/types/api'
+import { createEssay, getEssays, getEssayProgress } from '@/api/essay'
+import type { EssayListItem, EssayProgress } from '@/types/api'
 
 const text = ref('')
 const essayType = ref('')
 const loading = ref(false)
 const list = ref<EssayListItem[]>([])
+const progress = ref<EssayProgress | null>(null)
 
 async function loadList() {
   try { list.value = (await getEssays()).items } catch { /* 忽略 */ }
 }
-onShow(loadList)
+async function loadProgress() {
+  try { progress.value = await getEssayProgress() } catch { /* 忽略 */ }
+}
+onShow(() => { loadList(); loadProgress() })
 
 async function onSubmit() {
   loading.value = true
@@ -65,4 +80,7 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/essay/detail?id=${
 .row { display: flex; justify-content: space-between; padding: 16rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .row-title { font-size: 28rpx; color: var(--c-text-body); }
 .row-score { font-size: 28rpx; font-weight: 700; color: var(--c-gold); }
+.prog-row { display: flex; justify-content: space-between; font-size: 28rpx; color: var(--c-text-body); margin-bottom: 8rpx; }
+.prog-avg { font-weight: 700; color: var(--c-gold); }
+.prog-dim { display: flex; justify-content: space-between; font-size: 26rpx; color: var(--c-text-second); padding: 4rpx 0; }
 </style>
