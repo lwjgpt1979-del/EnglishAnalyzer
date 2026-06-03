@@ -168,3 +168,81 @@ async def test_submit_after_due_rejected(db_session):
     await assignment_service.publish_assignment(db_session, teacher_id=tid, assignment_id=a.id)
     with pytest.raises(AppError):
         await assignment_service.submit_assignment(db_session, student_id=sid, assignment_id=a.id, answers=[1])
+
+
+# ─── D-114: 自动判分 + 错题归库 ──────────────────────────────────────
+
+def test_normalize_and_autojudge():
+    from app.services.assignment_service import _normalize_answers, _auto_judge
+    assert _normalize_answers([{"index": 0, "answer": "A"}, {"index": 1, "answer": "B"}]) == {0: "A", 1: "B"}
+    assert _normalize_answers({"0": "A", "1": "B"}) == {0: "A", 1: "B"}
+    assert _normalize_answers(["A", "B"]) == {0: "A", 1: "B"}
+    qs = [{"stem": "q1", "answer": "A"}, {"stem": "q2", "answer": "B"}]
+    score, wrong = _auto_judge(qs, [{"index": 0, "answer": "A"}, {"index": 1, "answer": "X"}])
+    assert score == 50.0 and len(wrong) == 1 and wrong[0]["correct_answer"] == "B"
+    # 纯主观（无 answer）
+    s2, w2 = _auto_judge([{"stem": "写作"}], [{"index": 0, "answer": "..."}])
+    assert s2 is None and w2 == []
+
+
+@pytest.mark.asyncio
+async def test_submit_autograde_all_correct(db_session):
+    from app.models.d3_wrong_questions import WrongQuestion
+    from sqlalchemy import func
+    tid = await _teacher(db_session)
+    cls, sid = await _class_with_student(db_session, tid)
+    a = await assignment_service.create_assignment(
+        db_session, teacher_id=tid, class_id=cls.id, title="x",
+        questions=[{"stem": "1+1", "answer": "2"}, {"stem": "2+2", "answer": "4"}])
+    await assignment_service.publish_assignment(db_session, teacher_id=tid, assignment_id=a.id)
+    sub = await assignment_service.submit_assignment(
+        db_session, student_id=sid, assignment_id=a.id,
+        answers=[{"index": 0, "answer": "2"}, {"index": 1, "answer": "4"}])
+    assert float(sub.score) == 100.0
+    cnt = (await db_session.execute(
+        select(func.count()).select_from(WrongQuestion).where(
+            WrongQuestion.student_id == sid,
+            WrongQuestion.source_image_url == f"assignment://{a.id}"))).scalar_one()
+    assert cnt == 0
+
+
+@pytest.mark.asyncio
+async def test_submit_autograde_wrong_into_wrongbook(db_session):
+    from app.models.d3_wrong_questions import WrongQuestion
+    from sqlalchemy import func
+    tid = await _teacher(db_session)
+    cls, sid = await _class_with_student(db_session, tid)
+    a = await assignment_service.create_assignment(
+        db_session, teacher_id=tid, class_id=cls.id, title="x",
+        questions=[{"stem": "1+1", "answer": "2"}, {"stem": "2+2", "answer": "4"}])
+    await assignment_service.publish_assignment(db_session, teacher_id=tid, assignment_id=a.id)
+    sub = await assignment_service.submit_assignment(
+        db_session, student_id=sid, assignment_id=a.id,
+        answers=[{"index": 0, "answer": "2"}, {"index": 1, "answer": "5"}])
+    assert float(sub.score) == 50.0
+
+    def _wrong_count():
+        return db_session.execute(
+            select(func.count()).select_from(WrongQuestion).where(
+                WrongQuestion.student_id == sid,
+                WrongQuestion.source_image_url == f"assignment://{a.id}"))
+
+    assert (await _wrong_count()).scalar_one() == 1
+    # 重复提交纠正 → 旧错题清除、score 更新
+    await assignment_service.submit_assignment(
+        db_session, student_id=sid, assignment_id=a.id,
+        answers=[{"index": 0, "answer": "2"}, {"index": 1, "answer": "4"}])
+    assert (await _wrong_count()).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_submit_subjective_no_score(db_session):
+    tid = await _teacher(db_session)
+    cls, sid = await _class_with_student(db_session, tid)
+    a = await assignment_service.create_assignment(
+        db_session, teacher_id=tid, class_id=cls.id, title="x",
+        questions=[{"stem": "谈谈你的看法"}])  # 无 answer
+    await assignment_service.publish_assignment(db_session, teacher_id=tid, assignment_id=a.id)
+    sub = await assignment_service.submit_assignment(
+        db_session, student_id=sid, assignment_id=a.id, answers=[{"index": 0, "answer": "我的看法..."}])
+    assert sub.score is None

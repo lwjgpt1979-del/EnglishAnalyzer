@@ -4,12 +4,64 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
+from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d7_teacher import Assignment, AssignmentSubmission, ClassStudent
 from app.services import class_service, notification_service
+from app.services.question_service import _grade
+
+
+def _normalize_answers(answers) -> dict[int, str]:
+    """支持 [{index,answer}] / dict / 裸 list → {index: answer_str}。"""
+    out: dict[int, str] = {}
+    if isinstance(answers, list):
+        for i, it in enumerate(answers):
+            if isinstance(it, dict) and "index" in it:
+                out[int(it["index"])] = str(it.get("answer", ""))
+            else:
+                out[i] = str(it)
+    elif isinstance(answers, dict):
+        for k, v in answers.items():
+            try:
+                out[int(k)] = str(v)
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
+def _auto_judge(questions: list, answers) -> tuple[float | None, list[dict]]:
+    """返回 (score|None, wrong_items)。仅对有 answer 的客观题判分。"""
+    amap = _normalize_answers(answers)
+    objective = [(i, q) for i, q in enumerate(questions) if (q or {}).get("answer")]
+    if not objective:
+        return None, []
+    correct = 0
+    wrong: list[dict] = []
+    for i, q in objective:
+        ua = amap.get(i, "")
+        if _grade(str(q.get("type") or "其他"), str(q["answer"]), ua):
+            correct += 1
+        else:
+            wrong.append({
+                "stem": q.get("stem", ""), "student_answer": ua,
+                "correct_answer": str(q["answer"]),
+            })
+    return round(correct / len(objective) * 100, 2), wrong
+
+
+async def _sync_assignment_wrongs(db: AsyncSession, *, student_id, assignment_id, wrong_items) -> None:
+    marker = f"assignment://{assignment_id}"
+    await db.execute(delete(WrongQuestion).where(
+        WrongQuestion.student_id == student_id,
+        WrongQuestion.source_image_url == marker))
+    for w in wrong_items:
+        db.add(WrongQuestion(
+            id=uuid.uuid4(), student_id=student_id, source_image_url=marker,
+            question_text=w["stem"], student_answer=w["student_answer"],
+            correct_answer=w["correct_answer"], question_type=None))
 
 
 # ─── 老师端 ──────────────────────────────────────────────────────────
@@ -187,12 +239,17 @@ async def submit_assignment(
     if sub is not None:
         sub.answers = answers
         sub.submitted_at = now
-        await db.flush()
-        return sub
-    sub = AssignmentSubmission(
-        id=uuid.uuid4(), assignment_id=a.id, student_id=student_id,
-        answers=answers, submitted_at=now,
-    )
-    db.add(sub)
+    else:
+        sub = AssignmentSubmission(
+            id=uuid.uuid4(), assignment_id=a.id, student_id=student_id,
+            answers=answers, submitted_at=now,
+        )
+        db.add(sub)
+    await db.flush()
+    # 客观题自动判分 + 答错入错题库（D-114）
+    score, wrong = _auto_judge(a.questions or [], answers)
+    if score is not None:
+        sub.score = score
+    await _sync_assignment_wrongs(db, student_id=student_id, assignment_id=a.id, wrong_items=wrong)
     await db.flush()
     return sub
