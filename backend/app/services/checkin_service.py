@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import StudyCheckin
+from app.services import vocabulary_service
 
 
 def _today() -> date:
@@ -26,14 +27,14 @@ async def _row_for(db: AsyncSession, student_id: uuid.UUID, d: date) -> StudyChe
     )).scalar_one_or_none()
 
 
-async def record_checkin(
+async def _upsert_checkin(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-    new_words_count: int = 0,
-    review_done: bool = False,
+    new_words_count: int,
+    review_done: bool,
 ) -> StudyCheckin:
-    """记录当日打卡。同日重复调用幂等（更新计数、streak 不变）。"""
+    """写入/更新当日打卡行（streak 推算）。同日重复调用幂等（更新计数、streak 不变）。"""
     today = _today()
     row = await _row_for(db, student_id, today)
     if row is not None:
@@ -54,6 +55,24 @@ async def record_checkin(
     db.add(row)
     await db.flush()
     return row
+
+
+async def record_checkin(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+) -> tuple[StudyCheckin | None, dict]:
+    """严格校验今日任务完成度，达标才写打卡。返回 (打卡行 or None, progress)。"""
+    progress = await vocabulary_service.compute_today_progress(db, student_id=student_id)
+    if not progress["all_done"]:
+        return None, progress
+    row = await _upsert_checkin(
+        db,
+        student_id=student_id,
+        new_words_count=progress["new_learned_today"],
+        review_done=True,
+    )
+    return row, progress
 
 
 async def get_checkin_status(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
