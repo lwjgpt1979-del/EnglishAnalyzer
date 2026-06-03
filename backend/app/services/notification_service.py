@@ -20,6 +20,7 @@ TYPE_TO_CHANNEL = {
     "bind_request": "relative",
     "bind_accepted": "relative",
     "bind_rejected": "relative",
+    "checkin_reminder": "study",
 }
 
 RETENTION_DAYS_MEMBERSHIP = 365
@@ -87,6 +88,17 @@ async def emit_membership(
     return await emit(
         db, user_id=user_id, type_="membership",
         title=title, content=content, meta=meta,
+    )
+
+
+async def emit_checkin_reminder(
+    db: AsyncSession, *, user_id: uuid.UUID, streak_days: int,
+) -> Notification:
+    return await emit(
+        db, user_id=user_id, type_="checkin_reminder",
+        title="别让连续中断啦",
+        content=f"你已连续打卡 {streak_days} 天，今天还没学，快来词力通保持记录！",
+        meta={"streak_days": streak_days},
     )
 
 
