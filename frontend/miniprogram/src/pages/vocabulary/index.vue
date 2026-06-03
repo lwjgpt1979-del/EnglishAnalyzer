@@ -19,6 +19,21 @@
         <text class="ex-title">例句</text>
         <text v-for="(e, i) in exampleList(curStudy)" :key="i" class="ex-line">{{ e }}</text>
       </view>
+
+      <!-- 图背单词：配图 -->
+      <scroll-view v-if="curStudy.image_urls && curStudy.image_urls.length" scroll-x class="img-row">
+        <image v-for="(u, i) in curStudy.image_urls" :key="i" :src="u" mode="aspectFill" class="word-img" />
+      </scroll-view>
+      <!-- 英文可理解性描述 -->
+      <view v-if="curStudy.en_description" class="en-desc">
+        <text class="en-desc-text">{{ curStudy.en_description }}</text>
+      </view>
+      <!-- 双音频播放 -->
+      <view class="audio-row" v-if="curStudy.word_audio_url || curStudy.en_desc_audio_url">
+        <text v-if="curStudy.word_audio_url" class="audio-btn" @tap="playAudio(curStudy.word_audio_url)">🔊 单词</text>
+        <text v-if="curStudy.en_desc_audio_url" class="audio-btn" @tap="playAudio(curStudy.en_desc_audio_url)">🔊 英文描述</text>
+      </view>
+
       <button class="btn-primary" @tap="nextStudy">记住了，下一个</button>
     </view>
 
@@ -193,6 +208,14 @@ async function load() {
   }
 }
 
+let _audioCtx: UniApp.InnerAudioContext | null = null
+function playAudio(src?: string | null) {
+  if (!src) return
+  if (!_audioCtx) _audioCtx = uni.createInnerAudioContext()
+  _audioCtx.src = src
+  _audioCtx.play()
+}
+
 function reload() {
   load()
 }
@@ -209,6 +232,12 @@ onMounted(load)
 .phonetic { font-size: 30rpx; color: var(--c-text-second); text-align: center; margin-top: 8rpx; }
 .defs { margin-top: 32rpx; }
 .def-line { display: block; font-size: 32rpx; color: var(--c-text-body); line-height: 1.8; }
+.img-row { white-space: nowrap; margin: 20rpx 0; }
+.word-img { width: 220rpx; height: 160rpx; border-radius: var(--r-md); margin-right: 16rpx; display: inline-block; background: var(--c-bg-soft); }
+.en-desc { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx; margin: 16rpx 0; }
+.en-desc-text { font-size: 28rpx; color: var(--c-text-body); line-height: 1.7; }
+.audio-row { display: flex; gap: 24rpx; margin-bottom: 8rpx; }
+.audio-btn { font-size: 28rpx; color: var(--c-gold); font-weight: 600; }
 .examples { margin-top: 24rpx; padding-top: 20rpx; border-top: 1rpx solid var(--c-bg-soft); }
 .ex-title { font-size: 24rpx; color: var(--c-text-hint); display: block; margin-bottom: 8rpx; }
 .ex-line { display: block; font-size: 28rpx; color: var(--c-text-second); line-height: 1.7; }

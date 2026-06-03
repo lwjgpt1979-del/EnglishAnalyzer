@@ -562,6 +562,10 @@ export interface VocabWordCard {
   difficulty: number
   level: string
   is_new: boolean
+  image_urls?: string[] | null
+  en_description?: string | null
+  word_audio_url?: string | null
+  en_desc_audio_url?: string | null
 }
 
 export interface VocabDailyTask {
