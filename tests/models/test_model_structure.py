@@ -379,3 +379,11 @@ def test_users_has_admin_login_fields():
     cols = set(User.__table__.columns.keys())
     assert "username" in cols
     assert "password_hash" in cols
+
+
+def test_vocabulary_words_has_media_fields():
+    """P1 / D-101: vocabulary_words 必须有图背单词媒体字段。"""
+    from app.models.d5_learning import VocabularyWord
+    cols = set(VocabularyWord.__table__.columns.keys())
+    for c in ["image_urls", "en_description", "word_audio_url", "en_desc_audio_url", "media_status"]:
+        assert c in cols, f"VocabularyWord 缺字段 {c}"

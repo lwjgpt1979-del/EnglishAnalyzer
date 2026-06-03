@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     cos_region: str = "ap-guangzhou"
     cos_base_url: str = "https://enggramer-dev-1234567890.cos.ap-guangzhou.myqcloud.com"
 
+    # 词力通图背单词媒体（dev 以 placeholder 触发 mock；真生成留接缝，需预算 + key）
+    image_provider: str = "mock"
+    image_api_key: str = "img-placeholder-for-dev"
+    image_count_per_word: int = 3
+    tts_provider: str = "mock"
+    tts_api_key: str = "tts-placeholder-for-dev"
+
     # 阿里云 OCR（印刷体识别）
     # 在 https://ram.console.aliyun.com 创建 RAM 子账号并授予 OCR 权限
     aliyun_ocr_access_key_id: str = "placeholder_aliyun_ak_id"
