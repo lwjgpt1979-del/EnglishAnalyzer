@@ -13,7 +13,7 @@
       <button v-if="!detail.submitted" class="btn-primary" :disabled="submitting" @tap="onSubmit">
         {{ submitting ? '提交中…' : '提交作业' }}
       </button>
-      <view v-else class="done-tip">已提交，等待老师批改</view>
+      <view v-else class="done-tip">客观题已自动判分，主观题待老师批改</view>
     </view>
   </view>
 </template>
