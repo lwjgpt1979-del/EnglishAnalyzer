@@ -20,6 +20,7 @@ notification_type_enum = sa.Enum(
     "bind_accepted",
     "bind_rejected",
     "ocr_failed",
+    "checkin_reminder",
     name="notification_type",
 )
 
