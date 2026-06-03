@@ -212,3 +212,40 @@ async def test_pay_for_unbound_student_403(client):
         headers=p_h,
     )
     assert r.status_code == 403
+
+
+# ─── D-106: 亲人可见打卡日历 ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_checkin_calendar_requires_bound(client):
+    """未绑定亲子 → 403。"""
+    s_h, sid = await _setup_user(client, f"cs_{uuid.uuid4().hex[:6]}", 2010)
+    p_h, _ = await _setup_user(client, f"cp_{uuid.uuid4().hex[:6]}", 1985)
+    r = await client.get(f"/api/v1/relative/students/{sid}/checkin-calendar", headers=p_h)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_checkin_calendar_bound_ok(client):
+    """已绑定 → 200，days 含已打卡日。"""
+    from datetime import datetime, timezone
+    from app.models.d5_learning import StudyCheckin
+    s_h, sid = await _setup_user(client, f"cbs_{uuid.uuid4().hex[:6]}", 2010)
+    p_h, _ = await _setup_user(client, f"cbp_{uuid.uuid4().hex[:6]}", 1985)
+    iv = await client.post("/api/v1/relative/invite-code", headers=s_h)
+    code = iv.json()["data"]["code"]
+    await client.post("/api/v1/relative/bind",
+                      json={"code": code, "relationship": "母亲"}, headers=p_h)
+    now = datetime.now(timezone.utc)
+    async with _async_session_factory() as s:
+        s.add(StudyCheckin(
+            id=uuid.uuid4(), student_id=uuid.UUID(sid), checkin_date=now.date(),
+            new_words_count=5, review_done=True, streak_days=1))
+        await s.commit()
+    r = await client.get(
+        f"/api/v1/relative/students/{sid}/checkin-calendar",
+        params={"year": now.year, "month": now.month}, headers=p_h)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["checked_count"] == 1
+    assert data["days"][0]["date"] == now.date().isoformat()

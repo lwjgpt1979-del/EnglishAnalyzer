@@ -14,6 +14,8 @@ from app.schemas.base import BaseResponse, make_ok
 from app.schemas.relative import (
     BindRelativeRequest,
     BoundStudentOut,
+    CheckinCalendarOut,
+    CheckinDayItem,
     QRCodeOut,
     RelativeInviteCodeOut,
     SendInviteSmsRequest,
@@ -120,6 +122,37 @@ async def relative_view_student_wqs(
     )
     items = list(r.scalars().all())
     return make_ok([WrongQuestionOut.model_validate(wq) for wq in items])
+
+
+@router.get(
+    "/students/{student_id}/checkin-calendar",
+    response_model=BaseResponse[CheckinCalendarOut],
+)
+async def relative_view_student_checkin_calendar(
+    student_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+    year: int | None = None,
+    month: int | None = None,
+):
+    from datetime import datetime, timezone
+    from app.services import checkin_service
+    await get_rls_db(db, str(current_user.id))
+    await relative_service.assert_bound(
+        db, relative_id=current_user.id, student_id=student_id,
+    )
+    now = datetime.now(timezone.utc)
+    cal = await checkin_service.get_month_calendar(
+        db, student_id=student_id,
+        year=year or now.year, month=month or now.month,
+    )
+    return make_ok(CheckinCalendarOut(
+        year=cal["year"], month=cal["month"],
+        days=[CheckinDayItem(**d) for d in cal["days"]],
+        checked_count=cal["checked_count"],
+        current_streak=cal["current_streak"],
+        longest_streak=cal["longest_streak"],
+    ))
 
 
 @router.post("/invite-code/qrcode", response_model=BaseResponse[QRCodeOut])

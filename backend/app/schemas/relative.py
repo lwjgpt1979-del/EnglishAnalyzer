@@ -46,3 +46,18 @@ class SendInviteSmsRequest(BaseModel):
 class SendInviteSmsOut(BaseModel):
     sent: bool
     code: str
+
+
+class CheckinDayItem(BaseModel):
+    date: str
+    new_words_count: int
+    streak_days: int
+
+
+class CheckinCalendarOut(BaseModel):
+    year: int
+    month: int
+    days: list[CheckinDayItem]
+    checked_count: int
+    current_streak: int
+    longest_streak: int
