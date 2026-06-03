@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     # SMS 短信服务
     sms_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填真实 provider 名
 
+    # 微信订阅消息（打卡提醒，D-108）
+    wechat_subscribe_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock
+    wechat_subscribe_template_checkin: str = "placeholder-template-checkin"
+
     # 应用
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
