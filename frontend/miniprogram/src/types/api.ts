@@ -601,3 +601,11 @@ export interface VocabWrongList {
   total: number
   items: VocabWrongItem[]
 }
+
+// 打卡（D-104）
+export interface VocabCheckinResult {
+  checkin_date: string
+  streak_days: number
+  new_words_count: number
+  review_done: boolean
+}
