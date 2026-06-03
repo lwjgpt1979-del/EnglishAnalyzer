@@ -628,3 +628,25 @@ export interface RelativeCheckinCalendar {
   current_streak: number
   longest_streak: number
 }
+
+// 打卡热力图 + 徽章 + 补签（D-107）
+export interface VocabCheckinBadge {
+  level: string
+  name: string
+  threshold: number
+  unlocked: boolean
+}
+export interface VocabStudentCalendar {
+  year: number
+  month: number
+  days: { date: string; new_words_count: number; streak_days: number }[]
+  checked_count: number
+  current_streak: number
+  longest_streak: number
+  badges: VocabCheckinBadge[]
+}
+export interface VocabMakeUpResult {
+  date: string
+  current_streak: number
+  longest_streak: number
+}

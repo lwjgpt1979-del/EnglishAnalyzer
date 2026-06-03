@@ -3,8 +3,24 @@
   <view class="vocab-page">
     <view v-if="loading" class="center-tip">加载今日任务…</view>
 
-    <view v-else-if="phase === 'empty'" class="center-tip">
-      🎉 今日没有待学/待复习的单词，明天再来吧！
+    <view v-else-if="phase === 'empty'">
+      <view v-if="cal" class="checkin-panel">
+        <view class="cp-summary">连续 {{ cal.current_streak }} 天 · 最高 {{ cal.longest_streak }} 天</view>
+        <view class="cp-badges">
+          <text v-for="b in cal.badges" :key="b.level" class="cp-badge" :class="{ on: b.unlocked }">
+            {{ b.level === 'bronze' ? '🥉' : b.level === 'silver' ? '🥈' : '🥇' }}{{ b.name }}
+          </text>
+        </view>
+        <view class="cp-grid">
+          <view v-for="(c, i) in calCells" :key="i" class="cp-cell"
+                :class="{ checked: c.checked, missable: c.missable, blank: !c.day }"
+                @tap="c.missable ? onMakeUp(c.date) : null">
+            <text v-if="c.day">{{ c.checked ? '🔥' : c.day }}</text>
+          </view>
+        </view>
+        <view class="cp-hint">点亮灰色日期可补签</view>
+      </view>
+      <view class="center-tip">🎉 今日没有待学/待复习的单词，明天再来吧！</view>
     </view>
 
     <!-- 学习阶段：词卡 -->
@@ -78,6 +94,21 @@
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
       <view v-if="checkinDone" class="done-streak">已连续打卡 {{ streakDays }} 天 🔥</view>
       <view v-else class="done-gap">{{ gapHint }}</view>
+      <view v-if="cal" class="checkin-panel">
+        <view class="cp-badges">
+          <text v-for="b in cal.badges" :key="b.level" class="cp-badge" :class="{ on: b.unlocked }">
+            {{ b.level === 'bronze' ? '🥉' : b.level === 'silver' ? '🥈' : '🥇' }}{{ b.name }}
+          </text>
+        </view>
+        <view class="cp-grid">
+          <view v-for="(c, i) in calCells" :key="i" class="cp-cell"
+                :class="{ checked: c.checked, missable: c.missable, blank: !c.day }"
+                @tap="c.missable ? onMakeUp(c.date) : null">
+            <text v-if="c.day">{{ c.checked ? '🔥' : c.day }}</text>
+          </view>
+        </view>
+        <view class="cp-hint">点亮灰色日期可补签</view>
+      </view>
       <button class="btn-primary" @tap="reload">再来一组</button>
       <button class="btn-ghost" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">查看错词本</button>
     </view>
@@ -86,7 +117,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin } from '@/api/vocabulary'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin } from '@/api/vocabulary'
+import type { VocabStudentCalendar } from '@/types/api'
 import { useAuthStore } from '@/stores/auth'
 import type { VocabWordCard } from '@/types/api'
 
@@ -115,6 +147,35 @@ const quizQueue = ref<Quiz[]>([])
 const streakDays = ref(0)
 const checkinDone = ref(false)
 const gapHint = ref('')
+const cal = ref<VocabStudentCalendar | null>(null)
+const calCells = computed(() => {
+  if (!cal.value) return [] as { day: number; date: string; checked: boolean; missable: boolean }[]
+  const { year, month } = cal.value
+  const checkedSet = new Set(cal.value.days.map(d => d.date))
+  const first = new Date(year, month - 1, 1).getDay()
+  const daysIn = new Date(year, month, 0).getDate()
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const arr: { day: number; date: string; checked: boolean; missable: boolean }[] = []
+  for (let i = 0; i < first; i++) arr.push({ day: 0, date: '', checked: false, missable: false })
+  for (let d = 1; d <= daysIn; d++) {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const checked = checkedSet.has(date)
+    arr.push({ day: d, date, checked, missable: !checked && date < todayStr })
+  }
+  return arr
+})
+async function loadCalendar() {
+  try { cal.value = await getCheckinCalendar() } catch { /* 不阻塞 */ }
+}
+async function onMakeUp(date: string) {
+  try {
+    await makeUpCheckin(date)
+    await loadCalendar()
+    uni.showToast({ title: '补签成功', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message, icon: 'none' })
+  }
+}
 
 const curStudy = computed(() => newCards.value[studyIndex.value] || ({} as VocabWordCard))
 const curQuiz = computed(() => quizQueue.value[quizIndex.value] || ({} as Quiz))
@@ -204,6 +265,7 @@ async function finishSession() {
   } catch {
     // 打卡失败不阻塞完成页展示
   }
+  await loadCalendar()
 }
 
 function nextStudy() {
@@ -255,6 +317,7 @@ async function load() {
     studyIndex.value = 0
     if (newCards.value.length === 0 && reviewCards.value.length === 0) {
       phase.value = 'empty'
+      loadCalendar()
     } else if (newCards.value.length > 0) {
       phase.value = 'study'
     } else {
@@ -318,5 +381,16 @@ onMounted(load)
 .done-stat { font-size: 30rpx; color: var(--c-text-second); line-height: 1.9; }
 .done-streak { margin-top: 20rpx; font-size: 34rpx; font-weight: 700; color: var(--c-primary); }
 .done-gap { margin-top: 20rpx; font-size: 28rpx; color: var(--c-text-second); }
+.checkin-panel { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin: 20rpx 0; }
+.cp-summary { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.cp-badges { display: flex; gap: 12rpx; margin: 12rpx 0; flex-wrap: wrap; }
+.cp-badge { font-size: 22rpx; color: var(--c-text-hint); opacity: .45; }
+.cp-badge.on { color: var(--c-gold); opacity: 1; font-weight: 700; }
+.cp-grid { display: flex; flex-wrap: wrap; }
+.cp-cell { width: 14.28%; height: 60rpx; display: flex; align-items: center; justify-content: center; font-size: 22rpx; color: var(--c-text-body); }
+.cp-cell.checked { color: var(--c-gold); font-weight: 700; }
+.cp-cell.missable { color: var(--c-text-hint); border: 1rpx dashed var(--c-border); border-radius: 8rpx; }
+.cp-cell.blank { visibility: hidden; }
+.cp-hint { font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
 .btn-ghost { background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; margin-top: 16rpx; text-align: center; }
 </style>

@@ -4,6 +4,8 @@ import type {
   VocabAnswerResult,
   VocabWrongList,
   VocabCheckinResult,
+  VocabStudentCalendar,
+  VocabMakeUpResult,
 } from '@/types/api'
 
 export function getDailyTask(): Promise<VocabDailyTask> {
@@ -27,4 +29,17 @@ export function getWrongWords(): Promise<VocabWrongList> {
 
 export function checkin(): Promise<VocabCheckinResult> {
   return request<VocabCheckinResult>('/api/v1/vocabulary/checkin', { method: 'POST' })
+}
+
+export function getCheckinCalendar(year?: number, month?: number): Promise<VocabStudentCalendar> {
+  const data: Record<string, number> = {}
+  if (year) data.year = year
+  if (month) data.month = month
+  return request<VocabStudentCalendar>('/api/v1/vocabulary/checkin/calendar', { method: 'GET', data })
+}
+
+export function makeUpCheckin(date: string): Promise<VocabMakeUpResult> {
+  return request<VocabMakeUpResult>('/api/v1/vocabulary/checkin/make-up', {
+    method: 'POST', data: { date },
+  })
 }
