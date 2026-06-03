@@ -138,3 +138,53 @@ async def test_checkin_completed_flow(client):
     assert data["completed"] is True and data["streak_days"] == 1
     st = (await client.get("/api/v1/vocabulary/checkin/status", headers=headers)).json()["data"]
     assert st["checked_in_today"] is True and st["current_streak"] == 1
+
+
+# ─── D-107: 学生端日历 + 补签 ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_checkin_calendar_with_badges(client):
+    from datetime import datetime, timezone
+    from app.models.d5_learning import StudyCheckin
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    me = (await client.get("/api/v1/users/me", headers=headers)).json()["data"]
+    now = datetime.now(timezone.utc)
+    async with _async_session_factory() as s:
+        s.add(StudyCheckin(
+            id=uuid.uuid4(), student_id=uuid.UUID(me["id"]), checkin_date=now.date(),
+            new_words_count=5, review_done=True, streak_days=1))
+        await s.commit()
+    r = await client.get("/api/v1/vocabulary/checkin/calendar",
+                         params={"year": now.year, "month": now.month}, headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["checked_count"] == 1
+    assert len(data["badges"]) == 3
+    assert data["badges"][0]["level"] == "bronze"
+
+
+@pytest.mark.asyncio
+async def test_make_up_via_api(client):
+    from datetime import datetime, timedelta, timezone
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    now = datetime.now(timezone.utc)
+    if now.day < 2:  # 月初无法补签昨天，跳过
+        return
+    yest = (now - timedelta(days=1)).date()
+    r = await client.post("/api/v1/vocabulary/checkin/make-up",
+                          json={"date": yest.isoformat()}, headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["date"] == yest.isoformat()
+    assert data["current_streak"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_make_up_future_via_api(client):
+    from datetime import datetime, timedelta, timezone
+    headers = await _login(client, uuid.uuid4().hex[:6])
+    now = datetime.now(timezone.utc)
+    fut = (now + timedelta(days=1)).date()
+    r = await client.post("/api/v1/vocabulary/checkin/make-up",
+                          json={"date": fut.isoformat()}, headers=headers)
+    assert r.status_code == 400

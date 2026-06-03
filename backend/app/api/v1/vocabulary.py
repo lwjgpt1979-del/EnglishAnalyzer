@@ -11,9 +11,13 @@ from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.vocabulary import (
+    CheckinBadge,
     CheckinResult,
     CheckinStatusOut,
     DailyTaskOut,
+    MakeUpIn,
+    MakeUpResult,
+    StudentCalendarOut,
     VocabAnswerIn,
     VocabAnswerResult,
     WrongWordItem,
@@ -106,3 +110,31 @@ async def checkin_status(db: DbDep, current_user: UserDep):
     await get_rls_db(db, str(current_user.id))
     st = await checkin_service.get_checkin_status(db, student_id=current_user.id)
     return make_ok(CheckinStatusOut(**st))
+
+
+@router.get("/checkin/calendar", response_model=BaseResponse[StudentCalendarOut])
+async def checkin_calendar(
+    db: DbDep, current_user: UserDep, year: int | None = None, month: int | None = None,
+):
+    """学生本月打卡热力图 + 里程碑徽章。"""
+    from datetime import datetime, timezone
+    await get_rls_db(db, str(current_user.id))
+    now = datetime.now(timezone.utc)
+    cal = await checkin_service.get_month_calendar(
+        db, student_id=current_user.id, year=year or now.year, month=month or now.month,
+    )
+    badges = checkin_service._badges(cal["longest_streak"])
+    return make_ok(StudentCalendarOut(
+        **cal, badges=[CheckinBadge(**b) for b in badges],
+    ))
+
+
+@router.post("/checkin/make-up", response_model=BaseResponse[MakeUpResult])
+async def checkin_make_up(body: MakeUpIn, db: DbDep, current_user: UserDep):
+    """补签某漏签日（恢复连续）。"""
+    from datetime import date as _date
+    await get_rls_db(db, str(current_user.id))
+    d = _date.fromisoformat(body.date)
+    res = await checkin_service.make_up_checkin(db, student_id=current_user.id, d=d)
+    await db.commit()
+    return make_ok(MakeUpResult(**res))

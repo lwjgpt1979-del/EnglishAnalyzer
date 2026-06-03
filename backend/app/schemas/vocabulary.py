@@ -114,3 +114,32 @@ class CheckinStatusOut(BaseModel):
     longest_streak: int
     today_new_words: int
     today_review_done: bool
+
+
+# ─── 补签 + 热力图 + 徽章（P1 / D-107）────────────────────────────────────────
+
+class CheckinBadge(BaseModel):
+    level: str
+    name: str
+    threshold: int
+    unlocked: bool
+
+
+class StudentCalendarOut(BaseModel):
+    year: int
+    month: int
+    days: list[dict]
+    checked_count: int
+    current_streak: int
+    longest_streak: int
+    badges: list[CheckinBadge]
+
+
+class MakeUpIn(BaseModel):
+    date: str
+
+
+class MakeUpResult(BaseModel):
+    date: str
+    current_streak: int
+    longest_streak: int
