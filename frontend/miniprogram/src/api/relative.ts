@@ -1,5 +1,5 @@
 import { request } from '@/utils/request'
-import type { RelativeInviteCodeOut, BoundStudent } from '@/types/api'
+import type { RelativeInviteCodeOut, BoundStudent, RelativeCheckinCalendar } from '@/types/api'
 
 export function generateRelativeInviteCode(): Promise<RelativeInviteCodeOut> {
   return request<RelativeInviteCodeOut>('/api/v1/relative/invite-code', { method: 'POST' })
@@ -26,4 +26,14 @@ export function relativeInviteQrcode() {
 
 export function relativeInviteSms(phone: string) {
   return request('/api/v1/relative/invite-code/sms', { method: 'POST', data: { phone } })
+}
+
+export function getStudentCheckinCalendar(studentId: string, year?: number, month?: number) {
+  const data: Record<string, number> = {}
+  if (year) data.year = year
+  if (month) data.month = month
+  return request<RelativeCheckinCalendar>(
+    `/api/v1/relative/students/${studentId}/checkin-calendar`,
+    { method: 'GET', data },
+  )
 }

@@ -613,3 +613,18 @@ export interface VocabCheckinResult {
   new_learned_today: number
   new_target: number
 }
+
+// 亲人可见打卡日历（D-106）
+export interface RelativeCheckinDay {
+  date: string
+  new_words_count: number
+  streak_days: number
+}
+export interface RelativeCheckinCalendar {
+  year: number
+  month: number
+  days: RelativeCheckinDay[]
+  checked_count: number
+  current_streak: number
+  longest_streak: number
+}

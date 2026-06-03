@@ -27,6 +27,18 @@
       </view>
 
       <view class="card">
+        <view class="card-title">本月打卡日历</view>
+        <view v-if="cal" class="cal-summary">
+          本月打卡 {{ cal.checked_count }} 天 · 当前连续 {{ cal.current_streak }} 天 · 历史最高 {{ cal.longest_streak }} 天
+        </view>
+        <view class="cal-grid">
+          <view v-for="(c, i) in cells" :key="i" class="cal-cell" :class="{ checked: c.checked, blank: !c.day }">
+            <text v-if="c.day">{{ c.checked ? '🔥' : c.day }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="card">
         <view class="card-title">为孩子续费 / 升级会员</view>
         <view class="tier-row">
           <text v-for="t in tiers" :key="t.tier" class="tier" :class="{ active: selectedTier === t.tier }" @tap="selectedTier = t.tier">
@@ -43,8 +55,9 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { getStudentDiagnosisAsRelative } from '@/api/relative'
+import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar } from '@/api/relative'
 import { createOrder, payOrder } from '@/api/orders'
+import type { RelativeCheckinCalendar } from '@/types/api'
 
 const studentId = ref('')
 const report = ref<any>(null)
@@ -58,12 +71,29 @@ const tiers = [
 ]
 const currentPrice = computed(() => tiers.find(t => t.tier === selectedTier.value)?.price || 0)
 
+const cal = ref<RelativeCheckinCalendar | null>(null)
+const checkedSet = computed(() => new Set(cal.value?.days.map(d => d.date) ?? []))
+const cells = computed(() => {
+  if (!cal.value) return [] as { day: number; date: string; checked: boolean }[]
+  const { year, month } = cal.value
+  const first = new Date(year, month - 1, 1).getDay()
+  const daysIn = new Date(year, month, 0).getDate()
+  const arr: { day: number; date: string; checked: boolean }[] = []
+  for (let i = 0; i < first; i++) arr.push({ day: 0, date: '', checked: false })
+  for (let d = 1; d <= daysIn; d++) {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    arr.push({ day: d, date, checked: checkedSet.value.has(date) })
+  }
+  return arr
+})
+
 onMounted(async () => {
   const pages = getCurrentPages()
   studentId.value = (pages[pages.length - 1] as any).options?.studentId || ''
   if (!studentId.value) { loading.value = false; return }
   try {
     report.value = await getStudentDiagnosisAsRelative(studentId.value)
+    try { cal.value = await getStudentCheckinCalendar(studentId.value) } catch { /* 日历失败不阻塞 */ }
   } finally { loading.value = false }
 })
 
@@ -113,4 +143,9 @@ async function onPay() {
 .tier.active { border-color: var(--c-gold); background: var(--c-primary-faint); font-weight: 700; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.cal-summary { font-size: 24rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
+.cal-grid { display: flex; flex-wrap: wrap; }
+.cal-cell { width: 14.28%; height: 64rpx; display: flex; align-items: center; justify-content: center; font-size: 24rpx; color: var(--c-text-body); }
+.cal-cell.checked { color: var(--c-gold); font-weight: 700; }
+.cal-cell.blank { visibility: hidden; }
 </style>
