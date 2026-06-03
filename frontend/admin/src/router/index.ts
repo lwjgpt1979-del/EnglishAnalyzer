@@ -14,6 +14,7 @@ const router = createRouter({
         { path: 'questions', name: 'questions', component: () => import('../views/QuestionsReview.vue') },
         { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
         { path: 'pricing', name: 'pricing', component: () => import('../views/Pricing.vue') },
+        { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
       ],
     },
   ],

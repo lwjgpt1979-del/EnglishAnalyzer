@@ -31,6 +31,7 @@ function onLogout() {
         <el-menu-item index="/questions">仿真题审核</el-menu-item>
         <el-menu-item index="/contents">知识点内容</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
+        <el-menu-item index="/essay-templates">作文模板</el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>

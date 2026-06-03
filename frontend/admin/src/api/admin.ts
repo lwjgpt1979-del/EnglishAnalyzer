@@ -64,3 +64,11 @@ export function getPricing() {
 export function updatePricing(body: SemesterPricing) {
   return unwrap<SemesterPricing>(request.put('/admin/pricing', body))
 }
+
+export function getEssayTemplates() {
+  return unwrap<Record<string, { template: string; samples: string[] }>>(request.get('/admin/essay-templates'))
+}
+
+export function updateEssayTemplates(payload: Record<string, { template: string; samples: string[] }>) {
+  return unwrap<Record<string, { template: string; samples: string[] }>>(request.put('/admin/essay-templates', payload))
+}
