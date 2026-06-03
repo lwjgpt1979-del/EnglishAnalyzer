@@ -602,10 +602,14 @@ export interface VocabWrongList {
   items: VocabWrongItem[]
 }
 
-// 打卡（D-104）
+// 打卡（D-104 / D-105 严格校验）
 export interface VocabCheckinResult {
-  checkin_date: string
+  completed: boolean
+  checkin_date: string | null
   streak_days: number
   new_words_count: number
   review_done: boolean
+  review_due: number
+  new_learned_today: number
+  new_target: number
 }

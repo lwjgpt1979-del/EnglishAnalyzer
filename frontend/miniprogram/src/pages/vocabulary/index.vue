@@ -76,7 +76,8 @@
       <view class="done-title">今日完成！</view>
       <view class="done-stat">新学 {{ newCards.length }} 词 · 复习 {{ reviewCards.length }} 词</view>
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
-      <view class="done-streak">已连续打卡 {{ streakDays }} 天 🔥</view>
+      <view v-if="checkinDone" class="done-streak">已连续打卡 {{ streakDays }} 天 🔥</view>
+      <view v-else class="done-gap">{{ gapHint }}</view>
       <button class="btn-primary" @tap="reload">再来一组</button>
       <button class="btn-ghost" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">查看错词本</button>
     </view>
@@ -112,6 +113,8 @@ const answered = ref(false)
 const chosenIndex = ref(-1)
 const quizQueue = ref<Quiz[]>([])
 const streakDays = ref(0)
+const checkinDone = ref(false)
+const gapHint = ref('')
 
 const curStudy = computed(() => newCards.value[studyIndex.value] || ({} as VocabWordCard))
 const curQuiz = computed(() => quizQueue.value[quizIndex.value] || ({} as Quiz))
@@ -190,8 +193,14 @@ function startQuiz() {
 async function finishSession() {
   phase.value = 'done'
   try {
-    const r = await checkin(newCards.value.length, true)
-    streakDays.value = r.streak_days
+    const r = await checkin()
+    checkinDone.value = r.completed
+    if (r.completed) {
+      streakDays.value = r.streak_days
+    } else {
+      const newGap = Math.max(0, r.new_target - r.new_learned_today)
+      gapHint.value = `还差 ${r.review_due} 个复习 / ${newGap} 个新词，完成后才能打卡`
+    }
   } catch {
     // 打卡失败不阻塞完成页展示
   }
@@ -308,5 +317,6 @@ onMounted(load)
 .done-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); margin: 16rpx 0; }
 .done-stat { font-size: 30rpx; color: var(--c-text-second); line-height: 1.9; }
 .done-streak { margin-top: 20rpx; font-size: 34rpx; font-weight: 700; color: var(--c-primary); }
+.done-gap { margin-top: 20rpx; font-size: 28rpx; color: var(--c-text-second); }
 .btn-ghost { background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; margin-top: 16rpx; text-align: center; }
 </style>
