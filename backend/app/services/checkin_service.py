@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AppError
 from app.models.d5_learning import StudyCheckin
 from app.services import vocabulary_service
 
@@ -27,30 +28,79 @@ async def _row_for(db: AsyncSession, student_id: uuid.UUID, d: date) -> StudyChe
     )).scalar_one_or_none()
 
 
+def _run_ending_at(dates: set[date], d: date) -> int:
+    n = 0
+    while d in dates:
+        n += 1
+        d -= timedelta(days=1)
+    return n
+
+
+def _compute_streaks(dates: set[date], today: date) -> tuple[int, int]:
+    """从打卡日期集合算 (current_streak, longest_streak)。"""
+    if not dates:
+        return 0, 0
+    if today in dates:
+        anchor = today
+    elif (today - timedelta(days=1)) in dates:
+        anchor = today - timedelta(days=1)
+    else:
+        anchor = None
+    current = _run_ending_at(dates, anchor) if anchor is not None else 0
+    longest = 0
+    for d in dates:
+        if (d - timedelta(days=1)) not in dates:  # 连续段起点
+            run = 0
+            x = d
+            while x in dates:
+                run += 1
+                x += timedelta(days=1)
+            longest = max(longest, run)
+    return current, longest
+
+
+_BADGE_DEFS = [("bronze", "坚持铜章", 7), ("silver", "毅力银章", 30), ("gold", "登峰金章", 100)]
+
+
+def _badges(longest_streak: int) -> list[dict]:
+    return [{"level": lv, "name": nm, "threshold": th, "unlocked": longest_streak >= th}
+            for lv, nm, th in _BADGE_DEFS]
+
+
+async def _all_dates(db: AsyncSession, student_id: uuid.UUID) -> set[date]:
+    rows = (await db.execute(
+        select(StudyCheckin.checkin_date).where(StudyCheckin.student_id == student_id)
+    )).all()
+    return {r[0] for r in rows}
+
+
 async def _upsert_checkin(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
     new_words_count: int,
     review_done: bool,
+    checkin_date: date | None = None,
 ) -> StudyCheckin:
-    """写入/更新当日打卡行（streak 推算）。同日重复调用幂等（更新计数、streak 不变）。"""
-    today = _today()
-    row = await _row_for(db, student_id, today)
+    """写入/更新某日打卡行；streak_days = 以该日结尾的连续段长度（动态）。"""
+    d = checkin_date or _today()
+    dates = await _all_dates(db, student_id)
+    dates.add(d)
+    run = _run_ending_at(dates, d)
+    row = await _row_for(db, student_id, d)
     if row is not None:
         row.new_words_count = new_words_count
         row.review_done = review_done
+        row.streak_days = run
         await db.flush()
         return row
-    yesterday = await _row_for(db, student_id, today - timedelta(days=1))
-    streak = (yesterday.streak_days + 1) if yesterday is not None else 1
     row = StudyCheckin(
         id=uuid.uuid4(),
         student_id=student_id,
-        checkin_date=today,
+        checkin_date=d,
         new_words_count=new_words_count,
         review_done=review_done,
-        streak_days=streak,
+        streak_days=run,
     )
     db.add(row)
     await db.flush()
@@ -76,26 +126,21 @@ async def record_checkin(
 
 
 async def get_checkin_status(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
-    """返回打卡状态：今日是否已打、当前连续、历史最高、今日计数。"""
+    """返回打卡状态：今日是否已打、当前连续、历史最高、今日计数（按日期集合动态算）。"""
     today = _today()
-    today_row = await _row_for(db, student_id, today)
-    yest_row = await _row_for(db, student_id, today - timedelta(days=1))
-    if today_row is not None:
-        current = today_row.streak_days
-    elif yest_row is not None:
-        current = yest_row.streak_days  # 今日待打、连续仍保持
-    else:
-        current = 0
-    longest = (await db.execute(
-        select(func.coalesce(func.max(StudyCheckin.streak_days), 0))
+    rows = (await db.execute(
+        select(StudyCheckin.checkin_date, StudyCheckin.new_words_count, StudyCheckin.review_done)
         .where(StudyCheckin.student_id == student_id)
-    )).scalar_one()
+    )).all()
+    dates = {r[0] for r in rows}
+    current, longest = _compute_streaks(dates, today)
+    today_row = next((r for r in rows if r[0] == today), None)
     return {
-        "checked_in_today": today_row is not None,
+        "checked_in_today": today in dates,
         "current_streak": current,
-        "longest_streak": int(longest),
-        "today_new_words": today_row.new_words_count if today_row else 0,
-        "today_review_done": today_row.review_done if today_row else False,
+        "longest_streak": longest,
+        "today_new_words": today_row[1] if today_row else 0,
+        "today_review_done": today_row[2] if today_row else False,
     }
 
 

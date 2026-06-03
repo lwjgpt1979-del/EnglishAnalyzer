@@ -38,9 +38,10 @@ async def test_first_checkin_streak_1(db_session):
 @pytest.mark.asyncio
 async def test_consecutive_day_streak_increments(db_session):
     sid = await _student(db_session)
-    db_session.add(StudyCheckin(
-        id=uuid.uuid4(), student_id=sid, checkin_date=_today() - timedelta(days=1),
-        new_words_count=3, review_done=True, streak_days=3))
+    for n in (3, 2, 1):  # today-3, today-2, today-1 真实连续
+        db_session.add(StudyCheckin(
+            id=uuid.uuid4(), student_id=sid, checkin_date=_today() - timedelta(days=n),
+            new_words_count=1, review_done=True, streak_days=0))
     await db_session.flush()
     row = await checkin_service._upsert_checkin(db_session, student_id=sid, new_words_count=2, review_done=True)
     assert row.streak_days == 4
@@ -68,9 +69,10 @@ async def test_same_day_idempotent(db_session):
 @pytest.mark.asyncio
 async def test_status(db_session):
     sid = await _student(db_session)
-    db_session.add(StudyCheckin(
-        id=uuid.uuid4(), student_id=sid, checkin_date=_today() - timedelta(days=1),
-        new_words_count=1, review_done=True, streak_days=7))
+    for n in range(7, 0, -1):  # today-7 .. today-1 真实连续 7 天
+        db_session.add(StudyCheckin(
+            id=uuid.uuid4(), student_id=sid, checkin_date=_today() - timedelta(days=n),
+            new_words_count=1, review_done=True, streak_days=0))
     await db_session.flush()
     st = await checkin_service.get_checkin_status(db_session, student_id=sid)
     assert st["checked_in_today"] is False
@@ -182,3 +184,27 @@ async def test_calendar_empty_month(db_session):
         db_session, student_id=sid, year=2099, month=1)
     assert cal["days"] == [] and cal["checked_count"] == 0
     assert cal["current_streak"] == 0 and cal["longest_streak"] == 0
+
+
+# ─── D-107: 动态 streak + 徽章 ────────────────────────────────────────
+
+def test_compute_streaks_pure():
+    from datetime import date as _d
+    from app.services.checkin_service import _compute_streaks
+    today = _d(2026, 6, 10)
+    assert _compute_streaks({_d(2026,6,8), _d(2026,6,9), _d(2026,6,10)}, today) == (3, 3)
+    assert _compute_streaks({_d(2026,6,8), _d(2026,6,9)}, today) == (2, 2)
+    assert _compute_streaks({_d(2026,6,8)}, today) == (0, 1)
+    assert _compute_streaks(set(), today) == (0, 0)
+    assert _compute_streaks({_d(2026,6,7), _d(2026,6,8), _d(2026,6,9), _d(2026,6,10)}, today) == (4, 4)
+
+
+def test_badges_thresholds():
+    from app.services.checkin_service import _badges
+    b0 = _badges(0)
+    assert all(x["unlocked"] is False for x in b0)
+    b7 = _badges(7)
+    assert b7[0]["unlocked"] is True and b7[1]["unlocked"] is False
+    b100 = _badges(100)
+    assert all(x["unlocked"] is True for x in b100)
+    assert [x["level"] for x in b0] == ["bronze", "silver", "gold"]
