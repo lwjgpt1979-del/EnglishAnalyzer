@@ -19,6 +19,7 @@ _DIMENSIONS = [("内容", 25), ("语言", 25), ("结构", 25), ("词汇", 25)]
 _PRO_MONTHLY_LIMIT = 3
 _MAX_ROUNDS = 5
 _ESSAY_TEMPLATES_KEY = "essay_templates"
+_PRO_SAMPLE_LIMIT = 2
 
 _SYSTEM_PROMPT = (
     "你是专业英语作文批改老师。请对学生作文从内容/语言/结构/词汇四个维度各 25 分打分，"
@@ -179,17 +180,25 @@ def get_templates(essay_type: str | None) -> dict:
     return _TEMPLATES_BY_TYPE.get(essay_type or "", _DEFAULT_TEMPLATE)
 
 
-async def get_configured_templates(db: AsyncSession, essay_type: str | None) -> dict:
-    """读 system_configs.essay_templates；命中题型→用之，否则 _default，再否则回落内置。"""
+async def get_configured_templates(
+    db: AsyncSession, essay_type: str | None, tier: str | None = None,
+) -> dict:
+    """读 system_configs.essay_templates；命中题型→用之，否则 _default，再否则回落内置。
+    tier 非 promax 且非 None → 范文 samples 截断至 _PRO_SAMPLE_LIMIT（档位差异化，D-112）。"""
     r = await db.execute(select(SystemConfig).where(SystemConfig.key == _ESSAY_TEMPLATES_KEY))
     cfg = r.scalar_one_or_none()
+    data: dict | None = None
     if cfg is not None and isinstance(cfg.value, dict):
-        data = cfg.value
-        if essay_type and essay_type in data:
-            return data[essay_type]
-        if "_default" in data:
-            return data["_default"]
-    return get_templates(essay_type)
+        conf = cfg.value
+        if essay_type and essay_type in conf:
+            data = conf[essay_type]
+        elif "_default" in conf:
+            data = conf["_default"]
+    if data is None:
+        data = get_templates(essay_type)
+    if tier is not None and tier != "promax":
+        return {**data, "samples": list(data.get("samples", []))[:_PRO_SAMPLE_LIMIT]}
+    return data
 
 
 async def get_all_templates_config(db: AsyncSession) -> dict:

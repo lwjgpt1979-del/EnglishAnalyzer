@@ -17,7 +17,7 @@ from app.schemas.essay import (
     EssayCreate, EssayListItem, EssayListOut, EssayOut,
     EssayProgressOut, EssayRoundItem, EssayTemplatesOut, RepolishIn,
 )
-from app.services import essay_service
+from app.services import essay_service, membership_service
 
 router = APIRouter(prefix="/essays", tags=["essays"])
 
@@ -67,7 +67,9 @@ async def list_my_essays(db: DbDep, current_user: UserDep):
 @router.get("/templates", response_model=BaseResponse[EssayTemplatesOut])
 async def essay_templates(db: DbDep, current_user: UserDep, essay_type: str | None = None):
     await get_rls_db(db, str(current_user.id))
-    t = await essay_service.get_configured_templates(db, essay_type)
+    m = await membership_service.get_active_membership(db, user_id=current_user.id)
+    tier = str(m.tier) if m else "free"
+    t = await essay_service.get_configured_templates(db, essay_type, tier=tier)
     return make_ok(EssayTemplatesOut(essay_type=essay_type, template=t["template"], samples=t["samples"]))
 
 

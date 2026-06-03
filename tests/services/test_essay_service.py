@@ -153,3 +153,23 @@ async def test_get_progress_empty(db_session):
     sid = await _student(db_session, "pro")
     p = await essay_service.get_progress(db_session, student_id=sid)
     assert p["total_essays"] == 0 and p["avg_total"] == 0 and p["trend"] == []
+
+
+# ─── D-112: 模板范文按档位差异化 ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_templates_tier_pro_truncated(db_session):
+    t = await essay_service.get_configured_templates(db_session, "话题作文", tier="pro")
+    assert len(t["samples"]) <= 2
+
+
+@pytest.mark.asyncio
+async def test_templates_tier_promax_full(db_session):
+    t = await essay_service.get_configured_templates(db_session, "话题作文", tier="promax")
+    assert len(t["samples"]) == 3  # 内置话题作文 3 篇
+
+
+@pytest.mark.asyncio
+async def test_templates_tier_none_full(db_session):
+    t = await essay_service.get_configured_templates(db_session, "话题作文", tier=None)
+    assert len(t["samples"]) == 3

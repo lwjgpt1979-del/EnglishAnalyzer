@@ -92,7 +92,7 @@ async def test_templates_via_api(client):
     r = await client.get("/api/v1/essays/templates", params={"essay_type": "话题作文"}, headers=headers)
     assert r.status_code == 200
     data = r.json()["data"]
-    assert data["template"] and len(data["samples"]) >= 3
+    assert data["template"] and len(data["samples"]) >= 1  # Pro 档位裁剪后≥1（D-112）
 
 
 @pytest.mark.asyncio
@@ -104,3 +104,19 @@ async def test_progress_via_api(client):
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["total_essays"] == 2 and len(data["trend"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_templates_tier_pro_via_api(client):
+    headers = await _login_pro(client, uuid.uuid4().hex[:6])
+    r = await client.get("/api/v1/essays/templates", params={"essay_type": "话题作文"}, headers=headers)
+    assert r.status_code == 200
+    assert len(r.json()["data"]["samples"]) <= 2
+
+
+@pytest.mark.asyncio
+async def test_templates_tier_promax_via_api(client):
+    headers = await _login_promax(client, uuid.uuid4().hex[:6])
+    r = await client.get("/api/v1/essays/templates", params={"essay_type": "话题作文"}, headers=headers)
+    assert r.status_code == 200
+    assert len(r.json()["data"]["samples"]) == 3

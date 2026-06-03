@@ -40,6 +40,7 @@
         <view class="card-title">模板与范文</view>
         <text class="para">{{ tpl.template }}</text>
         <view v-for="(s, i) in tpl.samples" :key="i" class="sample">{{ i + 1 }}. {{ s }}</view>
+        <view class="sample-tip">ProMax 可查看更多范文</view>
       </view>
 
       <view class="card">
@@ -110,6 +111,7 @@ async function onRepolish() {
 .issue-head { display: block; font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
 .issue-exp { display: block; font-size: 24rpx; color: var(--c-text-second); margin-top: 6rpx; line-height: 1.6; }
 .sample { font-size: 24rpx; color: var(--c-text-second); line-height: 1.7; margin-top: 8rpx; }
+.sample-tip { font-size: 22rpx; color: var(--c-text-hint); margin-top: 10rpx; }
 .essay-input { width: 100%; height: 240rpx; font-size: 28rpx; color: var(--c-text-body); line-height: 1.6; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 12rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
