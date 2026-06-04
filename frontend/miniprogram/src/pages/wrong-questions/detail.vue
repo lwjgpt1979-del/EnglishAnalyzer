@@ -3,8 +3,13 @@
   <view class="detail-page">
     <view v-if="!wq" class="center-tip">加载中…</view>
     <view v-else>
-      <!-- 题目图片 -->
+      <!-- 题目图片 / 作业来源 -->
+      <view v-if="fromAssignment" class="assign-banner">
+        <text class="assign-icon">📋</text>
+        <text class="assign-label">来自老师作业的错题</text>
+      </view>
       <image
+        v-else
         class="wq-img"
         :src="wq.source_image_url"
         mode="widthFix"
@@ -158,6 +163,7 @@ if (!wqId) {
 }
 
 const wq = ref<WrongQuestionOut | null>(null)
+const fromAssignment = computed(() => (wq.value?.source_image_url || '').startsWith('assignment://'))
 const latestAnalysis = ref<AiAnalysisOut | null>(null)
 const analyzing = ref(false)
 const teacherComments = ref<TeacherCommentOut[]>([])
@@ -304,7 +310,7 @@ async function onAnalyze() {
 }
 
 function previewImg() {
-  if (wq.value) {
+  if (wq.value && !fromAssignment.value) {
     uni.previewImage({ urls: [wq.value.source_image_url] })
   }
 }
@@ -314,6 +320,9 @@ function previewImg() {
 .detail-page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .center-tip { text-align: center; padding: 100rpx; color: var(--c-text-hint); }
 .wq-img { width: 100%; border-radius: var(--r-lg); margin-bottom: 20rpx; }
+.assign-banner { display: flex; align-items: center; gap: 12rpx; background: var(--c-primary-faint); border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 20rpx; }
+.assign-icon { font-size: 40rpx; }
+.assign-label { font-size: 28rpx; font-weight: 700; color: var(--c-primary); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
 .card-title { font-size: var(--fs-h2); font-weight: 700; margin-bottom: 20rpx; color: var(--c-ink); }
 .row {

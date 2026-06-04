@@ -23,7 +23,12 @@
         class="wq-card"
         @tap="goDetail(wq.id)"
       >
+        <view v-if="fromAssignment(wq)" class="wq-img wq-assign">
+          <text class="wq-assign-icon">📋</text>
+          <text class="wq-assign-text">{{ (wq.question_text || '作业错题').slice(0, 24) }}</text>
+        </view>
         <image
+          v-else
           class="wq-img"
           :src="wq.source_image_url"
           mode="aspectFill"
@@ -31,6 +36,7 @@
         />
         <view class="wq-info">
           <view class="wq-meta">
+            <text v-if="fromAssignment(wq)" class="tag tag-blue">来自作业</text>
             <text v-if="wq.question_type" class="tag">{{ wq.question_type }}</text>
             <text v-if="wq.difficulty" class="tag">{{ '★'.repeat(wq.difficulty) }}</text>
             <text v-if="wq.is_mastered" class="tag tag-green">已掌握</text>
@@ -56,6 +62,9 @@ import type { WrongQuestionOut } from '@/types/api'
 
 const auth = useAuthStore()
 const items = ref<WrongQuestionOut[]>([])
+function fromAssignment(wq: WrongQuestionOut): boolean {
+  return (wq.source_image_url || '').startsWith('assignment://')
+}
 const total = ref(0)
 const loading = ref(false)
 const skip = ref(0)
@@ -139,6 +148,10 @@ function goDetail(id: string) {
   border-radius: var(--r-pill);
 }
 .tag-green { background: var(--c-success-bg); color: var(--c-success-dark); }
+.tag-blue { background: var(--c-primary-faint); color: var(--c-primary); }
+.wq-assign { display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--c-bg-page); border-radius: 8rpx; padding: 8rpx; }
+.wq-assign-icon { font-size: 40rpx; }
+.wq-assign-text { font-size: 20rpx; color: var(--c-text-hint); text-align: center; line-height: 1.3; margin-top: 4rpx; }
 .wq-date { color: var(--c-text-hint); font-size: 24rpx; }
 .load-more { text-align: center; padding: 32rpx; color: var(--c-text-second); font-size: 28rpx; }
 .gray { color: var(--c-text-hint); }
