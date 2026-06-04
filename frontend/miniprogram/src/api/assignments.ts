@@ -36,3 +36,7 @@ export function getStudentAssignment(id: string): Promise<StudentAssignmentDetai
 export function submitAssignment(id: string, answers: unknown): Promise<{ id: string; submitted_at: string }> {
   return request(`/api/v1/assignments/${id}/submit`, { method: 'POST', data: { answers } })
 }
+
+export function getAssignmentStats(id: string): Promise<import('@/types/api').AssignmentStats> {
+  return request(`/api/v1/teacher/assignments/${id}/stats`, { method: 'GET' })
+}

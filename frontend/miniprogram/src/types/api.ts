@@ -703,3 +703,10 @@ export interface StudentAssignmentItem {
 export interface StudentAssignmentDetail {
   assignment: AssignmentOut; submitted: boolean; answers: unknown; score: number | null
 }
+
+export interface PerQuestionStat { index: number; stem: string; correct: number; total: number; rate: number }
+export interface AssignmentStats {
+  total_students: number; submitted_count: number; completion_rate: number
+  graded_count: number; avg_score: number | null; max_score: number | null; min_score: number | null
+  per_question: PerQuestionStat[]
+}

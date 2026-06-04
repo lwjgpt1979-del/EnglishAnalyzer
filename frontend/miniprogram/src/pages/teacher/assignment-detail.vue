@@ -10,6 +10,15 @@
         </view>
       </view>
 
+      <view v-if="stats" class="card">
+        <view class="card-title">统计</view>
+        <view class="stat-row"><text>完成率</text><text class="stat-v">{{ Math.round(stats.completion_rate * 100) }}%（{{ stats.submitted_count }}/{{ stats.total_students }}）</text></view>
+        <view v-if="stats.avg_score != null" class="stat-row"><text>平均分</text><text class="stat-v">{{ stats.avg_score }}（{{ stats.min_score }}~{{ stats.max_score }}）</text></view>
+        <view v-for="p in stats.per_question" :key="p.index" class="stat-row">
+          <text>第 {{ p.index + 1 }} 题正确率</text><text class="stat-v">{{ Math.round(p.rate * 100) }}%（{{ p.correct }}/{{ p.total }}）</text>
+        </view>
+      </view>
+
       <view class="card">
         <view class="card-title">提交（{{ detail.submissions.length }}）</view>
         <view v-if="!detail.submissions.length" class="empty">还没有学生提交</view>
@@ -29,11 +38,12 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { getAssignmentDetail, gradeSubmission } from '@/api/assignments'
-import type { TeacherAssignmentDetail } from '@/types/api'
+import { getAssignmentDetail, gradeSubmission, getAssignmentStats } from '@/api/assignments'
+import type { TeacherAssignmentDetail, AssignmentStats } from '@/types/api'
 
 const id = ref('')
 const detail = ref<TeacherAssignmentDetail | null>(null)
+const stats = ref<AssignmentStats | null>(null)
 const scores = reactive<Record<string, string>>({})
 
 onLoad((q) => {
@@ -42,7 +52,10 @@ onLoad((q) => {
 })
 
 async function load() {
-  try { detail.value = await getAssignmentDetail(id.value) } catch (e) {
+  try {
+    detail.value = await getAssignmentDetail(id.value)
+    stats.value = await getAssignmentStats(id.value)
+  } catch (e) {
     uni.showToast({ title: (e as Error).message, icon: 'none' })
   }
 }
@@ -74,4 +87,6 @@ async function onGrade(sid: string) {
 .grade-row { display: flex; align-items: center; gap: 16rpx; }
 .score-ipt { width: 160rpx; height: 64rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 0 12rpx; font-size: 26rpx; }
 .op { font-size: 26rpx; color: var(--c-primary); font-weight: 700; }
+.stat-row { display: flex; justify-content: space-between; font-size: 26rpx; color: var(--c-text-body); padding: 6rpx 0; }
+.stat-v { font-weight: 700; color: var(--c-gold); }
 </style>
