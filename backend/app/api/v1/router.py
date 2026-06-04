@@ -21,6 +21,7 @@ from app.api.v1.user_papers import router as user_papers_router
 from app.api.v1.vocabulary import router as vocabulary_router
 from app.api.v1.essay import router as essay_router
 from app.api.v1.assignments import router as assignments_router
+from app.api.v1.institution import router as institution_router
 
 v1_router = APIRouter()
 
@@ -44,4 +45,5 @@ v1_router.include_router(user_papers_router)
 v1_router.include_router(vocabulary_router)
 v1_router.include_router(essay_router)
 v1_router.include_router(assignments_router)
+v1_router.include_router(institution_router)
 v1_router.include_router(admin_router)
