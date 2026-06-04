@@ -20,6 +20,7 @@ from app.schemas.institution import (
     ActivationCodeOut,
     BatchRenewRequest,
     BatchRenewResult,
+    BillItemOut,
     InstitutionOverviewOut,
     InstitutionProfileOut,
     InstitutionProfileUpdate,
@@ -31,6 +32,7 @@ from app.schemas.institution import (
     RenewableStudentOut,
 )
 from app.services import (
+    institution_billing_service,
     institution_purchase_service,
     institution_renew_service,
     institution_service,
@@ -165,3 +167,12 @@ async def batch_renew(body: BatchRenewRequest, db: DbDep, admin: InstAdminDep):
         duration_months=body.duration_months, operator_id=admin.id)
     await db.commit()
     return make_ok(BatchRenewResult(**res))
+
+
+# ─── 账单（D-125）──────────────────────────────────────────────────────────
+
+@router.get("/bills", response_model=BaseResponse[list[BillItemOut]])
+async def list_bills(db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    rows = await institution_billing_service.list_bills(db, institution_id=inst_id)
+    return make_ok([BillItemOut(**r) for r in rows])

@@ -134,3 +134,10 @@ class BatchRenewResult(BaseModel):
     renewed_count: int
     total_amount_fen: int
     skipped: list[uuid.UUID]
+
+
+class BillItemOut(BaseModel):
+    date: dt.datetime
+    type: str
+    summary: str
+    amount_fen: int
