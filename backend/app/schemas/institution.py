@@ -46,6 +46,11 @@ class InstitutionTeacherOut(BaseModel):
     phone: str | None = None
     subject: str | None = None
     cert_status: str
+    monthly_paper_quota: int | None = None
+
+
+class TeacherQuotaUpdate(BaseModel):
+    monthly_paper_quota: int | None
 
 
 class JoinInstitutionRequest(BaseModel):

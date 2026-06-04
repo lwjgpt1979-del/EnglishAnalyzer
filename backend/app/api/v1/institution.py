@@ -30,6 +30,7 @@ from app.schemas.institution import (
     PurchaseListItem,
     PurchaseOut,
     RenewableStudentOut,
+    TeacherQuotaUpdate,
 )
 from app.services import (
     institution_billing_service,
@@ -95,6 +96,7 @@ async def list_institution_teachers(db: DbDep, admin: InstAdminDep):
         InstitutionTeacherOut(
             id=t.id, nickname=u.nickname, phone=u.phone,
             subject=t.subject, cert_status=str(t.cert_status),
+            monthly_paper_quota=t.monthly_paper_quota,
         ) for t, u in rows
     ])
 
@@ -106,6 +108,23 @@ async def remove_institution_teacher(teacher_id: uuid.UUID, db: DbDep, admin: In
         db, institution_id=inst_id, teacher_id=teacher_id)
     await db.commit()
     return make_ok({"removed": str(teacher_id)})
+
+
+@router.patch("/teachers/{teacher_id}/quota", response_model=BaseResponse[InstitutionTeacherOut])
+async def set_teacher_quota_api(
+    teacher_id: uuid.UUID, body: TeacherQuotaUpdate, db: DbDep, admin: InstAdminDep,
+):
+    inst_id = _require_inst(admin)
+    t = await institution_service.set_teacher_quota(
+        db, institution_id=inst_id, teacher_id=teacher_id,
+        monthly_paper_quota=body.monthly_paper_quota)
+    await db.commit()
+    u = await db.get(User, teacher_id)
+    return make_ok(InstitutionTeacherOut(
+        id=t.id, nickname=u.nickname if u else None, phone=u.phone if u else None,
+        subject=t.subject, cert_status=str(t.cert_status),
+        monthly_paper_quota=t.monthly_paper_quota,
+    ))
 
 
 # ─── 学生采购（D-122）──────────────────────────────────────────────────────
