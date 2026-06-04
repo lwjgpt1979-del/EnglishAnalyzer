@@ -184,6 +184,8 @@ class Teacher(Base):
     max_students = mapped_column(
         sa.Integer, nullable=False, server_default=sa.text("50")
     )
+    # —— 机构出卷月额度（D-128；NULL=不限）——
+    monthly_paper_quota = mapped_column(sa.Integer, nullable=True)
     enterprise_userid = mapped_column(sa.String, nullable=True)
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),
