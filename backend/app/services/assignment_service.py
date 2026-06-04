@@ -154,6 +154,22 @@ async def get_assignment_for_teacher(
     return a, subs
 
 
+async def suggest_questions(db: AsyncSession, *, student_id: uuid.UUID, count: int = 5) -> dict:
+    """AI 智能选题：读目标学生最薄弱知识点 → 生成 count 题（dev-mock 免费）。"""
+    from app.services import diagnosis_service, question_ai_service
+    report = await diagnosis_service.get_diagnosis_report(db, student_id=student_id)
+    if not report.top_weak_knowledge_points:
+        raise AppError(code=400, message="该生暂无薄弱知识点，请先完成错题 AI 分析")
+    kp = report.top_weak_knowledge_points[0].knowledge_point
+    gen = await question_ai_service.generate_questions(
+        kp_name=kp, kp_category="语法", kp_description=None, count=count)
+    questions = [
+        {"stem": q.stem, "type": q.question_type, "options": q.options, "answer": q.answer}
+        for q in gen
+    ]
+    return {"knowledge_point": kp, "questions": questions}
+
+
 async def get_assignment_stats(
     db: AsyncSession, *, teacher_id: uuid.UUID, assignment_id: uuid.UUID,
 ) -> dict:

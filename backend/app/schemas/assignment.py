@@ -94,3 +94,8 @@ class AssignmentStatsOut(BaseModel):
     max_score: float | None = None
     min_score: float | None = None
     per_question: list[PerQuestionStat]
+
+
+class SuggestOut(BaseModel):
+    knowledge_point: str
+    questions: list[AssignmentQuestion]

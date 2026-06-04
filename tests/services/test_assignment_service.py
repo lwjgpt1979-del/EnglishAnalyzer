@@ -293,3 +293,45 @@ async def test_assignment_stats_other_teacher_404(db_session):
         db_session, teacher_id=tid, class_id=cls.id, title="x", questions=_Q)
     with pytest.raises(AppError):
         await assignment_service.get_assignment_stats(db_session, teacher_id=other, assignment_id=a.id)
+
+
+# ─── D-116: AI 智能选题 / 薄弱点组卷 ─────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _force_qai_dev_mock(monkeypatch):
+    """强制 question_ai_service dev-mock，绝不真打付费 LLM。"""
+    from app.services import question_ai_service
+    monkeypatch.setattr(question_ai_service, "is_llm_dev_mode", lambda: True)
+
+
+async def _seed_weak(s, student_id, kp="一般现在时"):
+    from app.models.d3_wrong_questions import WrongQuestion, AiAnalysis
+    wq = WrongQuestion(id=uuid.uuid4(), student_id=student_id, source_image_url="x://1")
+    s.add(wq)
+    await s.flush()
+    s.add(AiAnalysis(
+        id=uuid.uuid4(), wrong_question_id=wq.id, student_id=student_id,
+        llm_provider="deepseek", error_types=["语法"], knowledge_points=[kp],
+        diagnosis="d", suggestions="s", tokens_used=0))
+    await s.flush()
+
+
+@pytest.mark.asyncio
+async def test_suggest_questions(db_session):
+    from app.services.auth_service import upsert_user
+    stu = await upsert_user(db_session, openid=f"sg_{uuid.uuid4().hex[:8]}")
+    await db_session.flush()
+    await _seed_weak(db_session, stu.id, kp="一般现在时")
+    res = await assignment_service.suggest_questions(db_session, student_id=stu.id, count=3)
+    assert res["knowledge_point"] == "一般现在时"
+    assert len(res["questions"]) == 3
+    assert res["questions"][0]["answer"]
+
+
+@pytest.mark.asyncio
+async def test_suggest_no_weak_400(db_session):
+    from app.services.auth_service import upsert_user
+    stu = await upsert_user(db_session, openid=f"sg_{uuid.uuid4().hex[:8]}")
+    await db_session.flush()
+    with pytest.raises(AppError):
+        await assignment_service.suggest_questions(db_session, student_id=stu.id, count=3)

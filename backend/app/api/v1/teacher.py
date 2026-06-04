@@ -356,7 +356,7 @@ from datetime import datetime as _dt  # noqa: E402
 from app.services import assignment_service  # noqa: E402
 from app.schemas.assignment import (  # noqa: E402
     AssignmentCreate, AssignmentListItem, AssignmentOut, AssignmentStatsOut,
-    GradeIn, SubmissionItem, TeacherAssignmentDetail,
+    GradeIn, SubmissionItem, SuggestOut, TeacherAssignmentDetail,
 )
 
 
@@ -411,6 +411,15 @@ async def list_assignments_api(db: DbDep, current_user: UserDep, class_id: uuid.
             due_at=a.due_at.isoformat() if a.due_at else None, submission_count=cnt)
         for a, cnt in rows
     ])
+
+
+@router.get("/assignments/suggest", response_model=BaseResponse[SuggestOut])
+async def suggest_questions_api(student_id: uuid.UUID, db: DbDep, current_user: UserDep, count: int = 5):
+    """AI 智能选题：按目标学生薄弱知识点生成题目建议（dev-mock 免费）。"""
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    res = await assignment_service.suggest_questions(db, student_id=student_id, count=count)
+    return make_ok(SuggestOut(**res))
 
 
 @router.get("/assignments/{assignment_id}", response_model=BaseResponse[TeacherAssignmentDetail])
