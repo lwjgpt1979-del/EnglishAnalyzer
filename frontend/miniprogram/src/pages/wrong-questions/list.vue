@@ -1,6 +1,11 @@
 <!-- src/pages/wrong-questions/list.vue -->
 <template>
   <view class="list-page">
+    <!-- 来源筛选 -->
+    <view class="src-tabs">
+      <text v-for="t in SRC_TABS" :key="t.value" class="src-tab" :class="{ active: source === t.value }" @tap="switchSource(t.value)">{{ t.label }}</text>
+    </view>
+
     <!-- 加载态 -->
     <view v-if="loading && items.length === 0" class="center-tip">加载中…</view>
 
@@ -70,6 +75,20 @@ const loading = ref(false)
 const skip = ref(0)
 const LIMIT = 20
 const hasMore = ref(true)
+const source = ref('')
+const SRC_TABS = [
+  { label: '全部', value: '' },
+  { label: '作业', value: 'assignment' },
+  { label: '上传', value: 'upload' },
+]
+function switchSource(v: string) {
+  if (source.value === v) return
+  source.value = v
+  items.value = []
+  skip.value = 0
+  hasMore.value = true
+  loadItems()
+}
 
 onMounted(async () => {
   if (!auth.isLoggedIn()) {
@@ -82,7 +101,7 @@ async function loadItems() {
   if (loading.value) return
   loading.value = true
   try {
-    const res = await listWrongQuestions(skip.value, LIMIT)
+    const res = await listWrongQuestions(skip.value, LIMIT, source.value)
     items.value.push(...res.items)
     total.value = res.total
     hasMore.value = items.value.length < res.total
@@ -149,6 +168,9 @@ function goDetail(id: string) {
 }
 .tag-green { background: var(--c-success-bg); color: var(--c-success-dark); }
 .tag-blue { background: var(--c-primary-faint); color: var(--c-primary); }
+.src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0; }
+.src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
+.src-tab.active { background: var(--c-primary); color: var(--c-ink); font-weight: 700; }
 .wq-assign { display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--c-bg-page); border-radius: 8rpx; padding: 8rpx; }
 .wq-assign-icon { font-size: 40rpx; }
 .wq-assign-text { font-size: 20rpx; color: var(--c-text-hint); text-align: center; line-height: 1.3; margin-top: 4rpx; }

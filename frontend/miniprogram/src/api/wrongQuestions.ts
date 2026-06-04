@@ -15,9 +15,10 @@ export function createWrongQuestion(data: WrongQuestionCreate): Promise<WrongQue
   })
 }
 
-export function listWrongQuestions(skip = 0, limit = 20): Promise<WrongQuestionListOut> {
+export function listWrongQuestions(skip = 0, limit = 20, source = ''): Promise<WrongQuestionListOut> {
+  const q = source ? `&source=${source}` : ''
   return request<WrongQuestionListOut>(
-    `/api/v1/wrong-questions/?skip=${skip}&limit=${limit}`,
+    `/api/v1/wrong-questions/?skip=${skip}&limit=${limit}${q}`,
   )
 }
 
