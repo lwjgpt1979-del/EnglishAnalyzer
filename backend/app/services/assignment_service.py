@@ -154,6 +154,46 @@ async def get_assignment_for_teacher(
     return a, subs
 
 
+async def get_assignment_stats(
+    db: AsyncSession, *, teacher_id: uuid.UUID, assignment_id: uuid.UUID,
+) -> dict:
+    from sqlalchemy import func
+    a = await _get_owned_assignment(db, teacher_id=teacher_id, assignment_id=assignment_id)
+    total_students = (await db.execute(
+        select(func.count()).select_from(ClassStudent).where(ClassStudent.class_id == a.class_id)
+    )).scalar_one()
+    subs = list((await db.execute(
+        select(AssignmentSubmission).where(AssignmentSubmission.assignment_id == a.id)
+    )).scalars().all())
+    submitted = len(subs)
+    completion_rate = round(submitted / total_students, 2) if total_students else 0.0
+    scores = [float(s.score) for s in subs if s.score is not None]
+    avg_score = round(sum(scores) / len(scores), 2) if scores else None
+    max_score = max(scores) if scores else None
+    min_score = min(scores) if scores else None
+    # 逐题正确率（客观题）
+    questions = a.questions or []
+    per_question = []
+    for i, q in enumerate(questions):
+        if not (q or {}).get("answer"):
+            continue
+        correct = 0
+        for su in subs:
+            ua = _normalize_answers(su.answers).get(i, "")
+            if _grade(str(q.get("type") or "其他"), str(q["answer"]), ua):
+                correct += 1
+        per_question.append({
+            "index": i, "stem": q.get("stem", ""), "correct": correct,
+            "total": submitted, "rate": round(correct / submitted, 2) if submitted else 0.0,
+        })
+    return {
+        "total_students": int(total_students), "submitted_count": submitted,
+        "completion_rate": completion_rate, "graded_count": len(scores),
+        "avg_score": avg_score, "max_score": max_score, "min_score": min_score,
+        "per_question": per_question,
+    }
+
+
 async def grade_submission(
     db: AsyncSession, *, teacher_id: uuid.UUID, submission_id: uuid.UUID, score: float,
 ) -> AssignmentSubmission:

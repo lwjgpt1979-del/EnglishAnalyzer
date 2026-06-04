@@ -355,7 +355,7 @@ async def teacher_invite_sms(body: SendInviteSmsRequest, db: DbDep, current_user
 from datetime import datetime as _dt  # noqa: E402
 from app.services import assignment_service  # noqa: E402
 from app.schemas.assignment import (  # noqa: E402
-    AssignmentCreate, AssignmentListItem, AssignmentOut,
+    AssignmentCreate, AssignmentListItem, AssignmentOut, AssignmentStatsOut,
     GradeIn, SubmissionItem, TeacherAssignmentDetail,
 )
 
@@ -439,3 +439,12 @@ async def grade_submission_api(submission_id: uuid.UUID, body: GradeIn, db: DbDe
         db, teacher_id=current_user.id, submission_id=submission_id, score=body.score)
     await db.commit()
     return make_ok({"id": str(sub.id), "score": float(sub.score)})
+
+
+@router.get("/assignments/{assignment_id}/stats", response_model=BaseResponse[AssignmentStatsOut])
+async def assignment_stats_api(assignment_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    st = await assignment_service.get_assignment_stats(
+        db, teacher_id=current_user.id, assignment_id=assignment_id)
+    return make_ok(AssignmentStatsOut(**st))

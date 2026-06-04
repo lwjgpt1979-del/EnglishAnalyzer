@@ -75,3 +75,22 @@ class SubmitIn(BaseModel):
 
 class GradeIn(BaseModel):
     score: float = Field(..., ge=0)
+
+
+class PerQuestionStat(BaseModel):
+    index: int
+    stem: str
+    correct: int
+    total: int
+    rate: float
+
+
+class AssignmentStatsOut(BaseModel):
+    total_students: int
+    submitted_count: int
+    completion_rate: float
+    graded_count: int
+    avg_score: float | None = None
+    max_score: float | None = None
+    min_score: float | None = None
+    per_question: list[PerQuestionStat]

@@ -102,3 +102,22 @@ async def test_create_assignment_requires_certified(client):
                           json={"class_id": str(uuid.uuid4()), "title": "x", "questions": []},
                           headers=headers)
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assignment_stats_api(client):
+    t_headers, _ = await _make_certified_teacher(client, uuid.uuid4().hex[:6])
+    s_headers, sid = await _login(client, f"stu_{uuid.uuid4().hex[:6]}")
+    cls = (await client.post("/api/v1/teacher/classes", json={"name": "一班"}, headers=t_headers)).json()["data"]
+    await _add_student_to_class(uuid.UUID(cls["id"]), sid)
+    body = {"class_id": cls["id"], "title": "t",
+            "questions": [{"stem": "1+1", "answer": "2"}]}
+    aid = (await client.post("/api/v1/teacher/assignments", json=body, headers=t_headers)).json()["data"]["id"]
+    await client.post(f"/api/v1/teacher/assignments/{aid}/publish", headers=t_headers)
+    await client.post(f"/api/v1/assignments/{aid}/submit",
+                      json={"answers": [{"index": 0, "answer": "2"}]}, headers=s_headers)
+    r = await client.get(f"/api/v1/teacher/assignments/{aid}/stats", headers=t_headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["total_students"] == 1 and data["submitted_count"] == 1
+    assert data["per_question"][0]["rate"] == 1.0

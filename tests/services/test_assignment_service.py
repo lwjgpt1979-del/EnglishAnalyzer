@@ -246,3 +246,50 @@ async def test_submit_subjective_no_score(db_session):
     sub = await assignment_service.submit_assignment(
         db_session, student_id=sid, assignment_id=a.id, answers=[{"index": 0, "answer": "我的看法..."}])
     assert sub.score is None
+
+
+# ─── D-115: 作业统计大盘 ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_assignment_stats(db_session):
+    from app.models.d7_teacher import ClassStudent
+    from app.services.auth_service import upsert_user
+    tid = await _teacher(db_session)
+    cls, sid1 = await _class_with_student(db_session, tid)
+    # 再加 2 个学生（共 3 人）
+    s2 = await upsert_user(db_session, openid=f"s_{uuid.uuid4().hex[:8]}"); await db_session.flush()
+    s3 = await upsert_user(db_session, openid=f"s_{uuid.uuid4().hex[:8]}"); await db_session.flush()
+    db_session.add_all([
+        ClassStudent(class_id=cls.id, student_id=s2.id, joined_at=datetime.now(timezone.utc)),
+        ClassStudent(class_id=cls.id, student_id=s3.id, joined_at=datetime.now(timezone.utc)),
+    ])
+    await db_session.flush()
+    a = await assignment_service.create_assignment(
+        db_session, teacher_id=tid, class_id=cls.id, title="x",
+        questions=[{"stem": "1+1", "answer": "2"}, {"stem": "2+2", "answer": "4"}])
+    await assignment_service.publish_assignment(db_session, teacher_id=tid, assignment_id=a.id)
+    # sid1 全对(100)，s2 一半(50)
+    await assignment_service.submit_assignment(db_session, student_id=sid1, assignment_id=a.id,
+        answers=[{"index": 0, "answer": "2"}, {"index": 1, "answer": "4"}])
+    await assignment_service.submit_assignment(db_session, student_id=s2.id, assignment_id=a.id,
+        answers=[{"index": 0, "answer": "2"}, {"index": 1, "answer": "X"}])
+    st = await assignment_service.get_assignment_stats(db_session, teacher_id=tid, assignment_id=a.id)
+    assert st["total_students"] == 3
+    assert st["submitted_count"] == 2
+    assert st["completion_rate"] == 0.67
+    assert st["avg_score"] == 75.0
+    assert st["max_score"] == 100.0 and st["min_score"] == 50.0
+    pq = {p["index"]: p for p in st["per_question"]}
+    assert pq[0]["correct"] == 2 and pq[0]["total"] == 2 and pq[0]["rate"] == 1.0
+    assert pq[1]["correct"] == 1 and pq[1]["rate"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_assignment_stats_other_teacher_404(db_session):
+    other = await _teacher(db_session)
+    tid = await _teacher(db_session)
+    cls, _ = await _class_with_student(db_session, tid)
+    a = await assignment_service.create_assignment(
+        db_session, teacher_id=tid, class_id=cls.id, title="x", questions=_Q)
+    with pytest.raises(AppError):
+        await assignment_service.get_assignment_stats(db_session, teacher_id=other, assignment_id=a.id)
