@@ -328,3 +328,36 @@ async def get_student_diagnosis_report(
         raise AppError(code=403, message="无权查看该学生数据")
     from app.services.diagnosis_service import get_diagnosis_report
     return await get_diagnosis_report(db, student_id=student_id)
+
+
+async def join_institution(
+    db: AsyncSession, *, teacher_user_id: uuid.UUID, code: str
+) -> Teacher:
+    """老师输 institution_join 邀请码加入机构（D-121）。"""
+    now = datetime.now(timezone.utc)
+    invite = (await db.execute(
+        select(InviteCode).where(
+            InviteCode.code == code,
+            InviteCode.type == "institution_join",
+            InviteCode.used_at.is_(None),
+            InviteCode.expires_at > now,
+        )
+    )).scalar_one_or_none()
+    if invite is None:
+        raise AppError(code=400, message="邀请码无效或已过期")
+
+    issuer = await db.get(User, invite.issuer_id)
+    if issuer is None or issuer.institution_id is None:
+        raise AppError(code=400, message="邀请码所属机构无效")
+
+    teacher = await db.get(Teacher, teacher_user_id)
+    if teacher is None:
+        raise AppError(code=404, message="老师档案不存在")
+    if teacher.institution_id is not None:
+        raise AppError(code=409, message="您已加入机构，不能重复加入")
+
+    teacher.institution_id = issuer.institution_id
+    invite.used_at = now
+    invite.target_id = teacher_user_id
+    await db.flush()
+    return teacher
