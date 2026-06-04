@@ -17,13 +17,17 @@ from app.core.security import require_role
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.institution import (
+    ActivationCodeOut,
     InstitutionOverviewOut,
     InstitutionProfileOut,
     InstitutionProfileUpdate,
     InstitutionTeacherOut,
     InviteCodeOut,
+    PurchaseCreateRequest,
+    PurchaseListItem,
+    PurchaseOut,
 )
-from app.services import institution_service
+from app.services import institution_purchase_service, institution_service
 
 router = APIRouter(prefix="/institution", tags=["institution"])
 
@@ -93,3 +97,41 @@ async def remove_institution_teacher(teacher_id: uuid.UUID, db: DbDep, admin: In
         db, institution_id=inst_id, teacher_id=teacher_id)
     await db.commit()
     return make_ok({"removed": str(teacher_id)})
+
+
+# ─── 学生采购（D-122）──────────────────────────────────────────────────────
+
+@router.post("/purchases", response_model=BaseResponse[PurchaseOut])
+async def create_purchase(body: PurchaseCreateRequest, db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    purchase, codes = await institution_purchase_service.create_purchase(
+        db, institution_id=inst_id, created_by=admin.id,
+        tier=body.tier, duration_months=body.duration_months, quantity=body.quantity)
+    await db.commit()
+    return make_ok(PurchaseOut(
+        id=purchase.id, tier=str(purchase.tier), duration_months=purchase.duration_months,
+        quantity=purchase.quantity, amount_fen=purchase.amount_fen, status=purchase.status,
+        created_at=purchase.created_at,
+        codes=[ActivationCodeOut(code=c.code, status=c.status, used_at=c.used_at) for c in codes],
+    ))
+
+
+@router.get("/purchases", response_model=BaseResponse[list[PurchaseListItem]])
+async def list_purchases(db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    rows = await institution_purchase_service.list_purchases(db, institution_id=inst_id)
+    return make_ok([
+        PurchaseListItem(
+            id=p.id, tier=str(p.tier), duration_months=p.duration_months,
+            quantity=p.quantity, amount_fen=p.amount_fen, status=p.status,
+            created_at=p.created_at, used_count=used, total_count=total,
+        ) for p, used, total in rows
+    ])
+
+
+@router.get("/purchases/{purchase_id}/codes", response_model=BaseResponse[list[ActivationCodeOut]])
+async def get_purchase_codes(purchase_id: uuid.UUID, db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    codes = await institution_purchase_service.get_purchase_codes(
+        db, institution_id=inst_id, purchase_id=purchase_id)
+    return make_ok([ActivationCodeOut(code=c.code, status=c.status, used_at=c.used_at) for c in codes])

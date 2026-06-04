@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_role
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
+from app.schemas.institution import ActivateCodeRequest
 from app.schemas.payments import CurrentMembershipOut
-from app.services import membership_service
+from app.services import activation_service, membership_service
 
 router = APIRouter(prefix="/memberships", tags=["memberships"])
 
@@ -29,3 +30,18 @@ async def get_my_membership(db: DbDep, current_user: UserDep):
     if membership is None:
         return make_ok(CurrentMembershipOut())
     return make_ok(CurrentMembershipOut.model_validate(membership))
+
+
+StudentDep = Annotated[User, Depends(require_role("student"))]
+
+
+@router.post("/activate-code", response_model=BaseResponse[dict])
+async def activate_code(body: ActivateCodeRequest, db: DbDep, current_user: StudentDep):
+    """学生输机构激活码 → 获得会员 + 归属机构（D-122）。"""
+    await get_rls_db(db, str(current_user.id))
+    m = await activation_service.activate_code(
+        db, student_user_id=current_user.id, code=body.code)
+    await db.commit()
+    tier = str(m.tier) if m is not None else "free"
+    expires = m.expires_at.isoformat() if (m is not None and m.expires_at) else None
+    return make_ok({"tier": tier, "expires_at": expires})

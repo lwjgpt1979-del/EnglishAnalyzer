@@ -47,3 +47,42 @@ class InstitutionTeacherOut(BaseModel):
 
 class JoinInstitutionRequest(BaseModel):
     code: str
+
+
+class PurchaseCreateRequest(BaseModel):
+    tier: str
+    duration_months: int
+    quantity: int
+
+
+class ActivationCodeOut(BaseModel):
+    code: str
+    status: str
+    used_at: dt.datetime | None = None
+
+
+class PurchaseOut(BaseModel):
+    id: uuid.UUID
+    tier: str
+    duration_months: int
+    quantity: int
+    amount_fen: int
+    status: str
+    created_at: dt.datetime
+    codes: list[ActivationCodeOut]
+
+
+class PurchaseListItem(BaseModel):
+    id: uuid.UUID
+    tier: str
+    duration_months: int
+    quantity: int
+    amount_fen: int
+    status: str
+    created_at: dt.datetime
+    used_count: int
+    total_count: int
+
+
+class ActivateCodeRequest(BaseModel):
+    code: str
