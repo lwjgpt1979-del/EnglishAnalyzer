@@ -72,3 +72,26 @@ export function getEssayTemplates() {
 export function updateEssayTemplates(payload: Record<string, { template: string; samples: string[] }>) {
   return unwrap<Record<string, { template: string; samples: string[] }>>(request.put('/admin/essay-templates', payload))
 }
+
+// ── 机构入驻审核（D-123）──
+export interface AdminInstitution {
+  id: string; name: string; contact_phone: string
+  province_code: string; city_code: string; address: string
+  status: string; created_at: string
+}
+
+export function createInstitution(data: {
+  name: string; contact_phone: string; province_code: string; city_code: string; address: string
+}): Promise<AdminInstitution> {
+  return unwrap<AdminInstitution>(request.post('/admin/institutions', data))
+}
+export function listInstitutions(status?: string): Promise<AdminInstitution[]> {
+  const q = status ? `?status=${status}` : ''
+  return unwrap<AdminInstitution[]>(request.get(`/admin/institutions${q}`))
+}
+export function approveInstitution(id: string, adminUsername: string): Promise<{ institution_id: string; admin_username: string; password: string }> {
+  return unwrap(request.post(`/admin/institutions/${id}/approve`, { admin_username: adminUsername }))
+}
+export function rejectInstitution(id: string): Promise<AdminInstitution> {
+  return unwrap<AdminInstitution>(request.post(`/admin/institutions/${id}/reject`))
+}

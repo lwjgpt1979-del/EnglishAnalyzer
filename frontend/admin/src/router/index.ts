@@ -15,6 +15,7 @@ const router = createRouter({
         { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
         { path: 'pricing', name: 'pricing', component: () => import('../views/Pricing.vue') },
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
+        { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },
         { path: 'institution/overview', name: 'institution-overview', component: () => import('../views/InstitutionOverview.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/profile', name: 'institution-profile', component: () => import('../views/InstitutionProfile.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/teachers', name: 'institution-teachers', component: () => import('../views/InstitutionTeachers.vue'), meta: { roles: ['institution_admin'] } },
