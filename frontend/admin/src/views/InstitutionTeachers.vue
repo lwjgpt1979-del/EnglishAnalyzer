@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  generateTeacherInviteCode, listTeachers, removeTeacher,
+  generateTeacherInviteCode, listTeachers, removeTeacher, setTeacherQuota,
   type InstitutionTeacher,
 } from '../api/institution'
 
@@ -27,6 +27,17 @@ async function remove(t: InstitutionTeacher) {
   await load()
 }
 
+async function setQuota(t: InstitutionTeacher) {
+  const { value } = await ElMessageBox.prompt(
+    '每月出卷上限（留空=不限）', '设置额度',
+    { inputValue: t.monthly_paper_quota?.toString() ?? '' })
+  const q = value === '' || value == null ? null : Number(value)
+  if (q !== null && (Number.isNaN(q) || q < 0)) { ElMessage.error('请输入非负整数'); return }
+  await setTeacherQuota(t.id, q)
+  ElMessage.success('已设置')
+  await load()
+}
+
 onMounted(load)
 </script>
 
@@ -44,8 +55,12 @@ onMounted(load)
       <el-table-column prop="phone" label="电话" />
       <el-table-column prop="subject" label="科目" />
       <el-table-column prop="cert_status" label="认证状态" />
-      <el-table-column label="操作" width="120">
+      <el-table-column label="月出卷额度">
+        <template #default="{ row }">{{ row.monthly_paper_quota ?? '不限' }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="180">
         <template #default="{ row }">
+          <el-button type="primary" text @click="setQuota(row)">设额度</el-button>
           <el-button type="danger" text @click="remove(row)">移出机构</el-button>
         </template>
       </el-table-column>
