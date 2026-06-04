@@ -52,6 +52,13 @@
       </view>
     </view>
 
+    <!-- 机构激活码（D-122）-->
+    <view class="card">
+      <view class="card-title">机构激活码</view>
+      <text class="menu-desc">机构学生：输入机构发放的激活码，激活会员。</text>
+      <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/membership/activate' })">输入激活码</button>
+    </view>
+
     <!-- 整卷上传（D-089 / M4）-->
     <view class="card" @tap="goUserPapers">
       <view class="card-title">整卷拆题</view>
