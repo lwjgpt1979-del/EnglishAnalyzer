@@ -6,16 +6,21 @@
 from __future__ import annotations
 
 import datetime as dt
+import random
+import string
 import uuid
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d1_users import Institution, Student, Teacher
+from app.models.d1_users import Institution, InviteCode, Student, Teacher, User
 from app.models.d2_payments import Membership
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d5_learning import StudyCheckin
+
+_CODE_CHARS = string.ascii_uppercase + string.digits
+_JOIN_CODE_TTL_HOURS = 24 * 7
 
 
 async def get_profile(db: AsyncSession, *, institution_id: uuid.UUID) -> Institution:
@@ -86,3 +91,55 @@ async def get_overview(db: AsyncSession, *, institution_id: uuid.UUID) -> dict:
         "member_count": member_count,
         "active_7d_count": active_7d_count,
     }
+
+
+async def generate_join_code(
+    db: AsyncSession, *, institution_id: uuid.UUID, issuer_id: uuid.UUID
+) -> InviteCode:
+    """生成机构加入邀请码（institution_join，6 位，7 天有效）。"""
+    async def _unique() -> str:
+        for _ in range(10):
+            code = "".join(random.choices(_CODE_CHARS, k=6))
+            r = await db.execute(select(InviteCode).where(InviteCode.code == code))
+            if r.scalar_one_or_none() is None:
+                return code
+        raise AppError(code=500, message="邀请码生成失败，请重试")
+
+    invite = InviteCode(
+        id=uuid.uuid4(),
+        code=await _unique(),
+        type="institution_join",  # type: ignore[arg-type]
+        issuer_id=issuer_id,
+        target_id=None,
+        expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=_JOIN_CODE_TTL_HOURS),
+    )
+    db.add(invite)
+    await db.flush()
+    return invite
+
+
+async def list_teachers(
+    db: AsyncSession, *, institution_id: uuid.UUID
+) -> list[tuple[Teacher, User]]:
+    """名下老师列表（Teacher 行 + 对应 User 展示字段）。"""
+    rows = (await db.execute(
+        select(Teacher, User)
+        .join(User, User.id == Teacher.id)
+        .where(Teacher.institution_id == institution_id)
+    )).all()
+    return [(t, u) for t, u in rows]
+
+
+async def remove_teacher(
+    db: AsyncSession, *, institution_id: uuid.UUID, teacher_id: uuid.UUID
+) -> None:
+    """把老师移出机构（teachers.institution_id=None）；跨机构拒绝。"""
+    t = (await db.execute(
+        select(Teacher).where(
+            Teacher.id == teacher_id, Teacher.institution_id == institution_id
+        )
+    )).scalar_one_or_none()
+    if t is None:
+        raise AppError(code=404, message="老师不存在或不属于本机构")
+    t.institution_id = None
+    await db.flush()
