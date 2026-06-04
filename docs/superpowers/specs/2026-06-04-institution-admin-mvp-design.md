@@ -1,6 +1,6 @@
 # 机构后台基础壳 + 数据概览（D-120）设计文档
 
-> 机构端 MVP 第一切片。零迁移、dev-mock 无花钱。
+> 机构端 MVP 第一切片。一个小迁移（users.institution_id）、dev-mock 无花钱。
 
 ## 目标
 
@@ -25,6 +25,10 @@
 
 ## 后端组件
 
+### 0. 迁移 0019：`users.institution_id`（新增列）
+
+`users` 表加 nullable 列 `institution_id`（FK → `institutions.id`）+ 索引。机构管理员 User 行此列指向所管机构（C 端用户为 NULL）。模型 `d1_users.py` 的 `User` 类同步加列。沿用已有迁移范式（0001~0018）。
+
 ### 1. `admin_auth_service`（修改）
 
 - `authenticate(db, username, password)`：放行 role ∈ `{platform_admin, institution_admin}`（platform_admin 原行为不变，纯增量）。
@@ -43,10 +47,12 @@ get_overview(db, *, institution_id) -> dict
 
 | 指标 | 口径 |
 |------|------|
-| teacher_count | `users` 中 `institution_id=X 且 role='teacher'` 计数 |
-| student_count | `users` 中 `institution_id=X 且 role='student'` 计数 |
-| member_count | 名下学生中存在 `memberships.is_active=True 且 tier≠'free'` 的人数 |
-| active_7d_count | 名下学生中近 7 日有打卡（check-in）或错题上传（wrong_questions.created_at）记录的人数 |
+| teacher_count | `teachers` 表中 `institution_id=X` 计数 |
+| student_count | `students` 表中 `institution_id=X` 计数 |
+| member_count | 名下学生（`students.institution_id=X`）中存在 `memberships.is_active=True 且 tier≠'free'` 的人数 |
+| active_7d_count | 名下学生中近 7 日有打卡（`study_checkins.checkin_date`）或错题上传（`wrong_questions.created_at`）记录的人数 |
+
+机构归属：老师走 `teachers.institution_id`，学生走 `students.institution_id`，机构管理员走新列 `users.institution_id`（请求时以 `current_user.institution_id` 作隔离键）。
 
 `update_profile` 仅允许编辑 `name / contact_phone / address`（均为已有列），不触碰 `status / commission_rate / 省市编码`。
 
@@ -101,6 +107,6 @@ get_overview(db, *, institution_id) -> dict
 
 ## 影响范围
 
-- 新增：`institution_service.py`、`api/v1/institution.py`、`schemas/institution.py`、admin web 两个 view + api + router/menu 改动。
-- 修改：`admin_auth_service.authenticate`（放行 institution_admin）、`main.py`（注册路由）、`stores/auth.ts`、`MainLayout`。
-- 无数据库迁移，无新依赖，无付费调用。
+- 新增：迁移 `0019_users_institution_id.py`、`institution_service.py`、`api/v1/institution.py`、`schemas/institution.py`、admin web 两个 view + api + router/menu 改动。
+- 修改：`models/d1_users.py`（User 加 institution_id 列）、`admin_auth_service`（放行 institution_admin + create_institution_admin）、`main.py`（注册路由）、`stores/auth.ts`、`MainLayout`。
+- 一个增量迁移（users.institution_id，nullable + 索引），无新依赖，无付费调用。
