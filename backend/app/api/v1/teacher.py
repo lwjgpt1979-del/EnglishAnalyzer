@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
 from app.core.exceptions import AppError
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_role
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.teacher import (
@@ -457,3 +457,23 @@ async def assignment_stats_api(assignment_id: uuid.UUID, db: DbDep, current_user
     st = await assignment_service.get_assignment_stats(
         db, teacher_id=current_user.id, assignment_id=assignment_id)
     return make_ok(AssignmentStatsOut(**st))
+
+
+# ─── 加入机构（D-121）──────────────────────────────────────────────────────
+from app.schemas.institution import InstitutionTeacherOut, JoinInstitutionRequest
+
+TeacherDep = Annotated[User, Depends(require_role("teacher"))]
+
+
+@router.post("/join-institution", response_model=BaseResponse[InstitutionTeacherOut])
+async def join_institution_api(
+    body: JoinInstitutionRequest, db: DbDep, current_user: TeacherDep,
+):
+    t = await teacher_service.join_institution(
+        db, teacher_user_id=current_user.id, code=body.code)
+    await db.commit()
+    await db.refresh(t)
+    return make_ok(InstitutionTeacherOut(
+        id=t.id, nickname=current_user.nickname, phone=current_user.phone,
+        subject=t.subject, cert_status=str(t.cert_status),
+    ))

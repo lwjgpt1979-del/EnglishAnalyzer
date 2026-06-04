@@ -30,3 +30,20 @@ class InstitutionOverviewOut(BaseModel):
     student_count: int
     member_count: int
     active_7d_count: int
+
+
+class InviteCodeOut(BaseModel):
+    code: str
+    expires_at: dt.datetime
+
+
+class InstitutionTeacherOut(BaseModel):
+    id: uuid.UUID
+    nickname: str | None = None
+    phone: str | None = None
+    subject: str | None = None
+    cert_status: str
+
+
+class JoinInstitutionRequest(BaseModel):
+    code: str

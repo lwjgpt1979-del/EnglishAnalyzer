@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -19,6 +20,8 @@ from app.schemas.institution import (
     InstitutionOverviewOut,
     InstitutionProfileOut,
     InstitutionProfileUpdate,
+    InstitutionTeacherOut,
+    InviteCodeOut,
 )
 from app.services import institution_service
 
@@ -58,3 +61,35 @@ async def update_profile(body: InstitutionProfileUpdate, db: DbDep, admin: InstA
     await db.commit()
     await db.refresh(inst)
     return make_ok(InstitutionProfileOut.model_validate(inst))
+
+
+# ─── 老师管理（D-121）──────────────────────────────────────────────────────
+
+@router.post("/teachers/invite-code", response_model=BaseResponse[InviteCodeOut])
+async def gen_teacher_invite_code(db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    invite = await institution_service.generate_join_code(
+        db, institution_id=inst_id, issuer_id=admin.id)
+    await db.commit()
+    return make_ok(InviteCodeOut(code=invite.code, expires_at=invite.expires_at))
+
+
+@router.get("/teachers", response_model=BaseResponse[list[InstitutionTeacherOut]])
+async def list_institution_teachers(db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    rows = await institution_service.list_teachers(db, institution_id=inst_id)
+    return make_ok([
+        InstitutionTeacherOut(
+            id=t.id, nickname=u.nickname, phone=u.phone,
+            subject=t.subject, cert_status=str(t.cert_status),
+        ) for t, u in rows
+    ])
+
+
+@router.delete("/teachers/{teacher_id}", response_model=BaseResponse[dict])
+async def remove_institution_teacher(teacher_id: uuid.UUID, db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    await institution_service.remove_teacher(
+        db, institution_id=inst_id, teacher_id=teacher_id)
+    await db.commit()
+    return make_ok({"removed": str(teacher_id)})
