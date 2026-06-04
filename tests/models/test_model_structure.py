@@ -289,6 +289,7 @@ def test_all_37_tables_in_metadata():
         "relatives", "student_relatives", "teacher_students", "invite_codes",
         # 域2
         "memberships", "orders", "refund_records",
+        "institution_purchases", "activation_codes",
         # 域3
         "wrong_questions", "ocr_tasks", "ai_analyses", "teacher_comments",
         # 域4
@@ -321,7 +322,7 @@ def test_all_37_tables_in_metadata():
     actual_tables = set(Base.metadata.tables.keys())
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
-    assert len(actual_tables) == 49, f"期望 49 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+    assert len(actual_tables) == 51, f"期望 51 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
 
 
 def test_d11_v2_curriculum_tables():
