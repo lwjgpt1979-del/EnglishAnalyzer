@@ -59,3 +59,8 @@ export function teacherInviteQrcode() {
 export function teacherInviteSms(phone: string) {
   return request('/api/v1/teacher/invite-code/sms', { method: 'POST', data: { phone } })
 }
+
+/** 老师输码加入机构（D-121） */
+export function joinInstitution(code: string) {
+  return request('/api/v1/teacher/join-institution', { method: 'POST', data: { code } })
+}

@@ -1,5 +1,9 @@
 <template>
   <view class="page">
+    <view class="card join-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/join-institution' })">
+      <text class="join-text">🏫 加入机构</text>
+      <text class="arrow">›</text>
+    </view>
     <view class="card">
       <view class="card-title">创建班级</view>
       <input v-model="newName" class="input" placeholder="班级名称" />
@@ -52,4 +56,6 @@ onMounted(load)
 .class-name { font-size: 28rpx; font-weight: 700; color: var(--c-ink); display: block; }
 .class-cnt { font-size: 24rpx; color: var(--c-text-hint); }
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }
+.join-card { display: flex; align-items: center; justify-content: space-between; }
+.join-text { font-weight: 700; font-size: 30rpx; }
 </style>
