@@ -52,24 +52,33 @@ async def get_wrong_question(
     return result.scalar_one_or_none()
 
 
+def _source_filter(source: str | None):
+    """来源过滤：assignment=作业（assignment://），upload=非作业。"""
+    if source == "assignment":
+        return [WrongQuestion.source_image_url.like("assignment://%")]
+    if source == "upload":
+        return [~WrongQuestion.source_image_url.like("assignment://%")]
+    return []
+
+
 async def list_wrong_questions(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
     skip: int = 0,
     limit: int = 20,
+    source: str | None = None,
 ) -> tuple[list[WrongQuestion], int]:
-    """分页查询当前学生的错题，按创建时间倒序，返回 (items, total)。"""
+    """分页查询当前学生的错题，按创建时间倒序，返回 (items, total)。source 可按来源过滤。"""
+    conds = [WrongQuestion.student_id == student_id, *_source_filter(source)]
     count_result = await db.execute(
-        select(func.count()).select_from(WrongQuestion).where(
-            WrongQuestion.student_id == student_id
-        )
+        select(func.count()).select_from(WrongQuestion).where(*conds)
     )
     total: int = count_result.scalar_one()
 
     rows = await db.execute(
         select(WrongQuestion)
-        .where(WrongQuestion.student_id == student_id)
+        .where(*conds)
         .order_by(WrongQuestion.created_at.desc())
         .offset(skip)
         .limit(limit)

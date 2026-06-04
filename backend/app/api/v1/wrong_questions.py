@@ -59,11 +59,12 @@ async def list_wrong_questions(
     current_user: UserDep,
     skip: int = Query(0, ge=0, description="分页偏移"),
     limit: int = Query(20, ge=1, le=100, description="每页条数"),
+    source: str | None = Query(None, description="来源筛选：assignment/upload，空=全部"),
 ):
-    """获取当前学生的错题列表（分页，按创建时间倒序）。"""
+    """获取当前学生的错题列表（分页，按创建时间倒序，可按来源筛选）。"""
     await get_rls_db(db, str(current_user.id))
     items, total = await wrong_question_service.list_wrong_questions(
-        db, student_id=current_user.id, skip=skip, limit=limit
+        db, student_id=current_user.id, skip=skip, limit=limit, source=source
     )
     return make_ok(
         WrongQuestionListOut(

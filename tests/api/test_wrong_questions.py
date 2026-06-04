@@ -504,3 +504,25 @@ async def test_list_wrong_questions_by_kp_api(client: AsyncClient, auth_headers)
     assert body["code"] == 200
     assert body["data"]["total"] == 0
     assert body["data"]["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_wrong_questions_source_filter(db_session, test_student):
+    # 上传来源
+    await create_wrong_question(db_session, student_id=test_student.id, data=WrongQuestionCreate(
+        source_image_url="https://cdn.example.com/up.jpg", question_text="upload q"))
+    # 作业来源
+    from app.models.d3_wrong_questions import WrongQuestion
+    db_session.add(WrongQuestion(
+        id=uuid.uuid4(), student_id=test_student.id,
+        source_image_url="assignment://abc", question_text="assign q"))
+    await db_session.flush()
+    from app.services import wrong_question_service
+    _, total_all = await wrong_question_service.list_wrong_questions(db_session, student_id=test_student.id)
+    items_a, total_a = await wrong_question_service.list_wrong_questions(
+        db_session, student_id=test_student.id, source="assignment")
+    items_u, total_u = await wrong_question_service.list_wrong_questions(
+        db_session, student_id=test_student.id, source="upload")
+    assert total_all == 2
+    assert total_a == 1 and items_a[0].source_image_url.startswith("assignment://")
+    assert total_u == 1 and not items_u[0].source_image_url.startswith("assignment://")
