@@ -30,6 +30,9 @@ class InstitutionOverviewOut(BaseModel):
     student_count: int
     member_count: int
     active_7d_count: int
+    expiring_30d_count: int
+    tier_distribution: dict[str, int]
+    month_purchase_fen: int
 
 
 class InviteCodeOut(BaseModel):

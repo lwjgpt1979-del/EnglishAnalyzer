@@ -48,7 +48,8 @@ async def test_overview_and_profile(client):
     r = await client.get("/api/v1/institution/overview", headers=h)
     assert r.status_code == 200
     body = r.json()["data"]
-    assert set(body) == {"teacher_count", "student_count", "member_count", "active_7d_count"}
+    assert {"teacher_count", "student_count", "member_count", "active_7d_count",
+            "expiring_30d_count", "tier_distribution", "month_purchase_fen"} <= set(body)
 
     r = await client.get("/api/v1/institution/profile", headers=h)
     assert r.status_code == 200
