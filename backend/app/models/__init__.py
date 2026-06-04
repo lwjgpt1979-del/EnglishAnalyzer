@@ -18,7 +18,9 @@ from .d1_users import (  # noqa: F401
 )
 
 # 域2: 会员与支付 (3 张表)
-from .d2_payments import Order, Membership, RefundRecord  # noqa: F401
+from .d2_payments import (  # noqa: F401
+    Order, Membership, RefundRecord, InstitutionPurchase, ActivationCode,
+)
 
 # 域3: 错题与 AI 诊断 (4 张表)
 from .d3_wrong_questions import WrongQuestion, OcrTask, AiAnalysis, TeacherComment  # noqa: F401

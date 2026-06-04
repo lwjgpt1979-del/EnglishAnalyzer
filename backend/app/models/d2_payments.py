@@ -147,3 +147,46 @@ class RefundRecord(Base):
         server_default=sa.func.now(),
         onupdate=sa.func.now(),
     )
+
+
+# ─── 机构学生采购（D-122）────────────────────────────────────────────────────
+
+
+class InstitutionPurchase(Base):
+    __tablename__ = "institution_purchases"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    institution_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("institutions.id"), nullable=False
+    )
+    tier = mapped_column(membership_tier_enum, nullable=False)
+    duration_months = mapped_column(sa.Integer, nullable=False)
+    quantity = mapped_column(sa.Integer, nullable=False)
+    amount_fen = mapped_column(sa.Integer, nullable=False)
+    status = mapped_column(sa.String, nullable=False, server_default=sa.text("'paid'"))
+    created_by = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+    )
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class ActivationCode(Base):
+    __tablename__ = "activation_codes"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = mapped_column(sa.String(12), nullable=False, unique=True)
+    purchase_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("institution_purchases.id"), nullable=False
+    )
+    tier = mapped_column(membership_tier_enum, nullable=False)
+    duration_months = mapped_column(sa.Integer, nullable=False)
+    status = mapped_column(sa.String, nullable=False, server_default=sa.text("'unused'"))
+    used_by = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True
+    )
+    used_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
