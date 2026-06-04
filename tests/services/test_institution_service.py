@@ -72,6 +72,33 @@ async def test_get_overview_counts(db_session):
     assert ov["student_count"] == 3
     assert ov["member_count"] == 1
     assert ov["active_7d_count"] == 2
+    # 新增字段存在（D-126）
+    assert {"expiring_30d_count", "tier_distribution", "month_purchase_fen"} <= set(ov)
+
+
+@pytest.mark.asyncio
+async def test_get_overview_enhanced(db_session):
+    from app.models.d2_payments import InstitutionPurchase
+    inst = await _institution(db_session)
+    admin = uuid.uuid4()
+    db_session.add(User(id=admin, openid=f"o:{admin}", role="institution_admin",
+                        institution_id=inst.id))
+    await db_session.flush()
+    # 3 个 pro 会员（_student member=True → tier=pro，expires_at=None）
+    await _student(db_session, inst.id, member=True)
+    await _student(db_session, inst.id, member=True)
+    await _student(db_session, inst.id, member=True)
+    # 本月采购
+    db_session.add(InstitutionPurchase(
+        id=uuid.uuid4(), institution_id=inst.id, tier="pro",
+        duration_months=6, quantity=2, amount_fen=36000, status="paid",
+        created_by=admin))
+    await db_session.flush()
+
+    ov = await institution_service.get_overview(db_session, institution_id=inst.id)
+    assert ov["tier_distribution"] == {"basic": 0, "pro": 3, "promax": 0}
+    assert ov["month_purchase_fen"] == 36000
+    assert isinstance(ov["expiring_30d_count"], int)
 
 
 @pytest.mark.asyncio

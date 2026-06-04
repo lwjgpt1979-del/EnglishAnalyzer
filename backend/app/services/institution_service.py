@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d1_users import Institution, InviteCode, Student, Teacher, User
-from app.models.d2_payments import Membership
+from app.models.d2_payments import InstitutionPurchase, Membership
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d5_learning import StudyCheckin
 
@@ -85,11 +85,43 @@ async def get_overview(db: AsyncSession, *, institution_id: uuid.UUID) -> dict:
         select(func.count(func.distinct(active_ids.c.student_id)))
     )).scalar_one()
 
+    # —— D-126 增强指标 ——
+    cutoff_30d = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30)
+    expiring_30d_count = (await db.execute(
+        select(func.count(func.distinct(Membership.user_id))).where(
+            Membership.user_id.in_(student_ids),
+            Membership.is_active.is_(True),
+            Membership.expires_at.is_not(None),
+            Membership.expires_at <= cutoff_30d,
+        )
+    )).scalar_one()
+
+    tier_rows = (await db.execute(
+        select(Membership.tier, func.count()).where(
+            Membership.user_id.in_(student_ids),
+            Membership.is_active.is_(True),
+        ).group_by(Membership.tier)
+    )).all()
+    _tc = {str(t): c for t, c in tier_rows}
+    tier_distribution = {k: _tc.get(k, 0) for k in ("basic", "pro", "promax")}
+
+    month_start = dt.datetime.now(dt.timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_purchase_fen = (await db.execute(
+        select(func.coalesce(func.sum(InstitutionPurchase.amount_fen), 0)).where(
+            InstitutionPurchase.institution_id == institution_id,
+            InstitutionPurchase.created_at >= month_start,
+        )
+    )).scalar_one()
+
     return {
         "teacher_count": teacher_count,
         "student_count": student_count,
         "member_count": member_count,
         "active_7d_count": active_7d_count,
+        "expiring_30d_count": expiring_30d_count,
+        "tier_distribution": tier_distribution,
+        "month_purchase_fen": month_purchase_fen,
     }
 
 
