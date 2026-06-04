@@ -18,6 +18,8 @@ from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.institution import (
     ActivationCodeOut,
+    BatchRenewRequest,
+    BatchRenewResult,
     InstitutionOverviewOut,
     InstitutionProfileOut,
     InstitutionProfileUpdate,
@@ -26,8 +28,13 @@ from app.schemas.institution import (
     PurchaseCreateRequest,
     PurchaseListItem,
     PurchaseOut,
+    RenewableStudentOut,
 )
-from app.services import institution_purchase_service, institution_service
+from app.services import (
+    institution_purchase_service,
+    institution_renew_service,
+    institution_service,
+)
 
 router = APIRouter(prefix="/institution", tags=["institution"])
 
@@ -135,3 +142,26 @@ async def get_purchase_codes(purchase_id: uuid.UUID, db: DbDep, admin: InstAdmin
     codes = await institution_purchase_service.get_purchase_codes(
         db, institution_id=inst_id, purchase_id=purchase_id)
     return make_ok([ActivationCodeOut(code=c.code, status=c.status, used_at=c.used_at) for c in codes])
+
+
+# ─── 批量续费（D-124）──────────────────────────────────────────────────────
+
+@router.get("/renewable-students", response_model=BaseResponse[list[RenewableStudentOut]])
+async def list_renewable_students(db: DbDep, admin: InstAdminDep, expiring_days: int | None = None):
+    inst_id = _require_inst(admin)
+    rows = await institution_renew_service.list_renewable_students(
+        db, institution_id=inst_id, expiring_days=expiring_days)
+    return make_ok([
+        RenewableStudentOut(student_id=sid, nickname=nick, tier=tier, expires_at=exp)
+        for sid, nick, tier, exp in rows
+    ])
+
+
+@router.post("/batch-renew", response_model=BaseResponse[BatchRenewResult])
+async def batch_renew(body: BatchRenewRequest, db: DbDep, admin: InstAdminDep):
+    inst_id = _require_inst(admin)
+    res = await institution_renew_service.batch_renew(
+        db, institution_id=inst_id, student_ids=body.student_ids,
+        duration_months=body.duration_months, operator_id=admin.id)
+    await db.commit()
+    return make_ok(BatchRenewResult(**res))

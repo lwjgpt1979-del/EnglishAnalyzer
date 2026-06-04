@@ -116,3 +116,21 @@ class ApproveInstitutionResult(BaseModel):
     institution_id: uuid.UUID
     admin_username: str
     password: str
+
+
+class RenewableStudentOut(BaseModel):
+    student_id: uuid.UUID
+    nickname: str | None = None
+    tier: str
+    expires_at: dt.datetime
+
+
+class BatchRenewRequest(BaseModel):
+    student_ids: list[uuid.UUID]
+    duration_months: int
+
+
+class BatchRenewResult(BaseModel):
+    renewed_count: int
+    total_amount_fen: int
+    skipped: list[uuid.UUID]
