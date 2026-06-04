@@ -22,6 +22,7 @@ const router = createRouter({
         { path: 'institution/purchases', name: 'institution-purchases', component: () => import('../views/InstitutionPurchases.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/renew', name: 'institution-renew', component: () => import('../views/InstitutionRenew.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/bills', name: 'institution-bills', component: () => import('../views/InstitutionBills.vue'), meta: { roles: ['institution_admin'] } },
+        { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },
       ],
     },
   ],

@@ -34,6 +34,7 @@ function onLogout() {
           <el-menu-item index="/institution/purchases">学生采购</el-menu-item>
           <el-menu-item index="/institution/renew">批量续费</el-menu-item>
           <el-menu-item index="/institution/bills">账单</el-menu-item>
+          <el-menu-item index="/notifications">通知</el-menu-item>
         </template>
         <template v-else>
           <el-menu-item index="/overview">数据大盘</el-menu-item>
@@ -42,6 +43,7 @@ function onLogout() {
           <el-menu-item index="/pricing">定价配置</el-menu-item>
           <el-menu-item index="/essay-templates">作文模板</el-menu-item>
           <el-menu-item index="/institutions">机构审核</el-menu-item>
+          <el-menu-item index="/notifications">通知</el-menu-item>
         </template>
       </el-menu>
     </el-aside>
