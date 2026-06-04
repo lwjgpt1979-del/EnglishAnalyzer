@@ -84,3 +84,9 @@ export function listRenewableStudents(expiringDays?: number): Promise<RenewableS
 export function batchRenew(studentIds: string[], durationMonths: number): Promise<{ renewed_count: number; total_amount_fen: number; skipped: string[] }> {
   return unwrap(request.post('/institution/batch-renew', { student_ids: studentIds, duration_months: durationMonths }))
 }
+
+export interface BillItem { date: string; type: string; summary: string; amount_fen: number }
+
+export function listBills(): Promise<BillItem[]> {
+  return unwrap<BillItem[]>(request.get('/institution/bills'))
+}
