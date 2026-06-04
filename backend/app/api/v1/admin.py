@@ -36,8 +36,15 @@ from app.schemas.vocabulary import (
     VocabMediaReviewRequest,
     VocabMediaUpdateRequest,
 )
+from app.schemas.institution import (
+    AdminInstitutionCreate,
+    AdminInstitutionOut,
+    ApproveInstitutionRequest,
+    ApproveInstitutionResult,
+)
 from app.services import (
     admin_auth_service,
+    admin_institution_service,
     admin_stats_service,
     curriculum_service,
     essay_service,
@@ -293,3 +300,39 @@ async def update_vocab_media(word_id: uuid.UUID, body: VocabMediaUpdateRequest, 
     )
     await db.commit()
     return make_ok(_to_vocab_media_item(w))
+
+
+# ─── 机构入驻审核（D-123）──────────────────────────────────────────────────
+
+@router.post("/institutions", response_model=BaseResponse[AdminInstitutionOut])
+async def admin_create_institution(body: AdminInstitutionCreate, db: DbDep, admin: AdminDep):
+    inst = await admin_institution_service.create_institution(
+        db, name=body.name, contact_phone=body.contact_phone,
+        province_code=body.province_code, city_code=body.city_code, address=body.address)
+    await db.commit()
+    return make_ok(AdminInstitutionOut.model_validate(inst))
+
+
+@router.get("/institutions", response_model=BaseResponse[list[AdminInstitutionOut]])
+async def admin_list_institutions(db: DbDep, admin: AdminDep, status: str | None = None):
+    rows = await admin_institution_service.list_institutions(db, status=status)
+    return make_ok([AdminInstitutionOut.model_validate(i) for i in rows])
+
+
+@router.post("/institutions/{institution_id}/approve",
+             response_model=BaseResponse[ApproveInstitutionResult])
+async def admin_approve_institution(
+    institution_id: uuid.UUID, body: ApproveInstitutionRequest, db: DbDep, admin: AdminDep,
+):
+    inst, username, password = await admin_institution_service.approve_institution(
+        db, institution_id=institution_id, admin_username=body.admin_username)
+    await db.commit()
+    return make_ok(ApproveInstitutionResult(
+        institution_id=inst.id, admin_username=username, password=password))
+
+
+@router.post("/institutions/{institution_id}/reject", response_model=BaseResponse[AdminInstitutionOut])
+async def admin_reject_institution(institution_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    inst = await admin_institution_service.reject_institution(db, institution_id=institution_id)
+    await db.commit()
+    return make_ok(AdminInstitutionOut.model_validate(inst))

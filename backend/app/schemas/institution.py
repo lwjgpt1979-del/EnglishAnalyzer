@@ -86,3 +86,33 @@ class PurchaseListItem(BaseModel):
 
 class ActivateCodeRequest(BaseModel):
     code: str
+
+
+class AdminInstitutionCreate(BaseModel):
+    name: str
+    contact_phone: str
+    province_code: str
+    city_code: str
+    address: str
+
+
+class AdminInstitutionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    name: str
+    contact_phone: str
+    province_code: str
+    city_code: str
+    address: str
+    status: str
+    created_at: dt.datetime
+
+
+class ApproveInstitutionRequest(BaseModel):
+    admin_username: str
+
+
+class ApproveInstitutionResult(BaseModel):
+    institution_id: uuid.UUID
+    admin_username: str
+    password: str
