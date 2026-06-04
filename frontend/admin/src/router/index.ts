@@ -20,6 +20,7 @@ const router = createRouter({
         { path: 'institution/profile', name: 'institution-profile', component: () => import('../views/InstitutionProfile.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/teachers', name: 'institution-teachers', component: () => import('../views/InstitutionTeachers.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/purchases', name: 'institution-purchases', component: () => import('../views/InstitutionPurchases.vue'), meta: { roles: ['institution_admin'] } },
+        { path: 'institution/renew', name: 'institution-renew', component: () => import('../views/InstitutionRenew.vue'), meta: { roles: ['institution_admin'] } },
       ],
     },
   ],

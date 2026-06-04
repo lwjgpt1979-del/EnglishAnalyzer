@@ -72,3 +72,15 @@ export function listPurchases(): Promise<PurchaseListItem[]> {
 export function getPurchaseCodes(purchaseId: string): Promise<ActivationCode[]> {
   return unwrap<ActivationCode[]>(request.get(`/institution/purchases/${purchaseId}/codes`))
 }
+
+export interface RenewableStudent {
+  student_id: string; nickname: string | null; tier: string; expires_at: string
+}
+
+export function listRenewableStudents(expiringDays?: number): Promise<RenewableStudent[]> {
+  const q = expiringDays != null ? `?expiring_days=${expiringDays}` : ''
+  return unwrap<RenewableStudent[]>(request.get(`/institution/renewable-students${q}`))
+}
+export function batchRenew(studentIds: string[], durationMonths: number): Promise<{ renewed_count: number; total_amount_fen: number; skipped: string[] }> {
+  return unwrap(request.post('/institution/batch-renew', { student_ids: studentIds, duration_months: durationMonths }))
+}

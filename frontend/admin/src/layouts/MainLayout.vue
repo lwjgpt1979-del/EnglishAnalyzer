@@ -32,6 +32,7 @@ function onLogout() {
           <el-menu-item index="/institution/profile">机构资料</el-menu-item>
           <el-menu-item index="/institution/teachers">老师管理</el-menu-item>
           <el-menu-item index="/institution/purchases">学生采购</el-menu-item>
+          <el-menu-item index="/institution/renew">批量续费</el-menu-item>
         </template>
         <template v-else>
           <el-menu-item index="/overview">数据大盘</el-menu-item>
