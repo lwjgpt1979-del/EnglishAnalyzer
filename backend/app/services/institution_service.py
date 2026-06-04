@@ -175,3 +175,20 @@ async def remove_teacher(
         raise AppError(code=404, message="老师不存在或不属于本机构")
     t.institution_id = None
     await db.flush()
+
+
+async def set_teacher_quota(
+    db: AsyncSession, *, institution_id: uuid.UUID, teacher_id: uuid.UUID,
+    monthly_paper_quota: int | None,
+) -> Teacher:
+    """设/清除老师每月出卷额度（None=不限）；跨机构拒绝。"""
+    t = (await db.execute(
+        select(Teacher).where(
+            Teacher.id == teacher_id, Teacher.institution_id == institution_id
+        )
+    )).scalar_one_or_none()
+    if t is None:
+        raise AppError(code=404, message="老师不存在或不属于本机构")
+    t.monthly_paper_quota = monthly_paper_quota
+    await db.flush()
+    return t

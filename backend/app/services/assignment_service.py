@@ -4,10 +4,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
+from app.models.d1_users import Teacher
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d7_teacher import Assignment, AssignmentSubmission, ClassStudent
 from app.services import class_service, notification_service
@@ -83,6 +84,19 @@ async def create_assignment(
     title: str, questions: list, due_at: datetime | None = None,
 ) -> Assignment:
     await class_service._get_owned_class(db, teacher_id=teacher_id, class_id=class_id)
+    # —— 机构出卷月额度闸门（D-128；老师未配额度=不限）——
+    teacher = await db.get(Teacher, teacher_id)
+    if teacher is not None and teacher.monthly_paper_quota is not None:
+        month_start = datetime.now(timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0)
+        used = (await db.execute(
+            select(func.count()).select_from(Assignment).where(
+                Assignment.teacher_id == teacher_id,
+                Assignment.created_at >= month_start,
+            )
+        )).scalar_one()
+        if used >= teacher.monthly_paper_quota:
+            raise AppError(code=403, message="本月出卷额度已用尽，请联系机构管理员")
     a = Assignment(
         id=uuid.uuid4(), teacher_id=teacher_id, class_id=class_id,
         title=title, questions=questions, due_at=due_at, status="draft",
