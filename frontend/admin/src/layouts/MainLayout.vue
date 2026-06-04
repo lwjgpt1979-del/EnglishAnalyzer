@@ -30,6 +30,7 @@ function onLogout() {
         <template v-if="auth.role === 'institution_admin'">
           <el-menu-item index="/institution/overview">机构概览</el-menu-item>
           <el-menu-item index="/institution/profile">机构资料</el-menu-item>
+          <el-menu-item index="/institution/teachers">老师管理</el-menu-item>
         </template>
         <template v-else>
           <el-menu-item index="/overview">数据大盘</el-menu-item>
