@@ -60,8 +60,36 @@ async def authenticate(
     )).scalar_one_or_none()
     if user is None or not user.password_hash:
         return None
-    if str(user.role) != "platform_admin":
+    if str(user.role) not in ("platform_admin", "institution_admin"):
         return None
     if not verify_password(password, user.password_hash):
         return None
+    return user
+
+
+async def create_institution_admin(
+    db: AsyncSession, *, username: str, password: str, institution_id: uuid.UUID,
+) -> User:
+    """创建 / 重置一个 institution_admin 账号，绑定到指定机构。
+
+    - username 已存在 → 重置密码 + 角色 + 机构（不新建行）。
+    - 不存在 → 新建，openid 合成 "inst:{username}"，role=institution_admin。
+    """
+    existing = (await db.execute(
+        select(User).where(User.username == username)
+    )).scalar_one_or_none()
+    if existing is not None:
+        existing.password_hash = hash_password(password)
+        existing.role = "institution_admin"
+        existing.institution_id = institution_id
+        return existing
+    user = User(
+        id=uuid.uuid4(),
+        openid=f"inst:{username}",
+        username=username,
+        password_hash=hash_password(password),
+        role="institution_admin",
+        institution_id=institution_id,
+    )
+    db.add(user)
     return user
