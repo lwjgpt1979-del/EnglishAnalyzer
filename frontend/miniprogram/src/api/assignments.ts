@@ -40,3 +40,7 @@ export function submitAssignment(id: string, answers: unknown): Promise<{ id: st
 export function getAssignmentStats(id: string): Promise<import('@/types/api').AssignmentStats> {
   return request(`/api/v1/teacher/assignments/${id}/stats`, { method: 'GET' })
 }
+
+export function suggestAssignmentQuestions(studentId: string, count = 5): Promise<import('@/types/api').AssignmentSuggest> {
+  return request('/api/v1/teacher/assignments/suggest', { method: 'GET', data: { student_id: studentId, count } })
+}

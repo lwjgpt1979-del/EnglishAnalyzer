@@ -3,6 +3,10 @@
     <view class="card">
       <view class="card-title">出卷</view>
       <input v-model="title" class="ipt" placeholder="作业标题" />
+      <view class="suggest-row">
+        <input v-model="suggestSid" class="ipt suggest-ipt" placeholder="目标学生ID（智能选题）" />
+        <text class="suggest-btn" @tap="onSuggest">🎯 智能选题</text>
+      </view>
       <view v-for="(q, i) in questions" :key="i" class="q-block">
         <view class="q-head">第 {{ i + 1 }} 题 <text class="q-del" @tap="removeQ(i)">删除</text></view>
         <textarea v-model="q.stem" class="q-stem" placeholder="题干" />
@@ -34,7 +38,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { createAssignment, listAssignments, publishAssignment, closeAssignment } from '@/api/assignments'
+import { createAssignment, listAssignments, publishAssignment, closeAssignment, suggestAssignmentQuestions } from '@/api/assignments'
 import type { AssignmentListItem, AssignmentQuestion } from '@/types/api'
 
 const classId = ref('')
@@ -42,6 +46,19 @@ const title = ref('')
 const questions = ref<AssignmentQuestion[]>([{ stem: '', answer: '' }])
 const creating = ref(false)
 const list = ref<AssignmentListItem[]>([])
+const suggestSid = ref('')
+
+async function onSuggest() {
+  if (!suggestSid.value.trim()) { uni.showToast({ title: '请输入学生ID', icon: 'none' }); return }
+  try {
+    const r = await suggestAssignmentQuestions(suggestSid.value.trim(), 5)
+    questions.value = r.questions.map((q) => ({ stem: q.stem, type: q.type, options: q.options, answer: q.answer }))
+    if (!title.value) title.value = `${r.knowledge_point} 专项练习`
+    uni.showToast({ title: `已按「${r.knowledge_point}」选题`, icon: 'none' })
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message, icon: 'none' })
+  }
+}
 
 onLoad((q) => { classId.value = (q as { classId?: string })?.classId || '' })
 onShow(load)
@@ -86,6 +103,9 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/assignment
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; }
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
 .ipt { width: 100%; height: 72rpx; font-size: 28rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 0 16rpx; margin-bottom: 12rpx; }
+.suggest-row { display: flex; gap: 12rpx; align-items: center; margin-bottom: 12rpx; }
+.suggest-ipt { flex: 1; margin-bottom: 0; }
+.suggest-btn { font-size: 26rpx; color: var(--c-primary); font-weight: 700; white-space: nowrap; }
 .q-block { border-top: 1rpx solid var(--c-border); padding-top: 12rpx; margin-bottom: 12rpx; }
 .q-head { font-size: 26rpx; color: var(--c-text-second); margin-bottom: 8rpx; }
 .q-del { color: #e54d42; margin-left: 12rpx; }

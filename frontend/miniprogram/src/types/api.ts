@@ -710,3 +710,5 @@ export interface AssignmentStats {
   graded_count: number; avg_score: number | null; max_score: number | null; min_score: number | null
   per_question: PerQuestionStat[]
 }
+
+export interface AssignmentSuggest { knowledge_point: string; questions: AssignmentQuestion[] }
