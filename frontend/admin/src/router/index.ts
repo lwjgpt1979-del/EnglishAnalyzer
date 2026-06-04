@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'institution/overview', name: 'institution-overview', component: () => import('../views/InstitutionOverview.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/profile', name: 'institution-profile', component: () => import('../views/InstitutionProfile.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'institution/teachers', name: 'institution-teachers', component: () => import('../views/InstitutionTeachers.vue'), meta: { roles: ['institution_admin'] } },
+        { path: 'institution/purchases', name: 'institution-purchases', component: () => import('../views/InstitutionPurchases.vue'), meta: { roles: ['institution_admin'] } },
       ],
     },
   ],

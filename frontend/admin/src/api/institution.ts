@@ -51,3 +51,24 @@ export function listTeachers(): Promise<InstitutionTeacher[]> {
 export function removeTeacher(teacherId: string): Promise<{ removed: string }> {
   return unwrap(request.delete(`/institution/teachers/${teacherId}`))
 }
+
+export interface ActivationCode { code: string; status: string; used_at: string | null }
+export interface PurchaseDetail {
+  id: string; tier: string; duration_months: number; quantity: number
+  amount_fen: number; status: string; created_at: string; codes: ActivationCode[]
+}
+export interface PurchaseListItem {
+  id: string; tier: string; duration_months: number; quantity: number
+  amount_fen: number; status: string; created_at: string
+  used_count: number; total_count: number
+}
+
+export function createPurchase(data: { tier: string; duration_months: number; quantity: number }): Promise<PurchaseDetail> {
+  return unwrap<PurchaseDetail>(request.post('/institution/purchases', data))
+}
+export function listPurchases(): Promise<PurchaseListItem[]> {
+  return unwrap<PurchaseListItem[]>(request.get('/institution/purchases'))
+}
+export function getPurchaseCodes(purchaseId: string): Promise<ActivationCode[]> {
+  return unwrap<ActivationCode[]>(request.get(`/institution/purchases/${purchaseId}/codes`))
+}
