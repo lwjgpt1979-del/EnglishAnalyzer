@@ -65,6 +65,10 @@ class User(Base):
     nickname = mapped_column(sa.String, nullable=True)
     avatar_url = mapped_column(sa.String, nullable=True)
     role = mapped_column(user_role_enum, nullable=False)
+    # —— 机构管理员 ↔ 机构绑定键（D-120；C 端用户为 NULL）——
+    institution_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("institutions.id"), nullable=True
+    )
     is_active = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.text("true")
     )
