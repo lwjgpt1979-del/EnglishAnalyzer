@@ -27,11 +27,17 @@ function onLogout() {
         text-color="rgba(255,255,255,0.75)"
         active-text-color="#ffffff"
       >
-        <el-menu-item index="/overview">数据大盘</el-menu-item>
-        <el-menu-item index="/questions">仿真题审核</el-menu-item>
-        <el-menu-item index="/contents">知识点内容</el-menu-item>
-        <el-menu-item index="/pricing">定价配置</el-menu-item>
-        <el-menu-item index="/essay-templates">作文模板</el-menu-item>
+        <template v-if="auth.role === 'institution_admin'">
+          <el-menu-item index="/institution/overview">机构概览</el-menu-item>
+          <el-menu-item index="/institution/profile">机构资料</el-menu-item>
+        </template>
+        <template v-else>
+          <el-menu-item index="/overview">数据大盘</el-menu-item>
+          <el-menu-item index="/questions">仿真题审核</el-menu-item>
+          <el-menu-item index="/contents">知识点内容</el-menu-item>
+          <el-menu-item index="/pricing">定价配置</el-menu-item>
+          <el-menu-item index="/essay-templates">作文模板</el-menu-item>
+        </template>
       </el-menu>
     </el-aside>
     <el-container>

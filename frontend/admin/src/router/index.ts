@@ -15,6 +15,8 @@ const router = createRouter({
         { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
         { path: 'pricing', name: 'pricing', component: () => import('../views/Pricing.vue') },
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
+        { path: 'institution/overview', name: 'institution-overview', component: () => import('../views/InstitutionOverview.vue'), meta: { roles: ['institution_admin'] } },
+        { path: 'institution/profile', name: 'institution-profile', component: () => import('../views/InstitutionProfile.vue'), meta: { roles: ['institution_admin'] } },
       ],
     },
   ],
@@ -27,6 +29,16 @@ router.beforeEach((to) => {
   }
   if (to.path === '/login' && auth.isLoggedIn()) {
     return { path: '/' }
+  }
+  // 角色分流：机构管理员仅可进机构页，访问根/平台页时重定向到机构概览
+  if (auth.isLoggedIn()) {
+    const roles = to.meta.roles as string[] | undefined
+    if (roles && !roles.includes(auth.role)) {
+      return { path: auth.role === 'institution_admin' ? '/institution/overview' : '/overview' }
+    }
+    if (auth.role === 'institution_admin' && (to.path === '/' || to.path === '/overview')) {
+      return { path: '/institution/overview' }
+    }
   }
   return true
 })
