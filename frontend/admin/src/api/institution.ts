@@ -5,6 +5,9 @@ export interface InstitutionOverview {
   student_count: number
   member_count: number
   active_7d_count: number
+  expiring_30d_count: number
+  month_purchase_fen: number
+  tier_distribution: Record<string, number>
 }
 
 export interface InstitutionProfile {
