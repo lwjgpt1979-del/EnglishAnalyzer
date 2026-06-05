@@ -9,7 +9,19 @@
     </view>
     <view class="hero">
       <text class="hero-title">engGramer</text>
-      <text class="hero-sub">英语 AI 错题诊断</text>
+      <text class="hero-sub">英语 AI 知识学习</text>
+    </view>
+
+    <!-- 开始学习主卡片 -->
+    <view class="learn-card" @tap="goLearn">
+      <view class="learn-left">
+        <text class="learn-icon">📖</text>
+        <view class="learn-text">
+          <text class="learn-title">开始学习</text>
+          <text class="learn-sub">{{ preferredLabel || '选择教材开始' }}</text>
+        </view>
+      </view>
+      <text class="learn-arrow">›</text>
     </view>
 
     <view class="quick-grid">
@@ -72,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { onShow } from '@dcloudio/uni-app'
 import { getUnreadCount } from '@/api/notifications'
@@ -85,6 +97,20 @@ async function loadUnread() {
   try { const r = await getUnreadCount(); unreadCount.value = r.data?.count || 0 } catch { /* ignore */ }
 }
 function goMessages() { uni.navigateTo({ url: '/pages/messages/index' }) }
+
+const preferredLabel = computed(() => {
+  const u = auth.user as any
+  if (!u?.preferred_textbook_version) return ''
+  return `${u.preferred_textbook_version} ${u.preferred_grade} ${u.preferred_semester}学期`
+})
+
+function goLearn() {
+  const t = (auth.user as any)?.preferred_textbook_version || '译林版'
+  const g = (auth.user as any)?.preferred_grade || '小学5年级'
+  const s = (auth.user as any)?.preferred_semester || '上'
+  const url = `/pages/curriculum/units?textbook=${encodeURIComponent(t)}&grade=${encodeURIComponent(g)}&semester=${encodeURIComponent(s)}`
+  uni.navigateTo({ url })
+}
 onShow(loadUnread)
 
 onMounted(() => {
@@ -101,6 +127,22 @@ onMounted(() => {
 .hero { text-align: center; padding: 60rpx 0 48rpx; }
 .hero-title { font-size: var(--fs-display); font-weight: 800; color: var(--c-ink); display: block; }
 .hero-sub { font-size: var(--fs-h2); color: var(--c-text-hint); display: block; margin-top: 12rpx; }
+.learn-card {
+  background: var(--c-primary);
+  border-radius: var(--r-lg);
+  padding: 36rpx 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.08);
+}
+.learn-left { display: flex; align-items: center; gap: 24rpx; }
+.learn-icon { font-size: 64rpx; }
+.learn-text { display: flex; flex-direction: column; gap: 8rpx; }
+.learn-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-ink); }
+.learn-sub { font-size: var(--fs-body); color: var(--c-ink); opacity: 0.7; }
+.learn-arrow { font-size: 48rpx; color: var(--c-ink); opacity: 0.6; font-weight: 700; }
 .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-bottom: 32rpx; }
 .quick-card {
   background: var(--c-bg-card);
