@@ -46,7 +46,8 @@ async def test_create_list_approve_flow(client):
     data = r.json()["data"]
     assert data["admin_username"] == uname and len(data["password"]) >= 8
 
-    r = await client.post("/api/v1/admin/auth/login",
+    # 新开通的机构管理员从机构登录门登录（D-129）
+    r = await client.post("/api/v1/institution/auth/login",
                           json={"username": uname, "password": data["password"]})
     assert r.status_code == 200
 
@@ -73,7 +74,8 @@ async def test_institution_admin_forbidden(client):
         await admin_auth_service.create_institution_admin(
             s, username=uname, password="pw123456", institution_id=inst.id)
         await s.commit()
-    r = await client.post("/api/v1/admin/auth/login",
+    # 机构管理员从机构门登录（平台门已拒绝机构账号），再访问平台机构审核应 403
+    r = await client.post("/api/v1/institution/auth/login",
                           json={"username": uname, "password": "pw123456"})
     h = {"Authorization": f"Bearer {r.json()['data']['access_token']}"}
     r = await client.get("/api/v1/admin/institutions", headers=h)

@@ -33,7 +33,8 @@ async def _setup_inst_admin(username, inst_name="机构A") -> Institution:
 
 
 async def _login(client, username, password="pw123456"):
-    r = await client.post("/api/v1/admin/auth/login",
+    # 机构管理员走机构登录门（D-129）
+    r = await client.post("/api/v1/institution/auth/login",
                           json={"username": username, "password": password})
     return r.json()["data"]["access_token"]
 
@@ -67,7 +68,10 @@ async def test_platform_admin_forbidden(client):
     async with _async_session_factory() as s:
         await admin_auth_service.create_admin(s, username=username, password="pw123456")
         await s.commit()
-    token = await _login(client, username)
+    # platform_admin 走平台登录门
+    r = await client.post("/api/v1/admin/auth/login",
+                          json={"username": username, "password": "pw123456"})
+    token = r.json()["data"]["access_token"]
     h = {"Authorization": f"Bearer {token}"}
     r = await client.get("/api/v1/institution/overview", headers=h)
     assert r.status_code == 403

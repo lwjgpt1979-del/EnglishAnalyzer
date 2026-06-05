@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.exceptions import AppError
-from app.core.security import require_role
+from app.core.security import create_access_token, create_refresh_token, require_role
 from app.models.d1_users import User
+from app.schemas.auth import AdminLoginRequest, TokenResponse
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.institution import (
     ActivationCodeOut,
@@ -33,6 +34,7 @@ from app.schemas.institution import (
     TeacherQuotaUpdate,
 )
 from app.services import (
+    admin_auth_service,
     institution_billing_service,
     institution_purchase_service,
     institution_renew_service,
@@ -49,6 +51,20 @@ def _require_inst(admin: User):
     if admin.institution_id is None:
         raise AppError(code=400, message="该管理员未绑定机构")
     return admin.institution_id
+
+
+# ─── 机构管理员登录（D-129：独立登录门，仅 institution_admin）──────────────
+@router.post("/auth/login", response_model=BaseResponse[TokenResponse])
+async def institution_login(body: AdminLoginRequest, db: DbDep):
+    user = await admin_auth_service.authenticate(
+        db, username=body.username, password=body.password,
+        allowed_roles=("institution_admin",))
+    if user is None:
+        raise AppError(code=401, message="用户名或密码错误")
+    return make_ok(TokenResponse(
+        access_token=create_access_token(str(user.id), str(user.role)),
+        refresh_token=create_refresh_token(str(user.id)),
+    ))
 
 
 @router.get("/overview", response_model=BaseResponse[InstitutionOverviewOut])

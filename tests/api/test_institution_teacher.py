@@ -31,7 +31,7 @@ async def _setup_admin(username, inst_name="机构A"):
 
 
 async def _admin_login(client, username):
-    r = await client.post("/api/v1/admin/auth/login",
+    r = await client.post("/api/v1/institution/auth/login",
                           json={"username": username, "password": "pw123456"})
     return {"Authorization": f"Bearer {r.json()['data']['access_token']}"}
 

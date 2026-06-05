@@ -53,14 +53,19 @@ async def create_admin(db: AsyncSession, *, username: str, password: str) -> Use
 
 async def authenticate(
     db: AsyncSession, *, username: str, password: str,
+    allowed_roles: tuple[str, ...] = ("platform_admin",),
 ) -> User | None:
-    """校验用户名+密码，成功返回 platform_admin 用户，否则 None。"""
+    """校验用户名+密码，角色须在 allowed_roles 内（默认仅 platform_admin）。
+
+    D-129：拆登录门——/admin/auth/login 默认仅平台超管；机构走
+    /institution/auth/login 传 allowed_roles=("institution_admin",)。
+    """
     user = (await db.execute(
         select(User).where(User.username == username)
     )).scalar_one_or_none()
     if user is None or not user.password_hash:
         return None
-    if str(user.role) not in ("platform_admin", "institution_admin"):
+    if str(user.role) not in allowed_roles:
         return None
     if not verify_password(password, user.password_hash):
         return None

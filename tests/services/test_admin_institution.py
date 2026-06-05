@@ -35,7 +35,9 @@ async def test_approve_creates_admin(db_session):
         db_session, institution_id=inst.id, admin_username=uname)
     assert str(inst2.status) == "active"
     assert username == uname and len(password) >= 8
-    user = await admin_auth_service.authenticate(db_session, username=uname, password=password)
+    user = await admin_auth_service.authenticate(
+        db_session, username=uname, password=password,
+        allowed_roles=("institution_admin",))
     assert user is not None and str(user.role) == "institution_admin"
     assert user.institution_id == inst.id
 

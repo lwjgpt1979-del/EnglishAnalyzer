@@ -40,10 +40,12 @@ async def test_create_and_authenticate_institution_admin(db_session):
 
     ok = await admin_auth_service.authenticate(
         db_session, username=username, password="pw123456",
+        allowed_roles=("institution_admin",),
     )
     assert ok is not None and ok.id == admin.id
 
     bad = await admin_auth_service.authenticate(
         db_session, username=username, password="wrong",
+        allowed_roles=("institution_admin",),
     )
     assert bad is None
