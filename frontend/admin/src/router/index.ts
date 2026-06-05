@@ -16,12 +16,6 @@ const router = createRouter({
         { path: 'pricing', name: 'pricing', component: () => import('../views/Pricing.vue') },
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
         { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },
-        { path: 'institution/overview', name: 'institution-overview', component: () => import('../views/InstitutionOverview.vue'), meta: { roles: ['institution_admin'] } },
-        { path: 'institution/profile', name: 'institution-profile', component: () => import('../views/InstitutionProfile.vue'), meta: { roles: ['institution_admin'] } },
-        { path: 'institution/teachers', name: 'institution-teachers', component: () => import('../views/InstitutionTeachers.vue'), meta: { roles: ['institution_admin'] } },
-        { path: 'institution/purchases', name: 'institution-purchases', component: () => import('../views/InstitutionPurchases.vue'), meta: { roles: ['institution_admin'] } },
-        { path: 'institution/renew', name: 'institution-renew', component: () => import('../views/InstitutionRenew.vue'), meta: { roles: ['institution_admin'] } },
-        { path: 'institution/bills', name: 'institution-bills', component: () => import('../views/InstitutionBills.vue'), meta: { roles: ['institution_admin'] } },
         { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },
       ],
     },
@@ -35,16 +29,6 @@ router.beforeEach((to) => {
   }
   if (to.path === '/login' && auth.isLoggedIn()) {
     return { path: '/' }
-  }
-  // 角色分流：机构管理员仅可进机构页，访问根/平台页时重定向到机构概览
-  if (auth.isLoggedIn()) {
-    const roles = to.meta.roles as string[] | undefined
-    if (roles && !roles.includes(auth.role)) {
-      return { path: auth.role === 'institution_admin' ? '/institution/overview' : '/overview' }
-    }
-    if (auth.role === 'institution_admin' && (to.path === '/' || to.path === '/overview')) {
-      return { path: '/institution/overview' }
-    }
   }
   return true
 })
