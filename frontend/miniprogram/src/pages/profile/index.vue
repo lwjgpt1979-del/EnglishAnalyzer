@@ -28,7 +28,8 @@
     <!-- V2 学期会员（D-079 / M1）-->
     <view class="card">
       <view class="card-title">学期会员</view>
-      <text class="menu-desc">按学期购买课程内容（基础 ¥39 / Pro ¥79 / ProMax ¥159 / 学期）。完整购买流程将在学期详情页推出（M3）。</text>
+      <text class="menu-desc">按学期购买课程内容（基础 ¥39 / Pro ¥79 / ProMax ¥159 / 学期）。</text>
+      <button class="btn-menu" @tap="goBuySemester">按学期购买课程（基础¥39 / Pro¥79 / ProMax¥159）</button>
       <view v-if="mySemesters.length" class="sem-list">
         <view
           v-for="s in mySemesters"
@@ -239,6 +240,14 @@ function goPreviewUnits() {
   const g = (auth.user as any)?.preferred_grade || '小学5年级'
   const sem = (auth.user as any)?.preferred_semester || '上'
   const url = `/pages/curriculum/units?textbook=${encodeURIComponent(t)}&grade=${encodeURIComponent(g)}&semester=${encodeURIComponent(sem)}`
+  uni.navigateTo({ url })
+}
+
+function goBuySemester() {
+  const t = (auth.user as any)?.preferred_textbook_version || '译林版'
+  const g = (auth.user as any)?.preferred_grade || '小学5年级'
+  const sem = (auth.user as any)?.preferred_semester || '上'
+  const url = `/pages/membership/semester-purchase?textbook=${encodeURIComponent(t)}&grade=${encodeURIComponent(g)}&semester=${encodeURIComponent(sem)}`
   uni.navigateTo({ url })
 }
 </script>

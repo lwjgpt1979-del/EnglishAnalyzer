@@ -149,11 +149,19 @@ export interface CurrentMembershipOut {
 
 // ── Orders ───────────────────────────────────────────────────────────────────
 
+export interface SemesterItem {
+  textbook_version: string
+  grade: string
+  semester: '上' | '下'
+}
+
 export interface OrderCreate {
   tier: string          // basic | pro | promax
-  duration_months: number  // 1 | 3 | 12
+  duration_months?: number  // 1 | 3 | 12（按月购买时填写）
   order_type: string    // new | renew | upgrade
+  minor_consent?: boolean
   target_student_id?: string
+  semesters?: SemesterItem[]
 }
 
 export interface OrderOut {

@@ -54,6 +54,7 @@
     { "path": "pages/teacher/assignment-detail", "style": { "navigationBarTitleText": "作业批改" } },
     { "path": "pages/teacher/join-institution", "style": { "navigationBarTitleText": "加入机构" } },
     { "path": "pages/membership/activate", "style": { "navigationBarTitleText": "激活码" } },
+    { "path": "pages/membership/semester-purchase", "style": { "navigationBarTitleText": "购买学期会员" } },
     { "path": "pages/relative/center", "style": { "navigationBarTitleText": "家人中心" } },
     { "path": "pages/relative/student-view", "style": { "navigationBarTitleText": "孩子学情" } },
     { "path": "pages/curriculum/units", "style": { "navigationBarTitleText": "课程单元" } },
