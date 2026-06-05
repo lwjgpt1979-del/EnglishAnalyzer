@@ -29,9 +29,13 @@ async def activate_code(
     if purchase is None:
         raise AppError(code=400, message="激活码对应采购单不存在")
 
+    # 普通微信学生 role=student 但可能尚无 students 行（plain wx 登录只建 User）。
+    # 激活时若缺则补建，使正常学生也能激活（D-129 测试发现）。
     student = await db.get(Student, student_user_id)
     if student is None:
-        raise AppError(code=404, message="学生档案不存在")
+        student = Student(id=student_user_id)
+        db.add(student)
+        await db.flush()
     if student.institution_id is not None:
         raise AppError(code=409, message="您已是机构学生，不能重复激活")
 

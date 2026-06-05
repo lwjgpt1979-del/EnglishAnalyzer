@@ -60,6 +60,28 @@ async def test_activate_used_code_rejected(db_session):
 
 
 @pytest.mark.asyncio
+async def test_activate_creates_student_row_if_missing(db_session):
+    # 普通微信学生：role=student 但无 students 行（plain wx 登录）
+    inst = Institution(id=uuid.uuid4(), name="A", contact_phone="1",
+                       province_code="11", city_code="1101", address="街")
+    db_session.add(inst)
+    await db_session.flush()
+    admin = uuid.uuid4()
+    db_session.add(User(id=admin, openid=f"o:{admin}", role="institution_admin", institution_id=inst.id))
+    sid = uuid.uuid4()
+    db_session.add(User(id=sid, openid=f"o:{sid}", role="student"))  # 不建 Student 行
+    await db_session.flush()
+    _, codes = await psvc.create_purchase(
+        db_session, institution_id=inst.id, created_by=admin,
+        tier="pro", duration_months=6, quantity=1)
+    await activation_service.activate_code(db_session, student_user_id=sid, code=codes[0].code)
+    stu = await db_session.get(Student, sid)
+    assert stu is not None and stu.institution_id == inst.id
+    m = await membership_service.get_active_membership(db_session, user_id=sid)
+    assert m is not None and str(m.tier) == "pro"
+
+
+@pytest.mark.asyncio
 async def test_activate_bad_code(db_session):
     _, sid, _ = await _setup(db_session)
     with pytest.raises(AppError):
