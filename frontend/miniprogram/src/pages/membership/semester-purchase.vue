@@ -25,20 +25,6 @@
       </view>
     </view>
 
-    <!-- 学期数选择 -->
-    <view class="section-title">学期数</view>
-    <view class="count-row">
-      <view
-        v-for="n in [1, 2, 3]"
-        :key="n"
-        class="count-btn"
-        :class="{ selected: semCount === n }"
-        @tap="semCount = n"
-      >
-        <text class="count-label">{{ n }} 学期</text>
-      </view>
-    </view>
-
     <!-- 总价 -->
     <view class="total-row">
       <text class="total-label">合计</text>
@@ -98,15 +84,10 @@ const tiers: { key: TierKey; label: string; price: number }[] = [
 
 const selectedTier = ref<TierKey>('basic')
 
-const unitPrice = computed(() => {
+// ── 总价（M1 单学期购买）─────────────────────────────────────────────────────
+const totalPrice = computed(() => {
   return tiers.find(t => t.key === selectedTier.value)?.price ?? 39
 })
-
-// ── 学期数 ────────────────────────────────────────────────────────────────────
-const semCount = ref(1)
-
-// ── 总价 ─────────────────────────────────────────────────────────────────────
-const totalPrice = computed(() => unitPrice.value * semCount.value)
 
 // ── 支付 ─────────────────────────────────────────────────────────────────────
 const paying = ref(false)
@@ -115,18 +96,17 @@ async function onPay() {
   if (paying.value) return
   paying.value = true
   try {
-    // 构造 semesters 数组：同一个学期重复 semCount 次
+    // M1 单学期购买：semesters 仅含当前一个 (教材, 年级, 学期)
     const semItem: SemesterItem = {
       textbook_version: textbook.value,
       grade: grade.value,
       semester: semester.value as '上' | '下',
     }
-    const semestersArr: SemesterItem[] = Array.from({ length: semCount.value }, () => ({ ...semItem }))
 
     const order = await createOrder({
       tier: selectedTier.value,
       order_type: 'new',
-      semesters: semestersArr,
+      semesters: [semItem],
     })
 
     const params = await payOrder(order.id)
@@ -229,30 +209,6 @@ async function onPay() {
   font-size: 20rpx;
   color: var(--c-text-hint);
   margin-top: 4rpx;
-}
-
-/* 学期数 */
-.count-row {
-  display: flex;
-  gap: 16rpx;
-  margin-bottom: 32rpx;
-}
-.count-btn {
-  flex: 1;
-  text-align: center;
-  padding: 20rpx;
-  border: 2rpx solid var(--c-border);
-  border-radius: var(--r-md);
-  background: var(--c-bg-card);
-}
-.count-btn.selected {
-  border-color: var(--c-gold);
-  background: var(--c-primary-faint);
-}
-.count-label {
-  font-size: 28rpx;
-  font-weight: 600;
-  color: var(--c-ink);
 }
 
 /* 总价 */
