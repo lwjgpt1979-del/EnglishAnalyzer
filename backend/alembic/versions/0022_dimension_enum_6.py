@@ -1,8 +1,13 @@
-"""dimension_enum_6: content_dimension 4→6（+vocabulary/reading/translation, -dictation）
+"""dimension_add_3: content_dimension +vocabulary/reading/translation（保留 dictation）
 
 Revision ID: 0022
 Revises: 0021
 Create Date: 2026-06-06
+
+content_dimension 同时被 knowledge_point_contents.dimension（教学内容，用 6 维）和
+simulated_questions.dimension（仿真题生成，仍用 dictation 听写题）共用。
+故只新增 3 个教学维度值，保留 dictation 供仿真题继续使用 → 并集共 7 值。
+用 ALTER TYPE ADD VALUE，不改表、不丢数据。
 """
 from alembic import op
 
@@ -13,36 +18,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # content_dimension 同时被 knowledge_point_contents.dimension 和
-    # simulated_questions.dimension（0014 加）引用，不能直接 DROP TYPE。
-    # 用 rename → create new → ALTER COLUMN ... USING → drop old 的方式原地迁移，
-    # 旧值 'dictation' 映射为 'writing'（听写已并入写作维度）。
-    op.execute("ALTER TYPE content_dimension RENAME TO content_dimension_old")
-    op.execute(
-        "CREATE TYPE content_dimension AS ENUM "
-        "('listening', 'vocabulary', 'grammar', 'reading', 'translation', 'writing')"
-    )
-    for table in ("knowledge_point_contents", "simulated_questions"):
-        op.execute(
-            f"ALTER TABLE {table} ALTER COLUMN dimension TYPE content_dimension "
-            "USING (CASE WHEN dimension::text = 'dictation' THEN 'writing' "
-            "ELSE dimension::text END::content_dimension)"
-        )
-    op.execute("DROP TYPE content_dimension_old")
+    # PostgreSQL 12+ 允许在事务内 ADD VALUE（只要本事务内不使用新值）。
+    op.execute("ALTER TYPE content_dimension ADD VALUE IF NOT EXISTS 'vocabulary'")
+    op.execute("ALTER TYPE content_dimension ADD VALUE IF NOT EXISTS 'reading'")
+    op.execute("ALTER TYPE content_dimension ADD VALUE IF NOT EXISTS 'translation'")
 
 
 def downgrade() -> None:
-    # 反向：6 维度 → 4 维度。新增的 vocabulary/reading/translation 值映射回 grammar
-    # （无精确逆映射；选 grammar 作为兜底，保证 cast 不失败）。
-    op.execute("ALTER TYPE content_dimension RENAME TO content_dimension_new")
-    op.execute(
-        "CREATE TYPE content_dimension AS ENUM "
-        "('listening', 'dictation', 'grammar', 'writing')"
-    )
-    for table in ("knowledge_point_contents", "simulated_questions"):
-        op.execute(
-            f"ALTER TABLE {table} ALTER COLUMN dimension TYPE content_dimension "
-            "USING (CASE WHEN dimension::text IN ('vocabulary', 'reading', 'translation') "
-            "THEN 'grammar' ELSE dimension::text END::content_dimension)"
-        )
-    op.execute("DROP TYPE content_dimension_new")
+    # PostgreSQL 不支持从 enum 删除值；保留新增值即可（无害，无数据依赖时也不阻塞回滚）。
+    pass

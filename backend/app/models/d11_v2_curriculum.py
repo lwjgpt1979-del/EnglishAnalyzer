@@ -7,8 +7,14 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import mapped_column
 from .base import Base
 
+# content_dimension 被两处共用：
+#   - knowledge_point_contents.dimension：教学内容，用 6 维
+#     （listening/vocabulary/grammar/reading/translation/writing，不含 dictation）
+#   - simulated_questions.dimension：仿真题生成，仍用 dictation（听写题）等
+# 故枚举为两者并集共 7 值；dictation 仅供仿真题，教学内容不产出该维度。
 dimension_enum = sa.Enum(
-    "listening", "vocabulary", "grammar", "reading", "translation", "writing",
+    "listening", "dictation", "grammar", "writing",
+    "vocabulary", "reading", "translation",
     name="content_dimension",
 )
 content_status_enum = sa.Enum(
