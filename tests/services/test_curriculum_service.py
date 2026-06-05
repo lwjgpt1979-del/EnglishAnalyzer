@@ -63,14 +63,14 @@ async def test_persist_unit_creates_all_6_tables(db_session):
     )).scalars().all()
     assert len(found_kps) == len(codes)
 
-    # 4. knowledge_point_contents：每个本次 AI 的 KP × 4 维度
+    # 4. knowledge_point_contents：每个本次 AI 的 KP × 6 维度
     kp_ids = [kp.id for kp in found_kps]
     contents = (await db_session.execute(
         select(KnowledgePointContent).where(
             KnowledgePointContent.knowledge_point_id.in_(kp_ids)
         )
     )).scalars().all()
-    assert len(contents) == len(kp_ids) * 4
+    assert len(contents) == len(kp_ids) * 6
 
     # 5/6. curriculum_words ↔ vocabulary_words（>= 同理）
     cw = (await db_session.execute(

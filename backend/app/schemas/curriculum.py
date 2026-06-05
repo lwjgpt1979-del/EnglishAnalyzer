@@ -27,7 +27,7 @@ class AIKnowledgePointItem(BaseModel):
     description: str
     contents: dict[str, str] = Field(
         ...,
-        description="key ∈ {listening, dictation, grammar, writing}, value 为 markdown",
+        description="key ∈ {listening, vocabulary, grammar, reading, translation, writing}, value 为 markdown",
     )
 
 
@@ -76,7 +76,7 @@ class UnitDetailOut(UnitOut):
 
 
 class KPContentOut(BaseModel):
-    dimension: str  # listening | dictation | grammar | writing
+    dimension: str  # listening | vocabulary | grammar | reading | translation | writing
     content_md: str
     audio_url: str | None = None
 

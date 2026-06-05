@@ -8,7 +8,7 @@ from sqlalchemy.orm import mapped_column
 from .base import Base
 
 dimension_enum = sa.Enum(
-    "listening", "dictation", "grammar", "writing",
+    "listening", "vocabulary", "grammar", "reading", "translation", "writing",
     name="content_dimension",
 )
 content_status_enum = sa.Enum(
@@ -22,7 +22,7 @@ generated_by_enum = sa.Enum(
 
 
 class KnowledgePointContent(Base):
-    """每个知识点 × 4 维度（听/听写/语法/写作）的 AI 解读内容。"""
+    """每个知识点 × 6 维度（听/词汇/语法/阅读/翻译/写作）的 AI 解读内容。"""
     __tablename__ = "knowledge_point_contents"
 
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

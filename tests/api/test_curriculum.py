@@ -178,8 +178,8 @@ async def test_get_unit_detail_200_for_owned_semester(client):
 
 
 @pytest.mark.asyncio
-async def test_get_kp_contents_returns_4_dimensions(client):
-    """GET /knowledge-points/{id}/contents 返回 4 维度内容，每条带 dimension/content_md。
+async def test_get_kp_contents_returns_6_dimensions(client):
+    """GET /knowledge-points/{id}/contents 返回 6 维度内容，每条带 dimension/content_md。
     KP 所属 unit_no=19 受 paywall，所以测试用户需先有学期。"""
     await _seed_unit(19)
 
@@ -209,9 +209,9 @@ async def test_get_kp_contents_returns_4_dimensions(client):
     )
     assert resp.status_code == 200, resp.text
     contents = resp.json()["data"]
-    assert len(contents) == 4
+    assert len(contents) == 6
     dims = {c["dimension"] for c in contents}
-    assert dims == {"listening", "dictation", "grammar", "writing"}
+    assert dims == {"listening", "vocabulary", "grammar", "reading", "translation", "writing"}
     for c in contents:
         assert c["content_md"]
         assert "audio_url" in c

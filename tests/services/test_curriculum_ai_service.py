@@ -35,9 +35,9 @@ async def test_dev_mock_returns_valid_structure():
     assert len(unit.knowledge_points) >= 3
     assert len(unit.words) >= 5
 
-    # 知识点 4 维度都得有
+    # 知识点 6 维度都得有
     for kp in unit.knowledge_points:
-        assert set(kp.contents.keys()) == {"listening", "dictation", "grammar", "writing"}
+        assert set(kp.contents.keys()) == {"listening", "vocabulary", "grammar", "reading", "translation", "writing"}
         assert all(v.strip() for v in kp.contents.values())
         # code 必须包含 unit 标识方便幂等 upsert
         assert "u1" in kp.code or str(unit.unit_no) in kp.code

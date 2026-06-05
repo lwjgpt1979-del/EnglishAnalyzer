@@ -27,7 +27,7 @@ _USER_PROMPT_TEMPLATE = """请为以下教材单元生成完整教学内容。
 要求：
 1. 推断该单元的标题（unit_title），符合该教材实际编排
 2. 列出 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任一类）
-3. 每个知识点提供 4 维度教学内容（listening/dictation/grammar/writing）markdown，每个维度内容简明（2-4 句即可，避免冗长）
+3. 每个知识点提供 6 维度教学内容（listening/vocabulary/grammar/reading/translation/writing）markdown，每个维度内容简明（2-4 句即可，避免冗长）
 4. 列出 10-15 个核心单词
 5. code 字段格式：'yl-g{grade_short}s{sem_short}-u{unit_no}-kp{{idx}}'，其中 {{idx}} 是 1 开始的知识点序号，必须全局唯一
 
@@ -46,9 +46,11 @@ _USER_PROMPT_TEMPLATE = """请为以下教材单元生成完整教学内容。
       "description": "...",
       "contents": {{
         "listening": "## 听力要点\\n...",
-        "dictation": "## 听写训练\\n...",
+        "vocabulary": "## 词汇讲解\\n...",
         "grammar": "## 语法解析\\n...",
-        "writing": "## 写作应用\\n..."
+        "reading": "## 阅读策略\\n...",
+        "translation": "## 翻译技巧\\n...",
+        "writing": "## 写作要点\\n..."
       }}
     }}
   ],
@@ -87,9 +89,11 @@ def _make_mock_unit(
                 "description": "占位描述：dev mock 数据",
                 "contents": {
                     "listening": f"## 听力要点（U{unit_no}-KP1）\n这是 mock 听力解读。",
-                    "dictation": f"## 听写训练（U{unit_no}-KP1）\n这是 mock 听写要点。",
+                    "vocabulary": f"## 词汇讲解（U{unit_no}-KP1）\n这是 mock 词汇讲解。",
                     "grammar": f"## 语法解析（U{unit_no}-KP1）\n这是 mock 语法讲解。",
-                    "writing": f"## 写作应用（U{unit_no}-KP1）\n这是 mock 写作举例。",
+                    "reading": f"## 阅读策略（U{unit_no}-KP1）\n这是 mock 阅读策略。",
+                    "translation": f"## 翻译技巧（U{unit_no}-KP1）\n这是 mock 翻译技巧。",
+                    "writing": f"## 写作要点（U{unit_no}-KP1）\n这是 mock 写作举例。",
                 },
             },
             {  # type: ignore[list-item]
@@ -99,8 +103,10 @@ def _make_mock_unit(
                 "description": "占位描述",
                 "contents": {
                     "listening": "## 听力\nmock",
-                    "dictation": "## 听写\nmock",
+                    "vocabulary": "## 词汇\nmock",
                     "grammar": "## 语法\nmock",
+                    "reading": "## 阅读\nmock",
+                    "translation": "## 翻译\nmock",
                     "writing": "## 写作\nmock",
                 },
             },
@@ -111,8 +117,10 @@ def _make_mock_unit(
                 "description": "占位描述",
                 "contents": {
                     "listening": "## 听力\nmock",
-                    "dictation": "## 听写\nmock",
+                    "vocabulary": "## 词汇\nmock",
                     "grammar": "## 语法\nmock",
+                    "reading": "## 阅读\nmock",
+                    "translation": "## 翻译\nmock",
                     "writing": "## 写作\nmock",
                 },
             },
