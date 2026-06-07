@@ -27,6 +27,13 @@
     <view class="quick-grid">
       <view
         class="quick-card"
+        @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })"
+      >
+        <text class="quick-icon">🤖</text>
+        <text class="quick-label">智能出题</text>
+      </view>
+      <view
+        class="quick-card"
         @tap="() => uni.navigateTo({ url: '/pages/upload/index' })"
       >
         <text class="quick-icon">📷</text>

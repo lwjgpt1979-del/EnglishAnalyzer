@@ -87,10 +87,12 @@ const activeView = ref<ViewKey>('content')
 
 // —— Tab 1：课本内容 ——
 const dims = [
-  { key: 'listening', label: '听力' },
-  { key: 'dictation', label: '听写' },
-  { key: 'grammar', label: '语法' },
-  { key: 'writing', label: '写作' },
+  { key: 'listening',   label: '听力' },
+  { key: 'vocabulary',  label: '词汇' },
+  { key: 'grammar',     label: '语法' },
+  { key: 'reading',     label: '阅读' },
+  { key: 'translation', label: '翻译' },
+  { key: 'writing',     label: '写作' },
 ]
 const contents = ref<KPContentOut[]>([])
 const activeDim = ref('grammar')

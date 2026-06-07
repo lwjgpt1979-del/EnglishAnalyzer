@@ -306,7 +306,7 @@ function accClass(accuracy: number): string {
 }
 
 function goPractice() {
-  uni.navigateTo({ url: '/pages/practice/index' })
+  uni.navigateTo({ url: '/pages/practice/adaptive' })
 }
 
 function barWidth(count: number, max: number): number {
