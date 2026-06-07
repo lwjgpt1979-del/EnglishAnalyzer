@@ -76,3 +76,22 @@ export function confirmOcrText(
     data,
   })
 }
+
+export interface PaperWrongItem {
+  id: string
+  stem: string | null
+  question_type: string | null
+  is_mastered: boolean
+  source_label: string
+}
+
+export interface PaperWrongListOut {
+  items: PaperWrongItem[]
+  total: number
+}
+
+export function listPaperWrongs(skip = 0, limit = 20): Promise<PaperWrongListOut> {
+  return request<PaperWrongListOut>(`/api/v1/user-papers/wrongs?skip=${skip}&limit=${limit}`, {
+    method: 'GET',
+  })
+}

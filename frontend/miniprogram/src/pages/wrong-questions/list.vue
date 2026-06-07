@@ -26,12 +26,19 @@
         v-for="wq in items"
         :key="wq.id"
         class="wq-card"
-        @tap="goDetail(wq.id)"
+        @tap="source === 'paper' ? null : goDetail(wq.id)"
       >
-        <view v-if="fromAssignment(wq)" class="wq-img wq-assign">
+        <!-- 整卷错题（source_label='整卷'，有 stem 字段） -->
+        <view v-if="wq.source_label === '整卷'" class="wq-img wq-assign">
+          <text class="wq-assign-icon">📄</text>
+          <text class="wq-assign-text">{{ (wq.stem || '整卷错题').slice(0, 28) }}</text>
+        </view>
+        <!-- 作业错题 -->
+        <view v-else-if="fromAssignment(wq)" class="wq-img wq-assign">
           <text class="wq-assign-icon">📋</text>
           <text class="wq-assign-text">{{ (wq.question_text || '作业错题').slice(0, 24) }}</text>
         </view>
+        <!-- 普通单题上传 -->
         <image
           v-else
           class="wq-img"
@@ -41,12 +48,13 @@
         />
         <view class="wq-info">
           <view class="wq-meta">
-            <text v-if="fromAssignment(wq)" class="tag tag-blue">来自作业</text>
+            <text v-if="wq.source_label === '整卷'" class="tag tag-paper">整卷</text>
+            <text v-else-if="fromAssignment(wq)" class="tag tag-blue">来自作业</text>
             <text v-if="wq.question_type" class="tag">{{ wq.question_type }}</text>
             <text v-if="wq.difficulty" class="tag">{{ '★'.repeat(wq.difficulty) }}</text>
             <text v-if="wq.is_mastered" class="tag tag-green">已掌握</text>
           </view>
-          <text class="wq-date">{{ wq.created_at.slice(0, 10) }}</text>
+          <text v-if="wq.created_at" class="wq-date">{{ wq.created_at.slice(0, 10) }}</text>
         </view>
       </view>
 
@@ -61,12 +69,12 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { listWrongQuestions } from '@/api/wrongQuestions'
+import { listWrongQuestions, listPaperWrongs } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 import type { WrongQuestionOut } from '@/types/api'
 
 const auth = useAuthStore()
-const items = ref<WrongQuestionOut[]>([])
+const items = ref<any[]>([])
 function fromAssignment(wq: WrongQuestionOut): boolean {
   return (wq.source_image_url || '').startsWith('assignment://')
 }
@@ -80,6 +88,7 @@ const SRC_TABS = [
   { label: '全部', value: '' },
   { label: '作业', value: 'assignment' },
   { label: '上传', value: 'upload' },
+  { label: '整卷', value: 'paper' },
 ]
 function switchSource(v: string) {
   if (source.value === v) return
@@ -101,7 +110,12 @@ async function loadItems() {
   if (loading.value) return
   loading.value = true
   try {
-    const res = await listWrongQuestions(skip.value, LIMIT, source.value)
+    let res: { items: any[]; total: number }
+    if (source.value === 'paper') {
+      res = await listPaperWrongs(skip.value, LIMIT)
+    } else {
+      res = await listWrongQuestions(skip.value, LIMIT, source.value)
+    }
     items.value.push(...res.items)
     total.value = res.total
     hasMore.value = items.value.length < res.total
@@ -168,6 +182,7 @@ function goDetail(id: string) {
 }
 .tag-green { background: var(--c-success-bg); color: var(--c-success-dark); }
 .tag-blue { background: var(--c-primary-faint); color: var(--c-primary); }
+.tag-paper { background: #EDE9FE; color: #6D28D9; }
 .src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0; }
 .src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
 .src-tab.active { background: var(--c-primary); color: var(--c-ink); font-weight: 700; }

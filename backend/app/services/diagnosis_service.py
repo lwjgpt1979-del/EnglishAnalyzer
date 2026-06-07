@@ -164,16 +164,41 @@ async def _aggregate_structured_dimensions(
         select(SimPracticeRecord.knowledge_point_id, SimPracticeRecord.is_correct)
         .where(SimPracticeRecord.student_id == student_id)
     )).all()
-    if not recs:
-        return [], []
 
-    # 按 KP 聚合 [attempts, correct]
+    # 按 KP 聚合 [attempts, correct]（来源：sim_practice_records）
     kp_agg: dict[uuid.UUID, list[int]] = {}
     for kp_id, ok in recs:
         slot = kp_agg.setdefault(kp_id, [0, 0])
         slot[0] += 1
         if ok:
             slot[1] += 1
+
+    # ── 整卷错题 KP（来源：user_paper_question_knowledge_points，is_wrong=True）──
+    from app.models.d13_v2_user_papers import (
+        UserPaperQuestion,
+        UserPaperQuestionKnowledgePoint,
+        UserUploadedPaper,
+    )
+    paper_kp_ids = (await db.execute(
+        select(UserPaperQuestionKnowledgePoint.knowledge_point_id)
+        .join(
+            UserPaperQuestion,
+            UserPaperQuestion.id == UserPaperQuestionKnowledgePoint.user_paper_question_id,
+        )
+        .join(UserUploadedPaper, UserUploadedPaper.id == UserPaperQuestion.user_paper_id)
+        .where(
+            UserUploadedPaper.student_id == student_id,
+            UserPaperQuestion.is_wrong == True,
+        )
+    )).scalars().all()
+    for kp_id in paper_kp_ids:
+        slot = kp_agg.setdefault(kp_id, [0, 0])
+        slot[0] += 1          # attempt + 1
+        # is_correct = False（is_wrong=True → 不加 correct）
+
+    if not kp_agg:
+        return [], []
+
     kp_ids = list(kp_agg.keys())
 
     kp_meta: dict[uuid.UUID, tuple[str, str | None]] = {

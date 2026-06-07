@@ -37,7 +37,14 @@
         @tap="() => uni.navigateTo({ url: '/pages/upload/index' })"
       >
         <text class="quick-icon">📷</text>
-        <text class="quick-label">上传错题</text>
+        <text class="quick-label">单题上传</text>
+      </view>
+      <view
+        class="quick-card"
+        @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })"
+      >
+        <text class="quick-icon">📄</text>
+        <text class="quick-label">上传整卷</text>
       </view>
       <view
         class="quick-card"
@@ -73,13 +80,6 @@
       >
         <text class="quick-icon">📋</text>
         <text class="quick-label">老师任务</text>
-      </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.switchTab({ url: '/pages/profile/index' })"
-      >
-        <text class="quick-icon">👤</text>
-        <text class="quick-label">个人中心</text>
       </view>
     </view>
 

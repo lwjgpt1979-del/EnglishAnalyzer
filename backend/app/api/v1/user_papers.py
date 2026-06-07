@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -77,3 +77,30 @@ async def get_user_paper(
     if detail is None:
         raise AppError(code=404, message="试卷不存在或无权访问")
     return make_ok(detail.model_dump(mode="json"))
+
+
+@router.get("/wrongs")
+async def list_paper_wrong_questions(
+    db: DbDep,
+    current_user: UserDep,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """整卷错题列表（is_wrong=True）。供前端错题本"整卷"tab 调用。"""
+    from app.services.wrong_question_service import list_paper_wrongs
+    items, total = await list_paper_wrongs(
+        db, student_id=current_user.id, skip=skip, limit=limit
+    )
+    return make_ok({
+        "items": [
+            {
+                "id": str(i.id),
+                "stem": i.stem,
+                "question_type": i.question_type,
+                "is_mastered": i.is_mastered,
+                "source_label": i.source_label,
+            }
+            for i in items
+        ],
+        "total": total,
+    })

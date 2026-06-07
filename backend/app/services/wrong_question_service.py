@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -12,6 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
 from app.schemas.wrong_questions import WrongQuestionCreate
+
+
+@dataclass
+class PaperWrongItem:
+    """整卷错题的简化视图（来自 user_paper_questions.is_wrong=True）。"""
+    id: uuid.UUID
+    stem: str | None
+    question_type: str | None
+    is_mastered: bool = False
+    source_label: str = "整卷"
 
 
 async def create_wrong_question(
@@ -146,3 +157,47 @@ async def list_analyses(
         .order_by(AiAnalysis.created_at.desc())
     )
     return list(rows.scalars().all())
+
+
+async def list_paper_wrongs(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    skip: int = 0,
+    limit: int = 20,
+) -> tuple[list[PaperWrongItem], int]:
+    """查询整卷错题（user_paper_questions.is_wrong=True），返回 (items, total)。
+
+    只返回属于当前学生整卷（via user_uploaded_papers.student_id）中答错的题。
+    """
+    from app.models.d13_v2_user_papers import UserPaperQuestion, UserUploadedPaper
+
+    base_conds = [
+        UserUploadedPaper.student_id == student_id,
+        UserPaperQuestion.is_wrong == True,
+    ]
+    total_result = await db.execute(
+        select(func.count())
+        .select_from(UserPaperQuestion)
+        .join(UserUploadedPaper, UserUploadedPaper.id == UserPaperQuestion.user_paper_id)
+        .where(*base_conds)
+    )
+    total: int = total_result.scalar_one()
+
+    rows = (await db.execute(
+        select(UserPaperQuestion)
+        .join(UserUploadedPaper, UserUploadedPaper.id == UserPaperQuestion.user_paper_id)
+        .where(*base_conds)
+        .order_by(UserPaperQuestion.id)
+        .offset(skip)
+        .limit(limit)
+    )).scalars().all()
+
+    return [
+        PaperWrongItem(
+            id=r.id,
+            stem=r.stem,
+            question_type=r.question_type,
+        )
+        for r in rows
+    ], total
