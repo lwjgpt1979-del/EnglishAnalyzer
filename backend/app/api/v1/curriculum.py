@@ -59,3 +59,23 @@ async def get_kp_contents(
         db, user_id=current_user.id, kp_id=kp_id,
     )
     return make_ok([c.model_dump(mode="json") for c in contents])
+
+
+@router.get("/kps/search")
+async def search_knowledge_points(
+    db: DbDep,
+    q: str = Query("", description="搜索关键词（知识点名称模糊匹配）"),
+    limit: int = Query(10, ge=1, le=20, description="最多返回条数"),
+):
+    """按知识点名称模糊搜索，供前端选择目标 KP。无需会员。"""
+    from app.schemas.curriculum import KPSearchItem
+    kps = await curriculum_service.search_kps(db, q=q, limit=limit)
+    return make_ok([
+        KPSearchItem(
+            id=kp.id,
+            name=kp.name,
+            category=str(kp.category),
+            description=kp.description if hasattr(kp, "description") else None,
+        ).model_dump(mode="json")
+        for kp in kps
+    ])

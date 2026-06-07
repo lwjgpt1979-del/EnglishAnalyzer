@@ -446,6 +446,11 @@ export interface SimQuestionOut {
   difficulty: number
 }
 
+export interface AdaptiveSetOut {
+  questions: SimQuestionOut[]
+  weak_kp_names: string[]
+}
+
 export interface PracticeAttemptIn {
   question_id: string
   user_answer: string
@@ -720,3 +725,10 @@ export interface AssignmentStats {
 }
 
 export interface AssignmentSuggest { knowledge_point: string; questions: AssignmentQuestion[] }
+
+export interface KPSearchItem {
+  id: string
+  name: string
+  category: string
+  description: string | null
+}

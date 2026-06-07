@@ -105,3 +105,10 @@ class ContentReviewRequest(BaseModel):
 class ContentUpdateRequest(BaseModel):
     content_md: str | None = Field(None, min_length=1, description="修订后的正文 Markdown")
     audio_url: str | None = Field(None, description="音频 URL（可选）")
+
+
+class KPSearchItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    category: str
+    description: str | None = None

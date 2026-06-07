@@ -384,3 +384,17 @@ async def update_content(
         c.audio_url = audio_url
     await db.flush()
     return c
+
+
+async def search_kps(
+    db: AsyncSession,
+    *,
+    q: str,
+    limit: int = 10,
+) -> list[KnowledgePoint]:
+    """按名称模糊搜索知识点（ILIKE）。q 为空则不过滤，返回前 limit 条。"""
+    stmt = select(KnowledgePoint).order_by(KnowledgePoint.name)
+    if q:
+        stmt = stmt.where(KnowledgePoint.name.ilike(f"%{q}%"))
+    stmt = stmt.limit(limit)
+    return list((await db.execute(stmt)).scalars().all())
