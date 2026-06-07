@@ -5,6 +5,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -336,3 +337,64 @@ async def admin_reject_institution(institution_id: uuid.UUID, db: DbDep, admin: 
     inst = await admin_institution_service.reject_institution(db, institution_id=institution_id)
     await db.commit()
     return make_ok(AdminInstitutionOut.model_validate(inst))
+
+
+# ── V2 课程单元管理 ────────────────────────────────────────────────────────────
+
+@router.get("/curriculum/units")
+async def list_curriculum_units(db: DbDep, admin: AdminDep):
+    """列出所有课程单元 + 内容完成度统计，供 Admin 内容生成触发。"""
+    stats = await curriculum_service.list_units_with_stats(db)
+    return make_ok([
+        {
+            "unit_id": str(s.unit_id),
+            "textbook_version": s.textbook_version,
+            "grade": s.grade,
+            "semester": s.semester,
+            "unit_no": s.unit_no,
+            "unit_title": s.unit_title,
+            "kp_count": s.kp_count,
+            "content_count": s.content_count,
+            "content_rate": s.content_rate,
+        }
+        for s in stats
+    ])
+
+
+@router.post("/curriculum/units/{unit_id}/generate")
+async def generate_unit_content(
+    unit_id: uuid.UUID,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """触发 AI 生成指定单元的课程内容（dev mock 即时；生产约 5-15s）。
+
+    生成内容 status='draft'，需在 ContentsReview 审核发布后学生才可见。
+    """
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.services import curriculum_ai_service
+
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id)
+    )).scalar_one_or_none()
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+
+    ai_unit = await curriculum_ai_service.generate_unit(
+        textbook_version=unit.textbook_version,
+        grade=str(unit.grade),
+        semester=str(unit.semester),
+        unit_no=unit.unit_no,
+    )
+    await curriculum_service.persist_unit(db, ai_unit=ai_unit, content_status="draft")
+    await db.commit()
+
+    # 返回更新后的统计
+    stats = await curriculum_service.list_units_with_stats(db)
+    stat = next((s for s in stats if s.unit_id == unit_id), None)
+    return make_ok({
+        "unit_id": str(unit_id),
+        "kp_count": stat.kp_count if stat else 0,
+        "content_count": stat.content_count if stat else 0,
+        "content_rate": stat.content_rate if stat else 0.0,
+    })

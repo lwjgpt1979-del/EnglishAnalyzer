@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 
 from datetime import datetime, timezone
 
@@ -398,3 +399,74 @@ async def search_kps(
         stmt = stmt.where(KnowledgePoint.name.ilike(f"%{q}%"))
     stmt = stmt.limit(limit)
     return list((await db.execute(stmt)).scalars().all())
+
+
+@dataclass
+class UnitContentStat:
+    """单个课程单元的内容完成度统计。"""
+    unit_id: uuid.UUID
+    textbook_version: str
+    grade: str
+    semester: str
+    unit_no: int
+    unit_title: str
+    kp_count: int
+    content_count: int
+    content_rate: float   # content_count / (kp_count * 6)，0-1
+
+
+async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
+    """列出所有课程单元及内容完成度，供 Admin 课程管理页使用。"""
+    units = (await db.execute(
+        select(CurriculumUnit).order_by(
+            CurriculumUnit.textbook_version,
+            CurriculumUnit.grade,
+            CurriculumUnit.semester,
+            CurriculumUnit.unit_no,
+        )
+    )).scalars().all()
+
+    if not units:
+        return []
+
+    unit_ids = [u.id for u in units]
+
+    # 每个单元的 KP 数
+    kp_counts: dict[uuid.UUID, int] = dict(
+        (await db.execute(
+            select(UnitKnowledgePoint.unit_id, func.count())
+            .where(UnitKnowledgePoint.unit_id.in_(unit_ids))
+            .group_by(UnitKnowledgePoint.unit_id)
+        )).all()
+    )
+
+    # 每个单元关联 KP 的内容数（via join，左连接保证无内容时为 0）
+    content_rows = (await db.execute(
+        select(UnitKnowledgePoint.unit_id, func.count(KnowledgePointContent.id))
+        .join(
+            KnowledgePointContent,
+            KnowledgePointContent.knowledge_point_id == UnitKnowledgePoint.knowledge_point_id,
+            isouter=True,
+        )
+        .where(UnitKnowledgePoint.unit_id.in_(unit_ids))
+        .group_by(UnitKnowledgePoint.unit_id)
+    )).all()
+    content_counts: dict[uuid.UUID, int] = dict(content_rows)
+
+    result: list[UnitContentStat] = []
+    for u in units:
+        kc = kp_counts.get(u.id, 0)
+        cc = content_counts.get(u.id, 0)
+        rate = round(cc / (kc * 6), 4) if kc > 0 else 0.0
+        result.append(UnitContentStat(
+            unit_id=u.id,
+            textbook_version=u.textbook_version,
+            grade=str(u.grade),
+            semester=str(u.semester),
+            unit_no=u.unit_no,
+            unit_title=u.unit_title or "",
+            kp_count=kc,
+            content_count=cc,
+            content_rate=min(rate, 1.0),
+        ))
+    return result

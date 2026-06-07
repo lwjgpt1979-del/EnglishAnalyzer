@@ -60,3 +60,16 @@ export interface AdminOverview {
   total_users: number
   paid_orders: number
 }
+
+// 课程单元（含内容完成度统计）
+export interface AdminCurriculumUnit {
+  unit_id: string
+  textbook_version: string
+  grade: string
+  semester: string
+  unit_no: number
+  unit_title: string
+  kp_count: number
+  content_count: number
+  content_rate: number   // 0-1
+}

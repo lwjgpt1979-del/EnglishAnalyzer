@@ -7,6 +7,7 @@ import type {
   AdminOverview,
   SemesterPricing,
   ReviewStatus,
+  AdminCurriculumUnit,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -94,4 +95,22 @@ export function approveInstitution(id: string, adminUsername: string): Promise<{
 }
 export function rejectInstitution(id: string): Promise<AdminInstitution> {
   return unwrap<AdminInstitution>(request.post(`/admin/institutions/${id}/reject`))
+}
+
+// ── 课程单元管理 ──────────────────────────────────────────────────────────────
+export function listCurriculumUnits(): Promise<AdminCurriculumUnit[]> {
+  return unwrap<AdminCurriculumUnit[]>(request.get('/admin/curriculum/units'))
+}
+
+export interface GenerateUnitResult {
+  unit_id: string
+  kp_count: number
+  content_count: number
+  content_rate: number
+}
+
+export function generateUnitContent(unitId: string): Promise<GenerateUnitResult> {
+  return unwrap<GenerateUnitResult>(
+    request.post(`/admin/curriculum/units/${unitId}/generate`)
+  )
 }

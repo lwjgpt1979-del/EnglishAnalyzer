@@ -13,6 +13,7 @@ const router = createRouter({
         { path: 'overview', name: 'overview', component: () => import('../views/Overview.vue') },
         { path: 'questions', name: 'questions', component: () => import('../views/QuestionsReview.vue') },
         { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
+        { path: 'curriculum-units', name: 'curriculum-units', component: () => import('../views/CurriculumUnits.vue') },
         { path: 'pricing', name: 'pricing', component: () => import('../views/Pricing.vue') },
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
         { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },
