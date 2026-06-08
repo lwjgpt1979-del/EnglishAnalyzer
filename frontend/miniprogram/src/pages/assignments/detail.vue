@@ -8,6 +8,10 @@
         <view v-for="(q, i) in detail.assignment.questions" :key="i" class="q">
           <text class="q-stem">{{ i + 1 }}. {{ q.stem }}</text>
           <input v-model="answers[i]" class="ans-ipt" :disabled="detail.submitted" placeholder="你的答案" />
+          <view v-if="detail.submitted && q.answer" class="ref-ans">
+            <text class="ref-label">参考答案：</text>
+            <text class="ref-val">{{ q.answer }}</text>
+          </view>
         </view>
       </view>
       <button v-if="!detail.submitted" class="btn-primary" :disabled="submitting" @tap="onSubmit">
@@ -72,4 +76,7 @@ async function onSubmit() {
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
 .done-tip { text-align: center; font-size: 26rpx; color: var(--c-text-hint); padding: 16rpx; }
+.ref-ans { display: flex; gap: 8rpx; margin-top: 8rpx; font-size: 24rpx; }
+.ref-label { color: var(--c-text-hint); flex-shrink: 0; }
+.ref-val { color: var(--c-gold); font-weight: 600; }
 </style>
