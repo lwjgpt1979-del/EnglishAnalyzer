@@ -15,6 +15,7 @@ const router = createRouter({
         { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
         { path: 'curriculum-units', name: 'curriculum-units', component: () => import('../views/CurriculumUnits.vue') },
         { path: 'vocab-media', name: 'vocab-media', component: () => import('../views/VocabMedia.vue') },
+        { path: 'teacher-cert', name: 'teacher-cert', component: () => import('../views/TeacherCertReview.vue') },
         { path: 'pricing', name: 'pricing', component: () => import('../views/Pricing.vue') },
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
         { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },

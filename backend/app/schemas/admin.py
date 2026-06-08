@@ -14,3 +14,4 @@ class AdminOverviewOut(BaseModel):
     )
     total_users: int = Field(..., description="用户总数")
     paid_orders: int = Field(..., description="已支付订单数")
+    pending_teachers: int = Field(0, description="待审教师认证数")

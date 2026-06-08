@@ -361,3 +361,34 @@ async def join_institution(
     invite.target_id = teacher_user_id
     await db.flush()
     return teacher
+
+
+async def list_teachers_for_admin(
+    db: AsyncSession,
+    *,
+    cert_status: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> tuple[list[tuple[Teacher, User]], int]:
+    """平台管理员查看所有老师列表，可按 cert_status 筛选。"""
+    from sqlalchemy import func
+    base_conds = []
+    if cert_status:
+        base_conds.append(Teacher.cert_status == cert_status)
+
+    total: int = (await db.execute(
+        select(func.count())
+        .select_from(Teacher)
+        .where(*base_conds)
+    )).scalar_one()
+
+    rows = (await db.execute(
+        select(Teacher, User)
+        .join(User, User.id == Teacher.id)
+        .where(*base_conds)
+        .order_by(Teacher.id)
+        .offset(skip)
+        .limit(limit)
+    )).all()
+
+    return [(t, u) for t, u in rows], total

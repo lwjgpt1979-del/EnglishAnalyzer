@@ -51,6 +51,27 @@ class TeacherCommentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminTeacherItem(BaseModel):
+    """平台管理员视角的老师信息（含认证状态 + 机构归属）。"""
+    teacher_id: uuid.UUID
+    nickname: str | None
+    phone: str | None
+    subject: str | None
+    cert_status: str
+    cert_doc_url: str | None
+    max_students: int
+    institution_id: uuid.UUID | None
+    monthly_paper_quota: int | None
+    created_at: str  # ISO datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminTeacherListOut(BaseModel):
+    total: int
+    items: list[AdminTeacherItem]
+
+
 class CertSubmitRequest(BaseModel):
     cert_doc_url: str = Field(..., min_length=1, description="证书文档 URL（已上传至 COS）")
 

@@ -46,6 +46,18 @@ onMounted(load)
     </el-row>
 
     <el-row :gutter="16" style="margin-top: 16px">
+      <el-col :span="6">
+        <el-card shadow="hover" :class="(data?.pending_teachers ?? 0) > 0 ? 'card-warn' : ''">
+          <el-statistic title="待审教师认证" :value="data?.pending_teachers ?? 0">
+            <template #suffix>
+              <router-link v-if="(data?.pending_teachers ?? 0) > 0" to="/teacher-cert" style="font-size:13px;margin-left:6px;">去审核→</router-link>
+            </template>
+          </el-statistic>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="16" style="margin-top: 16px">
       <el-col :span="12">
         <el-card shadow="never">
           <template #header>仿真题各状态</template>

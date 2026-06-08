@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,12 @@ from app.schemas.questions import (
     QuestionReviewRequest,
 )
 from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
-from app.schemas.teacher import CertReviewRequest, TeacherProfileOut
+from app.schemas.teacher import (
+    AdminTeacherItem,
+    AdminTeacherListOut,
+    CertReviewRequest,
+    TeacherProfileOut,
+)
 from app.schemas.vocabulary import (
     AdminVocabMediaItem,
     AdminVocabMediaListOut,
@@ -111,22 +116,61 @@ def _to_admin_item(r: SimulatedQuestion) -> AdminQuestionItem:
     )
 
 
-@router.post("/teachers/{teacher_id}/review", response_model=BaseResponse[TeacherProfileOut])
+@router.get("/teachers", response_model=BaseResponse[AdminTeacherListOut])
+async def list_teachers_admin(
+    db: DbDep,
+    admin: AdminDep,
+    cert_status: str | None = Query(None, description="uncertified/pending/certified/rejected，空=全部"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """列出所有老师（可按认证状态筛选）。"""
+    rows, total = await teacher_service.list_teachers_for_admin(
+        db, cert_status=cert_status, skip=skip, limit=limit,
+    )
+    items = [
+        AdminTeacherItem(
+            teacher_id=t.id,
+            nickname=u.nickname,
+            phone=u.phone,
+            subject=t.subject,
+            cert_status=str(t.cert_status),
+            cert_doc_url=t.cert_doc_url,
+            max_students=t.max_students,
+            institution_id=t.institution_id,
+            monthly_paper_quota=t.monthly_paper_quota,
+            created_at=u.created_at.isoformat() if u.created_at else "",
+        )
+        for t, u in rows
+    ]
+    return make_ok(AdminTeacherListOut(total=total, items=items))
+
+
+@router.post("/teachers/{teacher_id}/review", response_model=BaseResponse[AdminTeacherItem])
 async def review_teacher_cert(
     teacher_id: uuid.UUID,
     body: CertReviewRequest,
     db: DbDep,
     admin: AdminDep,
 ):
+    """审核老师认证：approve=True→certified，False→rejected。"""
+    from app.models.d1_users import User as _User
     teacher = await teacher_service.review_cert(
         db, teacher_id=teacher_id, approve=body.approve, reason=body.reason,
     )
     await db.commit()
-    return make_ok(TeacherProfileOut(
-        user_id=teacher.id, subject=teacher.subject,
+    user = await db.get(_User, teacher_id)
+    return make_ok(AdminTeacherItem(
+        teacher_id=teacher.id,
+        nickname=user.nickname if user else None,
+        phone=user.phone if user else None,
+        subject=teacher.subject,
         cert_status=str(teacher.cert_status),
         cert_doc_url=teacher.cert_doc_url,
         max_students=teacher.max_students,
+        institution_id=teacher.institution_id,
+        monthly_paper_quota=teacher.monthly_paper_quota,
+        created_at=user.created_at.isoformat() if user and user.created_at else "",
     ))
 
 

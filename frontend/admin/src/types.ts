@@ -59,6 +59,25 @@ export interface AdminOverview {
   contents_by_status: Record<ReviewStatus, number>
   total_users: number
   paid_orders: number
+  pending_teachers: number
+}
+
+// 教师认证（管理员视图）
+export interface AdminTeacherItem {
+  teacher_id: string
+  nickname: string | null
+  phone: string | null
+  subject: string | null
+  cert_status: 'uncertified' | 'pending' | 'certified' | 'rejected'
+  cert_doc_url: string | null
+  max_students: number
+  institution_id: string | null
+  monthly_paper_quota: number | null
+  created_at: string
+}
+export interface AdminTeacherListOut {
+  total: number
+  items: AdminTeacherItem[]
 }
 
 // 词力通单词媒体（图背单词 + 英文描述 + 双音频）

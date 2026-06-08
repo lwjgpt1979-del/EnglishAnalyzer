@@ -10,6 +10,8 @@ import type {
   AdminCurriculumUnit,
   AdminVocabMediaItem,
   AdminVocabMediaListOut,
+  AdminTeacherItem,
+  AdminTeacherListOut,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -97,6 +99,25 @@ export function approveInstitution(id: string, adminUsername: string): Promise<{
 }
 export function rejectInstitution(id: string): Promise<AdminInstitution> {
   return unwrap<AdminInstitution>(request.post(`/admin/institutions/${id}/reject`))
+}
+
+// ── 教师认证管理 ──────────────────────────────────────────────────────────────
+export function listTeachersForAdmin(params: {
+  cert_status?: string
+  skip?: number
+  limit?: number
+}): Promise<AdminTeacherListOut> {
+  return unwrap<AdminTeacherListOut>(request.get('/admin/teachers', { params }))
+}
+
+export function reviewTeacherCert(
+  teacherId: string,
+  approve: boolean,
+  reason?: string,
+): Promise<AdminTeacherItem> {
+  return unwrap<AdminTeacherItem>(
+    request.post(`/admin/teachers/${teacherId}/review`, { approve, reason }),
+  )
 }
 
 // ── 词力通媒体管理 ────────────────────────────────────────────────────────────

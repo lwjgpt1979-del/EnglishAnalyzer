@@ -4,7 +4,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d1_users import User
+from app.models.d1_users import User, Teacher
 from app.models.d2_payments import Order
 from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.models.d12_v2_exams import SimulatedQuestion
@@ -33,9 +33,13 @@ async def get_overview(db: AsyncSession) -> AdminOverviewOut:
     paid_orders = (await db.execute(
         select(func.count()).select_from(Order).where(Order.status == "paid")
     )).scalar_one()
+    pending_teachers = (await db.execute(
+        select(func.count()).select_from(Teacher).where(Teacher.cert_status == "pending")
+    )).scalar_one()
     return AdminOverviewOut(
         questions_by_status=_normalize(q_rows),
         contents_by_status=_normalize(c_rows),
         total_users=total_users,
         paid_orders=paid_orders,
+        pending_teachers=pending_teachers,
     )
