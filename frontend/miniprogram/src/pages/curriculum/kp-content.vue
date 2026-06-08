@@ -21,7 +21,7 @@
       <view v-if="loading" class="empty">加载中…</view>
       <view v-else-if="!currentContent" class="empty">该维度暂无内容</view>
       <scroll-view v-else scroll-y class="content">
-        <text class="md">{{ currentContent.content_md }}</text>
+        <rich-text :nodes="md2html(currentContent.content_md || '')" class="md" />
       </scroll-view>
       <view class="practice-bar">
         <button class="btn-secondary" @tap="goPractice">练习（5 题）</button>
@@ -75,6 +75,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { getKpContents } from '@/api/curriculum'
 import { listPracticeQuestions } from '@/api/questions'
 import { listWrongQuestionsByKp } from '@/api/wrongQuestions'
+import { md2html } from '@/utils/md'
 import type { KPContentOut, SimQuestionOut, WrongQuestionOut } from '@/types/api'
 
 type ViewKey = 'content' | 'questions' | 'wrong'
@@ -187,7 +188,7 @@ function goWrongDetail(id: string) {
 .subtab.active { color: var(--c-primary); font-weight: 700; }
 .empty { text-align: center; padding: 80rpx 24rpx; color: var(--c-text-hint); font-size: 28rpx; }
 .content { flex: 1; padding: 24rpx; }
-.md { font-size: 28rpx; line-height: 1.7; color: var(--c-text-body); white-space: pre-wrap; }
+.md { font-size: 28rpx; line-height: 1.7; color: var(--c-text-body); }
 .list { flex: 1; padding: 16rpx 24rpx; }
 .card {
   background: var(--c-bg-card); border: 1rpx solid var(--c-border);
