@@ -17,6 +17,10 @@
             <text class="stat-label">已分析</text>
           </view>
           <view class="stat-item">
+            <text class="stat-num">{{ report.mastered_count }}</text>
+            <text class="stat-label">已掌握</text>
+          </view>
+          <view class="stat-item">
             <text class="stat-num">{{ (report.mastery_rate * 100).toFixed(0) }}%</text>
             <text class="stat-label">掌握率</text>
           </view>
@@ -66,6 +70,45 @@
             />
           </view>
           <text class="bar-count">{{ item.count }}</text>
+        </view>
+      </view>
+
+      <!-- 题型分布 -->
+      <view class="card" v-if="Object.keys(report.question_type_distribution).length > 0">
+        <view class="card-title">题型分布</view>
+        <view
+          v-for="[type, cnt] in distEntries(report.question_type_distribution)"
+          :key="type"
+          class="bar-item"
+        >
+          <text class="bar-label">{{ type }}</text>
+          <view class="bar-track">
+            <view
+              class="bar-fill"
+              :style="{ width: barWidth(cnt, maxDistCount(report.question_type_distribution)) + '%' }"
+            />
+          </view>
+          <text class="bar-count">{{ cnt }}</text>
+        </view>
+      </view>
+
+      <!-- 难度分布 -->
+      <view class="card" v-if="Object.keys(report.difficulty_distribution).length > 0">
+        <view class="card-title">难度分布</view>
+        <view
+          v-for="[key, cnt] in distEntries(report.difficulty_distribution)"
+          :key="key"
+          class="bar-item"
+        >
+          <text class="bar-label">{{ difficultyLabel(key) }}</text>
+          <view class="bar-track">
+            <view
+              class="bar-fill"
+              :class="difficultyBarClass(key)"
+              :style="{ width: barWidth(cnt, maxDistCount(report.difficulty_distribution)) + '%' }"
+            />
+          </view>
+          <text class="bar-count">{{ cnt }}</text>
         </view>
       </view>
 
@@ -311,6 +354,26 @@ function goPractice() {
 
 function barWidth(count: number, max: number): number {
   return max === 0 ? 0 : Math.round((count / max) * 100)
+}
+
+function distEntries(dist: Record<string, number>): [string, number][] {
+  return Object.entries(dist).sort((a, b) => b[1] - a[1])
+}
+
+function maxDistCount(dist: Record<string, number>): number {
+  const vals = Object.values(dist)
+  return vals.length === 0 ? 1 : Math.max(...vals)
+}
+
+function difficultyLabel(key: string): string {
+  const map: Record<string, string> = { '1': '简单', '2': '中等', '3': '困难', 'easy': '简单', 'medium': '中等', 'hard': '困难' }
+  return map[key] ?? key
+}
+
+function difficultyBarClass(key: string): string {
+  if (key === '1' || key === 'easy') return 'acc-high'
+  if (key === '3' || key === 'hard') return 'acc-low'
+  return 'acc-mid'
 }
 
 function activityClass(count: number): string {
