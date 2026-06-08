@@ -27,3 +27,11 @@ class UserProfileOut(BaseModel):
     nickname: str | None
     avatar_url: str | None
     is_active: bool
+
+
+class UpdateProfileRequest(BaseModel):
+    """PATCH /auth/profile — 用户可修改的偏好字段（V2 M23）。"""
+    preferred_textbook_version: str | None = None
+    preferred_grade: str | None = None
+    preferred_semester: str | None = None
+    city_code: str | None = None  # V2 M27 预留

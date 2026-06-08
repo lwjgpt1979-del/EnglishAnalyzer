@@ -25,6 +25,51 @@
       </view>
     </view>
 
+    <!-- V2 M23 教材偏好 -->
+    <view class="card" v-if="auth.isLoggedIn()">
+      <view class="card-title">教材偏好</view>
+      <view class="pref-row">
+        <text class="pref-label">教材版本</text>
+        <text class="pref-val">{{ (auth.user as any)?.preferred_textbook_version || '未设置' }}</text>
+      </view>
+      <view class="pref-row">
+        <text class="pref-label">年级</text>
+        <text class="pref-val">{{ (auth.user as any)?.preferred_grade || '未设置' }}</text>
+      </view>
+      <view class="pref-row">
+        <text class="pref-label">学期</text>
+        <text class="pref-val">{{ (auth.user as any)?.preferred_semester || '未设置' }}</text>
+      </view>
+      <button class="btn-menu" style="margin-top:16rpx" @tap="openPrefEdit">修改教材偏好</button>
+
+      <!-- 编辑弹窗 -->
+      <view v-if="showPrefEdit" class="modal" @tap.self="showPrefEdit = false">
+        <view class="modal-card">
+          <view class="card-title">修改教材偏好</view>
+
+          <text class="pref-label" style="margin-bottom:8rpx;display:block">教材版本</text>
+          <picker :range="TEXTBOOK_VERSIONS" :value="prefForm.textbookIdx" @change="(e: any) => prefForm.textbookIdx = +e.detail.value">
+            <view class="picker-row">{{ TEXTBOOK_VERSIONS[prefForm.textbookIdx] }} ›</view>
+          </picker>
+
+          <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">年级</text>
+          <picker :range="GRADES" :value="prefForm.gradeIdx" @change="(e: any) => prefForm.gradeIdx = +e.detail.value">
+            <view class="picker-row">{{ GRADES[prefForm.gradeIdx] }} ›</view>
+          </picker>
+
+          <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">学期</text>
+          <picker :range="SEMESTERS" :value="prefForm.semIdx" @change="(e: any) => prefForm.semIdx = +e.detail.value">
+            <view class="picker-row">{{ SEMESTERS[prefForm.semIdx] }} ›</view>
+          </picker>
+
+          <button class="btn-primary" style="margin-top:24rpx" :disabled="prefSaving" @tap="onSavePref">
+            {{ prefSaving ? '保存中…' : '保存' }}
+          </button>
+          <button class="btn-secondary" style="margin-top:12rpx" @tap="showPrefEdit = false">取消</button>
+        </view>
+      </view>
+    </view>
+
     <!-- V2 学期会员（D-079 / M1）-->
     <view class="card">
       <view class="card-title">学期会员</view>
@@ -147,14 +192,57 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms, getMyRelatives, unbindRelative } from '@/api/relative'
 import { listMySemesters } from '@/api/semesters'
+import { updateProfile } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
 
+const TEXTBOOK_VERSIONS = ['译林版', '人教版', '外研版', '北师大版', '冀教版']
+const GRADES = ['小学3年级', '小学4年级', '小学5年级', '小学6年级', '初中7年级', '初中8年级', '初中9年级', '高中1年级', '高中2年级', '高中3年级']
+const SEMESTERS = ['上', '下']
+
 const auth = useAuthStore()
 const myInvite = ref<{ code: string; expires_at: string } | null>(null)
+
+// M23 教材偏好
+const showPrefEdit = ref(false)
+const prefSaving = ref(false)
+const prefForm = reactive({
+  textbookIdx: 0,
+  gradeIdx: 0,
+  semIdx: 0,
+})
+
+function openPrefEdit() {
+  const u: any = auth.user
+  prefForm.textbookIdx = Math.max(0, TEXTBOOK_VERSIONS.indexOf(u?.preferred_textbook_version || ''))
+  prefForm.gradeIdx = Math.max(0, GRADES.indexOf(u?.preferred_grade || ''))
+  prefForm.semIdx = Math.max(0, SEMESTERS.indexOf(u?.preferred_semester || ''))
+  showPrefEdit.value = true
+}
+
+async function onSavePref() {
+  prefSaving.value = true
+  try {
+    await updateProfile({
+      preferred_textbook_version: TEXTBOOK_VERSIONS[prefForm.textbookIdx],
+      preferred_grade: GRADES[prefForm.gradeIdx],
+      preferred_semester: SEMESTERS[prefForm.semIdx],
+    })
+    const u: any = auth.user
+    if (u) {
+      u.preferred_textbook_version = TEXTBOOK_VERSIONS[prefForm.textbookIdx]
+      u.preferred_grade = GRADES[prefForm.gradeIdx]
+      u.preferred_semester = SEMESTERS[prefForm.semIdx]
+    }
+    showPrefEdit.value = false
+    uni.showToast({ title: '已保存', icon: 'success' })
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '保存失败', icon: 'none' })
+  } finally { prefSaving.value = false }
+}
 
 const mySemesters = ref<PurchasedSemesterOut[]>([])
 const myRelatives = ref<BoundStudent[]>([])
@@ -412,4 +500,10 @@ function goBuySemester() {
 .rel-rel { font-size: 24rpx; color: var(--c-text-hint); }
 .btn-unbind { background: #fdecea; color: #e74c3c; border: 2rpx solid #f5c6c6; border-radius: var(--r-sm); font-size: 24rpx; padding: 8rpx 20rpx; }
 .btn-unbind[disabled] { opacity: 0.5; }
+/* M23 pref */
+.pref-row { display: flex; justify-content: space-between; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.pref-row:last-of-type { border-bottom: none; }
+.pref-label { font-size: 26rpx; color: var(--c-text-second); }
+.pref-val { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
+.picker-row { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; font-size: 28rpx; color: var(--c-ink); }
 </style>

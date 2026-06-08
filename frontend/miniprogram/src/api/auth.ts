@@ -7,3 +7,22 @@ export function wxLogin(code: string): Promise<TokenResponse> {
     data: { code },
   })
 }
+
+export interface UpdateProfileData {
+  preferred_textbook_version?: string | null
+  preferred_grade?: string | null
+  preferred_semester?: string | null
+  city_code?: string | null
+}
+
+export function updateProfile(data: UpdateProfileData): Promise<{
+  preferred_textbook_version: string | null
+  preferred_grade: string | null
+  preferred_semester: string | null
+  city_code: string | null
+}> {
+  return request('/api/v1/auth/profile', {
+    method: 'PATCH',
+    data,
+  })
+}

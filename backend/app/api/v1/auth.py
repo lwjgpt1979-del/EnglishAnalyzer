@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.exceptions import AppError
 from app.core.security import create_access_token, create_refresh_token, decode_token, get_current_user
 from app.models.d1_users import User
-from app.schemas.auth import RefreshRequest, TokenResponse, WxLoginRequest
+from app.schemas.auth import RefreshRequest, TokenResponse, UpdateProfileRequest, WxLoginRequest
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.compliance import (
     CompleteProfileRequest,
@@ -132,3 +132,25 @@ async def cancel_revoke_api(db: DbDep, current_user: UserDep):
     await revoke_cancellation(db, user=current_user)
     await db.commit()
     return make_ok({"revoked": True})
+
+
+@router.patch("/profile", response_model=BaseResponse[dict])
+async def update_profile_api(body: UpdateProfileRequest, db: DbDep, current_user: UserDep):
+    """用户修改教材偏好和城市归属（V2 M23/M27）。"""
+    if body.preferred_textbook_version is not None:
+        current_user.preferred_textbook_version = body.preferred_textbook_version
+    if body.preferred_grade is not None:
+        current_user.preferred_grade = body.preferred_grade
+    if body.preferred_semester is not None:
+        current_user.preferred_semester = body.preferred_semester
+    if body.city_code is not None:
+        current_user.city_code = body.city_code
+        current_user.city_source = "self_selected"
+    await db.flush()
+    await db.commit()
+    return make_ok({
+        "preferred_textbook_version": current_user.preferred_textbook_version,
+        "preferred_grade": current_user.preferred_grade,
+        "preferred_semester": str(current_user.preferred_semester) if current_user.preferred_semester else None,
+        "city_code": current_user.city_code,
+    })
