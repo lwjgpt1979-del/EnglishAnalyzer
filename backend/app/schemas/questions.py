@@ -145,3 +145,11 @@ class ExamRankOut(BaseModel):
     )
     my_avg_accuracy: float | None = Field(None, description="本人模拟考平均正确率")
     class_avg_accuracy: float | None = Field(None, description="班级模拟考平均正确率")
+
+
+# ─── 智能出题（D-130 AI 智能出题）──────────────────────────────────────────────
+
+class AdaptiveSetOut(BaseModel):
+    """GET /questions/adaptive-set 返回结构。"""
+    questions: list[SimQuestionOut]
+    weak_kp_names: list[str] = Field(..., description="本次推题依据的薄弱知识点名称")

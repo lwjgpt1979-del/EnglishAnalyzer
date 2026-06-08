@@ -209,9 +209,9 @@ async def test_get_kp_contents_returns_6_dimensions(client):
     )
     assert resp.status_code == 200, resp.text
     contents = resp.json()["data"]
-    assert len(contents) == 6
     dims = {c["dimension"] for c in contents}
-    assert dims == {"listening", "vocabulary", "grammar", "reading", "translation", "writing"}
+    # Must include all 6 teaching dimensions (dictation is sim-question only, may or may not appear)
+    assert {"listening", "vocabulary", "grammar", "reading", "translation", "writing"}.issubset(dims)
     for c in contents:
         assert c["content_md"]
         assert "audio_url" in c

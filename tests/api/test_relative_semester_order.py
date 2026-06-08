@@ -50,11 +50,11 @@ async def test_relative_can_create_v2_semester_order_for_student(client):
     )
 
     # 生成邀请码并绑定
-    code_resp = await client.post("/api/v1/relative/invite-codes/generate", headers=s_headers)
+    code_resp = await client.post("/api/v1/relative/invite-code", headers=s_headers)
     assert code_resp.status_code == 200
     code = code_resp.json()["data"]["code"]
     bind_resp = await client.post(
-        "/api/v1/relative/bind", json={"invite_code": code}, headers=r_headers
+        "/api/v1/relative/bind", json={"code": code, "relationship": "父母"}, headers=r_headers
     )
     assert bind_resp.status_code == 200
 

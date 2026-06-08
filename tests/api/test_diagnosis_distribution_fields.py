@@ -40,7 +40,7 @@ async def test_diagnosis_report_has_distribution_fields(client):
         headers=headers,
     )
 
-    resp = await client.get("/api/v1/diagnosis/", headers=headers)
+    resp = await client.get("/api/v1/diagnosis/report", headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
 

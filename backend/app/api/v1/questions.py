@@ -10,8 +10,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import make_ok
-from app.schemas.questions import ExamAttemptIn, PracticeAttemptIn
-from app.services import question_service
+from app.schemas.questions import AdaptiveSetOut, ExamAttemptIn, PracticeAttemptIn, SimQuestionOut
+from app.services import adaptive_question_service, question_service
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -83,6 +83,32 @@ async def get_exam_history(
         db, user_id=current_user.id, limit=limit,
     )
     return make_ok(result.model_dump(mode="json"))
+
+
+@router.get("/adaptive-set", response_model=None)
+async def get_adaptive_set(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    total: int = Query(5, ge=1, le=10, description="本次出题总数"),
+):
+    """智能出题：根据学生薄弱知识点自动组卷，返回未做过的推荐题目。"""
+    result = await adaptive_question_service.get_adaptive_set(
+        db, student_id=current_user.id, total=total
+    )
+    await db.commit()
+    questions_out = [
+        SimQuestionOut(
+            id=q.id,
+            question_type=q.question_type,
+            stem=q.stem,
+            options=q.options,
+            difficulty=q.difficulty,
+        )
+        for q in result.questions
+    ]
+    return make_ok(
+        AdaptiveSetOut(questions=questions_out, weak_kp_names=result.weak_kp_names).model_dump(mode="json")
+    )
 
 
 @router.get("/exam-rank")

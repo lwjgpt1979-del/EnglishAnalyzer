@@ -150,6 +150,7 @@ async def remove_student_api(student_id: uuid.UUID, db: DbDep, current_user: Use
     ts.status = "inactive"
     ts.unbound_at = datetime.now(timezone.utc)
     await db.flush()
+    await db.commit()
     return make_ok({"removed": True})
 
 

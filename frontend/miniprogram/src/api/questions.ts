@@ -1,5 +1,6 @@
 import { request } from '@/utils/request'
 import type {
+  AdaptiveSetOut,
   SimQuestionOut,
   PracticeAttemptIn,
   PracticeResultOut,
@@ -50,4 +51,11 @@ export function getExamHistory(limit = 20): Promise<ExamHistoryOut> {
 
 export function getExamRank(): Promise<ExamRankOut> {
   return request<ExamRankOut>('/api/v1/questions/exam-rank')
+}
+
+export function getAdaptiveSet(total = 5): Promise<AdaptiveSetOut> {
+  return request<AdaptiveSetOut>('/api/v1/questions/adaptive-set', {
+    method: 'GET',
+    data: { total },
+  })
 }

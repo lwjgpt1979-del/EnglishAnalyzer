@@ -9,7 +9,8 @@ from httpx import ASGITransport, AsyncClient
 from app.core.database import _async_session_factory
 from app.main import app
 from app.models.d1_users import Institution, Student, User
-from app.models.d2_payments import Membership
+from app.models.d2_payments import Order
+from app.models.d14_v2_semesters import PurchasedSemester
 from app.services import admin_auth_service
 
 
@@ -32,8 +33,34 @@ async def _setup(username, inst_name="机构A"):
         await s.flush()
         s.add(Student(id=sid, institution_id=inst.id))
         now = dt.datetime.now(dt.timezone.utc)
-        s.add(Membership(id=uuid.uuid4(), user_id=sid, tier="pro", started_at=now,
-                         expires_at=now + dt.timedelta(days=10), is_active=True))
+        # V2: seed PurchasedSemester (requires an Order FK)
+        order = Order(
+            id=uuid.uuid4(),
+            order_no=f"TEST-{uuid.uuid4().hex[:8]}",
+            payer_id=sid,
+            beneficiary_id=sid,
+            order_type="new",
+            tier="pro",
+            duration_months=6,
+            amount_fen=7900,
+            status="paid",
+            paid_at=now,
+            semester_count=1,
+        )
+        s.add(order)
+        await s.flush()
+        s.add(PurchasedSemester(
+            id=uuid.uuid4(),
+            user_id=sid,
+            textbook_version="译林版",
+            grade="小学5年级",
+            semester="上",
+            tier="pro",
+            semester_no=1,
+            started_at=now,
+            expires_at=now + dt.timedelta(days=10),
+            order_id=order.id,
+        ))
         await s.commit()
         return inst.id, sid
 

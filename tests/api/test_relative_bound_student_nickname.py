@@ -41,12 +41,12 @@ async def test_bound_student_list_includes_nickname(client):
                       json={"birth_year": 1980, "agreement_version": "v1.0"}, headers=r_h)
 
     # 学生生成邀请码
-    code_r = await client.post("/api/v1/relative/invite-codes/generate", headers=s_h)
+    code_r = await client.post("/api/v1/relative/invite-code", headers=s_h)
     assert code_r.status_code == 200
     code = code_r.json()["data"]["code"]
 
     # 家人绑定
-    bind_r = await client.post("/api/v1/relative/bind", json={"invite_code": code}, headers=r_h)
+    bind_r = await client.post("/api/v1/relative/bind", json={"code": code, "relationship": "父母"}, headers=r_h)
     assert bind_r.status_code == 200
 
     # 家人查列表

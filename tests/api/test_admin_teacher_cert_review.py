@@ -56,6 +56,7 @@ async def _seed_pending_teacher() -> uuid.UUID:
             max_students=30,
         )
         s.add(user)
+        await s.flush()  # must persist user before teacher (FK: teachers.id → users.id)
         s.add(teacher)
         await s.commit()
     return uid
@@ -86,7 +87,7 @@ async def test_filter_by_cert_status_pending(client: AsyncClient):
     """植入 pending 老师 → cert_status=pending 筛选后能找到该老师。"""
     teacher_id = await _seed_pending_teacher()
     headers = await _make_admin_headers(client)
-    r = await client.get("/api/v1/admin/teachers?cert_status=pending", headers=headers)
+    r = await client.get("/api/v1/admin/teachers?cert_status=pending&limit=200", headers=headers)
     assert r.status_code == 200
     ids = [item["teacher_id"] for item in r.json()["data"]["items"]]
     assert str(teacher_id) in ids

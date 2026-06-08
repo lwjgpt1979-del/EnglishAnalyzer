@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── 会员 ─────────────────────────────────────────────────────────────────────
@@ -48,12 +48,19 @@ class OrderOut(BaseModel):
     tier: str
     duration_months: int
     amount_fen: int = Field(..., description="实收金额（分）")
+    amount: int = Field(0, description="实收金额（元）— amount_fen / 100，方便前端展示")
     status: str = Field(..., description="pending | paid | refunded | partial_refunded")
     wx_transaction_id: str | None = None
     paid_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _fill_amount(self) -> "OrderOut":
+        if self.amount == 0 and self.amount_fen:
+            self.amount = self.amount_fen // 100
+        return self
 
 
 # ── 支付参数 ──────────────────────────────────────────────────────────────────

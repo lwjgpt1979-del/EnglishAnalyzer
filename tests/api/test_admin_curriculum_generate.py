@@ -21,13 +21,33 @@ async def db() -> AsyncSession:
 
 @pytest_asyncio.fixture
 async def seeded_unit_id(db: AsyncSession) -> str:
-    """植入一个最小课程单元用于生成测试。"""
+    """植入一个最小课程单元用于生成测试（幂等：先删旧行）。"""
+    from sqlalchemy import delete
+    from app.models.d4_knowledge import CurriculumUnit as CU
+    # unit_no must be ≤ 20 (AIGeneratedUnit schema cap); use 18 to avoid clash with other tests
+    # Cascade delete all FK-dependent rows before deleting the unit
+    from sqlalchemy import text
+    cleanup_sql = """
+    DO $$
+    DECLARE _ids UUID[];
+    BEGIN
+      SELECT ARRAY(SELECT id FROM curriculum_units
+                   WHERE textbook_version='译林版' AND grade='小学5年级'
+                     AND semester='上' AND unit_no=18)
+      INTO _ids;
+      DELETE FROM unit_knowledge_points WHERE unit_id = ANY(_ids);
+      DELETE FROM curriculum_words WHERE unit_id = ANY(_ids);
+      DELETE FROM curriculum_units WHERE id = ANY(_ids);
+    END $$;
+    """
+    await db.execute(text(cleanup_sql))
+    await db.commit()
     unit = CurriculumUnit(
         id=uuid.uuid4(),
         textbook_version="译林版",
         grade="小学5年级",
         semester="上",
-        unit_no=99,
+        unit_no=18,
         unit_title="Test Unit",
     )
     db.add(unit)
