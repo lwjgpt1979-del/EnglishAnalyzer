@@ -124,7 +124,32 @@ async def list_my_students(db: DbDep, current_user: UserDep):
     return make_ok([
         TeacherStudentOut(student_id=ts.student_id, bound_at=ts.bound_at, nickname=u.nickname)
         for ts, u in rows
+        if str(ts.status) == "active"
     ])
+
+
+@router.delete("/students/{student_id}", response_model=BaseResponse[dict])
+async def remove_student_api(student_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """教师从自己的学生列表中移除学生（软删除）。"""
+    if str(current_user.role) != "teacher":
+        raise AppError(code=403, message="仅教师可移除学生")
+    from sqlalchemy import select as _sel_rm
+    from app.models.d1_users import TeacherStudent as _TS
+    from datetime import datetime, timezone
+    r = await db.execute(
+        _sel_rm(_TS).where(
+            _TS.teacher_id == current_user.id,
+            _TS.student_id == student_id,
+            _TS.status == "active",
+        )
+    )
+    ts = r.scalar_one_or_none()
+    if ts is None:
+        raise AppError(code=404, message="该学生未与您绑定")
+    ts.status = "inactive"
+    ts.unbound_at = datetime.now(timezone.utc)
+    await db.flush()
+    return make_ok({"removed": True})
 
 
 @router.get(

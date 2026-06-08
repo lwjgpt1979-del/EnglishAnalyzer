@@ -80,9 +80,16 @@
         class="student-item"
         @tap="goToStudent(s.student_id)"
       >
-        <text class="student-id">{{ s.nickname || ('学生 ' + s.student_id.slice(0, 8) + '…') }}</text>
-        <text class="student-bind-date">绑定：{{ s.bound_at ? s.bound_at.slice(0, 10) : '-' }}</text>
-        <text class="arrow">›</text>
+        <view class="s-info">
+          <text class="student-id">{{ s.nickname || ('学生 ' + s.student_id.slice(0, 8) + '…') }}</text>
+          <text class="student-bind-date">绑定：{{ s.bound_at ? s.bound_at.slice(0, 10) : '-' }}</text>
+        </view>
+        <view class="s-actions" @tap.stop>
+          <text class="arrow">›</text>
+          <button size="mini" class="btn-rm" :disabled="removingStudentId === s.student_id" @tap.stop="onRemoveStudent(s.student_id)">
+            {{ removingStudentId === s.student_id ? '…' : '移除' }}
+          </button>
+        </view>
       </view>
     </view>
 
@@ -115,6 +122,7 @@ import {
   getMyStudents,
   teacherInviteQrcode,
   teacherInviteSms,
+  removeStudent,
 } from '@/api/teacher'
 import { request } from '@/utils/request'
 import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut, QRCodeOut } from '@/types/api'
@@ -131,6 +139,7 @@ const generatingCode = ref(false)
 
 const students = ref<TeacherStudentOut[]>([])
 const loadingStudents = ref(false)
+const removingStudentId = ref<string | null>(null)
 
 const bindCodeInput = ref('')
 const binding = ref(false)
@@ -193,6 +202,23 @@ async function loadStudents() {
     students.value = await getMyStudents()
   } finally {
     loadingStudents.value = false
+  }
+}
+
+async function onRemoveStudent(studentId: string) {
+  const { confirm } = await new Promise<{ confirm: boolean }>(resolve =>
+    uni.showModal({ title: '移除学生', content: '确认将该学生从您的学生列表中移除？', success: resolve })
+  )
+  if (!confirm) return
+  removingStudentId.value = studentId
+  try {
+    await removeStudent(studentId)
+    uni.showToast({ title: '已移除', icon: 'success' })
+    await loadStudents()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '移除失败', icon: 'none' })
+  } finally {
+    removingStudentId.value = null
   }
 }
 
@@ -291,8 +317,12 @@ onLoad((options) => {
 .invite-expire { font-size: 22rpx; color: var(--c-text-hint); }
 .btn-copy { background: var(--c-primary); color: var(--c-ink); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
 .tip { font-size: 26rpx; color: var(--c-text-hint); text-align: center; padding: 24rpx 0; }
-.student-item { display: flex; align-items: center; padding: 20rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.student-item { display: flex; align-items: center; justify-content: space-between; padding: 20rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .student-item:last-child { border-bottom: none; }
+.s-info { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
+.s-actions { display: flex; align-items: center; gap: 12rpx; }
+.btn-rm { background: #fdecea; color: #e74c3c; border: none; border-radius: 8rpx; font-size: 22rpx; padding: 0 16rpx; height: 52rpx; line-height: 52rpx; }
+.btn-rm[disabled] { opacity: 0.5; }
 .student-id { flex: 1; font-size: 28rpx; color: var(--c-text-body); }
 .student-bind-date { font-size: 24rpx; color: var(--c-text-hint); margin-right: 8rpx; }
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }

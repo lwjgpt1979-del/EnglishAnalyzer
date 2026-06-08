@@ -64,3 +64,8 @@ export function teacherInviteSms(phone: string) {
 export function joinInstitution(code: string) {
   return request('/api/v1/teacher/join-institution', { method: 'POST', data: { code } })
 }
+
+/** 教师移除学生（V2 M18） */
+export function removeStudent(studentId: string): Promise<{ removed: boolean }> {
+  return request<{ removed: boolean }>(`/api/v1/teacher/students/${studentId}`, { method: 'DELETE' })
+}
