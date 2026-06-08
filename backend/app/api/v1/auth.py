@@ -145,7 +145,7 @@ async def update_profile_api(body: UpdateProfileRequest, db: DbDep, current_user
         current_user.preferred_semester = body.preferred_semester
     if body.city_code is not None:
         current_user.city_code = body.city_code
-        current_user.city_source = "self_selected"
+        current_user.city_source = "manual"
     await db.flush()
     await db.commit()
     return make_ok({

@@ -40,12 +40,16 @@
         <text class="pref-label">学期</text>
         <text class="pref-val">{{ (auth.user as any)?.preferred_semester || '未设置' }}</text>
       </view>
-      <button class="btn-menu" style="margin-top:16rpx" @tap="openPrefEdit">修改教材偏好</button>
+      <view class="pref-row">
+        <text class="pref-label">所在城市</text>
+        <text class="pref-val">{{ cityDisplayName || '未设置' }}</text>
+      </view>
+      <button class="btn-menu" style="margin-top:16rpx" @tap="openPrefEdit">修改偏好</button>
 
       <!-- 编辑弹窗 -->
       <view v-if="showPrefEdit" class="modal" @tap.self="showPrefEdit = false">
         <view class="modal-card">
-          <view class="card-title">修改教材偏好</view>
+          <view class="card-title">修改偏好</view>
 
           <text class="pref-label" style="margin-bottom:8rpx;display:block">教材版本</text>
           <picker :range="TEXTBOOK_VERSIONS" :value="prefForm.textbookIdx" @change="(e: any) => prefForm.textbookIdx = +e.detail.value">
@@ -60,6 +64,16 @@
           <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">学期</text>
           <picker :range="SEMESTERS" :value="prefForm.semIdx" @change="(e: any) => prefForm.semIdx = +e.detail.value">
             <view class="picker-row">{{ SEMESTERS[prefForm.semIdx] }} ›</view>
+          </picker>
+
+          <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">省份</text>
+          <picker :range="PROVINCE_NAMES" :value="prefForm.provIdx" @change="onProvChange">
+            <view class="picker-row">{{ PROVINCE_NAMES[prefForm.provIdx] }} ›</view>
+          </picker>
+
+          <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">城市</text>
+          <picker :range="currentCityNames" :value="prefForm.cityIdx" @change="(e: any) => prefForm.cityIdx = +e.detail.value">
+            <view class="picker-row">{{ currentCityNames[prefForm.cityIdx] || '—' }} ›</view>
           </picker>
 
           <button class="btn-primary" style="margin-top:24rpx" :disabled="prefSaving" @tap="onSavePref">
@@ -197,6 +211,7 @@ import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms, ge
 import { listMySemesters } from '@/api/semesters'
 import { updateProfile } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { PROVINCES, PROVINCE_NAMES, getCitiesForProvince, getCityName, getProvinceName } from '@/data/cities'
 import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
 
 const TEXTBOOK_VERSIONS = ['译林版', '人教版', '外研版', '北师大版', '冀教版']
@@ -206,36 +221,72 @@ const SEMESTERS = ['上', '下']
 const auth = useAuthStore()
 const myInvite = ref<{ code: string; expires_at: string } | null>(null)
 
-// M23 教材偏好
+// M23/M27 教材偏好 + 城市
 const showPrefEdit = ref(false)
 const prefSaving = ref(false)
 const prefForm = reactive({
   textbookIdx: 0,
   gradeIdx: 0,
   semIdx: 0,
+  provIdx: 0,
+  cityIdx: 0,
 })
+
+const currentCityNames = computed(() => {
+  const prov = PROVINCES[prefForm.provIdx]
+  return getCitiesForProvince(prov?.name ?? '').map(c => c.name)
+})
+
+const cityDisplayName = computed(() => {
+  const code = (auth.user as any)?.city_code
+  if (!code) return ''
+  const city = getCityName(code)
+  const prov = getProvinceName(code)
+  return city === prov ? city : (prov ? `${prov} ${city}` : city)
+})
+
+function onProvChange(e: any) {
+  prefForm.provIdx = +e.detail.value
+  prefForm.cityIdx = 0
+}
 
 function openPrefEdit() {
   const u: any = auth.user
   prefForm.textbookIdx = Math.max(0, TEXTBOOK_VERSIONS.indexOf(u?.preferred_textbook_version || ''))
   prefForm.gradeIdx = Math.max(0, GRADES.indexOf(u?.preferred_grade || ''))
   prefForm.semIdx = Math.max(0, SEMESTERS.indexOf(u?.preferred_semester || ''))
+  // init city picker
+  const code = u?.city_code
+  if (code) {
+    const provCode = code.slice(0, 2)
+    const pIdx = PROVINCES.findIndex(p => p.code === provCode)
+    if (pIdx >= 0) {
+      prefForm.provIdx = pIdx
+      const cities = getCitiesForProvince(PROVINCES[pIdx].name)
+      const cIdx = cities.findIndex(c => c.code === code)
+      prefForm.cityIdx = Math.max(0, cIdx)
+    }
+  }
   showPrefEdit.value = true
 }
 
 async function onSavePref() {
   prefSaving.value = true
   try {
+    const cities = getCitiesForProvince(PROVINCES[prefForm.provIdx]?.name ?? '')
+    const cityCode = cities[prefForm.cityIdx]?.code ?? null
     await updateProfile({
       preferred_textbook_version: TEXTBOOK_VERSIONS[prefForm.textbookIdx],
       preferred_grade: GRADES[prefForm.gradeIdx],
       preferred_semester: SEMESTERS[prefForm.semIdx],
+      city_code: cityCode,
     })
     const u: any = auth.user
     if (u) {
       u.preferred_textbook_version = TEXTBOOK_VERSIONS[prefForm.textbookIdx]
       u.preferred_grade = GRADES[prefForm.gradeIdx]
       u.preferred_semester = SEMESTERS[prefForm.semIdx]
+      u.city_code = cityCode
     }
     showPrefEdit.value = false
     uni.showToast({ title: '已保存', icon: 'success' })
