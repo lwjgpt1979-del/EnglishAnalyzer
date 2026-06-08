@@ -8,6 +8,8 @@ import type {
   SemesterPricing,
   ReviewStatus,
   AdminCurriculumUnit,
+  AdminVocabMediaItem,
+  AdminVocabMediaListOut,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -95,6 +97,30 @@ export function approveInstitution(id: string, adminUsername: string): Promise<{
 }
 export function rejectInstitution(id: string): Promise<AdminInstitution> {
   return unwrap<AdminInstitution>(request.post(`/admin/institutions/${id}/reject`))
+}
+
+// ── 词力通媒体管理 ────────────────────────────────────────────────────────────
+export function listVocabMedia(params: {
+  media_status?: string
+  skip?: number
+  limit?: number
+}): Promise<AdminVocabMediaListOut> {
+  return unwrap<AdminVocabMediaListOut>(request.get('/admin/vocab', { params }))
+}
+
+export function generateVocabMedia(wordId: string): Promise<AdminVocabMediaItem> {
+  return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/generate-media`))
+}
+
+export function reviewVocabMedia(wordId: string, approve: boolean): Promise<AdminVocabMediaItem> {
+  return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/media/review`, { approve }))
+}
+
+export function updateVocabMedia(
+  wordId: string,
+  body: { en_description?: string; image_urls?: string[]; word_audio_url?: string; en_desc_audio_url?: string },
+): Promise<AdminVocabMediaItem> {
+  return unwrap<AdminVocabMediaItem>(request.put(`/admin/vocab/${wordId}/media`, body))
 }
 
 // ── 课程单元管理 ──────────────────────────────────────────────────────────────

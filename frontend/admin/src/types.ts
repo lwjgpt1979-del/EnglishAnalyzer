@@ -61,6 +61,21 @@ export interface AdminOverview {
   paid_orders: number
 }
 
+// 词力通单词媒体（图背单词 + 英文描述 + 双音频）
+export interface AdminVocabMediaItem {
+  word_id: string
+  word: string
+  image_urls: string[] | null
+  en_description: string | null
+  word_audio_url: string | null
+  en_desc_audio_url: string | null
+  media_status: 'draft' | 'published' | 'retired'
+}
+export interface AdminVocabMediaListOut {
+  total: number
+  items: AdminVocabMediaItem[]
+}
+
 // 课程单元（含内容完成度统计）
 export interface AdminCurriculumUnit {
   unit_id: string
