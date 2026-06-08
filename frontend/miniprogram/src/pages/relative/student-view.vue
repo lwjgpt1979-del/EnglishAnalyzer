@@ -38,12 +38,54 @@
         </view>
       </view>
 
+      <!-- V2 学期代付卡片 -->
       <view class="card">
-        <view class="card-title">为孩子续费 / 升级会员</view>
+        <view class="card-title">为孩子购买学期会员</view>
+        <!-- 教材版本 -->
+        <view class="selector-row">
+          <text class="selector-lbl">教材</text>
+          <picker
+            :range="textbookOptions"
+            :value="textbookOptions.indexOf(textbook)"
+            @change="(e: any) => textbook = textbookOptions[e.detail.value]"
+          >
+            <view class="selector-val">{{ textbook }} ▾</view>
+          </picker>
+        </view>
+        <!-- 年级 -->
+        <view class="selector-row">
+          <text class="selector-lbl">年级</text>
+          <picker
+            :range="gradeOptions"
+            :value="gradeOptions.indexOf(grade)"
+            @change="(e: any) => grade = gradeOptions[e.detail.value]"
+          >
+            <view class="selector-val">{{ grade }} ▾</view>
+          </picker>
+        </view>
+        <!-- 学期 -->
+        <view class="selector-row">
+          <text class="selector-lbl">学期</text>
+          <picker
+            :range="semesterOptions"
+            :value="semesterOptions.indexOf(semester)"
+            @change="(e: any) => semester = semesterOptions[e.detail.value]"
+          >
+            <view class="selector-val">{{ semester }}学期 ▾</view>
+          </picker>
+        </view>
+        <!-- 档位 -->
         <view class="tier-row">
-          <text v-for="t in tiers" :key="t.tier" class="tier" :class="{ active: selectedTier === t.tier }" @tap="selectedTier = t.tier">
-            {{ t.label }}<br>¥{{ t.price }}/月
-          </text>
+          <view
+            v-for="t in tiers"
+            :key="t.key"
+            class="tier"
+            :class="{ active: selectedTier === t.key }"
+            @tap="selectedTier = t.key"
+          >
+            <text class="tier-label">{{ t.label }}</text>
+            <text class="tier-price">¥{{ t.price }}/学期</text>
+          </view>
         </view>
         <button class="btn-primary" :disabled="paying" @tap="onPay">
           {{ paying ? '支付中…' : `代付 ¥${currentPrice}` }}
@@ -59,17 +101,34 @@ import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar } from '@/api/
 import { createOrder, payOrder } from '@/api/orders'
 import type { RelativeCheckinCalendar } from '@/types/api'
 
+// ── 学期选择选项（与 semester-purchase.vue 保持同步）──────────────────────────
+const textbookOptions = ['译林版', '人教版', '北师大版']
+const gradeOptions = [
+  '小学3年级', '小学4年级', '小学5年级', '小学6年级',
+  '初中7年级', '初中8年级', '初中9年级',
+]
+const semesterOptions = ['上', '下']
+
+// ── 学期状态 ──────────────────────────────────────────────────────────────────
+const textbook = ref('译林版')
+const grade = ref('小学5年级')
+const semester = ref('上')
+
+// ── 档位（V2 学期定价）────────────────────────────────────────────────────────
+type TierKey = 'basic' | 'pro' | 'promax'
+const tiers: { key: TierKey; label: string; price: number }[] = [
+  { key: 'basic',  label: '基础版', price: 39  },
+  { key: 'pro',    label: 'Pro',    price: 79  },
+  { key: 'promax', label: 'ProMax', price: 159 },
+]
+const selectedTier = ref<TierKey>('basic')
+const currentPrice = computed(() => tiers.find(t => t.key === selectedTier.value)?.price ?? 39)
+
+// ── 学生 / 诊断报告 ──────────────────────────────────────────────────────────
 const studentId = ref('')
 const report = ref<any>(null)
 const loading = ref(true)
 const paying = ref(false)
-const selectedTier = ref('basic')
-const tiers = [
-  { tier: 'basic', label: '基础版', price: 9 },
-  { tier: 'pro', label: '专业版', price: 19 },
-  { tier: 'promax', label: '旗舰版', price: 39 },
-]
-const currentPrice = computed(() => tiers.find(t => t.tier === selectedTier.value)?.price || 0)
 
 const cal = ref<RelativeCheckinCalendar | null>(null)
 const checkedSet = computed(() => new Set(cal.value?.days.map(d => d.date) ?? []))
@@ -97,14 +156,21 @@ onMounted(async () => {
   } finally { loading.value = false }
 })
 
+// ── V2 学期代付 ───────────────────────────────────────────────────────────────
 async function onPay() {
   paying.value = true
   try {
     const order = await createOrder({
       tier: selectedTier.value,
-      duration_months: 1,
       order_type: 'new',
-      target_student_id: studentId.value,
+      semesters: [
+        {
+          textbook_version: textbook.value,
+          grade: grade.value,
+          semester: semester.value as '上' | '下',
+        },
+      ],
+      target_student_id: studentId.value || undefined,
     })
     const params = await payOrder(order.id)
     await new Promise<void>((resolve, reject) => {
@@ -138,11 +204,22 @@ async function onPay() {
 .sug { display: flex; margin-bottom: 16rpx; }
 .sug-num { width: 44rpx; height: 44rpx; background: var(--c-primary); color: var(--c-ink); border-radius: 50%; font-size: 24rpx; font-weight: 700; line-height: 44rpx; text-align: center; margin-right: 16rpx; }
 .sug-text { flex: 1; font-size: 28rpx; color: var(--c-text-body); line-height: 1.7; }
-.tier-row { display: flex; gap: 16rpx; margin-bottom: 16rpx; }
-.tier { flex: 1; text-align: center; padding: 16rpx 0; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 24rpx; color: var(--c-text-body); }
-.tier.active { border-color: var(--c-gold); background: var(--c-primary-faint); font-weight: 700; }
+/* 学期选择器 */
+.selector-row { display: flex; align-items: center; justify-content: space-between; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.selector-lbl { font-size: 26rpx; color: var(--c-text-hint); }
+.selector-val { font-size: 26rpx; color: var(--c-ink); }
+/* 档位 */
+.tier-row { display: flex; gap: 16rpx; margin: 20rpx 0 16rpx; }
+.tier { flex: 1; text-align: center; padding: 16rpx 8rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); display: flex; flex-direction: column; gap: 4rpx; }
+.tier.active { border-color: var(--c-gold); background: var(--c-primary-faint); }
+.tier-label { font-size: 24rpx; font-weight: 700; color: var(--c-ink); }
+.tier-price { font-size: 22rpx; color: var(--c-text-hint); }
+.tier.active .tier-label { color: var(--c-gold); }
+.tier.active .tier-price { color: var(--c-gold); }
+/* 按钮 */
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+/* 打卡日历 */
 .cal-summary { font-size: 24rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 .cal-grid { display: flex; flex-wrap: wrap; }
 .cal-cell { width: 14.28%; height: 64rpx; display: flex; align-items: center; justify-content: center; font-size: 24rpx; color: var(--c-text-body); }
