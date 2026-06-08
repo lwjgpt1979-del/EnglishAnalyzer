@@ -135,7 +135,8 @@ class RenewableStudentOut(BaseModel):
 
 class BatchRenewRequest(BaseModel):
     student_ids: list[uuid.UUID]
-    duration_months: int
+    semesters: int = 1          # V2 M26: 续费学期数（1学期 ≈ 183天）
+    duration_months: int | None = None  # V1 兼容字段（已废弃，semesters 优先）
 
 
 class BatchRenewResult(BaseModel):

@@ -199,7 +199,8 @@ async def batch_renew(body: BatchRenewRequest, db: DbDep, admin: InstAdminDep):
     inst_id = _require_inst(admin)
     res = await institution_renew_service.batch_renew(
         db, institution_id=inst_id, student_ids=body.student_ids,
-        duration_months=body.duration_months, operator_id=admin.id)
+        semesters=body.semesters, duration_months=body.duration_months,
+        operator_id=admin.id)
     await db.commit()
     return make_ok(BatchRenewResult(**res))
 
