@@ -11,7 +11,7 @@
       <view v-if="loading" class="tip">加载中…</view>
       <view v-else-if="students.length === 0" class="tip">班级暂无学生</view>
       <view v-for="s in students" :key="s.student_id" class="card s-item">
-        <text class="s-id">学生 {{ s.student_id.slice(0, 8) }}…</text>
+        <text class="s-id">{{ s.nickname || ('学生 ' + s.student_id.slice(0, 8) + '…') }}</text>
         <text class="s-rm" @tap.stop="onRemove(s.student_id)">移除</text>
       </view>
       <view class="card">

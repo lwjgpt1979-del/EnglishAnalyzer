@@ -33,6 +33,7 @@ class BindTeacherRequest(BaseModel):
 class TeacherStudentOut(BaseModel):
     student_id: uuid.UUID
     bound_at: datetime | None
+    nickname: str | None = None
 
     model_config = {"from_attributes": True}
 

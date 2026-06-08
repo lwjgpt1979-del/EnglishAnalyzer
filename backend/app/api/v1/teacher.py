@@ -113,12 +113,18 @@ async def list_my_students(db: DbDep, current_user: UserDep):
     from app.models.d1_users import Teacher as _T
     _r = await db.execute(_sel(_T).where(_T.id == current_user.id))
     teacher_service.ensure_certified(_r.scalar_one_or_none())
-    students = await teacher_service.get_my_students(
-        db, teacher_id=current_user.id
-    )
-    return make_ok(
-        [TeacherStudentOut(student_id=s.student_id, bound_at=s.bound_at) for s in students]
-    )
+    from sqlalchemy import select as _sel2
+    from app.models.d1_users import TeacherStudent, User as _U
+    rows = (await db.execute(
+        _sel2(TeacherStudent, _U)
+        .join(_U, _U.id == TeacherStudent.student_id)
+        .where(TeacherStudent.teacher_id == current_user.id)
+        .order_by(TeacherStudent.bound_at.desc())
+    )).all()
+    return make_ok([
+        TeacherStudentOut(student_id=ts.student_id, bound_at=ts.bound_at, nickname=u.nickname)
+        for ts, u in rows
+    ])
 
 
 @router.get(
@@ -306,10 +312,19 @@ async def remove_class_student_api(
 async def list_class_students_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep):
     await _require_certified_teacher(db, current_user)
     await get_rls_db(db, str(current_user.id))
-    items = await class_service.list_class_students(
-        db, teacher_id=current_user.id, class_id=class_id,
-    )
-    return make_ok([ClassStudentOut(student_id=cs.student_id, joined_at=cs.joined_at) for cs in items])
+    from sqlalchemy import select as _sel3
+    from app.models.d1_users import User as _U2
+    from app.models.d7_teacher import ClassStudent as _CS
+    rows = (await db.execute(
+        _sel3(_CS, _U2)
+        .join(_U2, _U2.id == _CS.student_id)
+        .where(_CS.class_id == class_id)
+        .order_by(_CS.joined_at)
+    )).all()
+    return make_ok([
+        ClassStudentOut(student_id=cs.student_id, joined_at=cs.joined_at, nickname=u.nickname)
+        for cs, u in rows
+    ])
 
 
 @router.get("/classes/{class_id}/report", response_model=BaseResponse[ClassReport])

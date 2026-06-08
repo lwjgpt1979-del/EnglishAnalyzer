@@ -220,6 +220,7 @@ export interface InviteCodeOut {
 export interface TeacherStudentOut {
   student_id: string
   bound_at: string | null
+  nickname?: string | null
 }
 
 export interface TeacherCommentOut {
@@ -330,6 +331,7 @@ export interface ClassOut {
 export interface ClassStudentOut {
   student_id: string
   joined_at: string
+  nickname?: string | null
 }
 
 export interface ClassReport {

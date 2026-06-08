@@ -80,7 +80,7 @@
         class="student-item"
         @tap="goToStudent(s.student_id)"
       >
-        <text class="student-id">学生 {{ s.student_id.slice(0, 8) }}…</text>
+        <text class="student-id">{{ s.nickname || ('学生 ' + s.student_id.slice(0, 8) + '…') }}</text>
         <text class="student-bind-date">绑定：{{ s.bound_at ? s.bound_at.slice(0, 10) : '-' }}</text>
         <text class="arrow">›</text>
       </view>

@@ -26,6 +26,7 @@ class ClassStudentAddRequest(BaseModel):
 class ClassStudentOut(BaseModel):
     student_id: uuid.UUID
     joined_at: datetime
+    nickname: str | None = None
 
     model_config = {"from_attributes": True}
 
