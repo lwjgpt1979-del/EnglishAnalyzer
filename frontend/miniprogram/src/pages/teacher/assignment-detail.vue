@@ -23,7 +23,7 @@
         <view class="card-title">提交（{{ detail.submissions.length }}）</view>
         <view v-if="!detail.submissions.length" class="empty">还没有学生提交</view>
         <view v-for="su in detail.submissions" :key="su.id" class="sub">
-          <text class="sub-head">学生 {{ su.student_id.slice(0, 8) }}… · {{ su.score != null ? su.score + ' 分' : '未批改' }}</text>
+          <text class="sub-head">{{ su.nickname || ('学生 ' + su.student_id.slice(0, 8) + '…') }} · {{ su.score != null ? su.score + ' 分' : '未批改' }}</text>
           <text class="sub-ans">{{ JSON.stringify(su.answers) }}</text>
           <view class="grade-row">
             <input v-model="scores[su.id]" class="score-ipt" type="number" placeholder="分数" />

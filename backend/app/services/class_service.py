@@ -147,6 +147,13 @@ async def build_class_report(
     rates: list[float] = []
     rankings: list[dict] = []
 
+    # Prefetch student nicknames
+    from app.models.d1_users import User as _U
+    nick_rows = (await db.execute(
+        select(_U.id, _U.nickname).where(_U.id.in_(student_ids))
+    )).all() if student_ids else []
+    nick_map = {str(r[0]): r[1] for r in nick_rows}
+
     for sid in student_ids:
         report = await get_diagnosis_report(db, student_id=sid)
         total_questions += report.total_questions
@@ -155,6 +162,7 @@ async def build_class_report(
             "student_id": sid,
             "total_questions": report.total_questions,
             "mastery_rate": report.mastery_rate,
+            "nickname": nick_map.get(str(sid)),
         })
         for et in report.top_error_types:
             err_counter[et.error_type] += et.count

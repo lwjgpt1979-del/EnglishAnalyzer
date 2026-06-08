@@ -46,6 +46,7 @@ class SubmissionItem(BaseModel):
     answers: list | dict
     score: float | None = None
     submitted_at: str
+    nickname: str | None = None
 
 
 class TeacherAssignmentDetail(BaseModel):

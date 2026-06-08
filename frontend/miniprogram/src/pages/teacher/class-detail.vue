@@ -43,7 +43,7 @@
         <view v-if="report.students_ranking.length" class="card">
           <view class="card-title">掌握率排名</view>
           <view v-for="(s, i) in report.students_ranking" :key="s.student_id" class="row">
-            <text>{{ i + 1 }}. 学生 {{ s.student_id.slice(0, 8) }}…</text>
+            <text>{{ i + 1 }}. {{ s.nickname || ('学生 ' + s.student_id.slice(0, 8) + '…') }}</text>
             <text class="count">{{ Math.round(s.mastery_rate * 100) }}%</text>
           </view>
         </view>

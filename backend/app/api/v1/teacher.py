@@ -443,13 +443,24 @@ async def get_assignment_api(assignment_id: uuid.UUID, db: DbDep, current_user: 
     await get_rls_db(db, str(current_user.id))
     a, subs = await assignment_service.get_assignment_for_teacher(
         db, teacher_id=current_user.id, assignment_id=assignment_id)
+    # Enrich submissions with student nicknames
+    from sqlalchemy import select as _sel4
+    from app.models.d1_users import User as _U3
+    student_ids = [su.student_id for su in subs]
+    nick_map: dict = {}
+    if student_ids:
+        rows = (await db.execute(
+            _sel4(_U3.id, _U3.nickname).where(_U3.id.in_(student_ids))
+        )).all()
+        nick_map = {str(r[0]): r[1] for r in rows}
     return make_ok(TeacherAssignmentDetail(
         assignment=_assignment_out(a),
         submissions=[
             SubmissionItem(
                 id=su.id, student_id=su.student_id, answers=su.answers,
                 score=float(su.score) if su.score is not None else None,
-                submitted_at=su.submitted_at.isoformat())
+                submitted_at=su.submitted_at.isoformat(),
+                nickname=nick_map.get(str(su.student_id)))
             for su in subs
         ],
     ))

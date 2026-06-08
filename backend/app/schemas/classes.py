@@ -35,6 +35,7 @@ class ClassReportStudent(BaseModel):
     student_id: uuid.UUID
     total_questions: int
     mastery_rate: float
+    nickname: str | None = None
 
 
 class ClassReportErrorType(BaseModel):

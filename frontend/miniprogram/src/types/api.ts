@@ -342,7 +342,7 @@ export interface ClassReport {
   total_questions: number
   top_error_types: { type: string; count: number }[]
   top_weak_knowledge_points: { kp: string; count: number }[]
-  students_ranking: { student_id: string; total_questions: number; mastery_rate: number }[]
+  students_ranking: { student_id: string; total_questions: number; mastery_rate: number; nickname?: string | null }[]
 }
 
 // ── Relative ──────────────────────────────────────────────────────────────────
@@ -710,7 +710,7 @@ export interface AssignmentListItem {
   id: string; class_id: string; title: string; status: string; due_at: string | null; submission_count: number
 }
 export interface SubmissionItem {
-  id: string; student_id: string; answers: unknown; score: number | null; submitted_at: string
+  id: string; student_id: string; answers: unknown; score: number | null; submitted_at: string; nickname?: string | null
 }
 export interface TeacherAssignmentDetail { assignment: AssignmentOut; submissions: SubmissionItem[] }
 export interface StudentAssignmentItem {
