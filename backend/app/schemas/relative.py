@@ -31,6 +31,7 @@ class BoundStudentOut(BaseModel):
     student_id: uuid.UUID
     relationship: str
     bound_at: datetime
+    nickname: str | None = None
 
 
 class QRCodeOut(BaseModel):

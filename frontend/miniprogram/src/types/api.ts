@@ -354,6 +354,7 @@ export interface BoundStudent {
   student_id: string
   relationship: string
   bound_at: string
+  nickname?: string | null
 }
 
 export interface QRCodeOut {

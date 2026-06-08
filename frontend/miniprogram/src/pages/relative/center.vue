@@ -15,8 +15,8 @@
       <view v-else-if="children.length === 0" class="tip">还没有绑定的孩子。</view>
       <view v-for="c in children" :key="c.student_id" class="child-row" @tap="goView(c.student_id)">
         <view>
-          <text class="cname">孩子 {{ c.student_id.slice(0, 8) }}…</text>
-          <text class="crel">关系：{{ c.relationship }}</text>
+          <text class="cname">{{ c.nickname || ('孩子 ' + c.student_id.slice(0, 8) + '…') }}</text>
+          <text class="crel">{{ c.relationship }}</text>
         </view>
         <text class="arrow">›</text>
       </view>

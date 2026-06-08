@@ -55,21 +55,51 @@ async def bind_as_relative(body: BindRelativeRequest, db: DbDep, current_user: U
 
 @router.get("/students", response_model=BaseResponse[list[BoundStudentOut]])
 async def list_my_students(db: DbDep, current_user: UserDep):
+    from sqlalchemy import select
     await get_rls_db(db, str(current_user.id))
-    items = await relative_service.get_my_students(db, relative_id=current_user.id)
+    from app.models.d1_users import StudentRelative
+    rows = (await db.execute(
+        select(StudentRelative, User)
+        .join(User, User.id == StudentRelative.student_id)
+        .where(
+            StudentRelative.relative_id == current_user.id,
+            StudentRelative.is_active.is_(True),
+        )
+        .order_by(StudentRelative.bound_at.desc())
+    )).all()
     return make_ok([
-        BoundStudentOut(student_id=sr.student_id, relationship=sr.relationship, bound_at=sr.bound_at)
-        for sr in items
+        BoundStudentOut(
+            student_id=sr.student_id,
+            relationship=sr.relationship,
+            bound_at=sr.bound_at,
+            nickname=u.nickname,
+        )
+        for sr, u in rows
     ])
 
 
 @router.get("/my-relatives", response_model=BaseResponse[list[BoundStudentOut]])
 async def list_my_relatives(db: DbDep, current_user: UserDep):
+    from sqlalchemy import select
     await get_rls_db(db, str(current_user.id))
-    items = await relative_service.get_my_relatives(db, student_id=current_user.id)
+    from app.models.d1_users import StudentRelative
+    rows = (await db.execute(
+        select(StudentRelative, User)
+        .join(User, User.id == StudentRelative.relative_id)
+        .where(
+            StudentRelative.student_id == current_user.id,
+            StudentRelative.is_active.is_(True),
+        )
+        .order_by(StudentRelative.bound_at.desc())
+    )).all()
     return make_ok([
-        BoundStudentOut(student_id=sr.relative_id, relationship=sr.relationship, bound_at=sr.bound_at)
-        for sr in items
+        BoundStudentOut(
+            student_id=sr.relative_id,
+            relationship=sr.relationship,
+            bound_at=sr.bound_at,
+            nickname=u.nickname,
+        )
+        for sr, u in rows
     ])
 
 
