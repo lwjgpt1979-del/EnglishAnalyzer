@@ -21,6 +21,9 @@
           {{ adding ? '添加中…' : '添加' }}
         </button>
       </view>
+      <button class="btn-danger" :disabled="deleting" @tap="onDelete">
+        {{ deleting ? '解散中…' : '解散班级' }}
+      </button>
     </view>
 
     <view v-else>
@@ -53,7 +56,7 @@
 </template>
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { listClassStudents, addClassStudents, removeClassStudent, getClassReport } from '@/api/classes'
+import { listClassStudents, addClassStudents, removeClassStudent, getClassReport, deleteClass } from '@/api/classes'
 import type { ClassStudentOut, ClassReport } from '@/types/api'
 const classId = ref('')
 const tab = ref<'students' | 'report'>('students')
@@ -63,6 +66,7 @@ const adding = ref(false)
 const newStudentId = ref('')
 const report = ref<ClassReport | null>(null)
 const reportLoading = ref(false)
+const deleting = ref(false)
 async function loadStudents() {
   loading.value = true
   try { const r = await listClassStudents(classId.value); students.value = r.data || [] }
@@ -85,6 +89,22 @@ async function onRemove(sid: string) {
   catch (e: any) { uni.showToast({ title: e?.message || '失败', icon: 'none' }) }
 }
 function goAssignments() { uni.navigateTo({ url: `/pages/teacher/assignments?classId=${classId.value}` }) }
+async function onDelete() {
+  const { confirm } = await new Promise<{ confirm: boolean }>(resolve =>
+    uni.showModal({ title: '解散班级', content: '确认解散？班级数据将永久删除。', success: resolve })
+  )
+  if (!confirm) return
+  deleting.value = true
+  try {
+    await deleteClass(classId.value)
+    uni.showToast({ title: '班级已解散', icon: 'success' })
+    setTimeout(() => uni.navigateBack(), 1000)
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '失败', icon: 'none' })
+  } finally {
+    deleting.value = false
+  }
+}
 onMounted(() => {
   const pages = getCurrentPages()
   classId.value = (pages[pages.length - 1] as any).options?.classId || ''
@@ -107,6 +127,8 @@ onMounted(() => {
 .input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 26rpx; width: 100%; box-sizing: border-box; margin-bottom: 12rpx; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-weight: 700; font-size: 26rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-danger { background: var(--c-danger, #e53935); color: #fff; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 26rpx; margin-top: 8rpx; }
+.btn-danger[disabled] { opacity: 0.5; }
 .stat-row { display: flex; justify-content: space-around; }
 .stat { text-align: center; }
 .num { font-size: 48rpx; font-weight: 800; color: var(--c-ink); display: block; }

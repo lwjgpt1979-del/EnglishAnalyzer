@@ -18,18 +18,24 @@
         <text class="class-name">{{ c.name }}</text>
         <text class="class-cnt">{{ c.student_count }} 名学生</text>
       </view>
-      <text class="arrow">›</text>
+      <view class="row-actions" @tap.stop>
+        <text class="arrow">›</text>
+        <button size="mini" class="btn-del" :disabled="deletingId === c.id" @tap.stop="onDelete(c.id)">
+          {{ deletingId === c.id ? '…' : '解散' }}
+        </button>
+      </view>
     </view>
   </view>
 </template>
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { listClasses, createClass } from '@/api/classes'
+import { listClasses, createClass, deleteClass } from '@/api/classes'
 import type { ClassOut } from '@/types/api'
 const newName = ref('')
 const creating = ref(false)
 const classes = ref<ClassOut[]>([])
 const loading = ref(false)
+const deletingId = ref<string | null>(null)
 async function load() {
   loading.value = true
   try { const r = await listClasses(); classes.value = r.data || [] }
@@ -42,6 +48,22 @@ async function onCreate() {
   finally { creating.value = false }
 }
 function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/class-detail?classId=${id}` }) }
+async function onDelete(id: string) {
+  const { confirm } = await new Promise<{ confirm: boolean }>(resolve =>
+    uni.showModal({ title: '解散班级', content: '确认解散？班级数据将永久删除。', success: resolve })
+  )
+  if (!confirm) return
+  deletingId.value = id
+  try {
+    await deleteClass(id)
+    uni.showToast({ title: '班级已解散', icon: 'success' })
+    await load()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '失败', icon: 'none' })
+  } finally {
+    deletingId.value = null
+  }
+}
 onMounted(load)
 </script>
 <style scoped>
@@ -58,4 +80,7 @@ onMounted(load)
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }
 .join-card { display: flex; align-items: center; justify-content: space-between; }
 .join-text { font-weight: 700; font-size: 30rpx; }
+.row-actions { display: flex; align-items: center; gap: 16rpx; }
+.btn-del { background: var(--c-danger, #e53935); color: #fff; border-radius: 8rpx; font-size: 22rpx; padding: 0 16rpx; height: 52rpx; line-height: 52rpx; }
+.btn-del[disabled] { opacity: 0.5; }
 </style>
