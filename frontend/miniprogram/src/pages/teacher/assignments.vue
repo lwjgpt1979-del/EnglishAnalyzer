@@ -3,6 +3,9 @@
     <view class="card">
       <view class="card-title">出卷</view>
       <input v-model="title" class="ipt" placeholder="作业标题" />
+      <picker mode="date" :value="dueDate" @change="dueDate = ($event as any).detail.value">
+        <view class="ipt due-picker">{{ dueDate ? '截止日期：' + dueDate : '截止日期（选填）' }}</view>
+      </picker>
       <view class="suggest-row">
         <input v-model="suggestSid" class="ipt suggest-ipt" placeholder="目标学生ID（智能选题）" />
         <text class="suggest-btn" @tap="onSuggest">🎯 智能选题</text>
@@ -43,6 +46,7 @@ import type { AssignmentListItem, AssignmentQuestion } from '@/types/api'
 
 const classId = ref('')
 const title = ref('')
+const dueDate = ref('')
 const questions = ref<AssignmentQuestion[]>([{ stem: '', answer: '' }])
 const creating = ref(false)
 const list = ref<AssignmentListItem[]>([])
@@ -76,8 +80,10 @@ async function onCreate() {
     await createAssignment({
       class_id: classId.value, title: title.value,
       questions: questions.value.filter((q) => q.stem.trim()),
+      due_at: dueDate.value ? dueDate.value + 'T23:59:59Z' : undefined,
     })
     title.value = ''
+    dueDate.value = ''
     questions.value = [{ stem: '', answer: '' }]
     await load()
     uni.showToast({ title: '已创建', icon: 'success' })
