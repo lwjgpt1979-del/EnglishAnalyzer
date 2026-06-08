@@ -7,6 +7,7 @@
         <view class="stat-row">
           <view class="stat"><text class="num">{{ report.total_questions }}</text><text class="lbl">累计错题</text></view>
           <view class="stat"><text class="num">{{ report.total_analyzed }}</text><text class="lbl">已分析</text></view>
+          <view class="stat"><text class="num">{{ report.mastered_count ?? 0 }}</text><text class="lbl">已掌握</text></view>
           <view class="stat"><text class="num">{{ Math.round(report.mastery_rate * 100) }}%</text><text class="lbl">掌握率</text></view>
         </view>
       </view>
