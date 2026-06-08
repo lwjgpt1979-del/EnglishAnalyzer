@@ -24,7 +24,7 @@
       <view v-for="a in list" :key="a.id" class="row">
         <view class="row-main" @tap="goDetail(a.id)">
           <text class="row-title">{{ a.title }}</text>
-          <text class="row-sub">{{ statusText(a.status) }} · 已交 {{ a.submission_count }}</text>
+          <text class="row-sub">{{ statusText(a.status) }} · 已交 {{ a.submission_count }}{{ a.due_at ? ' · 截止 ' + a.due_at.slice(0, 10) : '' }}</text>
         </view>
         <view class="row-ops">
           <text v-if="a.status === 'draft'" class="op" @tap="onPublish(a.id)">发布</text>

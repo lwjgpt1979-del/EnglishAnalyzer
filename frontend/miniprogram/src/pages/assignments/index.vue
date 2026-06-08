@@ -6,7 +6,7 @@
       <view v-for="a in list" :key="a.id" class="row" @tap="goDetail(a.id)">
         <view>
           <text class="row-title">{{ a.title }}</text>
-          <text class="row-sub">{{ a.submitted ? (a.score != null ? '已批改 ' + a.score + ' 分' : '已提交') : '待完成' }}</text>
+          <text class="row-sub">{{ a.submitted ? (a.score != null ? '已批改 ' + a.score + ' 分' : '已提交') : '待完成' }}{{ a.due_at ? '　截止 ' + a.due_at.slice(0, 10) : '' }}</text>
         </view>
         <text class="row-arrow">›</text>
       </view>
