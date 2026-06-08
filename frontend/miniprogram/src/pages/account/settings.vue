@@ -16,8 +16,8 @@
 </template>
 <script setup lang="ts">
 function goCancel() { uni.navigateTo({ url: '/pages/account/cancel' }) }
-function goAgreement() { uni.showToast({ title: '协议占位（MVP）', icon: 'none' }) }
-function goPrivacy() { uni.showToast({ title: '隐私政策占位（MVP）', icon: 'none' }) }
+function goAgreement() { uni.navigateTo({ url: '/pages/account/agreement' }) }
+function goPrivacy() { uni.navigateTo({ url: '/pages/account/privacy' }) }
 </script>
 <style scoped>
 .page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
