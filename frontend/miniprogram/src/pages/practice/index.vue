@@ -1,6 +1,16 @@
 <!-- V2 M3c: 练习调度页 — 搜索知识点或使用 AI 智能推荐 -->
 <template>
   <view class="page">
+    <!-- 练习统计 -->
+    <view v-if="stats && stats.total_practiced > 0" class="card stat-card">
+      <view class="card-title">我的练习统计</view>
+      <view class="stat-row">
+        <view class="stat"><text class="num">{{ stats.total_practiced }}</text><text class="lbl">累计练习</text></view>
+        <view class="stat"><text class="num">{{ stats.total_correct }}</text><text class="lbl">答对题数</text></view>
+        <view class="stat"><text class="num">{{ Math.round(stats.correct_rate * 100) }}%</text><text class="lbl">正确率</text></view>
+      </view>
+    </view>
+
     <!-- 搜索区 -->
     <view class="card search-card">
       <view class="card-title">选择知识点练习</view>
@@ -56,10 +66,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { searchKPs } from '@/api/curriculum_kps'
-import type { KPSearchItem } from '@/types/api'
+import { getPracticeStats } from '@/api/practice'
+import type { KPSearchItem, PracticeStatsOut } from '@/types/api'
 
+const stats = ref<PracticeStatsOut | null>(null)
 const query = ref('')
 const results = ref<KPSearchItem[]>([])
 const searching = ref(false)
@@ -100,6 +112,10 @@ function goSession(kp: KPSearchItem) {
 function goAdaptive() {
   uni.navigateTo({ url: '/pages/practice/adaptive' })
 }
+
+onMounted(async () => {
+  try { stats.value = await getPracticeStats() } catch { /* 静默忽略 */ }
+})
 </script>
 
 <style scoped>
@@ -137,4 +153,9 @@ function goAdaptive() {
 .ai-title { font-size: 30rpx; font-weight: 700; color: var(--c-ink); display: block; }
 .ai-desc { font-size: 24rpx; color: var(--c-text-second); display: block; margin-top: 4rpx; }
 .ai-arrow { font-size: 40rpx; color: var(--c-text-hint); }
+
+.stat-card .stat-row { display: flex; justify-content: space-around; }
+.stat { text-align: center; }
+.num { font-size: 48rpx; font-weight: 800; color: var(--c-ink); display: block; }
+.lbl { font-size: 22rpx; color: var(--c-text-hint); }
 </style>
