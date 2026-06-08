@@ -117,6 +117,25 @@
       </view>
     </view>
 
+    <!-- 已绑定的家人 -->
+    <view class="card" v-if="myRelatives.length > 0 || relativesLoaded">
+      <view class="card-title">已绑定的家人</view>
+      <text class="menu-desc" style="margin-bottom:16rpx;display:block;">以下家人可查看你的学情报告</text>
+      <view v-if="myRelatives.length === 0" class="rel-empty">暂无已绑定的家人</view>
+      <view v-for="r in myRelatives" :key="r.student_id" class="rel-row">
+        <view class="rel-info">
+          <text class="rel-name">{{ r.nickname || '家人' }}</text>
+          <text class="rel-rel">{{ r.relationship }}</text>
+        </view>
+        <button
+          size="mini"
+          class="btn-unbind"
+          :disabled="unbindingId === r.student_id"
+          @tap.stop="onUnbind(r.student_id)"
+        >{{ unbindingId === r.student_id ? '解绑中…' : '解绑' }}</button>
+      </view>
+    </view>
+
     <!-- 账号设置 -->
     <view class="card" @tap="goSettings">
       <view class="card-title">账号设置</view>
@@ -129,15 +148,18 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms } from '@/api/relative'
+import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms, getMyRelatives, unbindRelative } from '@/api/relative'
 import { listMySemesters } from '@/api/semesters'
 import { useAuthStore } from '@/stores/auth'
-import type { PurchasedSemesterOut, QRCodeOut } from '@/types/api'
+import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
 
 const auth = useAuthStore()
 const myInvite = ref<{ code: string; expires_at: string } | null>(null)
 
 const mySemesters = ref<PurchasedSemesterOut[]>([])
+const myRelatives = ref<BoundStudent[]>([])
+const relativesLoaded = ref(false)
+const unbindingId = ref<string | null>(null)
 
 const cancelInfo = computed(() => {
   const u: any = auth.user
@@ -147,9 +169,10 @@ const cancelInfo = computed(() => {
 
 onMounted(async () => {
   if (auth.isLoggedIn()) {
+    try { mySemesters.value = await listMySemesters() || [] } catch { /* 忽略 */ }
     try {
-      mySemesters.value = await listMySemesters() || []
-    } catch { /* 忽略：用户未购则空 */ }
+      myRelatives.value = await getMyRelatives() || []
+    } catch { /* 忽略 */ } finally { relativesLoaded.value = true }
   }
 })
 
@@ -220,6 +243,26 @@ async function onSendRelSms() {
   } catch (e: any) {
     uni.showToast({ title: e?.message || '发送失败', icon: 'none' })
   } finally { relSmsSending.value = false }
+}
+
+async function onUnbind(relativeId: string) {
+  uni.showModal({
+    title: '确认解绑',
+    content: '解绑后该家人将无法查看你的学情报告，确认吗？',
+    confirmText: '解绑',
+    confirmColor: '#e74c3c',
+    success: async (res) => {
+      if (!res.confirm) return
+      unbindingId.value = relativeId
+      try {
+        await unbindRelative(relativeId)
+        myRelatives.value = myRelatives.value.filter(r => r.student_id !== relativeId)
+        uni.showToast({ title: '已解绑', icon: 'success' })
+      } catch (e: any) {
+        uni.showToast({ title: e?.message || '解绑失败', icon: 'none' })
+      } finally { unbindingId.value = null }
+    },
+  })
 }
 
 function copyRelCode() {
@@ -360,4 +403,13 @@ function goBuySemester() {
 .dev-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 .sem-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4rpx; }
 .chevron { color: var(--c-text-hint); font-size: 28rpx; }
+/* 已绑定的家人 */
+.rel-empty { font-size: 26rpx; color: var(--c-text-hint); text-align: center; padding: 20rpx 0; }
+.rel-row { display: flex; align-items: center; justify-content: space-between; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.rel-row:last-child { border-bottom: none; }
+.rel-info { display: flex; flex-direction: column; gap: 4rpx; }
+.rel-name { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.rel-rel { font-size: 24rpx; color: var(--c-text-hint); }
+.btn-unbind { background: #fdecea; color: #e74c3c; border: 2rpx solid #f5c6c6; border-radius: var(--r-sm); font-size: 24rpx; padding: 8rpx 20rpx; }
+.btn-unbind[disabled] { opacity: 0.5; }
 </style>
