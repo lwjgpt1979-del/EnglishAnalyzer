@@ -17,6 +17,7 @@ from app.schemas.teacher import (
     BindTeacherRequest,
     CertSubmitRequest,
     InviteCodeOut,
+    MyTeacherOut,
     QRCodeOut,
     SendInviteSmsRequest,
     SendInviteSmsOut,
@@ -150,6 +151,29 @@ async def remove_student_api(student_id: uuid.UUID, db: DbDep, current_user: Use
     ts.unbound_at = datetime.now(timezone.utc)
     await db.flush()
     return make_ok({"removed": True})
+
+
+@router.get("/my-teachers", response_model=BaseResponse[list[MyTeacherOut]])
+async def list_my_teachers(db: DbDep, current_user: UserDep):
+    """学生查看自己绑定的所有老师。"""
+    from sqlalchemy import select as _sel_mt
+    from app.models.d1_users import TeacherStudent as _TS, User as _U, Teacher as _T
+    rows = (await db.execute(
+        _sel_mt(_TS, _U, _T)
+        .join(_U, _U.id == _TS.teacher_id)
+        .join(_T, _T.id == _TS.teacher_id)
+        .where(_TS.student_id == current_user.id, _TS.status == "active")
+        .order_by(_TS.bound_at.desc())
+    )).all()
+    return make_ok([
+        MyTeacherOut(
+            teacher_id=ts.teacher_id,
+            nickname=u.nickname,
+            subject=t.subject,
+            bound_at=ts.bound_at,
+        )
+        for ts, u, t in rows
+    ])
 
 
 @router.get(

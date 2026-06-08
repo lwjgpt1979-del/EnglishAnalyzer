@@ -223,6 +223,13 @@ export interface TeacherStudentOut {
   nickname?: string | null
 }
 
+export interface MyTeacherOut {
+  teacher_id: string
+  nickname?: string | null
+  subject?: string | null
+  bound_at?: string | null
+}
+
 export interface TeacherCommentOut {
   id: string
   wrong_question_id: string

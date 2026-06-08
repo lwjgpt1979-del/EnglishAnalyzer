@@ -5,6 +5,7 @@ import type {
   TeacherStudentOut,
   TeacherCommentOut,
   WrongQuestionOut,
+  MyTeacherOut,
 } from '@/types/api'
 
 export function becomeTeacher(subject?: string): Promise<TeacherProfileOut> {
@@ -68,4 +69,9 @@ export function joinInstitution(code: string) {
 /** 教师移除学生（V2 M18） */
 export function removeStudent(studentId: string): Promise<{ removed: boolean }> {
   return request<{ removed: boolean }>(`/api/v1/teacher/students/${studentId}`, { method: 'DELETE' })
+}
+
+/** 学生查看已绑定老师列表（V2 M19） */
+export function getMyTeachers(): Promise<MyTeacherOut[]> {
+  return request<MyTeacherOut[]>('/api/v1/teacher/my-teachers')
 }

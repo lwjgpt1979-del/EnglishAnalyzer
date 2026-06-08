@@ -108,6 +108,17 @@
       </button>
     </view>
 
+    <!-- 我的老师列表（学生视角，V2 M19） -->
+    <view v-if="myTeachers.length > 0" class="card">
+      <view class="card-title">我的老师（{{ myTeachers.length }}）</view>
+      <view v-for="t in myTeachers" :key="t.teacher_id" class="student-item">
+        <view class="s-info">
+          <text class="student-id">{{ t.nickname || ('老师 ' + t.teacher_id.slice(0, 8) + '…') }}</text>
+          <text class="student-bind-date">{{ t.subject ? '科目：' + t.subject + '　' : '' }}绑定：{{ t.bound_at ? t.bound_at.slice(0, 10) : '-' }}</text>
+        </view>
+      </view>
+    </view>
+
   </view>
 </template>
 
@@ -123,9 +134,10 @@ import {
   teacherInviteQrcode,
   teacherInviteSms,
   removeStudent,
+  getMyTeachers,
 } from '@/api/teacher'
 import { request } from '@/utils/request'
-import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut, QRCodeOut } from '@/types/api'
+import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut, QRCodeOut, MyTeacherOut } from '@/types/api'
 
 const auth = useAuthStore()
 
@@ -140,6 +152,7 @@ const generatingCode = ref(false)
 const students = ref<TeacherStudentOut[]>([])
 const loadingStudents = ref(false)
 const removingStudentId = ref<string | null>(null)
+const myTeachers = ref<MyTeacherOut[]>([])
 
 const bindCodeInput = ref('')
 const binding = ref(false)
@@ -160,6 +173,8 @@ onMounted(async () => {
     await loadStudents()
   }
   loadCertStatus()
+  // 加载学生视角的已绑定老师列表（M19）
+  try { myTeachers.value = await getMyTeachers() } catch { /* 静默忽略 */ }
 })
 
 async function handleBecomeTeacher() {

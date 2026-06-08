@@ -11,6 +11,13 @@ class BecomeTeacherRequest(BaseModel):
     subject: str | None = Field(None, description="任教科目，如'英语'")
 
 
+class MyTeacherOut(BaseModel):
+    teacher_id: uuid.UUID
+    nickname: str | None = None
+    subject: str | None = None
+    bound_at: datetime | None = None
+
+
 class TeacherProfileOut(BaseModel):
     user_id: uuid.UUID
     subject: str | None
