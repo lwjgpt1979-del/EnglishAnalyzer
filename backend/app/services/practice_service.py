@@ -235,6 +235,25 @@ async def submit_answer(
     db.add(record)
     question.usage_count = (question.usage_count or 0) + 1
     await db.flush()
+
+    # M39: 更新个人知识点掌握台账
+    from app.services import kp_mastery_service
+    kp_name = str(question.content.get("knowledge_point", "")) or None
+    if not kp_name:
+        kp_result = await db.execute(
+            select(KnowledgePoint).where(KnowledgePoint.id == question.knowledge_point_id)
+        )
+        kp_obj = kp_result.scalar_one_or_none()
+        kp_name = kp_obj.name if kp_obj else None
+    if kp_name:
+        await kp_mastery_service.upsert_mastery(
+            db,
+            student_id=student_id,
+            kp_key=kp_name,
+            kp_id=question.knowledge_point_id,
+            is_correct=is_correct,
+        )
+
     return record
 
 

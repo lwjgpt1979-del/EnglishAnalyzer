@@ -1,0 +1,55 @@
+"""个人知识点掌握台账 API（M39）。"""
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db, get_rls_db
+from app.core.security import get_current_user
+from app.models.d1_users import User
+from app.schemas.base import BaseResponse, make_ok
+from app.services import kp_mastery_service
+
+router = APIRouter(prefix="/kp-mastery", tags=["kp-mastery"])
+
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User, Depends(get_current_user)]
+
+
+class KpMasteryItem(BaseModel):
+    kp_key: str
+    kp_id: uuid.UUID | None
+    correct_count: int
+    wrong_count: int
+    accuracy: float  # correct / total，total=0 时为 0.0
+    last_activity_at: str | None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/", response_model=BaseResponse[list[KpMasteryItem]])
+async def get_kp_mastery(db: DbDep, current_user: UserDep):
+    """返回当前学生的个人知识点掌握台账，按正确率升序（弱项在前）。"""
+    await get_rls_db(db, str(current_user.id))
+    rows = await kp_mastery_service.get_mastery_tree(db, student_id=current_user.id)
+    items = []
+    for r in rows:
+        total = r.correct_count + r.wrong_count
+        accuracy = r.correct_count / total if total > 0 else 0.0
+        items.append(
+            KpMasteryItem(
+                kp_key=r.kp_key,
+                kp_id=r.kp_id,
+                correct_count=r.correct_count,
+                wrong_count=r.wrong_count,
+                accuracy=round(accuracy, 4),
+                last_activity_at=(
+                    r.last_activity_at.isoformat() if r.last_activity_at else None
+                ),
+            )
+        )
+    return make_ok(items)

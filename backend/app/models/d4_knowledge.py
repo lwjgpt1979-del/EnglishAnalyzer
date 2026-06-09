@@ -1,7 +1,7 @@
 """
-域4: 知识体系 (5 张表)
+域4: 知识体系 (6 张表)
   knowledge_points · curriculum_units · unit_knowledge_points ·
-  curriculum_words · wrong_question_knowledge_points
+  curriculum_words · wrong_question_knowledge_points · student_kp_mastery
 
 注意: CurriculumWord.word_id → vocabulary_words (域5)，字符串 FK，SQLAlchemy 延迟解析。
 """
@@ -114,3 +114,29 @@ class WrongQuestionKnowledgePoint(Base):
         sa.ForeignKey("knowledge_points.id"),
         primary_key=True,
     )
+
+
+class StudentKpMastery(Base):
+    """每位学生对每个知识点的掌握台账（M39）。
+
+    kp_key 为知识点名称字符串，是联合主键的一部分。
+    标准教材 KP → kp_id 填写对应 UUID；教师/自定义 KP → kp_id = NULL。
+    """
+
+    __tablename__ = "student_kp_mastery"
+
+    student_id = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    )
+    kp_key = mapped_column(sa.Text, nullable=False, primary_key=True)
+    kp_id = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("knowledge_points.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    correct_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    last_activity_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
