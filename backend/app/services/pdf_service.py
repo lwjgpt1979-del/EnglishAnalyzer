@@ -22,6 +22,15 @@ _C_INK = (30, 30, 30)
 _C_SECOND = (100, 100, 100)
 _C_LINE = (220, 220, 220)
 _C_BG = (250, 247, 235)
+_C_RED = (200, 70, 60)     # 薄弱
+_C_GREEN = (60, 160, 90)   # 已掌握
+
+# 掌握等级 → (颜色, 中文标签)
+_LEVEL_STYLE = {
+    "weak": (_C_RED, "薄弱"),
+    "medium": (_C_GOLD, "待巩固"),
+    "good": (_C_GREEN, "已掌握"),
+}
 
 
 def _has_cn_font() -> bool:
@@ -93,6 +102,44 @@ class _ReportPDF(FPDF):
         self.cn(9)
         self.cell(15, 6, str(count), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
+    def mastery_row(
+        self,
+        *,
+        kp_key: str,
+        accuracy: float,
+        total: int,
+        level: str,
+        suggestion: str,
+        width: float = 70.0,
+    ) -> None:
+        """掌握台账行：知识点名 + 按等级着色的正确率条 + 等级标签 + 换行建议。"""
+        color, label = _LEVEL_STYLE.get(level, (_C_GOLD, level))
+        # 第一行：名称 + 正确率条 + 百分比 + 等级
+        self.cn(10)
+        self.set_ink()
+        self.cell(50, 6, kp_key[:16])
+        bar_x, bar_y = self.get_x(), self.get_y()
+        self.set_fill_color(230, 230, 230)
+        self.rect(bar_x, bar_y + 1, width, 4, style="F")
+        bar_w = max(0.0, min(1.0, accuracy)) * width
+        if bar_w > 0:
+            self.set_fill_color(*color)
+            self.rect(bar_x, bar_y + 1, bar_w, 4, style="F")
+        self.set_x(bar_x + width + 3)
+        self.set_text_color(*color)
+        self.cn(9)
+        pct = f"{accuracy * 100:.0f}%" if total > 0 else "未练习"
+        self.cell(20, 6, pct)
+        self.cell(0, 6, f"[{label}]", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        # 第二行：复习建议（缩进，灰色，自动换行）
+        if suggestion:
+            self.set_second()
+            self.cn(8)
+            self.set_x(20)
+            self.multi_cell(170, 4.5, f"建议：{suggestion}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.ln(1)
+        self.set_ink()
+
 
 def generate_diagnosis_pdf(report: DiagnosisReport, *, student_name: str | None = None) -> bytes:
     """生成学情诊断报告 PDF，返回 bytes。"""
@@ -142,6 +189,27 @@ def generate_diagnosis_pdf(report: DiagnosisReport, *, student_name: str | None 
         max_cnt = report.top_weak_knowledge_points[0].count if report.top_weak_knowledge_points else 1
         for item in report.top_weak_knowledge_points:
             pdf.bar_row(item.knowledge_point, item.count, max_cnt)
+
+    # ── 知识点掌握台账（弱项在前 + 复习建议，M7b）────────────────────────────
+    if report.mastery_ledger:
+        pdf.section_title("📈 知识点掌握台账（弱项优先）")
+        shown = report.mastery_ledger[:12]
+        for item in shown:
+            pdf.mastery_row(
+                kp_key=item.kp_key,
+                accuracy=item.accuracy,
+                total=item.total,
+                level=item.level,
+                suggestion=item.suggestion,
+            )
+        remaining = len(report.mastery_ledger) - len(shown)
+        if remaining > 0:
+            pdf.set_second()
+            pdf.cn(9)
+            pdf.set_x(15)
+            pdf.cell(0, 6, f"……另有 {remaining} 个知识点，详见小程序学情报告。",
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_ink()
 
     # ── 错误类型分布 ─────────────────────────────────────────────────────────
     if report.top_error_types:
