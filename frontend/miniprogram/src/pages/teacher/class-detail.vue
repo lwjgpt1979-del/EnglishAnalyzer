@@ -6,6 +6,7 @@
     </view>
 
     <button class="btn-assign" @tap="goAssignments">📋 出卷 / 作业</button>
+    <button class="btn-assign btn-papers" @tap="goPapers">📝 仿真题组卷</button>
 
     <view v-if="tab === 'students'">
       <view v-if="loading" class="tip">加载中…</view>
@@ -89,6 +90,7 @@ async function onRemove(sid: string) {
   catch (e: any) { uni.showToast({ title: e?.message || '失败', icon: 'none' }) }
 }
 function goAssignments() { uni.navigateTo({ url: `/pages/teacher/assignments?classId=${classId.value}` }) }
+function goPapers() { uni.navigateTo({ url: `/pages/teacher/class-papers?classId=${classId.value}` }) }
 async function onDelete() {
   const { confirm } = await new Promise<{ confirm: boolean }>(resolve =>
     uni.showModal({ title: '解散班级', content: '确认解散？班级数据将永久删除。', success: resolve })
@@ -123,7 +125,8 @@ onMounted(() => {
 .s-id { font-size: 26rpx; color: var(--c-text-body); }
 .s-rm { font-size: 24rpx; color: var(--c-danger); padding: 8rpx 16rpx; }
 .hint { font-size: 22rpx; color: var(--c-text-hint); display: block; margin-bottom: 12rpx; }
-.btn-assign { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 26rpx; font-weight: 700; margin-bottom: 16rpx; }
+.btn-papers { background: #52c41a; margin-top: -8rpx; margin-bottom: 16rpx; }
+.btn-assign {background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 26rpx; font-weight: 700; margin-bottom: 16rpx; }
 .input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 26rpx; width: 100%; box-sizing: border-box; margin-bottom: 12rpx; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-weight: 700; font-size: 26rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }

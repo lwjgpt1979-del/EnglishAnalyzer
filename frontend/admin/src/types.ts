@@ -107,3 +107,29 @@ export interface AdminCurriculumUnit {
   content_count: number
   content_rate: number   // 0-1
 }
+
+// V2 M28：真题试卷（内部管理，版权规避）
+export interface AdminExamPaperItem {
+  id: string
+  title: string
+  textbook_version: string
+  grade: string
+  semester: string
+  region: string | null
+  paper_url: string | null
+  status: string
+  sim_count: number
+  created_at: string
+}
+export interface AdminExamPaperListOut {
+  total: number
+  items: AdminExamPaperItem[]
+}
+export interface ExamPaperCreate {
+  title: string
+  textbook_version: string
+  grade: string
+  semester: string
+  region?: string
+  paper_url?: string
+}

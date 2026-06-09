@@ -742,3 +742,42 @@ export interface KPSearchItem {
   category: string
   description: string | null
 }
+
+// V2 M28：仿真题 & 班级试卷
+export interface SimQuestionItem {
+  id: string
+  knowledge_point_id: string
+  question_type: string
+  stem: string
+  options: string[] | null
+  difficulty: number
+  dimension: string | null
+}
+export interface SimQuestionListOut {
+  items: SimQuestionItem[]
+  total: number
+}
+
+export interface ClassPaperItem {
+  paper_id: string
+  class_id: string
+  title: string
+  textbook_version: string | null
+  grade: string | null
+  semester: string | null
+  description: string | null
+  question_count: number
+  status: string
+  created_at: string
+}
+export interface ClassPaperDetailOut extends ClassPaperItem {
+  questions: SimQuestionItem[]
+}
+export interface ClassPaperCreate {
+  title: string
+  textbook_version?: string
+  grade?: string
+  semester?: string
+  description?: string
+  question_ids: string[]
+}

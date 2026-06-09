@@ -442,3 +442,168 @@ async def generate_unit_content(
         "content_count": stat.content_count if stat else 0,
         "content_rate": stat.content_rate if stat else 0.0,
     })
+
+
+# ─── V2 M28：真题试卷管理（版权规避：真题内部存储，仅对外暴露仿真题）──────────
+
+from pydantic import BaseModel as _BM, Field as _F
+from app.models.d12_v2_exams import ExamPaper as _EP, SimulatedQuestion as _SQ
+
+
+class ExamPaperCreate(_BM):
+    title: str
+    textbook_version: str
+    grade: str
+    semester: str
+    region: str | None = None
+    paper_url: str | None = None  # 已上传到 OSS 的 URL
+
+
+class ExamPaperOut(_BM):
+    id: str
+    title: str
+    textbook_version: str
+    grade: str
+    semester: str
+    region: str | None = None
+    paper_url: str | None = None
+    status: str
+    sim_count: int = 0
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class ExamPaperListOut(_BM):
+    items: list[ExamPaperOut]
+    total: int
+
+
+@router.post("/exam-papers", response_model=BaseResponse[ExamPaperOut])
+async def create_exam_paper(body: ExamPaperCreate, db: DbDep, admin: AdminDep):
+    """平台管理员录入一份真题试卷（内部存储，不对外暴露原题）。"""
+    from sqlalchemy import func
+    paper = _EP(
+        id=uuid.uuid4(),
+        source="official_seed",
+        uploader_id=admin.id,
+        textbook_version=body.textbook_version,
+        grade=body.grade,
+        semester=body.semester,
+        region=body.region,
+        title=body.title,
+        paper_url=body.paper_url,
+        status="draft",
+    )
+    db.add(paper)
+    await db.commit()
+    await db.refresh(paper)
+    return make_ok(ExamPaperOut(
+        id=str(paper.id),
+        title=paper.title,
+        textbook_version=paper.textbook_version,
+        grade=str(paper.grade),
+        semester=str(paper.semester),
+        region=paper.region,
+        paper_url=paper.paper_url,
+        status=str(paper.status),
+        sim_count=0,
+        created_at=paper.created_at.isoformat(),
+    ))
+
+
+@router.get("/exam-papers", response_model=BaseResponse[ExamPaperListOut])
+async def list_exam_papers(
+    db: DbDep,
+    admin: AdminDep,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """列出所有真题试卷（含仿真题数量统计）。"""
+    from sqlalchemy import func, select as _s
+    from app.models.d12_v2_exams import ExamQuestion as _EQ
+
+    total: int = (await db.execute(
+        _s(func.count()).select_from(_EP)
+    )).scalar_one()
+
+    rows = (await db.execute(
+        _s(_EP).order_by(_EP.created_at.desc()).offset(skip).limit(limit)
+    )).scalars().all()
+
+    items = []
+    for p in rows:
+        # 统计该试卷关联的仿真题数（通过 exam_questions → simulated_questions）
+        sim_cnt: int = (await db.execute(
+            _s(func.count(_SQ.id))
+            .join(_EQ, _EQ.id == _SQ.source_exam_question_id)
+            .where(_EQ.paper_id == p.id)
+        )).scalar_one()
+        items.append(ExamPaperOut(
+            id=str(p.id),
+            title=p.title,
+            textbook_version=p.textbook_version,
+            grade=str(p.grade),
+            semester=str(p.semester),
+            region=p.region,
+            paper_url=p.paper_url,
+            status=str(p.status),
+            sim_count=sim_cnt,
+            created_at=p.created_at.isoformat(),
+        ))
+    return make_ok(ExamPaperListOut(items=items, total=total))
+
+
+@router.post("/exam-papers/{paper_id}/generate", response_model=BaseResponse[dict])
+async def generate_sim_questions_from_paper(
+    paper_id: uuid.UUID, db: DbDep, admin: AdminDep
+):
+    """触发 AI 依据真题生成仿真题（规避版权：仿真题与原题措辞不同）。
+
+    MVP 实现：基于 ExamQuestion 记录（若存在）批量创建 SimulatedQuestion draft。
+    生产版本接入 LLM 改写服务。
+    """
+    from sqlalchemy import select as _s
+    from app.models.d12_v2_exams import ExamQuestion as _EQ
+
+    paper = (await db.execute(
+        _s(_EP).where(_EP.id == paper_id)
+    )).scalar_one_or_none()
+    if paper is None:
+        raise AppError(code=404, message="试卷不存在")
+
+    # 取该试卷下所有 exam_questions
+    eq_rows = (await db.execute(
+        _s(_EQ).where(_EQ.paper_id == paper_id)
+    )).scalars().all()
+
+    # 取第一个知识点（MVP：用首个可用 KP）
+    from app.models.d11_v2_curriculum import KnowledgePoint as _KP
+    kp = (await db.execute(_s(_KP).limit(1))).scalar_one_or_none()
+    if kp is None:
+        raise AppError(code=400, message="暂无知识点，请先生成课程内容")
+
+    created = 0
+    for eq in eq_rows:
+        # 检查是否已有仿真题
+        existing = (await db.execute(
+            _s(_SQ).where(_SQ.source_exam_question_id == eq.id)
+        )).scalar_one_or_none()
+        if existing:
+            continue
+        db.add(_SQ(
+            id=uuid.uuid4(),
+            source_exam_question_id=eq.id,
+            knowledge_point_id=kp.id,
+            question_type=eq.question_type,
+            stem=f"[仿真] {eq.stem}",
+            options=eq.options,
+            answer=eq.answer or "A",
+            explanation=eq.explanation,
+            difficulty=eq.difficulty or 3,
+            status="draft",
+        ))
+        created += 1
+
+    await db.commit()
+    return make_ok({"paper_id": str(paper_id), "sim_questions_created": created})

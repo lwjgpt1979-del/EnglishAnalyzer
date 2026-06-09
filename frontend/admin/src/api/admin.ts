@@ -12,6 +12,9 @@ import type {
   AdminVocabMediaListOut,
   AdminTeacherItem,
   AdminTeacherListOut,
+  AdminExamPaperItem,
+  AdminExamPaperListOut,
+  ExamPaperCreate,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -160,4 +163,17 @@ export function generateUnitContent(unitId: string): Promise<GenerateUnitResult>
   return unwrap<GenerateUnitResult>(
     request.post(`/admin/curriculum/units/${unitId}/generate`)
   )
+}
+
+// ── V2 M28：真题试卷管理 ────────────────────────────────────────────────────────
+export function listExamPapers(params?: { skip?: number; limit?: number }): Promise<AdminExamPaperListOut> {
+  return unwrap<AdminExamPaperListOut>(request.get('/admin/exam-papers', { params }))
+}
+
+export function createExamPaper(body: ExamPaperCreate): Promise<AdminExamPaperItem> {
+  return unwrap<AdminExamPaperItem>(request.post('/admin/exam-papers', body))
+}
+
+export function generateSimQuestionsFromPaper(paperId: string): Promise<{ paper_id: string; sim_questions_created: number }> {
+  return unwrap(request.post(`/admin/exam-papers/${paperId}/generate`))
 }
