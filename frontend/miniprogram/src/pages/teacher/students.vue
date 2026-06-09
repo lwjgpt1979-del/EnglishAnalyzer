@@ -18,6 +18,12 @@
         <text v-if="profile" class="subject-text">科目：{{ profile.subject || '未设置' }}</text>
       </view>
       <view v-else>
+        <view class="become-intro">
+          <text class="become-intro-title">开通教师身份后，你可以：</text>
+          <text class="become-feat">🏫 创建班级、邀请学生加入</text>
+          <text class="become-feat">📋 布置作业、按薄弱知识点一键出卷</text>
+          <text class="become-feat">📊 查看每位学生的知识点掌握台账</text>
+        </view>
         <input
           v-model="subjectInput"
           class="input"
@@ -26,6 +32,9 @@
         <button class="btn-primary" :disabled="becoming" @tap="handleBecomeTeacher">
           {{ becoming ? '处理中…' : '成为教师' }}
         </button>
+        <text class="become-divider-hint">
+          如果你是学生，想连接自己的老师 → 请使用下方「绑定老师」
+        </text>
       </view>
     </view>
 
@@ -353,4 +362,8 @@ onLoad((options) => {
 .qr-fallback { display: flex; align-items: center; gap: 12rpx; margin: 16rpx 0; padding: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); }
 .qr-code { flex: 1; font-size: 36rpx; font-weight: 800; letter-spacing: 4rpx; color: var(--c-ink); }
 .dev-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
+.become-intro { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx; margin-bottom: 16rpx; display: flex; flex-direction: column; gap: 10rpx; }
+.become-intro-title { font-size: 26rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 4rpx; }
+.become-feat { font-size: 25rpx; color: var(--c-text-body); line-height: 1.5; }
+.become-divider-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 16rpx; line-height: 1.5; }
 </style>

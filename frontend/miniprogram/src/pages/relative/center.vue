@@ -2,6 +2,13 @@
   <view class="page">
     <view class="card">
       <view class="card-title">绑定孩子账号</view>
+      <view class="bind-intro">
+        <text class="bind-intro-title">绑定孩子后，你可以：</text>
+        <text class="bind-feat">📊 查看孩子的学情报告与学习周报</text>
+        <text class="bind-feat">🧠 查看知识点掌握台账与复习建议</text>
+        <text class="bind-feat">📅 关注每日打卡与练习情况</text>
+      </view>
+      <text class="bind-hint">向孩子索取邀请码（孩子在「我的」页生成），或用微信扫孩子分享的二维码。</text>
       <input v-model="bindCode" class="input" maxlength="6" placeholder="6位邀请码" @input="bindCode = bindCode.toUpperCase()" />
       <input v-model="relationship" class="input" placeholder="关系（如：母亲/父亲/祖父）" />
       <button class="btn-primary" :disabled="!bindCode || !relationship || binding" @tap="onBind">
@@ -96,4 +103,8 @@ onLoad((options) => {
 .cname { font-size: 28rpx; color: var(--c-ink); font-weight: 700; display: block; }
 .crel { font-size: 24rpx; color: var(--c-text-hint); }
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }
+.bind-intro { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx; margin-bottom: 16rpx; display: flex; flex-direction: column; gap: 10rpx; }
+.bind-intro-title { font-size: 26rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 4rpx; }
+.bind-feat { font-size: 25rpx; color: var(--c-text-body); line-height: 1.5; }
+.bind-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); line-height: 1.5; margin-bottom: 16rpx; }
 </style>
