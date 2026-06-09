@@ -89,6 +89,60 @@ def _today_str() -> str:
     return date.today().isoformat()
 
 
+async def _send_real_bind_notification(
+    *, openid: str, relative_nickname: str, relationship: str
+) -> bool:
+    """调用微信 subscribeMessage.send 发送绑定成功通知。"""
+    try:
+        token = await _get_access_token()
+    except AppError as e:
+        logger.warning("[WX SUBSCRIBE] access_token 获取失败，跳过绑定通知：%s", e.message)
+        return False
+
+    url = f"https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token={token}"
+    payload = {
+        "touser": openid,
+        "template_id": settings.wechat_subscribe_template_bind,
+        "data": {
+            "thing1": {"value": f"{relative_nickname} 已成为您的{relationship}"},
+            "time2": {"value": _today_str()},
+        },
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(url, json=payload)
+    result = resp.json()
+
+    errcode = result.get("errcode", 0)
+    if errcode == 0:
+        logger.info("[WX SUBSCRIBE] 绑定通知推送成功 openid=%s", openid)
+        return True
+    if errcode == 43101:
+        logger.debug("[WX SUBSCRIBE] 用户未订阅绑定通知 openid=%s", openid)
+    else:
+        logger.warning(
+            "[WX SUBSCRIBE] 绑定通知推送失败 openid=%s errcode=%s errmsg=%s",
+            openid, errcode, result.get("errmsg"),
+        )
+    return False
+
+
+async def send_bind_notification(
+    *, openid: str, relative_nickname: str, relationship: str
+) -> bool:
+    """发送家人绑定成功订阅消息给学生。
+    dev-mock 记日志返回 True；prod 调微信 subscribeMessage.send。
+    """
+    if _is_dev():
+        logger.info(
+            "[WX SUBSCRIBE DEV MOCK] bind notification openid=%s relative=%s relationship=%s template=%s",
+            openid, relative_nickname, relationship, settings.wechat_subscribe_template_bind,
+        )
+        return True
+    return await _send_real_bind_notification(
+        openid=openid, relative_nickname=relative_nickname, relationship=relationship,
+    )
+
+
 async def send_checkin_reminder(*, openid: str, streak_days: int) -> bool:
     """发送打卡提醒订阅消息。
     dev-mock 记日志返回 True；prod 调微信 subscribeMessage.send。

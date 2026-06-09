@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
+
 from app.core.exceptions import AppError
 from app.models.d1_users import InviteCode, Relative, StudentRelative, User
 
@@ -107,7 +109,52 @@ async def bind_relative(
     db.add(sr)
     invite.used_at = now
     await db.flush()
+
+    # ── 通知学生：新家人绑定成功 ─────────────────────────────────────────────
+    relative_name = relative_user.nickname or "您的家人"
+    await _notify_student_bind_accepted(
+        db, student_id=student_id,
+        relative_name=relative_name, relationship=relationship,
+    )
+
     return sr
+
+
+async def _notify_student_bind_accepted(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    relative_name: str,
+    relationship: str,
+) -> None:
+    """给学生发站内通知，并异步推送微信订阅消息（非关键路径，失败不抛错）。"""
+    from sqlalchemy import select as _sel
+    from app.services import notification_service
+    from app.services.wechat_subscribe_service import send_bind_notification
+
+    await notification_service.emit(
+        db,
+        user_id=student_id,
+        type_="bind_accepted",
+        title="新家人绑定通知",
+        content=f"{relative_name} 已成为您的{relationship}，可查看您的学情。",
+        meta={"relative_name": relative_name, "relationship": relationship},
+    )
+
+    # 查学生 openid 做微信推送（非关键路径，失败不影响绑定流程）
+    try:
+        student_r = await db.execute(_sel(User).where(User.id == student_id))
+        student = student_r.scalar_one_or_none()
+        if student and student.wechat_openid:
+            asyncio.create_task(
+                send_bind_notification(
+                    openid=student.wechat_openid,
+                    relative_nickname=relative_name,
+                    relationship=relationship,
+                )
+            )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def get_my_students(

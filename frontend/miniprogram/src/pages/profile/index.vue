@@ -331,7 +331,19 @@ function goUserPapers() {
   uni.navigateTo({ url: '/pages/user-papers/list' })
 }
 
+function _requestBindSubscribe() {
+  const tmplId = import.meta.env.VITE_WX_SUBSCRIBE_TEMPLATE_BIND as string | undefined
+  if (!tmplId || tmplId.startsWith('placeholder')) return
+  uni.requestSubscribeMessage({
+    tmplIds: [tmplId],
+    success() { },
+    fail() { },
+  })
+}
+
 async function genInviteCode() {
+  // 先请求订阅权限，再生成邀请码（用户授权后家人绑定成功时会收到微信通知）
+  _requestBindSubscribe()
   try {
     const r = await generateRelativeInviteCode()
     myInvite.value = r || null

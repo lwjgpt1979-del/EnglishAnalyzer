@@ -88,6 +88,8 @@ async function onTap(n: NotificationOut) {
     const data = encodeURIComponent(JSON.stringify(n.meta))
     const studentName = encodeURIComponent(n.title || '孩子')
     uni.navigateTo({ url: `/pages/relative/weekly-report-detail?data=${data}&student_name=${studentName}` })
+  } else if (n.type === 'bind_accepted' || n.type === 'bind_request') {
+    uni.navigateTo({ url: '/pages/relative/center' })
   } else if (n.channel === 'membership') {
     uni.switchTab({ url: '/pages/profile/index' })
   }

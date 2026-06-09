@@ -189,3 +189,85 @@ async def test_send_checkin_reminder_prod_calls_real(wechat_mode):
 
     assert ok is True
     mock_real.assert_called_once_with(openid="ox_prod", streak_days=5)
+
+
+# ── M33: send_bind_notification ───────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_send_bind_notification_dev_mock():
+    """dev-mock 模式：返回 True，不调 httpx。"""
+    from app.services import wechat_subscribe_service
+
+    with patch("httpx.AsyncClient") as MockClient:
+        ok = await wechat_subscribe_service.send_bind_notification(
+            openid="ox_student", relative_nickname="张妈妈", relationship="母亲"
+        )
+    assert ok is True
+    MockClient.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_bind_notification_prod_success(wechat_mode, monkeypatch):
+    """生产模式绑定通知成功推送。"""
+    from app.services import wechat_subscribe_service
+    import time
+
+    monkeypatch.setattr(settings, "wechat_subscribe_template_bind", "AT0000_BIND_TPL")
+    wechat_subscribe_service._token_cache["token"] = "PREFILLED_TOKEN"
+    wechat_subscribe_service._token_cache["expires_at"] = time.time() + 7000
+
+    mock_client = _mock_http_post({"errcode": 0, "errmsg": "ok"})
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        ok = await wechat_subscribe_service.send_bind_notification(
+            openid="ox_student", relative_nickname="李爸爸", relationship="父亲"
+        )
+
+    assert ok is True
+    mock_client.post.assert_called_once()
+    payload = mock_client.post.call_args[1].get("json", {})
+    assert payload["touser"] == "ox_student"
+    assert payload["template_id"] == "AT0000_BIND_TPL"
+    assert "李爸爸" in payload["data"]["thing1"]["value"]
+    assert "父亲" in payload["data"]["thing1"]["value"]
+
+
+@pytest.mark.asyncio
+async def test_send_bind_notification_prod_unsubscribed_returns_false(wechat_mode, monkeypatch):
+    """43101 未订阅时返回 False，不抛错。"""
+    from app.services import wechat_subscribe_service
+    import time
+
+    monkeypatch.setattr(settings, "wechat_subscribe_template_bind", "AT0000_BIND_TPL")
+    wechat_subscribe_service._token_cache["token"] = "PREFILLED_TOKEN"
+    wechat_subscribe_service._token_cache["expires_at"] = time.time() + 7000
+
+    mock_client = _mock_http_post({"errcode": 43101, "errmsg": "user refuse to accept the msg"})
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        ok = await wechat_subscribe_service.send_bind_notification(
+            openid="ox_nosub", relative_nickname="王奶奶", relationship="祖母"
+        )
+
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_send_bind_notification_prod_calls_real(wechat_mode):
+    """生产模式 send_bind_notification 调用真实 API 路径。"""
+    from app.services import wechat_subscribe_service
+
+    with patch.object(
+        wechat_subscribe_service,
+        "_send_real_bind_notification",
+        new_callable=AsyncMock,
+        return_value=True,
+    ) as mock_real:
+        ok = await wechat_subscribe_service.send_bind_notification(
+            openid="ox_p", relative_nickname="陈叔叔", relationship="叔叔"
+        )
+
+    assert ok is True
+    mock_real.assert_called_once_with(
+        openid="ox_p", relative_nickname="陈叔叔", relationship="叔叔"
+    )

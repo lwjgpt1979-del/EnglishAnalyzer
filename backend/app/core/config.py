@@ -73,9 +73,10 @@ class Settings(BaseSettings):
     sms_template_code_verify: str = ""
     sms_template_code_invite: str = ""
 
-    # 微信订阅消息（打卡提醒，D-108）
+    # 微信订阅消息（打卡提醒，D-108；绑定通知，M33）
     wechat_subscribe_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock
     wechat_subscribe_template_checkin: str = "placeholder-template-checkin"
+    wechat_subscribe_template_bind: str = "placeholder-template-bind"
 
     # 应用
     debug: bool = False
