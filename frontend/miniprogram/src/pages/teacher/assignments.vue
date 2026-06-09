@@ -82,8 +82,13 @@ const suggestSid = ref('')
 const weakKps = ref<ClassKpWeakItem[]>([])
 const chipLoading = ref(false)
 
+// 从 KP 统计页深链跳转时携带的预选知识点
+const presetKpKey = ref('')
+
 onLoad((q) => {
-  classId.value = (q as { classId?: string })?.classId || ''
+  const p = q as { classId?: string; kpKey?: string }
+  classId.value = p?.classId || ''
+  presetKpKey.value = p?.kpKey ? decodeURIComponent(p.kpKey) : ''
 })
 onShow(load)
 
@@ -96,24 +101,35 @@ async function load() {
       weakKps.value = stats.top_weak_kps.slice(0, 5)
     } catch { /* 班级统计失败不阻断 */ }
   }
+  // 深链预选：从 KP 统计页带 kpKey 进来 → 自动按该 KP 选题（仅首次）
+  if (presetKpKey.value) {
+    const kp = presetKpKey.value
+    presetKpKey.value = ''
+    await selectByKp(kp)
+  }
 }
 
-/** 点击弱项 KP 芯片 → 按该 KP 生成题目 */
-async function onKpChip(kp: ClassKpWeakItem) {
+/** 按知识点名生成题目并填入表单。供芯片点击与深链预选复用。 */
+async function selectByKp(kpKey: string) {
   if (chipLoading.value) return
   chipLoading.value = true
   try {
-    const r = await suggestByKp(kp.kp_key, 5)
+    const r = await suggestByKp(kpKey, 5)
     questions.value = r.questions.map((q) => ({
       stem: q.stem, type: q.type, options: q.options, answer: q.answer,
     }))
-    if (!title.value) title.value = `${kp.kp_key} 专项练习`
-    uni.showToast({ title: `已按「${kp.kp_key}」选题`, icon: 'success' })
+    if (!title.value) title.value = `${kpKey} 专项练习`
+    uni.showToast({ title: `已按「${kpKey}」选题`, icon: 'success' })
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '选题失败', icon: 'none' })
   } finally {
     chipLoading.value = false
   }
+}
+
+/** 点击弱项 KP 芯片 → 按该 KP 生成题目 */
+function onKpChip(kp: ClassKpWeakItem) {
+  return selectByKp(kp.kp_key)
 }
 
 async function onSuggest() {

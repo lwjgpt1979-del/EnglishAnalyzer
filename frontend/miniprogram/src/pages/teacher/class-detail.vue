@@ -86,6 +86,7 @@
         <!-- 班级最薄弱 KP -->
         <view v-if="kpStats.top_weak_kps.length" class="card">
           <view class="card-title">📉 班级最薄弱知识点</view>
+          <view class="card-hint">点击任一知识点即可一键布置该项专项作业</view>
           <view class="kp-header-row">
             <text class="kp-col-name">知识点</text>
             <text class="kp-col-acc">班均正确率</text>
@@ -94,9 +95,13 @@
           <view
             v-for="kp in kpStats.top_weak_kps"
             :key="kp.kp_key"
-            class="kp-row"
+            class="kp-row kp-row-tappable"
+            @tap="goAssignByKp(kp.kp_key)"
           >
-            <text class="kp-name-cell">{{ kp.kp_key }}</text>
+            <view class="kp-name-cell-wrap">
+              <text class="kp-name-cell">{{ kp.kp_key }}</text>
+              <text class="kp-assign-hint">布置作业 ›</text>
+            </view>
             <view class="kp-acc-cell">
               <view class="mini-bar-track">
                 <view
@@ -214,6 +219,11 @@ async function onRemove(sid: string) {
 }
 
 function goAssignments() { uni.navigateTo({ url: `/pages/teacher/assignments?classId=${classId.value}` }) }
+function goAssignByKp(kpKey: string) {
+  uni.navigateTo({
+    url: `/pages/teacher/assignments?classId=${classId.value}&kpKey=${encodeURIComponent(kpKey)}`,
+  })
+}
 function goPapers() { uni.navigateTo({ url: `/pages/teacher/class-papers?classId=${classId.value}` }) }
 function goStudentKp(studentId: string, nickname: string | null) {
   const n = nickname ? encodeURIComponent(nickname) : ''
@@ -283,7 +293,10 @@ function accClass(acc: number) {
 .kp-col-acc  { flex: 2; font-size: 22rpx; color: var(--c-text-hint); }
 .kp-col-cnt  { flex: 1; font-size: 22rpx; color: var(--c-text-hint); text-align: right; }
 .kp-row { display: flex; align-items: center; padding: 12rpx 0; border-bottom: 1rpx solid var(--c-border); }
-.kp-name-cell { flex: 2; font-size: 26rpx; color: var(--c-text-body); }
+.kp-row-tappable:active { background: var(--c-bg-soft); }
+.kp-name-cell-wrap { flex: 2; display: flex; flex-direction: column; gap: 2rpx; }
+.kp-name-cell { font-size: 26rpx; color: var(--c-text-body); }
+.kp-assign-hint { font-size: 20rpx; color: var(--c-primary, #1677ff); }
 .kp-acc-cell { flex: 2; display: flex; align-items: center; gap: 8rpx; }
 .mini-bar-track { flex: 1; height: 10rpx; background: #f0f0f0; border-radius: 5rpx; overflow: hidden; }
 .mini-bar-fill { height: 100%; border-radius: 5rpx; }
