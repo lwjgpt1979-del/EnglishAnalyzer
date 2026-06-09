@@ -270,13 +270,22 @@
         <button class="btn-practice" @tap="goPractice">开始 AI 练习</button>
       </view>
 
+      <!-- 报告导出 -->
+      <view class="card export-entry">
+        <view class="card-title">导出报告</view>
+        <text class="practice-desc">将学情诊断报告导出为 PDF，可保存或分享给老师。</text>
+        <button class="btn-export" :disabled="exporting" @tap="exportPdf">
+          {{ exporting ? '生成中…' : '📄 导出 PDF' }}
+        </button>
+      </view>
+
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getDiagnosisReport } from '@/api/diagnosis'
+import { getDiagnosisReport, exportDiagnosisPdf } from '@/api/diagnosis'
 import { getKpAccuracy, getExamHistory, getExamRank } from '@/api/questions'
 import { useAuthStore } from '@/stores/auth'
 import type { DiagnosisReport, KPAccuracyOut, ExamHistoryOut, ExamRankOut } from '@/types/api'
@@ -287,6 +296,7 @@ const kpAccuracy = ref<KPAccuracyOut | null>(null)
 const examHistory = ref<ExamHistoryOut | null>(null)
 const examRank = ref<ExamRankOut | null>(null)
 const loading = ref(true)  // true until first fetch completes, prevents "暂无数据" flash
+const exporting = ref(false)
 
 const maxErrorCount = computed(() => {
   if (!report.value || report.value.top_error_types.length === 0) return 1
@@ -346,6 +356,44 @@ function accClass(accuracy: number): string {
   if (accuracy < 0.6) return 'acc-low'
   if (accuracy < 0.85) return 'acc-mid'
   return 'acc-high'
+}
+
+async function exportPdf() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    const { pdf_base64, filename } = await exportDiagnosisPdf()
+    // base64 → ArrayBuffer → 写本地临时文件 → openDocument
+    const base64Str = pdf_base64
+    const fs = uni.getFileSystemManager()
+    const tmpPath = `${wx.env.USER_DATA_PATH}/${filename}`
+    // 写文件（base64 模式）
+    fs.writeFile({
+      filePath: tmpPath,
+      data: base64Str,
+      encoding: 'base64',
+      success: () => {
+        uni.openDocument({
+          filePath: tmpPath,
+          fileType: 'pdf',
+          showMenu: true,  // 显示右上角分享菜单
+          success: () => {
+            uni.showToast({ title: 'PDF 已生成', icon: 'success' })
+          },
+          fail: (err) => {
+            uni.showToast({ title: '打开失败：' + (err.errMsg || ''), icon: 'none' })
+          },
+        })
+      },
+      fail: (err) => {
+        uni.showToast({ title: '写入失败：' + (err.errMsg || ''), icon: 'none' })
+      },
+    })
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '导出失败', icon: 'none' })
+  } finally {
+    exporting.value = false
+  }
 }
 
 function goPractice() {
@@ -499,4 +547,7 @@ function activityClass(count: number): string {
 .practice-entry { }
 .practice-desc { font-size: 24rpx; color: var(--c-text-second); display: block; margin-bottom: 12rpx; line-height: 1.5; }
 .btn-practice { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 700; text-align: center; }
+.export-entry { margin-top: 24rpx; }
+.btn-export { background: #f0f0f0; color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; border: 2rpx solid var(--c-border); }
+.btn-export[disabled] { opacity: 0.5; }
 </style>

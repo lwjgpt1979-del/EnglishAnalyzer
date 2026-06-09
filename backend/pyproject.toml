@@ -20,6 +20,7 @@ dependencies = [
     "tencentcloud-sdk-python-ocr>=3.0.0",
     "cos-python-sdk-v5>=1.9.30",
     "passlib[bcrypt]>=1.7.4",
+    "fpdf2>=2.7.0",
 ]
 
 [project.optional-dependencies]
