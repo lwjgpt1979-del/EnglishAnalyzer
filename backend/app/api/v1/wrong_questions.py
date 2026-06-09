@@ -25,6 +25,11 @@ from app.schemas.wrong_questions import (
     WrongQuestionOut,
 )
 from app.services import review_service, wrong_question_service
+from pydantic import BaseModel as _BaseModel
+
+
+class AutoTagOut(_BaseModel):
+    processed: int
 
 router = APIRouter(prefix="/wrong-questions", tags=["wrong-questions"])
 
@@ -62,11 +67,12 @@ async def list_wrong_questions(
     skip: int = Query(0, ge=0, description="分页偏移"),
     limit: int = Query(20, ge=1, le=100, description="每页条数"),
     source: str | None = Query(None, description="来源筛选：assignment/upload，空=全部"),
+    tag: str | None = Query(None, description="知识点标签筛选，空=全部（M38）"),
 ):
-    """获取当前学生的错题列表（分页，按创建时间倒序，可按来源筛选）。"""
+    """获取当前学生的错题列表（分页，按创建时间倒序，可按来源/标签筛选）。"""
     await get_rls_db(db, str(current_user.id))
     items, total = await wrong_question_service.list_wrong_questions(
-        db, student_id=current_user.id, skip=skip, limit=limit, source=source
+        db, student_id=current_user.id, skip=skip, limit=limit, source=source, tag=tag
     )
     return make_ok(
         WrongQuestionListOut(
@@ -113,6 +119,15 @@ async def get_review_queue(db: DbDep, current_user: UserDep):
         due_items=[WrongQuestionOut.model_validate(wq) for wq in due_items],
         stats=stats,
     ))
+
+
+@router.post("/auto-tag", response_model=BaseResponse[AutoTagOut])
+async def auto_tag_wrong_questions(db: DbDep, current_user: UserDep):
+    """批量补标：将有 AI 分析但缺 tags 的错题自动补全知识点标签（M38）。"""
+    await get_rls_db(db, str(current_user.id))
+    processed = await wrong_question_service.auto_tag_all(db, student_id=current_user.id)
+    await db.commit()
+    return make_ok(AutoTagOut(processed=processed))
 
 
 @router.get("/{wq_id}", response_model=BaseResponse[WrongQuestionOut])

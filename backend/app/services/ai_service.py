@@ -68,6 +68,9 @@ async def analyze_wrong_question(
         )
         db.add(analysis)
         await db.flush()
+        # M38: 自动打标 — 将 knowledge_points 合并写入 wq.tags
+        from app.services.wrong_question_service import apply_tags_from_analysis
+        apply_tags_from_analysis(wq, list(analysis.knowledge_points or []))
         # —— 发"AI分析完成"通知（D-074 Module 7B）——
         from app.services.notification_service import emit_analysis_done
         try:
@@ -118,6 +121,9 @@ async def analyze_wrong_question(
     )
     db.add(analysis)
     await db.flush()
+    # M38: 自动打标 — 将 knowledge_points 合并写入 wq.tags
+    from app.services.wrong_question_service import apply_tags_from_analysis
+    apply_tags_from_analysis(wq, list(analysis.knowledge_points or []))
     # —— 发"AI分析完成"通知（D-074 Module 7B）——
     from app.services.notification_service import emit_analysis_done
     try:

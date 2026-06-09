@@ -15,11 +15,16 @@ export function createWrongQuestion(data: WrongQuestionCreate): Promise<WrongQue
   })
 }
 
-export function listWrongQuestions(skip = 0, limit = 20, source = ''): Promise<WrongQuestionListOut> {
-  const q = source ? `&source=${source}` : ''
-  return request<WrongQuestionListOut>(
-    `/api/v1/wrong-questions/?skip=${skip}&limit=${limit}${q}`,
-  )
+export function listWrongQuestions(skip = 0, limit = 20, source = '', tag = ''): Promise<WrongQuestionListOut> {
+  const params = new URLSearchParams({ skip: String(skip), limit: String(limit) })
+  if (source) params.set('source', source)
+  if (tag) params.set('tag', tag)
+  return request<WrongQuestionListOut>(`/api/v1/wrong-questions/?${params.toString()}`)
+}
+
+/** M38 批量补标：将有 AI 分析但缺 tags 的错题自动打知识点标签 */
+export function autoTagWrongQuestions(): Promise<{ processed: number }> {
+  return request<{ processed: number }>('/api/v1/wrong-questions/auto-tag', { method: 'POST' })
 }
 
 /** M3 关联视图：按知识点查当前学生的相关错题（D-093） */

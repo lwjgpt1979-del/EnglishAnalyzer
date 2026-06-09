@@ -79,9 +79,18 @@ async def list_wrong_questions(
     skip: int = 0,
     limit: int = 20,
     source: str | None = None,
+    tag: str | None = None,
 ) -> tuple[list[WrongQuestion], int]:
-    """分页查询当前学生的错题，按创建时间倒序，返回 (items, total)。source 可按来源过滤。"""
+    """分页查询当前学生的错题，按创建时间倒序，返回 (items, total)。source/tag 可过滤。"""
+    from sqlalchemy.dialects.postgresql import JSONB as _JSONB
     conds = [WrongQuestion.student_id == student_id, *_source_filter(source)]
+    if tag:
+        # JSONB @> 包含查询：右侧把 JSON 字符串转为 JSONB
+        import json as _json
+        from sqlalchemy import cast as _cast, literal as _lit
+        conds.append(
+            WrongQuestion.tags.op("@>")(_cast(_lit(_json.dumps([tag])), _JSONB))
+        )
     count_result = await db.execute(
         select(func.count()).select_from(WrongQuestion).where(*conds)
     )
@@ -201,3 +210,70 @@ async def list_paper_wrongs(
         )
         for r in rows
     ], total
+
+
+# ── M38 自动打标 ───────────────────────────────────────────────────────────────
+
+def _merge_tags(existing: list | None, new_tags: list[str]) -> list[str]:
+    """合并已有 tags 与新 tags，去重，保持顺序。"""
+    combined = list(existing or [])
+    seen = set(combined)
+    for t in new_tags:
+        if t and t not in seen:
+            combined.append(t)
+            seen.add(t)
+    return combined
+
+
+def apply_tags_from_analysis(wq: WrongQuestion, knowledge_points: list[str]) -> None:
+    """将 AI 分析的 knowledge_points 合并到 wq.tags（不 commit，由调用方负责）。"""
+    if not knowledge_points:
+        return
+    wq.tags = _merge_tags(wq.tags, knowledge_points)
+
+
+async def auto_tag_all(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+) -> int:
+    """批量补标：找当前学生所有有 AI 分析但缺 tags 的错题，用最新分析的 knowledge_points 填充。
+
+    返回处理条数（processed）。不 commit，由 endpoint 层负责。
+    """
+    # 1. 找所有 tags 为空/null 的错题
+    wqs_result = await db.execute(
+        select(WrongQuestion)
+        .where(
+            WrongQuestion.student_id == student_id,
+            (WrongQuestion.tags == None) | (WrongQuestion.tags == []),  # noqa: E711
+        )
+    )
+    wqs: list[WrongQuestion] = list(wqs_result.scalars().all())
+    if not wqs:
+        return 0
+
+    wq_ids = [wq.id for wq in wqs]
+
+    # 2. 取每道错题最新一条 AI 分析
+    analyses_result = await db.execute(
+        select(AiAnalysis)
+        .where(AiAnalysis.wrong_question_id.in_(wq_ids))
+        .order_by(AiAnalysis.created_at.desc())
+    )
+    analyses: list[AiAnalysis] = list(analyses_result.scalars().all())
+
+    # 按 wrong_question_id → 最新分析
+    latest: dict[uuid.UUID, AiAnalysis] = {}
+    for a in analyses:
+        if a.wrong_question_id not in latest:
+            latest[a.wrong_question_id] = a
+
+    processed = 0
+    for wq in wqs:
+        analysis = latest.get(wq.id)
+        if analysis and analysis.knowledge_points:
+            apply_tags_from_analysis(wq, list(analysis.knowledge_points))
+            processed += 1
+
+    return processed

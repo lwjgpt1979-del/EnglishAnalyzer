@@ -6,6 +6,27 @@
       <text v-for="t in SRC_TABS" :key="t.value" class="src-tab" :class="{ active: source === t.value }" @tap="switchSource(t.value)">{{ t.label }}</text>
     </view>
 
+    <!-- 知识点标签筛选栏（M38） -->
+    <scroll-view v-if="allTags.length > 0" class="tag-scroll" scroll-x enhanced>
+      <view class="tag-bar">
+        <text class="tag-chip" :class="{ active: !activeTag }" @tap="switchTag('')">全部</text>
+        <text
+          v-for="t in allTags"
+          :key="t"
+          class="tag-chip"
+          :class="{ active: activeTag === t }"
+          @tap="switchTag(t)"
+        >{{ t }}</text>
+      </view>
+    </scroll-view>
+
+    <!-- 一键自动打标按钮 -->
+    <view v-if="source !== 'paper'" class="auto-tag-row">
+      <button class="btn-auto-tag" :disabled="autoTagging" @tap="doAutoTag">
+        {{ autoTagging ? '打标中…' : '✨ 一键自动打标' }}
+      </button>
+    </view>
+
     <!-- 加载态 -->
     <view v-if="loading && items.length === 0" class="center-tip">加载中…</view>
 
@@ -54,6 +75,16 @@
             <text v-if="wq.difficulty" class="tag">{{ '★'.repeat(wq.difficulty) }}</text>
             <text v-if="wq.is_mastered" class="tag tag-green">已掌握</text>
           </view>
+          <!-- 知识点标签 chips（M38） -->
+          <view v-if="wq.tags && wq.tags.length > 0" class="kp-tags">
+            <text
+              v-for="t in wq.tags.slice(0, 3)"
+              :key="t"
+              class="kp-tag"
+              @tap.stop="switchTag(t)"
+            >{{ t }}</text>
+            <text v-if="wq.tags.length > 3" class="kp-tag kp-more">+{{ wq.tags.length - 3 }}</text>
+          </view>
           <text v-if="wq.created_at" class="wq-date">{{ wq.created_at.slice(0, 10) }}</text>
         </view>
       </view>
@@ -68,8 +99,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { listWrongQuestions, listPaperWrongs } from '@/api/wrongQuestions'
+import { computed, onMounted, ref } from 'vue'
+import { listWrongQuestions, listPaperWrongs, autoTagWrongQuestions } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 import type { WrongQuestionOut } from '@/types/api'
 
@@ -84,19 +115,63 @@ const skip = ref(0)
 const LIMIT = 20
 const hasMore = ref(true)
 const source = ref('')
+const activeTag = ref('')
+const autoTagging = ref(false)
 const SRC_TABS = [
   { label: '全部', value: '' },
   { label: '作业', value: 'assignment' },
   { label: '上传', value: 'upload' },
   { label: '整卷', value: 'paper' },
 ]
-function switchSource(v: string) {
-  if (source.value === v) return
-  source.value = v
+
+// 从已加载的错题中提取所有唯一 tags，用于筛选栏
+const allTags = computed<string[]>(() => {
+  const set = new Set<string>()
+  for (const wq of items.value) {
+    if (Array.isArray(wq.tags)) wq.tags.forEach((t: string) => set.add(t))
+  }
+  return Array.from(set)
+})
+
+function resetList() {
   items.value = []
   skip.value = 0
   hasMore.value = true
+}
+
+function switchSource(v: string) {
+  if (source.value === v) return
+  source.value = v
+  activeTag.value = ''
+  resetList()
   loadItems()
+}
+
+function switchTag(t: string) {
+  if (activeTag.value === t) return
+  activeTag.value = t
+  resetList()
+  loadItems()
+}
+
+async function doAutoTag() {
+  if (autoTagging.value) return
+  autoTagging.value = true
+  try {
+    const res = await autoTagWrongQuestions()
+    uni.showToast({
+      title: res.processed > 0 ? `已打标 ${res.processed} 道题` : '所有错题已有标签',
+      icon: 'none',
+    })
+    if (res.processed > 0) {
+      resetList()
+      await loadItems()
+    }
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '打标失败', icon: 'none' })
+  } finally {
+    autoTagging.value = false
+  }
 }
 
 onMounted(async () => {
@@ -114,7 +189,7 @@ async function loadItems() {
     if (source.value === 'paper') {
       res = await listPaperWrongs(skip.value, LIMIT)
     } else {
-      res = await listWrongQuestions(skip.value, LIMIT, source.value)
+      res = await listWrongQuestions(skip.value, LIMIT, source.value, activeTag.value)
     }
     items.value.push(...res.items)
     total.value = res.total
@@ -192,4 +267,20 @@ function goDetail(id: string) {
 .wq-date { color: var(--c-text-hint); font-size: 24rpx; }
 .load-more { text-align: center; padding: 32rpx; color: var(--c-text-second); font-size: 28rpx; }
 .gray { color: var(--c-text-hint); }
+
+/* M38 知识点标签筛选栏 */
+.tag-scroll { width: 100%; margin-bottom: 16rpx; }
+.tag-bar { display: flex; flex-direction: row; gap: 12rpx; padding: 4rpx 0 8rpx 2rpx; white-space: nowrap; }
+.tag-chip { font-size: 22rpx; padding: 6rpx 16rpx; border-radius: 999rpx; background: #f0f0f0; color: var(--c-text-second); border: 2rpx solid transparent; flex-shrink: 0; }
+.tag-chip.active { background: var(--c-primary-faint); color: var(--c-gold); border-color: var(--c-gold); font-weight: 700; }
+
+/* 一键打标按钮 */
+.auto-tag-row { margin-bottom: 20rpx; display: flex; justify-content: flex-end; }
+.btn-auto-tag { font-size: 22rpx; padding: 10rpx 20rpx; background: #f7f0d0; color: var(--c-gold); border: 2rpx solid var(--c-gold); border-radius: 999rpx; line-height: 1.4; }
+.btn-auto-tag[disabled] { opacity: 0.5; }
+
+/* 知识点 chips on card */
+.kp-tags { display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 8rpx; }
+.kp-tag { font-size: 18rpx; padding: 2rpx 10rpx; border-radius: 999rpx; background: #fff7e0; color: #a37b00; border: 1rpx solid #f0d060; }
+.kp-more { background: #f0f0f0; color: var(--c-text-hint); border-color: #ddd; }
 </style>
