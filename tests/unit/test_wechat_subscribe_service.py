@@ -271,3 +271,65 @@ async def test_send_bind_notification_prod_calls_real(wechat_mode):
     mock_real.assert_called_once_with(
         openid="ox_p", relative_nickname="陈叔叔", relationship="叔叔"
     )
+
+
+# ── M35: send_assignment_notification ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_send_assignment_notification_dev_mock():
+    """dev-mock 模式：返回 True，不调 httpx。"""
+    from app.services import wechat_subscribe_service
+
+    with patch("httpx.AsyncClient") as MockClient:
+        ok = await wechat_subscribe_service.send_assignment_notification(
+            openid="ox_student", assignment_title="期末复习卷", teacher_name="李老师", due_at_str="06月15日 23:59"
+        )
+    assert ok is True
+    MockClient.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_assignment_notification_prod_success(wechat_mode, monkeypatch):
+    """生产模式作业通知成功推送，payload 包含正确字段。"""
+    from app.services import wechat_subscribe_service
+    import time
+
+    monkeypatch.setattr(settings, "wechat_subscribe_template_assignment", "AT0000_ASSIGN_TPL")
+    wechat_subscribe_service._token_cache["token"] = "PREFILLED_TOKEN"
+    wechat_subscribe_service._token_cache["expires_at"] = time.time() + 7000
+
+    mock_client = _mock_http_post({"errcode": 0, "errmsg": "ok"})
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        ok = await wechat_subscribe_service.send_assignment_notification(
+            openid="ox_s1", assignment_title="语法专项练习", teacher_name="王老师", due_at_str="06月20日 18:00"
+        )
+
+    assert ok is True
+    payload = mock_client.post.call_args[1].get("json", {})
+    assert payload["touser"] == "ox_s1"
+    assert payload["template_id"] == "AT0000_ASSIGN_TPL"
+    assert payload["data"]["thing1"]["value"] == "语法专项练习"
+    assert payload["data"]["thing2"]["value"] == "王老师"
+    assert payload["data"]["time3"]["value"] == "06月20日 18:00"
+
+
+@pytest.mark.asyncio
+async def test_send_assignment_notification_prod_calls_real(wechat_mode):
+    """生产模式 send_assignment_notification 调用真实 API 路径。"""
+    from app.services import wechat_subscribe_service
+
+    with patch.object(
+        wechat_subscribe_service,
+        "_send_real_assignment_notification",
+        new_callable=AsyncMock,
+        return_value=True,
+    ) as mock_real:
+        ok = await wechat_subscribe_service.send_assignment_notification(
+            openid="ox_p2", assignment_title="阅读理解", teacher_name="张老师", due_at_str="无截止时间"
+        )
+
+    assert ok is True
+    mock_real.assert_called_once_with(
+        openid="ox_p2", assignment_title="阅读理解", teacher_name="张老师", due_at_str="无截止时间"
+    )

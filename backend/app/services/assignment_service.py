@@ -1,6 +1,7 @@
 """老师出卷下发闭环 service（D-113 / Module 5B + 5B-S）。零迁移、无 LLM。"""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -8,7 +9,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d1_users import Teacher
+from app.models.d1_users import Teacher, User
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d7_teacher import Assignment, AssignmentSubmission, ClassStudent
 from app.services import class_service, notification_service
@@ -116,17 +117,43 @@ async def publish_assignment(
     if a.published_at is None:
         a.published_at = datetime.now(timezone.utc)
     await db.flush()
-    # 下发站内通知给班级每个学生
-    student_ids = (await db.execute(
+    # ── 查教师昵称（用于微信推送显示）────────────────────────────────────────
+    teacher_user = await db.get(User, teacher_id)
+    teacher_name = (teacher_user.nickname if teacher_user else None) or "老师"
+    due_at_str = a.due_at.strftime("%m月%d日 %H:%M") if a.due_at else "无截止时间"
+
+    # ── 下发站内通知 + 微信订阅消息给班级每个学生 ────────────────────────────
+    student_rows = (await db.execute(
         select(ClassStudent.student_id).where(ClassStudent.class_id == a.class_id)
     )).scalars().all()
-    for sid in student_ids:
+
+    # 批量查学生 openid（用于微信推送）
+    student_users = list(
+        (await db.execute(
+            select(User.id, User.openid).where(User.id.in_(student_rows))
+        )).all()
+    )
+    openid_map = {row.id: row.openid for row in student_users if row.openid}
+
+    from app.services.wechat_subscribe_service import send_assignment_notification
+
+    for sid in student_rows:
         await notification_service.emit(
             db, user_id=sid, type_="assignment",
             title="老师布置了新作业",
             content=f"《{a.title}》，请尽快完成。",
             meta={"assignment_id": str(a.id)},
         )
+        openid = openid_map.get(sid)
+        if openid:
+            asyncio.create_task(
+                send_assignment_notification(
+                    openid=openid,
+                    assignment_title=a.title,
+                    teacher_name=teacher_name,
+                    due_at_str=due_at_str,
+                )
+            )
     return a
 
 

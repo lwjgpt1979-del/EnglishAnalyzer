@@ -16,7 +16,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onMounted } from '@dcloudio/uni-app'
 import { getReceivedAssignments } from '@/api/assignments'
 import type { StudentAssignmentItem } from '@/types/api'
 
@@ -26,6 +26,17 @@ async function load() {
 }
 onShow(load)
 function goDetail(id: string) { uni.navigateTo({ url: `/pages/assignments/detail?id=${id}` }) }
+
+// 进入作业列表时申请订阅权限，以便老师发布新作业时能收到微信通知
+onMounted(() => {
+  const tmplId = import.meta.env.VITE_WX_SUBSCRIBE_TEMPLATE_ASSIGNMENT as string | undefined
+  if (!tmplId || tmplId.startsWith('placeholder')) return
+  uni.requestSubscribeMessage({
+    tmplIds: [tmplId],
+    success() { },
+    fail() { },
+  })
+})
 </script>
 
 <style scoped>

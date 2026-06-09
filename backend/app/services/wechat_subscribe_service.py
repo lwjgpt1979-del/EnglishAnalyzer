@@ -126,6 +126,65 @@ async def _send_real_bind_notification(
     return False
 
 
+async def _send_real_assignment_notification(
+    *, openid: str, assignment_title: str, teacher_name: str, due_at_str: str
+) -> bool:
+    """调用微信 subscribeMessage.send 发送作业通知给学生。"""
+    try:
+        token = await _get_access_token()
+    except AppError as e:
+        logger.warning("[WX SUBSCRIBE] access_token 获取失败，跳过作业通知：%s", e.message)
+        return False
+
+    url = f"https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token={token}"
+    payload = {
+        "touser": openid,
+        "template_id": settings.wechat_subscribe_template_assignment,
+        "data": {
+            "thing1": {"value": assignment_title},
+            "thing2": {"value": teacher_name},
+            "time3": {"value": due_at_str},
+        },
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(url, json=payload)
+    result = resp.json()
+
+    errcode = result.get("errcode", 0)
+    if errcode == 0:
+        logger.info("[WX SUBSCRIBE] 作业通知推送成功 openid=%s", openid)
+        return True
+    if errcode == 43101:
+        logger.debug("[WX SUBSCRIBE] 用户未订阅作业通知 openid=%s", openid)
+    else:
+        logger.warning(
+            "[WX SUBSCRIBE] 作业通知推送失败 openid=%s errcode=%s errmsg=%s",
+            openid, errcode, result.get("errmsg"),
+        )
+    return False
+
+
+async def send_assignment_notification(
+    *, openid: str, assignment_title: str, teacher_name: str, due_at_str: str
+) -> bool:
+    """发送新作业订阅消息给学生。
+    dev-mock 记日志返回 True；prod 调微信 subscribeMessage.send。
+    """
+    if _is_dev():
+        logger.info(
+            "[WX SUBSCRIBE DEV MOCK] assignment notification openid=%s title=%s teacher=%s due=%s template=%s",
+            openid, assignment_title, teacher_name, due_at_str,
+            settings.wechat_subscribe_template_assignment,
+        )
+        return True
+    return await _send_real_assignment_notification(
+        openid=openid,
+        assignment_title=assignment_title,
+        teacher_name=teacher_name,
+        due_at_str=due_at_str,
+    )
+
+
 async def send_bind_notification(
     *, openid: str, relative_nickname: str, relationship: str
 ) -> bool:

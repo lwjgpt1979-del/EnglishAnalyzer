@@ -145,10 +145,10 @@ async def _notify_student_bind_accepted(
     try:
         student_r = await db.execute(_sel(User).where(User.id == student_id))
         student = student_r.scalar_one_or_none()
-        if student and student.wechat_openid:
+        if student and student.openid:
             asyncio.create_task(
                 send_bind_notification(
-                    openid=student.wechat_openid,
+                    openid=student.openid,
                     relative_nickname=relative_name,
                     relationship=relationship,
                 )
