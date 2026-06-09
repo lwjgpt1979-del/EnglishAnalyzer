@@ -53,9 +53,9 @@ export function getExamRank(): Promise<ExamRankOut> {
   return request<ExamRankOut>('/api/v1/questions/exam-rank')
 }
 
-export function getAdaptiveSet(total = 5): Promise<AdaptiveSetOut> {
+export function getAdaptiveSet(total = 5, unitId?: string): Promise<AdaptiveSetOut> {
   return request<AdaptiveSetOut>('/api/v1/questions/adaptive-set', {
     method: 'GET',
-    data: { total },
+    data: { total, ...(unitId ? { unit_id: unitId } : {}) },
   })
 }

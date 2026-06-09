@@ -15,7 +15,8 @@
     <view v-else-if="!finished">
       <!-- 薄弱点 banner -->
       <view class="banner">
-        <text class="banner-label">针对你的薄弱点：</text>
+        <text class="banner-label" v-if="unitTitle">{{ unitTitle }} · 薄弱点：</text>
+        <text class="banner-label" v-else>针对你的薄弱点：</text>
         <text class="banner-kps">{{ weakKpNames.join('、') }}</text>
       </view>
 
@@ -127,6 +128,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { getAdaptiveSet, submitAttempt } from '@/api/questions'
 import type { SimQuestionOut, PracticeResultOut } from '@/types/api'
 
@@ -138,6 +140,8 @@ const userAnswer = ref('')
 const feedback = ref<PracticeResultOut | null>(null)
 const correctCount = ref(0)
 const finished = ref(false)
+const unitId = ref<string | undefined>(undefined)
+const unitTitle = ref('')
 
 // 记录每题作答结果（供完成页按 KP 分析）
 interface AnswerRecord { kp_name: string; correct: boolean }
@@ -168,7 +172,7 @@ function letter(i: number): string {
 async function loadAdaptiveSet() {
   loading.value = true
   try {
-    const result = await getAdaptiveSet(5)
+    const result = await getAdaptiveSet(5, unitId.value)
     questions.value = result.questions
     weakKpNames.value = result.weak_kp_names
   } catch (e: any) {
@@ -177,7 +181,12 @@ async function loadAdaptiveSet() {
     loading.value = false
   }
 }
-loadAdaptiveSet()
+
+onLoad((q: any) => {
+  unitId.value = q?.unit_id || undefined
+  unitTitle.value = q?.unit_title ? decodeURIComponent(q.unit_title) : ''
+  loadAdaptiveSet()
+})
 
 async function submit() {
   if (!current.value) return
@@ -213,7 +222,6 @@ function goBack() {
 }
 
 function retryAdaptive() {
-  // 重置状态，重新拉取一组题目
   questions.value = []
   weakKpNames.value = []
   currentIdx.value = 0

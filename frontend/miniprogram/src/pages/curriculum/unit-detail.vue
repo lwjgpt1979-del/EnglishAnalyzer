@@ -32,6 +32,11 @@
         </view>
       </view>
 
+      <!-- 智能推题入口 -->
+      <view class="adaptive-bar">
+        <button class="btn-adaptive" @tap="goAdaptive">🧠 智能推题（针对本单元弱项）</button>
+      </view>
+
       <view class="card">
         <view class="card-title">词汇 ({{ detail.words.length }})</view>
         <view v-for="w in detail.words" :key="w.id" class="word-row">
@@ -96,6 +101,14 @@ onShow(() => {
 function goKp(id: string) {
   uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${id}` })
 }
+
+function goAdaptive() {
+  if (!detail.value) return
+  const title = encodeURIComponent(detail.value.unit_title)
+  uni.navigateTo({
+    url: `/pages/practice/adaptive?unit_id=${unitId.value}&unit_title=${title}`,
+  })
+}
 function catLabel(c: string): string {
   return ({ grammar: '语法', vocabulary: '词汇', reading: '阅读', writing: '写作', listening: '听力' } as any)[c] || c
 }
@@ -130,4 +143,11 @@ function definitionText(defs: WordOut['definitions']): string {
 .kp-progress-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; }
 .kp-acc { font-size: 22rpx; color: var(--c-primary); font-weight: 700; min-width: 60rpx; }
 .kp-no-data { font-size: 22rpx; color: var(--c-text-hint); margin-top: 4rpx; }
+.adaptive-bar { padding: 0 0 20rpx; }
+.btn-adaptive {
+  width: 100%; background: var(--c-gold, #f5c518); color: #333;
+  border-radius: var(--r-btn); padding: 22rpx; font-weight: 700;
+  font-size: 28rpx; text-align: center;
+  box-shadow: 0 4rpx 16rpx rgba(245,197,24,.3);
+}
 </style>

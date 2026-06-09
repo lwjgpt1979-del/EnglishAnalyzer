@@ -90,10 +90,15 @@ async def get_adaptive_set(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     total: int = Query(5, ge=1, le=10, description="本次出题总数"),
+    unit_id: uuid.UUID | None = Query(None, description="单元 ID；传入时只推该单元弱项 KP"),
 ):
-    """智能出题：根据学生薄弱知识点自动组卷，返回未做过的推荐题目。"""
+    """智能出题：根据学生薄弱知识点自动组卷，返回未做过的推荐题目。
+
+    - 不传 unit_id：全局弱项模式（历史所有 KP 正确率最低的）
+    - 传 unit_id：单元维度模式（该单元 KP 中正确率最低 / 未练习的优先）
+    """
     result = await adaptive_question_service.get_adaptive_set(
-        db, student_id=current_user.id, total=total
+        db, student_id=current_user.id, total=total, unit_id=unit_id
     )
     await db.commit()
     # 构建 kp_id → kp_name 映射，供完成页按 KP 展示分析
