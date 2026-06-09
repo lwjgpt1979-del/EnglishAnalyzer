@@ -165,6 +165,80 @@ export function generateUnitContent(unitId: string): Promise<GenerateUnitResult>
   )
 }
 
+// ── M3 教材 PDF 上传解析 ──────────────────────────────────────────────────────
+
+export interface UnitSegment {
+  unit_no: number
+  start_page: number
+  end_page: number
+  detected_title?: string | null
+}
+
+export interface PdfUploadOut {
+  file_id: string
+  filename: string
+  total_pages: number
+  auto_split_success: boolean
+  auto_segments: UnitSegment[]
+}
+
+export interface PagePreview {
+  page_no: number
+  text_snippet: string
+}
+
+export interface UnitGenerateResult {
+  unit_no: number
+  unit_title: string
+  kp_count: number
+  word_count: number
+  status: 'ok' | 'error'
+  error?: string | null
+}
+
+export interface GenerateFromPdfOut {
+  results: UnitGenerateResult[]
+  success_count: number
+  error_count: number
+}
+
+export function uploadCurriculumPdf(file: File): Promise<PdfUploadOut> {
+  const form = new FormData()
+  form.append('file', file)
+  return unwrap<PdfUploadOut>(
+    request.post('/admin/curriculum/pdf/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    }),
+  )
+}
+
+export function getPdfPages(fileId: string): Promise<{ file_id: string; total_pages: number; pages: PagePreview[] }> {
+  return unwrap(request.get(`/admin/curriculum/pdf/${fileId}/pages`))
+}
+
+export function generateFromPdf(
+  fileId: string,
+  body: { textbook_version: string; grade: string; semester: string; segments: UnitSegment[]; content_status?: string },
+): Promise<GenerateFromPdfOut> {
+  return unwrap<GenerateFromPdfOut>(
+    request.post(`/admin/curriculum/pdf/${fileId}/generate`, { content_status: 'published', ...body }, { timeout: 300000 }),
+  )
+}
+
+export interface GenerateSemesterResult {
+  unit_no: number; unit_title: string; kp_count: number; word_count: number; status: string
+}
+
+export function generateSemester(body: {
+  textbook_version: string; grade: string; semester: string
+  unit_count?: number; content_status?: string; reset?: boolean
+}): Promise<GenerateSemesterResult[]> {
+  return unwrap<GenerateSemesterResult[]>(
+    request.post('/admin/curriculum/generate-semester', { unit_count: 6, content_status: 'published', reset: true, ...body }, { timeout: 300000 }),
+  )
+}
+
 // ── V2 M28：真题试卷管理 ────────────────────────────────────────────────────────
 export function listExamPapers(params?: { skip?: number; limit?: number }): Promise<AdminExamPaperListOut> {
   return unwrap<AdminExamPaperListOut>(request.get('/admin/exam-papers', { params }))
