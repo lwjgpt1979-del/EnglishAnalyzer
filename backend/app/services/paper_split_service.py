@@ -121,16 +121,55 @@ def _dev_mock_split(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     return questions
 
 
+def _try_parse_doubao_json(text: str) -> list[ParsedPaperQuestion] | None:
+    """尝试把豆包直出的 JSON 数组解析为 ParsedPaperQuestion 列表（M40）。
+
+    豆包 Vision 直接返回结构化 JSON，printed_text 即为完整 JSON 字符串，
+    handwritten_text 为空。若解析成功返回列表；否则返回 None 降级到传统流程。
+    """
+    text = text.strip()
+    if not text.startswith("["):
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list):
+        return None
+    result: list[ParsedPaperQuestion] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        result.append(
+            ParsedPaperQuestion(
+                question_no=item.get("question_no"),
+                question_type=_normalize_type(item.get("question_type")),
+                stem=item.get("stem"),
+                student_answer=item.get("student_answer"),
+                correct_answer=item.get("correct_answer"),
+                explanation=item.get("explanation"),
+            )
+        )
+    return result if result else None
+
+
 async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     """将整卷 OCR 文字拆分为多道结构化题目。
 
+    M40 新增：若 printed_text 是豆包直出的 JSON 数组，直接解析（跳过 DeepSeek 拆题）。
     Dev 模式：确定性本地拆题，无需 API。
-    Prod 模式：DeepSeek 拆题，返回 JSON 数组。
+    Prod 模式（传统OCR）：DeepSeek 拆题，返回 JSON 数组。
 
     异常处理：
     - API 错误 → AppError(502, "整卷拆题服务暂时不可用")
     - JSON 解析失败 / 非数组 → AppError(500, "整卷拆题返回格式异常")
     """
+    # M40: 豆包直出 JSON — 优先尝试直接解析，跳过 DeepSeek 拆题步骤
+    if ocr.handwritten_text == "" and (ocr.printed_text or "").strip().startswith("["):
+        parsed = _try_parse_doubao_json(ocr.printed_text or "")
+        if parsed is not None:
+            return parsed
+
     if is_llm_dev_mode():
         return _dev_mock_split(ocr)
 

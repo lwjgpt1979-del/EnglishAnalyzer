@@ -162,13 +162,15 @@ class DualEngineOcrProvider:
 
 # ── 公开接口 ──────────────────────────────────────────────────────────────────
 
-# 模块级单例：换厂商时改这里返回的实例即可，run_ocr 与所有调用方零改动。
-_provider: OcrProvider = DualEngineOcrProvider()
-
-
+# M40: 默认切换为豆包 Vision provider；DualEngineOcrProvider 保留向下兼容。
 def get_ocr_provider() -> OcrProvider:
-    """返回当前 OCR provider。换厂商：实现新的 OcrProvider 并替换此处。"""
-    return _provider
+    """返回当前 OCR provider。M40 起默认使用 DoubaoVisionProvider。"""
+    from app.services.doubao_vision_service import DoubaoVisionProvider
+    return DoubaoVisionProvider()
+
+
+# 向下兼容：保留旧单例（已不被 run_ocr 使用，但避免直接引用 _provider 的代码报错）
+_provider: OcrProvider = DualEngineOcrProvider()
 
 
 async def run_ocr(image_url: str) -> OcrResult:

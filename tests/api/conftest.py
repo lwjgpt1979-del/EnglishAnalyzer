@@ -6,8 +6,20 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy import select
 
 from app.main import app
+from app.core.config import settings
 from app.core.database import async_session_factory
 from app.models.d1_users import User
+
+
+@pytest.fixture(autouse=True)
+def _force_all_ai_dev_mode(monkeypatch):
+    """全局 fixture：强制所有 AI 服务走 dev mock，避免任何测试意外调真实 API。
+
+    各测试文件的 force_dev_mode fixture 与本 fixture 并存时不冲突
+    （monkeypatch 是幂等的）。
+    """
+    monkeypatch.setattr(settings, "deepseek_api_key", "sk-placeholder-for-test")
+    monkeypatch.setattr(settings, "doubao_api_key", "placeholder-doubao-dev")
 
 
 @pytest_asyncio.fixture

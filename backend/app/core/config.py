@@ -55,15 +55,19 @@ class Settings(BaseSettings):
     tts_provider: str = "mock"
     tts_api_key: str = "tts-placeholder-for-dev"
 
-    # 阿里云 OCR（印刷体识别）
-    # 在 https://ram.console.aliyun.com 创建 RAM 子账号并授予 OCR 权限
+    # 阿里云 OCR（印刷体识别，M40 后由豆包Vision替代，保留向下兼容）
     aliyun_ocr_access_key_id: str = "placeholder_aliyun_ak_id"
     aliyun_ocr_access_key_secret: str = "placeholder_aliyun_ak_secret"
 
-    # 腾讯云 OCR（手写体识别）
-    # 使用与 COS 相同的子账号即可（需开通 OCR 服务权限）
+    # 腾讯云 OCR（手写体识别，M40 后由豆包Vision替代，保留向下兼容）
     tencent_ocr_secret_id: str = "placeholder_tencent_ocr_sid"
     tencent_ocr_secret_key: str = "placeholder_tencent_ocr_skey"
+
+    # 豆包 Vision（火山引擎方舟，M40）
+    # dev 模式：doubao_api_key 以 'placeholder' 开头时触发 mock，无需真实 key
+    doubao_api_key: str = "placeholder-doubao-dev"
+    doubao_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    doubao_vision_model: str = "doubao-seed-2-0-mini-260428"
 
     # SMS 短信服务
     sms_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填 'aliyun'

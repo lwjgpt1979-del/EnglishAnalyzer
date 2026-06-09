@@ -16,6 +16,7 @@ from app.main import app
 @pytest.fixture(autouse=True)
 def force_dev_mode(monkeypatch):
     monkeypatch.setattr(settings, "deepseek_api_key", "sk-placeholder-for-test")
+    monkeypatch.setattr(settings, "doubao_api_key", "placeholder-doubao-dev")
 
 
 @pytest_asyncio.fixture

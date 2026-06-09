@@ -46,13 +46,15 @@ async def create_paper(
 
 
 async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
-    """后台任务：对整卷每张图跑 OCR → 合并文字 → DeepSeek 拆题 → 落库题目。
+    """后台任务：整卷图片 → 豆包Vision拆题 → DeepSeek KP归类 → 落库 + 台账写入（M40）。
 
     用独立 session（async_session_factory），与触发请求的 session 解耦。
     """
     from app.core.database import async_session_factory as _async_session_factory
     from app.services.ocr_service import OcrResult, run_ocr
     from app.services.paper_split_service import split_paper_questions
+    from app.services.kp_classifier_service import classify_kps
+    from app.services.kp_mastery_service import upsert_mastery
 
     async with _async_session_factory() as db:
         paper: UserUploadedPaper | None = await db.get(UserUploadedPaper, paper_id)
@@ -63,6 +65,7 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
         await db.commit()
 
         try:
+            # Step 1: 豆包Vision看图拆题（每张图独立处理，多页合并）
             printed_parts: list[str] = []
             handwritten_parts: list[str] = []
             for url in paper.source_image_urls:
@@ -78,7 +81,12 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
             )
             parsed = await split_paper_questions(merged)
 
+            # Step 2: DeepSeek 批量归类 KP（M40 新增）
+            kp_map: dict[str, str] = await classify_kps(parsed)
+
+            # Step 3: 落库题目 + 写入 student_kp_mastery
             for pq in parsed:
+                is_wrong = _is_wrong(pq.student_answer, pq.correct_answer)
                 db.add(
                     UserPaperQuestion(
                         user_paper_id=paper.id,
@@ -88,9 +96,23 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                         student_answer=pq.student_answer,
                         correct_answer=pq.correct_answer,
                         explanation=pq.explanation,
-                        is_wrong=_is_wrong(pq.student_answer, pq.correct_answer),
+                        is_wrong=is_wrong,
                     )
                 )
+
+                # M40: 写入知识点台账
+                qno = pq.question_no or ""
+                kp_key = kp_map.get(qno)
+                if kp_key:
+                    await upsert_mastery(
+                        db,
+                        student_id=paper.student_id,
+                        kp_key=kp_key,
+                        kp_id=None,      # 整卷上传暂不关联标准 KP UUID
+                        is_correct=not is_wrong,
+                        source="paper_upload",
+                    )
+
             paper.ocr_status = "completed"
         except Exception:
             paper.ocr_status = "failed"
