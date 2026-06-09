@@ -5,6 +5,10 @@
       "style": { "navigationBarTitleText": "engGramer" }
     },
     {
+      "path": "pages/onboarding/index",
+      "style": { "navigationBarTitleText": "欢迎使用", "navigationBarBackgroundColor": "#fffef0", "navigationStyle": "custom" }
+    },
+    {
       "path": "pages/upload/index",
       "style": { "navigationBarTitleText": "上传错题" }
     },

@@ -125,6 +125,16 @@ onMounted(() => {
     uni.redirectTo({ url: '/pages/auth/complete-profile' })
     return
   }
+  // 新手引导：已登录、未选教材偏好、且本设备未看过引导
+  if (
+    auth.isLoggedIn() &&
+    auth.user &&
+    !(auth.user as any).preferred_textbook_version &&
+    !uni.getStorageSync('onboarding_done')
+  ) {
+    uni.navigateTo({ url: '/pages/onboarding/index' })
+    return
+  }
   loadUnread()
 })
 </script>
