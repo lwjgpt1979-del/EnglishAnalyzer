@@ -17,7 +17,54 @@ from app.models.d4_knowledge import (
 )
 from app.models.d5_learning import VocabularyWord
 from app.models.d11_v2_curriculum import KnowledgePointContent
+from app.schemas.curriculum import AIGeneratedUnit, AIKnowledgePointItem, AIWordItem
 from app.services import curriculum_ai_service, curriculum_service
+
+
+def _make_unique_unit() -> AIGeneratedUnit:
+    """构造一个 code 含唯一 nonce 的 mock 单元。
+
+    dev-mock 的 generate_unit 输出 code 固定（按 grade/sem/unit 派生），多次跑
+    测试时历史已提交的 KnowledgePoint / KnowledgePointContent 会被本测试按 code
+    查回并计入断言，导致计数被污染。这里给每个 code 加 uuid 后缀，确保 found_kps
+    只命中本次新建的 KP，contents 恰好 = KP 数 × 6。
+    """
+    nonce = uuid.uuid4().hex[:8]
+    six_dims = {
+        "listening": "## 听力\nmock",
+        "vocabulary": "## 词汇\nmock",
+        "grammar": "## 语法\nmock",
+        "reading": "## 阅读\nmock",
+        "translation": "## 翻译\nmock",
+        "writing": "## 写作\nmock",
+    }
+    return AIGeneratedUnit(
+        textbook_version="译林版",
+        grade="小学5年级",
+        semester="上",
+        unit_no=1,
+        unit_title=f"Unit 1 ({nonce})",
+        knowledge_points=[
+            AIKnowledgePointItem(
+                code=f"test-{nonce}-kp{i}",
+                name=f"知识点 {i}（mock）",
+                category="grammar",
+                description="占位描述：测试 mock 数据",
+                contents=dict(six_dims),
+            )
+            for i in range(1, 4)
+        ],
+        words=[
+            AIWordItem(
+                word=f"word-{nonce}-{i}",
+                phonetic=f"/w{i}/",
+                definitions=[{"pos": "n.", "meaning": f"mock 释义{i}"}],
+                examples=[],
+                difficulty=1,
+            )
+            for i in range(1, 6)
+        ],
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -35,10 +82,12 @@ async def db_session():
 
 @pytest.mark.asyncio
 async def test_persist_unit_creates_all_6_tables(db_session):
-    """persist_unit 一次性写入 6 张表（针对本次单元 + 知识点的行）。"""
-    ai = await curriculum_ai_service.generate_unit(
-        textbook_version="译林版", grade="小学5年级", semester="上", unit_no=1,
-    )
+    """persist_unit 一次性写入 6 张表（针对本次单元 + 知识点的行）。
+
+    用 code 含唯一 nonce 的 mock 单元（见 _make_unique_unit），避免 dev-mock 固定
+    code 导致历史已提交数据污染 contents 计数。
+    """
+    ai = _make_unique_unit()
 
     cu = await curriculum_service.persist_unit(db_session, ai_unit=ai)
     await db_session.flush()
