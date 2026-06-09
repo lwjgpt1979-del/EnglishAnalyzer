@@ -9,6 +9,22 @@
       >{{ t.label }}</view>
     </view>
 
+    <!-- 掌握卡片 -->
+    <view class="mastery-card" v-if="mastery && mastery.total > 0">
+      <view class="mastery-row">
+        <text class="mastery-label">正确率</text>
+        <text class="mastery-val accent">{{ mastery.accuracy !== null ? Math.round(mastery.accuracy * 100) + '%' : '—' }}</text>
+      </view>
+      <view class="mastery-row">
+        <text class="mastery-label">练习次数</text>
+        <text class="mastery-val">{{ mastery.total }} 题</text>
+      </view>
+      <view class="mastery-row" v-if="mastery.last_activity_at">
+        <text class="mastery-label">最近练习</text>
+        <text class="mastery-val">{{ mastery.last_activity_at.slice(0, 10) }}</text>
+      </view>
+    </view>
+
     <!-- Tab 1: 课本内容（含 4 维度子 tab） -->
     <template v-if="activeView === 'content'">
       <view class="subtabs">
@@ -71,12 +87,12 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
-import { getKpContents } from '@/api/curriculum'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { getKpContents, getKpMastery } from '@/api/curriculum'
 import { listPracticeQuestions } from '@/api/questions'
 import { listWrongQuestionsByKp } from '@/api/wrongQuestions'
 import { md2html } from '@/utils/md'
-import type { KPContentOut, SimQuestionOut, WrongQuestionOut } from '@/types/api'
+import type { KPContentOut, KpMasteryItem, SimQuestionOut, WrongQuestionOut } from '@/types/api'
 
 type ViewKey = 'content' | 'questions' | 'wrong'
 const viewTabs: { key: ViewKey; label: string }[] = [
@@ -104,6 +120,15 @@ const currentContent = computed(
   () => contents.value.find(c => c.dimension === activeDim.value) || null,
 )
 
+// —— 掌握台账 ——
+const mastery = ref<KpMasteryItem | null>(null)
+
+async function loadMastery() {
+  try {
+    mastery.value = await getKpMastery(kpId.value)
+  } catch { /* 静默失败 */ }
+}
+
 // —— Tab 2：仿真题（懒加载） ——
 const questions = ref<SimQuestionOut[]>([])
 const qLoading = ref(false)
@@ -123,6 +148,11 @@ onLoad(async (q: any) => {
   } finally {
     loading.value = false
   }
+  loadMastery()
+})
+
+onShow(() => {
+  if (kpId.value) loadMastery()
 })
 
 async function switchView(key: ViewKey) {
@@ -205,4 +235,12 @@ function goWrongDetail(id: string) {
 .btn-primary, .btn-secondary { flex: 1; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); }
 .btn-secondary { background: var(--c-bg-soft); color: var(--c-text-body); border: 2rpx solid var(--c-border); }
+.mastery-card {
+  background: var(--c-bg-card); border-bottom: 1rpx solid var(--c-border);
+  padding: 20rpx 32rpx; display: flex; gap: 40rpx;
+}
+.mastery-row { display: flex; flex-direction: column; align-items: center; }
+.mastery-label { font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 4rpx; }
+.mastery-val { font-size: 30rpx; font-weight: 700; color: var(--c-text-body); }
+.mastery-val.accent { color: var(--c-primary); }
 </style>

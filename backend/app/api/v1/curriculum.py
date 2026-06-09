@@ -61,6 +61,85 @@ async def get_kp_contents(
     return make_ok([c.model_dump(mode="json") for c in contents])
 
 
+@router.get("/knowledge-points/{kp_id}/mastery")
+async def get_kp_mastery(
+    kp_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """返回当前用户对某 KP 的掌握台账（按 kp.name 匹配）。"""
+    from sqlalchemy import select as _select
+    from app.models.d4_knowledge import KnowledgePoint, StudentKpMastery
+
+    kp = (await db.execute(
+        _select(KnowledgePoint).where(KnowledgePoint.id == kp_id)
+    )).scalar_one_or_none()
+    if kp is None:
+        return make_ok(None)
+
+    m = (await db.execute(
+        _select(StudentKpMastery).where(
+            StudentKpMastery.student_id == current_user.id,
+            StudentKpMastery.kp_key == kp.name,
+        )
+    )).scalar_one_or_none()
+
+    if m is None:
+        return make_ok({"kp_name": kp.name, "correct_count": 0, "wrong_count": 0,
+                        "total": 0, "accuracy": None, "last_activity_at": None})
+    total = m.correct_count + m.wrong_count
+    return make_ok({
+        "kp_name": kp.name,
+        "correct_count": m.correct_count,
+        "wrong_count": m.wrong_count,
+        "total": total,
+        "accuracy": round(m.correct_count / total, 4) if total else None,
+        "last_activity_at": m.last_activity_at.isoformat() if m.last_activity_at else None,
+    })
+
+
+@router.get("/units/{unit_id}/mastery-summary")
+async def get_unit_mastery_summary(
+    unit_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """返回该单元每个 KP 的掌握情况（正确率、练习次数、最近练习时间）。"""
+    from sqlalchemy import select as _select
+    from app.models.d4_knowledge import KnowledgePoint, StudentKpMastery, UnitKnowledgePoint
+
+    rows = (await db.execute(
+        _select(KnowledgePoint)
+        .join(UnitKnowledgePoint, UnitKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+        .where(UnitKnowledgePoint.unit_id == unit_id)
+    )).scalars().all()
+
+    kp_keys = [r.name for r in rows]
+    mastery_rows = (await db.execute(
+        _select(StudentKpMastery).where(
+            StudentKpMastery.student_id == current_user.id,
+            StudentKpMastery.kp_key.in_(kp_keys),
+        )
+    )).scalars().all()
+    mastery_map = {m.kp_key: m for m in mastery_rows}
+
+    result = []
+    for kp in rows:
+        m = mastery_map.get(kp.name)
+        total = (m.correct_count + m.wrong_count) if m else 0
+        result.append({
+            "kp_id": str(kp.id),
+            "kp_name": kp.name,
+            "kp_category": str(kp.category) if kp.category else None,
+            "correct_count": m.correct_count if m else 0,
+            "wrong_count": m.wrong_count if m else 0,
+            "total": total,
+            "accuracy": round(m.correct_count / total, 4) if total else None,
+            "last_activity_at": m.last_activity_at.isoformat() if m and m.last_activity_at else None,
+        })
+    return make_ok(result)
+
+
 @router.get("/kps/search")
 async def search_knowledge_points(
     db: DbDep,

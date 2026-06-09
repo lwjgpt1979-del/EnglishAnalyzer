@@ -437,6 +437,26 @@ export interface KPContentOut {
   audio_url: string | null
 }
 
+export interface KpMasteryItem {
+  kp_name: string
+  correct_count: number
+  wrong_count: number
+  total: number
+  accuracy: number | null
+  last_activity_at: string | null
+}
+
+export interface KpMasterySummaryItem {
+  kp_id: string
+  kp_name: string
+  kp_category: string | null
+  correct_count: number
+  wrong_count: number
+  total: number
+  accuracy: number | null
+  last_activity_at: string | null
+}
+
 // ─── V2 仿真题（D-079 / M3a）──
 
 export type SimQuestionType =

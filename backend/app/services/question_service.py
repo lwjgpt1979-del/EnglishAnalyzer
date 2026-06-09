@@ -28,6 +28,7 @@ from app.schemas.questions import (
     AIGeneratedQuestion, ExamHistoryItem, ExamHistoryOut, ExamRankOut,
     KPAccuracyItem, KPAccuracyOut, PracticeResultOut, SimQuestionOut,
 )
+from app.services import kp_mastery_service
 
 
 # 映射 SimQuestion.question_type → WrongQuestion.question_type（合法 enum）
@@ -270,6 +271,31 @@ async def _log_attempt(
     await db.flush()
 
 
+async def _upsert_kp_mastery(
+    db: AsyncSession,
+    *,
+    user_id: uuid.UUID,
+    question: SimulatedQuestion,
+    correct: bool,
+) -> None:
+    if not question.knowledge_point_id:
+        return
+    kp_obj = (await db.execute(
+        select(KnowledgePoint).where(KnowledgePoint.id == question.knowledge_point_id)
+    )).scalar_one_or_none()
+    if kp_obj is None:
+        return
+    await kp_mastery_service.upsert_mastery(
+        db,
+        student_id=user_id,
+        kp_key=kp_obj.name,
+        kp_id=kp_obj.id,
+        is_correct=correct,
+        source="practice",
+        kp_description=kp_obj.description,
+    )
+
+
 async def submit_attempt(
     db: AsyncSession,
     *,
@@ -292,6 +318,8 @@ async def submit_attempt(
         wq_id = await _record_wrong(db, user_id=user_id, question=q, user_answer=user_answer)
     else:
         await _mark_mastered(db, user_id=user_id, question_stem=q.stem)
+
+    await _upsert_kp_mastery(db, user_id=user_id, question=q, correct=correct)
 
     return PracticeResultOut(
         correct=correct,
@@ -340,6 +368,8 @@ async def submit_exam_attempts(
                 db, user_id=user_id, question=q, user_answer=atin.user_answer)
         else:
             await _mark_mastered(db, user_id=user_id, question_stem=q.stem)
+
+        await _upsert_kp_mastery(db, user_id=user_id, question=q, correct=correct)
 
         items.append(ExamItemResult(
             question_id=q.id,
