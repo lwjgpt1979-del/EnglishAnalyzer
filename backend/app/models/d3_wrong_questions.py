@@ -63,6 +63,14 @@ class WrongQuestion(Base):
         server_default=sa.func.now(),
         onupdate=sa.func.now(),
     )
+    # ── SM-2 间隔重复字段（M36）────────────────────────────────────────────────
+    review_count = mapped_column(sa.Integer, nullable=False, server_default="0")
+    easiness_factor = mapped_column(
+        sa.Numeric(precision=4, scale=2), nullable=False, server_default="2.50"
+    )
+    review_interval_days = mapped_column(sa.Integer, nullable=False, server_default="1")
+    next_review_at = mapped_column(sa.Date, nullable=True)
+    last_review_at = mapped_column(sa.Date, nullable=True)
 
 
 class OcrTask(Base):

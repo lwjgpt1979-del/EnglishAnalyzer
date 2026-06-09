@@ -95,3 +95,41 @@ export function listPaperWrongs(skip = 0, limit = 20): Promise<PaperWrongListOut
     method: 'GET',
   })
 }
+
+// ── M36: SM-2 复习计划 ────────────────────────────────────────────────────────
+
+export interface ReviewStats {
+  total_unmastered: number
+  due_today: number
+  new_unscheduled: number
+}
+
+export interface WrongQuestionReviewItem {
+  id: string
+  question_text: string | null
+  student_answer: string | null
+  correct_answer: string | null
+  question_type: string | null
+  review_count: number
+  easiness_factor: number
+  review_interval_days: number
+  next_review_at: string | null
+  last_review_at: string | null
+  is_mastered: boolean
+}
+
+export interface ReviewQueueOut {
+  due_items: WrongQuestionReviewItem[]
+  stats: ReviewStats
+}
+
+export function getReviewQueue(): Promise<ReviewQueueOut> {
+  return request<ReviewQueueOut>('/api/v1/wrong-questions/review-queue', { method: 'GET' })
+}
+
+export function submitReview(wqId: string, quality: number): Promise<WrongQuestionReviewItem> {
+  return request<WrongQuestionReviewItem>(`/api/v1/wrong-questions/${wqId}/review`, {
+    method: 'POST',
+    data: { quality },
+  })
+}

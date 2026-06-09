@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,12 @@ class WrongQuestionOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     ocr_status: str | None = None
+    # SM-2 间隔重复字段（M36）
+    review_count: int = 0
+    easiness_factor: Decimal = Decimal("2.50")
+    review_interval_days: int = 1
+    next_review_at: date | None = None
+    last_review_at: date | None = None
 
     model_config = {"from_attributes": True}
 
@@ -55,6 +62,17 @@ class WrongQuestionOut(BaseModel):
 class WrongQuestionListOut(BaseModel):
     items: list[WrongQuestionOut]
     total: int
+
+
+class ReviewQueueOut(BaseModel):
+    """GET /wrong-questions/review-queue 响应体。"""
+    due_items: list[WrongQuestionOut]
+    stats: dict  # {total_unmastered, due_today, new_unscheduled}
+
+
+class SubmitReviewIn(BaseModel):
+    """POST /wrong-questions/{id}/review 请求体。"""
+    quality: int = Field(..., ge=0, le=5, description="复习质量 0=完全忘记 5=完全掌握")
 
 
 class AiAnalysisOut(BaseModel):

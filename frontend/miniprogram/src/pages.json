@@ -21,6 +21,10 @@
       "style": { "navigationBarTitleText": "错题详情" }
     },
     {
+      "path": "pages/wrong-questions/review",
+      "style": { "navigationBarTitleText": "今日复习" }
+    },
+    {
       "path": "pages/diagnosis/index",
       "style": { "navigationBarTitleText": "学情报告" }
     },

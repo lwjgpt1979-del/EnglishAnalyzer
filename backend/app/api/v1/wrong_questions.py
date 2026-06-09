@@ -18,11 +18,13 @@ from app.schemas.base import BaseResponse, make_ok
 from app.schemas.wrong_questions import (
     AiAnalysisOut,
     MarkMasteredRequest,
+    ReviewQueueOut,
+    SubmitReviewIn,
     WrongQuestionCreate,
     WrongQuestionListOut,
     WrongQuestionOut,
 )
-from app.services import wrong_question_service
+from app.services import review_service, wrong_question_service
 
 router = APIRouter(prefix="/wrong-questions", tags=["wrong-questions"])
 
@@ -93,6 +95,24 @@ async def list_wrong_questions_by_kp(
             total=total,
         )
     )
+
+
+# ── SM-2 复习计划（M36）— 必须在 /{wq_id} 之前定义，否则 FastAPI 路由被截获 ───────
+
+@router.get("/review-queue", response_model=BaseResponse[ReviewQueueOut])
+async def get_review_queue(db: DbDep, current_user: UserDep):
+    """今日复习队列：到期待复习 + 新错题初始化调度。"""
+    await get_rls_db(db, str(current_user.id))
+    # 先初始化新错题（安排今日复习）
+    await review_service.get_new_queue(db, student_id=current_user.id)
+    await db.commit()
+    # 再取今日队列
+    due_items = await review_service.get_today_review_queue(db, student_id=current_user.id)
+    stats = await review_service.get_review_stats(db, student_id=current_user.id)
+    return make_ok(ReviewQueueOut(
+        due_items=[WrongQuestionOut.model_validate(wq) for wq in due_items],
+        stats=stats,
+    ))
 
 
 @router.get("/{wq_id}", response_model=BaseResponse[WrongQuestionOut])
@@ -175,3 +195,20 @@ async def list_analyses(
         raise AppError(code=404, message="错题不存在或无权访问")
     analyses = await wrong_question_service.list_analyses(db, wrong_question_id=wq_id)
     return make_ok([AiAnalysisOut.model_validate(a) for a in analyses])
+
+
+@router.post("/{wq_id}/review", response_model=BaseResponse[WrongQuestionOut])
+async def submit_review(
+    wq_id: uuid.UUID,
+    body: SubmitReviewIn,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """提交复习质量（0-5），更新 SM-2 调度。"""
+    await get_rls_db(db, str(current_user.id))
+    wq = await review_service.submit_review(
+        db, wq_id=wq_id, student_id=current_user.id, quality=body.quality,
+    )
+    await db.commit()
+    await db.refresh(wq)
+    return make_ok(WrongQuestionOut.model_validate(wq))
