@@ -80,7 +80,8 @@
     { "path": "pages/practice/adaptive", "style": { "navigationBarTitleText": "智能出题" } },
     { "path": "pages/user-papers/list", "style": { "navigationBarTitleText": "我的整卷" } },
     { "path": "pages/user-papers/upload", "style": { "navigationBarTitleText": "上传整卷" } },
-    { "path": "pages/user-papers/detail", "style": { "navigationBarTitleText": "整卷详情" } }
+    { "path": "pages/user-papers/detail", "style": { "navigationBarTitleText": "整卷详情" } },
+    { "path": "pages/kp-mastery/index", "style": { "navigationBarTitleText": "知识点图谱" } }
   ],
   "tabBar": {
     "color": "#999",

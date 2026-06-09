@@ -119,6 +119,18 @@
       <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/membership/activate' })">输入激活码</button>
     </view>
 
+    <!-- M42 知识点图谱入口 -->
+    <view class="card kp-entry-card" @tap="goKpMastery">
+      <view class="kp-entry-row">
+        <view class="kp-entry-icon">🧠</view>
+        <view class="kp-entry-text">
+          <view class="card-title" style="margin-bottom:4rpx">知识点图谱</view>
+          <text class="menu-desc">查看各知识点掌握进度，精准定位薄弱项</text>
+        </view>
+        <text class="kp-entry-arrow">›</text>
+      </view>
+    </view>
+
     <!-- 整卷上传（D-089 / M4）-->
     <view class="card" @tap="goUserPapers">
       <view class="card-title">整卷拆题</view>
@@ -331,6 +343,10 @@ function goUserPapers() {
   uni.navigateTo({ url: '/pages/user-papers/list' })
 }
 
+function goKpMastery() {
+  uni.navigateTo({ url: '/pages/kp-mastery/index' })
+}
+
 function _requestBindSubscribe() {
   const tmplId = import.meta.env.VITE_WX_SUBSCRIBE_TEMPLATE_BIND as string | undefined
   if (!tmplId || tmplId.startsWith('placeholder')) return
@@ -522,6 +538,11 @@ function goBuySemester() {
 .btn-pay[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
 .center-tip { color: var(--c-text-hint); font-size: 28rpx; }
 .menu-desc { font-size: 24rpx; color: var(--c-text-second); margin-bottom: 12rpx; display: block; }
+.kp-entry-card { padding: 24rpx; }
+.kp-entry-row { display: flex; align-items: center; gap: 20rpx; }
+.kp-entry-icon { font-size: 52rpx; flex-shrink: 0; }
+.kp-entry-text { flex: 1; }
+.kp-entry-arrow { font-size: 40rpx; color: #bbb; flex-shrink: 0; }
 .btn-menu { background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; }
 .cancel-banner { background: var(--c-orange); color: #fff; border-radius: var(--r-md); padding: 16rpx 24rpx; margin-bottom: 16rpx; display: flex; align-items: center; }
 .cb-text { flex: 1; font-size: 26rpx; font-weight: 700; }
