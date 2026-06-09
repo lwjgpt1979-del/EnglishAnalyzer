@@ -76,6 +76,146 @@ async def upsert_mastery(
     await db.execute(stmt)
 
 
+async def get_mastery_tree_for_teacher(
+    db: AsyncSession,
+    *,
+    teacher_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> list[StudentKpMastery]:
+    """教师查学生 KP 台账，先鉴权（学生须绑定该教师）。
+
+    未绑定 → 抛 AppError(403)。
+    """
+    from sqlalchemy import select as _sel
+    from app.models.d1_users import TeacherStudent
+    from app.core.exceptions import AppError
+
+    rel = (await db.execute(
+        _sel(TeacherStudent).where(
+            TeacherStudent.teacher_id == teacher_id,
+            TeacherStudent.student_id == student_id,
+            TeacherStudent.status == "active",
+        )
+    )).scalar_one_or_none()
+
+    if rel is None:
+        raise AppError(code=403, message="该学生未绑定到您，无法查看其知识点台账")
+
+    return await get_mastery_tree(db, student_id=student_id)
+
+
+async def get_class_kp_stats(
+    db: AsyncSession,
+    *,
+    teacher_id: uuid.UUID,
+    class_id: uuid.UUID,
+) -> dict:
+    """聚合班级 KP 统计数据。
+
+    返回结构：
+      class_id, class_name, student_count
+      top_weak_kps       — 全班平均正确率最低的 KP（≤10 条），按 avg_accuracy ASC
+        · kp_key, avg_accuracy, student_count（有记录人数）,
+          weak_count（<60%人数）, mastered_count（≥80%人数）
+      students_attention — 全班平均正确率最低的学生（≤5 条），按 avg_accuracy ASC
+        · student_id, nickname, avg_accuracy, weak_kp_count, total_kp_count
+    """
+    from collections import defaultdict
+    from app.models.d1_users import User as _U
+    from app.models.d7_teacher import ClassStudent
+    from app.core.exceptions import AppError
+    from app.services.class_service import _get_owned_class
+
+    cls = await _get_owned_class(db, teacher_id=teacher_id, class_id=class_id)
+
+    # 获取班级所有学生 ID
+    student_ids = list(
+        (await db.execute(
+            select(ClassStudent.student_id).where(ClassStudent.class_id == class_id)
+        )).scalars().all()
+    )
+
+    if not student_ids:
+        return {
+            "class_id": str(class_id),
+            "class_name": cls.name,
+            "student_count": 0,
+            "top_weak_kps": [],
+            "students_attention": [],
+        }
+
+    # 批量查台账（一次 SQL，按 student_id IN）
+    mastery_rows = list(
+        (await db.execute(
+            select(StudentKpMastery).where(
+                StudentKpMastery.student_id.in_(student_ids),
+                StudentKpMastery.last_activity_at.is_not(None),
+            )
+        )).scalars().all()
+    )
+
+    # 拿学生昵称
+    nick_map: dict[str, str | None] = {
+        str(row.id): row.nickname
+        for row in (await db.execute(
+            select(_U.id, _U.nickname).where(_U.id.in_(student_ids))
+        )).all()
+    }
+
+    # ── 按 kp_key 聚合 ──────────────────────────────────────────────────
+    kp_data: dict[str, list[float]] = defaultdict(list)  # kp_key → [accuracy, ...]
+    for row in mastery_rows:
+        total = row.correct_count + row.wrong_count
+        if total == 0:
+            continue
+        acc = row.correct_count / total
+        kp_data[row.kp_key].append(acc)
+
+    top_weak_kps = []
+    for kp_key, accs in kp_data.items():
+        avg_acc = sum(accs) / len(accs)
+        top_weak_kps.append({
+            "kp_key": kp_key,
+            "avg_accuracy": round(avg_acc, 4),
+            "student_count": len(accs),
+            "weak_count": sum(1 for a in accs if a < 0.6),
+            "mastered_count": sum(1 for a in accs if a >= 0.8),
+        })
+    top_weak_kps.sort(key=lambda x: x["avg_accuracy"])
+    top_weak_kps = top_weak_kps[:10]
+
+    # ── 按 student_id 聚合 ──────────────────────────────────────────────
+    stu_data: dict[str, list[float]] = defaultdict(list)
+    for row in mastery_rows:
+        total = row.correct_count + row.wrong_count
+        if total == 0:
+            continue
+        acc = row.correct_count / total
+        stu_data[str(row.student_id)].append(acc)
+
+    students_attention = []
+    for stu_id_str, accs in stu_data.items():
+        avg_acc = sum(accs) / len(accs)
+        weak_kp_count = sum(1 for a in accs if a < 0.6)
+        students_attention.append({
+            "student_id": stu_id_str,
+            "nickname": nick_map.get(stu_id_str),
+            "avg_accuracy": round(avg_acc, 4),
+            "weak_kp_count": weak_kp_count,
+            "total_kp_count": len(accs),
+        })
+    students_attention.sort(key=lambda x: x["avg_accuracy"])
+    students_attention = students_attention[:5]
+
+    return {
+        "class_id": str(class_id),
+        "class_name": cls.name,
+        "student_count": len(student_ids),
+        "top_weak_kps": top_weak_kps,
+        "students_attention": students_attention,
+    }
+
+
 async def get_mastery_tree(
     db: AsyncSession,
     *,

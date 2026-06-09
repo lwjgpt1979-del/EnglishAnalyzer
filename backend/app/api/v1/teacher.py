@@ -268,6 +268,48 @@ async def student_diagnosis_api(student_id: uuid.UUID, db: DbDep, current_user: 
     return make_ok(report)
 
 
+# ── M44：教师端 KP 接口 ─────────────────────────────────────────────────────
+
+@router.get("/students/{student_id}/kp-mastery", response_model=None)
+async def student_kp_mastery_api(student_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """教师查看绑定学生的知识点掌握台账（弱项优先）。"""
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    from app.services import kp_mastery_service
+    rows = await kp_mastery_service.get_mastery_tree_for_teacher(
+        db, teacher_id=current_user.id, student_id=student_id,
+    )
+    items = []
+    for r in rows:
+        total = r.correct_count + r.wrong_count
+        accuracy = r.correct_count / total if total > 0 else 0.0
+        items.append({
+            "kp_key": r.kp_key,
+            "kp_id": str(r.kp_id) if r.kp_id else None,
+            "kp_description": r.kp_description,
+            "correct_count": r.correct_count,
+            "wrong_count": r.wrong_count,
+            "accuracy": round(accuracy, 4),
+            "sources": list(r.sources or []),
+            "last_activity_at": (
+                r.last_activity_at.isoformat() if r.last_activity_at else None
+            ),
+        })
+    return make_ok(items)
+
+
+@router.get("/classes/{class_id}/kp-stats", response_model=None)
+async def class_kp_stats_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """班级 KP 统计：最薄弱知识点 + 需关注学生列表。"""
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    from app.services import kp_mastery_service
+    stats = await kp_mastery_service.get_class_kp_stats(
+        db, teacher_id=current_user.id, class_id=class_id,
+    )
+    return make_ok(stats)
+
+
 @router.post("/cert/submit", response_model=BaseResponse[TeacherProfileOut])
 async def submit_cert_api(body: CertSubmitRequest, db: DbDep, current_user: UserDep):
     """教师提交认证材料。dev 模式自动通过，生产模式进入 pending。"""
