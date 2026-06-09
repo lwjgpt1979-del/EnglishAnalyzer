@@ -67,6 +67,7 @@
     { "path": "pages/membership/semester-purchase", "style": { "navigationBarTitleText": "购买学期会员" } },
     { "path": "pages/relative/center", "style": { "navigationBarTitleText": "家人中心" } },
     { "path": "pages/relative/student-view", "style": { "navigationBarTitleText": "孩子学情" } },
+    { "path": "pages/relative/weekly-report-detail", "style": { "navigationBarTitleText": "学情周报" } },
     { "path": "pages/curriculum/units", "style": { "navigationBarTitleText": "课程单元" } },
     { "path": "pages/curriculum/unit-detail", "style": { "navigationBarTitleText": "单元详情" } },
     { "path": "pages/curriculum/kp-content", "style": { "navigationBarTitleText": "知识点" } },

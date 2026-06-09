@@ -83,6 +83,11 @@ async function onTap(n: NotificationOut) {
   }
   if (n.meta?.wq_id) {
     uni.navigateTo({ url: `/pages/wrong-questions/detail?id=${n.meta.wq_id}` })
+  } else if (n.type === 'weekly_report' && n.meta) {
+    // 周报详情：将 meta 整体 JSON 传给详情页，student_name 从通知标题中提取
+    const data = encodeURIComponent(JSON.stringify(n.meta))
+    const studentName = encodeURIComponent(n.title || '孩子')
+    uni.navigateTo({ url: `/pages/relative/weekly-report-detail?data=${data}&student_name=${studentName}` })
   } else if (n.channel === 'membership') {
     uni.switchTab({ url: '/pages/profile/index' })
   }
