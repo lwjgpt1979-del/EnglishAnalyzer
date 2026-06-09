@@ -322,7 +322,8 @@ def test_all_37_tables_in_metadata():
     actual_tables = set(Base.metadata.tables.keys())
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
-    assert len(actual_tables) == 51, f"期望 51 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+    # 实际表数量会随新功能增长——此处为防"意外增删表"的护栏，新增合法表后同步更新。
+    assert len(actual_tables) == 55, f"期望 55 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
 
 
 def test_d11_v2_curriculum_tables():

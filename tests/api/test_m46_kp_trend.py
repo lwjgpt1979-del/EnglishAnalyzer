@@ -1,7 +1,7 @@
 """M46 — KP 趋势图（日快照 + trend API）"""
 from __future__ import annotations
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -62,7 +62,7 @@ async def test_trend_has_point_after_practice(client: AsyncClient):
     points = r.json()["data"]
     assert len(points) >= 1
 
-    today = str(date.today())
+    today = str(datetime.now(timezone.utc).date())  # 快照按 UTC 日期存储，须用 UTC 对比
     assert any(p["date"] == today for p in points)
     assert all(0.0 <= p["accuracy"] <= 1.0 for p in points)
 
@@ -90,7 +90,7 @@ async def test_trend_dedup_same_day(client: AsyncClient):
         headers={"Authorization": f"Bearer {token}"},
     )
     points = r.json()["data"]
-    today = str(date.today())
+    today = str(datetime.now(timezone.utc).date())  # 快照按 UTC 日期存储，须用 UTC 对比
     today_points = [p for p in points if p["date"] == today]
     assert len(today_points) == 1   # 去重，只有一条
 

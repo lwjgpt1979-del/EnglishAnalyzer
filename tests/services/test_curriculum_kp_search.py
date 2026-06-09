@@ -16,9 +16,14 @@ async def db() -> AsyncSession:
         await session.rollback()
 
 
+# 唯一标记词：避免与生产库已有的真实知识点（如"现在完成时"）名称碰撞，
+# 使关键词精确匹配类测试不受 DB 已有种子数据影响。
+_TAG = uuid.uuid4().hex[:8]
+
+
 @pytest_asyncio.fixture
 async def seed_kps(db: AsyncSession):
-    """插入 4 个知识点：2 个含"完成"，1 个含"被动"，1 个其他。"""
+    """插入 4 个知识点：2 个含唯一标记词，1 个含"被动"，1 个其他。"""
     def _kp(name: str) -> KnowledgePoint:
         return KnowledgePoint(
             id=uuid.uuid4(),
@@ -28,7 +33,7 @@ async def seed_kps(db: AsyncSession):
             applicable_grades=["小学5年级"],
             applicable_textbooks=["译林版"],
         )
-    kps = [_kp("现在完成时"), _kp("过去完成时"), _kp("被动语态"), _kp("一般现在时")]
+    kps = [_kp(f"现在完成时{_TAG}"), _kp(f"过去完成时{_TAG}"), _kp("被动语态"), _kp("一般现在时")]
     for k in kps:
         db.add(k)
     await db.flush()
@@ -37,13 +42,13 @@ async def seed_kps(db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_search_kps_by_keyword(db, seed_kps):
-    """关键词"完成"应返回2条，不含"被动"和"一般"。"""
+    """按唯一标记词搜索应恰好返回本测试 seed 的 2 条，不含其他。"""
     from app.services.curriculum_service import search_kps
-    results = await search_kps(db, q="完成", limit=10)
+    results = await search_kps(db, q=_TAG, limit=10)
     names = [r.name for r in results]
     assert len(results) == 2
-    assert "现在完成时" in names
-    assert "过去完成时" in names
+    assert f"现在完成时{_TAG}" in names
+    assert f"过去完成时{_TAG}" in names
     assert "被动语态" not in names
 
 
