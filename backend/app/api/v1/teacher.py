@@ -529,6 +529,20 @@ async def suggest_questions_api(student_id: uuid.UUID, db: DbDep, current_user: 
     return make_ok(SuggestOut(**res))
 
 
+@router.get("/assignments/suggest-by-kp", response_model=BaseResponse[SuggestOut])
+async def suggest_by_kp_api(
+    kp_key: str,
+    db: DbDep,
+    current_user: UserDep,
+    count: int = 5,
+):
+    """按指定知识点生成出题建议（M47 班级弱项推荐）。"""
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    res = await assignment_service.suggest_questions_by_kp(kp_key=kp_key, count=count)
+    return make_ok(SuggestOut(**res))
+
+
 @router.get("/assignments/{assignment_id}", response_model=BaseResponse[TeacherAssignmentDetail])
 async def get_assignment_api(assignment_id: uuid.UUID, db: DbDep, current_user: UserDep):
     await _require_certified_teacher(db, current_user)

@@ -44,3 +44,11 @@ export function getAssignmentStats(id: string): Promise<import('@/types/api').As
 export function suggestAssignmentQuestions(studentId: string, count = 5): Promise<import('@/types/api').AssignmentSuggest> {
   return request('/api/v1/teacher/assignments/suggest', { method: 'GET', data: { student_id: studentId, count } })
 }
+
+/** M47 — 按指定 KP 直接生成出题建议（班级弱项推荐专用）*/
+export function suggestByKp(kpKey: string, count = 5): Promise<import('@/types/api').AssignmentSuggest> {
+  return request('/api/v1/teacher/assignments/suggest-by-kp', {
+    method: 'GET',
+    data: { kp_key: kpKey, count },
+  })
+}

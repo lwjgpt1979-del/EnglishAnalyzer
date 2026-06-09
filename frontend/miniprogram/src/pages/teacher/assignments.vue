@@ -6,10 +6,32 @@
       <picker mode="date" :value="dueDate" @change="dueDate = ($event as any).detail.value">
         <view class="ipt due-picker">{{ dueDate ? '截止日期：' + dueDate : '截止日期（选填）' }}</view>
       </picker>
+
+      <!-- M47 班级弱项推荐 -->
+      <view v-if="weakKps.length" class="rec-section">
+        <view class="rec-title">🎯 班级弱项推荐</view>
+        <view class="rec-chips">
+          <view
+            v-for="kp in weakKps"
+            :key="kp.kp_key"
+            class="kp-chip"
+            :class="chipClass(kp.avg_accuracy)"
+            @tap="onKpChip(kp)"
+          >
+            <text class="chip-name">{{ kp.kp_key }}</text>
+            <text class="chip-acc">{{ pct(kp.avg_accuracy) }}</text>
+            <text class="chip-weak">{{ kp.weak_count }}/{{ kp.student_count }}人弱</text>
+          </view>
+        </view>
+        <text v-if="chipLoading" class="rec-loading">生成中…</text>
+      </view>
+
+      <!-- 原有：按学生 ID 智能选题 -->
       <view class="suggest-row">
         <input v-model="suggestSid" class="ipt suggest-ipt" placeholder="目标学生ID（智能选题）" />
         <text class="suggest-btn" @tap="onSuggest">🎯 智能选题</text>
       </view>
+
       <view v-for="(q, i) in questions" :key="i" class="q-block">
         <view class="q-head">第 {{ i + 1 }} 题 <text class="q-del" @tap="removeQ(i)">删除</text></view>
         <textarea v-model="q.stem" class="q-stem" placeholder="题干" />
@@ -41,7 +63,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { createAssignment, listAssignments, publishAssignment, closeAssignment, suggestAssignmentQuestions } from '@/api/assignments'
+import {
+  createAssignment, listAssignments, publishAssignment,
+  closeAssignment, suggestAssignmentQuestions, suggestByKp,
+} from '@/api/assignments'
+import { getClassKpStats, type ClassKpWeakItem } from '@/api/teacher'
 import type { AssignmentListItem, AssignmentQuestion } from '@/types/api'
 
 const classId = ref('')
@@ -51,6 +77,44 @@ const questions = ref<AssignmentQuestion[]>([{ stem: '', answer: '' }])
 const creating = ref(false)
 const list = ref<AssignmentListItem[]>([])
 const suggestSid = ref('')
+
+// M47 — 班级弱项 KP 推荐
+const weakKps = ref<ClassKpWeakItem[]>([])
+const chipLoading = ref(false)
+
+onLoad((q) => {
+  classId.value = (q as { classId?: string })?.classId || ''
+})
+onShow(load)
+
+async function load() {
+  try { list.value = await listAssignments(classId.value || undefined) } catch { /* 忽略 */ }
+  // 加载班级弱项 KP（有 classId 时）
+  if (classId.value && !weakKps.value.length) {
+    try {
+      const stats = await getClassKpStats(classId.value)
+      weakKps.value = stats.top_weak_kps.slice(0, 5)
+    } catch { /* 班级统计失败不阻断 */ }
+  }
+}
+
+/** 点击弱项 KP 芯片 → 按该 KP 生成题目 */
+async function onKpChip(kp: ClassKpWeakItem) {
+  if (chipLoading.value) return
+  chipLoading.value = true
+  try {
+    const r = await suggestByKp(kp.kp_key, 5)
+    questions.value = r.questions.map((q) => ({
+      stem: q.stem, type: q.type, options: q.options, answer: q.answer,
+    }))
+    if (!title.value) title.value = `${kp.kp_key} 专项练习`
+    uni.showToast({ title: `已按「${kp.kp_key}」选题`, icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '选题失败', icon: 'none' })
+  } finally {
+    chipLoading.value = false
+  }
+}
 
 async function onSuggest() {
   if (!suggestSid.value.trim()) { uni.showToast({ title: '请输入学生ID', icon: 'none' }); return }
@@ -64,15 +128,15 @@ async function onSuggest() {
   }
 }
 
-onLoad((q) => { classId.value = (q as { classId?: string })?.classId || '' })
-onShow(load)
-
-async function load() {
-  try { list.value = await listAssignments(classId.value || undefined) } catch { /* 忽略 */ }
-}
 function addQ() { questions.value.push({ stem: '', answer: '' }) }
 function removeQ(i: number) { questions.value.splice(i, 1) }
 function statusText(s: string) { return s === 'draft' ? '草稿' : s === 'published' ? '已发布' : '已关闭' }
+function pct(acc: number) { return `${(acc * 100).toFixed(0)}%` }
+function chipClass(acc: number) {
+  if (acc >= 0.8) return 'chip-green'
+  if (acc >= 0.6) return 'chip-yellow'
+  return 'chip-red'
+}
 
 async function onCreate() {
   creating.value = true
@@ -108,14 +172,35 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/assignment
 .page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; }
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
-.ipt { width: 100%; height: 72rpx; font-size: 28rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 0 16rpx; margin-bottom: 12rpx; }
+.ipt { width: 100%; height: 72rpx; font-size: 28rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 0 16rpx; margin-bottom: 12rpx; box-sizing: border-box; }
+
+/* M47 班级弱项推荐 */
+.rec-section { margin-bottom: 16rpx; padding: 16rpx; background: #fffbe6; border-radius: 12rpx; border: 1rpx solid #ffe58f; }
+.rec-title { font-size: 24rpx; font-weight: 600; color: #ad8b00; margin-bottom: 12rpx; }
+.rec-chips { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.kp-chip {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 10rpx 16rpx; border-radius: 12rpx; border: 2rpx solid;
+  min-width: 120rpx; cursor: pointer;
+}
+.chip-red    { border-color: #ff4d4f; background: #fff2f0; }
+.chip-yellow { border-color: #faad14; background: #fffbe6; }
+.chip-green  { border-color: #52c41a; background: #f6ffed; }
+.chip-name { font-size: 24rpx; font-weight: 600; color: #333; margin-bottom: 4rpx; }
+.chip-acc  { font-size: 28rpx; font-weight: 700; }
+.chip-red .chip-acc    { color: #ff4d4f; }
+.chip-yellow .chip-acc { color: #faad14; }
+.chip-green .chip-acc  { color: #52c41a; }
+.chip-weak { font-size: 18rpx; color: #999; margin-top: 2rpx; }
+.rec-loading { font-size: 24rpx; color: #999; margin-top: 8rpx; }
+
 .suggest-row { display: flex; gap: 12rpx; align-items: center; margin-bottom: 12rpx; }
 .suggest-ipt { flex: 1; margin-bottom: 0; }
 .suggest-btn { font-size: 26rpx; color: var(--c-primary); font-weight: 700; white-space: nowrap; }
 .q-block { border-top: 1rpx solid var(--c-border); padding-top: 12rpx; margin-bottom: 12rpx; }
 .q-head { font-size: 26rpx; color: var(--c-text-second); margin-bottom: 8rpx; }
 .q-del { color: #e54d42; margin-left: 12rpx; }
-.q-stem { width: 100%; height: 140rpx; font-size: 28rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 12rpx; margin-bottom: 12rpx; }
+.q-stem { width: 100%; height: 140rpx; font-size: 28rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 12rpx; margin-bottom: 12rpx; box-sizing: border-box; }
 .btn-ghost { background: var(--c-bg-page); color: var(--c-text-body); border-radius: var(--r-btn); padding: 16rpx; font-size: 26rpx; margin-bottom: 12rpx; }
 .btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }

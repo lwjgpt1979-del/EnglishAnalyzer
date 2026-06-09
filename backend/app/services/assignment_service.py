@@ -211,6 +211,20 @@ async def suggest_questions(db: AsyncSession, *, student_id: uuid.UUID, count: i
     return {"knowledge_point": kp, "questions": questions}
 
 
+async def suggest_questions_by_kp(kp_key: str, count: int = 5) -> dict:
+    """按指定 KP 名称直接生成出题建议（M47，不需要 student_id）。"""
+    from app.services import question_ai_service
+    if not kp_key or not kp_key.strip():
+        raise AppError(code=400, message="kp_key 不能为空")
+    gen = await question_ai_service.generate_questions(
+        kp_name=kp_key.strip(), kp_category="语法", kp_description=None, count=count)
+    questions = [
+        {"stem": q.stem, "type": q.question_type, "options": q.options, "answer": q.answer}
+        for q in gen
+    ]
+    return {"knowledge_point": kp_key.strip(), "questions": questions}
+
+
 async def get_assignment_stats(
     db: AsyncSession, *, teacher_id: uuid.UUID, assignment_id: uuid.UUID,
 ) -> dict:
