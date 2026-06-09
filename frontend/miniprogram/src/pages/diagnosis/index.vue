@@ -196,6 +196,41 @@
         <text class="acc-hint">弱项（正确率低于 60%）已高亮，建议优先攻克</text>
       </view>
 
+      <!-- 知识点掌握台账（M6c，弱项在前 + 复习建议） -->
+      <view class="card" v-if="report.mastery_ledger && report.mastery_ledger.length > 0">
+        <view class="card-title">知识点掌握台账</view>
+        <text class="ledger-hint">综合练习 / 错题 / 作业 / 整卷的累计表现，弱项在前。点击查看趋势 →</text>
+        <view
+          v-for="item in ledgerShown"
+          :key="item.kp_key"
+          class="ledger-item"
+          :class="`lv-${item.level}`"
+          @tap="goTrend(item.kp_key)"
+        >
+          <view class="ledger-head">
+            <text class="ledger-name">{{ item.kp_key }}</text>
+            <text class="ledger-acc" :class="`acc-${item.level}`">
+              {{ item.total > 0 ? Math.round(item.accuracy * 100) + '%' : '未练习' }}
+            </text>
+          </view>
+          <view class="bar-track">
+            <view class="bar-fill" :class="`acc-${item.level}`" :style="{ width: Math.round(item.accuracy * 100) + '%' }" />
+          </view>
+          <view class="ledger-meta">
+            <text class="ledger-sub">对 {{ item.correct_count }} · 错 {{ item.wrong_count }}（共 {{ item.total }}）</text>
+            <text class="ledger-badge" :class="`badge-${item.level}`">{{ levelLabel(item.level) }}</text>
+          </view>
+          <text class="ledger-suggestion">💡 {{ item.suggestion }}</text>
+        </view>
+        <view
+          v-if="report.mastery_ledger.length > LEDGER_PREVIEW"
+          class="ledger-toggle"
+          @tap="ledgerExpanded = !ledgerExpanded"
+        >
+          {{ ledgerExpanded ? '收起' : `展开全部 ${report.mastery_ledger.length} 个知识点` }}
+        </view>
+      </view>
+
       <!-- 模拟考成绩趋势 + 历史 -->
       <view class="card" v-if="examHistory && examHistory.items.length > 0">
         <view class="card-title">模拟考成绩趋势</view>
@@ -312,6 +347,14 @@ const examTrend = computed(() => {
     .map((ex) => ({ id: ex.id, accuracy: ex.accuracy }))
 })
 
+// 知识点掌握台账（弱项在前，默认预览前 5 条）
+const LEDGER_PREVIEW = 5
+const ledgerExpanded = ref(false)
+const ledgerShown = computed(() => {
+  const all = report.value?.mastery_ledger ?? []
+  return ledgerExpanded.value ? all : all.slice(0, LEDGER_PREVIEW)
+})
+
 onMounted(async () => {
   if (!auth.isLoggedIn()) await auth.login()
   loading.value = true
@@ -400,6 +443,14 @@ function goPractice() {
   uni.navigateTo({ url: '/pages/practice/adaptive' })
 }
 
+function levelLabel(level: string): string {
+  return ({ weak: '薄弱', medium: '待巩固', good: '已掌握' } as Record<string, string>)[level] || level
+}
+
+function goTrend(kpKey: string) {
+  uni.navigateTo({ url: `/pages/kp-mastery/trend?kpKey=${encodeURIComponent(kpKey)}` })
+}
+
 function barWidth(count: number, max: number): number {
   return max === 0 ? 0 : Math.round((count / max) * 100)
 }
@@ -468,6 +519,30 @@ function activityClass(count: number): string {
 .kpdim-acc.acc-mid { color: var(--c-gold); }
 .kpdim-acc.acc-high { color: #2ecc71; }
 .kpdim-sub { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
+
+/* 知识点掌握台账（M6c） */
+.ledger-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
+.ledger-item { padding: 16rpx; border-radius: var(--r-md); background: var(--c-bg-soft); margin-bottom: 16rpx; border-left: 6rpx solid transparent; }
+.ledger-item.lv-weak { background: #fdecea; border-left-color: var(--c-danger); }
+.ledger-item.lv-medium { background: #fff7e6; border-left-color: var(--c-gold); }
+.ledger-item.lv-good { background: #eafaf1; border-left-color: #2ecc71; }
+.ledger-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10rpx; }
+.ledger-name { font-size: 26rpx; font-weight: 600; color: var(--c-ink); flex: 1; }
+.ledger-acc { font-size: 28rpx; font-weight: 700; margin-left: 12rpx; }
+.bar-fill.acc-weak { background: var(--c-danger); }
+.bar-fill.acc-medium { background: var(--c-gold); }
+.bar-fill.acc-good { background: #2ecc71; }
+.acc-weak { color: var(--c-danger); }
+.acc-medium { color: var(--c-gold); }
+.acc-good { color: #2ecc71; }
+.ledger-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8rpx; }
+.ledger-sub { font-size: 22rpx; color: var(--c-text-hint); }
+.ledger-badge { font-size: 20rpx; padding: 2rpx 14rpx; border-radius: var(--r-pill); }
+.badge-weak { background: var(--c-danger); color: #fff; }
+.badge-medium { background: var(--c-gold); color: #fff; }
+.badge-good { background: #2ecc71; color: #fff; }
+.ledger-suggestion { display: block; font-size: 22rpx; color: var(--c-text-second); margin-top: 10rpx; line-height: 1.5; }
+.ledger-toggle { text-align: center; font-size: 24rpx; color: var(--c-primary, #1677ff); padding: 12rpx; }
 
 /* 我的班级排名 */
 .rank-card { }

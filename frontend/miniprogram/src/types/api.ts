@@ -123,6 +123,21 @@ export interface SemesterDimensionItem {
   accuracy: number
 }
 
+// 知识点掌握台账条目（来自 student_kp_mastery，M6c）
+export interface MasteryLedgerItem {
+  kp_key: string
+  kp_id: string | null
+  correct_count: number
+  wrong_count: number
+  total: number
+  accuracy: number
+  level: 'weak' | 'medium' | 'good'
+  suggestion: string
+  sources: string[]
+  last_activity_at: string | null
+  days_since_last: number | null
+}
+
 export interface DiagnosisReport {
   total_questions: number
   total_analyzed: number
@@ -136,6 +151,7 @@ export interface DiagnosisReport {
   top_suggestions: string[]
   kp_dimension: KpDimensionItem[]
   semester_dimension: SemesterDimensionItem[]
+  mastery_ledger: MasteryLedgerItem[]
 }
 
 // ── Membership ───────────────────────────────────────────────────────────────

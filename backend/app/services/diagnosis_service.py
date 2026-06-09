@@ -22,12 +22,68 @@ from app.schemas.diagnosis import (
     ErrorTypeCount,
     KnowledgePointCount,
     KpDimensionItem,
+    MasteryLedgerItem,
     SemesterDimensionItem,
 )
 
 _TOP_N = 10          # error_types / knowledge_points 取前10
 _SUGGESTION_N = 5    # 最多返回5条建议
 _ACTIVITY_DAYS = 30  # 近30天活跃度
+_WEAK_THRESHOLD = 0.4    # 正确率 < 0.4 视为薄弱
+_MEDIUM_THRESHOLD = 0.7  # 0.4 ≤ 正确率 < 0.7 视为待巩固
+_STALE_DAYS = 14         # 超过 N 天未练习 → 提醒复习
+
+
+def _build_review_suggestion(*, accuracy: float, total: int, days_since: int | None) -> tuple[str, str]:
+    """根据正确率与活跃度生成 (level, suggestion)。纯规则，不调 AI。"""
+    if accuracy < _WEAK_THRESHOLD:
+        level = "weak"
+        msg = "薄弱项，建议优先做专项练习，从基础题逐步加难。"
+    elif accuracy < _MEDIUM_THRESHOLD:
+        level = "medium"
+        msg = "已有基础但不稳，再多练几组巩固熟练度。"
+    else:
+        level = "good"
+        msg = "掌握较好，保持节奏并定期回顾防遗忘。"
+    if total < 3:
+        msg = "练习量偏少，建议先多做几题以获得可靠评估。"
+    if days_since is not None and days_since >= _STALE_DAYS:
+        msg += f"（已 {days_since} 天未练习，注意及时复习）"
+    return level, msg
+
+
+async def _build_mastery_ledger(
+    db: AsyncSession, *, student_id: uuid.UUID
+) -> list[MasteryLedgerItem]:
+    """从 student_kp_mastery 台账构建带复习建议的条目列表（弱项在前）。"""
+    from app.services import kp_mastery_service
+
+    rows = await kp_mastery_service.get_mastery_tree(db, student_id=student_id)
+    today = datetime.now(timezone.utc)
+    items: list[MasteryLedgerItem] = []
+    for r in rows:
+        total = r.correct_count + r.wrong_count
+        accuracy = r.correct_count / total if total > 0 else 0.0
+        days_since: int | None = None
+        if r.last_activity_at is not None:
+            days_since = (today - r.last_activity_at.astimezone(timezone.utc)).days
+        level, suggestion = _build_review_suggestion(
+            accuracy=accuracy, total=total, days_since=days_since
+        )
+        items.append(MasteryLedgerItem(
+            kp_key=r.kp_key,
+            kp_id=r.kp_id,
+            correct_count=r.correct_count,
+            wrong_count=r.wrong_count,
+            total=total,
+            accuracy=round(accuracy, 4),
+            level=level,
+            suggestion=suggestion,
+            sources=list(r.sources or []),
+            last_activity_at=r.last_activity_at.isoformat() if r.last_activity_at else None,
+            days_since_last=days_since,
+        ))
+    return items
 
 
 async def get_diagnosis_report(
@@ -126,6 +182,9 @@ async def get_diagnosis_report(
         db, student_id=student_id
     )
 
+    # ── 8. 知识点掌握台账（来自 student_kp_mastery，弱项在前 + 复习建议，M6c）────
+    mastery_ledger = await _build_mastery_ledger(db, student_id=student_id)
+
     return DiagnosisReport(
         total_questions=total_questions,
         total_analyzed=total_analyzed,
@@ -139,6 +198,7 @@ async def get_diagnosis_report(
         top_suggestions=top_suggestions,
         kp_dimension=kp_dimension,
         semester_dimension=semester_dimension,
+        mastery_ledger=mastery_ledger,
     )
 
 

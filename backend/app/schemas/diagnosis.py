@@ -48,6 +48,22 @@ class SemesterDimensionItem(BaseModel):
     accuracy: float = Field(..., ge=0.0, le=1.0, description="正确率，保留 4 位小数")
 
 
+class MasteryLedgerItem(BaseModel):
+    """知识点掌握台账条目（数据源：student_kp_mastery，M5/M6 多来源累积）。"""
+
+    kp_key: str = Field(..., description="知识点名称")
+    kp_id: uuid.UUID | None = Field(None, description="标准 KP 的 UUID，自定义 KP 为 null")
+    correct_count: int = Field(..., description="累计答对次数")
+    wrong_count: int = Field(..., description="累计答错次数")
+    total: int = Field(..., description="累计作答次数")
+    accuracy: float = Field(..., ge=0.0, le=1.0, description="正确率，保留 4 位小数")
+    level: str = Field(..., description="掌握等级：weak / medium / good")
+    suggestion: str = Field(..., description="规则化复习建议")
+    sources: list[str] = Field(default_factory=list, description="贡献来源列表")
+    last_activity_at: str | None = Field(None, description="最近一次作答时间 ISO 字符串")
+    days_since_last: int | None = Field(None, description="距今天数，无记录为 null")
+
+
 class DiagnosisReport(BaseModel):
     """学情诊断报告。
 
@@ -98,4 +114,10 @@ class DiagnosisReport(BaseModel):
     )
     semester_dimension: list[SemesterDimensionItem] = Field(
         default_factory=list, description="按学期维度的练习正确率"
+    )
+
+    # ── 知识点掌握台账（来自 student_kp_mastery，弱项在前，含复习建议，M6c）──────
+    mastery_ledger: list[MasteryLedgerItem] = Field(
+        default_factory=list,
+        description="个人知识点掌握台账，按正确率升序（弱项在前），含规则化复习建议",
     )
