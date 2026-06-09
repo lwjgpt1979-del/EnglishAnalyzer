@@ -553,3 +553,143 @@ async def join_institution_api(
         id=t.id, nickname=current_user.nickname, phone=current_user.phone,
         subject=t.subject, cert_status=str(t.cert_status),
     ))
+
+
+# ─── 出卷闭环（V2 M28）─────────────────────────────────────────────────────
+
+from app.services import teacher_exam_service
+from app.schemas.teacher_exam import (
+    ClassPaperCreate, ClassPaperOut, ClassPaperDetailOut,
+    SimQuestionOut, SimQuestionListOut,
+)
+
+
+def _ensure_teacher_cert(current_user: User, db_teacher) -> None:  # type: ignore[type-arg]
+    """复用 teacher_service.ensure_certified，兼容 None（未注册为老师）。"""
+    teacher_service.ensure_certified(db_teacher)
+
+
+@router.get("/sim-questions", response_model=BaseResponse[SimQuestionListOut])
+async def browse_sim_questions_api(
+    db: DbDep, current_user: TeacherDep,
+    kp_id: uuid.UUID | None = None,
+    question_type: str | None = None,
+    difficulty: int | None = None,
+    skip: int = 0,
+    limit: int = 20,
+):
+    """老师浏览平台仿真题库（用于组卷选题）。"""
+    await get_rls_db(db, str(current_user.id))
+    items, total = await teacher_exam_service.browse_sim_questions(
+        db,
+        kp_id=kp_id,
+        question_type=question_type,
+        difficulty=difficulty,
+        skip=skip,
+        limit=limit,
+    )
+    return make_ok(SimQuestionListOut(
+        items=[SimQuestionOut.model_validate(q) for q in items],
+        total=total,
+    ))
+
+
+@router.post("/classes/{class_id}/papers", response_model=BaseResponse[ClassPaperOut])
+async def create_class_paper_api(
+    class_id: uuid.UUID,
+    body: ClassPaperCreate,
+    db: DbDep,
+    current_user: TeacherDep,
+):
+    """老师为班级出卷（从平台仿真题库选题）。"""
+    await get_rls_db(db, str(current_user.id))
+    paper = await teacher_exam_service.create_class_paper(
+        db,
+        class_id=class_id,
+        teacher_id=current_user.id,
+        title=body.title,
+        textbook_version=body.textbook_version,
+        grade=body.grade,
+        semester=body.semester,
+        description=body.description,
+        question_ids=body.question_ids,
+    )
+    await db.commit()
+    return make_ok(ClassPaperOut(
+        paper_id=paper.id,
+        class_id=paper.class_id,
+        title=paper.title,
+        textbook_version=paper.textbook_version,
+        grade=paper.grade,
+        semester=paper.semester,
+        description=paper.description,
+        question_count=len(body.question_ids),
+        status=paper.status,
+        created_at=paper.created_at,
+    ))
+
+
+@router.get("/classes/{class_id}/papers", response_model=BaseResponse[list[ClassPaperOut]])
+async def list_class_papers_api(
+    class_id: uuid.UUID,
+    db: DbDep,
+    current_user: TeacherDep,
+):
+    """老师查看班级已出卷子列表。"""
+    await get_rls_db(db, str(current_user.id))
+    papers = await teacher_exam_service.list_class_papers(db, class_id=class_id)
+    result = []
+    for p in papers:
+        qcount = await teacher_exam_service.get_paper_question_count(db, paper_id=p.id)
+        result.append(ClassPaperOut(
+            paper_id=p.id,
+            class_id=p.class_id,
+            title=p.title,
+            textbook_version=p.textbook_version,
+            grade=p.grade,
+            semester=p.semester,
+            description=p.description,
+            question_count=qcount,
+            status=p.status,
+            created_at=p.created_at,
+        ))
+    return make_ok(result)
+
+
+@router.get("/papers/{paper_id}", response_model=BaseResponse[ClassPaperDetailOut])
+async def get_class_paper_detail_api(
+    paper_id: uuid.UUID,
+    db: DbDep,
+    current_user: TeacherDep,
+):
+    """老师查看卷子详情（含题目 + 答案）。"""
+    await get_rls_db(db, str(current_user.id))
+    paper, questions = await teacher_exam_service.get_paper_with_questions(db, paper_id=paper_id)
+    return make_ok(ClassPaperDetailOut(
+        paper_id=paper.id,
+        class_id=paper.class_id,
+        title=paper.title,
+        textbook_version=paper.textbook_version,
+        grade=paper.grade,
+        semester=paper.semester,
+        description=paper.description,
+        question_count=len(questions),
+        status=paper.status,
+        created_at=paper.created_at,
+        questions=[SimQuestionOut.model_validate(q) for q in questions],
+    ))
+
+
+@router.delete("/papers/{paper_id}", response_model=BaseResponse[dict])
+async def delete_class_paper_api(
+    paper_id: uuid.UUID,
+    db: DbDep,
+    current_user: TeacherDep,
+):
+    """老师删除班级卷子（软删：status→archived）。"""
+    await get_rls_db(db, str(current_user.id))
+    await teacher_exam_service.delete_class_paper(
+        db, paper_id=paper_id, teacher_id=current_user.id,
+    )
+    await db.commit()
+    return make_ok({"deleted": True})

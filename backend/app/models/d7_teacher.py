@@ -1,6 +1,7 @@
 """
-域7: 老师端 (4 张表)
+域7: 老师端 (6 张表)
   classes · class_students · assignments · assignment_submissions
+  · class_papers · class_paper_questions
 """
 
 import uuid
@@ -112,4 +113,44 @@ class AssignmentSubmission(Base):
             "assignment_id", "student_id",
             name="uix_assignment_submissions_unique",
         ),
+    )
+
+
+class ClassPaper(Base):
+    """老师从平台仿真题库选题组成的班级试卷（V2 M28）。"""
+
+    __tablename__ = "class_papers"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    class_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("classes.id"), nullable=False)
+    teacher_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    title = mapped_column(sa.String, nullable=False)
+    textbook_version = mapped_column(sa.String, nullable=True)
+    grade = mapped_column(sa.String, nullable=True)
+    semester = mapped_column(sa.String, nullable=True)
+    description = mapped_column(sa.Text, nullable=True)
+    status = mapped_column(sa.String, nullable=False, server_default=sa.text("'active'"))
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                               server_default=sa.func.now(), onupdate=sa.func.now())
+
+
+class ClassPaperQuestion(Base):
+    """班级试卷题目明细——引用平台仿真题（V2 M28）。"""
+
+    __tablename__ = "class_paper_questions"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    class_paper_id = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("class_papers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sim_question_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("simulated_questions.id"), nullable=False
+    )
+    order_no = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("1"))
+
+    __table_args__ = (
+        sa.UniqueConstraint("class_paper_id", "sim_question_id", name="uq_cpq_paper_question"),
     )
