@@ -71,6 +71,8 @@ async def analyze_wrong_question(
         # M38: 自动打标 — 将 knowledge_points 合并写入 wq.tags
         from app.services.wrong_question_service import apply_tags_from_analysis
         apply_tags_from_analysis(wq, list(analysis.knowledge_points or []))
+        # M41: 写入知识点台账（source="wrong_question"）
+        await _upsert_wrong_question_mastery(db, student_id=student_id, analysis=analysis)
         # —— 发"AI分析完成"通知（D-074 Module 7B）——
         from app.services.notification_service import emit_analysis_done
         try:
@@ -124,6 +126,8 @@ async def analyze_wrong_question(
     # M38: 自动打标 — 将 knowledge_points 合并写入 wq.tags
     from app.services.wrong_question_service import apply_tags_from_analysis
     apply_tags_from_analysis(wq, list(analysis.knowledge_points or []))
+    # M41: 写入知识点台账（source="wrong_question"）
+    await _upsert_wrong_question_mastery(db, student_id=student_id, analysis=analysis)
     # —— 发"AI分析完成"通知（D-074 Module 7B）——
     from app.services.notification_service import emit_analysis_done
     try:
@@ -131,3 +135,29 @@ async def analyze_wrong_question(
     except Exception:
         pass  # 通知失败不影响主链路
     return analysis
+
+
+async def _upsert_wrong_question_mastery(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    analysis: "AiAnalysis",
+) -> None:
+    """把错题 AI 分析的第一个知识点写入掌握台账（is_correct=False）。"""
+    try:
+        from app.services import kp_mastery_service
+        kps = list(analysis.knowledge_points or [])
+        if not kps:
+            return
+        # 只写首个知识点（主要错因）
+        await kp_mastery_service.upsert_mastery(
+            db,
+            student_id=student_id,
+            kp_key=kps[0],
+            kp_id=None,
+            is_correct=False,
+            source="wrong_question",
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("M41: 错题台账写入失败")

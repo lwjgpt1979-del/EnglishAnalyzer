@@ -349,4 +349,73 @@ async def submit_assignment(
         sub.score = score
     await _sync_assignment_wrongs(db, student_id=student_id, assignment_id=a.id, wrong_items=wrong)
     await db.flush()
+
+    # M41: 写入知识点台账（source="assignment"）
+    await _upsert_assignment_mastery(
+        db, student_id=student_id, questions=a.questions or [], answers=answers, wrong_items=wrong
+    )
+
     return sub
+
+
+async def _upsert_assignment_mastery(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    questions: list,
+    answers,
+    wrong_items: list[dict],
+) -> None:
+    """把作业每道客观题的对/错写入知识点台账。
+
+    KP 通过 kp_classifier_service 推断（dev 模式直接返回 mock KP）。
+    """
+    try:
+        from app.services import kp_mastery_service
+        from app.services.kp_classifier_service import classify_kps
+        from app.services.paper_split_service import ParsedPaperQuestion
+
+        amap = _normalize_answers(answers)
+        # 只处理有答案的客观题
+        objective = [(i, q) for i, q in enumerate(questions) if (q or {}).get("answer")]
+        if not objective:
+            return
+
+        # 构造 ParsedPaperQuestion 列表，供 classify_kps 推断知识点
+        pq_list: list[ParsedPaperQuestion] = []
+        for i, q in objective:
+            ua = amap.get(i, "")
+            pq_list.append(
+                ParsedPaperQuestion(
+                    question_no=str(i),
+                    question_type=str(q.get("type") or "其他"),
+                    stem=str(q.get("stem") or ""),
+                    student_answer=ua,
+                    correct_answer=str(q.get("answer") or ""),
+                    explanation=None,
+                )
+            )
+
+        # KP 分类（dev mock 直接返回固定 KP）
+        kp_map = await classify_kps(pq_list)  # {question_no: kp_key}
+
+        # 构建答错题的 stem set，方便判断对/错
+        wrong_stems = {w["stem"] for w in wrong_items}
+
+        for pq in pq_list:
+            kp_key = kp_map.get(pq.question_no)
+            if not kp_key:
+                continue
+            is_correct = pq.stem not in wrong_stems
+            await kp_mastery_service.upsert_mastery(
+                db,
+                student_id=student_id,
+                kp_key=kp_key,
+                kp_id=None,
+                is_correct=is_correct,
+                source="assignment",
+            )
+    except Exception:
+        # 台账写入失败不影响主链路
+        import logging
+        logging.getLogger(__name__).exception("M41: 作业台账写入失败")
