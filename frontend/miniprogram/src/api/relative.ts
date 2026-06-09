@@ -28,6 +28,24 @@ export function relativeInviteSms(phone: string) {
   return request('/api/v1/relative/invite-code/sms', { method: 'POST', data: { phone } })
 }
 
+// ── M45 KP 台账 ────────────────────────────────────────────────────────────
+
+export interface ChildKpMasteryItem {
+  kp_key: string
+  kp_id: string | null
+  kp_description: string | null
+  correct_count: number
+  wrong_count: number
+  accuracy: number
+  sources: string[]
+  last_activity_at: string | null
+}
+
+/** 家长查看孩子知识点台账 */
+export function getChildKpMastery(studentId: string): Promise<ChildKpMasteryItem[]> {
+  return request<ChildKpMasteryItem[]>(`/api/v1/relative/students/${studentId}/kp-mastery`)
+}
+
 export function getStudentCheckinCalendar(studentId: string, year?: number, month?: number) {
   const data: Record<string, number> = {}
   if (year) data.year = year

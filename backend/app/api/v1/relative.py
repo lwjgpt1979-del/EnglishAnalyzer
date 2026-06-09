@@ -185,6 +185,23 @@ async def relative_view_student_checkin_calendar(
     ))
 
 
+@router.get(
+    "/students/{student_id}/kp-mastery",
+    response_model=None,
+    summary="家长查看孩子知识点台账（M45）",
+)
+async def relative_view_student_kp_mastery(
+    student_id: uuid.UUID, db: DbDep, current_user: UserDep,
+):
+    await get_rls_db(db, str(current_user.id))
+    await relative_service.assert_bound(
+        db, relative_id=current_user.id, student_id=student_id,
+    )
+    from app.services.kp_mastery_service import get_mastery_tree
+    items = await get_mastery_tree(db, student_id=student_id)
+    return make_ok(items)
+
+
 @router.post("/invite-code/qrcode", response_model=BaseResponse[QRCodeOut])
 async def relative_invite_qrcode(db: DbDep, current_user: UserDep):
     await get_rls_db(db, str(current_user.id))

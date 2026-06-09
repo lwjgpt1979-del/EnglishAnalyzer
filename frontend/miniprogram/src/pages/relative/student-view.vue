@@ -12,6 +12,12 @@
         </view>
       </view>
 
+      <!-- M45 知识点台账入口 -->
+      <view class="card entry-card" @tap="goKpMastery">
+        <text class="entry-text">🧠 知识点掌握图谱</text>
+        <text class="entry-arrow">›</text>
+      </view>
+
       <view v-if="report.top_error_types.length" class="card">
         <view class="card-title">高频错误</view>
         <view v-for="e in report.top_error_types.slice(0, 5)" :key="e.error_type" class="row">
@@ -157,6 +163,11 @@ onMounted(async () => {
   } finally { loading.value = false }
 })
 
+// ── M45 知识点台账 ───────────────────────────────────────────────────────────
+function goKpMastery() {
+  uni.navigateTo({ url: `/pages/relative/student-kp?studentId=${studentId.value}` })
+}
+
 // ── V2 学期代付 ───────────────────────────────────────────────────────────────
 async function onPay() {
   paying.value = true
@@ -226,4 +237,8 @@ async function onPay() {
 .cal-cell { width: 14.28%; height: 64rpx; display: flex; align-items: center; justify-content: center; font-size: 24rpx; color: var(--c-text-body); }
 .cal-cell.checked { color: var(--c-gold); font-weight: 700; }
 .cal-cell.blank { visibility: hidden; }
+/* M45 入口卡片 */
+.entry-card { display: flex; justify-content: space-between; align-items: center; }
+.entry-text { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.entry-arrow { font-size: 32rpx; color: var(--c-text-hint); }
 </style>
