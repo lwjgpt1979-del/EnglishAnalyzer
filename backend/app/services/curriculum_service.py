@@ -159,6 +159,93 @@ async def persist_unit(
     return cu
 
 
+# ─── Admin：批量生成 ────────────────────────────────────────────────────────
+
+async def reset_semester(
+    db: AsyncSession,
+    *,
+    textbook_version: str,
+    grade: str,
+    semester: str,
+) -> int:
+    """删除指定学期的所有单元（按 FK 顺序先删子表再删主表）。
+
+    返回删除的单元数。用于重新生成前清场。
+    """
+    import sqlalchemy as _sa
+    from app.models.d4_knowledge import CurriculumWord
+
+    # 先查出目标单元 ID
+    rows = list((await db.execute(
+        select(CurriculumUnit).where(
+            CurriculumUnit.textbook_version == textbook_version,
+            CurriculumUnit.grade == grade,
+            CurriculumUnit.semester == semester,
+        )
+    )).scalars().all())
+    if not rows:
+        return 0
+
+    unit_ids = [cu.id for cu in rows]
+
+    # 按 FK 顺序删子表，再删主表（避免 FK violation）
+    from app.models.d4_knowledge import UnitKnowledgePoint
+    await db.execute(
+        _sa.delete(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id.in_(unit_ids))
+    )
+    await db.execute(
+        _sa.delete(CurriculumWord).where(CurriculumWord.unit_id.in_(unit_ids))
+    )
+    await db.execute(
+        _sa.delete(CurriculumUnit).where(CurriculumUnit.id.in_(unit_ids))
+    )
+    await db.flush()
+    return len(rows)
+
+
+async def generate_semester(
+    db: AsyncSession,
+    *,
+    textbook_version: str,
+    grade: str,
+    semester: str,
+    unit_count: int = 6,
+    content_status: str = "published",
+    reset: bool = True,
+) -> list[dict]:
+    """清场后用真实 AI 生成指定学期全部单元（M2）。
+
+    返回逐单元结果列表：[{unit_no, unit_title, kp_count, status}, ...]
+    content_status="published" 让内容立即对学生可见（管理员已做质量担保）。
+    """
+    from app.services import curriculum_ai_service
+
+    if reset:
+        deleted = await reset_semester(
+            db, textbook_version=textbook_version, grade=grade, semester=semester,
+        )
+
+    results = []
+    for unit_no in range(1, unit_count + 1):
+        ai_unit = await curriculum_ai_service.generate_unit(
+            textbook_version=textbook_version,
+            grade=grade,
+            semester=semester,
+            unit_no=unit_no,
+        )
+        cu = await persist_unit(db, ai_unit=ai_unit, content_status=content_status)
+        await db.flush()
+        results.append({
+            "unit_no": unit_no,
+            "unit_title": ai_unit.unit_title,
+            "kp_count": len(ai_unit.knowledge_points),
+            "word_count": len(ai_unit.words),
+            "status": "ok",
+        })
+
+    return results
+
+
 # ─── Paywall ────────────────────────────────────────────────────────────────
 
 async def is_unit_locked(

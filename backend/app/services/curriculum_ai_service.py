@@ -179,12 +179,19 @@ async def generate_unit(
         raw = raw.split("\n", 1)[1] if "\n" in raw else raw
         if raw.rstrip().endswith("```"):
             raw = raw.rstrip()[:-3].rstrip()
+    import re as _re
     try:
         # strict=False 允许字符串内出现裸换行/制表符等控制字符
         # （DeepSeek 偶尔在 markdown 内容里直接输出真实换行而非 \\n）
         data = json.loads(raw, strict=False)
-    except json.JSONDecodeError as exc:
-        raise AppError(code=500, message="AI 课程生成返回格式异常") from exc
+    except json.JSONDecodeError:
+        # 修复 DeepSeek 偶尔输出的非法 \X 转义（如 \s \p \( 等），
+        # 将其替换为合法的 \\X，使 JSON 解析器接受。
+        fixed = _re.sub(r'\\([^"\\/bfnrtu])', r'\\\\\1', raw)
+        try:
+            data = json.loads(fixed, strict=False)
+        except json.JSONDecodeError as exc2:
+            raise AppError(code=500, message="AI 课程生成返回格式异常") from exc2
 
     try:
         return AIGeneratedUnit(**data)

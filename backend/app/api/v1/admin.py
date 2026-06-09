@@ -607,3 +607,39 @@ async def generate_sim_questions_from_paper(
 
     await db.commit()
     return make_ok({"paper_id": str(paper_id), "sim_questions_created": created})
+
+
+# ── M2 课程内容 AI 生成 ────────────────────────────────────────────────────────
+
+class GenerateSemesterRequest(_BM):
+    textbook_version: str = "译林版"
+    grade: str = "小学5年级"
+    semester: str = "上"
+    unit_count: int = 6
+    content_status: str = "published"
+    reset: bool = True
+
+
+@router.post("/curriculum/generate-semester", response_model=BaseResponse[list[dict]])
+async def generate_semester_api(
+    body: GenerateSemesterRequest,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """用真实 AI 生成（或重新生成）一个学期的课程内容（M2）。
+
+    reset=True 先清除该学期已有数据再重建（幂等）。
+    content_status="published" 生成后立即对学生可见。
+    同步执行，6 单元约 60-90 秒，请耐心等待。
+    """
+    results = await curriculum_service.generate_semester(
+        db,
+        textbook_version=body.textbook_version,
+        grade=body.grade,
+        semester=body.semester,
+        unit_count=body.unit_count,
+        content_status=body.content_status,
+        reset=body.reset,
+    )
+    await db.commit()
+    return make_ok(results)
