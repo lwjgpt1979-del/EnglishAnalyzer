@@ -45,21 +45,18 @@ async def _get_weak_kp_names_from_mastery(
     from app.models.d4_knowledge import StudentKpMastery
     import sqlalchemy as sa
 
+    # last_activity_at IS NOT NULL 等价于 correct+wrong > 0（每次 upsert 都写该字段），
+    # 且 last_activity_at 列可建普通索引，比计算表达式更友好。
     rows = list(
         (await db.execute(
             select(StudentKpMastery).where(
                 StudentKpMastery.student_id == student_id,
-                (StudentKpMastery.correct_count + StudentKpMastery.wrong_count) > 0,
+                StudentKpMastery.last_activity_at.is_not(None),
             ).order_by(
-                sa.case(
-                    (StudentKpMastery.correct_count + StudentKpMastery.wrong_count == 0, 1),
-                    else_=0,
-                ),
-                sa.case(
-                    ((StudentKpMastery.correct_count + StudentKpMastery.wrong_count) > 0,
-                     sa.cast(StudentKpMastery.correct_count, sa.Float)
-                     / (StudentKpMastery.correct_count + StudentKpMastery.wrong_count)),
-                    else_=sa.literal(0.0),
+                # accuracy = correct / (correct + wrong)，升序 = 弱项优先
+                (
+                    sa.cast(StudentKpMastery.correct_count, sa.Float)
+                    / (StudentKpMastery.correct_count + StudentKpMastery.wrong_count)
                 ).asc(),
                 StudentKpMastery.last_activity_at.desc().nulls_last(),
             ).limit(top_n)
