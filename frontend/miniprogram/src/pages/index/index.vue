@@ -25,6 +25,34 @@
 
     <!-- ───────── 学生身份 ───────── -->
     <template v-if="activeRole === 'student'">
+      <!-- 今日学习计划（M9）-->
+      <view v-if="auth.isLoggedIn() && plan && plan.tasks.length" class="plan-card">
+        <view class="plan-head">
+          <text class="plan-title">📅 今日学习计划</text>
+          <text class="plan-progress">{{ plan.completed_count }}/{{ plan.total_count }} 完成</text>
+        </view>
+        <view class="plan-bar-track">
+          <view
+            class="plan-bar-fill"
+            :style="{ width: (plan.total_count ? plan.completed_count / plan.total_count * 100 : 0) + '%' }"
+          />
+        </view>
+        <view
+          v-for="(t, i) in plan.tasks"
+          :key="i"
+          class="plan-task"
+          @tap="() => goTask(t)"
+        >
+          <text class="plan-check" :class="{ done: t.done }">{{ t.done ? '✓' : '○' }}</text>
+          <view class="plan-task-body">
+            <text class="plan-task-title" :class="{ done: t.done }">{{ t.title }}</text>
+            <text class="plan-task-sub">{{ t.subtitle }}</text>
+          </view>
+          <text class="plan-task-arrow">›</text>
+        </view>
+        <text v-if="!plan.checkin_done" class="plan-checkin-tip">完成学习后别忘了去「词力通」打卡 →</text>
+      </view>
+
       <!-- 开始学习主卡片 -->
       <view class="learn-card" @tap="goLearn">
         <view class="learn-left">
@@ -143,8 +171,9 @@ import { useAuthStore } from '@/stores/auth'
 import { onShow } from '@dcloudio/uni-app'
 import { getUnreadCount } from '@/api/notifications'
 import { getMyStudentsAsRelative } from '@/api/relative'
+import { getTodayPlan } from '@/api/learningPlan'
 import { request } from '@/utils/request'
-import type { BoundStudent } from '@/types/api'
+import type { BoundStudent, TodayPlanOut, PlanTask } from '@/types/api'
 
 const auth = useAuthStore()
 
@@ -161,6 +190,26 @@ const ROLE_STORAGE_KEY = 'home_active_role'
 
 const children = ref<BoundStudent[]>([])
 const certStatus = ref<string>('')
+const plan = ref<TodayPlanOut | null>(null)
+
+async function loadPlan() {
+  if (!auth.isLoggedIn()) { plan.value = null; return }
+  try { plan.value = await getTodayPlan() } catch { plan.value = null }
+}
+
+function goTask(t: PlanTask) {
+  if (t.action === 'review') {
+    uni.navigateTo({ url: '/pages/wrong-questions/review' })
+  } else if (t.action === 'learn') {
+    goLearn()
+  } else { // practice
+    if (t.kp_id) {
+      uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${t.kp_id}` })
+    } else {
+      uni.navigateTo({ url: '/pages/practice/adaptive' })
+    }
+  }
+}
 
 const isTeacher = computed(() => (auth.user as any)?.role === 'teacher')
 const isRelative = computed(() => children.value.length > 0)
@@ -199,6 +248,7 @@ async function loadRoleData() {
     } catch { certStatus.value = '' }
   }
   resolveInitialRole()
+  loadPlan()
 }
 
 const heroTitle = computed(() => (
@@ -267,6 +317,28 @@ onMounted(() => {
   color: var(--c-text-second); border-radius: var(--r-pill); transition: all .2s;
 }
 .role-seg-item.active { background: var(--c-primary); color: var(--c-ink); font-weight: 700; }
+
+/* 今日学习计划（M9）*/
+.plan-card {
+  background: var(--c-bg-card); border-radius: var(--r-lg);
+  padding: 28rpx 28rpx 20rpx; margin-bottom: 24rpx;
+  box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04);
+}
+.plan-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16rpx; }
+.plan-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-ink); }
+.plan-progress { font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
+.plan-bar-track { height: 12rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; margin-bottom: 16rpx; }
+.plan-bar-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width .3s; }
+.plan-task { display: flex; align-items: center; gap: 16rpx; padding: 18rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.plan-task:last-of-type { border-bottom: none; }
+.plan-check { width: 40rpx; height: 40rpx; line-height: 40rpx; text-align: center; border-radius: 50%; background: var(--c-bg-soft); color: var(--c-text-hint); font-size: 26rpx; flex-shrink: 0; }
+.plan-check.done { background: #2ecc71; color: #fff; }
+.plan-task-body { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
+.plan-task-title { font-size: 28rpx; font-weight: 600; color: var(--c-ink); }
+.plan-task-title.done { color: var(--c-text-hint); text-decoration: line-through; }
+.plan-task-sub { font-size: 22rpx; color: var(--c-text-hint); }
+.plan-task-arrow { font-size: 40rpx; color: var(--c-text-hint); font-weight: 700; }
+.plan-checkin-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; }
 
 .learn-card {
   background: var(--c-primary);

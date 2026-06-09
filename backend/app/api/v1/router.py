@@ -24,6 +24,7 @@ from app.api.v1.assignments import router as assignments_router
 from app.api.v1.institution import router as institution_router
 from app.api.v1.student_papers import router as student_papers_router
 from app.api.v1.kp_mastery import router as kp_mastery_router
+from app.api.v1.learning_plan import router as learning_plan_router
 
 v1_router = APIRouter()
 
@@ -50,4 +51,5 @@ v1_router.include_router(assignments_router)
 v1_router.include_router(institution_router)
 v1_router.include_router(student_papers_router)
 v1_router.include_router(kp_mastery_router)
+v1_router.include_router(learning_plan_router)
 v1_router.include_router(admin_router)

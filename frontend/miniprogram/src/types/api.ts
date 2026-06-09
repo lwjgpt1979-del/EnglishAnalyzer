@@ -154,6 +154,29 @@ export interface DiagnosisReport {
   mastery_ledger: MasteryLedgerItem[]
 }
 
+// ── 每日学习计划（M9）────────────────────────────────────────────────────────
+export interface PlanTask {
+  type: 'weak_kp' | 'review' | 'learn'
+  title: string
+  subtitle: string
+  action: 'practice' | 'review' | 'learn'
+  done: boolean
+  kp_id: string | null
+  kp_key: string | null
+  accuracy: number | null
+  level: 'weak' | 'medium' | 'good' | null
+  count: number | null
+}
+
+export interface TodayPlanOut {
+  date: string
+  tasks: PlanTask[]
+  completed_count: number
+  total_count: number
+  checkin_done: boolean
+  review_pending: number
+}
+
 // ── Membership ───────────────────────────────────────────────────────────────
 
 export interface CurrentMembershipOut {
