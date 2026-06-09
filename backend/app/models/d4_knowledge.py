@@ -121,6 +121,8 @@ class StudentKpMastery(Base):
 
     kp_key 为知识点名称字符串，是联合主键的一部分。
     标准教材 KP → kp_id 填写对应 UUID；教师/自定义 KP → kp_id = NULL。
+    sources 记录累积写入的来源列表（去重），如 ['practice', 'paper_upload', 'assignment']。
+    kp_description 为知识点简介（标准KP来自 knowledge_points.description，自定义KP可由 AI 填入）。
     """
 
     __tablename__ = "student_kp_mastery"
@@ -139,4 +141,8 @@ class StudentKpMastery(Base):
     )
     correct_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    # 贡献来源列表，去重存储，如 ['practice', 'paper_upload', 'assignment', 'wrong_question']
+    sources = mapped_column(ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"))
+    # 知识点简介：标准KP来自 knowledge_points.description，自定义KP可由 AI 填入
+    kp_description = mapped_column(sa.Text, nullable=True)
     last_activity_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)

@@ -23,9 +23,11 @@ UserDep = Annotated[User, Depends(get_current_user)]
 class KpMasteryItem(BaseModel):
     kp_key: str
     kp_id: uuid.UUID | None
+    kp_description: str | None      # 知识点简介
     correct_count: int
     wrong_count: int
-    accuracy: float  # correct / total，total=0 时为 0.0
+    accuracy: float                 # correct / total，total=0 时为 0.0
+    sources: list[str]              # 贡献来源，如 ['practice', 'paper_upload']
     last_activity_at: str | None
 
     model_config = {"from_attributes": True}
@@ -44,9 +46,11 @@ async def get_kp_mastery(db: DbDep, current_user: UserDep):
             KpMasteryItem(
                 kp_key=r.kp_key,
                 kp_id=r.kp_id,
+                kp_description=r.kp_description,
                 correct_count=r.correct_count,
                 wrong_count=r.wrong_count,
                 accuracy=round(accuracy, 4),
+                sources=list(r.sources or []),
                 last_activity_at=(
                     r.last_activity_at.isoformat() if r.last_activity_at else None
                 ),
