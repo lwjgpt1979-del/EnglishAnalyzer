@@ -132,10 +132,17 @@ async def generate_practice_questions(
     """
     kp_name = knowledge_point
     if not kp_name:
-        report = await diagnosis_service.get_diagnosis_report(db, student_id=student_id)
-        if not report.top_weak_knowledge_points:
-            raise AppError(code=400, message="暂无薄弱知识点，请先上传错题并完成 AI 分析")
-        kp_name = report.top_weak_knowledge_points[0].knowledge_point
+        # M43：优先从 student_kp_mastery 台账读弱项
+        from app.services.adaptive_question_service import _get_weak_kp_names_from_mastery
+        mastery_weak = await _get_weak_kp_names_from_mastery(db, student_id=student_id, top_n=1)
+        if mastery_weak:
+            kp_name = mastery_weak[0]
+        else:
+            # fallback：旧 diagnosis_service 逻辑
+            report = await diagnosis_service.get_diagnosis_report(db, student_id=student_id)
+            if not report.top_weak_knowledge_points:
+                raise AppError(code=400, message="暂无薄弱知识点，请先完成练习或上传错题")
+            kp_name = report.top_weak_knowledge_points[0].knowledge_point
 
     kp = await get_or_create_knowledge_point(db, name=kp_name)
 
