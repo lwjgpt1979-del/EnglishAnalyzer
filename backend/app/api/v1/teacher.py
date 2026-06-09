@@ -275,25 +275,37 @@ async def student_kp_mastery_api(student_id: uuid.UUID, db: DbDep, current_user:
     """教师查看绑定学生的知识点掌握台账（弱项优先）。"""
     await _require_certified_teacher(db, current_user)
     await get_rls_db(db, str(current_user.id))
+    from datetime import datetime, timezone
     from app.services import kp_mastery_service
     rows = await kp_mastery_service.get_mastery_tree_for_teacher(
         db, teacher_id=current_user.id, student_id=student_id,
     )
+    now = datetime.now(timezone.utc)
     items = []
     for r in rows:
         total = r.correct_count + r.wrong_count
         accuracy = r.correct_count / total if total > 0 else 0.0
+        days_since: int | None = None
+        if r.last_activity_at is not None:
+            days_since = (now - r.last_activity_at.astimezone(timezone.utc)).days
+        level, suggestion = kp_mastery_service.review_suggestion(
+            accuracy=accuracy, total=total, days_since=days_since
+        )
         items.append({
             "kp_key": r.kp_key,
             "kp_id": str(r.kp_id) if r.kp_id else None,
             "kp_description": r.kp_description,
             "correct_count": r.correct_count,
             "wrong_count": r.wrong_count,
+            "total": total,
             "accuracy": round(accuracy, 4),
+            "level": level,
+            "suggestion": suggestion,
             "sources": list(r.sources or []),
             "last_activity_at": (
                 r.last_activity_at.isoformat() if r.last_activity_at else None
             ),
+            "days_since_last": days_since,
         })
     return make_ok(items)
 

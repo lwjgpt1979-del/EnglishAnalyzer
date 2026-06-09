@@ -61,9 +61,13 @@ export interface TeacherKpMasteryItem {
   kp_description: string | null
   correct_count: number
   wrong_count: number
+  total: number
   accuracy: number
+  level: 'weak' | 'medium' | 'good'
+  suggestion: string
   sources: string[]
   last_activity_at: string | null
+  days_since_last: number | null
 }
 
 export interface ClassKpWeakItem {

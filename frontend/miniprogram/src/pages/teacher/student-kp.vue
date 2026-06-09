@@ -88,6 +88,12 @@
           最近：{{ formatDate(item.last_activity_at) }}
         </text>
 
+        <!-- 复习建议（M7c，教师辅导参考） -->
+        <view v-if="item.suggestion" class="kp-suggestion" :class="`sug-${item.level}`">
+          <text class="sug-badge" :class="`badge-${item.level}`">{{ levelLabel(item.level) }}</text>
+          <text class="sug-text">💡 {{ item.suggestion }}</text>
+        </view>
+
       </view>
     </view>
 
@@ -157,6 +163,9 @@ const weakCount = computed(() =>
   items.value.filter(i => i.accuracy < 0.6 && (i.correct_count + i.wrong_count) > 0).length
 )
 
+function levelLabel(level: string) {
+  return ({ weak: '薄弱', medium: '待巩固', good: '已掌握' } as Record<string, string>)[level] || level
+}
 function pct(acc: number) { return `${(acc * 100).toFixed(0)}%` }
 function accClass(acc: number) {
   if (acc >= 0.8) return 'acc-green'
@@ -248,4 +257,20 @@ function formatDate(iso: string) {
 
 .text-green { color: #52c41a !important; }
 .text-red   { color: #ff4d4f !important; }
+
+/* ── 复习建议（M7c）── */
+.kp-suggestion {
+  margin-top: 14rpx; padding: 14rpx 16rpx; border-radius: 12rpx;
+  display: flex; align-items: flex-start; gap: 10rpx;
+  &.sug-weak   { background: #fff2f0; }
+  &.sug-medium { background: #fffbe6; }
+  &.sug-good   { background: #f6ffed; }
+}
+.sug-badge {
+  flex-shrink: 0; font-size: 20rpx; padding: 2rpx 14rpx; border-radius: 20rpx; color: #fff;
+  &.badge-weak   { background: #ff4d4f; }
+  &.badge-medium { background: #faad14; }
+  &.badge-good   { background: #52c41a; }
+}
+.sug-text { flex: 1; font-size: 24rpx; color: #555; line-height: 1.5; }
 </style>
