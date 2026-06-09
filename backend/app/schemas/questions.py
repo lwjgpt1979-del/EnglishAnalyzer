@@ -30,6 +30,7 @@ class SimQuestionOut(BaseModel):
     stem: str
     options: list[str] | None = None
     difficulty: int
+    kp_name: str | None = None  # 所属知识点名称，自适应练习用于完成页按 KP 分析
 
 
 # ─── 运营审核（M5）：运营可见完整字段（含 answer），仅 platform_admin 可访问 ──

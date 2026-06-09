@@ -96,6 +96,17 @@ async def get_adaptive_set(
         db, student_id=current_user.id, total=total
     )
     await db.commit()
+    # 构建 kp_id → kp_name 映射，供完成页按 KP 展示分析
+    from sqlalchemy import select as _sel
+    from app.models.d4_knowledge import KnowledgePoint as _KP
+    kp_ids = {q.knowledge_point_id for q in result.questions if q.knowledge_point_id}
+    kp_name_map: dict = {}
+    if kp_ids:
+        kp_rows = (await db.execute(
+            _sel(_KP.id, _KP.name).where(_KP.id.in_(kp_ids))
+        )).all()
+        kp_name_map = {row.id: row.name for row in kp_rows}
+
     questions_out = [
         SimQuestionOut(
             id=q.id,
@@ -103,6 +114,7 @@ async def get_adaptive_set(
             stem=q.stem,
             options=q.options,
             difficulty=q.difficulty,
+            kp_name=kp_name_map.get(q.knowledge_point_id) if q.knowledge_point_id else None,
         )
         for q in result.questions
     ]

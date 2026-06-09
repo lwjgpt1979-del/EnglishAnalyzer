@@ -454,6 +454,7 @@ export interface SimQuestionOut {
   stem: string
   options: string[] | null
   difficulty: number
+  kp_name: string | null
 }
 
 export interface AdaptiveSetOut {

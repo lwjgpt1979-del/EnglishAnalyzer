@@ -77,3 +77,15 @@ async def test_adaptive_set_total_param_accepted(client: AsyncClient):
     # 非法：total=11
     resp = await client.get("/api/v1/questions/adaptive-set", params={"total": 11}, headers=h)
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_adaptive_set_questions_have_kp_name_field(client: AsyncClient):
+    """返回的题目字段中包含 kp_name（可为 None，但字段必须存在）。"""
+    h = await _login(client)
+    resp = await client.get("/api/v1/questions/adaptive-set", headers=h)
+    assert resp.status_code == 200
+    questions = resp.json()["data"]["questions"]
+    # 无题时字段从 schema 保证存在，跳过（新用户空集）
+    for q in questions:
+        assert "kp_name" in q, f"题目 {q.get('id')} 缺少 kp_name 字段"
