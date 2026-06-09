@@ -12,6 +12,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import _async_session_factory
+from app.models.d1_users import User
 from app.models.d13_v2_user_papers import UserPaperQuestion, UserUploadedPaper
 
 
@@ -23,8 +24,17 @@ async def db() -> AsyncSession:
 
 
 @pytest_asyncio.fixture
-def student_id() -> uuid.UUID:
-    return uuid.uuid4()
+async def student_id(db: AsyncSession) -> uuid.UUID:
+    """创建真实 User 以满足 FK 约束。"""
+    sid = uuid.uuid4()
+    db.add(User(
+        id=sid,
+        openid=f"test_paper_{sid.hex[:8]}",
+        role="student",
+        is_active=True,
+    ))
+    await db.flush()
+    return sid
 
 
 @pytest_asyncio.fixture
@@ -37,6 +47,7 @@ async def seed_paper_questions(db: AsyncSession, student_id: uuid.UUID):
         ocr_status="completed",
     )
     db.add(paper)
+    await db.flush()  # 先持久化 paper，确保 FK 引用存在
     wrong1 = UserPaperQuestion(
         id=uuid.uuid4(),
         user_paper_id=paper.id,

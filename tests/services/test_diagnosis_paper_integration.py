@@ -12,6 +12,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import _async_session_factory
+from app.models.d1_users import User
 from app.models.d13_v2_user_papers import (
     UserPaperQuestion,
     UserPaperQuestionKnowledgePoint,
@@ -27,16 +28,32 @@ async def db() -> AsyncSession:
         await s.rollback()
 
 
+def _make_kp(name: str) -> KnowledgePoint:
+    return KnowledgePoint(
+        id=uuid.uuid4(),
+        code=f"TST_{uuid.uuid4().hex[:6]}",
+        name=name,
+        category="grammar",
+        applicable_grades=["小学5年级"],
+        applicable_textbooks=["译林版"],
+    )
+
+
 @pytest_asyncio.fixture
-def student_id() -> uuid.UUID:
-    return uuid.uuid4()
+async def student_id(db: AsyncSession) -> uuid.UUID:
+    """创建真实 User 以满足 FK 约束。"""
+    sid = uuid.uuid4()
+    db.add(User(id=sid, openid=f"diag_{sid.hex[:8]}", role="student", is_active=True))
+    await db.flush()
+    return sid
 
 
 @pytest_asyncio.fixture
 async def seed_paper_kp(db: AsyncSession, student_id: uuid.UUID):
     """整卷错题 + KP 关联（被动语态）。"""
-    kp = KnowledgePoint(id=uuid.uuid4(), name="被动语态", category="grammar")
+    kp = _make_kp("被动语态")
     db.add(kp)
+    await db.flush()
     paper = UserUploadedPaper(
         id=uuid.uuid4(),
         student_id=student_id,
@@ -44,6 +61,7 @@ async def seed_paper_kp(db: AsyncSession, student_id: uuid.UUID):
         ocr_status="completed",
     )
     db.add(paper)
+    await db.flush()
     q = UserPaperQuestion(
         id=uuid.uuid4(),
         user_paper_id=paper.id,
@@ -92,13 +110,15 @@ async def test_diagnosis_paper_correct_question_not_counted(db, student_id):
     """整卷答对的题（is_wrong=False）不计入 kp_dimension。"""
     from app.services.diagnosis_service import _aggregate_structured_dimensions
 
-    kp = KnowledgePoint(id=uuid.uuid4(), name="一般现在时", category="grammar")
+    kp = _make_kp("一般现在时")
     db.add(kp)
+    await db.flush()
     paper = UserUploadedPaper(
         id=uuid.uuid4(), student_id=student_id,
         source_image_urls=["https://x.com/p2.jpg"], ocr_status="completed",
     )
     db.add(paper)
+    await db.flush()
     q = UserPaperQuestion(
         id=uuid.uuid4(), user_paper_id=paper.id, stem="正确题",
         is_wrong=False, question_type="单选",

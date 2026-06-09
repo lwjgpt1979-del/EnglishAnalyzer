@@ -19,12 +19,16 @@ async def db() -> AsyncSession:
 @pytest_asyncio.fixture
 async def seed_kps(db: AsyncSession):
     """插入 4 个知识点：2 个含"完成"，1 个含"被动"，1 个其他。"""
-    kps = [
-        KnowledgePoint(id=uuid.uuid4(), name="现在完成时", category="grammar"),
-        KnowledgePoint(id=uuid.uuid4(), name="过去完成时", category="grammar"),
-        KnowledgePoint(id=uuid.uuid4(), name="被动语态",   category="grammar"),
-        KnowledgePoint(id=uuid.uuid4(), name="一般现在时", category="grammar"),
-    ]
+    def _kp(name: str) -> KnowledgePoint:
+        return KnowledgePoint(
+            id=uuid.uuid4(),
+            code=f"TST_{uuid.uuid4().hex[:6]}",
+            name=name,
+            category="grammar",
+            applicable_grades=["小学5年级"],
+            applicable_textbooks=["译林版"],
+        )
+    kps = [_kp("现在完成时"), _kp("过去完成时"), _kp("被动语态"), _kp("一般现在时")]
     for k in kps:
         db.add(k)
     await db.flush()
