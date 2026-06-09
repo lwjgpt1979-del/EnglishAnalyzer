@@ -258,6 +258,8 @@ async function finishSession() {
     checkinDone.value = r.completed
     if (r.completed) {
       streakDays.value = r.streak_days
+      // 打卡成功后请求订阅消息授权（一次性，用户点允许后后端 cron 才能推送提醒）
+      requestCheckinSubscribe()
     } else {
       const newGap = Math.max(0, r.new_target - r.new_learned_today)
       gapHint.value = `还差 ${r.review_due} 个复习 / ${newGap} 个新词，完成后才能打卡`
@@ -266,6 +268,27 @@ async function finishSession() {
     // 打卡失败不阻塞完成页展示
   }
   await loadCalendar()
+}
+
+/**
+ * 请求微信订阅消息授权（打卡提醒）。
+ * template_id 通过环境变量 VITE_WX_SUBSCRIBE_TEMPLATE_CHECKIN 注入；
+ * dev 模式（空字符串）时静默跳过，不弹授权框。
+ */
+function requestCheckinSubscribe() {
+  const tmplId = import.meta.env.VITE_WX_SUBSCRIBE_TEMPLATE_CHECKIN as string | undefined
+  if (!tmplId) return  // dev 模式或未配置，跳过
+
+  uni.requestSubscribeMessage({
+    tmplIds: [tmplId],
+    success() {
+      // 用户选择（accept/reject/ban），结果记录在微信侧
+      // 后端 cron 下次发送时微信会自动过滤未授权用户
+    },
+    fail() {
+      // 用户拒绝或环境不支持（如开发工具），静默忽略
+    },
+  })
 }
 
 function nextStudy() {
