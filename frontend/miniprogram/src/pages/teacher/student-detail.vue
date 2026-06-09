@@ -10,6 +10,12 @@
       <text class="arrow">›</text>
     </view>
 
+    <!-- M44 知识点台账入口 -->
+    <view class="card report-entry" @tap="goKpMastery">
+      <text class="report-text">🧠 知识点掌握图谱</text>
+      <text class="arrow">›</text>
+    </view>
+
     <view v-for="wq in wqs" :key="wq.id" class="wq-card">
       <image
         v-if="wq.source_image_url"
@@ -71,6 +77,7 @@ const existingComments = reactive<Record<string, TeacherCommentOut[]>>({})
 const studentId = ref('')
 
 function goReport() { uni.navigateTo({ url: `/pages/teacher/student-diagnosis?studentId=${studentId.value}` }) }
+function goKpMastery() { uni.navigateTo({ url: `/pages/teacher/student-kp?studentId=${studentId.value}` }) }
 
 onMounted(async () => {
   const pages = getCurrentPages()

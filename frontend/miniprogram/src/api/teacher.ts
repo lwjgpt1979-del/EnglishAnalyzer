@@ -53,6 +53,53 @@ export function getStudentDiagnosis(studentId: string) {
   return request(`/api/v1/teacher/students/${studentId}/diagnosis-report`, { method: 'GET' })
 }
 
+// ── M44 KP 接口 ────────────────────────────────────────────────────────────
+
+export interface TeacherKpMasteryItem {
+  kp_key: string
+  kp_id: string | null
+  kp_description: string | null
+  correct_count: number
+  wrong_count: number
+  accuracy: number
+  sources: string[]
+  last_activity_at: string | null
+}
+
+export interface ClassKpWeakItem {
+  kp_key: string
+  avg_accuracy: number
+  student_count: number
+  weak_count: number
+  mastered_count: number
+}
+
+export interface ClassStudentAttention {
+  student_id: string
+  nickname: string | null
+  avg_accuracy: number
+  weak_kp_count: number
+  total_kp_count: number
+}
+
+export interface ClassKpStats {
+  class_id: string
+  class_name: string
+  student_count: number
+  top_weak_kps: ClassKpWeakItem[]
+  students_attention: ClassStudentAttention[]
+}
+
+/** 教师查看绑定学生的知识点台账（M44） */
+export function getStudentKpMastery(studentId: string): Promise<TeacherKpMasteryItem[]> {
+  return request<TeacherKpMasteryItem[]>(`/api/v1/teacher/students/${studentId}/kp-mastery`)
+}
+
+/** 班级 KP 薄弱统计（M44） */
+export function getClassKpStats(classId: string): Promise<ClassKpStats> {
+  return request<ClassKpStats>(`/api/v1/teacher/classes/${classId}/kp-stats`)
+}
+
 export function teacherInviteQrcode() {
   return request('/api/v1/teacher/invite-code/qrcode', { method: 'POST' })
 }
