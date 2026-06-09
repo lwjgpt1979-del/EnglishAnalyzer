@@ -21,6 +21,8 @@ dependencies = [
     "cos-python-sdk-v5>=1.9.30",
     "passlib[bcrypt]>=1.7.4",
     "fpdf2>=2.7.0",
+    "pdfplumber>=0.11.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

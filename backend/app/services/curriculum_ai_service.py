@@ -197,3 +197,133 @@ async def generate_unit(
         return AIGeneratedUnit(**data)
     except Exception as exc:
         raise AppError(code=500, message="AI 课程生成返回格式异常") from exc
+
+
+# ─── PDF 上下文版本（M3）────────────────────────────────────────────────────────
+
+_PDF_SYSTEM_PROMPT = (
+    "你是资深英语教材编辑，擅长从教材原文中拆解知识点并生成结构化教学解读。"
+    "用户将提供教材某单元的 PDF 原文，请据此提取本单元真实的核心知识点与词汇。"
+    "请严格按 JSON 格式输出，不要任何 markdown 代码块或额外文字。"
+)
+
+_PDF_PROMPT_TEMPLATE = """\
+请分析以下教材单元的 PDF 原文，提取本单元教学内容。
+
+教材：{textbook_version}
+年级：{grade}
+学期：{semester}
+单元号：{unit_no}
+单元标题（如能识别）：{detected_title}
+
+== 单元原文（pdfplumber 提取，可能含噪声）==
+{unit_text}
+== 原文结束 ==
+
+要求：
+1. 根据原文推断/确认 unit_title
+2. 提取 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任意类别）
+3. 每个知识点提供 6 维度教学内容（listening/vocabulary/grammar/reading/translation/writing）
+4. 提取 10-15 个原文出现的核心词汇
+5. code 格式：yl-g{grade_short}s{sem_short}-u{unit_no}-kpN（N 从 1 开始）
+
+返回纯 JSON（不要 markdown）：
+{{
+  "textbook_version": "{textbook_version}",
+  "grade": "{grade}",
+  "semester": "{semester}",
+  "unit_no": {unit_no},
+  "unit_title": "...",
+  "knowledge_points": [
+    {{
+      "code": "yl-g{grade_short}s{sem_short}-u{unit_no}-kp1",
+      "name": "...",
+      "category": "grammar",
+      "description": "...",
+      "contents": {{
+        "listening": "## 听力要点\\n...",
+        "vocabulary": "## 词汇讲解\\n...",
+        "grammar": "## 语法解析\\n...",
+        "reading": "## 阅读策略\\n...",
+        "translation": "## 翻译技巧\\n...",
+        "writing": "## 写作要点\\n..."
+      }}
+    }}
+  ],
+  "words": [
+    {{
+      "word": "example",
+      "phonetic": "/ɪɡˈzɑːmpəl/",
+      "definitions": [{{"pos": "n.", "meaning": "例子"}}],
+      "examples": ["This is an example."],
+      "difficulty": 2,
+      "is_core": true
+    }}
+  ]
+}}"""
+
+
+def _strip_and_fix_json(raw: str) -> dict:
+    """去掉 markdown fence 并修复非法转义，返回解析后的 dict。"""
+    import re as _re
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw
+        if raw.rstrip().endswith("```"):
+            raw = raw.rstrip()[:-3].rstrip()
+    try:
+        return json.loads(raw, strict=False)
+    except json.JSONDecodeError:
+        fixed = _re.sub(r'\\([^"\\/bfnrtu])', r'\\\\\1', raw)
+        return json.loads(fixed, strict=False)
+
+
+async def generate_unit_from_text(
+    *,
+    textbook_version: str,
+    grade: str,
+    semester: str,
+    unit_no: int,
+    unit_text: str,
+    detected_title: str | None = None,
+) -> AIGeneratedUnit:
+    """从 PDF 提取的单元原文生成结构化课程内容（M3）。"""
+    if is_llm_dev_mode():
+        return _make_mock_unit(textbook_version, grade, semester, unit_no)
+
+    grade_short = "5" if "5" in grade else "7"
+    sem_short = "1" if semester == "上" else "2"
+
+    # 限制原文长度，避免超 token（约保留前 6000 字符）
+    text_truncated = unit_text[:6000] if len(unit_text) > 6000 else unit_text
+
+    prompt = _PDF_PROMPT_TEMPLATE.format(
+        textbook_version=textbook_version,
+        grade=grade,
+        semester=semester,
+        unit_no=unit_no,
+        detected_title=detected_title or "（待识别）",
+        unit_text=text_truncated,
+        grade_short=grade_short,
+        sem_short=sem_short,
+    )
+
+    try:
+        response = await chat_completion(
+            system_prompt=_PDF_SYSTEM_PROMPT,
+            user_prompt=prompt,
+            max_tokens=8192,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        raise AppError(code=502, message=f"AI PDF 课程生成失败：{exc}") from exc
+
+    raw = (response.choices[0].message.content or "").strip()
+    try:
+        data = _strip_and_fix_json(raw)
+    except json.JSONDecodeError as exc:
+        raise AppError(code=500, message="AI PDF 课程生成返回格式异常") from exc
+
+    try:
+        return AIGeneratedUnit(**data)
+    except Exception as exc:
+        raise AppError(code=500, message="AI PDF 课程生成返回格式异常") from exc

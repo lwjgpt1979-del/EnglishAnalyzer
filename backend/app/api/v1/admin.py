@@ -643,3 +643,145 @@ async def generate_semester_api(
     )
     await db.commit()
     return make_ok(results)
+
+
+# ── M3 教材 PDF 上传解析 ──────────────────────────────────────────────────────
+
+from fastapi import UploadFile, File, Form
+from app.schemas.pdf_upload import (
+    PdfUploadOut, PdfPageListOut, PagePreview,
+    GenerateFromPdfRequest, GenerateFromPdfOut, UnitGenerateResult, UnitSegment,
+)
+from app.services import pdf_upload_service
+
+
+@router.post("/curriculum/pdf/upload", response_model=BaseResponse[PdfUploadOut])
+async def upload_curriculum_pdf(
+    admin: AdminDep,
+    file: UploadFile = File(..., description="教材 PDF 文件"),
+):
+    """
+    上传教材 PDF，自动检测单元分界。
+
+    返回：
+    - file_id：后续生成接口使用
+    - auto_split_success：True 表示自动识别到 ≥2 个单元，可直接生成；
+      False 表示需调用 /pages 端点查看页面预览后手动划分单元范围。
+    - auto_segments：自动识别的单元列表（auto_split_success=False 时为空）
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise AppError(code=400, message="请上传 PDF 文件（.pdf 后缀）")
+
+    raw = await file.read()
+    if len(raw) > 100 * 1024 * 1024:  # 100 MB 上限
+        raise AppError(code=400, message="PDF 文件过大（上限 100 MB）")
+
+    file_id = pdf_upload_service.save_upload(raw)
+
+    try:
+        pages = pdf_upload_service.extract_pages(file_id)
+    except Exception as exc:
+        pdf_upload_service.delete_upload(file_id)
+        raise AppError(code=422, message=f"PDF 文本提取失败：{exc}") from exc
+
+    segments_raw = pdf_upload_service.auto_detect_units(pages)
+    auto_ok = segments_raw is not None
+
+    return make_ok(PdfUploadOut(
+        file_id=file_id,
+        filename=file.filename,
+        total_pages=len(pages),
+        auto_split_success=auto_ok,
+        auto_segments=[UnitSegment(**s) for s in (segments_raw or [])],
+    ))
+
+
+@router.get("/curriculum/pdf/{file_id}/pages", response_model=BaseResponse[PdfPageListOut])
+async def get_pdf_pages(file_id: str, admin: AdminDep):
+    """
+    返回 PDF 各页文本摘要（前 200 字），供人工划定单元起止页使用。
+
+    仅在 upload 返回 auto_split_success=False 时需要调用此接口。
+    """
+    try:
+        previews_raw = pdf_upload_service.get_page_previews(file_id)
+    except FileNotFoundError:
+        raise AppError(code=404, message=f"PDF 不存在（file_id={file_id}），请重新上传")
+    except Exception as exc:
+        raise AppError(code=422, message=f"PDF 读取失败：{exc}") from exc
+
+    return make_ok(PdfPageListOut(
+        file_id=file_id,
+        total_pages=len(previews_raw),
+        pages=[PagePreview(**p) for p in previews_raw],
+    ))
+
+
+@router.post("/curriculum/pdf/{file_id}/generate",
+             response_model=BaseResponse[GenerateFromPdfOut])
+async def generate_from_pdf(
+    file_id: str,
+    body: GenerateFromPdfRequest,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """
+    根据上传的 PDF 分片逐单元调用 AI 生成课程内容。
+
+    segments 可来自 upload 返回的 auto_segments，或人工在 /pages 基础上划定。
+    每个 segment 单独调用 DeepSeek，将真实单元文本作为上下文。
+    成功的单元直接写入数据库（content_status 由请求决定）。
+    任一单元失败不影响其他单元继续生成。
+    """
+    from app.services import curriculum_ai_service
+
+    try:
+        _ = pdf_upload_service.extract_pages(file_id)  # 验证文件存在
+    except FileNotFoundError:
+        raise AppError(code=404, message=f"PDF 不存在（file_id={file_id}），请重新上传")
+
+    results: list[UnitGenerateResult] = []
+    success = error = 0
+
+    for seg in body.segments:
+        try:
+            unit_text = pdf_upload_service.get_unit_text(
+                file_id, seg.start_page, seg.end_page,
+            )
+            ai_unit = await curriculum_ai_service.generate_unit_from_text(
+                textbook_version=body.textbook_version,
+                grade=body.grade,
+                semester=body.semester,
+                unit_no=seg.unit_no,
+                unit_text=unit_text,
+                detected_title=seg.detected_title,
+            )
+            cu = await curriculum_service.persist_unit(
+                db, ai_unit=ai_unit, content_status=body.content_status,
+            )
+            await db.flush()
+            results.append(UnitGenerateResult(
+                unit_no=seg.unit_no,
+                unit_title=ai_unit.unit_title,
+                kp_count=len(ai_unit.knowledge_points),
+                word_count=len(ai_unit.words),
+                status="ok",
+            ))
+            success += 1
+        except Exception as exc:
+            results.append(UnitGenerateResult(
+                unit_no=seg.unit_no,
+                unit_title=seg.detected_title or f"Unit {seg.unit_no}",
+                kp_count=0,
+                word_count=0,
+                status="error",
+                error=str(exc),
+            ))
+            error += 1
+
+    await db.commit()
+    return make_ok(GenerateFromPdfOut(
+        results=results,
+        success_count=success,
+        error_count=error,
+    ))
