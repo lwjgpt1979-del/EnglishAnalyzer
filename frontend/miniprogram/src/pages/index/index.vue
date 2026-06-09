@@ -8,80 +8,127 @@
       </view>
     </view>
     <view class="hero">
-      <text class="hero-title">engGramer</text>
-      <text class="hero-sub">英语 AI 知识学习</text>
+      <text class="hero-title">{{ heroTitle }}</text>
+      <text class="hero-sub">{{ heroSub }}</text>
     </view>
 
-    <!-- 开始学习主卡片 -->
-    <view class="learn-card" @tap="goLearn">
-      <view class="learn-left">
-        <text class="learn-icon">📖</text>
-        <view class="learn-text">
-          <text class="learn-title">开始学习</text>
-          <text class="learn-sub">{{ preferredLabel || '选择教材开始' }}</text>
+    <!-- 身份切换器：仅在拥有 ≥2 个身份时显示 -->
+    <view v-if="availableRoles.length > 1" class="role-seg">
+      <text
+        v-for="r in availableRoles"
+        :key="r.key"
+        class="role-seg-item"
+        :class="{ active: activeRole === r.key }"
+        @tap="switchRole(r.key)"
+      >{{ r.label }}</text>
+    </view>
+
+    <!-- ───────── 学生身份 ───────── -->
+    <template v-if="activeRole === 'student'">
+      <!-- 开始学习主卡片 -->
+      <view class="learn-card" @tap="goLearn">
+        <view class="learn-left">
+          <text class="learn-icon">📖</text>
+          <view class="learn-text">
+            <text class="learn-title">开始学习</text>
+            <text class="learn-sub">{{ preferredLabel || '选择教材开始' }}</text>
+          </view>
+        </view>
+        <text class="learn-arrow">›</text>
+      </view>
+
+      <view class="quick-grid">
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })">
+          <text class="quick-icon">🤖</text>
+          <text class="quick-label">智能出题</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/upload/index' })">
+          <text class="quick-icon">📷</text>
+          <text class="quick-label">单题上传</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">
+          <text class="quick-icon">📄</text>
+          <text class="quick-label">上传整卷</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.switchTab({ url: '/pages/wrong-questions/list' })">
+          <text class="quick-icon">📚</text>
+          <text class="quick-label">我的错题</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.switchTab({ url: '/pages/diagnosis/index' })">
+          <text class="quick-icon">📊</text>
+          <text class="quick-label">学情报告</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/index' })">
+          <text class="quick-icon">🔤</text>
+          <text class="quick-label">词力通</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/essay/index' })">
+          <text class="quick-icon">✍️</text>
+          <text class="quick-label">作文精修</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/assignments/index' })">
+          <text class="quick-icon">📋</text>
+          <text class="quick-label">老师任务</text>
         </view>
       </view>
-      <text class="learn-arrow">›</text>
-    </view>
+    </template>
 
-    <view class="quick-grid">
+    <!-- ───────── 教师身份 ───────── -->
+    <template v-else-if="activeRole === 'teacher'">
       <view
-        class="quick-card"
-        @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })"
+        v-if="certStatus && certStatus !== 'certified'"
+        class="cert-banner"
+        @tap="() => uni.navigateTo({ url: '/pages/teacher/cert' })"
       >
-        <text class="quick-icon">🤖</text>
-        <text class="quick-label">智能出题</text>
+        <text>⚠️ 教师资质未认证，点击去认证以解锁全部功能</text>
       </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.navigateTo({ url: '/pages/upload/index' })"
-      >
-        <text class="quick-icon">📷</text>
-        <text class="quick-label">单题上传</text>
+
+      <view class="quick-grid">
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/classes' })">
+          <text class="quick-icon">🏫</text>
+          <text class="quick-label">班级管理</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/students' })">
+          <text class="quick-icon">👥</text>
+          <text class="quick-label">我的学生</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/classes' })">
+          <text class="quick-icon">📋</text>
+          <text class="quick-label">出卷 / 作业</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/cert' })">
+          <text class="quick-icon">📜</text>
+          <text class="quick-label">资质认证</text>
+        </view>
       </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })"
-      >
-        <text class="quick-icon">📄</text>
-        <text class="quick-label">上传整卷</text>
+      <text class="role-hint">出卷、班级 KP 统计与一键布置作业均在「班级管理」内进入对应班级后操作。</text>
+    </template>
+
+    <!-- ───────── 家长身份 ───────── -->
+    <template v-else-if="activeRole === 'relative'">
+      <view class="child-section">
+        <view v-if="children.length === 0" class="child-empty">
+          <text class="child-empty-icon">👨‍👩‍👧</text>
+          <text class="child-empty-text">还没有绑定孩子</text>
+        </view>
+        <view
+          v-for="c in children"
+          :key="c.student_id"
+          class="child-card"
+          @tap="() => goChild(c.student_id)"
+        >
+          <view class="child-avatar">{{ (c.nickname || '孩').slice(0, 1) }}</view>
+          <view class="child-info">
+            <text class="child-name">{{ c.nickname || ('孩子 ' + c.student_id.slice(0, 6)) }}</text>
+            <text class="child-sub">查看学情 · 掌握台账 · 周报</text>
+          </view>
+          <text class="child-arrow">›</text>
+        </view>
       </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.switchTab({ url: '/pages/wrong-questions/list' })"
-      >
-        <text class="quick-icon">📚</text>
-        <text class="quick-label">我的错题</text>
-      </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.switchTab({ url: '/pages/diagnosis/index' })"
-      >
-        <text class="quick-icon">📊</text>
-        <text class="quick-label">学情报告</text>
-      </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.navigateTo({ url: '/pages/vocabulary/index' })"
-      >
-        <text class="quick-icon">🔤</text>
-        <text class="quick-label">词力通</text>
-      </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.navigateTo({ url: '/pages/essay/index' })"
-      >
-        <text class="quick-icon">✍️</text>
-        <text class="quick-label">作文精修</text>
-      </view>
-      <view
-        class="quick-card"
-        @tap="() => uni.navigateTo({ url: '/pages/assignments/index' })"
-      >
-        <text class="quick-icon">📋</text>
-        <text class="quick-label">老师任务</text>
-      </view>
-    </view>
+      <button class="btn-role-action" @tap="() => uni.navigateTo({ url: '/pages/relative/center' })">
+        ＋ 绑定 / 管理孩子
+      </button>
+    </template>
 
     <view v-if="!auth.isLoggedIn()" class="login-banner">
       <text class="login-tip">登录后解锁 AI 分析功能</text>
@@ -95,6 +142,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { onShow } from '@dcloudio/uni-app'
 import { getUnreadCount } from '@/api/notifications'
+import { getMyStudentsAsRelative } from '@/api/relative'
+import { request } from '@/utils/request'
+import type { BoundStudent } from '@/types/api'
 
 const auth = useAuthStore()
 
@@ -104,6 +154,59 @@ async function loadUnread() {
   try { const r = await getUnreadCount(); unreadCount.value = r.data?.count || 0 } catch { /* ignore */ }
 }
 function goMessages() { uni.navigateTo({ url: '/pages/messages/index' }) }
+
+// ── 身份切换 ────────────────────────────────────────────────────────────────
+type RoleKey = 'student' | 'teacher' | 'relative'
+const ROLE_STORAGE_KEY = 'home_active_role'
+
+const children = ref<BoundStudent[]>([])
+const certStatus = ref<string>('')
+
+const isTeacher = computed(() => (auth.user as any)?.role === 'teacher')
+const isRelative = computed(() => children.value.length > 0)
+
+// 可用身份：学生人人都有；教师按 role；家长按是否绑定孩子
+const availableRoles = computed(() => {
+  const list: { key: RoleKey; label: string }[] = [{ key: 'student', label: '我是学生' }]
+  if (isTeacher.value) list.push({ key: 'teacher', label: '我是老师' })
+  if (isRelative.value) list.push({ key: 'relative', label: '我是家长' })
+  return list
+})
+
+const activeRole = ref<RoleKey>('student')
+
+function switchRole(key: RoleKey) {
+  activeRole.value = key
+  uni.setStorageSync(ROLE_STORAGE_KEY, key)
+}
+
+/** 选定初始身份：上次选择仍可用则沿用，否则回退学生 */
+function resolveInitialRole() {
+  const keys = availableRoles.value.map((r) => r.key)
+  const saved = uni.getStorageSync(ROLE_STORAGE_KEY) as RoleKey | ''
+  activeRole.value = saved && keys.includes(saved) ? saved : 'student'
+}
+
+async function loadRoleData() {
+  if (!auth.isLoggedIn()) { children.value = []; certStatus.value = ''; return }
+  // 家长身份：拉绑定的孩子
+  try { children.value = await getMyStudentsAsRelative() } catch { children.value = [] }
+  // 教师身份：拉认证状态（仅当是老师）
+  if (isTeacher.value) {
+    try {
+      const r: any = await request('/api/v1/teacher/profile', { method: 'POST', data: {} })
+      certStatus.value = r.data?.cert_status || 'uncertified'
+    } catch { certStatus.value = '' }
+  }
+  resolveInitialRole()
+}
+
+const heroTitle = computed(() => (
+  { student: 'engGramer', teacher: '教师工作台', relative: '家长中心' }[activeRole.value]
+))
+const heroSub = computed(() => (
+  { student: '英语 AI 知识学习', teacher: '班级 · 学生 · 作业', relative: '关注孩子的学习' }[activeRole.value]
+))
 
 const preferredLabel = computed(() => {
   const u = auth.user as any
@@ -118,7 +221,15 @@ function goLearn() {
   const url = `/pages/curriculum/units?textbook=${encodeURIComponent(t)}&grade=${encodeURIComponent(g)}&semester=${encodeURIComponent(s)}`
   uni.navigateTo({ url })
 }
-onShow(loadUnread)
+
+function goChild(studentId: string) {
+  uni.navigateTo({ url: `/pages/relative/student-view?studentId=${studentId}` })
+}
+
+onShow(() => {
+  loadUnread()
+  loadRoleData()
+})
 
 onMounted(() => {
   if (auth.isLoggedIn() && auth.user && (auth.user as any).profile_completed === false) {
@@ -136,14 +247,27 @@ onMounted(() => {
     return
   }
   loadUnread()
+  loadRoleData()
 })
 </script>
 
 <style scoped>
 .home-page { padding: 40rpx 24rpx; background: var(--c-bg-page); min-height: 100vh; }
-.hero { text-align: center; padding: 60rpx 0 48rpx; }
+.hero { text-align: center; padding: 60rpx 0 32rpx; }
 .hero-title { font-size: var(--fs-display); font-weight: 800; color: var(--c-ink); display: block; }
 .hero-sub { font-size: var(--fs-h2); color: var(--c-text-hint); display: block; margin-top: 12rpx; }
+
+/* 身份切换器 */
+.role-seg {
+  display: flex; background: var(--c-bg-card); border-radius: var(--r-pill);
+  padding: 6rpx; margin-bottom: 28rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04);
+}
+.role-seg-item {
+  flex: 1; text-align: center; padding: 16rpx 0; font-size: var(--fs-body);
+  color: var(--c-text-second); border-radius: var(--r-pill); transition: all .2s;
+}
+.role-seg-item.active { background: var(--c-primary); color: var(--c-ink); font-weight: 700; }
+
 .learn-card {
   background: var(--c-primary);
   border-radius: var(--r-lg);
@@ -170,6 +294,38 @@ onMounted(() => {
 }
 .quick-icon { font-size: 56rpx; display: block; margin-bottom: 16rpx; }
 .quick-label { font-size: var(--fs-body); color: var(--c-text-body); }
+
+/* 教师身份 */
+.cert-banner {
+  background: #fff7e6; border: 1rpx solid #ffe58f; color: #ad6800;
+  border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 24rpx; font-size: var(--fs-body);
+}
+.role-hint { display: block; font-size: 24rpx; color: var(--c-text-hint); line-height: 1.6; padding: 0 8rpx; }
+
+/* 家长身份 */
+.child-section { margin-bottom: 24rpx; }
+.child-empty { text-align: center; padding: 60rpx 0; }
+.child-empty-icon { font-size: 80rpx; display: block; margin-bottom: 16rpx; }
+.child-empty-text { font-size: var(--fs-body); color: var(--c-text-hint); }
+.child-card {
+  background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx 32rpx;
+  display: flex; align-items: center; gap: 24rpx; margin-bottom: 16rpx;
+  box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04);
+}
+.child-avatar {
+  width: 80rpx; height: 80rpx; border-radius: 50%; background: var(--c-primary);
+  color: var(--c-ink); font-size: 36rpx; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.child-info { flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
+.child-name { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); }
+.child-sub { font-size: 24rpx; color: var(--c-text-hint); }
+.child-arrow { font-size: 48rpx; color: var(--c-text-hint); font-weight: 700; }
+.btn-role-action {
+  background: var(--c-bg-card); color: var(--c-text-body); border: 2rpx solid var(--c-border);
+  border-radius: var(--r-btn); font-size: var(--fs-body); padding: 20rpx; margin-bottom: 32rpx;
+}
+
 .login-banner {
   background: var(--c-bg-card);
   border-radius: var(--r-lg);
