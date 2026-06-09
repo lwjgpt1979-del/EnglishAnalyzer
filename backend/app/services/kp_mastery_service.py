@@ -24,6 +24,34 @@ from app.models.d4_knowledge import StudentKpMastery, KpMasterySnapshot
 # 合法来源标识符
 KpSource = Literal["practice", "paper_upload", "assignment", "wrong_question"]
 
+# ── 复习建议规则（M6c，单一来源；diagnosis_service / relative 端点共用）──────────
+_WEAK_THRESHOLD = 0.4    # 正确率 < 0.4 视为薄弱
+_MEDIUM_THRESHOLD = 0.7  # 0.4 ≤ 正确率 < 0.7 视为待巩固
+_STALE_DAYS = 14         # 超过 N 天未练习 → 提醒复习
+
+
+def review_suggestion(
+    *, accuracy: float, total: int, days_since: int | None
+) -> tuple[str, str]:
+    """根据正确率与活跃度生成 (level, suggestion)。纯规则，不调 AI。
+
+    level ∈ {weak, medium, good}；suggestion 为中文建议文案。
+    """
+    if accuracy < _WEAK_THRESHOLD:
+        level = "weak"
+        msg = "薄弱项，建议优先做专项练习，从基础题逐步加难。"
+    elif accuracy < _MEDIUM_THRESHOLD:
+        level = "medium"
+        msg = "已有基础但不稳，再多练几组巩固熟练度。"
+    else:
+        level = "good"
+        msg = "掌握较好，保持节奏并定期回顾防遗忘。"
+    if total < 3:
+        msg = "练习量偏少，建议先多做几题以获得可靠评估。"
+    if days_since is not None and days_since >= _STALE_DAYS:
+        msg += f"（已 {days_since} 天未练习，注意及时复习）"
+    return level, msg
+
 
 async def upsert_mastery(
     db: AsyncSession,

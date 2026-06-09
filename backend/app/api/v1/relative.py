@@ -197,8 +197,35 @@ async def relative_view_student_kp_mastery(
     await relative_service.assert_bound(
         db, relative_id=current_user.id, student_id=student_id,
     )
-    from app.services.kp_mastery_service import get_mastery_tree
-    items = await get_mastery_tree(db, student_id=student_id)
+    from datetime import datetime, timezone
+    from app.services.kp_mastery_service import get_mastery_tree, review_suggestion
+
+    rows = await get_mastery_tree(db, student_id=student_id)
+    now = datetime.now(timezone.utc)
+    items = []
+    for r in rows:
+        total = r.correct_count + r.wrong_count
+        accuracy = r.correct_count / total if total > 0 else 0.0
+        days_since: int | None = None
+        if r.last_activity_at is not None:
+            days_since = (now - r.last_activity_at.astimezone(timezone.utc)).days
+        level, suggestion = review_suggestion(
+            accuracy=accuracy, total=total, days_since=days_since
+        )
+        items.append({
+            "kp_key": r.kp_key,
+            "kp_id": str(r.kp_id) if r.kp_id else None,
+            "kp_description": r.kp_description,
+            "correct_count": r.correct_count,
+            "wrong_count": r.wrong_count,
+            "total": total,
+            "accuracy": round(accuracy, 4),
+            "level": level,
+            "suggestion": suggestion,
+            "sources": list(r.sources or []),
+            "last_activity_at": r.last_activity_at.isoformat() if r.last_activity_at else None,
+            "days_since_last": days_since,
+        })
     return make_ok(items)
 
 

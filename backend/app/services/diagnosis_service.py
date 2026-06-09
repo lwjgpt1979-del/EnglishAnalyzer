@@ -29,27 +29,14 @@ from app.schemas.diagnosis import (
 _TOP_N = 10          # error_types / knowledge_points 取前10
 _SUGGESTION_N = 5    # 最多返回5条建议
 _ACTIVITY_DAYS = 30  # 近30天活跃度
-_WEAK_THRESHOLD = 0.4    # 正确率 < 0.4 视为薄弱
-_MEDIUM_THRESHOLD = 0.7  # 0.4 ≤ 正确率 < 0.7 视为待巩固
-_STALE_DAYS = 14         # 超过 N 天未练习 → 提醒复习
-
-
+# 复习建议规则已统一至 kp_mastery_service.review_suggestion（M6c 单一来源）。
+# 此处保留同名薄封装，供 _build_mastery_ledger 与既有测试引用。
 def _build_review_suggestion(*, accuracy: float, total: int, days_since: int | None) -> tuple[str, str]:
-    """根据正确率与活跃度生成 (level, suggestion)。纯规则，不调 AI。"""
-    if accuracy < _WEAK_THRESHOLD:
-        level = "weak"
-        msg = "薄弱项，建议优先做专项练习，从基础题逐步加难。"
-    elif accuracy < _MEDIUM_THRESHOLD:
-        level = "medium"
-        msg = "已有基础但不稳，再多练几组巩固熟练度。"
-    else:
-        level = "good"
-        msg = "掌握较好，保持节奏并定期回顾防遗忘。"
-    if total < 3:
-        msg = "练习量偏少，建议先多做几题以获得可靠评估。"
-    if days_since is not None and days_since >= _STALE_DAYS:
-        msg += f"（已 {days_since} 天未练习，注意及时复习）"
-    return level, msg
+    """委托 kp_mastery_service.review_suggestion。"""
+    from app.services import kp_mastery_service
+    return kp_mastery_service.review_suggestion(
+        accuracy=accuracy, total=total, days_since=days_since
+    )
 
 
 async def _build_mastery_ledger(

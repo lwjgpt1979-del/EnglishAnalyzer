@@ -36,9 +36,13 @@ export interface ChildKpMasteryItem {
   kp_description: string | null
   correct_count: number
   wrong_count: number
+  total: number
   accuracy: number
+  level: 'weak' | 'medium' | 'good'
+  suggestion: string
   sources: string[]
   last_activity_at: string | null
+  days_since_last: number | null
 }
 
 /** 家长查看孩子知识点台账 */
