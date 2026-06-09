@@ -21,6 +21,7 @@ TYPE_TO_CHANNEL = {
     "bind_accepted": "relative",
     "bind_rejected": "relative",
     "checkin_reminder": "study",
+    "weekly_report": "study",
 }
 
 RETENTION_DAYS_MEMBERSHIP = 365
