@@ -59,6 +59,7 @@
         v-for="item in filteredItems"
         :key="item.kp_key"
         class="card kp-card"
+        @tap="goTrend(item.kp_key)"
       >
         <!-- 标题行 -->
         <view class="kp-header">
@@ -182,6 +183,11 @@ function formatDate(iso: string) {
   const M = d.getMonth() + 1
   const D = d.getDate()
   return `${M}月${D}日`
+}
+
+// M46 — 跳转趋势页
+function goTrend(kpKey: string) {
+  uni.navigateTo({ url: `/pages/kp-mastery/trend?kpKey=${encodeURIComponent(kpKey)}` })
 }
 </script>
 

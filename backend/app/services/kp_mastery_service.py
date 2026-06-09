@@ -19,7 +19,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d4_knowledge import StudentKpMastery
+from app.models.d4_knowledge import StudentKpMastery, KpMasterySnapshot
 
 # 合法来源标识符
 KpSource = Literal["practice", "paper_upload", "assignment", "wrong_question"]
@@ -74,6 +74,73 @@ async def upsert_mastery(
         },
     )
     await db.execute(stmt)
+
+    # ── 日快照（M46）─────────────────────────────────────────────────────────
+    # 读取更新后的台账行，写入/更新当天快照（每 UTC 日期最多一行）
+    today = now.date()
+    row = (await db.execute(
+        select(StudentKpMastery).where(
+            StudentKpMastery.student_id == student_id,
+            StudentKpMastery.kp_key == kp_key,
+        )
+    )).scalar_one_or_none()
+
+    if row is not None:
+        total = row.correct_count + row.wrong_count
+        snap_accuracy = row.correct_count / total if total > 0 else 0.0
+        snap_stmt = pg_insert(KpMasterySnapshot).values(
+            student_id=student_id,
+            kp_key=kp_key,
+            snapshot_date=today,
+            accuracy=snap_accuracy,
+            correct_count=row.correct_count,
+            wrong_count=row.wrong_count,
+            recorded_at=now,
+        ).on_conflict_do_update(
+            constraint="uq_kp_snapshot_student_kp_date",
+            set_={
+                "accuracy": snap_accuracy,
+                "correct_count": row.correct_count,
+                "wrong_count": row.wrong_count,
+                "recorded_at": now,
+            },
+        )
+        await db.execute(snap_stmt)
+
+
+async def get_kp_trend(
+    db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    kp_key: str,
+    days: int = 30,
+) -> list[dict]:
+    """返回指定 KP 的历史趋势快照（最近 days 天，按日期 ASC）。
+
+    返回格式：[{date: "YYYY-MM-DD", accuracy: float, correct_count: int, wrong_count: int}, ...]
+    """
+    from datetime import timedelta
+    since = datetime.now(timezone.utc).date() - timedelta(days=days - 1)
+
+    rows = (await db.execute(
+        select(KpMasterySnapshot)
+        .where(
+            KpMasterySnapshot.student_id == student_id,
+            KpMasterySnapshot.kp_key == kp_key,
+            KpMasterySnapshot.snapshot_date >= since,
+        )
+        .order_by(KpMasterySnapshot.snapshot_date.asc())
+    )).scalars().all()
+
+    return [
+        {
+            "date": str(r.snapshot_date),
+            "accuracy": round(r.accuracy, 4),
+            "correct_count": r.correct_count,
+            "wrong_count": r.wrong_count,
+        }
+        for r in rows
+    ]
 
 
 async def get_mastery_tree_for_teacher(

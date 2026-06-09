@@ -1,10 +1,10 @@
-"""个人知识点掌握台账 API（M39）。"""
+"""个人知识点掌握台账 API（M39 / M46）。"""
 from __future__ import annotations
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,3 +57,25 @@ async def get_kp_mastery(db: DbDep, current_user: UserDep):
             )
         )
     return make_ok(items)
+
+
+class KpTrendPoint(BaseModel):
+    date: str           # YYYY-MM-DD
+    accuracy: float
+    correct_count: int
+    wrong_count: int
+
+
+@router.get("/trend", response_model=BaseResponse[list[KpTrendPoint]])
+async def get_kp_trend(
+    db: DbDep,
+    current_user: UserDep,
+    kp_key: str = Query(..., description="知识点名称"),
+    days: int = Query(30, ge=7, le=90, description="查询最近 N 天（7-90）"),
+):
+    """返回指定知识点近 N 天的日正确率趋势（M46）。"""
+    await get_rls_db(db, str(current_user.id))
+    points = await kp_mastery_service.get_kp_trend(
+        db, student_id=current_user.id, kp_key=kp_key, days=days
+    )
+    return make_ok([KpTrendPoint(**p) for p in points])

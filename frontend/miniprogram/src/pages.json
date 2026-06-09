@@ -83,7 +83,8 @@
     { "path": "pages/user-papers/detail", "style": { "navigationBarTitleText": "整卷详情" } },
     { "path": "pages/kp-mastery/index", "style": { "navigationBarTitleText": "知识点图谱" } },
     { "path": "pages/teacher/student-kp", "style": { "navigationBarTitleText": "知识点台账" } },
-    { "path": "pages/relative/student-kp", "style": { "navigationBarTitleText": "知识点台账" } }
+    { "path": "pages/relative/student-kp", "style": { "navigationBarTitleText": "知识点台账" } },
+    { "path": "pages/kp-mastery/trend", "style": { "navigationBarTitleText": "趋势图" } }
   ],
   "tabBar": {
     "color": "#999",

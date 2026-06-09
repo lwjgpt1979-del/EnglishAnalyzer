@@ -16,3 +16,19 @@ export interface KpMasteryItem {
 export function getKpMastery(): Promise<KpMasteryItem[]> {
   return request<KpMasteryItem[]>('/api/v1/kp-mastery/')
 }
+
+// ── M46 趋势 ────────────────────────────────────────────────────────────────
+
+export interface KpTrendPoint {
+  date: string          // YYYY-MM-DD
+  accuracy: number      // 0~1
+  correct_count: number
+  wrong_count: number
+}
+
+/** GET /api/v1/kp-mastery/trend — 返回指定 KP 最近 N 天的日正确率快照 */
+export function getKpTrend(kpKey: string, days = 30): Promise<KpTrendPoint[]> {
+  return request<KpTrendPoint[]>(
+    `/api/v1/kp-mastery/trend?kp_key=${encodeURIComponent(kpKey)}&days=${days}`,
+  )
+}
