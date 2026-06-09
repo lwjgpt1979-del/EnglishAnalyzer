@@ -1,14 +1,16 @@
 """SMS 验证码服务。MVP 阶段 dev mock：不真发短信，验证码记日志并固定为 '123456'。
-生产接入：替换 _send_real_sms 内实现（阿里云/腾讯云短信 SDK）。
+生产接入：设置环境变量 SMS_PROVIDER=aliyun 及阿里云 AccessKey 即可。
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import string
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
+from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,31 @@ async def send_sms_code(*, phone: str, code: str, purpose: str) -> None:
 
 
 async def _send_real_sms(*, phone: str, code: str, purpose: str) -> None:
-    raise NotImplementedError("生产 SMS provider 未接入")
+    """调用阿里云短信 SDK 发送短信。仅当 sms_provider=aliyun 时被调用。"""
+    from alibabacloud_dysmsapi20170525.client import Client
+    from alibabacloud_dysmsapi20170525.models import SendSmsRequest
+    from alibabacloud_tea_openapi.models import Config
+
+    cfg = Config(
+        access_key_id=settings.sms_access_key_id,
+        access_key_secret=settings.sms_access_key_secret,
+        endpoint="dysmsapi.aliyuncs.com",
+    )
+    client = Client(cfg)
+    template_code = (
+        settings.sms_template_code_verify
+        if purpose in ("guardian_verify", "cancel_account")
+        else settings.sms_template_code_invite
+    )
+    req = SendSmsRequest(
+        phone_numbers=phone,
+        sign_name=settings.sms_sign_name,
+        template_code=template_code,
+        template_param=f'{{"code":"{code}"}}',
+    )
+    resp = await asyncio.to_thread(client.send_sms, req)
+    if resp.body.code != "OK":
+        raise AppError(code=503, message=f"短信发送失败：{resp.body.message}")
 
 
 async def send_invite_sms(

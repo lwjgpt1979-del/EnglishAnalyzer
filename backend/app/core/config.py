@@ -66,7 +66,12 @@ class Settings(BaseSettings):
     tencent_ocr_secret_key: str = "placeholder_tencent_ocr_skey"
 
     # SMS 短信服务
-    sms_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填真实 provider 名
+    sms_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填 'aliyun'
+    sms_access_key_id: str = ""
+    sms_access_key_secret: str = ""
+    sms_sign_name: str = "engGramer"
+    sms_template_code_verify: str = ""
+    sms_template_code_invite: str = ""
 
     # 微信订阅消息（打卡提醒，D-108）
     wechat_subscribe_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock
