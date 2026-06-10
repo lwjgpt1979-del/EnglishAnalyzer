@@ -103,7 +103,7 @@ async function onUpload() {
 .btn-upload {
   margin-top: 48rpx;
   background: var(--c-primary);
-  color: var(--c-ink);
+  color: var(--c-on-primary);
   border-radius: var(--r-btn);
   font-size: 32rpx;
   font-weight: 700;

@@ -627,7 +627,7 @@ function activityClass(count: number): string {
   width: 44rpx;
   height: 44rpx;
   background: var(--c-primary);
-  color: var(--c-ink);
+  color: var(--c-on-primary);
   border-radius: 50%;
   font-size: 24rpx;
   font-weight: 700;

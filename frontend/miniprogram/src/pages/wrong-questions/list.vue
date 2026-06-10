@@ -225,7 +225,7 @@ function goDetail(id: string) {
 .btn-sm {
   margin-top: 32rpx;
   background: var(--c-primary);
-  color: var(--c-ink);
+  color: var(--c-on-primary);
   font-size: 28rpx;
   font-weight: 700;
   border-radius: var(--r-btn);

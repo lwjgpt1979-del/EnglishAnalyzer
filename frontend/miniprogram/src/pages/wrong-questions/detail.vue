@@ -334,7 +334,7 @@ function previewImg() {
 .label { width: 140rpx; color: var(--c-text-second); font-size: 28rpx; }
 .btn-analyze {
   background: var(--c-primary);
-  color: var(--c-ink);
+  color: var(--c-on-primary);
   border-radius: var(--r-btn);
   font-size: 28rpx;
   font-weight: 700;
