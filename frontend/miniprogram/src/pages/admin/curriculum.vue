@@ -166,6 +166,6 @@ onShow(load)
   background: var(--c-bg-card); border-top: 1rpx solid var(--c-border);
 }
 .fab-btn { flex: 1; text-align: center; padding: 20rpx 0; border-radius: var(--r-btn); font-size: 28rpx; font-weight: 700; }
-.fab-primary   { background: var(--c-primary); color: var(--c-ink); }
+.fab-primary   { background: var(--c-primary); color: var(--c-on-primary); }
 .fab-secondary { background: var(--c-bg-page); color: var(--c-ink); border: 1rpx solid var(--c-border); }
 </style>

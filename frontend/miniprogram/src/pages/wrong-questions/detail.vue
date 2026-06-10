@@ -341,7 +341,7 @@ function previewImg() {
   height: 80rpx;
   line-height: 80rpx;
 }
-.btn-analyze[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-analyze[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .analysis-result { margin-top: 24rpx; }
 .section-title { font-size: 26rpx; color: var(--c-text-second); margin: 20rpx 0 8rpx; }
 .tags { display: flex; flex-wrap: wrap; gap: 10rpx; }
@@ -379,7 +379,7 @@ function previewImg() {
 .ocr-status-text { flex: 1; font-size: 26rpx; color: var(--c-text-second); }
 .btn-ocr-retry {
   font-size: 24rpx; height: 56rpx; line-height: 56rpx;
-  background: var(--c-primary); color: var(--c-ink); font-weight: 600; border-radius: var(--r-sm); padding: 0 20rpx;
+  background: var(--c-primary); color: var(--c-on-primary); font-weight: 600; border-radius: var(--r-sm); padding: 0 20rpx;
 }
 
 /* OCR 编辑表单 */

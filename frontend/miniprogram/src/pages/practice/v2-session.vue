@@ -159,8 +159,8 @@ function goBack() {
 .fb-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
 .fb-ans { font-size: 24rpx; color: var(--c-text-body); }
 .fb-exp { font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .finish-card { display: flex; flex-direction: column; gap: 16rpx; align-items: center; text-align: center; padding: 48rpx; }
 .finish-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-ink); }
 .finish-meta { font-size: 28rpx; color: var(--c-text-second); }

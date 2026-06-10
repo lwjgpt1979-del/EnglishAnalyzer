@@ -247,12 +247,12 @@ function formatDate(iso: string) {
 
 .acc-green, .dot-green { color: #52c41a; }
 .bar-fill.acc-green   { background: #52c41a; }
-.acc-yellow, .dot-yellow { color: #faad14; }
-.bar-fill.acc-yellow  { background: #faad14; }
+.acc-yellow, .dot-yellow { color: #ffb020; }
+.bar-fill.acc-yellow  { background: #ffb020; }
 .acc-red, .dot-red    { color: #ff4d4f; }
 .bar-fill.acc-red     { background: #ff4d4f; }
 .dot-green  { background: #52c41a; }
-.dot-yellow { background: #faad14; }
+.dot-yellow { background: #ffb020; }
 .dot-red    { background: #ff4d4f; }
 
 .text-green { color: #52c41a !important; }
@@ -263,13 +263,13 @@ function formatDate(iso: string) {
   margin-top: 14rpx; padding: 14rpx 16rpx; border-radius: 12rpx;
   display: flex; align-items: flex-start; gap: 10rpx;
   &.sug-weak   { background: #fff2f0; }
-  &.sug-medium { background: #fffbe6; }
+  &.sug-medium { background: #eef5ff; }
   &.sug-good   { background: #f6ffed; }
 }
 .sug-badge {
   flex-shrink: 0; font-size: 20rpx; padding: 2rpx 14rpx; border-radius: 20rpx; color: #fff;
   &.badge-weak   { background: #ff4d4f; }
-  &.badge-medium { background: #faad14; }
+  &.badge-medium { background: #ffb020; }
   &.badge-good   { background: #52c41a; }
 }
 .sug-text { flex: 1; font-size: 24rpx; color: #555; line-height: 1.5; }

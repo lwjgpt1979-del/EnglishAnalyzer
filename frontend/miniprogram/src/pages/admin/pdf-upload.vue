@@ -405,7 +405,7 @@ function backToList() {
   display: flex; align-items: center; justify-content: center;
   font-size: 22rpx; font-weight: 700; flex-shrink: 0;
 }
-.dot-active { background: var(--c-primary); color: var(--c-ink); }
+.dot-active { background: var(--c-primary); color: var(--c-on-primary); }
 .dot-done   { background: #52c41a; color: #fff; }
 .dot-idle   { background: var(--c-border); color: var(--c-text-hint); }
 .step-label { font-size: 20rpx; color: var(--c-text-hint); margin: 0 8rpx; white-space: nowrap; }
@@ -424,7 +424,7 @@ function backToList() {
   flex: 1; text-align: center; padding: 18rpx 0; border-radius: var(--r-btn);
   font-size: 26rpx; border: 2rpx solid var(--c-border); color: var(--c-text-body);
 }
-.mode-active { border-color: var(--c-primary); background: #fffbe6; font-weight: 700; }
+.mode-active { border-color: var(--c-primary); background: #eef5ff; font-weight: 700; }
 
 /* ── 表单 ── */
 .form-item { display: flex; justify-content: space-between; align-items: center; padding: 20rpx 0; border-bottom: 1rpx solid var(--c-border); }
@@ -433,7 +433,7 @@ function backToList() {
 
 /* ── 提示 ── */
 .note { font-size: 22rpx; color: var(--c-text-hint); background: var(--c-bg-page); border-radius: 8rpx; padding: 16rpx; margin: 20rpx 0; line-height: 1.6; }
-.warn-note { color: #ad6800; background: #fffbe6; }
+.warn-note { color: #b8860b; background: #eef5ff; }
 .err-msg   { font-size: 24rpx; color: #ff4d4f; margin-top: 12rpx; }
 
 /* ── 上传区 ── */
@@ -464,7 +464,7 @@ function backToList() {
 
 /* ── 分段编辑 ── */
 .auto-ok-tip  { font-size: 24rpx; color: #389e0d; background: #f6ffed; border-radius: 8rpx; padding: 12rpx 16rpx; margin-bottom: 16rpx; }
-.auto-fail-tip{ font-size: 24rpx; color: #ad6800; background: #fffbe6; border-radius: 8rpx; padding: 12rpx 16rpx; margin-bottom: 16rpx; }
+.auto-fail-tip{ font-size: 24rpx; color: #b8860b; background: #eef5ff; border-radius: 8rpx; padding: 12rpx 16rpx; margin-bottom: 16rpx; }
 .add-seg-hint { text-align: center; color: var(--c-text-hint); font-size: 24rpx; padding: 24rpx 0; }
 .seg-row {
   display: flex; align-items: flex-start; gap: 12rpx;
@@ -516,7 +516,7 @@ function backToList() {
 .btn-row { display: flex; gap: 16rpx; margin-top: 32rpx; }
 .btn-primary {
   flex: 1; text-align: center; padding: 22rpx 0; border-radius: var(--r-btn);
-  background: var(--c-primary); color: var(--c-ink); font-size: 28rpx; font-weight: 700; margin-top: 24rpx;
+  background: var(--c-primary); color: var(--c-on-primary); font-size: 28rpx; font-weight: 700; margin-top: 24rpx;
 }
 .btn-ghost {
   flex: 1; text-align: center; padding: 22rpx 0; border-radius: var(--r-btn);

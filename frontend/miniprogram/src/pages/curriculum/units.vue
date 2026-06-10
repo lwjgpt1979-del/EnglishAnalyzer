@@ -94,7 +94,7 @@ function onTapUnit(u: UnitOut) {
 }
 .unit-card.locked { opacity: .65; }
 .unit-no-badge {
-  background: var(--c-primary); color: var(--c-ink);
+  background: var(--c-primary); color: var(--c-on-primary);
   border-radius: var(--r-md); padding: 8rpx 16rpx;
   font-size: 28rpx; font-weight: 800; min-width: 64rpx; text-align: center;
 }

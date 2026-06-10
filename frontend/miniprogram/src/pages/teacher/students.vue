@@ -333,13 +333,13 @@ onLoad((options) => {
 .badge-text { font-size: 28rpx; color: var(--c-success); }
 .subject-text { font-size: 24rpx; color: var(--c-text-hint); }
 .input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; margin-bottom: 16rpx; width: 100%; box-sizing: border-box; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; text-align: center; margin-top: 8rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; text-align: center; margin-top: 8rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .btn-secondary { background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 20rpx; font-size: 28rpx; font-weight: 600; text-align: center; }
 .invite-box { margin-top: 16rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx; display: flex; align-items: center; gap: 16rpx; }
 .invite-code { font-size: 48rpx; font-weight: 800; letter-spacing: 8rpx; color: var(--c-ink); flex: 1; }
 .invite-expire { font-size: 22rpx; color: var(--c-text-hint); }
-.btn-copy { background: var(--c-primary); color: var(--c-ink); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
+.btn-copy { background: var(--c-primary); color: var(--c-on-primary); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
 .tip { font-size: 26rpx; color: var(--c-text-hint); text-align: center; padding: 24rpx 0; }
 .student-item { display: flex; align-items: center; justify-content: space-between; padding: 20rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .student-item:last-child { border-bottom: none; }

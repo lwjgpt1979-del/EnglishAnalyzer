@@ -81,7 +81,7 @@ async function onRevoke() {
 .input { width: 100%; border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; margin: 16rpx 0 8rpx; box-sizing: border-box; }
 .btn-danger { background: var(--c-danger); color: #fff; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
 .btn-danger[disabled] { opacity: .5; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
 .cooling { text-align: center; padding: 24rpx 0; }
 .cooling-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-orange); display: block; margin-bottom: 8rpx; }
 .cooling-days { font-size: var(--fs-display); font-weight: 800; color: var(--c-ink); display: block; margin-bottom: 24rpx; }

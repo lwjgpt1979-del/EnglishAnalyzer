@@ -239,7 +239,7 @@ function goStudentDiag() {
   line-height: 1;
 }
 .stat-num.excellent { color: #22c55e; }
-.stat-num.good      { color: #f5c518; }
+.stat-num.good      { color: #ffb020; }
 .stat-num.fair      { color: #f97316; }
 .stat-num.poor      { color: #ef4444; }
 .stat-num.streak    { color: #f97316; }
@@ -279,7 +279,7 @@ function goStudentDiag() {
   background: #ccc;
 }
 .checkin-fill.excellent { background: #22c55e; }
-.checkin-fill.good      { background: #f5c518; }
+.checkin-fill.good      { background: #ffb020; }
 .checkin-fill.fair      { background: #f97316; }
 .checkin-fill.poor      { background: #ef4444; }
 .checkin-hint {
@@ -341,7 +341,7 @@ function goStudentDiag() {
 }
 .kp-item.kp-top {
   background: #fff8e0;
-  border: 2rpx solid #f5c518;
+  border: 2rpx solid #ffb020;
 }
 .kp-rank {
   width: 36rpx;
@@ -358,7 +358,7 @@ function goStudentDiag() {
   line-height: 36rpx;
 }
 .kp-item.kp-top .kp-rank {
-  background: #f5c518;
+  background: #ffb020;
   color: #1a1a1a;
 }
 .kp-name {

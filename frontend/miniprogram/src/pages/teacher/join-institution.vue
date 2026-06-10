@@ -27,5 +27,5 @@ async function submit() {
 .page { padding: 48rpx; }
 .hint { color: var(--c-text-second); font-size: 28rpx; margin-bottom: 32rpx; }
 .code-input { background: var(--c-bg-card); border-radius: var(--r-md); padding: 24rpx; font-size: 36rpx; letter-spacing: 8rpx; text-align: center; }
-.btn { margin-top: 48rpx; background: var(--c-primary); color: var(--c-ink); font-weight: 700; border-radius: var(--r-btn); }
+.btn { margin-top: 48rpx; background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; border-radius: var(--r-btn); }
 </style>

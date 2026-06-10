@@ -113,7 +113,7 @@ onMounted(load)
 .channels-wrap { white-space: nowrap; }
 .channels { display: inline-flex; gap: 8rpx; padding: 8rpx 4rpx 16rpx; }
 .ch { padding: 8rpx 18rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 24rpx; color: var(--c-text-second); white-space: nowrap; }
-.ch.active { background: var(--c-primary); color: var(--c-ink); font-weight: 700; }
+.ch.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
 .actions { display: flex; gap: 16rpx; padding: 8rpx 8rpx 16rpx; }
 .action-btn { font-size: 24rpx; color: var(--c-gold); font-weight: 600; padding: 4rpx 12rpx; }
 .tip { text-align: center; padding: 80rpx 0; color: var(--c-text-hint); font-size: 26rpx; }

@@ -367,7 +367,7 @@ function _markDone() {
 }
 .btn-primary {
   width: 100%;
-  background: #f5c518;
+  background: #ffb020;
   color: #1a1a1a;
   border-radius: 999rpx;
   font-size: 32rpx;

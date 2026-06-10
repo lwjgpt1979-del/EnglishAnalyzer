@@ -108,7 +108,7 @@ onShow(load)
 
 /* 等级 */
 .level-card { display: flex; align-items: center; gap: 28rpx; background: linear-gradient(135deg, #fff7e0, #ffeec0); }
-.level-badge { width: 110rpx; height: 110rpx; border-radius: 50%; background: var(--c-primary); color: var(--c-ink); font-size: 34rpx; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4rpx 16rpx rgba(0,0,0,.12); }
+.level-badge { width: 110rpx; height: 110rpx; border-radius: 50%; background: var(--c-primary); color: var(--c-on-primary); font-size: 34rpx; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4rpx 16rpx rgba(0,0,0,.12); }
 .level-info { flex: 1; }
 .level-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12rpx; }
 .level-xp { font-size: 32rpx; font-weight: 800; color: var(--c-ink); }

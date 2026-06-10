@@ -128,7 +128,7 @@ onMounted(async () => {
 .search-row { display: flex; gap: 12rpx; margin-bottom: 16rpx; }
 .search-input { flex: 1; border: 2rpx solid var(--c-border); border-radius: var(--r-md);
                 height: 72rpx; line-height: 72rpx; padding: 0 20rpx; font-size: 28rpx; }
-.btn-search { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-md);
+.btn-search { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-md);
               padding: 0 28rpx; font-size: 26rpx; font-weight: 600; height: 72rpx;
               line-height: 72rpx; white-space: nowrap; }
 

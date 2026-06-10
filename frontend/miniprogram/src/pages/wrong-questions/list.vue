@@ -260,7 +260,7 @@ function goDetail(id: string) {
 .tag-paper { background: #EDE9FE; color: #6D28D9; }
 .src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0; }
 .src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
-.src-tab.active { background: var(--c-primary); color: var(--c-ink); font-weight: 700; }
+.src-tab.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
 .wq-assign { display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--c-bg-page); border-radius: 8rpx; padding: 8rpx; }
 .wq-assign-icon { font-size: 40rpx; }
 .wq-assign-text { font-size: 20rpx; color: var(--c-text-hint); text-align: center; line-height: 1.3; margin-top: 4rpx; }

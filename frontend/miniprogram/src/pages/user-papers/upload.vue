@@ -171,8 +171,8 @@ function goList() {
 .add { display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2rpx dashed var(--c-border); }
 .add-icon { font-size: 56rpx; color: var(--c-text-hint); line-height: 1; }
 .add-text { font-size: 24rpx; color: var(--c-text-hint); margin-top: 8rpx; }
-.btn-submit { margin-top: 40rpx; background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); font-size: 32rpx; font-weight: 700; height: 96rpx; line-height: 96rpx; }
-.btn-submit[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-submit { margin-top: 40rpx; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-size: 32rpx; font-weight: 700; height: 96rpx; line-height: 96rpx; }
+.btn-submit[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .error-msg { margin-top: 20rpx; color: var(--c-danger); font-size: 26rpx; text-align: center; }
 .card-link { margin-top: 24rpx; text-align: center; color: var(--c-text-second); font-size: 28rpx; padding: 16rpx; }
 </style>

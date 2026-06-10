@@ -110,6 +110,6 @@ async function onUpload() {
   height: 96rpx;
   line-height: 96rpx;
 }
-.btn-upload[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-upload[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .error-msg { margin-top: 20rpx; color: var(--c-danger); font-size: 26rpx; text-align: center; }
 </style>

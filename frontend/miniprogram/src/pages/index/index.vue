@@ -371,7 +371,7 @@ onMounted(() => {
 
 /* 教师身份 */
 .cert-banner {
-  background: #fff7e6; border: 1rpx solid #ffe58f; color: #ad6800;
+  background: #fff7e6; border: 1rpx solid #ffe58f; color: #b8860b;
   border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 24rpx; font-size: var(--fs-body);
 }
 .role-hint { display: block; font-size: 24rpx; color: var(--c-text-hint); line-height: 1.6; padding: 0 8rpx; }

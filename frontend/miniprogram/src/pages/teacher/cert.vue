@@ -55,6 +55,6 @@ onMounted(loadStatus)
 .label { color: var(--c-text-second); font-size: 28rpx; }
 .input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; }
 .dev-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 12rpx; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 </style>

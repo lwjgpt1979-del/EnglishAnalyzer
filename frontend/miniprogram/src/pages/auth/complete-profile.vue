@@ -132,8 +132,8 @@ async function onVerify() {
 .label { color: var(--c-text-second); font-size: 28rpx; }
 .input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; color: var(--c-text-body); box-sizing: border-box; width: 100%; }
 .agree { display: flex; align-items: center; gap: 8rpx; margin: 24rpx 0 8rpx; font-size: 26rpx; color: var(--c-text-second); }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .dev-hint { font-size: 22rpx; color: var(--c-text-hint); }
 .picker-val { padding: 16rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }
 </style>

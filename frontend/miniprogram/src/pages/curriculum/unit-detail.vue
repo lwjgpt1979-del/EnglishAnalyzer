@@ -121,7 +121,7 @@ function definitionText(defs: WordOut['definitions']): string {
 .page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .empty { text-align: center; padding: 80rpx 0; color: var(--c-text-hint); }
 .header { display: flex; align-items: center; gap: 16rpx; padding: 12rpx 0 24rpx; }
-.badge { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-md); padding: 6rpx 14rpx; font-size: 26rpx; font-weight: 800; }
+.badge { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-md); padding: 6rpx 14rpx; font-size: 26rpx; font-weight: 800; }
 .title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); flex: 1; }
 .meta { font-size: 22rpx; color: var(--c-text-hint); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
@@ -145,7 +145,7 @@ function definitionText(defs: WordOut['definitions']): string {
 .kp-no-data { font-size: 22rpx; color: var(--c-text-hint); margin-top: 4rpx; }
 .adaptive-bar { padding: 0 0 20rpx; }
 .btn-adaptive {
-  width: 100%; background: var(--c-gold, #f5c518); color: #333;
+  width: 100%; background: var(--c-gold, #ffb020); color: #333;
   border-radius: var(--r-btn); padding: 22rpx; font-weight: 700;
   font-size: 28rpx; text-align: center;
   box-shadow: 0 4rpx 16rpx rgba(245,197,24,.3);

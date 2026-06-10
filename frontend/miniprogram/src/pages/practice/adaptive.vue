@@ -295,8 +295,8 @@ function goDiagnosis() {
 .fb-ans { font-size: 24rpx; color: var(--c-text-body); }
 .fb-exp { font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; }
 
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 
 .empty-card { display: flex; flex-direction: column; align-items: center; gap: 16rpx; padding: 60rpx 40rpx; text-align: center; }
 .empty-icon { font-size: 80rpx; }
@@ -317,7 +317,7 @@ function goDiagnosis() {
 .kp-stat-bar-wrap { flex: 1; height: 12rpx; background: #f0f0f0; border-radius: 999rpx; overflow: hidden; }
 .kp-stat-bar { height: 100%; border-radius: 999rpx; transition: width 0.4s; }
 .kp-stat-bar.full { background: #22c55e; }
-.kp-stat-bar.partial { background: #f5c518; }
+.kp-stat-bar.partial { background: #ffb020; }
 .kp-stat-bar.none { background: #ef4444; width: 4rpx !important; }
 .kp-stat-num { font-size: 22rpx; color: var(--c-text-hint); width: 60rpx; text-align: right; flex-shrink: 0; }
 

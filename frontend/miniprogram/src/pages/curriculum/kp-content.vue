@@ -233,7 +233,7 @@ function goWrongDetail(id: string) {
 .list-foot { text-align: center; padding: 24rpx 0 40rpx; color: var(--c-text-hint); font-size: 24rpx; }
 .practice-bar { padding: 24rpx; background: var(--c-bg-card); border-top: 1rpx solid var(--c-border); display: flex; gap: 16rpx; }
 .btn-primary, .btn-secondary { flex: 1; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); }
 .btn-secondary { background: var(--c-bg-soft); color: var(--c-text-body); border: 2rpx solid var(--c-border); }
 .mastery-card {
   background: var(--c-bg-card); border-bottom: 1rpx solid var(--c-border);

@@ -397,7 +397,7 @@ onMounted(load)
 .pic-option.opt-correct { border-color: #1b7a3d; }
 .pic-option.opt-wrong { border-color: var(--c-danger); }
 .pic-option-img { width: 100%; height: 100%; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; margin-top: 24rpx; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; margin-top: 24rpx; }
 .done { text-align: center; }
 .done-emoji { font-size: 80rpx; }
 .done-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); margin: 16rpx 0; }

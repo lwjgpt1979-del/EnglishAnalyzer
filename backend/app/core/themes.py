@@ -80,7 +80,7 @@ THEMES: list[dict] = [
 ]
 
 _BY_KEY = {t["key"]: t for t in THEMES}
-DEFAULT_THEME_KEY = "cyan"
+DEFAULT_THEME_KEY = "sky"
 
 
 def get_theme(key: str) -> dict:

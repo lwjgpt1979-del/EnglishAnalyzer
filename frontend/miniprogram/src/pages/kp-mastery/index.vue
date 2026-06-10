@@ -383,7 +383,7 @@ function goTrend(kpKey: string) {
 
 /* ── 颜色语义 ── */
 .acc-green, .dot-green, .bar-fill.acc-green { color: #52c41a; background: #52c41a; }
-.acc-yellow, .dot-yellow, .bar-fill.acc-yellow { color: #faad14; background: #faad14; }
+.acc-yellow, .dot-yellow, .bar-fill.acc-yellow { color: #ffb020; background: #ffb020; }
 .acc-red, .dot-red, .bar-fill.acc-red { color: #ff4d4f; background: #ff4d4f; }
 
 // ov-num 直接加颜色类

@@ -214,7 +214,7 @@ async function onPay() {
 .row { display: flex; justify-content: space-between; padding: 8rpx 0; border-bottom: 1rpx solid var(--c-border); font-size: 26rpx; color: var(--c-text-body); }
 .count { color: var(--c-gold); font-weight: 700; }
 .sug { display: flex; margin-bottom: 16rpx; }
-.sug-num { width: 44rpx; height: 44rpx; background: var(--c-primary); color: var(--c-ink); border-radius: 50%; font-size: 24rpx; font-weight: 700; line-height: 44rpx; text-align: center; margin-right: 16rpx; }
+.sug-num { width: 44rpx; height: 44rpx; background: var(--c-primary); color: var(--c-on-primary); border-radius: 50%; font-size: 24rpx; font-weight: 700; line-height: 44rpx; text-align: center; margin-right: 16rpx; }
 .sug-text { flex: 1; font-size: 28rpx; color: var(--c-text-body); line-height: 1.7; }
 /* 学期选择器 */
 .selector-row { display: flex; align-items: center; justify-content: space-between; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
@@ -229,8 +229,8 @@ async function onPay() {
 .tier.active .tier-label { color: var(--c-gold); }
 .tier.active .tier-price { color: var(--c-gold); }
 /* 按钮 */
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 /* 打卡日历 */
 .cal-summary { font-size: 24rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 .cal-grid { display: flex; flex-wrap: wrap; }

@@ -73,8 +73,8 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/essay/detail?id=${
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
 .essay-input { width: 100%; height: 320rpx; font-size: 28rpx; color: var(--c-text-body); line-height: 1.6; }
 .type-input { width: 100%; height: 72rpx; font-size: 26rpx; border-top: 1rpx solid var(--c-border); margin-top: 12rpx; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .tip { font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; text-align: center; }
 .empty { font-size: 26rpx; color: var(--c-text-hint); padding: 24rpx 0; text-align: center; }
 .row { display: flex; justify-content: space-between; padding: 16rpx 0; border-bottom: 1rpx solid var(--c-border); }

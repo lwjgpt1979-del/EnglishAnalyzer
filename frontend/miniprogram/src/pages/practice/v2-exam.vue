@@ -175,8 +175,8 @@ function goBack() {
 .essay-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx 20rpx; font-size: 28rpx; line-height: 1.5; box-sizing: border-box; width: 100%; min-height: 200rpx; }
 .practice-bar { padding: 24rpx; background: var(--c-bg-card); border-top: 1rpx solid var(--c-border); }
 .practice-bar.fixed { position: fixed; left: 0; right: 0; bottom: 0; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .score-card { display: flex; flex-direction: column; align-items: center; gap: 12rpx; padding: 48rpx; }
 .score-num { font-size: 64rpx; font-weight: 800; color: var(--c-ink); }
 .score-meta { font-size: 26rpx; color: var(--c-text-second); }

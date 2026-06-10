@@ -262,6 +262,6 @@ async function onPay() {
 }
 .btn-pay[disabled] {
   background: var(--c-primary-soft);
-  color: #b9a94e;
+  color: #9aa7b8;
 }
 </style>

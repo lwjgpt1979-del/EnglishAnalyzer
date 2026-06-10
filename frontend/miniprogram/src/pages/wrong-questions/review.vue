@@ -226,6 +226,6 @@ function goBack() {
 .q-btn.selected .q-label { color: var(--c-gold); font-weight: 700; }
 .submit-btn { margin-top: 0; }
 
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; width: 100%; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; width: 100%; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 </style>

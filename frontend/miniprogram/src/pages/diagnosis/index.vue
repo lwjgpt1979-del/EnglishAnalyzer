@@ -640,7 +640,7 @@ function activityClass(count: number): string {
 
 .practice-entry { }
 .practice-desc { font-size: 24rpx; color: var(--c-text-second); display: block; margin-bottom: 12rpx; line-height: 1.5; }
-.btn-practice { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 700; text-align: center; }
+.btn-practice { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 700; text-align: center; }
 .export-entry { margin-top: 24rpx; }
 .btn-export { background: #f0f0f0; color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; border: 2rpx solid var(--c-border); }
 .btn-export[disabled] { opacity: 0.5; }

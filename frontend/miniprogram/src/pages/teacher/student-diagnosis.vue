@@ -148,6 +148,6 @@ function difficultyBarClass(key: string): string {
 .tag-kp { background: #eaeac4; color: #6b6b2e; font-size: 24rpx; font-weight: 600; padding: 6rpx 16rpx; border-radius: var(--r-pill); }
 /* 建议 */
 .sug { display: flex; align-items: flex-start; margin-bottom: 20rpx; }
-.sug-num { width: 44rpx; height: 44rpx; background: var(--c-primary); color: var(--c-ink); border-radius: 50%; font-size: 24rpx; font-weight: 700; line-height: 44rpx; text-align: center; flex-shrink: 0; margin-right: 16rpx; }
+.sug-num { width: 44rpx; height: 44rpx; background: var(--c-primary); color: var(--c-on-primary); border-radius: 50%; font-size: 24rpx; font-weight: 700; line-height: 44rpx; text-align: center; flex-shrink: 0; margin-right: 16rpx; }
 .sug-text { flex: 1; font-size: 28rpx; color: var(--c-text-body); line-height: 1.7; }
 </style>

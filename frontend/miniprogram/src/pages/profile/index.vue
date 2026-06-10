@@ -496,7 +496,7 @@ function goBuySemester() {
   margin-right: 24rpx;
 }
 .nickname { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
-.btn-login { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); font-weight: 700; }
+.btn-login { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-weight: 700; }
 .member-tier {
   display: inline-block;
   padding: 8rpx 24rpx;
@@ -551,7 +551,7 @@ function goBuySemester() {
   height: 96rpx;
   line-height: 96rpx;
 }
-.btn-pay[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-pay[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .center-tip { color: var(--c-text-hint); font-size: 28rpx; }
 .menu-desc { font-size: 24rpx; color: var(--c-text-second); margin-bottom: 12rpx; display: block; }
 .kp-entry-card { padding: 24rpx; }
@@ -576,9 +576,9 @@ function goBuySemester() {
 .invite-row { margin-top: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; display: flex; align-items: center; gap: 12rpx; }
 .inv-code { flex: 1; font-size: 40rpx; font-weight: 800; color: var(--c-ink); letter-spacing: 6rpx; }
 .inv-exp { font-size: 22rpx; color: var(--c-text-hint); }
-.btn-copy { background: var(--c-primary); color: var(--c-ink); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; text-align: center; margin-top: 8rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-copy { background: var(--c-primary); color: var(--c-on-primary); font-size: 24rpx; font-weight: 600; border-radius: var(--r-sm); padding: 8rpx 16rpx; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; text-align: center; margin-top: 8rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .btn-secondary { background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 20rpx; font-size: 28rpx; font-weight: 600; text-align: center; }
 .invite-actions { display: flex; gap: 12rpx; }
 .half { flex: 1; margin-top: 0; }

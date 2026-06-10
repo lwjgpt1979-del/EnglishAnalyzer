@@ -278,7 +278,7 @@ function shortDate(dateStr: string, i: number): string {
 .bar-fill {
   width: 100%; border-radius: 6rpx; transition: height 0.3s;
   &.acc-green  { background: #52c41a; }
-  &.acc-yellow { background: #faad14; }
+  &.acc-yellow { background: #ffb020; }
   &.acc-red    { background: #ff4d4f; }
 }
 .bar-date { font-size: 16rpx; color: #bbb; margin-top: 6rpx; white-space: nowrap; }
@@ -289,14 +289,14 @@ function shortDate(dateStr: string, i: number): string {
   position: absolute; left: 52rpx; right: 24rpx; height: 1rpx; border-top: 1rpx dashed;
 }
 .ref-80 { bottom: 226rpx; border-color: #52c41a; }  /* 80%: 200rpx * 0.8 = 160, 加 padding */
-.ref-60 { bottom: 186rpx; border-color: #faad14; }  /* 60% */
+.ref-60 { bottom: 186rpx; border-color: #ffb020; }  /* 60% */
 
 /* 图例 */
 .legend-row { display: flex; gap: 24rpx; margin-top: 16rpx; flex-wrap: wrap; }
 .legend-item { display: flex; align-items: center; gap: 8rpx; }
 .legend-dot { width: 16rpx; height: 16rpx; border-radius: 50%; }
 .dot-green  { background: #52c41a; }
-.dot-yellow { background: #faad14; }
+.dot-yellow { background: #ffb020; }
 .dot-red    { background: #ff4d4f; }
 .legend-label { font-size: 22rpx; color: #666; }
 
@@ -323,7 +323,7 @@ function shortDate(dateStr: string, i: number): string {
 .list-pct { font-size: 26rpx; font-weight: 700; width: 70rpx; text-align: right; flex-shrink: 0; }
 
 .acc-green { color: #52c41a; }
-.acc-yellow { color: #faad14; }
+.acc-yellow { color: #ffb020; }
 .acc-red { color: #ff4d4f; }
 .text-green { color: #52c41a !important; }
 .text-red { color: #ff4d4f !important; }

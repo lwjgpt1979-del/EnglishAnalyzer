@@ -133,8 +133,8 @@ async function submitComment(wqId: string) {
 .wq-meta { font-size: 24rpx; color: var(--c-text-second); margin-bottom: 16rpx; }
 .comment-section { border-top: 1rpx solid var(--c-border); padding-top: 16rpx; }
 .comment-input { width: 100%; border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 12rpx; font-size: 26rpx; min-height: 80rpx; box-sizing: border-box; margin-bottom: 8rpx; }
-.btn-comment { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-sm); font-size: 24rpx; font-weight: 600; }
-.btn-comment[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-comment { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-sm); font-size: 24rpx; font-weight: 600; }
+.btn-comment[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .existing-comments { margin-top: 16rpx; }
 .comment-item { background: var(--c-primary-faint); border-radius: var(--r-md); padding: 14rpx 18rpx; margin-bottom: 8rpx; border-left: 4rpx solid var(--c-gold); }
 .comment-text { font-size: 26rpx; color: var(--c-text-body); display: block; margin-bottom: 4rpx; }

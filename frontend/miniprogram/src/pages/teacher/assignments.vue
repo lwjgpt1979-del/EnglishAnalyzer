@@ -191,8 +191,8 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/assignment
 .ipt { width: 100%; height: 72rpx; font-size: 28rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 0 16rpx; margin-bottom: 12rpx; box-sizing: border-box; }
 
 /* M47 班级弱项推荐 */
-.rec-section { margin-bottom: 16rpx; padding: 16rpx; background: #fffbe6; border-radius: 12rpx; border: 1rpx solid #ffe58f; }
-.rec-title { font-size: 24rpx; font-weight: 600; color: #ad8b00; margin-bottom: 12rpx; }
+.rec-section { margin-bottom: 16rpx; padding: 16rpx; background: #eef5ff; border-radius: 12rpx; border: 1rpx solid #ffe58f; }
+.rec-title { font-size: 24rpx; font-weight: 600; color: #b8860b; margin-bottom: 12rpx; }
 .rec-chips { display: flex; flex-wrap: wrap; gap: 12rpx; }
 .kp-chip {
   display: flex; flex-direction: column; align-items: center;
@@ -200,12 +200,12 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/assignment
   min-width: 120rpx; cursor: pointer;
 }
 .chip-red    { border-color: #ff4d4f; background: #fff2f0; }
-.chip-yellow { border-color: #faad14; background: #fffbe6; }
+.chip-yellow { border-color: #ffb020; background: #eef5ff; }
 .chip-green  { border-color: #52c41a; background: #f6ffed; }
 .chip-name { font-size: 24rpx; font-weight: 600; color: #333; margin-bottom: 4rpx; }
 .chip-acc  { font-size: 28rpx; font-weight: 700; }
 .chip-red .chip-acc    { color: #ff4d4f; }
-.chip-yellow .chip-acc { color: #faad14; }
+.chip-yellow .chip-acc { color: #ffb020; }
 .chip-green .chip-acc  { color: #52c41a; }
 .chip-weak { font-size: 18rpx; color: #999; margin-top: 2rpx; }
 .rec-loading { font-size: 24rpx; color: #999; margin-top: 8rpx; }
@@ -218,8 +218,8 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/assignment
 .q-del { color: #e54d42; margin-left: 12rpx; }
 .q-stem { width: 100%; height: 140rpx; font-size: 28rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 12rpx; margin-bottom: 12rpx; box-sizing: border-box; }
 .btn-ghost { background: var(--c-bg-page); color: var(--c-text-body); border-radius: var(--r-btn); padding: 16rpx; font-size: 26rpx; margin-bottom: 12rpx; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .empty { font-size: 26rpx; color: var(--c-text-hint); padding: 24rpx 0; text-align: center; }
 .row { display: flex; justify-content: space-between; align-items: center; padding: 16rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .row-title { font-size: 28rpx; color: var(--c-text-body); display: block; }

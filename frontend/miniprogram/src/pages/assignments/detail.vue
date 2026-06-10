@@ -73,8 +73,8 @@ async function onSubmit() {
 .q { padding: 12rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .q-stem { display: block; font-size: 28rpx; color: var(--c-text-body); margin-bottom: 8rpx; }
 .ans-ipt { width: 100%; height: 68rpx; border: 1rpx solid var(--c-border); border-radius: 8rpx; padding: 0 12rpx; font-size: 26rpx; }
-.btn-primary { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #b9a94e; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }
+.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .done-tip { text-align: center; font-size: 26rpx; color: var(--c-text-hint); padding: 16rpx; }
 .ref-ans { display: flex; gap: 8rpx; margin-top: 8rpx; font-size: 24rpx; }
 .ref-label { color: var(--c-text-hint); flex-shrink: 0; }
