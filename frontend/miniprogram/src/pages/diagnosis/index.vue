@@ -27,6 +27,29 @@
         </view>
       </view>
 
+      <!-- 退步预警（M13）-->
+      <view v-if="report.regression_alerts && report.regression_alerts.length > 0" class="card alert-card">
+        <view class="alert-head">
+          <text class="alert-title">📉 退步预警</text>
+          <text class="alert-sub">{{ report.regression_alerts.length }} 个知识点正确率下滑</text>
+        </view>
+        <view
+          v-for="a in report.regression_alerts"
+          :key="a.kp_key"
+          class="alert-item"
+          :class="`sev-${a.severity}`"
+          @tap="goTrend(a.kp_key)"
+        >
+          <view class="alert-row">
+            <text class="alert-kp">{{ a.kp_key }}</text>
+            <text class="alert-drop">↓{{ Math.round(a.drop * 100) }}%</text>
+          </view>
+          <text class="alert-detail">
+            峰值 {{ Math.round(a.peak_accuracy * 100) }}% → 最新 {{ Math.round(a.latest_accuracy * 100) }}%，建议尽快复习巩固
+          </text>
+        </view>
+      </view>
+
       <!-- 我的班级排名（学生端百分位，不显示他人姓名） -->
       <view class="card rank-card" v-if="examRank && examRank.ranked">
         <view class="card-title">我的班级排名</view>
@@ -506,6 +529,19 @@ function activityClass(count: number): string {
 .diag-page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .center-tip { text-align: center; padding: 120rpx; color: var(--c-text-hint); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
+/* 退步预警（M13）*/
+.alert-card { border: 2rpx solid #ffd7d2; }
+.alert-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16rpx; }
+.alert-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-danger); }
+.alert-sub { font-size: 22rpx; color: var(--c-text-hint); }
+.alert-item { padding: 16rpx; border-radius: var(--r-md); background: var(--c-danger-bg); margin-bottom: 12rpx; border-left: 6rpx solid var(--c-danger); }
+.alert-item.sev-mid { border-left-color: var(--c-orange); background: #fff4ec; }
+.alert-item.sev-low { border-left-color: var(--c-gold); background: #fff8e8; }
+.alert-row { display: flex; justify-content: space-between; align-items: baseline; }
+.alert-kp { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.alert-drop { font-size: 28rpx; font-weight: 800; color: var(--c-danger); }
+.alert-item.sev-mid .alert-drop { color: var(--c-orange); }
+.alert-detail { display: block; font-size: 22rpx; color: var(--c-text-second); margin-top: 6rpx; line-height: 1.5; }
 .card-title { font-size: var(--fs-h2); font-weight: 700; margin-bottom: 20rpx; color: var(--c-ink); }
 
 /* 总览 */

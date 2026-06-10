@@ -64,6 +64,19 @@ class MasteryLedgerItem(BaseModel):
     days_since_last: int | None = Field(None, description="距今天数，无记录为 null")
 
 
+class RegressionAlert(BaseModel):
+    """知识点退步预警（M13，来自 kp_mastery_snapshots 趋势对比）。"""
+
+    kp_key: str = Field(..., description="知识点名称")
+    latest_accuracy: float = Field(..., description="最新正确率")
+    peak_accuracy: float = Field(..., description="历史峰值正确率")
+    drop: float = Field(..., description="跌幅 = 峰值 - 最新")
+    severity: str = Field(..., description="严重度 high/mid/low")
+    latest_date: str = Field(..., description="最新快照日期")
+    peak_date: str = Field(..., description="峰值快照日期")
+    latest_total: int = Field(..., description="最新累计作答数")
+
+
 class DiagnosisReport(BaseModel):
     """学情诊断报告。
 
@@ -120,4 +133,10 @@ class DiagnosisReport(BaseModel):
     mastery_ledger: list[MasteryLedgerItem] = Field(
         default_factory=list,
         description="个人知识点掌握台账，按正确率升序（弱项在前），含规则化复习建议",
+    )
+
+    # ── 退步预警（来自 kp_mastery_snapshots 趋势对比，M13）────────────────────
+    regression_alerts: list[RegressionAlert] = Field(
+        default_factory=list,
+        description="正确率显著下滑的知识点，按跌幅降序",
     )

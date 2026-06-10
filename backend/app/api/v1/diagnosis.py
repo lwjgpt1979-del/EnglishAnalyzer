@@ -35,6 +35,15 @@ async def get_my_diagnosis_report(db: DbDep, current_user: UserDep):
     return make_ok(report)
 
 
+@router.get("/regression-alerts")
+async def get_my_regression_alerts(db: DbDep, current_user: UserDep):
+    """返回当前学生的知识点退步预警（轻量，不含完整报告）。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import regression_service
+    alerts = await regression_service.detect_regressions(db, student_id=current_user.id)
+    return make_ok(alerts)
+
+
 class PdfExportOut(BaseModel):
     pdf_base64: str
     filename: str

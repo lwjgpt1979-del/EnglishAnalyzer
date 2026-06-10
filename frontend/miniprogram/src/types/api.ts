@@ -138,6 +138,17 @@ export interface MasteryLedgerItem {
   days_since_last: number | null
 }
 
+export interface RegressionAlert {
+  kp_key: string
+  latest_accuracy: number
+  peak_accuracy: number
+  drop: number
+  severity: 'high' | 'mid' | 'low'
+  latest_date: string
+  peak_date: string
+  latest_total: number
+}
+
 export interface DiagnosisReport {
   total_questions: number
   total_analyzed: number
@@ -152,6 +163,7 @@ export interface DiagnosisReport {
   kp_dimension: KpDimensionItem[]
   semester_dimension: SemesterDimensionItem[]
   mastery_ledger: MasteryLedgerItem[]
+  regression_alerts: RegressionAlert[]
 }
 
 // ── 每日学习计划（M9）────────────────────────────────────────────────────────

@@ -808,3 +808,15 @@ async def admin_set_theme(body: SetThemeRequest, db: DbDep, admin: AdminDep):
     theme = await _theme_svc.set_active(db, key=body.key, operator_id=admin.id)
     await db.commit()
     return make_ok(theme)
+
+
+# ── M13 学情退步预警批量推送 ──────────────────────────────────────────────────
+from app.services import regression_service as _regression_svc
+
+
+@router.post("/regression-alerts/run", response_model=None)
+async def admin_run_regression_alerts(db: DbDep, admin: AdminDep):
+    """批量检测全体学生知识点退步并推送通知（运营/定时调用）。"""
+    result = await _regression_svc.run_regression_alerts(db)
+    await db.commit()
+    return make_ok(result)

@@ -172,6 +172,10 @@ async def get_diagnosis_report(
     # ── 8. 知识点掌握台账（来自 student_kp_mastery，弱项在前 + 复习建议，M6c）────
     mastery_ledger = await _build_mastery_ledger(db, student_id=student_id)
 
+    # ── 9. 退步预警（来自 kp_mastery_snapshots 趋势对比，M13）──────────────────
+    from app.services import regression_service
+    regression_alerts = await regression_service.detect_regressions(db, student_id=student_id)
+
     return DiagnosisReport(
         total_questions=total_questions,
         total_analyzed=total_analyzed,
@@ -186,6 +190,7 @@ async def get_diagnosis_report(
         kp_dimension=kp_dimension,
         semester_dimension=semester_dimension,
         mastery_ledger=mastery_ledger,
+        regression_alerts=regression_alerts,
     )
 
 
