@@ -20,8 +20,8 @@
         <text class="stem-text">{{ wq.question_text || '（无题干，本题为图片错题）' }}</text>
       </view>
 
-      <!-- OCR 识别状态卡 -->
-      <view class="card" v-if="wq">
+      <!-- OCR 识别状态卡（仅图片错题需要 OCR；文字录入错题不显示）-->
+      <view class="card" v-if="wq && isRealImage">
         <!-- 状态条 -->
         <view class="ocr-status-bar" :class="ocrStatusClass">
           <text class="ocr-status-icon">{{ ocrStatusIcon }}</text>
