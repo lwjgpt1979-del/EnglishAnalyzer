@@ -82,7 +82,7 @@
               :class="[`q-lv-${i}`, selectedQuality === btn.q ? 'selected' : '']"
               @tap="selectedQuality = btn.q"
             >
-              <text class="q-icon">{{ btn.icon }}</text>
+              <view class="q-icon" />
               <text class="q-label">{{ btn.label }}</text>
             </view>
           </view>
@@ -226,13 +226,22 @@ function goBack() {
 .quality-btns { display: flex; justify-content: space-between; gap: 12rpx; margin-bottom: 28rpx; }
 .q-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10rpx; padding: 20rpx 4rpx; border-radius: var(--r-md); background: #f6f8fa; border: 2rpx solid transparent; transition: all 0.15s; }
 .q-btn:active { transform: scale(0.96); }
-.q-icon { font-size: 40rpx; line-height: 1; }
 .q-label { font-size: 19rpx; color: var(--c-text-hint); }
+/* 线性表情图标（难过→开心 渐变，按掌握程度配色）*/
+.q-icon {
+  width: 48rpx; height: 48rpx;
+  background-repeat: no-repeat; background-position: center; background-size: contain;
+}
+.q-lv-0 .q-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f08a6a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='9' cy='10' r='1' fill='%23f08a6a' stroke='none'/%3E%3Ccircle cx='15' cy='10' r='1' fill='%23f08a6a' stroke='none'/%3E%3Cpath d='M7.8 16.2 Q12 12.8 16.2 16.2'/%3E%3C/svg%3E"); }
+.q-lv-1 .q-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5a623' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='9' cy='10' r='1' fill='%23f5a623' stroke='none'/%3E%3Ccircle cx='15' cy='10' r='1' fill='%23f5a623' stroke='none'/%3E%3Cpath d='M8.2 15.8 Q12 14 15.8 15.8'/%3E%3C/svg%3E"); }
+.q-lv-2 .q-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e0a116' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='9' cy='10' r='1' fill='%23e0a116' stroke='none'/%3E%3Ccircle cx='15' cy='10' r='1' fill='%23e0a116' stroke='none'/%3E%3Cpath d='M8.5 15 L15.5 15'/%3E%3C/svg%3E"); }
+.q-lv-3 .q-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235fa9dd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='9' cy='10' r='1' fill='%235fa9dd' stroke='none'/%3E%3Ccircle cx='15' cy='10' r='1' fill='%235fa9dd' stroke='none'/%3E%3Cpath d='M8.2 14.6 Q12 16.4 15.8 14.6'/%3E%3C/svg%3E"); }
+.q-lv-4 .q-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232ecc71' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='9' cy='10' r='1' fill='%232ecc71' stroke='none'/%3E%3Ccircle cx='15' cy='10' r='1' fill='%232ecc71' stroke='none'/%3E%3Cpath d='M7.8 14.2 Q12 17.8 16.2 14.2'/%3E%3C/svg%3E"); }
 /* 选中态：按掌握程度梯度着色（忘→掌握 暖到冷）*/
 .q-btn.selected { border-width: 2rpx; }
 .q-btn.q-lv-0.selected { border-color: #f08a6a; background: #fff0eb; }
 .q-btn.q-lv-1.selected { border-color: #f5a623; background: #fff5e3; }
-.q-btn.q-lv-2.selected { border-color: #f5c211; background: #fdf6da; }
+.q-btn.q-lv-2.selected { border-color: #e0a116; background: #fdf6da; }
 .q-btn.q-lv-3.selected { border-color: #7bbde8; background: #eaf4fb; }
 .q-btn.q-lv-4.selected { border-color: #2ecc71; background: #eafaf1; }
 .q-btn.selected .q-label { font-weight: 800; color: var(--c-ink); }
