@@ -32,6 +32,9 @@ async function onSubmit() {
         <el-form-item><el-input v-model="form.password" type="password" placeholder="密码" show-password @keyup.enter="onSubmit" /></el-form-item>
         <el-button type="primary" :loading="loading" style="width:100%" @click="onSubmit">登录</el-button>
       </el-form>
+      <div class="apply-entry">
+        还没有机构账号？<el-link type="primary" @click="router.push('/apply')">立即申请入驻 →</el-link>
+      </div>
     </el-card>
   </div>
 </template>
@@ -40,4 +43,5 @@ async function onSubmit() {
 .login-wrap { height: 100vh; display: flex; align-items: center; justify-content: center; background: #f0f2f5; }
 .login-card { width: 360px; }
 .t { text-align: center; margin: 0 0 20px; }
+.apply-entry { text-align: center; margin-top: 16px; font-size: 13px; color: #909399; }
 </style>

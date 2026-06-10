@@ -150,3 +150,24 @@ class BillItemOut(BaseModel):
     type: str
     summary: str
     amount_fen: int
+
+
+# ── 机构自助入驻申请（M47，公开免登录）─────────────────────────────────────
+class InstitutionApplyCodeRequest(BaseModel):
+    phone: str
+
+
+class InstitutionApplyRequest(BaseModel):
+    name: str
+    contact_phone: str
+    province_code: str
+    city_code: str
+    address: str
+    code: str
+
+
+class InstitutionApplyResult(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    institution_id: uuid.UUID
+    name: str
+    status: str

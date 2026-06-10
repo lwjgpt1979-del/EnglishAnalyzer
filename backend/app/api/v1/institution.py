@@ -22,6 +22,9 @@ from app.schemas.institution import (
     BatchRenewRequest,
     BatchRenewResult,
     BillItemOut,
+    InstitutionApplyCodeRequest,
+    InstitutionApplyRequest,
+    InstitutionApplyResult,
     InstitutionOverviewOut,
     InstitutionProfileOut,
     InstitutionProfileUpdate,
@@ -35,6 +38,7 @@ from app.schemas.institution import (
 )
 from app.services import (
     admin_auth_service,
+    institution_apply_service,
     institution_billing_service,
     institution_purchase_service,
     institution_renew_service,
@@ -65,6 +69,29 @@ async def institution_login(body: AdminLoginRequest, db: DbDep):
         access_token=create_access_token(str(user.id), str(user.role)),
         refresh_token=create_refresh_token(str(user.id)),
     ))
+
+
+# ─── 机构自助入驻申请（M47，公开免登录）────────────────────────────────────
+@router.post("/apply/send-code", response_model=BaseResponse[dict])
+async def institution_apply_send_code(body: InstitutionApplyCodeRequest, db: DbDep):
+    """发送机构入驻申请手机验证码（公开）。"""
+    await institution_apply_service.send_apply_code(db, phone=body.phone)
+    await db.commit()
+    return make_ok({"sent": True})
+
+
+@router.post("/apply", response_model=BaseResponse[InstitutionApplyResult])
+async def institution_apply(body: InstitutionApplyRequest, db: DbDep):
+    """提交机构入驻申请（公开）。验码通过后写入 pending 机构，进入超管审核队列。"""
+    inst = await institution_apply_service.apply_institution(
+        db,
+        name=body.name, contact_phone=body.contact_phone,
+        province_code=body.province_code, city_code=body.city_code,
+        address=body.address, code=body.code,
+    )
+    await db.commit()
+    return make_ok(InstitutionApplyResult(
+        institution_id=inst.id, name=inst.name, status=str(inst.status)))
 
 
 @router.get("/overview", response_model=BaseResponse[InstitutionOverviewOut])

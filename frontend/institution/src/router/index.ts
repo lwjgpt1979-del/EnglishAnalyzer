@@ -5,6 +5,7 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { public: true } },
+    { path: '/apply', name: 'apply', component: () => import('../views/InstitutionApply.vue'), meta: { public: true } },
     {
       path: '/',
       component: () => import('../layouts/MainLayout.vue'),

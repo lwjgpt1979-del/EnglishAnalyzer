@@ -72,3 +72,25 @@ class Notification(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class SmsVerification(Base):
+    """通用短信验证码（M47）。
+
+    服务于尚无账号的申请人按 (phone, purpose) 验证手机号，例如机构自助入驻申请。
+    已登录用户的验证码仍存在 users.phone_verify_code。
+    """
+
+    __tablename__ = "sms_verifications"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    phone = mapped_column(sa.String(20), nullable=False)
+    purpose = mapped_column(sa.String(40), nullable=False)
+    code = mapped_column(sa.String(6), nullable=False)
+    expires_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    consumed = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )

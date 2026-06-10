@@ -98,3 +98,23 @@ export interface BillItem { date: string; type: string; summary: string; amount_
 export function listBills(): Promise<BillItem[]> {
   return unwrap<BillItem[]>(request.get('/institution/bills'))
 }
+
+// ── 机构自助入驻申请（M47，公开免登录）──────────────────────────────────
+export interface InstitutionApplyPayload {
+  name: string
+  contact_phone: string
+  province_code: string
+  city_code: string
+  address: string
+  code: string
+}
+
+export function applySendCode(phone: string): Promise<{ sent: boolean }> {
+  return unwrap<{ sent: boolean }>(request.post('/institution/apply/send-code', { phone }))
+}
+
+export function applyInstitution(
+  payload: InstitutionApplyPayload,
+): Promise<{ institution_id: string; name: string; status: string }> {
+  return unwrap(request.post('/institution/apply', payload))
+}
