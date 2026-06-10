@@ -3,18 +3,22 @@
   <view class="detail-page">
     <view v-if="!wq" class="center-tip">加载中…</view>
     <view v-else>
-      <!-- 题目图片 / 作业来源 -->
+      <!-- 题目：作业来源 / 真实图片 / 文字题干 -->
       <view v-if="fromAssignment" class="assign-banner">
         <text class="assign-icon">📋</text>
         <text class="assign-label">来自老师作业的错题</text>
       </view>
       <image
-        v-else
+        v-else-if="isRealImage"
         class="wq-img"
         :src="wq.source_image_url"
         mode="widthFix"
         @tap="previewImg"
       />
+      <view v-else class="stem-card">
+        <text class="stem-label">📝 题目</text>
+        <text class="stem-text">{{ wq.question_text || '（无题干，本题为图片错题）' }}</text>
+      </view>
 
       <!-- OCR 识别状态卡 -->
       <view class="card" v-if="wq">
@@ -164,6 +168,10 @@ if (!wqId) {
 
 const wq = ref<WrongQuestionOut | null>(null)
 const fromAssignment = computed(() => (wq.value?.source_image_url || '').startsWith('assignment://'))
+const isRealImage = computed(() => {
+  const u = wq.value?.source_image_url || ''
+  return /^https?:\/\//.test(u) || u.startsWith('/') || u.startsWith('data:') || u.startsWith('wxfile://')
+})
 const latestAnalysis = ref<AiAnalysisOut | null>(null)
 const analyzing = ref(false)
 const teacherComments = ref<TeacherCommentOut[]>([])
@@ -321,6 +329,10 @@ function previewImg() {
 .center-tip { text-align: center; padding: 100rpx; color: var(--c-text-hint); }
 .wq-img { width: 100%; border-radius: var(--r-lg); margin-bottom: 20rpx; }
 .assign-banner { display: flex; align-items: center; gap: 12rpx; background: var(--c-primary-faint); border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 20rpx; }
+/* 文字题干卡（无真实图片时）*/
+.stem-card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx; margin-bottom: 20rpx; box-shadow: var(--shadow-sm); }
+.stem-label { font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 14rpx; border-radius: var(--r-pill); }
+.stem-text { display: block; margin-top: 16rpx; font-size: 32rpx; color: var(--c-ink); font-weight: 600; line-height: 1.6; }
 .assign-icon { font-size: 40rpx; }
 .assign-label { font-size: 28rpx; font-weight: 700; color: var(--c-primary); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
@@ -354,8 +366,8 @@ function previewImg() {
   border-radius: var(--r-pill);
 }
 .tag-orange {
-  background: #eaeac4;
-  color: #6b6b2e;
+  background: #ffeee9;
+  color: #d9603f;
   font-size: 24rpx;
   font-weight: 600;
   padding: 4rpx 14rpx;
