@@ -287,7 +287,7 @@ function goDetail(id: string) {
 .wq-meta { display: flex; flex-wrap: wrap; gap: 8rpx; }
 .tag {
   background: var(--c-primary-soft);
-  color: #8a7212;
+  color: var(--c-primary-deep);
   font-size: 22rpx;
   font-weight: 600;
   padding: 4rpx 14rpx;
@@ -310,15 +310,15 @@ function goDetail(id: string) {
 .tag-scroll { width: 100%; margin-bottom: 16rpx; }
 .tag-bar { display: flex; flex-direction: row; gap: 12rpx; padding: 4rpx 0 8rpx 2rpx; white-space: nowrap; }
 .tag-chip { font-size: 22rpx; padding: 6rpx 16rpx; border-radius: 999rpx; background: #f0f0f0; color: var(--c-text-second); border: 2rpx solid transparent; flex-shrink: 0; }
-.tag-chip.active { background: var(--c-primary-faint); color: var(--c-gold); border-color: var(--c-gold); font-weight: 700; }
+.tag-chip.active { background: var(--c-primary-faint); color: var(--c-primary-deep); border-color: var(--c-primary); font-weight: 700; }
 
 /* 一键打标按钮 */
 .auto-tag-row { margin-bottom: 20rpx; display: flex; justify-content: flex-end; }
-.btn-auto-tag { font-size: 22rpx; padding: 10rpx 20rpx; background: #f7f0d0; color: var(--c-gold); border: 2rpx solid var(--c-gold); border-radius: 999rpx; line-height: 1.4; }
+.btn-auto-tag { font-size: 22rpx; padding: 10rpx 20rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border: 2rpx solid var(--c-primary); border-radius: 999rpx; line-height: 1.4; }
 .btn-auto-tag[disabled] { opacity: 0.5; }
 
 /* 知识点 chips on card */
 .kp-tags { display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 8rpx; }
-.kp-tag { font-size: 18rpx; padding: 2rpx 10rpx; border-radius: 999rpx; background: #fff7e0; color: #a37b00; border: 1rpx solid #f0d060; }
+.kp-tag { font-size: 18rpx; padding: 2rpx 10rpx; border-radius: 999rpx; background: var(--c-primary-soft); color: var(--c-primary-deep); border: 1rpx solid var(--c-primary); }
 .kp-more { background: #f0f0f0; color: var(--c-text-hint); border-color: #ddd; }
 </style>

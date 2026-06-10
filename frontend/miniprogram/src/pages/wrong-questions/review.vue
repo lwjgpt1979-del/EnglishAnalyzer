@@ -195,13 +195,13 @@ function goBack() {
 /* 进度条 */
 .progress-wrap { display: flex; align-items: center; gap: 16rpx; margin-bottom: 20rpx; }
 .progress-bar { flex: 1; height: 12rpx; background: #f0f0f0; border-radius: 999rpx; overflow: hidden; }
-.progress-fill { height: 100%; background: var(--c-gold); border-radius: 999rpx; transition: width 0.3s; }
+.progress-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width 0.3s; }
 .progress-text { font-size: 22rpx; color: var(--c-text-hint); white-space: nowrap; }
 
 /* 题目卡片 */
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
 .meta-row { display: flex; justify-content: space-between; margin-bottom: 16rpx; }
-.meta-tag { font-size: 22rpx; color: var(--c-gold); background: var(--c-primary-faint); padding: 4rpx 12rpx; border-radius: 999rpx; }
+.meta-tag { font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 12rpx; border-radius: 999rpx; }
 .meta-review { font-size: 22rpx; color: var(--c-text-hint); }
 .question-text { display: block; font-size: 30rpx; color: var(--c-ink); line-height: 1.6; font-weight: 600; margin-bottom: 28rpx; }
 
@@ -220,10 +220,10 @@ function goBack() {
 .quality-label { font-size: 26rpx; color: var(--c-text-second); display: block; margin-bottom: 20rpx; }
 .quality-btns { display: flex; justify-content: space-between; gap: 8rpx; margin-bottom: 24rpx; }
 .q-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6rpx; padding: 16rpx 4rpx; border-radius: var(--r-md); background: #f8f8f8; border: 2rpx solid transparent; transition: all 0.15s; }
-.q-btn.selected { border-color: var(--c-gold); background: var(--c-primary-faint); }
+.q-btn.selected { border-color: var(--c-primary); background: var(--c-primary-faint); }
 .q-icon { font-size: 36rpx; }
 .q-label { font-size: 18rpx; color: var(--c-text-hint); }
-.q-btn.selected .q-label { color: var(--c-gold); font-weight: 700; }
+.q-btn.selected .q-label { color: var(--c-primary-deep); font-weight: 700; }
 .submit-btn { margin-top: 0; }
 
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; width: 100%; }

@@ -288,8 +288,8 @@ function goTrend(kpKey: string) {
   white-space: nowrap;
 
   &.active {
-    background: #1677ff;
-    color: #fff;
+    background: var(--c-primary);
+    color: var(--c-on-primary);
   }
 }
 
@@ -381,10 +381,13 @@ function goTrend(kpKey: string) {
   color: #ccc;
 }
 
-/* ── 颜色语义 ── */
-.acc-green, .dot-green, .bar-fill.acc-green { color: #52c41a; background: #52c41a; }
-.acc-yellow, .dot-yellow, .bar-fill.acc-yellow { color: #ffb020; background: #ffb020; }
-.acc-red, .dot-red, .bar-fill.acc-red { color: #ff4d4f; background: #ff4d4f; }
+/* ── 颜色语义（文字仅 color；圆点/进度条才 background，避免百分比文字变实心色块）── */
+.acc-green { color: #2fc58a; }
+.acc-yellow { color: #ffb020; }
+.acc-red { color: #ff5a5f; }
+.dot-green, .bar-fill.acc-green { background: #2fc58a; }
+.dot-yellow, .bar-fill.acc-yellow { background: #ffb020; }
+.dot-red, .bar-fill.acc-red { background: #ff5a5f; }
 
 // ov-num 直接加颜色类
 .text-green { color: #52c41a !important; }
