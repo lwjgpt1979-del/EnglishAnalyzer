@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -13,6 +14,22 @@ from app.core.database import async_session_factory as _async_session_factory
 from app.models.d1_users import User
 from app.models.d13_v2_user_papers import UserPaperQuestion, UserUploadedPaper
 from app.services import user_paper_service
+from app.services.ocr_service import OcrResult
+
+# 整卷拆题 dev mock 文字：两道题（27/28），学生手写答案均为 B。
+# 经 paper_split_service._dev_mock_split（deepseek dev 模式）确定性拆出 2 题。
+_MOCK_PRINTED = (
+    "27. The teacher asked the students to _____ their homework on time.\n"
+    "A. hand in  B. hand out  C. hand over  D. hand up\n"
+    "28. She _____ in Beijing for three years before she moved to Shanghai.\n"
+    "A. lived  B. had lived  C. has lived  D. lives"
+)
+_MOCK_HANDWRITTEN = "27. B\n28. B"
+
+
+async def _fake_run_ocr(image_url: str) -> OcrResult:
+    """替身：避免真实豆包 Vision 网络请求，返回确定性 OCR 文字。"""
+    return OcrResult(printed_text=_MOCK_PRINTED, handwritten_text=_MOCK_HANDWRITTEN)
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +85,9 @@ async def test_run_pipeline_populates_questions(db_session: AsyncSession):
     )
     await db_session.commit()
 
-    await user_paper_service.run_paper_pipeline(paper.id)
+    # patch 视觉识别函数，避免真实豆包 Vision 网络请求（mock 图片 URL 无法解析）。
+    with patch("app.services.ocr_service.run_ocr", _fake_run_ocr):
+        await user_paper_service.run_paper_pipeline(paper.id)
 
     async with _async_session_factory() as s:
         reloaded = await s.get(UserUploadedPaper, paper.id)
@@ -92,7 +111,8 @@ async def test_get_paper_detail_returns_questions(db_session: AsyncSession):
         title=None,
     )
     await db_session.commit()
-    await user_paper_service.run_paper_pipeline(paper.id)
+    with patch("app.services.ocr_service.run_ocr", _fake_run_ocr):
+        await user_paper_service.run_paper_pipeline(paper.id)
 
     detail = await user_paper_service.get_paper_detail(
         db_session, paper_id=paper.id, student_id=user.id
