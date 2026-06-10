@@ -28,7 +28,10 @@
       <!-- 今日学习计划（M9）-->
       <view v-if="auth.isLoggedIn() && plan && plan.tasks.length" class="plan-card">
         <view class="plan-head">
-          <text class="plan-title">📅 今日学习计划</text>
+          <view class="plan-title-wrap">
+            <view class="plan-title-icon" />
+            <text class="plan-title">今日学习计划</text>
+          </view>
           <text class="plan-progress">{{ plan.completed_count }}/{{ plan.total_count }} 完成</text>
         </view>
         <view class="plan-bar-track">
@@ -64,7 +67,7 @@
       <!-- 开始学习主卡片 -->
       <view class="learn-card" @tap="goLearn">
         <view class="learn-left">
-          <text class="learn-icon">📖</text>
+          <view class="learn-icon" />
           <view class="learn-text">
             <text class="learn-title">开始学习</text>
             <text class="learn-sub">{{ preferredLabel || '选择教材开始' }}</text>
@@ -75,35 +78,35 @@
 
       <view class="quick-grid">
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })">
-          <text class="quick-icon">🤖</text>
+          <view class="qi qi-ai" />
           <text class="quick-label">智能出题</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/upload/index' })">
-          <text class="quick-icon">📷</text>
+          <view class="qi qi-camera" />
           <text class="quick-label">单题上传</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">
-          <text class="quick-icon">📄</text>
+          <view class="qi qi-file" />
           <text class="quick-label">上传整卷</text>
         </view>
         <view class="quick-card" @tap="() => uni.switchTab({ url: '/pages/wrong-questions/list' })">
-          <text class="quick-icon">📚</text>
+          <view class="qi qi-book" />
           <text class="quick-label">我的错题</text>
         </view>
         <view class="quick-card" @tap="() => uni.switchTab({ url: '/pages/diagnosis/index' })">
-          <text class="quick-icon">📊</text>
+          <view class="qi qi-chart" />
           <text class="quick-label">学情报告</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/index' })">
-          <text class="quick-icon">🔤</text>
+          <view class="qi qi-vocab" />
           <text class="quick-label">词力通</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/essay/index' })">
-          <text class="quick-icon">✍️</text>
+          <view class="qi qi-pen" />
           <text class="quick-label">作文精修</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/assignments/index' })">
-          <text class="quick-icon">📋</text>
+          <view class="qi qi-clipboard" />
           <text class="quick-label">老师任务</text>
         </view>
       </view>
@@ -341,7 +344,13 @@ onMounted(() => {
   padding: 28rpx 28rpx 20rpx; margin-bottom: 24rpx;
   box-shadow: var(--shadow-md);
 }
-.plan-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16rpx; }
+.plan-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
+.plan-title-wrap { display: flex; align-items: center; gap: 12rpx; }
+.plan-title-icon {
+  width: 40rpx; height: 40rpx; flex-shrink: 0;
+  background-repeat: no-repeat; background-position: center; background-size: contain;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
+}
 .plan-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-ink); }
 .plan-progress { font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
 .plan-bar-track { height: 12rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; margin-bottom: 16rpx; }
@@ -416,7 +425,11 @@ onMounted(() => {
   box-shadow: var(--shadow-primary);
 }
 .learn-left { display: flex; align-items: center; gap: 24rpx; }
-.learn-icon { font-size: 68rpx; }
+.learn-icon {
+  width: 72rpx; height: 72rpx; flex-shrink: 0;
+  background-repeat: no-repeat; background-position: center; background-size: contain;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z'/%3E%3Cpath d='M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z'/%3E%3C/svg%3E");
+}
 .learn-text { display: flex; flex-direction: column; gap: 8rpx; }
 .learn-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-on-primary); }
 .learn-sub { font-size: var(--fs-body); color: var(--c-on-primary); opacity: 0.85; }
@@ -433,6 +446,22 @@ onMounted(() => {
 .quick-card:active { transform: translateY(2rpx) scale(0.98); box-shadow: var(--shadow-md); }
 .quick-icon { font-size: 58rpx; display: block; margin-bottom: 16rpx; }
 .quick-label { font-size: var(--fs-body); color: var(--c-text-body); font-weight: 500; }
+
+/* 功能图标徽章（统一线性图标）*/
+.qi {
+  width: 92rpx; height: 92rpx; margin: 0 auto 16rpx;
+  border-radius: 24rpx;
+  background-color: var(--c-primary-faint);
+  background-repeat: no-repeat; background-position: center; background-size: 48rpx 48rpx;
+}
+.qi-ai { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7z'/%3E%3Cpath d='M18.5 14l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z'/%3E%3C/svg%3E"); }
+.qi-camera { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z'/%3E%3Ccircle cx='12' cy='13' r='4'/%3E%3C/svg%3E"); }
+.qi-file { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3Cpath d='M9 13h6'/%3E%3Cpath d='M9 17h6'/%3E%3C/svg%3E"); }
+.qi-book { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
+.qi-chart { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' y1='20' x2='6' y2='15'/%3E%3Cline x1='12' y1='20' x2='12' y2='9'/%3E%3Cline x1='18' y1='20' x2='18' y2='4'/%3E%3C/svg%3E"); }
+.qi-vocab { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z'/%3E%3Cpath d='M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z'/%3E%3C/svg%3E"); }
+.qi-pen { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'/%3E%3C/svg%3E"); }
+.qi-clipboard { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/%3E%3Crect x='8' y='2' width='8' height='4' rx='1'/%3E%3Cpath d='M9 13l2 2 4-4'/%3E%3C/svg%3E"); }
 
 /* 教师身份 */
 .cert-banner {
