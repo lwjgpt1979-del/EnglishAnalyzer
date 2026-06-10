@@ -70,18 +70,15 @@ async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPla
             level=level,
         ))
 
-    # 待复习错题
-    review_pending = int((await db.execute(
-        select(func.count()).select_from(WrongQuestion).where(
-            WrongQuestion.student_id == student_id,
-            WrongQuestion.is_mastered.is_(False),
-        )
-    )).scalar() or 0)
+    # 待复习错题：按 SM-2 遗忘曲线取「今日到期 + 新错题」，而非全部未掌握（M12）
+    from app.services import review_service
+    rstats = await review_service.get_review_stats(db, student_id=student_id)
+    review_pending = int(rstats["due_today"]) + int(rstats["new_unscheduled"])
     if review_pending > 0:
         tasks.append(PlanTask(
             type="review",
             title="复习错题",
-            subtitle=f"{review_pending} 道待巩固",
+            subtitle=f"今日待复习 {review_pending} 道（遗忘曲线）",
             action="review",
             done=False,
             count=review_pending,

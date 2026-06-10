@@ -1,6 +1,18 @@
 <!-- src/pages/wrong-questions/list.vue -->
 <template>
   <view class="list-page">
+    <!-- 今日错题复习（M12 遗忘曲线）-->
+    <view v-if="reviewDue > 0" class="review-banner" @tap="goReview">
+      <view class="rb-left">
+        <text class="rb-icon">🧠</text>
+        <view class="rb-text">
+          <text class="rb-title">今日错题复习</text>
+          <text class="rb-sub">{{ reviewDue }} 道到期 · 遗忘曲线智能安排</text>
+        </view>
+      </view>
+      <text class="rb-arrow">开始 ›</text>
+    </view>
+
     <!-- 来源筛选 -->
     <view class="src-tabs">
       <text v-for="t in SRC_TABS" :key="t.value" class="src-tab" :class="{ active: source === t.value }" @tap="switchSource(t.value)">{{ t.label }}</text>
@@ -100,11 +112,25 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { listWrongQuestions, listPaperWrongs, autoTagWrongQuestions } from '@/api/wrongQuestions'
+import { onShow } from '@dcloudio/uni-app'
+import { listWrongQuestions, listPaperWrongs, autoTagWrongQuestions, getReviewQueue } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 import type { WrongQuestionOut } from '@/types/api'
 
 const auth = useAuthStore()
+
+// 今日复习到期数（SM-2 遗忘曲线，M12）
+const reviewDue = ref(0)
+async function loadReviewDue() {
+  try {
+    const r = await getReviewQueue()
+    reviewDue.value = (r.stats?.due_today || 0) + (r.stats?.new_unscheduled || 0)
+  } catch { reviewDue.value = 0 }
+}
+function goReview() {
+  uni.navigateTo({ url: '/pages/wrong-questions/review' })
+}
+onShow(loadReviewDue)
 const items = ref<any[]>([])
 function fromAssignment(wq: WrongQuestionOut): boolean {
   return (wq.source_image_url || '').startsWith('assignment://')
@@ -221,6 +247,18 @@ function goDetail(id: string) {
 
 <style scoped>
 .list-page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
+/* 今日复习横幅（M12）*/
+.review-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--g-hero); border-radius: var(--r-lg); padding: 28rpx 32rpx;
+  margin-bottom: 24rpx; box-shadow: var(--shadow-primary);
+}
+.rb-left { display: flex; align-items: center; gap: 20rpx; }
+.rb-icon { font-size: 52rpx; }
+.rb-text { display: flex; flex-direction: column; gap: 4rpx; }
+.rb-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-on-primary); }
+.rb-sub { font-size: 22rpx; color: var(--c-on-primary); opacity: 0.9; }
+.rb-arrow { font-size: 28rpx; font-weight: 700; color: var(--c-on-primary); white-space: nowrap; }
 .center-tip { text-align: center; padding: 120rpx 0; color: var(--c-text-hint); font-size: 28rpx; }
 .btn-sm {
   margin-top: 32rpx;
