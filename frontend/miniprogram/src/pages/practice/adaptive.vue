@@ -15,17 +15,29 @@
     <view v-else-if="!finished">
       <!-- 薄弱点 banner -->
       <view class="banner">
-        <text class="banner-label" v-if="unitTitle">{{ unitTitle }} · 薄弱点：</text>
-        <text class="banner-label" v-else>针对你的薄弱点：</text>
-        <text class="banner-kps">{{ weakKpNames.join('、') }}</text>
+        <text class="banner-icon">🎯</text>
+        <view class="banner-body">
+          <text class="banner-label">{{ unitTitle ? unitTitle + ' · 薄弱点' : '针对你的薄弱点' }}</text>
+          <text class="banner-kps">{{ weakKpNames.join('  ·  ') }}</text>
+        </view>
       </view>
 
+      <!-- 进度条 -->
       <view class="progress">
-        <text>{{ currentIdx + 1 }} / {{ questions.length }}</text>
+        <view class="progress-track">
+          <view
+            class="progress-fill"
+            :style="{ width: ((currentIdx + 1) / questions.length * 100) + '%' }"
+          />
+        </view>
+        <text class="progress-text">{{ currentIdx + 1 }}<text class="progress-total"> / {{ questions.length }}</text></text>
       </view>
 
       <view class="card">
-        <view class="qtype">{{ current.question_type }} · 难度 {{ current.difficulty }}</view>
+        <view class="qmeta">
+          <text class="qtype-chip">{{ current.question_type }}</text>
+          <text class="qdiff">难度 {{ current.difficulty }}</text>
+        </view>
         <text class="stem">{{ current.stem }}</text>
 
         <!-- 单选 / 完型 / 阅读 -->
@@ -39,7 +51,10 @@
               wrong: feedback && userAnswer === letter(i) && !feedback.correct,
             }"
             @tap="feedback ? null : (userAnswer = letter(i))"
-          >{{ opt }}</view>
+          >
+            <text class="opt-letter">{{ letter(i) }}</text>
+            <text class="opt-text">{{ optText(opt) }}</text>
+          </view>
         </view>
 
         <!-- 填空 -->
@@ -56,14 +71,17 @@
         <view v-else-if="current.question_type === '判断'" class="judge">
           <view
             v-for="opt in ['对', '错']" :key="opt"
-            class="option"
+            class="judge-option"
             :class="{
               selected: userAnswer === opt,
               correct: feedback && opt === feedback.correct_answer,
               wrong: feedback && userAnswer === opt && !feedback.correct,
             }"
             @tap="feedback ? null : (userAnswer = opt)"
-          >{{ opt }}</view>
+          >
+            <text class="judge-icon">{{ opt === '对' ? '✓' : '✗' }}</text>
+            <text class="judge-text">{{ opt }}</text>
+          </view>
         </view>
 
         <!-- 写作 / 连线（简化：文本输入） -->
@@ -168,6 +186,11 @@ function letter(i: number): string {
   return ['A', 'B', 'C', 'D'][i] ?? ''
 }
 
+// 去掉选项里可能自带的「A. / A、/ A）」字母前缀，避免与字母徽章重复
+function optText(opt: string): string {
+  return String(opt).replace(/^\s*[A-Da-d]\s*[.．、，)）:：]\s*/, '').trim()
+}
+
 // 加载智能题集
 async function loadAdaptiveSet() {
   loading.value = true
@@ -246,26 +269,72 @@ function goDiagnosis() {
 .banner {
   background: var(--c-primary-faint);
   border-radius: var(--r-md);
-  padding: 16rpx 20rpx;
-  margin-bottom: 16rpx;
+  padding: 20rpx 22rpx;
+  margin-bottom: 20rpx;
   display: flex;
-  flex-wrap: wrap;
-  gap: 4rpx;
+  align-items: center;
+  gap: 16rpx;
 }
-.banner-label { font-size: 24rpx; color: var(--c-text-second); }
-.banner-kps { font-size: 24rpx; font-weight: 700; color: var(--c-gold); }
+.banner-icon { font-size: 40rpx; flex-shrink: 0; }
+.banner-body { display: flex; flex-direction: column; gap: 6rpx; min-width: 0; }
+.banner-label { font-size: 22rpx; color: var(--c-text-second); }
+.banner-kps { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); line-height: 1.4; }
 
-.progress { text-align: center; padding: 12rpx 0; font-size: 24rpx; color: var(--c-text-second); }
+/* 进度条 */
+.progress { display: flex; align-items: center; gap: 16rpx; padding: 0 4rpx 20rpx; }
+.progress-track { flex: 1; height: 14rpx; background: var(--c-primary-soft); border-radius: 999rpx; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width .3s; }
+.progress-text { font-size: 28rpx; font-weight: 800; color: var(--c-primary-deep); white-space: nowrap; }
+.progress-total { font-size: 24rpx; font-weight: 600; color: var(--c-text-hint); }
 
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
-.qtype { font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 12rpx; }
-.stem { display: block; font-size: 30rpx; font-weight: 600; color: var(--c-ink); line-height: 1.5; margin-bottom: 24rpx; }
+.qmeta { display: flex; align-items: center; gap: 14rpx; margin-bottom: 18rpx; }
+.qtype-chip { font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 16rpx; border-radius: var(--r-pill); }
+.qdiff { font-size: 22rpx; color: var(--c-text-hint); }
+.stem { display: block; font-size: 32rpx; font-weight: 700; color: var(--c-ink); line-height: 1.55; margin-bottom: 28rpx; }
 
-.options, .judge { display: flex; flex-direction: column; gap: 12rpx; margin-bottom: 24rpx; }
-.option { padding: 20rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }
-.option.selected { border-color: var(--c-gold); background: var(--c-primary-faint); font-weight: 600; }
+.options, .judge { display: flex; flex-direction: column; gap: 14rpx; margin-bottom: 24rpx; }
+/* 字母徽章选项 */
+.option {
+  display: flex; align-items: center; gap: 18rpx;
+  padding: 22rpx 22rpx;
+  border: 2rpx solid var(--c-border); border-radius: var(--r-md);
+  background: #fff;
+  transition: all .15s;
+}
+.option:active { transform: scale(0.99); }
+.opt-letter {
+  width: 48rpx; height: 48rpx; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--c-bg-soft); color: var(--c-text-second);
+  font-size: 26rpx; font-weight: 800;
+}
+.opt-text { flex: 1; font-size: 28rpx; color: var(--c-text-body); line-height: 1.45; }
+.option.selected { border-color: var(--c-primary); background: var(--c-primary-faint); }
+.option.selected .opt-letter { background: var(--c-primary); color: var(--c-on-primary); }
+.option.selected .opt-text { color: var(--c-primary-deep); font-weight: 600; }
 .option.correct { border-color: #2ecc71; background: #eafaf1; }
+.option.correct .opt-letter { background: #2ecc71; color: #fff; }
 .option.wrong { border-color: var(--c-danger); background: var(--c-danger-bg); }
+.option.wrong .opt-letter { background: var(--c-danger); color: #fff; }
+
+/* 判断题 */
+.judge { flex-direction: row; gap: 20rpx; }
+.judge-option {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10rpx;
+  padding: 28rpx 0;
+  border: 2rpx solid var(--c-border); border-radius: var(--r-md);
+  background: #fff; transition: all .15s;
+}
+.judge-icon { font-size: 40rpx; color: var(--c-text-hint); font-weight: 800; }
+.judge-text { font-size: 28rpx; color: var(--c-text-body); }
+.judge-option.selected { border-color: var(--c-primary); background: var(--c-primary-faint); }
+.judge-option.selected .judge-icon, .judge-option.selected .judge-text { color: var(--c-primary-deep); }
+.judge-option.correct { border-color: #2ecc71; background: #eafaf1; }
+.judge-option.correct .judge-icon, .judge-option.correct .judge-text { color: #1ba557; }
+.judge-option.wrong { border-color: var(--c-danger); background: var(--c-danger-bg); }
+.judge-option.wrong .judge-icon, .judge-option.wrong .judge-text { color: var(--c-danger); }
 
 .fill-input {
   border: 2rpx solid var(--c-border);
