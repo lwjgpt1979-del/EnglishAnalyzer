@@ -20,3 +20,15 @@ htmlcov/
 .env
 .env.local
 deploy/.env.local
+
+# ── 运行时/本地/垃圾（不入库）──
+# 运行时上传的 PDF
+backend/uploads/
+# 误生成的重复迁移目录（真正迁移在 backend/alembic/）
+/alembic/
+# 文档旧副本
+docs/*_副本.md
+# 个人本地配置
+.claude/settings.local.json
+# 微信私有配置（含本地设置）
+frontend/miniprogram/project.private.config.json

@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend/admin", "run", "dev"],
+      "port": 5174
+    },
+    {
+      "name": "institution",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend/institution", "run", "dev"],
+      "port": 5175
+    },
+    {
+      "name": "miniprogram",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend/miniprogram", "run", "dev:h5"],
+      "port": 5173
+    }
+  ]
+}
