@@ -69,7 +69,7 @@
           mode="aspectFill"
           lazy-load
         />
-        <view v-else class="wq-img wq-icon">
+        <view v-else class="wq-icon">
           <text class="wq-icon-emoji">{{ wq.source_label === '整卷' ? '📄' : fromAssignment(wq) ? '📋' : '📝' }}</text>
         </view>
         <view class="wq-info">
@@ -279,8 +279,8 @@ function goDetail(id: string) {
   box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
 }
 .wq-img { width: 180rpx; height: 140rpx; flex-shrink: 0; }
-/* 无图错题左侧图标框 */
-.wq-icon { display: flex; align-items: center; justify-content: center; background: var(--c-bg-soft); }
+/* 无图错题左侧图标框：宽度固定、高度撑满整卡（与右侧等高，不留白）*/
+.wq-icon { width: 180rpx; flex-shrink: 0; align-self: stretch; min-height: 140rpx; display: flex; align-items: center; justify-content: center; background: var(--c-bg-soft); }
 .wq-icon-emoji { font-size: 52rpx; }
 .wq-info {
   flex: 1;
