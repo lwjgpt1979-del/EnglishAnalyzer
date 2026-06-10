@@ -41,12 +41,22 @@
           v-for="(t, i) in plan.tasks"
           :key="i"
           class="plan-task"
+          :class="{ done: t.done }"
           @tap="() => goTask(t)"
         >
-          <text class="plan-check" :class="{ done: t.done }">{{ t.done ? '✓' : '○' }}</text>
+          <view class="task-badge" :class="`badge-${t.type}`">
+            <text class="task-badge-icon">{{ t.done ? '✓' : taskIcon(t) }}</text>
+          </view>
           <view class="plan-task-body">
-            <text class="plan-task-title" :class="{ done: t.done }">{{ t.title }}</text>
-            <text class="plan-task-sub">{{ t.subtitle }}</text>
+            <text class="plan-task-title" :class="{ done: t.done }">{{ taskTitle(t) }}</text>
+            <view class="plan-task-meta">
+              <text
+                v-if="t.accuracy != null"
+                class="acc-pill"
+                :class="`lv-${t.level}`"
+              >{{ (t.accuracy * 100).toFixed(0) }}%</text>
+              <text class="plan-task-sub">{{ taskSub(t) }}</text>
+            </view>
           </view>
           <text class="plan-task-arrow">›</text>
         </view>
@@ -211,6 +221,20 @@ function goTask(t: PlanTask) {
   }
 }
 
+// 任务卡视觉辅助
+function taskIcon(t: PlanTask) {
+  if (t.type === 'weak_kp') return '🎯'
+  if (t.type === 'review') return '🧠'
+  return '📖'
+}
+function taskTitle(t: PlanTask) {
+  return t.title.replace(/^攻克薄弱点：/, '')
+}
+function taskSub(t: PlanTask) {
+  // 去掉与正确率胶囊重复的「正确率 X% ·」前缀
+  return t.subtitle.replace(/^正确率\s*\d+%\s*[·•・]\s*/, '')
+}
+
 const isTeacher = computed(() => (auth.user as any)?.role === 'teacher')
 const isRelative = computed(() => children.value.length > 0)
 
@@ -329,15 +353,28 @@ onMounted(() => {
 .plan-progress { font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
 .plan-bar-track { height: 12rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; margin-bottom: 16rpx; }
 .plan-bar-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width .3s; }
-.plan-task { display: flex; align-items: center; gap: 16rpx; padding: 18rpx 0; border-bottom: 1rpx solid var(--c-border); }
-.plan-task:last-of-type { border-bottom: none; }
-.plan-check { width: 40rpx; height: 40rpx; line-height: 40rpx; text-align: center; border-radius: 50%; background: var(--c-bg-soft); color: var(--c-text-hint); font-size: 26rpx; flex-shrink: 0; }
-.plan-check.done { background: var(--c-success); color: #fff; }
-.plan-task-body { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
-.plan-task-title { font-size: 28rpx; font-weight: 600; color: var(--c-ink); }
+.plan-task { display: flex; align-items: center; gap: 20rpx; padding: 18rpx 20rpx; margin-top: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); transition: transform .1s; }
+.plan-task:active { transform: scale(0.985); }
+.plan-task.done { background: transparent; }
+/* 类型徽章 */
+.task-badge { width: 64rpx; height: 64rpx; border-radius: 18rpx; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.task-badge-icon { font-size: 32rpx; line-height: 1; }
+.badge-weak_kp { background: #ffe9e2; }
+.badge-review { background: var(--c-primary-soft); }
+.badge-learn { background: #e6f8ee; }
+.plan-task.done .task-badge { background: var(--c-success); }
+.plan-task.done .task-badge-icon { color: #fff; font-weight: 800; }
+/* 文本区 */
+.plan-task-body { flex: 1; display: flex; flex-direction: column; gap: 8rpx; min-width: 0; }
+.plan-task-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); line-height: 1.35; }
 .plan-task-title.done { color: var(--c-text-hint); text-decoration: line-through; }
+.plan-task-meta { display: flex; align-items: center; gap: 12rpx; flex-wrap: wrap; }
+.acc-pill { font-size: 20rpx; font-weight: 700; padding: 2rpx 12rpx; border-radius: var(--r-pill); }
+.acc-pill.lv-weak { background: #ffe1d8; color: #e05a37; }
+.acc-pill.lv-medium { background: #fff0d6; color: #c98314; }
+.acc-pill.lv-good { background: #d8f5e6; color: #18a058; }
 .plan-task-sub { font-size: 22rpx; color: var(--c-text-hint); }
-.plan-task-arrow { font-size: 40rpx; color: var(--c-text-hint); font-weight: 700; }
+.plan-task-arrow { font-size: 40rpx; color: var(--c-text-hint); font-weight: 700; flex-shrink: 0; }
 .plan-checkin-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; }
 
 .learn-card {
