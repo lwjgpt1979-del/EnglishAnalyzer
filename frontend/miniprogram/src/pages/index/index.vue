@@ -41,19 +41,17 @@
           v-for="(t, i) in plan.tasks"
           :key="i"
           class="plan-task"
-          :class="{ done: t.done }"
+          :class="[`lv-${t.level || 'none'}`, { done: t.done }]"
           @tap="() => goTask(t)"
         >
-          <view class="task-badge" :class="`badge-${t.type}`">
-            <text class="task-badge-icon">{{ t.done ? '✓' : taskIcon(t) }}</text>
-          </view>
+          <view class="task-badge" :class="[`badge-${t.type}`, { done: t.done }]" />
           <view class="plan-task-body">
             <text class="plan-task-title" :class="{ done: t.done }">{{ taskTitle(t) }}</text>
             <view class="plan-task-meta">
               <text
                 v-if="t.accuracy != null"
                 class="acc-pill"
-                :class="`lv-${t.level}`"
+                :class="`pill-${t.level}`"
               >{{ (t.accuracy * 100).toFixed(0) }}%</text>
               <text class="plan-task-sub">{{ taskSub(t) }}</text>
             </view>
@@ -222,11 +220,6 @@ function goTask(t: PlanTask) {
 }
 
 // 任务卡视觉辅助
-function taskIcon(t: PlanTask) {
-  if (t.type === 'weak_kp') return '🎯'
-  if (t.type === 'review') return '🧠'
-  return '📖'
-}
 function taskTitle(t: PlanTask) {
   return t.title.replace(/^攻克薄弱点：/, '')
 }
@@ -353,28 +346,62 @@ onMounted(() => {
 .plan-progress { font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
 .plan-bar-track { height: 12rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; margin-bottom: 16rpx; }
 .plan-bar-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width .3s; }
-.plan-task { display: flex; align-items: center; gap: 20rpx; padding: 18rpx 20rpx; margin-top: 12rpx; background: var(--c-bg-soft); border-radius: var(--r-md); transition: transform .1s; }
-.plan-task:active { transform: scale(0.985); }
-.plan-task.done { background: transparent; }
-/* 类型徽章 */
-.task-badge { width: 64rpx; height: 64rpx; border-radius: 18rpx; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.task-badge-icon { font-size: 32rpx; line-height: 1; }
-.badge-weak_kp { background: #ffe9e2; }
-.badge-review { background: var(--c-primary-soft); }
-.badge-learn { background: #e6f8ee; }
-.plan-task.done .task-badge { background: var(--c-success); }
-.plan-task.done .task-badge-icon { color: #fff; font-weight: 800; }
+.plan-task {
+  position: relative;
+  display: flex; align-items: center; gap: 20rpx;
+  padding: 22rpx 24rpx; margin-top: 14rpx;
+  background: #fff;
+  border: 1rpx solid var(--c-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  transition: transform .12s, box-shadow .12s;
+}
+.plan-task:active { transform: scale(0.985); box-shadow: 0 6rpx 20rpx rgba(61,139,245,.12); }
+/* 左侧优先级色条 */
+.plan-task::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8rpx;
+  background: var(--c-primary);
+}
+.plan-task.lv-weak::before   { background: #ff7a59; }
+.plan-task.lv-medium::before { background: #ffb020; }
+.plan-task.lv-good::before   { background: #18a058; }
+.plan-task.done { background: var(--c-bg-soft); border-color: transparent; opacity: .7; }
+.plan-task.done::before { background: var(--c-success); }
+
+/* 类型图标徽章（线性 SVG，统一描边风格）*/
+.task-badge {
+  width: 64rpx; height: 64rpx; border-radius: 18rpx; flex-shrink: 0;
+  background-repeat: no-repeat; background-position: center; background-size: 36rpx 36rpx;
+}
+.badge-weak_kp {
+  background-color: #fff0eb;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff7a59' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%23ff7a59'/%3E%3C/svg%3E");
+}
+.badge-review {
+  background-color: var(--c-primary-faint);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 0 1 15-6.7L21 8'/%3E%3Cpath d='M21 3v5h-5'/%3E%3Cpath d='M21 12a9 9 0 0 1-15 6.7L3 16'/%3E%3Cpath d='M3 21v-5h5'/%3E%3C/svg%3E");
+}
+.badge-learn {
+  background-color: #e9f7ef;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2318a058' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z'/%3E%3Cpath d='M4 19a2 2 0 0 1 2-2h13'/%3E%3C/svg%3E");
+}
+.task-badge.done {
+  background-color: var(--c-success);
+  background-size: 34rpx 34rpx;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
 /* 文本区 */
 .plan-task-body { flex: 1; display: flex; flex-direction: column; gap: 8rpx; min-width: 0; }
-.plan-task-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); line-height: 1.35; }
+.plan-task-title { font-size: 29rpx; font-weight: 700; color: var(--c-ink); line-height: 1.35; }
 .plan-task-title.done { color: var(--c-text-hint); text-decoration: line-through; }
 .plan-task-meta { display: flex; align-items: center; gap: 12rpx; flex-wrap: wrap; }
-.acc-pill { font-size: 20rpx; font-weight: 700; padding: 2rpx 12rpx; border-radius: var(--r-pill); }
-.acc-pill.lv-weak { background: #ffe1d8; color: #e05a37; }
-.acc-pill.lv-medium { background: #fff0d6; color: #c98314; }
-.acc-pill.lv-good { background: #d8f5e6; color: #18a058; }
+.acc-pill { font-size: 20rpx; font-weight: 700; padding: 3rpx 14rpx; border-radius: var(--r-pill); }
+.acc-pill.pill-weak   { background: #ffe1d8; color: #e0512c; }
+.acc-pill.pill-medium { background: #fff0d6; color: #b9780f; }
+.acc-pill.pill-good   { background: #d8f5e6; color: #128048; }
 .plan-task-sub { font-size: 22rpx; color: var(--c-text-hint); }
-.plan-task-arrow { font-size: 40rpx; color: var(--c-text-hint); font-weight: 700; flex-shrink: 0; }
+.plan-task-arrow { font-size: 40rpx; color: var(--c-text-disabled, #c4ccd6); font-weight: 700; flex-shrink: 0; }
 .plan-checkin-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; }
 
 .learn-card {
