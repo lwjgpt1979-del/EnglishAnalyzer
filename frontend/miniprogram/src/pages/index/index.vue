@@ -310,19 +310,19 @@ onMounted(() => {
 /* 身份切换器 */
 .role-seg {
   display: flex; background: var(--c-bg-card); border-radius: var(--r-pill);
-  padding: 6rpx; margin-bottom: 28rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04);
+  padding: 6rpx; margin-bottom: 28rpx; box-shadow: var(--shadow-sm);
 }
 .role-seg-item {
   flex: 1; text-align: center; padding: 16rpx 0; font-size: var(--fs-body);
   color: var(--c-text-second); border-radius: var(--r-pill); transition: all .2s;
 }
-.role-seg-item.active { background: var(--c-primary); color: var(--c-ink); font-weight: 700; }
+.role-seg-item.active { background: var(--g-primary); color: var(--c-on-primary); font-weight: 700; box-shadow: var(--shadow-primary); }
 
 /* 今日学习计划（M9）*/
 .plan-card {
   background: var(--c-bg-card); border-radius: var(--r-lg);
   padding: 28rpx 28rpx 20rpx; margin-bottom: 24rpx;
-  box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04);
+  box-shadow: var(--shadow-md);
 }
 .plan-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16rpx; }
 .plan-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-ink); }
@@ -332,7 +332,7 @@ onMounted(() => {
 .plan-task { display: flex; align-items: center; gap: 16rpx; padding: 18rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .plan-task:last-of-type { border-bottom: none; }
 .plan-check { width: 40rpx; height: 40rpx; line-height: 40rpx; text-align: center; border-radius: 50%; background: var(--c-bg-soft); color: var(--c-text-hint); font-size: 26rpx; flex-shrink: 0; }
-.plan-check.done { background: #2ecc71; color: #fff; }
+.plan-check.done { background: var(--c-success); color: #fff; }
 .plan-task-body { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
 .plan-task-title { font-size: 28rpx; font-weight: 600; color: var(--c-ink); }
 .plan-task-title.done { color: var(--c-text-hint); text-decoration: line-through; }
@@ -341,31 +341,33 @@ onMounted(() => {
 .plan-checkin-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; }
 
 .learn-card {
-  background: var(--c-primary);
+  background: var(--g-hero);
   border-radius: var(--r-lg);
-  padding: 36rpx 32rpx;
+  padding: 40rpx 32rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 24rpx;
-  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-primary);
 }
 .learn-left { display: flex; align-items: center; gap: 24rpx; }
-.learn-icon { font-size: 64rpx; }
+.learn-icon { font-size: 68rpx; }
 .learn-text { display: flex; flex-direction: column; gap: 8rpx; }
-.learn-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-ink); }
-.learn-sub { font-size: var(--fs-body); color: var(--c-ink); opacity: 0.7; }
-.learn-arrow { font-size: 48rpx; color: var(--c-ink); opacity: 0.6; font-weight: 700; }
+.learn-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-on-primary); }
+.learn-sub { font-size: var(--fs-body); color: var(--c-on-primary); opacity: 0.85; }
+.learn-arrow { font-size: 48rpx; color: var(--c-on-primary); opacity: 0.8; font-weight: 700; }
 .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-bottom: 32rpx; }
 .quick-card {
   background: var(--c-bg-card);
   border-radius: var(--r-lg);
   padding: 40rpx 0;
   text-align: center;
-  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-sm);
+  transition: transform .15s, box-shadow .15s;
 }
-.quick-icon { font-size: 56rpx; display: block; margin-bottom: 16rpx; }
-.quick-label { font-size: var(--fs-body); color: var(--c-text-body); }
+.quick-card:active { transform: translateY(2rpx) scale(0.98); box-shadow: var(--shadow-md); }
+.quick-icon { font-size: 58rpx; display: block; margin-bottom: 16rpx; }
+.quick-label { font-size: var(--fs-body); color: var(--c-text-body); font-weight: 500; }
 
 /* 教师身份 */
 .cert-banner {
@@ -385,8 +387,8 @@ onMounted(() => {
   box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04);
 }
 .child-avatar {
-  width: 80rpx; height: 80rpx; border-radius: 50%; background: var(--c-primary);
-  color: var(--c-ink); font-size: 36rpx; font-weight: 800;
+  width: 80rpx; height: 80rpx; border-radius: 50%; background: var(--g-primary);
+  color: var(--c-on-primary); font-size: 36rpx; font-weight: 800;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .child-info { flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
@@ -403,10 +405,10 @@ onMounted(() => {
   border-radius: var(--r-lg);
   padding: 36rpx 32rpx;
   text-align: center;
-  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-sm);
 }
 .login-tip { font-size: var(--fs-body); color: var(--c-text-second); display: block; margin-bottom: 24rpx; }
-.btn-login { background: var(--c-primary); color: var(--c-ink); border-radius: var(--r-btn); font-size: var(--fs-h2); font-weight: 700; }
+.btn-login { background: var(--g-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-size: var(--fs-h2); font-weight: 700; box-shadow: var(--shadow-primary); }
 .topbar { display: flex; justify-content: flex-end; padding: 8rpx 0 16rpx; }
 .bell-wrap { position: relative; padding: 8rpx; }
 .bell { font-size: 40rpx; }

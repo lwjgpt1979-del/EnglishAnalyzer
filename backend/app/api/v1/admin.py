@@ -785,3 +785,26 @@ async def generate_from_pdf(
         success_count=success,
         error_count=error,
     ))
+
+
+# ── M11 主题中心 ──────────────────────────────────────────────────────────────
+from pydantic import BaseModel as _ThemeBM
+from app.services import theme_service as _theme_svc
+
+
+class SetThemeRequest(_ThemeBM):
+    key: str
+
+
+@router.get("/themes", response_model=None)
+async def admin_list_themes(db: DbDep, admin: AdminDep):
+    """列出全部主题预设 + 当前上线主题 key。"""
+    return make_ok(await _theme_svc.list_themes(db))
+
+
+@router.put("/theme", response_model=None)
+async def admin_set_theme(body: SetThemeRequest, db: DbDep, admin: AdminDep):
+    """设置上线主题（写 system_configs，小程序下次启动生效）。"""
+    theme = await _theme_svc.set_active(db, key=body.key, operator_id=admin.id)
+    await db.commit()
+    return make_ok(theme)

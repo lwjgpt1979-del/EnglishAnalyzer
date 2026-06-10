@@ -251,3 +251,20 @@ export function createExamPaper(body: ExamPaperCreate): Promise<AdminExamPaperIt
 export function generateSimQuestionsFromPaper(paperId: string): Promise<{ paper_id: string; sim_questions_created: number }> {
   return unwrap(request.post(`/admin/exam-papers/${paperId}/generate`))
 }
+
+// ── M11 主题中心 ────────────────────────────────────────────────────────────
+export interface ThemeTokens {
+  c_primary: string; c_primary_deep: string; c_primary_soft: string; c_primary_faint: string
+  c_gold: string; c_accent: string; c_olive: string
+  c_bg_page: string; c_bg_soft: string; c_border: string
+  g_primary: string; g_hero: string; shadow_primary: string
+}
+export interface ThemePreset { key: string; name: string; desc: string; tokens: ThemeTokens }
+export interface ThemeListOut { active_key: string; themes: ThemePreset[] }
+
+export function listThemes(): Promise<ThemeListOut> {
+  return unwrap<ThemeListOut>(request.get('/admin/themes'))
+}
+export function setActiveTheme(key: string): Promise<ThemePreset> {
+  return unwrap<ThemePreset>(request.put('/admin/theme', { key }))
+}
