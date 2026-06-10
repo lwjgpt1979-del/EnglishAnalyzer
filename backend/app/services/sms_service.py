@@ -56,7 +56,7 @@ async def _send_real_sms(*, phone: str, code: str, purpose: str) -> None:
     client = Client(cfg)
     template_code = (
         settings.sms_template_code_verify
-        if purpose in ("guardian_verify", "cancel_account")
+        if purpose in ("guardian_verify", "cancel_account", "institution_apply")
         else settings.sms_template_code_invite
     )
     req = SendSmsRequest(
