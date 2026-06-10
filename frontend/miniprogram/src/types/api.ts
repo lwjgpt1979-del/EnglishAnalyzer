@@ -177,6 +177,45 @@ export interface TodayPlanOut {
   review_pending: number
 }
 
+// ── 学习激励中心（M10）────────────────────────────────────────────────────────
+export interface BadgeItem {
+  level: string
+  name: string
+  threshold: number
+  unlocked: boolean
+}
+export interface AchievementItem {
+  key: string
+  name: string
+  desc: string
+  icon: string
+  current: number
+  target: number
+  unlocked: boolean
+  progress: number
+}
+export interface IncentiveStats {
+  total_practice: number
+  checkin_days: number
+  mastered_kp: number
+  wrong_mastered: number
+  exam_count: number
+  unlocked_achievements: number
+  total_achievements: number
+}
+export interface IncentiveSummary {
+  level: number
+  xp: number
+  xp_in_level: number
+  xp_to_next: number
+  current_streak: number
+  longest_streak: number
+  checked_in_today: boolean
+  badges: BadgeItem[]
+  achievements: AchievementItem[]
+  stats: IncentiveStats
+}
+
 // ── Membership ───────────────────────────────────────────────────────────────
 
 export interface CurrentMembershipOut {

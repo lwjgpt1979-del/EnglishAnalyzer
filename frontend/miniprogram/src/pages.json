@@ -86,7 +86,8 @@
     { "path": "pages/relative/student-kp", "style": { "navigationBarTitleText": "知识点台账" } },
     { "path": "pages/kp-mastery/trend", "style": { "navigationBarTitleText": "趋势图" } },
     { "path": "pages/admin/curriculum", "style": { "navigationBarTitleText": "教材知识管理" } },
-    { "path": "pages/admin/pdf-upload", "style": { "navigationBarTitleText": "上传教材 PDF" } }
+    { "path": "pages/admin/pdf-upload", "style": { "navigationBarTitleText": "上传教材 PDF" } },
+    { "path": "pages/incentive/index", "style": { "navigationBarTitleText": "学习成就" } }
   ],
   "tabBar": {
     "color": "#999",

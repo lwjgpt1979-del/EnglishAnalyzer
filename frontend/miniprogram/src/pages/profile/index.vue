@@ -119,6 +119,18 @@
       <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/membership/activate' })">输入激活码</button>
     </view>
 
+    <!-- M10 学习激励中心入口 -->
+    <view class="card kp-entry-card" @tap="goIncentive">
+      <view class="kp-entry-row">
+        <view class="kp-entry-icon">🏆</view>
+        <view class="kp-entry-text">
+          <view class="card-title" style="margin-bottom:4rpx">学习成就</view>
+          <text class="menu-desc">等级经验值 · 连续打卡 · 成就勋章墙</text>
+        </view>
+        <text class="kp-entry-arrow">›</text>
+      </view>
+    </view>
+
     <!-- M42 知识点图谱入口 -->
     <view class="card kp-entry-card" @tap="goKpMastery">
       <view class="kp-entry-row">
@@ -345,6 +357,10 @@ function goUserPapers() {
 
 function goKpMastery() {
   uni.navigateTo({ url: '/pages/kp-mastery/index' })
+}
+
+function goIncentive() {
+  uni.navigateTo({ url: '/pages/incentive/index' })
 }
 
 function _requestBindSubscribe() {
