@@ -15,7 +15,7 @@
     <view v-else-if="!finished">
       <!-- 薄弱点 banner -->
       <view class="banner">
-        <text class="banner-icon">🎯</text>
+        <view class="banner-icon" />
         <view class="banner-body">
           <text class="banner-label">{{ unitTitle ? unitTitle + ' · 薄弱点' : '针对你的薄弱点' }}</text>
           <text class="banner-kps">{{ weakKpNames.join('  ·  ') }}</text>
@@ -275,7 +275,13 @@ function goDiagnosis() {
   align-items: center;
   gap: 16rpx;
 }
-.banner-icon { font-size: 40rpx; flex-shrink: 0; }
+.banner-icon {
+  width: 56rpx; height: 56rpx; flex-shrink: 0;
+  border-radius: 16rpx;
+  background-color: #fff;
+  background-repeat: no-repeat; background-position: center; background-size: 36rpx 36rpx;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%233d8bf5'/%3E%3C/svg%3E");
+}
 .banner-body { display: flex; flex-direction: column; gap: 6rpx; min-width: 0; }
 .banner-label { font-size: 22rpx; color: var(--c-text-second); }
 .banner-kps { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); line-height: 1.4; }
