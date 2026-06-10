@@ -362,6 +362,7 @@ onMounted(() => {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8rpx;
   background: var(--c-primary);
 }
+.plan-task.lv-none::before   { background: #7bbde8; }
 .plan-task.lv-weak::before   { background: #bdd8e9; }
 .plan-task.lv-medium::before { background: #ffb020; }
 .plan-task.lv-good::before   { background: #18a058; }
@@ -378,8 +379,8 @@ onMounted(() => {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237ba6c9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%237ba6c9'/%3E%3C/svg%3E");
 }
 .badge-review {
-  background-color: var(--c-primary-faint);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 0 1 15-6.7L21 8'/%3E%3Cpath d='M21 3v5h-5'/%3E%3Cpath d='M21 12a9 9 0 0 1-15 6.7L3 16'/%3E%3Cpath d='M3 21v-5h5'/%3E%3C/svg%3E");
+  background-color: #e9f4fb;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237bbde8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 0 1 15-6.7L21 8'/%3E%3Cpath d='M21 3v5h-5'/%3E%3Cpath d='M21 12a9 9 0 0 1-15 6.7L3 16'/%3E%3Cpath d='M3 21v-5h5'/%3E%3C/svg%3E");
 }
 .badge-learn {
   background-color: #e9f7ef;
