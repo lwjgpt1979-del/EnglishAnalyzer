@@ -246,14 +246,14 @@ function formatDate(iso: string) {
 .bar-fill.acc-green   { background: #52c41a; }
 .acc-yellow, .dot-yellow { color: #ffb020; }
 .bar-fill.acc-yellow  { background: #ffb020; }
-.acc-red, .dot-red    { color: #ff4d4f; }
-.bar-fill.acc-red     { background: #ff4d4f; }
+.acc-red, .dot-red    { color: #ff7a59; }
+.bar-fill.acc-red     { background: #ff9078; }
 .dot-green  { background: #52c41a; }
 .dot-yellow { background: #ffb020; }
-.dot-red    { background: #ff4d4f; }
+.dot-red    { background: #ff9078; }
 
 .text-green { color: #52c41a !important; }
-.text-red   { color: #ff4d4f !important; }
+.text-red   { color: #ff7a59 !important; }
 
 /* ── 复习建议（M7c）── */
 .kp-suggestion {
@@ -265,7 +265,7 @@ function formatDate(iso: string) {
 }
 .sug-badge {
   flex-shrink: 0; font-size: 20rpx; padding: 2rpx 14rpx; border-radius: 20rpx; color: #fff;
-  &.badge-weak   { background: #ff4d4f; }
+  &.badge-weak   { background: #ff7a59; }
   &.badge-medium { background: #ffb020; }
   &.badge-good   { background: #52c41a; }
 }

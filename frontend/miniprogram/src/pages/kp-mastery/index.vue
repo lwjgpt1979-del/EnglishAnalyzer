@@ -381,15 +381,16 @@ function goTrend(kpKey: string) {
   color: #ccc;
 }
 
-/* ── 颜色语义（文字仅 color；圆点/进度条才 background，避免百分比文字变实心色块）── */
+/* ── 颜色语义（文字仅 color；圆点/进度条才 background，避免百分比文字变实心色块）──
+   弱项用柔和珊瑚(主题 accent)而非刺眼正红，融入天空蓝基调，同时保留暖色警示语义 */
 .acc-green { color: #2fc58a; }
-.acc-yellow { color: #ffb020; }
-.acc-red { color: #ff5a5f; }
+.acc-yellow { color: #f5a623; }
+.acc-red { color: #ff7a59; }
 .dot-green, .bar-fill.acc-green { background: #2fc58a; }
-.dot-yellow, .bar-fill.acc-yellow { background: #ffb020; }
-.dot-red, .bar-fill.acc-red { background: #ff5a5f; }
+.dot-yellow, .bar-fill.acc-yellow { background: #f7b955; }
+.dot-red, .bar-fill.acc-red { background: #ff9078; }
 
 // ov-num 直接加颜色类
-.text-green { color: #52c41a !important; }
-.text-red   { color: #ff4d4f !important; }
+.text-green { color: #2fc58a !important; }
+.text-red   { color: #ff7a59 !important; }
 </style>
