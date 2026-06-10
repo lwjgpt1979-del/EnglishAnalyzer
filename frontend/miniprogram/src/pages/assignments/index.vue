@@ -15,8 +15,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { onShow, onMounted } from '@dcloudio/uni-app'
+import { ref, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import { getReceivedAssignments } from '@/api/assignments'
 import type { StudentAssignmentItem } from '@/types/api'
 

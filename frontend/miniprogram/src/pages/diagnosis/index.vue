@@ -406,11 +406,29 @@ async function exportPdf() {
   exporting.value = true
   try {
     const { pdf_base64, filename } = await exportDiagnosisPdf()
-    // base64 → ArrayBuffer → 写本地临时文件 → openDocument
     const base64Str = pdf_base64
+
+    // #ifdef H5
+    // 浏览器：base64 → Blob → 触发下载（H5 无 getFileSystemManager）
+    {
+      const byteChars = atob(base64Str)
+      const bytes = new Uint8Array(byteChars.length)
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+      const blob = new Blob([bytes], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+      uni.showToast({ title: 'PDF 已下载', icon: 'success' })
+    }
+    // #endif
+
+    // #ifndef H5
+    // 微信小程序：写本地临时文件 → openDocument
     const fs = uni.getFileSystemManager()
     const tmpPath = `${wx.env.USER_DATA_PATH}/${filename}`
-    // 写文件（base64 模式）
     fs.writeFile({
       filePath: tmpPath,
       data: base64Str,
@@ -432,6 +450,7 @@ async function exportPdf() {
         uni.showToast({ title: '写入失败：' + (err.errMsg || ''), icon: 'none' })
       },
     })
+    // #endif
   } catch (e: any) {
     uni.showToast({ title: e?.message || '导出失败', icon: 'none' })
   } finally {
