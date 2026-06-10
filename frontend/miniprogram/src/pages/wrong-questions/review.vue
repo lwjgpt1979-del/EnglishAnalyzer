@@ -60,13 +60,14 @@
           <text class="reveal-hint">点击查看正确答案</text>
         </view>
         <view v-else class="answer-wrap">
-          <view class="answer-row">
-            <text class="answer-label">你的作答：</text>
-            <text class="answer-val student">{{ current!.student_answer || '（未记录）' }}</text>
+          <view class="ans-item">
+            <text class="ans-k">你的作答</text>
+            <text class="ans-v ans-wrong">{{ current!.student_answer || '未作答' }}</text>
           </view>
-          <view class="answer-row">
-            <text class="answer-label">正确答案：</text>
-            <text class="answer-val correct">{{ current!.correct_answer || '（未记录）' }}</text>
+          <view class="ans-divider" />
+          <view class="ans-item">
+            <text class="ans-k">正确答案</text>
+            <text class="ans-v ans-right">{{ current!.correct_answer || '—' }}</text>
           </view>
         </view>
 
@@ -75,10 +76,10 @@
           <text class="quality-label">这道题你掌握得怎么样？</text>
           <view class="quality-btns">
             <view
-              v-for="btn in qualityBtns"
+              v-for="(btn, i) in qualityBtns"
               :key="btn.q"
               class="q-btn"
-              :class="selectedQuality === btn.q ? 'selected' : ''"
+              :class="[`q-lv-${i}`, selectedQuality === btn.q ? 'selected' : '']"
               @tap="selectedQuality = btn.q"
             >
               <text class="q-icon">{{ btn.icon }}</text>
@@ -194,38 +195,49 @@ function goBack() {
 
 /* 进度条 */
 .progress-wrap { display: flex; align-items: center; gap: 16rpx; margin-bottom: 20rpx; }
-.progress-bar { flex: 1; height: 12rpx; background: #f0f0f0; border-radius: 999rpx; overflow: hidden; }
-.progress-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width 0.3s; }
-.progress-text { font-size: 22rpx; color: var(--c-text-hint); white-space: nowrap; }
+.progress-bar { flex: 1; height: 14rpx; background: #e3edf5; border-radius: 999rpx; overflow: hidden; }
+.progress-fill { height: 100%; background: #7bbde8; border-radius: 999rpx; transition: width 0.3s; }
+.progress-text { font-size: 24rpx; font-weight: 800; color: #3f87b8; white-space: nowrap; }
 
 /* 题目卡片 */
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
-.meta-row { display: flex; justify-content: space-between; margin-bottom: 16rpx; }
-.meta-tag { font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 12rpx; border-radius: 999rpx; }
+.meta-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18rpx; }
+.meta-tag { font-size: 22rpx; font-weight: 700; color: #3f87b8; background: #e9f4fb; padding: 5rpx 18rpx; border-radius: 999rpx; }
 .meta-review { font-size: 22rpx; color: var(--c-text-hint); }
-.question-text { display: block; font-size: 30rpx; color: var(--c-ink); line-height: 1.6; font-weight: 600; margin-bottom: 28rpx; }
+.question-text { display: block; font-size: 32rpx; color: var(--c-ink); line-height: 1.6; font-weight: 700; margin-bottom: 28rpx; }
 
 /* 揭示区 */
-.reveal-wrap { background: #f5f5f5; border-radius: var(--r-md); padding: 36rpx; text-align: center; margin-bottom: 24rpx; cursor: pointer; }
-.reveal-hint { font-size: 28rpx; color: var(--c-text-hint); }
-.answer-wrap { display: flex; flex-direction: column; gap: 16rpx; margin-bottom: 28rpx; }
-.answer-row { display: flex; align-items: flex-start; gap: 8rpx; }
-.answer-label { font-size: 24rpx; color: var(--c-text-hint); white-space: nowrap; }
-.answer-val { font-size: 28rpx; font-weight: 600; }
-.answer-val.student { color: var(--c-danger); }
-.answer-val.correct { color: #22c55e; }
+.reveal-wrap { background: #eef5fb; border: 2rpx dashed #b6d8ee; border-radius: var(--r-md); padding: 40rpx; text-align: center; margin-bottom: 28rpx; }
+.reveal-wrap:active { background: #e2eff9; }
+.reveal-hint { font-size: 28rpx; color: #5e93ba; font-weight: 600; }
+
+/* 答案卡 */
+.answer-wrap { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 8rpx 24rpx; margin-bottom: 28rpx; }
+.ans-item { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; padding: 20rpx 0; }
+.ans-divider { height: 1rpx; background: var(--c-border); }
+.ans-k { font-size: 24rpx; color: var(--c-text-second); flex-shrink: 0; }
+.ans-v { font-size: 30rpx; font-weight: 800; text-align: right; }
+.ans-v.ans-wrong { color: #e0512c; }
+.ans-v.ans-right { color: #18a058; }
 
 /* 评分区 */
-.quality-wrap { border-top: 1rpx solid var(--c-border); padding-top: 24rpx; }
-.quality-label { font-size: 26rpx; color: var(--c-text-second); display: block; margin-bottom: 20rpx; }
-.quality-btns { display: flex; justify-content: space-between; gap: 8rpx; margin-bottom: 24rpx; }
-.q-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6rpx; padding: 16rpx 4rpx; border-radius: var(--r-md); background: #f8f8f8; border: 2rpx solid transparent; transition: all 0.15s; }
-.q-btn.selected { border-color: var(--c-primary); background: var(--c-primary-faint); }
-.q-icon { font-size: 36rpx; }
-.q-label { font-size: 18rpx; color: var(--c-text-hint); }
-.q-btn.selected .q-label { color: var(--c-primary-deep); font-weight: 700; }
+.quality-wrap { border-top: 1rpx solid var(--c-border); padding-top: 28rpx; }
+.quality-label { font-size: 28rpx; font-weight: 700; color: var(--c-ink); display: block; margin-bottom: 22rpx; }
+.quality-btns { display: flex; justify-content: space-between; gap: 12rpx; margin-bottom: 28rpx; }
+.q-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10rpx; padding: 20rpx 4rpx; border-radius: var(--r-md); background: #f6f8fa; border: 2rpx solid transparent; transition: all 0.15s; }
+.q-btn:active { transform: scale(0.96); }
+.q-icon { font-size: 40rpx; line-height: 1; }
+.q-label { font-size: 19rpx; color: var(--c-text-hint); }
+/* 选中态：按掌握程度梯度着色（忘→掌握 暖到冷）*/
+.q-btn.selected { border-width: 2rpx; }
+.q-btn.q-lv-0.selected { border-color: #f08a6a; background: #fff0eb; }
+.q-btn.q-lv-1.selected { border-color: #f5a623; background: #fff5e3; }
+.q-btn.q-lv-2.selected { border-color: #f5c211; background: #fdf6da; }
+.q-btn.q-lv-3.selected { border-color: #7bbde8; background: #eaf4fb; }
+.q-btn.q-lv-4.selected { border-color: #2ecc71; background: #eafaf1; }
+.q-btn.selected .q-label { font-weight: 800; color: var(--c-ink); }
 .submit-btn { margin-top: 0; }
 
-.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; width: 100%; }
-.btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
+.btn-primary { background: #7bbde8; color: #fff; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; width: 100%; }
+.btn-primary[disabled] { background: #d4e7f5; color: #97b8cf; }
 </style>
