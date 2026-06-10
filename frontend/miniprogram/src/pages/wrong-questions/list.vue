@@ -71,14 +71,18 @@
           <text class="wq-assign-icon">📋</text>
           <text class="wq-assign-text">{{ (wq.question_text || '作业错题').slice(0, 24) }}</text>
         </view>
-        <!-- 普通单题上传 -->
+        <!-- 普通单题上传：真实图片显示图，否则显示题干文字（兼容文字错题/无图数据） -->
         <image
-          v-else
+          v-else-if="isRealImage(wq.source_image_url)"
           class="wq-img"
           :src="wq.source_image_url"
           mode="aspectFill"
           lazy-load
         />
+        <view v-else class="wq-img wq-assign">
+          <text class="wq-assign-icon">📝</text>
+          <text class="wq-assign-text">{{ (wq.question_text || '错题').slice(0, 28) }}</text>
+        </view>
         <view class="wq-info">
           <view class="wq-meta">
             <text v-if="wq.source_label === '整卷'" class="tag tag-paper">整卷</text>
@@ -134,6 +138,10 @@ onShow(loadReviewDue)
 const items = ref<any[]>([])
 function fromAssignment(wq: WrongQuestionOut): boolean {
   return (wq.source_image_url || '').startsWith('assignment://')
+}
+function isRealImage(url: string | undefined): boolean {
+  const u = url || ''
+  return /^https?:\/\//.test(u) || u.startsWith('/') || u.startsWith('data:') || u.startsWith('wxfile://') || u.startsWith('http://tmp')
 }
 const total = ref(0)
 const loading = ref(false)
