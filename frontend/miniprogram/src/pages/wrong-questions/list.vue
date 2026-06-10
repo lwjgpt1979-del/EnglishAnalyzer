@@ -61,29 +61,20 @@
         class="wq-card"
         @tap="source === 'paper' ? null : goDetail(wq.id)"
       >
-        <!-- 整卷错题（source_label='整卷'，有 stem 字段） -->
-        <view v-if="wq.source_label === '整卷'" class="wq-img wq-assign">
-          <text class="wq-assign-icon">📄</text>
-          <text class="wq-assign-text">{{ (wq.stem || '整卷错题').slice(0, 28) }}</text>
-        </view>
-        <!-- 作业错题 -->
-        <view v-else-if="fromAssignment(wq)" class="wq-img wq-assign">
-          <text class="wq-assign-icon">📋</text>
-          <text class="wq-assign-text">{{ (wq.question_text || '作业错题').slice(0, 24) }}</text>
-        </view>
-        <!-- 普通单题上传：真实图片显示图，否则显示题干文字（兼容文字错题/无图数据） -->
+        <!-- 左侧：真实图片显示缩略图，否则显示类型图标（不放文字，避免溢出） -->
         <image
-          v-else-if="isRealImage(wq.source_image_url)"
+          v-if="isRealImage(wq.source_image_url)"
           class="wq-img"
           :src="wq.source_image_url"
           mode="aspectFill"
           lazy-load
         />
-        <view v-else class="wq-img wq-assign">
-          <text class="wq-assign-icon">📝</text>
-          <text class="wq-assign-text">{{ (wq.question_text || '错题').slice(0, 28) }}</text>
+        <view v-else class="wq-img wq-icon">
+          <text class="wq-icon-emoji">{{ wq.source_label === '整卷' ? '📄' : fromAssignment(wq) ? '📋' : '📝' }}</text>
         </view>
         <view class="wq-info">
+          <!-- 题干（无图错题的主内容，占据宽区，最多两行）-->
+          <text v-if="!isRealImage(wq.source_image_url)" class="wq-stem">{{ cardText(wq) }}</text>
           <view class="wq-meta">
             <text v-if="wq.source_label === '整卷'" class="tag tag-paper">整卷</text>
             <text v-else-if="fromAssignment(wq)" class="tag tag-blue">来自作业</text>
@@ -142,6 +133,9 @@ function fromAssignment(wq: WrongQuestionOut): boolean {
 function isRealImage(url: string | undefined): boolean {
   const u = url || ''
   return /^https?:\/\//.test(u) || u.startsWith('/') || u.startsWith('data:') || u.startsWith('wxfile://') || u.startsWith('http://tmp')
+}
+function cardText(wq: any): string {
+  return wq.stem || wq.question_text || '错题（点击查看）'
 }
 const total = ref(0)
 const loading = ref(false)
@@ -285,14 +279,24 @@ function goDetail(id: string) {
   box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
 }
 .wq-img { width: 180rpx; height: 140rpx; flex-shrink: 0; }
+/* 无图错题左侧图标框 */
+.wq-icon { display: flex; align-items: center; justify-content: center; background: var(--c-bg-soft); }
+.wq-icon-emoji { font-size: 52rpx; }
 .wq-info {
   flex: 1;
   padding: 20rpx;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 10rpx;
+  min-width: 0;
 }
-.wq-meta { display: flex; flex-wrap: wrap; gap: 8rpx; }
+/* 题干主标题（最多两行省略）*/
+.wq-stem {
+  font-size: 28rpx; color: var(--c-ink); font-weight: 600; line-height: 1.45;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.wq-meta { display: flex; flex-wrap: wrap; gap: 8rpx; align-items: center; }
 .tag {
   background: var(--c-primary-soft);
   color: var(--c-primary-deep);
