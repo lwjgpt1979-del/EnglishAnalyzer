@@ -74,22 +74,17 @@
         </view>
       </view>
 
-      <!-- 元信息卡 -->
+      <!-- 元信息卡：彩色标签胶囊 -->
       <view class="card meta-card">
-        <view class="meta-item">
-          <text class="meta-k">题型</text>
-          <text class="meta-v">{{ wq.question_type || '未填写' }}</text>
+        <view class="meta-chips">
+          <text class="chip chip-type">{{ wq.question_type || '未填写' }}</text>
+          <text class="chip chip-diff">{{ wq.difficulty ? '★'.repeat(wq.difficulty) : '难度未填' }}</text>
         </view>
-        <view class="meta-divider" />
-        <view class="meta-item">
-          <text class="meta-k">难度</text>
-          <text class="meta-v">{{ wq.difficulty ? '★'.repeat(wq.difficulty) : '未填写' }}</text>
-        </view>
-        <view class="meta-divider" />
-        <view class="meta-item">
-          <text class="meta-k">已掌握</text>
-          <switch class="mastered-switch" :checked="wq.is_mastered" @change="onToggleMastered" />
-        </view>
+        <view
+          class="chip chip-master"
+          :class="{ 'is-on': wq.is_mastered }"
+          @tap="tapMastered"
+        >{{ wq.is_mastered ? '✓ 已掌握' : '○ 未掌握' }}</view>
       </view>
 
       <!-- AI 分析 -->
@@ -298,10 +293,12 @@ onMounted(async () => {
   }
 })
 
-async function onToggleMastered(e: { detail: { value: boolean } }) {
+async function tapMastered() {
   if (!wq.value) return
+  const next = !wq.value.is_mastered
   try {
-    wq.value = await markMastered(wqId, e.detail.value)
+    wq.value = await markMastered(wqId, next)
+    uni.showToast({ title: next ? '已标记掌握' : '已取消', icon: 'none' })
   } catch (err) {
     uni.showToast({ title: (err as Error).message, icon: 'error' })
   }
@@ -347,14 +344,25 @@ function previewImg() {
 }
 .label { width: 140rpx; color: var(--c-text-second); font-size: 28rpx; }
 
-/* 元信息卡：横向一行，每项「标签+值」内联并垂直居中 */
-.meta-card { display: flex; align-items: center; padding: 24rpx; gap: 8rpx; }
-.meta-item { flex: 1; display: flex; align-items: center; gap: 12rpx; min-width: 0; }
-.meta-item:last-child { flex: 0 0 auto; }
-.meta-k { font-size: 26rpx; color: var(--c-text-second); white-space: nowrap; }
-.meta-v { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
-.meta-divider { width: 1rpx; height: 36rpx; background: var(--c-border); }
-.meta-card .mastered-switch { transform: scale(0.78); transform-origin: center; }
+/* 元信息卡：彩色标签胶囊 */
+.meta-card { display: flex; align-items: center; justify-content: space-between; padding: 20rpx 24rpx; }
+.meta-chips { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.chip {
+  display: inline-flex; align-items: center;
+  height: 52rpx; padding: 0 22rpx;
+  border-radius: var(--r-pill);
+  font-size: 26rpx; font-weight: 600;
+  white-space: nowrap;
+}
+.chip-type { background: var(--c-primary-faint); color: var(--c-primary-deep); }
+.chip-diff { background: #fff4e0; color: #c98314; }
+.chip-master {
+  background: var(--c-bg-soft); color: var(--c-text-second);
+  border: 1rpx solid var(--c-border);
+}
+.chip-master.is-on {
+  background: #e6f8ee; color: #18a058; border-color: #b8ebcf;
+}
 .btn-analyze {
   background: var(--c-primary);
   color: var(--c-on-primary);
