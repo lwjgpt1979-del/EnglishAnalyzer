@@ -98,29 +98,29 @@
         </button>
 
         <view v-if="latestAnalysis" class="analysis-result">
-          <view class="section-title">错误类型</view>
-          <view class="tags">
-            <text
-              v-for="t in latestAnalysis.error_types"
-              :key="t"
-              class="tag-red"
-            >{{ t }}</text>
+          <view class="ana-sec" v-if="latestAnalysis.error_types && latestAnalysis.error_types.length">
+            <text class="ana-label">🏷️ 错误类型</text>
+            <view class="tags">
+              <text v-for="t in latestAnalysis.error_types" :key="t" class="tag-red">{{ t }}</text>
+            </view>
           </view>
 
-          <view class="section-title">薄弱知识点</view>
-          <view class="tags">
-            <text
-              v-for="k in latestAnalysis.knowledge_points"
-              :key="k"
-              class="tag-orange"
-            >{{ k }}</text>
+          <view class="ana-sec" v-if="latestAnalysis.knowledge_points && latestAnalysis.knowledge_points.length">
+            <text class="ana-label">⚠️ 薄弱知识点</text>
+            <view class="tags">
+              <text v-for="k in latestAnalysis.knowledge_points" :key="k" class="tag-orange">{{ k }}</text>
+            </view>
           </view>
 
-          <view class="section-title">诊断</view>
-          <text class="analysis-text">{{ latestAnalysis.diagnosis }}</text>
+          <view class="ana-sec" v-if="latestAnalysis.diagnosis">
+            <text class="ana-label">🔍 诊断</text>
+            <text class="ana-box">{{ latestAnalysis.diagnosis }}</text>
+          </view>
 
-          <view class="section-title">建议</view>
-          <text class="analysis-text">{{ latestAnalysis.suggestions }}</text>
+          <view class="ana-sec" v-if="latestAnalysis.suggestions">
+            <text class="ana-label">💡 建议</text>
+            <text class="ana-box ana-box-tip">{{ latestAnalysis.suggestions }}</text>
+          </view>
         </view>
       </view>
 
@@ -355,7 +355,11 @@ function previewImg() {
 }
 .btn-analyze[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .analysis-result { margin-top: 24rpx; }
-.section-title { font-size: 26rpx; color: var(--c-text-second); margin: 20rpx 0 8rpx; }
+.ana-sec { margin-top: 24rpx; }
+.ana-sec:first-child { margin-top: 0; }
+.ana-label { display: block; font-size: 27rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 12rpx; }
+.ana-box { display: block; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx 24rpx; font-size: 27rpx; color: var(--c-text-body); line-height: 1.7; }
+.ana-box-tip { background: var(--c-primary-faint); border-left: 6rpx solid var(--c-primary); }
 .tags { display: flex; flex-wrap: wrap; gap: 10rpx; }
 .tag-red {
   background: var(--c-danger-bg);
