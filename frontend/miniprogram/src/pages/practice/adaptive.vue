@@ -283,8 +283,8 @@ function goDiagnosis() {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235e93ba' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%235e93ba'/%3E%3C/svg%3E");
 }
 .banner-body { display: flex; flex-direction: column; gap: 6rpx; min-width: 0; }
-.banner-label { font-size: 23rpx; font-weight: 600; color: #5e93ba; letter-spacing: 1rpx; }
-.banner-kps { font-size: 26rpx; font-weight: 700; color: #33485c; line-height: 1.4; }
+.banner-label { font-size: 28rpx; font-weight: 700; color: #5e93ba; letter-spacing: 1rpx; }
+.banner-kps { font-size: 23rpx; font-weight: 600; color: #33485c; line-height: 1.45; }
 
 /* 进度条 */
 .progress { display: flex; align-items: center; gap: 16rpx; padding: 0 4rpx 20rpx; }
