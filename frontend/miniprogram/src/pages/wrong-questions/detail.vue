@@ -76,16 +76,18 @@
 
       <!-- 元信息卡 -->
       <view class="card meta-card">
-        <view class="row">
-          <text class="label">题型</text>
-          <text class="row-val">{{ wq.question_type || '未填写' }}</text>
+        <view class="meta-item">
+          <text class="meta-k">题型</text>
+          <text class="meta-v">{{ wq.question_type || '未填写' }}</text>
         </view>
-        <view class="row">
-          <text class="label">难度</text>
-          <text class="row-val">{{ wq.difficulty ? '★'.repeat(wq.difficulty) : '未填写' }}</text>
+        <view class="meta-divider" />
+        <view class="meta-item">
+          <text class="meta-k">难度</text>
+          <text class="meta-v">{{ wq.difficulty ? '★'.repeat(wq.difficulty) : '未填写' }}</text>
         </view>
-        <view class="row row-last">
-          <text class="label">已掌握</text>
+        <view class="meta-divider" />
+        <view class="meta-item">
+          <text class="meta-k">已掌握</text>
           <switch class="mastered-switch" :checked="wq.is_mastered" @change="onToggleMastered" />
         </view>
       </view>
@@ -345,12 +347,13 @@ function previewImg() {
 }
 .label { width: 140rpx; color: var(--c-text-second); font-size: 28rpx; }
 
-/* 元信息卡：收紧内边距与行高，避免占地过大 */
-.meta-card { padding: 8rpx 24rpx; }
-.meta-card .row { padding: 14rpx 0; }
-.meta-card .row-last { border-bottom: none; }
-.meta-card .row-val { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
-.meta-card .mastered-switch { transform: scale(0.82); transform-origin: left center; }
+/* 元信息卡：横向一行排列，紧凑展示 */
+.meta-card { display: flex; align-items: center; padding: 20rpx 24rpx; }
+.meta-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8rpx; min-width: 0; }
+.meta-k { font-size: 24rpx; color: var(--c-text-second); }
+.meta-v { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
+.meta-divider { width: 1rpx; height: 48rpx; background: var(--c-border); margin: 0 8rpx; }
+.meta-card .mastered-switch { transform: scale(0.8); transform-origin: center; }
 .btn-analyze {
   background: var(--c-primary);
   color: var(--c-on-primary);
