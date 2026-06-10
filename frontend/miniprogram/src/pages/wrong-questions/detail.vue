@@ -347,13 +347,14 @@ function previewImg() {
 }
 .label { width: 140rpx; color: var(--c-text-second); font-size: 28rpx; }
 
-/* 元信息卡：横向一行排列，紧凑展示 */
-.meta-card { display: flex; align-items: center; padding: 20rpx 24rpx; }
-.meta-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8rpx; min-width: 0; }
-.meta-k { font-size: 24rpx; color: var(--c-text-second); }
+/* 元信息卡：横向一行，每项「标签+值」内联并垂直居中 */
+.meta-card { display: flex; align-items: center; padding: 24rpx; gap: 8rpx; }
+.meta-item { flex: 1; display: flex; align-items: center; gap: 12rpx; min-width: 0; }
+.meta-item:last-child { flex: 0 0 auto; }
+.meta-k { font-size: 26rpx; color: var(--c-text-second); white-space: nowrap; }
 .meta-v { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
-.meta-divider { width: 1rpx; height: 48rpx; background: var(--c-border); margin: 0 8rpx; }
-.meta-card .mastered-switch { transform: scale(0.8); transform-origin: center; }
+.meta-divider { width: 1rpx; height: 36rpx; background: var(--c-border); }
+.meta-card .mastered-switch { transform: scale(0.78); transform-origin: center; }
 .btn-analyze {
   background: var(--c-primary);
   color: var(--c-on-primary);
