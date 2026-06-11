@@ -1,5 +1,4 @@
 import { request } from '@/utils/request'
-import type { ExamResultOut } from '@/types/api'
 
 export interface SelfExamQuota {
   is_promax: boolean
@@ -10,10 +9,31 @@ export interface SelfExamQuota {
 
 export interface SelfExamQuestion {
   id: string
+  section: string
   question_type: string
   stem: string
   options?: string[] | null
   difficulty?: number | null
+  audio_text?: string | null
+}
+
+export interface SelfExamItemResult {
+  id: string
+  section: string
+  stem: string
+  correct: boolean | null
+  correct_answer: string
+  user_answer: string
+  explanation: string
+}
+
+export interface SelfExamResult {
+  total: number
+  correct_count: number
+  items: SelfExamItemResult[]
+  writing_submitted: boolean
+  writing_prompt: string
+  writing_text: string
 }
 
 export interface SelfExamOut {
@@ -51,7 +71,7 @@ export function getSelfExam(id: string): Promise<SelfExamOut> {
 
 export function submitSelfExam(
   id: string, answers: { question_id: string; user_answer: string }[],
-): Promise<{ result: ExamResultOut; exam: SelfExamBrief }> {
+): Promise<{ result: SelfExamResult; exam: SelfExamBrief }> {
   return request(`/api/v1/self-exam/${id}/submit`, { method: 'POST', data: { answers } })
 }
 

@@ -14,6 +14,7 @@ from app.schemas.self_exam import (
     SelfExamBrief,
     SelfExamOut,
     SelfExamQuota,
+    SelfExamResult,
     SelfExamSubmitIn,
     SelfExamSubmitResult,
 )
@@ -74,4 +75,4 @@ async def submit(exam_id: uuid.UUID, body: SelfExamSubmitIn, db: DbDep, current_
     se, result = await self_exam_service.submit_self_exam(
         db, exam_id=exam_id, student_id=current_user.id, answers=body.answers)
     await db.commit()
-    return make_ok(SelfExamSubmitResult(result=result, exam=_to_brief(se)))
+    return make_ok(SelfExamSubmitResult(result=SelfExamResult(**result), exam=_to_brief(se)))

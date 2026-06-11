@@ -6,8 +6,6 @@ import uuid
 
 from pydantic import BaseModel
 
-from app.schemas.questions import ExamResultOut, PracticeAttemptIn
-
 
 class SelfExamQuota(BaseModel):
     is_promax: bool
@@ -18,10 +16,12 @@ class SelfExamQuota(BaseModel):
 
 class SelfExamQuestion(BaseModel):
     id: str
+    section: str = "objective"          # listening / objective / writing
     question_type: str
     stem: str
     options: list[str] | None = None
     difficulty: int | None = None
+    audio_text: str | None = None        # 听力区：朗读文本（前端经 /tts 合成音频）
 
 
 class SelfExamOut(BaseModel):
@@ -46,10 +46,34 @@ class SelfExamBrief(BaseModel):
     created_at: dt.datetime
 
 
+class SelfExamAnswerIn(BaseModel):
+    question_id: str          # 可为 simulated_question UUID 或 听力/写作的合成 id
+    user_answer: str = ""
+
+
 class SelfExamSubmitIn(BaseModel):
-    answers: list[PracticeAttemptIn]
+    answers: list[SelfExamAnswerIn]
+
+
+class SelfExamItemResult(BaseModel):
+    id: str
+    section: str
+    stem: str
+    correct: bool | None = None          # 写作题为 None（不计正误）
+    correct_answer: str = ""
+    user_answer: str = ""
+    explanation: str = ""
+
+
+class SelfExamResult(BaseModel):
+    total: int                            # 计分题数（听力+客观）
+    correct_count: int
+    items: list[SelfExamItemResult]
+    writing_submitted: bool = False
+    writing_prompt: str = ""
+    writing_text: str = ""
 
 
 class SelfExamSubmitResult(BaseModel):
-    result: ExamResultOut
+    result: SelfExamResult
     exam: SelfExamBrief
