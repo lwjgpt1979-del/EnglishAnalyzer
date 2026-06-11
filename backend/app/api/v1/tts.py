@@ -9,7 +9,9 @@ from collections import OrderedDict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
@@ -17,6 +19,7 @@ from app.services import tts_service
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 
+DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
 _MAX_TEXT = 1000  # 支持整段听力素材
@@ -27,24 +30,25 @@ _cache: "OrderedDict[str, bytes]" = OrderedDict()
 @router.get("/url", response_model=BaseResponse[dict])
 async def speak_url(
     current_user: UserDep,
+    db: DbDep,
     text: str = Query("", max_length=1200),
     stage: str = Query("junior", description="学段语速: primary/junior/senior，默认初中"),
 ):
     """返回文本对应的可播放音频 URL：优先 COS 直链（持久化）；COS 未配置则返回空，
-    前端回退到 /tts/speak 流式接口。stage 控制语速（小学慢/初中标准/高中略快）。"""
+    前端回退到 /tts/speak 流式接口。stage 控制语速（后台 system_configs 可配）。"""
     t = (text or "").strip()[:_MAX_TEXT]
-    speed = tts_service.speed_for_stage(stage)
+    speed = await tts_service.speed_for_stage_db(db, stage)
     url = await tts_service.get_or_create_audio_url(t, speed=speed) if t else None
     return make_ok({"url": url or ""})
 
 
 @router.get("/speak")
-async def speak(text: str = Query("", max_length=1200), stage: str = Query("junior")):
+async def speak(db: DbDep, text: str = Query("", max_length=1200), stage: str = Query("junior")):
     """合成并返回 mp3 音频。命中缓存直接复用，dev-mock 返回 204。"""
     text = (text or "").strip()[:_MAX_TEXT]
     if not text:
         return Response(status_code=204)
-    speed = tts_service.speed_for_stage(stage)
+    speed = await tts_service.speed_for_stage_db(db, stage)
     ckey = f"{text}@{speed}"
 
     if ckey in _cache:

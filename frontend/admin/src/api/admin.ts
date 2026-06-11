@@ -69,6 +69,14 @@ export function getPricing() {
   return unwrap<SemesterPricing>(request.get('/admin/pricing'))
 }
 
+export interface TtsSpeed { primary: number; junior: number; senior: number }
+export function getTtsSpeed() {
+  return unwrap<TtsSpeed>(request.get('/admin/tts-speed'))
+}
+export function updateTtsSpeed(body: TtsSpeed) {
+  return unwrap<TtsSpeed>(request.put('/admin/tts-speed', body))
+}
+
 export function updatePricing(body: SemesterPricing) {
   return unwrap<SemesterPricing>(request.put('/admin/pricing', body))
 }

@@ -35,6 +35,7 @@ function onLogout() {
         <el-menu-item index="/questions">仿真题审核</el-menu-item>
         <el-menu-item index="/contents">知识点内容审核</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
+        <el-menu-item index="/tts-speed">🔊 听力语速</el-menu-item>
         <el-menu-item index="/essay-templates">作文模板</el-menu-item>
         <el-menu-item index="/institutions">机构审核</el-menu-item>
         <el-menu-item index="/exam-papers">📝 真题试卷管理</el-menu-item>

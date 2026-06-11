@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'vocab-media', name: 'vocab-media', component: () => import('../views/VocabMedia.vue') },
         { path: 'teacher-cert', name: 'teacher-cert', component: () => import('../views/TeacherCertReview.vue') },
         { path: 'pricing', name: 'pricing', component: () => import('../views/Pricing.vue') },
+        { path: 'tts-speed', name: 'tts-speed', component: () => import('../views/TtsSpeed.vue') },
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
         { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },
         { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },

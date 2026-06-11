@@ -12,13 +12,78 @@ import base64
 import hashlib
 import logging
 import re
+import time
 import uuid
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.d9_system import SystemConfig
 
 logger = logging.getLogger(__name__)
+
+# ── 听力语速（平台后台 system_configs 可配，带进程内短缓存）──────────────────
+_SPEED_KEY = "tts_listening_speed"
+_SPEED_TTL = 60.0
+_speed_cache: dict = {"data": None, "ts": 0.0}
+
+
+def _default_speeds() -> dict:
+    return {
+        "primary": float(settings.volc_tts_speed_primary),
+        "junior": float(settings.volc_tts_speed_junior),
+        "senior": float(settings.volc_tts_speed_senior),
+    }
+
+
+async def get_listening_speeds(db: AsyncSession) -> dict:
+    """读后台配置的三档听力语速；缺失项回落 .env 默认。60s 缓存。"""
+    now = time.time()
+    if _speed_cache["data"] is not None and now - _speed_cache["ts"] < _SPEED_TTL:
+        return _speed_cache["data"]
+    d = _default_speeds()
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _SPEED_KEY)
+    )).scalar_one_or_none()
+    if row is not None and isinstance(row.value, dict):
+        for k in ("primary", "junior", "senior"):
+            try:
+                d[k] = float(row.value.get(k, d[k]))
+            except (TypeError, ValueError):
+                pass
+    _speed_cache["data"] = d
+    _speed_cache["ts"] = now
+    return d
+
+
+async def speed_for_stage_db(db: AsyncSession, stage: str | None) -> float:
+    d = await get_listening_speeds(db)
+    return d.get((stage or "junior").lower(), d["junior"])
+
+
+async def set_listening_speeds(db: AsyncSession, *, speeds: dict, updated_by) -> dict:
+    """运营改三档听力语速：upsert system_configs.tts_listening_speed，并清缓存。"""
+    value = {
+        "primary": float(speeds.get("primary", settings.volc_tts_speed_primary)),
+        "junior": float(speeds.get("junior", settings.volc_tts_speed_junior)),
+        "senior": float(speeds.get("senior", settings.volc_tts_speed_senior)),
+    }
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _SPEED_KEY)
+    )).scalar_one_or_none()
+    if row is None:
+        db.add(SystemConfig(
+            id=uuid.uuid4(), key=_SPEED_KEY, value=value,
+            description="听力语速三档(小学/初中/高中, speed_ratio)", updated_by=updated_by,
+        ))
+    else:
+        row.value = value
+        row.updated_by = updated_by
+    await db.flush()
+    _speed_cache["data"] = None  # 失效缓存
+    return value
 
 # 对话行：以「英文名:」开头，如 "Anna: Hi Tom"
 _DIALOGUE_LINE = re.compile(r"([A-Z][A-Za-z]{1,15})\s*[:：]\s*")

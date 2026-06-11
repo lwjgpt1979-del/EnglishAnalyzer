@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from pydantic import BaseModel
 from app.core.exceptions import AppError
 from app.core.security import create_access_token, create_refresh_token, require_role
 from app.models.d1_users import User
@@ -276,6 +277,33 @@ async def update_pricing(body: SemesterPricingUpdate, db: DbDep, admin: AdminDep
     )
     await db.commit()
     return make_ok(updated)
+
+
+# ─── 听力语速三档（小学/初中/高中，speed_ratio）────────────────────────────
+class TtsSpeedConfig(BaseModel):
+    primary: float
+    junior: float
+    senior: float
+
+
+@router.get("/tts-speed", response_model=BaseResponse[TtsSpeedConfig])
+async def get_tts_speed(db: DbDep, admin: AdminDep):
+    """读当前听力语速三档配置。"""
+    from app.services import tts_service
+    return make_ok(TtsSpeedConfig(**await tts_service.get_listening_speeds(db)))
+
+
+@router.put("/tts-speed", response_model=BaseResponse[TtsSpeedConfig])
+async def update_tts_speed(body: TtsSpeedConfig, db: DbDep, admin: AdminDep):
+    """运营改听力语速三档（speed_ratio，建议 0.6~1.5；单词统一用初中档）。"""
+    from app.services import tts_service
+    for v in (body.primary, body.junior, body.senior):
+        if not (0.5 <= v <= 2.0):
+            raise AppError(code=400, message="语速倍率需在 0.5~2.0 之间")
+    saved = await tts_service.set_listening_speeds(
+        db, speeds=body.model_dump(), updated_by=admin.id)
+    await db.commit()
+    return make_ok(TtsSpeedConfig(**saved))
 
 
 @router.get("/essay-templates", response_model=BaseResponse[dict])
