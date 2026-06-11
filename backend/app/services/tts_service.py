@@ -123,6 +123,7 @@ async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str
         _get_cos_client().put_object(
             Bucket=settings.cos_bucket, Key=key, Body=audio,
             ContentType="audio/mpeg",
+            ACL="public-read",  # 对象级公开读，音频直链可匿名播放（不依赖桶ACL）
         )
 
     try:
