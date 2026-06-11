@@ -7,7 +7,9 @@ dev-mock：tts_provider != 'volcano' 或缺凭据时返回空字节（无音频�
 """
 from __future__ import annotations
 
+import asyncio
 import base64
+import hashlib
 import logging
 import uuid
 
@@ -64,3 +66,68 @@ async def synthesize(text: str, *, voice: str | None = None) -> bytes:
         logger.error("[TTS] 火山合成失败: %s", data.get("message") or data)
         return b""
     return base64.b64decode(data["data"])
+
+
+# ── 持久化到腾讯 COS ─────────────────────────────────────────────────────────
+_cos_client = None
+
+
+def _is_cos_dev() -> bool:
+    return settings.cos_secret_key.startswith("placeholder")
+
+
+def _get_cos_client():
+    global _cos_client
+    if _cos_client is None:
+        from qcloud_cos import CosConfig, CosS3Client  # type: ignore[import]
+        _cos_client = CosS3Client(CosConfig(
+            Region=settings.cos_region,
+            SecretId=settings.cos_secret_id,
+            SecretKey=settings.cos_secret_key,
+        ))
+    return _cos_client
+
+
+def _cos_key(text: str, voice: str) -> str:
+    digest = hashlib.md5(f"{voice}|{text}".encode("utf-8")).hexdigest()
+    return f"tts/{digest}.mp3"
+
+
+async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str | None:
+    """返回该文本对应的 COS 音频直链（不存在则现合成并上传）。
+
+    COS 为 dev 占位时返回 None，由调用方回退到 /tts/speak 流式播放。
+    """
+    text = (text or "").strip()
+    if not text or _is_cos_dev():
+        return None
+    v = voice or settings.volc_tts_voice
+    key = _cos_key(text, v)
+    url = f"{settings.cos_base_url}/{key}"
+
+    def _exists() -> bool:
+        try:
+            return bool(_get_cos_client().object_exists(Bucket=settings.cos_bucket, Key=key))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[TTS] COS object_exists 失败: %s", e)
+            return False
+
+    if await asyncio.to_thread(_exists):
+        return url
+
+    audio = await synthesize(text, voice=voice)
+    if not audio:
+        return None
+
+    def _put() -> None:
+        _get_cos_client().put_object(
+            Bucket=settings.cos_bucket, Key=key, Body=audio,
+            ContentType="audio/mpeg",
+        )
+
+    try:
+        await asyncio.to_thread(_put)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[TTS] COS 上传失败: %s", e)
+        return None
+    return url

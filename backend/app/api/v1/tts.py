@@ -6,16 +6,31 @@ dev-mock 下返回 204（无音频）。
 from __future__ import annotations
 
 from collections import OrderedDict
+from typing import Annotated
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 
+from app.core.security import get_current_user
+from app.models.d1_users import User
+from app.schemas.base import BaseResponse, make_ok
 from app.services import tts_service
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 
+UserDep = Annotated[User, Depends(get_current_user)]
+
 _MAX_TEXT = 1000  # 支持整段听力素材
 _CACHE_MAX = 200
 _cache: "OrderedDict[str, bytes]" = OrderedDict()
+
+
+@router.get("/url", response_model=BaseResponse[dict])
+async def speak_url(current_user: UserDep, text: str = Query("", max_length=1200)):
+    """返回文本对应的可播放音频 URL：优先 COS 直链（持久化）；COS 未配置则返回空，
+    前端回退到 /tts/speak 流式接口。"""
+    t = (text or "").strip()[:_MAX_TEXT]
+    url = await tts_service.get_or_create_audio_url(t) if t else None
+    return make_ok({"url": url or ""})
 
 
 @router.get("/speak")

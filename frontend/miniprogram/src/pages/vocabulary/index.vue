@@ -169,6 +169,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore } from '@/api/vocabulary'
 import type { ShadowScoreResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
+import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
 import type { VocabWordCard } from '@/types/api'
 
@@ -411,11 +412,11 @@ function playAudio(src?: string | null) {
   _audioCtx.play()
 }
 
-const _ttsBase = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000'
-/** 用火山 TTS 接口实时合成并播放一段文本（dev 无凭据时接口 204，静默无声）。 */
-function playTTS(text?: string | null) {
+/** 播放一段文本的火山 TTS 音频（优先 COS 持久化直链，否则流式）。 */
+async function playTTS(text?: string | null) {
   if (!text) return
-  playAudio(`${_ttsBase}/api/v1/tts/speak?text=${encodeURIComponent(text)}`)
+  const url = await resolveSpeakUrl(text)
+  playAudio(url)
 }
 
 function reload() {

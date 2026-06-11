@@ -80,14 +80,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { getListeningExercises, getListeningExercise } from '@/api/listening'
 import type { ListeningBrief, ListeningDetail } from '@/api/listening'
+import { resolveSpeakUrl } from '@/utils/tts'
 
 const loading = ref(true)
 const phase = ref<'list' | 'doing' | 'result'>('list')
 const exercises = ref<ListeningBrief[]>([])
 const detail = ref<ListeningDetail>({} as ListeningDetail)
 const answers = ref<number[]>([])
-
-const ttsBase = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000'
 
 onMounted(async () => {
   try {
@@ -163,7 +162,7 @@ function resetAudio() {
   playing.value = false
 }
 
-function playAudio() {
+async function playAudio() {
   if (!detail.value.transcript) return
   if (!_ctx) {
     _ctx = uni.createInnerAudioContext()
@@ -173,7 +172,7 @@ function playAudio() {
     _ctx.onError(() => { playing.value = false })
   }
   if (playing.value) { _ctx.pause(); playing.value = false; return }
-  _ctx.src = `${ttsBase}/api/v1/tts/speak?text=${encodeURIComponent(detail.value.transcript)}`
+  _ctx.src = await resolveSpeakUrl(detail.value.transcript)
   _ctx.play()
 }
 </script>
