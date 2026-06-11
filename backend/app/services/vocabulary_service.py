@@ -8,13 +8,22 @@ SM-2（SuperMemo 2）间隔重复调度，每名学生每个单词独立维护�
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, time, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, literal, or_, select, union_all
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d5_learning import VocabularyLearning, VocabularyWord
+from app.models.d1_users import User
+from app.models.d4_knowledge import CurriculumUnit, CurriculumWord
+from app.models.d5_learning import (
+    StudentVocabCandidate,
+    VocabularyLearning,
+    VocabularyWord,
+)
+from app.models.d14_v2_semesters import PurchasedSemester
 from app.schemas.vocabulary import (
     DailyTaskOut,
     VocabAnswerResult,
@@ -22,8 +31,131 @@ from app.schemas.vocabulary import (
 )
 from app.services import membership_service
 
+# 抽生词时跳过的高频虚词（即便命中词典也不入候选，避免噪声）
+_STOPWORDS = {
+    "the", "and", "for", "are", "but", "not", "you", "all", "can", "her", "was",
+    "one", "our", "out", "his", "has", "had", "him", "she", "they", "their",
+    "this", "that", "these", "those", "with", "from", "have", "will", "your",
+    "what", "when", "who", "how", "why", "which", "there", "here", "then",
+    "than", "into", "about", "would", "could", "should", "been", "were",
+}
+
 _DAILY_NEW_LIMIT = {"free": 5, "basic": 10, "pro": 30, "promax": 50}
 _INTERVALS = {1: 1, 2: 3, 3: 7, 4: 15}  # repetitions → interval_days；>=5 取 30
+
+
+async def _ordered_new_words(
+    db: AsyncSession, *, student: User, limit: int | None = None,
+) -> list[VocabularyWord]:
+    """按优先级返回该生未学过的新词（跨来源去重）。
+
+    优先级：P1 当前学期教材词 > P2 其他来源候选词(试卷/错题) > P3 过往购买学期教材词。
+    同一个词出现在多来源时取最高优先级。scope 内无可学新词时回退全局按难度
+    （兼容内容未铺/新用户，不至于空页）。
+    """
+    learned = (
+        select(VocabularyLearning.word_id)
+        .where(VocabularyLearning.student_id == student.id)
+        .scalar_subquery()
+    )
+    pref = (
+        student.preferred_textbook_version,
+        student.preferred_grade,
+        student.preferred_semester,
+    )
+    parts = []
+    # P1 当前学期教材词
+    if all(pref):
+        parts.append(
+            select(CurriculumWord.word_id.label("wid"), literal(1).label("p"))
+            .join(CurriculumUnit, CurriculumUnit.id == CurriculumWord.unit_id)
+            .where(
+                CurriculumUnit.textbook_version == pref[0],
+                CurriculumUnit.grade == pref[1],
+                CurriculumUnit.semester == pref[2],
+            )
+        )
+    # P2 其他来源候选词
+    parts.append(
+        select(StudentVocabCandidate.word_id.label("wid"), literal(2).label("p"))
+        .where(StudentVocabCandidate.student_id == student.id)
+    )
+    # P3 过往购买学期（排除当前学期）教材词
+    purchased = (await db.execute(
+        select(
+            PurchasedSemester.textbook_version,
+            PurchasedSemester.grade,
+            PurchasedSemester.semester,
+        ).where(PurchasedSemester.user_id == student.id)
+    )).all()
+    past = [(t, g, s) for (t, g, s) in purchased if (t, g, s) != pref]
+    if past:
+        cond = or_(*[
+            and_(
+                CurriculumUnit.textbook_version == t,
+                CurriculumUnit.grade == g,
+                CurriculumUnit.semester == s,
+            ) for (t, g, s) in past
+        ])
+        parts.append(
+            select(CurriculumWord.word_id.label("wid"), literal(3).label("p"))
+            .join(CurriculumUnit, CurriculumUnit.id == CurriculumWord.unit_id)
+            .where(cond)
+        )
+
+    union_q = union_all(*parts).subquery()
+    ranked = (
+        select(union_q.c.wid, func.min(union_q.c.p).label("p"))
+        .group_by(union_q.c.wid).subquery()
+    )
+    scoped = (
+        select(VocabularyWord)
+        .join(ranked, ranked.c.wid == VocabularyWord.id)
+        .where(VocabularyWord.id.not_in(learned))
+        .order_by(ranked.c.p, VocabularyWord.difficulty, VocabularyWord.id)
+    )
+    if limit is not None:
+        scoped = scoped.limit(limit)
+    rows = list((await db.execute(scoped)).scalars().all())
+    if rows:
+        return rows
+
+    # 回退：scope 内无可学新词 → 全局按难度
+    g = (
+        select(VocabularyWord)
+        .where(VocabularyWord.id.not_in(learned))
+        .order_by(VocabularyWord.difficulty, VocabularyWord.id)
+    )
+    if limit is not None:
+        g = g.limit(limit)
+    return list((await db.execute(g)).scalars().all())
+
+
+async def add_source_candidates(
+    db: AsyncSession, *, student_id: uuid.UUID, text: str, source: str,
+) -> int:
+    """从一段英文文本里抽出命中词典的生词，加入该生"其他来源"候选池(P2)。
+
+    只收录已在全局词典(vocabulary_words)里的词（带释义/媒体，可学）；
+    去停用词；UNIQUE(student,word) 保证不重复。返回新增条数。失败不抛（best-effort）。
+    """
+    if not text:
+        return 0
+    tokens = {t.lower() for t in re.findall(r"[A-Za-z]{3,}", text)}
+    tokens -= _STOPWORDS
+    if not tokens:
+        return 0
+    rows = (await db.execute(
+        select(VocabularyWord.id).where(func.lower(VocabularyWord.word).in_(tokens))
+    )).scalars().all()
+    if not rows:
+        return 0
+    stmt = pg_insert(StudentVocabCandidate).values([
+        {"id": uuid.uuid4(), "student_id": student_id, "word_id": wid, "source": source}
+        for wid in rows
+    ]).on_conflict_do_nothing(index_elements=["student_id", "word_id"])
+    result = await db.execute(stmt)
+    return result.rowcount or 0
 
 
 def _level_for(repetitions: int) -> str:
@@ -84,16 +216,11 @@ async def compute_today_progress(db: AsyncSession, *, student_id: uuid.UUID) -> 
         )
     )).scalar_one()
 
-    learned_subq = (
-        select(VocabularyLearning.word_id)
-        .where(VocabularyLearning.student_id == student_id)
-        .scalar_subquery()
-    )
-    new_words_remaining = (await db.execute(
-        select(func.count()).select_from(VocabularyWord).where(
-            VocabularyWord.id.not_in(learned_subq),
-        )
+    # 剩余可学新词：与选词同口径（按学期优先级 scope，回退全局）
+    student = (await db.execute(
+        select(User).where(User.id == student_id)
     )).scalar_one()
+    new_words_remaining = len(await _ordered_new_words(db, student=student))
 
     new_limit = await _daily_new_limit(db, student_id=student_id)
     target = _new_target(new_limit, int(new_learned_today), int(new_words_remaining))
@@ -148,19 +275,12 @@ async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTas
     )).all()
     review_words = [_to_card(w, level=str(lr.level), is_new=False) for lr, w in review_rows]
 
-    # 新词：该生无 learning 记录的词，按难度升序，limit 档位上限
+    # 新词：按优先级（当前学期教材 > 其他来源 > 过往学期）选取、跨来源去重，limit 档位上限
     new_limit = await _daily_new_limit(db, student_id=student_id)
-    learned_subq = (
-        select(VocabularyLearning.word_id)
-        .where(VocabularyLearning.student_id == student_id)
-        .scalar_subquery()
-    )
-    new_rows = (await db.execute(
-        select(VocabularyWord)
-        .where(VocabularyWord.id.not_in(learned_subq))
-        .order_by(VocabularyWord.difficulty, VocabularyWord.id)
-        .limit(new_limit)
-    )).scalars().all()
+    student = (await db.execute(
+        select(User).where(User.id == student_id)
+    )).scalar_one()
+    new_rows = await _ordered_new_words(db, student=student, limit=new_limit)
     new_words = [_to_card(w, level="new", is_new=True) for w in new_rows]
 
     return DailyTaskOut(

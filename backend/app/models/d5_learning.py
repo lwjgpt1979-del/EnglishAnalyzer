@@ -92,6 +92,36 @@ class VocabularyLearning(Base):
     )
 
 
+class StudentVocabCandidate(Base):
+    """学生词力通"其他来源"候选词（P2，M50）。
+
+    从上传试卷 / 错题文本里抽出的、命中词典的生词，作为该生当前学期其他来源
+    的待学候选。选新词时优先级介于"当前学期教材词"(P1) 与"过往购买学期词"(P3) 之间。
+    UNIQUE (student_id, word_id) 保证不重复。
+    """
+
+    __tablename__ = "student_vocab_candidates"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+    )
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id"), nullable=False
+    )
+    source = mapped_column(sa.String(20), nullable=False)  # 'paper' / 'wrong_question'
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "student_id", "word_id",
+            name="uix_student_vocab_candidate_student_word",
+        ),
+    )
+
+
 class Essay(Base):
     """学生作文润色记录（可多轮）。"""
 

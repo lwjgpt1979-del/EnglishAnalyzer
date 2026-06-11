@@ -113,6 +113,15 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                         source="paper_upload",
                     )
 
+            # P2：整卷题干里命中词典的生词 → 该生词力通候选池（best-effort）
+            try:
+                from app.services import vocabulary_service
+                stems_text = " ".join((pq.stem or "") for pq in parsed)
+                await vocabulary_service.add_source_candidates(
+                    db, student_id=paper.student_id, text=stems_text, source="paper")
+            except Exception:  # noqa: BLE001
+                pass
+
             paper.ocr_status = "completed"
         except Exception:
             paper.ocr_status = "failed"

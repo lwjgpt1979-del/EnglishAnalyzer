@@ -45,6 +45,13 @@ async def create_wrong_question(
     )
     db.add(wq)
     await db.flush()
+    # P2：把错题题干里命中词典的生词加入该生词力通候选池（best-effort，不影响主流程）
+    try:
+        from app.services import vocabulary_service
+        await vocabulary_service.add_source_candidates(
+            db, student_id=student_id, text=data.question_text or "", source="wrong_question")
+    except Exception:  # noqa: BLE001
+        pass
     return wq
 
 
