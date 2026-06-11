@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref, onUnmounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { PROVINCES, CITIES_BY_PROVINCE } from '../data/cities'
-import { applySendCode, applyInstitution } from '../api/institution'
+import { getApplyCaptcha, applySendCode, applyInstitution } from '../api/institution'
 
 const router = useRouter()
 
@@ -15,6 +15,23 @@ const form = reactive({
   city_code: '',
   address: '',
 })
+
+// ── 图形验证码（防短信盗刷）──
+const captchaId = ref('')
+const captchaSvg = ref('')
+const captchaInput = ref('')
+
+async function refreshCaptcha() {
+  try {
+    const c = await getApplyCaptcha()
+    captchaId.value = c.captcha_id
+    captchaSvg.value = c.image_svg
+    captchaInput.value = ''
+  } catch {
+    // 静默：用户点图可重试
+  }
+}
+onMounted(refreshCaptcha)
 
 const cityOptions = computed(() => CITIES_BY_PROVINCE[form.province_code] ?? [])
 
@@ -40,13 +57,16 @@ const phoneOk = computed(() => /^1[3-9]\d{9}$/.test(form.contact_phone))
 
 async function onSendCode() {
   if (!phoneOk.value) { ElMessage.warning('请输入正确的 11 位手机号'); return }
+  if (!captchaInput.value.trim()) { ElMessage.warning('请先填写图形验证码'); return }
   sending.value = true
   try {
-    await applySendCode(form.contact_phone)
+    await applySendCode(form.contact_phone, captchaId.value, captchaInput.value.trim())
     ElMessage.success('验证码已发送，请注意查收')
     startCountdown()
+    refreshCaptcha()
   } catch (e) {
     ElMessage.error((e as Error).message || '发送失败')
+    refreshCaptcha()  // 图形码一次性，失败后换新
   } finally {
     sending.value = false
   }
@@ -105,16 +125,24 @@ async function onSubmit() {
           </el-form-item>
 
           <el-form-item label="联系手机号" required>
-            <div class="phone-row">
-              <el-input v-model="form.contact_phone" placeholder="11 位手机号" maxlength="11" />
-              <el-button :disabled="countdown > 0 || sending" :loading="sending" @click="onSendCode">
-                {{ countdown > 0 ? `${countdown}s 后重发` : '获取验证码' }}
-              </el-button>
+            <el-input v-model="form.contact_phone" placeholder="11 位手机号" maxlength="11" />
+          </el-form-item>
+
+          <el-form-item label="图形验证码" required>
+            <div class="captcha-row">
+              <el-input v-model="captchaInput" placeholder="输入右侧字符" maxlength="6" />
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <div class="captcha-img" title="看不清？点击换一张" @click="refreshCaptcha" v-html="captchaSvg" />
             </div>
           </el-form-item>
 
           <el-form-item label="短信验证码" required>
-            <el-input v-model="form.code" placeholder="请输入 6 位验证码" maxlength="6" />
+            <div class="phone-row">
+              <el-input v-model="form.code" placeholder="请输入 6 位验证码" maxlength="6" />
+              <el-button :disabled="countdown > 0 || sending" :loading="sending" @click="onSendCode">
+                {{ countdown > 0 ? `${countdown}s 后重发` : '获取验证码' }}
+              </el-button>
+            </div>
           </el-form-item>
 
           <el-form-item label="所在地区" required>
@@ -152,6 +180,10 @@ async function onSubmit() {
 .sub { text-align: center; color: #909399; font-size: 13px; margin: 0 0 20px; line-height: 1.6; }
 .phone-row { display: flex; gap: 10px; width: 100%; }
 .phone-row .el-input { flex: 1; }
+.captcha-row { display: flex; gap: 10px; width: 100%; align-items: center; }
+.captcha-row .el-input { flex: 1; }
+.captcha-img { width: 120px; height: 44px; flex-shrink: 0; cursor: pointer; border-radius: 6px; overflow: hidden; line-height: 0; }
+.captcha-img :deep(svg) { display: block; width: 120px; height: 44px; }
 .region-row { display: flex; gap: 10px; width: 100%; }
 .back { text-align: center; margin-top: 14px; }
 .success { padding: 8px 0; }

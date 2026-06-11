@@ -109,8 +109,18 @@ export interface InstitutionApplyPayload {
   code: string
 }
 
-export function applySendCode(phone: string): Promise<{ sent: boolean }> {
-  return unwrap<{ sent: boolean }>(request.post('/institution/apply/send-code', { phone }))
+export interface CaptchaData { captcha_id: string; image_svg: string }
+
+export function getApplyCaptcha(): Promise<CaptchaData> {
+  return unwrap<CaptchaData>(request.get('/institution/apply/captcha'))
+}
+
+export function applySendCode(
+  phone: string, captchaId: string, captchaCode: string,
+): Promise<{ sent: boolean }> {
+  return unwrap<{ sent: boolean }>(request.post('/institution/apply/send-code', {
+    phone, captcha_id: captchaId, captcha_code: captchaCode,
+  }))
 }
 
 export function applyInstitution(

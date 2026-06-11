@@ -153,8 +153,15 @@ class BillItemOut(BaseModel):
 
 
 # ── 机构自助入驻申请（M47，公开免登录）─────────────────────────────────────
+class CaptchaOut(BaseModel):
+    captcha_id: str
+    image_svg: str
+
+
 class InstitutionApplyCodeRequest(BaseModel):
     phone: str
+    captcha_id: str
+    captcha_code: str
 
 
 class InstitutionApplyRequest(BaseModel):

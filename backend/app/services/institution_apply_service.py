@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.models.d1_users import Institution
 from app.models.d9_system import SmsVerification
+from app.services import captcha_service
 from app.services.sms_service import (
     expires_at_from_now,
     generate_code,
@@ -33,9 +34,14 @@ def _validate_phone(phone: str) -> str:
     return phone
 
 
-async def send_apply_code(db: AsyncSession, *, phone: str) -> None:
-    """发送机构入驻申请验证码。60s 内重复发送会被拒绝。"""
+async def send_apply_code(
+    db: AsyncSession, *, phone: str, captcha_id: str, captcha_code: str,
+) -> None:
+    """发送机构入驻申请验证码。先过图形验证码，再 60s 冷却。"""
     phone = _validate_phone(phone)
+
+    # 图形验证码挡在前面，防短信盗刷
+    await captcha_service.verify(db, captcha_id=captcha_id, answer=captcha_code)
 
     latest = (await db.execute(
         select(SmsVerification)

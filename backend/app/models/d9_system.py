@@ -94,3 +94,22 @@ class SmsVerification(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class CaptchaChallenge(Base):
+    """图形验证码挑战（M48）。
+
+    挡在「发送短信验证码」前，防止脚本盗刷短信。一次性，验证后即核销。
+    """
+
+    __tablename__ = "captcha_challenges"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    answer = mapped_column(sa.String(10), nullable=False)
+    expires_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    consumed = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )

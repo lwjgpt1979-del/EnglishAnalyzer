@@ -22,6 +22,7 @@ from app.schemas.institution import (
     BatchRenewRequest,
     BatchRenewResult,
     BillItemOut,
+    CaptchaOut,
     InstitutionApplyCodeRequest,
     InstitutionApplyRequest,
     InstitutionApplyResult,
@@ -38,6 +39,7 @@ from app.schemas.institution import (
 )
 from app.services import (
     admin_auth_service,
+    captcha_service,
     institution_apply_service,
     institution_billing_service,
     institution_purchase_service,
@@ -72,10 +74,19 @@ async def institution_login(body: AdminLoginRequest, db: DbDep):
 
 
 # ─── 机构自助入驻申请（M47，公开免登录）────────────────────────────────────
+@router.get("/apply/captcha", response_model=BaseResponse[CaptchaOut])
+async def institution_apply_captcha(db: DbDep):
+    """获取图形验证码（公开，挡在发短信前防盗刷）。"""
+    captcha_id, svg = await captcha_service.generate(db)
+    await db.commit()
+    return make_ok(CaptchaOut(captcha_id=captcha_id, image_svg=svg))
+
+
 @router.post("/apply/send-code", response_model=BaseResponse[dict])
 async def institution_apply_send_code(body: InstitutionApplyCodeRequest, db: DbDep):
-    """发送机构入驻申请手机验证码（公开）。"""
-    await institution_apply_service.send_apply_code(db, phone=body.phone)
+    """发送机构入驻申请手机验证码（公开）。需先过图形验证码。"""
+    await institution_apply_service.send_apply_code(
+        db, phone=body.phone, captcha_id=body.captcha_id, captcha_code=body.captcha_code)
     await db.commit()
     return make_ok({"sent": True})
 
