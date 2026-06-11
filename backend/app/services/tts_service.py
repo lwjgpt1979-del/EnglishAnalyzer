@@ -40,9 +40,50 @@ def _split_dialogue(text: str) -> list[tuple[str, str]] | None:
     return segs if len(speakers) >= 2 else None
 
 
-def _voice_pool() -> list[str]:
-    pool = [v.strip() for v in (settings.volc_tts_voice_pool or "").split(",") if v.strip()]
-    return pool or [settings.volc_tts_voice]
+def _male_voices() -> list[str]:
+    return [v.strip() for v in (settings.volc_tts_voice_male or "").split(",") if v.strip()]
+
+
+def _female_voices() -> list[str]:
+    return [v.strip() for v in (settings.volc_tts_voice_female or "").split(",") if v.strip()]
+
+
+def _all_voices() -> list[str]:
+    return (_male_voices() + _female_voices()) or [settings.volc_tts_voice]
+
+
+# 常见英文名性别（用于对话听力按角色选男/女声；未知名按出现顺序男女交替）
+_FEMALE_NAMES = {
+    "anna", "lily", "lucy", "mary", "kate", "amy", "jenny", "susan", "helen",
+    "grace", "emma", "alice", "lisa", "nancy", "cindy", "sandy", "linda", "betty",
+    "rose", "ann", "sally", "kitty", "eve", "may", "joy", "lulu", "mona", "miss",
+}
+_MALE_NAMES = {
+    "tom", "jack", "mike", "tim", "bob", "peter", "david", "john", "sam", "ben",
+    "mark", "tony", "jim", "eric", "frank", "jerry", "harry", "andy", "mr", "dad",
+    "daniel", "kevin", "leo", "max", "nick", "paul", "tony", "bill", "george",
+}
+
+
+def _gender_of(name: str) -> str | None:
+    n = (name or "").strip().lower()
+    if n in _FEMALE_NAMES:
+        return "f"
+    if n in _MALE_NAMES:
+        return "m"
+    return None
+
+
+def _voices_for_gender(g: str) -> list[str]:
+    vs = _female_voices() if g == "f" else _male_voices()
+    return vs or _all_voices()
+
+
+def _pick_voice_for_text(text: str) -> str:
+    """单词/句子：按文本哈希稳定选一个音色（同文本固定、跨文本有男有女）。"""
+    voices = _all_voices()
+    h = int(hashlib.md5((text or "").encode("utf-8")).hexdigest(), 16)
+    return voices[h % len(voices)]
 
 
 def is_dev_mode() -> bool:
@@ -118,25 +159,44 @@ def _cos_key(text: str, voice: str) -> str:
     return f"tts/{digest}.mp3"
 
 
-async def _synthesize_smart(text: str, *, voice: str | None) -> tuple[bytes, str]:
-    """对话体→多说话人不同音色逐句合成并拼接；否则单音色。返回 (音频, 缓存标记)。"""
+def _assign_dialogue_voices(segs: list[tuple[str, str]]) -> dict[str, str]:
+    """按说话人分配音色：已知名按性别选；未知名男女交替；同性别多角色在池内轮换。"""
+    speaker_voice: dict[str, str] = {}
+    gidx = {"m": 0, "f": 0}
+    alt = 0
+    for speaker, _ in segs:
+        if speaker in speaker_voice:
+            continue
+        g = _gender_of(speaker)
+        if g is None:
+            g = "m" if alt % 2 == 0 else "f"
+            alt += 1
+        vlist = _voices_for_gender(g)
+        speaker_voice[speaker] = vlist[gidx[g] % len(vlist)]
+        gidx[g] += 1
+    return speaker_voice
+
+
+async def _synthesize_smart(text: str, *, voice: str | None) -> bytes:
+    """对话体→按说话人性别多音色逐句合成拼接；否则用指定音色单合成。"""
     segs = _split_dialogue(text) if voice is None else None
     if not segs:
-        return await synthesize(text, voice=voice), voice or settings.volc_tts_voice
+        v = voice or _pick_voice_for_text(text)
+        audio = await synthesize(text, voice=v)
+        if not audio and v != settings.volc_tts_voice:
+            audio = await synthesize(text, voice=settings.volc_tts_voice)
+        return audio
 
-    pool = _voice_pool()
-    speaker_voice: dict[str, str] = {}
+    speaker_voice = _assign_dialogue_voices(segs)
     chunks: list[bytes] = []
     for speaker, line in segs:
-        if speaker not in speaker_voice:
-            speaker_voice[speaker] = pool[len(speaker_voice) % len(pool)]
         v = speaker_voice[speaker]
         audio = await synthesize(line, voice=v)
-        if not audio:  # 该音色不可用 → 退回默认音色
+        if not audio and v != settings.volc_tts_voice:  # 音色不可用→退默认
             audio = await synthesize(line, voice=settings.volc_tts_voice)
         if audio:
             chunks.append(audio)
-    return b"".join(chunks), "dlg:" + ",".join(f"{s}={v}" for s, v in speaker_voice.items())
+    return b"".join(chunks)
 
 
 async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str | None:
@@ -147,9 +207,14 @@ async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str
     text = (text or "").strip()
     if not text or _is_cos_dev():
         return None
-    # 缓存 key 区分单音色 / 多说话人对话
+    # 缓存 key：对话按音色池标记；单文本按所选(哈希稳定)音色，保证幂等
     is_dlg = voice is None and _split_dialogue(text) is not None
-    v = ("dialogue:" + settings.volc_tts_voice_pool) if is_dlg else (voice or settings.volc_tts_voice)
+    if is_dlg:
+        v = f"dialogue:{settings.volc_tts_voice_male}|{settings.volc_tts_voice_female}"
+    elif voice:
+        v = voice
+    else:
+        v = _pick_voice_for_text(text)
     key = _cos_key(text, v)
     url = f"{settings.cos_base_url}/{key}"
 
@@ -163,7 +228,7 @@ async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str
     if await asyncio.to_thread(_exists):
         return url
 
-    audio, _ = await _synthesize_smart(text, voice=voice)
+    audio = await _synthesize_smart(text, voice=voice)
     if not audio:
         return None
 
