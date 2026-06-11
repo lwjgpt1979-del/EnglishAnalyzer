@@ -8,6 +8,14 @@ export function wxLogin(code: string): Promise<TokenResponse> {
   })
 }
 
+/** 微信一键获取手机号：getPhoneNumber 按钮回调的 code → 换取并写入手机号 */
+export function wxBindPhone(code: string): Promise<{ phone: string }> {
+  return request<{ phone: string }>('/api/v1/auth/wx-phone', {
+    method: 'POST',
+    data: { code },
+  })
+}
+
 export interface UpdateProfileData {
   preferred_textbook_version?: string | null
   preferred_grade?: string | null

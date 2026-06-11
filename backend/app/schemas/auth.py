@@ -5,6 +5,15 @@ class WxLoginRequest(BaseModel):
     code: str
 
 
+class WxPhoneRequest(BaseModel):
+    """小程序 getPhoneNumber 回调返回的 code，用于换取手机号。"""
+    code: str
+
+
+class WxPhoneResult(BaseModel):
+    phone: str
+
+
 class AdminLoginRequest(BaseModel):
     """运营管理员账号密码登录（M5 / D-098）。"""
     username: str = Field(..., min_length=1)

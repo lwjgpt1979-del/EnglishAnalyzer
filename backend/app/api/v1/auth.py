@@ -11,7 +11,14 @@ from app.core.database import get_db
 from app.core.exceptions import AppError
 from app.core.security import create_access_token, create_refresh_token, decode_token, get_current_user
 from app.models.d1_users import User
-from app.schemas.auth import RefreshRequest, TokenResponse, UpdateProfileRequest, WxLoginRequest
+from app.schemas.auth import (
+    RefreshRequest,
+    TokenResponse,
+    UpdateProfileRequest,
+    WxLoginRequest,
+    WxPhoneRequest,
+    WxPhoneResult,
+)
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.compliance import (
     CompleteProfileRequest,
@@ -55,6 +62,16 @@ async def wx_login(
             refresh_token=create_refresh_token(str(user.id)),
         )
     )
+
+
+@router.post("/wx-phone", response_model=BaseResponse[WxPhoneResult])
+async def wx_phone(body: WxPhoneRequest, db: DbDep, current_user: UserDep):
+    """微信一键获取手机号：前端 getPhoneNumber 按钮回调拿到 code，
+    后端换取手机号并写入当前用户。dev 模式返回固定号码。"""
+    phone = await auth_service.get_wx_phone_number(body.code)
+    current_user.phone = phone
+    await db.commit()
+    return make_ok(WxPhoneResult(phone=phone))
 
 
 @router.post("/refresh", response_model=BaseResponse[TokenResponse])

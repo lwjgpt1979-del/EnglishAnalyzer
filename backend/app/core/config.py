@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     wechat_code2session_url: str = (
         "https://api.weixin.qq.com/sns/jscode2session"
     )
+    wechat_access_token_url: str = (
+        "https://api.weixin.qq.com/cgi-bin/token"
+    )
+    wechat_get_phone_url: str = (
+        "https://api.weixin.qq.com/wxa/business/getuserphonenumber"
+    )
 
     # JWT
     jwt_secret_key: str = "dev-secret-change-in-production"

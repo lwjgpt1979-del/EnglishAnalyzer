@@ -1,3 +1,4 @@
+import time
 import uuid
 
 import httpx
@@ -7,6 +8,76 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import AppError
 from app.models.d1_users import User
+
+# 微信小程序全局 access_token 进程内缓存（约 2h 有效，提前 5min 失效）
+_access_token_cache: dict = {"token": None, "expires_at": 0.0}
+
+
+def _is_wechat_dev() -> bool:
+    return settings.wechat_appid.startswith("wx_dev")
+
+
+async def get_wechat_access_token() -> str:
+    """获取微信小程序全局 access_token，进程内缓存。
+
+    文档: https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/mp-access-token/getAccessToken.html
+    """
+    if _is_wechat_dev():
+        return "dev_access_token"
+
+    now = time.time()
+    if _access_token_cache["token"] and _access_token_cache["expires_at"] > now:
+        return _access_token_cache["token"]
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            settings.wechat_access_token_url,
+            params={
+                "grant_type": "client_credential",
+                "appid": settings.wechat_appid,
+                "secret": settings.wechat_appsecret,
+            },
+        )
+    data = resp.json()
+    token = data.get("access_token")
+    if not token:
+        raise AppError(
+            code=503,
+            message=f"获取微信 access_token 失败（{data.get('errmsg', 'unknown')}）",
+        )
+    _access_token_cache["token"] = token
+    _access_token_cache["expires_at"] = now + int(data.get("expires_in", 7200)) - 300
+    return token
+
+
+async def get_wx_phone_number(phone_code: str) -> str:
+    """用小程序 getPhoneNumber 回调的 code 换取用户手机号（纯号码，不含区号）。
+
+    文档: https://developers.weixin.qq.com/miniprogram/dev/OpenApiDoc/user-info/phone-number/getPhoneNumber.html
+    需企业认证主体小程序；每次调用消耗手机号快速验证组件额度。
+    """
+    if not phone_code:
+        raise AppError(code=400, message="缺少手机号授权 code")
+    if _is_wechat_dev():
+        return "13800138000"  # dev mock
+
+    token = await get_wechat_access_token()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            settings.wechat_get_phone_url,
+            params={"access_token": token},
+            json={"code": phone_code},
+        )
+    data = resp.json()
+    if data.get("errcode") not in (0, None):
+        raise AppError(
+            code=400,
+            message=f"获取手机号失败（{data.get('errmsg', 'unknown')}），请重试",
+        )
+    phone = (data.get("phone_info") or {}).get("purePhoneNumber")
+    if not phone:
+        raise AppError(code=400, message="微信未返回手机号，请重试")
+    return phone
 
 
 async def wechat_code2session(code: str) -> dict:

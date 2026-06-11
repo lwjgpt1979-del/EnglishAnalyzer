@@ -13,6 +13,15 @@
       <view class="row col">
         <text class="label">本人手机号（可选）</text>
         <input v-model="userPhone" class="input" placeholder="用于注销验证" />
+        <!-- #ifdef MP-WEIXIN -->
+        <button
+          class="btn-wx-phone"
+          open-type="getPhoneNumber"
+          @getphonenumber="onGetPhone"
+        >
+          <text class="wx-ico">📱</text> 微信一键填充手机号
+        </button>
+        <!-- #endif -->
       </view>
       <view class="row col">
         <text class="label">教材版本</text>
@@ -54,6 +63,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { completeProfile, guardianVerify } from '@/api/compliance'
+import { wxBindPhone } from '@/api/auth'
 const birthYear = ref('')
 const guardianPhone = ref('')
 const userPhone = ref('')
@@ -84,6 +94,23 @@ const canSubmit = computed(() =>
   && (!needGuardian.value || guardianPhone.value.length === 11)
   && !!textbook.value && !!grade.value && !!semester.value,
 )
+// 微信一键获取手机号（仅微信小程序端有此 API）
+async function onGetPhone(e: any) {
+  const code = e?.detail?.code
+  if (!code) {
+    // 用户拒绝授权或获取失败
+    uni.showToast({ title: '已取消授权', icon: 'none' })
+    return
+  }
+  try {
+    const r = await wxBindPhone(code)
+    userPhone.value = r.phone
+    uni.showToast({ title: '已填充手机号', icon: 'success' })
+  } catch (err: any) {
+    uni.showToast({ title: err?.message || '获取失败', icon: 'none' })
+  }
+}
+
 async function onSubmit() {
   submitting.value = true
   try {
@@ -135,5 +162,12 @@ async function onVerify() {
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; margin-top: 16rpx; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .dev-hint { font-size: 22rpx; color: var(--c-text-hint); }
+.btn-wx-phone {
+  margin-top: 12rpx; background: #eef5ff; color: var(--c-primary-deep);
+  border: 2rpx solid var(--c-primary-soft); border-radius: var(--r-md);
+  font-size: 26rpx; font-weight: 600; padding: 14rpx 0; line-height: 1.4;
+}
+.btn-wx-phone::after { border: none; }
+.wx-ico { font-size: 28rpx; }
 .picker-val { padding: 16rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }
 </style>
