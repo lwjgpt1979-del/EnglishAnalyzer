@@ -306,6 +306,32 @@ async def update_tts_speed(body: TtsSpeedConfig, db: DbDep, admin: AdminDep):
     return make_ok(TtsSpeedConfig(**saved))
 
 
+class TtsVoicesConfig(BaseModel):
+    male: list[str]
+    female: list[str]
+
+
+@router.get("/tts-voices", response_model=BaseResponse[TtsVoicesConfig])
+async def get_tts_voices(db: DbDep, admin: AdminDep):
+    """读当前男/女音色池（火山 bigtts voice_type 列表）。"""
+    from app.services import tts_service
+    return make_ok(TtsVoicesConfig(**await tts_service.get_voices(db)))
+
+
+@router.put("/tts-voices", response_model=BaseResponse[TtsVoicesConfig])
+async def update_tts_voices(body: TtsVoicesConfig, db: DbDep, admin: AdminDep):
+    """运营改男/女音色池。对话听力按说话人性别选音色，单词按词哈希稳定取一个。"""
+    from app.services import tts_service
+    male = [v.strip() for v in body.male if v.strip()]
+    female = [v.strip() for v in body.female if v.strip()]
+    if not male or not female:
+        raise AppError(code=400, message="男、女音色各至少配 1 个")
+    saved = await tts_service.set_voices(
+        db, male=male, female=female, updated_by=admin.id)
+    await db.commit()
+    return make_ok(TtsVoicesConfig(**saved))
+
+
 @router.get("/essay-templates", response_model=BaseResponse[dict])
 async def get_essay_templates(db: DbDep, admin: AdminDep):
     """读作文精修模板/范文配置（未配则返回内置）。"""

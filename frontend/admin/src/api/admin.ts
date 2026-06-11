@@ -77,6 +77,14 @@ export function updateTtsSpeed(body: TtsSpeed) {
   return unwrap<TtsSpeed>(request.put('/admin/tts-speed', body))
 }
 
+export interface TtsVoices { male: string[]; female: string[] }
+export function getTtsVoices() {
+  return unwrap<TtsVoices>(request.get('/admin/tts-voices'))
+}
+export function updateTtsVoices(body: TtsVoices) {
+  return unwrap<TtsVoices>(request.put('/admin/tts-voices', body))
+}
+
 export function updatePricing(body: SemesterPricing) {
   return unwrap<SemesterPricing>(request.put('/admin/pricing', body))
 }

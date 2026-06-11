@@ -37,6 +37,7 @@ async def speak_url(
     """返回文本对应的可播放音频 URL：优先 COS 直链（持久化）；COS 未配置则返回空，
     前端回退到 /tts/speak 流式接口。stage 控制语速（后台 system_configs 可配）。"""
     t = (text or "").strip()[:_MAX_TEXT]
+    await tts_service.get_voices(db)  # 预热音色池缓存供合成路径使用
     speed = await tts_service.speed_for_stage_db(db, stage)
     url = await tts_service.get_or_create_audio_url(t, speed=speed) if t else None
     return make_ok({"url": url or ""})
@@ -48,6 +49,7 @@ async def speak(db: DbDep, text: str = Query("", max_length=1200), stage: str = 
     text = (text or "").strip()[:_MAX_TEXT]
     if not text:
         return Response(status_code=204)
+    await tts_service.get_voices(db)  # 预热音色池缓存供合成路径使用
     speed = await tts_service.speed_for_stage_db(db, stage)
     ckey = f"{text}@{speed}"
 

@@ -105,12 +105,70 @@ def _split_dialogue(text: str) -> list[tuple[str, str]] | None:
     return segs if len(speakers) >= 2 else None
 
 
+_VOICES_KEY = "tts_voices"
+_voices_cache: dict = {"data": None, "ts": 0.0}
+
+
+def _split_voices(s: str) -> list[str]:
+    return [v.strip() for v in (s or "").split(",") if v.strip()]
+
+
+def _default_voices() -> dict:
+    return {
+        "male": _split_voices(settings.volc_tts_voice_male),
+        "female": _split_voices(settings.volc_tts_voice_female),
+    }
+
+
+async def get_voices(db: AsyncSession) -> dict:
+    """读后台配置的男/女音色池；缺失回落 .env。60s 缓存；并刷新同步缓存供合成路径用。"""
+    now = time.time()
+    if _voices_cache["data"] is not None and now - _voices_cache["ts"] < _SPEED_TTL:
+        return _voices_cache["data"]
+    d = _default_voices()
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _VOICES_KEY)
+    )).scalar_one_or_none()
+    if row is not None and isinstance(row.value, dict):
+        for k in ("male", "female"):
+            v = row.value.get(k)
+            if isinstance(v, list) and v:
+                d[k] = [str(x).strip() for x in v if str(x).strip()]
+    _voices_cache["data"] = d
+    _voices_cache["ts"] = now
+    return d
+
+
+async def set_voices(db: AsyncSession, *, male: list[str], female: list[str], updated_by) -> dict:
+    """运营改男/女音色池：upsert system_configs.tts_voices，并清缓存。"""
+    value = {
+        "male": [str(m).strip() for m in male if str(m).strip()],
+        "female": [str(f).strip() for f in female if str(f).strip()],
+    }
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _VOICES_KEY)
+    )).scalar_one_or_none()
+    if row is None:
+        db.add(SystemConfig(
+            id=uuid.uuid4(), key=_VOICES_KEY, value=value,
+            description="TTS 音色池(male/female, bigtts voice_type)", updated_by=updated_by,
+        ))
+    else:
+        row.value = value
+        row.updated_by = updated_by
+    await db.flush()
+    _voices_cache["data"] = None
+    return value
+
+
 def _male_voices() -> list[str]:
-    return [v.strip() for v in (settings.volc_tts_voice_male or "").split(",") if v.strip()]
+    c = _voices_cache["data"]
+    return (c["male"] if c and c.get("male") else _split_voices(settings.volc_tts_voice_male))
 
 
 def _female_voices() -> list[str]:
-    return [v.strip() for v in (settings.volc_tts_voice_female or "").split(",") if v.strip()]
+    c = _voices_cache["data"]
+    return (c["female"] if c and c.get("female") else _split_voices(settings.volc_tts_voice_female))
 
 
 def _all_voices() -> list[str]:
