@@ -80,7 +80,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { getListeningExercises, getListeningExercise } from '@/api/listening'
 import type { ListeningBrief, ListeningDetail } from '@/api/listening'
-import { resolveSpeakUrl } from '@/utils/tts'
+import { resolveSpeakUrl, gradeToStage } from '@/utils/tts'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
 
 const loading = ref(true)
 const phase = ref<'list' | 'doing' | 'result'>('list')
@@ -172,7 +175,7 @@ async function playAudio() {
     _ctx.onError(() => { playing.value = false })
   }
   if (playing.value) { _ctx.pause(); playing.value = false; return }
-  _ctx.src = await resolveSpeakUrl(detail.value.transcript)
+  _ctx.src = await resolveSpeakUrl(detail.value.transcript, gradeToStage((auth.user as any)?.preferred_grade))
   _ctx.play()
 }
 </script>

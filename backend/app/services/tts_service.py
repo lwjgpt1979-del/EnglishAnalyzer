@@ -94,7 +94,23 @@ def is_dev_mode() -> bool:
     )
 
 
-async def synthesize(text: str, *, voice: str | None = None) -> bytes:
+_STAGE_SPEED = {
+    "primary": "volc_tts_speed_primary",
+    "junior": "volc_tts_speed_junior",
+    "senior": "volc_tts_speed_senior",
+}
+
+
+def speed_for_stage(stage: str | None) -> float:
+    """学段→语速倍率。未知/缺省按初中(junior)。"""
+    attr = _STAGE_SPEED.get((stage or "").lower(), "volc_tts_speed_junior")
+    try:
+        return float(getattr(settings, attr))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+async def synthesize(text: str, *, voice: str | None = None, speed_ratio: float = 1.0) -> bytes:
     """把文本合成为 mp3 音频字节。dev-mock 返回空字节。"""
     text = (text or "").strip()
     if not text:
@@ -113,7 +129,7 @@ async def synthesize(text: str, *, voice: str | None = None) -> bytes:
         "audio": {
             "voice_type": voice or settings.volc_tts_voice,
             "encoding": "mp3",
-            "speed_ratio": 1.0,
+            "speed_ratio": speed_ratio,
         },
         "request": {
             "reqid": str(uuid.uuid4()),
@@ -177,37 +193,40 @@ def _assign_dialogue_voices(segs: list[tuple[str, str]]) -> dict[str, str]:
     return speaker_voice
 
 
-async def _synthesize_smart(text: str, *, voice: str | None) -> bytes:
+async def _synthesize_smart(text: str, *, voice: str | None, speed: float = 1.0) -> bytes:
     """对话体→按说话人性别多音色逐句合成拼接；否则用指定音色单合成。"""
     segs = _split_dialogue(text) if voice is None else None
     if not segs:
         v = voice or _pick_voice_for_text(text)
-        audio = await synthesize(text, voice=v)
+        audio = await synthesize(text, voice=v, speed_ratio=speed)
         if not audio and v != settings.volc_tts_voice:
-            audio = await synthesize(text, voice=settings.volc_tts_voice)
+            audio = await synthesize(text, voice=settings.volc_tts_voice, speed_ratio=speed)
         return audio
 
     speaker_voice = _assign_dialogue_voices(segs)
     chunks: list[bytes] = []
     for speaker, line in segs:
         v = speaker_voice[speaker]
-        audio = await synthesize(line, voice=v)
+        audio = await synthesize(line, voice=v, speed_ratio=speed)
         if not audio and v != settings.volc_tts_voice:  # 音色不可用→退默认
-            audio = await synthesize(line, voice=settings.volc_tts_voice)
+            audio = await synthesize(line, voice=settings.volc_tts_voice, speed_ratio=speed)
         if audio:
             chunks.append(audio)
     return b"".join(chunks)
 
 
-async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str | None:
+async def get_or_create_audio_url(
+    text: str, *, voice: str | None = None, speed: float = 1.0,
+) -> str | None:
     """返回该文本对应的 COS 音频直链（不存在则现合成并上传）。
 
-    对话体自动多说话人不同音色；COS 为 dev 占位时返回 None，调用方回退流式。
+    对话体自动多说话人不同音色；speed 为语速倍率（按学段）；
+    COS 为 dev 占位时返回 None，调用方回退流式。
     """
     text = (text or "").strip()
     if not text or _is_cos_dev():
         return None
-    # 缓存 key：对话按音色池标记；单文本按所选(哈希稳定)音色，保证幂等
+    # 缓存 key：对话按音色池标记；单文本按所选(哈希稳定)音色；并入语速，保证幂等
     is_dlg = voice is None and _split_dialogue(text) is not None
     if is_dlg:
         v = f"dialogue:{settings.volc_tts_voice_male}|{settings.volc_tts_voice_female}"
@@ -215,7 +234,7 @@ async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str
         v = voice
     else:
         v = _pick_voice_for_text(text)
-    key = _cos_key(text, v)
+    key = _cos_key(text, f"{v}@{speed}")
     url = f"{settings.cos_base_url}/{key}"
 
     def _exists() -> bool:
@@ -228,7 +247,7 @@ async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str
     if await asyncio.to_thread(_exists):
         return url
 
-    audio = await _synthesize_smart(text, voice=voice)
+    audio = await _synthesize_smart(text, voice=voice, speed=speed)
     if not audio:
         return None
 

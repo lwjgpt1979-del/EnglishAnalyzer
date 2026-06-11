@@ -102,7 +102,10 @@
 import { computed, onUnmounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { getSelfExam, submitSelfExam, type SelfExamOut, type SelfExamQuestion, type SelfExamResult } from '@/api/selfExam'
-import { resolveSpeakUrl } from '@/utils/tts'
+import { resolveSpeakUrl, gradeToStage } from '@/utils/tts'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
 
 const loading = ref(true)
 const reviewOnly = ref(false)
@@ -183,7 +186,7 @@ async function playListening(text: string) {
     _ctx.onError(() => { playing.value = false })
   }
   if (playing.value) { _ctx.pause(); playing.value = false; return }
-  _ctx.src = await resolveSpeakUrl(text)
+  _ctx.src = await resolveSpeakUrl(text, gradeToStage((auth.user as any)?.preferred_grade))
   _ctx.play()
 }
 

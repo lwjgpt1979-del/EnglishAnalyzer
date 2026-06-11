@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     # 听力对话按说话人性别选；单词按词哈希稳定随机选男/女
     volc_tts_voice_male: str = "zh_male_wennuanahu_uranus_bigtts,zh_male_jieshuonansheng_mars_bigtts"
     volc_tts_voice_female: str = "zh_female_shuangkuaisisi_moon_bigtts,zh_female_wanwanxiaohe_moon_bigtts"
+    # 听力语速按学段（speed_ratio，0.8~2.0）：小学慢 / 初中标准 / 高中略快；单词统一用初中
+    volc_tts_speed_primary: float = 0.8
+    volc_tts_speed_junior: float = 1.0
+    volc_tts_speed_senior: float = 1.1
 
     # 阿里云 OCR（印刷体识别，M40 后由豆包Vision替代，保留向下兼容）
     aliyun_ocr_access_key_id: str = "placeholder_aliyun_ak_id"

@@ -24,6 +24,7 @@ export interface UserProfileOut {
   avatar_url: string | null
   is_active: boolean
   phone?: string | null
+  preferred_grade?: string | null
   profile_completed?: boolean
   birth_year?: number | null
   deactivation_scheduled_at?: string | null
