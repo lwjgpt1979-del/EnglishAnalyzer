@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     volc_tts_access_token: str = ""
     volc_tts_cluster: str = "volcano_tts"
     volc_tts_voice: str = "zh_male_wennuanahu_uranus_bigtts"  # 大模型音色(BigTTS)，控制台可换
+    # 对话听力多说话人音色池（按说话人轮换；逗号分隔，需控制台已开通的 bigtts 音色）
+    volc_tts_voice_pool: str = "zh_male_wennuanahu_uranus_bigtts,zh_female_shuangkuaisisi_moon_bigtts"
 
     # 阿里云 OCR（印刷体识别，M40 后由豆包Vision替代，保留向下兼容）
     aliyun_ocr_access_key_id: str = "placeholder_aliyun_ak_id"

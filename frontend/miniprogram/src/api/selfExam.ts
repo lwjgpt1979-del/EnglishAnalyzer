@@ -25,6 +25,9 @@ export interface SelfExamItemResult {
   correct_answer: string
   user_answer: string
   explanation: string
+  essay_id?: string | null
+  score?: number | null
+  full_score?: number | null
 }
 
 export interface SelfExamResult {

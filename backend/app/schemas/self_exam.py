@@ -63,6 +63,10 @@ class SelfExamItemResult(BaseModel):
     correct_answer: str = ""
     user_answer: str = ""
     explanation: str = ""
+    # 写作题：AI 精修结果
+    essay_id: str | None = None
+    score: int | None = None
+    full_score: int | None = None
 
 
 class SelfExamResult(BaseModel):

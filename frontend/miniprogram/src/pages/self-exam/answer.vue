@@ -81,6 +81,10 @@
         <text class="res-stem">{{ it.stem }}</text>
         <text class="res-line">你的答案：{{ it.user_answer || '（未作答）' }}</text>
         <text v-if="it.correct !== null" class="res-line right">正确答案：{{ it.correct_answer }}</text>
+        <view v-if="it.section === 'writing' && it.score != null" class="essay-box">
+          <text class="essay-score">作文得分 {{ it.score }}<text class="essay-full"> / {{ it.full_score }}</text></text>
+          <text v-if="it.essay_id" class="essay-link" @tap="() => goEssay(it.essay_id)">查看 AI 精修详情 ›</text>
+        </view>
         <text v-if="it.explanation" class="res-exp">{{ it.explanation }}</text>
       </view>
       <view class="practice-bar fixed"><button class="btn-primary" @tap="goBack">返回</button></view>
@@ -209,6 +213,9 @@ async function submit(auto: boolean) {
 }
 
 function goBack() { uni.navigateBack() }
+function goEssay(id?: string | null) {
+  if (id) uni.navigateTo({ url: `/pages/essay/detail?id=${id}` })
+}
 </script>
 
 <style scoped>
@@ -252,6 +259,10 @@ function goBack() { uni.navigateBack() }
 .res-line { display: block; font-size: 26rpx; color: var(--c-text-body); line-height: 1.6; }
 .res-line.right { color: #18a058; }
 .res-exp { display: block; font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; margin-top: 6rpx; }
+.essay-box { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; margin: 10rpx 0; padding: 14rpx 18rpx; background: var(--c-primary-faint); border-radius: var(--r-md); }
+.essay-score { font-size: 28rpx; font-weight: 800; color: var(--c-primary-deep); }
+.essay-full { font-size: 22rpx; font-weight: 600; color: var(--c-text-hint); }
+.essay-link { font-size: 24rpx; font-weight: 600; color: var(--c-primary); }
 .practice-bar.fixed { position: fixed; left: 0; right: 0; bottom: 0; padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom)); background: var(--c-bg-card); box-shadow: 0 -2rpx 16rpx rgba(0,0,0,.06); }
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }

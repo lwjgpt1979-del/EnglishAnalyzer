@@ -11,6 +11,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import re
 import uuid
 
 import httpx
@@ -18,6 +19,30 @@ import httpx
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# 对话行：以「英文名:」开头，如 "Anna: Hi Tom"
+_DIALOGUE_LINE = re.compile(r"([A-Z][A-Za-z]{1,15})\s*[:：]\s*")
+
+
+def _split_dialogue(text: str) -> list[tuple[str, str]] | None:
+    """把对话体拆成 [(说话人, 台词)]；说话人少于 2 个则返回 None（非对话）。"""
+    parts = _DIALOGUE_LINE.split(text or "")
+    # split 结果：[前缀, 名1, 台词1, 名2, 台词2, ...]
+    if len(parts) < 5:
+        return None
+    segs: list[tuple[str, str]] = []
+    for i in range(1, len(parts) - 1, 2):
+        speaker = parts[i].strip()
+        line = parts[i + 1].strip()
+        if line:
+            segs.append((speaker, line))
+    speakers = {s for s, _ in segs}
+    return segs if len(speakers) >= 2 else None
+
+
+def _voice_pool() -> list[str]:
+    pool = [v.strip() for v in (settings.volc_tts_voice_pool or "").split(",") if v.strip()]
+    return pool or [settings.volc_tts_voice]
 
 
 def is_dev_mode() -> bool:
@@ -93,15 +118,38 @@ def _cos_key(text: str, voice: str) -> str:
     return f"tts/{digest}.mp3"
 
 
+async def _synthesize_smart(text: str, *, voice: str | None) -> tuple[bytes, str]:
+    """对话体→多说话人不同音色逐句合成并拼接；否则单音色。返回 (音频, 缓存标记)。"""
+    segs = _split_dialogue(text) if voice is None else None
+    if not segs:
+        return await synthesize(text, voice=voice), voice or settings.volc_tts_voice
+
+    pool = _voice_pool()
+    speaker_voice: dict[str, str] = {}
+    chunks: list[bytes] = []
+    for speaker, line in segs:
+        if speaker not in speaker_voice:
+            speaker_voice[speaker] = pool[len(speaker_voice) % len(pool)]
+        v = speaker_voice[speaker]
+        audio = await synthesize(line, voice=v)
+        if not audio:  # 该音色不可用 → 退回默认音色
+            audio = await synthesize(line, voice=settings.volc_tts_voice)
+        if audio:
+            chunks.append(audio)
+    return b"".join(chunks), "dlg:" + ",".join(f"{s}={v}" for s, v in speaker_voice.items())
+
+
 async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str | None:
     """返回该文本对应的 COS 音频直链（不存在则现合成并上传）。
 
-    COS 为 dev 占位时返回 None，由调用方回退到 /tts/speak 流式播放。
+    对话体自动多说话人不同音色；COS 为 dev 占位时返回 None，调用方回退流式。
     """
     text = (text or "").strip()
     if not text or _is_cos_dev():
         return None
-    v = voice or settings.volc_tts_voice
+    # 缓存 key 区分单音色 / 多说话人对话
+    is_dlg = voice is None and _split_dialogue(text) is not None
+    v = ("dialogue:" + settings.volc_tts_voice_pool) if is_dlg else (voice or settings.volc_tts_voice)
     key = _cos_key(text, v)
     url = f"{settings.cos_base_url}/{key}"
 
@@ -115,7 +163,7 @@ async def get_or_create_audio_url(text: str, *, voice: str | None = None) -> str
     if await asyncio.to_thread(_exists):
         return url
 
-    audio = await synthesize(text, voice=voice)
+    audio, _ = await _synthesize_smart(text, voice=voice)
     if not audio:
         return None
 

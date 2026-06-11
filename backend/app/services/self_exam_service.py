@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
+from app.models.d9_system import SystemConfig
 from app.models.d12_v2_exams import SelfExam
 from app.schemas.questions import PracticeAttemptIn
 from app.services import (
@@ -22,7 +23,23 @@ from app.services import (
     question_service,
 )
 
-WEEKLY_QUOTA = 3          # 每周自助出卷份数上限（5C，后台可配留后续）
+WEEKLY_QUOTA = 3          # 每周自助出卷份数上限默认值（后台 system_configs 可覆盖）
+_QUOTA_CONFIG_KEY = "self_exam_weekly_quota"   # 5.6 配置中心键
+
+
+async def get_weekly_quota(db: AsyncSession) -> int:
+    """从 system_configs 读每周配额（5.6 配置中心），缺失/异常回落默认值。"""
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _QUOTA_CONFIG_KEY)
+    )).scalar_one_or_none()
+    if row is None:
+        return WEEKLY_QUOTA
+    try:
+        v = row.value
+        n = int(v.get("limit") if isinstance(v, dict) else v)
+        return n if n > 0 else WEEKLY_QUOTA
+    except (TypeError, ValueError):
+        return WEEKLY_QUOTA
 OBJECTIVE_COUNT = 6       # 客观题数量
 TIME_LIMIT_SEC = 1200     # 限时 20 分钟（含听力+客观+写作）
 
@@ -54,11 +71,12 @@ async def quota_status(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
         )
     )).scalar_one()
     promax = await is_promax(db, student_id=student_id)
+    limit = await get_weekly_quota(db)
     return {
         "is_promax": promax,
         "used": int(used),
-        "limit": WEEKLY_QUOTA,
-        "remaining": max(0, WEEKLY_QUOTA - int(used)),
+        "limit": limit,
+        "remaining": max(0, limit - int(used)),
     }
 
 
@@ -67,7 +85,7 @@ async def create_self_exam(db: AsyncSession, *, student_id: uuid.UUID) -> SelfEx
         raise AppError(code=403, message="自助出卷为 ProMax 会员专属功能")
     q = await quota_status(db, student_id=student_id)
     if q["remaining"] <= 0:
-        raise AppError(code=429, message=f"本周自助出卷次数已用完（每周 {WEEKLY_QUOTA} 份）")
+        raise AppError(code=429, message=f"本周自助出卷次数已用完（每周 {q['limit']} 份）")
 
     aset = await adaptive_question_service.get_adaptive_set(
         db, student_id=student_id, total=OBJECTIVE_COUNT
@@ -195,15 +213,32 @@ async def submit_self_exam(
                 "user_answer": r.user_answer or "未作答", "explanation": r.explanation,
             })
 
-    # 写作：记录，不计分
+    # 写作：不计客观分；有作答则调用作文 AI 精修真实批改/评分
     writing_text = ans_map.get("writing-1", "")
     writing_prompt = wri_items[0]["stem"] if wri_items else ""
     if wri_items:
-        result_items.append({
+        w_item: dict = {
             "id": "writing-1", "section": "writing", "stem": writing_prompt,
             "correct": None, "correct_answer": "", "user_answer": writing_text or "未作答",
-            "explanation": "写作题不计入客观分，可前往「作文精修」获取 AI 批改。",
-        })
+            "explanation": "写作题不计入客观分。",
+        }
+        if (writing_text or "").strip():
+            try:
+                from app.services import essay_service
+                essay = await essay_service.polish_essay(
+                    db, student_id=student_id, original_text=writing_text,
+                    title=writing_prompt[:30], essay_type="exam",
+                )
+                dim = essay.dimensions or {}
+                scores = dim.get("scores", []) or []
+                full = sum(int(s.get("full", 0)) for s in scores) or None
+                w_item["essay_id"] = str(essay.id)
+                w_item["score"] = int(dim.get("total", 0))
+                w_item["full_score"] = full
+                w_item["explanation"] = "AI 已批改，点击查看精修详情（润色版 + 逐项评分）。"
+            except Exception:  # noqa: BLE001
+                w_item["explanation"] = "写作已提交，可前往「作文精修」获取 AI 批改。"
+        result_items.append(w_item)
 
     total = len(lst_items) + obj_total
     correct = lst_correct + obj_correct
