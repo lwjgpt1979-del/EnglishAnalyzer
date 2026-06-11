@@ -47,10 +47,10 @@
       <view v-if="curStudy.en_description" class="en-desc">
         <text class="en-desc-text">{{ curStudy.en_description }}</text>
       </view>
-      <!-- 双音频播放 -->
-      <view class="audio-row" v-if="curStudy.word_audio_url || curStudy.en_desc_audio_url">
-        <text v-if="curStudy.word_audio_url" class="audio-btn" @tap="playAudio(curStudy.word_audio_url)">🔊 单词</text>
-        <text v-if="curStudy.en_desc_audio_url" class="audio-btn" @tap="playAudio(curStudy.en_desc_audio_url)">🔊 英文描述</text>
+      <!-- 双音频播放（火山 TTS 实时合成）-->
+      <view class="audio-row" v-if="curStudy.word">
+        <text class="audio-btn" @tap="playTTS(curStudy.word)">🔊 单词</text>
+        <text v-if="curStudy.en_description" class="audio-btn" @tap="playTTS(curStudy.en_description)">🔊 英文描述</text>
       </view>
 
       <button class="btn-primary" @tap="nextStudy">记住了，下一个</button>
@@ -411,6 +411,13 @@ function playAudio(src?: string | null) {
   _audioCtx.play()
 }
 
+const _ttsBase = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000'
+/** 用火山 TTS 接口实时合成并播放一段文本（dev 无凭据时接口 204，静默无声）。 */
+function playTTS(text?: string | null) {
+  if (!text) return
+  playAudio(`${_ttsBase}/api/v1/tts/speak?text=${encodeURIComponent(text)}`)
+}
+
 function reload() {
   load()
 }
@@ -442,10 +449,8 @@ function closeShadow() {
 }
 
 function playShadowDemo() {
-  // 例句暂无独立音频：退用单词/英文描述音频作示范；都没有则提示
-  const src = curStudy.value?.en_desc_audio_url || curStudy.value?.word_audio_url
-  if (src) playAudio(src)
-  else uni.showToast({ title: '本句暂无示范音频', icon: 'none' })
+  // 火山 TTS 实时合成整句示范音频
+  playTTS(shadow.text)
 }
 
 let _recorder: UniApp.RecorderManager | null = null

@@ -58,8 +58,14 @@ class Settings(BaseSettings):
     image_provider: str = "mock"
     image_api_key: str = "img-placeholder-for-dev"
     image_count_per_word: int = 3
-    tts_provider: str = "mock"
+    tts_provider: str = "mock"  # 'mock'=占位；'volcano'=火山引擎语音合成
     tts_api_key: str = "tts-placeholder-for-dev"
+    # 火山引擎语音合成（豆包 TTS，语音技术控制台，独立于 Ark 视觉）
+    volc_tts_url: str = "https://openspeech.bytedance.com/api/v1/tts"
+    volc_tts_appid: str = ""
+    volc_tts_access_token: str = ""
+    volc_tts_cluster: str = "volcano_tts"
+    volc_tts_voice: str = "en_male_adam_mars_bigtts"  # 默认英文音色，按需在控制台换
 
     # 阿里云 OCR（印刷体识别，M40 后由豆包Vision替代，保留向下兼容）
     aliyun_ocr_access_key_id: str = "placeholder_aliyun_ak_id"
