@@ -22,6 +22,7 @@ async def create_institution(
     inst = Institution(
         id=uuid.uuid4(), name=name, contact_phone=contact_phone,
         province_code=province_code, city_code=city_code, address=address,
+        source="admin",
     )
     db.add(inst)
     await db.flush()
@@ -29,11 +30,13 @@ async def create_institution(
 
 
 async def list_institutions(
-    db: AsyncSession, *, status: str | None = None
+    db: AsyncSession, *, status: str | None = None, source: str | None = None
 ) -> list[Institution]:
     q = select(Institution)
     if status:
         q = q.where(Institution.status == status)
+    if source:
+        q = q.where(Institution.source == source)
     q = q.order_by(Institution.created_at.desc())
     return list((await db.execute(q)).scalars().all())
 

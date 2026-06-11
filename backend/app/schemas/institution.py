@@ -113,6 +113,7 @@ class AdminInstitutionOut(BaseModel):
     city_code: str
     address: str
     status: str
+    source: str = "admin"
     created_at: dt.datetime
 
 

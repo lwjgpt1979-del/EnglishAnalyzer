@@ -85,7 +85,7 @@ export function updateEssayTemplates(payload: Record<string, { template: string;
 export interface AdminInstitution {
   id: string; name: string; contact_phone: string
   province_code: string; city_code: string; address: string
-  status: string; created_at: string
+  status: string; source: string; created_at: string
 }
 
 export function createInstitution(data: {
@@ -93,8 +93,11 @@ export function createInstitution(data: {
 }): Promise<AdminInstitution> {
   return unwrap<AdminInstitution>(request.post('/admin/institutions', data))
 }
-export function listInstitutions(status?: string): Promise<AdminInstitution[]> {
-  const q = status ? `?status=${status}` : ''
+export function listInstitutions(status?: string, source?: string): Promise<AdminInstitution[]> {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  if (source) params.set('source', source)
+  const q = params.toString() ? `?${params.toString()}` : ''
   return unwrap<AdminInstitution[]>(request.get(`/admin/institutions${q}`))
 }
 export function approveInstitution(id: string, adminUsername: string): Promise<{ institution_id: string; admin_username: string; password: string }> {

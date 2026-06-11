@@ -118,7 +118,7 @@ async def apply_institution(
     inst = Institution(
         id=uuid.uuid4(), name=name, contact_phone=contact_phone,
         province_code=province_code, city_code=city_code, address=address,
-        status="pending",
+        status="pending", source="self_apply",
     )
     db.add(inst)
     await db.flush()

@@ -8,9 +8,12 @@ import {
 
 const form = reactive({ name: '', contact_phone: '', province_code: '', city_code: '', address: '' })
 const filter = ref('')
+const sourceFilter = ref('')
 const rows = ref<AdminInstitution[]>([])
 
-async function load() { rows.value = await listInstitutions(filter.value || undefined) }
+async function load() {
+  rows.value = await listInstitutions(filter.value || undefined, sourceFilter.value || undefined)
+}
 
 async function submit() {
   if (!form.name) { ElMessage.warning('请填机构名称'); return }
@@ -55,14 +58,25 @@ onMounted(load)
       </el-form>
     </el-card>
 
-    <el-select v-model="filter" placeholder="全部状态" clearable style="width: 160px; margin-bottom: 12px" @change="load">
+    <el-select v-model="filter" placeholder="全部状态" clearable style="width: 160px; margin-bottom: 12px; margin-right: 12px" @change="load">
       <el-option label="待审核" value="pending" />
       <el-option label="已通过" value="active" />
       <el-option label="已拒绝/冻结" value="suspended" />
     </el-select>
+    <el-select v-model="sourceFilter" placeholder="全部来源" clearable style="width: 160px; margin-bottom: 12px" @change="load">
+      <el-option label="自助申请" value="self_apply" />
+      <el-option label="手动录入" value="admin" />
+    </el-select>
 
     <el-table :data="rows" border>
       <el-table-column prop="name" label="名称" />
+      <el-table-column label="来源" width="110">
+        <template #default="{ row }">
+          <el-tag :type="row.source === 'self_apply' ? 'success' : 'info'" size="small" effect="light">
+            {{ row.source === 'self_apply' ? '自助申请' : '手动录入' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="contact_phone" label="电话" />
       <el-table-column prop="status" label="状态" />
       <el-table-column prop="created_at" label="申请时间">

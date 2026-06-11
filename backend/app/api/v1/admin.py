@@ -359,8 +359,10 @@ async def admin_create_institution(body: AdminInstitutionCreate, db: DbDep, admi
 
 
 @router.get("/institutions", response_model=BaseResponse[list[AdminInstitutionOut]])
-async def admin_list_institutions(db: DbDep, admin: AdminDep, status: str | None = None):
-    rows = await admin_institution_service.list_institutions(db, status=status)
+async def admin_list_institutions(
+    db: DbDep, admin: AdminDep, status: str | None = None, source: str | None = None,
+):
+    rows = await admin_institution_service.list_institutions(db, status=status, source=source)
     return make_ok([AdminInstitutionOut.model_validate(i) for i in rows])
 
 

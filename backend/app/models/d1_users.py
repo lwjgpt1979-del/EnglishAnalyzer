@@ -130,6 +130,10 @@ class Institution(Base):
         nullable=False,
         server_default=sa.text("'pending'"),
     )
+    # 来源：'admin'=超管手动录入 / 'self_apply'=对外自助入驻申请（M49）
+    source = mapped_column(
+        sa.String(20), nullable=False, server_default=sa.text("'admin'")
+    )
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
