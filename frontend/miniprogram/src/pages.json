@@ -13,6 +13,10 @@
       "style": { "navigationBarTitleText": "上传错题" }
     },
     {
+      "path": "pages/listening/index",
+      "style": { "navigationBarTitleText": "听力练习" }
+    },
+    {
       "path": "pages/wrong-questions/list",
       "style": { "navigationBarTitleText": "我的错题" }
     },

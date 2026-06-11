@@ -28,6 +28,7 @@ from app.api.v1.learning_plan import router as learning_plan_router
 from app.api.v1.incentive import router as incentive_router
 from app.api.v1.config import router as config_router
 from app.api.v1.tts import router as tts_router
+from app.api.v1.listening import router as listening_router
 
 v1_router = APIRouter()
 
@@ -58,4 +59,5 @@ v1_router.include_router(learning_plan_router)
 v1_router.include_router(incentive_router)
 v1_router.include_router(config_router)
 v1_router.include_router(tts_router)
+v1_router.include_router(listening_router)
 v1_router.include_router(admin_router)

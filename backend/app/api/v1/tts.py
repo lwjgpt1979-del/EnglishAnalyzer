@@ -13,13 +13,13 @@ from app.services import tts_service
 
 router = APIRouter(prefix="/tts", tags=["tts"])
 
-_MAX_TEXT = 300
+_MAX_TEXT = 1000  # 支持整段听力素材
 _CACHE_MAX = 200
 _cache: "OrderedDict[str, bytes]" = OrderedDict()
 
 
 @router.get("/speak")
-async def speak(text: str = Query("", max_length=600)):
+async def speak(text: str = Query("", max_length=1200)):
     """合成并返回 mp3 音频。命中缓存直接复用，dev-mock 返回 204。"""
     text = (text or "").strip()[:_MAX_TEXT]
     if not text:
