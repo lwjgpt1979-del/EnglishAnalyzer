@@ -25,6 +25,25 @@
       </view>
     </view>
 
+    <!-- 手机号绑定 / 换绑 -->
+    <view class="card" v-if="auth.isLoggedIn()">
+      <view class="card-title">手机号</view>
+      <view class="phone-row">
+        <view class="phone-info">
+          <text v-if="boundPhone" class="phone-val">{{ maskedPhone }}</text>
+          <text v-else class="phone-unbound">未绑定</text>
+          <text class="phone-desc">用于账号安全与注销验证</text>
+        </view>
+        <!-- #ifdef MP-WEIXIN -->
+        <button
+          class="btn-phone"
+          open-type="getPhoneNumber"
+          @getphonenumber="onBindPhone"
+        >{{ boundPhone ? '换绑' : '微信绑定' }}</button>
+        <!-- #endif -->
+      </view>
+    </view>
+
     <!-- V2 M23 教材偏好 -->
     <view class="card" v-if="auth.isLoggedIn()">
       <view class="card-title">教材偏好</view>
@@ -233,7 +252,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms, getMyRelatives, unbindRelative } from '@/api/relative'
 import { listMySemesters } from '@/api/semesters'
-import { updateProfile } from '@/api/auth'
+import { updateProfile, wxBindPhone } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { PROVINCES, PROVINCE_NAMES, getCitiesForProvince, getCityName, getProvinceName } from '@/data/cities'
 import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
@@ -244,6 +263,24 @@ const SEMESTERS = ['上', '下']
 
 const auth = useAuthStore()
 const myInvite = ref<{ code: string; expires_at: string } | null>(null)
+
+// 手机号绑定 / 换绑
+const boundPhone = computed(() => (auth.user as any)?.phone || '')
+const maskedPhone = computed(() => {
+  const p = boundPhone.value
+  return p.length === 11 ? `${p.slice(0, 3)}****${p.slice(7)}` : p
+})
+async function onBindPhone(e: any) {
+  const code = e?.detail?.code
+  if (!code) { uni.showToast({ title: '已取消授权', icon: 'none' }); return }
+  try {
+    const r = await wxBindPhone(code)
+    if (auth.user) (auth.user as any).phone = r.phone
+    uni.showToast({ title: '绑定成功', icon: 'success' })
+  } catch (err: any) {
+    uni.showToast({ title: err?.message || '绑定失败', icon: 'none' })
+  }
+}
 
 // M23/M27 教材偏好 + 城市
 const showPrefEdit = ref(false)
@@ -600,6 +637,20 @@ function goBuySemester() {
 .rel-rel { font-size: 24rpx; color: var(--c-text-hint); }
 .btn-unbind { background: #fdecea; color: #e74c3c; border: 2rpx solid #f5c6c6; border-radius: var(--r-sm); font-size: 24rpx; padding: 8rpx 20rpx; }
 .btn-unbind[disabled] { opacity: 0.5; }
+/* 手机号 */
+.phone-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.phone-info { display: flex; flex-direction: column; gap: 6rpx; min-width: 0; }
+.phone-val { font-size: 32rpx; font-weight: 700; color: var(--c-ink); letter-spacing: 2rpx; }
+.phone-unbound { font-size: 30rpx; font-weight: 600; color: var(--c-text-hint); }
+.phone-desc { font-size: 22rpx; color: var(--c-text-hint); }
+.btn-phone {
+  flex-shrink: 0; margin: 0;
+  background: var(--c-primary-faint); color: var(--c-primary-deep);
+  border: 2rpx solid var(--c-primary-soft); border-radius: var(--r-md);
+  font-size: 26rpx; font-weight: 600; padding: 12rpx 32rpx; line-height: 1.5;
+}
+.btn-phone::after { border: none; }
+
 /* M23 pref */
 .pref-row { display: flex; justify-content: space-between; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .pref-row:last-of-type { border-bottom: none; }

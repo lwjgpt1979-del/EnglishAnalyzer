@@ -14,6 +14,7 @@ class UserMeOut(BaseModel):
     nickname: str | None
     avatar_url: str | None
     is_active: bool
+    phone: str | None = None
 
     # 合规字段（默认值保持向后兼容）
     profile_completed: bool = False

@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { onLaunch } from '@dcloudio/uni-app'
 import { request } from '@/utils/request'
+import { useAuthStore } from '@/stores/auth'
 
 // M11：启动拉取平台上线主题，H5 注入 CSS 变量（小程序见 build 期 token）
 async function applyActiveTheme() {
@@ -29,6 +30,8 @@ async function applyActiveTheme() {
 onLaunch(() => {
   console.log('[App] launched')
   applyActiveTheme()
+  // 已有 token → 恢复用户信息（个人页等依赖 auth.user）
+  useAuthStore().restore()
 })
 </script>
 

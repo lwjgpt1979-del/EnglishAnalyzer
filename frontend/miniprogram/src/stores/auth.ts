@@ -63,6 +63,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * 冷启动 / 刷新时恢复用户：已有 token 但 user 为空则拉 /me 填充。
+   * token 失效则静默忽略，后续业务接口 401 时再统一处理。
+   */
+  async function restore(): Promise<void> {
+    if (!token.value || user.value) return
+    try {
+      user.value = await getMyProfile()
+    } catch (e) {
+      console.warn('[auth.restore] fetch /me failed:', e)
+    }
+  }
+
   function logout(): void {
     token.value = ''
     user.value = null
@@ -70,5 +83,5 @@ export const useAuthStore = defineStore('auth', () => {
     uni.removeStorageSync('refresh_token')
   }
 
-  return { token, user, loginLoading, isLoggedIn, login, logout }
+  return { token, user, loginLoading, isLoggedIn, login, restore, logout }
 })

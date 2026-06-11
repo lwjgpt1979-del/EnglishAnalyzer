@@ -39,6 +39,7 @@ async def get_me(
             nickname=current_user.nickname,
             avatar_url=current_user.avatar_url,
             is_active=current_user.is_active,
+            phone=current_user.phone,
             profile_completed=current_user.profile_completed,
             birth_year=current_user.birth_year,
             deactivation_scheduled_at=current_user.deactivation_scheduled_at,
