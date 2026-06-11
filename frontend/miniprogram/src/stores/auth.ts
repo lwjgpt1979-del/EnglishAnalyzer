@@ -10,9 +10,9 @@ export const useAuthStore = defineStore('auth', () => {
   const loginLoading = ref(false)
 
   function isLoggedIn(): boolean {
-    // NOTE: only checks for token existence, not expiry.
-    // An expired token will cause a 401 → auto-reLaunch on first API call.
-    // TODO: add silent refresh via refresh_token when token expiry check is added.
+    // 仅检查 token 是否存在，不校验过期。
+    // 过期(401)由 utils/request 拦截层用 refresh_token 静默续期并重试一次，
+    // 续期失败才清会话并提示重新登录。
     return !!token.value
   }
 
