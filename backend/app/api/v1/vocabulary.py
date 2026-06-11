@@ -17,13 +17,15 @@ from app.schemas.vocabulary import (
     DailyTaskOut,
     MakeUpIn,
     MakeUpResult,
+    ShadowScoreIn,
+    ShadowScoreResult,
     StudentCalendarOut,
     VocabAnswerIn,
     VocabAnswerResult,
     WrongWordItem,
     WrongWordListOut,
 )
-from app.services import checkin_service, vocabulary_service
+from app.services import checkin_service, speech_score_service, vocabulary_service
 
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
 
@@ -37,6 +39,13 @@ async def daily_task(db: DbDep, current_user: UserDep):
     await get_rls_db(db, str(current_user.id))
     task = await vocabulary_service.get_daily_task(db, student_id=current_user.id)
     return make_ok(task)
+
+
+@router.post("/shadow-score", response_model=BaseResponse[ShadowScoreResult])
+async def shadow_score(body: ShadowScoreIn, current_user: UserDep):
+    """跟读发音评分：对一句例句的跟读录音评分（MVP dev mock）。"""
+    result = speech_score_service.score_pronunciation(reference_text=body.reference_text)
+    return make_ok(ShadowScoreResult(**result))
 
 
 @router.post("/answer", response_model=BaseResponse[VocabAnswerResult])

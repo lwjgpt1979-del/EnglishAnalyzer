@@ -12,6 +12,22 @@ export function getDailyTask(): Promise<VocabDailyTask> {
   return request<VocabDailyTask>('/api/v1/vocabulary/daily-task', { method: 'GET' })
 }
 
+export interface ShadowWordScore { word: string; score: number }
+export interface ShadowScoreResult {
+  overall: number
+  level: string
+  words: ShadowWordScore[]
+  tip: string
+}
+
+/** 跟读发音评分 */
+export function shadowScore(referenceText: string): Promise<ShadowScoreResult> {
+  return request<ShadowScoreResult>('/api/v1/vocabulary/shadow-score', {
+    method: 'POST',
+    data: { reference_text: referenceText },
+  })
+}
+
 export function submitVocabAnswer(
   wordId: string,
   correct: boolean,

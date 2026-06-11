@@ -143,3 +143,20 @@ class MakeUpResult(BaseModel):
     date: str
     current_streak: int
     longest_streak: int
+
+
+# ── 跟读发音评分（听力跟读模块·嵌入词力通例句）────────────────────────────
+class ShadowScoreIn(BaseModel):
+    reference_text: str = Field(..., min_length=1, description="跟读的参照句子文本")
+
+
+class ShadowWordScore(BaseModel):
+    word: str
+    score: int
+
+
+class ShadowScoreResult(BaseModel):
+    overall: int
+    level: str                       # excellent/good/fair/poor
+    words: list[ShadowWordScore]
+    tip: str

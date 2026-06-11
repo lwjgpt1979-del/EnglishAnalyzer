@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     doubao_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     doubao_vision_model: str = "doubao-seed-2-0-mini-260428"
 
+    # 语音评测（听力跟读·发音评分）
+    speech_eval_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填 'iflytek'/'aliyun'
+
     # SMS 短信服务
     sms_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填 'aliyun'
     sms_access_key_id: str = ""

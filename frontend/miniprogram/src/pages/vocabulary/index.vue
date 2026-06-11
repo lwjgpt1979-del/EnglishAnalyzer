@@ -33,7 +33,10 @@
       </view>
       <view class="examples" v-if="exampleList(curStudy).length">
         <text class="ex-title">例句</text>
-        <text v-for="(e, i) in exampleList(curStudy)" :key="i" class="ex-line">{{ e }}</text>
+        <view v-for="(e, i) in exampleList(curStudy)" :key="i" class="ex-row">
+          <text class="ex-line">{{ e }}</text>
+          <text class="ex-shadow-btn" @tap="openShadow(e)">🎤 跟读</text>
+        </view>
       </view>
 
       <!-- 图背单词：配图 -->
@@ -112,12 +115,59 @@
       <button class="btn-primary" @tap="reload">再来一组</button>
       <button class="btn-ghost" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">查看错词本</button>
     </view>
+
+    <!-- 跟读评分弹窗 -->
+    <view v-if="shadow.open" class="shadow-modal" @tap.self="closeShadow">
+      <view class="shadow-card">
+        <view class="shadow-title">🎤 跟读练习</view>
+        <text class="shadow-sentence">{{ shadow.text }}</text>
+
+        <view class="shadow-tools">
+          <text class="shadow-demo" @tap="playShadowDemo">🔊 示范</text>
+        </view>
+
+        <!-- 录音 / 评分态 -->
+        <view v-if="!shadow.result" class="shadow-rec-area">
+          <button
+            class="shadow-rec-btn"
+            :class="{ recording: shadow.recording }"
+            :disabled="shadow.scoring"
+            @tap="shadow.recording ? stopAndScore() : startShadowRecord()"
+          >
+            {{ shadow.scoring ? '评分中…' : (shadow.recording ? '● 录音中，点击结束' : '开始跟读') }}
+          </button>
+          <text class="shadow-hint">点击开始，朗读上面的句子</text>
+        </view>
+
+        <!-- 评分结果 -->
+        <view v-else class="shadow-result">
+          <view class="shadow-score" :class="`lv-${shadow.result.level}`">
+            <text class="ss-num">{{ shadow.result.overall }}</text>
+            <text class="ss-unit">分 · {{ levelLabel(shadow.result.level) }}</text>
+          </view>
+          <view class="shadow-words">
+            <text
+              v-for="(w, i) in shadow.result.words" :key="i"
+              class="sw-chip" :class="{ weak: w.score < 80 }"
+            >{{ w.word }} <text class="sw-score">{{ w.score }}</text></text>
+          </view>
+          <view class="shadow-tip">💡 {{ shadow.result.tip }}</view>
+          <view class="shadow-actions">
+            <button v-if="shadow.recordPath" class="btn-ghost half" @tap="playMyRecord">▶ 我的录音</button>
+            <button class="btn-primary half" @tap="retryShadow">🔁 重跟</button>
+          </view>
+        </view>
+
+        <text class="shadow-close" @tap="closeShadow">关闭</text>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin } from '@/api/vocabulary'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore } from '@/api/vocabulary'
+import type { ShadowScoreResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { useAuthStore } from '@/stores/auth'
 import type { VocabWordCard } from '@/types/api'
@@ -365,6 +415,79 @@ function reload() {
   load()
 }
 
+// ── 跟读评分（听力跟读·嵌入例句）──────────────────────────────────────────
+const shadow = reactive({
+  open: false,
+  text: '',
+  recording: false,
+  scoring: false,
+  result: null as ShadowScoreResult | null,
+  recordPath: '',
+})
+
+function levelLabel(lv: string) {
+  return ({ excellent: '优秀', good: '良好', fair: '及格', poor: '待加强' } as Record<string, string>)[lv] || lv
+}
+
+function openShadow(text: string) {
+  Object.assign(shadow, { open: true, text, recording: false, scoring: false, result: null, recordPath: '' })
+}
+
+function closeShadow() {
+  // #ifdef MP-WEIXIN
+  if (shadow.recording) { try { _recorder?.stop() } catch { /* ignore */ } }
+  // #endif
+  shadow.open = false
+  shadow.recording = false
+}
+
+function playShadowDemo() {
+  // 例句暂无独立音频：退用单词/英文描述音频作示范；都没有则提示
+  const src = curStudy.value?.en_desc_audio_url || curStudy.value?.word_audio_url
+  if (src) playAudio(src)
+  else uni.showToast({ title: '本句暂无示范音频', icon: 'none' })
+}
+
+let _recorder: UniApp.RecorderManager | null = null
+function startShadowRecord() {
+  shadow.result = null
+  // #ifdef MP-WEIXIN
+  try {
+    if (!_recorder) _recorder = uni.getRecorderManager()
+    _recorder.onStop((res) => { shadow.recordPath = (res as { tempFilePath?: string }).tempFilePath || '' })
+    _recorder.start({ format: 'mp3', duration: 60000 })
+    shadow.recording = true
+    return
+  } catch { /* 不支持则退回直接评分 */ }
+  // #endif
+  // H5 / 不支持录音：直接进入「录音中」态，结束即评分（演示用）
+  shadow.recording = true
+}
+
+async function stopAndScore() {
+  // #ifdef MP-WEIXIN
+  try { _recorder?.stop() } catch { /* ignore */ }
+  // #endif
+  shadow.recording = false
+  shadow.scoring = true
+  try {
+    shadow.result = await shadowScore(shadow.text)
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '评分失败', icon: 'none' })
+  } finally {
+    shadow.scoring = false
+  }
+}
+
+function retryShadow() {
+  shadow.result = null
+  shadow.recordPath = ''
+}
+
+function playMyRecord() {
+  if (shadow.recordPath) playAudio(shadow.recordPath)
+}
+
 onMounted(load)
 </script>
 
@@ -385,7 +508,9 @@ onMounted(load)
 .audio-btn { font-size: 28rpx; color: var(--c-gold); font-weight: 600; }
 .examples { margin-top: 24rpx; padding-top: 20rpx; border-top: 1rpx solid var(--c-bg-soft); }
 .ex-title { font-size: 24rpx; color: var(--c-text-hint); display: block; margin-bottom: 8rpx; }
-.ex-line { display: block; font-size: 28rpx; color: var(--c-text-second); line-height: 1.7; }
+.ex-row { display: flex; align-items: center; gap: 12rpx; margin-bottom: 6rpx; }
+.ex-line { flex: 1; font-size: 28rpx; color: var(--c-text-second); line-height: 1.7; }
+.ex-shadow-btn { flex-shrink: 0; font-size: 22rpx; font-weight: 600; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 6rpx 16rpx; border-radius: var(--r-pill); }
 .quiz-type { font-size: 24rpx; color: var(--c-gold); font-weight: 600; }
 .quiz-prompt { font-size: 44rpx; font-weight: 700; color: var(--c-ink); text-align: center; margin: 32rpx 0 40rpx; }
 .option { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 28rpx 24rpx; font-size: 30rpx; color: var(--c-text-body); margin-bottom: 20rpx; }
@@ -416,4 +541,32 @@ onMounted(load)
 .cp-cell.blank { visibility: hidden; }
 .cp-hint { font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
 .btn-ghost { background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; margin-top: 16rpx; text-align: center; }
+
+/* ── 跟读评分弹窗 ── */
+.shadow-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.shadow-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: 40rpx 36rpx; width: 84%; max-width: 640rpx; display: flex; flex-direction: column; align-items: center; }
+.shadow-title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); margin-bottom: 20rpx; }
+.shadow-sentence { font-size: 32rpx; font-weight: 600; color: var(--c-ink); line-height: 1.6; text-align: center; }
+.shadow-tools { margin: 20rpx 0; }
+.shadow-demo { font-size: 26rpx; font-weight: 600; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 10rpx 28rpx; border-radius: var(--r-pill); }
+.shadow-rec-area { display: flex; flex-direction: column; align-items: center; gap: 12rpx; margin-top: 12rpx; width: 100%; }
+.shadow-rec-btn { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-size: 30rpx; font-weight: 700; padding: 22rpx 0; width: 100%; }
+.shadow-rec-btn.recording { background: var(--c-danger); }
+.shadow-rec-btn[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
+.shadow-hint { font-size: 22rpx; color: var(--c-text-hint); }
+.shadow-result { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 18rpx; margin-top: 8rpx; }
+.shadow-score { display: flex; align-items: baseline; gap: 10rpx; }
+.ss-num { font-size: 80rpx; font-weight: 900; line-height: 1; }
+.ss-unit { font-size: 26rpx; color: var(--c-text-second); }
+.shadow-score.lv-excellent .ss-num, .shadow-score.lv-good .ss-num { color: #18a058; }
+.shadow-score.lv-fair .ss-num { color: var(--c-gold); }
+.shadow-score.lv-poor .ss-num { color: var(--c-danger); }
+.shadow-words { display: flex; flex-wrap: wrap; gap: 12rpx; justify-content: center; }
+.sw-chip { font-size: 24rpx; color: var(--c-text-body); background: var(--c-bg-soft); padding: 6rpx 16rpx; border-radius: var(--r-pill); }
+.sw-chip.weak { background: var(--c-danger-bg); color: var(--c-danger); font-weight: 600; }
+.sw-score { font-size: 20rpx; opacity: .8; }
+.shadow-tip { font-size: 26rpx; color: var(--c-text-second); line-height: 1.6; text-align: center; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; width: 100%; box-sizing: border-box; }
+.shadow-actions { display: flex; gap: 16rpx; width: 100%; }
+.shadow-actions .half { flex: 1; margin-top: 0; }
+.shadow-close { margin-top: 24rpx; font-size: 26rpx; color: var(--c-text-hint); }
 </style>
