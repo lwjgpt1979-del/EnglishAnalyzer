@@ -17,6 +17,14 @@
       "style": { "navigationBarTitleText": "听力练习" }
     },
     {
+      "path": "pages/self-exam/index",
+      "style": { "navigationBarTitleText": "自助出卷" }
+    },
+    {
+      "path": "pages/self-exam/answer",
+      "style": { "navigationBarTitleText": "模拟卷作答" }
+    },
+    {
       "path": "pages/wrong-questions/list",
       "style": { "navigationBarTitleText": "我的错题" }
     },
