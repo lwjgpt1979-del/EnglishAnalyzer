@@ -44,7 +44,12 @@
     <view v-else class="chat-wrap">
       <view class="chat-top">
         <text class="ct-leave" @tap="leave">← 换场景</text>
-        <text class="ct-end" @tap="endAndRate">结束并评价</text>
+        <view class="ct-right">
+          <text class="ct-auto" :class="{ on: autoPlay }" @tap="autoPlay = !autoPlay">
+            {{ autoPlay ? '🔊 自动播放' : '🔇 自动播放' }}
+          </text>
+          <text class="ct-end" @tap="endAndRate">结束并评价</text>
+        </view>
       </view>
       <scroll-view scroll-y class="chat" :scroll-top="scrollTop" :scroll-with-animation="true">
         <view class="chat-inner">
@@ -73,20 +78,45 @@
         </view>
       </scroll-view>
 
-      <!-- 输入条 -->
+      <!-- 输入条（微信式：默认语音，可切键盘）-->
       <view class="input-bar">
         <!-- #ifdef MP-WEIXIN -->
-        <view class="mic" :class="{ rec: recording }" @touchstart="micStart" @touchend="micEnd">
-          <text>{{ recording ? '松开发送' : '🎤' }}</text>
+        <view class="mode-toggle" @tap="toggleMode">
+          <text class="mt-ico">{{ inputMode === 'voice' ? '⌨' : '🎙' }}</text>
         </view>
+        <view
+          v-if="inputMode === 'voice'"
+          class="hold-btn" :class="{ holding: recording }"
+          @touchstart="micStart" @touchmove="micMove"
+          @touchend="micEnd" @touchcancel="micEnd"
+        >{{ recording ? '松开 发送' : '按住 说话' }}</view>
         <!-- #endif -->
         <input
+          v-if="inputMode === 'text'"
           class="ti" v-model="draft" type="text" confirm-type="send"
-          placeholder="打字或按住🎤说英语…" @confirm="send"
+          placeholder="说点什么…" @confirm="send"
         />
-        <button class="send" :disabled="!draft.trim() || thinking" @tap="send">发送</button>
+        <button
+          v-if="inputMode === 'text'"
+          class="send" :disabled="!draft.trim() || thinking" @tap="send"
+        >发送</button>
       </view>
     </view>
+
+    <!-- #ifdef MP-WEIXIN -->
+    <!-- 微信式「按住说话」录音浮层 -->
+    <view v-if="recording" class="rec-mask">
+      <view class="rec-panel" :class="{ cancel: cancelZone }">
+        <view v-if="!cancelZone" class="rec-wave">
+          <view v-for="i in 5" :key="i" class="wbar" :style="{ animationDelay: (i * 0.12) + 's' }" />
+        </view>
+        <text v-else class="rec-cancel-ico">✕</text>
+      </view>
+      <text class="rec-tip" :class="{ cancel: cancelZone }">
+        {{ cancelZone ? '松开手指，取消发送' : '正在聆听… 上滑取消' }}
+      </text>
+    </view>
+    <!-- #endif -->
 
     <!-- 结束评价 -->
     <view v-if="summary" class="mask" @tap="summary = null">
@@ -161,6 +191,17 @@ const draft = ref('')
 const thinking = ref(false)
 const scrollTop = ref(0)
 const recording = ref(false)
+const cancelZone = ref(false)
+const autoPlay = ref(true)   // AI 回复自动播放语音
+// 输入模式：微信端默认语音，H5 只用文字
+const inputMode = ref<'voice' | 'text'>('text')
+// #ifdef MP-WEIXIN
+inputMode.value = 'voice'
+// #endif
+function toggleMode() {
+  if (recording.value) return
+  inputMode.value = inputMode.value === 'voice' ? 'text' : 'voice'
+}
 const summary = ref<SpeakSummary | null>(null)
 const rating = ref(false)
 
@@ -215,8 +256,10 @@ async function start(key: string) {
 }
 
 function pushAi(text: string, audio: string, translation = '', correction = '') {
-  messages.value.push({ role: 'assistant', text, audio, translation, correction, showTr: false })
+  const msg: Msg = { role: 'assistant', text, audio, translation, correction, showTr: false }
+  messages.value.push(msg)
   scrollToEnd()
+  if (audio && autoPlay.value) playAudio(msg)   // AI 回复自动播放
 }
 
 async function send() {
@@ -255,7 +298,7 @@ function playAudio(m: Msg) {
     _ctx.onStop(() => { if (_cur) _cur.playing = false })
     _ctx.onError(() => { if (_cur) _cur.playing = false })
   }
-  if (_cur && _cur.playing) { _cur.playing = false; try { _ctx.stop() } catch { /* ignore */ } }
+  if (_cur && _cur !== m) _cur.playing = false   // 切换播放对象：重设 src 自动中断上一段
   _cur = m
   m.playing = true
   _ctx.src = m.audio
@@ -278,27 +321,74 @@ function getMgr() {
     _mgr.onRecognize = () => { /* 中间结果忽略 */ }
     _mgr.onStop = (res: any) => {
       recording.value = false
+      _busy = false
+      if (_canceled) { _canceled = false; return }   // 上滑取消：丢弃结果
       const text = (res && res.result || '').trim()
       if (text) { draft.value = text; send() }
       else uni.showToast({ title: '没听清，再说一次或打字', icon: 'none' })
     }
-    _mgr.onError = () => {
+    _mgr.onError = (res: any) => {
       recording.value = false
-      uni.showToast({ title: '语音识别不可用，请打字', icon: 'none' })
+      _busy = false
+      if (_canceled) { _canceled = false; return }
+      // eslint-disable-next-line no-console
+      console.warn('[WechatSI onError]', JSON.stringify(res))
+      const raw = res && (res.msg || res.errMsg) || ''
+      const friendly = /finish|忙|wait/i.test(raw) ? '识别还在处理，请稍候再说' : '语音识别失败，请打字'
+      uni.showToast({ title: friendly, icon: 'none', duration: 2000 })
     }
     return _mgr
-  } catch {
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[WechatSI requirePlugin 失败]', e)
     return null
   }
 }
-function micStart() {
+let _recStartAt = 0
+let _startY = 0
+let _busy = false       // 上一句识别处理中（stop 后等 onStop/onError）
+let _canceled = false   // 本次上滑取消
+const CANCEL_DY = 80    // 上滑超过此距离(px)进入取消区
+
+function micStart(e: any) {
+  if (_busy) { uni.showToast({ title: '上一句还在识别，请稍候', icon: 'none' }); return }
   const mgr = getMgr()
   if (!mgr) { uni.showToast({ title: '未启用语音插件，请打字', icon: 'none' }); return }
+  _startY = e?.touches?.[0]?.clientY ?? e?.changedTouches?.[0]?.clientY ?? 0
+  cancelZone.value = false
+  _canceled = false
   recording.value = true
-  mgr.start({ lang: 'en_US' })
+  _recStartAt = Date.now()
+  try { mgr.start({ lang: 'en_US', duration: 30000 }) } catch (e2) {
+    recording.value = false
+    // eslint-disable-next-line no-console
+    console.warn('[WechatSI start 失败]', e2)
+    uni.showToast({ title: '无法开始录音，请打字', icon: 'none' })
+  }
+}
+function micMove(e: any) {
+  if (!recording.value) return
+  const y = e?.touches?.[0]?.clientY ?? 0
+  cancelZone.value = (_startY - y) > CANCEL_DY
 }
 function micEnd() {
   if (!recording.value) return
+  recording.value = false
+  const wasCancel = cancelZone.value
+  cancelZone.value = false
+  if (Date.now() - _recStartAt < 400) {
+    _canceled = true
+    try { getMgr()?.stop() } catch { /* ignore */ }
+    uni.showToast({ title: '按住说话时间太短', icon: 'none' })
+    return
+  }
+  if (wasCancel) {
+    _canceled = true
+    try { getMgr()?.stop() } catch { /* ignore */ }
+    uni.showToast({ title: '已取消', icon: 'none' })
+    return
+  }
+  _busy = true   // 进入识别处理，结果回来前不允许再次开始
   const mgr = getMgr()
   if (mgr) mgr.stop()
 }
@@ -315,14 +405,14 @@ function micEnd() {
 .sec-head { padding: 14rpx 24rpx 0; display: flex; align-items: baseline; gap: 14rpx; flex-wrap: wrap; }
 .sec-name { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
 .sec-desc { font-size: 22rpx; color: var(--c-text-hint); }
-.grid { display: flex; flex-wrap: wrap; gap: 20rpx; padding: 16rpx 24rpx; }
-.sc-card { width: calc(50% - 10rpx); box-sizing: border-box; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 26rpx 22rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); display: flex; flex-direction: column; gap: 10rpx; }
+.grid { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 12rpx 24rpx; }
+.sc-card { width: 48%; box-sizing: border-box; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 22rpx 20rpx; margin-bottom: 18rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); display: flex; flex-direction: column; gap: 8rpx; }
 .sc-card.custom { background: linear-gradient(160deg, var(--c-primary-faint), var(--c-bg-card)); border: 2rpx solid var(--c-primary-soft); }
 .sc-top { display: flex; align-items: center; justify-content: space-between; }
-.sc-tag { font-size: 18rpx; font-weight: 700; color: var(--c-primary-deep); background: #fff; padding: 4rpx 12rpx; border-radius: var(--r-pill); }
-.sc-emoji { font-size: 48rpx; }
-.sc-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
-.sc-open { font-size: 22rpx; color: var(--c-text-hint); line-height: 1.5; }
+.sc-tag { font-size: 18rpx; font-weight: 700; color: var(--c-primary-deep); background: #fff; padding: 3rpx 12rpx; border-radius: var(--r-pill); }
+.sc-emoji { font-size: 40rpx; }
+.sc-title { font-size: 28rpx; font-weight: 800; color: var(--c-ink); }
+.sc-open { font-size: 21rpx; color: var(--c-text-hint); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .chat-wrap { display: flex; flex-direction: column; height: 100vh; }
 .chat { flex: 1; min-height: 0; }
@@ -344,14 +434,30 @@ function micEnd() {
 .bubble.thinking { color: var(--c-text-hint); font-size: 26rpx; }
 
 .input-bar { display: flex; align-items: center; gap: 14rpx; padding: 16rpx 20rpx; background: var(--c-bg-card); box-shadow: 0 -4rpx 20rpx rgba(0,0,0,.05); }
-.mic { flex-shrink: 0; width: 76rpx; height: 76rpx; border-radius: 50%; background: var(--c-primary-faint); color: var(--c-primary-deep); display: flex; align-items: center; justify-content: center; font-size: 26rpx; font-weight: 700; }
-.mic.rec { background: var(--c-primary); color: var(--c-on-primary); transform: scale(1.06); }
+.mode-toggle { flex-shrink: 0; width: 76rpx; height: 76rpx; border-radius: 50%; background: var(--c-bg-soft); display: flex; align-items: center; justify-content: center; }
+.mt-ico { font-size: 40rpx; color: var(--c-text-body); line-height: 1; }
+.hold-btn { flex: 1; height: 76rpx; line-height: 76rpx; text-align: center; border-radius: var(--r-pill); background: #fff; border: 2rpx solid var(--c-border); font-size: 30rpx; font-weight: 700; color: var(--c-text-body); }
+.hold-btn.holding { background: var(--c-primary-faint); border-color: var(--c-primary); color: var(--c-primary-deep); }
+
+/* 微信式录音浮层 */
+.rec-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28rpx; z-index: 60; }
+.rec-panel { width: 240rpx; height: 240rpx; border-radius: 36rpx; background: rgba(40,44,52,.92); display: flex; align-items: center; justify-content: center; box-shadow: 0 12rpx 48rpx rgba(0,0,0,.3); }
+.rec-panel.cancel { background: rgba(214,69,69,.95); }
+.rec-wave { display: flex; align-items: center; gap: 10rpx; height: 90rpx; }
+.wbar { width: 12rpx; height: 28rpx; border-radius: 6rpx; background: #7ee0a8; animation: wave .8s ease-in-out infinite; }
+@keyframes wave { 0%,100% { height: 24rpx; opacity:.6 } 50% { height: 84rpx; opacity:1 } }
+.rec-cancel-ico { color: #fff; font-size: 96rpx; font-weight: 800; }
+.rec-tip { font-size: 26rpx; color: #fff; background: rgba(0,0,0,.4); padding: 10rpx 28rpx; border-radius: var(--r-pill); }
+.rec-tip.cancel { background: rgba(214,69,69,.9); }
 .ti { flex: 1; background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 18rpx 24rpx; font-size: 28rpx; color: var(--c-text-body); }
 .send { flex-shrink: 0; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-pill); font-size: 28rpx; font-weight: 700; padding: 0 30rpx; height: 72rpx; line-height: 72rpx; }
 .send[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 
 .chat-top { display: flex; align-items: center; justify-content: space-between; padding: 14rpx 24rpx; background: var(--c-bg-card); box-shadow: 0 2rpx 12rpx rgba(0,0,0,.04); }
 .ct-leave { font-size: 26rpx; color: var(--c-text-hint); }
+.ct-right { display: flex; align-items: center; gap: 14rpx; }
+.ct-auto { font-size: 24rpx; color: var(--c-text-hint); }
+.ct-auto.on { color: var(--c-primary-deep); }
 .ct-end { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 8rpx 22rpx; border-radius: var(--r-pill); }
 
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 40rpx; }
