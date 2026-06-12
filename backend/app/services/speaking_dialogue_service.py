@@ -323,6 +323,43 @@ async def _due_wrong_count(db: AsyncSession, student_id) -> int:
     return int(stats.get("due_today", 0)) + int(stats.get("new_unscheduled", 0))
 
 
+async def _credit_vocab_usage(
+    db: AsyncSession, student_id, *, targets: list[str], user_text: str, history: list[dict],
+) -> list[dict]:
+    """词力通：学生本轮新用对的目标词 → 各记一次 SM-2 正确，推进熟练度。
+
+    只给「本轮出现且此前对话未出现过」的词记分，避免同词刷分。返回 [{word, level}]。
+    """
+    targets = [t for t in (targets or []) if t]
+    if not targets:
+        return []
+    now_low = (user_text or "").lower()
+    prev_low = " ".join(
+        (m.get("text") or "") for m in (history or []) if m.get("role") == "user"
+    ).lower()
+    newly = [w for w in targets if w.lower() in now_low and w.lower() not in prev_low]
+    if not newly:
+        return []
+
+    from sqlalchemy import func
+    from app.models.d5_learning import VocabularyWord
+    from app.services import vocabulary_service
+    out: list[dict] = []
+    for w in newly[:4]:
+        wid = (await db.execute(
+            select(VocabularyWord.id).where(func.lower(VocabularyWord.word) == w.lower()).limit(1)
+        )).scalar_one_or_none()
+        if wid is None:
+            continue
+        try:
+            res = await vocabulary_service.submit_answer(
+                db, student_id=student_id, word_id=wid, correct=True)
+            out.append({"word": w, "level": str(res.level)})
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[Speaking] 词力通记分失败 %s: %s", w, e)
+    return out
+
+
 async def list_personalized(db: AsyncSession, student_id) -> list[dict]:
     """因材施教的个性化场景：学期内容 + 词力通在练 + 错题薄弱点（按后台开关过滤）。"""
     cfg = await get_speaking_config(db)
@@ -544,12 +581,20 @@ async def reply(
         except Exception as e:  # noqa: BLE001
             logger.warning("[Speaking] 错题复习标记失败: %s", e)
 
+    # 词力通：学生本轮新用对的目标词 → 各推进一次熟练度（SM-2）
+    vocab_practiced: list[dict] = []
+    if sc.get("target_kind") == "word":
+        vocab_practiced = await _credit_vocab_usage(
+            db, student_id, targets=sc.get("targets") or [],
+            user_text=user_text, history=history)
+
     return {
         "ai_text": ai_text,
         "ai_audio_url": audio or "",
         "correction": (data.get("correction") or "").strip(),
         "translation": (data.get("translation") or "").strip(),
         "mastered_wrong": mastered_wrong,
+        "vocab_practiced": vocab_practiced,
     }
 
 

@@ -76,8 +76,8 @@ async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
             user_text=body.user_text, stage=_stage(current_user))
     except ValueError:
         raise AppError(code=404, message="场景不存在")
-    if result.get("mastered_wrong"):
-        await db.commit()   # 错题复习已写库
+    if result.get("mastered_wrong") or result.get("vocab_practiced"):
+        await db.commit()   # 错题复习 / 词力通熟练度已写库
     return make_ok(result)
 
 

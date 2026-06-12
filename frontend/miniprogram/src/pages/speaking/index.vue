@@ -287,6 +287,11 @@ async function send() {
       scrollToEnd()
       uni.showToast({ title: '错题复习 +1 ✅', icon: 'success' })
     }
+    if (r.vocab_practiced && r.vocab_practiced.length) {
+      const ws = r.vocab_practiced.map(v => v.word).join('、')
+      messages.value.push({ role: 'system', text: `🔤 用对了「${ws}」，熟练度 +1` })
+      scrollToEnd()
+    }
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '回应失败', icon: 'none' })
   } finally {

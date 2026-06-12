@@ -31,6 +31,7 @@ export interface SpeakReply {
   correction: string
   translation: string
   mastered_wrong?: { kp: string; due_left: number } | null
+  vocab_practiced?: { word: string; level: string }[]
 }
 
 export function getSpeakScenarios(): Promise<SpeakScenarioList> {
