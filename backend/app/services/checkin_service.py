@@ -125,6 +125,22 @@ async def record_checkin(
     return row, progress
 
 
+async def record_study_day(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
+    """把"今天有学习活动"记入打卡（如完成一次口语练习）：今日无打卡行则创建，
+    已存在则保留原值（不覆盖词力通的 new_words/review_done）。返回打卡状态。"""
+    d = _today()
+    row = await _row_for(db, student_id, d)
+    if row is None:
+        dates = await _all_dates(db, student_id)
+        dates.add(d)
+        db.add(StudyCheckin(
+            id=uuid.uuid4(), student_id=student_id, checkin_date=d,
+            new_words_count=0, review_done=False, streak_days=_run_ending_at(dates, d),
+        ))
+        await db.flush()
+    return await get_checkin_status(db, student_id=student_id)
+
+
 async def get_checkin_status(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
     """返回打卡状态：今日是否已打、当前连续、历史最高、今日计数（按日期集合动态算）。"""
     today = _today()

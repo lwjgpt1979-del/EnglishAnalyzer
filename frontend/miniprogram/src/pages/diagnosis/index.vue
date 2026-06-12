@@ -27,6 +27,29 @@
         </view>
       </view>
 
+      <!-- 口语练习维度 -->
+      <view v-if="speakStats && speakStats.total_sessions > 0" class="card speak-card" @tap="() => uni.navigateTo({ url: '/pages/speaking/index' })">
+        <view class="card-title">🗣️ 口语练习</view>
+        <view class="stat-row">
+          <view class="stat-item">
+            <text class="stat-num">{{ speakStats.total_sessions }}</text>
+            <text class="stat-label">累计练习</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-num">{{ speakStats.week_sessions }}</text>
+            <text class="stat-label">本周</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-num">{{ speakStats.avg_score }}</text>
+            <text class="stat-label">平均分</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-num">{{ speakStats.speaking_streak }}<text class="stat-unit">天</text></text>
+            <text class="stat-label">连续口语</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 退步预警（M13）-->
       <view v-if="report.regression_alerts && report.regression_alerts.length > 0" class="card alert-card">
         <view class="alert-head">
@@ -345,6 +368,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { getDiagnosisReport, exportDiagnosisPdf } from '@/api/diagnosis'
 import { getKpAccuracy, getExamHistory, getExamRank } from '@/api/questions'
+import { getSpeakStats, type SpeakStats } from '@/api/speaking'
 import { useAuthStore } from '@/stores/auth'
 import type { DiagnosisReport, KPAccuracyOut, ExamHistoryOut, ExamRankOut } from '@/types/api'
 
@@ -353,6 +377,7 @@ const report = ref<DiagnosisReport | null>(null)
 const kpAccuracy = ref<KPAccuracyOut | null>(null)
 const examHistory = ref<ExamHistoryOut | null>(null)
 const examRank = ref<ExamRankOut | null>(null)
+const speakStats = ref<SpeakStats | null>(null)
 const loading = ref(true)  // true until first fetch completes, prevents "暂无数据" flash
 const exporting = ref(false)
 
@@ -399,6 +424,12 @@ onMounted(async () => {
     examHistory.value = await getExamHistory()
   } catch {
     examHistory.value = null
+  }
+  // 口语维度独立拉取，失败不影响主报告
+  try {
+    speakStats.value = await getSpeakStats()
+  } catch {
+    speakStats.value = null
   }
   // 班级排名独立拉取，失败不影响主报告
   try {
@@ -549,6 +580,8 @@ function activityClass(count: number): string {
 .stat-item { text-align: center; }
 .stat-num { font-size: 56rpx; font-weight: 800; color: var(--c-ink); display: block; }
 .stat-label { font-size: 24rpx; color: var(--c-text-hint); }
+.stat-unit { font-size: 24rpx; font-weight: 600; color: var(--c-text-hint); }
+.speak-card { border-left: 6rpx solid var(--c-primary); }
 
 /* 进度条 */
 .bar-item { display: flex; align-items: center; margin-bottom: 16rpx; }

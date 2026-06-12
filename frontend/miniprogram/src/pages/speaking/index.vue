@@ -96,6 +96,9 @@
           <text class="sr-num">{{ summary.overall }}</text>
           <text class="sr-unit">分</text>
         </view>
+        <view v-if="summary.checkin" class="checkin-line">
+          ✅ 已计入今日打卡 · 连续 <text class="cl-num">{{ summary.checkin.current_streak }}</text> 天 🔥
+        </view>
         <view class="dims">
           <view class="dim"><text class="dim-l">流利度</text><text class="dim-v">{{ summary.fluency }}</text></view>
           <view class="dim"><text class="dim-l">语法</text><text class="dim-v">{{ summary.grammar }}</text></view>
@@ -357,6 +360,8 @@ function micEnd() {
 .score-ring { width: 160rpx; height: 160rpx; border-radius: 50%; background: var(--c-primary-faint); border: 8rpx solid var(--c-primary); display: flex; align-items: baseline; justify-content: center; gap: 4rpx; }
 .sr-num { font-size: 64rpx; font-weight: 900; color: var(--c-primary-deep); }
 .sr-unit { font-size: 24rpx; color: var(--c-primary-deep); }
+.checkin-line { font-size: 24rpx; color: #18a058; background: #e6f8ee; border-radius: var(--r-pill); padding: 8rpx 24rpx; font-weight: 600; }
+.cl-num { font-size: 30rpx; font-weight: 900; color: #18a058; }
 .dims { display: flex; gap: 28rpx; }
 .dim { display: flex; flex-direction: column; align-items: center; gap: 4rpx; }
 .dim-l { font-size: 22rpx; color: var(--c-text-hint); }

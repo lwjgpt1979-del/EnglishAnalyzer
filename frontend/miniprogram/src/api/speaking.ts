@@ -63,6 +63,20 @@ export interface SpeakSummary {
   focus_review?: string     // 专项掌握点评
   focus_used?: string[]     // 已用上的目标词
   focus_missed?: string[]   // 未用到的目标词
+  checkin?: { checked_in_today: boolean; current_streak: number; longest_streak: number }
+}
+
+export interface SpeakStats {
+  total_sessions: number
+  week_sessions: number
+  avg_score: number
+  last_score: number
+  speaking_streak: number
+  last_practiced_at: string | null
+}
+
+export function getSpeakStats(): Promise<SpeakStats> {
+  return request<SpeakStats>('/api/v1/speaking/stats', { method: 'GET' })
 }
 
 export function summarizeSpeak(

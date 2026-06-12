@@ -427,7 +427,7 @@ async def summarize(
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception as e:  # noqa: BLE001
         logger.warning("[Speaking] 总结 LLM 失败，回退 mock: %s", e)
-        return _mock_summary(user_turns)
+        return {**_mock_summary(user_turns), **focus}
 
     def _strlist(v):
         if isinstance(v, list):
@@ -443,4 +443,61 @@ async def summarize(
         "improvements": _strlist(data.get("improvements")) or ["多用完整句子表达"],
         "encouragement": (data.get("encouragement") or "继续加油！").strip(),
         **focus,
+    }
+
+
+async def record_session(
+    db: AsyncSession, *, student_id, scenario_key: str, summary: dict, turns: int,
+) -> dict:
+    """持久化一次口语练习 + 计入今日打卡。返回打卡状态。"""
+    import uuid as _uuid
+    from app.models.d5_learning import SpeakingSession
+    from app.services import checkin_service
+    db.add(SpeakingSession(
+        id=_uuid.uuid4(), student_id=student_id, scenario_key=scenario_key,
+        source=(summary.get("focus_source") or "通用"),
+        score=int(summary.get("overall") or 0),
+        turns=int(turns or 0),
+        used_count=len(summary.get("focus_used") or []),
+        missed_count=len(summary.get("focus_missed") or []),
+    ))
+    await db.flush()
+    return await checkin_service.record_study_day(db, student_id=student_id)
+
+
+async def speaking_stats(db: AsyncSession, student_id) -> dict:
+    """口语维度学情：累计/本周练习数、均分、最近分、连续口语天数。"""
+    from datetime import datetime, timedelta, timezone, date as _date
+    from sqlalchemy import func
+    from app.models.d5_learning import SpeakingSession
+    rows = (await db.execute(
+        select(SpeakingSession.score, SpeakingSession.created_at)
+        .where(SpeakingSession.student_id == student_id)
+        .order_by(SpeakingSession.created_at.desc())
+    )).all()
+    total = len(rows)
+    if total == 0:
+        return {"total_sessions": 0, "week_sessions": 0, "avg_score": 0,
+                "last_score": 0, "speaking_streak": 0, "last_practiced_at": None}
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+    week = sum(1 for _, c in rows if c and c >= week_ago)
+    scores = [s for s, _ in rows if s is not None]
+    avg = round(sum(scores) / len(scores)) if scores else 0
+    # 连续口语天数（以今天/最近一次结尾）
+    days = {c.date() for _, c in rows if c}
+    streak = 0
+    cur = now.date()
+    if cur not in days:
+        cur = max(days)
+    while cur in days:
+        streak += 1
+        cur = cur - timedelta(days=1)
+    return {
+        "total_sessions": total,
+        "week_sessions": week,
+        "avg_score": avg,
+        "last_score": int(rows[0][0] or 0),
+        "speaking_streak": streak,
+        "last_practiced_at": rows[0][1].isoformat() if rows[0][1] else None,
     }

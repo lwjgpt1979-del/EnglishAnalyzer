@@ -85,13 +85,30 @@ class SummaryIn(BaseModel):
 
 @router.post("/summary", response_model=BaseResponse[dict])
 async def summary(body: SummaryIn, current_user: UserDep, db: DbDep):
-    """对话结束 → 本次练习评价（评分 + 亮点 + 改进 + 鼓励）。"""
+    """对话结束 → 本次练习评价（评分 + 亮点 + 改进 + 鼓励）+ 计入打卡。"""
     try:
-        return make_ok(await svc.summarize(
+        result = await svc.summarize(
             db, student_id=current_user.id, scenario_key=body.scenario_key,
             history=[t.model_dump() for t in body.history],
-            stage=_stage(current_user)))
+            stage=_stage(current_user))
     except ValueError as e:
         if "no user turns" in str(e):
             raise AppError(code=400, message="还没开口说话，先聊几句再评价吧")
         raise AppError(code=404, message="场景不存在")
+    turns = sum(1 for t in body.history if t.role == "user")
+    checkin = await svc.record_session(
+        db, student_id=current_user.id, scenario_key=body.scenario_key,
+        summary=result, turns=turns)
+    await db.commit()
+    result["checkin"] = {
+        "checked_in_today": checkin["checked_in_today"],
+        "current_streak": checkin["current_streak"],
+        "longest_streak": checkin["longest_streak"],
+    }
+    return make_ok(result)
+
+
+@router.get("/stats", response_model=BaseResponse[dict])
+async def stats(current_user: UserDep, db: DbDep):
+    """口语维度学情：累计/本周练习数、均分、最近分、连续口语天数。"""
+    return make_ok(await svc.speaking_stats(db, current_user.id))

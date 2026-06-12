@@ -200,3 +200,23 @@ class StudyCheckin(Base):
             name="uix_study_checkins_student_date",
         ),
     )
+
+
+class SpeakingSession(Base):
+    """口语对话练习记录（每完成一次结束评价写一条）。供口语维度学情 + 打卡。"""
+
+    __tablename__ = "speaking_sessions"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, index=True
+    )
+    scenario_key = mapped_column(sa.String, nullable=False)
+    source = mapped_column(sa.String, nullable=True)          # 词力通 / 错题薄弱点 / 学期内容 / 通用
+    score = mapped_column(sa.SmallInteger, nullable=True)     # 本次综合评分 0-100
+    turns = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    used_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    missed_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
