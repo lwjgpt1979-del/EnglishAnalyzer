@@ -68,14 +68,17 @@ async def start(body: StartIn, current_user: UserDep, db: DbDep):
 
 @router.post("/reply", response_model=BaseResponse[dict])
 async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
-    """学生说一句 → AI 回复 + 纠错 + 回复语音。"""
+    """学生说一句 → AI 回复 + 纠错 + 回复语音；错题复习答对则标记复习。"""
     try:
-        return make_ok(await svc.reply(
+        result = await svc.reply(
             db, student_id=current_user.id, scenario_key=body.scenario_key,
             history=[t.model_dump() for t in body.history],
-            user_text=body.user_text, stage=_stage(current_user)))
+            user_text=body.user_text, stage=_stage(current_user))
     except ValueError:
         raise AppError(code=404, message="场景不存在")
+    if result.get("mastered_wrong"):
+        await db.commit()   # 错题复习已写库
+    return make_ok(result)
 
 
 class SummaryIn(BaseModel):

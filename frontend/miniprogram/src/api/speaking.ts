@@ -30,6 +30,7 @@ export interface SpeakReply {
   ai_audio_url: string
   correction: string
   translation: string
+  mastered_wrong?: { kp: string; due_left: number } | null
 }
 
 export function getSpeakScenarios(): Promise<SpeakScenarioList> {

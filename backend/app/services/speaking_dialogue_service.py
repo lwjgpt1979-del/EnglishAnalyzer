@@ -277,6 +277,52 @@ async def _wrong_kp_names(db: AsyncSession, student_id, *, limit: int = 5) -> li
     return [r[0] for r in rows if r[0]]
 
 
+async def _wq_kp_names(db: AsyncSession, wq_id, *, limit: int = 4) -> list[str]:
+    from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
+    rows = (await db.execute(
+        select(KnowledgePoint.name)
+        .join(WrongQuestionKnowledgePoint,
+              WrongQuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+        .where(WrongQuestionKnowledgePoint.wrong_question_id == wq_id).limit(limit)
+    )).all()
+    return [r[0] for r in rows if r[0]]
+
+
+async def _top_due_wrong(db: AsyncSession, student_id) -> dict | None:
+    """取最该复习的一道错题（今日到期优先，其次新错题），含题干/正确答案/知识点。"""
+    from datetime import date as _date
+    from app.models.d3_wrong_questions import WrongQuestion
+    today = _date.today()
+    wq = (await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.student_id == student_id, WrongQuestion.is_mastered.is_(False),
+            WrongQuestion.next_review_at.is_not(None), WrongQuestion.next_review_at <= today,
+        ).order_by(WrongQuestion.next_review_at.asc()).limit(1)
+    )).scalar_one_or_none()
+    if wq is None:
+        wq = (await db.execute(
+            select(WrongQuestion).where(
+                WrongQuestion.student_id == student_id, WrongQuestion.is_mastered.is_(False),
+                WrongQuestion.next_review_at.is_(None),
+            ).order_by(WrongQuestion.created_at.asc()).limit(1)
+        )).scalar_one_or_none()
+    if wq is None:
+        return None
+    return {
+        "id": str(wq.id),
+        "stem": (wq.question_text or "").strip()[:300],
+        "answer": (wq.correct_answer or "").strip()[:200],
+        "student_answer": (wq.student_answer or "").strip()[:200],
+        "kps": await _wq_kp_names(db, wq.id),
+    }
+
+
+async def _due_wrong_count(db: AsyncSession, student_id) -> int:
+    from app.services import review_service
+    stats = await review_service.get_review_stats(db, student_id=student_id)
+    return int(stats.get("due_today", 0)) + int(stats.get("new_unscheduled", 0))
+
+
 async def list_personalized(db: AsyncSession, student_id) -> list[dict]:
     """因材施教的个性化场景：学期内容 + 词力通在练 + 错题薄弱点（按后台开关过滤）。"""
     cfg = await get_speaking_config(db)
@@ -292,11 +338,11 @@ async def list_personalized(db: AsyncSession, student_id) -> list[dict]:
                 "tag": "custom", "source": "词力通",
             })
     if cfg["special"]["wrong"]["enabled"]:
-        wkps = await _wrong_kp_names(db, student_id)
-        if wkps:
+        due = await _due_wrong_count(db, student_id)
+        if due > 0:
             out.append({
-                "key": "wrong", "title": "错题薄弱点", "emoji": "🎯",
-                "opening": "Let's practice the parts you found tricky. Ready when you are!",
+                "key": "wrong", "title": f"错题复习（待复习 {due}）", "emoji": "🎯",
+                "opening": "Let's review a question you got wrong, step by step. Ready?",
                 "tag": "custom", "source": "错题",
             })
     return out
@@ -373,18 +419,28 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
         }
 
     if key == "wrong":
-        kps = await _wrong_kp_names(db, student_id)
-        if not kps:
+        wq = await _top_due_wrong(db, student_id)
+        if wq is None:
             return None
-        focus = (f"The student has been making mistakes on: {', '.join(kps)}. "
-                 f"Gently steer the conversation so they practice these points out loud, "
-                 f"and correct related mistakes.")
+        kp_str = "、".join(wq["kps"]) or "this language point"
+        focus = (
+            f"You are reviewing ONE specific question the student got wrong before. "
+            f"Knowledge point: {kp_str}. "
+            f"Question: \"{wq['stem']}\". Correct answer: \"{wq['answer']}\". "
+            + (f"The student's wrong answer was: \"{wq['student_answer']}\". " if wq['student_answer'] else "")
+            + "Through short friendly dialogue, help them truly understand WHY the correct answer is "
+            "right; then ask ONE simple check question about this point. Set \"mastered\": true ONLY "
+            "after the student answers your check correctly or clearly shows they understand now; "
+            "otherwise keep \"mastered\": false and keep guiding. Do NOT reveal mastered to the student."
+        )
         return {
-            "key": "wrong", "title": "错题薄弱点", "emoji": "🎯", "gender": g,
-            "persona": "a patient coach helping the student practice their tricky points",
-            "opening": "Let's practice the parts you found tricky. Ready when you are!",
-            "focus": focus, "source": "错题薄弱点", "targets": kps, "target_kind": "point",
-            "prompt": cfg["special"]["wrong"]["prompt"],
+            "key": "wrong", "title": "错题复习", "emoji": "🎯", "gender": g,
+            "persona": "a patient coach helping the student understand a question they got wrong",
+            "opening": f"Let's go over a question you missed before about {kp_str}. "
+                       f"What do you remember about it?",
+            "focus": focus, "source": "错题薄弱点", "targets": wq["kps"] or [kp_str],
+            "target_kind": "point", "prompt": cfg["special"]["wrong"]["prompt"],
+            "wrong_question_id": wq["id"],
         }
 
     return None
@@ -447,7 +503,9 @@ async def reply(
             + (f"Personalization: {focus} " if focus else "")
             + "Respond ONLY as compact JSON with keys: reply (your English line), "
             "correction (a short note on the student's mistake, or empty string), "
-            "translation (a Chinese translation of your reply)."
+            "translation (a Chinese translation of your reply), "
+            "mastered (boolean, true ONLY when the student just clearly demonstrated they "
+            "now understand the reviewed point; otherwise false)."
         )
         convo = "\n".join(
             f"{'Student' if m.get('role') == 'user' else 'You'}: {m.get('text', '')}"
@@ -468,11 +526,30 @@ async def reply(
     speed = await tts_service.speed_for_stage_db(db, stage)
     voice = await tts_service.first_voice(db, sc["gender"])
     audio = await tts_service.get_or_create_audio_url(ai_text, voice=voice, speed=speed)
+
+    # 错题复习：学生答对 → 提交一次成功复习（SM-2），从今日待复习队列中减一
+    mastered_wrong = None
+    wq_id = sc.get("wrong_question_id")
+    if wq_id and bool(data.get("mastered")):
+        try:
+            import uuid as _uuid
+            from app.services import review_service
+            await review_service.submit_review(
+                db, wq_id=_uuid.UUID(wq_id), student_id=student_id, quality=5)
+            due_left = await _due_wrong_count(db, student_id)
+            mastered_wrong = {
+                "kp": "、".join(sc.get("targets") or []) or "该知识点",
+                "due_left": due_left,
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[Speaking] 错题复习标记失败: %s", e)
+
     return {
         "ai_text": ai_text,
         "ai_audio_url": audio or "",
         "correction": (data.get("correction") or "").strip(),
         "translation": (data.get("translation") or "").strip(),
+        "mastered_wrong": mastered_wrong,
     }
 
 

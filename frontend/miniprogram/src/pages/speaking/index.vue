@@ -54,7 +54,10 @@
       <scroll-view scroll-y class="chat" :scroll-top="scrollTop" :scroll-with-animation="true">
         <view class="chat-inner">
           <view v-for="(m, i) in messages" :key="i" :class="['row', m.role]">
-            <view v-if="m.role === 'assistant'" class="bubble ai">
+            <view v-if="m.role === 'system'" class="sys-banner">
+              <text>{{ m.text }}</text>
+            </view>
+            <view v-else-if="m.role === 'assistant'" class="bubble ai">
               <text class="b-text">{{ m.text }}</text>
               <view class="b-tools">
                 <text class="b-play" @tap="playAudio(m)">{{ m.playing ? '⏸' : '▶' }} 听</text>
@@ -173,7 +176,7 @@ import {
 } from '@/api/speaking'
 
 interface Msg {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   text: string
   audio?: string
   translation?: string
@@ -276,6 +279,14 @@ async function send() {
       .map(m => ({ role: m.role, text: m.text }))
     const r = await replySpeak(scenarioKey.value, t, history)
     pushAi(r.ai_text, r.ai_audio_url, r.translation, r.correction)
+    if (r.mastered_wrong) {
+      messages.value.push({
+        role: 'system',
+        text: `🎉 答对了！「${r.mastered_wrong.kp}」这道错题已通过复习，待复习剩 ${r.mastered_wrong.due_left} 道`,
+      })
+      scrollToEnd()
+      uni.showToast({ title: '错题复习 +1 ✅', icon: 'success' })
+    }
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '回应失败', icon: 'none' })
   } finally {
@@ -420,6 +431,8 @@ function micEnd() {
 .row { display: flex; }
 .row.assistant { justify-content: flex-start; }
 .row.user { justify-content: flex-end; }
+.row.system { justify-content: center; }
+.sys-banner { max-width: 88%; background: #e6f8ee; color: #18a058; border-radius: 16rpx; padding: 14rpx 22rpx; font-size: 24rpx; font-weight: 600; line-height: 1.5; text-align: center; }
 .bubble { max-width: 78%; border-radius: 22rpx; padding: 18rpx 22rpx; box-shadow: 0 3rpx 16rpx rgba(0,0,0,.05); }
 .bubble.ai { background: var(--c-bg-card); border-top-left-radius: 6rpx; }
 .bubble.me { background: var(--c-primary); border-top-right-radius: 6rpx; }
