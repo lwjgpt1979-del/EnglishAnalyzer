@@ -59,6 +59,10 @@ export interface SpeakSummary {
   highlights: string[]
   improvements: string[]
   encouragement: string
+  focus_source?: string     // 本次专项来源：词力通 / 错题薄弱点 / 学期内容
+  focus_review?: string     // 专项掌握点评
+  focus_used?: string[]     // 已用上的目标词
+  focus_missed?: string[]   // 未用到的目标词
 }
 
 export function summarizeSpeak(

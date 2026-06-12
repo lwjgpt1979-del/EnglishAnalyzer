@@ -204,7 +204,8 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "key": key, "title": title[:18], "emoji": "📖", "gender": g,
             "persona": f"a friendly tutor named Sam chatting about the school topic \"{title}\"",
             "opening": f"Let's chat about \"{title}\". What do you know about it?",
-            "focus": focus,
+            "focus": focus, "source": "学期内容",
+            "targets": ([title] + kps)[:6], "target_kind": "topic",
         }
 
     if key == "vocab":
@@ -217,7 +218,7 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "key": "vocab", "title": "词力通在练词", "emoji": "🔤", "gender": g,
             "persona": "a cheerful word-practice buddy helping the student use new words",
             "opening": f"Time to use your new words! Can you make a sentence with \"{words[0]}\"?",
-            "focus": focus,
+            "focus": focus, "source": "词力通", "targets": words, "target_kind": "word",
         }
 
     if key == "wrong":
@@ -231,7 +232,7 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "key": "wrong", "title": "错题薄弱点", "emoji": "🎯", "gender": g,
             "persona": "a patient coach helping the student practice their tricky points",
             "opening": "Let's practice the parts you found tricky. Ready when you are!",
-            "focus": focus,
+            "focus": focus, "source": "错题薄弱点", "targets": kps, "target_kind": "point",
         }
 
     return None
@@ -343,11 +344,42 @@ def _mock_summary(user_turns: list[str]) -> dict:
     }
 
 
+def _focus_review(sc: dict, user_turns: list[str]) -> dict:
+    """据本次场景的个性化目标(单词/薄弱点/单元)，点评"练到了什么、掌握如何"。
+
+    单词类：按是否在发言中出现做确定性掌握判断；薄弱点/单元类：给专项练习提示。
+    通用预设场景：返回空（前端不展示）。
+    """
+    source = sc.get("source") or ""
+    targets = [t for t in (sc.get("targets") or []) if t]
+    kind = sc.get("target_kind") or ""
+    if not source or not targets:
+        return {"focus_source": "", "focus_review": "", "focus_used": [], "focus_missed": []}
+
+    if kind == "word":
+        joined = " ".join(user_turns).lower()
+        used = [w for w in targets if w.lower() in joined]
+        missed = [w for w in targets if w.lower() not in joined]
+        if used and not missed:
+            note = f"太棒了！本次在练的 {len(used)} 个词都用上了，掌握得不错 👍"
+        elif used:
+            note = (f"本次用上了 {len(used)}/{len(targets)} 个在练词；"
+                    f"还没用到「{'、'.join(missed[:4])}」，下次试着说说看。")
+        else:
+            note = f"本次还没用到在练的词（{'、'.join(targets[:4])}），下次开口造句练一练吧。"
+        return {"focus_source": source, "focus_review": note,
+                "focus_used": used, "focus_missed": missed}
+
+    label = "、".join(targets[:3])
+    note = f"本次围绕「{label}」做了口语练习，多开口、多纠错会更扎实。"
+    return {"focus_source": source, "focus_review": note, "focus_used": [], "focus_missed": []}
+
+
 async def summarize(
     db: AsyncSession, *, student_id, scenario_key: str, history: list[dict],
     stage: str = "junior",
 ) -> dict:
-    """对话结束后给本次练习评价：评分 + 亮点 + 改进 + 鼓励。"""
+    """对话结束后给本次练习评价：评分 + 亮点 + 改进 + 鼓励 + 专项掌握点评。"""
     sc = await resolve_scenario(db, student_id=student_id, key=scenario_key)
     if sc is None:
         raise ValueError("scenario not found")
@@ -356,8 +388,10 @@ async def summarize(
     if not user_turns:
         raise ValueError("no user turns")
 
+    focus = _focus_review(sc, user_turns)
+
     if is_llm_dev_mode():
-        return _mock_summary(user_turns)
+        return {**_mock_summary(user_turns), **focus}
 
     level = _LEVEL_BY_STAGE.get(stage, _LEVEL_BY_STAGE["junior"])
     sys = (
@@ -393,4 +427,5 @@ async def summarize(
         "highlights": _strlist(data.get("highlights")) or ["完成了多轮英语对话"],
         "improvements": _strlist(data.get("improvements")) or ["多用完整句子表达"],
         "encouragement": (data.get("encouragement") or "继续加油！").strip(),
+        **focus,
     }

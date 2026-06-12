@@ -109,6 +109,15 @@
           <text class="sec-t">📈 可提升</text>
           <text v-for="(im, i) in summary.improvements" :key="i" class="sec-li">· {{ im }}</text>
         </view>
+        <!-- 本次专项（因材施教）-->
+        <view v-if="summary.focus_review" class="focus-box">
+          <text class="focus-t">🎯 本次专项 · {{ summary.focus_source }}</text>
+          <text class="focus-review">{{ summary.focus_review }}</text>
+          <view v-if="(summary.focus_used && summary.focus_used.length) || (summary.focus_missed && summary.focus_missed.length)" class="chips">
+            <text v-for="(w, i) in summary.focus_used" :key="'u'+i" class="chip used">✓ {{ w }}</text>
+            <text v-for="(w, i) in summary.focus_missed" :key="'m'+i" class="chip miss">{{ w }}</text>
+          </view>
+        </view>
         <text class="encour">{{ summary.encouragement }}</text>
         <view class="sheet-btns">
           <button class="btn-ghost" @tap="summary = null">继续聊</button>
@@ -344,6 +353,13 @@ function micEnd() {
 .sec { width: 100%; display: flex; flex-direction: column; gap: 6rpx; }
 .sec-t { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
 .sec-li { font-size: 25rpx; color: var(--c-text-second); line-height: 1.6; }
+.focus-box { width: 100%; background: var(--c-primary-faint); border-radius: 16rpx; padding: 18rpx 20rpx; display: flex; flex-direction: column; gap: 8rpx; }
+.focus-t { font-size: 25rpx; font-weight: 800; color: var(--c-primary-deep); }
+.focus-review { font-size: 25rpx; color: var(--c-text-second); line-height: 1.6; }
+.chips { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 4rpx; }
+.chip { font-size: 22rpx; padding: 4rpx 16rpx; border-radius: var(--r-pill); }
+.chip.used { background: #e6f8ee; color: #18a058; }
+.chip.miss { background: #fff; color: var(--c-text-hint); border: 2rpx solid var(--c-border); }
 .encour { font-size: 26rpx; color: var(--c-primary-deep); text-align: center; line-height: 1.6; margin-top: 4rpx; }
 .sheet-btns { display: flex; gap: 16rpx; width: 100%; margin-top: 12rpx; }
 .btn-ghost { flex: 1; background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; }
