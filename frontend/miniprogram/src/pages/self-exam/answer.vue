@@ -87,7 +87,10 @@
         </view>
         <text v-if="it.explanation" class="res-exp">{{ it.explanation }}</text>
       </view>
-      <view class="practice-bar fixed"><button class="btn-primary" @tap="goBack">返回</button></view>
+      <view class="practice-bar fixed result-bar">
+        <button v-if="hasWrong" class="btn-secondary" @tap="goWrongBook">📕 错题回看</button>
+        <button class="btn-primary" @tap="goBack">返回</button>
+      </view>
     </scroll-view>
 
     <view v-if="!loading && !reviewOnly && !result" class="practice-bar fixed">
@@ -122,6 +125,14 @@ const SEC_META: Record<string, { label: string; icon: string }> = {
   writing: { label: '书面表达', icon: '📝' },
 }
 function secLabel(s: string) { return SEC_META[s]?.label || s }
+
+// 是否有归库的错题（客观区答错才进错题本）
+const hasWrong = computed(() =>
+  (result.value?.items || []).some(it => it.section === 'objective' && it.correct === false),
+)
+function goWrongBook() {
+  uni.navigateTo({ url: '/pages/wrong-questions/list' })
+}
 
 const sections = computed(() => {
   const order = ['listening', 'objective', 'writing']
@@ -267,6 +278,8 @@ function goEssay(id?: string | null) {
 .essay-full { font-size: 22rpx; font-weight: 600; color: var(--c-text-hint); }
 .essay-link { font-size: 24rpx; font-weight: 600; color: var(--c-primary); }
 .practice-bar.fixed { position: fixed; left: 0; right: 0; bottom: 0; padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom)); background: var(--c-bg-card); box-shadow: 0 -2rpx 16rpx rgba(0,0,0,.06); }
-.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; }
+.btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; flex: 1; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
+.result-bar { display: flex; gap: 16rpx; }
+.btn-secondary { flex: 1; background: var(--c-primary-faint); color: var(--c-primary-deep); border: 2rpx solid var(--c-primary-soft); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; }
 </style>

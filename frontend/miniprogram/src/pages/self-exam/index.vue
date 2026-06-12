@@ -33,6 +33,34 @@
           <text class="quota-tip">每周 {{ quota.limit }} 份，自然周一 0:00 重置</text>
         </view>
 
+        <!-- 成绩趋势 -->
+        <view v-if="doneExams.length >= 2" class="card">
+          <view class="card-title">成绩趋势</view>
+          <view class="trend-stats">
+            <view class="ts-item">
+              <text class="ts-num">{{ doneExams.length }}</text>
+              <text class="ts-label">已完成</text>
+            </view>
+            <view class="ts-item">
+              <text class="ts-num">{{ avgAcc }}%</text>
+              <text class="ts-label">平均正确率</text>
+            </view>
+            <view class="ts-item">
+              <text class="ts-num">{{ bestAcc }}%</text>
+              <text class="ts-label">最高正确率</text>
+            </view>
+          </view>
+          <view class="bars">
+            <view v-for="(b, i) in bars" :key="i" class="bar-col">
+              <view class="bar-track">
+                <view class="bar-fill" :class="b.cls" :style="{ height: b.pct + '%' }" />
+              </view>
+              <text class="bar-acc">{{ b.acc }}</text>
+            </view>
+          </view>
+          <text class="trend-hint">最近 {{ bars.length }} 次正确率（越高越好）</text>
+        </view>
+
         <!-- 历史记录 -->
         <view class="card">
           <view class="card-title">历史记录</view>
@@ -57,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   getSelfExamQuota, generateSelfExam, getSelfExamHistory,
   type SelfExamBrief,
@@ -67,6 +95,30 @@ const loading = ref(true)
 const generating = ref(false)
 const quota = reactive({ is_promax: false, used: 0, limit: 3, remaining: 3 })
 const history = ref<SelfExamBrief[]>([])
+
+// 已完成的卷（按时间正序，用于趋势）
+const doneExams = computed(() =>
+  history.value.filter(h => h.status === 'done' && h.total)
+    .slice().reverse(),
+)
+function accPct(h: SelfExamBrief) {
+  return Math.round(((h.accuracy ?? (h.correct_count || 0) / (h.total || 1))) * 100)
+}
+const avgAcc = computed(() => {
+  const xs = doneExams.value.map(accPct)
+  return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0
+})
+const bestAcc = computed(() => {
+  const xs = doneExams.value.map(accPct)
+  return xs.length ? Math.max(...xs) : 0
+})
+const bars = computed(() =>
+  doneExams.value.slice(-10).map(h => {
+    const acc = accPct(h)
+    const cls = acc >= 85 ? 'good' : acc >= 60 ? 'mid' : 'low'
+    return { acc, pct: Math.max(6, acc), cls }
+  }),
+)
 
 async function load() {
   try {
@@ -129,4 +181,19 @@ onMounted(load)
 .hist-status.answering { background: var(--c-primary-faint); color: var(--c-primary-deep); }
 .hist-score { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
 .hist-continue { font-size: 26rpx; color: var(--c-primary); }
+
+/* 成绩趋势 */
+.trend-stats { display: flex; justify-content: space-around; margin-bottom: 20rpx; }
+.ts-item { display: flex; flex-direction: column; align-items: center; gap: 4rpx; }
+.ts-num { font-size: 40rpx; font-weight: 900; color: var(--c-primary); }
+.ts-label { font-size: 22rpx; color: var(--c-text-hint); }
+.bars { display: flex; align-items: flex-end; gap: 12rpx; height: 200rpx; padding: 8rpx 4rpx 0; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8rpx; height: 100%; justify-content: flex-end; }
+.bar-track { width: 100%; flex: 1; display: flex; align-items: flex-end; background: var(--c-bg-soft); border-radius: 8rpx; overflow: hidden; }
+.bar-fill { width: 100%; border-radius: 8rpx 8rpx 0 0; transition: height .3s; }
+.bar-fill.good { background: #18a058; }
+.bar-fill.mid { background: var(--c-primary); }
+.bar-fill.low { background: #f0a020; }
+.bar-acc { font-size: 20rpx; color: var(--c-text-second); font-weight: 600; }
+.trend-hint { display: block; text-align: center; font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; }
 </style>
