@@ -387,3 +387,146 @@ async def get_or_create_audio_url(
         logger.error("[TTS] COS 上传失败: %s", e)
         return None
     return url
+
+
+# ── TTS 用量看板 + 预热 ────────────────────────────────────────────────────────
+async def cos_usage() -> dict:
+    """统计 COS 上 tts/ 前缀下的对象数与总字节（每个对象=一次已付费合成）。"""
+    if _is_cos_dev():
+        return {"available": False, "object_count": 0, "total_bytes": 0, "total_mb": 0.0}
+
+    def _scan() -> tuple[int, int]:
+        cli = _get_cos_client()
+        count = 0
+        total = 0
+        marker = ""
+        while True:
+            resp = cli.list_objects(
+                Bucket=settings.cos_bucket, Prefix="tts/", Marker=marker, MaxKeys=1000)
+            for obj in resp.get("Contents", []) or []:
+                count += 1
+                total += int(obj.get("Size", 0))
+            if resp.get("IsTruncated") == "true":
+                marker = resp.get("NextMarker", "")
+                if not marker:
+                    break
+            else:
+                break
+        return count, total
+
+    try:
+        count, total = await asyncio.to_thread(_scan)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[TTS] COS 用量统计失败: %s", e)
+        return {"available": False, "object_count": 0, "total_bytes": 0, "total_mb": 0.0}
+    return {
+        "available": True,
+        "object_count": count,
+        "total_bytes": total,
+        "total_mb": round(total / 1048576, 2),
+    }
+
+
+# 预热任务进程内状态（单任务串行，避免并发打爆火山配额）
+_prewarm_state: dict = {
+    "running": False, "label": "", "total": 0, "done": 0, "ok": 0, "failed": 0,
+}
+
+
+def prewarm_status() -> dict:
+    return dict(_prewarm_state)
+
+
+async def _run_prewarm(texts: list[str], speed: float) -> None:
+    _prewarm_state.update(running=True, total=len(texts), done=0, ok=0, failed=0)
+    try:
+        for t in texts:
+            try:
+                url = await get_or_create_audio_url(t, speed=speed)
+                if url:
+                    _prewarm_state["ok"] += 1
+                else:
+                    _prewarm_state["failed"] += 1
+            except Exception:  # noqa: BLE001
+                _prewarm_state["failed"] += 1
+            _prewarm_state["done"] += 1
+    finally:
+        _prewarm_state["running"] = False
+
+
+async def start_prewarm(
+    db: AsyncSession, *, textbook_version: str, grade: str, semester: str,
+    scope: str = "vocab", limit: int = 50, speed: float = 1.0,
+) -> dict:
+    """收集某学期的词表(单词+英文描述)/听力文本，后台串行预生成入 COS。
+
+    scope: vocab | listening | all。返回 {started, total, label}。
+    """
+    if _prewarm_state["running"]:
+        return {"started": False, "reason": "已有预热任务进行中", **prewarm_status()}
+
+    texts: list[str] = []
+    label_parts: list[str] = []
+
+    if scope in ("vocab", "all"):
+        from app.models.d4_knowledge import CurriculumUnit, CurriculumWord
+        from app.models.d5_learning import VocabularyWord
+        rows = (await db.execute(
+            select(VocabularyWord.word, VocabularyWord.en_description)
+            .join(CurriculumWord, CurriculumWord.word_id == VocabularyWord.id)
+            .join(CurriculumUnit, CurriculumUnit.id == CurriculumWord.unit_id)
+            .where(
+                CurriculumUnit.textbook_version == textbook_version,
+                CurriculumUnit.grade == grade,
+                CurriculumUnit.semester == semester,
+            )
+            .distinct()
+            .limit(max(1, min(limit, 500)))
+        )).all()
+        for word, desc in rows:
+            if word:
+                texts.append(word)
+            if desc:
+                texts.append(desc)
+        label_parts.append(f"词表{len(rows)}词")
+
+    if scope in ("listening", "all"):
+        from app.services import listening_service
+        for ex in getattr(listening_service, "_EXERCISES", []):
+            tr = ex.get("transcript")
+            if tr:
+                texts.append(tr)
+        label_parts.append("听力素材")
+
+    # 去重保序
+    seen: set[str] = set()
+    uniq = [t for t in texts if not (t in seen or seen.add(t))]
+
+    if not uniq:
+        return {"started": False, "reason": "该学期无可预热文本", "total": 0}
+
+    label = f"{textbook_version}/{grade}/{semester} · " + "+".join(label_parts)
+    _prewarm_state.update(label=label)
+    asyncio.create_task(_run_prewarm(uniq, speed))
+    return {"started": True, "total": len(uniq), "label": label}
+
+
+async def prewarm_semesters(db: AsyncSession, *, limit: int = 50) -> list[dict]:
+    """列出有词汇的学期(供后台选择预热)，按词数倒序。"""
+    from app.models.d4_knowledge import CurriculumUnit, CurriculumWord
+    from sqlalchemy import func
+    rows = (await db.execute(
+        select(
+            CurriculumUnit.textbook_version, CurriculumUnit.grade,
+            CurriculumUnit.semester,
+            func.count(func.distinct(CurriculumWord.word_id)).label("wc"),
+        )
+        .join(CurriculumWord, CurriculumWord.unit_id == CurriculumUnit.id)
+        .group_by(CurriculumUnit.textbook_version, CurriculumUnit.grade, CurriculumUnit.semester)
+        .order_by(func.count(func.distinct(CurriculumWord.word_id)).desc())
+        .limit(limit)
+    )).all()
+    return [
+        {"textbook_version": r[0], "grade": r[1], "semester": r[2], "word_count": int(r[3])}
+        for r in rows
+    ]

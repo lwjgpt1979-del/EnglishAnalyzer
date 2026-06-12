@@ -88,6 +88,22 @@ export function ttsPreview(params: { voice?: string; speed?: number }) {
   return unwrap<{ url: string }>(request.get('/admin/tts-preview', { params }))
 }
 
+export interface TtsCosUsage { available: boolean; object_count: number; total_bytes: number; total_mb: number }
+export interface TtsPrewarmStatus { running: boolean; label: string; total: number; done: number; ok: number; failed: number }
+export interface TtsPrewarmSemester { textbook_version: string; grade: string; semester: string; word_count: number }
+export function getTtsStats() {
+  return unwrap<{ cos: TtsCosUsage; prewarm: TtsPrewarmStatus }>(request.get('/admin/tts-stats'))
+}
+export function getPrewarmSemesters() {
+  return unwrap<TtsPrewarmSemester[]>(request.get('/admin/tts-prewarm/semesters'))
+}
+export function startPrewarm(body: { textbook_version: string; grade: string; semester: string; scope: string; limit: number }) {
+  return unwrap<{ started: boolean; total?: number; label?: string; reason?: string }>(request.post('/admin/tts-prewarm', body))
+}
+export function getPrewarmStatus() {
+  return unwrap<TtsPrewarmStatus>(request.get('/admin/tts-prewarm/status'))
+}
+
 export function updatePricing(body: SemesterPricing) {
   return unwrap<SemesterPricing>(request.put('/admin/pricing', body))
 }

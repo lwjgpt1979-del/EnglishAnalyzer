@@ -354,6 +354,46 @@ async def tts_preview(
     return make_ok({"url": url})
 
 
+@router.get("/tts-stats", response_model=BaseResponse[dict])
+async def tts_stats(db: DbDep, admin: AdminDep):
+    """TTS 用量看板：COS 上 tts/ 已生成音频数 + 存储用量 + 当前预热进度。"""
+    from app.services import tts_service
+    usage = await tts_service.cos_usage()
+    return make_ok({"cos": usage, "prewarm": tts_service.prewarm_status()})
+
+
+@router.get("/tts-prewarm/semesters", response_model=BaseResponse[list])
+async def tts_prewarm_semesters(db: DbDep, admin: AdminDep):
+    """可预热的学期列表（有词汇的，按词数倒序）。"""
+    from app.services import tts_service
+    return make_ok(await tts_service.prewarm_semesters(db))
+
+
+class TtsPrewarmIn(BaseModel):
+    textbook_version: str
+    grade: str
+    semester: str
+    scope: str = "vocab"   # vocab | listening | all
+    limit: int = 50
+
+
+@router.post("/tts-prewarm", response_model=BaseResponse[dict])
+async def tts_prewarm(body: TtsPrewarmIn, db: DbDep, admin: AdminDep):
+    """按学期后台批量预生成音频入 COS（首播零延迟、控成本）。串行单任务。"""
+    from app.services import tts_service
+    speed = await tts_service.speed_for_stage_db(db, "junior")
+    res = await tts_service.start_prewarm(
+        db, textbook_version=body.textbook_version, grade=body.grade,
+        semester=body.semester, scope=body.scope, limit=body.limit, speed=speed)
+    return make_ok(res)
+
+
+@router.get("/tts-prewarm/status", response_model=BaseResponse[dict])
+async def tts_prewarm_status(db: DbDep, admin: AdminDep):
+    from app.services import tts_service
+    return make_ok(tts_service.prewarm_status())
+
+
 @router.get("/essay-templates", response_model=BaseResponse[dict])
 async def get_essay_templates(db: DbDep, admin: AdminDep):
     """读作文精修模板/范文配置（未配则返回内置）。"""
