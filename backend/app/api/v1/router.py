@@ -30,6 +30,7 @@ from app.api.v1.config import router as config_router
 from app.api.v1.tts import router as tts_router
 from app.api.v1.listening import router as listening_router
 from app.api.v1.self_exam import router as self_exam_router
+from app.api.v1.speaking import router as speaking_router
 
 v1_router = APIRouter()
 
@@ -62,4 +63,5 @@ v1_router.include_router(config_router)
 v1_router.include_router(tts_router)
 v1_router.include_router(listening_router)
 v1_router.include_router(self_exam_router)
+v1_router.include_router(speaking_router)
 v1_router.include_router(admin_router)

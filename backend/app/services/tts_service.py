@@ -175,6 +175,13 @@ def _all_voices() -> list[str]:
     return (_male_voices() + _female_voices()) or [settings.volc_tts_voice]
 
 
+async def first_voice(db: AsyncSession, gender: str) -> str:
+    """取该性别音色池第一个（供口语对话等需稳定指定音色的场景）。"""
+    await get_voices(db)
+    pool = _female_voices() if gender == "f" else _male_voices()
+    return pool[0] if pool else settings.volc_tts_voice
+
+
 # 常见英文名性别（用于对话听力按角色选男/女声；未知名按出现顺序男女交替）
 _FEMALE_NAMES = {
     "anna", "lily", "lucy", "mary", "kate", "amy", "jenny", "susan", "helen",
