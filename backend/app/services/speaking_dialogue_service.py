@@ -11,10 +11,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.d9_system import SystemConfig
 from app.services import tts_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
@@ -67,12 +70,134 @@ _LEVEL_BY_STAGE = {
     "senior": "senior high school (natural conversational English)",
 }
 
+# ── 口语场景配置中心（平台后台 system_configs 可配，进程内短缓存）─────────────
+_SPK_KEY = "speaking_scenarios"
+_SPK_TTL = 60.0
+_spk_cache: dict = {"data": None, "ts": 0.0}
 
-def list_scenarios() -> list[dict]:
+_DEF_WRONG_PROMPT = (
+    "You are a patient, encouraging speaking coach helping the student practice "
+    "the grammar/usage points they often get wrong. Stay friendly and on topic, "
+    "keep replies to 1-2 short sentences, and gently correct related mistakes.")
+_DEF_VOCAB_PROMPT = (
+    "You are a cheerful word-practice buddy helping the student actually use the "
+    "words they are learning. Keep replies short and naturally weave 1-2 target "
+    "words into each reply.")
+_DEF_SEM_PROMPT = (
+    "You are a friendly tutor chatting about the student's current school unit. "
+    "Keep replies to 1-2 short sentences and guide them to talk about the topic.")
+
+
+def _def_preset_prompt(s: dict) -> str:
+    return (f"You are {s['persona']}. Have a natural spoken-English conversation, "
+            f"stay in character and on the scenario topic, keep replies to 1-2 short "
+            f"sentences, and gently correct clear mistakes.")
+
+
+def _default_config() -> dict:
+    return {
+        "special": {
+            "wrong": {"enabled": True, "prompt": _DEF_WRONG_PROMPT},
+            "vocab": {"enabled": True, "prompt": _DEF_VOCAB_PROMPT},
+        },
+        "preset": {s["key"]: {"enabled": True, "prompt": _def_preset_prompt(s)} for s in _SCENARIOS},
+        "semester": {"enabled": True, "default_prompt": _DEF_SEM_PROMPT, "rules": {}},
+    }
+
+
+def _merge_config(saved: dict | None) -> dict:
+    """把存档配置并到默认上（默认补全缺失项，保证结构完整）。"""
+    cfg = _default_config()
+    if not isinstance(saved, dict):
+        return cfg
+    sp = saved.get("special") or {}
+    for k in ("wrong", "vocab"):
+        if isinstance(sp.get(k), dict):
+            cfg["special"][k]["enabled"] = bool(sp[k].get("enabled", True))
+            if sp[k].get("prompt"):
+                cfg["special"][k]["prompt"] = str(sp[k]["prompt"])
+    pr = saved.get("preset") or {}
+    for k, v in cfg["preset"].items():
+        if isinstance(pr.get(k), dict):
+            v["enabled"] = bool(pr[k].get("enabled", True))
+            if pr[k].get("prompt"):
+                v["prompt"] = str(pr[k]["prompt"])
+    sm = saved.get("semester") or {}
+    if isinstance(sm, dict):
+        cfg["semester"]["enabled"] = bool(sm.get("enabled", True))
+        if sm.get("default_prompt"):
+            cfg["semester"]["default_prompt"] = str(sm["default_prompt"])
+        if isinstance(sm.get("rules"), dict):
+            cfg["semester"]["rules"] = {str(k): str(v) for k, v in sm["rules"].items() if v}
+    return cfg
+
+
+async def get_speaking_config(db: AsyncSession) -> dict:
+    now = time.time()
+    if _spk_cache["data"] is not None and now - _spk_cache["ts"] < _SPK_TTL:
+        return _spk_cache["data"]
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _SPK_KEY)
+    )).scalar_one_or_none()
+    cfg = _merge_config(row.value if row is not None else None)
+    _spk_cache["data"] = cfg
+    _spk_cache["ts"] = now
+    return cfg
+
+
+async def set_speaking_config(db: AsyncSession, *, config: dict, updated_by) -> dict:
+    value = _merge_config(config)
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _SPK_KEY)
+    )).scalar_one_or_none()
+    if row is None:
+        db.add(SystemConfig(
+            id=uuid.uuid4(), key=_SPK_KEY, value=value,
+            description="口语对话场景配置(启用开关+AI提示词)", updated_by=updated_by,
+        ))
+    else:
+        row.value = value
+        row.updated_by = updated_by
+    await db.flush()
+    _spk_cache["data"] = None
+    return value
+
+
+async def semester_scope_tree(db: AsyncSession, *, limit: int = 500) -> list[dict]:
+    """学期分级规则编辑用：列出有单元的 教材/年级/学期/单元（含全路径 key）。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    rows = (await db.execute(
+        select(CurriculumUnit.id, CurriculumUnit.textbook_version, CurriculumUnit.grade,
+               CurriculumUnit.semester, CurriculumUnit.unit_no, CurriculumUnit.unit_title)
+        .order_by(CurriculumUnit.textbook_version, CurriculumUnit.grade,
+                  CurriculumUnit.semester, CurriculumUnit.unit_no)
+        .limit(limit)
+    )).all()
+    return [
+        {"unit_id": str(r[0]), "textbook_version": r[1], "grade": r[2],
+         "semester": str(r[3]), "unit_no": r[4], "unit_title": r[5]}
+        for r in rows
+    ]
+
+
+def _resolve_sem_prompt(cfg: dict, *, tv: str, grade: str, sem: str, unit_id: str) -> str:
+    """学期场景提示词：单元→学期→年级→教材→默认，就近命中，不套用上级。"""
+    rules = (cfg.get("semester") or {}).get("rules") or {}
+    for key in (f"unit:{unit_id}", f"semester:{tv}/{grade}/{sem}",
+                f"grade:{tv}/{grade}", f"textbook:{tv}"):
+        if rules.get(key):
+            return str(rules[key])
+    return (cfg.get("semester") or {}).get("default_prompt") or _DEF_SEM_PROMPT
+
+
+async def list_scenarios(db: AsyncSession) -> list[dict]:
+    cfg = await get_speaking_config(db)
+    pr = cfg["preset"]
     return [
         {"key": s["key"], "title": s["title"], "emoji": s["emoji"],
          "opening": s["opening"], "tag": "preset"}
         for s in _SCENARIOS
+        if pr.get(s["key"], {}).get("enabled", True)
     ]
 
 
@@ -153,23 +278,27 @@ async def _wrong_kp_names(db: AsyncSession, student_id, *, limit: int = 5) -> li
 
 
 async def list_personalized(db: AsyncSession, student_id) -> list[dict]:
-    """因材施教的个性化场景：学期内容 + 词力通在练 + 错题薄弱点。"""
+    """因材施教的个性化场景：学期内容 + 词力通在练 + 错题薄弱点（按后台开关过滤）。"""
+    cfg = await get_speaking_config(db)
     out: list[dict] = []
-    out.extend(await _semester_units(db, student_id))
-    words = await _vocab_words(db, student_id)
-    if len(words) >= 3:
-        out.append({
-            "key": "vocab", "title": "词力通在练词", "emoji": "🔤",
-            "opening": f"Time to use your new words! Can you make a sentence with \"{words[0]}\"?",
-            "tag": "custom", "source": "词力通",
-        })
-    wkps = await _wrong_kp_names(db, student_id)
-    if wkps:
-        out.append({
-            "key": "wrong", "title": "错题薄弱点", "emoji": "🎯",
-            "opening": "Let's practice the parts you found tricky. Ready when you are!",
-            "tag": "custom", "source": "错题",
-        })
+    if cfg["semester"]["enabled"]:
+        out.extend(await _semester_units(db, student_id))
+    if cfg["special"]["vocab"]["enabled"]:
+        words = await _vocab_words(db, student_id)
+        if len(words) >= 3:
+            out.append({
+                "key": "vocab", "title": "词力通在练词", "emoji": "🔤",
+                "opening": f"Time to use your new words! Can you make a sentence with \"{words[0]}\"?",
+                "tag": "custom", "source": "词力通",
+            })
+    if cfg["special"]["wrong"]["enabled"]:
+        wkps = await _wrong_kp_names(db, student_id)
+        if wkps:
+            out.append({
+                "key": "wrong", "title": "错题薄弱点", "emoji": "🎯",
+                "opening": "Let's practice the parts you found tricky. Ready when you are!",
+                "tag": "custom", "source": "错题",
+            })
     return out
 
 
@@ -178,9 +307,11 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
 
     个性化场景的 focus 在此从 DB 实时重建（无需服务端缓存）。
     """
+    cfg = await get_speaking_config(db)
     preset = get_scenario(key)
     if preset is not None:
-        return {**preset, "focus": ""}
+        prompt = (cfg["preset"].get(key, {}) or {}).get("prompt") or _def_preset_prompt(preset)
+        return {**preset, "focus": "", "prompt": prompt}
 
     g = _gender_for_key(key)
     if key.startswith("sem:"):
@@ -191,11 +322,13 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             return None
         from app.models.d4_knowledge import CurriculumUnit
         row = (await db.execute(
-            select(CurriculumUnit.unit_title).where(CurriculumUnit.id == unit_id)
+            select(CurriculumUnit.unit_title, CurriculumUnit.textbook_version,
+                   CurriculumUnit.grade, CurriculumUnit.semester)
+            .where(CurriculumUnit.id == unit_id)
         )).first()
         if row is None:
             return None
-        title = row[0] or "this unit"
+        title, tv, grade, sem = row[0] or "this unit", row[1], row[2], row[3]
         kps = await _unit_kp_names(db, unit_id)
         focus = (f"The conversation topic is the school unit \"{title}\". "
                  + (f"Related language points: {', '.join(kps)}. " if kps else "")
@@ -206,6 +339,7 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "opening": f"Let's chat about \"{title}\". What do you know about it?",
             "focus": focus, "source": "学期内容",
             "targets": ([title] + kps)[:6], "target_kind": "topic",
+            "prompt": _resolve_sem_prompt(cfg, tv=tv, grade=grade, sem=str(sem), unit_id=unit_id),
         }
 
     if key.startswith("words:"):
@@ -221,6 +355,7 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "opening": f"Let's practice these words: {', '.join(words)}. "
                        f"Can you use \"{words[0]}\" in a sentence?",
             "focus": focus, "source": "词力通", "targets": words, "target_kind": "word",
+            "prompt": cfg["special"]["vocab"]["prompt"],
         }
 
     if key == "vocab":
@@ -234,6 +369,7 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "persona": "a cheerful word-practice buddy helping the student use new words",
             "opening": f"Time to use your new words! Can you make a sentence with \"{words[0]}\"?",
             "focus": focus, "source": "词力通", "targets": words, "target_kind": "word",
+            "prompt": cfg["special"]["vocab"]["prompt"],
         }
 
     if key == "wrong":
@@ -248,6 +384,7 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "persona": "a patient coach helping the student practice their tricky points",
             "opening": "Let's practice the parts you found tricky. Ready when you are!",
             "focus": focus, "source": "错题薄弱点", "targets": kps, "target_kind": "point",
+            "prompt": cfg["special"]["wrong"]["prompt"],
         }
 
     return None
@@ -299,15 +436,18 @@ async def reply(
     else:
         level = _LEVEL_BY_STAGE.get(stage, _LEVEL_BY_STAGE["junior"])
         focus = (sc.get("focus") or "").strip()
+        # 角色/风格提示词来自后台配置（缺省回退 persona 模板）
+        base = (sc.get("prompt") or "").strip() or (
+            f"You are {sc.get('persona', 'a friendly tutor')}. Have a natural "
+            f"spoken-English conversation, stay in character and on topic, keep replies "
+            f"to 1-2 short sentences, and gently correct clear mistakes.")
         sys = (
-            f"You are {sc['persona']}. Have a natural spoken-English conversation with a "
-            f"Chinese student at {level} level. Rules: keep your reply to 1-2 SHORT sentences; "
-            f"stay in character and on the scenario topic; if the student made a clear English "
-            f"mistake, give a brief friendly correction; always end by inviting them to keep "
-            f"talking. " + (f"Personalization: {focus} " if focus else "")
+            base + f" The student is a Chinese student at {level} level. "
+            + "Always reply in 1-2 SHORT sentences and end by inviting them to keep talking. "
+            + (f"Personalization: {focus} " if focus else "")
             + "Respond ONLY as compact JSON with keys: reply (your English line), "
-            f"correction (a short note on the student's mistake, or empty string), "
-            f"translation (a Chinese translation of your reply)."
+            "correction (a short note on the student's mistake, or empty string), "
+            "translation (a Chinese translation of your reply)."
         )
         convo = "\n".join(
             f"{'Student' if m.get('role') == 'user' else 'You'}: {m.get('text', '')}"

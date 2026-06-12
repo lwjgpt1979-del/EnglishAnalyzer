@@ -88,6 +88,27 @@ export function ttsPreview(params: { voice?: string; speed?: number }) {
   return unwrap<{ url: string }>(request.get('/admin/tts-preview', { params }))
 }
 
+// ── 口语场景配置 ──
+export interface SpeakScenarioCfg { enabled: boolean; prompt: string }
+export interface SpeakingConfig {
+  special: { wrong: SpeakScenarioCfg; vocab: SpeakScenarioCfg }
+  preset: Record<string, SpeakScenarioCfg>
+  semester: { enabled: boolean; default_prompt: string; rules: Record<string, string> }
+}
+export interface SemScopeUnit {
+  unit_id: string; textbook_version: string; grade: string
+  semester: string; unit_no: number; unit_title: string
+}
+export function getSpeakingConfig() {
+  return unwrap<SpeakingConfig>(request.get('/admin/speaking-config'))
+}
+export function updateSpeakingConfig(body: SpeakingConfig) {
+  return unwrap<SpeakingConfig>(request.put('/admin/speaking-config', body))
+}
+export function getSpeakingSemesters() {
+  return unwrap<SemScopeUnit[]>(request.get('/admin/speaking-config/semesters'))
+}
+
 export interface TtsCosUsage { available: boolean; object_count: number; total_bytes: number; total_mb: number }
 export interface TtsPrewarmStatus { running: boolean; label: string; total: number; done: number; ok: number; failed: number }
 export interface TtsPrewarmSemester { textbook_version: string; grade: string; semester: string; word_count: number }

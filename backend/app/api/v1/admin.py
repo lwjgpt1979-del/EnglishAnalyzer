@@ -354,6 +354,30 @@ async def tts_preview(
     return make_ok({"url": url})
 
 
+@router.get("/speaking-config", response_model=BaseResponse[dict])
+async def get_speaking_config(db: DbDep, admin: AdminDep):
+    """读口语对话场景配置（特殊/通用/学期 的启用开关 + AI 提示词）。"""
+    from app.services import speaking_dialogue_service
+    return make_ok(await speaking_dialogue_service.get_speaking_config(db))
+
+
+@router.put("/speaking-config", response_model=BaseResponse[dict])
+async def update_speaking_config(body: dict, db: DbDep, admin: AdminDep):
+    """运营改口语场景配置。结构容错合并，缺失项回落默认。"""
+    from app.services import speaking_dialogue_service
+    saved = await speaking_dialogue_service.set_speaking_config(
+        db, config=body or {}, updated_by=admin.id)
+    await db.commit()
+    return make_ok(saved)
+
+
+@router.get("/speaking-config/semesters", response_model=BaseResponse[list])
+async def speaking_config_semesters(db: DbDep, admin: AdminDep):
+    """学期场景分级规则编辑用：教材/年级/学期/单元 选择树。"""
+    from app.services import speaking_dialogue_service
+    return make_ok(await speaking_dialogue_service.semester_scope_tree(db))
+
+
 @router.get("/tts-stats", response_model=BaseResponse[dict])
 async def tts_stats(db: DbDep, admin: AdminDep):
     """TTS 用量看板：COS 上 tts/ 已生成音频数 + 存储用量 + 当前预热进度。"""

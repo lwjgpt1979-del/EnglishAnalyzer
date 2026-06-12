@@ -52,7 +52,7 @@ class ReplyIn(BaseModel):
 async def scenarios(current_user: UserDep, db: DbDep):
     """口语对话场景：因材施教的个性化场景（学期/词力通/错题）+ 通用预设。"""
     custom = await svc.list_personalized(db, current_user.id)
-    return make_ok({"custom": custom, "preset": svc.list_scenarios()})
+    return make_ok({"custom": custom, "preset": await svc.list_scenarios(db)})
 
 
 @router.post("/start", response_model=BaseResponse[dict])
