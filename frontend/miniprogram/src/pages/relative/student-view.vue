@@ -12,6 +12,17 @@
         </view>
       </view>
 
+      <!-- 口语练习 -->
+      <view v-if="speakStats && speakStats.total_sessions > 0" class="card speak-card">
+        <view class="card-title">🗣️ 口语练习</view>
+        <view class="stat-row">
+          <view class="stat"><text class="num">{{ speakStats.total_sessions }}</text><text class="lbl">累计</text></view>
+          <view class="stat"><text class="num">{{ speakStats.week_sessions }}</text><text class="lbl">本周</text></view>
+          <view class="stat"><text class="num">{{ speakStats.avg_score }}</text><text class="lbl">平均分</text></view>
+          <view class="stat"><text class="num">{{ speakStats.speaking_streak }}天</text><text class="lbl">连续</text></view>
+        </view>
+      </view>
+
       <!-- M45 知识点台账入口 -->
       <view class="card entry-card" @tap="goKpMastery">
         <text class="entry-text">🧠 知识点掌握图谱</text>
@@ -104,7 +115,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar } from '@/api/relative'
+import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar, getChildSpeakingStats, type SpeakStats } from '@/api/relative'
 import { createOrder, payOrder } from '@/api/orders'
 import type { RelativeCheckinCalendar } from '@/types/api'
 
@@ -134,6 +145,7 @@ const currentPrice = computed(() => tiers.find(t => t.key === selectedTier.value
 // ── 学生 / 诊断报告 ──────────────────────────────────────────────────────────
 const studentId = ref('')
 const report = ref<any>(null)
+const speakStats = ref<SpeakStats | null>(null)
 const loading = ref(true)
 const paying = ref(false)
 
@@ -160,6 +172,7 @@ onMounted(async () => {
   try {
     report.value = await getStudentDiagnosisAsRelative(studentId.value)
     try { cal.value = await getStudentCheckinCalendar(studentId.value) } catch { /* 日历失败不阻塞 */ }
+    try { speakStats.value = await getChildSpeakingStats(studentId.value) } catch { speakStats.value = null }
   } finally { loading.value = false }
 })
 
@@ -209,6 +222,7 @@ async function onPay() {
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
 .stat-row { display: flex; justify-content: space-around; }
 .stat { text-align: center; }
+.speak-card { border-left: 6rpx solid var(--c-primary); }
 .num { font-size: 56rpx; font-weight: 800; color: var(--c-ink); display: block; }
 .lbl { font-size: 24rpx; color: var(--c-text-hint); }
 .row { display: flex; justify-content: space-between; padding: 8rpx 0; border-bottom: 1rpx solid var(--c-border); font-size: 26rpx; color: var(--c-text-body); }

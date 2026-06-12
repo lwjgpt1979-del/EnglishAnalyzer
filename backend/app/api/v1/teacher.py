@@ -268,6 +268,18 @@ async def student_diagnosis_api(student_id: uuid.UUID, db: DbDep, current_user: 
     return make_ok(report)
 
 
+@router.get("/students/{student_id}/speaking-stats", response_model=BaseResponse[dict])
+async def student_speaking_stats_api(student_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """教师查看指定学生的口语练习情况。"""
+    if str(current_user.role) != "teacher":
+        raise AppError(code=403, message="仅教师可访问")
+    await get_rls_db(db, str(current_user.id))
+    await teacher_service.assert_bound(
+        db, teacher_id=current_user.id, student_id=student_id)
+    from app.services import speaking_dialogue_service
+    return make_ok(await speaking_dialogue_service.speaking_stats(db, student_id))
+
+
 # ── M44：教师端 KP 接口 ─────────────────────────────────────────────────────
 
 @router.get("/students/{student_id}/kp-mastery", response_model=None)

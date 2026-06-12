@@ -14,6 +14,17 @@
         </view>
       </view>
 
+      <!-- 口语练习 -->
+      <view v-if="speakStats && speakStats.total_sessions > 0" class="card speak-card">
+        <view class="card-title">🗣️ 口语练习</view>
+        <view class="stat-row">
+          <view class="stat"><text class="num">{{ speakStats.total_sessions }}</text><text class="lbl">累计</text></view>
+          <view class="stat"><text class="num">{{ speakStats.week_sessions }}</text><text class="lbl">本周</text></view>
+          <view class="stat"><text class="num">{{ speakStats.avg_score }}</text><text class="lbl">平均分</text></view>
+          <view class="stat"><text class="num">{{ speakStats.speaking_streak }}天</text><text class="lbl">连续</text></view>
+        </view>
+      </view>
+
       <!-- 高频错误 -->
       <view v-if="report.top_error_types?.length" class="card">
         <view class="card-title">高频错误</view>
@@ -75,9 +86,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getStudentDiagnosis } from '@/api/teacher'
+import { getStudentDiagnosis, getStudentSpeakingStats, type SpeakStats } from '@/api/teacher'
 
 const report = ref<any>(null)
+const speakStats = ref<SpeakStats | null>(null)
 const loading = ref(true)
 
 onMounted(async () => {
@@ -90,6 +102,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  try { speakStats.value = await getStudentSpeakingStats(sid) } catch { speakStats.value = null }
 })
 
 const maxErrorCount = computed<number>(() => {
@@ -132,6 +145,7 @@ function difficultyBarClass(key: string): string {
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
 .stat-row { display: flex; justify-content: space-around; }
 .stat { text-align: center; }
+.speak-card { border-left: 6rpx solid var(--c-primary); }
 .num { font-size: 48rpx; font-weight: 800; color: var(--c-ink); display: block; }
 .lbl { font-size: 22rpx; color: var(--c-text-hint); }
 /* 进度条 */

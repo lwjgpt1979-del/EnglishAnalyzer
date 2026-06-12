@@ -20,6 +20,14 @@ export function getStudentDiagnosisAsRelative(studentId: string): Promise<any> {
   return request<any>(`/api/v1/relative/students/${studentId}/diagnosis-report`, { method: 'GET' })
 }
 
+export interface SpeakStats {
+  total_sessions: number; week_sessions: number; avg_score: number
+  last_score: number; speaking_streak: number; last_practiced_at: string | null
+}
+export function getChildSpeakingStats(studentId: string): Promise<SpeakStats> {
+  return request<SpeakStats>(`/api/v1/relative/students/${studentId}/speaking-stats`, { method: 'GET' })
+}
+
 export function relativeInviteQrcode() {
   return request('/api/v1/relative/invite-code/qrcode', { method: 'POST' })
 }

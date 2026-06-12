@@ -53,6 +53,14 @@ export function getStudentDiagnosis(studentId: string) {
   return request(`/api/v1/teacher/students/${studentId}/diagnosis-report`, { method: 'GET' })
 }
 
+export interface SpeakStats {
+  total_sessions: number; week_sessions: number; avg_score: number
+  last_score: number; speaking_streak: number; last_practiced_at: string | null
+}
+export function getStudentSpeakingStats(studentId: string): Promise<SpeakStats> {
+  return request<SpeakStats>(`/api/v1/teacher/students/${studentId}/speaking-stats`, { method: 'GET' })
+}
+
 // ── M44 KP 接口 ────────────────────────────────────────────────────────────
 
 export interface TeacherKpMasteryItem {

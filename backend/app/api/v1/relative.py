@@ -133,6 +133,19 @@ async def relative_view_student_diagnosis(
     return make_ok(report)
 
 
+@router.get("/students/{student_id}/speaking-stats", response_model=BaseResponse[dict])
+async def relative_view_student_speaking(
+    student_id: uuid.UUID, db: DbDep, current_user: UserDep,
+):
+    """家人查看孩子的口语练习情况。"""
+    await get_rls_db(db, str(current_user.id))
+    await relative_service.assert_bound(
+        db, relative_id=current_user.id, student_id=student_id,
+    )
+    from app.services import speaking_dialogue_service
+    return make_ok(await speaking_dialogue_service.speaking_stats(db, student_id))
+
+
 @router.get(
     "/students/{student_id}/wrong-questions",
     response_model=BaseResponse[list[WrongQuestionOut]],

@@ -150,6 +150,21 @@ async def get_my_students(
     return list(result.scalars().all())
 
 
+async def assert_bound(
+    db: AsyncSession, *, teacher_id: uuid.UUID, student_id: uuid.UUID,
+) -> None:
+    """校验师生绑定关系，无则 403。"""
+    binding = await db.execute(
+        select(TeacherStudent).where(
+            TeacherStudent.teacher_id == teacher_id,
+            TeacherStudent.student_id == student_id,
+            TeacherStudent.status == "active",
+        )
+    )
+    if binding.scalar_one_or_none() is None:
+        raise AppError(code=403, message="无权查看该学生数据")
+
+
 async def get_student_wrong_questions(
     db: AsyncSession,
     *,
