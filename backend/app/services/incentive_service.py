@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d3_wrong_questions import WrongQuestion
-from app.models.d5_learning import StudyCheckin
+from app.models.d5_learning import SpeakingSession, StudyCheckin
 from app.models.d4_knowledge import StudentKpMastery
 from app.models.d12_v2_exams import SimExamSession, SimPracticeRecord
 from app.services import checkin_service
@@ -25,6 +25,7 @@ _XP_CHECKIN = 10
 _XP_KP_MASTERED = 20
 _XP_WRONG_MASTERED = 15
 _XP_EXAM = 10
+_XP_SPEAKING = 5
 _XP_PER_LEVEL = 100
 _MASTERY_THRESHOLD = 0.8  # KP 正确率达标线
 
@@ -66,12 +67,22 @@ async def get_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
         .where(SimExamSession.student_id == student_id)
     )).scalar() or 0.0)
 
+    speaking_count = int((await db.execute(
+        select(func.count()).select_from(SpeakingSession)
+        .where(SpeakingSession.student_id == student_id)
+    )).scalar() or 0)
+    best_speaking = int((await db.execute(
+        select(func.coalesce(func.max(SpeakingSession.score), 0))
+        .where(SpeakingSession.student_id == student_id)
+    )).scalar() or 0)
+
     # ── 经验值 / 等级 ────────────────────────────────────────────────────
     xp = (total_practice * _XP_PRACTICE
           + checkin_days * _XP_CHECKIN
           + mastered_kp * _XP_KP_MASTERED
           + wrong_mastered * _XP_WRONG_MASTERED
-          + exam_count * _XP_EXAM)
+          + exam_count * _XP_EXAM
+          + speaking_count * _XP_SPEAKING)
     level = xp // _XP_PER_LEVEL + 1
     xp_in_level = xp % _XP_PER_LEVEL
     xp_to_next = _XP_PER_LEVEL - xp_in_level
@@ -98,6 +109,10 @@ async def get_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
         _ach("wrong_slayer", "错题克星", "攻克 10 道错题", "🎯", wrong_mastered, 10),
         _ach("exam_ace", "考场之星", "模拟考正确率达 80%", "🏆",
              1 if best_exam_acc >= 0.8 else 0, 1),
+        _ach("speak_starter", "开口第一句", "完成第一次口语练习", "🎤", speaking_count, 1),
+        _ach("speak_20", "开口达人", "累计 20 次口语练习", "🗣️", speaking_count, 20),
+        _ach("speak_ace", "口语高手", "单次口语评分达 90", "🌟",
+             1 if best_speaking >= 90 else 0, 1),
     ]
 
     return {
@@ -116,6 +131,7 @@ async def get_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
             "mastered_kp": mastered_kp,
             "wrong_mastered": wrong_mastered,
             "exam_count": exam_count,
+            "speaking_count": speaking_count,
             "unlocked_achievements": sum(1 for a in achievements if a["unlocked"]),
             "total_achievements": len(achievements),
         },

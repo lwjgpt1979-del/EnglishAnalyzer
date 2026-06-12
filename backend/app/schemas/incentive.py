@@ -28,6 +28,7 @@ class IncentiveStats(BaseModel):
     mastered_kp: int
     wrong_mastered: int
     exam_count: int
+    speaking_count: int = 0
     unlocked_achievements: int
     total_achievements: int
 
