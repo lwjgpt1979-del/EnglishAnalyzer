@@ -84,6 +84,9 @@ export function getTtsVoices() {
 export function updateTtsVoices(body: TtsVoices) {
   return unwrap<TtsVoices>(request.put('/admin/tts-voices', body))
 }
+export function ttsPreview(params: { voice?: string; speed?: number }) {
+  return unwrap<{ url: string }>(request.get('/admin/tts-preview', { params }))
+}
 
 export function updatePricing(body: SemesterPricing) {
   return unwrap<SemesterPricing>(request.put('/admin/pricing', body))

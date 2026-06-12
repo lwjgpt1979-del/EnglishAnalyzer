@@ -332,6 +332,28 @@ async def update_tts_voices(body: TtsVoicesConfig, db: DbDep, admin: AdminDep):
     return make_ok(TtsVoicesConfig(**saved))
 
 
+_TTS_PREVIEW_SAMPLE = "Hello! Welcome to English learning. Let's practice together."
+
+
+@router.get("/tts-preview", response_model=BaseResponse[dict])
+async def tts_preview(
+    db: DbDep,
+    admin: AdminDep,
+    voice: str = Query("", description="指定音色 voice_type；空则按样本句哈希取池内音色"),
+    speed: float = Query(1.0, description="语速倍率 0.5~2.0"),
+    text: str = Query("", description="试听文本；空用默认样本句"),
+):
+    """合成一句样本并返回 COS 直链，供后台「试听」即点即播。"""
+    from app.services import tts_service
+    spd = min(2.0, max(0.5, speed))
+    sample = (text or _TTS_PREVIEW_SAMPLE).strip()[:200]
+    url = await tts_service.get_or_create_audio_url(
+        sample, voice=(voice.strip() or None), speed=spd)
+    if not url:
+        raise AppError(code=400, message="试听失败：音色未授权或语音/COS 未配置")
+    return make_ok({"url": url})
+
+
 @router.get("/essay-templates", response_model=BaseResponse[dict])
 async def get_essay_templates(db: DbDep, admin: AdminDep):
     """读作文精修模板/范文配置（未配则返回内置）。"""
