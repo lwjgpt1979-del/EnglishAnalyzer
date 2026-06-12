@@ -8,9 +8,11 @@ dev-mock：LLM 占位时走本地确定性回复，整条链路（含 H5 文本�
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import tts_service
@@ -68,7 +70,8 @@ _LEVEL_BY_STAGE = {
 
 def list_scenarios() -> list[dict]:
     return [
-        {"key": s["key"], "title": s["title"], "emoji": s["emoji"], "opening": s["opening"]}
+        {"key": s["key"], "title": s["title"], "emoji": s["emoji"],
+         "opening": s["opening"], "tag": "preset"}
         for s in _SCENARIOS
     ]
 
@@ -77,8 +80,167 @@ def get_scenario(key: str) -> dict | None:
     return _BY_KEY.get(key)
 
 
-async def opening(db: AsyncSession, *, scenario_key: str, stage: str = "junior") -> dict:
-    sc = get_scenario(scenario_key)
+def _gender_for_key(key: str) -> str:
+    return "f" if int(hashlib.md5(key.encode()).hexdigest(), 16) % 2 else "m"
+
+
+async def _student_prefs(db: AsyncSession, student_id) -> tuple[str | None, str | None, str | None]:
+    from app.models.d1_users import User
+    row = (await db.execute(
+        select(User.preferred_textbook_version, User.preferred_grade, User.preferred_semester)
+        .where(User.id == student_id)
+    )).first()
+    return (row[0], row[1], row[2]) if row else (None, None, None)
+
+
+async def _semester_units(db: AsyncSession, student_id, *, limit: int = 3) -> list[dict]:
+    """当前学期前若干单元 → 每单元一个对话场景。"""
+    tv, grade, sem = await _student_prefs(db, student_id)
+    if not (tv and grade and sem):
+        return []
+    from app.models.d4_knowledge import CurriculumUnit
+    units = (await db.execute(
+        select(CurriculumUnit.id, CurriculumUnit.unit_title)
+        .where(CurriculumUnit.textbook_version == tv, CurriculumUnit.grade == grade,
+               CurriculumUnit.semester == sem)
+        .order_by(CurriculumUnit.unit_no).limit(limit)
+    )).all()
+    return [
+        {"key": f"sem:{uid}", "title": (title or "本单元")[:18], "emoji": "📖",
+         "opening": f"Let's chat about \"{title}\". What do you know about it?",
+         "tag": "custom", "source": "学期内容"}
+        for uid, title in units
+    ]
+
+
+async def _unit_kp_names(db: AsyncSession, unit_id) -> list[str]:
+    from app.models.d4_knowledge import KnowledgePoint, UnitKnowledgePoint
+    rows = (await db.execute(
+        select(KnowledgePoint.name)
+        .join(UnitKnowledgePoint, UnitKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+        .where(UnitKnowledgePoint.unit_id == unit_id).limit(8)
+    )).all()
+    return [r[0] for r in rows if r[0]]
+
+
+async def _vocab_words(db: AsyncSession, student_id, *, limit: int = 8) -> list[str]:
+    """学生词力通在练（临近复习/未掌握）的单词。"""
+    from app.models.d5_learning import VocabularyLearning, VocabularyWord
+    rows = (await db.execute(
+        select(VocabularyWord.word)
+        .join(VocabularyLearning, VocabularyLearning.word_id == VocabularyWord.id)
+        .where(VocabularyLearning.student_id == student_id)
+        .order_by(VocabularyLearning.next_review_at.asc()).limit(limit)
+    )).all()
+    return [r[0] for r in rows if r[0]]
+
+
+async def _wrong_kp_names(db: AsyncSession, student_id, *, limit: int = 5) -> list[str]:
+    """学生错题关联的高频知识点。"""
+    from sqlalchemy import func
+    from app.models.d3_wrong_questions import WrongQuestion
+    from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
+    rows = (await db.execute(
+        select(KnowledgePoint.name, func.count().label("c"))
+        .join(WrongQuestionKnowledgePoint,
+              WrongQuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+        .join(WrongQuestion, WrongQuestion.id == WrongQuestionKnowledgePoint.wrong_question_id)
+        .where(WrongQuestion.student_id == student_id,
+               WrongQuestion.is_mastered.is_(False))
+        .group_by(KnowledgePoint.name).order_by(func.count().desc()).limit(limit)
+    )).all()
+    return [r[0] for r in rows if r[0]]
+
+
+async def list_personalized(db: AsyncSession, student_id) -> list[dict]:
+    """因材施教的个性化场景：学期内容 + 词力通在练 + 错题薄弱点。"""
+    out: list[dict] = []
+    out.extend(await _semester_units(db, student_id))
+    words = await _vocab_words(db, student_id)
+    if len(words) >= 3:
+        out.append({
+            "key": "vocab", "title": "词力通在练词", "emoji": "🔤",
+            "opening": f"Time to use your new words! Can you make a sentence with \"{words[0]}\"?",
+            "tag": "custom", "source": "词力通",
+        })
+    wkps = await _wrong_kp_names(db, student_id)
+    if wkps:
+        out.append({
+            "key": "wrong", "title": "错题薄弱点", "emoji": "🎯",
+            "opening": "Let's practice the parts you found tricky. Ready when you are!",
+            "tag": "custom", "source": "错题",
+        })
+    return out
+
+
+async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | None:
+    """把场景 key 还原为完整场景（含 persona/gender/opening/focus）。
+
+    个性化场景的 focus 在此从 DB 实时重建（无需服务端缓存）。
+    """
+    preset = get_scenario(key)
+    if preset is not None:
+        return {**preset, "focus": ""}
+
+    g = _gender_for_key(key)
+    if key.startswith("sem:"):
+        import uuid as _uuid
+        try:
+            unit_id = str(_uuid.UUID(key[4:]))
+        except (ValueError, AttributeError):
+            return None
+        from app.models.d4_knowledge import CurriculumUnit
+        row = (await db.execute(
+            select(CurriculumUnit.unit_title).where(CurriculumUnit.id == unit_id)
+        )).first()
+        if row is None:
+            return None
+        title = row[0] or "this unit"
+        kps = await _unit_kp_names(db, unit_id)
+        focus = (f"The conversation topic is the school unit \"{title}\". "
+                 + (f"Related language points: {', '.join(kps)}. " if kps else "")
+                 + "Naturally guide the student to talk about this topic.")
+        return {
+            "key": key, "title": title[:18], "emoji": "📖", "gender": g,
+            "persona": f"a friendly tutor named Sam chatting about the school topic \"{title}\"",
+            "opening": f"Let's chat about \"{title}\". What do you know about it?",
+            "focus": focus,
+        }
+
+    if key == "vocab":
+        words = await _vocab_words(db, student_id)
+        if not words:
+            return None
+        focus = (f"Encourage the student to use these words they are learning: "
+                 f"{', '.join(words)}. Weave 1-2 of them into each of your replies naturally.")
+        return {
+            "key": "vocab", "title": "词力通在练词", "emoji": "🔤", "gender": g,
+            "persona": "a cheerful word-practice buddy helping the student use new words",
+            "opening": f"Time to use your new words! Can you make a sentence with \"{words[0]}\"?",
+            "focus": focus,
+        }
+
+    if key == "wrong":
+        kps = await _wrong_kp_names(db, student_id)
+        if not kps:
+            return None
+        focus = (f"The student has been making mistakes on: {', '.join(kps)}. "
+                 f"Gently steer the conversation so they practice these points out loud, "
+                 f"and correct related mistakes.")
+        return {
+            "key": "wrong", "title": "错题薄弱点", "emoji": "🎯", "gender": g,
+            "persona": "a patient coach helping the student practice their tricky points",
+            "opening": "Let's practice the parts you found tricky. Ready when you are!",
+            "focus": focus,
+        }
+
+    return None
+
+
+async def opening(
+    db: AsyncSession, *, student_id, scenario_key: str, stage: str = "junior",
+) -> dict:
+    sc = await resolve_scenario(db, student_id=student_id, key=scenario_key)
     if sc is None:
         raise ValueError("scenario not found")
     speed = await tts_service.speed_for_stage_db(db, stage)
@@ -108,10 +270,10 @@ def _mock_reply(user_text: str) -> dict:
 
 
 async def reply(
-    db: AsyncSession, *, scenario_key: str, history: list[dict], user_text: str,
+    db: AsyncSession, *, student_id, scenario_key: str, history: list[dict], user_text: str,
     stage: str = "junior",
 ) -> dict:
-    sc = get_scenario(scenario_key)
+    sc = await resolve_scenario(db, student_id=student_id, key=scenario_key)
     if sc is None:
         raise ValueError("scenario not found")
     user_text = (user_text or "").strip()[:500]
@@ -120,12 +282,14 @@ async def reply(
         data = _mock_reply(user_text)
     else:
         level = _LEVEL_BY_STAGE.get(stage, _LEVEL_BY_STAGE["junior"])
+        focus = (sc.get("focus") or "").strip()
         sys = (
             f"You are {sc['persona']}. Have a natural spoken-English conversation with a "
             f"Chinese student at {level} level. Rules: keep your reply to 1-2 SHORT sentences; "
             f"stay in character and on the scenario topic; if the student made a clear English "
             f"mistake, give a brief friendly correction; always end by inviting them to keep "
-            f"talking. Respond ONLY as compact JSON with keys: reply (your English line), "
+            f"talking. " + (f"Personalization: {focus} " if focus else "")
+            + "Respond ONLY as compact JSON with keys: reply (your English line), "
             f"correction (a short note on the student's mistake, or empty string), "
             f"translation (a Chinese translation of your reply)."
         )
@@ -180,10 +344,11 @@ def _mock_summary(user_turns: list[str]) -> dict:
 
 
 async def summarize(
-    db: AsyncSession, *, scenario_key: str, history: list[dict], stage: str = "junior",
+    db: AsyncSession, *, student_id, scenario_key: str, history: list[dict],
+    stage: str = "junior",
 ) -> dict:
     """对话结束后给本次练习评价：评分 + 亮点 + 改进 + 鼓励。"""
-    sc = get_scenario(scenario_key)
+    sc = await resolve_scenario(db, student_id=student_id, key=scenario_key)
     if sc is None:
         raise ValueError("scenario not found")
     user_turns = [(m.get("text") or "").strip() for m in (history or []) if m.get("role") == "user"]

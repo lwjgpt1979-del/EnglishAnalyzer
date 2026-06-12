@@ -6,9 +6,31 @@
         <text class="h-title">🗣️ AI 口语对话</text>
         <text class="h-sub">选个场景，开口说英语 · AI 实时回应并纠错</text>
       </view>
+
+      <!-- 为你定制（因材施教）-->
+      <view v-if="custom.length" class="sec-head">
+        <text class="sec-name">✨ 为你定制</text>
+        <text class="sec-desc">按你的学期内容 / 在练单词 / 错题薄弱点生成</text>
+      </view>
+      <view v-if="custom.length" class="grid">
+        <view
+          v-for="s in custom" :key="s.key"
+          class="sc-card custom" @tap="start(s.key)"
+        >
+          <view class="sc-top">
+            <text class="sc-emoji">{{ s.emoji }}</text>
+            <text v-if="s.source" class="sc-tag">{{ s.source }}</text>
+          </view>
+          <text class="sc-title">{{ s.title }}</text>
+          <text class="sc-open">{{ s.opening }}</text>
+        </view>
+      </view>
+
+      <!-- 通用场景 -->
+      <view class="sec-head"><text class="sec-name">🌐 通用场景</text></view>
       <view class="grid">
         <view
-          v-for="s in scenarios" :key="s.key"
+          v-for="s in preset" :key="s.key"
           class="sc-card" @tap="start(s.key)"
         >
           <text class="sc-emoji">{{ s.emoji }}</text>
@@ -115,7 +137,8 @@ interface Msg {
 }
 
 const phase = ref<'pick' | 'chat'>('pick')
-const scenarios = ref<SpeakScenario[]>([])
+const custom = ref<SpeakScenario[]>([])
+const preset = ref<SpeakScenario[]>([])
 const scenarioKey = ref('')
 const messages = ref<Msg[]>([])
 const draft = ref('')
@@ -145,7 +168,9 @@ async function endAndRate() {
 
 onMounted(async () => {
   try {
-    scenarios.value = await getSpeakScenarios()
+    const list = await getSpeakScenarios()
+    custom.value = list.custom || []
+    preset.value = list.preset || []
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '加载失败', icon: 'none' })
   }
@@ -264,8 +289,14 @@ function micEnd() {
 .h-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); display: block; }
 .h-sub { font-size: 24rpx; color: var(--c-text-hint); margin-top: 6rpx; display: block; }
 
-.grid { display: flex; flex-wrap: wrap; gap: 20rpx; padding: 20rpx 24rpx; }
+.sec-head { padding: 14rpx 24rpx 0; display: flex; align-items: baseline; gap: 14rpx; flex-wrap: wrap; }
+.sec-name { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.sec-desc { font-size: 22rpx; color: var(--c-text-hint); }
+.grid { display: flex; flex-wrap: wrap; gap: 20rpx; padding: 16rpx 24rpx; }
 .sc-card { width: calc(50% - 10rpx); box-sizing: border-box; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 26rpx 22rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); display: flex; flex-direction: column; gap: 10rpx; }
+.sc-card.custom { background: linear-gradient(160deg, var(--c-primary-faint), var(--c-bg-card)); border: 2rpx solid var(--c-primary-soft); }
+.sc-top { display: flex; align-items: center; justify-content: space-between; }
+.sc-tag { font-size: 18rpx; font-weight: 700; color: var(--c-primary-deep); background: #fff; padding: 4rpx 12rpx; border-radius: var(--r-pill); }
 .sc-emoji { font-size: 48rpx; }
 .sc-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
 .sc-open { font-size: 22rpx; color: var(--c-text-hint); line-height: 1.5; }

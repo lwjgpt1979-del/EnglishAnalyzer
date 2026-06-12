@@ -48,17 +48,20 @@ class ReplyIn(BaseModel):
     history: list[TurnIn] = []
 
 
-@router.get("/scenarios", response_model=BaseResponse[list])
-async def scenarios(current_user: UserDep):
-    """口语对话场景列表。"""
-    return make_ok(svc.list_scenarios())
+@router.get("/scenarios", response_model=BaseResponse[dict])
+async def scenarios(current_user: UserDep, db: DbDep):
+    """口语对话场景：因材施教的个性化场景（学期/词力通/错题）+ 通用预设。"""
+    custom = await svc.list_personalized(db, current_user.id)
+    return make_ok({"custom": custom, "preset": svc.list_scenarios()})
 
 
 @router.post("/start", response_model=BaseResponse[dict])
 async def start(body: StartIn, current_user: UserDep, db: DbDep):
     """开始某场景：返回 AI 开场白 + 语音。"""
     try:
-        return make_ok(await svc.opening(db, scenario_key=body.scenario_key, stage=_stage(current_user)))
+        return make_ok(await svc.opening(
+            db, student_id=current_user.id,
+            scenario_key=body.scenario_key, stage=_stage(current_user)))
     except ValueError:
         raise AppError(code=404, message="场景不存在")
 
@@ -68,7 +71,7 @@ async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
     """学生说一句 → AI 回复 + 纠错 + 回复语音。"""
     try:
         return make_ok(await svc.reply(
-            db, scenario_key=body.scenario_key,
+            db, student_id=current_user.id, scenario_key=body.scenario_key,
             history=[t.model_dump() for t in body.history],
             user_text=body.user_text, stage=_stage(current_user)))
     except ValueError:
@@ -85,7 +88,7 @@ async def summary(body: SummaryIn, current_user: UserDep, db: DbDep):
     """对话结束 → 本次练习评价（评分 + 亮点 + 改进 + 鼓励）。"""
     try:
         return make_ok(await svc.summarize(
-            db, scenario_key=body.scenario_key,
+            db, student_id=current_user.id, scenario_key=body.scenario_key,
             history=[t.model_dump() for t in body.history],
             stage=_stage(current_user)))
     except ValueError as e:

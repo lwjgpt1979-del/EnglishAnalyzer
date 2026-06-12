@@ -5,6 +5,13 @@ export interface SpeakScenario {
   title: string
   emoji: string
   opening: string
+  tag?: string       // preset | custom
+  source?: string    // custom 来源：学期内容 / 词力通 / 错题
+}
+
+export interface SpeakScenarioList {
+  custom: SpeakScenario[]
+  preset: SpeakScenario[]
 }
 
 export interface SpeakTurn {
@@ -25,8 +32,8 @@ export interface SpeakReply {
   translation: string
 }
 
-export function getSpeakScenarios(): Promise<SpeakScenario[]> {
-  return request<SpeakScenario[]>('/api/v1/speaking/scenarios', { method: 'GET' })
+export function getSpeakScenarios(): Promise<SpeakScenarioList> {
+  return request<SpeakScenarioList>('/api/v1/speaking/scenarios', { method: 'GET' })
 }
 
 export function startSpeak(scenarioKey: string): Promise<SpeakOpening> {
