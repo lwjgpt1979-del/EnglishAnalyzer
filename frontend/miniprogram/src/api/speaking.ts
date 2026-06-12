@@ -43,3 +43,22 @@ export function replySpeak(
     data: { scenario_key: scenarioKey, user_text: userText, history },
   })
 }
+
+export interface SpeakSummary {
+  overall: number
+  fluency: number
+  grammar: number
+  vocabulary: number
+  highlights: string[]
+  improvements: string[]
+  encouragement: string
+}
+
+export function summarizeSpeak(
+  scenarioKey: string, history: SpeakTurn[],
+): Promise<SpeakSummary> {
+  return request<SpeakSummary>('/api/v1/speaking/summary', {
+    method: 'POST',
+    data: { scenario_key: scenarioKey, history },
+  })
+}

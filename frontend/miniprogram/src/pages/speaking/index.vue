@@ -20,6 +20,10 @@
 
     <!-- 对话 -->
     <view v-else class="chat-wrap">
+      <view class="chat-top">
+        <text class="ct-leave" @tap="leave">← 换场景</text>
+        <text class="ct-end" @tap="endAndRate">结束并评价</text>
+      </view>
       <scroll-view scroll-y class="chat" :scroll-top="scrollTop" :scroll-with-animation="true">
         <view class="chat-inner">
           <view v-for="(m, i) in messages" :key="i" :class="['row', m.role]">
@@ -60,7 +64,35 @@
         />
         <button class="send" :disabled="!draft.trim() || thinking" @tap="send">发送</button>
       </view>
-      <text class="leave" @tap="leave">← 换个场景</text>
+    </view>
+
+    <!-- 结束评价 -->
+    <view v-if="summary" class="mask" @tap="summary = null">
+      <view class="sheet" @tap.stop>
+        <text class="sh-title">🎉 本次口语评价</text>
+        <view class="score-ring">
+          <text class="sr-num">{{ summary.overall }}</text>
+          <text class="sr-unit">分</text>
+        </view>
+        <view class="dims">
+          <view class="dim"><text class="dim-l">流利度</text><text class="dim-v">{{ summary.fluency }}</text></view>
+          <view class="dim"><text class="dim-l">语法</text><text class="dim-v">{{ summary.grammar }}</text></view>
+          <view class="dim"><text class="dim-l">词汇</text><text class="dim-v">{{ summary.vocabulary }}</text></view>
+        </view>
+        <view class="sec">
+          <text class="sec-t">✨ 亮点</text>
+          <text v-for="(h, i) in summary.highlights" :key="i" class="sec-li">· {{ h }}</text>
+        </view>
+        <view class="sec">
+          <text class="sec-t">📈 可提升</text>
+          <text v-for="(im, i) in summary.improvements" :key="i" class="sec-li">· {{ im }}</text>
+        </view>
+        <text class="encour">{{ summary.encouragement }}</text>
+        <view class="sheet-btns">
+          <button class="btn-ghost" @tap="summary = null">继续聊</button>
+          <button class="btn-fill" @tap="() => { summary = null; leave() }">换个场景</button>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -68,8 +100,8 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
 import {
-  getSpeakScenarios, startSpeak, replySpeak,
-  type SpeakScenario, type SpeakTurn,
+  getSpeakScenarios, startSpeak, replySpeak, summarizeSpeak,
+  type SpeakScenario, type SpeakTurn, type SpeakSummary,
 } from '@/api/speaking'
 
 interface Msg {
@@ -90,6 +122,26 @@ const draft = ref('')
 const thinking = ref(false)
 const scrollTop = ref(0)
 const recording = ref(false)
+const summary = ref<SpeakSummary | null>(null)
+const rating = ref(false)
+
+async function endAndRate() {
+  const userTurns = messages.value.filter(m => m.role === 'user').length
+  if (userTurns === 0) { uni.showToast({ title: '先聊几句再评价吧', icon: 'none' }); return }
+  if (rating.value) return
+  rating.value = true
+  uni.showLoading({ title: '正在评价…' })
+  try {
+    const history: SpeakTurn[] = messages.value
+      .map(m => ({ role: m.role, text: m.text }))
+    summary.value = await summarizeSpeak(scenarioKey.value, history)
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '评价失败', icon: 'none' })
+  } finally {
+    uni.hideLoading()
+    rating.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -243,5 +295,26 @@ function micEnd() {
 .ti { flex: 1; background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 18rpx 24rpx; font-size: 28rpx; color: var(--c-text-body); }
 .send { flex-shrink: 0; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-pill); font-size: 28rpx; font-weight: 700; padding: 0 30rpx; height: 72rpx; line-height: 72rpx; }
 .send[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
-.leave { text-align: center; padding: 16rpx; font-size: 24rpx; color: var(--c-text-hint); }
+
+.chat-top { display: flex; align-items: center; justify-content: space-between; padding: 14rpx 24rpx; background: var(--c-bg-card); box-shadow: 0 2rpx 12rpx rgba(0,0,0,.04); }
+.ct-leave { font-size: 26rpx; color: var(--c-text-hint); }
+.ct-end { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 8rpx 22rpx; border-radius: var(--r-pill); }
+
+.mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 40rpx; }
+.sheet { width: 100%; max-width: 620rpx; background: var(--c-bg-card); border-radius: 28rpx; padding: 36rpx 32rpx; display: flex; flex-direction: column; align-items: center; gap: 16rpx; max-height: 86vh; overflow-y: auto; }
+.sh-title { font-size: 34rpx; font-weight: 800; color: var(--c-ink); }
+.score-ring { width: 160rpx; height: 160rpx; border-radius: 50%; background: var(--c-primary-faint); border: 8rpx solid var(--c-primary); display: flex; align-items: baseline; justify-content: center; gap: 4rpx; }
+.sr-num { font-size: 64rpx; font-weight: 900; color: var(--c-primary-deep); }
+.sr-unit { font-size: 24rpx; color: var(--c-primary-deep); }
+.dims { display: flex; gap: 28rpx; }
+.dim { display: flex; flex-direction: column; align-items: center; gap: 4rpx; }
+.dim-l { font-size: 22rpx; color: var(--c-text-hint); }
+.dim-v { font-size: 36rpx; font-weight: 800; color: var(--c-ink); }
+.sec { width: 100%; display: flex; flex-direction: column; gap: 6rpx; }
+.sec-t { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
+.sec-li { font-size: 25rpx; color: var(--c-text-second); line-height: 1.6; }
+.encour { font-size: 26rpx; color: var(--c-primary-deep); text-align: center; line-height: 1.6; margin-top: 4rpx; }
+.sheet-btns { display: flex; gap: 16rpx; width: 100%; margin-top: 12rpx; }
+.btn-ghost { flex: 1; background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; }
+.btn-fill { flex: 1; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; }
 </style>

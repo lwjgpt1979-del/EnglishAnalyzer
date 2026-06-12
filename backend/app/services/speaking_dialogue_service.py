@@ -154,3 +154,78 @@ async def reply(
         "correction": (data.get("correction") or "").strip(),
         "translation": (data.get("translation") or "").strip(),
     }
+
+
+def _clamp_score(v, default=70) -> int:
+    try:
+        return max(0, min(100, int(round(float(v)))))
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def _mock_summary(user_turns: list[str]) -> dict:
+    """dev-mock：按学生发言条数/平均长度给确定性评价（H5 可测）。"""
+    n = len(user_turns)
+    avg = (sum(len(t.split()) for t in user_turns) / n) if n else 0
+    base = min(95, 60 + n * 4 + int(avg))
+    return {
+        "overall": _clamp_score(base),
+        "fluency": _clamp_score(base - 2),
+        "grammar": _clamp_score(base - 5),
+        "vocabulary": _clamp_score(base + 2),
+        "highlights": ["敢于开口，完成了多轮对话", "用到了完整句子表达"][: max(1, min(2, n))],
+        "improvements": ["可以尝试更长的句子和连接词（and/because）", "注意动词时态与单复数"],
+        "encouragement": "练得不错，继续保持每天开口说英语！",
+    }
+
+
+async def summarize(
+    db: AsyncSession, *, scenario_key: str, history: list[dict], stage: str = "junior",
+) -> dict:
+    """对话结束后给本次练习评价：评分 + 亮点 + 改进 + 鼓励。"""
+    sc = get_scenario(scenario_key)
+    if sc is None:
+        raise ValueError("scenario not found")
+    user_turns = [(m.get("text") or "").strip() for m in (history or []) if m.get("role") == "user"]
+    user_turns = [t for t in user_turns if t]
+    if not user_turns:
+        raise ValueError("no user turns")
+
+    if is_llm_dev_mode():
+        return _mock_summary(user_turns)
+
+    level = _LEVEL_BY_STAGE.get(stage, _LEVEL_BY_STAGE["junior"])
+    sys = (
+        f"You are a kind English speaking coach for a Chinese student at {level} level. "
+        f"Based on the student's spoken lines in a roleplay, rate their performance and give "
+        f"encouraging, specific feedback. Respond ONLY as compact JSON with keys: "
+        f"overall (0-100 int), fluency (0-100), grammar (0-100), vocabulary (0-100), "
+        f"highlights (1-3 short Chinese bullet strings on what they did well), "
+        f"improvements (1-3 short Chinese bullet strings on what to improve), "
+        f"encouragement (one short Chinese sentence)."
+    )
+    lines = "\n".join(f"- {t}" for t in user_turns[-12:])
+    usr = f"Scenario: {sc['title']}.\nStudent's spoken lines:\n{lines}\n\nGive the JSON evaluation now."
+    try:
+        resp = await chat_completion(
+            system_prompt=sys, user_prompt=usr, max_tokens=400,
+            response_format={"type": "json_object"})
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[Speaking] 总结 LLM 失败，回退 mock: %s", e)
+        return _mock_summary(user_turns)
+
+    def _strlist(v):
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()][:3]
+        return [str(v).strip()] if v else []
+
+    return {
+        "overall": _clamp_score(data.get("overall")),
+        "fluency": _clamp_score(data.get("fluency")),
+        "grammar": _clamp_score(data.get("grammar")),
+        "vocabulary": _clamp_score(data.get("vocabulary")),
+        "highlights": _strlist(data.get("highlights")) or ["完成了多轮英语对话"],
+        "improvements": _strlist(data.get("improvements")) or ["多用完整句子表达"],
+        "encouragement": (data.get("encouragement") or "继续加油！").strip(),
+    }

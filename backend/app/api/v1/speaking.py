@@ -73,3 +73,22 @@ async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
             user_text=body.user_text, stage=_stage(current_user)))
     except ValueError:
         raise AppError(code=404, message="场景不存在")
+
+
+class SummaryIn(BaseModel):
+    scenario_key: str
+    history: list[TurnIn] = []
+
+
+@router.post("/summary", response_model=BaseResponse[dict])
+async def summary(body: SummaryIn, current_user: UserDep, db: DbDep):
+    """对话结束 → 本次练习评价（评分 + 亮点 + 改进 + 鼓励）。"""
+    try:
+        return make_ok(await svc.summarize(
+            db, scenario_key=body.scenario_key,
+            history=[t.model_dump() for t in body.history],
+            stage=_stage(current_user)))
+    except ValueError as e:
+        if "no user turns" in str(e):
+            raise AppError(code=400, message="还没开口说话，先聊几句再评价吧")
+        raise AppError(code=404, message="场景不存在")
