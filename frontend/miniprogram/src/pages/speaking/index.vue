@@ -117,6 +117,10 @@
             <text v-for="(w, i) in summary.focus_used" :key="'u'+i" class="chip used">✓ {{ w }}</text>
             <text v-for="(w, i) in summary.focus_missed" :key="'m'+i" class="chip miss">{{ w }}</text>
           </view>
+          <button
+            v-if="summary.focus_missed && summary.focus_missed.length"
+            class="repractice" @tap="repracticeMissed"
+          >🔁 再练这 {{ summary.focus_missed.length }} 个没用到的词</button>
         </view>
         <text class="encour">{{ summary.encouragement }}</text>
         <view class="sheet-btns">
@@ -173,6 +177,13 @@ async function endAndRate() {
     uni.hideLoading()
     rating.value = false
   }
+}
+
+function repracticeMissed() {
+  const missed = summary.value?.focus_missed || []
+  if (!missed.length) return
+  summary.value = null
+  start('words:' + missed.join('|'))
 }
 
 onMounted(async () => {
@@ -360,6 +371,7 @@ function micEnd() {
 .chip { font-size: 22rpx; padding: 4rpx 16rpx; border-radius: var(--r-pill); }
 .chip.used { background: #e6f8ee; color: #18a058; }
 .chip.miss { background: #fff; color: var(--c-text-hint); border: 2rpx solid var(--c-border); }
+.repractice { margin-top: 12rpx; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-pill); font-size: 25rpx; font-weight: 700; padding: 14rpx 0; }
 .encour { font-size: 26rpx; color: var(--c-primary-deep); text-align: center; line-height: 1.6; margin-top: 4rpx; }
 .sheet-btns { display: flex; gap: 16rpx; width: 100%; margin-top: 12rpx; }
 .btn-ghost { flex: 1; background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; }

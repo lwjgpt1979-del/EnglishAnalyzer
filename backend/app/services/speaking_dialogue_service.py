@@ -208,6 +208,21 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             "targets": ([title] + kps)[:6], "target_kind": "topic",
         }
 
+    if key.startswith("words:"):
+        # 指定单词专项（如评价里「再练未用到的词」）：词表编码在 key 中（| 分隔）
+        words = [w.strip() for w in key[6:].split("|") if w.strip()][:8]
+        if not words:
+            return None
+        focus = (f"Encourage the student to use these specific words: {', '.join(words)}. "
+                 f"Weave 1-2 of them into each of your replies naturally.")
+        return {
+            "key": key, "title": "专项练词", "emoji": "🔤", "gender": g,
+            "persona": "a cheerful word-practice buddy helping the student use target words",
+            "opening": f"Let's practice these words: {', '.join(words)}. "
+                       f"Can you use \"{words[0]}\" in a sentence?",
+            "focus": focus, "source": "词力通", "targets": words, "target_kind": "word",
+        }
+
     if key == "vocab":
         words = await _vocab_words(db, student_id)
         if not words:
