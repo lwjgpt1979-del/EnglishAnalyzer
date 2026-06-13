@@ -58,7 +58,7 @@
               <text>{{ m.text }}</text>
             </view>
             <view v-else-if="m.role === 'assistant'" class="bubble ai">
-              <text class="b-text">{{ m.text }}</text>
+              <text v-if="m.text" class="b-text">{{ m.text }}</text>
               <!-- 词卡：图左 + 词/音标/释义右；下方 例句 / 短语 / 发音·测发音 -->
               <view v-if="m.card" class="wcard">
                 <view class="wcard-top">
@@ -90,7 +90,7 @@
                   <text class="wcard-btn primary" @tap="openPron(m.card.word)">🎤 测发音</text>
                 </view>
               </view>
-              <view class="b-tools">
+              <view v-if="m.text" class="b-tools">
                 <text class="b-play" @tap="playAudio(m)">{{ m.playing ? '⏸' : '▶' }} 听</text>
                 <text v-if="m.translation" class="b-tr-btn" @tap="m.showTr = !m.showTr">
                   {{ m.showTr ? '隐藏翻译' : '中文' }}
@@ -333,7 +333,7 @@ async function start(key: string) {
     targetWords.value = o.target_words || []
     if (vocabMode.value) {
       cardIdx.value = 0
-      pushAi("我们来认这些词。先看这个，听发音、跟着读 👇", '', '', '', cards.value[0])
+      pushAi('', '', '', '', cards.value[0])
     } else {
       pushAi(o.ai_text, o.ai_audio_url)
     }
