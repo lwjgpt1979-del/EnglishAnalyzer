@@ -598,8 +598,8 @@ function micEnd() {
 /* 气泡内词卡：图左+词右，例句/短语/按钮分行（按布局2）*/
 .wcard { margin-top: 14rpx; background: var(--c-bg-card); border-radius: 16rpx; padding: 18rpx; display: flex; flex-direction: column; }
 .wcard-top { display: flex; gap: 18rpx; padding-bottom: 16rpx; border-bottom: 1rpx solid var(--c-border); }
-.wcard-img { width: 190rpx; height: 150rpx; border-radius: 12rpx; flex-shrink: 0; background: var(--c-bg-soft); }
-.wcard-img-empty { display: flex; align-items: center; justify-content: center; font-size: 56rpx; opacity: .5; }
+.wcard-img { width: 320rpx; height: 300rpx; border-radius: 12rpx; flex-shrink: 0; background: var(--c-bg-soft); }
+.wcard-img-empty { display: flex; align-items: center; justify-content: center; font-size: 72rpx; opacity: .5; }
 .wcard-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8rpx; min-width: 0; }
 .wcard-word { font-size: 46rpx; font-weight: 900; color: var(--c-ink); }
 .wcard-phon { font-size: 26rpx; color: var(--c-text-second); }
