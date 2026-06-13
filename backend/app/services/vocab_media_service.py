@@ -50,7 +50,7 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
     meaning = _primary_meaning(w)
     en = await _gen_en_description(w.word, meaning)
     w.en_description = en
-    w.image_urls = vocab_media_provider.generate_images(w.word, n=settings.image_count_per_word)
+    w.image_urls = await vocab_media_provider.generate_images(w.word, n=settings.image_count_per_word)
     w.word_audio_url = vocab_media_provider.generate_tts(w.word)
     w.en_desc_audio_url = vocab_media_provider.generate_tts(en)
     w.media_status = "draft"
