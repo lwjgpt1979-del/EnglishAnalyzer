@@ -145,6 +145,11 @@
             <text class="ss-num">{{ shadow.result.overall }}</text>
             <text class="ss-unit">分 · {{ levelLabel(shadow.result.level) }}</text>
           </view>
+          <view v-if="shadow.result.accuracy != null" class="shadow-dims">
+            <text class="sd">准确度 {{ shadow.result.accuracy }}</text>
+            <text class="sd">流利度 {{ shadow.result.fluency }}</text>
+            <text class="sd">完整度 {{ shadow.result.completion }}</text>
+          </view>
           <view class="shadow-words">
             <text
               v-for="(w, i) in shadow.result.words" :key="i"
@@ -455,29 +460,55 @@ function playShadowDemo() {
 }
 
 let _recorder: UniApp.RecorderManager | null = null
+let _recorderBound = false
+function ensureRecorder(): UniApp.RecorderManager {
+  if (!_recorder) _recorder = uni.getRecorderManager()
+  if (!_recorderBound) {
+    // 录音结束 → 读文件为 base64 → 送评测（onStop 异步，必须在这里取路径）
+    _recorder.onStop((res) => { readAndScore((res as { tempFilePath?: string }).tempFilePath || '') })
+    _recorderBound = true
+  }
+  return _recorder
+}
+
 function startShadowRecord() {
   shadow.result = null
+  shadow.recordPath = ''
   // #ifdef MP-WEIXIN
   try {
-    if (!_recorder) _recorder = uni.getRecorderManager()
-    _recorder.onStop((res) => { shadow.recordPath = (res as { tempFilePath?: string }).tempFilePath || '' })
-    _recorder.start({ format: 'mp3', duration: 60000 })
+    ensureRecorder().start({ format: 'mp3', duration: 60000 })
     shadow.recording = true
     return
   } catch { /* 不支持则退回直接评分 */ }
   // #endif
-  // H5 / 不支持录音：直接进入「录音中」态，结束即评分（演示用）
   shadow.recording = true
 }
 
-async function stopAndScore() {
-  // #ifdef MP-WEIXIN
-  try { _recorder?.stop() } catch { /* ignore */ }
-  // #endif
+function stopAndScore() {
   shadow.recording = false
   shadow.scoring = true
+  // #ifdef MP-WEIXIN
+  try { _recorder?.stop(); return } catch { /* ignore */ }
+  // #endif
+  // H5 / 不支持录音：直接走 dev-mock（无音频）
+  readAndScore('')
+}
+
+async function readAndScore(path: string) {
+  let audio = ''
+  if (path) {
+    audio = await new Promise<string>((resolve) => {
+      try {
+        uni.getFileSystemManager().readFile({
+          filePath: path, encoding: 'base64',
+          success: (r) => resolve((r.data as string) || ''),
+          fail: () => resolve(''),
+        })
+      } catch { resolve('') }
+    })
+  }
   try {
-    shadow.result = await shadowScore(shadow.text)
+    shadow.result = await shadowScore(shadow.text, audio, 'mp3')
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '评分失败', icon: 'none' })
   } finally {
@@ -567,6 +598,8 @@ onMounted(load)
 .shadow-score.lv-excellent .ss-num, .shadow-score.lv-good .ss-num { color: #18a058; }
 .shadow-score.lv-fair .ss-num { color: var(--c-gold); }
 .shadow-score.lv-poor .ss-num { color: var(--c-danger); }
+.shadow-dims { display: flex; justify-content: center; gap: 18rpx; margin: 8rpx 0 14rpx; }
+.sd { font-size: 22rpx; color: var(--c-text-second); background: var(--c-bg-soft); padding: 4rpx 16rpx; border-radius: var(--r-pill); }
 .shadow-words { display: flex; flex-wrap: wrap; gap: 12rpx; justify-content: center; }
 .sw-chip { font-size: 24rpx; color: var(--c-text-body); background: var(--c-bg-soft); padding: 6rpx 16rpx; border-radius: var(--r-pill); }
 .sw-chip.weak { background: var(--c-danger-bg); color: var(--c-danger); font-weight: 600; }

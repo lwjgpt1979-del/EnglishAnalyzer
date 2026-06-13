@@ -20,11 +20,13 @@ export interface ShadowScoreResult {
   tip: string
 }
 
-/** 跟读发音评分 */
-export function shadowScore(referenceText: string): Promise<ShadowScoreResult> {
+/** 跟读发音评分（带录音 base64；空则后端走 dev-mock） */
+export function shadowScore(
+  referenceText: string, audio = '', audioFormat = 'mp3',
+): Promise<ShadowScoreResult> {
   return request<ShadowScoreResult>('/api/v1/vocabulary/shadow-score', {
     method: 'POST',
-    data: { reference_text: referenceText },
+    data: { reference_text: referenceText, audio, audio_format: audioFormat },
   })
 }
 

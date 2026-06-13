@@ -25,7 +25,9 @@ from app.schemas.vocabulary import (
     WrongWordItem,
     WrongWordListOut,
 )
-from app.services import checkin_service, speech_score_service, vocabulary_service
+from app.services import (
+    checkin_service, pronunciation_service, speech_score_service, vocabulary_service,
+)
 
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
 
@@ -43,8 +45,18 @@ async def daily_task(db: DbDep, current_user: UserDep):
 
 @router.post("/shadow-score", response_model=BaseResponse[ShadowScoreResult])
 async def shadow_score(body: ShadowScoreIn, current_user: UserDep):
-    """跟读发音评分：对一句例句的跟读录音评分（MVP dev mock）。"""
-    result = speech_score_service.score_pronunciation(reference_text=body.reference_text)
+    """跟读发音评分：对单词/例句的跟读录音评分（腾讯 SOE；无密钥/无音频走 dev-mock）。"""
+    import base64 as _b64
+    audio_bytes = b""
+    if body.audio:
+        try:
+            audio_bytes = _b64.b64decode(body.audio)
+        except Exception:  # noqa: BLE001
+            audio_bytes = b""
+    mode = "word" if len(body.reference_text.split()) <= 1 else "sentence"
+    result = await pronunciation_service.assess(
+        reference_text=body.reference_text, audio_bytes=audio_bytes or None,
+        mode=mode, audio_format=body.audio_format or "mp3")
     return make_ok(ShadowScoreResult(**result))
 
 

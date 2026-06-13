@@ -147,7 +147,9 @@ class MakeUpResult(BaseModel):
 
 # ── 跟读发音评分（听力跟读模块·嵌入词力通例句）────────────────────────────
 class ShadowScoreIn(BaseModel):
-    reference_text: str = Field(..., min_length=1, description="跟读的参照句子文本")
+    reference_text: str = Field(..., min_length=1, description="跟读的参照单词/句子文本")
+    audio: str = Field("", description="录音 base64（空则走 dev-mock）")
+    audio_format: str = Field("mp3", description="音频格式：mp3/wav/pcm")
 
 
 class ShadowWordScore(BaseModel):
@@ -160,3 +162,6 @@ class ShadowScoreResult(BaseModel):
     level: str                       # excellent/good/fair/poor
     words: list[ShadowWordScore]
     tip: str
+    accuracy: int | None = None      # 准确度（SOE）
+    fluency: int | None = None       # 流利度（SOE）
+    completion: int | None = None    # 完整度（SOE）
