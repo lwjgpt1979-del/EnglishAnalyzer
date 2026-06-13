@@ -76,13 +76,12 @@ _SPK_TTL = 60.0
 _spk_cache: dict = {"data": None, "ts": 0.0}
 
 _DEF_WRONG_PROMPT = (
-    "You are a patient, encouraging speaking coach helping the student practice "
-    "the grammar/usage points they often get wrong. Stay friendly and on topic, "
-    "keep replies to 1-2 short sentences, and gently correct related mistakes.")
+    "You are an exam-mistake review coach. You quiz the student on a question they got "
+    "wrong, check their answer, and—when they are wrong—explain the reason clearly and "
+    "kindly, including what the distractor options are testing. Stay patient and focused.")
 _DEF_VOCAB_PROMPT = (
-    "You are a cheerful word-practice buddy helping the student actually use the "
-    "words they are learning. Keep replies short and naturally weave 1-2 target "
-    "words into each reply.")
+    "You are a vocabulary listening and pronunciation coach. You help the student hear, "
+    "say, and use their words, and you gently correct mispronunciations with simple tips.")
 _DEF_SEM_PROMPT = (
     "You are a friendly tutor chatting about the student's current school unit. "
     "Keep replies to 1-2 short sentences and guide them to talk about the topic.")
@@ -207,6 +206,17 @@ def get_scenario(key: str) -> dict | None:
 
 def _gender_for_key(key: str) -> str:
     return "f" if int(hashlib.md5(key.encode()).hexdigest(), 16) % 2 else "m"
+
+
+def _vocab_focus(words: list[str]) -> str:
+    return (
+        f"This is a VOCABULARY LISTENING & PRONUNCIATION practice. Target words: {', '.join(words)}. "
+        "Help the student HEAR and SAY these words: say one target word clearly, then ask the student to "
+        "repeat it and use it in a short sentence. PRONUNCIATION IS THE PRIORITY — if the student's spoken "
+        "word looks mispronounced (it came through as a different or garbled word), gently tell them the "
+        "correct pronunciation with a simple tip (word stress, syllables, or a tricky sound) and have them "
+        "say it again. Keep it encouraging and focused on saying the target words aloud."
+    )
 
 
 async def _student_prefs(db: AsyncSession, student_id) -> tuple[str | None, str | None, str | None]:
@@ -430,13 +440,12 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
         words = [w.strip() for w in key[6:].split("|") if w.strip()][:8]
         if not words:
             return None
-        focus = (f"Encourage the student to use these specific words: {', '.join(words)}. "
-                 f"Weave 1-2 of them into each of your replies naturally.")
+        focus = _vocab_focus(words)
         return {
             "key": key, "title": "专项练词", "emoji": "🔤", "gender": g,
-            "persona": "a cheerful word-practice buddy helping the student use target words",
-            "opening": f"Let's practice these words: {', '.join(words)}. "
-                       f"Can you use \"{words[0]}\" in a sentence?",
+            "persona": "a vocabulary listening & pronunciation coach",
+            "opening": f"Let's practice saying these words: {', '.join(words)}. "
+                       f"Listen, then say \"{words[0]}\" out loud and use it in a short sentence.",
             "focus": focus, "source": "词力通", "targets": words, "target_kind": "word",
             "prompt": cfg["special"]["vocab"]["prompt"],
         }
@@ -445,12 +454,12 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
         words = await _vocab_words(db, student_id)
         if not words:
             return None
-        focus = (f"Encourage the student to use these words they are learning: "
-                 f"{', '.join(words)}. Weave 1-2 of them into each of your replies naturally.")
+        focus = _vocab_focus(words)
         return {
             "key": "vocab", "title": "词力通在练词", "emoji": "🔤", "gender": g,
-            "persona": "a cheerful word-practice buddy helping the student use new words",
-            "opening": f"Time to use your new words! Can you make a sentence with \"{words[0]}\"?",
+            "persona": "a vocabulary listening & pronunciation coach",
+            "opening": f"Let's practice your words by listening and speaking! "
+                       f"Say \"{words[0]}\" out loud and use it in a short sentence.",
             "focus": focus, "source": "词力通", "targets": words, "target_kind": "word",
             "prompt": cfg["special"]["vocab"]["prompt"],
         }
@@ -461,20 +470,26 @@ async def resolve_scenario(db: AsyncSession, *, student_id, key: str) -> dict | 
             return None
         kp_str = "、".join(wq["kps"]) or "this language point"
         focus = (
-            f"You are reviewing ONE specific question the student got wrong before. "
+            f"This is an EXAM-MISTAKE REVIEW for ONE specific question the student got wrong. "
             f"Knowledge point: {kp_str}. "
-            f"Question: \"{wq['stem']}\". Correct answer: \"{wq['answer']}\". "
-            + (f"The student's wrong answer was: \"{wq['student_answer']}\". " if wq['student_answer'] else "")
-            + "Through short friendly dialogue, help them truly understand WHY the correct answer is "
-            "right; then ask ONE simple check question about this point. Set \"mastered\": true ONLY "
-            "after the student answers your check correctly or clearly shows they understand now; "
-            "otherwise keep \"mastered\": false and keep guiding. Do NOT reveal mastered to the student."
+            f"The question (with its options if any): \"{wq['stem']}\". "
+            f"Correct answer: \"{wq['answer']}\". "
+            + (f"The student previously chose the WRONG answer: \"{wq['student_answer']}\". "
+               if wq['student_answer'] else "")
+            + "Procedure: (1) Read the question to the student and ask them to answer it (do NOT reveal "
+            "the answer). (2) Check their answer. If CORRECT: affirm warmly in one line and set "
+            "\"mastered\": true (we will move to the next question). If WRONG: keep \"mastered\": false, "
+            "explain clearly WHY their answer is wrong, and briefly explain what the distractor option(s) "
+            "are testing and why they are traps; then ask them to try again. Stay on THIS question until "
+            "they answer it correctly."
         )
         return {
             "key": "wrong", "title": "错题复习", "emoji": "🎯", "gender": g,
-            "persona": "a patient coach helping the student understand a question they got wrong",
-            "opening": f"Let's go over a question you missed before about {kp_str}. "
-                       f"What do you remember about it?",
+            "persona": "an exam-mistake review coach who quizzes the student and explains errors",
+            "opening": (f"Let's review a question you got wrong, about {kp_str}. Here it is: "
+                        f"{wq['stem'][:180]} ... What's your answer?")
+                       if wq['stem'] else
+                       f"Let's review a question you got wrong about {kp_str}. Ready to try it again?",
             "focus": focus, "source": "错题薄弱点", "targets": wq["kps"] or [kp_str],
             "target_kind": "point", "prompt": cfg["special"]["wrong"]["prompt"],
             "wrong_question_id": wq["id"],
@@ -536,13 +551,17 @@ async def reply(
             f"to 1-2 short sentences, and gently correct clear mistakes.")
         sys = (
             base + f" The student is a Chinese student at {level} level. "
-            + "Always reply in 1-2 SHORT sentences and end by inviting them to keep talking. "
-            + (f"Personalization: {focus} " if focus else "")
-            + "Respond ONLY as compact JSON with keys: reply (your English line), "
+            + "Keep replies concise (about 1-3 short sentences). "
+            + "STAY STRICTLY ON THE GOAL OF THIS ACTIVITY: if the student asks something off-topic "
+            "or tries to change the subject, answer in ONE short sentence and then immediately steer "
+            "back to the task. Do not get pulled away from the activity's purpose. "
+            + (f"Task: {focus} " if focus else "")
+            + "Respond ONLY as compact JSON with keys: reply (your English line; you may add a brief "
+            "Chinese clause when correcting so the student understands), "
             "correction (a short note on the student's mistake, or empty string), "
             "translation (a Chinese translation of your reply), "
-            "mastered (boolean, true ONLY when the student just clearly demonstrated they "
-            "now understand the reviewed point; otherwise false)."
+            "mastered (boolean, true ONLY when the student just answered correctly / clearly "
+            "demonstrated they now understand the reviewed point; otherwise false)."
         )
         convo = "\n".join(
             f"{'Student' if m.get('role') == 'user' else 'You'}: {m.get('text', '')}"
