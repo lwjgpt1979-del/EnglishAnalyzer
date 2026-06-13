@@ -457,6 +457,7 @@ async def generate_vocab_media(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
 class VocabImageConfig(BaseModel):
     batch_size: int = 20
     images_per_word: int = 1
+    use_ai_prompt: bool = True
     primary: str
     styles: list[str]
 

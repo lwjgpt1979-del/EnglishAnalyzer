@@ -111,7 +111,7 @@ export function getSpeakingSemesters() {
 
 // ── 词力通配图提示词配置 + 批量 ──
 export interface VocabImageConfig {
-  batch_size: number; images_per_word: number; primary: string; styles: string[]
+  batch_size: number; images_per_word: number; use_ai_prompt: boolean; primary: string; styles: string[]
 }
 export interface VocabImageBatchStatus {
   running: boolean; total: number; done: number; ok: number; failed: number

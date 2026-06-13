@@ -7,7 +7,7 @@ import {
   type VocabImageBatchStatus,
 } from '../api/admin'
 
-const form = reactive({ batch_size: 20, images_per_word: 1, primary: '', stylesText: '' })
+const form = reactive({ batch_size: 20, images_per_word: 1, use_ai_prompt: true, primary: '', stylesText: '' })
 const loading = ref(false)
 const saving = ref(false)
 const batch = ref<VocabImageBatchStatus | null>(null)
@@ -20,6 +20,7 @@ async function load() {
     const c = await getVocabImageConfig()
     form.batch_size = c.batch_size
     form.images_per_word = c.images_per_word
+    form.use_ai_prompt = c.use_ai_prompt
     form.primary = c.primary
     form.stylesText = (c.styles || []).join('\n')
     batch.value = await getVocabImageBatchStatus()
@@ -37,7 +38,7 @@ async function save() {
   try {
     await updateVocabImageConfig({
       batch_size: form.batch_size, images_per_word: form.images_per_word,
-      primary: form.primary, styles,
+      use_ai_prompt: form.use_ai_prompt, primary: form.primary, styles,
     })
     ElMessage.success('已保存')
   } finally {
@@ -91,6 +92,10 @@ onUnmounted(stopPolling)
         <el-form-item label="每词图片数">
           <el-input-number v-model="form.images_per_word" :min="1" :max="3" />
           <span style="color:#909399;font-size:12px;margin-left:8px">每词生成几张（×单价计费）</span>
+        </el-form-item>
+        <el-form-item label="AI智能提示词">
+          <el-switch v-model="form.use_ai_prompt" active-text="开" inactive-text="关" />
+          <span style="color:#909399;font-size:12px;margin-left:8px">开启后用 DeepSeek 把每个词(尤其抽象词/虚词)转成可画的具体场景，再拼下面的要求；图片更能表意</span>
         </el-form-item>
         <el-form-item label="主要要求">
           <el-input v-model="form.primary" type="textarea" :rows="4"

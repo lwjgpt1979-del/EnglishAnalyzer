@@ -5,9 +5,12 @@ generate_for_word：英文描述（LLM，dev-mock 出固定文本）+ 多图 + �
 """
 from __future__ import annotations
 
+import logging
 import random
 import time
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +41,7 @@ _DEF_STYLES = [
 
 
 def _default_img_config() -> dict:
-    return {"batch_size": 20, "images_per_word": 1,
+    return {"batch_size": 20, "images_per_word": 1, "use_ai_prompt": True,
             "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES)}
 
 
@@ -53,6 +56,8 @@ def _merge_img_config(saved: dict | None) -> dict:
             cfg["images_per_word"] = max(1, min(int(saved.get("images_per_word", 1)), 3))
         except (TypeError, ValueError):
             pass
+        if "use_ai_prompt" in saved:
+            cfg["use_ai_prompt"] = bool(saved["use_ai_prompt"])
         if saved.get("primary"):
             cfg["primary"] = str(saved["primary"])
         if isinstance(saved.get("styles"), list):
@@ -60,6 +65,29 @@ def _merge_img_config(saved: dict | None) -> dict:
             if s:
                 cfg["styles"] = s
     return cfg
+
+
+async def _ai_visual_brief(word: str, meaning: str, pos: str) -> str:
+    """用 DeepSeek 把词(尤其抽象词/虚词)转成一句"可画的具体视觉场景"，提升图片可理解性。"""
+    if llm_provider.is_llm_dev_mode():
+        return ""   # dev-mock：不增强，走主要要求模板
+    try:
+        resp = await llm_provider.chat_completion(
+            system_prompt=(
+                "You design ONE concrete, illustratable visual scene for a text-to-image model so a "
+                "child instantly understands an English word/phrase. For abstract words, prepositions, "
+                "conjunctions or verbs, depict a clear concrete situation or simple visual metaphor that "
+                "conveys the meaning. Output ONE short English sentence describing only what is visible "
+                "(objects, people, action, spatial relation). No text/letters/words in the image. "
+                "No style words, no explanations."
+            ),
+            user_prompt=f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}",
+            max_tokens=120,
+        )
+        return (resp.choices[0].message.content or "").strip().replace("\n", " ")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[配图AI提示词] %s 失败: %s", word, e)
+        return ""
 
 
 async def get_image_config(db: AsyncSession) -> dict:
@@ -90,12 +118,14 @@ async def set_image_config(db: AsyncSession, *, config: dict, updated_by) -> dic
     return value
 
 
-def _build_prompts(cfg: dict, *, word: str, meaning: str, n: int) -> list[str]:
-    """主要要求(固定模板) + 次要随机风格 → n 条提示词。"""
+def _build_prompts(cfg: dict, *, word: str, meaning: str, n: int, brief: str = "") -> list[str]:
+    """(AI视觉场景 brief +) 主要要求(固定模板) + 次要随机风格 → n 条提示词。"""
     try:
         base = cfg["primary"].format(word=word, meaning=meaning or word)
     except Exception:  # noqa: BLE001 模板占位写错时退化
         base = f'{cfg["primary"]} word: "{word}".'
+    if brief:
+        base = f"{brief} {base}"   # AI 生成的可画场景放最前，主要要求作约束
     styles = cfg.get("styles") or [""]
     picks = random.sample(styles, k=min(n, len(styles))) if len(styles) >= n else \
         [random.choice(styles) for _ in range(n)]
@@ -127,11 +157,22 @@ async def _gen_en_description(word: str, meaning: str) -> str:
     return (resp.choices[0].message.content or "").strip()
 
 
+def _pos_of(w: VocabularyWord) -> str:
+    d = w.definitions
+    if isinstance(d, list) and d and isinstance(d[0], dict):
+        return str(d[0].get("pos", ""))
+    return ""
+
+
 async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None = None) -> list[str]:
-    """按配置(主要要求+随机风格)为单词批量构造提示词并逐条出图(转存COS)。"""
+    """按配置(可选AI视觉场景 + 主要要求 + 随机风格)构造提示词并逐条出图(转存COS)。"""
     cfg = cfg or await get_image_config(db)
     meaning = _primary_meaning(w)
-    prompts = _build_prompts(cfg, word=w.word, meaning=meaning, n=int(cfg.get("images_per_word", 1)))
+    brief = ""
+    if cfg.get("use_ai_prompt"):
+        brief = await _ai_visual_brief(w.word, meaning, _pos_of(w))
+    prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
+                             n=int(cfg.get("images_per_word", 1)), brief=brief)
     urls: list[str] = []
     for p in prompts:
         u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
