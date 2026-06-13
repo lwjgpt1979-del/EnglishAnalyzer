@@ -210,12 +210,13 @@ def _gender_for_key(key: str) -> str:
 
 def _vocab_focus(words: list[str]) -> str:
     return (
-        f"This is a VOCABULARY LISTENING & PRONUNCIATION practice. Target words: {', '.join(words)}. "
-        "Help the student HEAR and SAY these words: say one target word clearly, then ask the student to "
-        "repeat it and use it in a short sentence. PRONUNCIATION IS THE PRIORITY — if the student's spoken "
-        "word looks mispronounced (it came through as a different or garbled word), gently tell them the "
-        "correct pronunciation with a simple tip (word stress, syllables, or a tricky sound) and have them "
-        "say it again. Keep it encouraging and focused on saying the target words aloud."
+        "This is a VOCABULARY LEARNING chat. The APP shows each target word to the student as a card "
+        "(word + phonetic + picture) and plays its audio — so do NOT introduce, name, spell out, or quote "
+        "any specific next word yourself, and do NOT say things like \"listen again: 'xxx'\". "
+        "Instead, in 1-2 short sentences: warmly react to what the student just said (praise + a gentle "
+        "correction or pronunciation tip if needed), then invite them to look at and read the next word "
+        "card aloud (e.g. \"Nice! Now look at the next word and read it out loud.\"). Keep it short and "
+        "encouraging."
     )
 
 

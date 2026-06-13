@@ -51,25 +51,7 @@
           <text class="ct-end" @tap="endAndRate">结束并评价</text>
         </view>
       </view>
-      <!-- 词卡学习模式 -->
-      <view v-if="vocabMode && curCard()" class="vocab-wrap">
-        <view class="vocab-prog">{{ cardIdx + 1 }} / {{ cards.length }}</view>
-        <view class="word-card">
-          <text class="wc-word">{{ curCard().word }}</text>
-          <text v-if="curCard().phonetic" class="wc-phon">{{ curCard().phonetic }}</text>
-          <view class="wc-play" @tap="playWord(curCard())"><text>🔊 发音</text></view>
-          <image v-if="curCard().image_urls && curCard().image_urls.length"
-            class="wc-img" :src="curCard().image_urls[0]" mode="aspectFit" />
-          <text v-if="curCard().meaning" class="wc-mean">{{ curCard().meaning }}</text>
-        </view>
-        <view class="wc-actions">
-          <button class="wc-nav" :disabled="cardIdx === 0" @tap="prevCard">‹ 上一词</button>
-          <button class="wc-test" @tap="openPron(curCard().word)">🎤 测发音</button>
-          <button class="wc-nav" :disabled="cardIdx >= cards.length - 1" @tap="nextCard">下一词 ›</button>
-        </view>
-      </view>
-
-      <scroll-view v-if="!vocabMode" scroll-y class="chat" :scroll-top="scrollTop" :scroll-with-animation="true">
+      <scroll-view scroll-y class="chat" :scroll-top="scrollTop" :scroll-with-animation="true">
         <view class="chat-inner">
           <view v-for="(m, i) in messages" :key="i" :class="['row', m.role]">
             <view v-if="m.role === 'system'" class="sys-banner">
@@ -77,6 +59,20 @@
             </view>
             <view v-else-if="m.role === 'assistant'" class="bubble ai">
               <text class="b-text">{{ m.text }}</text>
+              <!-- 词卡（文字+音标+图片一起出，音标不发声）-->
+              <view v-if="m.card" class="wcard">
+                <view class="wcard-head">
+                  <text class="wcard-word">{{ m.card.word }}</text>
+                  <text v-if="m.card.phonetic" class="wcard-phon">{{ m.card.phonetic }}</text>
+                </view>
+                <image v-if="m.card.image_urls && m.card.image_urls.length"
+                  class="wcard-img" :src="m.card.image_urls[0]" mode="aspectFit" />
+                <text v-if="m.card.meaning" class="wcard-mean">{{ m.card.meaning }}</text>
+                <view class="wcard-btns">
+                  <text class="wcard-btn" @tap="playWord(m.card)">🔊 发音</text>
+                  <text class="wcard-btn primary" @tap="openPron(m.card.word)">🎤 测发音</text>
+                </view>
+              </view>
               <view class="b-tools">
                 <text class="b-play" @tap="playAudio(m)">{{ m.playing ? '⏸' : '▶' }} 听</text>
                 <text v-if="m.translation" class="b-tr-btn" @tap="m.showTr = !m.showTr">
@@ -99,14 +95,8 @@
         </view>
       </scroll-view>
 
-      <!-- 测发音：词力通场景的目标词，点一下用 SOE 真实评测发音 -->
-      <scroll-view v-if="!vocabMode && targetWords.length" scroll-x class="pron-bar">
-        <text class="pron-lead">🎤 测发音</text>
-        <text v-for="(w, i) in targetWords" :key="i" class="pron-chip" @tap="openPron(w)">{{ w }}</text>
-      </scroll-view>
-
       <!-- 输入条（微信式：默认语音，可切键盘）-->
-      <view v-if="!vocabMode" class="input-bar">
+      <view class="input-bar">
         <!-- #ifdef MP-WEIXIN -->
         <view class="mode-toggle" @tap="toggleMode">
           <text class="mt-ico">{{ inputMode === 'voice' ? '⌨' : '🎙' }}</text>
@@ -237,6 +227,7 @@ interface Msg {
   correction?: string
   showTr?: boolean
   playing?: boolean
+  card?: VocabCard | null   // 词力通：随气泡一起出的词卡（文字+音标+图片）
 }
 
 const phase = ref<'pick' | 'chat'>('pick')
@@ -319,12 +310,16 @@ async function start(key: string) {
   try {
     if (vocabMode.value) {
       cards.value = await getVocabCards()
-      if (!cards.value.length) { vocabMode.value = false }
-      else { showCard(0) }
+      if (!cards.value.length) vocabMode.value = false
     }
     const o = await startSpeak(key)
     targetWords.value = o.target_words || []
-    if (!vocabMode.value) pushAi(o.ai_text, o.ai_audio_url)
+    if (vocabMode.value) {
+      cardIdx.value = 0
+      pushAi("我们来认这些词。先看这个，听发音、跟着读 👇", '', '', '', cards.value[0])
+    } else {
+      pushAi(o.ai_text, o.ai_audio_url)
+    }
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '开始失败', icon: 'none' })
   } finally {
@@ -332,15 +327,7 @@ async function start(key: string) {
   }
 }
 
-const curCard = () => cards.value[cardIdx.value]
-function showCard(i: number) {
-  cardIdx.value = Math.max(0, Math.min(cards.value.length - 1, i))
-  if (autoPlay.value) playWord(curCard())
-}
-function prevCard() { if (cardIdx.value > 0) showCard(cardIdx.value - 1) }
-function nextCard() { if (cardIdx.value < cards.value.length - 1) showCard(cardIdx.value + 1) }
-
-async function playWord(c?: VocabCard) {
+async function playWord(c?: VocabCard | null) {
   if (!c) return
   const url = c.audio_url || await resolveSpeakUrl(c.word)
   if (!url) return
@@ -355,11 +342,12 @@ async function playWord(c?: VocabCard) {
   _ctx.play()
 }
 
-function pushAi(text: string, audio: string, translation = '', correction = '') {
-  const msg: Msg = { role: 'assistant', text, audio, translation, correction, showTr: false }
+function pushAi(text: string, audio: string, translation = '', correction = '', card: VocabCard | null = null) {
+  const msg: Msg = { role: 'assistant', text, audio, translation, correction, showTr: false, card }
   messages.value.push(msg)
   scrollToEnd()
-  if (audio && autoPlay.value) playAudio(msg)   // AI 回复自动播放
+  if (card && autoPlay.value) playWord(card)        // 词卡：自动播单词发音
+  else if (audio && autoPlay.value) playAudio(msg)  // 普通回复：自动播 AI 语音
 }
 
 async function send() {
@@ -375,7 +363,13 @@ async function send() {
       .slice(-8)
       .map(m => ({ role: m.role, text: m.text }))
     const r = await replySpeak(scenarioKey.value, t, history)
-    pushAi(r.ai_text, r.ai_audio_url, r.translation, r.correction)
+    // 词力通：AI 点评后带出下一个词卡（文字+音标+图片一起出）
+    let nextCard: VocabCard | null = null
+    if (vocabMode.value && cardIdx.value < cards.value.length - 1) {
+      cardIdx.value += 1
+      nextCard = cards.value[cardIdx.value]
+    }
+    pushAi(r.ai_text, nextCard ? '' : r.ai_audio_url, r.translation, r.correction, nextCard)
     if (r.mastered_wrong) {
       messages.value.push({
         role: 'system',
@@ -584,19 +578,16 @@ function micEnd() {
 
 .chat-wrap { display: flex; flex-direction: column; height: 100vh; }
 
-/* 词卡学习模式 */
-.vocab-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 24rpx; gap: 28rpx; }
-.vocab-prog { font-size: 24rpx; color: var(--c-text-hint); font-weight: 600; }
-.word-card { width: 100%; background: var(--c-bg-card); border-radius: 28rpx; padding: 56rpx 32rpx; display: flex; flex-direction: column; align-items: center; gap: 20rpx; box-shadow: 0 6rpx 32rpx rgba(0,0,0,.06); margin-top: 20rpx; }
-.wc-word { font-size: 76rpx; font-weight: 900; color: var(--c-ink); }
-.wc-phon { font-size: 34rpx; color: var(--c-text-second); }
-.wc-play { background: var(--c-primary-faint); color: var(--c-primary-deep); font-size: 28rpx; font-weight: 700; padding: 12rpx 36rpx; border-radius: var(--r-pill); }
-.wc-img { width: 320rpx; height: 240rpx; border-radius: 16rpx; }
-.wc-mean { font-size: 34rpx; color: var(--c-text-body); font-weight: 600; }
-.wc-actions { display: flex; align-items: center; gap: 16rpx; width: 100%; margin-top: auto; padding-bottom: 24rpx; }
-.wc-nav { flex: 1; background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 22rpx 0; font-size: 28rpx; }
-.wc-nav[disabled] { opacity: .4; }
-.wc-test { flex: 1.3; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx 0; font-size: 30rpx; font-weight: 700; }
+/* 气泡内词卡（文字+音标+图片一起出）*/
+.wcard { margin-top: 14rpx; background: var(--c-bg-soft); border-radius: 16rpx; padding: 20rpx 22rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.wcard-head { display: flex; align-items: baseline; gap: 16rpx; flex-wrap: wrap; }
+.wcard-word { font-size: 48rpx; font-weight: 900; color: var(--c-ink); }
+.wcard-phon { font-size: 28rpx; color: var(--c-text-second); }
+.wcard-img { width: 240rpx; height: 180rpx; border-radius: 12rpx; }
+.wcard-mean { font-size: 30rpx; color: var(--c-text-body); font-weight: 600; }
+.wcard-btns { display: flex; gap: 14rpx; margin-top: 4rpx; }
+.wcard-btn { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 10rpx 26rpx; border-radius: var(--r-pill); }
+.wcard-btn.primary { background: var(--c-primary); color: var(--c-on-primary); }
 .chat { flex: 1; min-height: 0; }
 .chat-inner { padding: 24rpx 24rpx 12rpx; display: flex; flex-direction: column; gap: 18rpx; }
 .row { display: flex; }
