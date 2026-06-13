@@ -54,15 +54,15 @@ class Settings(BaseSettings):
     cos_region: str = "ap-guangzhou"
     cos_base_url: str = "https://enggramer-dev-1234567890.cos.ap-guangzhou.myqcloud.com"
 
-    # 词力通图背单词媒体（dev 以 placeholder 触发 mock；真生成留接缝，需预算 + key）
-    image_provider: str = "mock"        # 'mock'=占位；'ark'=火山方舟 Seedream 文生图
+    # 词力通图背单词媒体（dev 以 placeholder 触发 mock；真生成留接缝）
+    image_provider: str = "mock"        # 'mock'=占位；'tencent'=腾讯混元生图极速版
     image_api_key: str = "img-placeholder-for-dev"
     image_count_per_word: int = 3
-    # 火山方舟 Seedream 文生图（image_provider=ark 时启用；图临时URL→下载传COS持久化）
-    ark_api_key: str = "placeholder-ark-key"
-    ark_image_model: str = "doubao-seedream-3-0-t2i-250415"
-    ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
-    ark_image_size: str = "1024x1024"
+    # 腾讯混元生图极速版 TextToImageLite（image_provider=tencent 时启用；图临时URL→下载传COS）
+    tencent_aiart_secret_id: str = "placeholder-aiart-id"
+    tencent_aiart_secret_key: str = "placeholder-aiart-key"
+    tencent_aiart_region: str = "ap-guangzhou"
+    tencent_aiart_resolution: str = "1024:1024"
     tts_provider: str = "mock"  # 'mock'=占位；'volcano'=火山引擎语音合成
     tts_api_key: str = "tts-placeholder-for-dev"
     # 火山引擎语音合成（豆包 TTS，语音技术控制台，独立于 Ark 视觉）

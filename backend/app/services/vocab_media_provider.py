@@ -1,7 +1,7 @@
 """词力通图/音频 provider（P1 / D-101）。
 
-图片：image_provider='ark' + 真实 ARK_API_KEY → 火山方舟 Seedream 文生图，
-生成的临时图 URL 下载后上传 COS 持久化，返回 COS 直链；否则 dev-mock 占位图。
+图片：image_provider='tencent' + 真实 TENCENT_AIART_SECRET_* → 腾讯混元生图极速版
+(TextToImageLite)，生成的临时图 URL 下载后上传 COS 持久化，返回 COS 直链；否则 dev-mock。
 音频：mock 占位（卡片实际发音走 TTS / tts_service，不依赖这里）。
 """
 from __future__ import annotations
@@ -22,7 +22,8 @@ _cos_client = None
 
 
 def is_image_dev_mode() -> bool:
-    return settings.image_provider != "ark" or settings.ark_api_key.startswith("placeholder")
+    return (settings.image_provider != "tencent"
+            or settings.tencent_aiart_secret_key.startswith("placeholder"))
 
 
 def is_tts_dev_mode() -> bool:
@@ -43,21 +44,20 @@ def _get_cos_client():
     return _cos_client
 
 
-async def _ark_t2i(prompt: str) -> str | None:
-    """火山方舟 Seedream 文生图：返回一张图的临时 URL。"""
-    url = f"{settings.ark_base_url}/images/generations"
-    headers = {"Authorization": f"Bearer {settings.ark_api_key}",
-               "Content-Type": "application/json"}
-    payload = {
-        "model": settings.ark_image_model, "prompt": prompt,
-        "size": settings.ark_image_size, "response_format": "url", "watermark": False,
-    }
-    async with httpx.AsyncClient(timeout=90) as client:
-        r = await client.post(url, headers=headers, json=payload)
-        r.raise_for_status()
-        data = r.json()
-    items = data.get("data") or []
-    return items[0].get("url") if items else None
+def _tencent_t2i(prompt: str) -> str | None:
+    """腾讯混元生图极速版 TextToImageLite（同步，在 to_thread 中执行）：返回临时图 URL。"""
+    from tencentcloud.common import credential
+    from tencentcloud.aiart.v20221229 import aiart_client, models
+    cred = credential.Credential(
+        settings.tencent_aiart_secret_id, settings.tencent_aiart_secret_key)
+    client = aiart_client.AiartClient(cred, settings.tencent_aiart_region)
+    req = models.TextToImageLiteRequest()
+    req.Prompt = prompt[:1024]
+    req.Resolution = settings.tencent_aiart_resolution
+    req.RspImgType = "url"
+    req.LogoAdd = 0   # 不加水印
+    resp = client.TextToImageLite(req)
+    return getattr(resp, "ResultImage", None) or None
 
 
 async def _persist_to_cos(img_url: str) -> str:
@@ -94,11 +94,11 @@ async def generate_images(prompt: str, n: int = 3) -> list[str]:
     out: list[str] = []
     for _ in range(max(1, min(n, 2))):   # 控成本：每词最多 2 张
         try:
-            tmp = await _ark_t2i(img_prompt)
+            tmp = await asyncio.to_thread(_tencent_t2i, img_prompt)
             if tmp:
                 out.append(await _persist_to_cos(tmp))
         except Exception as e:  # noqa: BLE001
-            logger.error("[Ark文生图] %s 失败: %s", word, e)
+            logger.error("[混元生图] %s 失败: %s", word, e)
             break
     if not out:   # 全失败 → 占位兜底，不阻塞流程
         safe = urllib.parse.quote(word[:20])
