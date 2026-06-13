@@ -511,6 +511,8 @@ async def opening(
         "scenario": {"key": sc["key"], "title": sc["title"], "emoji": sc["emoji"]},
         "ai_text": sc["opening"],
         "ai_audio_url": audio or "",
+        # 词力通等练词场景：返回目标词，供前端「测发音」逐词调 SOE 评测
+        "target_words": (sc.get("targets") or []) if sc.get("target_kind") == "word" else [],
     }
 
 

@@ -81,6 +81,12 @@
         </view>
       </scroll-view>
 
+      <!-- 测发音：词力通场景的目标词，点一下用 SOE 真实评测发音 -->
+      <scroll-view v-if="targetWords.length" scroll-x class="pron-bar">
+        <text class="pron-lead">🎤 测发音</text>
+        <text v-for="(w, i) in targetWords" :key="i" class="pron-chip" @tap="openPron(w)">{{ w }}</text>
+      </scroll-view>
+
       <!-- 输入条（微信式：默认语音，可切键盘）-->
       <view class="input-bar">
         <!-- #ifdef MP-WEIXIN -->
@@ -120,6 +126,34 @@
       </text>
     </view>
     <!-- #endif -->
+
+    <!-- 测发音弹窗（SOE 真实评测） -->
+    <view v-if="pron.open" class="mask" @tap.self="closePron">
+      <view class="pron-card" @tap.stop>
+        <text class="pron-title">🎤 测发音</text>
+        <text class="pron-word">{{ pron.word }}</text>
+        <view v-if="!pron.result">
+          <button
+            class="pron-rec" :class="{ on: pron.recording }" :disabled="pron.scoring"
+            @tap="pron.recording ? pronStop() : pronStart()"
+          >{{ pron.scoring ? '评分中…' : (pron.recording ? '● 录音中，点击结束' : '开始朗读') }}</button>
+          <text class="pron-hint">清楚地读出上面的单词</text>
+        </view>
+        <view v-else class="pron-result">
+          <view class="pron-score" :class="`lv-${pron.result.level}`">
+            <text class="pr-num">{{ pron.result.overall }}</text><text class="pr-unit">分</text>
+          </view>
+          <view v-if="pron.result.accuracy != null" class="pron-dims">
+            <text class="pd">准确 {{ pron.result.accuracy }}</text>
+            <text class="pd">流利 {{ pron.result.fluency }}</text>
+            <text class="pd">完整 {{ pron.result.completion }}</text>
+          </view>
+          <text class="pron-tip">💡 {{ pron.result.tip }}</text>
+          <button class="pron-rec" @tap="openPron(pron.word)">🔁 再测</button>
+        </view>
+        <text class="pron-close" @tap="closePron">关闭</text>
+      </view>
+    </view>
 
     <!-- 结束评价 -->
     <view v-if="summary" class="mask" @tap="summary = null">
@@ -169,11 +203,12 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import {
   getSpeakScenarios, startSpeak, replySpeak, summarizeSpeak,
   type SpeakScenario, type SpeakTurn, type SpeakSummary,
 } from '@/api/speaking'
+import { shadowScore, type ShadowScoreResult } from '@/api/vocabulary'
 
 interface Msg {
   role: 'user' | 'assistant' | 'system'
@@ -196,6 +231,12 @@ const scrollTop = ref(0)
 const recording = ref(false)
 const cancelZone = ref(false)
 const autoPlay = ref(true)   // AI 回复自动播放语音
+const targetWords = ref<string[]>([])   // 词力通场景的目标词（供测发音）
+// 测发音弹窗（复用词力通跟读的 SOE 评测）
+const pron = reactive<{
+  open: boolean; word: string; recording: boolean; scoring: boolean
+  result: ShadowScoreResult | null
+}>({ open: false, word: '', recording: false, scoring: false, result: null })
 // 输入模式：微信端默认语音，H5 只用文字
 const inputMode = ref<'voice' | 'text'>('text')
 // #ifdef MP-WEIXIN
@@ -246,10 +287,12 @@ onMounted(async () => {
 async function start(key: string) {
   scenarioKey.value = key
   messages.value = []
+  targetWords.value = []
   phase.value = 'chat'
   thinking.value = true
   try {
     const o = await startSpeak(key)
+    targetWords.value = o.target_words || []
     pushAi(o.ai_text, o.ai_audio_url)
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '开始失败', icon: 'none' })
@@ -324,6 +367,61 @@ function playAudio(m: Msg) {
 function leave() {
   if (_cur && _ctx) { try { _ctx.stop() } catch { /* ignore */ } }
   phase.value = 'pick'
+}
+
+// ── 测发音（录音 → 复用词力通 SOE 评测）──
+let _pronRec: UniApp.RecorderManager | null = null
+let _pronBound = false
+function ensurePronRecorder(): UniApp.RecorderManager {
+  if (!_pronRec) _pronRec = uni.getRecorderManager()
+  if (!_pronBound) {
+    _pronRec.onStop((res) => { pronReadAndScore((res as { tempFilePath?: string }).tempFilePath || '') })
+    _pronBound = true
+  }
+  return _pronRec
+}
+function openPron(word: string) {
+  pron.word = word; pron.result = null; pron.recording = false; pron.scoring = false; pron.open = true
+}
+function closePron() { pron.open = false }
+function pronStart() {
+  pron.result = null
+  // #ifdef MP-WEIXIN
+  try {
+    ensurePronRecorder().start({ format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, duration: 15000 })
+    pron.recording = true
+    return
+  } catch { /* fallthrough */ }
+  // #endif
+  pron.recording = true
+}
+function pronStop() {
+  pron.recording = false
+  pron.scoring = true
+  // #ifdef MP-WEIXIN
+  try { _pronRec?.stop(); return } catch { /* ignore */ }
+  // #endif
+  pronReadAndScore('')
+}
+async function pronReadAndScore(path: string) {
+  let audio = ''
+  if (path) {
+    audio = await new Promise<string>((resolve) => {
+      try {
+        uni.getFileSystemManager().readFile({
+          filePath: path, encoding: 'base64',
+          success: (r) => resolve((r.data as string) || ''), fail: () => resolve(''),
+        })
+      } catch { resolve('') }
+    })
+  }
+  try {
+    pron.result = await shadowScore(pron.word, audio, 'mp3')
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '评分失败', icon: 'none' })
+  } finally {
+    pron.scoring = false
+  }
 }
 
 // ── 语音输入（微信同声传译插件，仅微信端） ──
@@ -478,6 +576,27 @@ function micEnd() {
 .ct-auto.on { color: var(--c-primary-deep); }
 .ct-end { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 8rpx 22rpx; border-radius: var(--r-pill); }
 
+/* 测发音 chips 条 */
+.pron-bar { white-space: nowrap; padding: 12rpx 20rpx; background: var(--c-bg-card); border-top: 1rpx solid var(--c-border); }
+.pron-lead { font-size: 22rpx; color: var(--c-text-hint); margin-right: 10rpx; }
+.pron-chip { display: inline-block; font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 8rpx 22rpx; border-radius: var(--r-pill); margin-right: 12rpx; }
+/* 测发音弹窗 */
+.pron-card { width: 100%; max-width: 560rpx; background: var(--c-bg-card); border-radius: 28rpx; padding: 36rpx 32rpx; display: flex; flex-direction: column; align-items: center; gap: 16rpx; }
+.pron-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.pron-word { font-size: 48rpx; font-weight: 900; color: var(--c-primary-deep); }
+.pron-rec { width: 100%; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; }
+.pron-rec.on { background: var(--c-danger, #e64f4f); }
+.pron-hint { font-size: 22rpx; color: var(--c-text-hint); margin-top: 10rpx; text-align: center; display: block; }
+.pron-result { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12rpx; }
+.pron-score { display: flex; align-items: baseline; gap: 4rpx; }
+.pr-num { font-size: 72rpx; font-weight: 900; color: var(--c-primary); }
+.pron-score.lv-excellent .pr-num, .pron-score.lv-good .pr-num { color: #18a058; }
+.pron-score.lv-poor .pr-num { color: var(--c-danger, #e64f4f); }
+.pr-unit { font-size: 26rpx; color: var(--c-text-hint); }
+.pron-dims { display: flex; gap: 16rpx; }
+.pd { font-size: 22rpx; color: var(--c-text-second); background: var(--c-bg-soft); padding: 4rpx 16rpx; border-radius: var(--r-pill); }
+.pron-tip { font-size: 25rpx; color: var(--c-text-second); text-align: center; line-height: 1.5; }
+.pron-close { font-size: 24rpx; color: var(--c-text-hint); margin-top: 6rpx; }
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 40rpx; }
 .sheet { width: 100%; max-width: 620rpx; background: var(--c-bg-card); border-radius: 28rpx; padding: 36rpx 32rpx; display: flex; flex-direction: column; align-items: center; gap: 16rpx; max-height: 86vh; overflow-y: auto; }
 .sh-title { font-size: 34rpx; font-weight: 800; color: var(--c-ink); }

@@ -23,6 +23,7 @@ export interface SpeakOpening {
   scenario: { key: string; title: string; emoji: string }
   ai_text: string
   ai_audio_url: string
+  target_words?: string[]
 }
 
 export interface SpeakReply {
