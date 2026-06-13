@@ -81,9 +81,8 @@ async def _call_soe_ws(ref_text: str, audio_bytes: bytes, *, mode: str, audio_fo
     url = _build_ws_url(ref_text, mode=mode, audio_format=audio_format)
     result: dict | None = None
     async with websockets.connect(url, max_size=8 * 1024 * 1024) as ws:
-        # 推音频帧
-        for i in range(0, len(audio_bytes), _CHUNK):
-            await ws.send(audio_bytes[i:i + _CHUNK])
+        # 录音模式(rec_mode=1)：整段音频一次性发送一个数据包
+        await ws.send(audio_bytes)
         await ws.send(json.dumps({"type": "end"}))
         # 收结果直到 final=1
         while True:
@@ -122,9 +121,10 @@ def _map_result(res: dict) -> dict:
                 rl = ph.get("ReferenceLetter") or ph.get("ReferencePhone") or ph.get("Phone")
                 if rl:
                     weak_phones.append(str(rl))
+    # 准确度/总分为 0-100；流利度/完整度为 0-1 小数 → ×100 统一成百分制
     accuracy = int(round(res.get("PronAccuracy", 0) or 0))
-    fluency = int(round(res.get("PronFluency", 0) or 0))
-    completion = int(round(res.get("PronCompletion", 0) or 0))
+    fluency = int(round((res.get("PronFluency", 0) or 0) * 100))
+    completion = int(round((res.get("PronCompletion", 0) or 0) * 100))
     overall = int(round(res.get("SuggestedScore", 0) or accuracy or 0))
     return {
         "overall": overall, "level": _level(overall),
