@@ -111,6 +111,12 @@ async def summary(body: SummaryIn, current_user: UserDep, db: DbDep):
     return make_ok(result)
 
 
+@router.get("/vocab-cards", response_model=BaseResponse[list])
+async def vocab_cards(current_user: UserDep, db: DbDep):
+    """词力通在练词的词卡（单词/英标/释义/图片/发音），供词卡学习场景。"""
+    return make_ok(await svc.vocab_cards(db, current_user.id))
+
+
 @router.get("/stats", response_model=BaseResponse[dict])
 async def stats(current_user: UserDep, db: DbDep):
     """口语维度学情：累计/本周练习数、均分、最近分、连续口语天数。"""

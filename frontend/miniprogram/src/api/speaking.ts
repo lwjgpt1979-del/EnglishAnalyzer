@@ -39,6 +39,17 @@ export function getSpeakScenarios(): Promise<SpeakScenarioList> {
   return request<SpeakScenarioList>('/api/v1/speaking/scenarios', { method: 'GET' })
 }
 
+export interface VocabCard {
+  word: string
+  phonetic: string
+  meaning: string
+  image_urls: string[]
+  audio_url: string
+}
+export function getVocabCards(): Promise<VocabCard[]> {
+  return request<VocabCard[]>('/api/v1/speaking/vocab-cards', { method: 'GET' })
+}
+
 export function startSpeak(scenarioKey: string): Promise<SpeakOpening> {
   return request<SpeakOpening>('/api/v1/speaking/start', {
     method: 'POST', data: { scenario_key: scenarioKey },

@@ -270,6 +270,30 @@ async def _vocab_words(db: AsyncSession, student_id, *, limit: int = 8) -> list[
     return [r[0] for r in rows if r[0]]
 
 
+async def vocab_cards(db: AsyncSession, student_id, *, limit: int = 12) -> list[dict]:
+    """词力通在练词的词卡：单词 + 英标 + 释义 + 图片 + 发音音频(无则前端用TTS兜底)。"""
+    from app.models.d5_learning import VocabularyLearning, VocabularyWord
+    rows = (await db.execute(
+        select(VocabularyWord.word, VocabularyWord.phonetic, VocabularyWord.definitions,
+               VocabularyWord.image_urls, VocabularyWord.word_audio_url)
+        .join(VocabularyLearning, VocabularyLearning.word_id == VocabularyWord.id)
+        .where(VocabularyLearning.student_id == student_id)
+        .order_by(VocabularyLearning.next_review_at.asc()).limit(limit)
+    )).all()
+    out: list[dict] = []
+    for word, phon, defs, imgs, audio in rows:
+        meaning = ""
+        if isinstance(defs, list) and defs and isinstance(defs[0], dict):
+            meaning = str(defs[0].get("meaning") or "")
+        out.append({
+            "word": word, "phonetic": phon or "",
+            "meaning": meaning[:40],
+            "image_urls": ([str(u) for u in imgs][:2] if isinstance(imgs, list) else []),
+            "audio_url": audio or "",
+        })
+    return out
+
+
 async def _wrong_kp_names(db: AsyncSession, student_id, *, limit: int = 5) -> list[str]:
     """学生错题关联的高频知识点。"""
     from sqlalchemy import func

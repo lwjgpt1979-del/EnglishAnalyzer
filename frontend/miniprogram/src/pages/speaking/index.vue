@@ -51,7 +51,25 @@
           <text class="ct-end" @tap="endAndRate">结束并评价</text>
         </view>
       </view>
-      <scroll-view scroll-y class="chat" :scroll-top="scrollTop" :scroll-with-animation="true">
+      <!-- 词卡学习模式 -->
+      <view v-if="vocabMode && curCard()" class="vocab-wrap">
+        <view class="vocab-prog">{{ cardIdx + 1 }} / {{ cards.length }}</view>
+        <view class="word-card">
+          <text class="wc-word">{{ curCard().word }}</text>
+          <text v-if="curCard().phonetic" class="wc-phon">{{ curCard().phonetic }}</text>
+          <view class="wc-play" @tap="playWord(curCard())"><text>🔊 发音</text></view>
+          <image v-if="curCard().image_urls && curCard().image_urls.length"
+            class="wc-img" :src="curCard().image_urls[0]" mode="aspectFit" />
+          <text v-if="curCard().meaning" class="wc-mean">{{ curCard().meaning }}</text>
+        </view>
+        <view class="wc-actions">
+          <button class="wc-nav" :disabled="cardIdx === 0" @tap="prevCard">‹ 上一词</button>
+          <button class="wc-test" @tap="openPron(curCard().word)">🎤 测发音</button>
+          <button class="wc-nav" :disabled="cardIdx >= cards.length - 1" @tap="nextCard">下一词 ›</button>
+        </view>
+      </view>
+
+      <scroll-view v-if="!vocabMode" scroll-y class="chat" :scroll-top="scrollTop" :scroll-with-animation="true">
         <view class="chat-inner">
           <view v-for="(m, i) in messages" :key="i" :class="['row', m.role]">
             <view v-if="m.role === 'system'" class="sys-banner">
@@ -82,13 +100,13 @@
       </scroll-view>
 
       <!-- 测发音：词力通场景的目标词，点一下用 SOE 真实评测发音 -->
-      <scroll-view v-if="targetWords.length" scroll-x class="pron-bar">
+      <scroll-view v-if="!vocabMode && targetWords.length" scroll-x class="pron-bar">
         <text class="pron-lead">🎤 测发音</text>
         <text v-for="(w, i) in targetWords" :key="i" class="pron-chip" @tap="openPron(w)">{{ w }}</text>
       </scroll-view>
 
       <!-- 输入条（微信式：默认语音，可切键盘）-->
-      <view class="input-bar">
+      <view v-if="!vocabMode" class="input-bar">
         <!-- #ifdef MP-WEIXIN -->
         <view class="mode-toggle" @tap="toggleMode">
           <text class="mt-ico">{{ inputMode === 'voice' ? '⌨' : '🎙' }}</text>
@@ -205,10 +223,11 @@
 <script setup lang="ts">
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import {
-  getSpeakScenarios, startSpeak, replySpeak, summarizeSpeak,
-  type SpeakScenario, type SpeakTurn, type SpeakSummary,
+  getSpeakScenarios, startSpeak, replySpeak, summarizeSpeak, getVocabCards,
+  type SpeakScenario, type SpeakTurn, type SpeakSummary, type VocabCard,
 } from '@/api/speaking'
 import { shadowScore, type ShadowScoreResult } from '@/api/vocabulary'
+import { resolveSpeakUrl } from '@/utils/tts'
 
 interface Msg {
   role: 'user' | 'assistant' | 'system'
@@ -232,6 +251,10 @@ const recording = ref(false)
 const cancelZone = ref(false)
 const autoPlay = ref(true)   // AI 回复自动播放语音
 const targetWords = ref<string[]>([])   // 词力通场景的目标词（供测发音）
+// 词卡学习模式（词力通场景）
+const vocabMode = ref(false)
+const cards = ref<VocabCard[]>([])
+const cardIdx = ref(0)
 // 测发音弹窗（复用词力通跟读的 SOE 评测）
 const pron = reactive<{
   open: boolean; word: string; recording: boolean; scoring: boolean
@@ -288,17 +311,48 @@ async function start(key: string) {
   scenarioKey.value = key
   messages.value = []
   targetWords.value = []
+  vocabMode.value = key === 'vocab' || key.startsWith('words:')
+  cards.value = []
+  cardIdx.value = 0
   phase.value = 'chat'
   thinking.value = true
   try {
+    if (vocabMode.value) {
+      cards.value = await getVocabCards()
+      if (!cards.value.length) { vocabMode.value = false }
+      else { showCard(0) }
+    }
     const o = await startSpeak(key)
     targetWords.value = o.target_words || []
-    pushAi(o.ai_text, o.ai_audio_url)
+    if (!vocabMode.value) pushAi(o.ai_text, o.ai_audio_url)
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '开始失败', icon: 'none' })
   } finally {
     thinking.value = false
   }
+}
+
+const curCard = () => cards.value[cardIdx.value]
+function showCard(i: number) {
+  cardIdx.value = Math.max(0, Math.min(cards.value.length - 1, i))
+  if (autoPlay.value) playWord(curCard())
+}
+function prevCard() { if (cardIdx.value > 0) showCard(cardIdx.value - 1) }
+function nextCard() { if (cardIdx.value < cards.value.length - 1) showCard(cardIdx.value + 1) }
+
+async function playWord(c?: VocabCard) {
+  if (!c) return
+  const url = c.audio_url || await resolveSpeakUrl(c.word)
+  if (!url) return
+  if (!_ctx) {
+    _ctx = uni.createInnerAudioContext()
+    _ctx.onEnded(() => { if (_cur) _cur.playing = false })
+    _ctx.onStop(() => { if (_cur) _cur.playing = false })
+    _ctx.onError(() => { if (_cur) _cur.playing = false })
+  }
+  _cur = null
+  _ctx.src = url
+  _ctx.play()
 }
 
 function pushAi(text: string, audio: string, translation = '', correction = '') {
@@ -529,6 +583,20 @@ function micEnd() {
 .sc-open { font-size: 21rpx; color: var(--c-text-hint); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .chat-wrap { display: flex; flex-direction: column; height: 100vh; }
+
+/* 词卡学习模式 */
+.vocab-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 24rpx; gap: 28rpx; }
+.vocab-prog { font-size: 24rpx; color: var(--c-text-hint); font-weight: 600; }
+.word-card { width: 100%; background: var(--c-bg-card); border-radius: 28rpx; padding: 56rpx 32rpx; display: flex; flex-direction: column; align-items: center; gap: 20rpx; box-shadow: 0 6rpx 32rpx rgba(0,0,0,.06); margin-top: 20rpx; }
+.wc-word { font-size: 76rpx; font-weight: 900; color: var(--c-ink); }
+.wc-phon { font-size: 34rpx; color: var(--c-text-second); }
+.wc-play { background: var(--c-primary-faint); color: var(--c-primary-deep); font-size: 28rpx; font-weight: 700; padding: 12rpx 36rpx; border-radius: var(--r-pill); }
+.wc-img { width: 320rpx; height: 240rpx; border-radius: 16rpx; }
+.wc-mean { font-size: 34rpx; color: var(--c-text-body); font-weight: 600; }
+.wc-actions { display: flex; align-items: center; gap: 16rpx; width: 100%; margin-top: auto; padding-bottom: 24rpx; }
+.wc-nav { flex: 1; background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 22rpx 0; font-size: 28rpx; }
+.wc-nav[disabled] { opacity: .4; }
+.wc-test { flex: 1.3; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx 0; font-size: 30rpx; font-weight: 700; }
 .chat { flex: 1; min-height: 0; }
 .chat-inner { padding: 24rpx 24rpx 12rpx; display: flex; flex-direction: column; gap: 18rpx; }
 .row { display: flex; }
