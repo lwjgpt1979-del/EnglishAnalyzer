@@ -107,8 +107,7 @@ async def generate_images(prompt: str, n: int = 3) -> list[str]:
 
 
 def generate_tts(text: str) -> str:
-    """返回音频 URL。dev-mock 占位（卡片实际发音走 tts_service / 火山 TTS）。"""
+    """返回音频 URL。mock 时返回空串（不写假URL；卡片发音走 tts_service / 火山 TTS 兜底）。"""
     if is_tts_dev_mode():
-        h = hashlib.md5((text or "").encode("utf-8")).hexdigest()[:12]
-        return f"https://mock-tts.local/audio/{h}.mp3"
+        return ""
     raise NotImplementedError("真 TTS provider 未接入（卡片发音已走 tts_service）")

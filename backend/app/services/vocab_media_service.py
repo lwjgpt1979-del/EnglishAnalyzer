@@ -51,8 +51,12 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
     en = await _gen_en_description(w.word, meaning)
     w.en_description = en
     w.image_urls = await vocab_media_provider.generate_images(w.word, n=settings.image_count_per_word)
-    w.word_audio_url = vocab_media_provider.generate_tts(w.word)
-    w.en_desc_audio_url = vocab_media_provider.generate_tts(en)
+    wa = vocab_media_provider.generate_tts(w.word)
+    ea = vocab_media_provider.generate_tts(en)
+    if wa:
+        w.word_audio_url = wa      # mock 返回空 → 不覆盖（卡片发音走火山 TTS 兜底）
+    if ea:
+        w.en_desc_audio_url = ea
     w.media_status = "draft"
     await db.flush()
     return w
