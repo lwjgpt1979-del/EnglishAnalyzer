@@ -109,6 +109,26 @@ export function getSpeakingSemesters() {
   return unwrap<SemScopeUnit[]>(request.get('/admin/speaking-config/semesters'))
 }
 
+// ── 词力通配图提示词配置 + 批量 ──
+export interface VocabImageConfig {
+  batch_size: number; images_per_word: number; primary: string; styles: string[]
+}
+export interface VocabImageBatchStatus {
+  running: boolean; total: number; done: number; ok: number; failed: number
+}
+export function getVocabImageConfig() {
+  return unwrap<VocabImageConfig>(request.get('/admin/vocab-image-config'))
+}
+export function updateVocabImageConfig(body: VocabImageConfig) {
+  return unwrap<VocabImageConfig>(request.put('/admin/vocab-image-config', body))
+}
+export function startVocabImageBatch() {
+  return unwrap<{ started: boolean; total?: number; reason?: string }>(request.post('/admin/vocab-image/batch'))
+}
+export function getVocabImageBatchStatus() {
+  return unwrap<VocabImageBatchStatus>(request.get('/admin/vocab-image/batch/status'))
+}
+
 export interface TtsCosUsage { available: boolean; object_count: number; total_bytes: number; total_mb: number }
 export interface TtsPrewarmStatus { running: boolean; label: string; total: number; done: number; ok: number; failed: number }
 export interface TtsPrewarmSemester { textbook_version: string; grade: string; semester: string; word_count: number }

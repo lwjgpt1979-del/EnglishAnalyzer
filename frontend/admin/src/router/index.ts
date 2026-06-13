@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'tts-speed', name: 'tts-speed', component: () => import('../views/TtsSpeed.vue') },
         { path: 'tts-usage', name: 'tts-usage', component: () => import('../views/TtsUsage.vue') },
         { path: 'speaking-scenarios', name: 'speaking-scenarios', component: () => import('../views/SpeakingScenarios.vue') },
+        { path: 'vocab-image-gen', name: 'vocab-image-gen', component: () => import('../views/VocabImageGen.vue') },
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
         { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },
         { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },
