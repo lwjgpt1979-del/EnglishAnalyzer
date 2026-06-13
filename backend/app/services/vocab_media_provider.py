@@ -79,31 +79,23 @@ async def _persist_to_cos(img_url: str) -> str:
     return f"{settings.cos_base_url}/{key}"
 
 
-async def generate_images(prompt: str, n: int = 3) -> list[str]:
-    """为单词(prompt=单词)生成 n 张配图 URL。dev-mock 占位；真实走 Ark→COS。"""
-    word = (prompt or "word").strip()
-    if is_image_dev_mode():
-        safe = urllib.parse.quote(word[:20])
-        return [f"https://placehold.co/600x400?text={safe}-{i + 1}" for i in range(n)]
+async def t2i_to_cos(prompt: str, *, label: str = "") -> str | None:
+    """单条完整提示词 → 混元生图极速版 → 下载转存 COS → 返回直链。
 
-    img_prompt = (
-        f"A clear, simple, friendly illustration representing the English word \"{word}\", "
-        f"for children learning English vocabulary. Flat illustration style, bright colors, "
-        f"clean plain background, single obvious subject, NO text or letters in the image."
-    )
-    out: list[str] = []
-    for _ in range(max(1, min(n, 2))):   # 控成本：每词最多 2 张
-        try:
-            tmp = await asyncio.to_thread(_tencent_t2i, img_prompt)
-            if tmp:
-                out.append(await _persist_to_cos(tmp))
-        except Exception as e:  # noqa: BLE001
-            logger.error("[混元生图] %s 失败: %s", word, e)
-            break
-    if not out:   # 全失败 → 占位兜底，不阻塞流程
-        safe = urllib.parse.quote(word[:20])
-        return [f"https://placehold.co/600x400?text={safe}-1"]
-    return out
+    dev-mock 返回 placehold 占位（按 label/prompt 哈希）；失败返回 None（调用方决定兜底）。
+    """
+    if is_image_dev_mode():
+        safe = urllib.parse.quote((label or prompt or "word")[:20])
+        h = hashlib.md5((prompt or "").encode()).hexdigest()[:4]
+        return f"https://placehold.co/600x400?text={safe}-{h}"
+    try:
+        tmp = await asyncio.to_thread(_tencent_t2i, prompt)
+        if not tmp:
+            return None
+        return await _persist_to_cos(tmp)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[混元生图] %s 失败: %s", label or prompt[:20], e)
+        return None
 
 
 def generate_tts(text: str) -> str:

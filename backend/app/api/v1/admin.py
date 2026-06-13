@@ -454,6 +454,39 @@ async def generate_vocab_media(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(_to_vocab_media_item(w))
 
 
+class VocabImageConfig(BaseModel):
+    batch_size: int = 20
+    images_per_word: int = 1
+    primary: str
+    styles: list[str]
+
+
+@router.get("/vocab-image-config", response_model=BaseResponse[VocabImageConfig])
+async def get_vocab_image_config(db: DbDep, admin: AdminDep):
+    """读配图提示词配置（主要要求 + 随机风格 + 批量数量）。"""
+    return make_ok(VocabImageConfig(**await vocab_media_service.get_image_config(db)))
+
+
+@router.put("/vocab-image-config", response_model=BaseResponse[VocabImageConfig])
+async def update_vocab_image_config(body: VocabImageConfig, db: DbDep, admin: AdminDep):
+    """改配图提示词配置。"""
+    saved = await vocab_media_service.set_image_config(
+        db, config=body.model_dump(), updated_by=admin.id)
+    await db.commit()
+    return make_ok(VocabImageConfig(**saved))
+
+
+@router.post("/vocab-image/batch", response_model=BaseResponse[dict])
+async def start_vocab_image_batch(db: DbDep, admin: AdminDep):
+    """对未配图的单词，按配置批量生成配图（后台串行）。"""
+    return make_ok(await vocab_media_service.start_batch_image_gen(db))
+
+
+@router.get("/vocab-image/batch/status", response_model=BaseResponse[dict])
+async def vocab_image_batch_status(db: DbDep, admin: AdminDep):
+    return make_ok(vocab_media_service.batch_status())
+
+
 @router.get("/vocab", response_model=BaseResponse[AdminVocabMediaListOut])
 async def list_vocab_media(
     db: DbDep, admin: AdminDep,
