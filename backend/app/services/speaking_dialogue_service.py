@@ -276,13 +276,20 @@ async def vocab_cards(db: AsyncSession, student_id, *, limit: int = 12) -> list[
     from app.models.d5_learning import VocabularyLearning, VocabularyWord
     rows = (await db.execute(
         select(VocabularyWord.word, VocabularyWord.phonetic, VocabularyWord.definitions,
-               VocabularyWord.image_urls, VocabularyWord.word_audio_url)
+               VocabularyWord.image_urls, VocabularyWord.word_audio_url,
+               VocabularyWord.examples, VocabularyWord.phrases)
         .join(VocabularyLearning, VocabularyLearning.word_id == VocabularyWord.id)
         .where(VocabularyLearning.student_id == student_id)
         .order_by(VocabularyLearning.next_review_at.asc()).limit(limit)
     )).all()
+
+    def _first(jl):
+        if isinstance(jl, list) and jl and isinstance(jl[0], dict):
+            return {"en": str(jl[0].get("en", "")), "zh": str(jl[0].get("zh", ""))}
+        return None
+
     out: list[dict] = []
-    for word, phon, defs, imgs, audio in rows:
+    for word, phon, defs, imgs, audio, examples, phrases in rows:
         meaning = ""
         if isinstance(defs, list) and defs and isinstance(defs[0], dict):
             meaning = str(defs[0].get("meaning") or "")
@@ -291,6 +298,8 @@ async def vocab_cards(db: AsyncSession, student_id, *, limit: int = 12) -> list[
             "meaning": meaning[:40],
             "image_urls": ([str(u) for u in imgs][:2] if isinstance(imgs, list) else []),
             "audio_url": audio or "",
+            "example": _first(examples),
+            "phrase": _first(phrases),
         })
     return out
 

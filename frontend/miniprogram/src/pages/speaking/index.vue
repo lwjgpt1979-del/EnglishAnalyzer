@@ -59,15 +59,32 @@
             </view>
             <view v-else-if="m.role === 'assistant'" class="bubble ai">
               <text class="b-text">{{ m.text }}</text>
-              <!-- 词卡（文字+音标+图片一起出，音标不发声）-->
+              <!-- 词卡：图左 + 词/音标/释义右；下方 例句 / 短语 / 发音·测发音 -->
               <view v-if="m.card" class="wcard">
-                <view class="wcard-head">
-                  <text class="wcard-word">{{ m.card.word }}</text>
-                  <text v-if="m.card.phonetic" class="wcard-phon">{{ m.card.phonetic }}</text>
+                <view class="wcard-top">
+                  <image v-if="m.card.image_urls && m.card.image_urls.length"
+                    class="wcard-img" :src="m.card.image_urls[0]" mode="aspectFit" />
+                  <view v-else class="wcard-img wcard-img-empty"><text>🖼️</text></view>
+                  <view class="wcard-info">
+                    <text class="wcard-word">{{ m.card.word }}</text>
+                    <text v-if="m.card.phonetic" class="wcard-phon">{{ m.card.phonetic }}</text>
+                    <text v-if="m.card.meaning" class="wcard-mean">{{ m.card.meaning }}</text>
+                  </view>
                 </view>
-                <image v-if="m.card.image_urls && m.card.image_urls.length"
-                  class="wcard-img" :src="m.card.image_urls[0]" mode="aspectFit" />
-                <text v-if="m.card.meaning" class="wcard-mean">{{ m.card.meaning }}</text>
+                <view v-if="m.card.example && m.card.example.en" class="wcard-row">
+                  <text class="wcard-tag">例句</text>
+                  <view class="wcard-rowtext">
+                    <text class="wcard-en">{{ m.card.example.en }}</text>
+                    <text v-if="m.card.example.zh" class="wcard-zh">{{ m.card.example.zh }}</text>
+                  </view>
+                </view>
+                <view v-if="m.card.phrase && m.card.phrase.en" class="wcard-row">
+                  <text class="wcard-tag">短语</text>
+                  <view class="wcard-rowtext">
+                    <text class="wcard-en">{{ m.card.phrase.en }}</text>
+                    <text v-if="m.card.phrase.zh" class="wcard-zh">{{ m.card.phrase.zh }}</text>
+                  </view>
+                </view>
                 <view class="wcard-btns">
                   <text class="wcard-btn" @tap="playWord(m.card)">🔊 发音</text>
                   <text class="wcard-btn primary" @tap="openPron(m.card.word)">🎤 测发音</text>
@@ -578,15 +595,22 @@ function micEnd() {
 
 .chat-wrap { display: flex; flex-direction: column; height: 100vh; }
 
-/* 气泡内词卡（文字+音标+图片一起出）*/
-.wcard { margin-top: 14rpx; background: var(--c-bg-soft); border-radius: 16rpx; padding: 20rpx 22rpx; display: flex; flex-direction: column; gap: 12rpx; }
-.wcard-head { display: flex; align-items: baseline; gap: 16rpx; flex-wrap: wrap; }
-.wcard-word { font-size: 48rpx; font-weight: 900; color: var(--c-ink); }
-.wcard-phon { font-size: 28rpx; color: var(--c-text-second); }
-.wcard-img { width: 240rpx; height: 180rpx; border-radius: 12rpx; }
+/* 气泡内词卡：图左+词右，例句/短语/按钮分行（按布局2）*/
+.wcard { margin-top: 14rpx; background: var(--c-bg-card); border-radius: 16rpx; padding: 18rpx; display: flex; flex-direction: column; }
+.wcard-top { display: flex; gap: 18rpx; padding-bottom: 16rpx; border-bottom: 1rpx solid var(--c-border); }
+.wcard-img { width: 190rpx; height: 150rpx; border-radius: 12rpx; flex-shrink: 0; background: var(--c-bg-soft); }
+.wcard-img-empty { display: flex; align-items: center; justify-content: center; font-size: 56rpx; opacity: .5; }
+.wcard-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8rpx; min-width: 0; }
+.wcard-word { font-size: 46rpx; font-weight: 900; color: var(--c-ink); }
+.wcard-phon { font-size: 26rpx; color: var(--c-text-second); }
 .wcard-mean { font-size: 30rpx; color: var(--c-text-body); font-weight: 600; }
-.wcard-btns { display: flex; gap: 14rpx; margin-top: 4rpx; }
-.wcard-btn { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 10rpx 26rpx; border-radius: var(--r-pill); }
+.wcard-row { display: flex; gap: 14rpx; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.wcard-tag { flex-shrink: 0; font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 14rpx; border-radius: var(--r-pill); height: 32rpx; line-height: 32rpx; }
+.wcard-rowtext { flex: 1; display: flex; flex-direction: column; gap: 4rpx; min-width: 0; }
+.wcard-en { font-size: 28rpx; color: var(--c-text-body); line-height: 1.45; }
+.wcard-zh { font-size: 24rpx; color: var(--c-text-hint); line-height: 1.4; }
+.wcard-btns { display: flex; gap: 14rpx; padding-top: 16rpx; }
+.wcard-btn { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 10rpx 30rpx; border-radius: var(--r-pill); }
 .wcard-btn.primary { background: var(--c-primary); color: var(--c-on-primary); }
 .chat { flex: 1; min-height: 0; }
 .chat-inner { padding: 24rpx 24rpx 12rpx; display: flex; flex-direction: column; gap: 18rpx; }

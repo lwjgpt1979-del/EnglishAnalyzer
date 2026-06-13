@@ -164,13 +164,43 @@ def _pos_of(w: VocabularyWord) -> str:
     return ""
 
 
+async def _ai_example_phrase(word: str, meaning: str, pos: str, brief: str) -> dict:
+    """生成 例句(先贴合图片意思) + 短语。返回 {example:{en,zh}, phrase:{en,zh}}。"""
+    if llm_provider.is_llm_dev_mode():
+        return {"example": {"en": f"This is a {word}.", "zh": f"这是{meaning}。"},
+                "phrase": {"en": word, "zh": meaning}}
+    import json as _json
+    scene = f" The example sentence should match this picture: {brief}." if brief else ""
+    try:
+        resp = await llm_provider.chat_completion(
+            system_prompt=(
+                "You are an English vocabulary helper for young Chinese learners. For the given word/"
+                "phrase, output compact JSON with keys: example (an object {en, zh}: ONE simple CEFR-A2 "
+                "example sentence using the word, plus its Chinese translation) and phrase (an object "
+                "{en, zh}: ONE very common short collocation/phrase with the word, plus Chinese). "
+                "Keep English simple and natural." + scene
+            ),
+            user_prompt=f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}",
+            max_tokens=200, response_format={"type": "json_object"},
+        )
+        data = _json.loads(resp.choices[0].message.content or "{}")
+        ex = data.get("example") or {}
+        ph = data.get("phrase") or {}
+        return {"example": {"en": str(ex.get("en", "")).strip(), "zh": str(ex.get("zh", "")).strip()},
+                "phrase": {"en": str(ph.get("en", "")).strip(), "zh": str(ph.get("zh", "")).strip()}}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[例句短语] %s 失败: %s", word, e)
+        return {"example": {"en": "", "zh": ""}, "phrase": {"en": "", "zh": ""}}
+
+
 async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None = None) -> list[str]:
-    """按配置(可选AI视觉场景 + 主要要求 + 随机风格)构造提示词并逐条出图(转存COS)。"""
+    """按配置生成配图(可选AI视觉场景)；并补充贴合图片的例句+短语(写到 w)。"""
     cfg = cfg or await get_image_config(db)
     meaning = _primary_meaning(w)
+    pos = _pos_of(w)
     brief = ""
     if cfg.get("use_ai_prompt"):
-        brief = await _ai_visual_brief(w.word, meaning, _pos_of(w))
+        brief = await _ai_visual_brief(w.word, meaning, pos)
     prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
                              n=int(cfg.get("images_per_word", 1)), brief=brief)
     urls: list[str] = []
@@ -178,6 +208,12 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
         u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
         if u:
             urls.append(u)
+    # 例句(先贴合图片意思) + 短语：缺失时补充
+    ep = await _ai_example_phrase(w.word, meaning, pos, brief)
+    if ep["example"]["en"]:
+        w.examples = [ep["example"]]
+    if ep["phrase"]["en"]:
+        w.phrases = [ep["phrase"]]
     return urls
 
 

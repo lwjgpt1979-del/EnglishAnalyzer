@@ -38,7 +38,8 @@ class VocabularyWord(Base):
     word = mapped_column(sa.String, nullable=False)
     phonetic = mapped_column(sa.String, nullable=True)
     definitions = mapped_column(JSONB, nullable=False)
-    examples = mapped_column(JSONB, nullable=True)
+    examples = mapped_column(JSONB, nullable=True)   # 例句 [{en, zh}]
+    phrases = mapped_column(JSONB, nullable=True)    # 短语 [{en, zh}]
     difficulty = mapped_column(sa.SmallInteger, nullable=False)  # 1-5
     # —— 图背单词媒体（P1 词力通深化 / D-101；dev-mock 占位，真生成留 config 接缝）——
     image_urls = mapped_column(JSONB, nullable=True)
