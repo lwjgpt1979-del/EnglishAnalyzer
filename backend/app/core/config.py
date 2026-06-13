@@ -92,10 +92,11 @@ class Settings(BaseSettings):
     # 语音评测（听力跟读·发音评分）
     speech_eval_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填 'iflytek'/'aliyun'
 
-    # 腾讯云智聆口语评测 SOE（独立于 COS 的专用子账号；placeholder 时走 dev-mock）
+    # 腾讯云智聆口语评测（新版 WebSocket；独立子账号；placeholder 时走 dev-mock）
+    tencent_soe_appid: str = "placeholder-appid"      # SOE 应用 AppID（数字，API密钥管理页可见）
     tencent_soe_secret_id: str = "placeholder-soe-id"
     tencent_soe_secret_key: str = "placeholder-soe-key"
-    tencent_soe_region: str = "ap-guangzhou"
+    tencent_soe_region: str = "ap-guangzhou"          # 新版WS用不到，保留兼容
 
     # SMS 短信服务
     sms_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock；生产填 'aliyun'

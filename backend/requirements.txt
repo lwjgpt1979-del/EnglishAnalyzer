@@ -1,1 +1,1 @@
-tencentcloud-sdk-python-soe>=3.0.1459
+websockets>=12.0
