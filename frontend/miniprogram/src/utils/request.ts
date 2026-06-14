@@ -87,10 +87,14 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
   }
   const body = res.data as { code: number; message: string; data: T }
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw new Error(body.message || `HTTP ${res.statusCode}`)
+    const e = new Error(body.message || `HTTP ${res.statusCode}`) as Error & { code?: number }
+    e.code = body.code ?? res.statusCode
+    throw e
   }
   if (body.code !== 200) {
-    throw new Error(body.message || '请求失败')
+    const e = new Error(body.message || '请求失败') as Error & { code?: number }
+    e.code = body.code
+    throw e
   }
   return body.data
 }

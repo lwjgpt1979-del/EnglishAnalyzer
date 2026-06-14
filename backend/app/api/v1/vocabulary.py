@@ -67,8 +67,16 @@ async def daily_task(db: DbDep, current_user: UserDep):
 
 
 @router.post("/shadow-score", response_model=BaseResponse[ShadowScoreResult])
-async def shadow_score(body: ShadowScoreIn, current_user: UserDep):
-    """跟读发音评分：对单词/例句的跟读录音评分（腾讯 SOE；无密钥/无音频走 dev-mock）。"""
+async def shadow_score(body: ShadowScoreIn, db: DbDep, current_user: UserDep):
+    """跟读发音评分（会员专享）：对单词/例句的跟读录音评分（腾讯 SOE）。
+
+    无有效会员 → 402，前端引导开通会员。
+    """
+    from app.core.exceptions import AppError
+    from app.services import membership_service
+    m = await membership_service.get_active_membership(db, user_id=current_user.id)
+    if m is None:
+        raise AppError(code=402, message="跟读为会员专享功能，开通会员后即可使用 🎤")
     import base64 as _b64
     audio_bytes = b""
     if body.audio:

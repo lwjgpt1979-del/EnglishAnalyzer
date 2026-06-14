@@ -222,6 +222,17 @@
         <text class="shadow-close" @tap="closeShadow">关闭</text>
       </view>
     </view>
+
+    <!-- 跟读会员引导弹窗 -->
+    <view v-if="showPaywall" class="shadow-modal" @tap.self="showPaywall = false">
+      <view class="paywall-card">
+        <text class="paywall-emoji">🎤🔒</text>
+        <text class="paywall-title">跟读评测是会员专享</text>
+        <text class="paywall-desc">开通会员后即可对单词/例句跟读打分，纠正发音。</text>
+        <button class="btn-primary" @tap="goMembership">去开通会员</button>
+        <text class="paywall-close" @tap="showPaywall = false">暂不</text>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -232,6 +243,7 @@ import type { ShadowScoreResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
+import { getMyMembership } from '@/api/memberships'
 import type { VocabWordCard } from '@/types/api'
 
 interface Quiz {
@@ -246,6 +258,8 @@ const auth = useAuthStore()
 const loading = ref(true)
 const phase = ref<'empty' | 'study' | 'review' | 'quiz' | 'done'>('study')
 const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
+const isMember = ref(false)       // 是否有有效会员（跟读门禁）
+const showPaywall = ref(false)    // 跟读会员引导弹窗
 
 const newCards = ref<VocabWordCard[]>([])
 const reviewCards = ref<VocabWordCard[]>([])
@@ -532,6 +546,7 @@ function optionClass(i: number): string {
 async function load() {
   if (!auth.isLoggedIn()) await auth.login()
   loading.value = true
+  getMyMembership().then((m) => { isMember.value = m.is_active && m.tier !== 'free' }).catch(() => { isMember.value = false })
   try {
     const task = await getDailyTask()
     newCards.value = task.new_words
@@ -639,7 +654,12 @@ function levelLabel(lv: string) {
 }
 
 function openShadow(text: string) {
+  if (!isMember.value) { showPaywall.value = true; return }   // 跟读为会员专享
   Object.assign(shadow, { open: true, text, recording: false, scoring: false, result: null, recordPath: '' })
+}
+function goMembership() {
+  showPaywall.value = false
+  uni.navigateTo({ url: '/pages/membership/activate' })
 }
 
 function closeShadow() {
@@ -717,7 +737,13 @@ async function readAndScore(path: string) {
       })
     }
   } catch (e) {
-    uni.showToast({ title: (e as Error).message || '评分失败', icon: 'none' })
+    if ((e as { code?: number }).code === 402) {   // 会员专享：引导开通
+      isMember.value = false
+      closeShadow()
+      showPaywall.value = true
+    } else {
+      uni.showToast({ title: (e as Error).message || '评分失败', icon: 'none' })
+    }
   } finally {
     shadow.scoring = false
   }
@@ -845,6 +871,13 @@ onMounted(load)
 
 /* ── 跟读评分弹窗 ── */
 .shadow-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 999; }
+/* 跟读会员引导 */
+.paywall-card { width: 560rpx; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 40rpx 32rpx; display: flex; flex-direction: column; align-items: center; gap: 16rpx; }
+.paywall-emoji { font-size: 72rpx; }
+.paywall-title { font-size: 34rpx; font-weight: 800; color: var(--c-ink); }
+.paywall-desc { font-size: 26rpx; color: var(--c-text-second); text-align: center; line-height: 1.6; }
+.paywall-card .btn-primary { width: 100%; margin-top: 8rpx; }
+.paywall-close { font-size: 26rpx; color: var(--c-text-hint); padding: 8rpx; }
 .shadow-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: 40rpx 36rpx; width: 84%; max-width: 640rpx; display: flex; flex-direction: column; align-items: center; }
 .shadow-title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); margin-bottom: 20rpx; }
 .shadow-sentence { font-size: 32rpx; font-weight: 600; color: var(--c-ink); line-height: 1.6; text-align: center; }
