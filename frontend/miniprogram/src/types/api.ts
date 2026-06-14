@@ -727,6 +727,8 @@ export interface VocabWrongItem {
   word: string
   phonetic?: string | null
   definitions: Array<{ pos?: string; meaning: string }> | Record<string, unknown>
+  examples?: Array<{ en: string; zh?: string; audio?: string }> | null
+  phrases?: Array<{ en: string; zh?: string; audio?: string }> | null
   wrong_count: number
   level: string
   image_urls?: string[] | null

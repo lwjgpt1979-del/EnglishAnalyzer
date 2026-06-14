@@ -152,6 +152,7 @@ async def wrong_words(db: DbDep, current_user: UserDep, skip: int = 0, limit: in
     items = [
         WrongWordItem(
             word_id=w.id, word=w.word, phonetic=w.phonetic, definitions=w.definitions,
+            examples=w.examples, phrases=w.phrases,
             wrong_count=lr.wrong_count, level=str(lr.level),
             image_urls=(w.image_urls if _pub(w) else None),
             en_description=(w.en_description if _pub(w) else None),

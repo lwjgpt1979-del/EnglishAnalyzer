@@ -82,6 +82,8 @@ class WrongWordItem(BaseModel):
     word: str
     phonetic: str | None = None
     definitions: list[dict] | dict
+    examples: list | dict | None = None
+    phrases: list | dict | None = None
     wrong_count: int
     level: str
     image_urls: list[str] | None = None
