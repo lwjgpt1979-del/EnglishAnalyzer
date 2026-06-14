@@ -49,6 +49,27 @@ class SystemConfig(Base):
     )
 
 
+class FeatureUsage(Base):
+    """权益体系：计量功能的配额用量（按用户+能力+周期桶计数）。"""
+
+    __tablename__ = "feature_usage"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    feature_key = mapped_column(sa.String(64), nullable=False)
+    period_bucket = mapped_column(sa.String(10), nullable=False)
+    count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False,
+        server_default=sa.func.now(), onupdate=sa.func.now(),
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "feature_key", "period_bucket",
+                            name="uix_feature_usage"),
+    )
+
+
 class Notification(Base):
     """站内通知（G15: 补充 read_at）。"""
 
