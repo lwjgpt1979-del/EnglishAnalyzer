@@ -141,7 +141,62 @@ def _required_tiers(spec: FeatureSpec, overrides_by_tier: dict | None = None) ->
 # ── 配额计数 ───────────────────────────────────────────────────────────────────
 def _bucket(period: str | None) -> str:
     now = datetime.now(timezone.utc)
-    return now.strftime("%Y-%m-%d") if period == "day" else now.strftime("%Y-%m")
+    if period == "day":
+        return now.strftime("%Y-%m-%d")
+    if period == "week":
+        iso = now.isocalendar()
+        return f"{iso[0]}-W{iso[1]:02d}"
+    return now.strftime("%Y-%m")
+
+
+# ── 加量包（超额加购，方案①）─────────────────────────────────────────────────
+def _top_tier() -> str:
+    return TIERS[-1]   # promax
+
+
+async def addon_config(db: AsyncSession, key: str) -> dict:
+    """加量包配置：默认(关闭)⊕后台覆盖。返回 {enabled, pack_size, price_fen}。"""
+    row = (await db.execute(text(
+        "SELECT enabled, pack_size, price_fen FROM feature_addon_config WHERE feature_key=:k"
+    ), {"k": key})).first()
+    if row is None:
+        return {"enabled": False, "pack_size": 10, "price_fen": 0}
+    return {"enabled": bool(row[0]), "pack_size": int(row[1]), "price_fen": int(row[2])}
+
+
+async def addon_balance(db: AsyncSession, *, user_id, key: str) -> int:
+    row = (await db.execute(text(
+        "SELECT balance FROM feature_addon_balance WHERE user_id=:u AND feature_key=:k"
+    ), {"u": str(user_id), "k": key})).first()
+    return int(row[0]) if row else 0
+
+
+async def grant_addon(db: AsyncSession, *, user_id, key: str, n: int) -> None:
+    """发放加量次数（购买成功后调用）。永久余额，累加。"""
+    await db.execute(text(
+        "INSERT INTO feature_addon_balance(id,user_id,feature_key,balance,updated_at) "
+        "VALUES(:i,:u,:k,:n,now()) "
+        "ON CONFLICT(user_id,feature_key) DO UPDATE SET balance=feature_addon_balance.balance+:n, updated_at=now()"
+    ), {"i": str(uuid.uuid4()), "u": str(user_id), "k": key, "n": n})
+
+
+async def _decr_addon(db: AsyncSession, *, user_id, key: str) -> None:
+    await db.execute(text(
+        "UPDATE feature_addon_balance SET balance=GREATEST(0,balance-1), updated_at=now() "
+        "WHERE user_id=:u AND feature_key=:k AND balance>0"
+    ), {"u": str(user_id), "k": key})
+
+
+async def admin_set_addon(db: AsyncSession, *, key: str, enabled: bool, pack_size: int,
+                          price_fen: int, updated_by) -> None:
+    if key not in _FEATURES:
+        raise AppError(code=404, message="未注册的能力")
+    await db.execute(text(
+        "INSERT INTO feature_addon_config(feature_key,enabled,pack_size,price_fen,updated_by,updated_at) "
+        "VALUES(:k,:e,:s,:p,:by,now()) "
+        "ON CONFLICT(feature_key) DO UPDATE SET enabled=:e,pack_size=:s,price_fen=:p,updated_by=:by,updated_at=now()"
+    ), {"k": key, "e": enabled, "s": max(1, pack_size), "p": max(0, price_fen),
+        "by": str(updated_by) if updated_by else None})
 
 
 async def _usage_count(db: AsyncSession, *, user_id, key: str, period: str | None) -> int:
@@ -152,18 +207,21 @@ async def _usage_count(db: AsyncSession, *, user_id, key: str, period: str | Non
     return int(row[0]) if row else 0
 
 
-async def consume(db: AsyncSession, *, user_id, key: str) -> None:
-    """计量功能成功执行后调用，按周期 +1（与业务同事务）。"""
+async def consume(db: AsyncSession, *, user_id, key: str, tier: str | None = None) -> None:
+    """计量功能成功执行后调用：先扣周期配额，配额满则扣加量余额（与业务同事务）。"""
     spec = _FEATURES.get(key)
-    period = None
-    # 取该用户档位下的 period（quota 模式才有意义）；这里按 spec 默认 period 兜底
-    for t in TIERS:
-        r = spec.rule_for(t) if spec else DENY()
-        if r.mode == "quota" and r.period:
-            period = r.period
-            break
-    b = _bucket(period)
-    await db.execute(pg_insert_usage(user_id, key, b))
+    if spec is None:
+        return
+    tier = tier or await _tier_of(db, user_id)
+    ov = await _overrides_for(db, key)
+    rule = ov.get(tier) or spec.rule_for(tier)
+    if rule.mode != "quota":
+        return   # allow/deny 不计量
+    used = await _usage_count(db, user_id=user_id, key=key, period=rule.period)
+    if used < (rule.limit or 0):
+        await db.execute(pg_insert_usage(user_id, key, _bucket(rule.period)))   # 周期内：计周期
+    elif tier != "free":
+        await _decr_addon(db, user_id=user_id, key=key)                          # 超额：扣加量余额
 
 
 def pg_insert_usage(user_id, key, bucket):
@@ -196,12 +254,33 @@ async def check(db: AsyncSession, *, user_id, key: str, tier: str | None = None,
     req = _required_tiers(spec, ov)
 
     quota_limit = quota_left = None
+    addon_left = 0
+    can_buy_addon = False
+    addon_pack = None
     if rule.mode == "quota":
         used = await _usage_count(db, user_id=user_id, key=key, period=rule.period)
         quota_limit = rule.limit
         quota_left = max(0, (rule.limit or 0) - used)
-        allowed = quota_left > 0
-        reason = "" if allowed else f"本周期次数已用完（{rule.limit}/{rule.period}）"
+        if quota_left > 0:
+            allowed, reason = True, ""
+        else:
+            # 周期配额用尽 → 仅"最高档(promax)且本档为配额制"才走加量包；否则引导升级
+            reason = f"本周期次数已用完（{rule.limit}/{rule.period}）"
+            is_top = tier == _top_tier()
+            if is_top and tier != "free":
+                acfg = await addon_config(db, key)
+                addon_left = await addon_balance(db, user_id=user_id, key=key)
+                if addon_left > 0:
+                    allowed, reason = True, ""          # 动用加量余额（仅有会员时）
+                elif acfg["enabled"] and acfg["price_fen"] > 0:
+                    allowed = False
+                    can_buy_addon = True                # 出"买加量包"
+                    addon_pack = {"pack_size": acfg["pack_size"], "price_fen": acfg["price_fen"]}
+                    reason = "本周期次数已用完，可购买加量包继续使用"
+                else:
+                    allowed = False
+            else:
+                allowed = False                         # 非顶档 → 升级（required_tiers）
     elif rule.mode == "allow":
         allowed, reason = True, ""
     else:
@@ -218,6 +297,7 @@ async def check(db: AsyncSession, *, user_id, key: str, tier: str | None = None,
         "key": key, "title": spec.title, "module": spec.module,
         "allowed": allowed, "mode": rule.mode,
         "quota_limit": quota_limit, "quota_left": quota_left,
+        "addon_left": addon_left, "can_buy_addon": can_buy_addon, "addon_pack": addon_pack,
         "required_tiers": req, "condition": spec.condition,
         "condition_met": condition_met, "reason": reason,
     }
@@ -253,13 +333,17 @@ async def admin_list(db: AsyncSession) -> dict:
     items = []
     for spec in _FEATURES.values():
         ov = await _overrides_for(db, spec.key)
+        # 是否为计量功能（任一档为 quota）→ 才支持加量包
+        metered = any((ov.get(t) or spec.rule_for(t)).mode == "quota" for t in TIERS)
         items.append({
             "key": spec.key, "title": spec.title, "module": spec.module,
             "condition": spec.condition,
             "defaults": {t: spec.rule_for(t).to_dict() for t in TIERS},
             "overrides": {t: r.to_dict() for t, r in ov.items()},
+            "metered": metered,
+            "addon": await addon_config(db, spec.key),
         })
-    return {"tiers": TIERS, "features": items}
+    return {"tiers": TIERS, "features": items, "top_tier": _top_tier()}
 
 
 async def admin_set_override(db: AsyncSession, *, key: str, tier: str, mode: str,

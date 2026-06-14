@@ -55,3 +55,20 @@ async def clear_override(feature_key: str, tier: str, db: DbDep, admin: AdminDep
     await entitlement_service.admin_clear_override(db, key=feature_key, tier=tier)
     await db.commit()
     return make_ok(await entitlement_service.admin_list(db))
+
+
+class AddonIn(BaseModel):
+    feature_key: str
+    enabled: bool = False
+    pack_size: int = 10
+    price_fen: int = 0
+
+
+@admin_router.put("/addon", response_model=BaseResponse[dict])
+async def set_addon(body: AddonIn, db: DbDep, admin: AdminDep):
+    """配置某功能的加量包：开关 / 每包次数 / 价格(分)。"""
+    await entitlement_service.admin_set_addon(
+        db, key=body.feature_key, enabled=body.enabled,
+        pack_size=body.pack_size, price_fen=body.price_fen, updated_by=admin.id)
+    await db.commit()
+    return make_ok(await entitlement_service.admin_list(db))
