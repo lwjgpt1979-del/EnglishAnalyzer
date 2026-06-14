@@ -16,6 +16,7 @@
                 :class="{ checked: c.checked, missable: c.missable, blank: !c.day }"
                 @tap="c.missable ? onMakeUp(c.date) : null">
             <text v-if="c.day">{{ c.checked ? '🔥' : c.day }}</text>
+            <text v-if="c.wrong > 0" class="cell-wrong">{{ c.wrong }}</text>
           </view>
         </view>
         <view class="cp-hint">点亮灰色日期可补签</view>
@@ -168,6 +169,7 @@
                 :class="{ checked: c.checked, missable: c.missable, blank: !c.day }"
                 @tap="c.missable ? onMakeUp(c.date) : null">
             <text v-if="c.day">{{ c.checked ? '🔥' : c.day }}</text>
+            <text v-if="c.wrong > 0" class="cell-wrong">{{ c.wrong }}</text>
           </view>
         </view>
         <view class="cp-hint">点亮灰色日期可补签</view>
@@ -249,7 +251,15 @@
             <text class="step-btn" @tap="adjustRep(1)">＋</text>
           </view>
         </view>
-        <text class="set-hint">每组学几个词、重复学几遍由你定；学完可一直「再来一组」。错得多的词会自动带入下一组。</text>
+        <view class="set-row">
+          <text class="set-label">错几次带入下组</text>
+          <view class="stepper">
+            <text class="step-btn" @tap="adjustThr(-1)">−</text>
+            <text class="step-val">{{ settingDraft.wrong_carry_threshold }}</text>
+            <text class="step-btn" @tap="adjustThr(1)">＋</text>
+          </view>
+        </view>
+        <text class="set-hint">每组学几个词、重复学几遍由你定；学完可一直「再来一组」。一个词在本组错够「带入下组」的次数，就会自动滚入下一组继续考察（不超过遍数）。</text>
         <button class="btn-primary" @tap="saveSettings">保存</button>
         <text class="paywall-close" @tap="showSettings = false">取消</text>
       </view>
@@ -307,8 +317,9 @@ const showPaywall = ref(false)    // 跟读会员引导弹窗
 // 学习设置（用户自定，不绑会员档位）
 const wordsPerGroup = ref(5)
 const repsPerGroup = ref(1)
+const wrongCarryThreshold = ref(2)
 const showSettings = ref(false)
-const settingDraft = reactive({ words_per_group: 5, reps_per_group: 1 })
+const settingDraft = reactive({ words_per_group: 5, reps_per_group: 1, wrong_carry_threshold: 2 })
 const showAddWord = ref(false)
 const addWordInput = ref('')
 const addingWord = ref(false)
@@ -334,19 +345,21 @@ const streakDays = ref(0)
 const checkinDone = ref(false)
 const gapHint = ref('')
 const cal = ref<VocabStudentCalendar | null>(null)
+type CalCell = { day: number; date: string; checked: boolean; missable: boolean; wrong: number }
 const calCells = computed(() => {
-  if (!cal.value) return [] as { day: number; date: string; checked: boolean; missable: boolean }[]
+  if (!cal.value) return [] as CalCell[]
   const { year, month } = cal.value
+  const wrongMap = new Map(cal.value.days.map(d => [d.date, (d as { wrong_count?: number }).wrong_count || 0]))
   const checkedSet = new Set(cal.value.days.map(d => d.date))
   const first = new Date(year, month - 1, 1).getDay()
   const daysIn = new Date(year, month, 0).getDate()
   const todayStr = new Date().toISOString().slice(0, 10)
-  const arr: { day: number; date: string; checked: boolean; missable: boolean }[] = []
-  for (let i = 0; i < first; i++) arr.push({ day: 0, date: '', checked: false, missable: false })
+  const arr: CalCell[] = []
+  for (let i = 0; i < first; i++) arr.push({ day: 0, date: '', checked: false, missable: false, wrong: 0 })
   for (let d = 1; d <= daysIn; d++) {
     const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     const checked = checkedSet.has(date)
-    arr.push({ day: d, date, checked, missable: !checked && date < todayStr })
+    arr.push({ day: d, date, checked, missable: !checked && date < todayStr, wrong: wrongMap.get(date) || 0 })
   }
   return arr
 })
@@ -501,8 +514,9 @@ function startQuiz() {
 async function finishSession() {
   phase.value = 'done'
   try {
-    // 日历=学习日志：完成一组即记入当日（不再按 quota 卡门槛）
-    const r = await checkin()
+    // 日历=学习日志：完成一组即记入当日 + 累加本组错题数（多错统计）
+    const groupWrongTotal = [...groupWrong.values()].reduce((a, b) => a + b, 0)
+    const r = await checkin(groupWrongTotal)
     checkinDone.value = true
     streakDays.value = r.streak_days ?? streakDays.value
     requestCheckinSubscribe()
@@ -610,11 +624,13 @@ function restartGroupPass() {
   }
 }
 
-// 本组学完所有遍数：把错得多的词存为「滚入下一组」，进完成页
+// 本组学完所有遍数：把错得「比较多」的词存为「滚入下一组」，进完成页
 function finalizeGroup() {
+  // 阈值：错≥设定次数才滚入；但不超过本组遍数（遍数=1 时退化为错1次即滚入）
+  const thr = Math.max(1, Math.min(wrongCarryThreshold.value, repsPerGroup.value))
   const carried: VocabWordCard[] = []
   pool.value.forEach((c) => {
-    if ((groupWrong.get(c.word_id) || 0) >= 1) carried.push(c)   // 错≥1次即滚入下一组
+    if ((groupWrong.get(c.word_id) || 0) >= thr) carried.push(c)
   })
   carryWords.value = carried
   finishSession()
@@ -633,7 +649,9 @@ async function load(fromReload = false) {
   getMyMembership().then((m) => { isMember.value = m.is_active && m.tier !== 'free' }).catch(() => { isMember.value = false })
   getVocabSettings().then((s) => {
     wordsPerGroup.value = s.words_per_group; repsPerGroup.value = s.reps_per_group
+    wrongCarryThreshold.value = s.wrong_carry_threshold ?? 2
     settingDraft.words_per_group = s.words_per_group; settingDraft.reps_per_group = s.reps_per_group
+    settingDraft.wrong_carry_threshold = s.wrong_carry_threshold ?? 2
   }).catch(() => { /* 用默认 */ })
   try {
     const task = await getDailyTask()
@@ -743,6 +761,7 @@ function reload() {
 function openSettings() {
   settingDraft.words_per_group = wordsPerGroup.value
   settingDraft.reps_per_group = repsPerGroup.value
+  settingDraft.wrong_carry_threshold = wrongCarryThreshold.value
   showSettings.value = true
 }
 function adjustWPG(d: number) {
@@ -751,12 +770,17 @@ function adjustWPG(d: number) {
 function adjustRep(d: number) {
   settingDraft.reps_per_group = Math.max(1, Math.min(5, settingDraft.reps_per_group + d))
 }
+function adjustThr(d: number) {
+  settingDraft.wrong_carry_threshold = Math.max(1, Math.min(5, settingDraft.wrong_carry_threshold + d))
+}
 async function saveSettings() {
   try {
     const s = await setVocabSettings({
-      words_per_group: settingDraft.words_per_group, reps_per_group: settingDraft.reps_per_group })
+      words_per_group: settingDraft.words_per_group, reps_per_group: settingDraft.reps_per_group,
+      wrong_carry_threshold: settingDraft.wrong_carry_threshold })
     wordsPerGroup.value = s.words_per_group
     repsPerGroup.value = s.reps_per_group
+    wrongCarryThreshold.value = s.wrong_carry_threshold ?? 2
     showSettings.value = false
     uni.showToast({ title: '已保存', icon: 'success' })
   } catch (e) {
@@ -1011,7 +1035,8 @@ onMounted(load)
 .cp-badge { font-size: 22rpx; color: var(--c-text-hint); opacity: .45; }
 .cp-badge.on { color: var(--c-gold); opacity: 1; font-weight: 700; }
 .cp-grid { display: flex; flex-wrap: wrap; }
-.cp-cell { width: 14.28%; height: 60rpx; display: flex; align-items: center; justify-content: center; font-size: 22rpx; color: var(--c-text-body); }
+.cp-cell { position: relative; width: 14.28%; height: 60rpx; display: flex; align-items: center; justify-content: center; font-size: 22rpx; color: var(--c-text-body); }
+.cell-wrong { position: absolute; top: 2rpx; right: 8rpx; font-size: 16rpx; line-height: 1; color: #fff; background: #ff6b6b; border-radius: 16rpx; padding: 1rpx 6rpx; }
 .cp-cell.checked { color: var(--c-gold); font-weight: 700; }
 .cp-cell.missable { color: var(--c-text-hint); border: 1rpx dashed var(--c-border); border-radius: 8rpx; }
 .cp-cell.blank { visibility: hidden; }

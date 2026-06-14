@@ -12,7 +12,7 @@ export function getDailyTask(): Promise<VocabDailyTask> {
   return request<VocabDailyTask>('/api/v1/vocabulary/daily-task', { method: 'GET' })
 }
 
-export interface VocabSettings { words_per_group: number; reps_per_group: number }
+export interface VocabSettings { words_per_group: number; reps_per_group: number; wrong_carry_threshold: number }
 export function getVocabSettings(): Promise<VocabSettings> {
   return request<VocabSettings>('/api/v1/vocabulary/settings', { method: 'GET' })
 }
@@ -58,8 +58,8 @@ export function getWrongWords(): Promise<VocabWrongList> {
   return request<VocabWrongList>('/api/v1/vocabulary/wrong-words', { method: 'GET' })
 }
 
-export function checkin(): Promise<VocabCheckinResult> {
-  return request<VocabCheckinResult>('/api/v1/vocabulary/checkin', { method: 'POST' })
+export function checkin(wrongCount = 0): Promise<VocabCheckinResult> {
+  return request<VocabCheckinResult>('/api/v1/vocabulary/checkin', { method: 'POST', data: { wrong_count: wrongCount } })
 }
 
 export function getCheckinCalendar(year?: number, month?: number): Promise<VocabStudentCalendar> {

@@ -138,6 +138,7 @@ class StudentVocabSetting(Base):
     )
     words_per_group = mapped_column(sa.Integer, nullable=False, server_default=sa.text("5"))
     reps_per_group = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    wrong_carry_threshold = mapped_column(sa.Integer, nullable=False, server_default=sa.text("2"))
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False,
         server_default=sa.func.now(), onupdate=sa.func.now(),
@@ -212,6 +213,7 @@ class StudyCheckin(Base):
     new_words_count = mapped_column(sa.Integer, nullable=False)
     review_done = mapped_column(sa.Boolean, nullable=False)
     streak_days = mapped_column(sa.Integer, nullable=False)
+    wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )

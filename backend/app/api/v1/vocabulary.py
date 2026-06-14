@@ -40,6 +40,7 @@ UserDep = Annotated[User, Depends(get_current_user)]
 class VocabSettings(BaseModel):
     words_per_group: int = Field(5, ge=1, le=50)
     reps_per_group: int = Field(1, ge=1, le=5)
+    wrong_carry_threshold: int = Field(2, ge=1, le=5)
 
 
 class AddWordIn(BaseModel):
@@ -68,7 +69,8 @@ async def get_settings(db: DbDep, current_user: UserDep):
 async def put_settings(body: VocabSettings, db: DbDep, current_user: UserDep):
     s = await vocabulary_service.set_vocab_settings(
         db, student_id=current_user.id,
-        words_per_group=body.words_per_group, reps_per_group=body.reps_per_group)
+        words_per_group=body.words_per_group, reps_per_group=body.reps_per_group,
+        wrong_carry_threshold=body.wrong_carry_threshold)
     await db.commit()
     return make_ok(VocabSettings(**s))
 
@@ -146,11 +148,17 @@ async def wrong_words(db: DbDep, current_user: UserDep, skip: int = 0, limit: in
     return make_ok(WrongWordListOut(total=total, items=items))
 
 
+class CheckinIn(BaseModel):
+    wrong_count: int = Field(0, ge=0)
+
+
 @router.post("/checkin", response_model=BaseResponse[CheckinResult])
-async def checkin(db: DbDep, current_user: UserDep):
-    """词力通完成会话打卡：后端实算今日完成度，达标才发放。"""
+async def checkin(db: DbDep, current_user: UserDep, body: CheckinIn | None = None):
+    """词力通完成一组学习：记入当日（日历=学习日志）+ 累加当日错题数。"""
     await get_rls_db(db, str(current_user.id))
-    row, progress = await checkin_service.record_checkin(db, student_id=current_user.id)
+    wrong = body.wrong_count if body else 0
+    row, progress = await checkin_service.record_checkin(
+        db, student_id=current_user.id, wrong_delta=wrong)
     if row is None:
         return make_ok(CheckinResult(
             completed=False,

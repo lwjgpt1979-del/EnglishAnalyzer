@@ -284,31 +284,41 @@ _WPG_MIN, _WPG_MAX = 1, 50
 _REP_MIN, _REP_MAX = 1, 5
 
 
+def _setting_dict(row) -> dict:
+    if row is None:
+        return {"words_per_group": 5, "reps_per_group": 1, "wrong_carry_threshold": 2}
+    return {
+        "words_per_group": int(row.words_per_group),
+        "reps_per_group": int(row.reps_per_group),
+        "wrong_carry_threshold": int(getattr(row, "wrong_carry_threshold", 2) or 2),
+    }
+
+
 async def get_vocab_settings(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
     row = (await db.execute(
         select(StudentVocabSetting).where(StudentVocabSetting.student_id == student_id)
     )).scalar_one_or_none()
-    if row is None:
-        return {"words_per_group": 5, "reps_per_group": 1}
-    return {"words_per_group": int(row.words_per_group), "reps_per_group": int(row.reps_per_group)}
+    return _setting_dict(row)
 
 
 async def set_vocab_settings(
     db: AsyncSession, *, student_id: uuid.UUID, words_per_group: int, reps_per_group: int,
+    wrong_carry_threshold: int = 2,
 ) -> dict:
     wpg = max(_WPG_MIN, min(int(words_per_group), _WPG_MAX))
     rep = max(_REP_MIN, min(int(reps_per_group), _REP_MAX))
+    thr = max(1, min(int(wrong_carry_threshold), 5))
     row = (await db.execute(
         select(StudentVocabSetting).where(StudentVocabSetting.student_id == student_id)
     )).scalar_one_or_none()
     if row is None:
         db.add(StudentVocabSetting(
             id=uuid.uuid4(), student_id=student_id,
-            words_per_group=wpg, reps_per_group=rep))
+            words_per_group=wpg, reps_per_group=rep, wrong_carry_threshold=thr))
     else:
-        row.words_per_group, row.reps_per_group = wpg, rep
+        row.words_per_group, row.reps_per_group, row.wrong_carry_threshold = wpg, rep, thr
     await db.flush()
-    return {"words_per_group": wpg, "reps_per_group": rep}
+    return {"words_per_group": wpg, "reps_per_group": rep, "wrong_carry_threshold": thr}
 
 
 async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTaskOut:

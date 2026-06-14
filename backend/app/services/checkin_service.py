@@ -80,9 +80,11 @@ async def _upsert_checkin(
     student_id: uuid.UUID,
     new_words_count: int,
     review_done: bool,
+    wrong_delta: int = 0,
     checkin_date: date | None = None,
 ) -> StudyCheckin:
-    """写入/更新某日打卡行；streak_days = 以该日结尾的连续段长度（动态）。"""
+    """写入/更新某日打卡行；streak_days = 以该日结尾的连续段长度（动态）。
+    wrong_delta：本次完成一组的错题数，累加进当日 wrong_count。"""
     d = checkin_date or _today()
     dates = await _all_dates(db, student_id)
     dates.add(d)
@@ -92,6 +94,7 @@ async def _upsert_checkin(
         row.new_words_count = new_words_count
         row.review_done = review_done
         row.streak_days = run
+        row.wrong_count = (row.wrong_count or 0) + max(0, wrong_delta)
         await db.flush()
         return row
     row = StudyCheckin(
@@ -101,6 +104,7 @@ async def _upsert_checkin(
         new_words_count=new_words_count,
         review_done=review_done,
         streak_days=run,
+        wrong_count=max(0, wrong_delta),
     )
     db.add(row)
     await db.flush()
@@ -111,14 +115,17 @@ async def record_checkin(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
+    wrong_delta: int = 0,
 ) -> tuple[StudyCheckin | None, dict]:
-    """完成一组学习即记入当日（日历=学习日志，不再按 quota 卡门槛）。返回 (打卡行, progress)。"""
+    """完成一组学习即记入当日（日历=学习日志，不再按 quota 卡门槛）。
+    wrong_delta：本组错题数，累加进当日错题统计。返回 (打卡行, progress)。"""
     progress = await vocabulary_service.compute_today_progress(db, student_id=student_id)
     row = await _upsert_checkin(
         db,
         student_id=student_id,
         new_words_count=progress["new_learned_today"],
         review_done=progress["review_done"],
+        wrong_delta=wrong_delta,
     )
     return row, progress
 
@@ -176,6 +183,7 @@ async def get_month_calendar(
             "date": r.checkin_date.isoformat(),
             "new_words_count": r.new_words_count,
             "streak_days": r.streak_days,
+            "wrong_count": getattr(r, "wrong_count", 0) or 0,
         }
         for r in rows
     ]
