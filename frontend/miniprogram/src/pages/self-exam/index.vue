@@ -23,14 +23,18 @@
             <text class="quota-label">本周剩余次数</text>
             <text class="quota-val">{{ quota.remaining }} / {{ quota.limit }}</text>
           </view>
+          <view v-if="quota.addon_left > 0" class="quota-row">
+            <text class="quota-label">加量包余额</text>
+            <text class="quota-val">{{ quota.addon_left }} 次</text>
+          </view>
           <button
             class="btn-primary"
-            :disabled="quota.remaining <= 0 || generating"
+            :disabled="(quota.remaining <= 0 && quota.addon_left <= 0 && !quota.can_buy_addon) || generating"
             @tap="onGenerate"
           >
-            {{ generating ? '出卷中…' : (quota.remaining > 0 ? '开始出卷（约10题·15分钟）' : '本周次数已用完') }}
+            {{ generating ? '出卷中…' : (quota.remaining > 0 || quota.addon_left > 0 ? '开始出卷（约10题·15分钟）' : (quota.can_buy_addon ? '本周已用完 · 购买加量包' : '本周次数已用完')) }}
           </button>
-          <text class="quota-tip">每周 {{ quota.limit }} 份，自然周一 0:00 重置</text>
+          <text class="quota-tip">每周 {{ quota.limit }} 份，自然周一 0:00 重置{{ quota.addon_left > 0 ? '；超额用加量包' : '' }}</text>
         </view>
 
         <!-- 成绩趋势 -->
@@ -81,6 +85,9 @@
         </view>
       </view>
     </view>
+
+    <Paywall :open="showPaywall" :feature="ent.feature('exam.generate')" emoji="📝"
+      title="自助出卷" @close="showPaywall = false" @purchased="onPurchased" />
   </view>
 </template>
 
@@ -90,10 +97,15 @@ import {
   getSelfExamQuota, generateSelfExam, getSelfExamHistory,
   type SelfExamBrief,
 } from '@/api/selfExam'
+import { useEntitlementsStore } from '@/stores/entitlements'
+import Paywall from '@/components/Paywall.vue'
 
+const ent = useEntitlementsStore()
+const showPaywall = ref(false)
 const loading = ref(true)
 const generating = ref(false)
-const quota = reactive({ is_promax: false, used: 0, limit: 3, remaining: 3 })
+const quota = reactive({ is_promax: false, used: 0, limit: 3, remaining: 3,
+  addon_left: 0, can_buy_addon: false, addon_pack: null as { pack_size: number; price_fen: number } | null })
 const history = ref<SelfExamBrief[]>([])
 
 // 已完成的卷（按时间正序，用于趋势）
@@ -121,6 +133,7 @@ const bars = computed(() =>
 )
 
 async function load() {
+  ent.fetch()
   try {
     const [q, h] = await Promise.all([getSelfExamQuota(), getSelfExamHistory().catch(() => [])])
     Object.assign(quota, q)
@@ -133,16 +146,20 @@ async function load() {
 }
 
 async function onGenerate() {
+  // 配额+加量余额都没了：顶档→买加量包，否则→升级
+  if (quota.remaining <= 0 && quota.addon_left <= 0) { showPaywall.value = true; return }
   generating.value = true
   try {
     const exam = await generateSelfExam()
     uni.navigateTo({ url: `/pages/self-exam/answer?id=${exam.id}` })
   } catch (e) {
-    uni.showToast({ title: (e as Error).message || '出卷失败', icon: 'none' })
+    if ((e as { code?: number }).code === 403) { showPaywall.value = true }
+    else uni.showToast({ title: (e as Error).message || '出卷失败', icon: 'none' })
   } finally {
     generating.value = false
   }
 }
+async function onPurchased() { await load() }
 
 function goExam(h: SelfExamBrief) {
   // 答题中→继续作答；已完成→查看结果（答题页据 status 展示）

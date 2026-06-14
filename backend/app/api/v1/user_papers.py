@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import get_db, get_rls_db
 from app.core.exceptions import AppError
 from app.core.security import get_current_user
 from app.models.d1_users import User
@@ -34,12 +34,16 @@ async def create_user_paper(
     current_user: UserDep,
 ):
     """建卷并异步触发 OCR 拆题。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(db, user_id=current_user.id, key="paper.upload")
     paper = await user_paper_service.create_paper(
         db,
         student_id=current_user.id,
         source_image_urls=body.source_image_urls,
         title=body.title,
     )
+    await entitlement_service.consume(db, user_id=current_user.id, key="paper.upload")
     await db.commit()
 
     background_tasks.add_task(user_paper_service.run_paper_pipeline, paper.id)

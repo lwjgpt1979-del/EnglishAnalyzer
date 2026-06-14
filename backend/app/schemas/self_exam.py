@@ -12,6 +12,9 @@ class SelfExamQuota(BaseModel):
     used: int
     limit: int
     remaining: int
+    addon_left: int = 0
+    can_buy_addon: bool = False
+    addon_pack: dict | None = None
 
 
 class SelfExamQuestion(BaseModel):

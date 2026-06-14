@@ -46,11 +46,14 @@ async def create_wrong_question(
 ):
     """提交新错题（MVP：前端先上传图片到 OSS，再传 URL）。"""
     await get_rls_db(db, str(current_user.id))
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(db, user_id=current_user.id, key="wrong.upload")
     wq = await wrong_question_service.create_wrong_question(
         db, student_id=current_user.id, data=body
     )
     # 初始化 ocr_status = pending 并触发后台 OCR
     wq.ocr_status = "pending"  # type: ignore[assignment]
+    await entitlement_service.consume(db, user_id=current_user.id, key="wrong.upload")
     await db.commit()
     await db.refresh(wq)
 
@@ -174,6 +177,8 @@ async def analyze_wrong_question(
 ):
     """触发 AI 分析（同步，约 3-8 秒）。每次调用生成新的分析记录。"""
     await get_rls_db(db, str(current_user.id))
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(db, user_id=current_user.id, key="wrong.analyze")
     wq = await wrong_question_service.get_wrong_question(
         db, wq_id=wq_id, student_id=current_user.id
     )
@@ -190,6 +195,7 @@ async def analyze_wrong_question(
     from app.services import ai_service  # 延迟导入，避免启动时加载 openai
 
     analysis = await ai_service.analyze_wrong_question(db, wq=wq, student_id=current_user.id)
+    await entitlement_service.consume(db, user_id=current_user.id, key="wrong.analyze")
     await db.commit()
     await db.refresh(analysis)
     return make_ok(AiAnalysisOut.model_validate(analysis))

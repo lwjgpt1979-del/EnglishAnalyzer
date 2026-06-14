@@ -101,6 +101,14 @@ def _seed_defaults() -> None:
                   {"free": DENY(), "basic": DENY(), "pro": QUOTA(3, "month"), "promax": ALLOW()}))
     F(FeatureSpec("essay.rewrite", "作文多轮重写", "essay",
                   {"free": DENY(), "basic": DENY(), "pro": DENY(), "promax": ALLOW()}))
+    # 自助卷/智能出题（现状：promax 专属、每周3份）→ 用完可买加量包
+    F(FeatureSpec("exam.generate", "智能出题/自助卷", "exam",
+                  {"free": DENY(), "basic": DENY(), "pro": DENY(), "promax": QUOTA(3, "week")}))
+    # 以下默认全开放（不改现有行为）；运营在后台权益配置页随时设配额/加量包即可
+    F(FeatureSpec("practice.generate", "智能练习生成", "practice", _all_allow()))
+    F(FeatureSpec("wrong.upload", "错题单题上传", "wrong", _all_allow()))
+    F(FeatureSpec("wrong.analyze", "错题AI讲解", "wrong", _all_allow()))
+    F(FeatureSpec("paper.upload", "整卷上传", "paper", _all_allow()))
     # 课程（与档位正交：需购买对应学期）
     F(FeatureSpec("curriculum.unit", "教材单元", "curriculum", _all_allow(),
                   condition="purchased_semester"))

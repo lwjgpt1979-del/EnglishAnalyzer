@@ -64,28 +64,28 @@ async def is_promax(db: AsyncSession, *, student_id: uuid.UUID) -> bool:
 
 
 async def quota_status(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
-    used = (await db.execute(
-        select(func.count()).select_from(SelfExam).where(
-            SelfExam.student_id == student_id,
-            SelfExam.created_at >= _week_start(datetime.now(timezone.utc)),
-        )
-    )).scalar_one()
-    promax = await is_promax(db, student_id=student_id)
-    limit = await get_weekly_quota(db)
+    """改由权益体系驱动（exam.generate）：周期配额 + 加量包余额。"""
+    from app.services import entitlement_service
+    res = await entitlement_service.check(db, user_id=student_id, key="exam.generate")
+    limit = res.get("quota_limit") or 0
+    left = res.get("quota_left")
+    left = left if left is not None else 0
     return {
-        "is_promax": promax,
-        "used": int(used),
+        "is_promax": res.get("mode") != "deny",     # 该档是否可用本功能
+        "used": max(0, limit - left),
         "limit": limit,
-        "remaining": max(0, limit - int(used)),
+        "remaining": left,
+        "addon_left": res.get("addon_left", 0),
+        "can_buy_addon": bool(res.get("can_buy_addon")),
+        "addon_pack": res.get("addon_pack"),
     }
 
 
 async def create_self_exam(db: AsyncSession, *, student_id: uuid.UUID) -> SelfExam:
-    if not await is_promax(db, student_id=student_id):
-        raise AppError(code=403, message="自助出卷为 ProMax 会员专属功能")
-    q = await quota_status(db, student_id=student_id)
-    if q["remaining"] <= 0:
-        raise AppError(code=429, message=f"本周自助出卷次数已用完（每周 {q['limit']} 份）")
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=student_id, key="exam.generate",
+        message="自助出卷为 ProMax 会员专属功能")
 
     aset = await adaptive_question_service.get_adaptive_set(
         db, student_id=student_id, total=OBJECTIVE_COUNT
@@ -147,6 +147,7 @@ async def create_self_exam(db: AsyncSession, *, student_id: uuid.UUID) -> SelfEx
     )
     db.add(se)
     await db.flush()
+    await entitlement_service.consume(db, user_id=student_id, key="exam.generate")
     return se
 
 

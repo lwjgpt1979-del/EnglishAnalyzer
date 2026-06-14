@@ -36,6 +36,8 @@ async def generate_questions(
 ):
     """生成练习题（不下发答案/解析）。knowledge_point 为空则自动选最薄弱知识点。"""
     await get_rls_db(db, str(current_user.id))
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(db, user_id=current_user.id, key="practice.generate")
     questions = await practice_service.generate_practice_questions(
         db,
         student_id=current_user.id,
@@ -43,6 +45,7 @@ async def generate_questions(
         count=body.count,
         difficulty=body.difficulty,
     )
+    await entitlement_service.consume(db, user_id=current_user.id, key="practice.generate")
     await db.commit()
 
     kp_id = questions[0].knowledge_point_id
