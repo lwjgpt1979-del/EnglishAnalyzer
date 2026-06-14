@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  getEntitlements, setEntitlementOverride, clearEntitlementOverride,
+  getEntitlements, setEntitlementOverride, clearEntitlementOverride, setEntitlementAddon,
   type EntitlementsConfig, type FeatureItem, type FeatureRule,
 } from '../api/admin'
 
@@ -69,6 +69,29 @@ async function onReset() {
   } finally { saving.value = false }
 }
 
+// 加量包编辑
+const addonVisible = ref(false)
+const addonFeat = ref<FeatureItem | null>(null)
+const addonForm = ref<{ enabled: boolean; pack_size: number; price_yuan: number }>(
+  { enabled: false, pack_size: 10, price_yuan: 9.9 })
+function openAddon(f: FeatureItem) {
+  addonFeat.value = f
+  addonForm.value = { enabled: f.addon.enabled, pack_size: f.addon.pack_size, price_yuan: f.addon.price_fen / 100 }
+  addonVisible.value = true
+}
+async function saveAddon() {
+  if (!addonFeat.value) return
+  saving.value = true
+  try {
+    cfg.value = await setEntitlementAddon({
+      feature_key: addonFeat.value.key, enabled: addonForm.value.enabled,
+      pack_size: addonForm.value.pack_size, price_fen: Math.round(addonForm.value.price_yuan * 100),
+    })
+    ElMessage.success('加量包已保存')
+    addonVisible.value = false
+  } finally { saving.value = false }
+}
+
 onMounted(load)
 </script>
 
@@ -94,6 +117,15 @@ onMounted(load)
             :effect="isOverridden(row, t) ? 'dark' : 'plain'"
             class="cell-tag" @click="openEdit(row, t)"
           >{{ ruleText(effective(row, t)) }}{{ isOverridden(row, t) ? ' *' : '' }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="加量包" min-width="150" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="!row.metered" type="info" effect="plain" size="small">不适用</el-tag>
+          <el-tag v-else class="cell-tag" :type="row.addon.enabled ? 'warning' : 'info'"
+            :effect="row.addon.enabled ? 'dark' : 'plain'" @click="openAddon(row)">
+            {{ row.addon.enabled ? `${row.addon.pack_size}次/¥${(row.addon.price_fen / 100).toFixed(1)}` : '未开启' }}
+          </el-tag>
         </template>
       </el-table-column>
     </el-table>
@@ -122,6 +154,18 @@ onMounted(load)
       <template #footer>
         <el-button @click="onReset" :loading="saving">恢复默认</el-button>
         <el-button type="primary" @click="onSave" :loading="saving">保存覆盖</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="addonVisible" :title="addonFeat ? `${addonFeat.title} · 加量包` : ''" width="420px">
+      <p class="hint">仅当用户已是最高档({{ cfg?.top_tier || 'promax' }})、配额用尽时出现购买；余额永久、需有会员才可用。</p>
+      <el-form label-width="90px">
+        <el-form-item label="开启加量包"><el-switch v-model="addonForm.enabled" /></el-form-item>
+        <el-form-item label="每包次数"><el-input-number v-model="addonForm.pack_size" :min="1" :max="999" /></el-form-item>
+        <el-form-item label="每包价格(元)"><el-input-number v-model="addonForm.price_yuan" :min="0" :precision="1" :step="1" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button type="primary" @click="saveAddon" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
   </div>
