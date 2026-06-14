@@ -20,6 +20,11 @@ export function setVocabSettings(s: VocabSettings): Promise<VocabSettings> {
   return request<VocabSettings>('/api/v1/vocabulary/settings', { method: 'PUT', data: s })
 }
 
+export interface AddWordResult { added: boolean; found: boolean; word?: string; already?: boolean; message?: string }
+export function addVocabWord(word: string): Promise<AddWordResult> {
+  return request<AddWordResult>('/api/v1/vocabulary/add-word', { method: 'POST', data: { word } })
+}
+
 export interface ShadowWordScore { word: string; score: number }
 export interface ShadowScoreResult {
   overall: number

@@ -159,6 +159,29 @@ async def add_source_candidates(
     return result.rowcount or 0
 
 
+async def add_manual_word(
+    db: AsyncSession, *, student_id: uuid.UUID, word: str,
+) -> dict:
+    """用户手动添加生词到自己的词源池（source='manual'）。仅收录词典已有的词。
+
+    返回 {added, found, word?, already?}。found=False 表示词典暂未收录。
+    """
+    w = (word or "").strip().lower()
+    if not w:
+        return {"added": False, "found": False, "message": "请输入单词"}
+    row = (await db.execute(
+        select(VocabularyWord.id, VocabularyWord.word)
+        .where(func.lower(VocabularyWord.word) == w)
+    )).first()
+    if row is None:
+        return {"added": False, "found": False, "message": "词典暂未收录该词，换一个试试"}
+    stmt = pg_insert(StudentVocabCandidate).values(
+        id=uuid.uuid4(), student_id=student_id, word_id=row[0], source="manual",
+    ).on_conflict_do_nothing(index_elements=["student_id", "word_id"])
+    res = await db.execute(stmt)
+    return {"added": True, "found": True, "word": row[1], "already": (res.rowcount or 0) == 0}
+
+
 def _level_for(repetitions: int) -> str:
     if repetitions <= 0:
         return "new"

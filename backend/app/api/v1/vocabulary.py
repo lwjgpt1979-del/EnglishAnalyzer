@@ -42,6 +42,21 @@ class VocabSettings(BaseModel):
     reps_per_group: int = Field(1, ge=1, le=5)
 
 
+class AddWordIn(BaseModel):
+    word: str = Field(..., min_length=1, max_length=60)
+
+
+@router.post("/add-word", response_model=BaseResponse[dict])
+async def add_word(body: AddWordIn, db: DbDep, current_user: UserDep):
+    """用户手动添加生词到自己的词源池（仅词典已有的词）。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await vocabulary_service.add_manual_word(
+        db, student_id=current_user.id, word=body.word)
+    if res.get("added"):
+        await db.commit()
+    return make_ok(res)
+
+
 @router.get("/settings", response_model=BaseResponse[VocabSettings])
 async def get_settings(db: DbDep, current_user: UserDep):
     """词力通学习设置：每组词数 / 每组遍数（每生一份，不绑定会员档位）。"""

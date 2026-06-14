@@ -21,7 +21,7 @@
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
       <view class="center-tip">🎉 暂时没有待学/待复习的单词
-        <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text></view>
+        <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text><text class="gear-inline" @tap="openAddWord">＋ 添加生词</text></view>
       </view>
     </view>
 
@@ -173,7 +173,7 @@
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
       <view v-if="carryWords.length" class="carry-tip">🔁 本组错的 {{ carryWords.length }} 个词将带入下一组继续考察</view>
-      <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text></view>
+      <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text><text class="gear-inline" @tap="openAddWord">＋ 添加生词</text></view>
       <button class="btn-primary" @tap="reload">再来一组</button>
       <button class="btn-ghost" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">查看错词本</button>
     </view>
@@ -255,6 +255,18 @@
       </view>
     </view>
 
+    <!-- 添加生词弹窗 -->
+    <view v-if="showAddWord" class="shadow-modal" @tap.self="showAddWord = false">
+      <view class="set-card">
+        <text class="set-title">＋ 添加生词</text>
+        <input class="addword-input" v-model="addWordInput" type="text" placeholder="输入英文单词"
+          confirm-type="done" @confirm="submitAddWord" />
+        <text class="set-hint">仅支持词典已收录的词；加入后会进入你的词单，之后学习会学到。</text>
+        <button class="btn-primary" :disabled="!addWordInput.trim() || addingWord" @tap="submitAddWord">加入词单</button>
+        <text class="paywall-close" @tap="showAddWord = false">完成</text>
+      </view>
+    </view>
+
     <!-- 跟读会员引导弹窗 -->
     <view v-if="showPaywall" class="shadow-modal" @tap.self="showPaywall = false">
       <view class="paywall-card">
@@ -270,7 +282,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings } from '@/api/vocabulary'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord } from '@/api/vocabulary'
 import type { ShadowScoreResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
@@ -297,6 +309,9 @@ const wordsPerGroup = ref(5)
 const repsPerGroup = ref(1)
 const showSettings = ref(false)
 const settingDraft = reactive({ words_per_group: 5, reps_per_group: 1 })
+const showAddWord = ref(false)
+const addWordInput = ref('')
+const addingWord = ref(false)
 // 每组遍数循环 + 错词滚入
 const currentRep = ref(1)                                  // 当前组的第几遍
 const carryWords = ref<VocabWordCard[]>([])                // 上一组错得多、滚入本组的词
@@ -749,6 +764,30 @@ async function saveSettings() {
   }
 }
 
+// ── 添加生词（仅词典已有）──
+function openAddWord() { addWordInput.value = ''; showAddWord.value = true }
+async function submitAddWord() {
+  const w = addWordInput.value.trim()
+  if (!w || addingWord.value) return
+  addingWord.value = true
+  try {
+    const r = await addVocabWord(w)
+    if (!r.found) {
+      uni.showToast({ title: r.message || '词典暂未收录', icon: 'none' })
+    } else if (r.already) {
+      uni.showToast({ title: `「${r.word}」已在词单中`, icon: 'none' })
+      addWordInput.value = ''
+    } else {
+      uni.showToast({ title: `已加入「${r.word}」`, icon: 'success' })
+      addWordInput.value = ''
+    }
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '添加失败', icon: 'none' })
+  } finally {
+    addingWord.value = false
+  }
+}
+
 // ── 跟读评分（听力跟读·嵌入例句）──────────────────────────────────────────
 const shadow = reactive({
   open: false,
@@ -1003,6 +1042,7 @@ onMounted(load)
 .carry-tip { font-size: 24rpx; color: #d6457e; background: #fff0f5; border-radius: var(--r-md); padding: 12rpx 18rpx; margin-top: 12rpx; }
 .done-set { font-size: 24rpx; color: var(--c-text-hint); margin-top: 14rpx; }
 .gear-inline { color: var(--c-primary-deep); font-weight: 700; margin-left: 12rpx; }
+.addword-input { width: 100%; box-sizing: border-box; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 22rpx 24rpx; font-size: 32rpx; color: var(--c-ink); }
 .shadow-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: 40rpx 36rpx; width: 84%; max-width: 640rpx; display: flex; flex-direction: column; align-items: center; }
 .shadow-title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); margin-bottom: 20rpx; }
 .shadow-sentence { font-size: 32rpx; font-weight: 600; color: var(--c-ink); line-height: 1.6; text-align: center; }
