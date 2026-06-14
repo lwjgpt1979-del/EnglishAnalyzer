@@ -57,6 +57,21 @@ async def activate_membership(
     - V1 new / upgrade：停用旧记录 → 创建新记录
     - V1 renew：在原记录上延长 expires_at
     """
+    # 加量包分支：发放该功能加量次数，不创建会员
+    if getattr(order, "addon_feature_key", None):
+        from app.services import entitlement_service
+        acfg = await entitlement_service.addon_config(db, order.addon_feature_key)
+        await entitlement_service.grant_addon(
+            db, user_id=order.beneficiary_id, key=order.addon_feature_key, n=acfg["pack_size"])
+        from app.services.notification_service import emit_membership
+        try:
+            await emit_membership(
+                db, user_id=order.beneficiary_id, title="加量包购买成功",
+                content=f"已到账 {acfg['pack_size']} 次，配额用完后自动使用。", order_id=order.id)
+        except Exception:
+            pass
+        return None
+
     # V2 分支
     if order.semester_count and order.purchased_semester_ids:
         from app.services.semester_service import create_purchased_semesters

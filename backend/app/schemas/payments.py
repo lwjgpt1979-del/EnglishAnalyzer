@@ -34,6 +34,7 @@ class OrderCreate(BaseModel):
     tier: str = Field(..., description="basic | pro | promax")
     duration_months: int | None = Field(None, description="遗留按月：1 | 3 | 12（激活码等）")
     quantity: int | None = Field(None, description="按份：每份6个月，x份=6x月（优先于 duration_months）")
+    addon_feature_key: str | None = Field(None, description="加量包：购买某功能的加量次数")
     order_type: str = Field(..., description="new | renew | upgrade")
     minor_consent: bool = Field(default=False, description="14-17岁用户首次购买必须为 True（已告知监护人并获得同意）")
     target_student_id: uuid.UUID | None = Field(None, description="代付时指定学生 ID；为空则为本人购买")

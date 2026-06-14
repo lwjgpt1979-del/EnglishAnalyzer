@@ -61,7 +61,9 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         raise AppError(
             code=400, message=f"无效档位：{body.tier}，可选：basic/pro/promax"
         )
-    if body.semesters:
+    if body.addon_feature_key:
+        pass   # 加量包：金额由后端按配置取，无需额外校验
+    elif body.semesters:
         if not body.semesters:
             raise AppError(code=400, message="V2 模式 semesters 不能为空列表")
     elif body.quantity is not None:
@@ -86,6 +88,7 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         quantity=body.quantity,
         order_type=body.order_type,
         semesters=body.semesters,
+        addon_feature_key=body.addon_feature_key,
     )
     await db.commit()
     await db.refresh(order)

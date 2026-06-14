@@ -73,11 +73,28 @@ async def create_order(
     quantity: int | None = None,          # 按份：每份 6 个月（优先于 duration_months）
     order_type: str,
     semesters: list[dict] | None = None,  # V2 新增
+    addon_feature_key: str | None = None, # 加量包：购买某功能的加量次数
 ) -> Order:
     """会员下单。三种计价：V2 学期(semesters) > 按份(quantity,6月/份) > 遗留按月(duration_months)。
     调用方负责 commit。"""
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     order_no = f"ORD-{today}-{uuid.uuid4().hex[:8].upper()}"
+
+    if addon_feature_key:
+        # 加量包：金额取该功能加量配置价
+        from app.services import entitlement_service
+        acfg = await entitlement_service.addon_config(db, addon_feature_key)
+        if not acfg["enabled"] or acfg["price_fen"] <= 0:
+            raise AppError(code=400, message="该功能未开放加量包")
+        order = Order(
+            id=uuid.uuid4(), order_no=order_no, payer_id=payer_id,
+            beneficiary_id=beneficiary_id, order_type=order_type, tier=tier,
+            duration_months=0, amount_fen=acfg["price_fen"], status="pending",
+            addon_feature_key=addon_feature_key,
+        )
+        db.add(order)
+        await db.flush()
+        return order
 
     if semesters:
         # V2：按学期计价

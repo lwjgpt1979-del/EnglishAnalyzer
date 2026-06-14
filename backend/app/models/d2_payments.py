@@ -74,6 +74,7 @@ class Order(Base):
     # —— V2 学期会员（D-079 / M1）——
     semester_count = mapped_column(sa.SmallInteger, nullable=True)
     purchased_semester_ids = mapped_column(JSONB, nullable=True)
+    addon_feature_key = mapped_column(sa.String(64), nullable=True)   # 加量包：购买的功能能力键
 
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()

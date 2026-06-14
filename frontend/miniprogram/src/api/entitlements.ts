@@ -8,6 +8,9 @@ export interface FeatureEntitlement {
   mode: 'allow' | 'deny' | 'quota'
   quota_limit?: number | null
   quota_left?: number | null
+  addon_left?: number
+  can_buy_addon?: boolean
+  addon_pack?: { pack_size: number; price_fen: number } | null
   required_tiers?: string[]
   condition?: string | null
   reason?: string
