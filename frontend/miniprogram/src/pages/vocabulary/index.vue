@@ -23,10 +23,10 @@
       <view class="center-tip">🎉 今日没有待学/待复习的单词，明天再来吧！</view>
     </view>
 
-    <!-- 学习阶段：词卡（图左+词右，例句/短语，跟读·发音一行）-->
-    <view v-else-if="phase === 'study'" class="card">
+    <!-- 学习/复习阶段：词卡（图左+词右，例句/短语，跟读·发音一行）-->
+    <view v-else-if="phase === 'study' || phase === 'review'" class="card">
       <view class="study-hd">
-        <text class="progress-hint">学新词 {{ studyIndex + 1 }} / {{ newCards.length }}</text>
+        <text class="progress-hint">{{ isReview ? '复习词' : '学新词' }} {{ cardIdx + 1 }} / {{ cardList.length }}</text>
         <text class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq">
           {{ readSeq ? '🔉 连读例句/短语' : '🔈 连读例句/短语' }}
         </text>
@@ -66,7 +66,7 @@
         <text class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)">🎤 跟读</text>
       </view>
 
-      <button class="btn-primary" @tap="nextStudy">记住了，下一个</button>
+      <button class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
     </view>
 
     <!-- 测试阶段：4 选 1 -->
@@ -205,7 +205,7 @@ interface Quiz {
 
 const auth = useAuthStore()
 const loading = ref(true)
-const phase = ref<'empty' | 'study' | 'quiz' | 'done'>('study')
+const phase = ref<'empty' | 'study' | 'review' | 'quiz' | 'done'>('study')
 const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
 
 const newCards = ref<VocabWordCard[]>([])
@@ -213,6 +213,7 @@ const reviewCards = ref<VocabWordCard[]>([])
 const pool = ref<VocabWordCard[]>([])   // 全部词，用于生成干扰项
 
 const studyIndex = ref(0)
+const reviewIndex = ref(0)
 const quizIndex = ref(0)
 const correctCount = ref(0)
 const answered = ref(false)
@@ -251,7 +252,19 @@ async function onMakeUp(date: string) {
   }
 }
 
-const curStudy = computed(() => newCards.value[studyIndex.value] || ({} as VocabWordCard))
+const isReview = computed(() => phase.value === 'review')
+const cardList = computed(() => (isReview.value ? reviewCards.value : newCards.value))
+const cardIdx = computed(() => (isReview.value ? reviewIndex.value : studyIndex.value))
+const curStudy = computed(() => cardList.value[cardIdx.value] || ({} as VocabWordCard))
+const studyBtnLabel = computed(() => {
+  if (isReview.value) {
+    return reviewIndex.value >= reviewCards.value.length - 1 ? '开始测试 →' : '记住了，下一个'
+  }
+  if (studyIndex.value >= newCards.value.length - 1) {
+    return reviewCards.value.length > 0 ? '开始复习 →' : '开始测试 →'
+  }
+  return '记住了，下一个'
+})
 const curQuiz = computed(() => quizQueue.value[quizIndex.value] || ({} as Quiz))
 const quizTypeLabel = computed(() => {
   const m = curQuiz.value.mode
@@ -376,12 +389,30 @@ function requestCheckinSubscribe() {
 }
 
 function nextStudy() {
+  if (phase.value === 'review') {
+    if (reviewIndex.value < reviewCards.value.length - 1) {
+      reviewIndex.value++
+      nextTick(() => playCard(curStudy.value))
+    } else {
+      startQuiz()
+    }
+    return
+  }
+  // 学新词阶段
   if (studyIndex.value < newCards.value.length - 1) {
     studyIndex.value++
     nextTick(() => playCard(curStudy.value))   // 新词卡出现自动发声
+  } else if (reviewCards.value.length > 0) {
+    enterReview()                              // 新词学完 → 复习词词卡
   } else {
     startQuiz()
   }
+}
+
+function enterReview() {
+  phase.value = 'review'
+  reviewIndex.value = 0
+  nextTick(() => playCard(curStudy.value))
 }
 
 async function choose(i: number) {
@@ -426,6 +457,7 @@ async function load() {
     reviewCards.value = task.review_words
     pool.value = [...task.new_words, ...task.review_words]
     studyIndex.value = 0
+    reviewIndex.value = 0
     if (newCards.value.length === 0 && reviewCards.value.length === 0) {
       phase.value = 'empty'
       loadCalendar()
@@ -433,7 +465,7 @@ async function load() {
       phase.value = 'study'
       nextTick(() => playCard(curStudy.value))   // 首张词卡自动发声
     } else {
-      startQuiz()
+      enterReview()                              // 只有复习词：先过带图词卡再测
     }
   } catch (e) {
     uni.showToast({ title: (e as Error).message, icon: 'none' })
