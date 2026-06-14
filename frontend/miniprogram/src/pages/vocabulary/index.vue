@@ -69,7 +69,7 @@
       <!-- 单词发音 + 跟读：同一行 -->
       <view class="wc-btns">
         <text class="wc-btn" @tap="playCard(curStudy)">🔊 单词发音</text>
-        <text class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)">🎤 跟读</text>
+        <text class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)">🎤 跟读{{ ent.can('vocab.shadow') ? '' : ' 🔒' }}</text>
       </view>
 
       <button class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
@@ -280,16 +280,9 @@
       </view>
     </view>
 
-    <!-- 跟读会员引导弹窗 -->
-    <view v-if="showPaywall" class="shadow-modal" @tap.self="showPaywall = false">
-      <view class="paywall-card">
-        <text class="paywall-emoji">🎤🔒</text>
-        <text class="paywall-title">跟读评测是会员专享</text>
-        <text class="paywall-desc">开通会员后即可对单词/例句跟读打分，纠正发音。</text>
-        <button class="btn-primary" @tap="goMembership">去开通会员</button>
-        <text class="paywall-close" @tap="showPaywall = false">暂不</text>
-      </view>
-    </view>
+    <!-- 跟读会员引导（统一会员墙）-->
+    <Paywall :open="showPaywall" :feature="ent.feature('vocab.shadow')" emoji="🎤"
+      title="跟读评测是会员专享" @close="showPaywall = false" />
   </view>
 </template>
 
@@ -300,7 +293,8 @@ import type { ShadowScoreResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
-import { getMyMembership } from '@/api/memberships'
+import { useEntitlementsStore } from '@/stores/entitlements'
+import Paywall from '@/components/Paywall.vue'
 import type { VocabWordCard } from '@/types/api'
 
 interface Quiz {
@@ -315,7 +309,7 @@ const auth = useAuthStore()
 const loading = ref(true)
 const phase = ref<'empty' | 'study' | 'review' | 'quiz' | 'done'>('study')
 const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
-const isMember = ref(false)       // 是否有有效会员（跟读门禁）
+const ent = useEntitlementsStore()
 const showPaywall = ref(false)    // 跟读会员引导弹窗
 // 学习设置（用户自定，不绑会员档位）
 const wordsPerGroup = ref(5)
@@ -649,7 +643,7 @@ function optionClass(i: number): string {
 async function load(fromReload = false) {
   if (!auth.isLoggedIn()) await auth.login()
   loading.value = true
-  getMyMembership().then((m) => { isMember.value = m.is_active && m.tier !== 'free' }).catch(() => { isMember.value = false })
+  ent.ensure()
   getVocabSettings().then((s) => {
     wordsPerGroup.value = s.words_per_group; repsPerGroup.value = s.reps_per_group
     wrongCarryThreshold.value = s.wrong_carry_threshold ?? 2
@@ -830,12 +824,8 @@ function levelLabel(lv: string) {
 }
 
 function openShadow(text: string) {
-  if (!isMember.value) { showPaywall.value = true; return }   // 跟读为会员专享
+  if (!ent.can('vocab.shadow')) { showPaywall.value = true; return }   // 跟读为会员专享
   Object.assign(shadow, { open: true, text, recording: false, scoring: false, result: null, recordPath: '' })
-}
-function goMembership() {
-  showPaywall.value = false
-  uni.navigateTo({ url: '/pages/membership/activate' })
 }
 
 function closeShadow() {
@@ -914,7 +904,6 @@ async function readAndScore(path: string) {
     }
   } catch (e) {
     if ((e as { code?: number }).code === 402) {   // 会员专享：引导开通
-      isMember.value = false
       closeShadow()
       showPaywall.value = true
     } else {

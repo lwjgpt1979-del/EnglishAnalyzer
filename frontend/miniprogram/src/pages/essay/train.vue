@@ -64,7 +64,7 @@
       </view>
       <textarea v-model="draft" class="ta ta-write" placeholder="在这里限时写作…" />
       <button class="btn-primary" :disabled="!draft.trim() || diagnosing" @tap="submitDiagnose">
-        {{ diagnosing ? 'AI 诊断中…' : '提交诊断' }}
+        {{ diagnosing ? 'AI 诊断中…' : (ent.can('essay.diagnose') ? '提交诊断' + quotaHint : '提交诊断 🔒') }}
       </button>
     </view>
 
@@ -110,16 +110,8 @@
       </view>
     </view>
 
-    <!-- 会员墙 -->
-    <view v-if="showPaywall" class="mask" @tap.self="showPaywall = false">
-      <view class="pw-card">
-        <text class="pw-emoji">✍️🔒</text>
-        <text class="pw-title">作文诊断是会员专享</text>
-        <text class="pw-desc">开通 Pro/ProMax 后即可使用 AI 按档诊断、漏点检测与升档建议。</text>
-        <button class="btn-primary" @tap="goMembership">去开通会员</button>
-        <text class="pw-close" @tap="showPaywall = false">暂不</text>
-      </view>
-    </view>
+    <Paywall :open="showPaywall" :feature="ent.feature('essay.diagnose')" emoji="✍️"
+      title="作文诊断是会员专享" @close="showPaywall = false" />
   </view>
 </template>
 
@@ -127,6 +119,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getEssayPrompts, analyzeEssayPrompt, diagnoseEssay, type EssayPrompt, type PromptAnalysis, type EssayDiagnosis } from '@/api/essay'
 import { useAuthStore } from '@/stores/auth'
+import { useEntitlementsStore } from '@/stores/entitlements'
+import Paywall from '@/components/Paywall.vue'
 
 const auth = useAuthStore()
 const phase = ref<'pick' | 'custom' | 'analyze' | 'write' | 'result'>('pick')
@@ -145,6 +139,7 @@ const showPoints = ref(true)
 const diagnosing = ref(false)
 const diag = ref<EssayDiagnosis | null>(null)
 const showPaywall = ref(false)
+const ent = useEntitlementsStore()
 
 // 计时
 const seconds = ref(0)
@@ -154,6 +149,10 @@ const timerText = computed(() => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 })
 const wordCount = computed(() => (draft.value.trim().match(/[A-Za-z']+/g) || []).length)
+const quotaHint = computed(() => {
+  const f = ent.feature('essay.diagnose')
+  return f.mode === 'quota' && f.quota_left != null ? `（本月剩 ${f.quota_left} 次）` : ''
+})
 const coveredCount = computed(() => diag.value ? diag.value.missing_points.filter(m => m.covered).length : 0)
 
 function bandClass(b?: string) {
@@ -187,6 +186,7 @@ function startWrite() {
   _timer = setInterval(() => { seconds.value++ }, 1000)
 }
 async function submitDiagnose() {
+  if (!ent.can('essay.diagnose')) { showPaywall.value = true; return }   // 点前拦截
   if (_timer) { clearInterval(_timer); _timer = null }
   diagnosing.value = true
   try {
@@ -197,6 +197,7 @@ async function submitDiagnose() {
       timed_seconds: seconds.value,
     })
     phase.value = 'result'
+    ent.fetch()   // 配额变化，刷新能力图
   } catch (e) {
     if ((e as { code?: number }).code === 403) { showPaywall.value = true }
     else uni.showToast({ title: (e as Error).message || '诊断失败', icon: 'none' })
@@ -204,9 +205,8 @@ async function submitDiagnose() {
 }
 function rewrite() { startWrite() }
 function goErrorBook() { uni.navigateTo({ url: '/pages/essay/error-book' }) }
-function goMembership() { showPaywall.value = false; uni.navigateTo({ url: '/pages/membership/activate' }) }
 
-onMounted(async () => { if (!auth.isLoggedIn()) await auth.login(); loadPrompts() })
+onMounted(async () => { if (!auth.isLoggedIn()) await auth.login(); ent.ensure(); loadPrompts() })
 onUnmounted(() => { if (_timer) clearInterval(_timer) })
 </script>
 
