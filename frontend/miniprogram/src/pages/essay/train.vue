@@ -23,7 +23,6 @@
       </view>
     </view>
 
-    <!-- 自定义题输入 -->
     <view v-else-if="phase === 'custom'">
       <view class="et-head"><text class="et-back" @tap="phase = 'pick'">← 返回</text><text class="et-title">自定义题目</text></view>
       <textarea v-model="customText" class="ta" placeholder="粘贴或输入作文题目/情景…" />
@@ -32,7 +31,6 @@
       </button>
     </view>
 
-    <!-- 审题 -->
     <view v-else-if="phase === 'analyze' && analysis">
       <view class="et-head"><text class="et-back" @tap="phase = 'pick'">← 换题</text><text class="et-title">审题</text></view>
       <view class="a-card">
@@ -52,7 +50,6 @@
       <button class="btn-primary" @tap="startWrite">开始写作 →</button>
     </view>
 
-    <!-- 写作 -->
     <view v-else-if="phase === 'write'">
       <view class="et-head">
         <text class="et-back" @tap="phase = 'analyze'">← 审题</text>
@@ -71,7 +68,6 @@
       </button>
     </view>
 
-    <!-- 诊断结果 -->
     <view v-else-if="phase === 'result' && diag">
       <view class="et-head"><text class="et-title">📊 诊断结果</text><text class="et-link" @tap="goErrorBook">📕 错因本</text></view>
       <view class="r-score">

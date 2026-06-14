@@ -156,8 +156,7 @@
       </view>
     </view>
 
-    <!-- 词力通 -->
-    <view v-else-if="tab === 'vocab'">
+    <view v-if="tab === 'vocab'">
       <view v-if="vocabLoading" class="tip">加载中…</view>
       <view v-else-if="!vocabStats" class="tip">暂无数据</view>
       <view v-else>
