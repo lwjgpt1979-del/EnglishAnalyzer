@@ -61,6 +61,8 @@
     { "path": "pages/vocabulary/wrong-book", "style": { "navigationBarTitleText": "错词本" } },
     { "path": "pages/vocabulary/report", "style": { "navigationBarTitleText": "词力通学情" } },
     { "path": "pages/essay/index", "style": { "navigationBarTitleText": "作文精修" } },
+    { "path": "pages/essay/train", "style": { "navigationBarTitleText": "应试写作训练" } },
+    { "path": "pages/essay/error-book", "style": { "navigationBarTitleText": "写作错因本" } },
     { "path": "pages/essay/detail", "style": { "navigationBarTitleText": "精修详情" } },
     { "path": "pages/assignments/index", "style": { "navigationBarTitleText": "老师任务" } },
     { "path": "pages/assignments/detail", "style": { "navigationBarTitleText": "作业详情" } },
