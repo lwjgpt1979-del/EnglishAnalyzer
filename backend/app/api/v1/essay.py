@@ -19,10 +19,72 @@ from app.schemas.essay import (
 )
 from app.services import essay_service, membership_service
 
+from pydantic import BaseModel, Field
+
 router = APIRouter(prefix="/essays", tags=["essays"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
+
+
+def _stage(user: User) -> str:
+    g = getattr(user, "preferred_grade", None) or ""
+    if "高中" in g:
+        return "senior"
+    if "小学" in g:
+        return "primary"
+    return "junior"
+
+
+# ── 应试训练 E1 ────────────────────────────────────────────────────────────────
+@router.get("/prompts", response_model=BaseResponse[list])
+async def list_essay_prompts(db: DbDep, current_user: UserDep,
+                             stage: str | None = None, genre: str | None = None):
+    """作文题库：按学段/体裁列题（含必答要点/人称/时态/词数）。"""
+    rows = await essay_service.list_prompts(db, stage=stage or _stage(current_user), genre=genre)
+    return make_ok([{
+        "id": str(p.id), "stage": p.stage, "genre": p.genre, "title": p.title,
+        "scenario": p.scenario, "required_points": p.required_points,
+        "person": p.person, "tense": p.tense, "word_min": p.word_min, "word_max": p.word_max,
+    } for p in rows])
+
+
+class AnalyzePromptIn(BaseModel):
+    prompt_id: uuid.UUID | None = None
+    text: str | None = None
+
+
+@router.post("/analyze-prompt", response_model=BaseResponse[dict])
+async def analyze_prompt_api(body: AnalyzePromptIn, db: DbDep, current_user: UserDep):
+    """审题助手：抽取要点清单 + 人称/时态/词数。"""
+    return make_ok(await essay_service.analyze_prompt(
+        db, prompt_id=body.prompt_id, text=body.text))
+
+
+class DiagnoseIn(BaseModel):
+    draft_text: str = Field(..., min_length=1)
+    prompt_id: uuid.UUID | None = None
+    prompt_text: str | None = None
+    timed_seconds: int | None = None
+
+
+@router.post("/diagnose", response_model=BaseResponse[dict])
+async def diagnose_api(body: DiagnoseIn, db: DbDep, current_user: UserDep):
+    """按档诊断：三维+档次 + 漏点检测 + 升档建议 + 错因沉淀。"""
+    await get_rls_db(db, str(current_user.id))
+    essay = await essay_service.diagnose_essay(
+        db, student_id=current_user.id, draft_text=body.draft_text,
+        prompt_id=body.prompt_id, prompt_text=body.prompt_text,
+        stage=_stage(current_user), timed_seconds=body.timed_seconds)
+    await db.commit()
+    return make_ok({"id": str(essay.id), **(essay.dimensions or {})})
+
+
+@router.get("/error-log", response_model=BaseResponse[dict])
+async def essay_error_log_api(db: DbDep, current_user: UserDep):
+    """作文写作错因本：按类型聚合 + 最近明细。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await essay_service.error_log_summary(db, student_id=current_user.id))
 
 
 def _to_out(e: Essay) -> EssayOut:

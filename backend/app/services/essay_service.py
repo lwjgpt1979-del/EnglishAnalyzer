@@ -127,6 +127,168 @@ async def repolish_essay(
     return essay
 
 
+# ── 应试训练（E1：审题 + 按档诊断 + 错因本）────────────────────────────────────
+_DIAG_DIMS = [("内容", 40), ("语言", 40), ("结构", 20)]
+
+
+async def list_prompts(
+    db: AsyncSession, *, stage: str | None = None, genre: str | None = None, limit: int = 50,
+) -> list:
+    from app.models.d5_learning import EssayPrompt
+    q = select(EssayPrompt)
+    if stage:
+        q = q.where(EssayPrompt.stage == stage)
+    if genre:
+        q = q.where(EssayPrompt.genre == genre)
+    rows = (await db.execute(q.order_by(EssayPrompt.created_at.desc()).limit(limit))).scalars().all()
+    return list(rows)
+
+
+async def get_prompt(db: AsyncSession, *, prompt_id: uuid.UUID):
+    from app.models.d5_learning import EssayPrompt
+    return (await db.execute(select(EssayPrompt).where(EssayPrompt.id == prompt_id))).scalar_one_or_none()
+
+
+async def analyze_prompt(
+    db: AsyncSession, *, prompt_id: uuid.UUID | None = None, text: str | None = None,
+) -> dict:
+    """审题助手：题库题直接返回要点/人称/时态/词数；自定义题用 AI 抽取。"""
+    if prompt_id:
+        p = await get_prompt(db, prompt_id=prompt_id)
+        if p is None:
+            raise AppError(code=404, message="题目不存在")
+        return {
+            "title": p.title, "genre": p.genre, "scenario": p.scenario,
+            "required_points": p.required_points or [],
+            "person": p.person, "tense": p.tense,
+            "word_min": p.word_min, "word_max": p.word_max,
+        }
+    scenario = (text or "").strip()
+    if not scenario:
+        raise AppError(code=400, message="请输入作文题目或情景")
+    if is_llm_dev_mode():
+        return {"title": scenario[:20], "genre": "未指定", "scenario": scenario,
+                "required_points": ["要点1", "要点2", "要点3"],
+                "person": "第一人称", "tense": "一般现在时", "word_min": 80, "word_max": 120}
+    sys = (
+        "你是英语写作审题助手。根据给定的作文题目/情景，提取写作要点清单与写作规范。"
+        "只返回 JSON，键：genre(体裁,中文)、required_points(必答要点,中文字符串数组)、"
+        "person(人称)、tense(主要时态)、word_min(int)、word_max(int)。要点要覆盖题目所有得分点，简洁。"
+    )
+    try:
+        resp = await chat_completion(system_prompt=sys, user_prompt=f"题目/情景：\n{scenario}",
+                                     max_tokens=600, response_format={"type": "json_object"})
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception as exc:  # noqa: BLE001
+        raise AppError(code=502, message=f"AI 审题失败：{exc}") from exc
+    return {
+        "title": scenario[:30], "genre": str(data.get("genre") or "未指定"), "scenario": scenario,
+        "required_points": [str(x) for x in (data.get("required_points") or [])],
+        "person": data.get("person"), "tense": data.get("tense"),
+        "word_min": data.get("word_min"), "word_max": data.get("word_max"),
+    }
+
+
+def _diag_system(stage: str) -> str:
+    level = "高考" if stage == "senior" else ("中考" if stage == "junior" else "小学")
+    return (
+        f"你是资深{level}英语书面表达阅卷老师。请严格对照评分标准为学生作文打分，目标是帮助学生在考试中提分。"
+        "从三个维度评分：内容(满分40，要点是否齐全、是否切题)、语言(满分40，语法/词汇/句式准确与丰富)、"
+        "结构(满分20，逻辑与衔接)。每个维度给档次(优秀/良好/合格/待提高)。"
+        "【关键】(1) 逐条核对给定的必答要点，标出每个要点是否答到; "
+        "(2) 给每个维度一条具体的“升档建议”(差一句什么样的句子/改什么就能上一档); "
+        "(3) 逐处指出错误并归类(类型限定：时态/主谓一致/中式表达/拼写/搭配/用词/标点)。"
+        "只返回 JSON，键：scores(list of {dimension,score,full,band})、total(int)、total_full(int)、"
+        "overall_band(str)、missing_points(list of {point,covered:boolean})、"
+        "upgrade_tips(list of {dimension,tip})、"
+        "issues(list of {original,suggestion,type,explanation})、model_better(str:可选的更好范例段落)。"
+    )
+
+
+def _mock_diagnose(required_points: list) -> dict:
+    return {
+        "scores": [{"dimension": d, "score": f - 8, "full": f, "band": "合格"} for d, f in _DIAG_DIMS],
+        "total": sum(f - 8 for _, f in _DIAG_DIMS), "total_full": 100, "overall_band": "合格",
+        "missing_points": [{"point": str(p), "covered": i % 2 == 0} for i, p in enumerate(required_points or ["要点1"])],
+        "upgrade_tips": [{"dimension": d, "tip": f"{d}：再补一个高级句式即可升档（dev-mock）"} for d, _ in _DIAG_DIMS],
+        "issues": [{"original": "I very like", "suggestion": "I like ... very much",
+                    "type": "中式表达", "explanation": "very 不能直接修饰动词。"}],
+        "model_better": "",
+    }
+
+
+async def diagnose_essay(
+    db: AsyncSession, *, student_id: uuid.UUID, draft_text: str,
+    prompt_id: uuid.UUID | None = None, prompt_text: str | None = None,
+    stage: str = "junior", timed_seconds: int | None = None,
+) -> Essay:
+    """按档诊断：会员闸门同精修(Pro/ProMax)。漏点检测 + 升档建议 + 错因沉淀。"""
+    m = await membership_service.get_active_membership(db, user_id=student_id)
+    tier = str(m.tier) if m else "free"
+    if tier in ("free", "basic"):
+        raise AppError(code=403, message="作文诊断为 Pro/ProMax 专属功能，请升级会员")
+
+    info = await analyze_prompt(db, prompt_id=prompt_id, text=prompt_text)
+    required = info.get("required_points") or []
+
+    if is_llm_dev_mode():
+        data = _mock_diagnose(required)
+    else:
+        usr = (f"作文体裁：{info.get('genre')}\n题目/情景：{info.get('scenario')}\n"
+               f"必答要点：{json.dumps(required, ensure_ascii=False)}\n"
+               f"要求人称：{info.get('person')}，时态：{info.get('tense')}，"
+               f"词数：{info.get('word_min')}-{info.get('word_max')}\n\n学生作文：\n{draft_text}")
+        try:
+            resp = await chat_completion(system_prompt=_diag_system(stage), user_prompt=usr,
+                                         max_tokens=2048, response_format={"type": "json_object"})
+            data = json.loads(resp.choices[0].message.content or "{}")
+        except Exception as exc:  # noqa: BLE001
+            raise AppError(code=502, message=f"AI 诊断失败：{exc}") from exc
+
+    essay = Essay(
+        id=uuid.uuid4(), student_id=student_id, original_text=draft_text,
+        polished_text=data.get("model_better") or "",
+        dimensions={
+            "kind": "exam_diagnose", "title": info.get("title"), "genre": info.get("genre"),
+            "stage": stage, "prompt_id": str(prompt_id) if prompt_id else None,
+            "required_points": required, "timed_seconds": timed_seconds,
+            "scores": data.get("scores", []), "total": data.get("total", 0),
+            "total_full": data.get("total_full", 100), "overall_band": data.get("overall_band", ""),
+            "missing_points": data.get("missing_points", []),
+            "upgrade_tips": data.get("upgrade_tips", []),
+            "issues": data.get("issues", []),
+        },
+        round_count=1, status="completed",
+    )
+    db.add(essay)
+    await db.flush()
+    from app.models.d5_learning import EssayErrorLog
+    for it in (data.get("issues") or []):
+        if isinstance(it, dict) and it.get("type"):
+            db.add(EssayErrorLog(
+                id=uuid.uuid4(), student_id=student_id, essay_id=essay.id,
+                type=str(it.get("type"))[:24], original=str(it.get("original") or "")[:500],
+                suggestion=str(it.get("suggestion") or "")[:500]))
+    await db.flush()
+    return essay
+
+
+async def error_log_summary(db: AsyncSession, *, student_id: uuid.UUID, limit: int = 60) -> dict:
+    """写作错因本：按类型聚合 + 最近明细。"""
+    from app.models.d5_learning import EssayErrorLog
+    rows = (await db.execute(
+        select(EssayErrorLog).where(EssayErrorLog.student_id == student_id)
+        .order_by(EssayErrorLog.created_at.desc()).limit(limit)
+    )).scalars().all()
+    from collections import Counter
+    cnt: Counter = Counter(r.type for r in rows)
+    return {
+        "by_type": [{"type": t, "count": c} for t, c in cnt.most_common()],
+        "items": [{"type": r.type, "original": r.original, "suggestion": r.suggestion,
+                   "created_at": r.created_at.isoformat()} for r in rows],
+    }
+
+
 async def get_essay(db: AsyncSession, *, student_id: uuid.UUID, essay_id: uuid.UUID) -> Essay | None:
     return (await db.execute(
         select(Essay).where(Essay.id == essay_id, Essay.student_id == student_id)

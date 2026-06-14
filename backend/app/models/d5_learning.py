@@ -162,6 +162,40 @@ class VocabPronLog(Base):
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
+class EssayPrompt(Base):
+    """作文题库（应试训练）：体裁 + 提纲要点 + 人称/时态/词数。"""
+
+    __tablename__ = "essay_prompts"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stage = mapped_column(sa.String(16), nullable=False)        # junior / senior / primary
+    genre = mapped_column(sa.String(24), nullable=False)        # 书信/通知/记叙/议论/看图/读后续写
+    title = mapped_column(sa.String, nullable=False)
+    scenario = mapped_column(sa.Text, nullable=False)           # 情景/提纲原文
+    required_points = mapped_column(JSONB, nullable=False)      # 必答要点 [str]
+    person = mapped_column(sa.String(16), nullable=True)
+    tense = mapped_column(sa.String(24), nullable=True)
+    word_min = mapped_column(sa.SmallInteger, nullable=True)
+    word_max = mapped_column(sa.SmallInteger, nullable=True)
+    source = mapped_column(sa.String(16), nullable=False, server_default=sa.text("'admin'"))
+    parent_prompt_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class EssayErrorLog(Base):
+    """作文写作错因本：高频错误归类沉淀。"""
+
+    __tablename__ = "essay_error_log"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, index=True)
+    essay_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    type = mapped_column(sa.String(24), nullable=False)         # 时态/主谓/中式表达/拼写/搭配/...
+    original = mapped_column(sa.Text, nullable=True)
+    suggestion = mapped_column(sa.Text, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
 class Essay(Base):
     """学生作文润色记录（可多轮）。"""
 
