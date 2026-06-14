@@ -567,9 +567,62 @@ def _mock_reply(user_text: str) -> dict:
     }
 
 
+def _mock_coach(user_text: str, pron: dict | None) -> dict:
+    weak = ""
+    if pron and isinstance(pron.get("words"), list):
+        weak = "、".join(w["word"] for w in pron["words"] if w.get("score", 100) < 80)
+    return {
+        "encourage": "宝贝说得真棒，妈妈听到你开口啦！👏",
+        "pron_tip": (f"有几个词再练练：{weak}，跟着妈妈慢慢读一遍～" if weak
+                     else "发音清楚，继续保持哦～"),
+        "express_tip": "可以试着把句子说得更完整一点，比如加上主语和动词。",
+        "better": user_text,
+    }
+
+
+async def _mom_coach(user_text: str, pron: dict | None, *, focus: str = "") -> dict:
+    """像妈妈教小朋友那样，对孩子这句英文做温柔的互动式点评：鼓励 + 发音提点 + 表达建议。"""
+    if is_llm_dev_mode():
+        return _mock_coach(user_text, pron)
+    weak_words, scores = "", ""
+    if pron:
+        if isinstance(pron.get("words"), list):
+            weak_words = "、".join(w["word"] for w in pron["words"] if w.get("score", 100) < 80)
+        scores = (f"发音总分{pron.get('overall')}, 准确度{pron.get('accuracy')}, "
+                  f"流利度{pron.get('fluency')}, 完整度{pron.get('completion')}. "
+                  f"读得不够准的词：{weak_words or '无'}.")
+    try:
+        resp = await chat_completion(
+            system_prompt=(
+                "你是一位温柔、耐心、充满鼓励的妈妈，正在陪自己的孩子练习说英语。"
+                "请用中文，像妈妈手把手教小朋友那样做互动式点评：先真诚地表扬具体做得好的地方，"
+                "再温柔地指出 1 个最值得改进的发音点（结合给出的发音评测，点名具体单词，告诉孩子怎么把这个音读准），"
+                "最后给 1 条让表达更自然/更完整的小建议，并示范一句更地道的说法。语气亲切，多用‘宝贝/我们一起/试试看’，"
+                "不要长篇大论，每条一两句。只输出紧凑 JSON，键为："
+                "encourage(表扬), pron_tip(发音提点), express_tip(表达建议), better(示范的更好说法, 英文)。"
+                + (f" 本活动目标：{focus}。" if focus else "")
+            ),
+            user_prompt=(f"孩子说的英文：{user_text}\n"
+                         f"{('发音评测：' + scores) if scores else '（本句暂无发音评测数据）'}\n"
+                         f"请按要求点评。"),
+            max_tokens=320, response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content or "{}")
+        return {
+            "encourage": (data.get("encourage") or "").strip(),
+            "pron_tip": (data.get("pron_tip") or "").strip(),
+            "express_tip": (data.get("express_tip") or "").strip(),
+            "better": (data.get("better") or "").strip(),
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[妈妈陪练] 点评失败，回退 mock: %s", e)
+        return _mock_coach(user_text, pron)
+
+
 async def reply(
     db: AsyncSession, *, student_id, scenario_key: str, history: list[dict], user_text: str,
-    stage: str = "junior",
+    stage: str = "junior", audio_b64: str | None = None, audio_format: str = "mp3",
+    coach: bool = False,
 ) -> dict:
     sc = await resolve_scenario(db, student_id=student_id, key=scenario_key)
     if sc is None:
@@ -644,6 +697,27 @@ async def reply(
             db, student_id, targets=sc.get("targets") or [],
             user_text=user_text, history=history)
 
+    # 妈妈陪练：对孩子这句英文做音频测评 + 互动式点评（仅 coach 模式开启时）
+    pron = None
+    coach_out = None
+    if coach:
+        audio_bytes = None
+        if audio_b64:
+            try:
+                import base64 as _b64
+                audio_bytes = _b64.b64decode(audio_b64)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[妈妈陪练] 音频解码失败: %s", e)
+        if audio_bytes:
+            try:
+                from app.services import pronunciation_service
+                pron = await pronunciation_service.assess(
+                    reference_text=user_text, audio_bytes=audio_bytes,
+                    mode="sentence", audio_format=(audio_format or "mp3"))
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[妈妈陪练] 发音评测失败: %s", e)
+        coach_out = await _mom_coach(user_text, pron, focus=(sc.get("focus") or "").strip())
+
     return {
         "ai_text": ai_text,
         "ai_audio_url": audio or "",
@@ -651,6 +725,8 @@ async def reply(
         "translation": (data.get("translation") or "").strip(),
         "mastered_wrong": mastered_wrong,
         "vocab_practiced": vocab_practiced,
+        "pron": pron,
+        "coach": coach_out,
     }
 
 

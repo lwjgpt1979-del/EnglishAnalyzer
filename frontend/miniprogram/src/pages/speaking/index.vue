@@ -51,6 +51,9 @@
           <text v-if="vocabMode" class="ct-auto" :class="{ on: readSentences }" @tap="readSentences = !readSentences">
             {{ readSentences ? '🔉 读例句/短语' : '🔈 读例句/短语' }}
           </text>
+          <text v-if="vocabMode" class="ct-auto" :class="{ on: momMode }" @tap="momMode = !momMode">
+            {{ momMode ? '👩‍🏫 妈妈陪练' : '🙂 妈妈陪练' }}
+          </text>
           <text class="ct-end" @tap="endAndRate">结束并评价</text>
         </view>
       </view>
@@ -103,6 +106,27 @@
               <view v-if="m.correction" class="b-fix">
                 <text class="b-fix-tag">✍️ 纠错</text>
                 <text class="b-fix-text">{{ m.correction }}</text>
+              </view>
+              <!-- 妈妈陪练：发音测评 + 互动点评 -->
+              <view v-if="m.coach" class="coach">
+                <view class="coach-hd">
+                  <text class="coach-ico">👩‍🏫</text>
+                  <text class="coach-title">妈妈陪练</text>
+                  <text v-if="m.pron && m.pron.overall != null" class="coach-score"
+                    :class="m.pron.level">发音 {{ m.pron.overall }}分</text>
+                </view>
+                <view v-if="m.pron && m.pron.accuracy != null" class="coach-meters">
+                  <text class="coach-meter">准确 {{ m.pron.accuracy }}</text>
+                  <text class="coach-meter">流利 {{ m.pron.fluency }}</text>
+                  <text class="coach-meter">完整 {{ m.pron.completion }}</text>
+                </view>
+                <view v-if="m.coach.encourage" class="coach-row"><text class="coach-emo">💗</text><text class="coach-tx">{{ m.coach.encourage }}</text></view>
+                <view v-if="m.coach.pron_tip" class="coach-row"><text class="coach-emo">🗣️</text><text class="coach-tx">{{ m.coach.pron_tip }}</text></view>
+                <view v-if="m.coach.express_tip" class="coach-row"><text class="coach-emo">✨</text><text class="coach-tx">{{ m.coach.express_tip }}</text></view>
+                <view v-if="m.coach.better" class="coach-better">
+                  <text class="coach-better-tag">这样说更棒</text>
+                  <text class="coach-better-en">{{ m.coach.better }}</text>
+                </view>
               </view>
             </view>
             <view v-else class="bubble me">
@@ -235,6 +259,7 @@ import { nextTick, onMounted, reactive, ref } from 'vue'
 import {
   getSpeakScenarios, startSpeak, replySpeak, summarizeSpeak, getVocabCards,
   type SpeakScenario, type SpeakTurn, type SpeakSummary, type VocabCard,
+  type MomCoach, type PronResult,
 } from '@/api/speaking'
 import { shadowScore, type ShadowScoreResult } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
@@ -248,6 +273,8 @@ interface Msg {
   showTr?: boolean
   playing?: boolean
   card?: VocabCard | null   // 词力通：随气泡一起出的词卡（文字+音标+图片）
+  coach?: MomCoach | null   // 妈妈陪练：互动式点评
+  pron?: PronResult | null  // 妈妈陪练：本句发音测评
 }
 
 const phase = ref<'pick' | 'chat'>('pick')
@@ -262,6 +289,7 @@ const recording = ref(false)
 const cancelZone = ref(false)
 const autoPlay = ref(true)   // AI 回复自动播放语音
 const readSentences = ref(true)  // 词力通：词卡同时连播例句/短语
+const momMode = ref(false)       // 妈妈陪练：每句英文回复做音频测评 + 互动点评
 const targetWords = ref<string[]>([])   // 词力通场景的目标词（供测发音）
 // 词卡学习模式（词力通场景）
 const vocabMode = ref(false)
@@ -379,9 +407,12 @@ function pushAi(text: string, audio: string, translation = '', correction = '', 
   else if (audio && autoPlay.value) playAudio(msg)  // 普通回复：自动播 AI 语音
 }
 
+let _pendingAudio = ''   // 妈妈陪练：本句语音的 base64（仅语音输入时有）
 async function send() {
   const t = draft.value.trim()
   if (!t || thinking.value) return
+  const audioB64 = _pendingAudio; _pendingAudio = ''
+  const coach = momMode.value && vocabMode.value
   draft.value = ''
   messages.value.push({ role: 'user', text: t })
   scrollToEnd()
@@ -391,7 +422,13 @@ async function send() {
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .slice(-8)
       .map(m => ({ role: m.role, text: m.text }))
-    const r = await replySpeak(scenarioKey.value, t, history)
+    const r = await replySpeak(scenarioKey.value, t, history,
+      coach ? { coach: true, audio: audioB64, audioFormat: 'mp3' } : undefined)
+    // 妈妈陪练：先插一条「妈妈点评」气泡（发音测评 + 互动建议）
+    if (r.coach) {
+      messages.value.push({ role: 'assistant', text: '', coach: r.coach, pron: r.pron || null })
+      scrollToEnd()
+    }
     // 词力通：AI 点评后带出下一个词卡（文字+音标+图片一起出）
     let nextCard: VocabCard | null = null
     if (vocabMode.value && cardIdx.value < cards.value.length - 1) {
@@ -490,18 +527,19 @@ function pronStop() {
   // #endif
   pronReadAndScore('')
 }
+function readFileB64(path: string): Promise<string> {
+  if (!path) return Promise.resolve('')
+  return new Promise<string>((resolve) => {
+    try {
+      uni.getFileSystemManager().readFile({
+        filePath: path, encoding: 'base64',
+        success: (r) => resolve((r.data as string) || ''), fail: () => resolve(''),
+      })
+    } catch { resolve('') }
+  })
+}
 async function pronReadAndScore(path: string) {
-  let audio = ''
-  if (path) {
-    audio = await new Promise<string>((resolve) => {
-      try {
-        uni.getFileSystemManager().readFile({
-          filePath: path, encoding: 'base64',
-          success: (r) => resolve((r.data as string) || ''), fail: () => resolve(''),
-        })
-      } catch { resolve('') }
-    })
-  }
+  const audio = await readFileB64(path)
   try {
     pron.result = await shadowScore(pron.word, audio, 'mp3')
   } catch (e) {
@@ -520,13 +558,17 @@ function getMgr() {
     const plugin: any = requirePlugin('WechatSI')
     _mgr = plugin.getRecordRecognitionManager()
     _mgr.onRecognize = () => { /* 中间结果忽略 */ }
-    _mgr.onStop = (res: any) => {
+    _mgr.onStop = async (res: any) => {
       recording.value = false
       _busy = false
       if (_canceled) { _canceled = false; return }   // 上滑取消：丢弃结果
       const text = (res && res.result || '').trim()
-      if (text) { draft.value = text; send() }
-      else uni.showToast({ title: '没听清，再说一次或打字', icon: 'none' })
+      if (!text) { uni.showToast({ title: '没听清，再说一次或打字', icon: 'none' }); return }
+      // 妈妈陪练：把这段录音转 base64，连同文本一起送后端做音频测评
+      if (momMode.value && vocabMode.value && res && res.tempFilePath) {
+        _pendingAudio = await readFileB64(res.tempFilePath)
+      }
+      draft.value = text; send()
     }
     _mgr.onError = (res: any) => {
       recording.value = false
@@ -652,6 +694,25 @@ function micEnd() {
 .b-fix { margin-top: 12rpx; background: #fff7e8; border-radius: 12rpx; padding: 12rpx 14rpx; display: flex; flex-direction: column; gap: 4rpx; }
 .b-fix-tag { font-size: 22rpx; font-weight: 800; color: #c98314; }
 .b-fix-text { font-size: 24rpx; color: #8a6516; line-height: 1.5; }
+
+/* 妈妈陪练点评卡 */
+.coach { margin-top: 12rpx; background: linear-gradient(160deg, #fff0f5, #fff7fb); border: 2rpx solid #ffd9e6; border-radius: 14rpx; padding: 14rpx 16rpx; display: flex; flex-direction: column; gap: 8rpx; }
+.coach-hd { display: flex; align-items: center; gap: 8rpx; }
+.coach-ico { font-size: 30rpx; }
+.coach-title { font-size: 24rpx; font-weight: 800; color: #d6457e; }
+.coach-score { margin-left: auto; font-size: 22rpx; font-weight: 800; color: #fff; background: #f48fb1; padding: 3rpx 14rpx; border-radius: var(--r-pill); }
+.coach-score.excellent { background: #34c759; }
+.coach-score.good { background: #5aa9f8; }
+.coach-score.fair { background: #ffab40; }
+.coach-score.poor { background: #ff6b6b; }
+.coach-meters { display: flex; gap: 10rpx; }
+.coach-meter { font-size: 20rpx; color: #b06a8a; background: #fff; border-radius: var(--r-pill); padding: 2rpx 12rpx; }
+.coach-row { display: flex; gap: 8rpx; align-items: flex-start; }
+.coach-emo { font-size: 24rpx; flex-shrink: 0; }
+.coach-tx { font-size: 24rpx; color: #7a4a60; line-height: 1.5; flex: 1; }
+.coach-better { margin-top: 4rpx; background: #fff; border-radius: 10rpx; padding: 10rpx 12rpx; display: flex; flex-direction: column; gap: 2rpx; }
+.coach-better-tag { font-size: 20rpx; font-weight: 800; color: #d6457e; }
+.coach-better-en { font-size: 26rpx; color: var(--c-ink); font-weight: 600; }
 .bubble.thinking { color: var(--c-text-hint); font-size: 26rpx; }
 
 .input-bar { display: flex; align-items: center; gap: 14rpx; padding: 16rpx 20rpx; background: var(--c-bg-card); box-shadow: 0 -4rpx 20rpx rgba(0,0,0,.05); }

@@ -26,6 +26,21 @@ export interface SpeakOpening {
   target_words?: string[]
 }
 
+export interface PronResult {
+  overall: number
+  level: string
+  words: { word: string; score: number }[]
+  tip: string
+  accuracy: number | null
+  fluency: number | null
+  completion: number | null
+}
+export interface MomCoach {
+  encourage: string
+  pron_tip: string
+  express_tip: string
+  better: string
+}
 export interface SpeakReply {
   ai_text: string
   ai_audio_url: string
@@ -33,6 +48,8 @@ export interface SpeakReply {
   translation: string
   mastered_wrong?: { kp: string; due_left: number } | null
   vocab_practiced?: { word: string; level: string }[]
+  pron?: PronResult | null
+  coach?: MomCoach | null
 }
 
 export function getSpeakScenarios(): Promise<SpeakScenarioList> {
@@ -60,10 +77,16 @@ export function startSpeak(scenarioKey: string): Promise<SpeakOpening> {
 
 export function replySpeak(
   scenarioKey: string, userText: string, history: SpeakTurn[],
+  opts?: { coach?: boolean; audio?: string; audioFormat?: string },
 ): Promise<SpeakReply> {
   return request<SpeakReply>('/api/v1/speaking/reply', {
     method: 'POST',
-    data: { scenario_key: scenarioKey, user_text: userText, history },
+    data: {
+      scenario_key: scenarioKey, user_text: userText, history,
+      coach: opts?.coach || false,
+      audio: opts?.audio || null,
+      audio_format: opts?.audioFormat || 'mp3',
+    },
   })
 }
 

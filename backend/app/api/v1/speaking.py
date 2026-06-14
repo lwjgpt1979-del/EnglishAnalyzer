@@ -46,6 +46,9 @@ class ReplyIn(BaseModel):
     scenario_key: str
     user_text: str = Field(..., min_length=1, max_length=500)
     history: list[TurnIn] = []
+    coach: bool = False                      # 妈妈陪练：对本句做音频测评 + 互动点评
+    audio: str | None = None                 # base64 录音（coach 模式用于发音评测）
+    audio_format: str = "mp3"
 
 
 @router.get("/scenarios", response_model=BaseResponse[dict])
@@ -73,7 +76,8 @@ async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
         result = await svc.reply(
             db, student_id=current_user.id, scenario_key=body.scenario_key,
             history=[t.model_dump() for t in body.history],
-            user_text=body.user_text, stage=_stage(current_user))
+            user_text=body.user_text, stage=_stage(current_user),
+            coach=body.coach, audio_b64=body.audio, audio_format=body.audio_format)
     except ValueError:
         raise AppError(code=404, message="场景不存在")
     if result.get("mastered_wrong") or result.get("vocab_practiced"):
