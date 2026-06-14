@@ -57,6 +57,16 @@ export interface SpeakStats {
   total_sessions: number; week_sessions: number; avg_score: number
   last_score: number; speaking_streak: number; last_practiced_at: string | null
 }
+export interface StudentVocabOverview {
+  mastered: number; review: number; learning: number; new_learned: number
+  learned_total: number; wrong_total: number; due_total: number; remaining_new: number
+  current_streak: number; longest_streak: number
+  pron: { count: number; avg: number | null; trend: 'up' | 'flat' | 'down'; weak_words: string[] } | null
+}
+export function getStudentVocabOverview(studentId: string): Promise<StudentVocabOverview> {
+  return request<StudentVocabOverview>(`/api/v1/teacher/students/${studentId}/vocab-overview`, { method: 'GET' })
+}
+
 export function getStudentSpeakingStats(studentId: string): Promise<SpeakStats> {
   return request<SpeakStats>(`/api/v1/teacher/students/${studentId}/speaking-stats`, { method: 'GET' })
 }

@@ -16,6 +16,31 @@
       <text class="arrow">›</text>
     </view>
 
+    <!-- 口语练习 -->
+    <view v-if="speakStats && speakStats.total_sessions > 0" class="card stat-card speak">
+      <view class="card-title">🗣️ 口语练习</view>
+      <view class="stat-row">
+        <view class="stat"><text class="num">{{ speakStats.total_sessions }}</text><text class="lbl">累计</text></view>
+        <view class="stat"><text class="num">{{ speakStats.week_sessions }}</text><text class="lbl">本周</text></view>
+        <view class="stat"><text class="num">{{ speakStats.avg_score }}</text><text class="lbl">平均分</text></view>
+        <view class="stat"><text class="num">{{ speakStats.speaking_streak }}天</text><text class="lbl">连续</text></view>
+      </view>
+    </view>
+
+    <!-- 词力通 -->
+    <view v-if="vocab && vocab.learned_total > 0" class="card stat-card vocab">
+      <view class="card-title">📚 词力通</view>
+      <view class="stat-row">
+        <view class="stat"><text class="num">{{ vocab.mastered }}</text><text class="lbl">已掌握</text></view>
+        <view class="stat"><text class="num">{{ vocab.due_total }}</text><text class="lbl">待复习</text></view>
+        <view class="stat"><text class="num">{{ vocab.wrong_total }}</text><text class="lbl">错词</text></view>
+        <view class="stat"><text class="num">{{ vocab.current_streak }}天</text><text class="lbl">连续</text></view>
+      </view>
+      <view v-if="vocab.pron" class="stat-pron">
+        🎤 发音平均 {{ vocab.pron.avg ?? '-' }} 分（{{ vocab.pron.count }} 次）<text v-if="vocab.pron.weak_words.length" class="stat-weak"> · 需加强：{{ vocab.pron.weak_words.slice(0, 4).join('、') }}</text>
+      </view>
+    </view>
+
     <view v-for="wq in wqs" :key="wq.id" class="wq-card">
       <image
         v-if="wq.source_image_url"
@@ -66,10 +91,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
-import { getStudentWrongQuestions, addComment, getComments } from '@/api/teacher'
+import { getStudentWrongQuestions, addComment, getComments, getStudentSpeakingStats, getStudentVocabOverview, type SpeakStats, type StudentVocabOverview } from '@/api/teacher'
 import type { WrongQuestionOut, TeacherCommentOut } from '@/types/api'
 
 const wqs = ref<WrongQuestionOut[]>([])
+const speakStats = ref<SpeakStats | null>(null)
+const vocab = ref<StudentVocabOverview | null>(null)
 const loading = ref(true)
 const commentDraft = reactive<Record<string, string>>({})
 const submitting = reactive<Record<string, boolean>>({})
@@ -89,6 +116,8 @@ onMounted(async () => {
     return
   }
 
+  getStudentSpeakingStats(sid).then(s => { speakStats.value = s }).catch(() => { speakStats.value = null })
+  getStudentVocabOverview(sid).then(v => { vocab.value = v }).catch(() => { vocab.value = null })
   try {
     wqs.value = await getStudentWrongQuestions(sid)
     await Promise.all(
@@ -143,4 +172,14 @@ async function submitComment(wqId: string) {
 .report-entry { display: flex; justify-content: space-between; align-items: center; }
 .report-text { font-size: 28rpx; color: var(--c-ink); font-weight: 700; }
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }
+/* 口语 / 词力通 卡 */
+.stat-card.speak { border-left: 6rpx solid var(--c-primary); }
+.stat-card.vocab { border-left: 6rpx solid #34c759; }
+.card-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
+.stat-row { display: flex; justify-content: space-between; }
+.stat { flex: 1; text-align: center; }
+.num { font-size: 48rpx; font-weight: 800; color: var(--c-ink); display: block; }
+.lbl { font-size: 24rpx; color: var(--c-text-hint); }
+.stat-pron { margin-top: 14rpx; font-size: 24rpx; color: var(--c-text-second); line-height: 1.5; }
+.stat-weak { color: #d6457e; }
 </style>
