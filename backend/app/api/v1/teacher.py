@@ -322,6 +322,34 @@ async def student_kp_mastery_api(student_id: uuid.UUID, db: DbDep, current_user:
     return make_ok(items)
 
 
+@router.get("/classes/{class_id}/vocab-stats", response_model=None)
+async def class_vocab_stats_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """班级词力通统计：人均学词/掌握 + 错词 + 发音均分 + 班级薄弱词 + 活跃数 + 逐生明细。"""
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    from sqlalchemy import select as _selv
+    from app.models.d1_users import User as _Uv
+    from app.models.d7_teacher import ClassStudent as _CSv
+    from app.services import vocabulary_service
+    rows = (await db.execute(
+        _selv(_CSv.student_id, _Uv.nickname)
+        .join(_Uv, _Uv.id == _CSv.student_id)
+        .where(_CSv.class_id == class_id)
+    )).all()
+    stats = await vocabulary_service.class_vocab_stats(
+        db, students=[(sid, nick) for sid, nick in rows])
+    return make_ok(stats)
+
+
+@router.get("/students/{student_id}/vocab-overview", response_model=BaseResponse[dict])
+async def student_vocab_overview_api(student_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """教师查看单个学生词力通学情。"""
+    await _require_certified_teacher(db, current_user)
+    await get_rls_db(db, str(current_user.id))
+    from app.services import vocabulary_service
+    return make_ok(await vocabulary_service.vocab_overview(db, student_id=student_id))
+
+
 @router.get("/classes/{class_id}/kp-stats", response_model=None)
 async def class_kp_stats_api(class_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """班级 KP 统计：最薄弱知识点 + 需关注学生列表。"""

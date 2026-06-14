@@ -259,6 +259,101 @@ async def vocab_overview(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
     }
 
 
+async def class_vocab_stats(
+    db: AsyncSession, *, students: list[tuple],
+) -> dict:
+    """班级词力通统计：人均学词/掌握、错词、发音均分、班级薄弱词、活跃数、逐生明细。
+
+    students: [(student_id, nickname), ...]
+    """
+    from collections import Counter
+    from datetime import timedelta
+    from app.models.d5_learning import VocabPronLog, StudyCheckin
+
+    ids = [s[0] for s in students]
+    names = {s[0]: (s[1] or "学生") for s in students}
+    n = len(ids)
+    if not ids:
+        return {"student_count": 0, "total_learned": 0, "total_mastered": 0,
+                "avg_learned": 0, "avg_mastered": 0, "wrong_total": 0,
+                "active_count": 0, "pron": None, "class_weak_words": [], "students": []}
+
+    # 学词/掌握（按生分组）
+    learned: dict = {}
+    mastered: dict = {}
+    rows = (await db.execute(
+        select(VocabularyLearning.student_id, VocabularyLearning.level, func.count())
+        .where(VocabularyLearning.student_id.in_(ids))
+        .group_by(VocabularyLearning.student_id, VocabularyLearning.level)
+    )).all()
+    for sid, lv, c in rows:
+        learned[sid] = learned.get(sid, 0) + int(c)
+        if str(lv) == "mastered":
+            mastered[sid] = mastered.get(sid, 0) + int(c)
+    # 错词
+    wrong: dict = {}
+    wrows = (await db.execute(
+        select(VocabularyLearning.student_id, func.count())
+        .where(VocabularyLearning.student_id.in_(ids), VocabularyLearning.is_wrong.is_(True))
+        .group_by(VocabularyLearning.student_id)
+    )).all()
+    for sid, c in wrows:
+        wrong[sid] = int(c)
+    # 发音均分（按生）
+    pron_avg: dict = {}
+    prows = (await db.execute(
+        select(VocabPronLog.student_id, func.avg(VocabPronLog.overall), func.count())
+        .where(VocabPronLog.student_id.in_(ids))
+        .group_by(VocabPronLog.student_id)
+    )).all()
+    pron_tested = 0
+    for sid, avg, c in prows:
+        pron_avg[sid] = int(round(float(avg))) if avg is not None else None
+        pron_tested += 1
+    # 班级薄弱词（聚合所有跟读 weak）
+    wc: Counter = Counter()
+    wkrows = (await db.execute(
+        select(VocabPronLog.weak).where(VocabPronLog.student_id.in_(ids), VocabPronLog.weak.isnot(None))
+    )).all()
+    for (weak,) in wkrows:
+        for w in (weak or []):
+            wc[str(w)] += 1
+    # 活跃（近7天有学习记录）
+    since = datetime.now(timezone.utc).date() - timedelta(days=7)
+    active_rows = (await db.execute(
+        select(func.count(func.distinct(StudyCheckin.student_id)))
+        .where(StudyCheckin.student_id.in_(ids), StudyCheckin.checkin_date >= since)
+    )).scalar_one()
+
+    total_learned = sum(learned.values())
+    total_mastered = sum(mastered.values())
+    pron_vals = [v for v in pron_avg.values() if v is not None]
+    class_pron_avg = int(round(sum(pron_vals) / len(pron_vals))) if pron_vals else None
+
+    rows_out = sorted(
+        [{
+            "student_id": str(sid), "nickname": names[sid],
+            "learned": learned.get(sid, 0), "mastered": mastered.get(sid, 0),
+            "wrong": wrong.get(sid, 0), "pron_avg": pron_avg.get(sid),
+        } for sid in ids],
+        key=lambda r: (-r["mastered"], -r["learned"]),
+    )
+
+    return {
+        "student_count": n,
+        "total_learned": total_learned,
+        "total_mastered": total_mastered,
+        "avg_learned": round(total_learned / n, 1),
+        "avg_mastered": round(total_mastered / n, 1),
+        "wrong_total": sum(wrong.values()),
+        "active_count": int(active_rows),
+        "pron": ({"tested_students": pron_tested, "avg": class_pron_avg}
+                 if pron_tested else None),
+        "class_weak_words": [w for w, _ in wc.most_common(8)],
+        "students": rows_out,
+    }
+
+
 async def add_manual_word(
     db: AsyncSession, *, student_id: uuid.UUID, word: str,
 ) -> dict:

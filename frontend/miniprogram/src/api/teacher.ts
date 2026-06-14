@@ -112,6 +112,24 @@ export function getClassKpStats(classId: string): Promise<ClassKpStats> {
   return request<ClassKpStats>(`/api/v1/teacher/classes/${classId}/kp-stats`)
 }
 
+export interface ClassVocabStudent {
+  student_id: string; nickname: string
+  learned: number; mastered: number; wrong: number; pron_avg: number | null
+}
+export interface ClassVocabStats {
+  student_count: number
+  total_learned: number; total_mastered: number
+  avg_learned: number; avg_mastered: number
+  wrong_total: number; active_count: number
+  pron: { tested_students: number; avg: number | null } | null
+  class_weak_words: string[]
+  students: ClassVocabStudent[]
+}
+/** 班级词力通统计 */
+export function getClassVocabStats(classId: string): Promise<ClassVocabStats> {
+  return request<ClassVocabStats>(`/api/v1/teacher/classes/${classId}/vocab-stats`)
+}
+
 export function teacherInviteQrcode() {
   return request('/api/v1/teacher/invite-code/qrcode', { method: 'POST' })
 }

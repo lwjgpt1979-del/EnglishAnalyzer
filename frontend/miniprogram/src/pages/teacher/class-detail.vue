@@ -4,6 +4,7 @@
       <text class="tab" :class="{ active: tab === 'students' }" @tap="tab = 'students'">学生</text>
       <text class="tab" :class="{ active: tab === 'report' }" @tap="switchReport">综合报告</text>
       <text class="tab" :class="{ active: tab === 'kp' }" @tap="switchKp">KP 统计</text>
+      <text class="tab" :class="{ active: tab === 'vocab' }" @tap="switchVocab">词力通</text>
     </view>
 
     <button class="btn-assign" @tap="goAssignments">📋 出卷 / 作业</button>
@@ -155,17 +156,62 @@
       </view>
     </view>
 
+    <!-- 词力通 -->
+    <view v-else-if="tab === 'vocab'">
+      <view v-if="vocabLoading" class="tip">加载中…</view>
+      <view v-else-if="!vocabStats" class="tip">暂无数据</view>
+      <view v-else>
+        <view class="card">
+          <view class="stat-row">
+            <view class="stat"><text class="num">{{ vocabStats.student_count }}</text><text class="lbl">班级人数</text></view>
+            <view class="stat"><text class="num">{{ vocabStats.avg_mastered }}</text><text class="lbl">人均掌握</text></view>
+            <view class="stat"><text class="num">{{ vocabStats.avg_learned }}</text><text class="lbl">人均学词</text></view>
+            <view class="stat"><text class="num">{{ vocabStats.active_count }}</text><text class="lbl">近7天活跃</text></view>
+          </view>
+          <view class="vocab-sub">
+            共学 {{ vocabStats.total_learned }} 词 · 已掌握 {{ vocabStats.total_mastered }} · 错词 {{ vocabStats.wrong_total }}
+            <text v-if="vocabStats.pron"> · 发音均分 {{ vocabStats.pron.avg ?? '-' }}（{{ vocabStats.pron.tested_students }} 生）</text>
+          </view>
+        </view>
+
+        <view v-if="vocabStats.class_weak_words.length" class="card">
+          <view class="card-title">📉 班级薄弱词</view>
+          <view class="weak-wrap">
+            <text v-for="(w, i) in vocabStats.class_weak_words" :key="i" class="weak-chip">{{ w }}</text>
+          </view>
+        </view>
+
+        <view class="card">
+          <view class="card-title">学生明细（按掌握排序）</view>
+          <view class="vstu-hd">
+            <text class="vstu-name">学生</text>
+            <text class="vstu-c">掌握</text>
+            <text class="vstu-c">学词</text>
+            <text class="vstu-c">错词</text>
+            <text class="vstu-c">发音</text>
+          </view>
+          <view v-for="s in vocabStats.students" :key="s.student_id" class="vstu-row">
+            <text class="vstu-name">{{ s.nickname }}</text>
+            <text class="vstu-c hl">{{ s.mastered }}</text>
+            <text class="vstu-c">{{ s.learned }}</text>
+            <text class="vstu-c" :class="{ warn: s.wrong > 0 }">{{ s.wrong }}</text>
+            <text class="vstu-c">{{ s.pron_avg ?? '-' }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
   </view>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { listClassStudents, addClassStudents, removeClassStudent, getClassReport, deleteClass } from '@/api/classes'
-import { getClassKpStats, type ClassKpStats } from '@/api/teacher'
+import { getClassKpStats, getClassVocabStats, type ClassKpStats, type ClassVocabStats } from '@/api/teacher'
 import type { ClassStudentOut, ClassReport } from '@/types/api'
 
 const classId = ref('')
-const tab = ref<'students' | 'report' | 'kp'>('students')
+const tab = ref<'students' | 'report' | 'kp' | 'vocab'>('students')
 
 const students = ref<ClassStudentOut[]>([])
 const loading = ref(false)
@@ -200,6 +246,17 @@ async function switchKp() {
   try { kpStats.value = await getClassKpStats(classId.value) }
   catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
   finally { kpLoading.value = false }
+}
+
+const vocabStats = ref<ClassVocabStats | null>(null)
+const vocabLoading = ref(false)
+async function switchVocab() {
+  tab.value = 'vocab'
+  if (vocabStats.value) return
+  vocabLoading.value = true
+  try { vocabStats.value = await getClassVocabStats(classId.value) }
+  catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
+  finally { vocabLoading.value = false }
 }
 
 async function onAdd() {
@@ -320,4 +377,15 @@ function accClass(acc: number) {
 .mini-bar-fill.acc-green  { background: #52c41a; }
 .mini-bar-fill.acc-yellow { background: #ffb020; }
 .mini-bar-fill.acc-red    { background: #ff4d4f; }
+/* 词力通 */
+.vocab-sub { margin-top: 14rpx; font-size: 24rpx; color: #888; line-height: 1.5; }
+.weak-wrap { display: flex; flex-wrap: wrap; gap: 12rpx; }
+.weak-chip { font-size: 24rpx; font-weight: 700; color: #d6457e; background: #fff0f5; border-radius: 999rpx; padding: 6rpx 20rpx; }
+.vstu-hd, .vstu-row { display: flex; align-items: center; padding: 12rpx 0; }
+.vstu-hd { border-bottom: 1rpx solid #eee; font-size: 22rpx; color: #999; }
+.vstu-row { border-bottom: 1rpx solid #f5f5f5; font-size: 26rpx; color: #333; }
+.vstu-name { flex: 2; }
+.vstu-c { flex: 1; text-align: center; }
+.vstu-c.hl { color: #34c759; font-weight: 800; }
+.vstu-c.warn { color: #ff6b6b; font-weight: 700; }
 </style>
