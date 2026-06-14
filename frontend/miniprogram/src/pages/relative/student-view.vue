@@ -23,6 +23,20 @@
         </view>
       </view>
 
+      <!-- 词力通 -->
+      <view v-if="vocab && vocab.learned_total > 0" class="card vocab-card">
+        <view class="card-title">📚 词力通</view>
+        <view class="stat-row">
+          <view class="stat"><text class="num">{{ vocab.mastered }}</text><text class="lbl">已掌握</text></view>
+          <view class="stat"><text class="num">{{ vocab.due_total }}</text><text class="lbl">待复习</text></view>
+          <view class="stat"><text class="num">{{ vocab.wrong_total }}</text><text class="lbl">错词</text></view>
+          <view class="stat"><text class="num">{{ vocab.current_streak }}天</text><text class="lbl">连续</text></view>
+        </view>
+        <view v-if="vocab.pron" class="vocab-pron">
+          🎤 发音平均 {{ vocab.pron.avg ?? '-' }} 分（{{ vocab.pron.count }} 次）<text v-if="vocab.pron.weak_words.length" class="vocab-weak"> · 需加强：{{ vocab.pron.weak_words.slice(0, 4).join('、') }}</text>
+        </view>
+      </view>
+
       <!-- M45 知识点台账入口 -->
       <view class="card entry-card" @tap="goKpMastery">
         <text class="entry-text">🧠 知识点掌握图谱</text>
@@ -115,7 +129,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar, getChildSpeakingStats, type SpeakStats } from '@/api/relative'
+import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar, getChildSpeakingStats, getChildVocabOverview, type SpeakStats, type ChildVocabOverview } from '@/api/relative'
 import { createOrder, payOrder } from '@/api/orders'
 import type { RelativeCheckinCalendar } from '@/types/api'
 
@@ -146,6 +160,7 @@ const currentPrice = computed(() => tiers.find(t => t.key === selectedTier.value
 const studentId = ref('')
 const report = ref<any>(null)
 const speakStats = ref<SpeakStats | null>(null)
+const vocab = ref<ChildVocabOverview | null>(null)
 const loading = ref(true)
 const paying = ref(false)
 
@@ -173,6 +188,7 @@ onMounted(async () => {
     report.value = await getStudentDiagnosisAsRelative(studentId.value)
     try { cal.value = await getStudentCheckinCalendar(studentId.value) } catch { /* 日历失败不阻塞 */ }
     try { speakStats.value = await getChildSpeakingStats(studentId.value) } catch { speakStats.value = null }
+    try { vocab.value = await getChildVocabOverview(studentId.value) } catch { vocab.value = null }
   } finally { loading.value = false }
 })
 
@@ -223,6 +239,9 @@ async function onPay() {
 .stat-row { display: flex; justify-content: space-around; }
 .stat { text-align: center; }
 .speak-card { border-left: 6rpx solid var(--c-primary); }
+.vocab-card { border-left: 6rpx solid #34c759; }
+.vocab-pron { margin-top: 14rpx; font-size: 24rpx; color: var(--c-text-second); line-height: 1.5; }
+.vocab-weak { color: #d6457e; }
 .num { font-size: 56rpx; font-weight: 800; color: var(--c-ink); display: block; }
 .lbl { font-size: 24rpx; color: var(--c-text-hint); }
 .row { display: flex; justify-content: space-between; padding: 8rpx 0; border-bottom: 1rpx solid var(--c-border); font-size: 26rpx; color: var(--c-text-body); }

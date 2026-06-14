@@ -28,6 +28,16 @@ export function getChildSpeakingStats(studentId: string): Promise<SpeakStats> {
   return request<SpeakStats>(`/api/v1/relative/students/${studentId}/speaking-stats`, { method: 'GET' })
 }
 
+export interface ChildVocabOverview {
+  mastered: number; review: number; learning: number; new_learned: number
+  learned_total: number; wrong_total: number; due_total: number; remaining_new: number
+  current_streak: number; longest_streak: number
+  pron: { count: number; avg: number | null; trend: 'up' | 'flat' | 'down'; weak_words: string[] } | null
+}
+export function getChildVocabOverview(studentId: string): Promise<ChildVocabOverview> {
+  return request<ChildVocabOverview>(`/api/v1/relative/students/${studentId}/vocab-overview`, { method: 'GET' })
+}
+
 export function relativeInviteQrcode() {
   return request('/api/v1/relative/invite-code/qrcode', { method: 'POST' })
 }
