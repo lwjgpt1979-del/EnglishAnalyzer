@@ -13,6 +13,7 @@ class WordCardOut(BaseModel):
     phonetic: str | None = None
     definitions: list[dict] | dict  # vocabulary_words.definitions（JSONB 原样）
     examples: list | dict | None = None
+    phrases: list | dict | None = None
     difficulty: int
     level: str = Field(..., description="new/learning/review/mastered")
     is_new: bool = Field(..., description="今日新词 True / 复习词 False")

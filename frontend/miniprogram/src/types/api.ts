@@ -694,7 +694,8 @@ export interface VocabWordCard {
   word: string
   phonetic: string | null
   definitions: Array<{ pos?: string; meaning: string }> | Record<string, unknown>
-  examples: unknown[] | Record<string, unknown> | null
+  examples: Array<{ en: string; zh?: string; audio?: string }> | null
+  phrases?: Array<{ en: string; zh?: string; audio?: string }> | null
   difficulty: number
   level: string
   is_new: boolean

@@ -244,6 +244,7 @@ def _to_card(w: VocabularyWord, *, level: str, is_new: bool) -> WordCardOut:
         phonetic=w.phonetic,
         definitions=w.definitions,
         examples=w.examples,
+        phrases=w.phrases,
         difficulty=w.difficulty,
         level=level,
         is_new=is_new,

@@ -23,34 +23,47 @@
       <view class="center-tip">🎉 今日没有待学/待复习的单词，明天再来吧！</view>
     </view>
 
-    <!-- 学习阶段：词卡 -->
+    <!-- 学习阶段：词卡（图左+词右，例句/短语，跟读·发音一行）-->
     <view v-else-if="phase === 'study'" class="card">
-      <view class="progress-hint">学新词 {{ studyIndex + 1 }} / {{ newCards.length }}</view>
-      <view class="word">{{ curStudy.word }}</view>
-      <view class="phonetic" v-if="curStudy.phonetic">/{{ curStudy.phonetic }}/</view>
-      <view class="defs">
-        <text v-for="(d, i) in defList(curStudy)" :key="i" class="def-line">{{ d }}</text>
+      <view class="study-hd">
+        <text class="progress-hint">学新词 {{ studyIndex + 1 }} / {{ newCards.length }}</text>
+        <text class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq">
+          {{ readSeq ? '🔉 连读例句/短语' : '🔈 连读例句/短语' }}
+        </text>
       </view>
-      <view class="examples" v-if="exampleList(curStudy).length">
-        <text class="ex-title">例句</text>
-        <view v-for="(e, i) in exampleList(curStudy)" :key="i" class="ex-row">
-          <text class="ex-line">{{ e }}</text>
-          <text class="ex-shadow-btn" @tap="openShadow(e)">🎤 跟读</text>
+
+      <!-- 图左 + 词/音标/释义右 -->
+      <view class="wc-top">
+        <image v-if="firstImage(curStudy)" class="wc-img" :src="firstImage(curStudy)!" mode="aspectFit" />
+        <view v-else class="wc-img wc-img-empty"><text>🖼️</text></view>
+        <view class="wc-info">
+          <text class="wc-word">{{ curStudy.word }}</text>
+          <text v-if="curStudy.phonetic" class="wc-phon">/{{ cleanPhon(curStudy.phonetic) }}/</text>
+          <text v-for="(d, i) in defList(curStudy)" :key="i" class="wc-mean">{{ d }}</text>
         </view>
       </view>
 
-      <!-- 图背单词：配图 -->
-      <scroll-view v-if="curStudy.image_urls && curStudy.image_urls.length" scroll-x class="img-row">
-        <image v-for="(u, i) in curStudy.image_urls" :key="i" :src="u" mode="aspectFill" class="word-img" />
-      </scroll-view>
-      <!-- 英文可理解性描述 -->
-      <view v-if="curStudy.en_description" class="en-desc">
-        <text class="en-desc-text">{{ curStudy.en_description }}</text>
+      <!-- 例句 -->
+      <view v-if="firstExample(curStudy)" class="wc-row">
+        <text class="wc-tag">例句</text>
+        <view class="wc-rowtext">
+          <text class="wc-en">{{ firstExample(curStudy)!.en }}</text>
+          <text v-if="firstExample(curStudy)!.zh" class="wc-zh">{{ firstExample(curStudy)!.zh }}</text>
+        </view>
       </view>
-      <!-- 双音频播放（火山 TTS 实时合成）-->
-      <view class="audio-row" v-if="curStudy.word">
-        <text class="audio-btn" @tap="playTTS(curStudy.word)">🔊 单词</text>
-        <text v-if="curStudy.en_description" class="audio-btn" @tap="playTTS(curStudy.en_description)">🔊 英文描述</text>
+      <!-- 短语 -->
+      <view v-if="firstPhrase(curStudy)" class="wc-row">
+        <text class="wc-tag">短语</text>
+        <view class="wc-rowtext">
+          <text class="wc-en">{{ firstPhrase(curStudy)!.en }}</text>
+          <text v-if="firstPhrase(curStudy)!.zh" class="wc-zh">{{ firstPhrase(curStudy)!.zh }}</text>
+        </view>
+      </view>
+
+      <!-- 单词发音 + 跟读：同一行 -->
+      <view class="wc-btns">
+        <text class="wc-btn" @tap="playCard(curStudy)">🔊 单词发音</text>
+        <text class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)">🎤 跟读</text>
       </view>
 
       <button class="btn-primary" @tap="nextStudy">记住了，下一个</button>
@@ -60,7 +73,10 @@
     <view v-else-if="phase === 'quiz'" class="card">
       <view class="progress-hint">测试 {{ quizIndex + 1 }} / {{ quizQueue.length }} · 正确 {{ correctCount }}</view>
       <view class="quiz-type">{{ quizTypeLabel }}</view>
-      <view class="quiz-prompt">{{ curQuiz.prompt }}</view>
+      <view class="quiz-prompt">
+        <text>{{ curQuiz.prompt }}</text>
+        <text v-if="curQuiz.mode !== 'm2w'" class="qp-play" @tap="playWordAudio(curQuiz.prompt)">🔊</text>
+      </view>
 
       <!-- 看图选词：4 张图选 1 -->
       <view v-if="curQuiz.mode === 'pic'" class="pic-grid">
@@ -83,7 +99,8 @@
         :class="optionClass(i)"
         @tap="choose(i)"
       >
-        {{ opt }}
+        <text class="opt-text">{{ opt }}</text>
+        <text v-if="curQuiz.mode === 'm2w'" class="opt-play" @tap.stop="playWordAudio(opt)">🔊</text>
       </view>
 
       <button v-if="answered" class="btn-primary" @tap="nextQuiz">下一题</button>
@@ -170,7 +187,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore } from '@/api/vocabulary'
 import type { ShadowScoreResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
@@ -189,6 +206,7 @@ interface Quiz {
 const auth = useAuthStore()
 const loading = ref(true)
 const phase = ref<'empty' | 'study' | 'quiz' | 'done'>('study')
+const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
 
 const newCards = ref<VocabWordCard[]>([])
 const reviewCards = ref<VocabWordCard[]>([])
@@ -250,10 +268,19 @@ function primaryMeaning(card: VocabWordCard): string {
   if (Array.isArray(d) && d.length) return (d[0] as any).meaning
   return ''
 }
-function exampleList(card: VocabWordCard): string[] {
-  const e = card.examples
-  if (Array.isArray(e)) return e.map((x) => String(x))
-  return []
+type EnZh = { en: string; zh?: string; audio?: string }
+function _firstEnZh(list: unknown): EnZh | null {
+  if (Array.isArray(list) && list.length && list[0] && typeof list[0] === 'object') {
+    const o = list[0] as Record<string, unknown>
+    const en = String(o.en ?? '').trim()
+    if (en) return { en, zh: String(o.zh ?? '').trim(), audio: String(o.audio ?? '').trim() }
+  }
+  return null
+}
+function firstExample(card: VocabWordCard): EnZh | null { return _firstEnZh(card.examples) }
+function firstPhrase(card: VocabWordCard): EnZh | null { return _firstEnZh(card.phrases) }
+function cleanPhon(p?: string | null): string {
+  return (p || '').trim().replace(/^\/+|\/+$/g, '')   // 去掉首尾斜杠，避免 //ˈæpl//
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -302,6 +329,7 @@ function startQuiz() {
   chosenIndex.value = -1
   if (quizQueue.value.length) {
     phase.value = 'quiz'
+    nextTick(announceQuiz)
   } else {
     finishSession()
   }
@@ -350,6 +378,7 @@ function requestCheckinSubscribe() {
 function nextStudy() {
   if (studyIndex.value < newCards.value.length - 1) {
     studyIndex.value++
+    nextTick(() => playCard(curStudy.value))   // 新词卡出现自动发声
   } else {
     startQuiz()
   }
@@ -357,6 +386,8 @@ function nextStudy() {
 
 async function choose(i: number) {
   if (answered.value) return
+  // 看义选词：点击单词选项即发音
+  if (curQuiz.value.mode === 'm2w') playWordAudio(curQuiz.value.options[i])
   answered.value = true
   chosenIndex.value = i
   const correct = i === curQuiz.value.answerIndex
@@ -373,6 +404,7 @@ function nextQuiz() {
     quizIndex.value++
     answered.value = false
     chosenIndex.value = -1
+    nextTick(announceQuiz)
   } else {
     finishSession()
   }
@@ -399,6 +431,7 @@ async function load() {
       loadCalendar()
     } else if (newCards.value.length > 0) {
       phase.value = 'study'
+      nextTick(() => playCard(curStudy.value))   // 首张词卡自动发声
     } else {
       startQuiz()
     }
@@ -410,11 +443,31 @@ async function load() {
 }
 
 let _audioCtx: UniApp.InnerAudioContext | null = null
+let _queue: string[] = []
+function _ensureCtx() {
+  if (!_audioCtx) {
+    _audioCtx = uni.createInnerAudioContext()
+    _audioCtx.onEnded(() => {
+      _queue.shift()
+      if (_queue.length && _audioCtx) { _audioCtx.src = _queue[0]; _audioCtx.play() }
+    })
+    _audioCtx.onError(() => { _queue = [] })
+  }
+  return _audioCtx
+}
 function playAudio(src?: string | null) {
   if (!src) return
-  if (!_audioCtx) _audioCtx = uni.createInnerAudioContext()
-  _audioCtx.src = src
-  _audioCtx.play()
+  _queue = [src]
+  _ensureCtx()
+  _audioCtx!.src = src
+  _audioCtx!.play()
+}
+function _playUrls(urls: string[]) {
+  _queue = urls.filter(Boolean)
+  if (!_queue.length) return
+  _ensureCtx()
+  _audioCtx!.src = _queue[0]
+  _audioCtx!.play()
 }
 
 /** 播放一段文本的火山 TTS 音频（优先 COS 持久化直链，否则流式）。 */
@@ -422,6 +475,35 @@ async function playTTS(text?: string | null) {
   if (!text) return
   const url = await resolveSpeakUrl(text)
   playAudio(url)
+}
+
+/** 词卡发声：单词（开关开时连读例句/短语），优先预生成音频，缺失再 TTS。 */
+async function playCard(card?: VocabWordCard | null) {
+  if (!card || !card.word) return
+  const urls: string[] = [card.word_audio_url || await resolveSpeakUrl(card.word)]
+  if (readSeq.value) {
+    const ex = firstExample(card)
+    const ph = firstPhrase(card)
+    if (ex?.en) urls.push(ex.audio || await resolveSpeakUrl(ex.en))
+    if (ph?.en) urls.push(ph.audio || await resolveSpeakUrl(ph.en))
+  }
+  _playUrls(urls)
+}
+
+/** 播放某个单词的发音（优先该词预生成音频，缺失再 TTS）。 */
+function cardByWord(w: string): VocabWordCard | null {
+  return pool.value.find((c) => c.word === w) || null
+}
+async function playWordAudio(word?: string | null) {
+  if (!word) return
+  const c = cardByWord(word)
+  const url = (c && c.word_audio_url) || await resolveSpeakUrl(word)
+  playAudio(url)
+}
+/** 看词选义 / 看图选词：题干是单词 → 出题即自动发音。 */
+function announceQuiz() {
+  const q = curQuiz.value
+  if (q && (q.mode === 'w2m' || q.mode === 'pic') && q.prompt) playWordAudio(q.prompt)
 }
 
 function reload() {
@@ -533,6 +615,26 @@ onMounted(load)
 .center-tip { text-align: center; padding: 160rpx 40rpx; color: var(--c-text-hint); line-height: 1.8; }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 40rpx 32rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,0.04); }
 .progress-hint { font-size: 24rpx; color: var(--c-text-hint); margin-bottom: 24rpx; }
+/* 学新词词卡（图左+词右）*/
+.study-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
+.study-hd .progress-hint { margin-bottom: 0; }
+.seq-toggle { font-size: 24rpx; color: var(--c-text-hint); }
+.seq-toggle.on { color: var(--c-primary-deep); font-weight: 600; }
+.wc-top { display: flex; gap: 20rpx; padding-bottom: 20rpx; border-bottom: 1rpx solid var(--c-bg-soft); }
+.wc-img { width: 300rpx; height: 280rpx; border-radius: 16rpx; flex-shrink: 0; background: var(--c-bg-soft); }
+.wc-img-empty { display: flex; align-items: center; justify-content: center; font-size: 80rpx; opacity: .5; }
+.wc-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10rpx; min-width: 0; }
+.wc-word { font-size: 52rpx; font-weight: 900; color: var(--c-ink); }
+.wc-phon { font-size: 28rpx; color: var(--c-text-second); }
+.wc-mean { font-size: 32rpx; color: var(--c-text-body); font-weight: 600; }
+.wc-row { display: flex; gap: 16rpx; padding: 18rpx 0; border-bottom: 1rpx solid var(--c-bg-soft); }
+.wc-tag { flex-shrink: 0; font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 5rpx 16rpx; border-radius: var(--r-pill); height: 34rpx; line-height: 34rpx; }
+.wc-rowtext { flex: 1; display: flex; flex-direction: column; gap: 4rpx; min-width: 0; }
+.wc-en { font-size: 30rpx; color: var(--c-text-body); line-height: 1.5; }
+.wc-zh { font-size: 24rpx; color: var(--c-text-hint); }
+.wc-btns { display: flex; gap: 18rpx; margin: 24rpx 0; }
+.wc-btn { flex: 1; text-align: center; font-size: 28rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 16rpx 0; border-radius: var(--r-pill); }
+.wc-btn.primary { background: var(--c-primary); color: var(--c-on-primary); }
 .word { font-size: 60rpx; font-weight: 800; color: var(--c-ink); text-align: center; }
 .phonetic { font-size: 30rpx; color: var(--c-text-second); text-align: center; margin-top: 8rpx; }
 .defs { margin-top: 32rpx; }
@@ -550,7 +652,10 @@ onMounted(load)
 .ex-shadow-btn { flex-shrink: 0; font-size: 22rpx; font-weight: 600; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 6rpx 16rpx; border-radius: var(--r-pill); }
 .quiz-type { font-size: 24rpx; color: var(--c-gold); font-weight: 600; }
 .quiz-prompt { font-size: 44rpx; font-weight: 700; color: var(--c-ink); text-align: center; margin: 32rpx 0 40rpx; }
-.option { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 28rpx 24rpx; font-size: 30rpx; color: var(--c-text-body); margin-bottom: 20rpx; }
+.option { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 28rpx 24rpx; font-size: 30rpx; color: var(--c-text-body); margin-bottom: 20rpx; }
+.opt-text { flex: 1; }
+.opt-play { flex-shrink: 0; font-size: 32rpx; color: var(--c-gold); padding: 0 8rpx; }
+.qp-play { margin-left: 16rpx; font-size: 36rpx; color: var(--c-gold); vertical-align: middle; }
 .opt-correct { background: #d8f3dc; color: #1b7a3d; }
 .opt-wrong { background: #fdecea; color: var(--c-danger); }
 /* 看图选词 2×2 */
