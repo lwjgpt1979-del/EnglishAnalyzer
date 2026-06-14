@@ -96,11 +96,10 @@ async def shadow_score(body: ShadowScoreIn, db: DbDep, current_user: UserDep):
 
     无有效会员 → 402，前端引导开通会员。
     """
-    from app.core.exceptions import AppError
-    from app.services import membership_service
-    m = await membership_service.get_active_membership(db, user_id=current_user.id)
-    if m is None:
-        raise AppError(code=402, message="跟读为会员专享功能，开通会员后即可使用 🎤")
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=current_user.id, key="vocab.shadow", code=402,
+        message="跟读为会员专享功能，开通会员后即可使用 🎤")
     import base64 as _b64
     audio_bytes = b""
     if body.audio:

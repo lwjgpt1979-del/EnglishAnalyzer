@@ -223,12 +223,18 @@ async def check(db: AsyncSession, *, user_id, key: str, tier: str | None = None,
     }
 
 
-async def require_feature(db: AsyncSession, *, user_id, key: str, ctx: dict | None = None) -> dict:
-    """门禁：不可用则抛 AppError(403)。返回 check 结果（调用方成功后可 consume）。"""
+async def require_feature(db: AsyncSession, *, user_id, key: str, ctx: dict | None = None,
+                          code: int = 403, message: str | None = None) -> dict:
+    """门禁：不可用则抛 AppError。返回 check 结果（调用方成功后可 consume）。
+
+    code/message 可覆盖，用于迁移期保留各处原有的错误码与文案（前端不变）。
+    """
     res = await check(db, user_id=user_id, key=key, ctx=ctx)
     if not res.get("allowed"):
-        tiers = "/".join(res.get("required_tiers") or []) or "更高档位"
-        raise AppError(code=403, message=res.get("reason") or f"该功能需 {tiers} 会员")
+        if message is None:
+            tiers = "/".join(res.get("required_tiers") or []) or "更高档位"
+            message = res.get("reason") or f"该功能需 {tiers} 会员"
+        raise AppError(code=code, message=message)
     return res
 
 

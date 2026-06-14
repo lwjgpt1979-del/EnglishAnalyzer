@@ -69,12 +69,10 @@ async def polish_essay(
     title: str | None = None, essay_type: str | None = None,
     wrong_question_id: uuid.UUID | None = None,
 ) -> Essay:
-    m = await membership_service.get_active_membership(db, user_id=student_id)
-    tier = str(m.tier) if m else "free"
-    if tier in ("free", "basic"):
-        raise AppError(code=403, message="作文精修为 Pro/ProMax 专属功能，请升级会员")
-    if tier == "pro" and await _monthly_count(db, student_id) >= _PRO_MONTHLY_LIMIT:
-        raise AppError(code=403, message="本月作文精修次数已用完（Pro 每月3次）")
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=student_id, key="essay.polish",
+        message="作文精修为 Pro/ProMax 专属功能（Pro 每月3次），请升级会员")
     result = await _grade(original_text=original_text, essay_type=essay_type)
     essay = Essay(
         id=uuid.uuid4(), student_id=student_id, wrong_question_id=wrong_question_id,
@@ -87,6 +85,7 @@ async def polish_essay(
     )
     db.add(essay)
     await db.flush()
+    await entitlement_service.consume(db, user_id=student_id, key="essay.polish")
     return essay
 
 
@@ -96,10 +95,10 @@ async def repolish_essay(
     essay = await get_essay(db, student_id=student_id, essay_id=essay_id)
     if essay is None:
         raise AppError(code=404, message="作文记录不存在")
-    m = await membership_service.get_active_membership(db, user_id=student_id)
-    tier = str(m.tier) if m else "free"
-    if tier != "promax":
-        raise AppError(code=403, message="多轮迭代精修为 ProMax 专属功能")
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=student_id, key="essay.rewrite",
+        message="多轮迭代精修为 ProMax 专属功能")
     dim = dict(essay.dimensions or {})
     rounds = list(dim.get("rounds") or [])
     if not rounds:
@@ -222,11 +221,11 @@ async def diagnose_essay(
     prompt_id: uuid.UUID | None = None, prompt_text: str | None = None,
     stage: str = "junior", timed_seconds: int | None = None,
 ) -> Essay:
-    """按档诊断：会员闸门同精修(Pro/ProMax)。漏点检测 + 升档建议 + 错因沉淀。"""
-    m = await membership_service.get_active_membership(db, user_id=student_id)
-    tier = str(m.tier) if m else "free"
-    if tier in ("free", "basic"):
-        raise AppError(code=403, message="作文诊断为 Pro/ProMax 专属功能，请升级会员")
+    """按档诊断：权益门禁(essay.diagnose, Pro月3/ProMax不限)。漏点检测 + 升档建议 + 错因沉淀。"""
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=student_id, key="essay.diagnose",
+        message="作文诊断为 Pro/ProMax 专属功能，请升级会员")
 
     info = await analyze_prompt(db, prompt_id=prompt_id, text=prompt_text)
     required = info.get("required_points") or []
@@ -270,6 +269,7 @@ async def diagnose_essay(
                 type=str(it.get("type"))[:24], original=str(it.get("original") or "")[:500],
                 suggestion=str(it.get("suggestion") or "")[:500]))
     await db.flush()
+    await entitlement_service.consume(db, user_id=student_id, key="essay.diagnose")
     return essay
 
 
