@@ -62,11 +62,14 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
             code=400, message=f"无效档位：{body.tier}，可选：basic/pro/promax"
         )
     if body.semesters:
-        # V2 模式：不校验 duration_months
         if not body.semesters:
             raise AppError(code=400, message="V2 模式 semesters 不能为空列表")
+    elif body.quantity is not None:
+        # 按份：每份 6 个月
+        if body.quantity < 1 or body.quantity > 24:
+            raise AppError(code=400, message="份数需在 1-24 之间")
     else:
-        # V1 模式：校验 duration_months
+        # 遗留按月：校验 duration_months
         if body.duration_months not in order_service.ALLOWED_DURATIONS:
             raise AppError(
                 code=400, message=f"无效时长：{body.duration_months}，可选：1/3/12"
@@ -80,6 +83,7 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         beneficiary_id=beneficiary_id,
         tier=body.tier,
         duration_months=body.duration_months,
+        quantity=body.quantity,
         order_type=body.order_type,
         semesters=body.semesters,
     )

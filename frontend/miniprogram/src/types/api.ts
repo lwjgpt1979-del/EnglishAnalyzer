@@ -249,7 +249,8 @@ export interface SemesterItem {
 
 export interface OrderCreate {
   tier: string          // basic | pro | promax
-  duration_months?: number  // 1 | 3 | 12（按月购买时填写）
+  duration_months?: number  // 遗留按月：1 | 3 | 12
+  quantity?: number     // 按份：每份6个月，x份=6x月
   order_type: string    // new | renew | upgrade
   minor_consent?: boolean
   target_student_id?: string

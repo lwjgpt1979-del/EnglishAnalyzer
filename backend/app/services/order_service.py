@@ -25,8 +25,17 @@ PRICE_TABLE: dict[str, dict[int, int]] = {
     "promax": {1: 9900,  3: 28800, 12: 98800},
 }
 
+# 会员按「份」售卖：每份 6 个月，买 x 份 = 6x 个月。
+# 单价（分/份）= 原 12 月价 ÷ 2（买 2 份=12 月，总价等于原 12 月价）。
+UNIT_MONTHS = 6
+UNIT_PRICE_FEN: dict[str, int] = {
+    "basic":  14400,
+    "pro":    24900,
+    "promax": 49400,
+}
+
 ALLOWED_TIERS = frozenset(PRICE_TABLE.keys())
-ALLOWED_DURATIONS = frozenset({1, 3, 12})
+ALLOWED_DURATIONS = frozenset({1, 3, 12})   # 遗留：兼容激活码等按月路径
 ALLOWED_ORDER_TYPES = frozenset({"new", "renew", "upgrade"})
 
 
@@ -42,6 +51,15 @@ def get_price(tier: str, duration_months: int) -> int:
     return PRICE_TABLE[tier][duration_months]
 
 
+def get_unit_price(tier: str, quantity: int) -> int:
+    """按份计价（分）：每份 6 个月。quantity 份 → 价格 = 单价×份数。"""
+    if tier not in UNIT_PRICE_FEN:
+        raise AppError(code=400, message=f"无效档位：{tier}，可选：basic/pro/promax")
+    if quantity < 1 or quantity > 24:
+        raise AppError(code=400, message="份数需在 1-24 之间")
+    return UNIT_PRICE_FEN[tier] * quantity
+
+
 # ── CRUD ─────────────────────────────────────────────────────────────────────
 
 
@@ -52,10 +70,12 @@ async def create_order(
     beneficiary_id: uuid.UUID,
     tier: str,
     duration_months: int | None = None,
+    quantity: int | None = None,          # 按份：每份 6 个月（优先于 duration_months）
     order_type: str,
     semesters: list[dict] | None = None,  # V2 新增
 ) -> Order:
-    """V1（duration_months）和 V2（semesters）双模式共存。调用方负责 commit。"""
+    """会员下单。三种计价：V2 学期(semesters) > 按份(quantity,6月/份) > 遗留按月(duration_months)。
+    调用方负责 commit。"""
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     order_no = f"ORD-{today}-{uuid.uuid4().hex[:8].upper()}"
 
@@ -78,8 +98,23 @@ async def create_order(
             semester_count=semester_count,
             purchased_semester_ids=semesters,
         )
+    elif quantity is not None:
+        # 按份：每份 6 个月，x 份 = 6x 月
+        months = UNIT_MONTHS * quantity
+        amount_fen = get_unit_price(tier, quantity)
+        order = Order(
+            id=uuid.uuid4(),
+            order_no=order_no,
+            payer_id=payer_id,
+            beneficiary_id=beneficiary_id,
+            order_type=order_type,
+            tier=tier,
+            duration_months=months,
+            amount_fen=amount_fen,
+            status="pending",
+        )
     else:
-        # V1 旧逻辑
+        # 遗留：按月（1/3/12），兼容激活码等
         amount_fen = get_price(tier, duration_months)
         order = Order(
             id=uuid.uuid4(),
