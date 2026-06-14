@@ -124,8 +124,7 @@
       <view class="done-title">今日完成！</view>
       <view class="done-stat">新学 {{ newCards.length }} 词 · 复习 {{ reviewCards.length }} 词</view>
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
-      <view v-if="checkinDone" class="done-streak">已连续打卡 {{ streakDays }} 天 🔥</view>
-      <view v-else class="done-gap">{{ gapHint }}</view>
+      <view v-if="checkinDone" class="done-streak">今日已记录学习 · 连续 {{ streakDays }} 天 🔥</view>
 
       <!-- 跟读发音报告（本次有跟读评测才显示）-->
       <view v-if="shadowReport" class="vrep">
@@ -445,18 +444,13 @@ function startQuiz() {
 async function finishSession() {
   phase.value = 'done'
   try {
+    // 日历=学习日志：完成一组即记入当日（不再按 quota 卡门槛）
     const r = await checkin()
-    checkinDone.value = r.completed
-    if (r.completed) {
-      streakDays.value = r.streak_days
-      // 打卡成功后请求订阅消息授权（一次性，用户点允许后后端 cron 才能推送提醒）
-      requestCheckinSubscribe()
-    } else {
-      const newGap = Math.max(0, r.new_target - r.new_learned_today)
-      gapHint.value = `还差 ${r.review_due} 个复习 / ${newGap} 个新词，完成后才能打卡`
-    }
+    checkinDone.value = true
+    streakDays.value = r.streak_days ?? streakDays.value
+    requestCheckinSubscribe()
   } catch {
-    // 打卡失败不阻塞完成页展示
+    // 记录失败不阻塞完成页展示
   }
   await loadCalendar()
 }
@@ -543,7 +537,7 @@ function optionClass(i: number): string {
   return ''
 }
 
-async function load() {
+async function load(fromReload = false) {
   if (!auth.isLoggedIn()) await auth.login()
   loading.value = true
   getMyMembership().then((m) => { isMember.value = m.is_active && m.tier !== 'free' }).catch(() => { isMember.value = false })
@@ -556,6 +550,11 @@ async function load() {
     reviewIndex.value = 0
     shadowLog.value = []
     if (newCards.value.length === 0 && reviewCards.value.length === 0) {
+      // 「再来一组」时已无可练的词：友好提示并停留在完成页，不跳日历
+      if (fromReload) {
+        uni.showToast({ title: '今天的词都练完啦 🎉', icon: 'none' })
+        return
+      }
       phase.value = 'empty'
       loadCalendar()
     } else if (newCards.value.length > 0) {
@@ -636,7 +635,7 @@ function announceQuiz() {
 }
 
 function reload() {
-  load()
+  load(true)   // 「再来一组」：没词时不跳日历
 }
 
 // ── 跟读评分（听力跟读·嵌入例句）──────────────────────────────────────────

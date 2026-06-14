@@ -112,15 +112,13 @@ async def record_checkin(
     *,
     student_id: uuid.UUID,
 ) -> tuple[StudyCheckin | None, dict]:
-    """严格校验今日任务完成度，达标才写打卡。返回 (打卡行 or None, progress)。"""
+    """完成一组学习即记入当日（日历=学习日志，不再按 quota 卡门槛）。返回 (打卡行, progress)。"""
     progress = await vocabulary_service.compute_today_progress(db, student_id=student_id)
-    if not progress["all_done"]:
-        return None, progress
     row = await _upsert_checkin(
         db,
         student_id=student_id,
         new_words_count=progress["new_learned_today"],
-        review_done=True,
+        review_done=progress["review_done"],
     )
     return row, progress
 
