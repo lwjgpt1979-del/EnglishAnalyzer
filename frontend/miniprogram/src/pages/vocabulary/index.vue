@@ -103,6 +103,18 @@
         <text v-if="curQuiz.mode === 'm2w'" class="opt-play" @tap.stop="playWordAudio(opt)">🔊</text>
       </view>
 
+      <!-- 答题反馈：对错 + 正确单词(音标/释义/发音) -->
+      <view v-if="answered" class="quiz-fb" :class="lastCorrect ? 'ok' : 'no'">
+        <text v-if="lastCorrect" class="qfb-ok">🎉 答对了！</text>
+        <view v-else class="qfb-wrong">
+          <text class="qfb-label">正确答案</text>
+          <text class="qfb-word">{{ quizCard?.word }}</text>
+          <text v-if="quizCard?.phonetic" class="qfb-phon">/{{ cleanPhon(quizCard?.phonetic) }}/</text>
+          <text class="qfb-mean">{{ quizCard ? primaryMeaning(quizCard) : '' }}</text>
+          <text class="qfb-play" @tap="playWordAudio(quizCard?.word)">🔊</text>
+        </view>
+      </view>
+
       <button v-if="answered" class="btn-primary" @tap="nextQuiz">下一题</button>
     </view>
 
@@ -114,6 +126,33 @@
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
       <view v-if="checkinDone" class="done-streak">已连续打卡 {{ streakDays }} 天 🔥</view>
       <view v-else class="done-gap">{{ gapHint }}</view>
+
+      <!-- 跟读发音报告（本次有跟读评测才显示）-->
+      <view v-if="shadowReport" class="vrep">
+        <view class="vrep-hd">
+          <text class="vrep-t">🎤 发音报告</text>
+          <text class="vrep-trend" :class="shadowReport.trend">{{ trendText(shadowReport.trend) }}</text>
+        </view>
+        <view class="vrep-top">
+          <view class="vrep-avg">
+            <text class="vrep-avg-n">{{ shadowReport.avg ?? '-' }}</text>
+            <text class="vrep-avg-u">平均分</text>
+          </view>
+          <view class="vrep-dims">
+            <text class="vrep-dim">跟读 {{ shadowReport.count }} 句</text>
+            <text v-if="shadowReport.accuracy != null" class="vrep-dim">准确 {{ shadowReport.accuracy }} · 流利 {{ shadowReport.fluency }} · 完整 {{ shadowReport.completion }}</text>
+            <text class="vrep-dim">最佳：{{ shadowReport.best.word }} {{ shadowReport.best.score }}分</text>
+          </view>
+        </view>
+        <view v-if="shadowReport.bars.length" class="vrep-bars">
+          <view v-for="(b, i) in shadowReport.bars" :key="i" class="vrep-bar"
+            :class="barLevel(b)" :style="{ height: Math.max(8, b * 0.6) + 'rpx' }" />
+        </view>
+        <view v-if="shadowReport.weakWords.length" class="vrep-weak">
+          <text class="vrep-weak-t">需加强：</text>
+          <text v-for="(w, i) in shadowReport.weakWords" :key="i" class="vrep-weak-w">{{ w }}</text>
+        </view>
+      </view>
       <view v-if="cal" class="checkin-panel">
         <view class="cp-badges">
           <text v-for="b in cal.badges" :key="b.level" class="cp-badge" :class="{ on: b.unlocked }">
@@ -215,6 +254,8 @@ const pool = ref<VocabWordCard[]>([])   // 全部词，用于生成干扰项
 const studyIndex = ref(0)
 const reviewIndex = ref(0)
 const quizIndex = ref(0)
+type ShadowLogItem = { word: string; overall: number; accuracy: number | null; fluency: number | null; completion: number | null; weak: string[] }
+const shadowLog = ref<ShadowLogItem[]>([])   // 本次跟读发音评测（完成页发音报告）
 const correctCount = ref(0)
 const answered = ref(false)
 const chosenIndex = ref(-1)
@@ -266,6 +307,45 @@ const studyBtnLabel = computed(() => {
   return '记住了，下一个'
 })
 const curQuiz = computed(() => quizQueue.value[quizIndex.value] || ({} as Quiz))
+const quizCard = computed(() => pool.value.find((c) => c.word_id === curQuiz.value.word_id) || null)
+const lastCorrect = ref(false)
+
+// 完成页发音报告：聚合本次跟读评测（均分/三维/薄弱词/趋势/柱状）
+const shadowReport = computed(() => {
+  const items = shadowLog.value.filter((it) => it.overall != null)
+  if (!items.length) return null
+  const avg = (arr: (number | null)[]) => {
+    const v = arr.filter((x): x is number => x != null)
+    return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null
+  }
+  const bars = items.map((i) => i.overall)
+  const best = items.reduce((a, b) => (b.overall > a.overall ? b : a))
+  const wc = new Map<string, number>()
+  items.forEach((it) => it.weak.forEach((w) => wc.set(w, (wc.get(w) || 0) + 1)))
+  const weakWords = [...wc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map((e) => e[0])
+  let trend: 'up' | 'flat' | 'down' = 'flat'
+  if (bars.length >= 2) {
+    const mid = Math.floor(bars.length / 2)
+    const f = avg(bars.slice(0, mid)) || 0
+    const s = avg(bars.slice(mid)) || 0
+    trend = s - f >= 5 ? 'up' : f - s >= 5 ? 'down' : 'flat'
+  }
+  return {
+    count: items.length,
+    avg: avg(bars),
+    accuracy: avg(items.map((i) => i.accuracy)),
+    fluency: avg(items.map((i) => i.fluency)),
+    completion: avg(items.map((i) => i.completion)),
+    best: { word: best.word, score: best.overall },
+    weakWords, trend, bars: bars.slice(-12),
+  }
+})
+function trendText(t: string) {
+  return t === 'up' ? '📈 越练越好' : t === 'down' ? '📉 略有起伏' : '➡️ 稳定发挥'
+}
+function barLevel(b: number) {
+  return b >= 90 ? 'excellent' : b >= 80 ? 'good' : b >= 60 ? 'fair' : 'poor'
+}
 const quizTypeLabel = computed(() => {
   const m = curQuiz.value.mode
   return m === 'w2m' ? '看词选义' : m === 'm2w' ? '看义选词' : '看图选词'
@@ -417,12 +497,13 @@ function enterReview() {
 
 async function choose(i: number) {
   if (answered.value) return
-  // 看义选词：点击单词选项即发音
-  if (curQuiz.value.mode === 'm2w') playWordAudio(curQuiz.value.options[i])
   answered.value = true
   chosenIndex.value = i
   const correct = i === curQuiz.value.answerIndex
+  lastCorrect.value = correct
   if (correct) correctCount.value++
+  // 答题反馈：读出正确单词发音（答错时尤其重要，立即订正）
+  playWordAudio(quizCard.value?.word)
   try {
     await submitVocabAnswer(curQuiz.value.word_id, correct, false)
   } catch (e) {
@@ -458,6 +539,7 @@ async function load() {
     pool.value = [...task.new_words, ...task.review_words]
     studyIndex.value = 0
     reviewIndex.value = 0
+    shadowLog.value = []
     if (newCards.value.length === 0 && reviewCards.value.length === 0) {
       phase.value = 'empty'
       loadCalendar()
@@ -623,6 +705,17 @@ async function readAndScore(path: string) {
   }
   try {
     shadow.result = await shadowScore(shadow.text, audio, 'mp3')
+    if (shadow.result) {
+      const r = shadow.result as unknown as { overall: number; accuracy?: number; fluency?: number; completion?: number; words?: { word: string; score: number }[] }
+      shadowLog.value.push({
+        word: curStudy.value.word || '',
+        overall: r.overall,
+        accuracy: r.accuracy ?? null,
+        fluency: r.fluency ?? null,
+        completion: r.completion ?? null,
+        weak: (r.words || []).filter((w) => w.score < 80).map((w) => w.word),
+      })
+    }
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '评分失败', icon: 'none' })
   } finally {
@@ -688,6 +781,40 @@ onMounted(load)
 .opt-text { flex: 1; }
 .opt-play { flex-shrink: 0; font-size: 32rpx; color: var(--c-gold); padding: 0 8rpx; }
 .qp-play { margin-left: 16rpx; font-size: 36rpx; color: var(--c-gold); vertical-align: middle; }
+/* 答题反馈 */
+.quiz-fb { margin: 8rpx 0 24rpx; padding: 20rpx 22rpx; border-radius: var(--r-md); }
+.quiz-fb.ok { background: #d8f3dc; }
+.quiz-fb.no { background: #fff3e0; }
+.qfb-ok { font-size: 30rpx; font-weight: 800; color: #1b7a3d; }
+.qfb-wrong { display: flex; align-items: center; flex-wrap: wrap; gap: 12rpx; }
+.qfb-label { font-size: 24rpx; color: #b06a2a; }
+.qfb-word { font-size: 34rpx; font-weight: 800; color: var(--c-ink); }
+.qfb-phon { font-size: 26rpx; color: var(--c-text-second); }
+.qfb-mean { font-size: 28rpx; color: var(--c-text-body); }
+.qfb-play { font-size: 34rpx; color: var(--c-gold); margin-left: auto; }
+/* 跟读发音报告 */
+.vrep { width: 100%; box-sizing: border-box; background: linear-gradient(160deg, #eef6ff, #f7fbff); border: 2rpx solid #d6e6ff; border-radius: 16rpx; padding: 18rpx 20rpx; margin-top: 24rpx; display: flex; flex-direction: column; gap: 12rpx; text-align: left; }
+.vrep-hd { display: flex; align-items: center; justify-content: space-between; }
+.vrep-t { font-size: 28rpx; font-weight: 800; color: #2f6fd6; }
+.vrep-trend { font-size: 22rpx; font-weight: 700; padding: 3rpx 14rpx; border-radius: var(--r-pill); background: #fff; }
+.vrep-trend.up { color: #34c759; }
+.vrep-trend.down { color: #ff9500; }
+.vrep-trend.flat { color: #5aa9f8; }
+.vrep-top { display: flex; align-items: center; gap: 18rpx; }
+.vrep-avg { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; background: #fff; border-radius: 14rpx; padding: 10rpx 22rpx; }
+.vrep-avg-n { font-size: 48rpx; font-weight: 900; color: #2f6fd6; line-height: 1.1; }
+.vrep-avg-u { font-size: 20rpx; color: var(--c-text-hint); }
+.vrep-dims { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
+.vrep-dim { font-size: 23rpx; color: var(--c-text-body); }
+.vrep-bars { display: flex; align-items: flex-end; gap: 6rpx; height: 64rpx; padding: 4rpx 0; }
+.vrep-bar { flex: 1; min-width: 8rpx; border-radius: 4rpx; background: #5aa9f8; }
+.vrep-bar.excellent { background: #34c759; }
+.vrep-bar.good { background: #5aa9f8; }
+.vrep-bar.fair { background: #ffab40; }
+.vrep-bar.poor { background: #ff6b6b; }
+.vrep-weak { display: flex; flex-wrap: wrap; align-items: center; gap: 8rpx; }
+.vrep-weak-t { font-size: 23rpx; color: var(--c-text-hint); }
+.vrep-weak-w { font-size: 22rpx; font-weight: 700; color: #d6457e; background: #fff0f5; border-radius: var(--r-pill); padding: 3rpx 14rpx; }
 .opt-correct { background: #d8f3dc; color: #1b7a3d; }
 .opt-wrong { background: #fdecea; color: var(--c-danger); }
 /* 看图选词 2×2 */

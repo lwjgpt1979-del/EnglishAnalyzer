@@ -29,10 +29,33 @@ from app.services import (
     checkin_service, pronunciation_service, speech_score_service, vocabulary_service,
 )
 
+from pydantic import BaseModel, Field
+
 router = APIRouter(prefix="/vocabulary", tags=["vocabulary"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
+
+
+class VocabSettings(BaseModel):
+    words_per_group: int = Field(5, ge=1, le=50)
+    reps_per_group: int = Field(1, ge=1, le=5)
+
+
+@router.get("/settings", response_model=BaseResponse[VocabSettings])
+async def get_settings(db: DbDep, current_user: UserDep):
+    """词力通学习设置：每组词数 / 每组遍数（每生一份，不绑定会员档位）。"""
+    s = await vocabulary_service.get_vocab_settings(db, student_id=current_user.id)
+    return make_ok(VocabSettings(**s))
+
+
+@router.put("/settings", response_model=BaseResponse[VocabSettings])
+async def put_settings(body: VocabSettings, db: DbDep, current_user: UserDep):
+    s = await vocabulary_service.set_vocab_settings(
+        db, student_id=current_user.id,
+        words_per_group=body.words_per_group, reps_per_group=body.reps_per_group)
+    await db.commit()
+    return make_ok(VocabSettings(**s))
 
 
 @router.get("/daily-task", response_model=BaseResponse[DailyTaskOut])

@@ -20,6 +20,7 @@ from app.models.d1_users import User
 from app.models.d4_knowledge import CurriculumUnit, CurriculumWord
 from app.models.d5_learning import (
     StudentVocabCandidate,
+    StudentVocabSetting,
     VocabularyLearning,
     VocabularyWord,
 )
@@ -255,8 +256,40 @@ def _to_card(w: VocabularyWord, *, level: str, is_new: bool) -> WordCardOut:
     )
 
 
+# ── 学习设置（每生一份，不再绑定会员档位）────────────────────────────────────
+_WPG_MIN, _WPG_MAX = 1, 50
+_REP_MIN, _REP_MAX = 1, 5
+
+
+async def get_vocab_settings(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
+    row = (await db.execute(
+        select(StudentVocabSetting).where(StudentVocabSetting.student_id == student_id)
+    )).scalar_one_or_none()
+    if row is None:
+        return {"words_per_group": 5, "reps_per_group": 1}
+    return {"words_per_group": int(row.words_per_group), "reps_per_group": int(row.reps_per_group)}
+
+
+async def set_vocab_settings(
+    db: AsyncSession, *, student_id: uuid.UUID, words_per_group: int, reps_per_group: int,
+) -> dict:
+    wpg = max(_WPG_MIN, min(int(words_per_group), _WPG_MAX))
+    rep = max(_REP_MIN, min(int(reps_per_group), _REP_MAX))
+    row = (await db.execute(
+        select(StudentVocabSetting).where(StudentVocabSetting.student_id == student_id)
+    )).scalar_one_or_none()
+    if row is None:
+        db.add(StudentVocabSetting(
+            id=uuid.uuid4(), student_id=student_id,
+            words_per_group=wpg, reps_per_group=rep))
+    else:
+        row.words_per_group, row.reps_per_group = wpg, rep
+    await db.flush()
+    return {"words_per_group": wpg, "reps_per_group": rep}
+
+
 async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTaskOut:
-    """返回今日任务：到期复习词（全部）+ 新词（按档位上限）。"""
+    """返回一组学习内容：到期复习词（全部）+ 新词（按用户设置「每组词数」，不再按会员档位）。"""
     now = datetime.now(timezone.utc)
 
     # 复习词：到期的 learning 记录 join 词
@@ -276,8 +309,10 @@ async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTas
     )).all()
     review_words = [_to_card(w, level=str(lr.level), is_new=False) for lr, w in review_rows]
 
-    # 新词：按优先级（当前学期教材 > 其他来源 > 过往学期）选取、跨来源去重，limit 档位上限
-    new_limit = await _daily_new_limit(db, student_id=student_id)
+    # 新词：按优先级（当前学期教材 > 其他来源 > 过往学期）选取、跨来源去重，
+    # limit = 用户设置的「每组词数」（不再绑定会员档位）
+    settings = await get_vocab_settings(db, student_id=student_id)
+    new_limit = settings["words_per_group"]
     student = (await db.execute(
         select(User).where(User.id == student_id)
     )).scalar_one()

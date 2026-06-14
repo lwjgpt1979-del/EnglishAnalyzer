@@ -123,6 +123,27 @@ class StudentVocabCandidate(Base):
     )
 
 
+class StudentVocabSetting(Base):
+    """学生词力通学习设置（每生一份）。
+
+    不再按会员档位限量：每组学多少词 / 每组学多少遍 由用户自定。
+    UNIQUE(student_id)。
+    """
+
+    __tablename__ = "student_vocab_settings"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, unique=True
+    )
+    words_per_group = mapped_column(sa.Integer, nullable=False, server_default=sa.text("5"))
+    reps_per_group = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False,
+        server_default=sa.func.now(), onupdate=sa.func.now(),
+    )
+
+
 class Essay(Base):
     """学生作文润色记录（可多轮）。"""
 
