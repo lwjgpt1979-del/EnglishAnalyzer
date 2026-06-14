@@ -62,6 +62,10 @@ async def scenarios(current_user: UserDep, db: DbDep):
 @router.post("/start", response_model=BaseResponse[dict])
 async def start(body: StartIn, current_user: UserDep, db: DbDep):
     """开始某场景：返回 AI 开场白 + 语音。"""
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=current_user.id, key="speaking.dialogue",
+        message="AI 口语对话为会员专享，开通会员后即可使用")
     try:
         return make_ok(await svc.opening(
             db, student_id=current_user.id,
@@ -73,6 +77,14 @@ async def start(body: StartIn, current_user: UserDep, db: DbDep):
 @router.post("/reply", response_model=BaseResponse[dict])
 async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
     """学生说一句 → AI 回复 + 纠错 + 回复语音；错题复习答对则标记复习。"""
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=current_user.id, key="speaking.dialogue",
+        message="AI 口语对话为会员专享，开通会员后即可使用")
+    if body.coach:
+        await entitlement_service.require_feature(
+            db, user_id=current_user.id, key="speaking.coach",
+            message="口语陪练点评为 Pro/ProMax 专属功能")
     try:
         result = await svc.reply(
             db, student_id=current_user.id, scenario_key=body.scenario_key,

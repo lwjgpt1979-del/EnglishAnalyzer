@@ -48,8 +48,8 @@
           <text v-if="vocabMode" class="ct-auto" :class="{ on: readSentences }" @tap="readSentences = !readSentences">
             {{ readSentences ? '🔉 读例句/短语' : '🔈 读例句/短语' }}
           </text>
-          <text v-if="vocabMode" class="ct-auto" :class="{ on: momMode }" @tap="momMode = !momMode">
-            {{ momMode ? '👩‍🏫 陪练' : '🙂 陪练' }}
+          <text v-if="vocabMode" class="ct-auto" :class="{ on: momMode }" @tap="toggleCoach">
+            {{ momMode ? '👩‍🏫 陪练' : '🙂 陪练' }}{{ ent.can('speaking.coach') ? '' : ' 🔒' }}
           </text>
           <text class="ct-end" @tap="endAndRate">结束并评价</text>
         </view>
@@ -285,6 +285,9 @@
         </view>
       </view>
     </view>
+
+    <Paywall :open="showPaywall" :feature="ent.feature(paywallKey)" emoji="💬"
+      @close="showPaywall = false" />
   </view>
 </template>
 
@@ -297,6 +300,8 @@ import {
 } from '@/api/speaking'
 import { shadowScore, type ShadowScoreResult } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
+import { useEntitlementsStore } from '@/stores/entitlements'
+import Paywall from '@/components/Paywall.vue'
 
 interface Msg {
   role: 'user' | 'assistant' | 'system'
@@ -323,6 +328,10 @@ const recording = ref(false)
 const cancelZone = ref(false)
 const readSentences = ref(true)  // 词力通：词卡同时连播例句/短语
 const momMode = ref(false)       // 妈妈陪练：每句英文回复做音频测评 + 互动点评
+const ent = useEntitlementsStore()
+const showPaywall = ref(false)
+const paywallKey = ref('speaking.dialogue')
+function openPaywall(key: string) { paywallKey.value = key; showPaywall.value = true }
 const targetWords = ref<string[]>([])   // 词力通场景的目标词（供测发音）
 // 词卡学习模式（词力通场景）
 const vocabMode = ref(false)
@@ -381,6 +390,7 @@ function repracticeMissed() {
 }
 
 onMounted(async () => {
+  ent.ensure()
   try {
     const list = await getSpeakScenarios()
     custom.value = list.custom || []
@@ -391,6 +401,7 @@ onMounted(async () => {
 })
 
 async function start(key: string) {
+  if (!ent.can('speaking.dialogue')) { openPaywall('speaking.dialogue'); return }   // 口语为会员专享
   scenarioKey.value = key
   messages.value = []
   targetWords.value = []
@@ -414,7 +425,8 @@ async function start(key: string) {
       pushAi(o.ai_text, o.ai_audio_url)
     }
   } catch (e) {
-    uni.showToast({ title: (e as Error).message || '开始失败', icon: 'none' })
+    if ((e as { code?: number }).code === 403) { phase.value = 'pick'; openPaywall('speaking.dialogue') }
+    else uni.showToast({ title: (e as Error).message || '开始失败', icon: 'none' })
   } finally {
     thinking.value = false
   }
@@ -437,6 +449,10 @@ function practiceWord(i: number) {
   if (i < 0 || i >= cards.value.length) return
   cardIdx.value = i                          // 陪练评测参照对齐到该词卡
   pushAi('', '', '', '', cards.value[i])     // 弹出词卡（pushAi 内会同步选词并自动播放）
+}
+function toggleCoach() {
+  if (!momMode.value && !ent.can('speaking.coach')) { openPaywall('speaking.coach'); return }
+  momMode.value = !momMode.value
 }
 function pickPrev() { if (pickIdx.value > 0) practiceWord(pickIdx.value - 1) }
 function pickNext() { if (pickIdx.value < cards.value.length - 1) practiceWord(pickIdx.value + 1) }

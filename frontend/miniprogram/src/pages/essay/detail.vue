@@ -53,6 +53,9 @@
         </view>
       </view>
     </view>
+
+    <Paywall :open="showPaywall" :feature="ent.feature('essay.rewrite')" emoji="✍️"
+      title="多轮重写是 ProMax 专属" @close="showPaywall = false" />
   </view>
 </template>
 
@@ -61,7 +64,11 @@ import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { getEssay, repolishEssay, getEssayTemplates } from '@/api/essay'
 import type { EssayDetail, EssayTemplates } from '@/types/api'
+import { useEntitlementsStore } from '@/stores/entitlements'
+import Paywall from '@/components/Paywall.vue'
 
+const ent = useEntitlementsStore()
+const showPaywall = ref(false)
 const essay = ref<EssayDetail | null>(null)
 const tpl = ref<EssayTemplates | null>(null)
 const revised = ref('')
@@ -76,12 +83,14 @@ function loadEssay(id: string) {
 }
 
 onLoad((q) => {
+  ent.ensure()
   const id = (q as { id?: string })?.id
   if (id) loadEssay(id)
 })
 
 async function onRepolish() {
   if (!essay.value || !revised.value.trim()) return
+  if (!ent.can('essay.rewrite')) { showPaywall.value = true; return }
   repolishing.value = true
   try {
     essay.value = await repolishEssay(essay.value.id, revised.value)
@@ -89,7 +98,8 @@ async function onRepolish() {
     showRevise.value = false
     uni.showToast({ title: '已生成新一轮', icon: 'success' })
   } catch (e) {
-    uni.showToast({ title: (e as Error).message, icon: 'none' })
+    if ((e as { code?: number }).code === 403) { showPaywall.value = true }
+    else uni.showToast({ title: (e as Error).message, icon: 'none' })
   } finally {
     repolishing.value = false
   }
