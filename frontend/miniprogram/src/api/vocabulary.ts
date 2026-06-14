@@ -12,6 +12,14 @@ export function getDailyTask(): Promise<VocabDailyTask> {
   return request<VocabDailyTask>('/api/v1/vocabulary/daily-task', { method: 'GET' })
 }
 
+export interface VocabSettings { words_per_group: number; reps_per_group: number }
+export function getVocabSettings(): Promise<VocabSettings> {
+  return request<VocabSettings>('/api/v1/vocabulary/settings', { method: 'GET' })
+}
+export function setVocabSettings(s: VocabSettings): Promise<VocabSettings> {
+  return request<VocabSettings>('/api/v1/vocabulary/settings', { method: 'PUT', data: s })
+}
+
 export interface ShadowWordScore { word: string; score: number }
 export interface ShadowScoreResult {
   overall: number

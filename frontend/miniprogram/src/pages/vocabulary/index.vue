@@ -20,16 +20,21 @@
         </view>
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
-      <view class="center-tip">🎉 今日没有待学/待复习的单词，明天再来吧！</view>
+      <view class="center-tip">🎉 暂时没有待学/待复习的单词
+        <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text></view>
+      </view>
     </view>
 
     <!-- 学习/复习阶段：词卡（图左+词右，例句/短语，跟读·发音一行）-->
     <view v-else-if="phase === 'study' || phase === 'review'" class="card">
       <view class="study-hd">
-        <text class="progress-hint">{{ isReview ? '复习词' : '学新词' }} {{ cardIdx + 1 }} / {{ cardList.length }}</text>
-        <text class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq">
-          {{ readSeq ? '🔉 连读例句/短语' : '🔈 连读例句/短语' }}
-        </text>
+        <text class="progress-hint">{{ isReview ? '复习词' : '学新词' }} {{ cardIdx + 1 }} / {{ cardList.length }}<text v-if="repsPerGroup > 1" class="rep-tag"> · 第{{ currentRep }}/{{ repsPerGroup }}遍</text></text>
+        <view class="hd-right">
+          <text class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq">
+            {{ readSeq ? '🔉 连读' : '🔈 连读' }}
+          </text>
+          <text class="gear" @tap="openSettings">⚙️</text>
+        </view>
       </view>
 
       <!-- 图左 + 词/音标/释义右 -->
@@ -167,6 +172,8 @@
         </view>
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
+      <view v-if="carryWords.length" class="carry-tip">🔁 本组错的 {{ carryWords.length }} 个词将带入下一组继续考察</view>
+      <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text></view>
       <button class="btn-primary" @tap="reload">再来一组</button>
       <button class="btn-ghost" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">查看错词本</button>
     </view>
@@ -222,6 +229,32 @@
       </view>
     </view>
 
+    <!-- 学习设置弹窗 -->
+    <view v-if="showSettings" class="shadow-modal" @tap.self="showSettings = false">
+      <view class="set-card">
+        <text class="set-title">⚙️ 学习设置</text>
+        <view class="set-row">
+          <text class="set-label">每组词数</text>
+          <view class="stepper">
+            <text class="step-btn" @tap="adjustWPG(-1)">−</text>
+            <text class="step-val">{{ settingDraft.words_per_group }}</text>
+            <text class="step-btn" @tap="adjustWPG(1)">＋</text>
+          </view>
+        </view>
+        <view class="set-row">
+          <text class="set-label">每组遍数</text>
+          <view class="stepper">
+            <text class="step-btn" @tap="adjustRep(-1)">−</text>
+            <text class="step-val">{{ settingDraft.reps_per_group }}</text>
+            <text class="step-btn" @tap="adjustRep(1)">＋</text>
+          </view>
+        </view>
+        <text class="set-hint">每组学几个词、重复学几遍由你定；学完可一直「再来一组」。错得多的词会自动带入下一组。</text>
+        <button class="btn-primary" @tap="saveSettings">保存</button>
+        <text class="paywall-close" @tap="showSettings = false">取消</text>
+      </view>
+    </view>
+
     <!-- 跟读会员引导弹窗 -->
     <view v-if="showPaywall" class="shadow-modal" @tap.self="showPaywall = false">
       <view class="paywall-card">
@@ -237,7 +270,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore } from '@/api/vocabulary'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings } from '@/api/vocabulary'
 import type { ShadowScoreResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
@@ -259,6 +292,15 @@ const phase = ref<'empty' | 'study' | 'review' | 'quiz' | 'done'>('study')
 const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
 const isMember = ref(false)       // 是否有有效会员（跟读门禁）
 const showPaywall = ref(false)    // 跟读会员引导弹窗
+// 学习设置（用户自定，不绑会员档位）
+const wordsPerGroup = ref(5)
+const repsPerGroup = ref(1)
+const showSettings = ref(false)
+const settingDraft = reactive({ words_per_group: 5, reps_per_group: 1 })
+// 每组遍数循环 + 错词滚入
+const currentRep = ref(1)                                  // 当前组的第几遍
+const carryWords = ref<VocabWordCard[]>([])                // 上一组错得多、滚入本组的词
+const groupWrong = reactive(new Map<string, number>())     // 本组各词错次数
 
 const newCards = ref<VocabWordCard[]>([])
 const reviewCards = ref<VocabWordCard[]>([])
@@ -510,6 +552,10 @@ async function choose(i: number) {
   const correct = i === curQuiz.value.answerIndex
   lastCorrect.value = correct
   if (correct) correctCount.value++
+  else {
+    const wid = curQuiz.value.word_id
+    groupWrong.set(wid, (groupWrong.get(wid) || 0) + 1)   // 本组错词计数 → 滚入下一组
+  }
   // 答题反馈：读出正确单词发音（答错时尤其重要，立即订正）
   playWordAudio(quizCard.value?.word)
   try {
@@ -525,9 +571,38 @@ function nextQuiz() {
     answered.value = false
     chosenIndex.value = -1
     nextTick(announceQuiz)
+  } else if (currentRep.value < repsPerGroup.value) {
+    // 本组还没学够遍数 → 同一组再来一遍（重新过词卡 + 测试）
+    currentRep.value++
+    uni.showToast({ title: `第 ${currentRep.value}/${repsPerGroup.value} 遍`, icon: 'none' })
+    restartGroupPass()
   } else {
-    finishSession()
+    finalizeGroup()
   }
+}
+
+// 同一组再过一遍：回到词卡（有新词从新词，否则复习），过完再测
+function restartGroupPass() {
+  studyIndex.value = 0
+  reviewIndex.value = 0
+  if (newCards.value.length > 0) {
+    phase.value = 'study'
+    nextTick(() => playCard(curStudy.value))
+  } else if (reviewCards.value.length > 0) {
+    enterReview()
+  } else {
+    startQuiz()
+  }
+}
+
+// 本组学完所有遍数：把错得多的词存为「滚入下一组」，进完成页
+function finalizeGroup() {
+  const carried: VocabWordCard[] = []
+  pool.value.forEach((c) => {
+    if ((groupWrong.get(c.word_id) || 0) >= 1) carried.push(c)   // 错≥1次即滚入下一组
+  })
+  carryWords.value = carried
+  finishSession()
 }
 
 function optionClass(i: number): string {
@@ -541,14 +616,25 @@ async function load(fromReload = false) {
   if (!auth.isLoggedIn()) await auth.login()
   loading.value = true
   getMyMembership().then((m) => { isMember.value = m.is_active && m.tier !== 'free' }).catch(() => { isMember.value = false })
+  getVocabSettings().then((s) => {
+    wordsPerGroup.value = s.words_per_group; repsPerGroup.value = s.reps_per_group
+    settingDraft.words_per_group = s.words_per_group; settingDraft.reps_per_group = s.reps_per_group
+  }).catch(() => { /* 用默认 */ })
   try {
     const task = await getDailyTask()
+    // 错词滚入：把上一组错得多的词并入本组复习（去重，且不与本组新词重复）
+    const carried = carryWords.value; carryWords.value = []
+    const newIds = new Set(task.new_words.map((w) => w.word_id))
+    const reviewIds = new Set(task.review_words.map((w) => w.word_id))
+    const extra = carried.filter((w) => !newIds.has(w.word_id) && !reviewIds.has(w.word_id))
     newCards.value = task.new_words
-    reviewCards.value = task.review_words
-    pool.value = [...task.new_words, ...task.review_words]
+    reviewCards.value = [...task.review_words, ...extra]
+    pool.value = [...newCards.value, ...reviewCards.value]
     studyIndex.value = 0
     reviewIndex.value = 0
     shadowLog.value = []
+    currentRep.value = 1
+    groupWrong.clear()
     if (newCards.value.length === 0 && reviewCards.value.length === 0) {
       // 「再来一组」时已无可练的词：友好提示并停留在完成页，不跳日历
       if (fromReload) {
@@ -636,6 +722,31 @@ function announceQuiz() {
 
 function reload() {
   load(true)   // 「再来一组」：没词时不跳日历
+}
+
+// ── 学习设置 ──
+function openSettings() {
+  settingDraft.words_per_group = wordsPerGroup.value
+  settingDraft.reps_per_group = repsPerGroup.value
+  showSettings.value = true
+}
+function adjustWPG(d: number) {
+  settingDraft.words_per_group = Math.max(1, Math.min(50, settingDraft.words_per_group + d))
+}
+function adjustRep(d: number) {
+  settingDraft.reps_per_group = Math.max(1, Math.min(5, settingDraft.reps_per_group + d))
+}
+async function saveSettings() {
+  try {
+    const s = await setVocabSettings({
+      words_per_group: settingDraft.words_per_group, reps_per_group: settingDraft.reps_per_group })
+    wordsPerGroup.value = s.words_per_group
+    repsPerGroup.value = s.reps_per_group
+    showSettings.value = false
+    uni.showToast({ title: '已保存', icon: 'success' })
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '保存失败', icon: 'none' })
+  }
 }
 
 // ── 跟读评分（听力跟读·嵌入例句）──────────────────────────────────────────
@@ -877,6 +988,21 @@ onMounted(load)
 .paywall-desc { font-size: 26rpx; color: var(--c-text-second); text-align: center; line-height: 1.6; }
 .paywall-card .btn-primary { width: 100%; margin-top: 8rpx; }
 .paywall-close { font-size: 26rpx; color: var(--c-text-hint); padding: 8rpx; }
+/* 学习设置 */
+.hd-right { display: flex; align-items: center; gap: 16rpx; }
+.gear { font-size: 32rpx; }
+.rep-tag { color: var(--c-primary-deep); font-weight: 700; }
+.set-card { width: 580rpx; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 36rpx 32rpx; display: flex; flex-direction: column; gap: 22rpx; }
+.set-title { font-size: 34rpx; font-weight: 800; color: var(--c-ink); text-align: center; }
+.set-row { display: flex; align-items: center; justify-content: space-between; }
+.set-label { font-size: 30rpx; color: var(--c-text-body); font-weight: 600; }
+.stepper { display: flex; align-items: center; gap: 0; background: var(--c-bg-soft); border-radius: var(--r-pill); overflow: hidden; }
+.step-btn { width: 72rpx; height: 64rpx; line-height: 64rpx; text-align: center; font-size: 40rpx; color: var(--c-primary-deep); }
+.step-val { width: 88rpx; text-align: center; font-size: 32rpx; font-weight: 800; color: var(--c-ink); }
+.set-hint { font-size: 22rpx; color: var(--c-text-hint); line-height: 1.6; }
+.carry-tip { font-size: 24rpx; color: #d6457e; background: #fff0f5; border-radius: var(--r-md); padding: 12rpx 18rpx; margin-top: 12rpx; }
+.done-set { font-size: 24rpx; color: var(--c-text-hint); margin-top: 14rpx; }
+.gear-inline { color: var(--c-primary-deep); font-weight: 700; margin-left: 12rpx; }
 .shadow-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: 40rpx 36rpx; width: 84%; max-width: 640rpx; display: flex; flex-direction: column; align-items: center; }
 .shadow-title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); margin-bottom: 20rpx; }
 .shadow-sentence { font-size: 32rpx; font-weight: 600; color: var(--c-ink); line-height: 1.6; text-align: center; }
