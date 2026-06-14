@@ -133,6 +133,12 @@
 
     <!-- 机构激活码（D-122）-->
     <view class="card">
+      <view class="card-title">开通会员</view>
+      <text class="menu-desc">按份购买（每份 6 个月），基础 / Pro / ProMax 任选。</text>
+      <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/membership/buy' })">去开通会员</button>
+    </view>
+
+    <view class="card">
       <view class="card-title">机构激活码</view>
       <text class="menu-desc">机构学生：输入机构发放的激活码，激活会员。</text>
       <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/membership/activate' })">输入激活码</button>

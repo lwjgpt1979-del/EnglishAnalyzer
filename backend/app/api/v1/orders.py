@@ -23,6 +23,19 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
 
+@router.get("/tier-pricing", response_model=BaseResponse[dict])
+async def tier_pricing(current_user: UserDep):
+    """档位会员按份计价（每份 6 个月）。前端购买页据此显示，不写死价格。"""
+    return make_ok({
+        "unit_months": order_service.UNIT_MONTHS,
+        "tiers": [
+            {"key": "basic", "name": "基础", "unit_price_fen": order_service.UNIT_PRICE_FEN["basic"]},
+            {"key": "pro", "name": "Pro", "unit_price_fen": order_service.UNIT_PRICE_FEN["pro"]},
+            {"key": "promax", "name": "ProMax", "unit_price_fen": order_service.UNIT_PRICE_FEN["promax"]},
+        ],
+    })
+
+
 @router.post("/", response_model=BaseResponse[OrderOut])
 async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
     """创建待支付订单。支持自付（payer = beneficiary = 当前用户）和亲人代付。

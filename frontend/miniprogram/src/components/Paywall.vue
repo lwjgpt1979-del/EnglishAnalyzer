@@ -44,7 +44,7 @@ const desc = computed(() => {
 })
 
 function goMembership() {
-  uni.navigateTo({ url: '/pages/membership/activate' })
+  uni.navigateTo({ url: '/pages/membership/buy' })
 }
 
 async function buyAddon() {

@@ -84,6 +84,7 @@
     { "path": "pages/student/class-papers", "style": { "navigationBarTitleText": "班级试卷" } },
     { "path": "pages/student/paper-view", "style": { "navigationBarTitleText": "试卷作答" } },
     { "path": "pages/membership/activate", "style": { "navigationBarTitleText": "激活码" } },
+    { "path": "pages/membership/buy", "style": { "navigationBarTitleText": "开通会员" } },
     { "path": "pages/membership/semester-purchase", "style": { "navigationBarTitleText": "购买学期会员" } },
     { "path": "pages/relative/center", "style": { "navigationBarTitleText": "家人中心" } },
     { "path": "pages/relative/student-view", "style": { "navigationBarTitleText": "孩子学情" } },
