@@ -45,14 +45,11 @@
       <view class="chat-top">
         <text class="ct-leave" @tap="leave">← 换场景</text>
         <view class="ct-right">
-          <text class="ct-auto" :class="{ on: autoPlay }" @tap="autoPlay = !autoPlay">
-            {{ autoPlay ? '🔊 自动播放' : '🔇 自动播放' }}
-          </text>
           <text v-if="vocabMode" class="ct-auto" :class="{ on: readSentences }" @tap="readSentences = !readSentences">
             {{ readSentences ? '🔉 读例句/短语' : '🔈 读例句/短语' }}
           </text>
           <text v-if="vocabMode" class="ct-auto" :class="{ on: momMode }" @tap="momMode = !momMode">
-            {{ momMode ? '👩‍🏫 妈妈陪练' : '🙂 妈妈陪练' }}
+            {{ momMode ? '👩‍🏫 陪练' : '🙂 陪练' }}
           </text>
           <text class="ct-end" @tap="endAndRate">结束并评价</text>
         </view>
@@ -111,7 +108,8 @@
               <view v-if="m.coach" class="coach">
                 <view class="coach-hd">
                   <text class="coach-ico">👩‍🏫</text>
-                  <text class="coach-title">妈妈陪练</text>
+                  <text class="coach-title">陪练</text>
+                  <text v-if="m.audio" class="coach-play" @tap="playAudio(m)">{{ m.playing ? '⏸' : '🔊' }} 重听</text>
                   <text v-if="m.pron && m.pron.overall != null" class="coach-score"
                     :class="m.pron.level">发音 {{ m.pron.overall }}分</text>
                 </view>
@@ -124,9 +122,17 @@
                 <view v-if="m.coach.pron_tip" class="coach-row"><text class="coach-emo">🗣️</text><text class="coach-tx">{{ m.coach.pron_tip }}</text></view>
                 <view v-if="m.coach.express_tip" class="coach-row"><text class="coach-emo">✨</text><text class="coach-tx">{{ m.coach.express_tip }}</text></view>
                 <view v-if="m.coach.better" class="coach-better">
-                  <text class="coach-better-tag">这样说更棒</text>
+                  <text class="coach-better-tag">跟读范本</text>
                   <text class="coach-better-en">{{ m.coach.better }}</text>
                 </view>
+              </view>
+              <!-- 单词导航：仅最新一条回复显示，选词开始练习（弹出该词卡） -->
+              <view v-if="vocabMode && wordList.length && i === messages.length - 1" class="wcard-nav">
+                <text class="wnav-btn" :class="{ disabled: pickIdx <= 0 }" @tap="pickPrev">‹ 上一个</text>
+                <picker class="wnav-pick" mode="selector" :range="wordList" :value="pickIdx" @change="onPickChange">
+                  <view class="wnav-pick-in"><text>{{ wordList[pickIdx] }}</text><text class="wnav-caret">▾</text></view>
+                </picker>
+                <text class="wnav-btn" :class="{ disabled: pickIdx >= wordList.length - 1 }" @tap="pickNext">下一个 ›</text>
               </view>
             </view>
             <view v-else class="bubble me">
@@ -244,6 +250,34 @@
             class="repractice" @tap="repracticeMissed"
           >🔁 再练这 {{ summary.focus_missed.length }} 个没用到的词</button>
         </view>
+        <!-- 词力通陪练发音综合报告 -->
+        <view v-if="summary.vocab_report" class="vrep">
+          <view class="vrep-hd">
+            <text class="vrep-t">🎤 发音报告</text>
+            <text class="vrep-trend" :class="summary.vocab_report.trend">{{ trendLabel(summary.vocab_report.trend) }}</text>
+          </view>
+          <view class="vrep-top">
+            <view class="vrep-avg">
+              <text class="vrep-avg-n">{{ summary.vocab_report.avg ?? '-' }}</text>
+              <text class="vrep-avg-u">平均分</text>
+            </view>
+            <view class="vrep-dims">
+              <text class="vrep-dim">练词 {{ summary.vocab_report.count }} 句 / {{ summary.vocab_report.words.length }} 词</text>
+              <text v-if="summary.vocab_report.dims.accuracy != null" class="vrep-dim">准确 {{ summary.vocab_report.dims.accuracy }} · 流利 {{ summary.vocab_report.dims.fluency }} · 完整 {{ summary.vocab_report.dims.completion }}</text>
+              <text v-if="summary.vocab_report.best" class="vrep-dim">最佳：{{ summary.vocab_report.best.word }} {{ summary.vocab_report.best.score }}分</text>
+            </view>
+          </view>
+          <!-- 迷你柱状：每句发音分 -->
+          <view v-if="summary.vocab_report.bars.length" class="vrep-bars">
+            <view v-for="(b, i) in summary.vocab_report.bars" :key="i" class="vrep-bar"
+              :class="barLevel(b)" :style="{ height: Math.max(8, b * 0.6) + 'rpx' }" />
+          </view>
+          <view v-if="summary.vocab_report.weak_words.length" class="vrep-weak">
+            <text class="vrep-weak-t">需加强：</text>
+            <text v-for="(w, i) in summary.vocab_report.weak_words" :key="i" class="vrep-weak-w">{{ w }}</text>
+          </view>
+          <text class="vrep-cmt">{{ summary.vocab_report.comment }}</text>
+        </view>
         <text class="encour">{{ summary.encouragement }}</text>
         <view class="sheet-btns">
           <button class="btn-ghost" @tap="summary = null">继续聊</button>
@@ -255,11 +289,11 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import {
   getSpeakScenarios, startSpeak, replySpeak, summarizeSpeak, getVocabCards,
   type SpeakScenario, type SpeakTurn, type SpeakSummary, type VocabCard,
-  type MomCoach, type PronResult,
+  type MomCoach, type PronResult, type PronLogItem,
 } from '@/api/speaking'
 import { shadowScore, type ShadowScoreResult } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
@@ -287,7 +321,6 @@ const thinking = ref(false)
 const scrollTop = ref(0)
 const recording = ref(false)
 const cancelZone = ref(false)
-const autoPlay = ref(true)   // AI 回复自动播放语音
 const readSentences = ref(true)  // 词力通：词卡同时连播例句/短语
 const momMode = ref(false)       // 妈妈陪练：每句英文回复做音频测评 + 互动点评
 const targetWords = ref<string[]>([])   // 词力通场景的目标词（供测发音）
@@ -295,6 +328,9 @@ const targetWords = ref<string[]>([])   // 词力通场景的目标词（供测�
 const vocabMode = ref(false)
 const cards = ref<VocabCard[]>([])
 const cardIdx = ref(0)
+const pickIdx = ref(0)           // 单词导航当前选中的词（cards 下标）
+const wordList = computed(() => cards.value.map(c => c.word))
+const pronLog = ref<PronLogItem[]>([])   // 陪练逐句发音评测（供结束综合报告）
 // 测发音弹窗（复用词力通跟读的 SOE 评测）
 const pron = reactive<{
   open: boolean; word: string; recording: boolean; scoring: boolean
@@ -321,13 +357,20 @@ async function endAndRate() {
   try {
     const history: SpeakTurn[] = messages.value
       .map(m => ({ role: m.role, text: m.text }))
-    summary.value = await summarizeSpeak(scenarioKey.value, history)
+    summary.value = await summarizeSpeak(scenarioKey.value, history, pronLog.value)
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '评价失败', icon: 'none' })
   } finally {
     uni.hideLoading()
     rating.value = false
   }
+}
+
+function trendLabel(t: string) {
+  return t === 'up' ? '📈 越练越好' : t === 'down' ? '📉 略有起伏' : '➡️ 稳定发挥'
+}
+function barLevel(b: number) {
+  return b >= 90 ? 'excellent' : b >= 80 ? 'good' : b >= 60 ? 'fair' : 'poor'
 }
 
 function repracticeMissed() {
@@ -354,6 +397,7 @@ async function start(key: string) {
   vocabMode.value = key === 'vocab' || key.startsWith('words:')
   cards.value = []
   cardIdx.value = 0
+  pronLog.value = []
   phase.value = 'chat'
   thinking.value = true
   try {
@@ -388,6 +432,22 @@ async function playWord(c?: VocabCard | null) {
   const u = c.audio_url || await resolveSpeakUrl(c.word)
   _playUrls([u])
 }
+// 单词导航：上一个 / 选词 / 下一个 → 选中即弹出该词卡开始练习（自动播放）
+function practiceWord(i: number) {
+  if (i < 0 || i >= cards.value.length) return
+  cardIdx.value = i                          // 陪练评测参照对齐到该词卡
+  pushAi('', '', '', '', cards.value[i])     // 弹出词卡（pushAi 内会同步选词并自动播放）
+}
+function pickPrev() { if (pickIdx.value > 0) practiceWord(pickIdx.value - 1) }
+function pickNext() { if (pickIdx.value < cards.value.length - 1) practiceWord(pickIdx.value + 1) }
+function onPickChange(e: any) {
+  const i = Number(e?.detail?.value ?? -1)
+  if (i >= 0 && i < cards.value.length) practiceWord(i)
+}
+// 词卡出现时，把选词同步到当前词
+function syncPickToCard() {
+  if (vocabMode.value && cardIdx.value < cards.value.length) pickIdx.value = cardIdx.value
+}
 async function playCard(c?: VocabCard | null) {
   if (!c) return
   const urls: string[] = [c.audio_url || await resolveSpeakUrl(c.word)]
@@ -403,8 +463,9 @@ function pushAi(text: string, audio: string, translation = '', correction = '', 
   const msg: Msg = { role: 'assistant', text, audio, translation, correction, showTr: false, card }
   messages.value.push(msg)
   scrollToEnd()
-  if (card && autoPlay.value) playCard(card)        // 词卡：自动播单词(+开关:例句/短语)
-  else if (audio && autoPlay.value) playAudio(msg)  // 普通回复：自动播 AI 语音
+  // 词卡：同步导航选词 + 自动播放（单词 + 例句/短语，受「读例句/短语」开关控制）
+  if (card) { syncPickToCard(); playCard(card) }
+  else if (audio) playAudio(msg)  // 普通回复：自动播 AI 语音
 }
 
 let _pendingAudio = ''   // 妈妈陪练：本句语音的 base64（仅语音输入时有）
@@ -413,6 +474,11 @@ async function send() {
   if (!t || thinking.value) return
   const audioB64 = _pendingAudio; _pendingAudio = ''
   const coach = momMode.value && vocabMode.value
+  // 词力通陪练：以当前词卡的「例句/短语」原文作为发音评测参照（孩子在朗读它）
+  const curCard = vocabMode.value ? cards.value[cardIdx.value] : null
+  const refText = curCard
+    ? (curCard.example?.en || curCard.phrase?.en || curCard.word || '')
+    : ''
   draft.value = ''
   messages.value.push({ role: 'user', text: t })
   scrollToEnd()
@@ -423,19 +489,27 @@ async function send() {
       .slice(-8)
       .map(m => ({ role: m.role, text: m.text }))
     const r = await replySpeak(scenarioKey.value, t, history,
-      coach ? { coach: true, audio: audioB64, audioFormat: 'mp3' } : undefined)
-    // 妈妈陪练：先插一条「妈妈点评」气泡（发音测评 + 互动建议）
+      coach ? { coach: true, audio: audioB64, audioFormat: 'mp3', refText } : undefined)
+    // 陪练模式：只显示发音点评（不再同时出现 AI 对话回复气泡）；
+    // 普通模式：显示 AI 回复。词卡不再自动带出，由「上一个/选词/下一个」让用户选词练习
     if (r.coach) {
-      messages.value.push({ role: 'assistant', text: '', coach: r.coach, pron: r.pron || null })
+      const cm: Msg = { role: 'assistant', text: '', audio: r.coach.audio || '',
+        coach: r.coach, pron: r.pron || null }
+      messages.value.push(cm)
       scrollToEnd()
+      if (cm.audio) playAudio(cm)   // 点评真人语音自动播放（像老师在旁边讲）
+      // 记录本句发音评测，供结束综合报告
+      if (r.pron && r.pron.accuracy != null) {
+        pronLog.value.push({
+          word: curCard?.word || '',
+          overall: r.pron.overall, accuracy: r.pron.accuracy,
+          fluency: r.pron.fluency, completion: r.pron.completion,
+          weak: (r.pron.words || []).filter(w => w.score < 80).map(w => w.word),
+        })
+      }
+    } else {
+      pushAi(r.ai_text, r.ai_audio_url, r.translation, r.correction)
     }
-    // 词力通：AI 点评后带出下一个词卡（文字+音标+图片一起出）
-    let nextCard: VocabCard | null = null
-    if (vocabMode.value && cardIdx.value < cards.value.length - 1) {
-      cardIdx.value += 1
-      nextCard = cards.value[cardIdx.value]
-    }
-    pushAi(r.ai_text, nextCard ? '' : r.ai_audio_url, r.translation, r.correction, nextCard)
     if (r.mastered_wrong) {
       messages.value.push({
         role: 'system',
@@ -676,6 +750,14 @@ function micEnd() {
 .wcard-btns { display: flex; gap: 14rpx; padding-top: 16rpx; }
 .wcard-btn { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 10rpx 30rpx; border-radius: var(--r-pill); }
 .wcard-btn.primary { background: var(--c-primary); color: var(--c-on-primary); }
+/* 单词导航：上一个 / 选词 / 下一个 */
+.wcard-nav { display: flex; align-items: center; gap: 12rpx; margin-top: 14rpx; padding-top: 14rpx; border-top: 1rpx solid var(--c-border); }
+.wnav-btn { font-size: 24rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 8rpx 18rpx; border-radius: var(--r-pill); }
+.wnav-btn.disabled { color: var(--c-text-hint); background: var(--c-bg-soft); }
+.wnav-pick { flex: 1; }
+.wnav-pick-in { display: flex; align-items: center; justify-content: center; gap: 8rpx; background: #fff; border: 2rpx solid var(--c-primary-soft); border-radius: var(--r-pill); padding: 8rpx 16rpx; }
+.wnav-pick-in text { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
+.wnav-caret { font-size: 20rpx !important; color: var(--c-text-hint) !important; }
 .chat { flex: 1; min-height: 0; }
 .chat-inner { padding: 24rpx 24rpx 12rpx; display: flex; flex-direction: column; gap: 18rpx; }
 .row { display: flex; }
@@ -700,6 +782,7 @@ function micEnd() {
 .coach-hd { display: flex; align-items: center; gap: 8rpx; }
 .coach-ico { font-size: 30rpx; }
 .coach-title { font-size: 24rpx; font-weight: 800; color: #d6457e; }
+.coach-play { font-size: 22rpx; font-weight: 700; color: #d6457e; background: #fff; border: 2rpx solid #ffd9e6; border-radius: var(--r-pill); padding: 3rpx 14rpx; margin-left: 10rpx; }
 .coach-score { margin-left: auto; font-size: 22rpx; font-weight: 800; color: #fff; background: #f48fb1; padding: 3rpx 14rpx; border-radius: var(--r-pill); }
 .coach-score.excellent { background: #34c759; }
 .coach-score.good { background: #5aa9f8; }
@@ -787,6 +870,31 @@ function micEnd() {
 .chip.miss { background: #fff; color: var(--c-text-hint); border: 2rpx solid var(--c-border); }
 .repractice { margin-top: 12rpx; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-pill); font-size: 25rpx; font-weight: 700; padding: 14rpx 0; }
 .encour { font-size: 26rpx; color: var(--c-primary-deep); text-align: center; line-height: 1.6; margin-top: 4rpx; }
+
+/* 词力通发音综合报告 */
+.vrep { width: 100%; box-sizing: border-box; background: linear-gradient(160deg, #eef6ff, #f7fbff); border: 2rpx solid #d6e6ff; border-radius: 16rpx; padding: 18rpx 20rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.vrep-hd { display: flex; align-items: center; justify-content: space-between; }
+.vrep-t { font-size: 28rpx; font-weight: 800; color: #2f6fd6; }
+.vrep-trend { font-size: 22rpx; font-weight: 700; padding: 3rpx 14rpx; border-radius: var(--r-pill); background: #fff; }
+.vrep-trend.up { color: #34c759; }
+.vrep-trend.down { color: #ff9500; }
+.vrep-trend.flat { color: #5aa9f8; }
+.vrep-top { display: flex; align-items: center; gap: 18rpx; }
+.vrep-avg { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; background: #fff; border-radius: 14rpx; padding: 10rpx 22rpx; }
+.vrep-avg-n { font-size: 48rpx; font-weight: 900; color: #2f6fd6; line-height: 1.1; }
+.vrep-avg-u { font-size: 20rpx; color: var(--c-text-hint); }
+.vrep-dims { flex: 1; display: flex; flex-direction: column; gap: 4rpx; }
+.vrep-dim { font-size: 23rpx; color: var(--c-text-body); }
+.vrep-bars { display: flex; align-items: flex-end; gap: 6rpx; height: 64rpx; padding: 4rpx 0; }
+.vrep-bar { flex: 1; min-width: 8rpx; border-radius: 4rpx; background: #5aa9f8; }
+.vrep-bar.excellent { background: #34c759; }
+.vrep-bar.good { background: #5aa9f8; }
+.vrep-bar.fair { background: #ffab40; }
+.vrep-bar.poor { background: #ff6b6b; }
+.vrep-weak { display: flex; flex-wrap: wrap; align-items: center; gap: 8rpx; }
+.vrep-weak-t { font-size: 23rpx; color: var(--c-text-hint); }
+.vrep-weak-w { font-size: 22rpx; font-weight: 700; color: #d6457e; background: #fff0f5; border-radius: var(--r-pill); padding: 3rpx 14rpx; }
+.vrep-cmt { font-size: 24rpx; color: #2f6fd6; line-height: 1.55; }
 .sheet-btns { display: flex; gap: 16rpx; width: 100%; margin-top: 12rpx; }
 .btn-ghost { flex: 1; background: var(--c-bg-soft); color: var(--c-text-body); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; }
 .btn-fill { flex: 1; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; }

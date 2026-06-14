@@ -40,6 +40,7 @@ export interface MomCoach {
   pron_tip: string
   express_tip: string
   better: string
+  audio?: string   // 点评真人语音（火山TTS→COS）
 }
 export interface SpeakReply {
   ai_text: string
@@ -77,7 +78,7 @@ export function startSpeak(scenarioKey: string): Promise<SpeakOpening> {
 
 export function replySpeak(
   scenarioKey: string, userText: string, history: SpeakTurn[],
-  opts?: { coach?: boolean; audio?: string; audioFormat?: string },
+  opts?: { coach?: boolean; audio?: string; audioFormat?: string; refText?: string },
 ): Promise<SpeakReply> {
   return request<SpeakReply>('/api/v1/speaking/reply', {
     method: 'POST',
@@ -86,10 +87,30 @@ export function replySpeak(
       coach: opts?.coach || false,
       audio: opts?.audio || null,
       audio_format: opts?.audioFormat || 'mp3',
+      ref_text: opts?.refText || null,
     },
   })
 }
 
+export interface PronLogItem {
+  word: string
+  overall: number | null
+  accuracy: number | null
+  fluency: number | null
+  completion: number | null
+  weak: string[]
+}
+export interface VocabReport {
+  count: number
+  words: string[]
+  avg: number | null
+  best: { word: string; score: number } | null
+  weak_words: string[]
+  dims: { accuracy: number | null; fluency: number | null; completion: number | null }
+  trend: 'up' | 'flat' | 'down'
+  bars: number[]
+  comment: string
+}
 export interface SpeakSummary {
   overall: number
   fluency: number
@@ -102,6 +123,7 @@ export interface SpeakSummary {
   focus_review?: string     // 专项掌握点评
   focus_used?: string[]     // 已用上的目标词
   focus_missed?: string[]   // 未用到的目标词
+  vocab_report?: VocabReport | null  // 词力通陪练发音综合报告
   checkin?: { checked_in_today: boolean; current_streak: number; longest_streak: number }
 }
 
@@ -119,10 +141,10 @@ export function getSpeakStats(): Promise<SpeakStats> {
 }
 
 export function summarizeSpeak(
-  scenarioKey: string, history: SpeakTurn[],
+  scenarioKey: string, history: SpeakTurn[], pronLog: PronLogItem[] = [],
 ): Promise<SpeakSummary> {
   return request<SpeakSummary>('/api/v1/speaking/summary', {
     method: 'POST',
-    data: { scenario_key: scenarioKey, history },
+    data: { scenario_key: scenarioKey, history, pron_log: pronLog },
   })
 }

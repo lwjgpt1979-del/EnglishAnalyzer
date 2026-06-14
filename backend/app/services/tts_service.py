@@ -216,6 +216,14 @@ def _pick_voice_for_text(text: str) -> str:
     return voices[h % len(voices)]
 
 
+def zh_voice() -> str:
+    """返回一个中文音色（火山中文 BigTTS 可带读句中英文词）；用于中文点评等场景。"""
+    for v in _all_voices():
+        if v.startswith("zh"):
+            return v
+    return settings.volc_tts_voice
+
+
 def is_dev_mode() -> bool:
     return (
         settings.tts_provider != "volcano"

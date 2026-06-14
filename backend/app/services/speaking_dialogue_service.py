@@ -567,23 +567,37 @@ def _mock_reply(user_text: str) -> dict:
     }
 
 
+def _speakable(text: str) -> str:
+    """清洗点评文本以便 TTS：去掉国际音标(/.../ 与 IPA 字符)，避免火山 TTS 'unsupported language'。"""
+    import re
+    t = re.sub(r"/[^/\n]{0,24}/", "", text or "")          # 去掉 /ð/、/aɪ/ 等音标段
+    t = re.sub(r"[ɐ-ʯæðθʃʒŋː]", "", t)  # 残留 IPA 字符
+    t = re.sub(r"[ \t]{2,}", " ", t).strip()
+    return t
+
+
 def _mock_coach(user_text: str, pron: dict | None) -> dict:
     weak = ""
     if pron and isinstance(pron.get("words"), list):
         weak = "、".join(w["word"] for w in pron["words"] if w.get("score", 100) < 80)
     return {
-        "encourage": "宝贝说得真棒，妈妈听到你开口啦！👏",
-        "pron_tip": (f"有几个词再练练：{weak}，跟着妈妈慢慢读一遍～" if weak
-                     else "发音清楚，继续保持哦～"),
+        "encourage": "说得不错，开口很清楚！👏",
+        "pron_tip": (f"有几个词再练练：{weak}，跟我慢慢读一遍。" if weak
+                     else "发音清楚，继续保持。"),
         "express_tip": "可以试着把句子说得更完整一点，比如加上主语和动词。",
         "better": user_text,
     }
 
 
-async def _mom_coach(user_text: str, pron: dict | None, *, focus: str = "") -> dict:
-    """像妈妈教小朋友那样，对孩子这句英文做温柔的互动式点评：鼓励 + 发音提点 + 表达建议。"""
+async def _mom_coach(user_text: str, pron: dict | None, *, focus: str = "",
+                     target_text: str = "") -> dict:
+    """像妈妈教小朋友那样做温柔的互动式点评：鼓励 + 发音提点 + 建议。
+
+    target_text 非空（词力通朗读）→ 评测针对的是孩子朗读这句「目标原文」，
+    点评须围绕目标原文里读得不准的词，示范说法用目标原文本身。
+    """
     if is_llm_dev_mode():
-        return _mock_coach(user_text, pron)
+        return _mock_coach(target_text or user_text, pron)
     weak_words, scores = "", ""
     if pron:
         if isinstance(pron.get("words"), list):
@@ -592,19 +606,44 @@ async def _mom_coach(user_text: str, pron: dict | None, *, focus: str = "") -> d
                   f"流利度{pron.get('fluency')}, 完整度{pron.get('completion')}. "
                   f"读得不够准的词：{weak_words or '无'}.")
     try:
-        resp = await chat_completion(
-            system_prompt=(
-                "你是一位温柔、耐心、充满鼓励的妈妈，正在陪自己的孩子练习说英语。"
-                "请用中文，像妈妈手把手教小朋友那样做互动式点评：先真诚地表扬具体做得好的地方，"
-                "再温柔地指出 1 个最值得改进的发音点（结合给出的发音评测，点名具体单词，告诉孩子怎么把这个音读准），"
-                "最后给 1 条让表达更自然/更完整的小建议，并示范一句更地道的说法。语气亲切，多用‘宝贝/我们一起/试试看’，"
-                "不要长篇大论，每条一两句。只输出紧凑 JSON，键为："
-                "encourage(表扬), pron_tip(发音提点), express_tip(表达建议), better(示范的更好说法, 英文)。"
+        if target_text:
+            system_prompt = (
+                "你在帮助一个正在【反复练习朗读同一句指定英文】的学习者，目标是把这句话读准。"
+                "请用中文点评，且【只针对这句目标原文】，不要分析语音识别里的杂词。"
+                "要求：(1) encourage 只用一句很简短的肯定（不要长篇套话）。"
+                "(2) pron_tip 是重点：结合发音评测，点名目标原文里读得最不准的 1-2 个单词，"
+                "具体讲这个音的口型/舌位/气流怎么做，让对方能照着改。"
+                "【不要使用国际音标符号（如 /ð/、/æ/、/aɪ/、ː 等）】，"
+                "改用字母或中文把发音说清楚（例如：th 音、v 音、把 ee 音拉长），方便念出来听。"
+                "(3) express_tip 用一句话提示【跟着范本再读一遍】这同一句话，把刚才的音读对。"
+                "(4) 绝对不要提到‘下一个词/下一张卡/next word/next card/换下一个’——换词由对方自己决定，"
+                "只负责把当前这句反复带读到读准。"
+                "【非常重要】输出文本里不要出现任何称呼或自称（如 妈妈、老师、宝贝、亲爱的、同学、孩子、你呀 等），"
+                "直接讲发音要点；需要示意一起读时最多说‘跟我读’。语气平和、简洁，每条一两句。"
+                "只输出紧凑 JSON，键为：encourage(一句简短肯定), pron_tip(针对具体单词的发音纠正+口型舌位), "
+                "express_tip(提示再读一遍的话), better(就是这句目标原文本身, 作为跟读范本, 英文)。"
                 + (f" 本活动目标：{focus}。" if focus else "")
-            ),
-            user_prompt=(f"孩子说的英文：{user_text}\n"
-                         f"{('发音评测：' + scores) if scores else '（本句暂无发音评测数据）'}\n"
-                         f"请按要求点评。"),
+            )
+            user_prompt = (f"目标原文（孩子在反复朗读的句子/短语）：{target_text}\n"
+                           f"语音识别到的内容（仅供参考，可能不准）：{user_text}\n"
+                           f"{('发音评测（针对目标原文）：' + scores) if scores else '（本句暂无发音评测数据）'}\n"
+                           f"请只围绕目标原文，带孩子把这句读准；不要提下一个词。")
+        else:
+            system_prompt = (
+                "你在帮助一个学习者练习说英语。请用中文做互动式点评：先简短肯定具体做得好的地方，"
+                "再指出 1 个最值得改进的发音点（结合给出的发音评测，点名具体单词，说清这个音怎么读准），"
+                "最后给 1 条让表达更自然/更完整的小建议，并示范一句更地道的说法。"
+                "【非常重要】输出文本里不要出现任何称呼或自称（如 妈妈、老师、宝贝、亲爱的、同学、孩子 等），"
+                "直接讲要点；需要示意一起读时最多说‘跟我读’。语气平和、简洁，不要长篇大论，每条一两句。"
+                "只输出紧凑 JSON，键为："
+                "encourage(肯定), pron_tip(发音提点), express_tip(表达建议), better(示范的更好说法, 英文)。"
+                + (f" 本活动目标：{focus}。" if focus else "")
+            )
+            user_prompt = (f"孩子说的英文：{user_text}\n"
+                           f"{('发音评测：' + scores) if scores else '（本句暂无发音评测数据）'}\n"
+                           f"请按要求点评。")
+        resp = await chat_completion(
+            system_prompt=system_prompt, user_prompt=user_prompt,
             max_tokens=320, response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content or "{}")
@@ -622,14 +661,18 @@ async def _mom_coach(user_text: str, pron: dict | None, *, focus: str = "") -> d
 async def reply(
     db: AsyncSession, *, student_id, scenario_key: str, history: list[dict], user_text: str,
     stage: str = "junior", audio_b64: str | None = None, audio_format: str = "mp3",
-    coach: bool = False,
+    coach: bool = False, ref_text: str | None = None,
 ) -> dict:
     sc = await resolve_scenario(db, student_id=student_id, key=scenario_key)
     if sc is None:
         raise ValueError("scenario not found")
     user_text = (user_text or "").strip()[:500]
 
-    if is_llm_dev_mode():
+    # 陪练模式：只出发音点评，不再生成对话回复（避免冗余的“看下一张卡”气泡 + 省一次LLM）
+    skip_dialogue = coach
+    if skip_dialogue:
+        data = {}
+    elif is_llm_dev_mode():
         data = _mock_reply(user_text)
     else:
         level = _LEVEL_BY_STAGE.get(stage, _LEVEL_BY_STAGE["junior"])
@@ -668,10 +711,13 @@ async def reply(
             logger.warning("[Speaking] LLM 调用失败，回退 mock: %s", e)
             data = _mock_reply(user_text)
 
-    ai_text = (data.get("reply") or "").strip() or "Let's keep practicing! Tell me more."
-    speed = await tts_service.speed_for_stage_db(db, stage)
-    voice = await tts_service.first_voice(db, sc["gender"])
-    audio = await tts_service.get_or_create_audio_url(ai_text, voice=voice, speed=speed)
+    if skip_dialogue:
+        ai_text, audio = "", ""
+    else:
+        ai_text = (data.get("reply") or "").strip() or "Let's keep practicing! Tell me more."
+        speed = await tts_service.speed_for_stage_db(db, stage)
+        voice = await tts_service.first_voice(db, sc["gender"])
+        audio = await tts_service.get_or_create_audio_url(ai_text, voice=voice, speed=speed)
 
     # 错题复习：学生答对 → 提交一次成功复习（SM-2），从今日待复习队列中减一
     mastered_wrong = None
@@ -697,26 +743,41 @@ async def reply(
             db, student_id, targets=sc.get("targets") or [],
             user_text=user_text, history=history)
 
-    # 妈妈陪练：对孩子这句英文做音频测评 + 互动式点评（仅 coach 模式开启时）
+    # 陪练：对孩子这句英文做音频测评 + 互动式点评（仅 coach 模式开启时）
+    # 词力通朗读场景：以词卡「例句/短语」原文(ref_text)为评测参照，而非语音识别文本
     pron = None
     coach_out = None
     if coach:
+        target = (ref_text or "").strip()        # 朗读目标原文（有则据此评测/点评）
+        pron_ref = target or user_text
         audio_bytes = None
         if audio_b64:
             try:
                 import base64 as _b64
                 audio_bytes = _b64.b64decode(audio_b64)
             except Exception as e:  # noqa: BLE001
-                logger.warning("[妈妈陪练] 音频解码失败: %s", e)
+                logger.warning("[陪练] 音频解码失败: %s", e)
         if audio_bytes:
             try:
                 from app.services import pronunciation_service
                 pron = await pronunciation_service.assess(
-                    reference_text=user_text, audio_bytes=audio_bytes,
+                    reference_text=pron_ref, audio_bytes=audio_bytes,
                     mode="sentence", audio_format=(audio_format or "mp3"))
             except Exception as e:  # noqa: BLE001
-                logger.warning("[妈妈陪练] 发音评测失败: %s", e)
-        coach_out = await _mom_coach(user_text, pron, focus=(sc.get("focus") or "").strip())
+                logger.warning("[陪练] 发音评测失败: %s", e)
+        coach_out = await _mom_coach(user_text, pron, focus=(sc.get("focus") or "").strip(),
+                                     target_text=target)
+        # 把点评（肯定+发音纠正+再读一遍）合成真人语音，前端自动播放，像老师在旁边讲
+        if coach_out:
+            spoken = _speakable(" ".join(p for p in [coach_out.get("encourage"),
+                                                     coach_out.get("pron_tip"),
+                                                     coach_out.get("express_tip")] if p))
+            try:
+                coach_out["audio"] = (await tts_service.get_or_create_audio_url(
+                    spoken, voice=tts_service.zh_voice())) or "" if spoken else ""
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[陪练] 点评语音合成失败: %s", e)
+                coach_out["audio"] = ""
 
     return {
         "ai_text": ai_text,
@@ -784,9 +845,75 @@ def _focus_review(sc: dict, user_turns: list[str]) -> dict:
     return {"focus_source": source, "focus_review": note, "focus_used": [], "focus_missed": []}
 
 
+def _vocab_pron_report(pron_log: list[dict] | None) -> dict | None:
+    """词力通陪练结束综合报告：从逐句发音评测记录聚合 练词/均分/薄弱音/进步趋势。
+
+    pron_log 每项：{word, overall, accuracy, fluency, completion, weak:[..]}。
+    """
+    items = [it for it in (pron_log or []) if isinstance(it, dict) and it.get("overall") is not None]
+    if not items:
+        return None
+
+    def _avg(vals):
+        vals = [v for v in vals if v is not None]
+        return int(round(sum(vals) / len(vals))) if vals else None
+
+    bars = [int(it["overall"]) for it in items]
+    avg = _avg(bars)
+    dims = {
+        "accuracy": _avg([it.get("accuracy") for it in items]),
+        "fluency": _avg([it.get("fluency") for it in items]),
+        "completion": _avg([it.get("completion") for it in items]),
+    }
+    # 练过的词（去重保序）
+    words: list[str] = []
+    for it in items:
+        w = (it.get("word") or "").strip()
+        if w and w not in words:
+            words.append(w)
+    # 最佳一句
+    best_it = max(items, key=lambda it: it["overall"])
+    best = {"word": (best_it.get("word") or "").strip(), "score": int(best_it["overall"])}
+    # 薄弱词：按出现频次排序
+    from collections import Counter
+    wc: Counter = Counter()
+    for it in items:
+        for w in (it.get("weak") or []):
+            w = str(w).strip()
+            if w:
+                wc[w] += 1
+    weak_words = [w for w, _ in wc.most_common(6)]
+    # 进步趋势：后半段均分 vs 前半段
+    trend = "flat"
+    if len(bars) >= 2:
+        mid = len(bars) // 2
+        first, second = _avg(bars[:mid]) or 0, _avg(bars[mid:]) or 0
+        if second - first >= 5:
+            trend = "up"
+        elif first - second >= 5:
+            trend = "down"
+    # 评语（确定性，无需额外 LLM）
+    if avg is not None and avg >= 90:
+        comment = "发音很标准，整体非常棒！"
+    elif avg is not None and avg >= 75:
+        comment = "发音整体不错，再打磨几个细节会更好。"
+    else:
+        comment = "开口很认真，多跟读练习会进步很快。"
+    if weak_words:
+        comment += f" 重点再练：{'、'.join(weak_words[:4])}。"
+    if trend == "up":
+        comment += " 而且越读越好，进步很明显 📈"
+
+    return {
+        "count": len(items), "words": words, "avg": avg, "best": best,
+        "weak_words": weak_words, "dims": dims, "trend": trend,
+        "bars": bars[-12:], "comment": comment,
+    }
+
+
 async def summarize(
     db: AsyncSession, *, student_id, scenario_key: str, history: list[dict],
-    stage: str = "junior",
+    stage: str = "junior", pron_log: list[dict] | None = None,
 ) -> dict:
     """对话结束后给本次练习评价：评分 + 亮点 + 改进 + 鼓励 + 专项掌握点评。"""
     sc = await resolve_scenario(db, student_id=student_id, key=scenario_key)
@@ -798,9 +925,10 @@ async def summarize(
         raise ValueError("no user turns")
 
     focus = _focus_review(sc, user_turns)
+    vocab_report = _vocab_pron_report(pron_log)
 
     if is_llm_dev_mode():
-        return {**_mock_summary(user_turns), **focus}
+        return {**_mock_summary(user_turns), **focus, "vocab_report": vocab_report}
 
     level = _LEVEL_BY_STAGE.get(stage, _LEVEL_BY_STAGE["junior"])
     sys = (
@@ -821,7 +949,7 @@ async def summarize(
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception as e:  # noqa: BLE001
         logger.warning("[Speaking] 总结 LLM 失败，回退 mock: %s", e)
-        return {**_mock_summary(user_turns), **focus}
+        return {**_mock_summary(user_turns), **focus, "vocab_report": vocab_report}
 
     def _strlist(v):
         if isinstance(v, list):
@@ -837,6 +965,7 @@ async def summarize(
         "improvements": _strlist(data.get("improvements")) or ["多用完整句子表达"],
         "encouragement": (data.get("encouragement") or "继续加油！").strip(),
         **focus,
+        "vocab_report": vocab_report,
     }
 
 

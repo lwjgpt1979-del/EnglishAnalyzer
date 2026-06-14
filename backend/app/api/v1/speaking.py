@@ -46,9 +46,10 @@ class ReplyIn(BaseModel):
     scenario_key: str
     user_text: str = Field(..., min_length=1, max_length=500)
     history: list[TurnIn] = []
-    coach: bool = False                      # 妈妈陪练：对本句做音频测评 + 互动点评
+    coach: bool = False                      # 陪练：对本句做音频测评 + 互动点评
     audio: str | None = None                 # base64 录音（coach 模式用于发音评测）
     audio_format: str = "mp3"
+    ref_text: str | None = None              # 发音评测参照原文（词力通：朗读的例句/短语）
 
 
 @router.get("/scenarios", response_model=BaseResponse[dict])
@@ -77,7 +78,8 @@ async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
             db, student_id=current_user.id, scenario_key=body.scenario_key,
             history=[t.model_dump() for t in body.history],
             user_text=body.user_text, stage=_stage(current_user),
-            coach=body.coach, audio_b64=body.audio, audio_format=body.audio_format)
+            coach=body.coach, audio_b64=body.audio, audio_format=body.audio_format,
+            ref_text=body.ref_text)
     except ValueError:
         raise AppError(code=404, message="场景不存在")
     if result.get("mastered_wrong") or result.get("vocab_practiced"):
@@ -85,9 +87,19 @@ async def reply(body: ReplyIn, current_user: UserDep, db: DbDep):
     return make_ok(result)
 
 
+class PronLogItem(BaseModel):
+    word: str = ""
+    overall: int | None = None
+    accuracy: int | None = None
+    fluency: int | None = None
+    completion: int | None = None
+    weak: list[str] = []
+
+
 class SummaryIn(BaseModel):
     scenario_key: str
     history: list[TurnIn] = []
+    pron_log: list[PronLogItem] = []   # 词力通陪练逐句发音评测（用于结束综合报告）
 
 
 @router.post("/summary", response_model=BaseResponse[dict])
@@ -97,7 +109,8 @@ async def summary(body: SummaryIn, current_user: UserDep, db: DbDep):
         result = await svc.summarize(
             db, student_id=current_user.id, scenario_key=body.scenario_key,
             history=[t.model_dump() for t in body.history],
-            stage=_stage(current_user))
+            stage=_stage(current_user),
+            pron_log=[p.model_dump() for p in body.pron_log])
     except ValueError as e:
         if "no user turns" in str(e):
             raise AppError(code=400, message="还没开口说话，先聊几句再评价吧")
