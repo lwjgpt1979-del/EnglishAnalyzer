@@ -45,8 +45,8 @@ export interface VocabCard {
   meaning: string
   image_urls: string[]
   audio_url: string
-  example?: { en: string; zh: string } | null
-  phrase?: { en: string; zh: string } | null
+  example?: { en: string; zh: string; audio?: string } | null
+  phrase?: { en: string; zh: string; audio?: string } | null
 }
 export function getVocabCards(): Promise<VocabCard[]> {
   return request<VocabCard[]>('/api/v1/speaking/vocab-cards', { method: 'GET' })

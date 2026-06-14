@@ -19,7 +19,19 @@ from app.core.config import settings
 from app.core.exceptions import AppError
 from app.models.d5_learning import VocabularyWord
 from app.models.d9_system import SystemConfig
-from app.services import llm_provider, vocab_media_provider
+from app.services import llm_provider, tts_service, vocab_media_provider
+
+
+async def _tts_cos(text: str) -> str:
+    """火山 TTS → COS 缓存直链；失败/COS-dev 返回空串（前端再用 TTS 兜底）。"""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    try:
+        return (await tts_service.get_or_create_audio_url(text)) or ""
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[词力通TTS] %s 失败: %s", text[:20], e)
+        return ""
 
 # ── 配图提示词配置中心（system_configs，可后台配）─────────────────────────────
 _IMG_KEY = "vocab_image_gen"
@@ -208,12 +220,21 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
         u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
         if u:
             urls.append(u)
-    # 例句(先贴合图片意思) + 短语：缺失时补充
+    # 例句(先贴合图片意思) + 短语：缺失时补充；并预生成语音(火山→COS缓存)写入 JSONB
     ep = await _ai_example_phrase(w.word, meaning, pos, brief)
     if ep["example"]["en"]:
-        w.examples = [ep["example"]]
+        ex = dict(ep["example"])
+        ex["audio"] = await _tts_cos(ex["en"])
+        w.examples = [ex]
     if ep["phrase"]["en"]:
-        w.phrases = [ep["phrase"]]
+        ph = dict(ep["phrase"])
+        ph["audio"] = await _tts_cos(ph["en"])
+        w.phrases = [ph]
+    # 单词发音：预生成并写库，供原词力通 + AI口语-词力通共用
+    if not w.word_audio_url:
+        wa = await _tts_cos(w.word)
+        if wa:
+            w.word_audio_url = wa
     return urls
 
 
@@ -294,6 +315,49 @@ async def start_batch_image_gen(db: AsyncSession) -> dict:
         return {"started": False, "reason": "没有待配图的单词", "total": 0}
     asyncio.create_task(_run_batch(ids, cfg))
     return {"started": True, "total": len(ids)}
+
+
+async def backfill_audio(db: AsyncSession, *, limit: int = 500) -> dict:
+    """给已生成 例句/短语/单词 但缺音频的词补预生成语音(火山→COS)，写回 JSONB / word_audio_url。
+
+    幂等：已有 audio 的项跳过；供原词力通 + AI口语-词力通共用同一缓存直链。
+    """
+    rows = (await db.execute(select(VocabularyWord).limit(limit))).scalars().all()
+    scanned = filled = 0
+    for w in rows:
+        changed = False
+        exs = w.examples if isinstance(w.examples, list) else []
+        new_ex = []
+        for it in exs:
+            if isinstance(it, dict) and it.get("en") and not it.get("audio"):
+                it = {**it, "audio": await _tts_cos(str(it["en"]))}
+                if it["audio"]:
+                    changed = True
+            new_ex.append(it)
+        if changed:
+            w.examples = new_ex
+        ph_changed = False
+        phs = w.phrases if isinstance(w.phrases, list) else []
+        new_ph = []
+        for it in phs:
+            if isinstance(it, dict) and it.get("en") and not it.get("audio"):
+                it = {**it, "audio": await _tts_cos(str(it["en"]))}
+                if it["audio"]:
+                    ph_changed = True
+            new_ph.append(it)
+        if ph_changed:
+            w.phrases = new_ph
+            changed = True
+        if not w.word_audio_url:
+            wa = await _tts_cos(w.word)
+            if wa:
+                w.word_audio_url = wa
+                changed = True
+        scanned += 1
+        if changed:
+            filled += 1
+    await db.flush()
+    return {"scanned": scanned, "filled": filled}
 
 
 async def review_word_media(

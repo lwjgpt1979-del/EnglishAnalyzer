@@ -364,8 +364,9 @@ async function playCard(c?: VocabCard | null) {
   if (!c) return
   const urls: string[] = [c.audio_url || await resolveSpeakUrl(c.word)]
   if (readSentences.value) {
-    if (c.example && c.example.en) urls.push(await resolveSpeakUrl(c.example.en))
-    if (c.phrase && c.phrase.en) urls.push(await resolveSpeakUrl(c.phrase.en))
+    // 优先用后台预生成的 COS 缓存音频，缺失再用 TTS 即时兜底
+    if (c.example && c.example.en) urls.push(c.example.audio || await resolveSpeakUrl(c.example.en))
+    if (c.phrase && c.phrase.en) urls.push(c.phrase.audio || await resolveSpeakUrl(c.phrase.en))
   }
   _playUrls(urls)
 }

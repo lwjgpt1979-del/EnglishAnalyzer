@@ -285,7 +285,8 @@ async def vocab_cards(db: AsyncSession, student_id, *, limit: int = 12) -> list[
 
     def _first(jl):
         if isinstance(jl, list) and jl and isinstance(jl[0], dict):
-            return {"en": str(jl[0].get("en", "")), "zh": str(jl[0].get("zh", ""))}
+            return {"en": str(jl[0].get("en", "")), "zh": str(jl[0].get("zh", "")),
+                    "audio": str(jl[0].get("audio", ""))}
         return None
 
     out: list[dict] = []

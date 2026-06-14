@@ -488,6 +488,12 @@ async def vocab_image_batch_status(db: DbDep, admin: AdminDep):
     return make_ok(vocab_media_service.batch_status())
 
 
+@router.post("/vocab-audio/backfill", response_model=BaseResponse[dict])
+async def backfill_vocab_audio(db: DbDep, admin: AdminDep):
+    """给已有例句/短语/单词但缺音频的词补预生成语音(火山→COS缓存)，写回词库。"""
+    return make_ok(await vocab_media_service.backfill_audio(db))
+
+
 @router.get("/vocab", response_model=BaseResponse[AdminVocabMediaListOut])
 async def list_vocab_media(
     db: DbDep, admin: AdminDep,
