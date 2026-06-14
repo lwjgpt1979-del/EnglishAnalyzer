@@ -148,6 +148,9 @@ async def assess(
         out = _map_result(res)
         if not out["words"] or not out["words"][0]["word"]:
             out["words"] = [{"word": ref, "score": out["overall"]}]
+        logger.info("[SOE] 评测 ref=%r mode=%s 音频=%dB → 总分%d 准%d 流%d 整%d",
+                    ref, mode, len(audio_bytes), out["overall"],
+                    out["accuracy"], out["fluency"], out["completion"])
         return out
     except Exception as e:  # noqa: BLE001
         logger.error("[SOE] 发音评测失败，回退 mock: %s", e)

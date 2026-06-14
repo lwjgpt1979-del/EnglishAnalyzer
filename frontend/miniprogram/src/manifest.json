@@ -52,9 +52,15 @@
     "mp-weixin" : {
         "appid" : "wxb83d4e7d2f7e07fb",
         "setting" : {
-            "urlCheck" : true
+            "urlCheck" : false
         },
-        "usingComponents" : true
+        "usingComponents" : true,
+        "plugins" : {
+            "WechatSI" : {
+                "version" : "0.3.5",
+                "provider" : "wx069ba97219f66d99"
+            }
+        }
     },
     "mp-alipay" : {
         "usingComponents" : true

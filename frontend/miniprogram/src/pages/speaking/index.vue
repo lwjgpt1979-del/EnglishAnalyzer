@@ -48,6 +48,9 @@
           <text class="ct-auto" :class="{ on: autoPlay }" @tap="autoPlay = !autoPlay">
             {{ autoPlay ? '🔊 自动播放' : '🔇 自动播放' }}
           </text>
+          <text v-if="vocabMode" class="ct-auto" :class="{ on: readSentences }" @tap="readSentences = !readSentences">
+            {{ readSentences ? '🔉 读例句/短语' : '🔈 读例句/短语' }}
+          </text>
           <text class="ct-end" @tap="endAndRate">结束并评价</text>
         </view>
       </view>
@@ -258,6 +261,7 @@ const scrollTop = ref(0)
 const recording = ref(false)
 const cancelZone = ref(false)
 const autoPlay = ref(true)   // AI 回复自动播放语音
+const readSentences = ref(true)  // 词力通：词卡同时连播例句/短语
 const targetWords = ref<string[]>([])   // 词力通场景的目标词（供测发音）
 // 词卡学习模式（词力通场景）
 const vocabMode = ref(false)
@@ -344,26 +348,33 @@ async function start(key: string) {
   }
 }
 
+// 顺序播放队列（词 →可选 例句 → 短语）
+function _playUrls(urls: string[]) {
+  _queue = urls.filter(Boolean)
+  ensureAudioCtx()
+  _cur = null
+  if (_queue.length && _ctx) { _ctx.src = _queue[0]; _ctx.play() }
+}
 async function playWord(c?: VocabCard | null) {
   if (!c) return
-  const url = c.audio_url || await resolveSpeakUrl(c.word)
-  if (!url) return
-  if (!_ctx) {
-    _ctx = uni.createInnerAudioContext()
-    _ctx.onEnded(() => { if (_cur) _cur.playing = false })
-    _ctx.onStop(() => { if (_cur) _cur.playing = false })
-    _ctx.onError(() => { if (_cur) _cur.playing = false })
+  const u = c.audio_url || await resolveSpeakUrl(c.word)
+  _playUrls([u])
+}
+async function playCard(c?: VocabCard | null) {
+  if (!c) return
+  const urls: string[] = [c.audio_url || await resolveSpeakUrl(c.word)]
+  if (readSentences.value) {
+    if (c.example && c.example.en) urls.push(await resolveSpeakUrl(c.example.en))
+    if (c.phrase && c.phrase.en) urls.push(await resolveSpeakUrl(c.phrase.en))
   }
-  _cur = null
-  _ctx.src = url
-  _ctx.play()
+  _playUrls(urls)
 }
 
 function pushAi(text: string, audio: string, translation = '', correction = '', card: VocabCard | null = null) {
   const msg: Msg = { role: 'assistant', text, audio, translation, correction, showTr: false, card }
   messages.value.push(msg)
   scrollToEnd()
-  if (card && autoPlay.value) playWord(card)        // 词卡：自动播单词发音
+  if (card && autoPlay.value) playCard(card)        // 词卡：自动播单词(+开关:例句/短语)
   else if (audio && autoPlay.value) playAudio(msg)  // 普通回复：自动播 AI 语音
 }
 
@@ -414,19 +425,29 @@ function scrollToEnd() {
 // ── 音频 ──
 let _ctx: UniApp.InnerAudioContext | null = null
 let _cur: Msg | null = null
-function playAudio(m: Msg) {
-  if (!m.audio) { uni.showToast({ title: '暂无语音', icon: 'none' }); return }
+let _queue: string[] = []
+function ensureAudioCtx() {
   if (!_ctx) {
     _ctx = uni.createInnerAudioContext()
-    _ctx.onEnded(() => { if (_cur) _cur.playing = false })
-    _ctx.onStop(() => { if (_cur) _cur.playing = false })
-    _ctx.onError(() => { if (_cur) _cur.playing = false })
+    const next = () => {
+      _queue.shift()
+      if (_queue.length && _ctx) { _ctx.src = _queue[0]; _ctx.play() }
+      else if (_cur) _cur.playing = false
+    }
+    _ctx.onEnded(next)
+    _ctx.onStop(() => { _queue = []; if (_cur) _cur.playing = false })
+    _ctx.onError(() => { _queue = []; if (_cur) _cur.playing = false })
   }
+  return _ctx
+}
+function playAudio(m: Msg) {
+  if (!m.audio) { uni.showToast({ title: '暂无语音', icon: 'none' }); return }
+  ensureAudioCtx()
   if (_cur && _cur !== m) _cur.playing = false   // 切换播放对象：重设 src 自动中断上一段
   _cur = m
   m.playing = true
-  _ctx.src = m.audio
-  _ctx.play()
+  _queue = [m.audio]
+  if (_ctx) { _ctx.src = m.audio; _ctx.play() }
 }
 
 function leave() {

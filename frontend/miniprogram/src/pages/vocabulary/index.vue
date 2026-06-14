@@ -476,7 +476,7 @@ function startShadowRecord() {
   shadow.recordPath = ''
   // #ifdef MP-WEIXIN
   try {
-    ensureRecorder().start({ format: 'mp3', duration: 60000 })
+    ensureRecorder().start({ format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, duration: 60000 })
     shadow.recording = true
     return
   } catch { /* 不支持则退回直接评分 */ }
