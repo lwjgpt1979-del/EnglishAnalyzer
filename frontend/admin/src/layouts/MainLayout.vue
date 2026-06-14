@@ -35,6 +35,7 @@ function onLogout() {
         <el-menu-item index="/questions">仿真题审核</el-menu-item>
         <el-menu-item index="/contents">知识点内容审核</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
+        <el-menu-item index="/entitlements">🔐 会员权益配置</el-menu-item>
         <el-menu-item index="/tts-speed">🔊 听力语音</el-menu-item>
         <el-menu-item index="/tts-usage">📊 TTS 用量/预热</el-menu-item>
         <el-menu-item index="/speaking-scenarios">💬 口语场景</el-menu-item>

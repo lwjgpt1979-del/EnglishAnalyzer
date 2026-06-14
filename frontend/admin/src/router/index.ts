@@ -26,6 +26,7 @@ const router = createRouter({
         { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },
         { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },
         { path: 'exam-papers', name: 'exam-papers', component: () => import('../views/ExamPapers.vue') },
+        { path: 'entitlements', name: 'entitlements', component: () => import('../views/Entitlements.vue') },
       ],
     },
   ],

@@ -347,3 +347,27 @@ export function listThemes(): Promise<ThemeListOut> {
 export function setActiveTheme(key: string): Promise<ThemePreset> {
   return unwrap<ThemePreset>(request.put('/admin/theme', { key }))
 }
+
+// ── 权益体系配置 ──
+export interface FeatureRule { mode: string; limit: number | null; period: string | null }
+export interface FeatureItem {
+  key: string
+  title: string
+  module: string
+  condition: string | null
+  defaults: Record<string, FeatureRule>
+  overrides: Record<string, FeatureRule>
+}
+export interface EntitlementsConfig { tiers: string[]; features: FeatureItem[] }
+
+export function getEntitlements(): Promise<EntitlementsConfig> {
+  return unwrap<EntitlementsConfig>(request.get('/admin/entitlements'))
+}
+export function setEntitlementOverride(body: {
+  feature_key: string; tier: string; mode: string; quota_limit?: number | null; quota_period?: string | null
+}): Promise<EntitlementsConfig> {
+  return unwrap<EntitlementsConfig>(request.put('/admin/entitlements', body))
+}
+export function clearEntitlementOverride(feature_key: string, tier: string): Promise<EntitlementsConfig> {
+  return unwrap<EntitlementsConfig>(request.delete('/admin/entitlements', { params: { feature_key, tier } }))
+}

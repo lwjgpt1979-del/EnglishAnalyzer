@@ -8,8 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
-from app.core.exceptions import AppError
+from app.core.security import get_current_user, require_role
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.services import entitlement_service
@@ -19,7 +18,7 @@ admin_router = APIRouter(prefix="/admin/entitlements", tags=["admin-entitlements
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
-AdminDep = Annotated[User, Depends(get_current_user)]
+AdminDep = Annotated[User, Depends(require_role("platform_admin"))]
 
 
 @router.get("/entitlements", response_model=BaseResponse[dict])
@@ -31,8 +30,6 @@ async def my_entitlements(db: DbDep, current_user: UserDep):
 @admin_router.get("", response_model=BaseResponse[dict])
 async def list_entitlements(db: DbDep, admin: AdminDep):
     """注册表全集 + 当前覆盖（后台可视化配置）。"""
-    if str(getattr(admin, "role", "")) not in ("admin", "institution"):
-        raise AppError(code=403, message="仅管理员可配置权益")
     return make_ok(await entitlement_service.admin_list(db))
 
 
@@ -46,8 +43,6 @@ class OverrideIn(BaseModel):
 
 @admin_router.put("", response_model=BaseResponse[dict])
 async def set_override(body: OverrideIn, db: DbDep, admin: AdminDep):
-    if str(getattr(admin, "role", "")) not in ("admin", "institution"):
-        raise AppError(code=403, message="仅管理员可配置权益")
     await entitlement_service.admin_set_override(
         db, key=body.feature_key, tier=body.tier, mode=body.mode,
         limit=body.quota_limit, period=body.quota_period, updated_by=admin.id)
@@ -57,8 +52,6 @@ async def set_override(body: OverrideIn, db: DbDep, admin: AdminDep):
 
 @admin_router.delete("", response_model=BaseResponse[dict])
 async def clear_override(feature_key: str, tier: str, db: DbDep, admin: AdminDep):
-    if str(getattr(admin, "role", "")) not in ("admin", "institution"):
-        raise AppError(code=403, message="仅管理员可配置权益")
     await entitlement_service.admin_clear_override(db, key=feature_key, tier=tier)
     await db.commit()
     return make_ok(await entitlement_service.admin_list(db))
