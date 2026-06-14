@@ -159,6 +159,106 @@ async def add_source_candidates(
     return result.rowcount or 0
 
 
+async def log_pron(db: AsyncSession, *, student_id: uuid.UUID, reference_text: str, result: dict) -> None:
+    """记录一次跟读发音评测，供学情报表/趋势。best-effort，失败不抛。"""
+    from app.models.d5_learning import VocabPronLog
+    try:
+        ref = (reference_text or "").strip()
+        wid = None
+        if ref and len(ref.split()) == 1:
+            row = (await db.execute(
+                select(VocabularyWord.id).where(func.lower(VocabularyWord.word) == ref.lower())
+            )).first()
+            wid = row[0] if row else None
+        weak = [w.get("word") for w in (result.get("words") or [])
+                if isinstance(w, dict) and (w.get("score", 100) or 100) < 80 and w.get("word")]
+        db.add(VocabPronLog(
+            id=uuid.uuid4(), student_id=student_id, reference_text=ref[:200], word_id=wid,
+            overall=int(result.get("overall") or 0),
+            accuracy=result.get("accuracy"), fluency=result.get("fluency"),
+            completion=result.get("completion"), weak=weak or None))
+        await db.flush()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def vocab_overview(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
+    """学生词力通学情总览：各熟练度词数 + 待学 + 错词 + 连续天数 + 发音概况。"""
+    from collections import Counter
+    from app.models.d5_learning import VocabPronLog
+    from app.services import checkin_service
+
+    # 各熟练度计数
+    rows = (await db.execute(
+        select(VocabularyLearning.level, func.count())
+        .where(VocabularyLearning.student_id == student_id)
+        .group_by(VocabularyLearning.level)
+    )).all()
+    by_level = {str(lv): int(c) for lv, c in rows}
+    learned_total = sum(by_level.values())
+    # 错词数
+    wrong_total = (await db.execute(
+        select(func.count()).select_from(VocabularyLearning).where(
+            VocabularyLearning.student_id == student_id, VocabularyLearning.is_wrong.is_(True))
+    )).scalar_one()
+    # 到期待复习
+    now = datetime.now(timezone.utc)
+    due_total = (await db.execute(
+        select(func.count()).select_from(VocabularyLearning).where(
+            VocabularyLearning.student_id == student_id, VocabularyLearning.next_review_at <= now)
+    )).scalar_one()
+    # 可学新词（scope 口径）
+    student = (await db.execute(select(User).where(User.id == student_id))).scalar_one()
+    remaining_new = len(await _ordered_new_words(db, student=student))
+
+    # 连续天数
+    st = await checkin_service.get_checkin_status(db, student_id=student_id)
+
+    # 发音概况（最近 50 次）
+    plogs = (await db.execute(
+        select(VocabPronLog).where(VocabPronLog.student_id == student_id)
+        .order_by(VocabPronLog.created_at.desc()).limit(50)
+    )).scalars().all()
+    plogs = list(reversed(plogs))   # 时间正序
+    pron = None
+    if plogs:
+        def _avg(vals):
+            v = [x for x in vals if x is not None]
+            return int(round(sum(v) / len(v))) if v else None
+        bars = [int(p.overall) for p in plogs]
+        wc: Counter = Counter()
+        for p in plogs:
+            for w in (p.weak or []):
+                wc[str(w)] += 1
+        trend = "flat"
+        if len(bars) >= 2:
+            mid = len(bars) // 2
+            f, s = _avg(bars[:mid]) or 0, _avg(bars[mid:]) or 0
+            trend = "up" if s - f >= 5 else ("down" if f - s >= 5 else "flat")
+        pron = {
+            "count": len(plogs), "avg": _avg(bars),
+            "accuracy": _avg([p.accuracy for p in plogs]),
+            "fluency": _avg([p.fluency for p in plogs]),
+            "completion": _avg([p.completion for p in plogs]),
+            "weak_words": [w for w, _ in wc.most_common(8)],
+            "trend": trend, "bars": bars[-14:],
+        }
+
+    return {
+        "mastered": by_level.get("mastered", 0),
+        "review": by_level.get("review", 0),
+        "learning": by_level.get("learning", 0),
+        "new_learned": by_level.get("new", 0),
+        "learned_total": learned_total,
+        "wrong_total": int(wrong_total),
+        "due_total": int(due_total),
+        "remaining_new": remaining_new,
+        "current_streak": st["current_streak"],
+        "longest_streak": st["longest_streak"],
+        "pron": pron,
+    }
+
+
 async def add_manual_word(
     db: AsyncSession, *, student_id: uuid.UUID, word: str,
 ) -> dict:

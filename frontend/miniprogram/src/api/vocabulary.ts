@@ -12,6 +12,21 @@ export function getDailyTask(): Promise<VocabDailyTask> {
   return request<VocabDailyTask>('/api/v1/vocabulary/daily-task', { method: 'GET' })
 }
 
+export interface VocabPronSummary {
+  count: number; avg: number | null
+  accuracy: number | null; fluency: number | null; completion: number | null
+  weak_words: string[]; trend: 'up' | 'flat' | 'down'; bars: number[]
+}
+export interface VocabOverview {
+  mastered: number; review: number; learning: number; new_learned: number
+  learned_total: number; wrong_total: number; due_total: number; remaining_new: number
+  current_streak: number; longest_streak: number
+  pron: VocabPronSummary | null
+}
+export function getVocabOverview(): Promise<VocabOverview> {
+  return request<VocabOverview>('/api/v1/vocabulary/overview', { method: 'GET' })
+}
+
 export interface VocabSettings { words_per_group: number; reps_per_group: number; wrong_carry_threshold: number }
 export function getVocabSettings(): Promise<VocabSettings> {
   return request<VocabSettings>('/api/v1/vocabulary/settings', { method: 'GET' })

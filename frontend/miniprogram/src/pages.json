@@ -59,6 +59,7 @@
     { "path": "pages/speaking/index", "style": { "navigationBarTitleText": "AI 口语对话" } },
     { "path": "pages/vocabulary/index", "style": { "navigationBarTitleText": "词力通" } },
     { "path": "pages/vocabulary/wrong-book", "style": { "navigationBarTitleText": "错词本" } },
+    { "path": "pages/vocabulary/report", "style": { "navigationBarTitleText": "词力通学情" } },
     { "path": "pages/essay/index", "style": { "navigationBarTitleText": "作文精修" } },
     { "path": "pages/essay/detail", "style": { "navigationBarTitleText": "精修详情" } },
     { "path": "pages/assignments/index", "style": { "navigationBarTitleText": "老师任务" } },

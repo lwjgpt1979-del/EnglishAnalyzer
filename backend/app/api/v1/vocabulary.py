@@ -58,6 +58,13 @@ async def add_word(body: AddWordIn, db: DbDep, current_user: UserDep):
     return make_ok(res)
 
 
+@router.get("/overview", response_model=BaseResponse[dict])
+async def vocab_overview(db: DbDep, current_user: UserDep):
+    """学生词力通学情总览：词数分布 + 错词 + 待复习 + 连续天数 + 发音概况。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await vocabulary_service.vocab_overview(db, student_id=current_user.id))
+
+
 @router.get("/settings", response_model=BaseResponse[VocabSettings])
 async def get_settings(db: DbDep, current_user: UserDep):
     """词力通学习设置：每组词数 / 每组遍数（每生一份，不绑定会员档位）。"""
@@ -105,6 +112,14 @@ async def shadow_score(body: ShadowScoreIn, db: DbDep, current_user: UserDep):
     result = await pronunciation_service.assess(
         reference_text=body.reference_text, audio_bytes=audio_bytes or None,
         mode=mode, audio_format=body.audio_format or "mp3")
+    # 记录发音评测，供学情报表（best-effort）
+    try:
+        await get_rls_db(db, str(current_user.id))
+        await vocabulary_service.log_pron(
+            db, student_id=current_user.id, reference_text=body.reference_text, result=result)
+        await db.commit()
+    except Exception:  # noqa: BLE001
+        pass
     return make_ok(ShadowScoreResult(**result))
 
 

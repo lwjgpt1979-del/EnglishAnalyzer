@@ -145,6 +145,23 @@ class StudentVocabSetting(Base):
     )
 
 
+class VocabPronLog(Base):
+    """词力通跟读发音评测日志（用于学情报表/趋势/薄弱词）。"""
+
+    __tablename__ = "vocab_pron_logs"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, index=True)
+    reference_text = mapped_column(sa.String, nullable=False)
+    word_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id"), nullable=True)
+    overall = mapped_column(sa.SmallInteger, nullable=False)
+    accuracy = mapped_column(sa.SmallInteger, nullable=True)
+    fluency = mapped_column(sa.SmallInteger, nullable=True)
+    completion = mapped_column(sa.SmallInteger, nullable=True)
+    weak = mapped_column(JSONB, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
 class Essay(Base):
     """学生作文润色记录（可多轮）。"""
 

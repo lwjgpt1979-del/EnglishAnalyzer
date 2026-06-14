@@ -177,7 +177,10 @@
       <view v-if="carryWords.length" class="carry-tip">🔁 本组错的 {{ carryWords.length }} 个词将带入下一组继续考察</view>
       <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text><text class="gear-inline" @tap="openAddWord">＋ 添加生词</text></view>
       <button class="btn-primary" @tap="reload">再来一组</button>
-      <button class="btn-ghost" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">查看错词本</button>
+      <view class="done-links">
+        <text class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/report' })">📊 学情报表</text>
+        <text class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">📕 错词本</text>
+      </view>
     </view>
 
     <!-- 跟读评分弹窗 -->
@@ -1068,6 +1071,8 @@ onMounted(load)
 .done-set { font-size: 24rpx; color: var(--c-text-hint); margin-top: 14rpx; }
 .gear-inline { color: var(--c-primary-deep); font-weight: 700; margin-left: 12rpx; }
 .addword-input { width: 100%; box-sizing: border-box; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 22rpx 24rpx; font-size: 32rpx; color: var(--c-ink); }
+.done-links { display: flex; justify-content: center; gap: 40rpx; margin-top: 16rpx; }
+.done-link { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); }
 .shadow-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: 40rpx 36rpx; width: 84%; max-width: 640rpx; display: flex; flex-direction: column; align-items: center; }
 .shadow-title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); margin-bottom: 20rpx; }
 .shadow-sentence { font-size: 32rpx; font-weight: 600; color: var(--c-ink); line-height: 1.6; text-align: center; }
