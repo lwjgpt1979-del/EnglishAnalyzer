@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     wechat_pay_notify_url: str = "https://api.example.com/api/v1/webhooks/wx-pay"
     # dev 模式跳过微信签名验证（生产环境必须设为 false）
     wechat_pay_skip_sig_verify: bool = True
+    # 退款执行开关（默认 false=dev-mock 只记账不真调微信；生产配好商户证书后置 true 走真实退款 API）
+    wechat_pay_refund_enabled: bool = False
 
     # 腾讯云 COS 图片存储
     cos_secret_id: str = "placeholder_secret_id"

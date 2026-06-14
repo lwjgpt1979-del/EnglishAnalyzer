@@ -74,6 +74,8 @@ async def create_order(
     order_type: str,
     semesters: list[dict] | None = None,  # V2 新增
     addon_feature_key: str | None = None, # 加量包：购买某功能的加量次数
+    is_promotional: bool = False,         # 活动价订单（不支持退款）
+    payment_confirm_log_id: uuid.UUID | None = None,  # 支付确认留存（§4.6）
 ) -> Order:
     """会员下单。三种计价：V2 学期(semesters) > 按份(quantity,6月/份) > 遗留按月(duration_months)。
     调用方负责 commit。"""
@@ -91,6 +93,8 @@ async def create_order(
             beneficiary_id=beneficiary_id, order_type=order_type, tier=tier,
             duration_months=0, amount_fen=acfg["price_fen"], status="pending",
             addon_feature_key=addon_feature_key,
+            is_promotional=is_promotional,
+            payment_confirm_log_id=payment_confirm_log_id,
         )
         db.add(order)
         await db.flush()
@@ -144,6 +148,10 @@ async def create_order(
             amount_fen=amount_fen,
             status="pending",
         )
+    # 退款相关通用字段（§4.5）：总天数用于按比例退款计算
+    order.is_promotional = is_promotional
+    order.payment_confirm_log_id = payment_confirm_log_id
+    order.total_days = max((order.duration_months or 1) * 30, 1)
     db.add(order)
     await db.flush()
     return order

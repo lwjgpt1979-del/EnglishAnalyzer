@@ -76,6 +76,19 @@ class Order(Base):
     purchased_semester_ids = mapped_column(JSONB, nullable=True)
     addon_feature_key = mapped_column(sa.String(64), nullable=True)   # 加量包：购买的功能能力键
 
+    # —— 退款 / 申诉（§4.5，状态码用 VARCHAR 存，避免 PG 枚举迁移）——
+    refund_status = mapped_column(
+        sa.String, nullable=False, server_default=sa.text("'NONE'")
+    )
+    appeal_status = mapped_column(
+        sa.String, nullable=False, server_default=sa.text("'NONE'")
+    )
+    is_promotional = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    total_days = mapped_column(sa.Integer, nullable=True)  # 下单时 = duration_months×30
+    payment_confirm_log_id = mapped_column(UUID(as_uuid=True), nullable=True)
+
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
@@ -139,6 +152,11 @@ class RefundRecord(Base):
     reviewed_by = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True
     )
+    # —— 申诉/决策树扩展（§4.5）——
+    appeal_type = mapped_column(sa.String, nullable=True)   # SYSTEM_FAULT/DESC_MISMATCH/DUPLICATE_PURCHASE/MINOR_PURCHASE
+    state_code = mapped_column(sa.String, nullable=True)    # 决策树结果码（AUTO_FULL_REFUND 等）
+    evidence_urls = mapped_column(JSONB, nullable=True)     # 申诉证明截图 URL 列表
+    reviewed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
@@ -147,6 +165,40 @@ class RefundRecord(Base):
         nullable=False,
         server_default=sa.func.now(),
         onupdate=sa.func.now(),
+    )
+
+
+class PaymentConfirmLog(Base):
+    """支付前合规确认留存（§4.5.2 / §4.6），举证用，禁物理删（archived 逻辑归档）。"""
+
+    __tablename__ = "payment_confirm_logs"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+    )
+    order_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("orders.id"), nullable=True
+    )
+    confirmed_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    ip_address = mapped_column(sa.String, nullable=True)
+    device_id = mapped_column(sa.String, nullable=True)
+    session_id = mapped_column(sa.String, nullable=True)
+    user_agent = mapped_column(sa.Text, nullable=True)
+    checkbox_refund_policy = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    checkbox_digital_service = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    plan_snapshot = mapped_column(JSONB, nullable=True)
+    archived = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
 
 

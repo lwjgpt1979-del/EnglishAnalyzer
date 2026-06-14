@@ -40,6 +40,10 @@ class OrderCreate(BaseModel):
     target_student_id: uuid.UUID | None = Field(None, description="代付时指定学生 ID；为空则为本人购买")
     # V2 学期会员（D-079）。非空 → V2 计价；空则 V1 旧 duration_months
     semesters: list[dict] | None = Field(None, description="V2：[{textbook_version,grade,semester}]")
+    payment_confirm_log_id: uuid.UUID | None = Field(
+        None, description="支付确认留存记录 ID（§4.6，下单前 payment-confirm 返回）"
+    )
+    is_promotional: bool = Field(default=False, description="是否活动价订单（活动价不支持退款）")
 
 
 class OrderOut(BaseModel):
@@ -52,6 +56,8 @@ class OrderOut(BaseModel):
     amount_fen: int = Field(..., description="实收金额（分）")
     amount: int = Field(0, description="实收金额（元）— amount_fen / 100，方便前端展示")
     status: str = Field(..., description="pending | paid | refunded | partial_refunded")
+    refund_status: str = Field("NONE", description="退款状态码（§4.5.2）")
+    appeal_status: str = Field("NONE", description="申诉状态码（§4.5.2）")
     wx_transaction_id: str | None = None
     paid_at: datetime | None = None
     created_at: datetime
@@ -63,6 +69,55 @@ class OrderOut(BaseModel):
         if self.amount == 0 and self.amount_fen:
             self.amount = self.amount_fen // 100
         return self
+
+
+# ── 退款 / 申诉（§4.5）──────────────────────────────────────────────────────────
+
+
+class PaymentConfirmCreate(BaseModel):
+    """POST /orders/payment-confirm 请求体（§4.6.3）。
+
+    服务端补全 confirmed_at / ip_address / user_agent；客户端不得传这些。
+    两个勾选缺一不可。
+    """
+
+    plan_snapshot: dict | None = Field(None, description="当时展示的套餐信息快照")
+    checkbox_refund_policy: bool = Field(..., description="勾选退款规则确认框")
+    checkbox_digital_service: bool = Field(..., description="勾选虚拟数字服务确认框")
+    device_id: str | None = None
+    session_id: str | None = None
+
+
+class PaymentConfirmOut(BaseModel):
+    log_id: uuid.UUID
+
+    model_config = {"from_attributes": True}
+
+
+class AppealCreate(BaseModel):
+    """POST /orders/{id}/appeal 请求体（超7天有理由申诉）。"""
+
+    appeal_type: str = Field(
+        ..., description="SYSTEM_FAULT | DESC_MISMATCH | DUPLICATE_PURCHASE | MINOR_PURCHASE"
+    )
+    note: str | None = Field(None, description="申诉说明")
+    evidence_urls: list[str] | None = Field(None, description="证明截图 URL 列表")
+
+
+class RefundOut(BaseModel):
+    """退款 / 申诉处理结果。"""
+
+    id: uuid.UUID
+    order_id: uuid.UUID
+    amount_fen: int
+    refund_type: str
+    status: str = Field(..., description="pending | approved | rejected | completed")
+    state_code: str | None = None
+    appeal_type: str | None = None
+    wx_refund_id: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ── 支付参数 ──────────────────────────────────────────────────────────────────

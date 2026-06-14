@@ -5,16 +5,21 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
 from app.core.exceptions import AppError
 from app.core.security import get_current_user
 from app.models.d1_users import User
+from app.models.d2_payments import Order, PaymentConfirmLog
 from app.schemas.base import BaseResponse, make_ok
-from app.schemas.payments import OrderCreate, OrderOut, PayParamsOut
-from app.services import order_service, wechat_pay_service
+from app.schemas.payments import (
+    AppealCreate, OrderCreate, OrderOut, PayParamsOut,
+    PaymentConfirmCreate, PaymentConfirmOut, RefundOut,
+)
+from app.services import order_service, refund_service, wechat_pay_service
 from app.services.auth_service import is_minor_14_to_17
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -102,10 +107,88 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         order_type=body.order_type,
         semesters=body.semesters,
         addon_feature_key=body.addon_feature_key,
+        is_promotional=body.is_promotional,
+        payment_confirm_log_id=body.payment_confirm_log_id,
     )
+    # 反写支付确认记录的 order_id（举证关联，§4.6.3）
+    if body.payment_confirm_log_id:
+        log = await db.get(PaymentConfirmLog, body.payment_confirm_log_id)
+        if log and log.user_id == current_user.id and log.order_id is None:
+            log.order_id = order.id
     await db.commit()
     await db.refresh(order)
     return make_ok(OrderOut.model_validate(order))
+
+
+@router.post("/payment-confirm", response_model=BaseResponse[PaymentConfirmOut])
+async def payment_confirm(
+    body: PaymentConfirmCreate, request: Request, db: DbDep, current_user: UserDep,
+):
+    """支付前合规确认留存（§4.6.3）。两个勾选缺一不可；服务端补 IP/UA/时间戳。
+
+    客户端须在此接口成功（拿到 log_id）后，再携 log_id 下单+发起支付；
+    本接口失败则客户端不得放行支付。
+    """
+    if not (body.checkbox_refund_policy and body.checkbox_digital_service):
+        raise AppError(code=400, message="请先阅读并勾选退款规则与虚拟服务说明")
+    await get_rls_db(db, str(current_user.id))
+    ip = (request.headers.get("x-real-ip")
+          or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+          or (request.client.host if request.client else None))
+    log = PaymentConfirmLog(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        ip_address=ip,
+        device_id=body.device_id,
+        session_id=body.session_id,
+        user_agent=request.headers.get("user-agent"),
+        checkbox_refund_policy=body.checkbox_refund_policy,
+        checkbox_digital_service=body.checkbox_digital_service,
+        plan_snapshot=body.plan_snapshot,
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(log)
+    return make_ok(PaymentConfirmOut(log_id=log.id))
+
+
+@router.get("/", response_model=BaseResponse[list[OrderOut]])
+async def list_my_orders(db: DbDep, current_user: UserDep):
+    """当前用户订单列表（受益人视角，含退款/申诉状态），供订单记录页。"""
+    await get_rls_db(db, str(current_user.id))
+    rows = await db.execute(
+        select(Order)
+        .where(Order.beneficiary_id == current_user.id)
+        .order_by(Order.created_at.desc())
+    )
+    orders = rows.scalars().all()
+    return make_ok([OrderOut.model_validate(o) for o in orders])
+
+
+@router.post("/{order_id}/refund", response_model=BaseResponse[RefundOut])
+async def request_refund(order_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """发起退款（§4.5，7天内规则引擎自动判定；已使用转人工）。"""
+    await get_rls_db(db, str(current_user.id))
+    rec = await refund_service.request_refund(db, current_user, order_id)
+    await db.commit()
+    await db.refresh(rec)
+    return make_ok(RefundOut.model_validate(rec))
+
+
+@router.post("/{order_id}/appeal", response_model=BaseResponse[RefundOut])
+async def submit_appeal(
+    order_id: uuid.UUID, body: AppealCreate, db: DbDep, current_user: UserDep,
+):
+    """超7天有理由申诉（§4.5，4 类；重复购买可自动退）。"""
+    await get_rls_db(db, str(current_user.id))
+    rec = await refund_service.submit_appeal(
+        db, current_user, order_id,
+        appeal_type=body.appeal_type, note=body.note,
+        evidence_urls=body.evidence_urls,
+    )
+    await db.commit()
+    await db.refresh(rec)
+    return make_ok(RefundOut.model_validate(rec))
 
 
 @router.get("/{order_id}", response_model=BaseResponse[OrderOut])
