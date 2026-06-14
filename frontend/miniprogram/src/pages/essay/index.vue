@@ -22,7 +22,6 @@
       <button class="btn-primary" :disabled="loading || !text.trim()" @tap="onSubmit">
         {{ loading ? 'AI 批改中…' : (ent.can('essay.polish') ? 'AI 精修' : 'AI 精修 🔒') }}
       </button>
-      <view class="tip">Pro/ProMax 专属 · Pro 每月 3 次</view>
     </view>
 
     <Paywall :open="showPaywall" :feature="ent.feature('essay.polish')" emoji="✍️"
