@@ -83,6 +83,7 @@
     { "path": "pages/teacher/paper-compose", "style": { "navigationBarTitleText": "组卷" } },
     { "path": "pages/student/class-papers", "style": { "navigationBarTitleText": "班级试卷" } },
     { "path": "pages/student/paper-view", "style": { "navigationBarTitleText": "试卷作答" } },
+    { "path": "pages/orders/list", "style": { "navigationBarTitleText": "订单记录" } },
     { "path": "pages/membership/activate", "style": { "navigationBarTitleText": "激活码" } },
     { "path": "pages/membership/buy", "style": { "navigationBarTitleText": "开通会员" } },
     { "path": "pages/membership/semester-purchase", "style": { "navigationBarTitleText": "购买学期会员" } },

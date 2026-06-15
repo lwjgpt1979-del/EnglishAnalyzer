@@ -37,6 +37,8 @@
       </button>
       <text class="note">购买后会员时长自动累加；高档优先生效，到期自动顺延低档。</text>
     </view>
+
+    <PayConfirm :open="showConfirm" :plan="planSnapshot" @close="showConfirm = false" @confirmed="onConfirmed" />
   </view>
 </template>
 
@@ -45,11 +47,13 @@ import { computed, onMounted, ref } from 'vue'
 import { getTierPricing, createOrder, payOrder, type TierPricing } from '@/api/orders'
 import { useAuthStore } from '@/stores/auth'
 import { useEntitlementsStore } from '@/stores/entitlements'
+import PayConfirm from '@/components/PayConfirm.vue'
 
 const auth = useAuthStore()
 const ent = useEntitlementsStore()
 const loading = ref(true)
 const paying = ref(false)
+const showConfirm = ref(false)
 const pricing = ref<TierPricing | null>(null)
 const tier = ref('pro')
 const qty = ref(1)
@@ -58,15 +62,29 @@ const tiers = computed(() => pricing.value?.tiers || [])
 const unitFen = computed(() => tiers.value.find(t => t.key === tier.value)?.unit_price_fen || 0)
 const months = computed(() => (pricing.value?.unit_months || 6) * qty.value)
 const totalFen = computed(() => unitFen.value * qty.value)
+const planSnapshot = computed(() => ({
+  name: `${tiers.value.find(t => t.key === tier.value)?.name || ''}会员 ×${qty.value} 份`,
+  months: months.value, amountFen: totalFen.value, tier: tier.value, quantity: qty.value,
+}))
 
 function inc() { if (qty.value < 24) qty.value++ }
 function dec() { if (qty.value > 1) qty.value-- }
 
-async function onPay() {
+// 点击购买 → 先弹合规确认弹窗（§4.6），确认成功拿到 log_id 再下单支付
+function onPay() {
+  if (paying.value) return
+  showConfirm.value = true
+}
+
+async function onConfirmed(logId: string) {
+  showConfirm.value = false
   if (paying.value) return
   paying.value = true
   try {
-    const order = await createOrder({ tier: tier.value, quantity: qty.value, order_type: 'new' })
+    const order = await createOrder({
+      tier: tier.value, quantity: qty.value, order_type: 'new',
+      payment_confirm_log_id: logId,
+    })
     // #ifdef MP-WEIXIN
     const p = await payOrder(order.id)
     await new Promise<void>((resolve, reject) => {

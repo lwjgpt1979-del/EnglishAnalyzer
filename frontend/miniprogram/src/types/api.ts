@@ -256,6 +256,8 @@ export interface OrderCreate {
   minor_consent?: boolean
   target_student_id?: string
   semesters?: SemesterItem[]
+  payment_confirm_log_id?: string  // 支付确认留存 ID（§4.6）
+  is_promotional?: boolean         // 活动价订单
 }
 
 export interface OrderOut {
@@ -265,8 +267,42 @@ export interface OrderOut {
   duration_months: number
   amount_fen: number    // 分
   status: string        // pending | paid | refunded | partial_refunded
+  refund_status: string // 退款状态码（§4.5.2），默认 NONE
+  appeal_status: string // 申诉状态码（§4.5.2），默认 NONE
   wx_transaction_id: string | null
   paid_at: string | null
+  created_at: string
+}
+
+/** 支付前合规确认（§4.6.3）*/
+export interface PaymentConfirmCreate {
+  plan_snapshot?: Record<string, unknown>
+  checkbox_refund_policy: boolean
+  checkbox_digital_service: boolean
+  device_id?: string
+  session_id?: string
+}
+export interface PaymentConfirmOut {
+  log_id: string
+}
+
+/** 申诉（超7天有理由）*/
+export interface AppealCreate {
+  appeal_type: string   // SYSTEM_FAULT | DESC_MISMATCH | DUPLICATE_PURCHASE | MINOR_PURCHASE
+  note?: string
+  evidence_urls?: string[]
+}
+
+/** 退款 / 申诉处理结果 */
+export interface RefundOut {
+  id: string
+  order_id: string
+  amount_fen: number
+  refund_type: string   // standard_7d | prorated | appeal
+  status: string        // pending | approved | rejected | completed
+  state_code: string | null
+  appeal_type: string | null
+  wx_refund_id: string | null
   created_at: string
 }
 

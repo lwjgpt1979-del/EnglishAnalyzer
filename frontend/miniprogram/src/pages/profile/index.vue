@@ -139,6 +139,12 @@
     </view>
 
     <view class="card">
+      <view class="card-title">订单记录</view>
+      <text class="menu-desc">查看历史订单，申请退款或提交申诉。</text>
+      <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/orders/list' })">查看订单</button>
+    </view>
+
+    <view class="card">
       <view class="card-title">机构激活码</view>
       <text class="menu-desc">机构学生：输入机构发放的激活码，激活会员。</text>
       <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/membership/activate' })">输入激活码</button>

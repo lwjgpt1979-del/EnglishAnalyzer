@@ -11,6 +11,8 @@
       <button v-else class="pw-btn" @tap="goMembership">{{ ctaText }}</button>
       <text class="pw-close" @tap="$emit('close')">暂不</text>
     </view>
+
+    <PayConfirm :open="showConfirm" :plan="addonPlan" @close="showConfirm = false" @confirmed="onConfirmed" />
   </view>
 </template>
 
@@ -19,6 +21,7 @@ import { computed, ref } from 'vue'
 import { requiredTierText, useEntitlementsStore } from '@/stores/entitlements'
 import type { FeatureEntitlement } from '@/api/entitlements'
 import { createOrder, payOrder } from '@/api/orders'
+import PayConfirm from '@/components/PayConfirm.vue'
 
 const props = defineProps<{
   open: boolean
@@ -30,7 +33,12 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'purchased'): void }>()
 
 const ent = useEntitlementsStore()
 const paying = ref(false)
+const showConfirm = ref(false)
 const isAddon = computed(() => !!props.feature?.can_buy_addon && !!props.feature?.addon_pack)
+const addonPlan = computed(() => ({
+  name: `${props.feature?.title || '功能'}加量包 ${props.feature?.addon_pack?.pack_size || ''} 次`,
+  amountFen: props.feature?.addon_pack?.price_fen || 0,
+}))
 const tierText = computed(() => requiredTierText(props.feature?.required_tiers))
 const ctaText = computed(() => `去开通${tierText.value}会员`)
 const emoji = computed(() => props.emoji || '✨')
@@ -47,12 +55,19 @@ function goMembership() {
   uni.navigateTo({ url: '/pages/membership/buy' })
 }
 
-async function buyAddon() {
+function buyAddon() {
+  if (!props.feature || paying.value) return
+  showConfirm.value = true
+}
+
+async function onConfirmed(logId: string) {
+  showConfirm.value = false
   if (!props.feature || paying.value) return
   paying.value = true
   try {
     const order = await createOrder({
       tier: ent.tier, order_type: 'new', addon_feature_key: props.feature.key,
+      payment_confirm_log_id: logId,
     })
     // #ifdef MP-WEIXIN
     const params = await payOrder(order.id)
