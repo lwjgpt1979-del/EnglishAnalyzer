@@ -38,6 +38,23 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 行为埋点（§5.5 DAU/MAU）：按 token 记录日活，进程内去重，失败不影响请求
+    @app.middleware("http")
+    async def _activity_mw(request, call_next):
+        response = await call_next(request)
+        try:
+            auth = request.headers.get("authorization", "")
+            if auth.startswith("Bearer "):
+                from app.core.security import decode_token
+                from app.services import activity_service
+                payload = decode_token(auth[7:], expected_type="access")
+                uid = payload.get("sub")
+                if uid:
+                    await activity_service.record(uid)
+        except Exception:  # noqa: BLE001
+            pass
+        return response
+
     # Unified exception handling
     register_exception_handlers(app)
 

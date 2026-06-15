@@ -472,6 +472,7 @@ export interface DashboardData {
   membership: { active_by_tier: Record<string, number>; paid_members: number; pay_conversion_pct: number }
   revenue: { gmv_today_yuan: number; gmv_month_yuan: number; refund_month_yuan: number; refund_rate_pct: number }
   usage_today: Record<string, number>
+  active: { dau: number; mau: number; trend_7d: { date: string; count: number }[] }
   institution: { active: number }
   generated_at: string
 }

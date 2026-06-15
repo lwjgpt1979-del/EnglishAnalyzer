@@ -20,6 +20,11 @@ async function load() {
   }
 }
 
+function barH(c: number): number {
+  const max = Math.max(1, ...(dash.value?.active.trend_7d.map(t => t.count) || [1]))
+  return Math.round((c / max) * 80)
+}
+
 onMounted(load)
 </script>
 
@@ -60,6 +65,22 @@ onMounted(load)
           </el-statistic>
         </el-card>
       </el-col>
+    </el-row>
+
+    <!-- ── 活跃（DAU/MAU/趋势，§5.5）── -->
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="DAU(今日活跃)" :value="dash.active.dau" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="MAU(近30天)" :value="dash.active.mau" /></el-card></el-col>
+      <el-col :span="16"><el-card shadow="hover">
+        <template #header>近 7 天活跃趋势</template>
+        <div class="trend">
+          <div v-for="t in dash.active.trend_7d" :key="t.date" class="trend-bar">
+            <div class="tb-fill" :style="{ height: barH(t.count) + 'px' }"></div>
+            <div class="tb-num">{{ t.count }}</div>
+            <div class="tb-date">{{ t.date.slice(5) }}</div>
+          </div>
+        </div>
+      </el-card></el-col>
     </el-row>
 
     <!-- ── 数据大盘深化（§5.5）── -->
@@ -137,4 +158,9 @@ onMounted(load)
 
 <style scoped>
 .page-title { margin: 0 0 16px; font-size: 20px; color: #303133; }
+.trend { display: flex; align-items: flex-end; gap: 12px; height: 120px; }
+.trend-bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.tb-fill { width: 60%; background: linear-gradient(180deg,#79bbff,#409eff); border-radius: 4px 4px 0 0; min-height: 2px; }
+.tb-num { font-size: 12px; color: #606266; margin-top: 4px; }
+.tb-date { font-size: 11px; color: #909399; }
 </style>

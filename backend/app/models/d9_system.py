@@ -134,3 +134,20 @@ class CaptchaChallenge(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class UserActivity(Base):
+    """行为埋点（§5.5）：每用户每天一条活跃记录，用于 DAU/MAU/活跃趋势。"""
+
+    __tablename__ = "user_activity"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    active_date = mapped_column(sa.Date, nullable=False)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "active_date", name="uix_user_activity"),
+    )

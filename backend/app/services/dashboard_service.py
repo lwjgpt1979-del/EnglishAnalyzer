@@ -85,6 +85,10 @@ async def get_dashboard(db: AsyncSession) -> dict:
         "shadow": await _today(VocabPronLog, VocabPronLog.created_at),
     }
 
+    # —— 活跃（DAU/MAU/趋势）——
+    from app.services import activity_service
+    active = await activity_service.active_metrics(db)
+
     # —— 机构 ——
     inst_active = await _count(
         select(func.count()).select_from(Institution).where(Institution.status == "active"))
@@ -104,6 +108,7 @@ async def get_dashboard(db: AsyncSession) -> dict:
             "refund_month_yuan": _yuan(refund_month_fen), "refund_rate_pct": refund_rate,
         },
         "usage_today": usage_today,
+        "active": active,
         "institution": {"active": inst_active},
         "generated_at": now.isoformat(),
     }
