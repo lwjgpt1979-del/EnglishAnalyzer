@@ -32,6 +32,7 @@ const router = createRouter({
         { path: 'branch-companies', name: 'branch-companies', component: () => import('../views/BranchCompanies.vue') },
         { path: 'users', name: 'users', component: () => import('../views/Users.vue') },
         { path: 'finance', name: 'finance', component: () => import('../views/Finance.vue') },
+        { path: 'invoices', name: 'invoices', component: () => import('../views/Invoices.vue') },
       ],
     },
   ],

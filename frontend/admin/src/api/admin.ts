@@ -460,6 +460,25 @@ export function setPaymentSecrets(id: string, secrets: Record<string, string>): 
   return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}/secrets`, secrets))
 }
 
+// ── 发票申请管理（§5.4）──────────────────────────────────────
+export interface AdminInvoiceItem {
+  id: string; order_id: string; order_no: string | null; payment_account: string | null
+  title_type: string; title: string; tax_no: string | null; amount_yuan: number
+  content: string | null; email: string | null; status: string
+  invoice_no: string | null; invoice_url: string | null; note: string | null
+  created_at: string | null; issued_at: string | null
+}
+export interface AdminInvoiceListOut { total: number; items: AdminInvoiceItem[] }
+export function listInvoices(params: { status?: string; skip?: number; limit?: number }): Promise<AdminInvoiceListOut> {
+  return unwrap<AdminInvoiceListOut>(request.get('/admin/invoices', { params }))
+}
+export function issueInvoice(id: string, invoice_no: string, invoice_url?: string) {
+  return unwrap(request.post(`/admin/invoices/${id}/issue`, { invoice_no, invoice_url }))
+}
+export function rejectInvoice(id: string, note?: string) {
+  return unwrap(request.post(`/admin/invoices/${id}/reject`, { note }))
+}
+
 // ── 财务管理（§5.4）────────────────────────────────────────
 export interface FinanceGroup {
   key: string | null; name: string

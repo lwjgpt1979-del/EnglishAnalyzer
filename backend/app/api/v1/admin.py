@@ -1175,6 +1175,36 @@ async def admin_finance_compute_settlement(body: dict, db: DbDep, admin: AdminDe
     return make_ok(res)
 
 
+# ── 发票申请管理（§5.4）──────────────────────────────────────────────────────
+from app.services import invoice_service as _inv_svc
+
+
+@router.get("/invoices", response_model=None)
+async def admin_list_invoices(
+    db: DbDep, admin: AdminDep,
+    status: str = Query("pending", description="pending|issued|rejected|all"),
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+):
+    return make_ok(await _inv_svc.admin_list(db, status=status, skip=skip, limit=limit))
+
+
+@router.post("/invoices/{invoice_id}/issue", response_model=None)
+async def admin_issue_invoice(invoice_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """开具：回填发票号/链接，状态置 issued。body={invoice_no, invoice_url?}。"""
+    rec = await _inv_svc.issue(
+        db, invoice_id=invoice_id, admin_id=admin.id,
+        invoice_no=(body or {}).get("invoice_no", ""), invoice_url=(body or {}).get("invoice_url"))
+    await db.commit()
+    return make_ok({"id": str(rec.id), "status": rec.status})
+
+
+@router.post("/invoices/{invoice_id}/reject", response_model=None)
+async def admin_reject_invoice(invoice_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    rec = await _inv_svc.reject(db, invoice_id=invoice_id, note=(body or {}).get("note"))
+    await db.commit()
+    return make_ok({"id": str(rec.id), "status": rec.status})
+
+
 # ── 用户管理：封禁/解封（§5.3.1）────────────────────────────────────────────────
 from app.services import user_admin_service as _user_svc
 

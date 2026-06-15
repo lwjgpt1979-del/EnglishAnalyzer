@@ -173,6 +173,35 @@ class RefundRecord(Base):
     )
 
 
+class InvoiceRequest(Base):
+    """发票申请记录（§5.4）。应用内只管申请+状态；真实发票走税控/电子发票服务商。
+
+    开票方=订单收款主体（payment_account_id 固化），适配主体演进。
+    """
+
+    __tablename__ = "invoice_requests"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    order_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("orders.id"), nullable=False)
+    payment_account_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 开票主体
+    title_type = mapped_column(sa.String, nullable=False, server_default=sa.text("'personal'"))  # personal|company
+    title = mapped_column(sa.String, nullable=False)         # 抬头
+    tax_no = mapped_column(sa.String, nullable=True)          # 企业税号
+    amount_fen = mapped_column(sa.Integer, nullable=False)
+    content = mapped_column(sa.String, nullable=True)         # 开票内容
+    email = mapped_column(sa.String, nullable=True)
+    status = mapped_column(sa.String, nullable=False, server_default=sa.text("'pending'"))  # pending|issued|rejected
+    invoice_no = mapped_column(sa.String, nullable=True)
+    invoice_url = mapped_column(sa.String, nullable=True)
+    note = mapped_column(sa.Text, nullable=True)
+    issued_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    issued_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
 class PaymentConfirmLog(Base):
     """支付前合规确认留存（§4.5.2 / §4.6），举证用，禁物理删（archived 逻辑归档）。"""
 

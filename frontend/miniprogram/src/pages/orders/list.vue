@@ -17,12 +17,43 @@
 
         <!-- 退款/申诉处理信息 -->
         <view v-if="refundLine(o)" class="o-refund">{{ refundLine(o) }}</view>
+        <!-- 发票状态 -->
+        <view v-if="invLine(o)" class="o-invoice">{{ invLine(o) }}</view>
 
         <!-- 操作区 -->
-        <view v-if="canAct(o)" class="o-acts">
-          <text class="act act-refund" @tap="onRefund(o)">申请退款</text>
-          <text class="act act-appeal" @tap="openAppeal(o)">申诉</text>
+        <view class="o-acts">
+          <template v-if="canAct(o)">
+            <text class="act act-refund" @tap="onRefund(o)">申请退款</text>
+            <text class="act act-appeal" @tap="openAppeal(o)">申诉</text>
+          </template>
+          <text v-if="canInvoice(o)" class="act act-invoice" @tap="openInvoice(o)">申请开票</text>
         </view>
+      </view>
+    </view>
+
+    <!-- 开票表单弹窗 -->
+    <view v-if="invOpen" class="ap-mask">
+      <view class="ap-card">
+        <view class="ap-head">
+          <text class="ap-title">申请开票</text>
+          <text class="ap-x" @tap="invOpen = false">×</text>
+        </view>
+        <text class="ap-label">抬头类型</text>
+        <view class="inv-types">
+          <text class="inv-type" :class="{ on: invForm.title_type === 'personal' }" @tap="invForm.title_type = 'personal'">个人</text>
+          <text class="inv-type" :class="{ on: invForm.title_type === 'company' }" @tap="invForm.title_type = 'company'">企业</text>
+        </view>
+        <text class="ap-label">发票抬头</text>
+        <input v-model="invForm.title" class="ap-input" :placeholder="invForm.title_type === 'company' ? '公司全称' : '个人姓名'" />
+        <template v-if="invForm.title_type === 'company'">
+          <text class="ap-label">税号</text>
+          <input v-model="invForm.tax_no" class="ap-input" placeholder="统一社会信用代码" />
+        </template>
+        <text class="ap-label">接收邮箱（选填）</text>
+        <input v-model="invForm.email" class="ap-input" placeholder="电子发票发送至此邮箱" />
+        <button class="ap-submit" :disabled="invSubmitting" @tap="submitInvoice">
+          {{ invSubmitting ? '提交中…' : '提交开票申请' }}
+        </button>
       </view>
     </view>
 
@@ -60,13 +91,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { getMyOrders, requestRefund, submitAppeal } from '@/api/orders'
+import { onMounted, reactive, ref } from 'vue'
+import { getMyOrders, requestRefund, submitAppeal, requestInvoice, getMyInvoices, type MyInvoice } from '@/api/orders'
 import { uploadOneImage } from '@/composables/useUpload'
 import type { OrderOut } from '@/types/api'
 
 const loading = ref(true)
 const orders = ref<OrderOut[]>([])
+const invoices = ref<MyInvoice[]>([])   // 我的开票申请（按 order_id 映射状态）
 
 const TIER: Record<string, string> = { basic: '基础', pro: 'Pro', promax: 'ProMax' }
 function tierName(t: string) { return TIER[t] || t }
@@ -115,11 +147,56 @@ function canAct(o: OrderOut) {
 }
 function fmt(s: string) { return (s || '').replace('T', ' ').slice(0, 16) }
 
+// ── 发票 ──
+const INV_TXT: Record<string, string> = { pending: '开票申请中', issued: '已开票', rejected: '开票被驳回' }
+function invFor(o: OrderOut) { return invoices.value.find(v => v.order_id === o.id) }
+function invLine(o: OrderOut) {
+  const v = invFor(o)
+  if (!v) return ''
+  return `🧾 ${INV_TXT[v.status] || v.status}` + (v.status === 'issued' && v.invoice_no ? `（${v.invoice_no}）` : '')
+}
+// 已支付、未退款、且无进行中/已开票申请 → 可申请开票（驳回后可重申）
+function canInvoice(o: OrderOut) {
+  if (o.status !== 'paid') return false
+  const v = invFor(o)
+  return !v || v.status === 'rejected'
+}
+
 async function load() {
   loading.value = true
-  try { orders.value = await getMyOrders() }
+  try {
+    orders.value = await getMyOrders()
+    try { invoices.value = await getMyInvoices() } catch { /* 忽略 */ }
+  }
   catch (e) { uni.showToast({ title: (e as Error).message || '加载失败', icon: 'none' }) }
   finally { loading.value = false }
+}
+
+// 开票弹窗
+const invOpen = ref(false)
+const invSubmitting = ref(false)
+const invForm = reactive({ order_id: '', title_type: 'personal', title: '', tax_no: '', email: '' })
+function openInvoice(o: OrderOut) {
+  Object.assign(invForm, { order_id: o.id, title_type: 'personal', title: '', tax_no: '', email: '' })
+  invOpen.value = true
+}
+async function submitInvoice() {
+  if (!invForm.title.trim()) { uni.showToast({ title: '请填写发票抬头', icon: 'none' }); return }
+  if (invForm.title_type === 'company' && !invForm.tax_no.trim()) {
+    uni.showToast({ title: '企业抬头需填税号', icon: 'none' }); return
+  }
+  invSubmitting.value = true
+  try {
+    await requestInvoice({
+      order_id: invForm.order_id, title_type: invForm.title_type, title: invForm.title.trim(),
+      tax_no: invForm.tax_no.trim() || undefined, email: invForm.email.trim() || undefined,
+    })
+    uni.showToast({ title: '开票申请已提交', icon: 'success' })
+    invOpen.value = false
+    await load()
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '提交失败', icon: 'none' })
+  } finally { invSubmitting.value = false }
 }
 
 function onRefund(o: OrderOut) {
@@ -214,6 +291,12 @@ onMounted(load)
 .o-k { color: var(--c-text-hint); }
 .o-v { color: var(--c-text-body); }
 .o-refund { margin-top: 12rpx; font-size: 24rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); border-radius: var(--r-md); padding: 12rpx 16rpx; }
+.o-invoice { margin-top: 8rpx; font-size: 24rpx; color: var(--c-text-second); background: var(--c-bg-soft); border-radius: var(--r-md); padding: 12rpx 16rpx; }
+.act-invoice { color: var(--c-primary-deep); border: 2rpx solid var(--c-primary-soft); }
+.inv-types { display: flex; gap: 16rpx; margin-bottom: 8rpx; }
+.inv-type { flex: 1; text-align: center; padding: 16rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }
+.inv-type.on { border-color: var(--c-primary); background: var(--c-primary-faint); color: var(--c-primary-deep); font-weight: 700; }
+.ap-input { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 18rpx; width: 100%; box-sizing: border-box; font-size: 26rpx; color: var(--c-ink); margin-bottom: 4rpx; }
 .o-acts { display: flex; gap: 16rpx; margin-top: 16rpx; justify-content: flex-end; }
 .act { font-size: 26rpx; padding: 10rpx 28rpx; border-radius: var(--r-pill); }
 .act-refund { color: var(--c-danger); border: 2rpx solid var(--c-danger); }
