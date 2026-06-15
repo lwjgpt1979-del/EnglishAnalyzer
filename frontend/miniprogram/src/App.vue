@@ -3,6 +3,7 @@
 import { onLaunch } from '@dcloudio/uni-app'
 import { request } from '@/utils/request'
 import { useAuthStore } from '@/stores/auth'
+import { useBrandingStore } from '@/stores/branding'
 
 // M11：启动拉取平台上线主题，H5 注入 CSS 变量（小程序见 build 期 token）
 async function applyActiveTheme() {
@@ -30,6 +31,7 @@ async function applyActiveTheme() {
 onLaunch(() => {
   console.log('[App] launched')
   applyActiveTheme()
+  useBrandingStore().fetch()   // 项目名从后端统一读取
   // 已有 token → 恢复用户信息（个人页等依赖 auth.user）
   useAuthStore().restore()
 })

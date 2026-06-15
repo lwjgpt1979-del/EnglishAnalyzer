@@ -48,3 +48,9 @@ export interface TierPricing {
 export function getTierPricing(): Promise<TierPricing> {
   return request<TierPricing>('/api/v1/orders/tier-pricing', { method: 'GET' })
 }
+
+export interface SemesterPricing { basic: number; pro: number; promax: number }
+/** 学期会员定价（元/学期），运营后台可改 */
+export function getSemesterPricing(): Promise<SemesterPricing> {
+  return request<SemesterPricing>('/api/v1/orders/semester-pricing', { method: 'GET' })
+}

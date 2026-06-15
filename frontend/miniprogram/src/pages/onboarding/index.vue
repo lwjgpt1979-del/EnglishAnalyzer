@@ -8,7 +8,7 @@
     <!-- ── Step 1：功能介绍 ── -->
     <view v-if="step === 1" class="ob-page">
       <view class="ob-header">
-        <text class="ob-logo">engGramer</text>
+        <text class="ob-logo">{{ branding.appName }}</text>
         <text class="ob-tagline">英语 AI 知识学习，专为你定制</text>
       </view>
 
@@ -110,8 +110,10 @@
 import { computed, ref } from 'vue'
 import { updateProfile } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { useBrandingStore } from '@/stores/branding'
 
 const auth = useAuthStore()
+const branding = useBrandingStore()
 const step = ref(1)
 const featIndex = ref(0)
 const saving = ref(false)

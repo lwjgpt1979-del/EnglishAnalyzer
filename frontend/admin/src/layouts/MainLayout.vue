@@ -2,6 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import { branding } from '../branding'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,7 +19,7 @@ function onLogout() {
 <template>
   <el-container style="height: 100vh">
     <el-aside width="200px" class="aside">
-      <div class="logo">engGramer 运营</div>
+      <div class="logo">{{ branding.app_name }} 运营</div>
       <el-menu
         :default-active="active"
         router

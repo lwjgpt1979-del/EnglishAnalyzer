@@ -38,6 +38,12 @@
       <text class="desc-text">· 档位说明：基础含知识点讲解；Pro 含仿真练习；ProMax 含模拟考 + 排名</text>
     </view>
 
+    <!-- 监护人同意（14-17 岁首次购买必选；成年人可不勾，后端按年龄判定）-->
+    <view class="consent-row" @tap="agreeMinor = !agreeMinor">
+      <view class="cbox" :class="{ on: agreeMinor }">{{ agreeMinor ? '✓' : '' }}</view>
+      <text class="consent-text">我已告知监护人并获得同意（14-17 岁用户首次购买必选）</text>
+    </view>
+
     <!-- 支付按钮 -->
     <button
       class="btn-pay"
@@ -47,14 +53,16 @@
       {{ paying ? '支付中…' : '微信支付 ¥' + totalPrice }}
     </button>
 
+    <PayConfirm :open="showConfirm" :plan="planSnapshot" @close="showConfirm = false" @confirmed="onConfirmed" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { createOrder, payOrder } from '@/api/orders'
+import { createOrder, payOrder, getSemesterPricing } from '@/api/orders'
 import type { SemesterItem } from '@/types/api'
+import PayConfirm from '@/components/PayConfirm.vue'
 
 // ── 解码 ──────────────────────────────────────────────────────────────────────
 function safeDecode(s: string | undefined): string {
@@ -67,32 +75,56 @@ const textbook = ref('译林版')
 const grade = ref('小学5年级')
 const semester = ref('上')
 
-onLoad((q: any) => {
+onLoad(async (q: any) => {
   textbook.value = safeDecode(q?.textbook) || '译林版'
   grade.value = safeDecode(q?.grade) || '小学5年级'
   semester.value = safeDecode(q?.semester) || '上'
+  // 价格从后台定价配置读取（运营可改），不写死
+  try {
+    const p = await getSemesterPricing()
+    tiers.value = [
+      { key: 'basic',  label: '基础版', price: p.basic },
+      { key: 'pro',    label: 'Pro',    price: p.pro },
+      { key: 'promax', label: 'ProMax', price: p.promax },
+    ]
+  } catch { /* 取价失败保留默认 */ }
 })
 
 // ── 档位 ─────────────────────────────────────────────────────────────────────
 type TierKey = 'basic' | 'pro' | 'promax'
 
-const tiers: { key: TierKey; label: string; price: number }[] = [
+const tiers = ref<{ key: TierKey; label: string; price: number }[]>([
   { key: 'basic',  label: '基础版', price: 39  },
   { key: 'pro',    label: 'Pro',    price: 79  },
   { key: 'promax', label: 'ProMax', price: 159 },
-]
+])
 
 const selectedTier = ref<TierKey>('basic')
 
 // ── 总价（M1 单学期购买）─────────────────────────────────────────────────────
 const totalPrice = computed(() => {
-  return tiers.find(t => t.key === selectedTier.value)?.price ?? 39
+  return tiers.value.find(t => t.key === selectedTier.value)?.price ?? 39
 })
 
 // ── 支付 ─────────────────────────────────────────────────────────────────────
 const paying = ref(false)
+const showConfirm = ref(false)
+const agreeMinor = ref(false)
+const planSnapshot = computed(() => ({
+  name: `${tiers.value.find(t => t.key === selectedTier.value)?.label || ''}会员 · ${semester.value}学期`,
+  months: 6,
+  amountFen: totalPrice.value * 100,
+  tier: selectedTier.value,
+}))
 
-async function onPay() {
+// 点支付 → 先弹合规确认弹窗（§4.6），确认成功拿 log_id 再下单
+function onPay() {
+  if (paying.value) return
+  showConfirm.value = true
+}
+
+async function onConfirmed(logId: string) {
+  showConfirm.value = false
   if (paying.value) return
   paying.value = true
   try {
@@ -107,6 +139,8 @@ async function onPay() {
       tier: selectedTier.value,
       order_type: 'new',
       semesters: [semItem],
+      minor_consent: agreeMinor.value,
+      payment_confirm_log_id: logId,
     })
 
     const params = await payOrder(order.id)
@@ -246,6 +280,38 @@ async function onPay() {
   font-size: 22rpx;
   color: var(--c-text-hint);
   line-height: 1.6;
+}
+
+/* 监护人同意 */
+.consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+  padding: 0 8rpx;
+  margin-bottom: 24rpx;
+}
+.cbox {
+  flex: none;
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 8rpx;
+  border: 2rpx solid var(--c-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  color: var(--c-on-primary);
+  background: var(--c-bg-card);
+}
+.cbox.on {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+}
+.consent-text {
+  flex: 1;
+  font-size: 24rpx;
+  color: var(--c-text-second);
+  line-height: 1.5;
 }
 
 /* 支付按钮 */

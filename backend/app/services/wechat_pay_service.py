@@ -40,7 +40,16 @@ def _sign_rsa(message: str, private_key_pem: str | None = None) -> str:
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 
-    private_key = serialization.load_pem_private_key(pem.encode(), password=None)
+    if "BEGIN" not in pem or "PRIVATE KEY" not in pem:
+        raise AppError(code=400, message=(
+            "商户私钥格式不正确：应填 apiclient_key.pem 文件内容"
+            "（-----BEGIN PRIVATE KEY----- 开头），请在后台「收款主体→密钥」重新粘贴"))
+    try:
+        private_key = serialization.load_pem_private_key(pem.encode(), password=None)
+    except Exception as exc:
+        raise AppError(code=400, message=(
+            "商户私钥无法解析，请确认粘贴的是完整的 apiclient_key.pem 内容（含首尾行）"
+        )) from exc
     sig = private_key.sign(message.encode(), asym_padding.PKCS1v15(), hashes.SHA256())
     return base64.b64encode(sig).decode()
 

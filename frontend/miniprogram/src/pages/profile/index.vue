@@ -106,8 +106,8 @@
     <!-- V2 学期会员（D-079 / M1）-->
     <view class="card">
       <view class="card-title">学期会员</view>
-      <text class="menu-desc">按学期购买课程内容（基础 ¥39 / Pro ¥79 / ProMax ¥159 / 学期）。</text>
-      <button class="btn-menu" @tap="goBuySemester">按学期购买课程（基础¥39 / Pro¥79 / ProMax¥159）</button>
+      <text class="menu-desc">按学期购买课程内容（基础 ¥{{ semPrice.basic }} / Pro ¥{{ semPrice.pro }} / ProMax ¥{{ semPrice.promax }} / 学期）。</text>
+      <button class="btn-menu" @tap="goBuySemester">按学期购买课程（基础¥{{ semPrice.basic }} / Pro¥{{ semPrice.pro }} / ProMax¥{{ semPrice.promax }}）</button>
       <view v-if="mySemesters.length" class="sem-list">
         <view
           v-for="s in mySemesters"
@@ -264,6 +264,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms, getMyRelatives, unbindRelative } from '@/api/relative'
 import { listMySemesters } from '@/api/semesters'
+import { getSemesterPricing } from '@/api/orders'
 import { updateProfile, wxBindPhone } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { PROVINCES, PROVINCE_NAMES, getCitiesForProvince, getCityName, getProvinceName } from '@/data/cities'
@@ -369,6 +370,7 @@ async function onSavePref() {
 }
 
 const mySemesters = ref<PurchasedSemesterOut[]>([])
+const semPrice = ref({ basic: 39, pro: 79, promax: 159 })  // 默认兜底，进页面读后台定价
 const myRelatives = ref<BoundStudent[]>([])
 const relativesLoaded = ref(false)
 const unbindingId = ref<string | null>(null)
@@ -380,6 +382,7 @@ const cancelInfo = computed(() => {
 })
 
 onMounted(async () => {
+  try { semPrice.value = await getSemesterPricing() } catch { /* 取价失败保留默认 */ }
   if (auth.isLoggedIn()) {
     try { mySemesters.value = await listMySemesters() || [] } catch { /* 忽略 */ }
     try {

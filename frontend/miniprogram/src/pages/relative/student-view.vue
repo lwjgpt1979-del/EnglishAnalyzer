@@ -130,7 +130,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar, getChildSpeakingStats, getChildVocabOverview, type SpeakStats, type ChildVocabOverview } from '@/api/relative'
-import { createOrder, payOrder } from '@/api/orders'
+import { createOrder, payOrder, getSemesterPricing } from '@/api/orders'
 import type { RelativeCheckinCalendar } from '@/types/api'
 
 // ── 学期选择选项（与 semester-purchase.vue 保持同步）──────────────────────────
@@ -146,15 +146,15 @@ const textbook = ref('译林版')
 const grade = ref('小学5年级')
 const semester = ref('上')
 
-// ── 档位（V2 学期定价）────────────────────────────────────────────────────────
+// ── 档位（V2 学期定价，从后台读，不写死）──────────────────────────────────────
 type TierKey = 'basic' | 'pro' | 'promax'
-const tiers: { key: TierKey; label: string; price: number }[] = [
+const tiers = ref<{ key: TierKey; label: string; price: number }[]>([
   { key: 'basic',  label: '基础版', price: 39  },
   { key: 'pro',    label: 'Pro',    price: 79  },
   { key: 'promax', label: 'ProMax', price: 159 },
-]
+])
 const selectedTier = ref<TierKey>('basic')
-const currentPrice = computed(() => tiers.find(t => t.key === selectedTier.value)?.price ?? 39)
+const currentPrice = computed(() => tiers.value.find(t => t.key === selectedTier.value)?.price ?? 39)
 
 // ── 学生 / 诊断报告 ──────────────────────────────────────────────────────────
 const studentId = ref('')
@@ -181,6 +181,14 @@ const cells = computed(() => {
 })
 
 onMounted(async () => {
+  try {
+    const p = await getSemesterPricing()
+    tiers.value = [
+      { key: 'basic', label: '基础版', price: p.basic },
+      { key: 'pro', label: 'Pro', price: p.pro },
+      { key: 'promax', label: 'ProMax', price: p.promax },
+    ]
+  } catch { /* 取价失败保留默认 */ }
   const pages = getCurrentPages()
   studentId.value = (pages[pages.length - 1] as any).options?.studentId || ''
   if (!studentId.value) { loading.value = false; return }

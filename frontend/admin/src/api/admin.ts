@@ -460,6 +460,15 @@ export function setPaymentSecrets(id: string, secrets: Record<string, string>): 
   return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}/secrets`, secrets))
 }
 
+// ── 项目品牌（项目名）────────────────────────────────────────
+export interface Branding { app_name: string; slogan: string }
+export function getBranding(): Promise<Branding> {
+  return unwrap<Branding>(request.get('/config/branding'))   // 公开，登录前也可读
+}
+export function setBranding(body: Branding): Promise<Branding> {
+  return unwrap<Branding>(request.put('/admin/branding', body))
+}
+
 // ── 分公司管理（阶段③：地方子公司）────────────────────────────
 export interface BranchCity { id: string; city_code: string; effective_from: string | null; effective_to: string | null }
 export interface BranchCompanyItem {

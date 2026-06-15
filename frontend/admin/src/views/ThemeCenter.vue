@@ -1,12 +1,28 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { listThemes, setActiveTheme, type ThemePreset } from '../api/admin'
+import { listThemes, setActiveTheme, setBranding, type ThemePreset } from '../api/admin'
+import { branding, loadBranding } from '../branding'
 
 const themes = ref<ThemePreset[]>([])
 const activeKey = ref('')
 const loading = ref(true)
 const saving = ref('')
+
+// 项目名称
+const appNameInput = ref('')
+const savingName = ref(false)
+async function saveAppName() {
+  if (!appNameInput.value.trim()) { ElMessage.warning('项目名称不能为空'); return }
+  savingName.value = true
+  try {
+    await setBranding({ app_name: appNameInput.value.trim(), slogan: branding.slogan })
+    await loadBranding()
+    ElMessage.success('项目名称已更新，各端下次启动生效')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '保存失败')
+  } finally { savingName.value = false }
+}
 
 async function load() {
   loading.value = true
@@ -35,11 +51,24 @@ async function choose(t: ThemePreset) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  appNameInput.value = branding.app_name
+})
 </script>
 
 <template>
   <div class="theme-center">
+    <div class="brand-box">
+      <h2>🏷️ 项目名称</h2>
+      <p class="sub">全系统唯一项目名，各前端（小程序/后台）启动统一读取。改后下次启动生效。</p>
+      <div class="brand-row">
+        <el-input v-model="appNameInput" placeholder="如 engGramer" style="max-width:320px" />
+        <el-button type="primary" :loading="savingName" @click="saveAppName">保存</el-button>
+        <span class="brand-cur">当前：{{ branding.app_name }}</span>
+      </div>
+    </div>
+
     <div class="head">
       <h2>🎨 主题中心</h2>
       <p class="sub">挑选小程序的上线视觉风格。选中后写入配置，小程序下次启动自动应用。</p>
@@ -105,6 +134,10 @@ onMounted(load)
 .theme-center { padding: 8px 4px; }
 .head h2 { margin: 0 0 4px; }
 .sub { color: #909399; font-size: 14px; margin: 0 0 20px; }
+.brand-box { background: #fff; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; }
+.brand-box h2 { margin: 0 0 4px; font-size: 18px; }
+.brand-row { display: flex; align-items: center; gap: 12px; }
+.brand-cur { color: #909399; font-size: 13px; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
 .theme-card {
   position: relative; background: #fff; border: 2px solid #ebeef5; border-radius: 16px;

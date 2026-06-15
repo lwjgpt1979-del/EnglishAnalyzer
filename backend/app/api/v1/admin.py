@@ -1109,6 +1109,25 @@ import datetime as _dt
 from app.services import branch_service as _branch_svc
 
 
+# ── 项目品牌（项目名）──────────────────────────────────────────────────────────
+from app.services import branding_service as _branding_svc
+
+
+@router.get("/branding", response_model=None)
+async def admin_get_branding(db: DbDep, admin: AdminDep):
+    return make_ok(await _branding_svc.get_branding(db))
+
+
+@router.put("/branding", response_model=None)
+async def admin_set_branding(body: dict, db: DbDep, admin: AdminDep):
+    """改项目名/slogan（全前端启动读取，无需发版）。"""
+    data = await _branding_svc.set_branding(
+        db, app_name=(body or {}).get("app_name", ""),
+        slogan=(body or {}).get("slogan"), updated_by=admin.id)
+    await db.commit()
+    return make_ok(data)
+
+
 @router.get("/branch-companies", response_model=None)
 async def admin_list_branches(db: DbDep, admin: AdminDep):
     """分公司列表（含城市归属 + 关联收款主体；银行账户不回明文）。"""

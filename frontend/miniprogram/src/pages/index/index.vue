@@ -191,6 +191,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useBrandingStore } from '@/stores/branding'
 import { onShow } from '@dcloudio/uni-app'
 import { getUnreadCount } from '@/api/notifications'
 import { getMyStudentsAsRelative } from '@/api/relative'
@@ -199,6 +200,7 @@ import { request } from '@/utils/request'
 import type { BoundStudent, TodayPlanOut, PlanTask } from '@/types/api'
 
 const auth = useAuthStore()
+const branding = useBrandingStore()
 
 const unreadCount = ref(0)
 async function loadUnread() {
@@ -284,7 +286,7 @@ async function loadRoleData() {
 }
 
 const heroTitle = computed(() => (
-  { student: 'engGramer', teacher: '教师工作台', relative: '家长中心' }[activeRole.value]
+  { student: branding.appName, teacher: '教师工作台', relative: '家长中心' }[activeRole.value]
 ))
 const heroSub = computed(() => (
   { student: '英语 AI 知识学习', teacher: '班级 · 学生 · 作业', relative: '关注孩子的学习' }[activeRole.value]

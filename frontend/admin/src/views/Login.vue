@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import { branding } from '../branding'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -30,7 +31,7 @@ async function onSubmit() {
 <template>
   <div class="login-wrap">
     <el-card class="login-card">
-      <h2 class="title">engGramer 运营后台</h2>
+      <h2 class="title">{{ branding.app_name }} 运营后台</h2>
       <el-form label-position="top" @submit.prevent>
         <el-form-item label="用户名">
           <el-input v-model="form.username" placeholder="管理员用户名" @keyup.enter="onSubmit" />

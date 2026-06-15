@@ -30,6 +30,14 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
 
+@router.get("/semester-pricing", response_model=BaseResponse[dict])
+async def semester_pricing(db: DbDep, current_user: UserDep):
+    """学期会员定价（元/学期），运营后台可改；前端购买页据此显示，不写死。"""
+    from app.services.pricing_service import get_semester_pricing
+    p = await get_semester_pricing(db)
+    return make_ok({"basic": p.basic, "pro": p.pro, "promax": p.promax})
+
+
 @router.get("/tier-pricing", response_model=BaseResponse[dict])
 async def tier_pricing(current_user: UserDep):
     """档位会员按份计价（每份 6 个月）。前端购买页据此显示，不写死价格。"""
