@@ -8,6 +8,18 @@
         <text class="lh-title">🎧 听力练习</text>
         <text class="lh-sub">先看题 → 听音作答 → 对答案 → 回听原文</text>
       </view>
+
+      <!-- 模式 + 错题库 -->
+      <view class="mode-row">
+        <view class="mode-tabs">
+          <text class="mode-tab" :class="{ on: mode === 'intensive' }" @tap="mode = 'intensive'">精听</text>
+          <text class="mode-tab" :class="{ on: mode === 'extensive' }" @tap="pickExtensive">
+            泛听{{ ent.can('listening.extensive') ? '' : ' 🔒' }}
+          </text>
+        </view>
+        <text class="wrong-entry" @tap="goWrong">📕 错题库</text>
+      </view>
+      <text class="mode-hint">{{ mode === 'intensive' ? '精听：听后逐句解析 + 跟读' : '泛听：只听不看原文，训练整体理解（ProMax）' }}</text>
       <view
         v-for="ex in exercises" :key="ex.id"
         class="ex-card" @tap="openExercise(ex.id)"
@@ -47,7 +59,8 @@
           <text class="qe-tag" :class="answers[qi] === q.answer_index ? 'ok' : 'no'">
             {{ answers[qi] === q.answer_index ? '✓ 答对' : '✗ 答错' }}
           </text>
-          <text class="qe-text">{{ q.explanation }}</text>
+          <!-- 泛听不提供逐句解析（§6.2）-->
+          <text v-if="mode === 'intensive'" class="qe-text">{{ q.explanation }}</text>
         </view>
       </view>
 
@@ -65,33 +78,71 @@
           <text class="sc-num">{{ correctCount }}/{{ detail.questions.length }}</text>
           <text class="sc-label">答对题数</text>
         </view>
-        <view class="card transcript-card">
-          <text class="tc-title">📄 听力原文</text>
-          <text class="tc-text">{{ detail.transcript }}</text>
+        <!-- 精听：逐句原文 + 跟读；泛听不展示原文（§6.2）-->
+        <view v-if="mode === 'intensive'" class="card transcript-card">
+          <text class="tc-title">📄 听力原文（点句可跟读）</text>
+          <view v-for="(s, i) in sentences" :key="i" class="tc-sentence">
+            <text class="tcs-text">{{ s }}</text>
+            <text class="tcs-shadow" @tap="openShadow(s)">🎤 跟读{{ ent.can('listening.shadow') ? '' : ' 🔒' }}</text>
+          </view>
         </view>
         <button class="btn-secondary" @tap="retry">🔁 再做一次</button>
         <button class="btn-ghost" @tap="backToList">返回列表</button>
       </view>
     </view>
+
+    <ShadowModal :open="shadowOpen" :text="shadowText" :scorer="shadowScorer"
+      @close="shadowOpen = false" @paywall="showPaywall = true" />
+    <Paywall :open="showPaywall" :feature="ent.feature('listening.shadow')" emoji="🎤"
+      title="跟读评测是会员专享" @close="showPaywall = false" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getListeningExercises, getListeningExercise, submitListening } from '@/api/listening'
+import { getListeningExercises, getListeningExercise, submitListening, shadowListening } from '@/api/listening'
 import type { ListeningBrief, ListeningDetail } from '@/api/listening'
 import { resolveSpeakUrl, gradeToStage } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
+import { useEntitlementsStore } from '@/stores/entitlements'
+import ShadowModal from '@/components/ShadowModal.vue'
+import Paywall from '@/components/Paywall.vue'
 
 const auth = useAuthStore()
+const ent = useEntitlementsStore()
 
 const loading = ref(true)
 const phase = ref<'list' | 'doing' | 'result'>('list')
+const mode = ref<'intensive' | 'extensive'>('intensive')
 const exercises = ref<ListeningBrief[]>([])
 const detail = ref<ListeningDetail>({} as ListeningDetail)
 const answers = ref<number[]>([])
 
+// 跟读
+const shadowOpen = ref(false)
+const shadowText = ref('')
+const showPaywall = ref(false)
+const shadowScorer = (text: string, audio: string, fmt: string) =>
+  shadowListening(text, audio, fmt) as Promise<any>
+
+// 原文按句拆分（句末标点）供逐句跟读
+const sentences = computed(() =>
+  (detail.value.transcript || '').split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean),
+)
+
+function pickExtensive() {
+  if (!ent.can('listening.extensive')) { showPaywall.value = true; return }
+  mode.value = 'extensive'
+}
+function openShadow(text: string) {
+  if (!ent.can('listening.shadow')) { showPaywall.value = true; return }
+  shadowText.value = text
+  shadowOpen.value = true
+}
+function goWrong() { uni.navigateTo({ url: '/pages/listening/wrong' }) }
+
 onMounted(async () => {
+  ent.ensure()
   try {
     exercises.value = await getListeningExercises()
   } catch (e) {
@@ -231,6 +282,16 @@ async function playAudio() {
 .transcript-card { }
 .tc-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); display: block; margin-bottom: 12rpx; }
 .tc-text { font-size: 28rpx; color: var(--c-text-body); line-height: 1.9; }
+.tc-sentence { display: flex; align-items: flex-start; gap: 12rpx; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.tcs-text { flex: 1; font-size: 28rpx; color: var(--c-text-body); line-height: 1.7; }
+.tcs-shadow { flex-shrink: 0; font-size: 24rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); border-radius: var(--r-pill); padding: 6rpx 16rpx; }
+
+.mode-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8rpx; }
+.mode-tabs { display: flex; background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 4rpx; }
+.mode-tab { font-size: 26rpx; color: var(--c-text-second); padding: 10rpx 28rpx; border-radius: var(--r-pill); }
+.mode-tab.on { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
+.wrong-entry { font-size: 26rpx; color: var(--c-primary-deep); }
+.mode-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }

@@ -17,6 +17,10 @@
       "style": { "navigationBarTitleText": "听力练习" }
     },
     {
+      "path": "pages/listening/wrong",
+      "style": { "navigationBarTitleText": "听力错题库" }
+    },
+    {
       "path": "pages/self-exam/index",
       "style": { "navigationBarTitleText": "自助出卷" }
     },
