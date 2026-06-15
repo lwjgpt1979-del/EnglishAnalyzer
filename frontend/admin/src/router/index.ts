@@ -27,6 +27,7 @@ const router = createRouter({
         { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },
         { path: 'exam-papers', name: 'exam-papers', component: () => import('../views/ExamPapers.vue') },
         { path: 'entitlements', name: 'entitlements', component: () => import('../views/Entitlements.vue') },
+        { path: 'refunds', name: 'refunds', component: () => import('../views/Refunds.vue') },
       ],
     },
   ],

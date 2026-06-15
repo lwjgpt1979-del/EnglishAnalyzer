@@ -292,3 +292,168 @@ async def submit_appeal(db: AsyncSession, user: User, order_id: uuid.UUID,
     db.add(rec)
     await db.flush()
     return rec
+
+
+# ───────────────────── 后台审核（P3） ─────────────────────
+
+async def list_reviews(db: AsyncSession, *, kind: str = "all",
+                       status: str = "pending", skip: int = 0,
+                       limit: int = 50) -> dict:
+    """退款/申诉记录列表（含订单与用户摘要），供后台审核队列。
+
+    kind: all | refund | appeal；status: all | pending（默认只看待审）。
+    """
+    stmt = select(RefundRecord, Order, User).join(
+        Order, RefundRecord.order_id == Order.id
+    ).join(User, Order.beneficiary_id == User.id)
+    if kind == "appeal":
+        stmt = stmt.where(RefundRecord.refund_type == "appeal")
+    elif kind == "refund":
+        stmt = stmt.where(RefundRecord.refund_type != "appeal")
+    if status == "pending":
+        stmt = stmt.where(RefundRecord.status == "pending")
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = int(await db.scalar(count_stmt) or 0)
+    stmt = stmt.order_by(RefundRecord.created_at.desc()).offset(skip).limit(limit)
+    rows = (await db.execute(stmt)).all()
+    items = []
+    for rec, order, user in rows:
+        items.append({
+            "id": rec.id,
+            "order_id": order.id,
+            "order_no": order.order_no,
+            "kind": "appeal" if rec.refund_type == "appeal" else "refund",
+            "refund_type": rec.refund_type,
+            "appeal_type": rec.appeal_type,
+            "state_code": rec.state_code,
+            "status": rec.status,
+            "amount_fen": rec.amount_fen,
+            "order_amount_fen": order.amount_fen,
+            "reason": rec.reason,
+            "evidence_urls": rec.evidence_urls or [],
+            "user_nickname": user.nickname,
+            "user_phone": user.phone,
+            "order_tier": str(order.tier),
+            "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+            "created_at": rec.created_at.isoformat() if rec.created_at else None,
+        })
+    return {"total": total, "items": items}
+
+
+async def review(db: AsyncSession, admin: User, refund_id: uuid.UUID, *,
+                 approve: bool, amount_fen: int | None = None,
+                 reason: str | None = None) -> RefundRecord:
+    """后台审核一条待处理退款/申诉。"""
+    rec = await db.get(RefundRecord, refund_id)
+    if rec is None:
+        raise AppError(code=404, message="退款记录不存在")
+    if rec.status != "pending":
+        raise AppError(code=400, message="该记录已处理")
+    order = await db.get(Order, rec.order_id)
+    now = _now()
+    is_appeal = rec.refund_type == "appeal"
+
+    rec.reviewed_by = admin.id
+    rec.reviewed_at = now
+    if reason:
+        rec.reason = reason
+
+    if approve:
+        fen = amount_fen if (amount_fen is not None and amount_fen > 0) else rec.amount_fen
+        if fen < 1:
+            raise AppError(code=400, message="退款金额必须大于 0")
+        if fen > order.amount_fen:
+            raise AppError(code=400, message="退款金额不能超过订单实付金额")
+        rec.amount_fen = fen
+        rec.status = "completed"
+        rec.wx_refund_id = await _wx_refund(order, fen)
+        _apply_refund_amount(order, fen)
+        if is_appeal:
+            rec.state_code = "APPEAL_APPROVED"
+            order.appeal_status = "APPEAL_APPROVED"
+        else:
+            rec.state_code = "REFUND_PARTIAL_APPROVED"
+            order.refund_status = "REFUND_PARTIAL_APPROVED"
+    else:
+        rec.status = "rejected"
+        if is_appeal:
+            rec.state_code = "APPEAL_REJECTED"
+            order.appeal_status = "APPEAL_REJECTED"
+        else:
+            rec.state_code = "REFUND_REJECTED"
+            order.refund_status = "REFUND_REJECTED"
+
+    await db.flush()
+    return rec
+
+
+async def evidence_pack(db: AsyncSession, order_id: uuid.UUID) -> dict:
+    """纠纷举证包（§4.6.4），结构化 JSON（PDF 后置 P4）。"""
+    from app.models.d2_payments import PaymentConfirmLog
+
+    order = await db.get(Order, order_id)
+    if order is None:
+        raise AppError(code=404, message="订单不存在")
+    user = await db.get(User, order.beneficiary_id)
+
+    confirm = None
+    if order.payment_confirm_log_id:
+        log = await db.get(PaymentConfirmLog, order.payment_confirm_log_id)
+        if log:
+            confirm = {
+                "log_id": str(log.id),
+                "confirmed_at": log.confirmed_at.isoformat() if log.confirmed_at else None,
+                "ip_address": log.ip_address,
+                "device_id": log.device_id,
+                "session_id": log.session_id,
+                "user_agent": log.user_agent,
+                "checkbox_refund_policy": log.checkbox_refund_policy,
+                "checkbox_digital_service": log.checkbox_digital_service,
+                "plan_snapshot": log.plan_snapshot,
+            }
+
+    recs = (await db.execute(
+        select(RefundRecord).where(RefundRecord.order_id == order_id)
+        .order_by(RefundRecord.created_at.asc())
+    )).scalars().all()
+
+    used = await _used_since(db, order)
+
+    return {
+        "order": {
+            "id": str(order.id),
+            "order_no": order.order_no,
+            "tier": str(order.tier),
+            "amount_fen": order.amount_fen,
+            "duration_months": order.duration_months,
+            "total_days": order.total_days,
+            "is_promotional": order.is_promotional,
+            "status": order.status,
+            "refund_status": order.refund_status,
+            "appeal_status": order.appeal_status,
+            "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+        },
+        "user": {
+            "id": str(user.id) if user else None,
+            "nickname": user.nickname if user else None,
+            "phone": user.phone if user else None,
+        },
+        "payment_confirm": confirm,
+        "usage_count_since_paid": used,
+        "refund_records": [
+            {
+                "id": str(r.id),
+                "refund_type": r.refund_type,
+                "appeal_type": r.appeal_type,
+                "state_code": r.state_code,
+                "status": r.status,
+                "amount_fen": r.amount_fen,
+                "reason": r.reason,
+                "evidence_urls": r.evidence_urls or [],
+                "wx_refund_id": r.wx_refund_id,
+                "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            } for r in recs
+        ],
+    }

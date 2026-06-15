@@ -379,3 +379,41 @@ export function setEntitlementAddon(body: {
 }): Promise<EntitlementsConfig> {
   return unwrap<EntitlementsConfig>(request.put('/admin/entitlements/addon', body))
 }
+
+// ── 退款 / 申诉审核（P3）────────────────────────────────────
+export interface AdminRefundItem {
+  id: string
+  order_id: string
+  order_no: string
+  kind: string            // refund | appeal
+  refund_type: string
+  appeal_type: string | null
+  state_code: string | null
+  status: string          // pending | approved | rejected | completed
+  amount_fen: number
+  order_amount_fen: number
+  reason: string | null
+  evidence_urls: string[]
+  user_nickname: string | null
+  user_phone: string | null
+  order_tier: string
+  paid_at: string | null
+  created_at: string | null
+}
+export interface AdminRefundListOut { total: number; items: AdminRefundItem[] }
+
+export function listRefunds(params: {
+  kind?: string; status?: string; skip?: number; limit?: number
+}): Promise<AdminRefundListOut> {
+  return unwrap<AdminRefundListOut>(request.get('/admin/refunds', { params }))
+}
+export function reviewRefund(id: string, body: {
+  approve: boolean; amount_fen?: number | null; reason?: string | null
+}) {
+  return unwrap<{ id: string; status: string; state_code: string; amount_fen: number }>(
+    request.post(`/admin/refunds/${id}/review`, body),
+  )
+}
+export function getOrderEvidence(orderId: string): Promise<Record<string, unknown>> {
+  return unwrap<Record<string, unknown>>(request.get(`/admin/orders/${orderId}/evidence`))
+}

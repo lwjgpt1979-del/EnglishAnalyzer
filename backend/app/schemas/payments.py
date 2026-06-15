@@ -120,6 +120,40 @@ class RefundOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── 后台审核（P3）────────────────────────────────────────────────────────────
+
+
+class AdminRefundItem(BaseModel):
+    id: uuid.UUID
+    order_id: uuid.UUID
+    order_no: str
+    kind: str = Field(..., description="refund | appeal")
+    refund_type: str
+    appeal_type: str | None = None
+    state_code: str | None = None
+    status: str
+    amount_fen: int = Field(..., description="退款金额（分）")
+    order_amount_fen: int = Field(..., description="订单实付金额（分）")
+    reason: str | None = None
+    evidence_urls: list[str] = []
+    user_nickname: str | None = None
+    user_phone: str | None = None
+    order_tier: str
+    paid_at: str | None = None
+    created_at: str | None = None
+
+
+class AdminRefundListOut(BaseModel):
+    total: int
+    items: list[AdminRefundItem]
+
+
+class RefundReviewRequest(BaseModel):
+    approve: bool
+    amount_fen: int | None = Field(None, description="核定退款金额（分）；空则用记录原金额")
+    reason: str | None = None
+
+
 # ── 支付参数 ──────────────────────────────────────────────────────────────────
 
 

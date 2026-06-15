@@ -1002,3 +1002,41 @@ async def admin_run_regression_alerts(db: DbDep, admin: AdminDep):
     result = await _regression_svc.run_regression_alerts(db)
     await db.commit()
     return make_ok(result)
+
+
+# ── 退款 / 申诉审核队列（P3，§4.7）────────────────────────────────────────────
+from app.services import refund_service as _refund_svc
+from app.schemas.payments import AdminRefundListOut, RefundReviewRequest
+
+
+@router.get("/refunds", response_model=BaseResponse[AdminRefundListOut])
+async def admin_list_refunds(
+    db: DbDep, admin: AdminDep,
+    kind: str = Query("all", description="all | refund | appeal"),
+    status: str = Query("pending", description="all | pending"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """退款/申诉审核队列（默认只看待审）。"""
+    data = await _refund_svc.list_reviews(
+        db, kind=kind, status=status, skip=skip, limit=limit)
+    return make_ok(data)
+
+
+@router.post("/refunds/{refund_id}/review", response_model=None)
+async def admin_review_refund(
+    refund_id: uuid.UUID, body: RefundReviewRequest, db: DbDep, admin: AdminDep,
+):
+    """审核一条退款/申诉：approve 执行退款（dev-mock）/驳回。"""
+    rec = await _refund_svc.review(
+        db, admin, refund_id,
+        approve=body.approve, amount_fen=body.amount_fen, reason=body.reason)
+    await db.commit()
+    return make_ok({"id": str(rec.id), "status": rec.status,
+                    "state_code": rec.state_code, "amount_fen": rec.amount_fen})
+
+
+@router.get("/orders/{order_id}/evidence", response_model=None)
+async def admin_order_evidence(order_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """纠纷举证包（§4.6.4，结构化 JSON）。"""
+    return make_ok(await _refund_svc.evidence_pack(db, order_id))

@@ -197,6 +197,37 @@ async def test_refund_and_appeal_decision_tree():
                 payment_confirm_log_id=log_id)
             assert o9.total_days == 180 and o9.is_promotional is True
             assert o9.payment_confirm_log_id == log_id
+
+            # 10) 后台审核：人工按比例退款 approve → completed + REFUND_PARTIAL_APPROVED
+            admin_id = uuid.uuid4()
+            await db.execute(text(
+                "INSERT INTO users (id,openid,role,is_active) "
+                "VALUES (:i,:o,'platform_admin',true)"),
+                {"i": admin_id, "o": f"{_TAG}_admin"})
+            u10 = await _mk_user(db)
+            o10 = await _mk_order(db, u10, paid_days_ago=3, amount=10000, total_days=180)
+            await _mark_used(db, u10)
+            await db.flush()
+            rec10 = await rs.request_refund(db, await _load_user(db, u10), o10)
+            assert rec10.status == "pending"
+            admin = await _load_user(db, admin_id)
+            done = await rs.review(db, admin, rec10.id, approve=True, amount_fen=5000)
+            assert done.status == "completed" and done.amount_fen == 5000
+            assert done.state_code == "REFUND_PARTIAL_APPROVED"
+            assert (await _load_order(db, o10)).refund_status == "REFUND_PARTIAL_APPROVED"
+            assert done.reviewed_by == admin_id
+
+            # 11) list_reviews + 二次审核拦截
+            lst = await rs.list_reviews(db, kind="all", status="all", limit=200)
+            assert lst["total"] >= 1
+            with pytest.raises(AppError):
+                await rs.review(db, admin, rec10.id, approve=True)  # 已处理
+
+            # 12) 举证包
+            pack = await rs.evidence_pack(db, o10)
+            assert pack["order"]["order_no"].startswith(f"ORD-{_TAG}-")
+            assert pack["usage_count_since_paid"] >= 1
+            assert len(pack["refund_records"]) >= 1
         finally:
             await _cleanup(db)
             await db.commit()
