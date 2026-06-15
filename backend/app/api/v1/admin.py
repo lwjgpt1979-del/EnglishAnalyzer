@@ -1109,6 +1109,37 @@ import datetime as _dt
 from app.services import branch_service as _branch_svc
 
 
+# ── 用户管理：封禁/解封（§5.3.1）────────────────────────────────────────────────
+from app.services import user_admin_service as _user_svc
+
+
+@router.get("/users", response_model=None)
+async def admin_list_users(
+    db: DbDep, admin: AdminDep,
+    q: str = Query("", description="昵称/手机号/ID 搜索"),
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+):
+    return make_ok(await _user_svc.list_users(db, q=q, skip=skip, limit=limit))
+
+
+@router.post("/users/{user_id}/ban", response_model=None)
+async def admin_ban_user(user_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """封禁：body={reason, days?}；days 空=永久。"""
+    days = (body or {}).get("days")
+    u = await _user_svc.ban_user(
+        db, user_id=user_id, reason=(body or {}).get("reason", ""),
+        days=int(days) if days else None)
+    await db.commit()
+    return make_ok(_user_svc._to_item(u))
+
+
+@router.post("/users/{user_id}/unban", response_model=None)
+async def admin_unban_user(user_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    u = await _user_svc.unban_user(db, user_id=user_id)
+    await db.commit()
+    return make_ok(_user_svc._to_item(u))
+
+
 # ── 项目品牌（项目名）──────────────────────────────────────────────────────────
 from app.services import branding_service as _branding_svc
 

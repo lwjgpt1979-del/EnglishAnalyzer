@@ -95,6 +95,15 @@ async def get_current_user(
         if executed:
             await db.commit()
 
+    # 临时封禁到期自动解封（懒触发，§5.3.1）
+    if (not user.is_active and user.banned_until is not None
+            and user.banned_until <= datetime.now(timezone.utc)):
+        user.is_active = True
+        user.ban_reason = None
+        user.banned_until = None
+        user.banned_at = None
+        await db.commit()
+
     # 冷静期内（已申请注销但尚未执行）允许通过，以便 revoke/me 等端点正常工作
     if not user.is_active and not (
         user.deactivation_scheduled_at is not None

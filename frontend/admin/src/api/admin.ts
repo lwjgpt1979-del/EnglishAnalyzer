@@ -460,6 +460,31 @@ export function setPaymentSecrets(id: string, secrets: Record<string, string>): 
   return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}/secrets`, secrets))
 }
 
+// ── 用户管理：封禁/解封 ───────────────────────────────────────
+export interface AdminUserItem {
+  id: string
+  nickname: string | null
+  phone: string | null
+  role: string
+  is_active: boolean
+  banned: boolean
+  ban_reason: string | null
+  banned_until: string | null
+  ban_type: string | null   // permanent | temporary | null
+  created_at: string | null
+}
+export interface AdminUserListOut { total: number; items: AdminUserItem[] }
+
+export function listUsers(params: { q?: string; skip?: number; limit?: number }): Promise<AdminUserListOut> {
+  return unwrap<AdminUserListOut>(request.get('/admin/users', { params }))
+}
+export function banUser(id: string, reason: string, days: number | null): Promise<AdminUserItem> {
+  return unwrap<AdminUserItem>(request.post(`/admin/users/${id}/ban`, { reason, days }))
+}
+export function unbanUser(id: string): Promise<AdminUserItem> {
+  return unwrap<AdminUserItem>(request.post(`/admin/users/${id}/unban`))
+}
+
 // ── 项目品牌（项目名）────────────────────────────────────────
 export interface Branding { app_name: string; slogan: string }
 export function getBranding(): Promise<Branding> {

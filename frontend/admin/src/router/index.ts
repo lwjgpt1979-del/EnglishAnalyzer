@@ -30,6 +30,7 @@ const router = createRouter({
         { path: 'refunds', name: 'refunds', component: () => import('../views/Refunds.vue') },
         { path: 'payment-accounts', name: 'payment-accounts', component: () => import('../views/PaymentAccounts.vue') },
         { path: 'branch-companies', name: 'branch-companies', component: () => import('../views/BranchCompanies.vue') },
+        { path: 'users', name: 'users', component: () => import('../views/Users.vue') },
       ],
     },
   ],

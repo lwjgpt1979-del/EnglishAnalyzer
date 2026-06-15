@@ -89,6 +89,11 @@ class User(Base):
     )
     minor_purchase_consent_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
 
+    # —— 封禁（§5.3.1）：is_active=False 即封禁；banned_until 空=永久，有值=临时到期自动解封 ——
+    ban_reason = mapped_column(sa.Text, nullable=True)
+    banned_until = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    banned_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+
     # —— 合规：账号注销（D-073 / 需求文档 §4.2）——
     deactivation_requested_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     deactivation_scheduled_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)

@@ -40,6 +40,7 @@ function onLogout() {
         <el-menu-item index="/refunds">💸 退款/申诉审核</el-menu-item>
         <el-menu-item index="/payment-accounts">🏦 收款主体</el-menu-item>
         <el-menu-item index="/branch-companies">🏢 分公司管理</el-menu-item>
+        <el-menu-item index="/users">👥 用户管理</el-menu-item>
         <el-menu-item index="/tts-speed">🔊 听力语音</el-menu-item>
         <el-menu-item index="/tts-usage">📊 TTS 用量/预热</el-menu-item>
         <el-menu-item index="/speaking-scenarios">💬 口语场景</el-menu-item>
