@@ -170,3 +170,55 @@ async def list_wrong(db: _Session, *, student_id) -> list[dict]:
         "wrong_count": r.wrong_count,
         "last_wrong_at": r.last_wrong_at.isoformat() if r.last_wrong_at else None,
     } for r in rows]
+
+
+# ── 跟读薄弱句库（§6.4）+ 老师标注 ──────────────────────────────────────────────
+from app.models.d5_learning import ListeningShadowWeak as _LSW
+
+
+async def log_shadow(db: _Session, *, student_id, sentence: str, score: int) -> None:
+    """记录一次跟读评分(取最高分)。best_score<60 即薄弱句、优先复现。"""
+    sentence = (sentence or "").strip()
+    if not sentence:
+        return
+    now = _dt.datetime.now(_dt.timezone.utc)
+    rec = await db.scalar(_select(_LSW).where(_and(
+        _LSW.student_id == student_id, _LSW.sentence == sentence)))
+    if rec is None:
+        db.add(_LSW(id=_uuid.uuid4(), student_id=student_id, sentence=sentence,
+                    best_score=score, attempts=1, last_at=now))
+    else:
+        rec.attempts = (rec.attempts or 0) + 1
+        rec.best_score = max(rec.best_score or 0, score)
+        rec.last_at = now
+    await db.flush()
+
+
+async def list_weak_sentences(db: _Session, *, student_id, threshold: int = 60) -> list[dict]:
+    """薄弱句（最高分 < threshold），优先复现。"""
+    rows = (await db.execute(
+        _select(_LSW).where(_and(_LSW.student_id == student_id, _LSW.best_score < threshold))
+        .order_by(_LSW.best_score.asc(), _LSW.last_at.desc()))).scalars().all()
+    return [{"id": str(r.id), "sentence": r.sentence, "best_score": r.best_score,
+             "attempts": r.attempts,
+             "last_at": r.last_at.isoformat() if r.last_at else None} for r in rows]
+
+
+async def teacher_mark_wrong(db: _Session, *, student_id, exercise_id: str,
+                             question_index: int) -> None:
+    """老师标注某听力题为「需重点练习」→ 进该生听力错题库（§6.4）。"""
+    e = _BY_ID.get(exercise_id)
+    if e is None or question_index >= len(e["questions"]):
+        raise AppError(code=404, message="听力题不存在")
+    q = e["questions"][question_index]
+    now = _dt.datetime.now(_dt.timezone.utc)
+    existing = await db.scalar(_select(_LWQ).where(_and(
+        _LWQ.student_id == student_id, _LWQ.exercise_id == exercise_id,
+        _LWQ.question_index == question_index)))
+    if existing is None:
+        db.add(_LWQ(id=_uuid.uuid4(), student_id=student_id, exercise_id=exercise_id,
+                    exercise_title=e["title"], question_index=question_index,
+                    prompt="[老师标注] " + q["prompt"], options=q["options"],
+                    correct_index=q["answer_index"], chosen_index=None,
+                    explanation=q["explanation"], wrong_count=1, last_wrong_at=now))
+        await db.flush()

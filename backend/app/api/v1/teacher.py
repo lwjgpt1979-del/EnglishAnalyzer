@@ -268,6 +268,21 @@ async def student_diagnosis_api(student_id: uuid.UUID, db: DbDep, current_user: 
     return make_ok(report)
 
 
+@router.post("/students/{student_id}/listening-mark", response_model=None)
+async def mark_listening_wrong(student_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
+    """教师标注某听力题为「需重点练习」→ 进该生听力错题库（§6.4）。body={exercise_id, question_index}。"""
+    if str(current_user.role) != "teacher":
+        raise AppError(code=403, message="仅教师可访问")
+    await get_rls_db(db, str(current_user.id))
+    await teacher_service.assert_bound(db, teacher_id=current_user.id, student_id=student_id)
+    from app.services import listening_service
+    await listening_service.teacher_mark_wrong(
+        db, student_id=student_id, exercise_id=(body or {}).get("exercise_id", ""),
+        question_index=int((body or {}).get("question_index", 0)))
+    await db.commit()
+    return make_ok({"ok": True})
+
+
 @router.get("/students/{student_id}/speaking-stats", response_model=BaseResponse[dict])
 async def student_speaking_stats_api(student_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """教师查看指定学生的口语练习情况。"""

@@ -17,9 +17,24 @@
             泛听{{ ent.can('listening.extensive') ? '' : ' 🔒' }}
           </text>
         </view>
-        <text class="wrong-entry" @tap="goWrong">📕 错题库</text>
+        <view class="head-links">
+          <text v-if="ent.can('listening.shadow')" class="wrong-entry" @tap="toggleWeak">🔁 薄弱句{{ weakList.length ? `(${weakList.length})` : '' }}</text>
+          <text class="wrong-entry" @tap="goWrong">📕 错题库</text>
+        </view>
       </view>
       <text class="mode-hint">{{ mode === 'intensive' ? '精听：听后逐句解析 + 跟读' : '泛听：只听不看原文，训练整体理解（ProMax）' }}</text>
+
+      <!-- 薄弱句复练（跟读<60，优先复现）-->
+      <view v-if="showWeak" class="weak-panel">
+        <text v-if="!weakList.length" class="weak-empty">暂无薄弱句，跟读得分都不错 👍</text>
+        <view v-for="w in weakList" :key="w.id" class="weak-item">
+          <text class="weak-text">{{ w.sentence }}</text>
+          <view class="weak-right">
+            <text class="weak-score">{{ w.best_score }}分</text>
+            <text class="weak-shadow" @tap="openShadow(w.sentence)">🎤 复练</text>
+          </view>
+        </view>
+      </view>
       <view
         v-for="ex in exercises" :key="ex.id"
         class="ex-card" @tap="openExercise(ex.id)"
@@ -97,7 +112,7 @@
     </view>
 
     <ShadowModal :open="shadowOpen" :text="shadowText" :scorer="shadowScorer"
-      @close="shadowOpen = false" @paywall="showPaywall = true" />
+      @close="onShadowClosed" @paywall="showPaywall = true" />
     <Paywall :open="showPaywall" :feature="ent.feature('listening.shadow')" emoji="🎤"
       title="跟读评测是会员专享" @close="showPaywall = false" />
   </view>
@@ -105,8 +120,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getListeningExercises, getListeningExercise, submitListening, shadowListening } from '@/api/listening'
-import type { ListeningBrief, ListeningDetail } from '@/api/listening'
+import { getListeningExercises, getListeningExercise, submitListening, shadowListening, getWeakSentences } from '@/api/listening'
+import type { ListeningBrief, ListeningDetail, WeakSentence } from '@/api/listening'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useEntitlementsStore } from '@/stores/entitlements'
 import ShadowModal from '@/components/ShadowModal.vue'
@@ -144,8 +159,25 @@ function openShadow(text: string) {
 }
 function goWrong() { uni.navigateTo({ url: '/pages/listening/wrong' }) }
 
+// 薄弱句复练
+const showWeak = ref(false)
+const weakList = ref<WeakSentence[]>([])
+async function loadWeak() {
+  if (!ent.can('listening.shadow')) return
+  try { weakList.value = await getWeakSentences() } catch { /* 忽略 */ }
+}
+function toggleWeak() {
+  showWeak.value = !showWeak.value
+  if (showWeak.value) loadWeak()
+}
+function onShadowClosed() {
+  shadowOpen.value = false
+  if (showWeak.value) loadWeak()   // 复练后刷新薄弱句
+}
+
 onMounted(async () => {
   ent.ensure()
+  loadWeak()
   try {
     exercises.value = await getListeningExercises()
   } catch (e) {
@@ -318,7 +350,15 @@ async function playAudio() {
 .mode-tab { font-size: 26rpx; color: var(--c-text-second); padding: 10rpx 28rpx; border-radius: var(--r-pill); }
 .mode-tab.on { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
 .wrong-entry { font-size: 26rpx; color: var(--c-primary-deep); }
+.head-links { display: flex; gap: 20rpx; }
 .mode-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
+.weak-panel { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 16rpx 20rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
+.weak-empty { font-size: 24rpx; color: var(--c-text-hint); }
+.weak-item { display: flex; align-items: center; gap: 12rpx; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.weak-text { flex: 1; font-size: 26rpx; color: var(--c-text-body); line-height: 1.6; }
+.weak-right { display: flex; align-items: center; gap: 12rpx; flex-shrink: 0; }
+.weak-score { font-size: 22rpx; color: var(--c-danger); }
+.weak-shadow { font-size: 24rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); border-radius: var(--r-pill); padding: 6rpx 16rpx; }
 
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }

@@ -284,6 +284,24 @@ class ListeningWrongQuestion(Base):
     )
 
 
+class ListeningShadowWeak(Base):
+    """听力跟读薄弱句库（§6.4）：取最高分，best_score<60 为薄弱、优先复现。"""
+
+    __tablename__ = "listening_shadow_weak"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    sentence = mapped_column(sa.Text, nullable=False)
+    best_score = mapped_column(sa.SmallInteger, nullable=False)
+    attempts = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    last_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint("student_id", "sentence", name="uix_listening_shadow_weak"),
+    )
+
+
 class StudyCheckin(Base):
     """每日学习打卡（每生每天唯一）。"""
 

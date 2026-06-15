@@ -42,6 +42,7 @@ from .d5_learning import (  # noqa: F401
     Essay,
     ListeningRecord,
     ListeningWrongQuestion,
+    ListeningShadowWeak,
     StudyCheckin,
 )
 

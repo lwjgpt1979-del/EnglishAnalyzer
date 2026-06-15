@@ -75,4 +75,23 @@ async def shadow(body: dict, db: DbDep, current_user: UserDep):
     result = await pronunciation_service.assess(
         reference_text=ref, audio_bytes=audio_bytes or None,
         mode=mode, audio_format=(body or {}).get("audio_format") or "mp3")
+    # 记录跟读分 → 薄弱句库（best-effort，§6.4）
+    try:
+        await get_rls_db(db, str(current_user.id))
+        await listening_service.log_shadow(
+            db, student_id=current_user.id, sentence=ref, score=int(result.get("overall", 0)))
+        await db.commit()
+    except Exception:  # noqa: BLE001
+        pass
     return make_ok(result)
+
+
+@router.get("/weak-sentences", response_model=None)
+async def weak_sentences(db: DbDep, current_user: UserDep):
+    """跟读薄弱句库（最高分<60，优先复练），会员专享。"""
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(
+        db, user_id=current_user.id, key="listening.shadow", code=402,
+        message="跟读为会员专享功能，开通会员后即可使用 🎤")
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await listening_service.list_weak_sentences(db, student_id=current_user.id))

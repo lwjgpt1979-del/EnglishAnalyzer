@@ -62,3 +62,35 @@ async def test_submit_and_wrongbook():
             await db.execute(text("DELETE FROM users WHERE id=:i"), {"i": uid})
             await db.commit()
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_shadow_weak_and_teacher_mark():
+    from app.services import listening_service as svc
+    engine = _engine()
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    async with sf() as db:
+        uid = uuid.uuid4()
+        await db.execute(text("INSERT INTO users (id,openid,role) VALUES (:i,:o,'student')"),
+                         {"i": uid, "o": f"{_TAG}_{uid.hex[:10]}"})
+        await db.flush()
+        try:
+            # 跟读 50 分 → 薄弱句
+            await svc.log_shadow(db, student_id=uid, sentence="I like apples.", score=50)
+            weak = await svc.list_weak_sentences(db, student_id=uid)
+            assert len(weak) == 1 and weak[0]["best_score"] == 50
+            # 再跟读 85 → 取最高分,不再薄弱
+            await svc.log_shadow(db, student_id=uid, sentence="I like apples.", score=85)
+            weak2 = await svc.list_weak_sentences(db, student_id=uid)
+            assert len(weak2) == 0
+            # 老师标注 → 进听力错题库
+            ex = svc.list_exercises()[0]
+            await svc.teacher_mark_wrong(db, student_id=uid, exercise_id=ex["id"], question_index=0)
+            wb = await svc.list_wrong(db, student_id=uid)
+            assert len(wb) == 1 and wb[0]["prompt"].startswith("[老师标注]")
+        finally:
+            await db.execute(text("DELETE FROM listening_shadow_weak WHERE student_id=:i"), {"i": uid})
+            await db.execute(text("DELETE FROM listening_wrong_questions WHERE student_id=:i"), {"i": uid})
+            await db.execute(text("DELETE FROM users WHERE id=:i"), {"i": uid})
+            await db.commit()
+    await engine.dispose()

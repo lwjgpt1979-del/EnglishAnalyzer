@@ -51,3 +51,9 @@ export function getListeningWrong(): Promise<ListeningWrong[]> {
 export function shadowListening(reference_text: string, audio?: string, audio_format = 'mp3'): Promise<unknown> {
   return request('/api/v1/listening/shadow', { method: 'POST', data: { reference_text, audio, audio_format } })
 }
+
+export interface WeakSentence { id: string; sentence: string; best_score: number; attempts: number; last_at: string | null }
+/** 跟读薄弱句库（最高分<60，优先复练；会员专享）*/
+export function getWeakSentences(): Promise<WeakSentence[]> {
+  return request<WeakSentence[]>('/api/v1/listening/weak-sentences', { method: 'GET' })
+}
