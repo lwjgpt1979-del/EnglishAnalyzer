@@ -29,6 +29,18 @@ def _env(alias: str | None, key: str) -> str | None:
     return os.environ.get(f"PAY__{alias}__{key}")
 
 
+def _secret(account: "PaymentAccount", key: str) -> str | None:
+    """取某密钥：优先解密 secrets_enc（库），缺失回退 env 别名（兼容）。"""
+    from app.core import crypto
+    enc = (account.secrets_enc or {}).get(key) if account else None
+    if enc:
+        try:
+            return crypto.decrypt(enc)
+        except Exception:
+            return None
+    return _env(account.secret_alias if account else None, key)
+
+
 async def get_default(db: AsyncSession) -> PaymentAccount | None:
     return await db.scalar(
         select(PaymentAccount).where(
@@ -110,9 +122,9 @@ def load_credentials(account: PaymentAccount | None) -> Creds:
     alias = account.secret_alias
 
     if account.provider == "wechat":
-        pem = _env(alias, "WECHAT_PRIVATE_KEY_PEM")
-        api_key = _env(alias, "WECHAT_API_KEY_V3")
-        plat = _env(alias, "WECHAT_PLATFORM_PUBLIC_KEY_PEM")
+        pem = _secret(account, "WECHAT_PRIVATE_KEY_PEM")
+        api_key = _secret(account, "WECHAT_API_KEY_V3")
+        plat = _secret(account, "WECHAT_PLATFORM_PUBLIC_KEY_PEM")
         # legacy 主体：env 缺失时回退现有 settings，保持当前 dev 行为不变
         if alias == LEGACY_ALIAS:
             pem = pem or settings.wechat_pay_private_key_pem
@@ -137,8 +149,9 @@ def load_credentials(account: PaymentAccount | None) -> Creds:
     # 其他渠道（支付宝/苹果…）：密钥就绪则非 dev，否则 dev-mock
     from app.services.payment.base import required_secret_keys
     keys = required_secret_keys(account.provider)
-    ready = all(_env(alias, k) for k in keys) if keys else False
-    return Creds(provider=account.provider, is_dev=not ready, extra=cfg)
+    ready = all(_secret(account, k) for k in keys) if keys else False
+    return Creds(provider=account.provider, is_dev=not ready,
+                 account_id=str(account.id), extra=cfg)
 
 
 def credentials_ready(account: PaymentAccount) -> bool:
@@ -160,8 +173,10 @@ async def resolve_creds_for_order(db: AsyncSession, order) -> Creds:
 # ───────────────────── 后台管理（不涉密） ─────────────────────
 
 def _to_item(acc: PaymentAccount) -> dict:
-    """转后台展示项：含密钥就绪布尔，绝不返回密钥本身。"""
+    """转后台展示项：含每个密钥"是否已配置"布尔，绝不返回密钥本身。"""
     from app.services.payment.base import required_secret_keys
+    keys = required_secret_keys(acc.provider)
+    secrets_set = {k: bool(_secret(acc, k)) for k in keys}
     return {
         "id": acc.id,
         "name": acc.name,
@@ -173,9 +188,31 @@ def _to_item(acc: PaymentAccount) -> dict:
         "is_default": acc.is_default,
         "is_active": acc.is_active,
         "credentials_ready": credentials_ready(acc),
-        "required_secret_keys": required_secret_keys(acc.provider),
+        "required_secret_keys": keys,
+        "secrets_set": secrets_set,
         "created_at": acc.created_at.isoformat() if acc.created_at else None,
     }
+
+
+async def set_secrets(db: AsyncSession, account_id: uuid.UUID,
+                      secrets: dict[str, str]) -> PaymentAccount:
+    """录入/更新密钥：加密后合并进 secrets_enc（明文不落库）。空值=删除该键。"""
+    from app.core import crypto
+    acc = await db.get(PaymentAccount, account_id)
+    if acc is None:
+        raise AppError(code=404, message="收款主体不存在")
+    enc = dict(acc.secrets_enc or {})
+    for k, v in secrets.items():
+        if v is None or v == "":
+            enc.pop(k, None)
+        else:
+            enc[k] = crypto.encrypt(v)
+    acc.secrets_enc = enc
+    # JSONB 原地改需显式标记
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(acc, "secrets_enc")
+    await db.flush()
+    return acc
 
 
 async def admin_list(db: AsyncSession) -> list[dict]:

@@ -167,8 +167,9 @@ class PaymentAccountItem(BaseModel):
     branch_company_id: uuid.UUID | None = None
     is_default: bool
     is_active: bool
-    credentials_ready: bool = Field(..., description="所需密钥是否已在 env 就绪（不含密钥值）")
+    credentials_ready: bool = Field(..., description="所需密钥是否已全部配置（不含密钥值）")
     required_secret_keys: list[str] = []
+    secrets_set: dict[str, bool] = Field(default_factory=dict, description="各密钥是否已配置（不含值）")
     created_at: str | None = None
 
 

@@ -3,7 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   listPaymentAccounts, createPaymentAccount, updatePaymentAccount,
-  setDefaultPaymentAccount, togglePaymentAccount,
+  setDefaultPaymentAccount, togglePaymentAccount, setPaymentSecrets,
   type PaymentAccountItem,
 } from '../api/admin'
 
@@ -73,6 +73,32 @@ async function onToggle(r: PaymentAccountItem) {
   catch (e: any) { ElMessage.error(e?.message || '操作失败') }
 }
 
+// 密钥管理弹窗（write-only：只录入，不显示已存值）
+const secretsOpen = ref(false)
+const secretsAcc = ref<PaymentAccountItem | null>(null)
+const secretInputs = reactive<Record<string, string>>({})
+function openSecrets(r: PaymentAccountItem) {
+  secretsAcc.value = r
+  Object.keys(secretInputs).forEach(k => delete secretInputs[k])
+  r.required_secret_keys.forEach(k => { secretInputs[k] = '' })
+  secretsOpen.value = true
+}
+async function saveSecrets() {
+  if (!secretsAcc.value) return
+  // 只提交非空项（空=不改；如需删除请清空后端单独处理）
+  const payload: Record<string, string> = {}
+  for (const k of Object.keys(secretInputs)) {
+    if (secretInputs[k].trim()) payload[k] = secretInputs[k]
+  }
+  if (!Object.keys(payload).length) { ElMessage.info('未输入任何密钥'); return }
+  try {
+    await setPaymentSecrets(secretsAcc.value.id, payload)
+    ElMessage.success('密钥已加密保存')
+    secretsOpen.value = false
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+}
+
 onMounted(load)
 </script>
 
@@ -83,7 +109,8 @@ onMounted(load)
       <el-button type="primary" @click="openCreate">新增收款主体</el-button>
     </div>
     <p class="hint">支撑主体演进：个体 → 公司承接 → 总公司+地方子公司；订单按收款主体固化，退款原路退回。
-      密钥（私钥/APIv3 key 等）<b>不在此填写、不入库</b>，由运维写入服务器环境变量（按 secret_alias）。</p>
+      密钥点「密钥」按钮录入，<b>加密存库、明文不回显</b>（仅服务器需配一个主密钥 FIELD_ENCRYPTION_KEY）。
+      加公司/加渠道无需改服务器、无需重启。</p>
 
     <el-table :data="rows" v-loading="loading" stripe>
       <el-table-column label="名称" min-width="160">
@@ -118,6 +145,7 @@ onMounted(load)
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link @click="openEdit(row)">编辑</el-button>
+          <el-button size="small" link type="warning" @click="openSecrets(row)">密钥</el-button>
           <el-button v-if="!row.is_default" size="small" link type="success" @click="onSetDefault(row)">设默认</el-button>
           <el-button size="small" link :type="row.is_active ? 'danger' : 'primary'" @click="onToggle(row)">
             {{ row.is_active ? '停用' : '启用' }}
@@ -158,6 +186,26 @@ onMounted(load)
       <template #footer>
         <el-button @click="dialogOpen = false">取消</el-button>
         <el-button type="primary" @click="save">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="secretsOpen" :title="`密钥管理 — ${secretsAcc?.name || ''}`" width="600px">
+      <p class="hint">密钥加密存库、明文不回显；留空=不修改。修改后即时生效，无需改服务器或重启。</p>
+      <el-form label-position="top">
+        <el-form-item v-for="k in (secretsAcc?.required_secret_keys || [])" :key="k">
+          <template #label>
+            <span>{{ k }}</span>
+            <el-tag :type="secretsAcc?.secrets_set?.[k] ? 'success' : 'info'" size="small" style="margin-left:8px">
+              {{ secretsAcc?.secrets_set?.[k] ? '已配置' : '未配置' }}
+            </el-tag>
+          </template>
+          <el-input v-model="secretInputs[k]" type="textarea" :rows="k.includes('PEM') || k.includes('P8') ? 4 : 1"
+            :placeholder="secretsAcc?.secrets_set?.[k] ? '已配置（留空保持不变）' : '粘贴密钥内容'" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="secretsOpen = false">取消</el-button>
+        <el-button type="primary" @click="saveSecrets">加密保存</el-button>
       </template>
     </el-dialog>
   </div>

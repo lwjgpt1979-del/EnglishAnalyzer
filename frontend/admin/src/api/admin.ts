@@ -431,6 +431,7 @@ export interface PaymentAccountItem {
   is_active: boolean
   credentials_ready: boolean
   required_secret_keys: string[]
+  secrets_set: Record<string, boolean>
   created_at: string | null
 }
 export interface PaymentAccountCreate {
@@ -453,4 +454,8 @@ export function setDefaultPaymentAccount(id: string): Promise<PaymentAccountItem
 }
 export function togglePaymentAccount(id: string): Promise<PaymentAccountItem> {
   return unwrap<PaymentAccountItem>(request.post(`/admin/payment-accounts/${id}/toggle-active`))
+}
+/** 录入/更新密钥（加密存库，明文不回传）。值空=删除该密钥。 */
+export function setPaymentSecrets(id: string, secrets: Record<string, string>): Promise<PaymentAccountItem> {
+  return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}/secrets`, secrets))
 }

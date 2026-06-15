@@ -40,7 +40,9 @@ class PaymentAccount(Base):
     )  # wechat | alipay | apple_iap | googleplay | stripe | ...
     # 渠道非密身份（各渠道字段不同）
     config = mapped_column(JSONB, nullable=True)
-    # 指向 env 的密钥别名：PAY__<ALIAS>__<KEY>
+    # 加密存库的密钥：{key: AES-GCM 密文}，明文永不落库（见 core/crypto）
+    secrets_enc = mapped_column(JSONB, nullable=True)
+    # 兼容回退：指向 env 的密钥别名 PAY__<ALIAS>__<KEY>（secrets_enc 缺失时用）
     secret_alias = mapped_column(sa.String, nullable=True)
     # 子公司收款主体关联分公司；总公司/个体为 NULL
     branch_company_id = mapped_column(

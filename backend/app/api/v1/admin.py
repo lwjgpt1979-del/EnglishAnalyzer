@@ -1088,3 +1088,17 @@ async def admin_toggle_payment_account(account_id: uuid.UUID, db: DbDep, admin: 
     acc = await _pa_svc.toggle_active(db, account_id)
     await db.commit()
     return make_ok(_pa_svc._to_item(acc))
+
+
+@router.put("/payment-accounts/{account_id}/secrets", response_model=BaseResponse[PaymentAccountItem])
+async def admin_set_payment_secrets(
+    account_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep,
+):
+    """录入/更新该主体的渠道密钥（加密存库，明文不落库、接口不回传）。
+
+    body = {密钥名: 值}；值为空字符串表示删除该密钥。
+    """
+    secrets = {str(k): ("" if v is None else str(v)) for k, v in (body or {}).items()}
+    acc = await _pa_svc.set_secrets(db, account_id, secrets)
+    await db.commit()
+    return make_ok(_pa_svc._to_item(acc))

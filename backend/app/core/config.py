@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # JWT
     jwt_secret_key: str = "dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
+
+    # 字段级加密主密钥（KEK）：用于加密存库的敏感字段（支付密钥/银行账户等）。
+    # base64(32 字节)。生产用 `openssl rand -base64 32` 生成并写入 env；
+    # 留空时 dev 回退派生自 jwt_secret_key（仅本地开发，勿用于生产）。
+    field_encryption_key: str = ""
     access_token_expire_minutes: int = 120   # 2 小时
     refresh_token_expire_days: int = 30
 
