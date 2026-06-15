@@ -1251,6 +1251,29 @@ async def admin_unban_user(user_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(_user_svc._to_item(u))
 
 
+# ── 封禁申诉审核（§5.3.1）──────────────────────────────────────────────────────
+from app.services import ban_appeal_service as _appeal_svc
+
+
+@router.get("/ban-appeals", response_model=None)
+async def admin_list_ban_appeals(
+    db: DbDep, admin: AdminDep,
+    status: str = Query("pending", description="pending|approved|rejected|all"),
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+):
+    return make_ok(await _appeal_svc.admin_list(db, status=status, skip=skip, limit=limit))
+
+
+@router.post("/ban-appeals/{appeal_id}/review", response_model=None)
+async def admin_review_ban_appeal(appeal_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """审核封禁申诉：approve=true 解封并补偿会员时长；false 维持封禁。body={approve, note?}。"""
+    a = await _appeal_svc.review(
+        db, appeal_id=appeal_id, admin_id=admin.id,
+        approve=bool((body or {}).get("approve")), note=(body or {}).get("note"))
+    await db.commit()
+    return make_ok({"id": str(a.id), "status": a.status})
+
+
 # ── 项目品牌（项目名）──────────────────────────────────────────────────────────
 from app.services import branding_service as _branding_svc
 

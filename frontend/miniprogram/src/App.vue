@@ -28,12 +28,22 @@ async function applyActiveTheme() {
   } catch { /* 主题拉取失败用 App.vue 内置默认，不影响使用 */ }
 }
 
+async function checkBan() {
+  // 被封用户(token 仍有效)→ 跳封禁说明/申诉页（§5.3.1）
+  try {
+    const { getBanStatus } = await import('@/api/ban')
+    const s = await getBanStatus()
+    if (s?.banned) uni.reLaunch({ url: '/pages/account/ban' })
+  } catch { /* 未登录或网络异常忽略 */ }
+}
+
 onLaunch(() => {
   console.log('[App] launched')
   applyActiveTheme()
   useBrandingStore().fetch()   // 项目名从后端统一读取
   // 已有 token → 恢复用户信息（个人页等依赖 auth.user）
   useAuthStore().restore()
+  checkBan()
 })
 </script>
 

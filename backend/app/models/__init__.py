@@ -8,6 +8,7 @@ from .base import Base  # noqa: F401
 # 域1: 用户与租户 (8 张表)
 from .d1_users import (  # noqa: F401
     User,
+    BanAppeal,
     Institution,
     Student,
     Teacher,

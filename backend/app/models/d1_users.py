@@ -6,7 +6,7 @@
 
 import uuid
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, INET
+from sqlalchemy.dialects.postgresql import UUID, INET, JSONB
 from sqlalchemy.orm import mapped_column
 
 from .base import Base
@@ -117,6 +117,24 @@ class User(Base):
         nullable=False,
         server_default=sa.func.now(),
         onupdate=sa.func.now(),
+    )
+
+
+class BanAppeal(Base):
+    """封禁申诉（§5.3.1）：被封用户提交，后台审核；通过则解封并补偿会员时长。"""
+
+    __tablename__ = "ban_appeals"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    reason = mapped_column(sa.Text, nullable=False)
+    evidence_urls = mapped_column(JSONB, nullable=True)
+    status = mapped_column(sa.String, nullable=False, server_default=sa.text("'pending'"))  # pending|approved|rejected
+    note = mapped_column(sa.Text, nullable=True)
+    reviewed_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    reviewed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
 
 

@@ -27,6 +27,30 @@ async def ban_status(
     })
 
 
+@router.post("/me/ban-appeal", response_model=None)
+async def submit_ban_appeal(
+    body: dict,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_allow_banned)],
+):
+    """被封禁用户提交封禁申诉（§5.3.1）。body={reason, evidence_urls?}。"""
+    from app.services import ban_appeal_service
+    rec = await ban_appeal_service.submit(
+        db, user=current_user, reason=(body or {}).get("reason", ""),
+        evidence_urls=(body or {}).get("evidence_urls"))
+    await db.commit()
+    return make_ok({"id": str(rec.id), "status": rec.status})
+
+
+@router.get("/me/ban-appeals", response_model=None)
+async def my_ban_appeals(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user_allow_banned)],
+):
+    from app.services import ban_appeal_service
+    return make_ok(await ban_appeal_service.list_mine(db, user_id=current_user.id))
+
+
 @router.get("/me", response_model=BaseResponse[UserMeOut])
 async def get_me(
     db: Annotated[AsyncSession, Depends(get_db)],

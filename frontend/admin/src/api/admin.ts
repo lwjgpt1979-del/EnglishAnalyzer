@@ -555,6 +555,20 @@ export function unbanUser(id: string): Promise<AdminUserItem> {
   return unwrap<AdminUserItem>(request.post(`/admin/users/${id}/unban`))
 }
 
+// ── 封禁申诉审核 ──
+export interface BanAppealItem {
+  id: string; user_id: string; reason: string; evidence_urls: string[]
+  status: string; note: string | null; nickname: string | null; phone: string | null
+  ban_reason: string | null; created_at: string | null; reviewed_at: string | null
+}
+export interface BanAppealListOut { total: number; items: BanAppealItem[] }
+export function listBanAppeals(params: { status?: string; skip?: number; limit?: number }): Promise<BanAppealListOut> {
+  return unwrap<BanAppealListOut>(request.get('/admin/ban-appeals', { params }))
+}
+export function reviewBanAppeal(id: string, approve: boolean, note?: string) {
+  return unwrap(request.post(`/admin/ban-appeals/${id}/review`, { approve, note }))
+}
+
 // ── 项目品牌（项目名）────────────────────────────────────────
 export interface Branding { app_name: string; slogan: string }
 export function getBranding(): Promise<Branding> {
