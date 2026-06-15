@@ -1,10 +1,10 @@
-<!-- src/pages/essay/train.vue 应试写作训练 -->
+<!-- src/pages/essay/train.vue 写作能力训练 -->
 <template>
   <view class="et-page">
     <!-- 选题 -->
     <view v-if="phase === 'pick'">
       <view class="et-head">
-        <text class="et-title">✍️ 应试写作训练</text>
+        <text class="et-title">✍️ 写作能力训练</text>
         <text class="et-link" @tap="goErrorBook">📕 错因本</text>
       </view>
       <view class="genre-chips">

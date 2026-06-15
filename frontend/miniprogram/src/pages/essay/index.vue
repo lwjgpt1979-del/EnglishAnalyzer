@@ -1,7 +1,7 @@
 <template>
   <view class="page">
     <view class="card train-entry" @tap="goTrain">
-      <view class="te-l"><text class="te-t">✍️ 应试写作训练</text><text class="te-s">审题 · 限时写 · 按档诊断 · 漏点检测</text></view>
+      <view class="te-l"><text class="te-t">✍️ 写作能力训练</text><text class="te-s">审题 · 限时写 · 分档诊断 · 漏点检测</text></view>
       <text class="te-arrow">›</text>
     </view>
     <view v-if="progress && progress.total_essays > 0" class="card">

@@ -106,8 +106,8 @@
     <!-- V2 学期会员（D-079 / M1）-->
     <view class="card">
       <view class="card-title">学期会员</view>
-      <text class="menu-desc">按学期购买课程内容（基础 ¥{{ semPrice.basic }} / Pro ¥{{ semPrice.pro }} / ProMax ¥{{ semPrice.promax }} / 学期）。</text>
-      <button class="btn-menu" @tap="goBuySemester">按学期购买课程（基础¥{{ semPrice.basic }} / Pro¥{{ semPrice.pro }} / ProMax¥{{ semPrice.promax }}）</button>
+      <text class="menu-desc">按学期解锁知识点讲解与练习资料（基础 ¥{{ semPrice.basic }} / Pro ¥{{ semPrice.pro }} / ProMax ¥{{ semPrice.promax }} / 学期）。</text>
+      <button class="btn-menu" @tap="goBuySemester">按学期解锁学习资料（基础¥{{ semPrice.basic }} / Pro¥{{ semPrice.pro }} / ProMax¥{{ semPrice.promax }}）</button>
       <view v-if="mySemesters.length" class="sem-list">
         <view
           v-for="s in mySemesters"

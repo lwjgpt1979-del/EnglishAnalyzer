@@ -33,7 +33,7 @@
 
     <!-- 说明 -->
     <view class="desc-card">
-      <text class="desc-text">· 购买后解锁该学期全部单元课程内容</text>
+      <text class="desc-text">· 开通后解锁该学期全部单元的知识点讲解与练习资料</text>
       <text class="desc-text">· 有效期一学期（约 6 个月）</text>
       <text class="desc-text">· 档位说明：基础含知识点讲解；Pro 含仿真练习；ProMax 含模拟考 + 排名</text>
     </view>

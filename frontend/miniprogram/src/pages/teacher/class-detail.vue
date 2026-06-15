@@ -124,7 +124,7 @@
         <!-- 需关注学生 -->
         <view v-if="kpStats.students_attention.length" class="card">
           <view class="card-title">⚠️ 需重点关注的学生</view>
-          <view class="card-hint">整体平均正确率最低，建议优先辅导</view>
+          <view class="card-hint">整体平均正确率最低，建议优先强化练习</view>
           <view
             v-for="(s, i) in kpStats.students_attention"
             :key="s.student_id"

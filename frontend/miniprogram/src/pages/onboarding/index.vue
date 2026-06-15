@@ -96,7 +96,7 @@
       <text class="done-sub">
         已为你选好
         <text class="done-pref">{{ textbook }} {{ grade }} {{ semester }}学期</text>
-        的课程内容
+        的知识点讲解与练习
       </text>
       <view class="ob-actions">
         <button class="btn-primary" @tap="goLearn">开始学习 →</button>
