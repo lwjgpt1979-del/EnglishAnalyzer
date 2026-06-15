@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { getOverview } from '../api/admin'
+import { getOverview, getDashboard, type DashboardData } from '../api/admin'
 import type { AdminOverview } from '../types'
 
 const data = ref<AdminOverview | null>(null)
+const dash = ref<DashboardData | null>(null)
 const loading = ref(false)
+
+const ROLE: Record<string, string> = { student: '学生', teacher: '教师', relative: '家长', institution_admin: '机构管理员', branch_admin: '分公司管理员', platform_admin: '平台管理员' }
+const TIER: Record<string, string> = { free: '免费', basic: '基础', pro: 'Pro', promax: 'ProMax' }
+const USAGE: Record<string, string> = { checkins: '词力通打卡', practice: 'AI练习', wrong_upload: '错题上传', essays: '作文精修', shadow: '跟读' }
 
 async function load() {
   loading.value = true
   try {
-    data.value = await getOverview()
+    [data.value, dash.value] = await Promise.all([getOverview(), getDashboard()])
   } finally {
     loading.value = false
   }
@@ -55,6 +60,50 @@ onMounted(load)
           </el-statistic>
         </el-card>
       </el-col>
+    </el-row>
+
+    <!-- ── 数据大盘深化（§5.5）── -->
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="本月GMV(元)" :value="dash.revenue.gmv_month_yuan" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="今日GMV(元)" :value="dash.revenue.gmv_today_yuan" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="付费会员数" :value="dash.membership.paid_members" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="付费转化率(%)" :value="dash.membership.pay_conversion_pct" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="本月退款率(%)" :value="dash.revenue.refund_rate_pct" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="在驻机构" :value="dash.institution.active" /></el-card></el-col>
+    </el-row>
+
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="今日新增用户" :value="dash.users.new_today" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="近7天新增" :value="dash.users.new_7d" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="近30天新增" :value="dash.users.new_30d" /></el-card></el-col>
+      <el-col :span="12"><el-card shadow="hover">
+        <template #header>各档位有效会员</template>
+        <el-space wrap>
+          <el-tag v-for="(c, t) in dash.membership.active_by_tier" :key="t" type="success">{{ TIER[t] || t }}：{{ c }}</el-tag>
+        </el-space>
+      </el-card></el-col>
+    </el-row>
+
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="8"><el-card shadow="never">
+        <template #header>用户角色分布</template>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item v-for="(c, r) in dash.users.roles" :key="r" :label="ROLE[r] || r">{{ c }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card></el-col>
+      <el-col :span="8"><el-card shadow="never">
+        <template #header>今日核心功能使用</template>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item v-for="(c, k) in dash.usage_today" :key="k" :label="USAGE[k] || k">{{ c }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card></el-col>
+      <el-col :span="8"><el-card shadow="never">
+        <template #header>地区 Top（城市编码）</template>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item v-for="r in dash.users.regions_top" :key="r.city_code" :label="r.city_code">{{ r.count }}</el-descriptions-item>
+          <el-descriptions-item v-if="!dash.users.regions_top.length" label="（暂无）">-</el-descriptions-item>
+        </el-descriptions>
+      </el-card></el-col>
     </el-row>
 
     <el-row :gutter="16" style="margin-top: 16px">

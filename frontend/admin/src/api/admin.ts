@@ -460,6 +460,19 @@ export function setPaymentSecrets(id: string, secrets: Record<string, string>): 
   return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}/secrets`, secrets))
 }
 
+// ── 数据大盘深化（§5.5）──────────────────────────────────────
+export interface DashboardData {
+  users: { total: number; roles: Record<string, number>; new_today: number; new_7d: number; new_30d: number; regions_top: { city_code: string; count: number }[] }
+  membership: { active_by_tier: Record<string, number>; paid_members: number; pay_conversion_pct: number }
+  revenue: { gmv_today_yuan: number; gmv_month_yuan: number; refund_month_yuan: number; refund_rate_pct: number }
+  usage_today: Record<string, number>
+  institution: { active: number }
+  generated_at: string
+}
+export function getDashboard(): Promise<DashboardData> {
+  return unwrap<DashboardData>(request.get('/admin/dashboard'))
+}
+
 // ── 发票申请管理（§5.4）──────────────────────────────────────
 export interface AdminInvoiceItem {
   id: string; order_id: string; order_no: string | null; payment_account: string | null

@@ -84,6 +84,13 @@ async def admin_login(body: AdminLoginRequest, db: DbDep):
 
 # ─── 数据大盘概览（M5 / D-099）──────────────────────────────────────────────
 
+@router.get("/dashboard", response_model=None)
+async def admin_dashboard(db: DbDep, admin: AdminDep):
+    """数据大盘（§5.5）：用户/角色/地区/会员/营收/今日功能使用/机构。"""
+    from app.services import dashboard_service
+    return make_ok(await dashboard_service.get_dashboard(db))
+
+
 @router.get("/overview", response_model=BaseResponse[AdminOverviewOut])
 async def get_overview(db: DbDep, admin: AdminDep):
     """运营概览：仿真题/内容各状态计数 + 用户数 + 已支付订单数。"""
