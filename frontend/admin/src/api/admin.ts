@@ -459,3 +459,38 @@ export function togglePaymentAccount(id: string): Promise<PaymentAccountItem> {
 export function setPaymentSecrets(id: string, secrets: Record<string, string>): Promise<PaymentAccountItem> {
   return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}/secrets`, secrets))
 }
+
+// ── 分公司管理（阶段③：地方子公司）────────────────────────────
+export interface BranchCity { id: string; city_code: string; effective_from: string | null; effective_to: string | null }
+export interface BranchCompanyItem {
+  id: string
+  name: string
+  contact_phone: string | null
+  commission_rate: number | null
+  legal_name: string | null
+  tax_number: string | null
+  bank_name: string | null
+  bank_account_set: boolean
+  is_active: boolean
+  cities: BranchCity[]
+  payment_accounts: { id: string; name: string; provider: string }[]
+  created_at: string | null
+}
+export function listBranches(): Promise<BranchCompanyItem[]> {
+  return unwrap<BranchCompanyItem[]>(request.get('/admin/branch-companies'))
+}
+export function createBranch(body: Record<string, unknown>): Promise<{ id: string }> {
+  return unwrap<{ id: string }>(request.post('/admin/branch-companies', body))
+}
+export function updateBranch(id: string, body: Record<string, unknown>) {
+  return unwrap(request.put(`/admin/branch-companies/${id}`, body))
+}
+export function toggleBranch(id: string) {
+  return unwrap(request.post(`/admin/branch-companies/${id}/toggle-active`))
+}
+export function addBranchCity(id: string, city_code: string, effective_from?: string) {
+  return unwrap(request.post(`/admin/branch-companies/${id}/cities`, { city_code, effective_from }))
+}
+export function removeBranchCity(cityId: string) {
+  return unwrap(request.delete(`/admin/branch-companies/cities/${cityId}`))
+}

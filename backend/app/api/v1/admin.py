@@ -1102,3 +1102,58 @@ async def admin_set_payment_secrets(
     acc = await _pa_svc.set_secrets(db, account_id, secrets)
     await db.commit()
     return make_ok(_pa_svc._to_item(acc))
+
+
+# ── 分公司管理 + 城市归属（阶段③：地方子公司）──────────────────────────────────
+import datetime as _dt
+from app.services import branch_service as _branch_svc
+
+
+@router.get("/branch-companies", response_model=None)
+async def admin_list_branches(db: DbDep, admin: AdminDep):
+    """分公司列表（含城市归属 + 关联收款主体；银行账户不回明文）。"""
+    return make_ok(await _branch_svc.list_branches(db))
+
+
+@router.post("/branch-companies", response_model=None)
+async def admin_create_branch(body: dict, db: DbDep, admin: AdminDep):
+    b = await _branch_svc.create_branch(
+        db, name=body["name"], contact_phone=body.get("contact_phone"),
+        commission_rate=body.get("commission_rate"), legal_name=body.get("legal_name"),
+        tax_number=body.get("tax_number"), bank_name=body.get("bank_name"),
+        bank_account=body.get("bank_account"))
+    await db.commit()
+    return make_ok({"id": str(b.id)})
+
+
+@router.put("/branch-companies/{branch_id}", response_model=None)
+async def admin_update_branch(branch_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    await _branch_svc.update_branch(db, branch_id, fields=body or {})
+    await db.commit()
+    return make_ok({"ok": True})
+
+
+@router.post("/branch-companies/{branch_id}/toggle-active", response_model=None)
+async def admin_toggle_branch(branch_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    b = await _branch_svc.toggle_active(db, branch_id)
+    await db.commit()
+    return make_ok({"id": str(b.id), "is_active": b.is_active})
+
+
+@router.post("/branch-companies/{branch_id}/cities", response_model=None)
+async def admin_add_branch_city(branch_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    city_code = (body or {}).get("city_code")
+    if not city_code:
+        raise AppError(code=400, message="city_code 必填")
+    eff = (body or {}).get("effective_from")
+    eff_date = _dt.date.fromisoformat(eff) if eff else None
+    c = await _branch_svc.add_city(db, branch_id, city_code=city_code, effective_from=eff_date)
+    await db.commit()
+    return make_ok({"id": str(c.id)})
+
+
+@router.delete("/branch-companies/cities/{city_id}", response_model=None)
+async def admin_remove_branch_city(city_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    await _branch_svc.remove_city(db, city_id)
+    await db.commit()
+    return make_ok({"ok": True})
