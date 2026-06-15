@@ -41,6 +41,7 @@ from .d5_learning import (  # noqa: F401
     VocabularyLearning,
     Essay,
     ListeningRecord,
+    ListeningWrongQuestion,
     StudyCheckin,
 )
 

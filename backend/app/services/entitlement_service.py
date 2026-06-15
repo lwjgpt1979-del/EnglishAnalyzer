@@ -89,6 +89,12 @@ def _seed_defaults() -> None:
     F(FeatureSpec("vocab.study", "词力通学习/测试", "vocab", _all_allow()))
     F(FeatureSpec("vocab.report", "词力通学情报表", "vocab", _all_allow()))
     F(FeatureSpec("vocab.shadow", "词力通跟读评测", "vocab", _paid_allow()))
+    # 听力（§6.5）
+    F(FeatureSpec("listening.intensive", "听力精听", "listening", _all_allow()))
+    F(FeatureSpec("listening.shadow", "听力跟读评测", "listening", _paid_allow()))
+    F(FeatureSpec("listening.extensive", "听力泛听", "listening",
+                  {"free": DENY(), "basic": DENY(), "pro": DENY(), "promax": ALLOW()}))
+    F(FeatureSpec("listening.wrongbook", "听力错题库", "listening", _paid_allow()))
     # 口语
     F(FeatureSpec("speaking.dialogue", "AI口语对话", "speaking", _paid_allow()))
     F(FeatureSpec("speaking.coach", "口语陪练点评", "speaking",

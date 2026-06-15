@@ -251,6 +251,39 @@ class ListeningRecord(Base):
     )
 
 
+class ListeningWrongQuestion(Base):
+    """听力错题归集（§6.4）：精听答错的题目，供错题库重练。"""
+
+    __tablename__ = "listening_wrong_questions"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+    )
+    exercise_id = mapped_column(sa.String, nullable=False)
+    exercise_title = mapped_column(sa.String, nullable=True)
+    question_index = mapped_column(sa.SmallInteger, nullable=False)
+    prompt = mapped_column(sa.Text, nullable=False)
+    options = mapped_column(JSONB, nullable=True)
+    correct_index = mapped_column(sa.SmallInteger, nullable=False)
+    chosen_index = mapped_column(sa.SmallInteger, nullable=True)
+    explanation = mapped_column(sa.Text, nullable=True)
+    wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    last_wrong_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "student_id", "exercise_id", "question_index",
+            name="uix_listening_wrong",
+        ),
+    )
+
+
 class StudyCheckin(Base):
     """每日学习打卡（每生每天唯一）。"""
 

@@ -78,7 +78,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getListeningExercises, getListeningExercise } from '@/api/listening'
+import { getListeningExercises, getListeningExercise, submitListening } from '@/api/listening'
 import type { ListeningBrief, ListeningDetail } from '@/api/listening'
 import { resolveSpeakUrl, gradeToStage } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
@@ -142,6 +142,10 @@ function optionClass(qi: number, oi: number) {
 function submit() {
   phase.value = 'result'
   uni.pageScrollTo({ scrollTop: 0, duration: 200 })
+  // 上报答案 → 服务端判分 + 听力错题归集（§6.4，best-effort，不阻塞 UI）
+  if (detail.value.id) {
+    submitListening(detail.value.id, answers.value).catch(() => { /* 忽略 */ })
+  }
 }
 
 function retry() {

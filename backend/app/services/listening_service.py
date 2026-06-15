@@ -101,3 +101,72 @@ def get_exercise(exercise_id: str) -> dict:
     if e is None:
         raise AppError(code=404, message="听力素材不存在")
     return e
+
+
+# ── 精听答题 + 听力错题归集（§6.4）──────────────────────────────────────────────
+import uuid as _uuid
+import datetime as _dt
+
+from sqlalchemy import and_ as _and, select as _select
+from sqlalchemy.ext.asyncio import AsyncSession as _Session
+
+from app.models.d5_learning import ListeningWrongQuestion as _LWQ
+
+
+async def submit_answers(db: _Session, *, student_id, exercise_id: str,
+                         answers: list[int]) -> dict:
+    """提交精听答案：判分 + 错题归集（答错入库、重练答对则移出）。"""
+    e = _BY_ID.get(exercise_id)
+    if e is None:
+        raise AppError(code=404, message="听力素材不存在")
+    qs = e["questions"]
+    now = _dt.datetime.now(_dt.timezone.utc)
+    results, correct = [], 0
+    for i, q in enumerate(qs):
+        chosen = answers[i] if i < len(answers) else -1
+        ok = chosen == q["answer_index"]
+        if ok:
+            correct += 1
+        results.append({
+            "index": i, "prompt": q["prompt"], "options": q["options"],
+            "your_index": chosen, "correct_index": q["answer_index"],
+            "is_correct": ok, "explanation": q["explanation"],
+        })
+        existing = await db.scalar(_select(_LWQ).where(_and(
+            _LWQ.student_id == student_id, _LWQ.exercise_id == exercise_id,
+            _LWQ.question_index == i)))
+        if not ok:
+            if existing is None:
+                db.add(_LWQ(
+                    id=_uuid.uuid4(), student_id=student_id, exercise_id=exercise_id,
+                    exercise_title=e["title"], question_index=i, prompt=q["prompt"],
+                    options=q["options"], correct_index=q["answer_index"],
+                    chosen_index=chosen, explanation=q["explanation"],
+                    wrong_count=1, last_wrong_at=now))
+            else:
+                existing.wrong_count = (existing.wrong_count or 0) + 1
+                existing.chosen_index = chosen
+                existing.last_wrong_at = now
+        elif existing is not None:
+            await db.delete(existing)   # 重练答对 → 移出错题库
+    await db.flush()
+    return {
+        "exercise_id": exercise_id, "title": e["title"],
+        "correct_count": correct, "total": len(qs),
+        "transcript": e["transcript"], "results": results,
+    }
+
+
+async def list_wrong(db: _Session, *, student_id) -> list[dict]:
+    """听力错题库：按错误次数 + 最近错误时间排序。"""
+    rows = (await db.execute(
+        _select(_LWQ).where(_LWQ.student_id == student_id)
+        .order_by(_LWQ.wrong_count.desc(), _LWQ.last_wrong_at.desc())
+    )).scalars().all()
+    return [{
+        "id": str(r.id), "exercise_id": r.exercise_id, "exercise_title": r.exercise_title,
+        "question_index": r.question_index, "prompt": r.prompt, "options": r.options or [],
+        "correct_index": r.correct_index, "explanation": r.explanation,
+        "wrong_count": r.wrong_count,
+        "last_wrong_at": r.last_wrong_at.isoformat() if r.last_wrong_at else None,
+    } for r in rows]
