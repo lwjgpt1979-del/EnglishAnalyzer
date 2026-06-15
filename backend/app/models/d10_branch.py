@@ -1,11 +1,11 @@
 """
-域10: 分公司扩展 (3 张表)
-  branch_companies · branch_company_cities · branch_settlements
+域10: 分公司扩展 (4 张表)
+  branch_companies · branch_company_cities · branch_settlements · payment_accounts
 """
 
 import uuid
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import mapped_column
 
 from .base import Base
@@ -14,6 +14,62 @@ settlement_status_enum = sa.Enum(
     "draft", "confirmed", "paid",
     name="settlement_status",
 )
+
+
+class PaymentAccount(Base):
+    """收款主体 = 某支付渠道下的一个收款商户（= 一个营业执照主体）。
+
+    渠道无关（provider-agnostic）：provider 决定用哪个适配器，config 存该渠道
+    的非密身份（微信 {mch_id,cert_serial}、支付宝 {app_id,...}、苹果
+    {issuer_id,key_id,bundle_id}…），加渠道不改表结构。
+    支撑主体演进：个体 → 公司承接 → 总公司+地方子公司。订单下单时固化
+    payment_account_id，退款按订单原主体/原渠道原路退回。
+    **密钥（私钥/APIv3 key/.p8…）绝不入库**：仅存 secret_alias，运行时按
+    alias 从环境变量读取（见 payment_account_service）。
+    """
+
+    __tablename__ = "payment_accounts"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = mapped_column(sa.String, nullable=False)  # 显示名，如 "XX教育科技公司"
+    subject_type = mapped_column(
+        sa.String, nullable=False, server_default=sa.text("'company'")
+    )  # individual | company | subsidiary
+    provider = mapped_column(
+        sa.String, nullable=False, server_default=sa.text("'wechat'")
+    )  # wechat | alipay | apple_iap | googleplay | stripe | ...
+    # 渠道非密身份（各渠道字段不同）
+    config = mapped_column(JSONB, nullable=True)
+    # 指向 env 的密钥别名：PAY__<ALIAS>__<KEY>
+    secret_alias = mapped_column(sa.String, nullable=True)
+    # 子公司收款主体关联分公司；总公司/个体为 NULL
+    branch_company_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("branch_companies.id"), nullable=True
+    )
+    is_default = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
+    is_active = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("true")
+    )
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )
+
+    __table_args__ = (
+        sa.Index(
+            "uix_payment_accounts_default",
+            "is_default",
+            unique=True,
+            postgresql_where=sa.text("is_default = true"),
+        ),
+    )
 
 
 class BranchCompany(Base):

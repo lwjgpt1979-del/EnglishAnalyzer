@@ -154,6 +154,44 @@ class RefundReviewRequest(BaseModel):
     reason: str | None = None
 
 
+# ── 收款主体（多主体/多渠道）────────────────────────────────────────────────
+
+
+class PaymentAccountItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    subject_type: str = Field(..., description="individual | company | subsidiary")
+    provider: str = Field(..., description="wechat | alipay | apple_iap | ...")
+    config: dict = {}
+    secret_alias: str | None = None
+    branch_company_id: uuid.UUID | None = None
+    is_default: bool
+    is_active: bool
+    credentials_ready: bool = Field(..., description="所需密钥是否已在 env 就绪（不含密钥值）")
+    required_secret_keys: list[str] = []
+    created_at: str | None = None
+
+
+class PaymentAccountCreate(BaseModel):
+    name: str
+    subject_type: str = "company"
+    provider: str = "wechat"
+    config: dict | None = Field(None, description="渠道非密身份，如微信 {mch_id,cert_serial}")
+    secret_alias: str | None = Field(None, description="env 密钥别名，密钥本身不入库")
+    branch_company_id: uuid.UUID | None = None
+    is_active: bool = True
+
+
+class PaymentAccountUpdate(BaseModel):
+    name: str | None = None
+    subject_type: str | None = None
+    provider: str | None = None
+    config: dict | None = None
+    secret_alias: str | None = None
+    branch_company_id: uuid.UUID | None = None
+    is_active: bool | None = None
+
+
 # ── 支付参数 ──────────────────────────────────────────────────────────────────
 
 

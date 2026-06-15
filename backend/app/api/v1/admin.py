@@ -1040,3 +1040,51 @@ async def admin_review_refund(
 async def admin_order_evidence(order_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """纠纷举证包（§4.6.4，结构化 JSON）。"""
     return make_ok(await _refund_svc.evidence_pack(db, order_id))
+
+
+# ── 收款主体管理（多主体/多渠道；不涉密）────────────────────────────────────
+from app.services import payment_account_service as _pa_svc
+from app.schemas.payments import (
+    PaymentAccountItem, PaymentAccountCreate, PaymentAccountUpdate,
+)
+
+
+@router.get("/payment-accounts", response_model=BaseResponse[list[PaymentAccountItem]])
+async def admin_list_payment_accounts(db: DbDep, admin: AdminDep):
+    """收款主体列表（含密钥就绪布尔，绝不返回密钥）。"""
+    return make_ok(await _pa_svc.admin_list(db))
+
+
+@router.post("/payment-accounts", response_model=BaseResponse[PaymentAccountItem])
+async def admin_create_payment_account(
+    body: PaymentAccountCreate, db: DbDep, admin: AdminDep,
+):
+    acc = await _pa_svc.admin_create(
+        db, name=body.name, subject_type=body.subject_type, provider=body.provider,
+        config=body.config, secret_alias=body.secret_alias,
+        branch_company_id=body.branch_company_id, is_active=body.is_active)
+    await db.commit()
+    return make_ok(_pa_svc._to_item(acc))
+
+
+@router.put("/payment-accounts/{account_id}", response_model=BaseResponse[PaymentAccountItem])
+async def admin_update_payment_account(
+    account_id: uuid.UUID, body: PaymentAccountUpdate, db: DbDep, admin: AdminDep,
+):
+    acc = await _pa_svc.admin_update(db, account_id, fields=body.model_dump(exclude_unset=True))
+    await db.commit()
+    return make_ok(_pa_svc._to_item(acc))
+
+
+@router.post("/payment-accounts/{account_id}/set-default", response_model=BaseResponse[PaymentAccountItem])
+async def admin_set_default_payment_account(account_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    acc = await _pa_svc.set_default(db, account_id)
+    await db.commit()
+    return make_ok(_pa_svc._to_item(acc))
+
+
+@router.post("/payment-accounts/{account_id}/toggle-active", response_model=BaseResponse[PaymentAccountItem])
+async def admin_toggle_payment_account(account_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    acc = await _pa_svc.toggle_active(db, account_id)
+    await db.commit()
+    return make_ok(_pa_svc._to_item(acc))

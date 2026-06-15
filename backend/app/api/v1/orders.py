@@ -19,7 +19,9 @@ from app.schemas.payments import (
     AppealCreate, OrderCreate, OrderOut, PayParamsOut,
     PaymentConfirmCreate, PaymentConfirmOut, RefundOut,
 )
-from app.services import order_service, refund_service, wechat_pay_service
+from app.services import (
+    order_service, payment_account_service, refund_service, wechat_pay_service,
+)
 from app.services.auth_service import is_minor_14_to_17
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -110,6 +112,16 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
         is_promotional=body.is_promotional,
         payment_confirm_log_id=body.payment_confirm_log_id,
     )
+    # 固化收款主体 + 结算分公司（按受益人城市路由；退款按此原路退回）
+    beneficiary = current_user if beneficiary_id == current_user.id \
+        else await db.get(User, beneficiary_id)
+    acc = await payment_account_service.resolve_for_order(db, beneficiary)
+    if acc is not None:
+        order.payment_account_id = acc.id
+    branch_id = await payment_account_service.branch_company_id_for(db, beneficiary)
+    if branch_id is not None:
+        order.branch_company_id = branch_id
+
     # 反写支付确认记录的 order_id（举证关联，§4.6.3）
     if body.payment_confirm_log_id:
         log = await db.get(PaymentConfirmLog, body.payment_confirm_log_id)
@@ -220,6 +232,9 @@ async def pay_order(order_id: uuid.UUID, db: DbDep, current_user: UserDep):
             code=400, message=f"订单状态为 {order.status}，无法发起支付"
         )
 
-    prepay_id = await wechat_pay_service.get_prepay_id(order, current_user.openid)
-    params = wechat_pay_service.build_pay_params(prepay_id)
+    # 按订单固化的收款主体 + 渠道适配器生成支付参数
+    from app.services.payment.base import get_provider
+    creds = await payment_account_service.resolve_creds_for_order(db, order)
+    provider = get_provider(creds.provider)
+    params = await provider.create_payment(order, creds, openid=current_user.openid)
     return make_ok(PayParamsOut(**params))

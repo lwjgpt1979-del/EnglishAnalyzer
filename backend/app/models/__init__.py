@@ -62,7 +62,9 @@ from .d8_usage import DailyUsage, LearningReportSnapshot  # noqa: F401
 from .d9_system import SystemConfig, Notification  # noqa: F401
 
 # 域10: 分公司扩展 (3 张表)
-from .d10_branch import BranchCompany, BranchCompanyCity, BranchSettlement  # noqa: F401
+from .d10_branch import (  # noqa: F401
+    BranchCompany, BranchCompanyCity, BranchSettlement, PaymentAccount,
+)
 
 # 域11: V2 教材深度内容 (1 张表)
 from .d11_v2_curriculum import KnowledgePointContent  # noqa: F401

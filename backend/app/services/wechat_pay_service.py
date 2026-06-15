@@ -18,58 +18,64 @@ from app.core.exceptions import AppError
 from app.models.d2_payments import Order
 
 _JSAPI_URL = "https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi"
+_REFUND_URL = "https://api.mch.weixin.qq.com/v3/refund/domestic/refunds"
 
 
-def _is_dev_mode() -> bool:
-    """True when the private key is a placeholder — real RSA signing is not possible."""
+def _is_dev_mode(creds=None) -> bool:
+    """True 时无法真实 RSA 签名 → 走 dev-mock。
+
+    creds 给定时按其 is_dev/私钥判定；否则回退全局 settings（兼容回调等单主体场景）。
+    """
+    if creds is not None:
+        return bool(creds.is_dev) or not creds.private_key_pem \
+            or creds.private_key_pem.startswith("placeholder")
     return settings.wechat_pay_private_key_pem.startswith("placeholder")
 
 
-def _sign_rsa(message: str) -> str:
-    """RSA-SHA256 签名并 base64 编码。dev 模式返回占位字符串。"""
-    if _is_dev_mode():
+def _sign_rsa(message: str, private_key_pem: str | None = None) -> str:
+    """RSA-SHA256 签名并 base64 编码。无真实私钥时返回占位字符串。"""
+    pem = private_key_pem or settings.wechat_pay_private_key_pem
+    if not pem or pem.startswith("placeholder"):
         return "dev_signature_placeholder"
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 
-    private_key = serialization.load_pem_private_key(
-        settings.wechat_pay_private_key_pem.encode(), password=None
-    )
+    private_key = serialization.load_pem_private_key(pem.encode(), password=None)
     sig = private_key.sign(message.encode(), asym_padding.PKCS1v15(), hashes.SHA256())
     return base64.b64encode(sig).decode()
 
 
-def _build_auth_header(method: str, url_path: str, body: str) -> str:
-    """构建微信支付 v3 Authorization 请求头。"""
+def _build_auth_header(method: str, url_path: str, body: str, creds) -> str:
+    """构建微信支付 v3 Authorization 请求头（按 creds 商户）。"""
     nonce = uuid.uuid4().hex
     timestamp = str(int(time.time()))
     message = f"{method}\n{url_path}\n{timestamp}\n{nonce}\n{body}\n"
-    sig = _sign_rsa(message)
+    sig = _sign_rsa(message, creds.private_key_pem)
     return (
-        f'WECHATPAY2-SHA256-RSA2048 mchid="{settings.wechat_pay_mch_id}",'
+        f'WECHATPAY2-SHA256-RSA2048 mchid="{creds.mch_id}",'
         f'nonce_str="{nonce}",'
         f'signature="{sig}",'
         f'timestamp="{timestamp}",'
-        f'serial_no="{settings.wechat_pay_cert_serial}"'
+        f'serial_no="{creds.cert_serial}"'
     )
 
 
-async def get_prepay_id(order: Order, openid: str) -> str:
-    """调用微信支付 JSAPI 统一下单接口，返回 prepay_id。
+async def get_prepay_id(order: Order, openid: str, creds) -> str:
+    """调用微信支付 JSAPI 统一下单接口（按 creds 指定的收款主体），返回 prepay_id。
 
     异常：微信 API 返回错误 → AppError(2003)
     """
     body_dict = {
-        "appid": settings.wechat_appid,
-        "mchid": settings.wechat_pay_mch_id,
+        "appid": creds.app_id,
+        "mchid": creds.mch_id,
         "description": f"engGramer {order.tier}会员 {order.duration_months}个月",
         "out_trade_no": order.order_no,
-        "notify_url": settings.wechat_pay_notify_url,
+        "notify_url": creds.notify_url or settings.wechat_pay_notify_url,
         "amount": {"total": order.amount_fen, "currency": "CNY"},
         "payer": {"openid": openid},
     }
     body_str = json.dumps(body_dict, ensure_ascii=False, separators=(",", ":"))
-    auth = _build_auth_header("POST", "/v3/pay/transactions/jsapi", body_str)
+    auth = _build_auth_header("POST", "/v3/pay/transactions/jsapi", body_str, creds)
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -93,13 +99,13 @@ async def get_prepay_id(order: Order, openid: str) -> str:
     return data["prepay_id"]
 
 
-def build_pay_params(prepay_id: str) -> dict:
-    """构建前端 wx.requestPayment() 所需的 5 个参数。"""
+def build_pay_params(prepay_id: str, creds) -> dict:
+    """构建前端 wx.requestPayment() 所需的 5 个参数（按 creds 商户的 appid 签名）。"""
     timestamp = str(int(time.time()))
     nonce = uuid.uuid4().hex
     package = f"prepay_id={prepay_id}"
-    message = f"{settings.wechat_appid}\n{timestamp}\n{nonce}\n{package}\n"
-    pay_sign = _sign_rsa(message)
+    message = f"{creds.app_id}\n{timestamp}\n{nonce}\n{package}\n"
+    pay_sign = _sign_rsa(message, creds.private_key_pem)
     return {
         "timeStamp": timestamp,
         "nonceStr": nonce,
@@ -107,6 +113,40 @@ def build_pay_params(prepay_id: str) -> dict:
         "signType": "RSA",
         "paySign": pay_sign,
     }
+
+
+async def refund(creds, *, out_refund_no: str, amount_fen: int, total_fen: int,
+                 transaction_id: str | None = None,
+                 out_trade_no: str | None = None) -> str:
+    """微信退款 v3（按 creds 指定的收款主体）。返回微信退款单号 refund_id。
+
+    dev-mock（无真实私钥）时只返回 mock 退款单号，不真调微信。
+    """
+    if _is_dev_mode(creds):
+        return f"mock_refund_{uuid.uuid4().hex[:16]}"
+    body_dict = {
+        "out_refund_no": out_refund_no,
+        "amount": {"refund": amount_fen, "total": total_fen, "currency": "CNY"},
+    }
+    if transaction_id:
+        body_dict["transaction_id"] = transaction_id
+    elif out_trade_no:
+        body_dict["out_trade_no"] = out_trade_no
+    body_str = json.dumps(body_dict, ensure_ascii=False, separators=(",", ":"))
+    auth = _build_auth_header("POST", "/v3/refund/domestic/refunds", body_str, creds)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                _REFUND_URL, content=body_str.encode(),
+                headers={"Authorization": auth, "Content-Type": "application/json",
+                         "Accept": "application/json"},
+            )
+            data = resp.json()
+    except Exception as exc:
+        raise AppError(code=2003, message=f"微信退款请求失败：{exc}") from exc
+    if "refund_id" not in data:
+        raise AppError(code=2003, message=f"微信退款失败：{data.get('message', str(data))}")
+    return data["refund_id"]
 
 
 def verify_and_decrypt_callback(headers: dict, raw_body: bytes) -> dict:

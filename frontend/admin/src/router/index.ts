@@ -28,6 +28,7 @@ const router = createRouter({
         { path: 'exam-papers', name: 'exam-papers', component: () => import('../views/ExamPapers.vue') },
         { path: 'entitlements', name: 'entitlements', component: () => import('../views/Entitlements.vue') },
         { path: 'refunds', name: 'refunds', component: () => import('../views/Refunds.vue') },
+        { path: 'payment-accounts', name: 'payment-accounts', component: () => import('../views/PaymentAccounts.vue') },
       ],
     },
   ],

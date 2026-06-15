@@ -88,6 +88,8 @@ class Order(Base):
     )
     total_days = mapped_column(sa.Integer, nullable=True)  # 下单时 = duration_months×30
     payment_confirm_log_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    # 这笔钱由哪个收款主体收的（下单固化；退款按此原路退回，支持多主体/多渠道）
+    payment_account_id = mapped_column(UUID(as_uuid=True), nullable=True)
 
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()

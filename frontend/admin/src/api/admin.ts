@@ -417,3 +417,40 @@ export function reviewRefund(id: string, body: {
 export function getOrderEvidence(orderId: string): Promise<Record<string, unknown>> {
   return unwrap<Record<string, unknown>>(request.get(`/admin/orders/${orderId}/evidence`))
 }
+
+// ── 收款主体（多主体/多渠道）────────────────────────────────
+export interface PaymentAccountItem {
+  id: string
+  name: string
+  subject_type: string     // individual | company | subsidiary
+  provider: string         // wechat | alipay | apple_iap | ...
+  config: Record<string, unknown>
+  secret_alias: string | null
+  branch_company_id: string | null
+  is_default: boolean
+  is_active: boolean
+  credentials_ready: boolean
+  required_secret_keys: string[]
+  created_at: string | null
+}
+export interface PaymentAccountCreate {
+  name: string; subject_type: string; provider: string
+  config?: Record<string, unknown>; secret_alias?: string | null
+  branch_company_id?: string | null; is_active?: boolean
+}
+
+export function listPaymentAccounts(): Promise<PaymentAccountItem[]> {
+  return unwrap<PaymentAccountItem[]>(request.get('/admin/payment-accounts'))
+}
+export function createPaymentAccount(body: PaymentAccountCreate): Promise<PaymentAccountItem> {
+  return unwrap<PaymentAccountItem>(request.post('/admin/payment-accounts', body))
+}
+export function updatePaymentAccount(id: string, body: Partial<PaymentAccountCreate>): Promise<PaymentAccountItem> {
+  return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}`, body))
+}
+export function setDefaultPaymentAccount(id: string): Promise<PaymentAccountItem> {
+  return unwrap<PaymentAccountItem>(request.post(`/admin/payment-accounts/${id}/set-default`))
+}
+export function togglePaymentAccount(id: string): Promise<PaymentAccountItem> {
+  return unwrap<PaymentAccountItem>(request.post(`/admin/payment-accounts/${id}/toggle-active`))
+}
