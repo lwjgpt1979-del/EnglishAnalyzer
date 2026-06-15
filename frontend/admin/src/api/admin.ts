@@ -417,6 +417,12 @@ export function reviewRefund(id: string, body: {
 export function getOrderEvidence(orderId: string): Promise<Record<string, unknown>> {
   return unwrap<Record<string, unknown>>(request.get(`/admin/orders/${orderId}/evidence`))
 }
+/** 打开举证包打印版（带 Bearer 取 HTML → 新窗口，浏览器打印为 PDF）*/
+export async function openEvidencePdf(orderId: string): Promise<void> {
+  const resp = await request.get(`/admin/orders/${orderId}/evidence.html`, { responseType: 'text' })
+  const w = window.open('', '_blank')
+  if (w) { w.document.open(); w.document.write(resp.data as string); w.document.close() }
+}
 
 // ── 收款主体（多主体/多渠道）────────────────────────────────
 export interface PaymentAccountItem {

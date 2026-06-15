@@ -1049,6 +1049,14 @@ async def admin_order_evidence(order_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(await _refund_svc.evidence_pack(db, order_id))
 
 
+@router.get("/orders/{order_id}/evidence.html")
+async def admin_order_evidence_html(order_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """举证包打印版 HTML（带时间戳水印，浏览器「打印为 PDF」即得举证 PDF）。"""
+    from fastapi.responses import HTMLResponse
+    html = await _refund_svc.evidence_html(db, order_id)
+    return HTMLResponse(content=html)
+
+
 # ── 收款主体管理（多主体/多渠道；不涉密）────────────────────────────────────
 from app.services import payment_account_service as _pa_svc
 from app.schemas.payments import (

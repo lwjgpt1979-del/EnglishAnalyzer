@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  listRefunds, reviewRefund, getOrderEvidence,
+  listRefunds, reviewRefund, getOrderEvidence, openEvidencePdf,
   type AdminRefundItem,
 } from '../api/admin'
 
@@ -88,6 +88,10 @@ async function onEvidence(row: AdminRefundItem) {
     evidenceOpen.value = true
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
 }
+async function onEvidencePdf(row: AdminRefundItem) {
+  try { await openEvidencePdf(row.order_id) }
+  catch (e: any) { ElMessage.error(e?.message || '打开失败') }
+}
 
 function changeFilter() { skip.value = 0; load() }
 
@@ -153,6 +157,7 @@ onMounted(load)
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link @click="onEvidence(row)">举证包</el-button>
+          <el-button size="small" link type="primary" @click="onEvidencePdf(row)">举证PDF</el-button>
           <template v-if="row.status === 'pending'">
             <el-button size="small" type="success" @click="onApprove(row)">通过</el-button>
             <el-button size="small" type="danger" @click="onReject(row)">驳回</el-button>

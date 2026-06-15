@@ -508,3 +508,74 @@ async def handle_refund_notify(db: AsyncSession, decrypted: dict) -> dict:
         rec.state_code = "REFUND_ABNORMAL"  # 退款失败/异常，留待人工对账处理
     await db.flush()
     return {"matched": True, "refund_status": status, "record_id": str(rec.id)}
+
+
+# ───────────────────── 纠纷举证包（打印即 PDF 的 HTML，§4.6.4） ─────────────────────
+
+def _esc(v) -> str:
+    import html
+    return html.escape("" if v is None else str(v))
+
+
+async def evidence_html(db: AsyncSession, order_id: uuid.UUID) -> str:
+    """生成打印就绪的举证包 HTML（中文无字体坑；浏览器「打印为 PDF」即得带水印 PDF）。"""
+    pack = await evidence_pack(db, order_id)
+    o = pack["order"]; u = pack["user"]; c = pack["payment_confirm"]
+    gen = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    def row(k, v):
+        return f'<tr><th>{_esc(k)}</th><td>{_esc(v)}</td></tr>'
+
+    confirm_html = '<p class="muted">无支付确认留存记录</p>'
+    if c:
+        confirm_html = "<table>" + "".join([
+            row("勾选时间", c.get("confirmed_at")), row("IP 地址", c.get("ip_address")),
+            row("设备指纹", c.get("device_id")), row("UA", c.get("user_agent")),
+            row("已勾选·退款规则", "是" if c.get("checkbox_refund_policy") else "否"),
+            row("已勾选·虚拟服务", "是" if c.get("checkbox_digital_service") else "否"),
+        ]) + "</table>"
+
+    recs_html = "".join(
+        f'<tr><td>{_esc(r["refund_type"])}</td><td>{_esc(r.get("appeal_type") or "-")}</td>'
+        f'<td>{_esc(r["state_code"])}</td><td>{_esc(r["status"])}</td>'
+        f'<td>¥{(r["amount_fen"] or 0)/100:.2f}</td><td>{_esc(r.get("wx_refund_id") or "-")}</td>'
+        f'<td>{_esc(r.get("created_at"))}</td></tr>'
+        for r in pack["refund_records"]) or '<tr><td colspan="7" class="muted">无</td></tr>'
+
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>纠纷举证包 {_esc(o['order_no'])}</title>
+<style>
+@page {{ size: A4; margin: 16mm; }}
+body {{ font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #222; font-size: 13px; position: relative; }}
+.watermark {{ position: fixed; inset: 0; z-index: 0; overflow: hidden; opacity: .07; transform: rotate(-30deg); }}
+.watermark div {{ font-size: 26px; white-space: nowrap; line-height: 90px; color: #000; }}
+.content {{ position: relative; z-index: 1; }}
+h1 {{ font-size: 20px; }} h2 {{ font-size: 15px; margin-top: 18px; border-left: 4px solid #1677ff; padding-left: 8px; }}
+table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
+th, td {{ border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; word-break: break-all; }}
+th {{ background: #f5f7fa; width: 130px; font-weight: 600; }}
+.muted {{ color: #999; }} .gen {{ color: #999; font-size: 11px; margin-top: 6px; }}
+@media print {{ .noprint {{ display: none; }} }}
+</style></head><body>
+<div class="watermark">{''.join(f'<div>engGramer 举证 {gen} &nbsp; ' * 3 + '</div>' for _ in range(14))}</div>
+<div class="content">
+<button class="noprint" onclick="window.print()" style="float:right;padding:6px 14px">打印 / 另存为 PDF</button>
+<h1>纠纷举证包</h1>
+<p class="gen">生成时间：{gen}</p>
+
+<h2>一、订单信息</h2><table>
+{row("订单号", o["order_no"])}{row("档位", o["tier"])}{row("金额", f'¥{(o["amount_fen"] or 0)/100:.2f}')}
+{row("时长(天)", o["total_days"])}{row("活动价", "是" if o["is_promotional"] else "否")}
+{row("状态", o["status"])}{row("退款状态", o["refund_status"])}{row("申诉状态", o["appeal_status"])}
+{row("支付时间", o["paid_at"])}{row("下单时间", o["created_at"])}
+{row("用户", u.get("nickname"))}{row("手机", u.get("phone"))}
+</table>
+
+<h2>二、支付前合规确认留存</h2>{confirm_html}
+
+<h2>三、会员使用记录</h2><table>{row("生效后使用次数", pack["usage_count_since_paid"])}</table>
+
+<h2>四、退款 / 申诉记录</h2>
+<table><tr><th>类型</th><th>申诉类型</th><th>状态码</th><th>状态</th><th>金额</th><th>渠道退款单号</th><th>时间</th></tr>
+{recs_html}</table>
+</div></body></html>"""
