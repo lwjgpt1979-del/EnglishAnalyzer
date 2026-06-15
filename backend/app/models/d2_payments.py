@@ -147,6 +147,9 @@ class RefundRecord(Base):
     status = mapped_column(refund_status_enum, nullable=False)
     reason = mapped_column(sa.Text, nullable=True)
     wx_refund_id = mapped_column(sa.String, nullable=True)
+    # 退款异步对账：out_refund_no 匹配微信退款结果通知；wx_refund_status 存原始状态
+    out_refund_no = mapped_column(sa.String, nullable=True, index=True)
+    wx_refund_status = mapped_column(sa.String, nullable=True)
     branch_company_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("branch_companies.id"), nullable=True
     )

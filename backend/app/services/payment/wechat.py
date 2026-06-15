@@ -14,11 +14,12 @@ class WeChatProvider(PaymentProvider):
 
     async def refund(self, creds: Creds, *, out_refund_no: str, amount_fen: int,
                      total_fen: int, transaction_id: str | None = None,
-                     out_trade_no: str | None = None) -> str:
+                     out_trade_no: str | None = None,
+                     notify_url: str | None = None) -> str:
         return await wx.refund(
             creds, out_refund_no=out_refund_no, amount_fen=amount_fen,
             total_fen=total_fen, transaction_id=transaction_id,
-            out_trade_no=out_trade_no)
+            out_trade_no=out_trade_no, notify_url=notify_url)
 
     def required_secret_keys(self) -> list[str]:
         # 私钥=请求签名；APIv3=回调解密；平台公钥=回调验签（三件套）

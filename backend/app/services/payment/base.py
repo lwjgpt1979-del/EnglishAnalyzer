@@ -32,7 +32,8 @@ class PaymentProvider:
 
     async def refund(self, creds: Creds, *, out_refund_no: str, amount_fen: int,
                      total_fen: int, transaction_id: str | None = None,
-                     out_trade_no: str | None = None) -> str:
+                     out_trade_no: str | None = None,
+                     notify_url: str | None = None) -> str:
         """执行退款，返回渠道退款单号。
 
         注意：苹果IAP/GooglePlay 退款由商店发起并回调，适配器实现为"不主动调用、

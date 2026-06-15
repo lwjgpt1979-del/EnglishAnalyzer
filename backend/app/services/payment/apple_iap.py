@@ -21,7 +21,8 @@ class AppleIapProvider(PaymentProvider):
 
     async def refund(self, creds: Creds, *, out_refund_no: str, amount_fen: int,
                      total_fen: int, transaction_id: str | None = None,
-                     out_trade_no: str | None = None) -> str:
+                     out_trade_no: str | None = None,
+                     notify_url: str | None = None) -> str:
         # 苹果退款由用户向 Apple 申请、Apple 审批后回调；服务端不能主动发起
         raise AppError(
             code=400,

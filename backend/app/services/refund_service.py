@@ -101,24 +101,35 @@ async def _get_order_owned(db: AsyncSession, user: User, order_id: uuid.UUID) ->
     return order
 
 
-async def _wx_refund(db: AsyncSession, order: Order, amount_fen: int) -> str:
-    """执行退款，返回渠道退款单号。按订单固化的收款主体+渠道选适配器。
+def _refund_notify_url(account_id: str | None) -> str | None:
+    """退款结果通知地址：复用支付 notify 的同域 base，路径换 wx-refund。"""
+    base = settings.wechat_pay_notify_url
+    if not base:
+        return None
+    root = base.rsplit("/", 1)[0]  # .../api/v1/webhooks
+    url = f"{root}/wx-refund"
+    return f"{url}/{account_id}" if account_id else url
+
+
+async def _wx_refund(db: AsyncSession, order: Order, amount_fen: int) -> tuple[str, str]:
+    """执行退款，返回 (渠道退款单号, out_refund_no)。按订单固化的收款主体+渠道选适配器。
 
     - 全局开关 wechat_pay_refund_enabled 关 → dev-mock，不真调任何渠道。
-    - 开 → 按 order.payment_account_id 解析主体凭证 → 对应渠道适配器退款；
-      凭证为 dev（占位密钥）时适配器内部仍返回 mock 单号。
+    - 开 → 按 order.payment_account_id 解析主体凭证 → 对应渠道适配器退款（带退款
+      结果通知地址，供异步对账）；凭证为 dev（占位密钥）时适配器内部仍返回 mock 单号。
     """
+    out_refund_no = f"RF{uuid.uuid4().hex[:24]}"
     if not settings.wechat_pay_refund_enabled:
-        return f"mock_refund_{uuid.uuid4().hex[:16]}"
+        return f"mock_refund_{uuid.uuid4().hex[:16]}", out_refund_no
     from app.services import payment_account_service
     from app.services.payment.base import get_provider
     creds = await payment_account_service.resolve_creds_for_order(db, order)
     provider = get_provider(creds.provider)
-    out_refund_no = f"RF{uuid.uuid4().hex[:24]}"
-    return await provider.refund(
+    refund_id = await provider.refund(
         creds, out_refund_no=out_refund_no, amount_fen=amount_fen,
         total_fen=order.amount_fen, transaction_id=order.wx_transaction_id,
-        out_trade_no=order.order_no)
+        out_trade_no=order.order_no, notify_url=_refund_notify_url(creds.account_id))
+    return refund_id, out_refund_no
 
 
 def _apply_refund_amount(order: Order, amount_fen: int) -> None:
@@ -187,7 +198,7 @@ async def request_refund(db: AsyncSession, user: User,
     )
     if r["auto"]:
         # 7天内未使用 → 自动全额退款
-        rec.wx_refund_id = await _wx_refund(db, order, r["refund_fen"])
+        rec.wx_refund_id, rec.out_refund_no = await _wx_refund(db, order, r["refund_fen"])
         rec.status = "completed"
         rec.reviewed_at = now
         _apply_refund_amount(order, r["refund_fen"])
@@ -285,7 +296,7 @@ async def submit_appeal(db: AsyncSession, user: User, order_id: uuid.UUID,
             rec.state_code = "AUTO_DUPLICATE_REFUND"
             rec.status = "completed"
             rec.reviewed_at = now
-            rec.wx_refund_id = await _wx_refund(db, order, fen)
+            rec.wx_refund_id, rec.out_refund_no = await _wx_refund(db, order, fen)
             _apply_refund_amount(order, fen)
             order.appeal_status = "AUTO_DUPLICATE_REFUND"
         else:
@@ -375,7 +386,7 @@ async def review(db: AsyncSession, admin: User, refund_id: uuid.UUID, *,
             raise AppError(code=400, message="退款金额不能超过订单实付金额")
         rec.amount_fen = fen
         rec.status = "completed"
-        rec.wx_refund_id = await _wx_refund(db, order, fen)
+        rec.wx_refund_id, rec.out_refund_no = await _wx_refund(db, order, fen)
         _apply_refund_amount(order, fen)
         if is_appeal:
             rec.state_code = "APPEAL_APPROVED"
@@ -466,3 +477,34 @@ async def evidence_pack(db: AsyncSession, order_id: uuid.UUID) -> dict:
             } for r in recs
         ],
     }
+
+
+# ───────────────────── 退款异步对账（微信退款结果通知） ─────────────────────
+
+async def handle_refund_notify(db: AsyncSession, decrypted: dict) -> dict:
+    """处理微信退款结果通知，按 out_refund_no 匹配并核对状态。
+
+    decrypted 关键字段：out_refund_no、refund_id、refund_status(SUCCESS/CLOSED/ABNORMAL)。
+    SUCCESS→确认退款到账(completed)；CLOSED/ABNORMAL→标记异常(state_code=REFUND_ABNORMAL)。
+    """
+    out_refund_no = decrypted.get("out_refund_no")
+    if not out_refund_no:
+        return {"matched": False, "reason": "no out_refund_no"}
+    rec = await db.scalar(
+        select(RefundRecord).where(RefundRecord.out_refund_no == out_refund_no)
+    )
+    if rec is None:
+        return {"matched": False, "reason": "refund record not found"}
+
+    status = decrypted.get("refund_status") or ""
+    rec.wx_refund_status = status
+    if decrypted.get("refund_id") and not rec.wx_refund_id:
+        rec.wx_refund_id = decrypted["refund_id"]
+    rec.reviewed_at = _now()
+
+    if status == "SUCCESS":
+        rec.status = "completed"          # 退款到账确认
+    elif status in ("CLOSED", "ABNORMAL"):
+        rec.state_code = "REFUND_ABNORMAL"  # 退款失败/异常，留待人工对账处理
+    await db.flush()
+    return {"matched": True, "refund_status": status, "record_id": str(rec.id)}

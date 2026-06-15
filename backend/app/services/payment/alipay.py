@@ -17,7 +17,8 @@ class AlipayProvider(PaymentProvider):
 
     async def refund(self, creds: Creds, *, out_refund_no: str, amount_fen: int,
                      total_fen: int, transaction_id: str | None = None,
-                     out_trade_no: str | None = None) -> str:
+                     out_trade_no: str | None = None,
+                     notify_url: str | None = None) -> str:
         if creds.is_dev:
             return f"mock_alipay_refund_{uuid.uuid4().hex[:16]}"
         raise AppError(code=400, message="支付宝退款待接入（P-后续）")

@@ -126,9 +126,11 @@ def build_pay_params(prepay_id: str, creds) -> dict:
 
 async def refund(creds, *, out_refund_no: str, amount_fen: int, total_fen: int,
                  transaction_id: str | None = None,
-                 out_trade_no: str | None = None) -> str:
+                 out_trade_no: str | None = None,
+                 notify_url: str | None = None) -> str:
     """微信退款 v3（按 creds 指定的收款主体）。返回微信退款单号 refund_id。
 
+    notify_url：退款结果异步通知地址（对账用）。
     dev-mock（无真实私钥）时只返回 mock 退款单号，不真调微信。
     """
     if _is_dev_mode(creds):
@@ -137,6 +139,8 @@ async def refund(creds, *, out_refund_no: str, amount_fen: int, total_fen: int,
         "out_refund_no": out_refund_no,
         "amount": {"refund": amount_fen, "total": total_fen, "currency": "CNY"},
     }
+    if notify_url:
+        body_dict["notify_url"] = notify_url
     if transaction_id:
         body_dict["transaction_id"] = transaction_id
     elif out_trade_no:

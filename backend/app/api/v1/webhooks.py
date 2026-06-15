@@ -78,3 +78,38 @@ async def wx_pay_callback(request: Request, db: DbDep):
 async def wx_pay_callback_for_account(account_id: uuid.UUID, request: Request, db: DbDep):
     """指定收款主体（子公司/多商户）的支付结果通知。"""
     return await _handle_wx_pay(request, db, account_id)
+
+
+async def _handle_wx_refund(request: Request, db: AsyncSession,
+                            account_id: uuid.UUID | None) -> dict:
+    """退款结果通知：按主体取凭证验签解密 → 按 out_refund_no 对账更新。"""
+    from app.services import refund_service
+    raw_body = await request.body()
+    headers = dict(request.headers)
+    account = None
+    if account_id is not None:
+        account = await payment_account_service.get(db, account_id)
+    if account is None:
+        account = await payment_account_service.get_default(db)
+    creds = payment_account_service.load_credentials(account)
+    try:
+        decrypted = wechat_pay_service.verify_and_decrypt_callback(headers, raw_body, creds)
+    except AppError:
+        raise
+    except Exception as exc:
+        raise AppError(code=400, message=f"退款回调处理失败：{exc}") from exc
+    await refund_service.handle_refund_notify(db, decrypted)
+    await db.commit()
+    return {"code": "SUCCESS"}
+
+
+@router.post("/wx-refund")
+async def wx_refund_callback(request: Request, db: DbDep):
+    """默认收款主体的退款结果通知（对账）。"""
+    return await _handle_wx_refund(request, db, None)
+
+
+@router.post("/wx-refund/{account_id}")
+async def wx_refund_callback_for_account(account_id: uuid.UUID, request: Request, db: DbDep):
+    """指定收款主体的退款结果通知（对账）。"""
+    return await _handle_wx_refund(request, db, account_id)
