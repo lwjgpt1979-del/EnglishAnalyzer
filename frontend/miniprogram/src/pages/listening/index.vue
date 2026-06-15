@@ -40,6 +40,11 @@
         <button class="play-btn" :class="{ playing }" @tap="playAudio">
           {{ playing ? '⏸ 暂停' : (audioLoaded ? '▶ 重听' : '▶ 播放音频') }}
         </button>
+        <!-- 语速调节（§6.5：基础不开放，Pro 慢/标，ProMax 慢/标/真题）-->
+        <view v-if="speedOptions.length > 1" class="speed-row">
+          <text v-for="s in speedOptions" :key="s.stage" class="speed-chip"
+            :class="{ on: speed === s.stage }" @tap="changeSpeed(s.stage)">{{ s.label }}</text>
+        </view>
         <text class="ac-hint">{{ phase === 'doing' ? '听音频，选出每题答案' : '可回听音频，对照下方原文' }}</text>
       </view>
 
@@ -102,13 +107,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { getListeningExercises, getListeningExercise, submitListening, shadowListening } from '@/api/listening'
 import type { ListeningBrief, ListeningDetail } from '@/api/listening'
-import { resolveSpeakUrl, gradeToStage } from '@/utils/tts'
-import { useAuthStore } from '@/stores/auth'
+import { resolveSpeakUrl } from '@/utils/tts'
 import { useEntitlementsStore } from '@/stores/entitlements'
 import ShadowModal from '@/components/ShadowModal.vue'
 import Paywall from '@/components/Paywall.vue'
 
-const auth = useAuthStore()
 const ent = useEntitlementsStore()
 
 const loading = ref(true)
@@ -179,6 +182,26 @@ const correctCount = computed(() =>
   detail.value.questions?.reduce((n, q, i) => n + (answers.value[i] === q.answer_index ? 1 : 0), 0) || 0,
 )
 
+// 语速调节（§6.5）：慢速=primary / 标准=junior / 真题=senior
+const SPEEDS: { stage: 'primary' | 'junior' | 'senior'; label: string }[] = [
+  { stage: 'primary', label: '慢速' },
+  { stage: 'junior', label: '标准速' },
+  { stage: 'senior', label: '真题速' },
+]
+const speed = ref<'primary' | 'junior' | 'senior'>('junior')
+const speedOptions = computed(() => {
+  if (ent.tier === 'promax') return SPEEDS                                  // 慢/标/真题
+  if (ent.tier === 'pro') return SPEEDS.filter(s => s.stage !== 'senior')   // 慢/标
+  return []                                                                 // 基础/免费不开放
+})
+function changeSpeed(stage: 'primary' | 'junior' | 'senior') {
+  if (speed.value === stage) return
+  speed.value = stage
+  audioLoaded.value = false
+  resetAudio()
+  playAudio()
+}
+
 function optionClass(qi: number, oi: number) {
   if (phase.value === 'doing') {
     return answers.value[qi] === oi ? 'selected' : ''
@@ -230,7 +253,8 @@ async function playAudio() {
     _ctx.onError(() => { playing.value = false })
   }
   if (playing.value) { _ctx.pause(); playing.value = false; return }
-  _ctx.src = await resolveSpeakUrl(detail.value.transcript, gradeToStage((auth.user as any)?.preferred_grade))
+  // 语速：用户所选档(慢/标/真题)；基础档无选择则用标准
+  _ctx.src = await resolveSpeakUrl(detail.value.transcript, speed.value)
   _ctx.play()
 }
 </script>
@@ -258,6 +282,9 @@ async function playAudio() {
 .play-btn { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-size: 30rpx; font-weight: 700; padding: 20rpx 0; width: 100%; }
 .play-btn.playing { background: var(--c-primary-deep); }
 .ac-hint { font-size: 22rpx; color: var(--c-text-hint); }
+.speed-row { display: flex; gap: 12rpx; }
+.speed-chip { font-size: 24rpx; color: var(--c-text-second); background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 8rpx 24rpx; }
+.speed-chip.on { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
 
 .q-card { display: flex; flex-direction: column; gap: 14rpx; }
 .q-prompt { font-size: 30rpx; font-weight: 700; color: var(--c-ink); line-height: 1.5; }
