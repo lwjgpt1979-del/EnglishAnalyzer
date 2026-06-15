@@ -21,7 +21,9 @@ class WeChatProvider(PaymentProvider):
             out_trade_no=out_trade_no)
 
     def required_secret_keys(self) -> list[str]:
-        return ["WECHAT_PRIVATE_KEY_PEM", "WECHAT_API_KEY_V3"]
+        # 私钥=请求签名；APIv3=回调解密；平台公钥=回调验签（三件套）
+        return ["WECHAT_PRIVATE_KEY_PEM", "WECHAT_API_KEY_V3",
+                "WECHAT_PLATFORM_PUBLIC_KEY_PEM"]
 
 
 register(WeChatProvider())
