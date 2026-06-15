@@ -1109,6 +1109,72 @@ import datetime as _dt
 from app.services import branch_service as _branch_svc
 
 
+# ── 财务管理（§5.4）：营收统计 / 订单明细 / 导出 / 分成结算 ──────────────────────
+import datetime as _fdt
+from fastapi import Response as _Response
+from app.services import finance_service as _fin_svc
+
+
+def _period(month: str | None) -> tuple:
+    """month=YYYY-MM；缺省=当月。返回 [start, end) 的 UTC datetime。"""
+    today = _fdt.datetime.now(_fdt.timezone.utc)
+    if month:
+        y, m = (int(x) for x in month.split("-"))
+    else:
+        y, m = today.year, today.month
+    start = _fdt.datetime(y, m, 1, tzinfo=_fdt.timezone.utc)
+    end = _fdt.datetime(y + (m // 12), (m % 12) + 1, 1, tzinfo=_fdt.timezone.utc)
+    return start, end
+
+
+@router.get("/finance/summary", response_model=None)
+async def admin_finance_summary(
+    db: DbDep, admin: AdminDep,
+    month: str = Query(None, description="YYYY-MM，缺省当月"),
+    group_by: str = Query("account", description="account|branch|none"),
+):
+    start, end = _period(month)
+    return make_ok(await _fin_svc.revenue_summary(db, start=start, end=end, group_by=group_by))
+
+
+@router.get("/finance/orders", response_model=None)
+async def admin_finance_orders(
+    db: DbDep, admin: AdminDep, month: str = Query(None),
+    skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500),
+):
+    start, end = _period(month)
+    return make_ok(await _fin_svc.list_orders(db, start=start, end=end, skip=skip, limit=limit))
+
+
+@router.get("/finance/export")
+async def admin_finance_export(db: DbDep, admin: AdminDep, month: str = Query(None)):
+    start, end = _period(month)
+    csv_text = await _fin_svc.export_orders_csv(db, start=start, end=end)
+    fname = f"orders_{(month or start.strftime('%Y-%m'))}.csv"
+    # ﻿ BOM 让 Excel 正确识别 UTF-8 中文
+    return _Response(
+        content="﻿" + csv_text, media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@router.get("/finance/settlements", response_model=None)
+async def admin_finance_settlements(db: DbDep, admin: AdminDep,
+                                    branch_id: uuid.UUID = Query(None)):
+    return make_ok(await _fin_svc.list_settlements(db, branch_id=branch_id))
+
+
+@router.post("/finance/settlements/compute", response_model=None)
+async def admin_finance_compute_settlement(body: dict, db: DbDep, admin: AdminDep):
+    """计算（可落库）某分公司某周期分成。body={branch_id, start(YYYY-MM-DD), end, persist?}。"""
+    b = (body or {})
+    res = await _fin_svc.compute_settlement(
+        db, branch_id=uuid.UUID(b["branch_id"]),
+        start=_fdt.date.fromisoformat(b["start"]), end=_fdt.date.fromisoformat(b["end"]),
+        persist=bool(b.get("persist")))
+    await db.commit()
+    return make_ok(res)
+
+
 # ── 用户管理：封禁/解封（§5.3.1）────────────────────────────────────────────────
 from app.services import user_admin_service as _user_svc
 

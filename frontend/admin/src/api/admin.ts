@@ -460,6 +460,38 @@ export function setPaymentSecrets(id: string, secrets: Record<string, string>): 
   return unwrap<PaymentAccountItem>(request.put(`/admin/payment-accounts/${id}/secrets`, secrets))
 }
 
+// ── 财务管理（§5.4）────────────────────────────────────────
+export interface FinanceGroup {
+  key: string | null; name: string
+  gross_yuan: number; refund_yuan: number; net_yuan: number; orders: number; refunds: number
+}
+export interface FinanceSummary {
+  period: { start: string; end: string }; group_by: string
+  total: { gross_yuan: number; refund_yuan: number; net_yuan: number; orders: number; refunds: number }
+  groups: FinanceGroup[]
+}
+export function getFinanceSummary(params: { month?: string; group_by?: string }): Promise<FinanceSummary> {
+  return unwrap<FinanceSummary>(request.get('/admin/finance/summary', { params }))
+}
+export interface FinanceSettlement {
+  id: string; branch_name: string; period_start: string; period_end: string
+  gross_yuan: number; refund_yuan: number; net_yuan: number
+  branch_payable_yuan: number; platform_share_yuan: number; status: string
+}
+export function getSettlements(branch_id?: string): Promise<FinanceSettlement[]> {
+  return unwrap<FinanceSettlement[]>(request.get('/admin/finance/settlements', { params: { branch_id } }))
+}
+export function computeSettlement(body: { branch_id: string; start: string; end: string; persist?: boolean }) {
+  return unwrap(request.post('/admin/finance/settlements/compute', body))
+}
+export async function exportFinance(month?: string): Promise<void> {
+  const resp = await request.get('/admin/finance/export', { params: { month }, responseType: 'blob' })
+  const url = URL.createObjectURL(resp.data as Blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `orders_${month || 'current'}.csv`; a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── 用户管理：封禁/解封 ───────────────────────────────────────
 export interface AdminUserItem {
   id: string
