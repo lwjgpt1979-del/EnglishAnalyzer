@@ -80,3 +80,39 @@ async def test_ban_unban_and_auto_expire():
             await db.execute(text("DELETE FROM users WHERE openid LIKE :p"), {"p": f"{_TAG}_%"})
             await db.commit()
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_membership_pause_on_unban():
+    """解封时会员有效期顺延封禁时长。"""
+    from app.services import user_admin_service as svc
+    import datetime as dt
+    engine = _engine()
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    async with sf() as db:
+        uid = await _mk_user(db)
+        now = dt.datetime.now(dt.timezone.utc)
+        exp0 = now + dt.timedelta(days=10)
+        await db.execute(text(
+            "INSERT INTO memberships (id,user_id,tier,started_at,expires_at,is_active) "
+            "VALUES (:i,:u,'pro',:s,:e,true)"),
+            {"i": uuid.uuid4(), "u": uid, "s": now, "e": exp0})
+        await db.flush()
+        try:
+            # 封禁(banned_at 设为 3 天前模拟已封禁 3 天)
+            from app.models.d1_users import User
+            await svc.ban_user(db, user_id=uid, reason="测试", days=30)
+            u = await db.get(User, uid)
+            u.banned_at = now - dt.timedelta(days=3)
+            await db.flush()
+            # 解封 → 会员顺延约 3 天
+            await svc.unban_user(db, user_id=uid)
+            from app.models.d2_payments import Membership
+            mem = await db.scalar(text("SELECT expires_at FROM memberships WHERE user_id=:u").bindparams(u=uid))
+            # 顺延后应 > 原到期 + 2.9 天
+            assert mem >= exp0 + dt.timedelta(days=2, hours=23)
+        finally:
+            await db.execute(text("DELETE FROM memberships WHERE user_id=:u"), {"u": uid})
+            await db.execute(text("DELETE FROM users WHERE id=:u"), {"u": uid})
+            await db.commit()
+    await engine.dispose()

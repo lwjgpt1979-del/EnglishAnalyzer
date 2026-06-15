@@ -5,12 +5,26 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_user_allow_banned
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.users import UserMeOut
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("/me/ban-status", response_model=None)
+async def ban_status(
+    current_user: Annotated[User, Depends(get_current_user_allow_banned)],
+):
+    """被封禁用户可见的封禁说明（§5.3.1）。普通用户返回 banned=false。"""
+    return make_ok({
+        "banned": not current_user.is_active,
+        "ban_type": (None if current_user.is_active else
+                     ("permanent" if current_user.banned_until is None else "temporary")),
+        "reason": current_user.ban_reason,
+        "banned_until": current_user.banned_until.isoformat() if current_user.banned_until else None,
+    })
 
 
 @router.get("/me", response_model=BaseResponse[UserMeOut])

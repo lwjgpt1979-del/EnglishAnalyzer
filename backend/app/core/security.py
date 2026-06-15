@@ -95,9 +95,11 @@ async def get_current_user(
         if executed:
             await db.commit()
 
-    # 临时封禁到期自动解封（懒触发，§5.3.1）
+    # 临时封禁到期自动解封（懒触发，§5.3.1）：先顺延会员有效期，再清封禁态
     if (not user.is_active and user.banned_until is not None
             and user.banned_until <= datetime.now(timezone.utc)):
+        from app.services.user_admin_service import resume_membership_after_ban
+        await resume_membership_after_ban(db, user)
         user.is_active = True
         user.ban_reason = None
         user.banned_until = None
@@ -112,6 +114,29 @@ async def get_current_user(
     ):
         raise AppError(code=401, message="用户不存在或已被封禁")
 
+    return user
+
+
+async def get_current_user_allow_banned(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """与 get_current_user 同，但**不拦截封禁用户**（供被封用户查看封禁说明/申诉）。"""
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="未授权，请重新登录",
+        headers={"WWW-Authenticate": "Bearer"})
+    if credentials is None:
+        raise unauthorized
+    try:
+        payload = decode_token(credentials.credentials, expected_type="access")
+    except JWTError:
+        raise unauthorized
+    user_id: str = payload.get("sub", "")
+    if not user_id:
+        raise unauthorized
+    user = (await db.execute(select(User).where(User.id == uuid.UUID(user_id)))).scalar_one_or_none()
+    if user is None:
+        raise unauthorized
     return user
 
 
