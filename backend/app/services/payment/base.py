@@ -11,11 +11,13 @@ class Creds:
     """某收款主体在某渠道下的运行时凭证（非密来自 DB config，密钥来自 env）。"""
     provider: str
     is_dev: bool = True            # True → dev-mock，不真调渠道
+    account_id: str | None = None  # 收款主体 id（用于回调路由）
     app_id: str | None = None
     mch_id: str | None = None
     cert_serial: str | None = None
     private_key_pem: str | None = None
     api_key_v3: str | None = None
+    platform_public_key_pem: str | None = None  # 微信平台证书公钥，用于回调验签
     notify_url: str | None = None
     extra: dict = field(default_factory=dict)   # 渠道专属（如苹果 issuer_id/key_id）
 

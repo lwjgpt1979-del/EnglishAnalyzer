@@ -112,19 +112,25 @@ def load_credentials(account: PaymentAccount | None) -> Creds:
     if account.provider == "wechat":
         pem = _env(alias, "WECHAT_PRIVATE_KEY_PEM")
         api_key = _env(alias, "WECHAT_API_KEY_V3")
+        plat = _env(alias, "WECHAT_PLATFORM_PUBLIC_KEY_PEM")
         # legacy 主体：env 缺失时回退现有 settings，保持当前 dev 行为不变
         if alias == LEGACY_ALIAS:
             pem = pem or settings.wechat_pay_private_key_pem
             api_key = api_key or settings.wechat_pay_api_key_v3
         is_dev = (not pem) or pem.startswith("placeholder")
+        # 非默认主体用带主体 id 的回调地址，以便回调按主体取 key 解密验签
+        notify = cfg.get("notify_url") or settings.wechat_pay_notify_url
+        if not account.is_default and notify:
+            notify = f"{notify}/{account.id}"
         return Creds(
-            provider="wechat", is_dev=is_dev,
+            provider="wechat", is_dev=is_dev, account_id=str(account.id),
             app_id=cfg.get("app_id") or settings.wechat_appid,
             mch_id=cfg.get("mch_id"),
             cert_serial=cfg.get("cert_serial"),
             private_key_pem=pem,
             api_key_v3=api_key,
-            notify_url=cfg.get("notify_url") or settings.wechat_pay_notify_url,
+            platform_public_key_pem=plat,
+            notify_url=notify,
             extra=cfg,
         )
 

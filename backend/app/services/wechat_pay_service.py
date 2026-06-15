@@ -149,12 +149,42 @@ async def refund(creds, *, out_refund_no: str, amount_fen: int, total_fen: int,
     return data["refund_id"]
 
 
-def verify_and_decrypt_callback(headers: dict, raw_body: bytes) -> dict:
+def verify_signature(headers: dict, raw_body: bytes, platform_public_key_pem: str) -> bool:
+    """验证微信支付 v3 回调签名（RSA-SHA256/PKCS1v15，平台证书公钥）。
+
+    构造待验签串 = f"{timestamp}\n{nonce}\n{body}\n"，对 Wechatpay-Signature
+    (base64) 用平台公钥验签。headers 大小写不敏感。
+    """
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+    from cryptography.exceptions import InvalidSignature
+
+    h = {k.lower(): v for k, v in headers.items()}
+    timestamp = h.get("wechatpay-timestamp", "")
+    nonce = h.get("wechatpay-nonce", "")
+    signature_b64 = h.get("wechatpay-signature", "")
+    if not (timestamp and nonce and signature_b64):
+        return False
+    message = f"{timestamp}\n{nonce}\n{raw_body.decode()}\n".encode()
+    try:
+        pub = serialization.load_pem_public_key(platform_public_key_pem.encode())
+        pub.verify(
+            base64.b64decode(signature_b64), message,
+            asym_padding.PKCS1v15(), hashes.SHA256(),
+        )
+        return True
+    except (InvalidSignature, Exception):
+        return False
+
+
+def verify_and_decrypt_callback(headers: dict, raw_body: bytes, creds=None) -> dict:
     """验证微信回调签名并解密 resource 字段，返回解密后的交易数据。
 
-    - dev 模式（skip_sig_verify=True）跳过 RSA 验签。
     - 测试辅助：resource 含 mock_decrypted 字段时直接返回，无需 AES-GCM。
-    - 生产：使用 AES-256-GCM 解密（key = wechat_pay_api_key_v3 前 32 字节）。
+    - dev（creds.is_dev 或 skip_sig_verify=True）跳过 RSA 验签。
+    - 生产：用 creds.platform_public_key_pem 验证 Wechatpay-Signature；
+      再用 creds.api_key_v3（前 32 字节）AES-256-GCM 解密 resource。
+    creds 为空时回退全局 settings（兼容单商户）。
     """
     body = json.loads(raw_body)
     resource = body.get("resource", {})
@@ -163,15 +193,23 @@ def verify_and_decrypt_callback(headers: dict, raw_body: bytes) -> dict:
     if "mock_decrypted" in resource:
         return resource["mock_decrypted"]
 
-    if not settings.wechat_pay_skip_sig_verify:
-        # 生产环境：完整 RSA 验签（需微信平台公钥证书，此处预留）
-        pass
+    api_key = (creds.api_key_v3 if creds and creds.api_key_v3
+               else settings.wechat_pay_api_key_v3)
+    plat_pem = creds.platform_public_key_pem if creds else None
+    is_dev = bool(creds and creds.is_dev)
+
+    # 生产验签（dev 或显式跳过时不验）
+    if not is_dev and not settings.wechat_pay_skip_sig_verify:
+        if not plat_pem:
+            raise AppError(code=400, message="缺少微信平台证书公钥，无法验签回调")
+        if not verify_signature(headers, raw_body, plat_pem):
+            raise AppError(code=400, message="微信回调验签失败")
 
     # AES-256-GCM 解密 resource
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-        key = settings.wechat_pay_api_key_v3.encode()[:32]
+        key = api_key.encode()[:32]
         nonce_bytes = resource["nonce"].encode()
         associated_data = resource.get("associated_data", "").encode()
         ciphertext = base64.b64decode(resource["ciphertext"])
