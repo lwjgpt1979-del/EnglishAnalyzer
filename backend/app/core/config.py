@@ -130,6 +130,10 @@ class Settings(BaseSettings):
     # CORS 允许来源（逗号分隔；dev 默认 "*"，生产应填 admin/机构前端域名）
     # 例：https://admin.goodgrammar.top,https://inst.goodgrammar.top
     cors_allow_origins: str = "*"
+    # 错误监控 Sentry（留空=关闭；填 DSN 即开启上报）
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0   # 性能追踪采样率（0=仅错误，0.1=10%）
+    environment: str = "development"          # 上报环境标签：production/staging/development
 
     # 老师认证
     auto_approve_teacher_cert: bool = True  # dev 自动通过；生产置 False 由 admin 审核

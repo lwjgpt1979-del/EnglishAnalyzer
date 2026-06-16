@@ -305,3 +305,23 @@ class Announcement(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class RateLimit(Base):
+    """固定窗口限流计数（防爆破，上线硬化）。
+
+    bucket_key 形如 'login:ip:1.2.3.4' / 'sms:phone:138...'；
+    window_start 为窗口起点（按窗口长度对齐）。(bucket_key, window_start) 唯一，
+    INSERT ... ON CONFLICT DO UPDATE count=count+1 原子自增。过期行可定期清理。
+    """
+
+    __tablename__ = "rate_limits"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bucket_key = mapped_column(sa.String(160), nullable=False)
+    window_start = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
+
+    __table_args__ = (
+        sa.UniqueConstraint("bucket_key", "window_start", name="uix_rate_limits"),
+    )

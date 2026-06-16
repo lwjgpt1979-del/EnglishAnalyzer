@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,7 +70,14 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 # ─── 管理员登录（M5 / D-098）：账号密码 → JWT，无需 AdminDep（登录入口）──────
 
 @router.post("/auth/login", response_model=BaseResponse[TokenResponse])
-async def admin_login(body: AdminLoginRequest, db: DbDep):
+async def admin_login(body: AdminLoginRequest, request: Request, db: DbDep):
+    # 防爆破限流：同 IP 20 次/5min、同用户名 10 次/5min
+    from app.services import rate_limit_service as _rl
+    ip = _rl.client_ip(request)
+    await _rl.hit(db, key=f"admin_login:ip:{ip}", limit=20, window_seconds=300,
+                  message="登录尝试过于频繁，请 5 分钟后再试")
+    await _rl.hit(db, key=f"admin_login:user:{(body.username or '').lower()}", limit=10,
+                  window_seconds=300, message="该账号登录尝试过于频繁，请 5 分钟后再试")
     user = await admin_auth_service.authenticate(
         db, username=body.username, password=body.password,
     )

@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
@@ -270,8 +270,14 @@ async def relative_invite_qrcode(db: DbDep, current_user: UserDep):
 
 
 @router.post("/invite-code/sms", response_model=BaseResponse[SendInviteSmsOut])
-async def relative_invite_sms(body: SendInviteSmsRequest, db: DbDep, current_user: UserDep):
+async def relative_invite_sms(body: SendInviteSmsRequest, request: Request, db: DbDep, current_user: UserDep):
     await get_rls_db(db, str(current_user.id))
+    # 防刷短信：同用户 10 次/小时、目标手机号 5 次/小时
+    from app.services import rate_limit_service as _rl
+    await _rl.hit(db, key=f"sms:rel_invite:user:{current_user.id}", limit=10, window_seconds=3600,
+                  message="发送过于频繁，请稍后再试")
+    await _rl.hit(db, key=f"sms:rel_invite:phone:{body.phone}", limit=5, window_seconds=3600,
+                  message="该号码验证码发送过于频繁，请 1 小时后再试")
     invite = await relative_service.generate_invite_code(db, student_id=current_user.id)
     await db.commit()
     await send_invite_sms(

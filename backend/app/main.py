@@ -20,7 +20,26 @@ async def lifespan(app: FastAPI):
     await close_async_engine()
 
 
+def _init_sentry() -> None:
+    """错误监控（上线硬化）：配了 SENTRY_DSN 才启用；未装包/未配则静默跳过。"""
+    if not settings.sentry_dsn:
+        return
+    try:
+        import sentry_sdk
+    except ImportError:
+        print("⚠️ SENTRY_DSN 已配置但未安装 sentry-sdk，跳过（pip install sentry-sdk）", flush=True)
+        return
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        send_default_pii=False,   # 不上报用户 PII
+    )
+    print(f"✅ Sentry 已启用（env={settings.environment}）", flush=True)
+
+
 def create_app() -> FastAPI:
+    _init_sentry()
     app = FastAPI(
         title="engGramer API",
         version="1.0.0",

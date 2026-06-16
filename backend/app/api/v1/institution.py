@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -83,8 +83,14 @@ async def institution_apply_captcha(db: DbDep):
 
 
 @router.post("/apply/send-code", response_model=BaseResponse[dict])
-async def institution_apply_send_code(body: InstitutionApplyCodeRequest, db: DbDep):
+async def institution_apply_send_code(body: InstitutionApplyCodeRequest, request: Request, db: DbDep):
     """发送机构入驻申请手机验证码（公开）。需先过图形验证码。"""
+    # 防刷短信限流：同手机号 5 次/小时、同 IP 20 次/小时
+    from app.services import rate_limit_service as _rl
+    await _rl.hit(db, key=f"sms:inst_apply:phone:{body.phone}", limit=5, window_seconds=3600,
+                  message="验证码发送过于频繁，请 1 小时后再试")
+    await _rl.hit(db, key=f"sms:inst_apply:ip:{_rl.client_ip(request)}", limit=20, window_seconds=3600,
+                  message="发送过于频繁，请稍后再试")
     await institution_apply_service.send_apply_code(
         db, phone=body.phone, captcha_id=body.captcha_id, captcha_code=body.captcha_code)
     await db.commit()
