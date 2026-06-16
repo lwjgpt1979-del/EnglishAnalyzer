@@ -62,7 +62,7 @@ from .d7_teacher import (  # noqa: F401
 from .d8_usage import DailyUsage, LearningReportSnapshot  # noqa: F401
 
 # 域9: 系统配置与通知 (2 张表)
-from .d9_system import SystemConfig, Notification, UserActivity  # noqa: F401
+from .d9_system import SystemConfig, Notification, UserActivity, ContentFeedback  # noqa: F401
 
 # 域10: 分公司扩展 (3 张表)
 from .d10_branch import (  # noqa: F401

@@ -151,3 +151,23 @@ class UserActivity(Base):
     __table_args__ = (
         sa.UniqueConstraint("user_id", "active_date", name="uix_user_activity"),
     )
+
+
+class ContentFeedback(Base):
+    """内容质量反馈（§5.5）：用户上报诊断/题目有误，后台处理。"""
+
+    __tablename__ = "content_feedback"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    target_type = mapped_column(sa.String, nullable=False)   # diagnosis|question
+    target_id = mapped_column(sa.String, nullable=True)
+    snippet = mapped_column(sa.Text, nullable=True)
+    reason = mapped_column(sa.Text, nullable=True)
+    status = mapped_column(sa.String, nullable=False, server_default=sa.text("'pending'"))
+    note = mapped_column(sa.Text, nullable=True)
+    handled_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    handled_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )

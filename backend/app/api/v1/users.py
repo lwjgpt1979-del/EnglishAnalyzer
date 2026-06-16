@@ -13,6 +13,23 @@ from app.schemas.users import UserMeOut
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+@router.post("/feedback", response_model=None)
+async def submit_content_feedback(
+    body: dict,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """内容质量反馈（§5.5）：上报诊断/题目有误。body={target_type, target_id?, snippet?, reason?}。"""
+    from app.services import content_feedback_service
+    await get_rls_db(db, str(current_user.id))
+    rec = await content_feedback_service.submit(
+        db, user_id=current_user.id, target_type=(body or {}).get("target_type", ""),
+        target_id=(body or {}).get("target_id"), snippet=(body or {}).get("snippet"),
+        reason=(body or {}).get("reason"))
+    await db.commit()
+    return make_ok({"id": str(rec.id), "status": rec.status})
+
+
 @router.get("/me/ban-status", response_model=None)
 async def ban_status(
     current_user: Annotated[User, Depends(get_current_user_allow_banned)],

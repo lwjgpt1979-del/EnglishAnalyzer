@@ -1251,6 +1251,28 @@ async def admin_unban_user(user_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(_user_svc._to_item(u))
 
 
+# ── 内容质量反馈（§5.5）──────────────────────────────────────────────────────
+from app.services import content_feedback_service as _cf_svc
+
+
+@router.get("/content-feedback", response_model=None)
+async def admin_list_content_feedback(
+    db: DbDep, admin: AdminDep,
+    status: str = Query("pending"), target_type: str = Query("all"),
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+):
+    return make_ok(await _cf_svc.admin_list(db, status=status, target_type=target_type, skip=skip, limit=limit))
+
+
+@router.post("/content-feedback/{feedback_id}/handle", response_model=None)
+async def admin_handle_content_feedback(feedback_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """处理反馈：body={action: handled|dismissed, note?}。"""
+    f = await _cf_svc.handle(db, feedback_id=feedback_id, admin_id=admin.id,
+                             action=(body or {}).get("action", ""), note=(body or {}).get("note"))
+    await db.commit()
+    return make_ok({"id": str(f.id), "status": f.status})
+
+
 # ── 封禁申诉审核（§5.3.1）──────────────────────────────────────────────────────
 from app.services import ban_appeal_service as _appeal_svc
 

@@ -34,6 +34,7 @@ const router = createRouter({
         { path: 'finance', name: 'finance', component: () => import('../views/Finance.vue') },
         { path: 'invoices', name: 'invoices', component: () => import('../views/Invoices.vue') },
         { path: 'ban-appeals', name: 'ban-appeals', component: () => import('../views/BanAppeals.vue') },
+        { path: 'content-feedback', name: 'content-feedback', component: () => import('../views/ContentFeedback.vue') },
       ],
     },
   ],

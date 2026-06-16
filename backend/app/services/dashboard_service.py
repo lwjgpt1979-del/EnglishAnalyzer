@@ -89,6 +89,10 @@ async def get_dashboard(db: AsyncSession) -> dict:
     from app.services import activity_service
     active = await activity_service.active_metrics(db)
 
+    # —— 内容质量反馈（§5.5）——
+    from app.services import content_feedback_service
+    feedback = await content_feedback_service.stats(db, since=month0)
+
     # —— 机构 ——
     inst_active = await _count(
         select(func.count()).select_from(Institution).where(Institution.status == "active"))
@@ -109,6 +113,7 @@ async def get_dashboard(db: AsyncSession) -> dict:
         },
         "usage_today": usage_today,
         "active": active,
+        "feedback": feedback,
         "institution": {"active": inst_active},
         "generated_at": now.isoformat(),
     }

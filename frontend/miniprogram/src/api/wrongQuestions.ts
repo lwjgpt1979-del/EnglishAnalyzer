@@ -138,3 +138,10 @@ export function submitReview(wqId: string, quality: number): Promise<WrongQuesti
     data: { quality },
   })
 }
+
+/** 内容质量反馈（§5.5）：诊断/题目有误上报 */
+export function reportContentFeedback(data: {
+  target_type: 'diagnosis' | 'question'; target_id?: string; snippet?: string; reason?: string
+}): Promise<{ id: string; status: string }> {
+  return request('/api/v1/users/feedback', { method: 'POST', data })
+}

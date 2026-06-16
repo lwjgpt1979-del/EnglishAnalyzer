@@ -118,6 +118,7 @@
             <text class="ana-label">💡 建议</text>
             <text class="ana-box ana-box-tip">{{ latestAnalysis.suggestions }}</text>
           </view>
+          <text class="report-err" @tap="onReportError">🚩 诊断有误？反馈</text>
         </view>
       </view>
 
@@ -146,6 +147,7 @@ import {
   listAnalyses,
   markMastered,
   triggerOcr,
+  reportContentFeedback,
 } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 import { getComments } from '@/api/teacher'
@@ -321,6 +323,24 @@ function previewImg() {
     uni.previewImage({ urls: [wq.value.source_image_url] })
   }
 }
+
+function onReportError() {
+  uni.showModal({
+    title: '反馈诊断有误', editable: true, placeholderText: '请简述哪里有误（选填）',
+    success: async (r) => {
+      if (!r.confirm) return
+      try {
+        await reportContentFeedback({
+          target_type: 'diagnosis', target_id: wqId,
+          snippet: (wq.value?.question_text || '').slice(0, 80), reason: r.content || '',
+        })
+        uni.showToast({ title: '已提交，感谢反馈', icon: 'success' })
+      } catch (e) {
+        uni.showToast({ title: (e as Error).message || '提交失败', icon: 'none' })
+      }
+    },
+  })
+}
 </script>
 
 <style scoped>
@@ -379,6 +399,7 @@ function previewImg() {
 .ana-label { display: block; font-size: 27rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 12rpx; }
 .ana-box { display: block; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx 24rpx; font-size: 27rpx; color: var(--c-text-body); line-height: 1.7; }
 .ana-box-tip { background: var(--c-primary-faint); border-left: 6rpx solid var(--c-primary); }
+.report-err { display: inline-block; margin-top: 16rpx; font-size: 24rpx; color: var(--c-text-hint); }
 .tags { display: flex; flex-wrap: wrap; gap: 10rpx; }
 .tag-red {
   background: var(--c-danger-bg);

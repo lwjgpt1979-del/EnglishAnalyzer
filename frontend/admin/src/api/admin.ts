@@ -473,6 +473,7 @@ export interface DashboardData {
   revenue: { gmv_today_yuan: number; gmv_month_yuan: number; refund_month_yuan: number; refund_rate_pct: number }
   usage_today: Record<string, number>
   active: { dau: number; mau: number; trend_7d: { date: string; count: number }[] }
+  feedback: { diagnosis: number; question: number; pending: number }
   institution: { active: number }
   generated_at: string
 }
@@ -554,6 +555,20 @@ export function banUser(id: string, reason: string, days: number | null): Promis
 }
 export function unbanUser(id: string): Promise<AdminUserItem> {
   return unwrap<AdminUserItem>(request.post(`/admin/users/${id}/unban`))
+}
+
+// ── 内容质量反馈（§5.5）──
+export interface ContentFeedbackItem {
+  id: string; target_type: string; target_id: string | null; snippet: string | null
+  reason: string | null; status: string; note: string | null
+  created_at: string | null; handled_at: string | null
+}
+export interface ContentFeedbackListOut { total: number; items: ContentFeedbackItem[] }
+export function listContentFeedback(params: { status?: string; target_type?: string; skip?: number; limit?: number }): Promise<ContentFeedbackListOut> {
+  return unwrap<ContentFeedbackListOut>(request.get('/admin/content-feedback', { params }))
+}
+export function handleContentFeedback(id: string, action: 'handled' | 'dismissed', note?: string) {
+  return unwrap(request.post(`/admin/content-feedback/${id}/handle`, { action, note }))
 }
 
 // ── 封禁申诉审核 ──

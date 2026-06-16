@@ -94,6 +94,16 @@ onMounted(load)
     </el-row>
 
     <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="4"><el-card shadow="hover" :class="dash.feedback.pending > 0 ? 'card-warn' : ''">
+        <el-statistic title="待处理内容反馈" :value="dash.feedback.pending">
+          <template #suffix><router-link v-if="dash.feedback.pending > 0" to="/content-feedback" style="font-size:13px;margin-left:6px">去处理→</router-link></template>
+        </el-statistic>
+      </el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="本月诊断报错" :value="dash.feedback.diagnosis" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="本月题目报错" :value="dash.feedback.question" /></el-card></el-col>
+    </el-row>
+
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
       <el-col :span="4"><el-card shadow="hover"><el-statistic title="今日新增用户" :value="dash.users.new_today" /></el-card></el-col>
       <el-col :span="4"><el-card shadow="hover"><el-statistic title="近7天新增" :value="dash.users.new_7d" /></el-card></el-col>
       <el-col :span="4"><el-card shadow="hover"><el-statistic title="近30天新增" :value="dash.users.new_30d" /></el-card></el-col>
