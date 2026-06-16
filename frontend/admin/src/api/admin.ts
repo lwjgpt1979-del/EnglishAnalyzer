@@ -385,6 +385,7 @@ export interface AdminRefundItem {
   id: string
   order_id: string
   order_no: string
+  overdue: boolean        // 超 SLA(3天)未处理
   kind: string            // refund | appeal
   refund_type: string
   appeal_type: string | null

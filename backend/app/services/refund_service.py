@@ -336,12 +336,14 @@ async def list_reviews(db: AsyncSession, *, kind: str = "all",
     total = int(await db.scalar(count_stmt) or 0)
     stmt = stmt.order_by(RefundRecord.created_at.desc()).offset(skip).limit(limit)
     rows = (await db.execute(stmt)).all()
+    now = _now()
     items = []
     for rec, order, user in rows:
         items.append({
             "id": rec.id,
             "order_id": order.id,
             "order_no": order.order_no,
+            "overdue": _is_overdue(rec, now),
             "kind": "appeal" if rec.refund_type == "appeal" else "refund",
             "refund_type": rec.refund_type,
             "appeal_type": rec.appeal_type,
@@ -579,3 +581,57 @@ th {{ background: #f5f7fa; width: 130px; font-weight: 600; }}
 <table><tr><th>类型</th><th>申诉类型</th><th>状态码</th><th>状态</th><th>金额</th><th>渠道退款单号</th><th>时间</th></tr>
 {recs_html}</table>
 </div></body></html>"""
+
+
+# ───────────────────── 退款/申诉 SLA 超时告警（§4.5.3） ─────────────────────
+# 人工审核 SLA：7天内已使用按比例退款 + 超7天申诉，均要求 3 个工作日内处理。
+# 简化为 3 个自然日；超时即纳入告警。
+SLA_DAYS = 3
+
+
+def _is_overdue(rec, now: dt.datetime) -> bool:
+    if rec.status != "pending":
+        return False
+    created = _aware(rec.created_at) or now
+    return (now - created).days >= SLA_DAYS
+
+
+async def find_overdue(db: AsyncSession) -> list[dict]:
+    """待处理且超 SLA 的退款/申诉记录。"""
+    now = _now()
+    rows = (await db.execute(
+        select(RefundRecord, Order.order_no)
+        .join(Order, RefundRecord.order_id == Order.id)
+        .where(RefundRecord.status == "pending")
+        .order_by(RefundRecord.created_at.asc()))).all()
+    out = []
+    for rec, order_no in rows:
+        if _is_overdue(rec, now):
+            created = _aware(rec.created_at) or now
+            out.append({
+                "id": str(rec.id), "order_no": order_no,
+                "kind": "appeal" if rec.refund_type == "appeal" else "refund",
+                "days_overdue": (now - created).days,
+                "created_at": rec.created_at.isoformat() if rec.created_at else None,
+            })
+    return out
+
+
+async def run_sla_alerts(db: AsyncSession) -> dict:
+    """扫描超 SLA 的待处理退款/申诉，向平台管理员发站内告警。"""
+    overdue = await find_overdue(db)
+    if not overdue:
+        return {"overdue": 0, "admins_notified": 0}
+    from app.models.d1_users import User
+    from app.services import notification_service
+    admin_ids = (await db.execute(
+        select(User.id).where(User.role == "platform_admin", User.is_active.is_(True)))).scalars().all()
+    max_days = max(o["days_overdue"] for o in overdue)
+    title = f"⏰ {len(overdue)} 笔退款/申诉超时未处理"
+    content = (f"有 {len(overdue)} 笔待处理退款/申诉已超 {SLA_DAYS} 天 SLA"
+               f"（最长 {max_days} 天），请尽快在「退款/申诉审核」处理。")
+    for aid in admin_ids:
+        await notification_service.emit(
+            db, user_id=aid, type_="system", title=title, content=content,
+            meta={"kind": "refund_sla", "count": len(overdue)})
+    return {"overdue": len(overdue), "admins_notified": len(admin_ids)}

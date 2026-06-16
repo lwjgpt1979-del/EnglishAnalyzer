@@ -1049,6 +1049,14 @@ async def admin_order_evidence(order_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(await _refund_svc.evidence_pack(db, order_id))
 
 
+@router.post("/refunds/run-sla-alerts", response_model=None)
+async def admin_run_refund_sla_alerts(db: DbDep, admin: AdminDep):
+    """手动触发退款/申诉 SLA 超时告警（§4.5.3；也可由 cron 调用 CLI）。"""
+    res = await _refund_svc.run_sla_alerts(db)
+    await db.commit()
+    return make_ok(res)
+
+
 @router.get("/orders/{order_id}/evidence.html")
 async def admin_order_evidence_html(order_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """举证包打印版 HTML（带时间戳水印，浏览器「打印为 PDF」即得举证 PDF）。"""

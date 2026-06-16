@@ -124,7 +124,12 @@ onMounted(load)
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="order_no" label="订单号" width="200" />
+      <el-table-column prop="order_no" label="订单号" width="200">
+        <template #default="{ row }">
+          {{ row.order_no }}
+          <el-tag v-if="row.overdue" type="danger" size="small" effect="dark" style="margin-left:4px">超时</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="用户" width="140">
         <template #default="{ row }">
           <div>{{ row.user_nickname || '-' }}</div>
