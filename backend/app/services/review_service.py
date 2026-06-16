@@ -182,6 +182,7 @@ async def submit_review(
     # quality >= 4 且连续多次高分 → 自动标记掌握
     if quality >= 4 and result.review_count >= 3 and result.review_interval_days >= 21:
         wq.is_mastered = True
+        wq.mastery_source = "review"   # 复盘验证通过（§5.5 复盘率拆分）
         from datetime import datetime, timezone
         wq.mastered_at = datetime.now(timezone.utc)
 

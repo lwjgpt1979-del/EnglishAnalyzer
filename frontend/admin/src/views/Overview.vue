@@ -90,7 +90,27 @@ onMounted(load)
       <el-col :span="4"><el-card shadow="hover"><el-statistic title="付费会员数" :value="dash.membership.paid_members" /></el-card></el-col>
       <el-col :span="4"><el-card shadow="hover"><el-statistic title="付费转化率(%)" :value="dash.membership.pay_conversion_pct" /></el-card></el-col>
       <el-col :span="4"><el-card shadow="hover"><el-statistic title="本月退款率(%)" :value="dash.revenue.refund_rate_pct" /></el-card></el-col>
-      <el-col :span="4"><el-card shadow="hover"><el-statistic title="在驻机构" :value="dash.institution.active" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover"><el-statistic title="本月ARPU(元)" :value="dash.revenue.arpu_month_yuan" /></el-card></el-col>
+    </el-row>
+
+    <!-- ── 内容与产品质量（§5.5）── -->
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="6"><el-card shadow="hover">
+        <el-statistic title="错题复盘率(%)" :value="dash.content_quality.review_rate.rate_pct" />
+        <div class="muted">已掌握 {{ dash.content_quality.review_rate.mastered }} / {{ dash.content_quality.review_rate.total }} · 验证{{ dash.content_quality.review_rate.by_review }} 手动{{ dash.content_quality.review_rate.by_manual }}</div>
+      </el-card></el-col>
+      <el-col :span="6"><el-card shadow="hover">
+        <el-statistic title="OCR成功率·错题(%)" :value="dash.content_quality.ocr_success.wrong_questions.rate_pct" />
+        <div class="muted">{{ dash.content_quality.ocr_success.wrong_questions.completed }} / {{ dash.content_quality.ocr_success.wrong_questions.total }}</div>
+      </el-card></el-col>
+      <el-col :span="6"><el-card shadow="hover">
+        <el-statistic title="OCR成功率·整卷(%)" :value="dash.content_quality.ocr_success.uploaded_papers.rate_pct" />
+        <div class="muted">{{ dash.content_quality.ocr_success.uploaded_papers.completed }} / {{ dash.content_quality.ocr_success.uploaded_papers.total }}</div>
+      </el-card></el-col>
+      <el-col :span="6"><el-card shadow="hover">
+        <el-statistic title="机构账号续费率(%)" :value="dash.institution.renewal.rate_pct" />
+        <div class="muted">复购 {{ dash.institution.renewal.institutions_repurchased }} / {{ dash.institution.renewal.institutions_purchased }} 家（近似）</div>
+      </el-card></el-col>
     </el-row>
 
     <el-row v-if="dash" :gutter="16" style="margin-top: 16px">

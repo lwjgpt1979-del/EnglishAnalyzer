@@ -471,16 +471,20 @@ export function setPaymentSecrets(id: string, secrets: Record<string, string>): 
 export interface DashboardData {
   users: { total: number; roles: Record<string, number>; new_today: number; new_7d: number; new_30d: number; regions_top: { city_code: string; count: number }[] }
   membership: { active_by_tier: Record<string, number>; paid_members: number; pay_conversion_pct: number }
-  revenue: { gmv_today_yuan: number; gmv_month_yuan: number; refund_month_yuan: number; refund_rate_pct: number }
+  revenue: { gmv_today_yuan: number; gmv_month_yuan: number; refund_month_yuan: number; refund_rate_pct: number; arpu_month_yuan: number; payers_month: number }
   usage_today: Record<string, number>
   active: { dau: number; mau: number; trend_7d: { date: string; count: number }[] }
   feedback: { diagnosis: number; question: number; pending: number }
+  content_quality: {
+    review_rate: { total: number; mastered: number; rate_pct: number; by_review: number; by_manual: number; by_unknown: number }
+    ocr_success: { wrong_questions: { total: number; completed: number; rate_pct: number }; uploaded_papers: { total: number; completed: number; rate_pct: number } }
+  }
   growth: {
     channels: { total: number; items: { channel: string; label: string; count: number; pct: number }[] }
     renewal: { days: number; overall_rate_pct: number; total_expiring: number; total_renewed: number; by_tier: { tier: string; expiring: number; renewed: number; rate_pct: number }[] }
     funnel: { stages: { key: string; label: string; count: number; pct_of_registered: number; pct_of_prev: number }[] }
   }
-  institution: { active: number }
+  institution: { active: number; renewal: { institutions_purchased: number; institutions_repurchased: number; rate_pct: number } }
   generated_at: string
 }
 export function getDashboard(): Promise<DashboardData> {

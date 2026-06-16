@@ -53,6 +53,8 @@ class WrongQuestion(Base):
         sa.Boolean, nullable=False, server_default=sa.text("false")
     )
     mastered_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    # 掌握来源（§5.5 复盘率拆分）：review=复盘验证通过 | manual=用户手动标记
+    mastery_source = mapped_column(sa.String(10), nullable=True)
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )

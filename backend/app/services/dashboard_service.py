@@ -93,6 +93,54 @@ async def get_dashboard(db: AsyncSession) -> dict:
     from app.services import content_feedback_service
     feedback = await content_feedback_service.stats(db, since=month0)
 
+    # —— ARPU（§5.5）：本月 GMV / 本月付费人数 ——
+    payers_month = await _count(
+        select(func.count(func.distinct(Order.beneficiary_id))).where(and_(
+            Order.status.in_(paid_status), Order.paid_at >= month0)))
+    arpu_month = round(gmv_month_fen / 100 / payers_month, 2) if payers_month else 0.0
+
+    # —— 错题复盘率（§5.5，拆 验证通过 / 手动标记）——
+    wq_total = await _count(select(func.count()).select_from(WrongQuestion))
+    wq_mastered = await _count(
+        select(func.count()).select_from(WrongQuestion).where(WrongQuestion.is_mastered.is_(True)))
+    src_rows = (await db.execute(
+        select(WrongQuestion.mastery_source, func.count())
+        .where(WrongQuestion.is_mastered.is_(True))
+        .group_by(WrongQuestion.mastery_source))).all()
+    src = {str(s): int(c) for s, c in src_rows}
+    review_rate = {
+        "total": wq_total, "mastered": wq_mastered,
+        "rate_pct": round(wq_mastered / wq_total * 100, 1) if wq_total else 0.0,
+        "by_review": src.get("review", 0), "by_manual": src.get("manual", 0),
+        "by_unknown": src.get("None", 0),
+    }
+
+    # —— OCR 识别成功率（§5.5）：completed / 有状态总数（错题单题 + 整卷）——
+    from app.models.d13_v2_user_papers import UserUploadedPaper
+    async def _ocr_rate(model, col):
+        tot = await _count(select(func.count()).select_from(model).where(col.isnot(None)))
+        ok = await _count(select(func.count()).select_from(model).where(col == "completed"))
+        return {"total": tot, "completed": ok,
+                "rate_pct": round(ok / tot * 100, 1) if tot else 0.0}
+    ocr_success = {
+        "wrong_questions": await _ocr_rate(WrongQuestion, WrongQuestion.ocr_status),
+        "uploaded_papers": await _ocr_rate(UserUploadedPaper, UserUploadedPaper.ocr_status),
+    }
+
+    # —— 机构账号续费率（§5.5，近似：复购机构占比）——
+    from app.models.d2_payments import InstitutionPurchase
+    inst_purch_counts = (await db.execute(
+        select(InstitutionPurchase.institution_id, func.count())
+        .where(InstitutionPurchase.status == "paid")
+        .group_by(InstitutionPurchase.institution_id))).all()
+    inst_with_purchase = len(inst_purch_counts)
+    inst_repurchased = sum(1 for _, c in inst_purch_counts if int(c) >= 2)
+    inst_renewal = {
+        "institutions_purchased": inst_with_purchase,
+        "institutions_repurchased": inst_repurchased,
+        "rate_pct": round(inst_repurchased / inst_with_purchase * 100, 1) if inst_with_purchase else 0.0,
+    }
+
     # —— 增长分析（§5.5）：渠道来源 / 续费率 / 转化漏斗 ——
     from app.services import growth_service
     growth = await growth_service.get_growth(db)
@@ -114,11 +162,16 @@ async def get_dashboard(db: AsyncSession) -> dict:
         "revenue": {
             "gmv_today_yuan": gmv_today, "gmv_month_yuan": gmv_month,
             "refund_month_yuan": _yuan(refund_month_fen), "refund_rate_pct": refund_rate,
+            "arpu_month_yuan": arpu_month, "payers_month": payers_month,
         },
         "usage_today": usage_today,
         "active": active,
         "feedback": feedback,
+        "content_quality": {
+            "review_rate": review_rate,
+            "ocr_success": ocr_success,
+        },
         "growth": growth,
-        "institution": {"active": inst_active},
+        "institution": {"active": inst_active, "renewal": inst_renewal},
         "generated_at": now.isoformat(),
     }

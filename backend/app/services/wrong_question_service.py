@@ -157,6 +157,7 @@ async def mark_mastered(
     """切换已掌握状态；is_mastered=True 时记录 mastered_at。"""
     wq.is_mastered = is_mastered
     wq.mastered_at = datetime.now(timezone.utc) if is_mastered else None
+    wq.mastery_source = "manual" if is_mastered else None  # 用户手动标记（§5.5 复盘率拆分）
     await db.flush()
     return wq
 
