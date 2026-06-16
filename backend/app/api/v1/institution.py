@@ -112,6 +112,13 @@ async def get_overview(db: DbDep, admin: InstAdminDep):
     return make_ok(InstitutionOverviewOut(**data))
 
 
+@router.get("/learning-center", response_model=None)
+async def learning_center(db: DbDep, admin: InstAdminDep):
+    """机构学情数据中心（5B.4）：活跃率/打卡概览/薄弱知识点。"""
+    inst_id = _require_inst(admin)
+    return make_ok(await institution_service.learning_center(db, institution_id=inst_id))
+
+
 @router.get("/profile", response_model=BaseResponse[InstitutionProfileOut])
 async def get_profile(db: DbDep, admin: InstAdminDep):
     inst_id = _require_inst(admin)

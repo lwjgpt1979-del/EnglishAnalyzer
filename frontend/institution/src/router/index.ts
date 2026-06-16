@@ -14,6 +14,7 @@ const router = createRouter({
         { path: 'overview', name: 'overview', component: () => import('../views/InstitutionOverview.vue') },
         { path: 'profile', name: 'profile', component: () => import('../views/InstitutionProfile.vue') },
         { path: 'teachers', name: 'teachers', component: () => import('../views/InstitutionTeachers.vue') },
+        { path: 'learning', name: 'learning', component: () => import('../views/InstitutionLearning.vue') },
         { path: 'purchases', name: 'purchases', component: () => import('../views/InstitutionPurchases.vue') },
         { path: 'renew', name: 'renew', component: () => import('../views/InstitutionRenew.vue') },
         { path: 'bills', name: 'bills', component: () => import('../views/InstitutionBills.vue') },

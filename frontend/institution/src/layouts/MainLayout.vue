@@ -30,6 +30,7 @@ function onLogout() {
         <el-menu-item index="/overview">机构概览</el-menu-item>
         <el-menu-item index="/profile">机构资料</el-menu-item>
         <el-menu-item index="/teachers">老师管理</el-menu-item>
+        <el-menu-item index="/learning">学情中心</el-menu-item>
         <el-menu-item index="/purchases">学生采购</el-menu-item>
         <el-menu-item index="/renew">批量续费</el-menu-item>
         <el-menu-item index="/bills">账单</el-menu-item>

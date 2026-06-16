@@ -128,3 +128,16 @@ export function applyInstitution(
 ): Promise<{ institution_id: string; name: string; status: string }> {
   return unwrap(request.post('/institution/apply', payload))
 }
+
+// 学情数据中心（5B.4）
+export interface LearningCenter {
+  total_students: number
+  active_30d: number
+  active_rate_pct: number
+  checkin_students_30d: number
+  checkins_30d: number
+  weak_kp_top: { kp_key: string; student_count: number; description: string | null }[]
+}
+export function getLearningCenter(): Promise<LearningCenter> {
+  return unwrap<LearningCenter>(request.get('/institution/learning-center'))
+}

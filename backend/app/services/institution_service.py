@@ -192,3 +192,47 @@ async def set_teacher_quota(
     t.monthly_paper_quota = monthly_paper_quota
     await db.flush()
     return t
+
+
+async def learning_center(db: AsyncSession, *, institution_id: uuid.UUID) -> dict:
+    """机构学情数据中心（5B.4）：名下学生活跃率 / 打卡概览 / 薄弱知识点 Top。"""
+    from app.models.d4_knowledge import StudentKpMastery
+    from app.models.d9_system import UserActivity
+
+    student_ids = select(Student.id).where(Student.institution_id == institution_id)
+    total = int((await db.execute(
+        select(func.count()).select_from(Student)
+        .where(Student.institution_id == institution_id))).scalar_one() or 0)
+
+    today = dt.date.today()
+    d30 = today - dt.timedelta(days=29)
+    active_30d = int(await db.scalar(
+        select(func.count(func.distinct(UserActivity.user_id))).where(
+            UserActivity.user_id.in_(student_ids), UserActivity.active_date >= d30)) or 0)
+    checkin_students = int(await db.scalar(
+        select(func.count(func.distinct(StudyCheckin.student_id))).where(
+            StudyCheckin.student_id.in_(student_ids), StudyCheckin.checkin_date >= d30)) or 0)
+    checkins_30d = int(await db.scalar(
+        select(func.count()).select_from(StudyCheckin).where(
+            StudyCheckin.student_id.in_(student_ids), StudyCheckin.checkin_date >= d30)) or 0)
+
+    # 薄弱知识点 Top10：正确率<0.6 且有作答，按涉及学生数排序
+    rate = StudentKpMastery.correct_count * 1.0 / func.nullif(
+        StudentKpMastery.correct_count + StudentKpMastery.wrong_count, 0)
+    weak_rows = (await db.execute(
+        select(StudentKpMastery.kp_key, func.count(func.distinct(StudentKpMastery.student_id)),
+               func.max(StudentKpMastery.kp_description))
+        .where(StudentKpMastery.student_id.in_(student_ids),
+               (StudentKpMastery.correct_count + StudentKpMastery.wrong_count) >= 3, rate < 0.6)
+        .group_by(StudentKpMastery.kp_key)
+        .order_by(func.count(func.distinct(StudentKpMastery.student_id)).desc()).limit(10))).all()
+    weak_kp = [{"kp_key": k, "student_count": int(c or 0), "description": d} for k, c, d in weak_rows]
+
+    return {
+        "total_students": total,
+        "active_30d": active_30d,
+        "active_rate_pct": round(active_30d / total * 100, 1) if total else 0.0,
+        "checkin_students_30d": checkin_students,
+        "checkins_30d": checkins_30d,
+        "weak_kp_top": weak_kp,
+    }
