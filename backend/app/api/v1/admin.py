@@ -1584,3 +1584,45 @@ async def admin_pricing_history(db: DbDep, admin: AdminDep,
                                 limit: int = Query(50, ge=1, le=200)):
     """学期定价变更历史（退款/争议举证）。"""
     return make_ok(await pricing_service.pricing_history(db, limit=limit))
+
+
+# ══ 限时活动价 campaign（§5.7）═══════════════════════════════════════════════
+from app.services import promo_service as _promo_svc
+import datetime as _dt2
+
+
+def _parse_dt(s: str):
+    """ISO 字符串 → aware datetime（无时区按 UTC）。"""
+    d = _dt2.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    return d if d.tzinfo else d.replace(tzinfo=_dt2.timezone.utc)
+
+
+@router.get("/promo-campaigns", response_model=None)
+async def admin_list_campaigns(db: DbDep, admin: AdminDep,
+                               skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200)):
+    return make_ok(await _promo_svc.admin_list(db, skip=skip, limit=limit))
+
+
+@router.post("/promo-campaigns", response_model=None)
+async def admin_create_campaign(body: dict, db: DbDep, admin: AdminDep):
+    """建活动。body={name, starts_at, ends_at, price_basic?, price_pro?, price_promax?,
+    limit_type(none|once|total), total_quota?, is_promotional?}。价格为元/学期，留空=该档不参加。"""
+    b = body or {}
+    if not b.get("starts_at") or not b.get("ends_at"):
+        raise AppError(code=400, message="开始/结束时间必填")
+    c = await _promo_svc.admin_create(
+        db, admin_id=admin.id, name=b.get("name", ""),
+        starts_at=_parse_dt(b["starts_at"]), ends_at=_parse_dt(b["ends_at"]),
+        price_basic=b.get("price_basic"), price_pro=b.get("price_pro"),
+        price_promax=b.get("price_promax"), limit_type=b.get("limit_type", "none"),
+        total_quota=b.get("total_quota"), is_promotional=bool(b.get("is_promotional", True)))
+    await db.commit()
+    return make_ok({"id": str(c.id)})
+
+
+@router.post("/promo-campaigns/{campaign_id}/active", response_model=None)
+async def admin_set_campaign_active(campaign_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    c = await _promo_svc.admin_set_active(
+        db, campaign_id=campaign_id, is_active=bool((body or {}).get("is_active", True)))
+    await db.commit()
+    return make_ok({"id": str(c.id), "is_active": c.is_active})

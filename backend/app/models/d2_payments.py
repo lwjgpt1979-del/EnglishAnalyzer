@@ -95,6 +95,8 @@ class Order(Base):
     discount_fen = mapped_column(
         sa.Integer, nullable=False, server_default=sa.text("0")
     )  # 已抵扣金额（amount_fen 已是抵扣后实付）
+    # —— 限时活动价（§5.7）：下单时命中的活动 ——
+    promo_campaign_id = mapped_column(UUID(as_uuid=True), nullable=True)
 
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
@@ -331,6 +333,34 @@ class CouponGrant(Base):
     status = mapped_column(sa.String(10), nullable=False, server_default=sa.text("'unused'"))  # unused|used
     order_id = mapped_column(UUID(as_uuid=True), nullable=True)
     used_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class PromoCampaign(Base):
+    """限时活动价（§5.7）：活动期内覆盖学期会员定价。
+
+    price_* 为该档活动价（元/学期，NULL=该档不参加活动）。
+    limit_type: none(不限) | once(每用户限购1次) | total(总限量 total_quota 笔)。
+    is_promotional: 活动订单是否标记为活动价单（影响退款规则，见 §4.5.2）。
+    """
+
+    __tablename__ = "promo_campaigns"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = mapped_column(sa.String(100), nullable=False)
+    price_basic = mapped_column(sa.Integer, nullable=True)    # 元/学期，NULL=不参加
+    price_pro = mapped_column(sa.Integer, nullable=True)
+    price_promax = mapped_column(sa.Integer, nullable=True)
+    starts_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    ends_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    limit_type = mapped_column(sa.String(10), nullable=False, server_default=sa.text("'none'"))  # none|once|total
+    total_quota = mapped_column(sa.Integer, nullable=True)
+    sold_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    is_promotional = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    is_active = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    created_by = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )

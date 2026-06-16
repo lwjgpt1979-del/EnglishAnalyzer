@@ -11,6 +11,13 @@
 
     <!-- 档位选择 -->
     <view class="section-title">选择档位</view>
+    <!-- 限时活动横幅（§5.7）-->
+    <view v-if="campaign" class="promo-banner">
+      <text class="promo-tag">限时</text>
+      <text class="promo-name">{{ campaign.name }}</text>
+      <text v-if="campaign.ends_at" class="promo-end">至 {{ campaign.ends_at.replace('T', ' ').slice(5, 16) }}</text>
+    </view>
+
     <view class="tier-row">
       <view
         v-for="t in tiers"
@@ -21,6 +28,7 @@
       >
         <text class="tier-name">{{ t.label }}</text>
         <text class="tier-price">¥{{ t.price }}</text>
+        <text v-if="t.listPrice > t.price" class="tier-list">¥{{ t.listPrice }}</text>
         <text class="tier-unit">/学期</text>
       </view>
     </view>
@@ -83,21 +91,23 @@ onLoad(async (q: any) => {
   try {
     const p = await getSemesterPricing()
     tiers.value = [
-      { key: 'basic',  label: '基础版', price: p.basic },
-      { key: 'pro',    label: 'Pro',    price: p.pro },
-      { key: 'promax', label: 'ProMax', price: p.promax },
+      { key: 'basic',  label: '基础版', price: p.basic,  listPrice: p.list_basic || 0 },
+      { key: 'pro',    label: 'Pro',    price: p.pro,    listPrice: p.list_pro || 0 },
+      { key: 'promax', label: 'ProMax', price: p.promax, listPrice: p.list_promax || 0 },
     ]
+    campaign.value = p.campaign || null
   } catch { /* 取价失败保留默认 */ }
 })
 
 // ── 档位 ─────────────────────────────────────────────────────────────────────
 type TierKey = 'basic' | 'pro' | 'promax'
 
-const tiers = ref<{ key: TierKey; label: string; price: number }[]>([
-  { key: 'basic',  label: '基础版', price: 39  },
-  { key: 'pro',    label: 'Pro',    price: 79  },
-  { key: 'promax', label: 'ProMax', price: 159 },
+const tiers = ref<{ key: TierKey; label: string; price: number; listPrice: number }[]>([
+  { key: 'basic',  label: '基础版', price: 39,  listPrice: 0 },
+  { key: 'pro',    label: 'Pro',    price: 79,  listPrice: 0 },
+  { key: 'promax', label: 'ProMax', price: 159, listPrice: 0 },
 ])
+const campaign = ref<{ id: string; name: string; ends_at: string | null; is_promotional: boolean } | null>(null)
 
 const selectedTier = ref<TierKey>('basic')
 
@@ -238,12 +248,39 @@ async function onConfirmed(logId: string) {
   font-weight: 800;
   color: var(--c-ink);
 }
+.tier-list {
+  display: block;
+  font-size: 22rpx;
+  color: var(--c-text-hint);
+  text-decoration: line-through;
+  margin-top: 2rpx;
+}
 .tier-unit {
   display: block;
   font-size: 20rpx;
   color: var(--c-text-hint);
   margin-top: 4rpx;
 }
+
+/* 限时活动横幅 */
+.promo-banner {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  background: linear-gradient(90deg, #fff1e6, #ffe9d6);
+  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+  margin-bottom: 16rpx;
+}
+.promo-tag {
+  background: #ff6b35;
+  color: #fff;
+  font-size: 22rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 6rpx;
+}
+.promo-name { font-size: 26rpx; color: #d2691e; font-weight: 600; flex: 1; }
+.promo-end { font-size: 22rpx; color: #b8860b; }
 
 /* 总价 */
 .total-row {

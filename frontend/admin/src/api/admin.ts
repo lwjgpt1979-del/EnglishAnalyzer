@@ -748,3 +748,21 @@ export interface CertQuality {
 export function getCertQuality(days = 30): Promise<CertQuality> {
   return unwrap(request.get('/admin/teachers/cert-quality', { params: { days } }))
 }
+
+// ══ §5.7 限时活动价 campaign ══════════════════════════════════════
+export interface CampaignItem {
+  id: string; name: string
+  price_basic: number | null; price_pro: number | null; price_promax: number | null
+  starts_at: string | null; ends_at: string | null
+  limit_type: string; total_quota: number | null; sold_count: number
+  is_promotional: boolean; is_active: boolean; status: string; created_at: string | null
+}
+export function listCampaigns(params: { skip?: number; limit?: number }): Promise<{ total: number; items: CampaignItem[] }> {
+  return unwrap(request.get('/admin/promo-campaigns', { params }))
+}
+export function createCampaign(body: Record<string, unknown>): Promise<{ id: string }> {
+  return unwrap(request.post('/admin/promo-campaigns', body))
+}
+export function setCampaignActive(id: string, is_active: boolean) {
+  return unwrap(request.post(`/admin/promo-campaigns/${id}/active`, { is_active }))
+}

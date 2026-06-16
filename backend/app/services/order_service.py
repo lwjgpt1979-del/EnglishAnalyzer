@@ -103,9 +103,17 @@ async def create_order(
     if semesters:
         # V2：按学期计价
         from app.services.pricing_service import get_semester_pricing, calc_total_fen
+        from app.services import promo_service
         pricing = await get_semester_pricing(db)
         semester_count = len(semesters)
-        amount_fen = calc_total_fen(pricing, tier=tier, semester_count=semester_count)
+        # 限时活动价（§5.7）：命中则用活动单价并标记活动单
+        campaign, promo_unit = await promo_service.resolve_for_order(
+            db, tier=tier, payer_id=payer_id, semester_count=semester_count)
+        if campaign is not None and promo_unit is not None:
+            amount_fen = promo_unit * semester_count * 100
+            is_promotional = campaign.is_promotional
+        else:
+            amount_fen = calc_total_fen(pricing, tier=tier, semester_count=semester_count)
         order = Order(
             id=uuid.uuid4(),
             order_no=order_no,
@@ -118,7 +126,10 @@ async def create_order(
             status="pending",
             semester_count=semester_count,
             purchased_semester_ids=semesters,
+            promo_campaign_id=(campaign.id if campaign is not None else None),
         )
+        if campaign is not None and promo_unit is not None:
+            await promo_service.record_sale(db, campaign=campaign)
     elif quantity is not None:
         # 按份：每份 6 个月，x 份 = 6x 月
         months = UNIT_MONTHS * quantity

@@ -42,6 +42,7 @@ function onLogout() {
         <el-menu-item index="/sensitive-words">🛡️ 敏感词库</el-menu-item>
         <el-menu-item index="/contents">知识点内容审核</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
+        <el-menu-item index="/campaigns">🎉 限时活动价</el-menu-item>
         <el-menu-item index="/entitlements">🔐 会员权益配置</el-menu-item>
         <el-menu-item index="/refunds">💸 退款/申诉审核</el-menu-item>
         <el-menu-item index="/payment-accounts">🏦 收款主体</el-menu-item>

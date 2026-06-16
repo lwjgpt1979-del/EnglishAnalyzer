@@ -63,8 +63,12 @@ export function getTierPricing(): Promise<TierPricing> {
   return request<TierPricing>('/api/v1/orders/tier-pricing', { method: 'GET' })
 }
 
-export interface SemesterPricing { basic: number; pro: number; promax: number }
-/** 学期会员定价（元/学期），运营后台可改 */
+export interface SemesterPricing {
+  basic: number; pro: number; promax: number
+  list_basic?: number; list_pro?: number; list_promax?: number
+  campaign?: { id: string; name: string; ends_at: string | null; is_promotional: boolean } | null
+}
+/** 学期会员定价（元/学期，含限时活动价覆盖），运营后台可改 */
 export function getSemesterPricing(): Promise<SemesterPricing> {
   return request<SemesterPricing>('/api/v1/orders/semester-pricing', { method: 'GET' })
 }

@@ -32,10 +32,13 @@ UserDep = Annotated[User, Depends(get_current_user)]
 
 @router.get("/semester-pricing", response_model=BaseResponse[dict])
 async def semester_pricing(db: DbDep, current_user: UserDep):
-    """学期会员定价（元/学期），运营后台可改；前端购买页据此显示，不写死。"""
-    from app.services.pricing_service import get_semester_pricing
-    p = await get_semester_pricing(db)
-    return make_ok({"basic": p.basic, "pro": p.pro, "promax": p.promax})
+    """学期会员定价（元/学期），运营后台可改；前端购买页据此显示，不写死。
+
+    叠加当前限时活动（§5.7）：参加活动的档位返回活动价为实售、原价为划线价，
+    并带 campaign 信息（名称/结束时间）供前端展示倒计时。
+    """
+    from app.services import promo_service
+    return make_ok(await promo_service.effective_semester_pricing(db))
 
 
 @router.get("/tier-pricing", response_model=BaseResponse[dict])
