@@ -33,6 +33,7 @@ function onLogout() {
         <el-menu-item index="/theme-center">🎨 主题中心</el-menu-item>
         <el-menu-item index="/vocab-media">🔤 词力通媒体</el-menu-item>
         <el-menu-item index="/teacher-cert">👨‍🏫 教师认证审核</el-menu-item>
+        <el-menu-item index="/teacher-limits">📊 老师限额配置</el-menu-item>
         <el-menu-item index="/questions">仿真题审核</el-menu-item>
         <el-menu-item index="/content-feedback">📝 内容反馈</el-menu-item>
         <el-menu-item index="/support">🎧 客服工单</el-menu-item>

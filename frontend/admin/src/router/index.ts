@@ -42,6 +42,7 @@ const router = createRouter({
         { path: 'sensitive-words', name: 'sensitive-words', component: () => import('../views/SensitiveWords.vue') },
         { path: 'campaigns', name: 'campaigns', component: () => import('../views/Campaigns.vue') },
         { path: 'announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
+        { path: 'teacher-limits', name: 'teacher-limits', component: () => import('../views/TeacherLimits.vue') },
       ],
     },
   ],

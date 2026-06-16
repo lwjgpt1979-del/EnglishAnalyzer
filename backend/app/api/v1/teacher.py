@@ -103,6 +103,16 @@ async def bind_teacher(
     )
 
 
+@router.get("/quota", response_model=None)
+async def my_quota(db: DbDep, current_user: UserDep):
+    """老师自查月度额度（§5.6）：绑定学生/出卷/批改 的 used/limit/剩余。"""
+    if str(current_user.role) != "teacher":
+        raise AppError(code=403, message="仅教师可查看额度")
+    await get_rls_db(db, str(current_user.id))
+    from app.services import teacher_limit_service
+    return make_ok(await teacher_limit_service.quota_overview(db, teacher_id=current_user.id))
+
+
 @router.get("/students", response_model=BaseResponse[list[TeacherStudentOut]])
 async def list_my_students(db: DbDep, current_user: UserDep):
     """教师查看所有绑定学生。"""

@@ -1,8 +1,29 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listTeachersForAdmin, reviewTeacherCert, claimTeacherCert, getCertQuality, type CertQuality } from '../api/admin'
+import { reactive } from 'vue'
+import { listTeachersForAdmin, reviewTeacherCert, claimTeacherCert, getCertQuality, setTeacherLimitOverride, type CertQuality } from '../api/admin'
 import type { AdminTeacherItem } from '../types'
+
+// 个体额度覆盖（§5.6）
+const limitDialog = ref(false)
+const limitTarget = ref<AdminTeacherItem | null>(null)
+const limitForm = reactive<{ max_students: number | null; monthly_paper_quota: number | null; monthly_grading_quota: number | null }>(
+  { max_students: null, monthly_paper_quota: null, monthly_grading_quota: null })
+function openLimit(row: AdminTeacherItem) {
+  limitTarget.value = row
+  limitForm.max_students = row.max_students ?? null
+  limitForm.monthly_paper_quota = null
+  limitForm.monthly_grading_quota = null
+  limitDialog.value = true
+}
+async function saveLimit() {
+  if (!limitTarget.value) return
+  try {
+    await setTeacherLimitOverride(limitTarget.value.teacher_id, { ...limitForm })
+    ElMessage.success('已保存额度覆盖'); limitDialog.value = false; load()
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+}
 
 const quality = ref<CertQuality | null>(null)
 async function loadQuality() {
@@ -189,6 +210,7 @@ onMounted(() => { load(); loadQuality() })
             :disabled="row.cert_status === 'rejected'"
             @click="onReject(row)"
           >❌ 拒绝</el-button>
+          <el-button size="small" link @click="openLimit(row)">额度</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -203,6 +225,15 @@ onMounted(() => { load(); loadQuality() })
         @current-change="(p: number) => { skip = (p - 1) * PAGE_SIZE; load() }"
       />
     </div>
+
+    <el-dialog v-model="limitDialog" title="老师额度覆盖（留空=随全局默认）" width="440px">
+      <el-form label-width="150px">
+        <el-form-item label="绑定学生上限"><el-input-number v-model="limitForm.max_students" :min="0" /></el-form-item>
+        <el-form-item label="月度出卷上限"><el-input-number v-model="limitForm.monthly_paper_quota" :min="0" /></el-form-item>
+        <el-form-item label="月度批改上限"><el-input-number v-model="limitForm.monthly_grading_quota" :min="0" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="limitDialog = false">取消</el-button><el-button type="primary" @click="saveLimit">保存</el-button></template>
+    </el-dialog>
   </div>
 </template>
 

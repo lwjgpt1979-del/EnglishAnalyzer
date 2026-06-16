@@ -10,6 +10,21 @@
       <text class="quick-btn" @tap="goClasses">🏫 班级管理</text>
     </view>
 
+    <!-- 月度额度（§5.6）-->
+    <view v-if="isTeacher && quota" class="card quota-card">
+      <view class="card-title">我的额度（本月）</view>
+      <view class="quota-row" v-for="q in [
+        { label: '绑定学生', d: quota.students },
+        { label: '本月出卷', d: quota.paper },
+        { label: '本月批改/点评', d: quota.grading },
+      ]" :key="q.label">
+        <text class="quota-label">{{ q.label }}</text>
+        <view class="quota-bar"><view class="quota-fill" :class="{ low: q.d.remaining_pct < quota.warn_threshold_pct }" :style="{ width: Math.min(100, q.d.limit ? q.d.used / q.d.limit * 100 : 0) + '%' }" /></view>
+        <text class="quota-num">{{ q.d.used }}/{{ q.d.limit }}</text>
+      </view>
+      <text class="quota-tip">每月 {{ quota.reset_day }} 号重置；剩余低于 {{ quota.warn_threshold_pct }}% 将提醒</text>
+    </view>
+
     <!-- 成为教师 / 教师信息 -->
     <view class="card">
       <view class="card-title">教师身份</view>
@@ -144,6 +159,8 @@ import {
   teacherInviteSms,
   removeStudent,
   getMyTeachers,
+  getMyQuota,
+  type TeacherQuota,
 } from '@/api/teacher'
 import { request } from '@/utils/request'
 import type { TeacherProfileOut, InviteCodeOut, TeacherStudentOut, QRCodeOut, MyTeacherOut } from '@/types/api'
@@ -175,6 +192,12 @@ async function loadCertStatus() {
   try { const r: any = await request('/api/v1/teacher/profile', { method: 'POST', data: {} }); certStatus.value = r.data?.cert_status || 'uncertified' } catch {}
 }
 
+const quota = ref<TeacherQuota | null>(null)
+async function loadQuota() {
+  if (!isTeacher.value) return
+  try { quota.value = await getMyQuota() } catch { /* 未认证等忽略 */ }
+}
+
 onMounted(async () => {
   if (!auth.user) return
   isTeacher.value = auth.user.role === 'teacher'
@@ -182,6 +205,7 @@ onMounted(async () => {
     await loadStudents()
   }
   loadCertStatus()
+  loadQuota()
   // 加载学生视角的已绑定老师列表（M19）
   try { myTeachers.value = await getMyTeachers() } catch { /* 静默忽略 */ }
 })
@@ -366,4 +390,11 @@ onLoad((options) => {
 .become-intro-title { font-size: 26rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 4rpx; }
 .become-feat { font-size: 25rpx; color: var(--c-text-body); line-height: 1.5; }
 .become-divider-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 16rpx; line-height: 1.5; }
+.quota-row { display: flex; align-items: center; gap: 12rpx; margin: 12rpx 0; }
+.quota-label { width: 180rpx; font-size: 24rpx; color: var(--c-text-body); }
+.quota-bar { flex: 1; height: 14rpx; background: #f0f2f5; border-radius: 7rpx; overflow: hidden; }
+.quota-fill { height: 100%; background: #67c23a; border-radius: 7rpx; }
+.quota-fill.low { background: #e6a23c; }
+.quota-num { width: 110rpx; text-align: right; font-size: 24rpx; color: var(--c-text-hint); }
+.quota-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
 </style>

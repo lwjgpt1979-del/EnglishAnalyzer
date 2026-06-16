@@ -85,19 +85,9 @@ async def create_assignment(
     title: str, questions: list, due_at: datetime | None = None,
 ) -> Assignment:
     await class_service._get_owned_class(db, teacher_id=teacher_id, class_id=class_id)
-    # —— 机构出卷月额度闸门（D-128；老师未配额度=不限）——
-    teacher = await db.get(Teacher, teacher_id)
-    if teacher is not None and teacher.monthly_paper_quota is not None:
-        month_start = datetime.now(timezone.utc).replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0)
-        used = (await db.execute(
-            select(func.count()).select_from(Assignment).where(
-                Assignment.teacher_id == teacher_id,
-                Assignment.created_at >= month_start,
-            )
-        )).scalar_one()
-        if used >= teacher.monthly_paper_quota:
-            raise AppError(code=403, message="本月出卷额度已用尽，请联系机构管理员")
+    # —— 月度出卷额度闸门（§5.6：个体覆盖优先，否则全局默认 teacher_limits）——
+    from app.services import teacher_limit_service
+    await teacher_limit_service.assert_can_create_paper(db, teacher_id=teacher_id)
     a = Assignment(
         id=uuid.uuid4(), teacher_id=teacher_id, class_id=class_id,
         title=title, questions=questions, due_at=due_at, status="draft",

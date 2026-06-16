@@ -42,11 +42,14 @@ async def become_teacher(
         return existing
 
     user.role = "teacher"  # type: ignore[assignment]
+    # 新老师绑定学生上限默认取全局配置（§5.6；之后可个体覆盖）
+    from app.services import teacher_limit_service
+    _limits = await teacher_limit_service.get_limits(db)
     teacher = Teacher(
         id=user.id,
         subject=data.subject,
         cert_status="uncertified",  # type: ignore[arg-type]
-        max_students=50,
+        max_students=_limits["max_students"],
     )
     db.add(teacher)
     await db.flush()
@@ -118,6 +121,10 @@ async def bind_with_teacher(
     )
     if existing.scalar_one_or_none() is not None:
         raise AppError(code=409, message="您已绑定该老师")
+
+    # §5.6 绑定学生上限（仅拦新增，不回溯）
+    from app.services import teacher_limit_service
+    await teacher_limit_service.assert_can_bind_student(db, teacher_id=teacher_id)
 
     relation = TeacherStudent(
         id=uuid.uuid4(),
@@ -214,6 +221,10 @@ async def add_comment(
     )
     if binding.scalar_one_or_none() is None:
         raise AppError(code=403, message="无权批注该学生的错题")
+
+    # §5.6 月度批改/点评额度闸门 + 预警
+    from app.services import teacher_limit_service
+    await teacher_limit_service.check_grading_and_warn(db, teacher_id=teacher_id)
 
     comment = TeacherComment(
         id=uuid.uuid4(),

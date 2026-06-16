@@ -162,3 +162,13 @@ export function removeStudent(studentId: string): Promise<{ removed: boolean }> 
 export function getMyTeachers(): Promise<MyTeacherOut[]> {
   return request<MyTeacherOut[]>('/api/v1/teacher/my-teachers')
 }
+
+// 老师月度额度自查（§5.6）
+export interface QuotaBlock { used: number; limit: number; remaining: number; remaining_pct: number }
+export interface TeacherQuota {
+  warn_threshold_pct: number; reset_day: number
+  students: QuotaBlock; paper: QuotaBlock; grading: QuotaBlock
+}
+export function getMyQuota(): Promise<TeacherQuota> {
+  return request<TeacherQuota>('/api/v1/teacher/quota', { method: 'GET' })
+}

@@ -785,3 +785,18 @@ export function updateAnnouncement(id: string, body: Record<string, unknown>) {
 export function deleteAnnouncement(id: string) {
   return unwrap(request.delete(`/admin/announcements/${id}`))
 }
+
+// ══ §5.6 老师月度限额 ════════════════════════════════════════════
+export interface TeacherLimits {
+  max_students: number; monthly_paper_quota: number; monthly_grading_quota: number
+  warn_threshold_pct: number; reset_day: number
+}
+export function getTeacherLimits(): Promise<TeacherLimits> {
+  return unwrap(request.get('/admin/teacher-limits'))
+}
+export function updateTeacherLimits(body: Partial<TeacherLimits>): Promise<TeacherLimits> {
+  return unwrap(request.put('/admin/teacher-limits', body))
+}
+export function setTeacherLimitOverride(teacherId: string, body: Record<string, number | null>) {
+  return unwrap(request.post(`/admin/teachers/${teacherId}/limits`, body))
+}

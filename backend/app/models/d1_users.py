@@ -220,8 +220,9 @@ class Teacher(Base):
     max_students = mapped_column(
         sa.Integer, nullable=False, server_default=sa.text("50")
     )
-    # —— 机构出卷月额度（D-128；NULL=不限）——
-    monthly_paper_quota = mapped_column(sa.Integer, nullable=True)
+    # —— 月度额度个体覆盖（§5.6；NULL=随全局配置 teacher_limits）——
+    monthly_paper_quota = mapped_column(sa.Integer, nullable=True)     # 月度出卷上限覆盖
+    monthly_grading_quota = mapped_column(sa.Integer, nullable=True)   # 月度批改/点评上限覆盖
     enterprise_userid = mapped_column(sa.String, nullable=True)
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),

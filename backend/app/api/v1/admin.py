@@ -1665,3 +1665,34 @@ async def admin_delete_announcement(ann_id: uuid.UUID, db: DbDep, admin: AdminDe
     await _ann_svc.admin_delete(db, ann_id=ann_id)
     await db.commit()
     return make_ok({"ok": True})
+
+
+# ══ 老师月度限额配置（§5.6）═══════════════════════════════════════════════════
+from app.services import teacher_limit_service as _tl_svc
+
+
+@router.get("/teacher-limits", response_model=None)
+async def admin_get_teacher_limits(db: DbDep, admin: AdminDep):
+    """全局老师限额默认配置。"""
+    return make_ok(await _tl_svc.get_limits(db))
+
+
+@router.put("/teacher-limits", response_model=None)
+async def admin_update_teacher_limits(body: dict, db: DbDep, admin: AdminDep):
+    """改全局默认。body 可含 max_students/monthly_paper_quota/monthly_grading_quota/
+    warn_threshold_pct/reset_day。次月（按 reset_day）起按新值计。"""
+    res = await _tl_svc.update_limits(db, fields=(body or {}), admin_id=admin.id)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/teachers/{teacher_id}/limits", response_model=None)
+async def admin_set_teacher_override(teacher_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """设单个老师的额度覆盖（字段省略/传 null=随全局）。"""
+    t = await _tl_svc.set_teacher_override(db, teacher_id=teacher_id, fields=(body or {}))
+    await db.commit()
+    return make_ok({
+        "teacher_id": str(t.id), "max_students": t.max_students,
+        "monthly_paper_quota": t.monthly_paper_quota,
+        "monthly_grading_quota": t.monthly_grading_quota,
+    })
