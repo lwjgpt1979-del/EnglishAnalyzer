@@ -130,6 +130,16 @@ async def create_order(body: OrderCreate, db: DbDep, current_user: UserDep):
     if branch_id is not None:
         order.branch_company_id = branch_id
 
+    # 优惠券抵扣（SP-4）：按订单类型推导 scope 后校验+核销
+    if body.coupon_grant_id:
+        from app.services import coupon_service
+        scope = ("addon" if body.addon_feature_key
+                 else "semester" if body.semesters
+                 else body.order_type)
+        await coupon_service.apply_to_order(
+            db, grant_id=body.coupon_grant_id, user_id=current_user.id,
+            order=order, scope=scope)
+
     # 反写支付确认记录的 order_id（举证关联，§4.6.3）
     if body.payment_confirm_log_id:
         log = await db.get(PaymentConfirmLog, body.payment_confirm_log_id)

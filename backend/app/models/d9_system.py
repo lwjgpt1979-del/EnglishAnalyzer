@@ -171,3 +171,82 @@ class ContentFeedback(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class SupportTicket(Base):
+    """客服工单（§13.1）：用户在线咨询，后台客服受理/回复/结案。"""
+
+    __tablename__ = "support_tickets"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    category = mapped_column(sa.String(20), nullable=False)   # refund|feature|complaint|order|other
+    subject = mapped_column(sa.String(120), nullable=False)
+    status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'open'"))  # open|replied|closed
+    last_reply_role = mapped_column(sa.String(10), nullable=True)  # user|admin（最后是谁说话）
+    order_id = mapped_column(UUID(as_uuid=True), nullable=True)    # 可选关联订单
+    handled_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False,
+        server_default=sa.func.now(), onupdate=sa.func.now(),
+    )
+
+
+class SupportMessage(Base):
+    """工单的一条消息（§13.1）。"""
+
+    __tablename__ = "support_messages"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticket_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("support_tickets.id"), nullable=False)
+    sender_role = mapped_column(sa.String(10), nullable=False)   # user|admin
+    sender_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    content = mapped_column(sa.Text, nullable=False)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class FaqEntry(Base):
+    """FAQ 自助条目（§13.2）：后台维护，小程序「帮助与反馈」展示。"""
+
+    __tablename__ = "faq_entries"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    audience = mapped_column(sa.String(4), nullable=False, server_default=sa.text("'c'"))  # c|b|all
+    category = mapped_column(sa.String(40), nullable=False, server_default=sa.text("'通用'"))
+    question = mapped_column(sa.String(200), nullable=False)
+    answer = mapped_column(sa.Text, nullable=False)
+    sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    is_active = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    updated_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False,
+        server_default=sa.func.now(), onupdate=sa.func.now(),
+    )
+
+
+class UserFeedback(Base):
+    """意见反馈 / BUG 报告（§13.3）：功能建议/BUG，文字+截图。"""
+
+    __tablename__ = "user_feedback"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
+    kind = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'suggestion'"))  # suggestion|bug
+    content = mapped_column(sa.Text, nullable=False)
+    images = mapped_column(JSONB, nullable=True)   # 截图 URL 列表
+    contact = mapped_column(sa.String(60), nullable=True)
+    status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'pending'"))  # pending|reviewing|done|dismissed
+    note = mapped_column(sa.Text, nullable=True)
+    handled_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    handled_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )

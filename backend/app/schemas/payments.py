@@ -44,6 +44,7 @@ class OrderCreate(BaseModel):
         None, description="支付确认留存记录 ID（§4.6，下单前 payment-confirm 返回）"
     )
     is_promotional: bool = Field(default=False, description="是否活动价订单（活动价不支持退款）")
+    coupon_grant_id: uuid.UUID | None = Field(None, description="使用的优惠券（用户持有的 grant_id）")
 
 
 class OrderOut(BaseModel):
@@ -53,8 +54,9 @@ class OrderOut(BaseModel):
     order_no: str
     tier: str
     duration_months: int
-    amount_fen: int = Field(..., description="实收金额（分）")
+    amount_fen: int = Field(..., description="实收金额（分，已扣优惠券）")
     amount: int = Field(0, description="实收金额（元）— amount_fen / 100，方便前端展示")
+    discount_fen: int = Field(0, description="优惠券抵扣金额（分）")
     status: str = Field(..., description="pending | paid | refunded | partial_refunded")
     refund_status: str = Field("NONE", description="退款状态码（§4.5.2）")
     appeal_status: str = Field("NONE", description="申诉状态码（§4.5.2）")

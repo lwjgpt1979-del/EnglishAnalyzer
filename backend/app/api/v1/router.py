@@ -34,6 +34,8 @@ from app.api.v1.self_exam import router as self_exam_router
 from app.api.v1.speaking import router as speaking_router
 from app.api.v1.entitlements import router as entitlements_router
 from app.api.v1.entitlements import admin_router as entitlements_admin_router
+from app.api.v1.support import router as support_router
+from app.api.v1.coupons import router as coupons_router
 
 v1_router = APIRouter()
 
@@ -71,3 +73,5 @@ v1_router.include_router(speaking_router)
 v1_router.include_router(admin_router)
 v1_router.include_router(entitlements_router)
 v1_router.include_router(entitlements_admin_router)
+v1_router.include_router(support_router)
+v1_router.include_router(coupons_router)

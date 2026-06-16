@@ -90,6 +90,11 @@ class Order(Base):
     payment_confirm_log_id = mapped_column(UUID(as_uuid=True), nullable=True)
     # 这笔钱由哪个收款主体收的（下单固化；退款按此原路退回，支持多主体/多渠道）
     payment_account_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    # —— 优惠券抵扣（SP-4）——
+    coupon_grant_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    discount_fen = mapped_column(
+        sa.Integer, nullable=False, server_default=sa.text("0")
+    )  # 已抵扣金额（amount_fen 已是抵扣后实付）
 
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
@@ -273,6 +278,58 @@ class ActivationCode(Base):
     used_by = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True
     )
+    used_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class Coupon(Base):
+    """优惠券模板（SP-4）。
+
+    支持两种发放：
+      1) 后台直接发券给指定用户 → 直接创建 CouponGrant。
+      2) 兑换码批量发放：设 redeem_code（公开码），用户输入后领取一张 grant，
+         redeem_quota 控制总领取量，per_user_limit 控制每人领取次数。
+    抵扣类型：amount(满减，discount_value=分) | percent(折扣，discount_value=万分比，9500=95折)。
+    """
+
+    __tablename__ = "coupons"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = mapped_column(sa.String(100), nullable=False)
+    discount_type = mapped_column(sa.String(10), nullable=False)   # amount|percent
+    discount_value = mapped_column(sa.Integer, nullable=False)     # 分 或 万分比
+    min_amount_fen = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    max_discount_fen = mapped_column(sa.Integer, nullable=True)    # percent 券封顶
+    scope = mapped_column(sa.String(20), nullable=False, server_default=sa.text("'all'"))  # all|semester|addon|renew
+    redeem_code = mapped_column(sa.String(20), nullable=True, unique=True)  # 兑换码（可空=仅后台直发）
+    redeem_quota = mapped_column(sa.Integer, nullable=True)        # 兑换码总量（null=不限）
+    redeemed_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    per_user_limit = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    valid_from = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    valid_until = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    is_active = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    created_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class CouponGrant(Base):
+    """用户持有的一张优惠券（SP-4）。下单时选用 → 支付成功标记 used。"""
+
+    __tablename__ = "coupon_grants"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    coupon_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("coupons.id"), nullable=False
+    )
+    user_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+    )
+    status = mapped_column(sa.String(10), nullable=False, server_default=sa.text("'unused'"))  # unused|used
+    order_id = mapped_column(UUID(as_uuid=True), nullable=True)
     used_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()

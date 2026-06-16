@@ -1371,3 +1371,143 @@ async def admin_remove_branch_city(city_id: uuid.UUID, db: DbDep, admin: AdminDe
     await _branch_svc.remove_city(db, city_id)
     await db.commit()
     return make_ok({"ok": True})
+
+
+# ══ 客服与用户支持（§13）═════════════════════════════════════════════════════
+from app.services import support_service as _support_svc
+from app.services import faq_service as _faq_svc
+from app.services import user_feedback_service as _ufb_svc
+
+
+# ── 客服工单（§13.1）──────────────────────────────────────────────────────────
+@router.get("/support/tickets", response_model=None)
+async def admin_list_tickets(
+    db: DbDep, admin: AdminDep,
+    status: str = Query("pending", description="pending|open|replied|closed|all"),
+    category: str = Query("all"),
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+):
+    return make_ok(await _support_svc.admin_list(
+        db, status=status, category=category, skip=skip, limit=limit))
+
+
+@router.get("/support/tickets/{ticket_id}", response_model=None)
+async def admin_ticket_thread(ticket_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    return make_ok(await _support_svc.get_thread(db, ticket_id=ticket_id))
+
+
+@router.post("/support/tickets/{ticket_id}/reply", response_model=None)
+async def admin_reply_ticket(ticket_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """客服回复。body={content}。"""
+    m = await _support_svc.reply(
+        db, ticket_id=ticket_id, sender_role="admin", sender_id=admin.id,
+        content=(body or {}).get("content", ""))
+    await db.commit()
+    return make_ok({"id": str(m.id)})
+
+
+@router.post("/support/tickets/{ticket_id}/close", response_model=None)
+async def admin_close_ticket(ticket_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    t = await _support_svc.close_ticket(db, ticket_id=ticket_id, admin_id=admin.id)
+    await db.commit()
+    return make_ok({"id": str(t.id), "status": t.status})
+
+
+# ── FAQ 维护（§13.2）──────────────────────────────────────────────────────────
+@router.get("/faq", response_model=None)
+async def admin_list_faq(db: DbDep, admin: AdminDep,
+                         audience: str = Query("all"),
+                         skip: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=500)):
+    return make_ok(await _faq_svc.admin_list(db, audience=audience, skip=skip, limit=limit))
+
+
+@router.post("/faq", response_model=None)
+async def admin_create_faq(body: dict, db: DbDep, admin: AdminDep):
+    """新增 FAQ。body={audience, category, question, answer, sort_order?}。"""
+    f = await _faq_svc.create(
+        db, admin_id=admin.id, audience=(body or {}).get("audience", "c"),
+        category=(body or {}).get("category", "通用"),
+        question=(body or {}).get("question", ""), answer=(body or {}).get("answer", ""),
+        sort_order=(body or {}).get("sort_order", 0))
+    await db.commit()
+    return make_ok({"id": str(f.id)})
+
+
+@router.put("/faq/{faq_id}", response_model=None)
+async def admin_update_faq(faq_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    f = await _faq_svc.update(db, faq_id=faq_id, admin_id=admin.id, fields=(body or {}))
+    await db.commit()
+    return make_ok({"id": str(f.id)})
+
+
+@router.delete("/faq/{faq_id}", response_model=None)
+async def admin_delete_faq(faq_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    await _faq_svc.delete(db, faq_id=faq_id)
+    await db.commit()
+    return make_ok({"ok": True})
+
+
+# ── 意见反馈 / BUG（§13.3）────────────────────────────────────────────────────
+@router.get("/feedback/suggestions", response_model=None)
+async def admin_list_feedback(
+    db: DbDep, admin: AdminDep,
+    status: str = Query("pending"), kind: str = Query("all"),
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+):
+    return make_ok(await _ufb_svc.admin_list(db, status=status, kind=kind, skip=skip, limit=limit))
+
+
+@router.post("/feedback/suggestions/{feedback_id}/handle", response_model=None)
+async def admin_handle_feedback(feedback_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """处理：body={action: reviewing|done|dismissed, note?}。"""
+    f = await _ufb_svc.handle(db, feedback_id=feedback_id, admin_id=admin.id,
+                              action=(body or {}).get("action", ""), note=(body or {}).get("note"))
+    await db.commit()
+    return make_ok({"id": str(f.id), "status": f.status})
+
+
+# ══ 优惠券 / 兑换码（SP-4）═══════════════════════════════════════════════════
+from app.services import coupon_service as _coupon_svc
+
+
+@router.get("/coupons", response_model=None)
+async def admin_list_coupons(db: DbDep, admin: AdminDep,
+                             skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200)):
+    return make_ok(await _coupon_svc.admin_list(db, skip=skip, limit=limit))
+
+
+@router.post("/coupons", response_model=None)
+async def admin_create_coupon(body: dict, db: DbDep, admin: AdminDep):
+    """建券。body={name, discount_type(amount|percent), discount_value, min_amount_fen?,
+    max_discount_fen?, scope?, per_user_limit?, valid_days?, with_redeem_code?, redeem_quota?}。
+    amount: discount_value=分; percent: discount_value=折扣率万分比(9000=9折)。"""
+    b = body or {}
+    c = await _coupon_svc.admin_create(
+        db, admin_id=admin.id, name=b.get("name", ""),
+        discount_type=b.get("discount_type", "amount"),
+        discount_value=int(b.get("discount_value", 0)),
+        min_amount_fen=int(b.get("min_amount_fen", 0) or 0),
+        max_discount_fen=b.get("max_discount_fen"),
+        scope=b.get("scope", "all"), per_user_limit=int(b.get("per_user_limit", 1) or 1),
+        valid_days=b.get("valid_days"),
+        with_redeem_code=bool(b.get("with_redeem_code", False)),
+        redeem_quota=b.get("redeem_quota"))
+    await db.commit()
+    return make_ok({"id": str(c.id), "redeem_code": c.redeem_code})
+
+
+@router.post("/coupons/{coupon_id}/active", response_model=None)
+async def admin_set_coupon_active(coupon_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    c = await _coupon_svc.admin_set_active(
+        db, coupon_id=coupon_id, is_active=bool((body or {}).get("is_active", True)))
+    await db.commit()
+    return make_ok({"id": str(c.id), "is_active": c.is_active})
+
+
+@router.post("/coupons/{coupon_id}/grant", response_model=None)
+async def admin_grant_coupon(coupon_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """直发给用户。body={user_ids:[uuid,...]}。"""
+    uids = [uuid.UUID(x) for x in (body or {}).get("user_ids", [])]
+    n = await _coupon_svc.admin_grant(db, coupon_id=coupon_id, user_ids=uids)
+    await db.commit()
+    return make_ok({"granted": n})
