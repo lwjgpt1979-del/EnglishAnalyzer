@@ -159,6 +159,16 @@ async def confirm_ocr_text(
     if wq is None:
         raise AppError(code=404, message="错题不存在或无权访问")
 
+    # §5.5 手动修正率：仅当用户实际改动过识别结果才计为「修正」
+    def _changed(new, old) -> bool:
+        return new is not None and (new or "").strip() != ((old or "") if old is not None else "").strip()
+    corrected = (
+        _changed(body.question_text, wq.question_text)
+        or _changed(body.student_answer, wq.student_answer)
+        or _changed(body.correct_answer, wq.correct_answer)
+        or (body.question_type is not None and body.question_type != wq.question_type)
+    )
+
     if body.question_text is not None:
         wq.question_text = body.question_text
     if body.student_answer is not None:
@@ -168,6 +178,8 @@ async def confirm_ocr_text(
     if body.question_type is not None:
         wq.question_type = body.question_type  # type: ignore[assignment]
 
+    if corrected:
+        wq.ocr_corrected = True
     # 手动修正后强制标记为 completed
     wq.ocr_status = "completed"  # type: ignore[assignment]
 

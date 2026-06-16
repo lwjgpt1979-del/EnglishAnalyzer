@@ -478,6 +478,8 @@ export interface DashboardData {
   content_quality: {
     review_rate: { total: number; mastered: number; rate_pct: number; by_review: number; by_manual: number; by_unknown: number }
     ocr_success: { wrong_questions: { total: number; completed: number; rate_pct: number }; uploaded_papers: { total: number; completed: number; rate_pct: number } }
+    ocr_correction: { completed: number; corrected: number; rate_pct: number }
+    practice_split: { free_entry: number; review_triggered: number; total: number; free_pct: number; review_pct: number }
   }
   growth: {
     channels: { total: number; items: { channel: string; label: string; count: number; pct: number }[] }

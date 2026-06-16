@@ -114,6 +114,21 @@ onMounted(load)
     </el-row>
 
     <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="6"><el-card shadow="hover">
+        <el-statistic title="OCR手动修正率(%)" :value="dash.content_quality.ocr_correction.rate_pct" />
+        <div class="muted">修正 {{ dash.content_quality.ocr_correction.corrected }} / 完成识别 {{ dash.content_quality.ocr_correction.completed }}（越低越好）</div>
+      </el-card></el-col>
+      <el-col :span="6"><el-card shadow="hover">
+        <el-statistic title="练习·独立入口(%)" :value="dash.content_quality.practice_split.free_pct" />
+        <div class="muted">{{ dash.content_quality.practice_split.free_entry }} 次</div>
+      </el-card></el-col>
+      <el-col :span="6"><el-card shadow="hover">
+        <el-statistic title="练习·复盘触发(%)" :value="dash.content_quality.practice_split.review_pct" />
+        <div class="muted">{{ dash.content_quality.practice_split.review_triggered }} 次 · 合计 {{ dash.content_quality.practice_split.total }}</div>
+      </el-card></el-col>
+    </el-row>
+
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
       <el-col :span="4"><el-card shadow="hover" :class="dash.feedback.pending > 0 ? 'card-warn' : ''">
         <el-statistic title="待处理内容反馈" :value="dash.feedback.pending">
           <template #suffix><router-link v-if="dash.feedback.pending > 0" to="/content-feedback" style="font-size:13px;margin-left:6px">去处理→</router-link></template>

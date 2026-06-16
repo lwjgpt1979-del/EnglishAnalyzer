@@ -127,6 +127,31 @@ async def get_dashboard(db: AsyncSession) -> dict:
         "uploaded_papers": await _ocr_rate(UserUploadedPaper, UserUploadedPaper.ocr_status),
     }
 
+    # —— OCR 手动修正率（§5.5）：实际改动过识别结果的占比 / 完成识别数 ——
+    ocr_completed_n = await _count(
+        select(func.count()).select_from(WrongQuestion).where(WrongQuestion.ocr_status == "completed"))
+    ocr_corrected_n = await _count(
+        select(func.count()).select_from(WrongQuestion).where(WrongQuestion.ocr_corrected.is_(True)))
+    ocr_correction = {
+        "completed": ocr_completed_n, "corrected": ocr_corrected_n,
+        "rate_pct": round(ocr_corrected_n / ocr_completed_n * 100, 1) if ocr_completed_n else 0.0,
+    }
+
+    # —— 题库练习来源拆分（§5.5）：独立入口 vs 复盘触发 ——
+    from app.models.d6_ai_questions import PracticeRecord
+    pr_rows = (await db.execute(
+        select(PracticeRecord.trigger_type, func.count())
+        .group_by(PracticeRecord.trigger_type))).all()
+    pr = {str(t): int(c) for t, c in pr_rows}
+    pr_free = pr.get("module8_free", 0)
+    pr_review = pr.get("wrong_q_followup", 0)
+    pr_total = pr_free + pr_review
+    practice_split = {
+        "free_entry": pr_free, "review_triggered": pr_review, "total": pr_total,
+        "free_pct": round(pr_free / pr_total * 100, 1) if pr_total else 0.0,
+        "review_pct": round(pr_review / pr_total * 100, 1) if pr_total else 0.0,
+    }
+
     # —— 机构账号续费率（§5.5，近似：复购机构占比）——
     from app.models.d2_payments import InstitutionPurchase
     inst_purch_counts = (await db.execute(
@@ -170,6 +195,8 @@ async def get_dashboard(db: AsyncSession) -> dict:
         "content_quality": {
             "review_rate": review_rate,
             "ocr_success": ocr_success,
+            "ocr_correction": ocr_correction,
+            "practice_split": practice_split,
         },
         "growth": growth,
         "institution": {"active": inst_active, "renewal": inst_renewal},

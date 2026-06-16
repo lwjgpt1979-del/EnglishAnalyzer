@@ -59,6 +59,10 @@ class WrongQuestion(Base):
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
     ocr_status = mapped_column(ocr_status_enum, nullable=True)
+    # OCR 质量监控（§5.5 手动修正率）：用户确认时实际改动过识别结果则置 true
+    ocr_corrected = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("false")
+    )
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),
         nullable=False,
