@@ -114,6 +114,22 @@ def _list_issues(s: Settings) -> list[SafetyIssue]:
             fix="设为 false，由平台管理员调 POST /admin/teachers/{id}/review 审核",
         ))
 
+    # 字段级加密主密钥（加密支付渠道密钥；留空则回退派生自 JWT，生产严禁）
+    if not s.field_encryption_key or len(s.field_encryption_key) < 32:
+        issues.append(SafetyIssue(
+            key="FIELD_ENCRYPTION_KEY",
+            current_hint="(空) 将回退派生自 JWT" if not s.field_encryption_key else "过短",
+            fix="设为 `openssl rand -base64 32`，一次性永久不变（丢失则已存密文无法解密）",
+        ))
+
+    # CORS 通配（生产应收紧到 admin/机构前端域名，避免凭证被任意站点携带）
+    if s.cors_allow_origins.strip() in ("", "*"):
+        issues.append(SafetyIssue(
+            key="CORS_ALLOW_ORIGINS",
+            current_hint=s.cors_allow_origins or "(空)",
+            fix="填实际前端域名（逗号分隔），如 https://admin.goodgrammar.top,https://inst.goodgrammar.top",
+        ))
+
     return issues
 
 

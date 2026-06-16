@@ -29,11 +29,14 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.debug else None,
     )
 
-    # CORS (open for dev, tighten for production)
+    # CORS：dev 默认放开；生产用 settings.cors_allow_origins（逗号分隔域名）收紧。
+    # 通配 "*" 与 allow_credentials=True 在浏览器侧不兼容，故仅显式域名时才带 credentials。
+    _origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+    _wildcard = _origins == ["*"] or not _origins
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=["*"] if _wildcard else _origins,
+        allow_credentials=not _wildcard,
         allow_methods=["*"],
         allow_headers=["*"],
     )

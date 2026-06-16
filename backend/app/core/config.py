@@ -127,6 +127,9 @@ class Settings(BaseSettings):
     # 应用
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
+    # CORS 允许来源（逗号分隔；dev 默认 "*"，生产应填 admin/机构前端域名）
+    # 例：https://admin.goodgrammar.top,https://inst.goodgrammar.top
+    cors_allow_origins: str = "*"
 
     # 老师认证
     auto_approve_teacher_cert: bool = True  # dev 自动通过；生产置 False 由 admin 审核
