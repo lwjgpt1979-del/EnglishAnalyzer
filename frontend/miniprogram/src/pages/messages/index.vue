@@ -1,5 +1,12 @@
 <template>
   <view class="page">
+    <!-- 平台公告入口（§5.6）-->
+    <view class="ann-entry" @tap="goAnnouncements">
+      <text class="ann-ic">📢</text>
+      <text class="ann-label">平台公告</text>
+      <text class="ann-arrow">›</text>
+    </view>
+
     <!-- 频道筛选 -->
     <scroll-view scroll-x class="channels-wrap">
       <view class="channels">
@@ -87,6 +94,8 @@ async function switchChannel(c: string) {
   await load()
 }
 
+function goAnnouncements() { uni.navigateTo({ url: '/pages/announcements/index' }) }
+
 async function onTap(n: NotificationOut) {
   if (!n.is_read) {
     try { await markRead(n.id); n.is_read = true; await loadUnread() } catch { /* ignore */ }
@@ -120,6 +129,10 @@ onMounted(load)
 
 <style scoped>
 .page { padding: 16rpx; background: var(--c-bg-page); min-height: 100vh; }
+.ann-entry { display: flex; align-items: center; gap: 12rpx; background: #fff; border-radius: 12rpx; padding: 24rpx; margin-bottom: 16rpx; }
+.ann-ic { font-size: 36rpx; }
+.ann-label { flex: 1; font-size: 28rpx; color: #333; font-weight: 600; }
+.ann-arrow { font-size: 32rpx; color: #c0c4cc; }
 .channels-wrap { white-space: nowrap; }
 .channels { display: inline-flex; gap: 8rpx; padding: 8rpx 4rpx 16rpx; }
 .ch { padding: 8rpx 18rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 24rpx; color: var(--c-text-second); white-space: nowrap; }

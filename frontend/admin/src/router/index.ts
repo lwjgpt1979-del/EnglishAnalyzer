@@ -41,6 +41,7 @@ const router = createRouter({
         { path: 'coupons', name: 'coupons', component: () => import('../views/Coupons.vue') },
         { path: 'sensitive-words', name: 'sensitive-words', component: () => import('../views/SensitiveWords.vue') },
         { path: 'campaigns', name: 'campaigns', component: () => import('../views/Campaigns.vue') },
+        { path: 'announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
       ],
     },
   ],

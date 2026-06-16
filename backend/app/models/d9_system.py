@@ -280,3 +280,28 @@ class PriceChangeLog(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class Announcement(Base):
+    """平台公告（§5.6）：全平台或定向（机构/年级）发布。
+
+    audience: all(全平台) | institution(指定机构) | grade(指定年级)。
+    target_values: audience 为 institution/grade 时的目标值列表（机构 id 串 / 年级名）。
+    starts_at/ends_at 为空表示不限；展示按 is_active + 时间窗 + 受众匹配。
+    """
+
+    __tablename__ = "announcements"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = mapped_column(sa.String(120), nullable=False)
+    content = mapped_column(sa.Text, nullable=False)
+    audience = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'all'"))
+    target_values = mapped_column(JSONB, nullable=True)   # [institution_id...] 或 [grade...]
+    pinned = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    starts_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    ends_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    is_active = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    created_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )

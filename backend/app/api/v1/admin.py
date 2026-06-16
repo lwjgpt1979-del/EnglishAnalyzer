@@ -1626,3 +1626,42 @@ async def admin_set_campaign_active(campaign_id: uuid.UUID, body: dict, db: DbDe
         db, campaign_id=campaign_id, is_active=bool((body or {}).get("is_active", True)))
     await db.commit()
     return make_ok({"id": str(c.id), "is_active": c.is_active})
+
+
+# ══ 公告管理（§5.6）═══════════════════════════════════════════════════════════
+from app.services import announcement_service as _ann_svc
+
+
+@router.get("/announcements", response_model=None)
+async def admin_list_announcements(db: DbDep, admin: AdminDep,
+                                   skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200)):
+    return make_ok(await _ann_svc.admin_list(db, skip=skip, limit=limit))
+
+
+@router.post("/announcements", response_model=None)
+async def admin_create_announcement(body: dict, db: DbDep, admin: AdminDep):
+    """发布公告。body={title, content, audience(all|institution|grade), target_values?[],
+    pinned?, starts_at?, ends_at?}。定向公告需填 target_values（机构id 或 年级名）。"""
+    b = body or {}
+    sa_dt = _parse_dt(b["starts_at"]) if b.get("starts_at") else None
+    ea_dt = _parse_dt(b["ends_at"]) if b.get("ends_at") else None
+    a = await _ann_svc.admin_create(
+        db, admin_id=admin.id, title=b.get("title", ""), content=b.get("content", ""),
+        audience=b.get("audience", "all"), target_values=b.get("target_values"),
+        pinned=bool(b.get("pinned", False)), starts_at=sa_dt, ends_at=ea_dt)
+    await db.commit()
+    return make_ok({"id": str(a.id)})
+
+
+@router.put("/announcements/{ann_id}", response_model=None)
+async def admin_update_announcement(ann_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    a = await _ann_svc.admin_update(db, ann_id=ann_id, fields=(body or {}))
+    await db.commit()
+    return make_ok({"id": str(a.id), "is_active": a.is_active})
+
+
+@router.delete("/announcements/{ann_id}", response_model=None)
+async def admin_delete_announcement(ann_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    await _ann_svc.admin_delete(db, ann_id=ann_id)
+    await db.commit()
+    return make_ok({"ok": True})

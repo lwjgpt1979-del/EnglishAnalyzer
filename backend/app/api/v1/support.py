@@ -14,12 +14,21 @@ from app.core.database import get_db, get_rls_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import make_ok
-from app.services import faq_service, support_service, user_feedback_service
+from app.services import (announcement_service, faq_service, support_service,
+                          user_feedback_service)
 
 router = APIRouter(tags=["support"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
+
+
+# ── 平台公告（§5.6）──────────────────────────────────────────────────────────
+@router.get("/announcements", response_model=None)
+async def list_announcements(db: DbDep, current_user: UserDep):
+    """当前用户可见的生效公告（全平台 + 命中其机构/年级）。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await announcement_service.public_list(db, user_id=current_user.id))
 
 
 # ── FAQ 自助（§13.2）──────────────────────────────────────────────────────────

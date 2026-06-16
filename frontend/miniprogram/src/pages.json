@@ -77,6 +77,7 @@
     { "path": "pages/account/agreement", "style": { "navigationBarTitleText": "用户协议" } },
     { "path": "pages/account/privacy", "style": { "navigationBarTitleText": "隐私政策" } },
     { "path": "pages/messages/index", "style": { "navigationBarTitleText": "消息中心" } },
+    { "path": "pages/announcements/index", "style": { "navigationBarTitleText": "平台公告" } },
     { "path": "pages/support/help", "style": { "navigationBarTitleText": "帮助与反馈" } },
     { "path": "pages/support/tickets", "style": { "navigationBarTitleText": "我的工单" } },
     { "path": "pages/support/ticket-new", "style": { "navigationBarTitleText": "提交工单" } },

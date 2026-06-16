@@ -766,3 +766,22 @@ export function createCampaign(body: Record<string, unknown>): Promise<{ id: str
 export function setCampaignActive(id: string, is_active: boolean) {
   return unwrap(request.post(`/admin/promo-campaigns/${id}/active`, { is_active }))
 }
+
+// ══ §5.6 公告管理 ════════════════════════════════════════════════
+export interface AnnouncementItem {
+  id: string; title: string; content: string; audience: string
+  target_values: string[]; pinned: boolean; is_active: boolean
+  starts_at: string | null; ends_at: string | null; created_at: string | null
+}
+export function listAnnouncements(params: { skip?: number; limit?: number }): Promise<{ total: number; items: AnnouncementItem[] }> {
+  return unwrap(request.get('/admin/announcements', { params }))
+}
+export function createAnnouncement(body: Record<string, unknown>): Promise<{ id: string }> {
+  return unwrap(request.post('/admin/announcements', body))
+}
+export function updateAnnouncement(id: string, body: Record<string, unknown>) {
+  return unwrap(request.put(`/admin/announcements/${id}`, body))
+}
+export function deleteAnnouncement(id: string) {
+  return unwrap(request.delete(`/admin/announcements/${id}`))
+}
