@@ -149,10 +149,13 @@ async def assert_can_bind_student(db: AsyncSession, *, teacher_id: uuid.UUID) ->
 
 
 async def assert_can_create_paper(db: AsyncSession, *, teacher_id: uuid.UUID) -> None:
-    """出卷前校验月度上限（§5.6）。"""
+    """出卷前校验月度上限（§5.6）。机构套餐老师走机构池（S2），否则走个体额度。"""
     teacher = await db.get(Teacher, teacher_id)
     if teacher is None:
         return
+    from app.services import institution_package_service as _pkg
+    if await _pkg.gate_paper(db, teacher=teacher):
+        return   # 机构池已处理
     eff = await effective_for(db, teacher)
     ms = _month_start(eff["reset_day"])
     used = await _paper_used(db, teacher_id, ms)
@@ -161,10 +164,14 @@ async def assert_can_create_paper(db: AsyncSession, *, teacher_id: uuid.UUID) ->
 
 
 async def check_grading_and_warn(db: AsyncSession, *, teacher_id: uuid.UUID) -> None:
-    """批改/点评前校验月度上限 + 预警（§5.6）。在新增 TeacherComment 之前调用。"""
+    """批改/点评前校验月度上限 + 预警（§5.6）。在新增 TeacherComment 之前调用。
+    机构套餐老师走机构池（S2），否则走个体额度。"""
     teacher = await db.get(Teacher, teacher_id)
     if teacher is None:
         return
+    from app.services import institution_package_service as _pkg
+    if await _pkg.gate_grading(db, teacher=teacher):
+        return   # 机构池已处理
     eff = await effective_for(db, teacher)
     ms = _month_start(eff["reset_day"])
     limit = eff["monthly_grading_quota"]

@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d1_users import Institution, Teacher
+from app.models.d1_users import Institution, Teacher, User
 from app.models.d9_system import SystemConfig
 
 _KEY = "institution_packages"
@@ -173,6 +173,70 @@ async def usage_overview(db: AsyncSession, *, institution_id: uuid.UUID) -> dict
         "paper": _blk(paper, eff["paper_pool"]),
         "grading": _blk(grading, eff["grading_pool"]),
     }
+
+
+# ── S2 机构池闸门（机构老师出卷/批改扣机构池 + 池内老师子上限 + 池预警）────────
+async def _institution_admin_ids(db: AsyncSession, institution_id: uuid.UUID) -> list[uuid.UUID]:
+    return list((await db.execute(
+        select(User.id).where(User.role == "institution_admin",
+                              User.institution_id == institution_id,
+                              User.is_active.is_(True)))).scalars().all())
+
+
+async def _maybe_pool_warn(db: AsyncSession, *, institution_id: uuid.UUID, eff: dict,
+                           kind: str, label: str, pool_used_after: int) -> None:
+    limit, thr = eff[f"{kind}_pool"], eff["warn_threshold_pct"]
+    if limit <= 0 or thr <= 0:
+        return
+    warn_line = limit * (100 - thr) / 100.0
+    if (pool_used_after - 1) < warn_line <= pool_used_after:   # 恰好本次越线 → 一次
+        remain = max(0, limit - pool_used_after)
+        from app.services import notification_service
+        for aid in await _institution_admin_ids(db, institution_id):
+            try:
+                await notification_service.emit(
+                    db, user_id=aid, type_="system", title="机构额度预警",
+                    content=f"本机构本月「{label}」额度仅剩 {remain}/{limit}，请合理安排或联系平台扩容。",
+                    meta={"kind": f"pool_{kind}"})
+            except Exception:
+                pass
+
+
+async def _gate(db: AsyncSession, *, teacher: Teacher, kind: str, label: str) -> bool:
+    """机构老师 出卷(paper)/批改(grading) 池闸门。
+    返回 True=按机构池处理（已通过）；False=非套餐机构（调用方回退个体逻辑）。"""
+    if teacher is None or not teacher.institution_id:
+        return False
+    inst = await db.get(Institution, teacher.institution_id)
+    eff = await effective_for(db, inst) if inst else None
+    if eff is None:
+        return False   # 机构未配套餐 → 走个体逻辑
+    ms = month_start(eff["reset_day"])
+    pool_used = (await _paper_used(db, inst.id, ms) if kind == "paper"
+                 else await _grading_used(db, inst.id, ms))
+    pool_limit = eff[f"{kind}_pool"]
+    if pool_used >= pool_limit:
+        raise AppError(code=403, message=f"机构本月{label}额度已用尽，请联系机构管理员")
+    # 池内老师子上限（机构管理员可为单个老师设；null=共享池先到先得）
+    sub = teacher.monthly_paper_quota if kind == "paper" else teacher.monthly_grading_quota
+    if sub is not None:
+        from app.services import teacher_limit_service as _tl
+        ms_t = _tl._month_start(eff["reset_day"])
+        my = (await _tl._paper_used(db, teacher.id, ms_t) if kind == "paper"
+              else await _tl._grading_used(db, teacher.id, ms_t))
+        if my >= sub:
+            raise AppError(code=403, message=f"您的{label}子额度已用尽（{sub}/月），请联系机构管理员")
+    await _maybe_pool_warn(db, institution_id=inst.id, eff=eff, kind=kind,
+                           label=label, pool_used_after=pool_used + 1)
+    return True
+
+
+async def gate_paper(db: AsyncSession, *, teacher: Teacher) -> bool:
+    return await _gate(db, teacher=teacher, kind="paper", label="出卷")
+
+
+async def gate_grading(db: AsyncSession, *, teacher: Teacher) -> bool:
+    return await _gate(db, teacher=teacher, kind="grading", label="批改/点评")
 
 
 # ── 管理：给机构指定套餐 / 覆盖 ───────────────────────────────────────────────

@@ -119,7 +119,7 @@ onMounted(() => { loadCfg(); loadInsts() })
             :status="b.d && b.d.remaining_pct < (usage.warn_threshold_pct || 20) ? 'warning' : ''" style="width: 240px" />
           <span class="un">{{ b.d?.used }}/{{ b.d?.limit }}</span>
         </div>
-        <p class="hint">每月 {{ usage.reset_day }} 号重置。（S1 仅展示用量；扣减闸门在 S2 上线）</p>
+        <p class="hint">每月 {{ usage.reset_day }} 号重置。机构老师出卷/批改实时扣机构池，超额拦截；剩余低于预警阈值时通知机构管理员。</p>
       </div>
       <div v-else-if="selInst" class="hint">该机构未配置套餐。</div>
     </el-card>
