@@ -800,3 +800,11 @@ export function updateTeacherLimits(body: Partial<TeacherLimits>): Promise<Teach
 export function setTeacherLimitOverride(teacherId: string, body: Record<string, number | null>) {
   return unwrap(request.post(`/admin/teachers/${teacherId}/limits`, body))
 }
+
+// ══ §5.6 学习信息变更月度上限 ════════════════════════════════════
+export function getInfoChangeLimit(): Promise<{ limit: number }> {
+  return unwrap(request.get('/admin/info-change-limit'))
+}
+export function setInfoChangeLimit(limit: number): Promise<{ limit: number }> {
+  return unwrap(request.put('/admin/info-change-limit', { limit }))
+}

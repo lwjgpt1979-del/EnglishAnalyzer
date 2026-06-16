@@ -43,6 +43,7 @@ const router = createRouter({
         { path: 'campaigns', name: 'campaigns', component: () => import('../views/Campaigns.vue') },
         { path: 'announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
         { path: 'teacher-limits', name: 'teacher-limits', component: () => import('../views/TeacherLimits.vue') },
+        { path: 'system-settings', name: 'system-settings', component: () => import('../views/SystemSettings.vue') },
       ],
     },
   ],

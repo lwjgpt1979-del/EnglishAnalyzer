@@ -61,6 +61,7 @@ function onLogout() {
         <el-menu-item index="/exam-papers">📝 真题试卷管理</el-menu-item>
         <el-menu-item index="/notifications">通知</el-menu-item>
         <el-menu-item index="/announcements">📢 公告管理</el-menu-item>
+        <el-menu-item index="/system-settings">⚙️ 系统参数</el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>

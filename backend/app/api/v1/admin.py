@@ -1703,3 +1703,20 @@ async def admin_set_teacher_override(teacher_id: uuid.UUID, body: dict, db: DbDe
         "monthly_paper_quota": t.monthly_paper_quota,
         "monthly_grading_quota": t.monthly_grading_quota,
     })
+
+
+# ══ 学习信息变更月度上限（§5.6）═══════════════════════════════════════════════
+from app.services import info_change_service as _ic_svc
+
+
+@router.get("/info-change-limit", response_model=None)
+async def admin_get_info_change_limit(db: DbDep, admin: AdminDep):
+    return make_ok({"limit": await _ic_svc.get_limit(db)})
+
+
+@router.put("/info-change-limit", response_model=None)
+async def admin_set_info_change_limit(body: dict, db: DbDep, admin: AdminDep):
+    """改学习信息（年级/教材/学期）月度变更上限。body={limit}。次月起按新值计。"""
+    v = await _ic_svc.set_limit(db, value=int((body or {}).get("limit", 3)), admin_id=admin.id)
+    await db.commit()
+    return make_ok({"limit": v})

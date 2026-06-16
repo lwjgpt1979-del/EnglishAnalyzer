@@ -69,6 +69,9 @@
       <view v-if="showPrefEdit" class="modal" @tap.self="showPrefEdit = false">
         <view class="modal-card">
           <view class="card-title">修改偏好</view>
+          <text v-if="infoChangeRemaining !== null" class="info-quota-tip">
+            本月年级/教材/学期还可修改 {{ infoChangeRemaining }}/{{ infoChangeLimit }} 次（城市不计）
+          </text>
 
           <text class="pref-label" style="margin-bottom:8rpx;display:block">教材版本</text>
           <picker :range="TEXTBOOK_VERSIONS" :value="prefForm.textbookIdx" @change="(e: any) => prefForm.textbookIdx = +e.detail.value">
@@ -277,7 +280,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { generateRelativeInviteCode, relativeInviteQrcode, relativeInviteSms, getMyRelatives, unbindRelative } from '@/api/relative'
 import { listMySemesters } from '@/api/semesters'
 import { getSemesterPricing } from '@/api/orders'
-import { updateProfile, wxBindPhone } from '@/api/auth'
+import { updateProfile, wxBindPhone, getInfoChangeQuota } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { PROVINCES, PROVINCE_NAMES, getCitiesForProvince, getCityName, getProvinceName } from '@/data/cities'
 import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
@@ -310,6 +313,8 @@ async function onBindPhone(e: any) {
 // M23/M27 教材偏好 + 城市
 const showPrefEdit = ref(false)
 const prefSaving = ref(false)
+const infoChangeRemaining = ref<number | null>(null)
+const infoChangeLimit = ref(3)
 const prefForm = reactive({
   textbookIdx: 0,
   gradeIdx: 0,
@@ -354,6 +359,7 @@ function openPrefEdit() {
     }
   }
   showPrefEdit.value = true
+  getInfoChangeQuota().then(q => { infoChangeRemaining.value = q.remaining; infoChangeLimit.value = q.limit }).catch(() => {})
 }
 
 async function onSavePref() {
@@ -682,6 +688,7 @@ function goBuySemester() {
 .pref-row { display: flex; justify-content: space-between; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .pref-row:last-of-type { border-bottom: none; }
 .pref-label { font-size: 26rpx; color: var(--c-text-second); }
+.info-quota-tip { display: block; font-size: 22rpx; color: var(--c-gold, #e6a23c); background: #fff7e6; padding: 12rpx 16rpx; border-radius: 8rpx; margin-bottom: 16rpx; }
 .pref-val { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
 .picker-row { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; font-size: 28rpx; color: var(--c-ink); }
 </style>

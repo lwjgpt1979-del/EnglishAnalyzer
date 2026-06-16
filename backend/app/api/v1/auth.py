@@ -153,7 +153,23 @@ async def cancel_revoke_api(db: DbDep, current_user: UserDep):
 
 @router.patch("/profile", response_model=BaseResponse[dict])
 async def update_profile_api(body: UpdateProfileRequest, db: DbDep, current_user: UserDep):
-    """用户修改教材偏好和城市归属（V2 M23/M27）。"""
+    """用户修改教材偏好和城市归属（V2 M23/M27）。
+
+    §5.6 防滥用：年级/教材版本/学期 三项任一发生「实际变更」即计 1 次月度配额，
+    超过上限拒绝（城市归属不计入）。一次请求改多项也只算 1 次。
+    """
+    # 判定学习信息是否实际变化（与现值不同才算变更）
+    def _changed(new, cur) -> bool:
+        return new is not None and str(new) != (str(cur) if cur is not None else "")
+    info_changed = (
+        _changed(body.preferred_textbook_version, current_user.preferred_textbook_version)
+        or _changed(body.preferred_grade, current_user.preferred_grade)
+        or _changed(body.preferred_semester, current_user.preferred_semester)
+    )
+    if info_changed:
+        from app.services import info_change_service
+        await info_change_service.assert_and_consume(db, user_id=current_user.id)
+
     if body.preferred_textbook_version is not None:
         current_user.preferred_textbook_version = body.preferred_textbook_version
     if body.preferred_grade is not None:

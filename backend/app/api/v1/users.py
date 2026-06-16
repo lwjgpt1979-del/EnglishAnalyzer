@@ -30,6 +30,16 @@ async def submit_content_feedback(
     return make_ok({"id": str(rec.id), "status": rec.status})
 
 
+@router.get("/me/info-change-quota", response_model=None)
+async def info_change_quota(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """本月学习信息（年级/教材/学期）变更剩余次数（§5.6）。"""
+    from app.services import info_change_service
+    return make_ok(await info_change_service.usage(db, user_id=current_user.id))
+
+
 @router.get("/me/ban-status", response_model=None)
 async def ban_status(
     current_user: Annotated[User, Depends(get_current_user_allow_banned)],

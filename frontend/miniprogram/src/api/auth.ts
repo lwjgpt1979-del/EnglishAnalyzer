@@ -34,3 +34,8 @@ export function updateProfile(data: UpdateProfileData): Promise<{
     data,
   })
 }
+
+// 学习信息变更月度配额（§5.6）
+export function getInfoChangeQuota(): Promise<{ used: number; limit: number; remaining: number }> {
+  return request('/api/v1/users/me/info-change-quota', { method: 'GET' })
+}
