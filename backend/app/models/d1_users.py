@@ -74,6 +74,9 @@ class User(Base):
     )
     city_code = mapped_column(sa.String, nullable=True)
     city_source = mapped_column(city_source_enum, nullable=True)
+    # —— 渠道来源（§5.5）：注册时一次性写入，用于渠道获客分析 ——
+    # school|stationery|training|search|referral|other（空=unknown）
+    acquisition_channel = mapped_column(sa.String(20), nullable=True)
     ip_at_registration = mapped_column(INET, nullable=True)
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()

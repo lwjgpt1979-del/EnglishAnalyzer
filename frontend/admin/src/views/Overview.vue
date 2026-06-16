@@ -137,6 +137,39 @@ onMounted(load)
       </el-card></el-col>
     </el-row>
 
+    <!-- ── 增长分析（§5.5）：渠道来源 / 续费率 / 转化漏斗 ── -->
+    <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
+      <el-col :span="8"><el-card shadow="never">
+        <template #header>渠道来源分布（学生）</template>
+        <div v-for="c in dash.growth.channels.items" :key="c.channel" class="ch-row">
+          <span class="ch-label">{{ c.label }}</span>
+          <div class="ch-bar"><div class="ch-fill" :style="{ width: c.pct + '%' }"></div></div>
+          <span class="ch-val">{{ c.count }}（{{ c.pct }}%）</span>
+        </div>
+        <div v-if="!dash.growth.channels.items.length" class="muted">暂无数据</div>
+      </el-card></el-col>
+
+      <el-col :span="8"><el-card shadow="never">
+        <template #header>续费率（近 {{ dash.growth.renewal.days }} 天）· 总 {{ dash.growth.renewal.overall_rate_pct }}%</template>
+        <el-table :data="dash.growth.renewal.by_tier" size="small" :show-header="true">
+          <el-table-column label="档位"><template #default="{ row }">{{ TIER[row.tier] || row.tier }}</template></el-table-column>
+          <el-table-column prop="expiring" label="到期" width="70" />
+          <el-table-column prop="renewed" label="续费" width="70" />
+          <el-table-column label="续费率" width="90"><template #default="{ row }">{{ row.rate_pct }}%</template></el-table-column>
+        </el-table>
+        <div class="muted" style="margin-top:6px">分母=窗口内到期会员数，分子=已支付续费订单数（近似口径）</div>
+      </el-card></el-col>
+
+      <el-col :span="8"><el-card shadow="never">
+        <template #header>会员转化漏斗</template>
+        <div v-for="s in dash.growth.funnel.stages" :key="s.key" class="fn-row">
+          <span class="fn-label">{{ s.label }}</span>
+          <div class="fn-bar"><div class="fn-fill" :style="{ width: Math.max(2, s.pct_of_registered) + '%' }">{{ s.count }}</div></div>
+          <span class="fn-val">{{ s.pct_of_registered }}%<span class="muted" v-if="s.key !== 'registered'"> · 环比{{ s.pct_of_prev }}%</span></span>
+        </div>
+      </el-card></el-col>
+    </el-row>
+
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :span="12">
         <el-card shadow="never">
@@ -173,4 +206,15 @@ onMounted(load)
 .tb-fill { width: 60%; background: linear-gradient(180deg,#79bbff,#409eff); border-radius: 4px 4px 0 0; min-height: 2px; }
 .tb-num { font-size: 12px; color: #606266; margin-top: 4px; }
 .tb-date { font-size: 11px; color: #909399; }
+.muted { color: #909399; font-size: 12px; }
+.ch-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.ch-label { width: 72px; font-size: 13px; color: #606266; }
+.ch-bar { flex: 1; height: 14px; background: #f0f2f5; border-radius: 7px; overflow: hidden; }
+.ch-fill { height: 100%; background: linear-gradient(90deg,#79bbff,#409eff); border-radius: 7px; }
+.ch-val { width: 96px; text-align: right; font-size: 12px; color: #606266; }
+.fn-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fn-label { width: 84px; font-size: 13px; color: #606266; }
+.fn-bar { flex: 1; background: #f0f2f5; border-radius: 4px; overflow: hidden; }
+.fn-fill { background: linear-gradient(90deg,#95d475,#67c23a); color: #fff; font-size: 12px; text-align: right; padding: 2px 6px; border-radius: 4px; min-width: 24px; box-sizing: border-box; }
+.fn-val { width: 130px; text-align: right; font-size: 12px; color: #606266; }
 </style>

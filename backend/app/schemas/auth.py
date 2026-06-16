@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 class WxLoginRequest(BaseModel):
     code: str
+    channel: str | None = Field(default=None, description="获客渠道（§5.5）：school|stationery|training|search|referral|other；仅新用户首次登录写入")
 
 
 class WxPhoneRequest(BaseModel):

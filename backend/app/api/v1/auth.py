@@ -53,7 +53,7 @@ async def wx_login(
     session_key 不落库，不透传前端（Tech Spec §1.2）。
     """
     wx_data = await auth_service.wechat_code2session(body.code)
-    user = await auth_service.upsert_user(db, openid=wx_data["openid"])
+    user = await auth_service.upsert_user(db, openid=wx_data["openid"], channel=body.channel)
     await db.commit()
 
     return make_ok(

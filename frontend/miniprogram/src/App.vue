@@ -37,8 +37,15 @@ async function checkBan() {
   } catch { /* 未登录或网络异常忽略 */ }
 }
 
-onLaunch(() => {
+onLaunch((options) => {
   console.log('[App] launched')
+  // 获客渠道（§5.5）：扫码/分享带 ?channel=school|stationery|training|search|referral|other
+  // 落地暂存，首次 wx-login 时上报；仅在尚无记录时写入（保留最早来源）
+  const ch = (options?.query as Record<string, string> | undefined)?.channel
+  const VALID = ['school', 'stationery', 'training', 'search', 'referral', 'other']
+  if (ch && VALID.includes(ch) && !uni.getStorageSync('acq_channel')) {
+    uni.setStorageSync('acq_channel', ch)
+  }
   applyActiveTheme()
   useBrandingStore().fetch()   // 项目名从后端统一读取
   // 已有 token → 恢复用户信息（个人页等依赖 auth.user）

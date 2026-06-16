@@ -475,6 +475,11 @@ export interface DashboardData {
   usage_today: Record<string, number>
   active: { dau: number; mau: number; trend_7d: { date: string; count: number }[] }
   feedback: { diagnosis: number; question: number; pending: number }
+  growth: {
+    channels: { total: number; items: { channel: string; label: string; count: number; pct: number }[] }
+    renewal: { days: number; overall_rate_pct: number; total_expiring: number; total_renewed: number; by_tier: { tier: string; expiring: number; renewed: number; rate_pct: number }[] }
+    funnel: { stages: { key: string; label: string; count: number; pct_of_registered: number; pct_of_prev: number }[] }
+  }
   institution: { active: number }
   generated_at: string
 }

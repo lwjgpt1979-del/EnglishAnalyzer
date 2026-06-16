@@ -36,7 +36,9 @@ export const useAuthStore = defineStore('auth', () => {
         })
       })
       // Step 2: 换取 JWT (TokenResponse has access_token + refresh_token)
-      const tokenResp = await wxLogin(code)
+      // 携带获客渠道（§5.5）：仅新用户后端首次写入，老用户忽略
+      const channel = (uni.getStorageSync('acq_channel') as string) || undefined
+      const tokenResp = await wxLogin(code, channel)
       token.value = tokenResp.access_token
       uni.setStorageSync('access_token', tokenResp.access_token)
       uni.setStorageSync('refresh_token', tokenResp.refresh_token)

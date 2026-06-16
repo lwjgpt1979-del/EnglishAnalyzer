@@ -117,9 +117,13 @@ async def wechat_code2session(code: str) -> dict:
     return {"openid": openid, "session_key": data.get("session_key", "")}
 
 
-async def upsert_user(db: AsyncSession, *, openid: str) -> User:
+_VALID_CHANNELS = {"school", "stationery", "training", "search", "referral", "other"}
+
+
+async def upsert_user(db: AsyncSession, *, openid: str, channel: str | None = None) -> User:
     """按 openid 查找用户；不存在则创建（默认 role=student）。
 
+    channel：获客渠道（§5.5），仅在创建新用户时一次性写入（老用户重复登录不覆盖）。
     使用 db.flush() 而非 db.commit()，让调用方控制事务边界。
     """
     result = await db.execute(select(User).where(User.openid == openid))
@@ -131,6 +135,7 @@ async def upsert_user(db: AsyncSession, *, openid: str) -> User:
             openid=openid,
             role="student",
             is_active=True,
+            acquisition_channel=(channel if channel in _VALID_CHANNELS else None),
         )
         db.add(user)
         await db.flush()  # get id without committing
