@@ -108,3 +108,39 @@ async def list_paper_wrong_questions(
         ],
         "total": total,
     })
+
+
+@router.get("/{paper_id}/kp-summary")
+async def paper_kp_summary_api(paper_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """本卷错题按知识点归集（M4 深化）：每个知识点 总/错 数 + 薄弱标，薄弱优先。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await user_paper_service.paper_kp_summary(
+        db, paper_id=paper_id, student_id=current_user.id)
+    if res is None:
+        raise AppError(code=404, message="试卷不存在或无权访问")
+    return make_ok(res)
+
+
+@router.post("/questions/{question_id}/practice")
+async def practice_for_question_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """错题「练同类」：按该题知识点生成同类仿真练习（计入 practice.generate 配额）。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import entitlement_service
+    await entitlement_service.require_feature(db, user_id=current_user.id, key="practice.generate")
+    res = await user_paper_service.practice_for_question(
+        db, question_id=question_id, student_id=current_user.id)
+    await entitlement_service.consume(db, user_id=current_user.id, key="practice.generate")
+    await db.commit()
+    qs = res["questions"]
+    kp_name = res["knowledge_point"]
+    return make_ok({
+        "knowledge_point": kp_name,
+        "questions": [
+            {
+                "id": str(q.id), "knowledge_point_id": str(q.knowledge_point_id),
+                "knowledge_point_name": kp_name, "question_type": str(q.question_type),
+                "difficulty": q.difficulty, "stem": q.content["stem"],
+                "options": q.content.get("options"),
+            } for q in qs
+        ],
+    })

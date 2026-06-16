@@ -24,15 +24,31 @@
         <button class="btn-secondary" @tap="goUpload">重新上传</button>
       </view>
 
-      <!-- 完成：题目列表 -->
+      <!-- 完成：知识点归集 + 题目列表 -->
       <template v-else-if="paper.ocr_status === 'completed'">
         <view v-if="!paper.questions.length" class="card empty-q">
           <text>未识别到题目，请重试或换更清晰的图片</text>
           <button class="btn-secondary" @tap="goUpload">重新上传</button>
         </view>
 
+        <!-- 知识点归集卡（错题按知识点聚合，薄弱红标）-->
+        <view v-if="kpItems.length" class="card kp-card">
+          <text class="kp-title">本卷知识点归集</text>
+          <view v-for="k in kpItems" :key="k.kp_id" class="kp-row">
+            <text class="kp-name" :class="{ weak: k.weak }">{{ k.kp_name }}</text>
+            <text class="kp-cnt">错 {{ k.wrong }}/{{ k.total }}</text>
+            <text v-if="k.weak" class="kp-weak">薄弱</text>
+          </view>
+        </view>
+
+        <!-- 全部/错题 筛选 -->
+        <view v-if="paper.questions.length" class="filter-row">
+          <text class="fbtn" :class="{ on: !onlyWrong }" @tap="onlyWrong = false">全部 {{ paper.questions.length }}</text>
+          <text class="fbtn" :class="{ on: onlyWrong }" @tap="onlyWrong = true">错题 {{ wrongCount }}</text>
+        </view>
+
         <view
-          v-for="(q, idx) in paper.questions" :key="q.id"
+          v-for="(q, idx) in shownQuestions" :key="q.id"
           class="card q-card" :class="{ wrong: q.is_wrong }"
         >
           <view class="q-head">
@@ -46,9 +62,27 @@
             <text class="ans-line">正确答案：{{ q.correct_answer || '（未提供）' }}</text>
           </view>
           <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
+          <button v-if="q.is_wrong" class="btn-similar" :disabled="similarLoading" @tap="practiceSimilar(q.id)">练同类仿真题</button>
         </view>
       </template>
     </template>
+
+    <!-- 练同类结果弹层 -->
+    <view v-if="similarOpen" class="modal" @tap.self="similarOpen = false">
+      <view class="modal-card">
+        <text class="modal-title">同类练习 · {{ similarKp }}</text>
+        <scroll-view scroll-y class="modal-body">
+          <view v-for="(sq, i) in similarList" :key="sq.id" class="sq">
+            <text class="sq-stem">{{ i + 1 }}. {{ sq.stem }}</text>
+            <view v-if="sq.options" class="sq-opts">
+              <text v-for="(v, kk) in sq.options" :key="kk" class="sq-opt">{{ kk }}. {{ v }}</text>
+            </view>
+          </view>
+          <text v-if="!similarList.length" class="muted">未生成题目</text>
+        </scroll-view>
+        <button class="btn-secondary" @tap="similarOpen = false">关闭</button>
+      </view>
+    </view>
 
     <view v-else class="empty">试卷不存在或无权访问</view>
   </view>
@@ -57,13 +91,40 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper } from '@/api/userPapers'
+import { getUserPaper, getPaperKpSummary, practiceForQuestion, type PaperKpItem, type SimilarQuestion } from '@/api/userPapers'
 import type { UserPaperDetailOut } from '@/types/api'
 
 const paper = ref<UserPaperDetailOut | null>(null)
 const loading = ref(true)
 const paperId = ref('')
 let timer: ReturnType<typeof setTimeout> | null = null
+
+// M4 深化：知识点归集 + 错题筛选 + 练同类
+const kpItems = ref<PaperKpItem[]>([])
+const onlyWrong = ref(false)
+const wrongCount = computed(() => (paper.value?.questions || []).filter(q => q.is_wrong).length)
+const shownQuestions = computed(() => {
+  const qs = paper.value?.questions || []
+  return onlyWrong.value ? qs.filter(q => q.is_wrong) : qs
+})
+const similarOpen = ref(false)
+const similarLoading = ref(false)
+const similarKp = ref('')
+const similarList = ref<SimilarQuestion[]>([])
+
+async function loadKpSummary() {
+  try { kpItems.value = (await getPaperKpSummary(paperId.value)).items } catch { /* ignore */ }
+}
+async function practiceSimilar(qid: string) {
+  if (similarLoading.value) return
+  similarLoading.value = true
+  try {
+    const r = await practiceForQuestion(qid)
+    similarKp.value = r.knowledge_point; similarList.value = r.questions; similarOpen.value = true
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '生成失败', icon: 'none' })
+  } finally { similarLoading.value = false }
+}
 
 const isProcessing = computed(
   () => paper.value?.ocr_status === 'pending' || paper.value?.ocr_status === 'processing',
@@ -97,6 +158,8 @@ async function load() {
   // 仍在处理中 → 轮询
   if (isProcessing.value) {
     timer = setTimeout(load, 2500)
+  } else if (paper.value?.ocr_status === 'completed') {
+    loadKpSummary()
   }
 }
 
@@ -147,4 +210,24 @@ function goUpload() {
 .q-ans { display: flex; flex-direction: column; gap: 6rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; }
 .ans-line { font-size: 24rpx; color: var(--c-text-body); }
 .q-exp { display: block; font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; margin-top: 12rpx; }
+.kp-card { display: flex; flex-direction: column; gap: 10rpx; }
+.kp-title { font-size: 28rpx; font-weight: 800; color: var(--c-ink); margin-bottom: 6rpx; }
+.kp-row { display: flex; align-items: center; gap: 12rpx; }
+.kp-name { flex: 1; font-size: 26rpx; color: var(--c-text-body); }
+.kp-name.weak { color: var(--c-danger); font-weight: 700; }
+.kp-cnt { font-size: 24rpx; color: var(--c-text-hint); }
+.kp-weak { font-size: 20rpx; color: #fff; background: var(--c-danger); border-radius: 8rpx; padding: 2rpx 10rpx; }
+.filter-row { display: flex; gap: 16rpx; margin-bottom: 16rpx; }
+.fbtn { font-size: 26rpx; color: var(--c-text-second); padding: 8rpx 24rpx; border-radius: 999rpx; background: var(--c-bg-soft); }
+.fbtn.on { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
+.btn-similar { margin-top: 16rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-btn); font-size: 26rpx; padding: 12rpx 0; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal-card { width: 86%; max-height: 76vh; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx; display: flex; flex-direction: column; gap: 16rpx; }
+.modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.modal-body { max-height: 56vh; }
+.sq { margin-bottom: 20rpx; }
+.sq-stem { display: block; font-size: 27rpx; color: var(--c-text-body); line-height: 1.6; }
+.sq-opts { display: flex; flex-direction: column; gap: 4rpx; margin-top: 8rpx; }
+.sq-opt { font-size: 25rpx; color: var(--c-text-second); }
+.muted { color: var(--c-text-hint); font-size: 24rpx; }
 </style>
