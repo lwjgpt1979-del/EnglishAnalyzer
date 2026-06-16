@@ -35,6 +35,10 @@ function onLogout() {
         <el-menu-item index="/teacher-cert">👨‍🏫 教师认证审核</el-menu-item>
         <el-menu-item index="/questions">仿真题审核</el-menu-item>
         <el-menu-item index="/content-feedback">📝 内容反馈</el-menu-item>
+        <el-menu-item index="/support">🎧 客服工单</el-menu-item>
+        <el-menu-item index="/faq">❓ FAQ 管理</el-menu-item>
+        <el-menu-item index="/feedback">💡 意见反馈</el-menu-item>
+        <el-menu-item index="/coupons">🎟️ 优惠券</el-menu-item>
         <el-menu-item index="/contents">知识点内容审核</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
         <el-menu-item index="/entitlements">🔐 会员权益配置</el-menu-item>

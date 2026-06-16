@@ -629,3 +629,73 @@ export function addBranchCity(id: string, city_code: string, effective_from?: st
 export function removeBranchCity(cityId: string) {
   return unwrap(request.delete(`/admin/branch-companies/cities/${cityId}`))
 }
+
+// ══ 客服支持体系（§13）═══════════════════════════════════════════
+export interface SupportTicketItem {
+  id: string; user_id: string; category: string; subject: string
+  status: string; last_reply_role: string | null; order_id: string | null
+  last_content: string | null; created_at: string | null; updated_at: string | null
+}
+export interface SupportMessageItem { id: string; sender_role: string; content: string; created_at: string | null }
+export function listTickets(params: { status?: string; category?: string; skip?: number; limit?: number }): Promise<{ total: number; items: SupportTicketItem[] }> {
+  return unwrap(request.get('/admin/support/tickets', { params }))
+}
+export function getTicketThread(id: string): Promise<{ ticket: SupportTicketItem; messages: SupportMessageItem[] }> {
+  return unwrap(request.get(`/admin/support/tickets/${id}`))
+}
+export function replyTicket(id: string, content: string) {
+  return unwrap(request.post(`/admin/support/tickets/${id}/reply`, { content }))
+}
+export function closeTicket(id: string) {
+  return unwrap(request.post(`/admin/support/tickets/${id}/close`))
+}
+
+export interface FaqItem {
+  id: string; audience: string; category: string; question: string
+  answer: string; sort_order: number; is_active: boolean; updated_at: string | null
+}
+export function listFaq(params: { audience?: string; skip?: number; limit?: number }): Promise<{ total: number; items: FaqItem[] }> {
+  return unwrap(request.get('/admin/faq', { params }))
+}
+export function createFaq(body: Record<string, unknown>): Promise<{ id: string }> {
+  return unwrap(request.post('/admin/faq', body))
+}
+export function updateFaq(id: string, body: Record<string, unknown>) {
+  return unwrap(request.put(`/admin/faq/${id}`, body))
+}
+export function deleteFaq(id: string) {
+  return unwrap(request.delete(`/admin/faq/${id}`))
+}
+
+export interface FeedbackItem {
+  id: string; user_id: string; kind: string; content: string
+  images: string[]; contact: string | null; status: string; note: string | null
+  created_at: string | null; handled_at: string | null
+}
+export function listSuggestions(params: { status?: string; kind?: string; skip?: number; limit?: number }): Promise<{ total: number; items: FeedbackItem[] }> {
+  return unwrap(request.get('/admin/feedback/suggestions', { params }))
+}
+export function handleSuggestion(id: string, action: string, note?: string) {
+  return unwrap(request.post(`/admin/feedback/suggestions/${id}/handle`, { action, note }))
+}
+
+// ══ 优惠券 / 兑换码（SP-4）════════════════════════════════════════
+export interface CouponItem {
+  id: string; name: string; discount_type: string; discount_value: number
+  min_amount_fen: number; max_discount_fen: number | null; scope: string
+  redeem_code: string | null; redeem_quota: number | null; redeemed_count: number
+  per_user_limit: number; valid_until: string | null; is_active: boolean
+  granted: number; used: number; desc: string; created_at: string | null
+}
+export function listCoupons(params: { skip?: number; limit?: number }): Promise<{ total: number; items: CouponItem[] }> {
+  return unwrap(request.get('/admin/coupons', { params }))
+}
+export function createCoupon(body: Record<string, unknown>): Promise<{ id: string; redeem_code: string | null }> {
+  return unwrap(request.post('/admin/coupons', body))
+}
+export function setCouponActive(id: string, is_active: boolean) {
+  return unwrap(request.post(`/admin/coupons/${id}/active`, { is_active }))
+}
+export function grantCoupon(id: string, user_ids: string[]): Promise<{ granted: number }> {
+  return unwrap(request.post(`/admin/coupons/${id}/grant`, { user_ids }))
+}
