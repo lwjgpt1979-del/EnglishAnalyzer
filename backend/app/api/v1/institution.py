@@ -172,6 +172,7 @@ async def list_institution_teachers(db: DbDep, admin: InstAdminDep):
             id=t.id, nickname=u.nickname, phone=u.phone,
             subject=t.subject, cert_status=str(t.cert_status),
             monthly_paper_quota=t.monthly_paper_quota,
+            monthly_grading_quota=t.monthly_grading_quota,
         ) for t, u in rows
     ])
 
@@ -192,13 +193,15 @@ async def set_teacher_quota_api(
     inst_id = _require_inst(admin)
     t = await institution_service.set_teacher_quota(
         db, institution_id=inst_id, teacher_id=teacher_id,
-        monthly_paper_quota=body.monthly_paper_quota)
+        monthly_paper_quota=body.monthly_paper_quota,
+        monthly_grading_quota=body.monthly_grading_quota, set_grading=True)
     await db.commit()
     u = await db.get(User, teacher_id)
     return make_ok(InstitutionTeacherOut(
         id=t.id, nickname=u.nickname if u else None, phone=u.phone if u else None,
         subject=t.subject, cert_status=str(t.cert_status),
         monthly_paper_quota=t.monthly_paper_quota,
+        monthly_grading_quota=t.monthly_grading_quota,
     ))
 
 

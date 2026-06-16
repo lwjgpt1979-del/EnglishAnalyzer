@@ -47,10 +47,12 @@ class InstitutionTeacherOut(BaseModel):
     subject: str | None = None
     cert_status: str
     monthly_paper_quota: int | None = None
+    monthly_grading_quota: int | None = None
 
 
 class TeacherQuotaUpdate(BaseModel):
-    monthly_paper_quota: int | None
+    monthly_paper_quota: int | None = None
+    monthly_grading_quota: int | None = None   # 池内批改/点评子上限（None=随机构池共享）
 
 
 class JoinInstitutionRequest(BaseModel):

@@ -42,10 +42,14 @@ export interface InstitutionTeacher {
   subject: string | null
   cert_status: string
   monthly_paper_quota: number | null
+  monthly_grading_quota: number | null
 }
 
-export function setTeacherQuota(teacherId: string, quota: number | null): Promise<InstitutionTeacher> {
-  return unwrap<InstitutionTeacher>(request.patch(`/institution/teachers/${teacherId}/quota`, { monthly_paper_quota: quota }))
+export function setTeacherQuota(
+  teacherId: string, paper: number | null, grading: number | null,
+): Promise<InstitutionTeacher> {
+  return unwrap<InstitutionTeacher>(request.patch(`/institution/teachers/${teacherId}/quota`,
+    { monthly_paper_quota: paper, monthly_grading_quota: grading }))
 }
 
 export function generateTeacherInviteCode(): Promise<{ code: string; expires_at: string }> {

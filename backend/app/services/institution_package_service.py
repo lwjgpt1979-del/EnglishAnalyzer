@@ -231,6 +231,18 @@ async def _gate(db: AsyncSession, *, teacher: Teacher, kind: str, label: str) ->
     return True
 
 
+async def assert_can_add_teacher(db: AsyncSession, *, institution_id: uuid.UUID) -> None:
+    """S3：机构加老师前校验席位上限。非套餐机构（无 package_tier）不限制。"""
+    inst = await db.get(Institution, institution_id)
+    eff = await effective_for(db, inst) if inst else None
+    if eff is None:
+        return
+    used = await _seats_used(db, institution_id)
+    if used >= eff["teacher_seats"]:
+        raise AppError(code=403,
+                       message=f"机构老师席位已满（{eff['teacher_seats']}个），请联系平台升级套餐")
+
+
 async def gate_paper(db: AsyncSession, *, teacher: Teacher) -> bool:
     return await _gate(db, teacher=teacher, kind="paper", label="出卷")
 

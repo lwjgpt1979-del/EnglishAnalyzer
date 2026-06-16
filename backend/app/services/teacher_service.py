@@ -455,6 +455,11 @@ async def join_institution(
     if teacher.institution_id is not None:
         raise AppError(code=409, message="您已加入机构，不能重复加入")
 
+    # §9.1 S3：机构套餐老师席位上限（仅拦新增，不回溯）
+    from app.services import institution_package_service
+    await institution_package_service.assert_can_add_teacher(
+        db, institution_id=issuer.institution_id)
+
     teacher.institution_id = issuer.institution_id
     invite.used_at = now
     invite.target_id = teacher_user_id

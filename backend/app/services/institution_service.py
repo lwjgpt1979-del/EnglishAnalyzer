@@ -179,9 +179,13 @@ async def remove_teacher(
 
 async def set_teacher_quota(
     db: AsyncSession, *, institution_id: uuid.UUID, teacher_id: uuid.UUID,
-    monthly_paper_quota: int | None,
+    monthly_paper_quota: int | None, monthly_grading_quota: int | None = None,
+    set_grading: bool = False,
 ) -> Teacher:
-    """设/清除老师每月出卷额度（None=不限）；跨机构拒绝。"""
+    """设/清除老师机构池内子上限（None=随机构池共享）；跨机构拒绝。
+
+    set_grading=True 时才写 monthly_grading_quota（区分"未传"与"显式清空 None"）。
+    """
     t = (await db.execute(
         select(Teacher).where(
             Teacher.id == teacher_id, Teacher.institution_id == institution_id
@@ -190,6 +194,8 @@ async def set_teacher_quota(
     if t is None:
         raise AppError(code=404, message="老师不存在或不属于本机构")
     t.monthly_paper_quota = monthly_paper_quota
+    if set_grading:
+        t.monthly_grading_quota = monthly_grading_quota
     await db.flush()
     return t
 
