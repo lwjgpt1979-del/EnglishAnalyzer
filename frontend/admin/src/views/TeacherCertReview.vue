@@ -1,8 +1,19 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listTeachersForAdmin, reviewTeacherCert } from '../api/admin'
+import { listTeachersForAdmin, reviewTeacherCert, claimTeacherCert, getCertQuality, type CertQuality } from '../api/admin'
 import type { AdminTeacherItem } from '../types'
+
+const quality = ref<CertQuality | null>(null)
+async function loadQuality() {
+  try { quality.value = await getCertQuality(30) } catch { /* ignore */ }
+}
+async function onClaim(row: AdminTeacherItem) {
+  try {
+    await claimTeacherCert(row.teacher_id)
+    ElMessage.success('已认领，可开始审核')
+  } catch (e: any) { ElMessage.error(e?.message || '认领失败') }
+}
 
 const rows = ref<AdminTeacherItem[]>([])
 const total = ref(0)
@@ -38,6 +49,7 @@ async function onApprove(row: AdminTeacherItem) {
     const result = await reviewTeacherCert(row.teacher_id, true)
     ElMessage.success('已通过认证')
     patchRow(result)
+    loadQuality()
   } catch (e: any) {
     ElMessage.error(e?.message || '操作失败')
   }
@@ -57,10 +69,12 @@ async function onReject(row: AdminTeacherItem) {
       done()
     },
   }).catch(() => { throw new Error('cancelled') })
+  if (!reason.trim()) { ElMessage.warning('驳回必须填写原因'); return }
   try {
-    const result = await reviewTeacherCert(row.teacher_id, false, reason || undefined)
+    const result = await reviewTeacherCert(row.teacher_id, false, reason)
     ElMessage.warning('已拒绝认证')
     patchRow(result)
+    loadQuality()
   } catch (e: any) {
     if ((e as Error).message !== 'cancelled') ElMessage.error(e?.message || '操作失败')
   }
@@ -85,11 +99,26 @@ function statusLabel(s: string): string {
   return { pending: '待审核', certified: '已认证', rejected: '已拒绝', uncertified: '未提交' }[s] || s
 }
 
-onMounted(load)
+onMounted(() => { load(); loadQuality() })
 </script>
 
 <template>
   <div>
+    <!-- 审核质量监控（§5.8）-->
+    <el-row v-if="quality" :gutter="12" style="margin-bottom: 16px">
+      <el-col :span="4"><el-card shadow="hover" body-style="padding:12px"><el-statistic title="近30天申请" :value="quality.applied" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover" body-style="padding:12px"><el-statistic title="已审核" :value="quality.reviewed" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover" body-style="padding:12px"><el-statistic title="通过率(%)" :value="quality.pass_rate_pct" /></el-card></el-col>
+      <el-col :span="4"><el-card shadow="hover" body-style="padding:12px" :class="quality.pending > 0 ? 'pend' : ''"><el-statistic title="待审核" :value="quality.pending" /></el-card></el-col>
+      <el-col :span="8"><el-card shadow="hover" body-style="padding:12px">
+        <div class="rj-title">驳回原因 Top5</div>
+        <div v-for="r in quality.reject_reasons_top" :key="r.reason" class="rj-row">
+          <span class="rj-reason">{{ r.reason }}</span><span class="rj-cnt">{{ r.count }}</span>
+        </div>
+        <div v-if="!quality.reject_reasons_top.length" class="muted">暂无驳回</div>
+      </el-card></el-col>
+    </el-row>
+
     <!-- 筛选工具栏 -->
     <div style="margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
       <el-select
@@ -139,8 +168,14 @@ onMounted(load)
           {{ row.created_at ? row.created_at.slice(0, 16).replace('T', ' ') : '—' }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="230" fixed="right">
         <template #default="{ row }">
+          <el-button
+            v-if="row.cert_status === 'pending'"
+            size="small"
+            plain
+            @click="onClaim(row)"
+          >🙋 认领</el-button>
           <el-button
             size="small"
             type="success"
@@ -170,4 +205,13 @@ onMounted(load)
     </div>
   </div>
 </template>
+
+<style scoped>
+.pend { background: #fdf6ec; }
+.rj-title { font-size: 13px; color: #909399; margin-bottom: 6px; }
+.rj-row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
+.rj-reason { color: #606266; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%; }
+.rj-cnt { color: #f56c6c; font-weight: 600; }
+.muted { color: #c0c4cc; font-size: 12px; }
+</style>
 

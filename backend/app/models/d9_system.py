@@ -250,3 +250,33 @@ class UserFeedback(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class SensitiveWord(Base):
+    """敏感词库（§5.6）：超管动态维护，用于内容过滤（AI报告/作文/老师题目/学生上传）。"""
+
+    __tablename__ = "sensitive_words"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word = mapped_column(sa.String(64), nullable=False, unique=True)
+    category = mapped_column(sa.String(20), nullable=False, server_default=sa.text("'other'"))  # political|porn|violence|ad|other
+    action = mapped_column(sa.String(10), nullable=False, server_default=sa.text("'block'"))    # block|mask
+    is_active = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    created_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class PriceChangeLog(Base):
+    """定价变更历史存档（§5.7）：每次改定价存一份快照，用于退款/争议举证。"""
+
+    __tablename__ = "price_change_logs"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    config_key = mapped_column(sa.String(40), nullable=False)   # 如 semester_pricing
+    snapshot = mapped_column(JSONB, nullable=False)             # 改后完整定价快照
+    changed_by = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )

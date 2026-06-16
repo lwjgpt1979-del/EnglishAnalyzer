@@ -49,6 +49,9 @@ export interface SemesterPricing {
   basic: number
   pro: number
   promax: number
+  list_basic?: number
+  list_pro?: number
+  list_promax?: number
 }
 
 export type ReviewStatus = 'draft' | 'reviewing' | 'published' | 'retired'

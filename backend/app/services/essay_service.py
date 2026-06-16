@@ -73,6 +73,9 @@ async def polish_essay(
     await entitlement_service.require_feature(
         db, user_id=student_id, key="essay.polish",
         message="作文精修为 Pro/ProMax 专属功能（Pro 每月3次），请升级会员")
+    # §5.6 内容审核：学生提交作文先过敏感词过滤，命中 block 词直接阻断
+    from app.services import content_filter_service
+    await content_filter_service.assert_clean(db, original_text)
     result = await _grade(original_text=original_text, essay_type=essay_type)
     essay = Essay(
         id=uuid.uuid4(), student_id=student_id, wrong_question_id=wrong_question_id,

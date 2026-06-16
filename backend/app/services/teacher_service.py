@@ -292,12 +292,35 @@ async def submit_cert(
     cert_doc_url: str,
 ) -> Teacher:
     """老师提交认证材料。auto_approve=True 直接 certified；否则 pending。"""
+    import datetime as _dt
     from app.core.config import settings
     teacher.cert_doc_url = cert_doc_url
+    teacher.cert_submitted_at = _dt.datetime.now(_dt.timezone.utc)
+    teacher.cert_reject_reason = None      # 重新提交清空上次驳回原因
+    teacher.cert_claimed_by = None         # 重新进入队列
+    teacher.cert_claimed_at = None
     if settings.auto_approve_teacher_cert:
         teacher.cert_status = "certified"  # type: ignore[assignment]
     else:
         teacher.cert_status = "pending"  # type: ignore[assignment]
+    await db.flush()
+    return teacher
+
+
+async def claim_cert(db: AsyncSession, *, teacher_id: uuid.UUID,
+                     admin_id: uuid.UUID) -> Teacher:
+    """审核员认领认证任务（防多人同审，§5.8 Step1）。"""
+    import datetime as _dt
+    r = await db.execute(select(Teacher).where(Teacher.id == teacher_id))
+    teacher = r.scalar_one_or_none()
+    if teacher is None:
+        raise AppError(code=404, message="老师不存在")
+    if str(teacher.cert_status) != "pending":
+        raise AppError(code=400, message="该申请非待审核状态，无法认领")
+    if teacher.cert_claimed_by and teacher.cert_claimed_by != admin_id:
+        raise AppError(code=409, message="该申请已被其他审核员认领")
+    teacher.cert_claimed_by = admin_id
+    teacher.cert_claimed_at = _dt.datetime.now(_dt.timezone.utc)
     await db.flush()
     return teacher
 
@@ -309,14 +332,64 @@ async def review_cert(
     approve: bool,
     reason: str | None = None,
 ) -> Teacher:
-    """admin 审核老师认证。"""
+    """admin 审核老师认证。驳回必须填原因；通过/驳回均通知老师（§5.8 Step3）。"""
+    import datetime as _dt
     r = await db.execute(select(Teacher).where(Teacher.id == teacher_id))
     teacher = r.scalar_one_or_none()
     if teacher is None:
         raise AppError(code=404, message="老师不存在")
+    if not approve and not (reason or "").strip():
+        raise AppError(code=400, message="驳回必须填写原因")
     teacher.cert_status = ("certified" if approve else "rejected")  # type: ignore[assignment]
+    teacher.cert_reject_reason = None if approve else reason.strip()
+    teacher.cert_reviewed_at = _dt.datetime.now(_dt.timezone.utc)
     await db.flush()
+    # 通知老师
+    from app.services import notification_service
+    if approve:
+        await notification_service.emit(
+            db, user_id=teacher_id, type_="system", title="教师认证已通过",
+            content="您的教师认证已通过审核，已获得「认证老师」标识。")
+    else:
+        await notification_service.emit(
+            db, user_id=teacher_id, type_="system", title="教师认证未通过",
+            content=f"驳回原因：{teacher.cert_reject_reason}。您可补充材料后重新提交。")
     return teacher
+
+
+async def cert_quality(db: AsyncSession, *, days: int = 30) -> dict:
+    """认证审核质量监控（§5.8）：近 N 天申请量 / 通过率 / 驳回原因 Top5。"""
+    import datetime as _dt
+    from sqlalchemy import func as _f
+    since = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
+    applied = int(await db.scalar(
+        select(_f.count()).select_from(Teacher).where(
+            Teacher.cert_submitted_at.isnot(None),
+            Teacher.cert_submitted_at >= since)) or 0)
+    reviewed = int(await db.scalar(
+        select(_f.count()).select_from(Teacher).where(
+            Teacher.cert_reviewed_at.isnot(None),
+            Teacher.cert_reviewed_at >= since)) or 0)
+    certified = int(await db.scalar(
+        select(_f.count()).select_from(Teacher).where(
+            Teacher.cert_reviewed_at.isnot(None),
+            Teacher.cert_reviewed_at >= since,
+            Teacher.cert_status == "certified")) or 0)
+    pending = int(await db.scalar(
+        select(_f.count()).select_from(Teacher).where(Teacher.cert_status == "pending")) or 0)
+    reason_rows = (await db.execute(
+        select(Teacher.cert_reject_reason, _f.count())
+        .where(Teacher.cert_status == "rejected",
+               Teacher.cert_reviewed_at >= since,
+               Teacher.cert_reject_reason.isnot(None))
+        .group_by(Teacher.cert_reject_reason)
+        .order_by(_f.count().desc()).limit(5))).all()
+    return {
+        "days": days, "applied": applied, "reviewed": reviewed,
+        "certified": certified, "pending": pending,
+        "pass_rate_pct": round(certified / reviewed * 100, 1) if reviewed else 0.0,
+        "reject_reasons_top": [{"reason": r, "count": int(c)} for r, c in reason_rows],
+    }
 
 
 def ensure_certified(teacher: Teacher | None) -> None:

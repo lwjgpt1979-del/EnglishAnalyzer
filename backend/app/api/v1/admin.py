@@ -279,7 +279,9 @@ async def get_pricing(db: DbDep, admin: AdminDep):
 async def update_pricing(body: SemesterPricingUpdate, db: DbDep, admin: AdminDep):
     """运营改学期会员定价（三档单价，正整数）。"""
     updated = await pricing_service.update_semester_pricing(
-        db, pricing=SemesterPricing(basic=body.basic, pro=body.pro, promax=body.promax),
+        db, pricing=SemesterPricing(
+            basic=body.basic, pro=body.pro, promax=body.promax,
+            list_basic=body.list_basic, list_pro=body.list_pro, list_promax=body.list_promax),
         updated_by=admin.id,
     )
     await db.commit()
@@ -1511,3 +1513,74 @@ async def admin_grant_coupon(coupon_id: uuid.UUID, body: dict, db: DbDep, admin:
     n = await _coupon_svc.admin_grant(db, coupon_id=coupon_id, user_ids=uids)
     await db.commit()
     return make_ok({"granted": n})
+
+
+# ══ 敏感词库（§5.6）═══════════════════════════════════════════════════════════
+from app.services import content_filter_service as _cf_filter
+
+
+@router.get("/sensitive-words", response_model=None)
+async def admin_list_sensitive_words(
+    db: DbDep, admin: AdminDep,
+    category: str = Query("all"), q: str | None = Query(None),
+    skip: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000),
+):
+    return make_ok(await _cf_filter.admin_list(db, category=category, q=q, skip=skip, limit=limit))
+
+
+@router.post("/sensitive-words", response_model=None)
+async def admin_add_sensitive_word(body: dict, db: DbDep, admin: AdminDep):
+    """新增敏感词。body={word, category?, action?}。"""
+    s = await _cf_filter.admin_add(
+        db, admin_id=admin.id, word=(body or {}).get("word", ""),
+        category=(body or {}).get("category", "other"), action=(body or {}).get("action", "block"))
+    await db.commit()
+    return make_ok({"id": str(s.id)})
+
+
+@router.post("/sensitive-words/batch", response_model=None)
+async def admin_batch_add_sensitive_words(body: dict, db: DbDep, admin: AdminDep):
+    """批量导入。body={words:[...], category?, action?}。"""
+    n = await _cf_filter.admin_batch_add(
+        db, admin_id=admin.id, words=(body or {}).get("words", []),
+        category=(body or {}).get("category", "other"), action=(body or {}).get("action", "block"))
+    await db.commit()
+    return make_ok({"added": n})
+
+
+@router.put("/sensitive-words/{word_id}", response_model=None)
+async def admin_update_sensitive_word(word_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    s = await _cf_filter.admin_update(db, word_id=word_id, fields=(body or {}))
+    await db.commit()
+    return make_ok({"id": str(s.id), "is_active": s.is_active})
+
+
+@router.delete("/sensitive-words/{word_id}", response_model=None)
+async def admin_delete_sensitive_word(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    await _cf_filter.admin_delete(db, word_id=word_id)
+    await db.commit()
+    return make_ok({"ok": True})
+
+
+# ══ 老师认证审核增强（§5.8）═══════════════════════════════════════════════════
+@router.post("/teachers/{teacher_id}/claim", response_model=None)
+async def admin_claim_teacher_cert(teacher_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """审核员认领认证任务（防多人同审）。"""
+    t = await teacher_service.claim_cert(db, teacher_id=teacher_id, admin_id=admin.id)
+    await db.commit()
+    return make_ok({"teacher_id": str(t.id), "claimed_by": str(admin.id)})
+
+
+@router.get("/teachers/cert-quality", response_model=None)
+async def admin_teacher_cert_quality(db: DbDep, admin: AdminDep,
+                                     days: int = Query(30, ge=1, le=365)):
+    """认证审核质量监控：近 N 天申请量/通过率/驳回原因 Top5。"""
+    return make_ok(await teacher_service.cert_quality(db, days=days))
+
+
+# ══ 定价历史（§5.7）═══════════════════════════════════════════════════════════
+@router.get("/pricing/history", response_model=None)
+async def admin_pricing_history(db: DbDep, admin: AdminDep,
+                                limit: int = Query(50, ge=1, le=200)):
+    """学期定价变更历史（退款/争议举证）。"""
+    return make_ok(await pricing_service.pricing_history(db, limit=limit))

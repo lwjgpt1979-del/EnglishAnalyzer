@@ -710,3 +710,41 @@ export function setCouponActive(id: string, is_active: boolean) {
 export function grantCoupon(id: string, user_ids: string[]): Promise<{ granted: number }> {
   return unwrap(request.post(`/admin/coupons/${id}/grant`, { user_ids }))
 }
+
+// ══ §5.6 敏感词库 ════════════════════════════════════════════════
+export interface SensitiveWordItem {
+  id: string; word: string; category: string; action: string; is_active: boolean; created_at: string | null
+}
+export function listSensitiveWords(params: { category?: string; q?: string; skip?: number; limit?: number }): Promise<{ total: number; items: SensitiveWordItem[] }> {
+  return unwrap(request.get('/admin/sensitive-words', { params }))
+}
+export function addSensitiveWord(body: { word: string; category?: string; action?: string }): Promise<{ id: string }> {
+  return unwrap(request.post('/admin/sensitive-words', body))
+}
+export function batchAddSensitiveWords(body: { words: string[]; category?: string; action?: string }): Promise<{ added: number }> {
+  return unwrap(request.post('/admin/sensitive-words/batch', body))
+}
+export function updateSensitiveWord(id: string, body: Record<string, unknown>) {
+  return unwrap(request.put(`/admin/sensitive-words/${id}`, body))
+}
+export function deleteSensitiveWord(id: string) {
+  return unwrap(request.delete(`/admin/sensitive-words/${id}`))
+}
+
+// ══ §5.7 定价历史 ════════════════════════════════════════════════
+export interface PriceHistoryItem { id: string; snapshot: Record<string, number>; changed_by: string | null; created_at: string | null }
+export function getPricingHistory(limit = 50): Promise<PriceHistoryItem[]> {
+  return unwrap(request.get('/admin/pricing/history', { params: { limit } }))
+}
+
+// ══ §5.8 老师认证增强 ════════════════════════════════════════════
+export function claimTeacherCert(teacherId: string) {
+  return unwrap(request.post(`/admin/teachers/${teacherId}/claim`))
+}
+export interface CertQuality {
+  days: number; applied: number; reviewed: number; certified: number; pending: number
+  pass_rate_pct: number; reject_reasons_top: { reason: string; count: number }[]
+}
+export function getCertQuality(days = 30): Promise<CertQuality> {
+  return unwrap(request.get('/admin/teachers/cert-quality', { params: { days } }))
+}

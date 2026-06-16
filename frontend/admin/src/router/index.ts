@@ -39,6 +39,7 @@ const router = createRouter({
         { path: 'faq', name: 'faq', component: () => import('../views/Faq.vue') },
         { path: 'feedback', name: 'feedback', component: () => import('../views/Feedback.vue') },
         { path: 'coupons', name: 'coupons', component: () => import('../views/Coupons.vue') },
+        { path: 'sensitive-words', name: 'sensitive-words', component: () => import('../views/SensitiveWords.vue') },
       ],
     },
   ],

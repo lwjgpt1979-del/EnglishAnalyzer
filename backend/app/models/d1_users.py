@@ -211,6 +211,12 @@ class Teacher(Base):
     )
     cert_doc_url = mapped_column(sa.String, nullable=True)
     subject = mapped_column(sa.String, nullable=True)
+    # —— 认证审核队列增强（§5.8）——
+    cert_submitted_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)  # 提交认证时间
+    cert_claimed_by = mapped_column(UUID(as_uuid=True), nullable=True)             # 认领审核员（防多人同审）
+    cert_claimed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    cert_reject_reason = mapped_column(sa.Text, nullable=True)                     # 驳回原因
+    cert_reviewed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     max_students = mapped_column(
         sa.Integer, nullable=False, server_default=sa.text("50")
     )
