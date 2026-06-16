@@ -9,7 +9,7 @@
           class="ch"
           :class="{ active: activeChannel === c.key }"
           @tap="switchChannel(c.key)"
-        >{{ c.label }}</text>
+        >{{ c.label }}<text v-if="chUnread(c.key)" class="ch-badge">{{ chUnread(c.key) }}</text></text>
       </view>
     </scroll-view>
 
@@ -44,7 +44,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { listNotifications, markRead, markAllRead, deleteRead } from '@/api/notifications'
+import { listNotifications, markRead, markAllRead, deleteRead, getUnreadByChannel } from '@/api/notifications'
 import type { NotificationOut } from '@/types/api'
 
 const channels = [
@@ -58,6 +58,15 @@ const channels = [
 const activeChannel = ref('')
 const items = ref<NotificationOut[]>([])
 const loading = ref(false)
+const unreadMap = ref<Record<string, number>>({})
+const unreadTotal = ref(0)
+function chUnread(key: string): number {
+  return key === '' ? unreadTotal.value : (unreadMap.value[key] || 0)
+}
+async function loadUnread() {
+  try { const r = await getUnreadByChannel(); unreadMap.value = r.by_channel || {}; unreadTotal.value = r.total || 0 }
+  catch { /* ignore */ }
+}
 
 function channelLabel(c: string): string {
   const m: Record<string, string> = { study: '学习', membership: '会员', system: '系统', teacher: '老师', relative: '亲人' }
@@ -68,7 +77,8 @@ async function load() {
   loading.value = true
   try {
     const r = await listNotifications({ channel: activeChannel.value || undefined, limit: 50 })
-    items.value = r.data?.items || []
+    items.value = r?.items || []
+    await loadUnread()
   } finally { loading.value = false }
 }
 
@@ -79,7 +89,7 @@ async function switchChannel(c: string) {
 
 async function onTap(n: NotificationOut) {
   if (!n.is_read) {
-    try { await markRead(n.id); n.is_read = true } catch { /* ignore */ }
+    try { await markRead(n.id); n.is_read = true; await loadUnread() } catch { /* ignore */ }
   }
   if (n.meta?.wq_id) {
     uni.navigateTo({ url: `/pages/wrong-questions/detail?id=${n.meta.wq_id}` })
@@ -114,6 +124,7 @@ onMounted(load)
 .channels { display: inline-flex; gap: 8rpx; padding: 8rpx 4rpx 16rpx; }
 .ch { padding: 8rpx 18rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 24rpx; color: var(--c-text-second); white-space: nowrap; }
 .ch.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
+.ch-badge { margin-left: 6rpx; background: var(--c-danger); color: #fff; font-size: 18rpx; border-radius: 16rpx; padding: 0 8rpx; min-width: 16rpx; }
 .actions { display: flex; gap: 16rpx; padding: 8rpx 8rpx 16rpx; }
 .action-btn { font-size: 24rpx; color: var(--c-gold); font-weight: 600; padding: 4rpx 12rpx; }
 .tip { text-align: center; padding: 80rpx 0; color: var(--c-text-hint); font-size: 26rpx; }

@@ -52,6 +52,13 @@ async def unread_count_api(db: DbDep, current_user: UserDep):
     return make_ok(UnreadCountOut(count=c))
 
 
+@router.get("/unread-by-channel", response_model=None)
+async def unread_by_channel_api(db: DbDep, current_user: UserDep):
+    """未读数按频道分组（消息中心角标）。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await notification_service.unread_by_channel(db, user_id=current_user.id))
+
+
 @router.patch("/{notif_id}/read", response_model=BaseResponse[NotificationOut])
 async def mark_read_api(notif_id: uuid.UUID, db: DbDep, current_user: UserDep):
     await get_rls_db(db, str(current_user.id))

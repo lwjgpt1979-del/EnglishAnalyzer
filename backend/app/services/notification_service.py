@@ -138,6 +138,16 @@ async def unread_count(db: AsyncSession, *, user_id: uuid.UUID) -> int:
     return (await db.execute(q)).scalar_one()
 
 
+async def unread_by_channel(db: AsyncSession, *, user_id: uuid.UUID) -> dict:
+    """未读数按频道分组（消息中心角标）。返回 {total, by_channel:{channel:n}}。"""
+    rows = (await db.execute(
+        select(Notification.channel, func.count())
+        .where(Notification.user_id == user_id, Notification.is_read.is_(False))
+        .group_by(Notification.channel))).all()
+    by = {str(c): int(n) for c, n in rows}
+    return {"total": sum(by.values()), "by_channel": by}
+
+
 async def mark_read(db: AsyncSession, *, user_id: uuid.UUID, notif_id: uuid.UUID) -> Notification:
     from app.core.exceptions import AppError
     r = await db.execute(

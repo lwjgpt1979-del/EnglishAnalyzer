@@ -205,7 +205,7 @@ const branding = useBrandingStore()
 const unreadCount = ref(0)
 async function loadUnread() {
   if (!auth.isLoggedIn()) { unreadCount.value = 0; return }
-  try { const r = await getUnreadCount(); unreadCount.value = r.data?.count || 0 } catch { /* ignore */ }
+  try { const r = await getUnreadCount(); unreadCount.value = r?.count || 0 } catch { /* ignore */ }
 }
 function goMessages() { uni.navigateTo({ url: '/pages/messages/index' }) }
 
