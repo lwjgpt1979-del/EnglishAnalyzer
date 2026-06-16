@@ -145,6 +145,18 @@
     </view>
 
     <view class="card">
+      <view class="card-title">我的优惠券</view>
+      <text class="menu-desc">查看可用优惠券，输入兑换码领取，下单时抵扣。</text>
+      <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/coupons/index' })">优惠券 / 兑换码</button>
+    </view>
+
+    <view class="card">
+      <view class="card-title">帮助与反馈</view>
+      <text class="menu-desc">常见问题、联系客服、意见反馈与 BUG 报告。</text>
+      <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/support/help' })">帮助与反馈</button>
+    </view>
+
+    <view class="card">
       <view class="card-title">机构激活码</view>
       <text class="menu-desc">机构学生：输入机构发放的激活码，激活会员。</text>
       <button class="btn-menu" @tap="() => uni.navigateTo({ url: '/pages/membership/activate' })">输入激活码</button>

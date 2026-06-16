@@ -258,6 +258,7 @@ export interface OrderCreate {
   semesters?: SemesterItem[]
   payment_confirm_log_id?: string  // 支付确认留存 ID（§4.6）
   is_promotional?: boolean         // 活动价订单
+  coupon_grant_id?: string         // 使用的优惠券（SP-4）
 }
 
 export interface OrderOut {
@@ -265,7 +266,8 @@ export interface OrderOut {
   order_no: string
   tier: string
   duration_months: number
-  amount_fen: number    // 分
+  amount_fen: number    // 分（已扣优惠券）
+  discount_fen?: number // 优惠券抵扣（分，SP-4）
   status: string        // pending | paid | refunded | partial_refunded
   refund_status: string // 退款状态码（§4.5.2），默认 NONE
   appeal_status: string // 申诉状态码（§4.5.2），默认 NONE
