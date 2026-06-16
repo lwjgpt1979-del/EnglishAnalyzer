@@ -118,6 +118,14 @@ async def get_overview(db: DbDep, admin: InstAdminDep):
     return make_ok(InstitutionOverviewOut(**data))
 
 
+@router.get("/package", response_model=None)
+async def my_package(db: DbDep, admin: InstAdminDep):
+    """本机构套餐 + 三类池用量（§9.1，只读）。未配套餐返回 {package_tier: null}。"""
+    inst_id = _require_inst(admin)
+    from app.services import institution_package_service
+    return make_ok(await institution_package_service.usage_overview(db, institution_id=inst_id))
+
+
 @router.get("/learning-center", response_model=None)
 async def learning_center(db: DbDep, admin: InstAdminDep):
     """机构学情数据中心（5B.4）：活跃率/打卡概览/薄弱知识点。"""

@@ -141,3 +141,14 @@ export interface LearningCenter {
 export function getLearningCenter(): Promise<LearningCenter> {
   return unwrap<LearningCenter>(request.get('/institution/learning-center'))
 }
+
+// 本机构套餐 + 池用量（§9.1，只读）
+export interface PkgBlock { used: number; limit: number; remaining: number; remaining_pct: number }
+export interface MyPackage {
+  package_tier: string | null; package_name?: string; is_custom?: boolean
+  warn_threshold_pct?: number; reset_day?: number
+  teacher_seats?: PkgBlock; paper?: PkgBlock; grading?: PkgBlock
+}
+export function getMyPackage(): Promise<MyPackage> {
+  return unwrap<MyPackage>(request.get('/institution/package'))
+}

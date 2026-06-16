@@ -44,6 +44,7 @@ const router = createRouter({
         { path: 'announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
         { path: 'teacher-limits', name: 'teacher-limits', component: () => import('../views/TeacherLimits.vue') },
         { path: 'system-settings', name: 'system-settings', component: () => import('../views/SystemSettings.vue') },
+        { path: 'institution-packages', name: 'institution-packages', component: () => import('../views/InstitutionPackages.vue') },
       ],
     },
   ],

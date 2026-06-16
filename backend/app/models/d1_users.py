@@ -160,6 +160,13 @@ class Institution(Base):
     source = mapped_column(
         sa.String(20), nullable=False, server_default=sa.text("'admin'")
     )
+    # —— 机构套餐（§9.1 / §5.6；配置驱动，非枚举）——
+    # package_tier 对应 system_configs.institution_packages.tiers[].key；
+    # NULL = 非套餐机构（走老逻辑，不受机构池限制）。custom = 仅用下列 override。
+    package_tier = mapped_column(sa.String(20), nullable=True)
+    teacher_seats_override = mapped_column(sa.Integer, nullable=True)   # 老师席位数覆盖
+    paper_pool_override = mapped_column(sa.Integer, nullable=True)      # 月出卷池覆盖
+    grading_pool_override = mapped_column(sa.Integer, nullable=True)    # 月批改池覆盖
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )

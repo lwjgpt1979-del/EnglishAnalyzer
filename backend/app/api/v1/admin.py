@@ -1720,3 +1720,41 @@ async def admin_set_info_change_limit(body: dict, db: DbDep, admin: AdminDep):
     v = await _ic_svc.set_limit(db, value=int((body or {}).get("limit", 3)), admin_id=admin.id)
     await db.commit()
     return make_ok({"limit": v})
+
+
+# ══ 机构套餐配置（§9.1/§5.6，全配置驱动）═════════════════════════════════════
+from app.services import institution_package_service as _pkg_svc
+
+
+@router.get("/institution-packages", response_model=None)
+async def admin_get_institution_packages(db: DbDep, admin: AdminDep):
+    """套餐档位 + 各档配额 + 预警/重置日（全局配置）。"""
+    return make_ok(await _pkg_svc.get_config(db))
+
+
+@router.put("/institution-packages", response_model=None)
+async def admin_update_institution_packages(body: dict, db: DbDep, admin: AdminDep):
+    """改套餐配置。body={tiers:[{key,name,teacher_seats,paper_pool,grading_pool}...],
+    warn_threshold_pct, reset_day}。可增删档位，不发版。"""
+    res = await _pkg_svc.update_config(db, config=(body or {}), admin_id=admin.id)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/institutions/{institution_id}/package", response_model=None)
+async def admin_set_institution_package(institution_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """给机构指定套餐 + 可选覆盖。body={package_tier(null=取消), teacher_seats_override?,
+    paper_pool_override?, grading_pool_override?}。"""
+    b = body or {}
+    inst = await _pkg_svc.set_institution_package(
+        db, institution_id=institution_id, package_tier=b.get("package_tier"),
+        overrides={k: b[k] for k in ("teacher_seats_override", "paper_pool_override",
+                                     "grading_pool_override") if k in b})
+    await db.commit()
+    return make_ok({"id": str(inst.id), "package_tier": inst.package_tier})
+
+
+@router.get("/institutions/{institution_id}/package-usage", response_model=None)
+async def admin_institution_package_usage(institution_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """某机构套餐 + 池用量（超管查看）。"""
+    return make_ok(await _pkg_svc.usage_overview(db, institution_id=institution_id))

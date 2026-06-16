@@ -808,3 +808,25 @@ export function getInfoChangeLimit(): Promise<{ limit: number }> {
 export function setInfoChangeLimit(limit: number): Promise<{ limit: number }> {
   return unwrap(request.put('/admin/info-change-limit', { limit }))
 }
+
+// ══ §9.1 机构套餐（配置驱动）════════════════════════════════════
+export interface PackageTier { key: string; name: string; teacher_seats: number; paper_pool: number; grading_pool: number }
+export interface PackageConfig { tiers: PackageTier[]; warn_threshold_pct: number; reset_day: number }
+export function getInstitutionPackages(): Promise<PackageConfig> {
+  return unwrap(request.get('/admin/institution-packages'))
+}
+export function updateInstitutionPackages(body: PackageConfig): Promise<PackageConfig> {
+  return unwrap(request.put('/admin/institution-packages', body))
+}
+export function setInstitutionPackage(institutionId: string, body: Record<string, unknown>) {
+  return unwrap(request.post(`/admin/institutions/${institutionId}/package`, body))
+}
+export interface PackageUsageBlock { used: number; limit: number; remaining: number; remaining_pct: number }
+export interface PackageUsage {
+  package_tier: string | null; package_name?: string; is_custom?: boolean
+  warn_threshold_pct?: number; reset_day?: number
+  teacher_seats?: PackageUsageBlock; paper?: PackageUsageBlock; grading?: PackageUsageBlock
+}
+export function getInstitutionPackageUsage(institutionId: string): Promise<PackageUsage> {
+  return unwrap(request.get(`/admin/institutions/${institutionId}/package-usage`))
+}
