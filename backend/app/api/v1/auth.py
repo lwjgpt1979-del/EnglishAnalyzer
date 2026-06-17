@@ -115,6 +115,16 @@ async def complete_profile_api(body: CompleteProfileRequest, db: DbDep, current_
         preferred_grade=body.preferred_grade,
         preferred_semester=body.preferred_semester,
     )
+    # R4:选教材 → 自动纳入该教材应学全集 KP 到个人图谱(防御式,失败不阻断完档)
+    try:
+        v, g, s = (current_user.preferred_textbook_version,
+                   current_user.preferred_grade, current_user.preferred_semester)
+        if v and g and s:
+            from app.services import student_graph_service
+            await student_graph_service.enroll_textbook(
+                db, student_id=current_user.id, textbook_version=v, grade=g, semester=str(s))
+    except Exception:  # noqa: BLE001
+        pass
     await db.commit()
     return make_ok(res)
 

@@ -47,7 +47,13 @@ async def record_wrong(
         )
         .returning(WrongRecord.id)
     )
-    return (await db.execute(stmt)).scalar_one()
+    wid = (await db.execute(stmt)).scalar_one()
+    # R4:错题命中 → 个人图谱来源追加 'wrong_hit'(并入 in_scope)
+    if node_id is not None:
+        from app.services import student_graph_service
+        await student_graph_service.add_source(
+            db, student_id=student_id, node_id=node_id, tag="wrong_hit", in_scope=True)
+    return wid
 
 
 async def list_open_wrongs(

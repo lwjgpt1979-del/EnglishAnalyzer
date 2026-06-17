@@ -126,3 +126,45 @@ class WrongReviewSubmitOut(BaseModel):
     status: str
     review_count: int
     next_review_at: _dt.date | None = None
+
+
+# ── R4 个人知识图谱 ──────────────────────────────────────────
+class StudentGraphItem(BaseModel):
+    node_id: uuid.UUID
+    name: str
+    axis: str
+    node_kind: str | None = None
+    mastery: float | None = None
+    practice_count: int
+    wrong_count: int
+    source_tags: list[str]
+    in_scope: bool
+    status: str   # mastered|weak|practiced|unlearned
+
+
+class StudentGraphSummary(BaseModel):
+    in_scope: int
+    practiced: int
+    weak: int
+    mastered: int
+
+
+class StudentGraphOut(BaseModel):
+    summary: StudentGraphSummary
+    items: list[StudentGraphItem]
+
+
+class EnrollOut(BaseModel):
+    enrolled: int
+
+
+class StudentTrendPoint(BaseModel):
+    date: _dt.date
+    accuracy: float
+    correct: int
+    wrong: int
+
+
+class StudentTrendOut(BaseModel):
+    node_id: uuid.UUID
+    points: list[StudentTrendPoint]

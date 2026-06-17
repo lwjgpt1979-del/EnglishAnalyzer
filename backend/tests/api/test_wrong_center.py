@@ -27,6 +27,9 @@ async def _seed_node() -> uuid.UUID:
 async def _cleanup(student_id, node_id):
     async with _async_session_factory() as db:
         await db.execute(text("DELETE FROM wrong_record WHERE student_id = :s"), {"s": str(student_id)})
+        # R4:record_wrong 现会写 student_kp(add_source),清理需先删它再删节点
+        await db.execute(text("DELETE FROM student_kp WHERE student_id = :s"), {"s": str(student_id)})
+        await db.execute(text("DELETE FROM student_kp WHERE node_id = :n"), {"n": str(node_id)})
         await db.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_TAG}%"})
         await db.commit()
 

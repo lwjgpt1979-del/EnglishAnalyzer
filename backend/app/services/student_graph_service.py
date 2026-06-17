@@ -13,9 +13,13 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import datetime as _dt
+
 from app.models.d4_knowledge import CurriculumUnit
 from app.models.d15_knowledge_graph import KnowledgeNode
-from app.models.d16_question_domain import StudentKp
+from app.models.d16_question_domain import (
+    StudentKp, AnswerLog, PlatformQuestionKp,
+)
 from app.models.d17_curriculum_kg import UnitNode
 
 
@@ -133,3 +137,31 @@ async def graph_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
         sa.select(sa.func.count()).where(base.c.mastery >= 1.0)
     )).scalar_one()
     return {"in_scope": total_scope, "practiced": practiced, "weak": weak, "mastered": mastered}
+
+
+async def node_trend(
+    db: AsyncSession, *, student_id: uuid.UUID, node_id: uuid.UUID,
+    days: int = 30, today: _dt.date | None = None,
+) -> list[dict]:
+    """某 node 掌握趋势:answer_log 按日聚合 accuracy(只算该 node 的平台题作答)。"""
+    today = today or _dt.date.today()
+    since = today - _dt.timedelta(days=days)
+    day = sa.cast(AnswerLog.answered_at, sa.Date).label("d")
+    rows = (await db.execute(
+        sa.select(
+            day,
+            sa.func.count().label("total"),
+            sa.func.sum(sa.case((AnswerLog.is_correct.is_(True), 1), else_=0)).label("correct"),
+        )
+        .join(PlatformQuestionKp, PlatformQuestionKp.question_id == AnswerLog.question_id)
+        .where(AnswerLog.student_id == student_id,
+               PlatformQuestionKp.node_id == node_id,
+               sa.cast(AnswerLog.answered_at, sa.Date) >= since)
+        .group_by(day).order_by(day)
+    )).all()
+    out = []
+    for d, total, correct in rows:
+        c = int(correct or 0)
+        out.append({"date": d, "accuracy": round(c / total, 4) if total else 0.0,
+                    "correct": c, "wrong": int(total) - c})
+    return out
