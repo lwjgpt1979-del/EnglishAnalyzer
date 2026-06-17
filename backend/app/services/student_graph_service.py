@@ -75,3 +75,61 @@ async def add_source(
         )
     )
     await db.flush()
+
+
+def _status(mastery, practice_count: int, wrong_count: int) -> str:
+    """掌握=mastery≥1;薄弱=有错未掌握;已练=练过未错未掌握;未学=在全集未练。"""
+    if mastery is not None and float(mastery) >= 1.0:
+        return "mastered"
+    if wrong_count > 0:
+        return "weak"
+    if practice_count > 0:
+        return "practiced"
+    return "unlearned"
+
+
+async def get_graph(
+    db: AsyncSession, *, student_id: uuid.UUID, include_all: bool = False,
+) -> list[dict]:
+    """个人知识地图:默认只亮已练/已错(practice_count>0 或 wrong_count>0);
+    include_all=True 加上 in_scope 的未学节点(教材全集展开)。"""
+    stmt = (
+        sa.select(StudentKp.node_id, KnowledgeNode.name, KnowledgeNode.axis,
+                  KnowledgeNode.node_kind, StudentKp.mastery, StudentKp.practice_count,
+                  StudentKp.wrong_count, StudentKp.source_tags, StudentKp.in_scope)
+        .join(KnowledgeNode, KnowledgeNode.id == StudentKp.node_id)
+        .where(StudentKp.student_id == student_id)
+    )
+    if not include_all:
+        stmt = stmt.where(sa.or_(StudentKp.practice_count > 0, StudentKp.wrong_count > 0))
+    stmt = stmt.order_by(StudentKp.wrong_count.desc(), StudentKp.last_practice_at.desc().nullslast())
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "node_id": nid, "name": name, "axis": axis, "node_kind": nk,
+            "mastery": float(mastery) if mastery is not None else None,
+            "practice_count": pc, "wrong_count": wc, "source_tags": list(tags or []),
+            "in_scope": in_scope, "status": _status(mastery, pc, wc),
+        }
+        for nid, name, axis, nk, mastery, pc, wc, tags, in_scope in rows
+    ]
+
+
+async def graph_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
+    """图谱总览:全集 / 已练 / 薄弱 / 已掌握。"""
+    base = sa.select(StudentKp).where(StudentKp.student_id == student_id).subquery()
+    total_scope = (await db.execute(
+        sa.select(sa.func.count()).where(base.c.in_scope.is_(True))
+    )).scalar_one()
+    practiced = (await db.execute(
+        sa.select(sa.func.count()).where(sa.or_(base.c.practice_count > 0, base.c.wrong_count > 0))
+    )).scalar_one()
+    weak = (await db.execute(
+        sa.select(sa.func.count()).where(
+            base.c.wrong_count > 0,
+            sa.or_(base.c.mastery.is_(None), base.c.mastery < 1.0))
+    )).scalar_one()
+    mastered = (await db.execute(
+        sa.select(sa.func.count()).where(base.c.mastery >= 1.0)
+    )).scalar_one()
+    return {"in_scope": total_scope, "practiced": practiced, "weak": weak, "mastered": mastered}
