@@ -154,3 +154,34 @@ async def test_deprecate_fallbacks_when_real_arrives():
             assert fb.deprecated_at is not None and fb.status == "retired"
     finally:
         await _cleanup()
+
+
+@pytest.mark.asyncio
+async def test_fallback_loop_decision_4():
+    """决策④闭环:无真题 node → 建直生备选;真题到来 → 备选下架 + 不再产备选。"""
+    node_id = await _seed_node()
+    try:
+        # 1) 无真题 → 建 2 道 fallback 备选
+        async with _async_session_factory() as db:
+            fbs = await pq.generate_fallback_sim(db, node_id=node_id, count=2)
+            await db.commit()
+            assert len(fbs) == 2
+        async with _async_session_factory() as db:
+            rows = (await db.execute(
+                select(PlatformQuestion).where(PlatformQuestion.id.in_(fbs))
+            )).scalars().all()
+            assert all(r.is_fallback and r.type == "sim" and r.parent_real_id is None for r in rows)
+
+        # 2) 真题到来 → 备选自动下架,且此后 generate_fallback_sim 返回空(已有真题)
+        async with _async_session_factory() as db:
+            await pq.import_real_question(db, stem=f"{_TAG} 真题到来", kp_names=[HIT])
+            await db.commit()
+        async with _async_session_factory() as db:
+            rows = (await db.execute(
+                select(PlatformQuestion).where(PlatformQuestion.id.in_(fbs))
+            )).scalars().all()
+            assert all(r.deprecated_at is not None for r in rows)
+            more = await pq.generate_fallback_sim(db, node_id=node_id, count=2)
+            assert more == []   # 已有真题 → 不再产直生备选
+    finally:
+        await _cleanup()

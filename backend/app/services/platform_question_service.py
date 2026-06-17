@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
+from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
 from app.services.kp_match_service import match_kp
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
@@ -154,6 +155,40 @@ async def generate_sim_from_real(
         )
         for nid in parent_nodes:   # 继承母题 KP
             await attach_node(db, sim.id, nid)
+        out.append(sim.id)
+    return out
+
+
+async def has_real_for_node(db: AsyncSession, node_id: uuid.UUID) -> bool:
+    """该 node 是否已有真题母题(决定能否启用真题派生 / 是否该下架备选)。"""
+    row = (await db.execute(
+        sa.select(PlatformQuestion.id)
+        .join(PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id)
+        .where(PlatformQuestionKp.node_id == node_id, PlatformQuestion.type == "real")
+        .limit(1)
+    )).first()
+    return row is not None
+
+
+async def generate_fallback_sim(
+    db: AsyncSession, *, node_id: uuid.UUID, count: int = 3, status: str = "draft"
+) -> list[uuid.UUID]:
+    """KP 直生备选(决策④):某 node 暂无真题母题 → 生成 is_fallback=true 备选,挂该 node。
+
+    若该 node 已有真题 → 不生成备选(应走真题派生),返回空。
+    """
+    if await has_real_for_node(db, node_id):
+        return []
+    node_name = (await db.execute(
+        sa.select(KnowledgeNode.name).where(KnowledgeNode.id == node_id)
+    )).scalar_one_or_none()
+    out: list[uuid.UUID] = []
+    for i in range(count):
+        sim = await add_sim(
+            db, stem=f"[备选] {node_name or 'KP'} 练习题{i + 1}", is_fallback=True,
+            question_type="单选", status=status,
+        )
+        await attach_node(db, sim.id, node_id)
         out.append(sim.id)
     return out
 
