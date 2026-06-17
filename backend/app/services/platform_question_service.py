@@ -8,6 +8,8 @@ R2.2/R2.3:AI 改写派生仿真 / KP 直生备选 + 真题到来下架备选。
 """
 from __future__ import annotations
 
+import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 
@@ -18,6 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
 from app.services.kp_match_service import match_kp
+from app.services.llm_provider import chat_completion, is_llm_dev_mode
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,6 +102,60 @@ async def add_sim(
     db.add(q)
     await db.flush()
     return q
+
+
+async def _rewrite_variants(real: PlatformQuestion, count: int) -> list[dict]:
+    """真题 → count 道仿真变式。dev mock 确定性;生产走 LLM 改写(保持题型/难度/考点)。"""
+    if is_llm_dev_mode():
+        return [{
+            "stem": f"{real.stem}(变式{i + 1})",
+            "options": real.options, "answer": real.answer,
+            "explanation": real.explanation,
+        } for i in range(count)]
+    system = (
+        "你是英语命题专家。基于给定母题改写出同考点、同题型、同难度的新题,"
+        "保持考查点不变、情境/数据不同。严格输出 JSON。"
+    )
+    user = (
+        f"母题题干:{real.stem}\n题型:{real.question_type}\n选项:{json.dumps(real.options, ensure_ascii=False)}\n"
+        f"答案:{real.answer}\n\n生成 {count} 道仿真题,返回 "
+        '{"items":[{"stem":..,"options":..,"answer":..,"explanation":..}, ...]}'
+    )
+    try:
+        resp = await chat_completion(system_prompt=system, user_prompt=user,
+                                     max_tokens=2048, response_format={"type": "json_object"})
+        items = json.loads(resp.choices[0].message.content or "{}").get("items", [])
+        return items[:count]
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("sim rewrite LLM failed (real=%s): %s", real.id, exc)
+        return []
+
+
+async def generate_sim_from_real(
+    db: AsyncSession, *, real_id: uuid.UUID, count: int = 3, status: str = "draft"
+) -> list[uuid.UUID]:
+    """由真题派生 count 道仿真(parent_real_id=real_id),**继承母题 KP**(决策④-C 甲)。"""
+    real = (await db.execute(
+        sa.select(PlatformQuestion).where(PlatformQuestion.id == real_id)
+    )).scalar_one_or_none()
+    if real is None or real.type != "real":
+        raise AppError(code=404, message="母题真题不存在")
+    parent_nodes = await _node_ids_of(db, real_id)
+
+    out: list[uuid.UUID] = []
+    for v in await _rewrite_variants(real, count):
+        if not v.get("stem"):
+            continue
+        sim = await add_sim(
+            db, stem=v["stem"], parent_real_id=real_id, is_fallback=False,
+            answer=v.get("answer"), options=v.get("options"),
+            question_type=real.question_type, explanation=v.get("explanation"),
+            difficulty=real.difficulty, status=status,
+        )
+        for nid in parent_nodes:   # 继承母题 KP
+            await attach_node(db, sim.id, nid)
+        out.append(sim.id)
+    return out
 
 
 async def deprecate_fallbacks_for_node(db: AsyncSession, *, node_id: uuid.UUID) -> int:

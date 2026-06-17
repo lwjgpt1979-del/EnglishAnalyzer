@@ -104,6 +104,36 @@ async def test_import_real_attaches_node_and_candidate():
 
 
 @pytest.mark.asyncio
+async def test_generate_sim_from_real_inherits_kp_and_parent():
+    node_id = await _seed_node()
+    try:
+        async with _async_session_factory() as db:
+            real = await pq.import_real_question(db, stem=f"{_TAG} 真题母题", answer="B",
+                                                 question_type="单选", kp_names=[HIT])
+            await db.commit()
+            real_id = real.question_id
+
+        async with _async_session_factory() as db:
+            sim_ids = await pq.generate_sim_from_real(db, real_id=real_id, count=2)
+            await db.commit()
+            assert len(sim_ids) == 2
+
+        async with _async_session_factory() as db:
+            for sid in sim_ids:
+                sim = (await db.execute(
+                    select(PlatformQuestion).where(PlatformQuestion.id == sid)
+                )).scalar_one()
+                assert sim.type == "sim" and sim.parent_real_id == real_id and sim.is_fallback is False
+                # 继承母题 KP
+                edges = (await db.execute(
+                    select(PlatformQuestionKp.node_id).where(PlatformQuestionKp.question_id == sid)
+                )).scalars().all()
+                assert set(edges) == {node_id}
+    finally:
+        await _cleanup()
+
+
+@pytest.mark.asyncio
 async def test_deprecate_fallbacks_when_real_arrives():
     node_id = await _seed_node()
     try:
