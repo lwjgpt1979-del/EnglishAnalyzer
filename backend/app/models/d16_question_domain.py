@@ -180,9 +180,18 @@ class WrongRecord(Base):
     node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=True)
     is_original = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'open'"))  # open|mastered
+    mastery_source = mapped_column(sa.String(10), nullable=True)        # review|manual|auto(N仿真)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     mastered_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    # SM-2 间隔重复(R3 承接错题复习)
+    review_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    easiness_factor = mapped_column(sa.Numeric(4, 2), nullable=False, server_default=sa.text("2.50"))
+    review_interval_days = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    next_review_at = mapped_column(sa.Date, nullable=True)
+    last_review_at = mapped_column(sa.Date, nullable=True)
 
     __table_args__ = (
         sa.Index("ix_wrong_record_student_status", "student_id", "status"),
+        sa.Index("ix_wrong_record_due", "student_id", "next_review_at"),
+        sa.UniqueConstraint("student_id", "q_scope", "question_id", name="uix_wrong_record_identity"),
     )
