@@ -136,3 +136,37 @@ export interface ExamPaperCreate {
   region?: string
   paper_url?: string
 }
+
+// ── KP 候选审核（R0.4 KP-First）──────────────────────────────
+export type KpCandidateStatus = 'pending' | 'approved' | 'merged' | 'rejected'
+
+export interface KpCandidateItem {
+  id: string
+  raw_name: string
+  name_norm: string
+  suggested_axis?: string | null
+  suggested_stage?: string | null
+  occur_count: number
+  source_type?: string | null
+  context_sample?: Record<string, unknown> | null
+  status: KpCandidateStatus
+}
+
+export interface KpCandidateListOut {
+  total: number
+  items: KpCandidateItem[]
+}
+
+export interface KpNodeItem {
+  id: string
+  axis: string
+  node_kind?: string | null
+  name: string
+  code: string
+  applicable_stages?: string[] | null
+}
+
+export interface KpNodeListOut {
+  total: number
+  items: KpNodeItem[]
+}

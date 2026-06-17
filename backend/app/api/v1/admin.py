@@ -49,12 +49,22 @@ from app.schemas.institution import (
     ApproveInstitutionRequest,
     ApproveInstitutionResult,
 )
+from app.schemas.kp import (
+    ApproveCandidateRequest,
+    KpCandidateItem,
+    KpCandidateListOut,
+    KpNodeItem,
+    KpNodeListOut,
+    MergeCandidateRequest,
+    RejectCandidateRequest,
+)
 from app.services import (
     admin_auth_service,
     admin_institution_service,
     admin_stats_service,
     curriculum_service,
     essay_service,
+    kp_candidate_service,
     pricing_service,
     question_service,
     teacher_service,
@@ -272,6 +282,103 @@ async def update_content(
     )
     await db.commit()
     return make_ok(_to_content_item(r))
+
+
+# ─── 候选知识点审核（R0.4 KP-First）─────────────────────────────────────────────
+
+def _to_kp_candidate_item(c) -> KpCandidateItem:
+    return KpCandidateItem(
+        id=c.id, raw_name=c.raw_name, name_norm=c.name_norm,
+        suggested_axis=c.suggested_axis, suggested_stage=c.suggested_stage,
+        occur_count=c.occur_count, source_type=c.source_type,
+        context_sample=c.context_sample, status=c.status,
+    )
+
+
+def _to_kp_node_item(n) -> KpNodeItem:
+    return KpNodeItem(
+        id=n.id, axis=n.axis, node_kind=n.node_kind, name=n.name,
+        code=n.code, applicable_stages=n.applicable_stages,
+    )
+
+
+@router.get("/kp-candidates", response_model=BaseResponse[KpCandidateListOut])
+async def list_kp_candidates(
+    db: DbDep,
+    admin: AdminDep,
+    status: str = "pending",
+    axis: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+):
+    """候选知识点队列(默认 pending,高频 occur_count 优先)。"""
+    rows, total = await kp_candidate_service.list_candidates(
+        db, status=status, axis=axis, skip=skip, limit=limit,
+    )
+    return make_ok(KpCandidateListOut(
+        total=total, items=[_to_kp_candidate_item(r) for r in rows],
+    ))
+
+
+@router.get("/kp-nodes", response_model=BaseResponse[KpNodeListOut])
+async def list_kp_nodes(
+    db: DbDep,
+    admin: AdminDep,
+    axis: str | None = None,
+    stage: str | None = None,
+    q: str | None = None,
+    limit: int = 20,
+):
+    """归并目标选择器:按 axis/学段/名称模糊查 active 节点。"""
+    rows = await kp_candidate_service.list_nodes(db, axis=axis, stage=stage, q=q, limit=limit)
+    return make_ok(KpNodeListOut(total=len(rows), items=[_to_kp_node_item(r) for r in rows]))
+
+
+@router.post("/kp-candidates/{candidate_id}/approve", response_model=BaseResponse[KpNodeItem])
+async def approve_kp_candidate(
+    candidate_id: uuid.UUID,
+    body: ApproveCandidateRequest,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """通过 → 建正式节点 + 候选名进别名。"""
+    node = await kp_candidate_service.approve(
+        db, candidate_id=candidate_id, axis=body.axis, stage=body.stage,
+        node_kind=body.node_kind, parent_id=body.parent_id, reviewer_id=admin.id,
+    )
+    await db.commit()
+    return make_ok(_to_kp_node_item(node))
+
+
+@router.post("/kp-candidates/{candidate_id}/merge", response_model=BaseResponse[KpNodeItem])
+async def merge_kp_candidate(
+    candidate_id: uuid.UUID,
+    body: MergeCandidateRequest,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """归并 → 候选名作为目标节点的别名(治碎片化)。"""
+    node = await kp_candidate_service.merge(
+        db, candidate_id=candidate_id, target_node_id=body.target_node_id,
+        reviewer_id=admin.id,
+    )
+    await db.commit()
+    return make_ok(_to_kp_node_item(node))
+
+
+@router.post("/kp-candidates/{candidate_id}/reject", response_model=BaseResponse[KpCandidateItem])
+async def reject_kp_candidate(
+    candidate_id: uuid.UUID,
+    body: RejectCandidateRequest,
+    db: DbDep,
+    admin: AdminDep,
+):
+    """驳回(理由必填)。"""
+    cand = await kp_candidate_service.reject(
+        db, candidate_id=candidate_id, reason=body.reason, reviewer_id=admin.id,
+    )
+    await db.commit()
+    return make_ok(_to_kp_candidate_item(cand))
 
 
 # ─── 学期定价配置（M5）────────────────────────────────────────────────────────

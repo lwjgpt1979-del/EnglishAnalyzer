@@ -15,6 +15,11 @@ import type {
   AdminExamPaperItem,
   AdminExamPaperListOut,
   ExamPaperCreate,
+  KpCandidateStatus,
+  KpCandidateItem,
+  KpCandidateListOut,
+  KpNodeItem,
+  KpNodeListOut,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -61,6 +66,41 @@ export function reviewContent(id: string, approve: boolean) {
 export function updateContent(id: string, body: { content_md?: string; audio_url?: string }) {
   return unwrap<AdminContentItem>(
     request.put(`/admin/contents/${id}`, body),
+  )
+}
+
+// ── KP 候选审核（R0.4 KP-First）──────────────────────────────
+export function listKpCandidates(params: {
+  status: KpCandidateStatus
+  axis?: string
+  skip?: number
+  limit?: number
+}) {
+  return unwrap<KpCandidateListOut>(
+    request.get('/admin/kp-candidates', { params }),
+  )
+}
+
+export function listKpNodes(params: { axis?: string; stage?: string; q?: string; limit?: number }) {
+  return unwrap<KpNodeListOut>(request.get('/admin/kp-nodes', { params }))
+}
+
+export function approveKpCandidate(
+  id: string,
+  body: { axis: string; stage?: string | null; node_kind?: string | null; parent_id?: string | null },
+) {
+  return unwrap<KpNodeItem>(request.post(`/admin/kp-candidates/${id}/approve`, body))
+}
+
+export function mergeKpCandidate(id: string, targetNodeId: string) {
+  return unwrap<KpNodeItem>(
+    request.post(`/admin/kp-candidates/${id}/merge`, { target_node_id: targetNodeId }),
+  )
+}
+
+export function rejectKpCandidate(id: string, reason: string) {
+  return unwrap<KpCandidateItem>(
+    request.post(`/admin/kp-candidates/${id}/reject`, { reason }),
   )
 }
 

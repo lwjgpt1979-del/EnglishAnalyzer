@@ -42,6 +42,7 @@ function onLogout() {
         <el-menu-item index="/coupons">🎟️ 优惠券</el-menu-item>
         <el-menu-item index="/sensitive-words">🛡️ 敏感词库</el-menu-item>
         <el-menu-item index="/contents">知识点内容审核</el-menu-item>
+        <el-menu-item index="/kp-candidates">🧩 候选知识点审核</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
         <el-menu-item index="/campaigns">🎉 限时活动价</el-menu-item>
         <el-menu-item index="/entitlements">🔐 会员权益配置</el-menu-item>

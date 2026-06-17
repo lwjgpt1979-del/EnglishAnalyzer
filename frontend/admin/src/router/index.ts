@@ -13,6 +13,7 @@ const router = createRouter({
         { path: 'overview', name: 'overview', component: () => import('../views/Overview.vue') },
         { path: 'questions', name: 'questions', component: () => import('../views/QuestionsReview.vue') },
         { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
+        { path: 'kp-candidates', name: 'kp-candidates', component: () => import('../views/KpCandidatesReview.vue') },
         { path: 'curriculum-units', name: 'curriculum-units', component: () => import('../views/CurriculumUnits.vue') },
         { path: 'theme-center', name: 'theme-center', component: () => import('../views/ThemeCenter.vue') },
         { path: 'vocab-media', name: 'vocab-media', component: () => import('../views/VocabMedia.vue') },
