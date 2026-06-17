@@ -278,7 +278,7 @@ def test_branch_company_city_partial_unique_index():
 
 
 def test_all_37_tables_in_metadata():
-    """确保 Base.metadata 包含全部 47 张表（38 旧 + 9 V2 新表）。"""
+    """确保 Base.metadata 包含全部表（含 KP-First 重构 域15 知识图谱 + 域16 题分域）。"""
     # 导入 __init__ 触发所有模型注册
     import app.models  # noqa: F401
     from app.models.base import Base
@@ -318,12 +318,18 @@ def test_all_37_tables_in_metadata():
         "user_paper_question_knowledge_points",
         # 域14: V2 学期会员
         "purchased_semesters",
+        # 域15: 知识图谱骨架（KP-First R0.1）
+        "knowledge_nodes", "knowledge_node_aliases", "knowledge_node_relations", "kp_candidates",
+        # 域16: 题分域 + 个人窄表（KP-First R0.5）
+        "platform_question", "uploaded_question", "passage",
+        "platform_question_kp", "uploaded_question_kp",
+        "student_kp", "answer_log", "wrong_record",
     }
     actual_tables = set(Base.metadata.tables.keys())
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
     # 实际表数量会随新功能增长——此处为防"意外增删表"的护栏，新增合法表后同步更新。
-    assert len(actual_tables) == 55, f"期望 55 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
+    assert len(actual_tables) == 96, f"期望 96 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
 
 
 def test_d11_v2_curriculum_tables():
