@@ -13,8 +13,11 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from app.core.exceptions import AppError
 from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias, KpCandidate
+from app.models.d17_curriculum_kg import UnitNode
 from app.services.kp_normalize import normalize_kp_name
 
 # 候选来源 → 节点来源(KnowledgeNode.source ∈ seed|textbook|exam)
@@ -23,6 +26,20 @@ _SOURCE_MAP = {"textbook": "textbook", "exam": "exam"}
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def _backfill_unit_edges(db, node_id: uuid.UUID, source_ref: dict | None) -> None:
+    """候选若带来源单元(source_ref.unit_ids,R1 教材抽取写入)→ 审核后回填 unit_node 边。"""
+    for uid in (source_ref or {}).get("unit_ids", []):
+        try:
+            unit_uuid = uid if isinstance(uid, uuid.UUID) else uuid.UUID(str(uid))
+        except (ValueError, AttributeError):
+            continue
+        await db.execute(
+            pg_insert(UnitNode)
+            .values(unit_id=unit_uuid, node_id=node_id, source="manual")
+            .on_conflict_do_nothing(index_elements=["unit_id", "node_id"])
+        )
 
 
 async def _get_pending(db: AsyncSession, candidate_id: uuid.UUID) -> KpCandidate:
@@ -113,6 +130,7 @@ async def approve(
     cand.reviewed_by = reviewer_id
     cand.reviewed_at = _now()
     await db.flush()
+    await _backfill_unit_edges(db, node.id, cand.source_ref)   # R1:回填来源单元的边
     return node
 
 
@@ -143,6 +161,7 @@ async def merge(
     cand.reviewed_by = reviewer_id
     cand.reviewed_at = _now()
     await db.flush()
+    await _backfill_unit_edges(db, target_node_id, cand.source_ref)   # R1:回填来源单元的边
     return target
 
 
