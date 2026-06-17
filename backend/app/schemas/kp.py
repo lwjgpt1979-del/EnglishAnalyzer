@@ -97,3 +97,32 @@ class GenSimOut(BaseModel):
 
 class ReviewRequest(BaseModel):
     approve: bool = Field(..., description="true=通过→published,false=驳回→retired")
+
+
+# ── R3 错题中心/复习 ──────────────────────────────────────────
+import datetime as _dt  # noqa: E402
+
+
+class WrongReviewItem(BaseModel):
+    id: uuid.UUID
+    q_scope: str
+    question_id: uuid.UUID
+    node_id: uuid.UUID | None = None
+    review_count: int
+    next_review_at: _dt.date | None = None
+
+
+class WrongReviewQueueOut(BaseModel):
+    due_count: int
+    items: list[WrongReviewItem]
+
+
+class WrongReviewSubmitIn(BaseModel):
+    wrong_record_id: uuid.UUID
+    quality: int = Field(..., ge=0, le=5, description="0-5,SM-2 复习质量")
+
+
+class WrongReviewSubmitOut(BaseModel):
+    status: str
+    review_count: int
+    next_review_at: _dt.date | None = None
