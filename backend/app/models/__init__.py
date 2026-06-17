@@ -86,4 +86,9 @@ from .d13_v2_user_papers import (  # noqa: F401
 # 域14: V2 学期会员 (1 张表)
 from .d14_v2_semesters import PurchasedSemester  # noqa: F401
 
+# 域15: 知识图谱骨架 (KP-First 重构 R0, 4 张表)
+from .d15_knowledge_graph import (  # noqa: F401
+    KnowledgeNode, NodeAlias, NodeRelation, KpCandidate,
+)
+
 __all__ = ["Base"]
