@@ -170,3 +170,18 @@ export interface KpNodeListOut {
   total: number
   items: KpNodeItem[]
 }
+
+// ── 单元↔知识图谱节点（KP-First R1）────────────────────────
+export interface AdminUnitNodeItem {
+  node_id: string
+  name: string
+  axis: string
+  node_kind?: string | null
+  source: string
+}
+
+export interface UnitExtractResult {
+  matched: number
+  candidate: number
+  edges_created: number
+}

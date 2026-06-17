@@ -50,3 +50,23 @@ class MergeCandidateRequest(BaseModel):
 
 class RejectCandidateRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500, description="驳回理由")
+
+
+# ── R1 教材接入 ──────────────────────────────────────────────
+class UnitNodeItem(BaseModel):
+    node_id: uuid.UUID
+    name: str
+    axis: str
+    node_kind: str | None = None
+    source: str
+
+
+class UnitNodeListOut(BaseModel):
+    total: int
+    items: list[UnitNodeItem]
+
+
+class UnitExtractOut(BaseModel):
+    matched: int
+    candidate: int
+    edges_created: int

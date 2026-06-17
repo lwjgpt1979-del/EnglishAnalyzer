@@ -235,6 +235,9 @@ async def generate_semester(
         )
         cu = await persist_unit(db, ai_unit=ai_unit, content_status=content_status)
         await db.flush()
+        # R1:生成后自动对齐知识图谱(防御式,失败不阻断生成)
+        from app.services import curriculum_kp_service
+        await curriculum_kp_service.extract_for_ai_unit(db, unit_id=cu.id, ai_unit=ai_unit)
         results.append({
             "unit_no": unit_no,
             "unit_title": ai_unit.unit_title,

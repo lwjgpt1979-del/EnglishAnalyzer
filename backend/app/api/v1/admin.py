@@ -57,6 +57,9 @@ from app.schemas.kp import (
     KpNodeListOut,
     MergeCandidateRequest,
     RejectCandidateRequest,
+    UnitExtractOut,
+    UnitNodeItem,
+    UnitNodeListOut,
 )
 from app.services import (
     admin_auth_service,
@@ -736,6 +739,9 @@ async def generate_unit_content(
         unit_no=unit.unit_no,
     )
     await curriculum_service.persist_unit(db, ai_unit=ai_unit, content_status="draft")
+    # R1:生成后自动对齐知识图谱(防御式,失败不阻断生成)
+    from app.services import curriculum_kp_service
+    await curriculum_kp_service.extract_for_ai_unit(db, unit_id=unit_id, ai_unit=ai_unit)
     await db.commit()
 
     # 返回更新后的统计
@@ -747,6 +753,25 @@ async def generate_unit_content(
         "content_count": stat.content_count if stat else 0,
         "content_rate": stat.content_rate if stat else 0.0,
     })
+
+
+# ─── 单元 ↔ 知识图谱节点（R1 教材接入）─────────────────────────────────────────
+
+@router.get("/curriculum/units/{unit_id}/nodes", response_model=BaseResponse[UnitNodeListOut])
+async def list_unit_nodes_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """查看该单元已对齐的知识图谱节点(unit_node 边)。"""
+    from app.services import curriculum_kp_service
+    rows = await curriculum_kp_service.list_unit_nodes(db, unit_id=unit_id)
+    return make_ok(UnitNodeListOut(total=len(rows), items=[UnitNodeItem(**r) for r in rows]))
+
+
+@router.post("/curriculum/units/{unit_id}/extract-kps", response_model=BaseResponse[UnitExtractOut])
+async def reextract_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """重跑对齐:从该单元已有知识点名再走受控匹配(命中建边/未命中候选)。幂等。"""
+    from app.services import curriculum_kp_service
+    res = await curriculum_kp_service.reextract_unit(db, unit_id=unit_id)
+    await db.commit()
+    return make_ok(UnitExtractOut(**res.stats))
 
 
 # ─── V2 M28：真题试卷管理（版权规避：真题内部存储，仅对外暴露仿真题）──────────
@@ -1065,6 +1090,11 @@ async def generate_from_pdf(
                 db, ai_unit=ai_unit, content_status=body.content_status,
             )
             await db.flush()
+            # R1:PDF 上传生成后自动对齐知识图谱(来源 upload_extract;失败不阻断)
+            from app.services import curriculum_kp_service
+            await curriculum_kp_service.extract_for_ai_unit(
+                db, unit_id=cu.id, ai_unit=ai_unit, source="upload_extract",
+            )
             results.append(UnitGenerateResult(
                 unit_no=seg.unit_no,
                 unit_title=ai_unit.unit_title,

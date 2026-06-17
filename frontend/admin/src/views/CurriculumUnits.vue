@@ -5,9 +5,10 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listCurriculumUnits, generateUnitContent,
   uploadCurriculumPdf, generateFromPdf, generateSemester,
+  reextractUnit, listUnitNodes,
   type UnitSegment, type UnitGenerateResult, type GenerateFromPdfOut,
 } from '../api/admin'
-import type { AdminCurriculumUnit } from '../types'
+import type { AdminCurriculumUnit, AdminUnitNodeItem } from '../types'
 
 // ── 单元列表 ──────────────────────────────────────────────────────────────────
 const rows = ref<AdminCurriculumUnit[]>([])
@@ -51,6 +52,38 @@ async function onGenerate(row: AdminCurriculumUnit) {
     ElMessage.error(e?.message || '生成失败')
   } finally {
     generating.value[row.unit_id] = false
+  }
+}
+
+// ── 知识图谱对齐（R1）────────────────────────────────────────
+const aligning = ref<Record<string, boolean>>({})
+const nodesDlg = ref(false)
+const nodesLoading = ref(false)
+const unitNodes = ref<AdminUnitNodeItem[]>([])
+const nodesUnitTitle = ref('')
+
+async function onAlign(row: AdminCurriculumUnit) {
+  aligning.value[row.unit_id] = true
+  try {
+    const r = await reextractUnit(row.unit_id)
+    ElMessage.success(`对齐完成：命中 ${r.matched}、新建边 ${r.edges_created}、待审候选 ${r.candidate}`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '对齐失败')
+  } finally {
+    aligning.value[row.unit_id] = false
+  }
+}
+
+async function onViewNodes(row: AdminCurriculumUnit) {
+  nodesUnitTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
+  nodesDlg.value = true
+  nodesLoading.value = true
+  try {
+    unitNodes.value = (await listUnitNodes(row.unit_id)).items
+  } catch (e: any) {
+    ElMessage.error(e?.message || '加载失败')
+  } finally {
+    nodesLoading.value = false
   }
 }
 
@@ -249,14 +282,29 @@ onMounted(load)
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="290" fixed="right">
         <template #default="{ row }">
           <el-button size="small" type="primary" :loading="generating[row.unit_id]" @click="onGenerate(row)">
             🤖 生成内容
           </el-button>
+          <el-button size="small" type="success" :loading="aligning[row.unit_id]" @click="onAlign(row)">
+            🧩 对齐图谱
+          </el-button>
+          <el-button size="small" @click="onViewNodes(row)">查看节点</el-button>
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- ── 单元知识图谱节点 Dialog ── -->
+    <el-dialog v-model="nodesDlg" :title="`单元知识图谱节点 · ${nodesUnitTitle}`" width="560px">
+      <el-table v-loading="nodesLoading" :data="unitNodes" border style="width:100%">
+        <el-table-column prop="name" label="知识点" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="axis" label="轴" width="80" />
+        <el-table-column prop="node_kind" label="子类型" width="100" />
+        <el-table-column prop="source" label="来源" width="110" />
+      </el-table>
+      <el-empty v-if="!nodesLoading && !unitNodes.length" description="该单元暂无对齐的知识图谱节点" />
+    </el-dialog>
 
     <!-- ── PDF 上传 Dialog ── -->
     <el-dialog

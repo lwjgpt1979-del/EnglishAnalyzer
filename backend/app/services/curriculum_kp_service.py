@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 
@@ -16,11 +17,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d4_knowledge import CurriculumUnit
-from app.models.d15_knowledge_graph import KpCandidate
+from app.models.d4_knowledge import CurriculumUnit, KnowledgePoint, UnitKnowledgePoint
+from app.models.d15_knowledge_graph import KnowledgeNode, KpCandidate
 from app.models.d17_curriculum_kg import UnitNode
 from app.services.kp_match_service import match_kp
 from app.services.kp_normalize import stages_from_grades
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,3 +100,45 @@ async def extract_unit_nodes(
             await _attach_unit_to_candidate(db, r.candidate_id, unit_id)
             res.candidates.append({"name": name, "candidate_id": r.candidate_id})
     return res
+
+
+async def extract_for_ai_unit(
+    db: AsyncSession, *, unit_id: uuid.UUID, ai_unit, source: str = "ai_extract"
+) -> ExtractResult | None:
+    """生成流程的对齐钩子:从 AIGeneratedUnit 取 KP 名 → 受控匹配建边/候选。
+
+    **防御式**:对齐失败只记 warning,不阻断内容生成(对齐是新增能力,不能拖垮主流程)。
+    """
+    try:
+        names = [kp.name for kp in (getattr(ai_unit, "knowledge_points", None) or [])]
+        if not names:
+            return None
+        return await extract_unit_nodes(db, unit_id=unit_id, kp_names=names, source=source)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("unit KP align failed (unit=%s): %s", unit_id, exc)
+        return None
+
+
+async def reextract_unit(db: AsyncSession, *, unit_id: uuid.UUID) -> ExtractResult:
+    """重跑对齐:从该单元已有(旧)知识点名取材,再走受控匹配(不重新生成内容)。"""
+    names = (await db.execute(
+        sa.select(KnowledgePoint.name)
+        .join(UnitKnowledgePoint, UnitKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+        .where(UnitKnowledgePoint.unit_id == unit_id)
+    )).scalars().all()
+    return await extract_unit_nodes(db, unit_id=unit_id, kp_names=list(names), source="ai_extract")
+
+
+async def list_unit_nodes(db: AsyncSession, *, unit_id: uuid.UUID) -> list[dict]:
+    """该单元的 unit_node 边(含节点名/轴/子类型/来源),供后台查看。"""
+    rows = (await db.execute(
+        sa.select(UnitNode.node_id, KnowledgeNode.name, KnowledgeNode.axis,
+                  KnowledgeNode.node_kind, UnitNode.source)
+        .join(KnowledgeNode, KnowledgeNode.id == UnitNode.node_id)
+        .where(UnitNode.unit_id == unit_id)
+        .order_by(UnitNode.created_at)
+    )).all()
+    return [
+        {"node_id": nid, "name": nm, "axis": ax, "node_kind": nk, "source": src}
+        for nid, nm, ax, nk, src in rows
+    ]

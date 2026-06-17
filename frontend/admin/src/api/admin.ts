@@ -20,6 +20,8 @@ import type {
   KpCandidateListOut,
   KpNodeItem,
   KpNodeListOut,
+  AdminUnitNodeItem,
+  UnitExtractResult,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -281,6 +283,19 @@ export interface GenerateUnitResult {
 export function generateUnitContent(unitId: string): Promise<GenerateUnitResult> {
   return unwrap<GenerateUnitResult>(
     request.post(`/admin/curriculum/units/${unitId}/generate`)
+  )
+}
+
+// ── 单元↔知识图谱对齐（KP-First R1）──────────────────────────
+export function reextractUnit(unitId: string): Promise<UnitExtractResult> {
+  return unwrap<UnitExtractResult>(
+    request.post(`/admin/curriculum/units/${unitId}/extract-kps`)
+  )
+}
+
+export function listUnitNodes(unitId: string): Promise<{ total: number; items: AdminUnitNodeItem[] }> {
+  return unwrap<{ total: number; items: AdminUnitNodeItem[] }>(
+    request.get(`/admin/curriculum/units/${unitId}/nodes`)
   )
 }
 
