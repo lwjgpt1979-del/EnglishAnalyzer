@@ -60,6 +60,10 @@ from app.schemas.kp import (
     UnitExtractOut,
     UnitNodeItem,
     UnitNodeListOut,
+    PlatformQuestionItem,
+    PlatformQuestionListOut,
+    GenSimOut,
+    ReviewRequest,
 )
 from app.services import (
     admin_auth_service,
@@ -772,6 +776,49 @@ async def reextract_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
     res = await curriculum_kp_service.reextract_unit(db, unit_id=unit_id)
     await db.commit()
     return make_ok(UnitExtractOut(**res.stats))
+
+
+# ─── 平台题管理（R2 真题/仿真接入）──────────────────────────────────────────────
+
+def _to_pq_item(q) -> PlatformQuestionItem:
+    return PlatformQuestionItem(
+        id=q.id, type=q.type, parent_real_id=q.parent_real_id, is_fallback=q.is_fallback,
+        question_type=q.question_type, stem=q.stem, answer=q.answer,
+        difficulty=q.difficulty, status=q.status,
+    )
+
+
+@router.get("/platform-questions", response_model=BaseResponse[PlatformQuestionListOut])
+async def list_platform_questions_api(
+    db: DbDep, admin: AdminDep,
+    type: str | None = None, status: str | None = None,
+    node_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
+):
+    """平台题分页查询(真题/仿真,可按 type/status/node 过滤)。"""
+    from app.services import platform_question_service as pqs
+    rows, total = await pqs.list_platform_questions(
+        db, type=type, status=status, node_id=node_id, skip=skip, limit=limit)
+    return make_ok(PlatformQuestionListOut(total=total, items=[_to_pq_item(r) for r in rows]))
+
+
+@router.post("/platform-questions/{real_id}/gen-sim", response_model=BaseResponse[GenSimOut])
+async def gen_sim_from_real_api(real_id: uuid.UUID, db: DbDep, admin: AdminDep, count: int = 3):
+    """由真题预生成 N 道仿真(继承母题 KP,parent_real_id 必填)。"""
+    from app.services import platform_question_service as pqs
+    sim_ids = await pqs.generate_sim_from_real(db, real_id=real_id, count=count)
+    await db.commit()
+    return make_ok(GenSimOut(generated=len(sim_ids), sim_ids=sim_ids))
+
+
+@router.post("/platform-questions/{question_id}/review", response_model=BaseResponse[PlatformQuestionItem])
+async def review_platform_question_api(
+    question_id: uuid.UUID, body: ReviewRequest, db: DbDep, admin: AdminDep,
+):
+    """审核平台题:approve→published,reject→retired。"""
+    from app.services import platform_question_service as pqs
+    q = await pqs.review_platform_question(db, question_id=question_id, approve=body.approve)
+    await db.commit()
+    return make_ok(_to_pq_item(q))
 
 
 # ─── V2 M28：真题试卷管理（版权规避：真题内部存储，仅对外暴露仿真题）──────────

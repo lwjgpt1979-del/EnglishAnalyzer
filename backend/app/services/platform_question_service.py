@@ -105,6 +105,43 @@ async def add_sim(
     return q
 
 
+async def list_platform_questions(
+    db: AsyncSession, *, type: str | None = None, status: str | None = None,
+    node_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
+) -> tuple[list[PlatformQuestion], int]:
+    """平台题分页查询(运营审核/查看)。可按 type/status/node 过滤。"""
+    base = sa.select(PlatformQuestion)
+    if node_id is not None:
+        base = base.join(PlatformQuestionKp,
+                         PlatformQuestionKp.question_id == PlatformQuestion.id
+                         ).where(PlatformQuestionKp.node_id == node_id)
+    if type is not None:
+        base = base.where(PlatformQuestion.type == type)
+    if status is not None:
+        base = base.where(PlatformQuestion.status == status)
+    total = (await db.execute(
+        sa.select(sa.func.count()).select_from(base.subquery())
+    )).scalar_one()
+    rows = (await db.execute(
+        base.order_by(PlatformQuestion.created_at).offset(skip).limit(limit)
+    )).scalars().all()
+    return list(rows), total
+
+
+async def review_platform_question(
+    db: AsyncSession, *, question_id: uuid.UUID, approve: bool
+) -> PlatformQuestion:
+    """审核平台题:approve→published,reject→retired。"""
+    q = (await db.execute(
+        sa.select(PlatformQuestion).where(PlatformQuestion.id == question_id)
+    )).scalar_one_or_none()
+    if q is None:
+        raise AppError(code=404, message="平台题不存在")
+    q.status = "published" if approve else "retired"
+    await db.flush()
+    return q
+
+
 async def _rewrite_variants(real: PlatformQuestion, count: int) -> list[dict]:
     """真题 → count 道仿真变式。dev mock 确定性;生产走 LLM 改写(保持题型/难度/考点)。"""
     if is_llm_dev_mode():

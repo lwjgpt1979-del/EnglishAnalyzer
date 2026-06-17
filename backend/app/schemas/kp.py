@@ -70,3 +70,30 @@ class UnitExtractOut(BaseModel):
     matched: int
     candidate: int
     edges_created: int
+
+
+# ── R2 平台题 ────────────────────────────────────────────────
+class PlatformQuestionItem(BaseModel):
+    id: uuid.UUID
+    type: str
+    parent_real_id: uuid.UUID | None = None
+    is_fallback: bool
+    question_type: str | None = None
+    stem: str | None = None
+    answer: str | None = None
+    difficulty: int | None = None
+    status: str
+
+
+class PlatformQuestionListOut(BaseModel):
+    total: int
+    items: list[PlatformQuestionItem]
+
+
+class GenSimOut(BaseModel):
+    generated: int
+    sim_ids: list[uuid.UUID]
+
+
+class ReviewRequest(BaseModel):
+    approve: bool = Field(..., description="true=通过→published,false=驳回→retired")
