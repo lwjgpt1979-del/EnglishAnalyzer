@@ -117,6 +117,19 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                         is_correct=not is_wrong,
                         source="paper_upload",
                     )
+                    # R3:KP-First 对齐(match_kp 命中 node/落候选)+ 整卷错题收口进 wrong_record
+                    # (加法式,失败不阻断整卷管线;旧路径保留供过渡)
+                    try:
+                        from app.services.kp_match_service import match_kp
+                        from app.services import wrong_center_service
+                        m = await match_kp(db, raw_name=kp_key, axis_hint="knowledge",
+                                           source_type="uploaded_student")
+                        if is_wrong:
+                            await wrong_center_service.record_wrong(
+                                db, student_id=paper.student_id, q_scope="uploaded",
+                                question_id=q.id, node_id=m.node_id)
+                    except Exception:  # noqa: BLE001
+                        pass
 
             # P2：整卷题干里命中词典的生词 → 该生词力通候选池（best-effort）
             try:
