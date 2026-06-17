@@ -32,7 +32,7 @@ from app.models.d15_knowledge_graph import (  # noqa: E402
     NodeAlias,
     KpCandidate,
 )
-from app.services.kp_normalize import normalize_kp_name  # noqa: E402
+from app.services.kp_normalize import normalize_kp_name, stages_from_grades  # noqa: E402
 
 # 旧 category → 新 (axis, node_kind);legacy 标准点统一落 knowledge 轴
 CATEGORY_MAP: dict[str, tuple[str, str]] = {
@@ -47,16 +47,6 @@ DEFAULT_AXIS_KIND = ("knowledge", None)
 
 def _is_auto(code: str) -> bool:
     return (code or "").startswith("auto_")
-
-
-def _stages_from_grades(grades: list[str] | None) -> list[str]:
-    """applicable_grades(如 ["小学5年级","初中7年级"]) → 学段子集 ["小","初","高"](去重保序)。"""
-    out: list[str] = []
-    for g in grades or []:
-        seg = "小" if "小" in g else "初" if "初" in g else "高" if "高" in g else None
-        if seg and seg not in out:
-            out.append(seg)
-    return out
 
 
 class Stats:
@@ -103,7 +93,7 @@ async def migrate(dry: bool, only_codes: set[str] | None = None) -> Stats:
             norm = normalize_kp_name(kp.name)
             if not norm:
                 continue
-            stages = _stages_from_grades(kp.applicable_grades)
+            stages = stages_from_grades(kp.applicable_grades)
 
             if norm in norm_to_node:
                 # 同名折叠:并入已建节点,合并学段并集,不新建
@@ -176,7 +166,7 @@ async def migrate(dry: bool, only_codes: set[str] | None = None) -> Stats:
                 continue
             axis, _ = CATEGORY_MAP.get(kp.category, DEFAULT_AXIS_KIND)
             axis = axis or "knowledge"  # 决策②:绝不留 NULL,规避唯一键 NULL 去重失效
-            stages = _stages_from_grades(kp.applicable_grades)
+            stages = stages_from_grades(kp.applicable_grades)
             if dry:
                 # 估算:同名是否已在候选(粗略,按 norm 唯一近似)
                 st.cand += 1

@@ -31,3 +31,16 @@ def normalize_kp_name(raw: str) -> str:
     s = unicodedata.normalize("NFKC", raw)
     # 2) 仅保留字母数字与 CJK(isalnum 对汉字/字母/数字均为真),其余(空白/标点/符号)丢弃;ASCII 统一小写
     return "".join(ch.lower() for ch in s if ch.isalnum())
+
+
+def stages_from_grades(grades: list[str] | None) -> list[str]:
+    """年级名(如 ["小学5年级","初中7年级"])→ 学段子集 ["小","初","高"](去重保序)。
+
+    grade→stage 的单一真源(R0.2 种子迁移与 R1 教材抽取共用)。
+    """
+    out: list[str] = []
+    for g in grades or []:
+        seg = "小" if "小" in g else "初" if "初" in g else "高" if "高" in g else None
+        if seg and seg not in out:
+            out.append(seg)
+    return out

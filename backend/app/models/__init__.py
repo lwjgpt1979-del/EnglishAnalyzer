@@ -98,4 +98,7 @@ from .d16_question_domain import (  # noqa: F401
     StudentKp, AnswerLog, WrongRecord,
 )
 
+# 域17: 教材接入 KP-First (R1, 1 张表)
+from .d17_curriculum_kg import UnitNode  # noqa: F401
+
 __all__ = ["Base"]
