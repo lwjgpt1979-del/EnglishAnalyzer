@@ -91,4 +91,11 @@ from .d15_knowledge_graph import (  # noqa: F401
     KnowledgeNode, NodeAlias, NodeRelation, KpCandidate,
 )
 
+# 域16: 题分域 + 个人窄表骨架 (KP-First 重构 R0.5, 8 张表)
+from .d16_question_domain import (  # noqa: F401
+    PlatformQuestion, UploadedQuestion, Passage,
+    PlatformQuestionKp, UploadedQuestionKp,
+    StudentKp, AnswerLog, WrongRecord,
+)
+
 __all__ = ["Base"]
