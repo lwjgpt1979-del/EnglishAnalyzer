@@ -154,6 +154,44 @@ async def test_import_real_questions_bulk(client):
 
 
 @pytest.mark.asyncio
+async def test_extract_job_pdf_text(client):
+    """TK2:传 PDF → 后台 pdfplumber 取文本 → 拆题 → parsed 待校对(轮询)。"""
+    import asyncio as _aio
+    admin = await _make_admin(client, "ext")
+    job_id = None
+    try:
+        with patch("app.services.pdf_upload_service.extract_pages",
+                   lambda fid: ["1. Question one here\n2. Question two here"]):
+            r = await client.post("/api/v1/admin/platform-questions/extract", headers=admin,
+                                  files={"file": ("t.pdf", b"%PDF-1.4 fake", "application/pdf")})
+            assert r.status_code == 200, r.text
+            job_id = r.json()["data"]["job_id"]
+            data = None
+            for _ in range(50):
+                jr = await client.get(f"/api/v1/admin/platform-questions/extract-jobs/{job_id}", headers=admin)
+                data = jr.json()["data"]
+                if data["status"] != "running":
+                    break
+                await _aio.sleep(0.2)
+        assert data["status"] == "done", data
+        nos = sorted(p["question_no"] for p in data["parsed"])
+        assert nos == ["1", "2"] and all(p["stem"] for p in data["parsed"])
+    finally:
+        if job_id:
+            async with _async_session_factory() as db:
+                await db.execute(text("DELETE FROM real_extract_job WHERE id = :i"), {"i": job_id})
+                await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_extract_requires_input(client):
+    """既无文件也无 image_urls → 400。"""
+    admin = await _make_admin(client, "ext2")
+    r = await client.post("/api/v1/admin/platform-questions/extract", headers=admin)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_non_admin_forbidden(client):
     node_id, real_id = await _seed_real()
     try:

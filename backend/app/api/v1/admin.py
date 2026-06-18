@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +60,9 @@ from app.schemas.kp import (
     RealQuestionBulkIn,
     RealImportItemOut,
     RealImportBulkOut,
+    RealExtractCreatedOut,
+    RealExtractJobOut,
+    ParsedRealQuestion,
     ReviewRequest,
     VocabListCreate,
     VocabListOut,
@@ -811,6 +814,46 @@ async def review_platform_question_api(
     q = await pqs.review_platform_question(db, question_id=question_id, approve=body.approve)
     await db.commit()
     return make_ok(_to_pq_item(q))
+
+
+# ─── 真题抽题(TK2:上传 PDF/图片 → 异步 OCR/拆题 → 待校对)──────────────────────────
+
+@router.post("/platform-questions/extract", response_model=BaseResponse[RealExtractCreatedOut])
+async def extract_real_questions_api(
+    db: DbDep, admin: AdminDep,
+    file: UploadFile | None = File(None, description="真题 PDF(文本版)"),
+    image_urls: str | None = Form(None, description="图片 URL 列表(JSON 数组字符串,走 OCR)"),
+):
+    """传 PDF(pdfplumber 取文本)或图片 URL(run_ocr)→ 秒回 job_id,后台拆题。"""
+    import json as _json
+    from app.services import real_extract_service as res, pdf_upload_service as pus
+    if file is not None:
+        file_id = pus.save_upload(await file.read())
+        job = await res.create_job(db, source="pdf", file_id=file_id)
+    elif image_urls:
+        try:
+            urls = _json.loads(image_urls)
+            assert isinstance(urls, list) and urls
+        except Exception:
+            raise AppError(code=400, message="image_urls 需为非空 JSON 数组")
+        job = await res.create_job(db, source="image", image_urls=urls)
+    else:
+        raise AppError(code=400, message="请上传 PDF 文件或提供 image_urls")
+    await db.commit()
+    res.schedule(job.id)
+    return make_ok(RealExtractCreatedOut(job_id=job.id))
+
+
+@router.get("/platform-questions/extract-jobs/{job_id}", response_model=BaseResponse[RealExtractJobOut])
+async def get_real_extract_job_api(job_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """查真题抽题任务进度 + 取待校对题(前端轮询,校对后调 /platform-questions/bulk 导入)。"""
+    from app.services import real_extract_service as res
+    job = await res.get_job(db, job_id)
+    if job is None:
+        raise AppError(code=404, message="抽题任务不存在")
+    return make_ok(RealExtractJobOut(
+        job_id=job.id, source=job.source, status=job.status, error=job.error,
+        parsed=[ParsedRealQuestion(**p) for p in (job.parsed or [])]))
 
 
 # ─── 知识节点资源管理（R6 资源层补全）────────────────────────────────────────────

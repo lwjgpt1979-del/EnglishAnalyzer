@@ -128,6 +128,27 @@ class RealImportBulkOut(BaseModel):
     items: list[RealImportItemOut] = []
 
 
+# ── 真题抽题任务(TK2)──────────────────────────────────────────
+class ParsedRealQuestion(BaseModel):
+    question_no: str | None = None
+    question_type: str | None = None
+    stem: str | None = None
+    answer: str | None = None
+    explanation: str | None = None
+
+
+class RealExtractCreatedOut(BaseModel):
+    job_id: uuid.UUID
+
+
+class RealExtractJobOut(BaseModel):
+    job_id: uuid.UUID
+    source: str
+    status: str                          # running|done|failed
+    error: str | None = None
+    parsed: list[ParsedRealQuestion] = []
+
+
 class ReviewRequest(BaseModel):
     approve: bool = Field(..., description="true=通过→published,false=驳回→retired")
 

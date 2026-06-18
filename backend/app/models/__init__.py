@@ -95,7 +95,7 @@ from .d15_knowledge_graph import (  # noqa: F401
 from .d16_question_domain import (  # noqa: F401
     PlatformQuestion, UploadedQuestion, Passage,
     PlatformQuestionKp, UploadedQuestionKp,
-    StudentKp, AnswerLog, WrongRecord,
+    StudentKp, AnswerLog, WrongRecord, RealExtractJob,
 )
 
 # 域17: 教材接入 KP-First (R1, 1 张表)

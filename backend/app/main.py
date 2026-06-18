@@ -19,6 +19,8 @@ async def lifespan(app: FastAPI):
     try:
         from app.services.curriculum_gen_service import resume_running_jobs
         await resume_running_jobs()
+        from app.services.real_extract_service import resume_running_jobs as _resume_extract
+        await _resume_extract()
     except Exception:  # noqa: BLE001
         pass
     yield

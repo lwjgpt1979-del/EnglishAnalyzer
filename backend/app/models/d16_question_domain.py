@@ -195,3 +195,22 @@ class WrongRecord(Base):
         sa.Index("ix_wrong_record_due", "student_id", "next_review_at"),
         sa.UniqueConstraint("student_id", "q_scope", "question_id", name="uix_wrong_record_identity"),
     )
+
+
+class RealExtractJob(Base):
+    """真题抽题异步任务(TK2):上传 PDF/图片 → 后台 OCR/拆题 → parsed 待校对 → 校对后批量导入。"""
+
+    __tablename__ = "real_extract_job"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source = mapped_column(sa.String(8), nullable=False)            # pdf|image
+    file_id = mapped_column(sa.String(64), nullable=True)           # pdf 上传 id
+    image_urls = mapped_column(JSONB, nullable=True)                # 图片 OCR 源
+    status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'running'"))  # running|done|failed
+    parsed = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))  # 抽出待校对题
+    error = mapped_column(sa.Text, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.func.now(), onupdate=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_real_extract_job_status", "status"),)
