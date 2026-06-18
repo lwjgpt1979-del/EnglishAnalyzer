@@ -6,6 +6,7 @@ dev 模式拆解走确定性 mock(按结构信号词推句法点),不调真实 L
 """
 from __future__ import annotations
 
+import difflib
 import json
 import logging
 import re
@@ -132,9 +133,12 @@ async def get_detail(db: AsyncSession, *, ls_id: uuid.UUID) -> tuple[LongSentenc
     return ls, [{"node_id": nid, "name": nm, "node_kind": nk} for nid, nm, nk in nodes]
 
 
-# ── L3 验证·客观题 ────────────────────────────────────────────
-# 客观题型(自动判分、可硬判掌握);主观题型(translate/span_label/rewrite/read_aloud)留 L4。
+# ── 验证题型(L3 客观自动判分 / L4 主观 AI·发音评测)────────────────────────────
 _OBJECTIVE_TYPES = {"cloze", "struct_type", "main_clause"}
+_SUBJECTIVE_TYPES = {"translate", "rewrite", "span_label", "read_aloud"}  # L4:AI 评分 / 发音评测
+_IMPLEMENTED_TYPES = _OBJECTIVE_TYPES | _SUBJECTIVE_TYPES
+_READ_ALOUD_PASS = 60          # 朗读发音通过分阈值
+_SUBJ_SIM_PASS = 0.5           # dev 主观判分相似度阈值(生产走 LLM)
 _ALL_VERIFY_TYPES = ["cloze", "struct_type", "main_clause", "translate",
                      "span_label", "reorder", "rewrite", "read_aloud"]
 _SYNTAX_POOL = ["定语从句", "状语从句", "名词性从句", "非谓语动词", "倒装句", "强调句", "同位语从句"]
@@ -151,8 +155,8 @@ async def enabled_verify_types(db: AsyncSession) -> list[str]:
     configured = _ALL_VERIFY_TYPES
     if row is not None and isinstance(row.value, list):
         configured = row.value
-    # 仅返回已实现(客观)且被配置开放的
-    return [t for t in configured if t in _OBJECTIVE_TYPES]
+    # 仅返回已实现(客观+主观)且被配置开放的(未实现如 reorder 不返回)
+    return [t for t in configured if t in _IMPLEMENTED_TYPES]
 
 
 def build_verify(ls: LongSentence, verify_type: str) -> dict | None:
@@ -182,7 +186,47 @@ def build_verify(ls: LongSentence, verify_type: str) -> dict | None:
                 return {"type": verify_type, "prompt": f"填入恰当的连接词:{blanked}",
                         "options": [w] + distract, "answer": w}
         return None
+    # 主观题(无选项,自由作答/音频;answer 为参考)
+    if verify_type == "translate":
+        return {"type": verify_type, "prompt": f"翻译这句:{ls.text}",
+                "options": [], "answer": a.get("translation", "")}
+    if verify_type == "rewrite":
+        sp = syntax[0] if syntax else "同句法点"
+        return {"type": verify_type, "prompt": f"用「{sp}」改写/仿写一句:{ls.text}",
+                "options": [], "answer": ls.text}
+    if verify_type == "span_label":
+        layers = a.get("layers") or []
+        ref = layers[0]["text"] if layers else ls.text
+        sp = syntax[0] if syntax else "修饰成分"
+        return {"type": verify_type, "prompt": f"标出句中的「{sp}」部分:{ls.text}",
+                "options": [], "answer": ref}
+    if verify_type == "read_aloud":
+        return {"type": verify_type, "prompt": f"朗读这句:{ls.text}",
+                "options": [], "answer": ls.text}
     return None
+
+
+async def _grade_subjective(verify_type: str, ls: LongSentence, q: dict, answer: str) -> bool:
+    """主观题判分:translate/rewrite/span_label 走 AI(dev 用相似度);read_aloud 走发音分阈值。"""
+    if verify_type == "read_aloud":
+        # answer 传发音总分(客户端/发音评测得到);≥阈值算过
+        try:
+            return int(float(answer)) >= _READ_ALOUD_PASS
+        except (ValueError, TypeError):
+            return False
+    ref = str(q.get("answer") or "")
+    if is_llm_dev_mode():
+        return difflib.SequenceMatcher(None, answer.strip(), ref.strip()).ratio() >= _SUBJ_SIM_PASS
+    system = ("你是英语评分老师。判断学生答案是否达标(语义正确/句法点正确即可,不苛求字面)。"
+              "只输出 JSON {\"pass\": true/false}。")
+    user = f"题型:{verify_type}\n句子:{ls.text}\n参考:{ref}\n学生答案:{answer}"
+    try:
+        resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=32,
+                                     response_format={"type": "json_object"})
+        return bool(json.loads(resp.choices[0].message.content or "{}").get("pass"))
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("subjective grade LLM failed: %s", exc)
+        return False
 
 
 async def submit_verify(
@@ -197,13 +241,16 @@ async def submit_verify(
     ls, nodes = await get_detail(db, ls_id=ls_id)
     if ls is None or ls.status != "published":
         raise AppError(code=404, message="长难句不存在或未发布")
-    if verify_type not in _OBJECTIVE_TYPES:
-        raise AppError(code=400, message="该验证题型暂不支持自动判分")
+    if verify_type not in _IMPLEMENTED_TYPES:
+        raise AppError(code=400, message="该验证题型暂不支持")
     q = build_verify(ls, verify_type)
     if q is None:
         raise AppError(code=400, message="该句无法生成此题型")
 
-    correct = answer.strip() == str(q["answer"]).strip()
+    if verify_type in _OBJECTIVE_TYPES:
+        correct = answer.strip() == str(q["answer"]).strip()
+    else:
+        correct = await _grade_subjective(verify_type, ls, q, answer)
     # 合成 question_id(同句+同题型稳定),逐句法 node 记作答 + 判掌握
     qid = uuid.uuid5(uuid.NAMESPACE_OID, f"ls-verify:{ls_id}:{verify_type}")
     mastered: list[str] = []
