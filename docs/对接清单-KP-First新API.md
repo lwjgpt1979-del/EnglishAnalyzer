@@ -4,6 +4,7 @@
 > 响应包 `{code, message, data}`(BaseResponse)。
 > **学生端**用学生 JWT(get_current_user);**后台端** `/admin/*` 需 `platform_admin` 角色;
 > **家长/老师端**用各自 JWT。
+> 学生端每个端点的**请求/响应 JSON 示例**见 [对接清单-学生端Mock示例](对接清单-学生端Mock示例.md)。
 > 系统未上线:学生端讲解/错题/掌握读取**已直切 KP-First 新表**(路径多数不变,小程序无感),
 > 旧 `/admin/contents` 内容审核端点**已退役**(改由 `/admin/node-resources`)。
 
