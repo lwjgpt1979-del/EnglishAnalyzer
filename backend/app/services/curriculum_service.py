@@ -396,16 +396,30 @@ async def get_kp_contents(
     if locked:
         raise AppError(code=403, message="该知识点所属单元需购买学期会员后解锁")
 
+    # KP-First 直切:讲解读 node_resource(挂新 knowledge_nodes)。旧 kp → 名 → match_kp → node。
+    from app.models.d4_knowledge import KnowledgePoint
+    from app.models.d19_node_resource import NodeResource
+    from app.services.kp_match_service import match_kp
+
+    kp_name = (await db.execute(
+        select(KnowledgePoint.name).where(KnowledgePoint.id == kp_id)
+    )).scalar_one_or_none()
+    if not kp_name:
+        return []
+    m = await match_kp(db, raw_name=kp_name, axis_hint="knowledge", source_type="textbook", use_llm=False)
+    if m.node_id is None:
+        return []
     contents = (await db.execute(
-        select(KnowledgePointContent).where(
-            KnowledgePointContent.knowledge_point_id == kp_id,
-            KnowledgePointContent.status == "published",
+        select(NodeResource).where(
+            NodeResource.node_id == m.node_id,
+            NodeResource.resource_type == "lecture",
+            NodeResource.status == "published",
         )
     )).scalars().all()
     return [KPContentOut(
-        dimension=str(c.dimension),
-        content_md=c.content_md,
-        audio_url=c.audio_url,
+        dimension=str(c.dimension or ""),
+        content_md=c.content_md or "",
+        audio_url=c.media_url,
     ) for c in contents]
 
 

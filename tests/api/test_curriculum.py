@@ -177,83 +177,94 @@ async def test_get_unit_detail_200_for_owned_semester(client):
     assert len(detail["words"]) >= 5
 
 
+def _norm(s: str) -> str:
+    from app.services.kp_normalize import normalize_kp_name
+    return normalize_kp_name(s)
+
+
+async def _seed_kp_node_with_lectures(*, unit_version, unit_grade, unit_sem, unit_no,
+                                      kp_name, dims_published, dims_draft=()):
+    """建 单元+旧KP+UnitKP边 + 句法node+alias(kp_name) + node_resource(lecture 各维度)。返回 kp_id。"""
+    from sqlalchemy import select as _sel
+    from app.models.d4_knowledge import CurriculumUnit, KnowledgePoint, UnitKnowledgePoint
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.models.d19_node_resource import NodeResource
+    async with _async_session_factory() as s:
+        cu = (await s.execute(_sel(CurriculumUnit).where(
+            CurriculumUnit.textbook_version == unit_version, CurriculumUnit.grade == unit_grade,
+            CurriculumUnit.semester == unit_sem, CurriculumUnit.unit_no == unit_no))).scalar_one_or_none()
+        if cu is None:
+            cu = CurriculumUnit(id=uuid.uuid4(), textbook_version=unit_version, grade=unit_grade,
+                                semester=unit_sem, unit_no=unit_no, unit_title="单元")
+            s.add(cu)
+            await s.flush()
+        kp = KnowledgePoint(id=uuid.uuid4(), code=f"lc-{uuid.uuid4().hex[:6]}", name=kp_name,
+                            category="grammar", description="d",
+                            applicable_grades=[unit_grade], applicable_textbooks=[unit_version])
+        node = KnowledgeNode(id=uuid.uuid4(), axis="knowledge", node_kind="句法", name=kp_name,
+                             code=f"lcn-{uuid.uuid4().hex[:6]}", status="active", source="seed")
+        s.add_all([kp, node])
+        await s.flush()
+        s.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
+        s.add(NodeAlias(id=uuid.uuid4(), node_id=node.id, alias=kp_name,
+                        alias_norm=_norm(kp_name), source="seed"))
+        for d in dims_published:
+            s.add(NodeResource(id=uuid.uuid4(), node_id=node.id, resource_type="lecture",
+                               dimension=d, content_md=f"published {d}", media_url=f"https://x/{d}.mp3",
+                               status="published"))
+        for d in dims_draft:
+            s.add(NodeResource(id=uuid.uuid4(), node_id=node.id, resource_type="lecture",
+                               dimension=d, content_md=f"draft {d}", status="draft"))
+        await s.commit()
+        return kp.id, node.id
+
+
 @pytest.mark.asyncio
 async def test_get_kp_contents_returns_6_dimensions(client):
-    """GET /knowledge-points/{id}/contents 返回 6 维度内容，每条带 dimension/content_md。
-    KP 所属 unit_no=19 受 paywall，所以测试用户需先有学期。"""
-    await _seed_unit(19)
-
-    async with _async_session_factory() as s:
-        from sqlalchemy import select
-        from app.models.d4_knowledge import CurriculumUnit, UnitKnowledgePoint
-        cu = (await s.execute(
-            select(CurriculumUnit).where(
-                CurriculumUnit.textbook_version == "译林版",
-                CurriculumUnit.grade == "小学5年级",
-                CurriculumUnit.semester == "上",
-                CurriculumUnit.unit_no == 19,
-            )
-        )).scalar_one()
-        link = (await s.execute(
-            select(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id == cu.id)
-        )).scalars().first()
-        kp_id = link.knowledge_point_id
-
+    """KP-First 直切:GET contents 读 node_resource(lecture 六维),受 paywall(unit_no=19)。"""
+    six = ["listening", "vocabulary", "grammar", "reading", "translation", "writing"]
+    kp_id, node_id = await _seed_kp_node_with_lectures(
+        unit_version="译林版", unit_grade="小学5年级", unit_sem="上", unit_no=19,
+        kp_name=f"直切六维KP_{uuid.uuid4().hex[:6]}", dims_published=six)
     suffix = f"kpcontent_{uuid.uuid4().hex[:6]}"
     await _seed_user_with_semester(f"m2_curriculum_{suffix}")
-
     h = await _login(client, suffix)
-    resp = await client.get(
-        f"/api/v1/curriculum/knowledge-points/{kp_id}/contents",
-        headers=h,
-    )
-    assert resp.status_code == 200, resp.text
-    contents = resp.json()["data"]
-    dims = {c["dimension"] for c in contents}
-    # Must include all 6 teaching dimensions (dictation is sim-question only, may or may not appear)
-    assert {"listening", "vocabulary", "grammar", "reading", "translation", "writing"}.issubset(dims)
-    for c in contents:
-        assert c["content_md"]
-        assert "audio_url" in c
+    try:
+        resp = await client.get(f"/api/v1/curriculum/knowledge-points/{kp_id}/contents", headers=h)
+        assert resp.status_code == 200, resp.text
+        contents = resp.json()["data"]
+        dims = {c["dimension"] for c in contents}
+        assert set(six).issubset(dims)
+        for c in contents:
+            assert c["content_md"] and "audio_url" in c
+    finally:
+        async with _async_session_factory() as s:
+            from sqlalchemy import text as _t
+            await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(node_id)})
+            await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(node_id)})
+            await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(node_id)})
+            await s.commit()
 
 
 @pytest.mark.asyncio
 async def test_get_kp_contents_filters_published(client):
-    """get_kp_contents 只返回 published 内容；draft 不对学生可见（M5 闸门）。"""
-    from app.models.d4_knowledge import CurriculumUnit, KnowledgePoint, UnitKnowledgePoint
-    from app.models.d11_v2_curriculum import KnowledgePointContent
-    async with _async_session_factory() as s:
-        cu = CurriculumUnit(
-            id=uuid.uuid4(), textbook_version=f"测试版{uuid.uuid4().hex[:6]}",
-            grade="测试年级", semester="上", unit_no=1, unit_title="免费单元",
-        )
-        s.add(cu)
-        await s.flush()
-        kp = KnowledgePoint(
-            id=uuid.uuid4(), code=f"flt-{uuid.uuid4().hex[:6]}", name="过滤测试KP",
-            category="grammar", description="d",
-            applicable_grades=["小学5年级"], applicable_textbooks=["译林版"],
-        )
-        s.add(kp)
-        await s.flush()
-        s.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
-        s.add(KnowledgePointContent(
-            id=uuid.uuid4(), knowledge_point_id=kp.id, dimension="grammar",
-            content_md="published grammar", status="published", generated_by="ai_full",
-        ))
-        s.add(KnowledgePointContent(
-            id=uuid.uuid4(), knowledge_point_id=kp.id, dimension="listening",
-            content_md="draft listening", status="draft", generated_by="ai_full",
-        ))
-        await s.commit()
-        kp_id = kp.id
-
-    async with _async_session_factory() as s:
-        contents = await curriculum_service.get_kp_contents(
-            s, user_id=uuid.uuid4(), kp_id=kp_id,
-        )
-    dims = {c.dimension for c in contents}
-    assert dims == {"grammar"}
+    """KP-First 直切:get_kp_contents 只返回 published 的 node_resource lecture(draft 不可见)。"""
+    kp_id, node_id = await _seed_kp_node_with_lectures(
+        unit_version=f"测试版{uuid.uuid4().hex[:6]}", unit_grade="测试年级", unit_sem="上", unit_no=1,
+        kp_name=f"过滤测试KP_{uuid.uuid4().hex[:6]}",
+        dims_published=["grammar"], dims_draft=["listening"])
+    try:
+        async with _async_session_factory() as s:
+            contents = await curriculum_service.get_kp_contents(s, user_id=uuid.uuid4(), kp_id=kp_id)
+        dims = {c.dimension for c in contents}
+        assert dims == {"grammar"}
+    finally:
+        async with _async_session_factory() as s:
+            from sqlalchemy import text as _t
+            await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(node_id)})
+            await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(node_id)})
+            await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(node_id)})
+            await s.commit()
 
 
 @pytest.mark.asyncio
