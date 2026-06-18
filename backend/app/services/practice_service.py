@@ -116,6 +116,60 @@ def _dev_mock_questions(knowledge_point: str, count: int) -> list[dict]:
     return out
 
 
+async def _materialize_from_platform(
+    db: AsyncSession, *, kp, kp_name: str, count: int, difficulty: int,
+) -> list[AiQuestion]:
+    """取材 platform_question 有源题(该 KP 对应 node 的已发布·有内容仿真),物化进 AiQuestion。
+
+    无 node / 无有内容仿真 → 返回 [](调用方回退 AI 生成)。物化按源 PQ id 去重复用。
+    """
+    from app.services.kp_match_service import match_kp
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
+
+    m = await match_kp(db, raw_name=kp_name, axis_hint="knowledge",
+                       source_type="exam", use_llm=False)
+    if m.node_id is None:
+        return []
+    rows = (await db.execute(
+        select(PlatformQuestion)
+        .join(PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id)
+        .where(PlatformQuestionKp.node_id == m.node_id,
+               PlatformQuestion.type == "sim",
+               PlatformQuestion.status == "published",
+               PlatformQuestion.deprecated_at.is_(None),
+               PlatformQuestion.answer.isnot(None),
+               PlatformQuestion.options.isnot(None))
+        .limit(count)
+    )).scalars().all()
+    if not rows:
+        return []
+
+    out: list[AiQuestion] = []
+    now = datetime.now(timezone.utc)
+    for pq in rows:
+        existing = (await db.execute(
+            select(AiQuestion).where(
+                AiQuestion.content["source_platform_question_id"].astext == str(pq.id))
+        )).scalar_one_or_none()
+        if existing is not None:
+            out.append(existing)
+            continue
+        q = AiQuestion(
+            id=uuid.uuid4(), knowledge_point_id=kp.id, unit_id=None,
+            question_type="单选", difficulty=(pq.difficulty or difficulty),
+            content={
+                "stem": pq.stem, "options": pq.options, "answer": pq.answer,
+                "explanation": pq.explanation, "knowledge_point": kp_name,
+                "source_platform_question_id": str(pq.id),
+            },
+            is_active=True, generated_at=now, usage_count=0,
+        )
+        db.add(q)
+        out.append(q)
+    await db.flush()
+    return out
+
+
 async def generate_practice_questions(
     db: AsyncSession,
     *,
@@ -145,6 +199,12 @@ async def generate_practice_questions(
             kp_name = report.top_weak_knowledge_points[0].knowledge_point
 
     kp = await get_or_create_knowledge_point(db, name=kp_name)
+
+    # R7 收尾:取材优先 platform_question 有源题(真题派生·已发布·有内容),物化进 AiQuestion(作答链不变);
+    # 无有源题则回退 AI 生成(系统未上线题库空时即走此回退,有题后自动用平台题)。
+    sourced = await _materialize_from_platform(db, kp=kp, kp_name=kp_name, count=count, difficulty=difficulty)
+    if sourced:
+        return sourced
 
     if is_llm_dev_mode():
         raw_questions = _dev_mock_questions(kp_name, count)
