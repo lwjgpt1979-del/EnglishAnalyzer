@@ -299,3 +299,39 @@ class VerifySubmitOut(BaseModel):
     correct: bool
     correct_answer: str
     mastered_nodes: list[str] = []    # 本次达标判掌握的句法点
+
+
+# ── 长难句(后台 L5) ──────────────────────────────────────────
+class LSAdminItem(BaseModel):
+    id: uuid.UUID
+    text: str
+    source_kind: str
+    status: str
+    syntax_points: list[str] = []
+
+
+class LSAdminListOut(BaseModel):
+    total: int
+    items: list[LSAdminItem]
+
+
+class LSExtractOut(BaseModel):
+    created: int
+    long_kept: int
+    edges: int
+    candidates: int
+    skipped_done: int
+
+
+class LSConfigOut(BaseModel):
+    sources: list[str]
+    verify_types: list[str]
+    min_words: int
+    required_pass: int
+
+
+class LSConfigIn(BaseModel):
+    sources: list[str] | None = None
+    verify_types: list[str] | None = None
+    min_words: int | None = None
+    required_pass: int | None = None

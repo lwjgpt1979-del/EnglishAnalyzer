@@ -74,6 +74,11 @@ from app.schemas.kp import (
     NodeResourceListOut,
     AddResourceIn,
     UpdateResourceIn,
+    LSAdminItem,
+    LSAdminListOut,
+    LSExtractOut,
+    LSConfigOut,
+    LSConfigIn,
 )
 from app.services import (
     admin_auth_service,
@@ -887,6 +892,56 @@ async def update_node_resource_api(resource_id: uuid.UUID, body: UpdateResourceI
                                   media_url=body.media_url, title=body.title, resource_json=body.resource_json)
     await db.commit()
     return make_ok(_to_node_resource_item(r))
+
+
+# ─── 长难句管理（抽取 / 审核 / 配置,复用 R6 审核范式）───────────────────────────
+
+def _to_ls_admin_item(ls) -> LSAdminItem:
+    return LSAdminItem(
+        id=ls.id, text=ls.text, source_kind=ls.source_kind, status=ls.status,
+        syntax_points=(ls.analysis_json or {}).get("syntax_points", []))
+
+
+@router.post("/long-sentences/extract", response_model=BaseResponse[LSExtractOut])
+async def extract_long_sentences_api(db: DbDep, admin: AdminDep, limit: int = 200):
+    """手动触发长难句抽取(扫平台真题,幂等)。"""
+    from app.services import long_sentence_service as lss
+    st = await lss.extract_from_platform(db, limit=limit)
+    return make_ok(LSExtractOut(created=st.created, long_kept=st.long_kept, edges=st.edges,
+                                candidates=st.candidates, skipped_done=st.skipped_done))
+
+
+@router.get("/long-sentences", response_model=BaseResponse[LSAdminListOut])
+async def list_long_sentences_api(
+    db: DbDep, admin: AdminDep, status: str = "draft",
+    node_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
+):
+    from app.services import long_sentence_service as lss
+    rows, total = await lss.list_for_review(db, status=status, node_id=node_id, skip=skip, limit=limit)
+    return make_ok(LSAdminListOut(total=total, items=[_to_ls_admin_item(r) for r in rows]))
+
+
+@router.post("/long-sentences/{ls_id}/review", response_model=BaseResponse[LSAdminItem])
+async def review_long_sentence_api(ls_id: uuid.UUID, body: ReviewRequest, db: DbDep, admin: AdminDep):
+    from app.services import long_sentence_service as lss
+    ls = await lss.review(db, ls_id=ls_id, approve=body.approve)
+    await db.commit()
+    return make_ok(_to_ls_admin_item(ls))
+
+
+@router.get("/long-sentences/config", response_model=BaseResponse[LSConfigOut])
+async def get_ls_config_api(db: DbDep, admin: AdminDep):
+    from app.services import long_sentence_service as lss
+    return make_ok(LSConfigOut(**await lss.get_config(db)))
+
+
+@router.put("/long-sentences/config", response_model=BaseResponse[LSConfigOut])
+async def set_ls_config_api(body: LSConfigIn, db: DbDep, admin: AdminDep):
+    from app.services import long_sentence_service as lss
+    cfg = await lss.set_config(db, updated_by=admin.id, sources=body.sources, verify_types=body.verify_types,
+                               min_words=body.min_words, required_pass=body.required_pass)
+    await db.commit()
+    return make_ok(LSConfigOut(**cfg))
 
 
 # ─── 通用词库管理（R5 词汇并入,平台域超管维护）──────────────────────────────────

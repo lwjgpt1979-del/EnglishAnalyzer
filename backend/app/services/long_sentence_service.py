@@ -52,6 +52,66 @@ class ExtractStats:
               f"未命中候选 {self.candidates}")
 
 
+# ── L5 后台:审核 + 配置 ──────────────────────────────────────
+def _cfg_defaults() -> dict:
+    return {
+        "long_sentence.sources": ["platform_real"],
+        "long_sentence.verify_types": _ALL_VERIFY_TYPES,
+        "long_sentence.min_words": DEFAULT_MIN_WORDS,
+        "long_sentence.required_pass": DEFAULT_REQUIRED_PASS,
+    }
+
+
+async def get_config(db: AsyncSession) -> dict:
+    """长难句后台配置(缺失回落默认)。"""
+    from app.models.d9_system import SystemConfig
+    defaults = _cfg_defaults()
+    rows = dict((r.key, r.value) for r in (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key.in_(list(defaults)))
+    )).scalars().all())
+    return {k.split(".", 1)[1]: rows.get(k, v) for k, v in defaults.items()}
+
+
+async def set_config(db: AsyncSession, *, updated_by: uuid.UUID, sources=None, verify_types=None,
+                     min_words=None, required_pass=None) -> dict:
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d9_system import SystemConfig
+    updates = {"long_sentence.sources": sources, "long_sentence.verify_types": verify_types,
+               "long_sentence.min_words": min_words, "long_sentence.required_pass": required_pass}
+    for key, val in updates.items():
+        if val is None:
+            continue
+        await db.execute(
+            pg_insert(SystemConfig).values(id=uuid.uuid4(), key=key, value=val, updated_by=updated_by)
+            .on_conflict_do_update(index_elements=["key"], set_={"value": val, "updated_by": updated_by}))
+    await db.flush()
+    return await get_config(db)
+
+
+async def list_for_review(
+    db: AsyncSession, *, status: str = "draft", node_id: uuid.UUID | None = None,
+    skip: int = 0, limit: int = 20,
+) -> tuple[list[LongSentence], int]:
+    base = sa.select(LongSentence).where(LongSentence.status == status)
+    if node_id is not None:
+        base = base.join(LongSentenceNode, LongSentenceNode.long_sentence_id == LongSentence.id).where(
+            LongSentenceNode.node_id == node_id)
+    total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
+    rows = (await db.execute(
+        base.order_by(LongSentence.created_at).offset(skip).limit(limit))).scalars().all()
+    return list(rows), total
+
+
+async def review(db: AsyncSession, *, ls_id: uuid.UUID, approve: bool) -> LongSentence:
+    from app.core.exceptions import AppError
+    ls = (await db.execute(sa.select(LongSentence).where(LongSentence.id == ls_id))).scalar_one_or_none()
+    if ls is None:
+        raise AppError(code=404, message="长难句不存在")
+    ls.status = "published" if approve else "retired"
+    await db.flush()
+    return ls
+
+
 def split_sentences(text: str) -> list[str]:
     if not text:
         return []
