@@ -113,7 +113,14 @@ async def extract_for_ai_unit(
         names = [kp.name for kp in (getattr(ai_unit, "knowledge_points", None) or [])]
         if not names:
             return None
-        return await extract_unit_nodes(db, unit_id=unit_id, kp_names=names, source=source)
+        res = await extract_unit_nodes(db, unit_id=unit_id, kp_names=names, source=source)
+        # R5:单元 node 建好后 → 教材核心词 × 单元 node 派生 vocab_node(防御式)
+        try:
+            from app.services import vocab_kg_service
+            await vocab_kg_service.derive_unit_vocab_nodes(db, unit_id=unit_id)
+        except Exception as exc2:  # noqa: BLE001
+            _log.warning("unit vocab-node derive failed (unit=%s): %s", unit_id, exc2)
+        return res
     except Exception as exc:  # noqa: BLE001
         _log.warning("unit KP align failed (unit=%s): %s", unit_id, exc)
         return None

@@ -185,3 +185,21 @@ export interface UnitExtractResult {
   candidate: number
   edges_created: number
 }
+
+// ── 通用词库（KP-First R5）──────────────────────────────────
+export interface VocabListItem2 {
+  id: string
+  name: string
+  exam_level?: string | null
+  source_type?: string | null
+  status: string
+}
+
+export interface VocabWordItem {
+  word_id: string
+  word: string
+  rank?: number | null
+  frequency?: number | null
+  star: number
+  verified: boolean
+}

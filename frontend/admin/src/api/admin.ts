@@ -22,6 +22,8 @@ import type {
   KpNodeListOut,
   AdminUnitNodeItem,
   UnitExtractResult,
+  VocabListItem2,
+  VocabWordItem,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -297,6 +299,27 @@ export function listUnitNodes(unitId: string): Promise<{ total: number; items: A
   return unwrap<{ total: number; items: AdminUnitNodeItem[] }>(
     request.get(`/admin/curriculum/units/${unitId}/nodes`)
   )
+}
+
+// ── 通用词库（KP-First R5）──────────────────────────────────
+export function listVocabLists(params?: { status?: string }) {
+  return unwrap<{ items: VocabListItem2[] }>(request.get('/admin/vocab-lists', { params }))
+}
+
+export function createVocabList(body: {
+  name: string; exam_level?: string; source_type?: string; status?: string
+}) {
+  return unwrap<VocabListItem2>(request.post('/admin/vocab-lists', body))
+}
+
+export function listVocabItems(listId: string, params?: { skip?: number; limit?: number }) {
+  return unwrap<{ total: number; items: VocabWordItem[] }>(
+    request.get(`/admin/vocab-lists/${listId}/items`, { params }))
+}
+
+export function addVocabItems(listId: string, items: Array<{ word: string; rank?: number; star?: number }>) {
+  return unwrap<{ total: number; items: VocabWordItem[] }>(
+    request.post(`/admin/vocab-lists/${listId}/items`, { items }))
 }
 
 // ── M3 教材 PDF 上传解析 ──────────────────────────────────────────────────────

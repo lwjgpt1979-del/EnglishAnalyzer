@@ -1,0 +1,131 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { listVocabLists, createVocabList, listVocabItems, addVocabItems } from '../api/admin'
+import type { VocabListItem2, VocabWordItem } from '../types'
+
+const lists = ref<VocabListItem2[]>([])
+const loading = ref(false)
+const current = ref<VocabListItem2 | null>(null)
+const items = ref<VocabWordItem[]>([])
+const itemsLoading = ref(false)
+
+// 新建词库
+const createDlg = ref(false)
+const form = ref({ name: '', exam_level: '', source_type: 'official_syllabus', status: 'published' })
+const examLevels = ['primary', 'junior', 'senior', 'cet4', 'cet6']
+
+// 加词条
+const addDlg = ref(false)
+const wordsText = ref('')
+
+async function load() {
+  loading.value = true
+  try { lists.value = (await listVocabLists()).items }
+  catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+  finally { loading.value = false }
+}
+
+async function openItems(row: VocabListItem2) {
+  current.value = row
+  itemsLoading.value = true
+  try { items.value = (await listVocabItems(row.id, { limit: 500 })).items }
+  finally { itemsLoading.value = false }
+}
+
+async function confirmCreate() {
+  if (!form.value.name.trim()) { ElMessage.warning('请填词库名'); return }
+  const vl = await createVocabList({
+    name: form.value.name.trim(), exam_level: form.value.exam_level || undefined,
+    source_type: form.value.source_type, status: form.value.status,
+  })
+  ElMessage.success('已创建')
+  createDlg.value = false
+  form.value.name = ''
+  await load()
+  await openItems(vl)
+}
+
+async function confirmAdd() {
+  if (!current.value) return
+  const words = wordsText.value.split(/[\s,，\n]+/).map(s => s.trim()).filter(Boolean)
+  if (!words.length) { ElMessage.warning('请输入词(空格/逗号/换行分隔)'); return }
+  const payload = words.map((w, i) => ({ word: w, rank: i + 1 }))
+  const res = await addVocabItems(current.value.id, payload)
+  ElMessage.success(`已加入 ${res.total} 个词条`)
+  addDlg.value = false
+  wordsText.value = ''
+  items.value = res.items
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <div class="wrap">
+    <div class="left">
+      <div class="toolbar">
+        <span>通用词库</span>
+        <el-button size="small" type="success" @click="createDlg = true">+ 新建</el-button>
+        <el-button size="small" @click="load">刷新</el-button>
+      </div>
+      <el-table v-loading="loading" :data="lists" border highlight-current-row
+                style="width: 100%" @row-click="openItems">
+        <el-table-column prop="name" label="词库" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="exam_level" label="层级" width="80" />
+        <el-table-column prop="status" label="状态" width="90" />
+      </el-table>
+    </div>
+
+    <div class="right">
+      <div class="toolbar">
+        <span>{{ current ? `「${current.name}」词条` : '选择左侧词库查看词条' }}</span>
+        <el-button v-if="current" size="small" type="primary" @click="addDlg = true">+ 加词</el-button>
+      </div>
+      <el-table v-if="current" v-loading="itemsLoading" :data="items" border style="width: 100%">
+        <el-table-column prop="rank" label="排名" width="70" />
+        <el-table-column prop="word" label="词" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="star" label="星级" width="80" />
+        <el-table-column prop="verified" label="已核" width="70" />
+      </el-table>
+    </div>
+
+    <!-- 新建词库 -->
+    <el-dialog v-model="createDlg" title="新建通用词库" width="420px">
+      <el-form label-width="72px">
+        <el-form-item label="名称"><el-input v-model="form.name" placeholder="如 高考3500" /></el-form-item>
+        <el-form-item label="层级">
+          <el-select v-model="form.exam_level" clearable style="width:100%">
+            <el-option v-for="l in examLevels" :key="l" :label="l" :value="l" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="form.status" style="width:100%">
+            <el-option label="published" value="published" />
+            <el-option label="draft" value="draft" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDlg = false">取消</el-button>
+        <el-button type="success" @click="confirmCreate">创建</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 加词 -->
+    <el-dialog v-model="addDlg" title="批量加词(空格/逗号/换行分隔,按顺序排名)" width="480px">
+      <el-input v-model="wordsText" type="textarea" :rows="8" placeholder="abandon ability able ..." />
+      <template #footer>
+        <el-button @click="addDlg = false">取消</el-button>
+        <el-button type="primary" @click="confirmAdd">加入</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.wrap { display: flex; gap: 16px; }
+.left { width: 42%; }
+.right { flex: 1; }
+.toolbar { margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+</style>
