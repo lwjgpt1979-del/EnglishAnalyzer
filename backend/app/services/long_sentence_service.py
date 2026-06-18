@@ -340,58 +340,165 @@ async def _already_extracted(db: AsyncSession, question_id: uuid.UUID) -> bool:
     )).first() is not None
 
 
+async def _already_extracted_passage(db: AsyncSession, passage_id: uuid.UUID) -> bool:
+    return (await db.execute(
+        sa.select(LongSentence.id).where(LongSentence.source_passage_id == passage_id).limit(1)
+    )).first() is not None
+
+
+async def _persist_long_sentences(
+    db: AsyncSession, st: ExtractStats, *, text: str, scope: str, source_kind: str,
+    min_words: int, dry_run: bool, owner_id: uuid.UUID | None = None,
+    source_q_scope: str | None = None, source_question_id: uuid.UUID | None = None,
+    source_passage_id: uuid.UUID | None = None,
+) -> None:
+    """三源共用:切句 → 长句判定 → AI 拆解 → 建 long_sentence → match_kp 挂句法 node / 落候选。"""
+    for sent in split_sentences(text or ""):
+        st.sentences += 1
+        if not is_long_sentence(sent, min_words):
+            continue
+        st.long_kept += 1
+        analysis = await analyze_sentence(sent)
+        st.syntax_points.update(analysis.get("syntax_points") or [])
+        if dry_run:
+            st.created += 1
+            continue
+        ls = LongSentence(
+            id=uuid.uuid4(), scope=scope, owner_id=owner_id, source_kind=source_kind,
+            source_q_scope=source_q_scope, source_question_id=source_question_id,
+            source_passage_id=source_passage_id,
+            text=sent, analysis_json=analysis, status="draft",
+        )
+        db.add(ls)
+        await db.flush()
+        st.created += 1
+        for name in (analysis.get("syntax_points") or []):
+            m = await match_kp(db, raw_name=name, axis_hint="knowledge", source_type="exam")
+            if m.node_id is not None:
+                db.add(LongSentenceNode(long_sentence_id=ls.id, node_id=m.node_id))
+                st.edges += 1
+            elif m.candidate_id is not None:
+                st.candidates += 1
+
+
 async def extract_from_platform(
     db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
     dry_run: bool = False, only_question_ids: set | None = None,
 ) -> ExtractStats:
-    """扫平台真题(type='real')未抽过的 → 切句 → 长句判定 → AI 拆解 → match_kp 挂句法 node → 落 long_sentence。
-
-    幂等:按 source_question_id 标"已抽",复跑跳过。only_question_ids 供测试限定。
-    """
+    """① 扫平台真题(type='real')未抽过的 → 长难句。幂等按 source_question_id;only_* 供测试限定。"""
     st = ExtractStats()
     q = sa.select(PlatformQuestion).where(PlatformQuestion.type == "real")
     if only_question_ids is not None:
         q = q.where(PlatformQuestion.id.in_(only_question_ids))
     if limit is not None:
         q = q.limit(limit)
-    rows = (await db.execute(q)).scalars().all()
-
-    for pq in rows:
+    for pq in (await db.execute(q)).scalars().all():
         st.scanned += 1
         if await _already_extracted(db, pq.id):
             st.skipped_done += 1
             continue
-        for sent in split_sentences(pq.stem or ""):
-            st.sentences += 1
-            if not is_long_sentence(sent, min_words):
-                continue
-            st.long_kept += 1
-            analysis = await analyze_sentence(sent)
-            st.syntax_points.update(analysis.get("syntax_points") or [])
-            if dry_run:
-                st.created += 1
-                continue
-            ls = LongSentence(
-                id=uuid.uuid4(), scope="platform", source_kind="platform_real",
-                source_q_scope="platform", source_question_id=pq.id,
-                text=sent, analysis_json=analysis, status="draft",
-            )
-            db.add(ls)
-            await db.flush()
-            st.created += 1
-            # 句法点 → match_kp 挂 node / 落候选
-            for name in (analysis.get("syntax_points") or []):
-                m = await match_kp(db, raw_name=name, axis_hint="knowledge", source_type="exam")
-                if m.node_id is not None:
-                    db.add(LongSentenceNode(long_sentence_id=ls.id, node_id=m.node_id))
-                    st.edges += 1
-                elif m.candidate_id is not None:
-                    st.candidates += 1
+        await _persist_long_sentences(
+            db, st, text=pq.stem or "", scope="platform", source_kind="platform_real",
+            source_q_scope="platform", source_question_id=pq.id,
+            min_words=min_words, dry_run=dry_run)
         if not dry_run:
             await db.flush()
-
-    if dry_run:
-        await db.rollback()
-    else:
-        await db.commit()
+    await (db.rollback() if dry_run else db.commit())
     return st
+
+
+async def extract_from_textbook(
+    db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
+    dry_run: bool = False, only_passage_ids: set | None = None,
+) -> ExtractStats:
+    """② 扫平台语料 Passage(reading_text/dialogue)未抽过的 → 长难句(平台域)。幂等按 source_passage_id。"""
+    from app.models.d16_question_domain import Passage
+    st = ExtractStats()
+    q = sa.select(Passage).where(
+        Passage.scope == "platform", Passage.kind.in_(["reading_text", "dialogue"]),
+        Passage.text.isnot(None))
+    if only_passage_ids is not None:
+        q = q.where(Passage.id.in_(only_passage_ids))
+    if limit is not None:
+        q = q.limit(limit)
+    for pg in (await db.execute(q)).scalars().all():
+        st.scanned += 1
+        if await _already_extracted_passage(db, pg.id):
+            st.skipped_done += 1
+            continue
+        await _persist_long_sentences(
+            db, st, text=pg.text or "", scope="platform", source_kind="textbook",
+            source_passage_id=pg.id, min_words=min_words, dry_run=dry_run)
+        if not dry_run:
+            await db.flush()
+    await (db.rollback() if dry_run else db.commit())
+    return st
+
+
+async def extract_from_uploaded(
+    db: AsyncSession, *, owner_id: uuid.UUID | None = None, limit: int | None = None,
+    min_words: int = DEFAULT_MIN_WORDS, dry_run: bool = False, only_question_ids: set | None = None,
+) -> ExtractStats:
+    """③ 扫学生上传题(owner_scope='student')未抽过的 → 长难句(个人域,owner_id=该生)。
+
+    幂等按 source_question_id;owner_id 限定单生,only_* 供测试限定。
+    """
+    from app.models.d16_question_domain import UploadedQuestion
+    st = ExtractStats()
+    q = sa.select(UploadedQuestion).where(
+        UploadedQuestion.owner_scope == "student", UploadedQuestion.stem.isnot(None))
+    if owner_id is not None:
+        q = q.where(UploadedQuestion.owner_id == owner_id)
+    if only_question_ids is not None:
+        q = q.where(UploadedQuestion.id.in_(only_question_ids))
+    if limit is not None:
+        q = q.limit(limit)
+    for uq in (await db.execute(q)).scalars().all():
+        st.scanned += 1
+        if await _already_extracted(db, uq.id):
+            st.skipped_done += 1
+            continue
+        await _persist_long_sentences(
+            db, st, text=uq.stem or "", scope="student", owner_id=uq.owner_id,
+            source_kind="uploaded", source_q_scope="uploaded", source_question_id=uq.id,
+            min_words=min_words, dry_run=dry_run)
+        if not dry_run:
+            await db.flush()
+    await (db.rollback() if dry_run else db.commit())
+    return st
+
+
+_SOURCE_KIND_TO_FN = {
+    "platform_real": extract_from_platform,
+    "textbook": extract_from_textbook,
+    "uploaded": extract_from_uploaded,
+}
+
+
+async def run_extract(
+    db: AsyncSession, *, sources: list[str] | None = None, limit: int | None = None,
+    min_words: int | None = None, dry_run: bool = False,
+) -> ExtractStats:
+    """按来源配置批量抽取(sources 缺省读 long_sentence.sources)。合并各源 ExtractStats。"""
+    if sources is None:
+        cfg = await get_config(db)
+        sources = cfg.get("sources") or ["platform_real"]
+        if min_words is None:
+            min_words = int(cfg.get("min_words") or DEFAULT_MIN_WORDS)
+    if min_words is None:
+        min_words = DEFAULT_MIN_WORDS
+    merged = ExtractStats()
+    for src in sources:
+        fn = _SOURCE_KIND_TO_FN.get(src)
+        if fn is None:
+            continue
+        st = await fn(db, limit=limit, min_words=min_words, dry_run=dry_run)
+        merged.scanned += st.scanned
+        merged.sentences += st.sentences
+        merged.long_kept += st.long_kept
+        merged.created += st.created
+        merged.skipped_done += st.skipped_done
+        merged.edges += st.edges
+        merged.candidates += st.candidates
+        merged.syntax_points.update(st.syntax_points)
+    return merged

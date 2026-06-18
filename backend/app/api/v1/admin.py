@@ -903,10 +903,20 @@ def _to_ls_admin_item(ls) -> LSAdminItem:
 
 
 @router.post("/long-sentences/extract", response_model=BaseResponse[LSExtractOut])
-async def extract_long_sentences_api(db: DbDep, admin: AdminDep, limit: int = 200):
-    """手动触发长难句抽取(扫平台真题,幂等)。"""
+async def extract_long_sentences_api(
+    db: DbDep, admin: AdminDep, limit: int = 200, source: str = "config",
+):
+    """手动触发长难句抽取(幂等)。source: config(默认读 sources 配置)|all|platform_real|textbook|uploaded。"""
     from app.services import long_sentence_service as lss
-    st = await lss.extract_from_platform(db, limit=limit)
+    if source == "config":
+        sources = None
+    elif source == "all":
+        sources = list(lss._SOURCE_KIND_TO_FN)
+    elif source in lss._SOURCE_KIND_TO_FN:
+        sources = [source]
+    else:
+        raise AppError(code=400, message="不支持的抽取来源")
+    st = await lss.run_extract(db, sources=sources, limit=limit)
     return make_ok(LSExtractOut(created=st.created, long_kept=st.long_kept, edges=st.edges,
                                 candidates=st.candidates, skipped_done=st.skipped_done))
 

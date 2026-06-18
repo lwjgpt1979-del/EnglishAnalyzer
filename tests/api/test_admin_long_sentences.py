@@ -106,6 +106,51 @@ async def test_extract_review_config(client):
 
 
 @pytest.mark.asyncio
+async def test_extract_by_source_textbook_and_uploaded(client):
+    """L7:extract?source=textbook 抽平台语料、source=uploaded 抽学生上传。"""
+    from app.models.d16_question_domain import Passage, UploadedQuestion
+    from app.models.d20_long_sentence import LongSentence
+    node_id, _pq = await _seed()  # 复用「定语从句」node 挂边
+    pid, qid, owner = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    async with _async_session_factory() as db:
+        db.add(Passage(id=pid, scope="platform", kind="reading_text", text=LONG))
+        db.add(UploadedQuestion(id=qid, owner_scope="student", owner_id=owner, stem=LONG))
+        await db.commit()
+    try:
+        admin = await _make_admin(client, "src")
+        r = await client.post("/api/v1/admin/long-sentences/extract?source=textbook&limit=200", headers=admin)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["created"] >= 1
+        r = await client.post("/api/v1/admin/long-sentences/extract?source=uploaded&limit=200", headers=admin)
+        assert r.json()["data"]["created"] >= 1
+
+        async with _async_session_factory() as db:
+            tb = (await db.execute(select(LongSentence).where(
+                LongSentence.source_passage_id == pid))).scalars().first()
+            up = (await db.execute(select(LongSentence).where(
+                LongSentence.source_question_id == qid))).scalars().first()
+            assert tb is not None and tb.source_kind == "textbook" and tb.scope == "platform"
+            assert up is not None and up.source_kind == "uploaded" and up.scope == "student"
+
+        # 非法 source
+        r = await client.post("/api/v1/admin/long-sentences/extract?source=bogus", headers=admin)
+        assert r.status_code == 400
+    finally:
+        async with _async_session_factory() as db:
+            for col, val in (("source_passage_id", pid), ("source_question_id", qid)):
+                ids = (await db.execute(select(LongSentence.id).where(
+                    getattr(LongSentence, col) == val))).scalars().all()
+                for lid in ids:
+                    await db.execute(text("DELETE FROM long_sentence_node WHERE long_sentence_id = :l"),
+                                     {"l": str(lid)})
+                await db.execute(text(f"DELETE FROM long_sentence WHERE {col} = :v"), {"v": str(val)})
+            await db.execute(text("DELETE FROM passage WHERE id = :p"), {"p": str(pid)})
+            await db.execute(text("DELETE FROM uploaded_question WHERE id = :q"), {"q": str(qid)})
+            await db.commit()
+        await _cleanup(node_id, _pq)
+
+
+@pytest.mark.asyncio
 async def test_non_admin_forbidden(client):
     stu = await _login(client, f"{_TAG}_stu_{uuid.uuid4().hex[:6]}")
     r = await client.get("/api/v1/admin/long-sentences?status=draft", headers=stu)
