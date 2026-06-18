@@ -114,6 +114,47 @@ async def _get_weak_kps_for_unit(
     return [row[0] for row in rows]
 
 
+async def _materialize_sims_from_platform(db: AsyncSession, *, kp) -> int:
+    """把该 KP 对应 node 的已发布·有内容 platform 仿真物化进 SimulatedQuestion(kp 维度,判分链复用)。
+
+    按源 PQ id 去重(generation_metadata.source_platform_question_id)。返回新建数。无 node/无有源题→0。
+    """
+    from app.services.kp_match_service import match_kp
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
+
+    m = await match_kp(db, raw_name=kp.name, axis_hint="knowledge", source_type="exam", use_llm=False)
+    if m.node_id is None:
+        return 0
+    rows = (await db.execute(
+        select(PlatformQuestion)
+        .join(PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id)
+        .where(PlatformQuestionKp.node_id == m.node_id,
+               PlatformQuestion.type == "sim",
+               PlatformQuestion.status == "published",
+               PlatformQuestion.deprecated_at.is_(None),
+               PlatformQuestion.answer.isnot(None),
+               PlatformQuestion.options.isnot(None))
+        .limit(_PER_KP)
+    )).scalars().all()
+    created = 0
+    for pq in rows:
+        exists = (await db.execute(
+            select(SimulatedQuestion.id).where(
+                SimulatedQuestion.generation_metadata["source_platform_question_id"].astext == str(pq.id))
+        )).scalar_one_or_none()
+        if exists is not None:
+            continue
+        db.add(SimulatedQuestion(
+            id=uuid.uuid4(), source_exam_question_id=None, knowledge_point_id=kp.id,
+            question_type="单选", stem=pq.stem, options=pq.options, answer=pq.answer,
+            explanation=pq.explanation, difficulty=(pq.difficulty or 3), status="published",
+            generation_metadata={"source_platform_question_id": str(pq.id)}))
+        created += 1
+    if created:
+        await db.flush()
+    return created
+
+
 async def get_adaptive_set(
     db: AsyncSession,
     *,
@@ -172,6 +213,10 @@ async def get_adaptive_set(
     for kp in kp_rows:
         if len(collected) >= total:
             break
+
+        # R7 收尾:取材优先 platform_question 有源题 → 物化进 SimulatedQuestion(判分链不变),
+        # 被下面 existing 选中后即跳过 AI 生成;无有源题则照旧 AI 兜底。
+        await _materialize_sims_from_platform(db, kp=kp)
 
         # 查 published 且未做过的题
         existing = list(
