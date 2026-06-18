@@ -61,6 +61,40 @@ def test_auto_detect_units_english():
     assert segs[2]["end_page"] == 6
 
 
+def test_auto_detect_units_trims_last_unit_backmatter():
+    """末单元结束页裁剪到 Workbook/词汇表/附录之前,不把附录算进末单元(修复 Unit8 偏大)。"""
+    from app.services.pdf_upload_service import auto_detect_units
+
+    pages = [
+        "Unit 1\nIntro",          # 1
+        "unit 1 content",         # 2
+        "Unit 2\nIntro",          # 3 末单元起始
+        "unit 2 content",         # 4 末单元正文
+        "Unit 2 Assessment",      # 5 末单元真实末页
+        "Workbook Unit 1 ...",    # 6 后置附录起点 → 应被裁掉
+        "Irregular verbs ...",    # 7 附录
+        "back cover 定价",         # 8 封底
+    ]
+    segs = auto_detect_units(pages)
+    assert segs is not None
+    assert len(segs) == 2
+    assert segs[0]["start_page"] == 1 and segs[0]["end_page"] == 2
+    # 末单元 3-5(到 Workbook 之前),而非旧逻辑的 3-8(含附录+封底)
+    assert segs[1]["start_page"] == 3 and segs[1]["end_page"] == 5
+
+
+def test_auto_detect_units_last_unit_no_backmatter_keeps_total():
+    """末单元后无附录标记 → 结束页保持总页数(不误裁)。"""
+    from app.services.pdf_upload_service import auto_detect_units
+
+    pages = [
+        "Unit 1\nIntro", "content", "Unit 2\nIntro", "content", "more content",
+    ]
+    segs = auto_detect_units(pages)
+    assert segs is not None and len(segs) == 2
+    assert segs[1]["start_page"] == 3 and segs[1]["end_page"] == 5
+
+
 def test_auto_detect_units_too_few_returns_none():
     """少于 2 个单元分界时返回 None（触发人工辅助流程）。"""
     from app.services.pdf_upload_service import auto_detect_units

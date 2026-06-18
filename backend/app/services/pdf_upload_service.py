@@ -88,6 +88,27 @@ def _parse_unit_no(m: re.Match) -> int | None:
         return None
 
 
+# 末单元尾部常跟 Workbook / 词汇表 / 不规则动词表 / 附录 等非单元正文 → 据此裁剪末单元结束页。
+_BACKMATTER_PATTERNS = [
+    re.compile(r"\bWorkbook\b", re.I),
+    re.compile(r"\bWord\s?list\b", re.I),
+    re.compile(r"\bVocabulary\b", re.I),
+    re.compile(r"\bIrregular\s+verbs\b", re.I),
+    re.compile(r"\bGrammar\s+reference\b", re.I),
+    re.compile(r"\bAppendix\b", re.I),
+    re.compile(r"词汇表|不规则动词|附\s*录"),
+]
+
+
+def _backmatter_start(pages: list[str], after_page: int) -> int | None:
+    """从 after_page(1-based,不含)之后找首个后置附录页(Workbook/词汇表/附录…),返回其 1-based 页码。"""
+    for idx in range(after_page, len(pages)):   # idx 0-based → 1-based 页 = idx+1 > after_page
+        head = (pages[idx] or "")[:120]
+        if any(pat.search(head) for pat in _BACKMATTER_PATTERNS):
+            return idx + 1
+    return None
+
+
 def auto_detect_units(pages: list[str]) -> list[dict] | None:
     """
     扫描各页文本，识别单元起始页。
@@ -127,7 +148,13 @@ def auto_detect_units(pages: list[str]) -> list[dict] | None:
 
     segments = []
     for i, (start, unit_no, title) in enumerate(hits):
-        end = hits[i + 1][0] - 1 if i + 1 < len(hits) else total
+        if i + 1 < len(hits):
+            end = hits[i + 1][0] - 1
+        else:
+            # 末单元:没有下一单元兜底 → 默认到总页数,会把 Workbook/词汇表/附录/封底算进来。
+            # 裁剪到首个后置附录页之前(找不到则保持总页数,留人工调整)。
+            bm = _backmatter_start(pages, start)
+            end = (bm - 1) if bm else total
         segments.append({
             "unit_no": unit_no,
             "start_page": start,
