@@ -44,6 +44,29 @@ async def _match_kp_node(db: AsyncSession, kp_name: str | None) -> uuid.UUID | N
     return m.node_id
 
 
+async def _stash_pending_content(
+    db: AsyncSession, *, kp_name: str, dimension: str, content_md: str,
+    source_unit_id: uuid.UUID | None,
+) -> None:
+    """KP 未命中 node 时暂存讲解(按 kp_name_norm+dimension upsert),候选审核后物化为 lecture。"""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d11_v2_curriculum import PendingKpContent
+    from app.services.kp_normalize import normalize_kp_name
+    norm = normalize_kp_name(kp_name)
+    if not norm:
+        return
+    await db.execute(
+        pg_insert(PendingKpContent)
+        .values(id=uuid.uuid4(), kp_name_norm=norm, dimension=dimension,
+                content_md=content_md, source_unit_id=source_unit_id, generated_by="ai_full")
+        .on_conflict_do_update(
+            constraint="uix_pending_kp_dim",
+            set_={"content_md": content_md, "source_unit_id": source_unit_id,
+                  "updated_at": func.now()},
+        )
+    )
+
+
 async def persist_unit(
     db: AsyncSession,
     *,
@@ -112,17 +135,20 @@ async def persist_unit(
             db.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
 
         # contents 多维度 → KP-First 直写 node_resource lecture(挂句法/知识 node);停写旧 knowledge_point_contents。
-        # KP 走受控匹配得 node;未命中(落候选)则跳过其讲解,候选审核合并后可重生。
+        # KP 命中 node → 写 lecture;未命中(落候选)→ 暂存 pending_kp_content,候选审核后物化(内容不丢)。
+        from app.services import node_resource_service as nrs
         node_id = await _match_kp_node(db, kp.name)
-        if node_id is not None:
-            from app.services import node_resource_service as nrs
-            for dim, md in kp_in.contents.items():
-                if dim not in nrs._DIMENSIONS:
-                    continue  # node_resource lecture 仅六维;dictation 等非教学维跳过
+        for dim, md in kp_in.contents.items():
+            if dim not in nrs._DIMENSIONS:
+                continue  # node_resource lecture 仅六维;dictation 等非教学维跳过
+            if node_id is not None:
                 await nrs.upsert_lecture(
                     db, node_id=node_id, dimension=dim, content_md=md,
                     generated_by="ai_full", status=content_status,
                 )
+            else:
+                await _stash_pending_content(db, kp_name=kp.name, dimension=dim,
+                                             content_md=md, source_unit_id=cu.id)
 
     # 5. vocabulary_words + 6. curriculum_words
     for w_in in ai_unit.words:

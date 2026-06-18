@@ -49,3 +49,26 @@ class KnowledgePointContent(Base):
     __table_args__ = (
         sa.UniqueConstraint("knowledge_point_id", "dimension", name="uix_kp_dimension"),
     )
+
+
+class PendingKpContent(Base):
+    """生成内容暂存(KP-First):KP 未命中 knowledge_node 时,讲解按 (kp_name_norm, dimension)
+    暂存于此;候选 approve/merge 出 node 后物化为 node_resource(lecture)并删除本行。
+    用归一化 KP 名作键(非候选 id):persist_unit 早于候选创建,以 name_norm 解耦时序。"""
+
+    __tablename__ = "pending_kp_content"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kp_name_norm = mapped_column(sa.String, nullable=False)
+    dimension = mapped_column(sa.String(16), nullable=False)
+    content_md = mapped_column(sa.Text, nullable=False)
+    source_unit_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    generated_by = mapped_column(sa.String(24), nullable=False, server_default=sa.text("'ai_full'"))
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.func.now(), onupdate=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint("kp_name_norm", "dimension", name="uix_pending_kp_dim"),
+        sa.Index("ix_pending_kp_content_norm", "kp_name_norm"),
+    )

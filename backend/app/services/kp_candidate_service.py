@@ -42,6 +42,28 @@ async def _backfill_unit_edges(db, node_id: uuid.UUID, source_ref: dict | None) 
         )
 
 
+async def _materialize_pending_content(db, node_id: uuid.UUID, norm: str) -> int:
+    """候选出 node 后 → 取该 KP 名暂存的讲解(pending_kp_content)物化为 node_resource lecture,
+    并删除已物化行。返回物化条数(生成内容不丢:未命中时暂存,审核后到位)。"""
+    from app.models.d11_v2_curriculum import PendingKpContent
+    from app.services import node_resource_service as nrs
+    rows = (await db.execute(
+        sa.select(PendingKpContent).where(PendingKpContent.kp_name_norm == norm)
+    )).scalars().all()
+    count = 0
+    for r in rows:
+        if r.dimension not in nrs._DIMENSIONS:
+            continue
+        await nrs.upsert_lecture(
+            db, node_id=node_id, dimension=r.dimension, content_md=r.content_md,
+            generated_by=r.generated_by or "ai_full", status="draft")
+        await db.delete(r)
+        count += 1
+    if count:
+        await db.flush()
+    return count
+
+
 async def _get_pending(db: AsyncSession, candidate_id: uuid.UUID) -> KpCandidate:
     cand = (await db.execute(
         sa.select(KpCandidate).where(KpCandidate.id == candidate_id)
@@ -131,6 +153,7 @@ async def approve(
     cand.reviewed_at = _now()
     await db.flush()
     await _backfill_unit_edges(db, node.id, cand.source_ref)   # R1:回填来源单元的边
+    await _materialize_pending_content(db, node.id, norm)       # 生成内容物化为 lecture
     return node
 
 
@@ -162,6 +185,7 @@ async def merge(
     cand.reviewed_at = _now()
     await db.flush()
     await _backfill_unit_edges(db, target_node_id, cand.source_ref)   # R1:回填来源单元的边
+    await _materialize_pending_content(db, target_node_id, norm)      # 生成内容物化为 lecture
     return target
 
 
