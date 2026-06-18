@@ -65,6 +65,14 @@ async def _ordered_new_words(
         student.preferred_semester,
     )
     parts = []
+    # P0 个人体系命中词(KP-First R5):student_kp(in_scope)→ vocab_node → 词,最高优先
+    from app.models.d16_question_domain import StudentKp
+    from app.models.d18_vocab_kg import VocabNode
+    parts.append(
+        select(VocabNode.word_id.label("wid"), literal(0).label("p"))
+        .join(StudentKp, StudentKp.node_id == VocabNode.node_id)
+        .where(StudentKp.student_id == student.id, StudentKp.in_scope.is_(True))
+    )
     # P1 当前学期教材词
     if all(pref):
         parts.append(
