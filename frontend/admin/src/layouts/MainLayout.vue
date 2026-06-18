@@ -34,6 +34,7 @@ function onLogout() {
         <el-menu-item index="/vocab-media">🔤 词力通媒体</el-menu-item>
         <el-menu-item index="/teacher-cert">👨‍🏫 教师认证审核</el-menu-item>
         <el-menu-item index="/teacher-limits">📊 老师限额配置</el-menu-item>
+        <el-menu-item index="/platform-questions">📄 平台真题(上传真题)</el-menu-item>
         <el-menu-item index="/questions">仿真题审核</el-menu-item>
         <el-menu-item index="/content-feedback">📝 内容反馈</el-menu-item>
         <el-menu-item index="/support">🎧 客服工单</el-menu-item>
@@ -45,7 +46,6 @@ function onLogout() {
         <el-menu-item index="/vocab-lists">📒 通用词库</el-menu-item>
         <el-menu-item index="/node-resources">🎬 知识点资源</el-menu-item>
         <el-menu-item index="/long-sentences">📐 长难句管理</el-menu-item>
-        <el-menu-item index="/platform-questions">📄 平台真题</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
         <el-menu-item index="/campaigns">🎉 限时活动价</el-menu-item>
         <el-menu-item index="/entitlements">🔐 会员权益配置</el-menu-item>
