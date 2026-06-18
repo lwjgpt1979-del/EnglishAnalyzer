@@ -59,11 +59,20 @@ async def _sync_assignment_wrongs(db: AsyncSession, *, student_id, assignment_id
     await db.execute(delete(WrongQuestion).where(
         WrongQuestion.student_id == student_id,
         WrongQuestion.source_image_url == marker))
-    for w in wrong_items:
+    for idx, w in enumerate(wrong_items):
         db.add(WrongQuestion(
             id=uuid.uuid4(), student_id=student_id, source_image_url=marker,
             question_text=w["stem"], student_answer=w["student_answer"],
             correct_answer=w["correct_answer"], question_type=None))
+        # R7:作业错题统一收口进 wrong_record(match_kp 若有 KP 名;防御式不阻断提交)
+        try:
+            from app.services import ingest_service
+            qid = uuid.uuid5(uuid.NAMESPACE_OID, f"assignment:{assignment_id}:{idx}")
+            await ingest_service.record_wrong_answer(
+                db, student_id=student_id, q_scope="uploaded", question_id=qid,
+                kp_name=w.get("kp") or w.get("knowledge_point"))
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ─── 老师端 ──────────────────────────────────────────────────────────

@@ -147,6 +147,15 @@ async def submit_answers(db: _Session, *, student_id, exercise_id: str,
                 existing.wrong_count = (existing.wrong_count or 0) + 1
                 existing.chosen_index = chosen
                 existing.last_wrong_at = now
+            # R7:听力错题统一收口进 wrong_record(种子题无 uuid/KP → uuid5 合成 id、node 可空;防御式)
+            try:
+                from app.services import ingest_service
+                qid = _uuid.uuid5(_uuid.NAMESPACE_OID, f"listening:{exercise_id}:{i}")
+                await ingest_service.record_wrong_answer(
+                    db, student_id=student_id, q_scope="platform", question_id=qid,
+                    kp_name=q.get("kp_name"))
+            except Exception:  # noqa: BLE001
+                pass
         elif existing is not None:
             await db.delete(existing)   # 重练答对 → 移出错题库
     await db.flush()
