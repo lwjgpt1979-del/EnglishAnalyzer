@@ -106,4 +106,7 @@ from .d18_vocab_kg import (  # noqa: F401
     VocabNode, VocabQuestion, VocabWrong, VocabList, VocabListItem,
 )
 
+# 域19: 知识节点资源 KP-First (R6, 1 张表)
+from .d19_node_resource import NodeResource  # noqa: F401
+
 __all__ = ["Base"]
