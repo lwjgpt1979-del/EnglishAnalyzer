@@ -63,6 +63,27 @@ async def _run_ocr_pipeline(wq_id: uuid.UUID) -> None:
                 wq.question_type = parsed.question_type  # type: ignore[assignment]
             wq.ocr_status = "completed"  # type: ignore[assignment]
 
+            # R7:单题拍照错题 → 统一接入(classify→match_kp→uploaded_question + wrong_record);
+            # 防御式,失败不阻断 OCR 主流程(闭 R3 单题收口遗留)
+            try:
+                from app.services.kp_classifier_service import classify_kps
+                from app.services.paper_split_service import ParsedPaperQuestion
+                from app.services import ingest_service
+                pq = ParsedPaperQuestion(
+                    question_no="1", question_type=str(wq.question_type) if wq.question_type else None,
+                    stem=parsed.question_text or "", student_answer=parsed.student_answer or "",
+                    correct_answer=parsed.correct_answer or "", explanation=None)
+                kp_map = await classify_kps([pq])
+                item = ingest_service.IngestItem(
+                    question_no="1", question_type=pq.question_type, stem=parsed.question_text,
+                    student_answer=parsed.student_answer, correct_answer=parsed.correct_answer,
+                    is_wrong=True, kp_name=kp_map.get("1"))
+                await ingest_service.ingest_parsed(
+                    db, owner_scope="student", owner_id=wq.student_id, items=[item],
+                    source_type="uploaded_student")
+            except Exception:  # noqa: BLE001
+                pass
+
             # 更新 OcrTask 记录
             ocr_task.status = "completed"  # type: ignore[assignment]
             ocr_task.raw_result = {  # type: ignore[assignment]
