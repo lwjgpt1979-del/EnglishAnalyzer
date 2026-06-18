@@ -215,3 +215,39 @@ class VocabItemOut(BaseModel):
 class VocabItemsOut(BaseModel):
     total: int
     items: list[VocabItemOut]
+
+
+# ── R6 知识节点资源 ──────────────────────────────────────────
+class NodeResourceItem(BaseModel):
+    id: uuid.UUID
+    node_id: uuid.UUID
+    resource_type: str
+    dimension: str | None = None
+    title: str | None = None
+    content_md: str | None = None
+    media_url: str | None = None
+    resource_json: object | None = None
+    status: str
+
+
+class NodeResourceListOut(BaseModel):
+    total: int
+    items: list[NodeResourceItem]
+
+
+class AddResourceIn(BaseModel):
+    node_id: uuid.UUID
+    resource_type: str = Field(..., description="lecture|video|example|essay|mindmap")
+    dimension: str | None = Field(None, description="仅 lecture:听/词汇/语法/阅读/翻译/写作")
+    title: str | None = None
+    content_md: str | None = None
+    media_url: str | None = None
+    resource_json: object | None = None
+    status: str = "draft"
+
+
+class UpdateResourceIn(BaseModel):
+    content_md: str | None = None
+    media_url: str | None = None
+    title: str | None = None
+    resource_json: object | None = None

@@ -10,13 +10,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
-from app.schemas.base import make_ok
+from app.schemas.base import BaseResponse, make_ok
+from app.schemas.kp import NodeResourceItem, NodeResourceListOut
 from app.services import curriculum_service
 
 router = APIRouter(prefix="/curriculum", tags=["curriculum"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
+
+
+@router.get("/nodes/{node_id}/resources", response_model=BaseResponse[NodeResourceListOut])
+async def get_node_resources(
+    node_id: uuid.UUID, db: DbDep, current_user: UserDep, resource_type: str | None = None,
+):
+    """学生读:某知识节点的已发布学习资源(R6,讲解/视频/例句/范文/思维导图)。"""
+    from app.services import node_resource_service as nrs
+    rows = await nrs.list_published(db, node_id=node_id, resource_type=resource_type)
+    return make_ok(NodeResourceListOut(
+        total=len(rows),
+        items=[NodeResourceItem(
+            id=r.id, node_id=r.node_id, resource_type=r.resource_type, dimension=r.dimension,
+            title=r.title, content_md=r.content_md, media_url=r.media_url,
+            resource_json=r.resource_json, status=r.status,
+        ) for r in rows],
+    ))
 
 
 @router.get("/units")

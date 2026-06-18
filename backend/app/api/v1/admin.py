@@ -70,6 +70,10 @@ from app.schemas.kp import (
     VocabItemsIn,
     VocabItemOut,
     VocabItemsOut,
+    NodeResourceItem,
+    NodeResourceListOut,
+    AddResourceIn,
+    UpdateResourceIn,
 )
 from app.services import (
     admin_auth_service,
@@ -825,6 +829,64 @@ async def review_platform_question_api(
     q = await pqs.review_platform_question(db, question_id=question_id, approve=body.approve)
     await db.commit()
     return make_ok(_to_pq_item(q))
+
+
+# ─── 知识节点资源管理（R6 资源层补全）────────────────────────────────────────────
+
+def _to_node_resource_item(r) -> NodeResourceItem:
+    return NodeResourceItem(
+        id=r.id, node_id=r.node_id, resource_type=r.resource_type, dimension=r.dimension,
+        title=r.title, content_md=r.content_md, media_url=r.media_url,
+        resource_json=r.resource_json, status=r.status,
+    )
+
+
+@router.get("/node-resources", response_model=BaseResponse[NodeResourceListOut])
+async def list_node_resources_api(
+    db: DbDep, admin: AdminDep, status: str | None = "draft",
+    node_id: uuid.UUID | None = None, resource_type: str | None = None,
+    skip: int = 0, limit: int = 20,
+):
+    from app.services import node_resource_service as nrs
+    rows, total = await nrs.list_for_review(db, status=status, node_id=node_id,
+                                            resource_type=resource_type, skip=skip, limit=limit)
+    return make_ok(NodeResourceListOut(total=total, items=[_to_node_resource_item(r) for r in rows]))
+
+
+@router.post("/node-resources", response_model=BaseResponse[NodeResourceItem])
+async def add_node_resource_api(body: AddResourceIn, db: DbDep, admin: AdminDep):
+    from app.services import node_resource_service as nrs
+    if body.resource_type == "lecture":
+        if not body.dimension or not body.content_md:
+            raise AppError(code=400, message="lecture 需 dimension + content_md")
+        rid = await nrs.upsert_lecture(db, node_id=body.node_id, dimension=body.dimension,
+                                       content_md=body.content_md, media_url=body.media_url, status=body.status)
+        await db.commit()
+        from app.models.d19_node_resource import NodeResource as _NR
+        r = (await db.execute(select(_NR).where(_NR.id == rid))).scalar_one()
+    else:
+        r = await nrs.add_resource(db, node_id=body.node_id, resource_type=body.resource_type,
+                                   title=body.title, content_md=body.content_md, media_url=body.media_url,
+                                   resource_json=body.resource_json, status=body.status)
+        await db.commit()
+    return make_ok(_to_node_resource_item(r))
+
+
+@router.post("/node-resources/{resource_id}/review", response_model=BaseResponse[NodeResourceItem])
+async def review_node_resource_api(resource_id: uuid.UUID, body: ReviewRequest, db: DbDep, admin: AdminDep):
+    from app.services import node_resource_service as nrs
+    r = await nrs.review(db, resource_id=resource_id, approve=body.approve, reviewer_id=admin.id)
+    await db.commit()
+    return make_ok(_to_node_resource_item(r))
+
+
+@router.put("/node-resources/{resource_id}", response_model=BaseResponse[NodeResourceItem])
+async def update_node_resource_api(resource_id: uuid.UUID, body: UpdateResourceIn, db: DbDep, admin: AdminDep):
+    from app.services import node_resource_service as nrs
+    r = await nrs.update_resource(db, resource_id=resource_id, content_md=body.content_md,
+                                  media_url=body.media_url, title=body.title, resource_json=body.resource_json)
+    await db.commit()
+    return make_ok(_to_node_resource_item(r))
 
 
 # ─── 通用词库管理（R5 词汇并入,平台域超管维护）──────────────────────────────────
