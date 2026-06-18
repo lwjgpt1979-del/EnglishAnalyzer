@@ -24,6 +24,7 @@ import type {
   UnitExtractResult,
   VocabListItem2,
   VocabWordItem,
+  NodeResourceItem2,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -320,6 +321,25 @@ export function listVocabItems(listId: string, params?: { skip?: number; limit?:
 export function addVocabItems(listId: string, items: Array<{ word: string; rank?: number; star?: number }>) {
   return unwrap<{ total: number; items: VocabWordItem[] }>(
     request.post(`/admin/vocab-lists/${listId}/items`, { items }))
+}
+
+// ── 知识节点资源（KP-First R6）──────────────────────────────
+export function listNodeResources(params: {
+  status?: string; node_id?: string; resource_type?: string; skip?: number; limit?: number
+}) {
+  return unwrap<{ total: number; items: NodeResourceItem2[] }>(
+    request.get('/admin/node-resources', { params }))
+}
+
+export function addNodeResource(body: {
+  node_id: string; resource_type: string; dimension?: string; title?: string
+  content_md?: string; media_url?: string; status?: string
+}) {
+  return unwrap<NodeResourceItem2>(request.post('/admin/node-resources', body))
+}
+
+export function reviewNodeResource(id: string, approve: boolean) {
+  return unwrap<NodeResourceItem2>(request.post(`/admin/node-resources/${id}/review`, { approve }))
 }
 
 // ── M3 教材 PDF 上传解析 ──────────────────────────────────────────────────────

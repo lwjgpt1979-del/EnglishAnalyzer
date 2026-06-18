@@ -15,6 +15,7 @@ const router = createRouter({
         { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
         { path: 'kp-candidates', name: 'kp-candidates', component: () => import('../views/KpCandidatesReview.vue') },
         { path: 'vocab-lists', name: 'vocab-lists', component: () => import('../views/VocabLists.vue') },
+        { path: 'node-resources', name: 'node-resources', component: () => import('../views/NodeResources.vue') },
         { path: 'curriculum-units', name: 'curriculum-units', component: () => import('../views/CurriculumUnits.vue') },
         { path: 'theme-center', name: 'theme-center', component: () => import('../views/ThemeCenter.vue') },
         { path: 'vocab-media', name: 'vocab-media', component: () => import('../views/VocabMedia.vue') },

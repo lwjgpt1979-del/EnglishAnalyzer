@@ -203,3 +203,15 @@ export interface VocabWordItem {
   star: number
   verified: boolean
 }
+
+// ── 知识节点资源（KP-First R6）──────────────────────────────
+export interface NodeResourceItem2 {
+  id: string
+  node_id: string
+  resource_type: string
+  dimension?: string | null
+  title?: string | null
+  content_md?: string | null
+  media_url?: string | null
+  status: string
+}
