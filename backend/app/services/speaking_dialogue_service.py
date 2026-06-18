@@ -333,10 +333,44 @@ async def _wq_kp_names(db: AsyncSession, wq_id, *, limit: int = 4) -> list[str]:
     return [r[0] for r in rows if r[0]]
 
 
+async def _top_wrong_from_record(db: AsyncSession, student_id) -> dict | None:
+    """R7:优先从 KP-First 错题中心 wrong_record(open, uploaded)取一道,join uploaded_question 取内容。"""
+    from app.models.d16_question_domain import WrongRecord, UploadedQuestion
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    row = (await db.execute(
+        select(WrongRecord, UploadedQuestion)
+        .join(UploadedQuestion, UploadedQuestion.id == WrongRecord.question_id)
+        .where(WrongRecord.student_id == student_id, WrongRecord.status == "open",
+               WrongRecord.q_scope == "uploaded")
+        .order_by(WrongRecord.next_review_at.asc().nullsfirst(), WrongRecord.created_at.asc())
+        .limit(1)
+    )).first()
+    if row is None:
+        return None
+    wr, uq = row
+    kps = []
+    if wr.node_id is not None:
+        nm = (await db.execute(
+            select(KnowledgeNode.name).where(KnowledgeNode.id == wr.node_id))).scalar_one_or_none()
+        if nm:
+            kps = [nm]
+    return {
+        "id": str(wr.id),
+        "stem": (uq.stem or "").strip()[:300],
+        "answer": (uq.correct_answer or "").strip()[:200],
+        "student_answer": (uq.student_answer or "").strip()[:200],
+        "kps": kps,
+    }
+
+
 async def _top_due_wrong(db: AsyncSession, student_id) -> dict | None:
-    """取最该复习的一道错题（今日到期优先，其次新错题），含题干/正确答案/知识点。"""
+    """取最该复习的一道错题（KP-First 中心优先，回退旧错题本），含题干/正确答案/知识点。"""
     from datetime import date as _date
     from app.models.d3_wrong_questions import WrongQuestion
+    # R7:口语错题复习先读 wrong_record 中心(有内容则用),否则回退旧 WrongQuestion
+    from_center = await _top_wrong_from_record(db, student_id)
+    if from_center is not None:
+        return from_center
     today = _date.today()
     wq = (await db.execute(
         select(WrongQuestion).where(
