@@ -143,3 +143,57 @@ async def test_generate_unit_is_idempotent(
     )
     assert r1.status_code == 200
     assert r2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_generate_from_pdf_savepoint_isolates_failed_unit(admin_client: AsyncClient):
+    """单元间 savepoint 隔离:某单元生成失败,其余单元照常落库(失败不连累整批)。"""
+    from unittest.mock import patch
+    from app.services import curriculum_ai_service
+    from app.services.curriculum_ai_service import _make_mock_unit
+    from sqlalchemy import text as _t
+
+    tb = f"savepoint版{uuid.uuid4().hex[:6]}"
+    grade, sem = "测试年级", "上"
+
+    async def _fake_gen(*, textbook_version, grade, semester, unit_no, unit_text, detected_title=None):
+        if unit_no == 2:
+            raise RuntimeError("LLM boom (unit 2)")   # 仅 Unit 2 在 LLM 阶段失败
+        return _make_mock_unit(textbook_version, grade, semester, unit_no)
+
+    segs = [{"unit_no": n, "start_page": n, "end_page": n} for n in (1, 2, 3)]
+    body = {"textbook_version": tb, "grade": grade, "semester": sem,
+            "segments": segs, "content_status": "draft"}
+    try:
+        with patch.object(curriculum_ai_service, "generate_unit_from_text", _fake_gen), \
+             patch("app.services.pdf_upload_service.extract_pages", lambda fid: ["p"] * 5), \
+             patch("app.services.pdf_upload_service.get_unit_text", lambda fid, s, e: "unit text"):
+            r = await admin_client.post("/api/v1/admin/curriculum/pdf/anyfile/generate", json=body)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["success_count"] == 2 and data["error_count"] == 1
+        statuses = {x["unit_no"]: x["status"] for x in data["results"]}
+        assert statuses == {1: "ok", 2: "error", 3: "ok"}
+
+        # 成功单元已 commit 落库,失败单元不在库(savepoint 回滚 + 整批未被污染)
+        async with _async_session_factory() as s:
+            unos = (await s.execute(_t(
+                "SELECT unit_no FROM curriculum_units WHERE textbook_version=:tb ORDER BY unit_no"),
+                {"tb": tb})).scalars().all()
+        assert list(unos) == [1, 3]
+    finally:
+        async with _async_session_factory() as s:
+            ids = (await s.execute(_t("SELECT id FROM curriculum_units WHERE textbook_version=:tb"),
+                                   {"tb": tb})).scalars().all()
+            for uid in ids:
+                nids = (await s.execute(_t("SELECT node_id FROM unit_node WHERE unit_id=:u"),
+                                        {"u": str(uid)})).scalars().all()
+                await s.execute(_t("DELETE FROM unit_node WHERE unit_id=:u"), {"u": str(uid)})
+                await s.execute(_t("DELETE FROM curriculum_words WHERE unit_id=:u"), {"u": str(uid)})
+                for nid in nids:   # R8.4:清掉本测试新建的 node 及其资源/别名
+                    await s.execute(_t("DELETE FROM node_resource WHERE node_id=:n"), {"n": str(nid)})
+                    await s.execute(_t("DELETE FROM vocab_node WHERE node_id=:n"), {"n": str(nid)})
+                    await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id=:n"), {"n": str(nid)})
+                    await s.execute(_t("DELETE FROM knowledge_nodes WHERE id=:n"), {"n": str(nid)})
+            await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
+            await s.commit()

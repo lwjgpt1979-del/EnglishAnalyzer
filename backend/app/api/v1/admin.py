@@ -1226,6 +1226,7 @@ async def generate_from_pdf(
     results: list[UnitGenerateResult] = []
     success = error = 0
 
+    from app.services import curriculum_kp_service
     for seg in body.segments:
         try:
             unit_text = pdf_upload_service.get_unit_text(
@@ -1239,15 +1240,20 @@ async def generate_from_pdf(
                 unit_text=unit_text,
                 detected_title=seg.detected_title,
             )
-            cu = await curriculum_service.persist_unit(
-                db, ai_unit=ai_unit, content_status=body.content_status,
-            )
-            await db.flush()
-            # R1:PDF 上传生成后自动对齐知识图谱(来源 upload_extract;失败不阻断)
-            from app.services import curriculum_kp_service
-            await curriculum_kp_service.extract_for_ai_unit(
-                db, unit_id=cu.id, ai_unit=ai_unit, source="upload_extract",
-            )
+            # 每单元独立 savepoint:persist 失败只回滚本单元,不污染整批 / 不丢已成功单元
+            async with db.begin_nested():
+                cu = await curriculum_service.persist_unit(
+                    db, ai_unit=ai_unit, content_status=body.content_status,
+                )
+                await db.flush()
+            # R1:对齐知识图谱(派生 vocab_node)best-effort,独立 savepoint 隔离,失败不影响本单元
+            try:
+                async with db.begin_nested():
+                    await curriculum_kp_service.extract_for_ai_unit(
+                        db, unit_id=cu.id, ai_unit=ai_unit, source="upload_extract",
+                    )
+            except Exception:  # noqa: BLE001
+                pass
             results.append(UnitGenerateResult(
                 unit_no=seg.unit_no,
                 unit_title=ai_unit.unit_title,
