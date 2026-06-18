@@ -95,6 +95,39 @@ class GenSimOut(BaseModel):
     sim_ids: list[uuid.UUID]
 
 
+# ── 真题导入(平台真题页 TK1)──────────────────────────────────
+class RealQuestionIn(BaseModel):
+    stem: str = Field(..., min_length=1)
+    options: object | None = None          # list 或 {A:..,B:..}
+    answer: str | None = None
+    question_type: str | None = None
+    explanation: str | None = None
+    difficulty: int | None = None
+    question_no: str | None = None
+    kp_names: list[str] = []               # 知识点名 → match_kp 挂 node
+    meta: dict | None = None               # 考试元信息(地区/年份/卷别…)
+    stage_hint: str | None = None
+    status: str = "published"
+
+
+class RealQuestionBulkIn(BaseModel):
+    items: list[RealQuestionIn] = Field(..., min_length=1)
+    stage_hint: str | None = None
+    status: str | None = None              # 覆盖每题 status(可空)
+
+
+class RealImportItemOut(BaseModel):
+    question_id: uuid.UUID
+    matched_nodes: list[uuid.UUID] = []
+    candidates: list[uuid.UUID] = []
+
+
+class RealImportBulkOut(BaseModel):
+    imported: int
+    failed: int
+    items: list[RealImportItemOut] = []
+
+
 class ReviewRequest(BaseModel):
     approve: bool = Field(..., description="true=通过→published,false=驳回→retired")
 

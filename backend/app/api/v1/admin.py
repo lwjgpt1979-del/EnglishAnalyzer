@@ -56,6 +56,10 @@ from app.schemas.kp import (
     PlatformQuestionItem,
     PlatformQuestionListOut,
     GenSimOut,
+    RealQuestionIn,
+    RealQuestionBulkIn,
+    RealImportItemOut,
+    RealImportBulkOut,
     ReviewRequest,
     VocabListCreate,
     VocabListOut,
@@ -750,6 +754,43 @@ async def list_platform_questions_api(
     rows, total = await pqs.list_platform_questions(
         db, type=type, status=status, node_id=node_id, skip=skip, limit=limit)
     return make_ok(PlatformQuestionListOut(total=total, items=[_to_pq_item(r) for r in rows]))
+
+
+@router.post("/platform-questions", response_model=BaseResponse[RealImportItemOut])
+async def import_real_question_api(body: RealQuestionIn, db: DbDep, admin: AdminDep):
+    """导入一道真题 → platform_question(type=real),kp_names 受控匹配挂 node(TK1)。"""
+    from app.services import platform_question_service as pqs
+    res = await pqs.import_real_question(
+        db, stem=body.stem, answer=body.answer, options=body.options,
+        question_type=body.question_type, explanation=body.explanation,
+        difficulty=body.difficulty, meta=body.meta, kp_names=body.kp_names,
+        stage_hint=body.stage_hint, question_no=body.question_no, status=body.status)
+    await db.commit()
+    return make_ok(RealImportItemOut(
+        question_id=res.question_id, matched_nodes=res.matched_nodes, candidates=res.candidates))
+
+
+@router.post("/platform-questions/bulk", response_model=BaseResponse[RealImportBulkOut])
+async def import_real_questions_bulk_api(body: RealQuestionBulkIn, db: DbDep, admin: AdminDep):
+    """批量导入真题(校对后一次落多题);单题失败 savepoint 隔离,不连累其余(TK1)。"""
+    from app.services import platform_question_service as pqs
+    items: list[RealImportItemOut] = []
+    failed = 0
+    for it in body.items:
+        try:
+            async with db.begin_nested():
+                res = await pqs.import_real_question(
+                    db, stem=it.stem, answer=it.answer, options=it.options,
+                    question_type=it.question_type, explanation=it.explanation,
+                    difficulty=it.difficulty, meta=it.meta, kp_names=it.kp_names,
+                    stage_hint=it.stage_hint or body.stage_hint,
+                    question_no=it.question_no, status=body.status or it.status)
+            items.append(RealImportItemOut(
+                question_id=res.question_id, matched_nodes=res.matched_nodes, candidates=res.candidates))
+        except Exception:  # noqa: BLE001
+            failed += 1
+    await db.commit()
+    return make_ok(RealImportBulkOut(imported=len(items), failed=failed, items=items))
 
 
 @router.post("/platform-questions/{real_id}/gen-sim", response_model=BaseResponse[GenSimOut])

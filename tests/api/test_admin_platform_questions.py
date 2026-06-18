@@ -91,6 +91,68 @@ async def test_gen_sim_list_review(client):
         await _cleanup()
 
 
+async def _seed_node(name):
+    node_id = uuid.uuid4()
+    async with _async_session_factory() as db:
+        db.add(KnowledgeNode(id=node_id, axis="knowledge", node_kind="句法", name=name,
+                             code=f"{_TAG}-imp", status="active", source="textbook"))
+        await db.flush()
+        db.add(NodeAlias(id=uuid.uuid4(), node_id=node_id, alias=name,
+                         alias_norm=normalize_kp_name(name), source="seed"))
+        await db.commit()
+    return node_id
+
+
+@pytest.mark.asyncio
+async def test_import_real_question_single(client):
+    """TK1:导入单题真题 → platform_question(real) + kp_names 挂 node。"""
+    kp = f"{_TAG}导入点"
+    node_id = await _seed_node(kp)
+    try:
+        admin = await _make_admin(client, "imp")
+        r = await client.post("/api/v1/admin/platform-questions", headers=admin, json={
+            "stem": f"{_TAG} 导入真题题干", "options": ["A. x", "B. y"], "answer": "A",
+            "question_type": "单选", "difficulty": 3, "kp_names": [kp], "status": "published",
+        })
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert str(node_id) in data["matched_nodes"]
+        async with _async_session_factory() as db:
+            q = (await db.execute(select(PlatformQuestion).where(
+                PlatformQuestion.id == uuid.UUID(data["question_id"])))).scalar_one()
+            assert q.type == "real" and q.answer == "A"
+            edge = (await db.execute(select(PlatformQuestionKp).where(
+                PlatformQuestionKp.question_id == q.id, PlatformQuestionKp.node_id == node_id))).scalar_one_or_none()
+            assert edge is not None
+    finally:
+        await _cleanup()
+
+
+@pytest.mark.asyncio
+async def test_import_real_questions_bulk(client):
+    """TK1:批量导入,单题失败 savepoint 隔离不连累其余。"""
+    kp = f"{_TAG}批量点"
+    await _seed_node(kp)
+    try:
+        admin = await _make_admin(client, "blk")
+        r = await client.post("/api/v1/admin/platform-questions/bulk", headers=admin, json={
+            "items": [
+                {"stem": f"{_TAG} 批量题1", "answer": "B", "kp_names": [kp]},
+                {"stem": f"{_TAG} 批量题2", "answer": "C", "kp_names": []},
+            ],
+            "status": "published",
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["imported"] == 2 and r.json()["data"]["failed"] == 0
+        async with _async_session_factory() as db:
+            cnt = (await db.execute(text(
+                "SELECT count(*) FROM platform_question WHERE stem LIKE :p AND type='real'"),
+                {"p": f"{_TAG} 批量%"})).scalar()
+            assert cnt == 2
+    finally:
+        await _cleanup()
+
+
 @pytest.mark.asyncio
 async def test_non_admin_forbidden(client):
     node_id, real_id = await _seed_real()
