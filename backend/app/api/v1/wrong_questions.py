@@ -110,16 +110,13 @@ async def list_wrong_questions_by_kp(
 
 @router.get("/review-queue", response_model=BaseResponse[ReviewQueueOut])
 async def get_review_queue(db: DbDep, current_user: UserDep):
-    """今日复习队列：到期待复习 + 新错题初始化调度。"""
+    """今日复习队列(KP-First:已直接切到 wrong_record 中心,系统未上线不桥接旧表)。"""
     await get_rls_db(db, str(current_user.id))
-    # 先初始化新错题（安排今日复习）
-    await review_service.get_new_queue(db, student_id=current_user.id)
-    await db.commit()
-    # 再取今日队列
-    due_items = await review_service.get_today_review_queue(db, student_id=current_user.id)
-    stats = await review_service.get_review_stats(db, student_id=current_user.id)
+    from app.services import wrong_review_service
+    items = await wrong_review_service.review_queue_items(db, student_id=current_user.id)
+    stats = await wrong_review_service.review_stats(db, student_id=current_user.id)
     return make_ok(ReviewQueueOut(
-        due_items=[WrongQuestionOut.model_validate(wq) for wq in due_items],
+        due_items=[WrongQuestionOut(**it) for it in items],
         stats=stats,
     ))
 
@@ -225,11 +222,19 @@ async def submit_review(
     db: DbDep,
     current_user: UserDep,
 ):
-    """提交复习质量（0-5），更新 SM-2 调度。"""
+    """提交复习质量（0-5），更新 SM-2 调度(KP-First:wq_id 为 wrong_record id,直接切新表)。"""
     await get_rls_db(db, str(current_user.id))
-    wq = await review_service.submit_review(
-        db, wq_id=wq_id, student_id=current_user.id, quality=body.quality,
+    from app.services import wrong_review_service
+    wr = await wrong_review_service.submit_review(
+        db, student_id=current_user.id, wrong_record_id=wq_id, quality=body.quality,
     )
     await db.commit()
-    await db.refresh(wq)
-    return make_ok(WrongQuestionOut.model_validate(wq))
+    return make_ok(WrongQuestionOut(
+        id=wr.id, student_id=wr.student_id, source_image_url="",
+        question_text=None, student_answer=None, correct_answer=None, question_type=None,
+        difficulty=None, tags=None, is_mastered=(wr.status == "mastered"),
+        mastered_at=wr.mastered_at, created_at=wr.created_at, updated_at=wr.created_at,
+        ocr_status=None, review_count=wr.review_count, easiness_factor=wr.easiness_factor,
+        review_interval_days=wr.review_interval_days, next_review_at=wr.next_review_at,
+        last_review_at=wr.last_review_at,
+    ))

@@ -37,6 +37,54 @@ async def get_due_queue(
     )).scalars().all())
 
 
+async def review_queue_items(
+    db: AsyncSession, *, student_id: uuid.UUID, today: _dt.date | None = None,
+    limit: int = _MAX_DAILY_QUEUE,
+) -> list[dict]:
+    """今日复习队列(wrong_record)映射为旧 WrongQuestionOut 形状:join uploaded_question 取内容、
+    join knowledge_nodes 取 KP 名(tags)。前台读取切换直接用本数据源。"""
+    from app.models.d16_question_domain import UploadedQuestion
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    today = today or _dt.date.today()
+    rows = (await db.execute(
+        sa.select(WrongRecord, UploadedQuestion, KnowledgeNode.name)
+        .outerjoin(UploadedQuestion, sa.and_(
+            UploadedQuestion.id == WrongRecord.question_id, WrongRecord.q_scope == "uploaded"))
+        .outerjoin(KnowledgeNode, KnowledgeNode.id == WrongRecord.node_id)
+        .where(WrongRecord.student_id == student_id, WrongRecord.status == "open",
+               WrongRecord.next_review_at.isnot(None), WrongRecord.next_review_at <= today)
+        .order_by(WrongRecord.next_review_at).limit(limit)
+    )).all()
+    out = []
+    for wr, uq, node_name in rows:
+        out.append({
+            "id": wr.id, "student_id": wr.student_id, "source_image_url": "",
+            "question_text": (uq.stem if uq else None),
+            "student_answer": (uq.student_answer if uq else None),
+            "correct_answer": (uq.correct_answer if uq else None),
+            "question_type": (uq.question_type if uq else None),
+            "difficulty": None, "tags": ([node_name] if node_name else None),
+            "is_mastered": wr.status == "mastered", "mastered_at": wr.mastered_at,
+            "created_at": wr.created_at, "updated_at": wr.created_at, "ocr_status": None,
+            "review_count": wr.review_count, "easiness_factor": wr.easiness_factor,
+            "review_interval_days": wr.review_interval_days,
+            "next_review_at": wr.next_review_at, "last_review_at": wr.last_review_at,
+        })
+    return out
+
+
+async def review_stats(db: AsyncSession, *, student_id: uuid.UUID, today: _dt.date | None = None) -> dict:
+    """复习统计:未掌握 / 今日到期 / 新错题(未排期)。"""
+    today = today or _dt.date.today()
+    base = sa.select(sa.func.count()).select_from(WrongRecord).where(
+        WrongRecord.student_id == student_id, WrongRecord.status == "open")
+    total = (await db.execute(base)).scalar_one()
+    due = (await db.execute(base.where(WrongRecord.next_review_at.isnot(None),
+                                       WrongRecord.next_review_at <= today))).scalar_one()
+    new = (await db.execute(base.where(WrongRecord.next_review_at.is_(None)))).scalar_one()
+    return {"total_unmastered": total, "due_today": due, "new_unscheduled": new}
+
+
 async def submit_review(
     db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
     quality: int, today: _dt.date | None = None,

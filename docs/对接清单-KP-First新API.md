@@ -69,6 +69,15 @@
 
 ---
 
+## 二·补. 已切到新表的旧端点(小程序无需改路径)
+> 系统未上线,以下旧端点已**直接切到 KP-First 新表**(路径/响应形状不变,小程序无感):
+- `GET /wrong-questions/review-queue`、`POST /wrong-questions/{id}/review` → 现读写 `wrong_record`(SM-2);
+  队列 item 的 `id` 即 wrong_record id,内容由 join uploaded_question 提供,`tags` 为知识节点名。
+  (`POST /wrong-questions/{id}/mastered` 手动掌握仍走旧 WrongQuestion,未切)
+- 与新 `/wrong-center/*` 等价二选一;小程序保持调旧路径即可获得新表数据。
+
+---
+
 ## 三、迁移/切换建议(给前端)
 - 学生端可**渐进切换**:错题复习改读 `/wrong-center/*`;知识地图改读 `/student-kp/graph`;讲解/资源改读 `/curriculum/nodes/{node_id}/resources`(需先有 node_id——可由单元/题的 KP 节点得到)。
 - 旧端点未下线,可灰度并行;前端切完后再约后端下线旧表/旧端点(见 [[kp-first-r0-progress]] 遗留项)。
