@@ -101,4 +101,9 @@ from .d16_question_domain import (  # noqa: F401
 # 域17: 教材接入 KP-First (R1, 1 张表)
 from .d17_curriculum_kg import UnitNode  # noqa: F401
 
+# 域18: 词汇接入 KP-First (R5, 5 张表)
+from .d18_vocab_kg import (  # noqa: F401
+    VocabNode, VocabQuestion, VocabWrong, VocabList, VocabListItem,
+)
+
 __all__ = ["Base"]

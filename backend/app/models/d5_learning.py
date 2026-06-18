@@ -41,6 +41,11 @@ class VocabularyWord(Base):
     examples = mapped_column(JSONB, nullable=True)   # 例句 [{en, zh}]
     phrases = mapped_column(JSONB, nullable=True)    # 短语 [{en, zh}]
     difficulty = mapped_column(sa.SmallInteger, nullable=False)  # 1-5
+    # —— R5 词汇并入(KP-First):词条类型/来源/频率/星级 ——
+    type = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'word'"))  # word|phrase
+    source = mapped_column(sa.String(16), nullable=True)        # seed|ai|textbook|exam|import
+    frequency = mapped_column(sa.Integer, nullable=True)        # 词频排名(小=高频)
+    star = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))  # 考频星级 0-5
     # —— 图背单词媒体（P1 词力通深化 / D-101；dev-mock 占位，真生成留 config 接缝）——
     image_urls = mapped_column(JSONB, nullable=True)
     en_description = mapped_column(sa.Text, nullable=True)
