@@ -85,6 +85,50 @@ async def review_stats(db: AsyncSession, *, student_id: uuid.UUID, today: _dt.da
     return {"total_unmastered": total, "due_today": due, "new_unscheduled": new}
 
 
+async def mark_mastered(
+    db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID, is_mastered: bool,
+) -> WrongRecord:
+    """手动标记/取消掌握(前台直读新表):wrong_record.status = mastered|open。"""
+    wr = (await db.execute(
+        sa.select(WrongRecord).where(
+            WrongRecord.id == wrong_record_id, WrongRecord.student_id == student_id)
+    )).scalar_one_or_none()
+    if wr is None:
+        raise AppError(code=404, message="错题不存在或无权访问")
+    if is_mastered:
+        wr.status = "mastered"
+        wr.mastered_at = _dt.datetime.now(_dt.timezone.utc)
+        wr.mastery_source = "manual"
+    else:
+        wr.status = "open"
+        wr.mastered_at = None
+    await db.flush()
+    return wr
+
+
+async def to_wq_out_fields(db: AsyncSession, wr: WrongRecord) -> dict:
+    """把 wrong_record(+uploaded_question 内容)映射成旧 WrongQuestionOut 字段(前台无感)。"""
+    from app.models.d16_question_domain import UploadedQuestion
+    uq = None
+    if wr.q_scope == "uploaded":
+        uq = (await db.execute(
+            sa.select(UploadedQuestion).where(UploadedQuestion.id == wr.question_id)
+        )).scalar_one_or_none()
+    return {
+        "id": wr.id, "student_id": wr.student_id, "source_image_url": "",
+        "question_text": (uq.stem if uq else None),
+        "student_answer": (uq.student_answer if uq else None),
+        "correct_answer": (uq.correct_answer if uq else None),
+        "question_type": (uq.question_type if uq else None),
+        "difficulty": None, "tags": None,
+        "is_mastered": wr.status == "mastered", "mastered_at": wr.mastered_at,
+        "created_at": wr.created_at, "updated_at": wr.created_at, "ocr_status": None,
+        "review_count": wr.review_count, "easiness_factor": wr.easiness_factor,
+        "review_interval_days": wr.review_interval_days,
+        "next_review_at": wr.next_review_at, "last_review_at": wr.last_review_at,
+    }
+
+
 async def submit_review(
     db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
     quality: int, today: _dt.date | None = None,

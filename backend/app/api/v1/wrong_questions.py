@@ -153,17 +153,13 @@ async def mark_mastered(
     db: DbDep,
     current_user: UserDep,
 ):
-    """标记/取消已掌握。"""
+    """标记/取消已掌握(KP-First:wq_id 为 wrong_record id,直读新表)。"""
     await get_rls_db(db, str(current_user.id))
-    wq = await wrong_question_service.get_wrong_question(
-        db, wq_id=wq_id, student_id=current_user.id
-    )
-    if wq is None:
-        raise AppError(code=404, message="错题不存在或无权访问")
-    wq = await wrong_question_service.mark_mastered(db, wq=wq, is_mastered=body.is_mastered)
+    from app.services import wrong_review_service
+    wr = await wrong_review_service.mark_mastered(
+        db, student_id=current_user.id, wrong_record_id=wq_id, is_mastered=body.is_mastered)
     await db.commit()
-    await db.refresh(wq)
-    return make_ok(WrongQuestionOut.model_validate(wq))
+    return make_ok(WrongQuestionOut(**await wrong_review_service.to_wq_out_fields(db, wr)))
 
 
 @router.post("/{wq_id}/analyze", response_model=BaseResponse[AiAnalysisOut])

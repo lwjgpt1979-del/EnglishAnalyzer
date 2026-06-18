@@ -255,21 +255,37 @@ async def test_get_wrong_question_not_found(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_mark_mastered_api(client: AsyncClient, auth_headers):
-    create_resp = await client.post(
-        "/api/v1/wrong-questions/",
-        json={"source_image_url": "https://cdn.example.com/mastered.jpg"},
-        headers=auth_headers,
-    )
-    wq_id = create_resp.json()["data"]["id"]
-    resp = await client.patch(
-        f"/api/v1/wrong-questions/{wq_id}/mastered",
-        json={"is_mastered": True},
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-    assert resp.json()["data"]["is_mastered"] is True
-    assert resp.json()["data"]["mastered_at"] is not None
+async def test_mark_mastered_api(client: AsyncClient):
+    """KP-First 直切:/{id}/mastered 操作 wrong_record(id 为 wrong_record id)。"""
+    import uuid as _uuid
+    from unittest.mock import AsyncMock as _AM, patch as _patch
+    from sqlalchemy import select as _select
+    from app.core.database import _async_session_factory as _sf
+    from app.models.d1_users import User as _User
+    from app.models.d16_question_domain import WrongRecord as _WR
+
+    openid = f"wqmast_{_uuid.uuid4().hex[:8]}"
+    with _patch("app.services.auth_service.wechat_code2session", new_callable=_AM) as m:
+        m.return_value = {"openid": openid}
+        lr = await client.post("/api/v1/auth/wx-login", json={"code": "x"})
+    headers = {"Authorization": f"Bearer {lr.json()['data']['access_token']}"}
+    async with _sf() as s:
+        uid = (await s.execute(_select(_User.id).where(_User.openid == openid))).scalar_one()
+        wr_id = _uuid.uuid4()
+        s.add(_WR(id=wr_id, student_id=uid, q_scope="uploaded", question_id=_uuid.uuid4(), status="open"))
+        await s.commit()
+    try:
+        resp = await client.patch(
+            f"/api/v1/wrong-questions/{wr_id}/mastered",
+            json={"is_mastered": True}, headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["is_mastered"] is True
+        assert resp.json()["data"]["mastered_at"] is not None
+    finally:
+        async with _sf() as s:
+            await s.execute(_WR.__table__.delete().where(_WR.student_id == uid))
+            await s.commit()
 
 
 from unittest.mock import AsyncMock, MagicMock, patch
