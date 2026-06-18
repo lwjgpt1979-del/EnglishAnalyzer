@@ -103,6 +103,35 @@ async def analyze_sentence(sentence: str) -> dict:
                 "difficulty_points": [], "syntax_points": syntax}
 
 
+async def list_published(
+    db: AsyncSession, *, node_id: uuid.UUID | None = None, owner_id: uuid.UUID | None = None,
+    limit: int = 50,
+) -> list[LongSentence]:
+    """学生读:已发布长难句(平台域共享 + 该生个人域);可按句法 node 过滤。"""
+    cond = sa.or_(LongSentence.scope == "platform",
+                  sa.and_(LongSentence.scope == "student", LongSentence.owner_id == owner_id))
+    stmt = sa.select(LongSentence).where(LongSentence.status == "published", cond)
+    if node_id is not None:
+        stmt = stmt.join(LongSentenceNode, LongSentenceNode.long_sentence_id == LongSentence.id).where(
+            LongSentenceNode.node_id == node_id)
+    return list((await db.execute(
+        stmt.order_by(LongSentence.created_at.desc()).limit(limit))).scalars().all())
+
+
+async def get_detail(db: AsyncSession, *, ls_id: uuid.UUID) -> tuple[LongSentence | None, list[dict]]:
+    """长难句详情 + 其句法 node(供跳 R6 讲解资源)。"""
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    ls = (await db.execute(sa.select(LongSentence).where(LongSentence.id == ls_id))).scalar_one_or_none()
+    if ls is None:
+        return None, []
+    nodes = (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.node_kind)
+        .join(LongSentenceNode, LongSentenceNode.node_id == KnowledgeNode.id)
+        .where(LongSentenceNode.long_sentence_id == ls_id)
+    )).all()
+    return ls, [{"node_id": nid, "name": nm, "node_kind": nk} for nid, nm, nk in nodes]
+
+
 async def _already_extracted(db: AsyncSession, question_id: uuid.UUID) -> bool:
     return (await db.execute(
         sa.select(LongSentence.id).where(LongSentence.source_question_id == question_id).limit(1)

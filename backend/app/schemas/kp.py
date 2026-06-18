@@ -251,3 +251,30 @@ class UpdateResourceIn(BaseModel):
     media_url: str | None = None
     title: str | None = None
     resource_json: object | None = None
+
+
+# ── 长难句(学生端) ──────────────────────────────────────────
+class LongSentenceNodeRef(BaseModel):
+    node_id: uuid.UUID
+    name: str
+    node_kind: str | None = None
+
+
+class LongSentenceItem(BaseModel):
+    id: uuid.UUID
+    text: str
+    source_kind: str
+    syntax_points: list[str] = []
+
+
+class LongSentenceListOut(BaseModel):
+    total: int
+    items: list[LongSentenceItem]
+
+
+class LongSentenceDetailOut(BaseModel):
+    id: uuid.UUID
+    text: str
+    source_kind: str
+    analysis: dict | None = None      # main_clause/layers/translation/difficulty_points/syntax_points
+    nodes: list[LongSentenceNodeRef] = []   # 句法点 → 跳 /curriculum/nodes/{node_id}/resources
