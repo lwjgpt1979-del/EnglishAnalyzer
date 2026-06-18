@@ -16,6 +16,7 @@ const router = createRouter({
         { path: 'vocab-lists', name: 'vocab-lists', component: () => import('../views/VocabLists.vue') },
         { path: 'node-resources', name: 'node-resources', component: () => import('../views/NodeResources.vue') },
         { path: 'long-sentences', name: 'long-sentences', component: () => import('../views/LongSentences.vue') },
+        { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },
         { path: 'curriculum-units', name: 'curriculum-units', component: () => import('../views/CurriculumUnits.vue') },
         { path: 'theme-center', name: 'theme-center', component: () => import('../views/ThemeCenter.vue') },
         { path: 'vocab-media', name: 'vocab-media', component: () => import('../views/VocabMedia.vue') },

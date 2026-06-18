@@ -1,0 +1,210 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { UploadFilled } from '@element-plus/icons-vue'
+import {
+  listPlatformQuestions, extractRealQuestions, getExtractJob, bulkImportRealQuestions,
+  genSimFromReal, reviewPlatformQuestion,
+  type PlatformQuestion,
+} from '../api/admin'
+
+// ── 列表 ──
+const typeFilter = ref('')          // ''=全部, real, sim
+const statusFilter = ref('')
+const rows = ref<PlatformQuestion[]>([])
+const total = ref(0)
+const loading = ref(false)
+const typeOpts = [{ label: '全部', value: '' }, { label: '真题', value: 'real' }, { label: '仿真', value: 'sim' }]
+const statusOpts = ['', 'draft', 'published', 'retired']
+
+async function load() {
+  loading.value = true
+  try {
+    const data = await listPlatformQuestions({
+      type: typeFilter.value || undefined, status: statusFilter.value || undefined, limit: 50,
+    })
+    rows.value = data.items
+    total.value = data.total
+  } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+  finally { loading.value = false }
+}
+
+async function onGenSim(row: PlatformQuestion) {
+  const { value } = await ElMessageBox.prompt('预生成几道仿真?', '派生仿真', {
+    inputValue: '3', inputPattern: /^[1-9]\d*$/, inputErrorMessage: '请输入正整数',
+  })
+  const r = await genSimFromReal(row.id, Number(value))
+  ElMessage.success(`已生成 ${r.generated} 道仿真`)
+  await load()
+}
+
+async function onReview(row: PlatformQuestion, approve: boolean) {
+  await ElMessageBox.confirm(`确认${approve ? '通过发布' : '驳回'}该题?`, '确认', { type: 'warning' })
+  await reviewPlatformQuestion(row.id, approve)
+  ElMessage.success(approve ? '已发布' : '已驳回')
+  await load()
+}
+
+// ── 上传抽题向导 ──
+const dlg = ref(false)
+const step = ref(0)                 // 0=选源, 1=抽题中, 2=校对
+const pickedFile = ref<File | null>(null)
+const imageUrlsText = ref('')
+const extracting = ref(false)
+const importing = ref(false)
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+interface EditRow {
+  question_no?: string | null; question_type: string; stem: string
+  answer: string; explanation: string; difficulty: number | null; kp_names: string
+}
+const editRows = ref<EditRow[]>([])
+
+function stopPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
+
+function openDlg() {
+  stopPoll()
+  step.value = 0; pickedFile.value = null; imageUrlsText.value = ''
+  extracting.value = false; importing.value = false; editRows.value = []
+  dlg.value = true
+}
+
+function onFileChange(f: any) { pickedFile.value = f.raw as File }
+
+async function startExtract() {
+  const urls = imageUrlsText.value.split('\n').map(s => s.trim()).filter(Boolean)
+  if (!pickedFile.value && !urls.length) { ElMessage.warning('请选 PDF 或填图片 URL'); return }
+  extracting.value = true; step.value = 1
+  try {
+    const { job_id } = await extractRealQuestions({ file: pickedFile.value || undefined, imageUrls: urls })
+    pollExtract(job_id)
+  } catch (e: any) { extracting.value = false; ElMessage.error(e?.message || '抽题失败') }
+}
+
+async function pollExtract(jobId: string) {
+  try {
+    const job = await getExtractJob(jobId)
+    if (job.status === 'running') { pollTimer = setTimeout(() => pollExtract(jobId), 2500); return }
+    extracting.value = false
+    if (job.status === 'failed') { ElMessage.error(`抽题失败:${job.error || ''}`); step.value = 0; return }
+    editRows.value = job.parsed.map(p => ({
+      question_no: p.question_no, question_type: p.question_type || '单选',
+      stem: p.stem || '', answer: p.answer || '', explanation: p.explanation || '',
+      difficulty: null, kp_names: '',
+    }))
+    step.value = 2
+    if (!editRows.value.length) ElMessage.warning('未抽到题,请检查文件或改用图片上传')
+  } catch (e: any) { extracting.value = false; ElMessage.error(e?.message || '查询失败') }
+}
+
+async function doImport() {
+  const items = editRows.value.filter(r => r.stem.trim()).map(r => ({
+    stem: r.stem.trim(), answer: r.answer || null, question_type: r.question_type || null,
+    explanation: r.explanation || null, difficulty: r.difficulty, question_no: r.question_no,
+    kp_names: r.kp_names.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+  }))
+  if (!items.length) { ElMessage.warning('没有可导入的题'); return }
+  importing.value = true
+  try {
+    const r = await bulkImportRealQuestions(items, 'published')
+    ElMessage.success(`导入 ${r.imported} 题${r.failed ? `,失败 ${r.failed}` : ''}`)
+    dlg.value = false
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '导入失败') }
+  finally { importing.value = false }
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <div>
+    <div class="toolbar">
+      <span>类型:</span>
+      <el-select v-model="typeFilter" style="width:110px" @change="load">
+        <el-option v-for="t in typeOpts" :key="t.value" :label="t.label" :value="t.value" />
+      </el-select>
+      <span style="margin-left:16px">状态:</span>
+      <el-select v-model="statusFilter" style="width:120px" @change="load">
+        <el-option v-for="s in statusOpts" :key="s" :label="s || '全部'" :value="s" />
+      </el-select>
+      <el-button style="margin-left:12px" type="primary" @click="openDlg">+ 上传真题</el-button>
+      <el-button @click="load">刷新</el-button>
+      <span class="hint">真题挂知识节点;有真题的点其直生备选自动下架,可派生仿真供学生"有源"练习。共 {{ total }} 条</span>
+    </div>
+
+    <el-table v-loading="loading" :data="rows" border style="width:100%">
+      <el-table-column label="类型" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.type === 'real' ? 'danger' : 'info'" size="small">
+            {{ row.type === 'real' ? '真题' : '仿真' }}<span v-if="row.is_fallback">·备</span>
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="question_type" label="题型" width="80" />
+      <el-table-column prop="stem" label="题干" min-width="280" show-overflow-tooltip />
+      <el-table-column prop="answer" label="答案" width="90" show-overflow-tooltip />
+      <el-table-column prop="difficulty" label="难度" width="60" align="center" />
+      <el-table-column prop="status" label="状态" width="90" />
+      <el-table-column label="操作" width="220" fixed="right">
+        <template #default="{ row }">
+          <el-button v-if="row.type === 'real'" size="small" @click="onGenSim(row)">派生仿真</el-button>
+          <el-button v-if="row.status !== 'published'" size="small" type="success" @click="onReview(row, true)">发布</el-button>
+          <el-button v-if="row.status !== 'retired'" size="small" type="danger" @click="onReview(row, false)">驳回</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <el-dialog v-model="dlg" title="上传真题 → 抽题 → 校对导入" width="900px" @close="stopPoll" :close-on-click-modal="false">
+      <!-- 选源 -->
+      <div v-if="step === 0">
+        <el-alert type="info" :closable="false" style="margin-bottom:12px"
+          title="文本版 PDF 直接取字;扫描版/图片请填图片 URL(走 OCR)。Word 暂不支持。" />
+        <el-upload drag :auto-upload="false" :limit="1" :on-change="onFileChange" accept=".pdf">
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">拖入或点击选择 <b>真题 PDF</b>(文本版)</div>
+        </el-upload>
+        <div style="margin:14px 0 6px;color:#909399;font-size:13px">或:图片 URL(每行一个,走 OCR)</div>
+        <el-input v-model="imageUrlsText" type="textarea" :rows="3" placeholder="https://.../p1.jpg&#10;https://.../p2.jpg" />
+        <div style="text-align:right;margin-top:16px">
+          <el-button type="primary" @click="startExtract">开始抽题</el-button>
+        </div>
+      </div>
+
+      <!-- 抽题中 -->
+      <div v-else-if="step === 1" class="gen-loading">
+        <div style="font-size:15px;font-weight:600">AI 抽题中…</div>
+        <div style="font-size:13px;color:#909399;margin-top:6px">整卷拆题约 30–90 秒,可关窗口稍后重开</div>
+        <el-progress :percentage="100" :indeterminate="true" :duration="2" style="width:320px;margin-top:16px" />
+      </div>
+
+      <!-- 校对 -->
+      <div v-else-if="step === 2">
+        <div style="margin-bottom:8px;color:#606266">抽出 {{ editRows.length }} 题,核对/编辑后导入(可填 KP 名挂知识节点)</div>
+        <el-table :data="editRows" border size="small" max-height="440">
+          <el-table-column label="#" width="48" align="center"><template #default="{ row }">{{ row.question_no }}</template></el-table-column>
+          <el-table-column label="题干" min-width="240">
+            <template #default="{ row }"><el-input v-model="row.stem" type="textarea" :rows="2" /></template>
+          </el-table-column>
+          <el-table-column label="答案" width="90"><template #default="{ row }"><el-input v-model="row.answer" /></template></el-table-column>
+          <el-table-column label="题型" width="90"><template #default="{ row }"><el-input v-model="row.question_type" /></template></el-table-column>
+          <el-table-column label="难度" width="80"><template #default="{ row }"><el-input-number v-model="row.difficulty" :min="1" :max="5" size="small" controls-position="right" /></template></el-table-column>
+          <el-table-column label="知识点(逗号分隔)" width="160"><template #default="{ row }"><el-input v-model="row.kp_names" placeholder="如:定语从句" /></template></el-table-column>
+          <el-table-column label="" width="50" align="center">
+            <template #default="{ $index }"><el-button size="small" type="danger" link @click="editRows.splice($index, 1)">删</el-button></template>
+          </el-table-column>
+        </el-table>
+        <div style="text-align:right;margin-top:16px">
+          <el-button @click="step = 0">上一步</el-button>
+          <el-button type="primary" :loading="importing" @click="doImport">导入 {{ editRows.length }} 题</el-button>
+        </div>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.toolbar { margin-bottom: 16px; display: flex; align-items: center; flex-wrap: wrap; }
+.hint { margin-left: 16px; color: #909399; font-size: 12px; }
+.gen-loading { display: flex; flex-direction: column; align-items: center; padding: 40px 0; }
+</style>

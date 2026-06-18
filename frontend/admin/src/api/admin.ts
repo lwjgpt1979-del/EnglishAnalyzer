@@ -958,3 +958,65 @@ export interface PackageUsage {
 export function getInstitutionPackageUsage(institutionId: string): Promise<PackageUsage> {
   return unwrap(request.get(`/admin/institutions/${institutionId}/package-usage`))
 }
+
+// ── 平台真题(KP-First TK1-3)──────────────────────────────
+export interface PlatformQuestion {
+  id: string
+  type: string                 // real|sim
+  parent_real_id?: string | null
+  is_fallback: boolean
+  question_type?: string | null
+  stem?: string | null
+  answer?: string | null
+  difficulty?: number | null
+  status: string
+}
+export interface ParsedRealQuestion {
+  question_no?: string | null
+  question_type?: string | null
+  stem?: string | null
+  answer?: string | null
+  explanation?: string | null
+}
+export interface RealExtractJob {
+  job_id: string
+  source: string
+  status: 'running' | 'done' | 'failed'
+  error?: string | null
+  parsed: ParsedRealQuestion[]
+}
+
+export function listPlatformQuestions(params: {
+  type?: string; status?: string; node_id?: string; skip?: number; limit?: number
+}): Promise<{ total: number; items: PlatformQuestion[] }> {
+  return unwrap(request.get('/admin/platform-questions', { params }))
+}
+
+export function extractRealQuestions(opts: { file?: File; imageUrls?: string[] }): Promise<{ job_id: string }> {
+  const form = new FormData()
+  if (opts.file) form.append('file', opts.file)
+  if (opts.imageUrls?.length) form.append('image_urls', JSON.stringify(opts.imageUrls))
+  return unwrap(request.post('/admin/platform-questions/extract', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000,
+  }))
+}
+
+export function getExtractJob(jobId: string): Promise<RealExtractJob> {
+  return unwrap(request.get(`/admin/platform-questions/extract-jobs/${jobId}`))
+}
+
+export function bulkImportRealQuestions(
+  items: Array<{ stem: string; options?: unknown; answer?: string | null; question_type?: string | null
+    explanation?: string | null; difficulty?: number | null; question_no?: string | null; kp_names?: string[] }>,
+  status?: string,
+): Promise<{ imported: number; failed: number }> {
+  return unwrap(request.post('/admin/platform-questions/bulk', { items, status }))
+}
+
+export function genSimFromReal(realId: string, count = 3): Promise<{ generated: number; sim_ids: string[] }> {
+  return unwrap(request.post(`/admin/platform-questions/${realId}/gen-sim`, null, { params: { count } }))
+}
+
+export function reviewPlatformQuestion(id: string, approve: boolean): Promise<PlatformQuestion> {
+  return unwrap(request.post(`/admin/platform-questions/${id}/review`, { approve }))
+}
