@@ -64,6 +64,12 @@ from app.schemas.kp import (
     PlatformQuestionListOut,
     GenSimOut,
     ReviewRequest,
+    VocabListCreate,
+    VocabListOut,
+    VocabListsOut,
+    VocabItemsIn,
+    VocabItemOut,
+    VocabItemsOut,
 )
 from app.services import (
     admin_auth_service,
@@ -819,6 +825,43 @@ async def review_platform_question_api(
     q = await pqs.review_platform_question(db, question_id=question_id, approve=body.approve)
     await db.commit()
     return make_ok(_to_pq_item(q))
+
+
+# ─── 通用词库管理（R5 词汇并入,平台域超管维护）──────────────────────────────────
+
+@router.get("/vocab-lists", response_model=BaseResponse[VocabListsOut])
+async def list_vocab_lists_api(db: DbDep, admin: AdminDep, status: str | None = None):
+    from app.services import vocab_list_service as vls
+    rows = await vls.list_lists(db, status=status)
+    return make_ok(VocabListsOut(items=[
+        VocabListOut(id=r.id, name=r.name, exam_level=r.exam_level,
+                     source_type=r.source_type, status=r.status) for r in rows]))
+
+
+@router.post("/vocab-lists", response_model=BaseResponse[VocabListOut])
+async def create_vocab_list_api(body: VocabListCreate, db: DbDep, admin: AdminDep):
+    from app.services import vocab_list_service as vls
+    vl = await vls.create_list(db, name=body.name, exam_level=body.exam_level,
+                               source_type=body.source_type, maintained_by=admin.id, status=body.status)
+    await db.commit()
+    return make_ok(VocabListOut(id=vl.id, name=vl.name, exam_level=vl.exam_level,
+                                source_type=vl.source_type, status=vl.status))
+
+
+@router.get("/vocab-lists/{list_id}/items", response_model=BaseResponse[VocabItemsOut])
+async def list_vocab_items_api(list_id: uuid.UUID, db: DbDep, admin: AdminDep, skip: int = 0, limit: int = 100):
+    from app.services import vocab_list_service as vls
+    items = await vls.list_items(db, list_id=list_id, skip=skip, limit=limit)
+    return make_ok(VocabItemsOut(total=len(items), items=[VocabItemOut(**it) for it in items]))
+
+
+@router.post("/vocab-lists/{list_id}/items", response_model=BaseResponse[VocabItemsOut])
+async def add_vocab_items_api(list_id: uuid.UUID, body: VocabItemsIn, db: DbDep, admin: AdminDep):
+    from app.services import vocab_list_service as vls
+    await vls.add_items(db, list_id=list_id, items=[it.model_dump(exclude_none=True) for it in body.items])
+    await db.commit()
+    items = await vls.list_items(db, list_id=list_id, limit=500)
+    return make_ok(VocabItemsOut(total=len(items), items=[VocabItemOut(**it) for it in items]))
 
 
 # ─── V2 M28：真题试卷管理（版权规避：真题内部存储，仅对外暴露仿真题）──────────

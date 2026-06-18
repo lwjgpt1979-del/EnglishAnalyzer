@@ -168,3 +168,50 @@ class StudentTrendPoint(BaseModel):
 class StudentTrendOut(BaseModel):
     node_id: uuid.UUID
     points: list[StudentTrendPoint]
+
+
+# ── R5 通用词库(admin) ───────────────────────────────────────
+class VocabListCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    exam_level: str | None = None
+    source_type: str | None = None
+    status: str = "draft"
+
+
+class VocabListOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    exam_level: str | None = None
+    source_type: str | None = None
+    status: str
+
+
+class VocabListsOut(BaseModel):
+    items: list[VocabListOut]
+
+
+class VocabItemIn(BaseModel):
+    word: str | None = None
+    word_id: uuid.UUID | None = None
+    rank: int | None = None
+    frequency: int | None = None
+    star: int = 0
+    verified: bool = False
+
+
+class VocabItemsIn(BaseModel):
+    items: list[VocabItemIn] = Field(..., min_length=1)
+
+
+class VocabItemOut(BaseModel):
+    word_id: uuid.UUID
+    word: str
+    rank: int | None = None
+    frequency: int | None = None
+    star: int
+    verified: bool
+
+
+class VocabItemsOut(BaseModel):
+    total: int
+    items: list[VocabItemOut]
