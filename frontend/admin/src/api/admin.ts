@@ -25,6 +25,9 @@ import type {
   VocabListItem2,
   VocabWordItem,
   NodeResourceItem2,
+  LSAdminItem,
+  LSExtractResult,
+  LSConfig,
 } from '../types'
 
 // ── 数据大盘 ────────────────────────────────────────────────
@@ -340,6 +343,30 @@ export function addNodeResource(body: {
 
 export function reviewNodeResource(id: string, approve: boolean) {
   return unwrap<NodeResourceItem2>(request.post(`/admin/node-resources/${id}/review`, { approve }))
+}
+
+// ── 长难句管理（KP-First L7）──────────────────────────────
+export function extractLongSentences(params: { source?: string; limit?: number }) {
+  return unwrap<LSExtractResult>(request.post('/admin/long-sentences/extract', null, { params }))
+}
+
+export function listLongSentences(params: {
+  status?: string; node_id?: string; skip?: number; limit?: number
+}) {
+  return unwrap<{ total: number; items: LSAdminItem[] }>(
+    request.get('/admin/long-sentences', { params }))
+}
+
+export function reviewLongSentence(id: string, approve: boolean) {
+  return unwrap<LSAdminItem>(request.post(`/admin/long-sentences/${id}/review`, { approve }))
+}
+
+export function getLSConfig() {
+  return unwrap<LSConfig>(request.get('/admin/long-sentences/config'))
+}
+
+export function setLSConfig(body: Partial<LSConfig>) {
+  return unwrap<LSConfig>(request.put('/admin/long-sentences/config', body))
 }
 
 // ── M3 教材 PDF 上传解析 ──────────────────────────────────────────────────────

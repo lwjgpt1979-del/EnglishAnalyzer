@@ -215,3 +215,27 @@ export interface NodeResourceItem2 {
   media_url?: string | null
   status: string
 }
+
+// ── 长难句管理(KP-First L7)──────────────────────────────
+export interface LSAdminItem {
+  id: string
+  text: string
+  source_kind: string
+  status: string
+  syntax_points: string[]
+}
+
+export interface LSExtractResult {
+  created: number
+  long_kept: number
+  edges: number
+  candidates: number
+  skipped_done: number
+}
+
+export interface LSConfig {
+  sources: string[]
+  verify_types: string[]
+  min_words: number
+  required_pass: number
+}

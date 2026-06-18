@@ -45,6 +45,7 @@ function onLogout() {
         <el-menu-item index="/kp-candidates">🧩 候选知识点审核</el-menu-item>
         <el-menu-item index="/vocab-lists">📒 通用词库</el-menu-item>
         <el-menu-item index="/node-resources">🎬 知识点资源</el-menu-item>
+        <el-menu-item index="/long-sentences">📐 长难句管理</el-menu-item>
         <el-menu-item index="/pricing">定价配置</el-menu-item>
         <el-menu-item index="/campaigns">🎉 限时活动价</el-menu-item>
         <el-menu-item index="/entitlements">🔐 会员权益配置</el-menu-item>
