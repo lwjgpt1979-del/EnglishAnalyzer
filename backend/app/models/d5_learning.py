@@ -144,6 +144,9 @@ class StudentVocabSetting(Base):
     words_per_group = mapped_column(sa.Integer, nullable=False, server_default=sa.text("5"))
     reps_per_group = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
     wrong_carry_threshold = mapped_column(sa.Integer, nullable=False, server_default=sa.text("2"))
+    # R5 收尾:通用词库 opt-in(默认关;开后背词加选通用词库,可指定某词库)
+    include_general_vocab = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    general_vocab_list_id = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False,
         server_default=sa.func.now(), onupdate=sa.func.now(),

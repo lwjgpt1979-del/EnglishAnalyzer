@@ -112,6 +112,20 @@ async def _ordered_new_words(
             .where(cond)
         )
 
+    # P4 通用词库(opt-in):学生开了 include_general_vocab → 加该词库(或任一已发布库)的词,最低优先
+    setting = (await db.execute(
+        select(StudentVocabSetting).where(StudentVocabSetting.student_id == student.id)
+    )).scalar_one_or_none()
+    if setting is not None and getattr(setting, "include_general_vocab", False):
+        from app.models.d18_vocab_kg import VocabListItem, VocabList
+        gp = select(VocabListItem.word_id.label("wid"), literal(4).label("p"))
+        if setting.general_vocab_list_id is not None:
+            gp = gp.where(VocabListItem.list_id == setting.general_vocab_list_id)
+        else:
+            gp = gp.join(VocabList, VocabList.id == VocabListItem.list_id).where(
+                VocabList.status == "published")
+        parts.append(gp)
+
     union_q = union_all(*parts).subquery()
     ranked = (
         select(union_q.c.wid, func.min(union_q.c.p).label("p"))
@@ -489,11 +503,15 @@ _REP_MIN, _REP_MAX = 1, 5
 
 def _setting_dict(row) -> dict:
     if row is None:
-        return {"words_per_group": 5, "reps_per_group": 1, "wrong_carry_threshold": 2}
+        return {"words_per_group": 5, "reps_per_group": 1, "wrong_carry_threshold": 2,
+                "include_general_vocab": False, "general_vocab_list_id": None}
     return {
         "words_per_group": int(row.words_per_group),
         "reps_per_group": int(row.reps_per_group),
         "wrong_carry_threshold": int(getattr(row, "wrong_carry_threshold", 2) or 2),
+        "include_general_vocab": bool(getattr(row, "include_general_vocab", False)),
+        "general_vocab_list_id": (str(row.general_vocab_list_id)
+                                  if getattr(row, "general_vocab_list_id", None) else None),
     }
 
 
@@ -506,7 +524,8 @@ async def get_vocab_settings(db: AsyncSession, *, student_id: uuid.UUID) -> dict
 
 async def set_vocab_settings(
     db: AsyncSession, *, student_id: uuid.UUID, words_per_group: int, reps_per_group: int,
-    wrong_carry_threshold: int = 2,
+    wrong_carry_threshold: int = 2, include_general_vocab: bool = False,
+    general_vocab_list_id: uuid.UUID | None = None,
 ) -> dict:
     wpg = max(_WPG_MIN, min(int(words_per_group), _WPG_MAX))
     rep = max(_REP_MIN, min(int(reps_per_group), _REP_MAX))
@@ -515,13 +534,17 @@ async def set_vocab_settings(
         select(StudentVocabSetting).where(StudentVocabSetting.student_id == student_id)
     )).scalar_one_or_none()
     if row is None:
-        db.add(StudentVocabSetting(
+        row = StudentVocabSetting(
             id=uuid.uuid4(), student_id=student_id,
-            words_per_group=wpg, reps_per_group=rep, wrong_carry_threshold=thr))
+            words_per_group=wpg, reps_per_group=rep, wrong_carry_threshold=thr,
+            include_general_vocab=include_general_vocab, general_vocab_list_id=general_vocab_list_id)
+        db.add(row)
     else:
         row.words_per_group, row.reps_per_group, row.wrong_carry_threshold = wpg, rep, thr
+        row.include_general_vocab = include_general_vocab
+        row.general_vocab_list_id = general_vocab_list_id
     await db.flush()
-    return {"words_per_group": wpg, "reps_per_group": rep, "wrong_carry_threshold": thr}
+    return _setting_dict(row)
 
 
 async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTaskOut:

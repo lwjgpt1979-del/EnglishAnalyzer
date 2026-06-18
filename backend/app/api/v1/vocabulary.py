@@ -1,6 +1,7 @@
 """词力通词汇学习 API（P1 / D-100）。"""
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -41,6 +42,8 @@ class VocabSettings(BaseModel):
     words_per_group: int = Field(5, ge=1, le=50)
     reps_per_group: int = Field(1, ge=1, le=5)
     wrong_carry_threshold: int = Field(2, ge=1, le=5)
+    include_general_vocab: bool = False                 # 通用词库 opt-in(R5 收尾)
+    general_vocab_list_id: uuid.UUID | None = None      # 指定通用词库;空=任一已发布库
 
 
 class AddWordIn(BaseModel):
@@ -77,7 +80,9 @@ async def put_settings(body: VocabSettings, db: DbDep, current_user: UserDep):
     s = await vocabulary_service.set_vocab_settings(
         db, student_id=current_user.id,
         words_per_group=body.words_per_group, reps_per_group=body.reps_per_group,
-        wrong_carry_threshold=body.wrong_carry_threshold)
+        wrong_carry_threshold=body.wrong_carry_threshold,
+        include_general_vocab=body.include_general_vocab,
+        general_vocab_list_id=body.general_vocab_list_id)
     await db.commit()
     return make_ok(VocabSettings(**s))
 
