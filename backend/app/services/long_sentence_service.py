@@ -132,6 +132,101 @@ async def get_detail(db: AsyncSession, *, ls_id: uuid.UUID) -> tuple[LongSentenc
     return ls, [{"node_id": nid, "name": nm, "node_kind": nk} for nid, nm, nk in nodes]
 
 
+# ── L3 验证·客观题 ────────────────────────────────────────────
+# 客观题型(自动判分、可硬判掌握);主观题型(translate/span_label/rewrite/read_aloud)留 L4。
+_OBJECTIVE_TYPES = {"cloze", "struct_type", "main_clause"}
+_ALL_VERIFY_TYPES = ["cloze", "struct_type", "main_clause", "translate",
+                     "span_label", "reorder", "rewrite", "read_aloud"]
+_SYNTAX_POOL = ["定语从句", "状语从句", "名词性从句", "非谓语动词", "倒装句", "强调句", "同位语从句"]
+_REL_WORDS = ["which", "that", "who", "whom", "whose", "because", "although", "when", "while", "if"]
+DEFAULT_REQUIRED_PASS = 3      # 判句法 node 掌握所需净做对数(后台 long_sentence.required_pass 可覆盖)
+
+
+async def enabled_verify_types(db: AsyncSession) -> list[str]:
+    """后台配置 long_sentence.verify_types(默认全开);本期仅客观题型实际可用。"""
+    from app.models.d9_system import SystemConfig
+    row = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == "long_sentence.verify_types")
+    )).scalar_one_or_none()
+    configured = _ALL_VERIFY_TYPES
+    if row is not None and isinstance(row.value, list):
+        configured = row.value
+    # 仅返回已实现(客观)且被配置开放的
+    return [t for t in configured if t in _OBJECTIVE_TYPES]
+
+
+def build_verify(ls: LongSentence, verify_type: str) -> dict | None:
+    """从长难句解析生成一道客观题:{type, prompt, options, answer}。无法生成→None。"""
+    a = ls.analysis_json or {}
+    syntax = a.get("syntax_points") or []
+    if verify_type == "struct_type":
+        if not syntax:
+            return None
+        ans = syntax[0]
+        distract = [s for s in _SYNTAX_POOL if s != ans][:3]
+        return {"type": verify_type, "prompt": "该句主要涉及的句法点是?",
+                "options": [ans] + distract, "answer": ans}
+    if verify_type == "main_clause":
+        mc = a.get("main_clause")
+        if not mc:
+            return None
+        return {"type": verify_type, "prompt": "该句的主干(主谓宾核心)是?",
+                "options": [mc, "(无主干)", mc.split()[0] if mc.split() else "X", "全句即主干"],
+                "answer": mc}
+    if verify_type == "cloze":
+        # 挖掉句中第一个出现的关系/连接词
+        for w in _REL_WORDS:
+            if re.search(rf"\b{w}\b", ls.text, re.I):
+                blanked = re.sub(rf"\b{w}\b", "____", ls.text, count=1, flags=re.I)
+                distract = [x for x in _REL_WORDS if x.lower() != w.lower()][:3]
+                return {"type": verify_type, "prompt": f"填入恰当的连接词:{blanked}",
+                        "options": [w] + distract, "answer": w}
+        return None
+    return None
+
+
+async def submit_verify(
+    db: AsyncSession, *, student_id: uuid.UUID, ls_id: uuid.UUID, verify_type: str, answer: str,
+    required_pass: int = DEFAULT_REQUIRED_PASS,
+) -> dict:
+    """提交客观验证答案:判分 → 落 answer_log+student_kp(该句各句法 node)→ 错则收口、达标则判掌握。"""
+    from app.core.exceptions import AppError
+    from app.services import mastery_judge_service, wrong_center_service
+    from app.models.d16_question_domain import StudentKp
+
+    ls, nodes = await get_detail(db, ls_id=ls_id)
+    if ls is None or ls.status != "published":
+        raise AppError(code=404, message="长难句不存在或未发布")
+    if verify_type not in _OBJECTIVE_TYPES:
+        raise AppError(code=400, message="该验证题型暂不支持自动判分")
+    q = build_verify(ls, verify_type)
+    if q is None:
+        raise AppError(code=400, message="该句无法生成此题型")
+
+    correct = answer.strip() == str(q["answer"]).strip()
+    # 合成 question_id(同句+同题型稳定),逐句法 node 记作答 + 判掌握
+    qid = uuid.uuid5(uuid.NAMESPACE_OID, f"ls-verify:{ls_id}:{verify_type}")
+    mastered: list[str] = []
+    for n in nodes:
+        nid = n["node_id"]
+        await mastery_judge_service.log_answer(
+            db, student_id=student_id, q_scope="platform", question_id=qid,
+            node_id=nid, is_correct=correct, feature="long_sentence_verify")
+        if correct:
+            sk = (await db.execute(
+                sa.select(StudentKp).where(StudentKp.student_id == student_id, StudentKp.node_id == nid)
+            )).scalar_one_or_none()
+            if sk is not None and (sk.practice_count - sk.wrong_count) >= required_pass \
+                    and (sk.mastery is None or float(sk.mastery) < 1.0):
+                sk.mastery = 1.0
+                mastered.append(n["name"])
+        else:
+            await wrong_center_service.record_wrong(
+                db, student_id=student_id, q_scope="platform", question_id=qid, node_id=nid)
+    await db.flush()
+    return {"correct": correct, "correct_answer": q["answer"], "mastered_nodes": mastered}
+
+
 async def _already_extracted(db: AsyncSession, question_id: uuid.UUID) -> bool:
     return (await db.execute(
         sa.select(LongSentence.id).where(LongSentence.source_question_id == question_id).limit(1)

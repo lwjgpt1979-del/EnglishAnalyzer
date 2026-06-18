@@ -278,3 +278,24 @@ class LongSentenceDetailOut(BaseModel):
     source_kind: str
     analysis: dict | None = None      # main_clause/layers/translation/difficulty_points/syntax_points
     nodes: list[LongSentenceNodeRef] = []   # 句法点 → 跳 /curriculum/nodes/{node_id}/resources
+
+
+class VerifyTypesOut(BaseModel):
+    types: list[str]                  # 已开放(且本期可用)的验证题型,学生自选
+
+
+class VerifyQuestionOut(BaseModel):
+    type: str
+    prompt: str
+    options: list[str]                # 不含答案
+
+
+class VerifySubmitIn(BaseModel):
+    type: str
+    answer: str = Field(..., min_length=1)
+
+
+class VerifySubmitOut(BaseModel):
+    correct: bool
+    correct_answer: str
+    mastered_nodes: list[str] = []    # 本次达标判掌握的句法点
