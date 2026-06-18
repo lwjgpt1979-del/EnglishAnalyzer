@@ -14,6 +14,8 @@ from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _SYSTEM_PROMPT = (
     "你是资深英语教材编辑，擅长按教材大纲为每个单元拆解知识点并生成教学解读。"
+    "知识点 name 与 description 一律用中文命名（专有语法/术语可在括号内附英文，如"
+    "「一般现在时（present simple）」）；禁止用纯英文作知识点名。"
     "请严格按 JSON 格式输出，不要任何 markdown 代码块或额外文字。"
 )
 
@@ -26,7 +28,8 @@ _USER_PROMPT_TEMPLATE = """请为以下教材单元生成完整教学内容。
 
 要求：
 1. 推断该单元的标题（unit_title），符合该教材实际编排
-2. 列出 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任一类）
+2. 列出 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任一类）；
+   知识点 name 与 description **必须用中文**（专有术语可在括号内附英文），不得用纯英文
 3. 每个知识点提供 6 维度教学内容（listening/vocabulary/grammar/reading/translation/writing）markdown，每个维度内容简明（2-4 句即可，避免冗长）
 4. 列出 10-15 个核心单词
 5. code 字段格式：'yl-g{grade_short}s{sem_short}-u{unit_no}-kp{{idx}}'，其中 {{idx}} 是 1 开始的知识点序号，必须全局唯一
@@ -204,6 +207,8 @@ async def generate_unit(
 _PDF_SYSTEM_PROMPT = (
     "你是资深英语教材编辑，擅长从教材原文中拆解知识点并生成结构化教学解读。"
     "用户将提供教材某单元的 PDF 原文，请据此提取本单元真实的核心知识点与词汇。"
+    "知识点 name 与 description 一律用中文命名（即使原文是英文，也要用中文概括，"
+    "专有术语可在括号内附英文，如「不同类型的房屋（types of houses）」）；禁止用纯英文作知识点名。"
     "请严格按 JSON 格式输出，不要任何 markdown 代码块或额外文字。"
 )
 
@@ -222,7 +227,8 @@ _PDF_PROMPT_TEMPLATE = """\
 
 要求：
 1. 根据原文推断/确认 unit_title
-2. 提取 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任意类别）
+2. 提取 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任意类别）；
+   知识点 name 与 description **必须用中文**（即使原文英文也用中文概括，专有术语可括号附英文），不得用纯英文
 3. 每个知识点提供 6 维度教学内容（listening/vocabulary/grammar/reading/translation/writing）
 4. 提取 10-15 个原文出现的核心词汇
 5. code 格式：yl-g{grade_short}s{sem_short}-u{unit_no}-kpN（N 从 1 开始）
@@ -237,7 +243,7 @@ _PDF_PROMPT_TEMPLATE = """\
   "knowledge_points": [
     {{
       "code": "yl-g{grade_short}s{sem_short}-u{unit_no}-kp1",
-      "name": "...",
+      "name": "一般现在时描述日常活动",
       "category": "grammar",
       "description": "...",
       "contents": {{
