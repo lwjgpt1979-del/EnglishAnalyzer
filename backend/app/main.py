@@ -15,6 +15,12 @@ async def lifespan(app: FastAPI):
     # startup: async engine already initialized at module-level in database.py
     # 生产环境配置安全检查（D-077）：debug=False 时检测 placeholder，命中则 fail-fast
     run_production_safety_check(settings)
+    # 续跑因重启而中断的教材生成任务(方案 A;persist 幂等,跳过已成功单元)
+    try:
+        from app.services.curriculum_gen_service import resume_running_jobs
+        await resume_running_jobs()
+    except Exception:  # noqa: BLE001
+        pass
     yield
     # shutdown: release connection pool
     await close_async_engine()

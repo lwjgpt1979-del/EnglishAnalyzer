@@ -146,19 +146,21 @@ async def test_generate_unit_is_idempotent(
 
 
 @pytest.mark.asyncio
-async def test_generate_from_pdf_savepoint_isolates_failed_unit(admin_client: AsyncClient):
-    """单元间 savepoint 隔离:某单元生成失败,其余单元照常落库(失败不连累整批)。"""
+async def test_generate_from_pdf_async_job_isolates_failed_unit(admin_client: AsyncClient):
+    """异步任务(方案A):POST 秒回 job_id;后台逐单元生成,失败单元(重试后仍失败)不连累其余,
+    成功单元独立 commit 落库;轮询任务进度可见 done/failed。"""
+    import asyncio as _aio
     from unittest.mock import patch
     from app.services import curriculum_ai_service
     from app.services.curriculum_ai_service import _make_mock_unit
     from sqlalchemy import text as _t
 
-    tb = f"savepoint版{uuid.uuid4().hex[:6]}"
+    tb = f"asyncjob版{uuid.uuid4().hex[:6]}"
     grade, sem = "测试年级", "上"
 
     async def _fake_gen(*, textbook_version, grade, semester, unit_no, unit_text, detected_title=None):
         if unit_no == 2:
-            raise RuntimeError("LLM boom (unit 2)")   # 仅 Unit 2 在 LLM 阶段失败
+            raise RuntimeError("LLM boom (unit 2)")   # 仅 Unit 2 失败(重试 3 次都失败)
         return _make_mock_unit(textbook_version, grade, semester, unit_no)
 
     segs = [{"unit_no": n, "start_page": n, "end_page": n} for n in (1, 2, 3)]
@@ -169,13 +171,24 @@ async def test_generate_from_pdf_savepoint_isolates_failed_unit(admin_client: As
              patch("app.services.pdf_upload_service.extract_pages", lambda fid: ["p"] * 5), \
              patch("app.services.pdf_upload_service.get_unit_text", lambda fid, s, e: "unit text"):
             r = await admin_client.post("/api/v1/admin/curriculum/pdf/anyfile/generate", json=body)
-        assert r.status_code == 200, r.text
-        data = r.json()["data"]
-        assert data["success_count"] == 2 and data["error_count"] == 1
+            assert r.status_code == 200, r.text
+            job_id = r.json()["data"]["job_id"]
+            assert r.json()["data"]["total"] == 3
+
+            # 轮询任务直到结束(后台 asyncio 任务在同一事件循环跑)
+            data = None
+            for _ in range(50):
+                jr = await admin_client.get(f"/api/v1/admin/curriculum/pdf-jobs/{job_id}")
+                data = jr.json()["data"]
+                if data["status"] != "running":
+                    break
+                await _aio.sleep(0.2)
+        assert data["status"] == "done"           # 有成功单元 → done(非全败)
+        assert data["done"] == 2 and data["failed"] == 1
         statuses = {x["unit_no"]: x["status"] for x in data["results"]}
         assert statuses == {1: "ok", 2: "error", 3: "ok"}
 
-        # 成功单元已 commit 落库,失败单元不在库(savepoint 回滚 + 整批未被污染)
+        # 成功单元已独立 commit 落库,失败单元不在库
         async with _async_session_factory() as s:
             unos = (await s.execute(_t(
                 "SELECT unit_no FROM curriculum_units WHERE textbook_version=:tb ORDER BY unit_no"),
@@ -196,4 +209,5 @@ async def test_generate_from_pdf_savepoint_isolates_failed_unit(admin_client: As
                     await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id=:n"), {"n": str(nid)})
                     await s.execute(_t("DELETE FROM knowledge_nodes WHERE id=:n"), {"n": str(nid)})
             await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
+            await s.execute(_t("DELETE FROM curriculum_gen_job WHERE textbook_version=:tb"), {"tb": tb})
             await s.commit()

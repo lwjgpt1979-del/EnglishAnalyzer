@@ -4,9 +4,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listCurriculumUnits, generateUnitContent,
-  uploadCurriculumPdf, generateFromPdf, generateSemester,
+  uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
   reextractUnit, listUnitNodes,
-  type UnitSegment, type UnitGenerateResult, type GenerateFromPdfOut,
+  type UnitSegment, type UnitGenerateResult, type GenJob,
 } from '../api/admin'
 import type { AdminCurriculumUnit, AdminUnitNodeItem } from '../types'
 
@@ -124,11 +124,31 @@ function printedPage(pdfNo: number): string {
 const segments     = ref<UnitSegment[]>([])
 const segErr       = ref('')
 
-// step 3
+// step 3:异步任务进度(方案 A)
 const pdfGenerating = ref(false)
-const pdfGenResult  = ref<GenerateFromPdfOut | null>(null)
+const pdfJob        = ref<GenJob | null>(null)
+let pdfPollTimer: ReturnType<typeof setTimeout> | null = null
 
-function openPdfDialog() {
+function stopPoll() { if (pdfPollTimer) { clearTimeout(pdfPollTimer); pdfPollTimer = null } }
+
+async function pollJob(jobId: string) {
+  try {
+    pdfJob.value = await getGenJob(jobId)
+    if (pdfJob.value.status === 'running') {
+      pdfPollTimer = setTimeout(() => pollJob(jobId), 2500)   // 每 2.5s 轮询
+    } else {
+      pdfGenerating.value = false
+      if (pdfJob.value.done > 0) { ElMessage.success(`生成完成:成功 ${pdfJob.value.done} 个单元`); await load() }
+      if (pdfJob.value.failed > 0) ElMessage.warning(`${pdfJob.value.failed} 个单元失败,可重新上传该书补齐`)
+    }
+  } catch (e: any) {
+    pdfGenerating.value = false
+    ElMessage.error(e?.message || '查询进度失败')
+  }
+}
+
+async function openPdfDialog() {
+  stopPoll()
   pdfStep.value       = 0
   pdfFile.value       = null
   pdfFileId.value     = ''
@@ -138,8 +158,18 @@ function openPdfDialog() {
   pdfUploadErr.value  = ''
   segments.value      = []
   segErr.value        = ''
-  pdfGenResult.value  = null
+  pdfJob.value        = null
+  pdfGenerating.value = false
   pdfDialogVisible.value = true
+  // 重开时若仍有在跑的生成任务 → 直接挂回进度(关窗口不影响后台)
+  try {
+    const running = await listGenJobs({ status: 'running', limit: 1 })
+    if (running.length) {
+      pdfStep.value = 3
+      pdfGenerating.value = true
+      pollJob(running[0].job_id)
+    }
+  } catch { /* 忽略 */ }
 }
 
 function onFileChange(uploadFile: any) {
@@ -185,22 +215,19 @@ async function startPdfGenerate() {
   }
   pdfStep.value    = 3
   pdfGenerating.value = true
-  pdfGenResult.value  = null
+  pdfJob.value     = null
   try {
-    pdfGenResult.value = await generateFromPdf(pdfFileId.value, {
+    const created = await generateFromPdf(pdfFileId.value, {
       textbook_version: pdfTextbook.value,
       grade: pdfGrade.value,
       semester: pdfSemester.value,
       segments: segments.value,
     })
-    if (pdfGenResult.value.success_count > 0) {
-      ElMessage.success(`成功生成 ${pdfGenResult.value.success_count} 个单元`)
-      await load()
-    }
+    // 秒回 job_id → 轮询进度(可关窗口,后台继续)
+    pollJob(created.job_id)
   } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
-  } finally {
     pdfGenerating.value = false
+    ElMessage.error(e?.message || '生成失败')
   }
 }
 
@@ -318,6 +345,7 @@ onMounted(load)
       v-model="pdfDialogVisible"
       title="上传教材 PDF 生成课程内容"
       width="680px"
+      @close="stopPoll"
       :close-on-click-modal="false"
     >
       <el-steps :active="pdfStep" finish-status="success" style="margin-bottom:28px">
@@ -438,22 +466,27 @@ onMounted(load)
       <!-- Step 3：生成中 / 结果 -->
       <div v-if="pdfStep === 3">
         <div v-if="pdfGenerating" class="gen-loading">
-          <el-icon class="spinning"><i class="el-icon-loading" /></el-icon>
-          <div style="font-size:15px;font-weight:600;margin-top:12px">AI 生成中，请稍候…</div>
+          <div style="font-size:15px;font-weight:600">AI 后台生成中…</div>
           <div style="font-size:13px;color:#909399;margin-top:6px">
-            约 {{ segments.length * 20 }}–{{ segments.length * 30 }} 秒，请勿关闭窗口
+            已完成 {{ pdfJob?.done ?? 0 }} / {{ pdfJob?.total ?? segments.length }} 个单元<span v-if="pdfJob?.failed">（失败 {{ pdfJob.failed }}）</span>
+            ——可关闭窗口,后台继续生成,重开本弹窗会自动恢复进度
           </div>
-          <el-progress :percentage="0" status="" style="width:300px;margin-top:16px" :striped="true" :striped-flow="true" :duration="10" />
+          <el-progress
+            :percentage="pdfJob && pdfJob.total ? Math.round((pdfJob.done + pdfJob.failed) / pdfJob.total * 100) : 0"
+            style="width:320px;margin-top:16px" />
+          <div style="text-align:right;margin-top:16px;width:100%">
+            <el-button @click="pdfDialogVisible = false">关闭(后台继续)</el-button>
+          </div>
         </div>
 
-        <div v-else-if="pdfGenResult">
+        <div v-else-if="pdfJob">
           <div class="result-summary">
-            <el-tag type="success" size="large">✅ 成功 {{ pdfGenResult.success_count }} 个单元</el-tag>
-            <el-tag v-if="pdfGenResult.error_count" type="danger" size="large" style="margin-left:8px">
-              ❌ 失败 {{ pdfGenResult.error_count }} 个单元
+            <el-tag type="success" size="large">✅ 成功 {{ pdfJob.done }} 个单元</el-tag>
+            <el-tag v-if="pdfJob.failed" type="danger" size="large" style="margin-left:8px">
+              ❌ 失败 {{ pdfJob.failed }} 个单元
             </el-tag>
           </div>
-          <el-table :data="pdfGenResult.results" border size="small" style="margin-top:16px">
+          <el-table :data="pdfJob.results" border size="small" style="margin-top:16px">
             <el-table-column label="状态" width="60" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.status === 'ok' ? 'success' : 'danger'" size="small">

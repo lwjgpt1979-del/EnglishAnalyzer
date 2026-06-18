@@ -53,3 +53,27 @@ class GenerateFromPdfOut(BaseModel):
     results: list[UnitGenerateResult]
     success_count: int
     error_count: int
+
+
+# ── 异步生成任务(方案 A)──────────────────────────────────────
+import uuid as _uuid
+
+
+class GenJobCreatedOut(BaseModel):
+    """POST 生成:立即返回 job_id(秒回,后台异步跑)。"""
+    job_id: _uuid.UUID
+    total: int
+
+
+class GenJobOut(BaseModel):
+    """GET 任务进度。"""
+    job_id: _uuid.UUID
+    source: str
+    textbook_version: str
+    grade: str
+    semester: str
+    status: str                     # running|done|failed
+    total: int
+    done: int
+    failed: int
+    results: list[UnitGenerateResult] = []

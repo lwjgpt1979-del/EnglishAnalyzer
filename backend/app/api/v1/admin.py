@@ -1134,6 +1134,7 @@ from fastapi import UploadFile, File, Form
 from app.schemas.pdf_upload import (
     PdfUploadOut, PdfPageListOut, PagePreview,
     GenerateFromPdfRequest, GenerateFromPdfOut, UnitGenerateResult, UnitSegment,
+    GenJobCreatedOut, GenJobOut,
 )
 from app.services import pdf_upload_service
 
@@ -1201,85 +1202,63 @@ async def get_pdf_pages(file_id: str, admin: AdminDep):
     ))
 
 
+def _to_gen_job_out(job) -> GenJobOut:
+    return GenJobOut(
+        job_id=job.id, source=job.source, textbook_version=job.textbook_version,
+        grade=job.grade, semester=job.semester, status=job.status,
+        total=job.total, done=job.done, failed=job.failed,
+        results=[UnitGenerateResult(**r) for r in (job.results or [])],
+    )
+
+
 @router.post("/curriculum/pdf/{file_id}/generate",
-             response_model=BaseResponse[GenerateFromPdfOut])
+             response_model=BaseResponse[GenJobCreatedOut])
 async def generate_from_pdf(
     file_id: str,
     body: GenerateFromPdfRequest,
     db: DbDep,
     admin: AdminDep,
 ):
-    """
-    根据上传的 PDF 分片逐单元调用 AI 生成课程内容。
-
-    segments 可来自 upload 返回的 auto_segments，或人工在 /pages 基础上划定。
-    每个 segment 单独调用 DeepSeek，将真实单元文本作为上下文。
-    成功的单元直接写入数据库（content_status 由请求决定）。
-    任一单元失败不影响其他单元继续生成。
-    """
-    from app.services import curriculum_ai_service
-
+    """异步生成(方案 A):建任务并存待生成单元,**秒回 job_id**;后台逐单元生成
+    (每单元独立 commit + 失败重试),前端轮询 /pdf-jobs/{job_id} 看进度,可关窗口。"""
+    from app.services import curriculum_gen_service as gen
     try:
-        _ = pdf_upload_service.extract_pages(file_id)  # 验证文件存在
+        pdf_upload_service.extract_pages(file_id)  # 验证文件存在
     except FileNotFoundError:
         raise AppError(code=404, message=f"PDF 不存在（file_id={file_id}），请重新上传")
 
-    results: list[UnitGenerateResult] = []
-    success = error = 0
-
-    from app.services import curriculum_kp_service
-    for seg in body.segments:
-        try:
-            unit_text = pdf_upload_service.get_unit_text(
-                file_id, seg.start_page, seg.end_page,
-            )
-            ai_unit = await curriculum_ai_service.generate_unit_from_text(
-                textbook_version=body.textbook_version,
-                grade=body.grade,
-                semester=body.semester,
-                unit_no=seg.unit_no,
-                unit_text=unit_text,
-                detected_title=seg.detected_title,
-            )
-            # 每单元独立 savepoint:persist 失败只回滚本单元,不污染整批 / 不丢已成功单元
-            async with db.begin_nested():
-                cu = await curriculum_service.persist_unit(
-                    db, ai_unit=ai_unit, content_status=body.content_status,
-                )
-                await db.flush()
-            # R1:对齐知识图谱(派生 vocab_node)best-effort,独立 savepoint 隔离,失败不影响本单元
-            try:
-                async with db.begin_nested():
-                    await curriculum_kp_service.extract_for_ai_unit(
-                        db, unit_id=cu.id, ai_unit=ai_unit, source="upload_extract",
-                    )
-            except Exception:  # noqa: BLE001
-                pass
-            results.append(UnitGenerateResult(
-                unit_no=seg.unit_no,
-                unit_title=ai_unit.unit_title,
-                kp_count=len(ai_unit.knowledge_points),
-                word_count=len(ai_unit.words),
-                status="ok",
-            ))
-            success += 1
-        except Exception as exc:
-            results.append(UnitGenerateResult(
-                unit_no=seg.unit_no,
-                unit_title=seg.detected_title or f"Unit {seg.unit_no}",
-                kp_count=0,
-                word_count=0,
-                status="error",
-                error=str(exc),
-            ))
-            error += 1
-
+    segments = [s.model_dump() for s in body.segments]
+    job = await gen.create_job(
+        db, source="pdf", file_id=file_id, textbook_version=body.textbook_version,
+        grade=body.grade, semester=body.semester, content_status=body.content_status,
+        segments=segments,
+    )
     await db.commit()
-    return make_ok(GenerateFromPdfOut(
-        results=results,
-        success_count=success,
-        error_count=error,
-    ))
+    gen.schedule(job.id)
+    return make_ok(GenJobCreatedOut(job_id=job.id, total=len(segments)))
+
+
+@router.get("/curriculum/pdf-jobs/{job_id}", response_model=BaseResponse[GenJobOut])
+async def get_gen_job(job_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """查生成任务进度(前端轮询)。"""
+    from app.services import curriculum_gen_service as gen
+    job = await gen.get_job(db, job_id)
+    if job is None:
+        raise AppError(code=404, message="生成任务不存在")
+    return make_ok(_to_gen_job_out(job))
+
+
+@router.get("/curriculum/pdf-jobs", response_model=BaseResponse[list[GenJobOut]])
+async def list_gen_jobs(
+    db: DbDep, admin: AdminDep, status: str | None = None,
+    textbook_version: str | None = None, grade: str | None = None,
+    semester: str | None = None, limit: int = 20,
+):
+    """列任务(供重开页面时重新挂上在跑的进度:status=running + 教材筛选)。"""
+    from app.services import curriculum_gen_service as gen
+    jobs = await gen.list_jobs(db, status=status, textbook_version=textbook_version,
+                               grade=grade, semester=semester, limit=limit)
+    return make_ok([_to_gen_job_out(j) for j in jobs])
 
 
 # ── M11 主题中心 ──────────────────────────────────────────────────────────────

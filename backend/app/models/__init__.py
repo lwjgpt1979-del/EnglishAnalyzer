@@ -70,7 +70,7 @@ from .d10_branch import (  # noqa: F401
 )
 
 # 域11: V2 教材深度内容 (1 张表)
-from .d11_v2_curriculum import KnowledgePointContent, PendingKpContent  # noqa: F401
+from .d11_v2_curriculum import KnowledgePointContent, PendingKpContent, CurriculumGenJob  # noqa: F401
 
 # 域12: V2 真题与仿真题 (4 张表)
 from .d12_v2_exams import (  # noqa: F401

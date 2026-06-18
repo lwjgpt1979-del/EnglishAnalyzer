@@ -383,6 +383,21 @@ export interface GenerateFromPdfOut {
   error_count: number
 }
 
+// 异步生成任务(方案 A)
+export interface GenJobCreated { job_id: string; total: number }
+export interface GenJob {
+  job_id: string
+  source: string
+  textbook_version: string
+  grade: string
+  semester: string
+  status: 'running' | 'done' | 'failed'
+  total: number
+  done: number
+  failed: number
+  results: UnitGenerateResult[]
+}
+
 export function uploadCurriculumPdf(file: File): Promise<PdfUploadOut> {
   const form = new FormData()
   form.append('file', file)
@@ -401,10 +416,21 @@ export function getPdfPages(fileId: string): Promise<{ file_id: string; total_pa
 export function generateFromPdf(
   fileId: string,
   body: { textbook_version: string; grade: string; semester: string; segments: UnitSegment[]; content_status?: string },
-): Promise<GenerateFromPdfOut> {
-  return unwrap<GenerateFromPdfOut>(
-    request.post(`/admin/curriculum/pdf/${fileId}/generate`, { content_status: 'published', ...body }, { timeout: 300000 }),
+): Promise<GenJobCreated> {
+  // 秒回 job_id;后台异步逐单元生成,前端轮询 getGenJob 看进度
+  return unwrap<GenJobCreated>(
+    request.post(`/admin/curriculum/pdf/${fileId}/generate`, { content_status: 'published', ...body }),
   )
+}
+
+export function getGenJob(jobId: string): Promise<GenJob> {
+  return unwrap<GenJob>(request.get(`/admin/curriculum/pdf-jobs/${jobId}`))
+}
+
+export function listGenJobs(params: {
+  status?: string; textbook_version?: string; grade?: string; semester?: string; limit?: number
+}): Promise<GenJob[]> {
+  return unwrap<GenJob[]>(request.get('/admin/curriculum/pdf-jobs', { params }))
 }
 
 export interface GenerateSemesterResult {

@@ -72,3 +72,31 @@ class PendingKpContent(Base):
         sa.UniqueConstraint("kp_name_norm", "dimension", name="uix_pending_kp_dim"),
         sa.Index("ix_pending_kp_content_norm", "kp_name_norm"),
     )
+
+
+class CurriculumGenJob(Base):
+    """教材内容生成异步任务:分单元存下,后台逐单元生成(每单元独立 commit + 重试),前端轮询进度。"""
+
+    __tablename__ = "curriculum_gen_job"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'pdf'"))  # pdf|semester
+    file_id = mapped_column(sa.String(64), nullable=True)
+    textbook_version = mapped_column(sa.String(64), nullable=False)
+    grade = mapped_column(sa.String(32), nullable=False)
+    semester = mapped_column(sa.String(8), nullable=False)
+    content_status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'draft'"))
+    status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'running'"))  # running|done|failed
+    total = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    done = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    failed = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    segments = mapped_column(JSONB, nullable=False)
+    results = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.func.now(), onupdate=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_curriculum_gen_job_status", "status"),
+        sa.Index("ix_curriculum_gen_job_book", "textbook_version", "grade", "semester"),
+    )
