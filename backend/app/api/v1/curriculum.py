@@ -67,52 +67,55 @@ async def get_unit_detail(
     return make_ok(detail.model_dump(mode="json"))
 
 
-@router.get("/knowledge-points/{kp_id}/contents")
+@router.get("/knowledge-points/{node_id}/contents")
 async def get_kp_contents(
-    kp_id: uuid.UUID,
+    node_id: uuid.UUID,
     db: DbDep,
     current_user: UserDep,
 ):
+    """某知识 node 的六维讲解(R8.4:路径 id 即 node_id)。"""
     contents = await curriculum_service.get_kp_contents(
-        db, user_id=current_user.id, kp_id=kp_id,
+        db, user_id=current_user.id, node_id=node_id,
     )
     return make_ok([c.model_dump(mode="json") for c in contents])
 
 
-@router.get("/knowledge-points/{kp_id}/mastery")
+@router.get("/knowledge-points/{node_id}/mastery")
 async def get_kp_mastery(
-    kp_id: uuid.UUID,
+    node_id: uuid.UUID,
     db: DbDep,
     current_user: UserDep,
 ):
-    """返回当前用户对某 KP 的掌握台账（按 kp.name 匹配）。"""
+    """当前用户对某知识 node 的掌握(R8.4:读 student_kp,node 维度)。"""
     from sqlalchemy import select as _select
-    from app.models.d4_knowledge import KnowledgePoint, StudentKpMastery
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import StudentKp
 
-    kp = (await db.execute(
-        _select(KnowledgePoint).where(KnowledgePoint.id == kp_id)
+    node = (await db.execute(
+        _select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     )).scalar_one_or_none()
-    if kp is None:
+    if node is None:
         return make_ok(None)
 
-    m = (await db.execute(
-        _select(StudentKpMastery).where(
-            StudentKpMastery.student_id == current_user.id,
-            StudentKpMastery.kp_key == kp.name,
+    sk = (await db.execute(
+        _select(StudentKp).where(
+            StudentKp.student_id == current_user.id,
+            StudentKp.node_id == node_id,
         )
     )).scalar_one_or_none()
 
-    if m is None:
-        return make_ok({"kp_name": kp.name, "correct_count": 0, "wrong_count": 0,
+    if sk is None:
+        return make_ok({"kp_name": node.name, "correct_count": 0, "wrong_count": 0,
                         "total": 0, "accuracy": None, "last_activity_at": None})
-    total = m.correct_count + m.wrong_count
+    correct = max((sk.practice_count or 0) - (sk.wrong_count or 0), 0)
+    total = correct + (sk.wrong_count or 0)
     return make_ok({
-        "kp_name": kp.name,
-        "correct_count": m.correct_count,
-        "wrong_count": m.wrong_count,
+        "kp_name": node.name,
+        "correct_count": correct,
+        "wrong_count": sk.wrong_count or 0,
         "total": total,
-        "accuracy": round(m.correct_count / total, 4) if total else None,
-        "last_activity_at": m.last_activity_at.isoformat() if m.last_activity_at else None,
+        "accuracy": round(correct / total, 4) if total else None,
+        "last_activity_at": sk.last_practice_at.isoformat() if sk.last_practice_at else None,
     })
 
 
@@ -122,38 +125,41 @@ async def get_unit_mastery_summary(
     db: DbDep,
     current_user: UserDep,
 ):
-    """返回该单元每个 KP 的掌握情况（正确率、练习次数、最近练习时间）。"""
+    """该单元每个知识 node 的掌握(R8.4:unit_node → knowledge_nodes,读 student_kp)。"""
     from sqlalchemy import select as _select
-    from app.models.d4_knowledge import KnowledgePoint, StudentKpMastery, UnitKnowledgePoint
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import StudentKp
+    from app.models.d17_curriculum_kg import UnitNode
 
-    rows = (await db.execute(
-        _select(KnowledgePoint)
-        .join(UnitKnowledgePoint, UnitKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-        .where(UnitKnowledgePoint.unit_id == unit_id)
+    nodes = (await db.execute(
+        _select(KnowledgeNode)
+        .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
+        .where(UnitNode.unit_id == unit_id)
     )).scalars().all()
+    node_ids = [n.id for n in nodes]
 
-    kp_keys = [r.name for r in rows]
-    mastery_rows = (await db.execute(
-        _select(StudentKpMastery).where(
-            StudentKpMastery.student_id == current_user.id,
-            StudentKpMastery.kp_key.in_(kp_keys),
+    sk_rows = (await db.execute(
+        _select(StudentKp).where(
+            StudentKp.student_id == current_user.id,
+            StudentKp.node_id.in_(node_ids),
         )
-    )).scalars().all()
-    mastery_map = {m.kp_key: m for m in mastery_rows}
+    )).scalars().all() if node_ids else []
+    sk_map = {sk.node_id: sk for sk in sk_rows}
 
     result = []
-    for kp in rows:
-        m = mastery_map.get(kp.name)
-        total = (m.correct_count + m.wrong_count) if m else 0
+    for n in nodes:
+        sk = sk_map.get(n.id)
+        correct = max((sk.practice_count or 0) - (sk.wrong_count or 0), 0) if sk else 0
+        total = correct + (sk.wrong_count or 0) if sk else 0
         result.append({
-            "kp_id": str(kp.id),
-            "kp_name": kp.name,
-            "kp_category": str(kp.category) if kp.category else None,
-            "correct_count": m.correct_count if m else 0,
-            "wrong_count": m.wrong_count if m else 0,
+            "kp_id": str(n.id),
+            "kp_name": n.name,
+            "kp_category": str(n.node_kind) if n.node_kind else None,
+            "correct_count": correct,
+            "wrong_count": (sk.wrong_count or 0) if sk else 0,
             "total": total,
-            "accuracy": round(m.correct_count / total, 4) if total else None,
-            "last_activity_at": m.last_activity_at.isoformat() if m and m.last_activity_at else None,
+            "accuracy": round(correct / total, 4) if total else None,
+            "last_activity_at": sk.last_practice_at.isoformat() if sk and sk.last_practice_at else None,
         })
     return make_ok(result)
 

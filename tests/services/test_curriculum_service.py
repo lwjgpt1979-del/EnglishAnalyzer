@@ -97,23 +97,25 @@ async def test_persist_unit_creates_all_6_tables(db_session):
     )).scalar_one()
     assert cu_found.unit_title == ai.unit_title
 
-    # 2/3. unit_knowledge_points 链接到本单元（>= because persist is upsert,
-    # tolerates pre-existing real-AI data alongside mock data）
-    links = (await db_session.execute(
-        select(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id == cu.id)
+    # 2/3. R8.4:persist 直接建 unit_node 边 + active 知识 node(不再建 knowledge_points/unit_knowledge_points)
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.services.kp_normalize import normalize_kp_name
+    edges = (await db_session.execute(
+        select(UnitNode).where(UnitNode.unit_id == cu.id)
     )).scalars().all()
-    assert len(links) >= len(ai.knowledge_points)
+    assert len(edges) >= len(ai.knowledge_points)
 
-    # knowledge_points 至少有本次 AI 输出的全部（按 code 查）
-    codes = [kp.code for kp in ai.knowledge_points]
-    found_kps = (await db_session.execute(
-        select(KnowledgePoint).where(KnowledgePoint.code.in_(codes))
+    norms = [normalize_kp_name(kp.name) for kp in ai.knowledge_points]
+    nodes = (await db_session.execute(
+        select(KnowledgeNode).join(NodeAlias, NodeAlias.node_id == KnowledgeNode.id)
+        .where(NodeAlias.alias_norm.in_(norms))
     )).scalars().all()
-    assert len(found_kps) == len(codes)
+    assert len(nodes) >= len(ai.knowledge_points)
+    assert all(str(n.status) == "active" and str(n.source) == "textbook" for n in nodes)
 
-    # 4. 内容已切 node_resource(lecture);persist_unit 仅对命中 node 的 KP 落 lecture,
-    #    专项覆盖见 tests/api/test_curriculum.py::test_persist_unit_writes_node_resource_lectures_draft。
-    #    本用例专注核心表(units/kps/links/words),不再断言旧 knowledge_point_contents。
+    # 4. 讲解内容已 node-native:专项覆盖见
+    #    tests/api/test_curriculum.py::test_persist_unit_writes_node_resource_lectures_draft。
 
     # 5/6. curriculum_words ↔ vocabulary_words（>= 同理）
     cw = (await db_session.execute(

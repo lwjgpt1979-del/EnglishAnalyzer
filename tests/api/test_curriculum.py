@@ -188,6 +188,7 @@ async def _seed_kp_node_with_lectures(*, unit_version, unit_grade, unit_sem, uni
     from sqlalchemy import select as _sel
     from app.models.d4_knowledge import CurriculumUnit, KnowledgePoint, UnitKnowledgePoint
     from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.models.d17_curriculum_kg import UnitNode
     from app.models.d19_node_resource import NodeResource
     async with _async_session_factory() as s:
         cu = (await s.execute(_sel(CurriculumUnit).where(
@@ -206,6 +207,7 @@ async def _seed_kp_node_with_lectures(*, unit_version, unit_grade, unit_sem, uni
         s.add_all([kp, node])
         await s.flush()
         s.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
+        s.add(UnitNode(unit_id=cu.id, node_id=node.id, source="seed"))  # R8.4:付费墙经 unit_node
         s.add(NodeAlias(id=uuid.uuid4(), node_id=node.id, alias=kp_name,
                         alias_norm=_norm(kp_name), source="seed"))
         for d in dims_published:
@@ -230,7 +232,7 @@ async def test_get_kp_contents_returns_6_dimensions(client):
     await _seed_user_with_semester(f"m2_curriculum_{suffix}")
     h = await _login(client, suffix)
     try:
-        resp = await client.get(f"/api/v1/curriculum/knowledge-points/{kp_id}/contents", headers=h)
+        resp = await client.get(f"/api/v1/curriculum/knowledge-points/{node_id}/contents", headers=h)
         assert resp.status_code == 200, resp.text
         contents = resp.json()["data"]
         dims = {c["dimension"] for c in contents}
@@ -240,6 +242,7 @@ async def test_get_kp_contents_returns_6_dimensions(client):
     finally:
         async with _async_session_factory() as s:
             from sqlalchemy import text as _t
+            await s.execute(_t("DELETE FROM unit_node WHERE node_id = :n"), {"n": str(node_id)})
             await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(node_id)})
             await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(node_id)})
             await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(node_id)})
@@ -255,12 +258,13 @@ async def test_get_kp_contents_filters_published(client):
         dims_published=["grammar"], dims_draft=["listening"])
     try:
         async with _async_session_factory() as s:
-            contents = await curriculum_service.get_kp_contents(s, user_id=uuid.uuid4(), kp_id=kp_id)
+            contents = await curriculum_service.get_kp_contents(s, user_id=uuid.uuid4(), node_id=node_id)
         dims = {c.dimension for c in contents}
         assert dims == {"grammar"}
     finally:
         async with _async_session_factory() as s:
             from sqlalchemy import text as _t
+            await s.execute(_t("DELETE FROM unit_node WHERE node_id = :n"), {"n": str(node_id)})
             await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(node_id)})
             await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(node_id)})
             await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(node_id)})

@@ -34,37 +34,40 @@ from app.services import semester_service
 
 # ─── Persist ────────────────────────────────────────────────────────────────
 
-async def _match_kp_node(db: AsyncSession, kp_name: str | None) -> uuid.UUID | None:
-    """旧 KP 名 → 受控匹配新知识 node(use_llm=False,廉价);未命中返回 None(落候选)。"""
-    if not kp_name:
-        return None
-    from app.services.kp_match_service import match_kp
-    m = await match_kp(db, raw_name=kp_name, axis_hint="knowledge",
-                       source_type="textbook", use_llm=False)
-    return m.node_id
+async def _get_or_create_node(
+    db: AsyncSession, *, name: str, code: str | None,
+    description: str | None, stages: list[str] | None,
+) -> uuid.UUID | None:
+    """R8.4:教材是知识点的权威来源 → 生成时按名 get-or-create **active** 知识 node + 别名。
 
-
-async def _stash_pending_content(
-    db: AsyncSession, *, kp_name: str, dimension: str, content_md: str,
-    source_unit_id: uuid.UUID | None,
-) -> None:
-    """KP 未命中 node 时暂存讲解(按 kp_name_norm+dimension upsert),候选审核后物化为 lecture。"""
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from app.models.d11_v2_curriculum import PendingKpContent
+    已有同名(归一化)别名 → 复用其 node;否则新建 active node(source=textbook)。
+    取代旧"建 knowledge_points + match_kp/落候选"链:教材直接定义 node,内容直挂 node。
+    """
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
     from app.services.kp_normalize import normalize_kp_name
-    norm = normalize_kp_name(kp_name)
+    norm = normalize_kp_name(name)
     if not norm:
-        return
-    await db.execute(
-        pg_insert(PendingKpContent)
-        .values(id=uuid.uuid4(), kp_name_norm=norm, dimension=dimension,
-                content_md=content_md, source_unit_id=source_unit_id, generated_by="ai_full")
-        .on_conflict_do_update(
-            constraint="uix_pending_kp_dim",
-            set_={"content_md": content_md, "source_unit_id": source_unit_id,
-                  "updated_at": func.now()},
-        )
-    )
+        return None
+    existing = (await db.execute(
+        select(NodeAlias.node_id).where(NodeAlias.alias_norm == norm)
+    )).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    node_code = code or f"kp-{norm[:48]}"
+    if (await db.execute(
+        select(KnowledgeNode.id).where(KnowledgeNode.code == node_code)
+    )).scalar_one_or_none() is not None:
+        node_code = f"{node_code[:54]}-{uuid.uuid4().hex[:6]}"
+    nid = uuid.uuid4()
+    db.add(KnowledgeNode(
+        id=nid, axis="knowledge", node_kind=None, name=name, code=node_code,
+        applicable_stages=stages or None, status="active", source="textbook",
+        description=description,
+    ))
+    await db.flush()
+    db.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=name, alias_norm=norm, source="textbook"))
+    await db.flush()
+    return nid
 
 
 async def persist_unit(
@@ -102,53 +105,32 @@ async def persist_unit(
     else:
         cu.unit_title = ai_unit.unit_title
 
-    # 2. knowledge_points + 3. unit_knowledge_points + 4. knowledge_point_contents
+    # 2. 知识点 → R8.4 直接建/复用 active 知识 node + unit_node 边;讲解直写 node_resource。
+    #    不再建 knowledge_points / unit_knowledge_points(旧桥退役),内容 node-native、无 pending。
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.services import node_resource_service as nrs
+    from app.services.kp_normalize import stages_from_grades
+    stages = stages_from_grades([ai_unit.grade])
     for kp_in in ai_unit.knowledge_points:
-        kp_q = await db.execute(
-            select(KnowledgePoint).where(KnowledgePoint.code == kp_in.code)
+        node_id = await _get_or_create_node(
+            db, name=kp_in.name, code=kp_in.code,
+            description=kp_in.description, stages=stages,
         )
-        kp = kp_q.scalar_one_or_none()
-        if kp is None:
-            kp = KnowledgePoint(
-                id=uuid.uuid4(),
-                code=kp_in.code,
-                name=kp_in.name,
-                category=kp_in.category,  # type: ignore[arg-type]
-                description=kp_in.description,
-                applicable_grades=[ai_unit.grade],
-                applicable_textbooks=[ai_unit.textbook_version],
-            )
-            db.add(kp)
-            await db.flush()
-        else:
-            kp.name = kp_in.name
-            kp.description = kp_in.description
-
-        # link
-        link_q = await db.execute(
-            select(UnitKnowledgePoint).where(
-                UnitKnowledgePoint.unit_id == cu.id,
-                UnitKnowledgePoint.knowledge_point_id == kp.id,
-            )
+        if node_id is None:
+            continue
+        await db.execute(
+            pg_insert(UnitNode)
+            .values(unit_id=cu.id, node_id=node_id, source="ai_extract")
+            .on_conflict_do_nothing(index_elements=["unit_id", "node_id"])
         )
-        if link_q.scalar_one_or_none() is None:
-            db.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
-
-        # contents 多维度 → KP-First 直写 node_resource lecture(挂句法/知识 node);停写旧 knowledge_point_contents。
-        # KP 命中 node → 写 lecture;未命中(落候选)→ 暂存 pending_kp_content,候选审核后物化(内容不丢)。
-        from app.services import node_resource_service as nrs
-        node_id = await _match_kp_node(db, kp.name)
         for dim, md in kp_in.contents.items():
             if dim not in nrs._DIMENSIONS:
                 continue  # node_resource lecture 仅六维;dictation 等非教学维跳过
-            if node_id is not None:
-                await nrs.upsert_lecture(
-                    db, node_id=node_id, dimension=dim, content_md=md,
-                    generated_by="ai_full", status=content_status,
-                )
-            else:
-                await _stash_pending_content(db, kp_name=kp.name, dimension=dim,
-                                             content_md=md, source_unit_id=cu.id)
+            await nrs.upsert_lecture(
+                db, node_id=node_id, dimension=dim, content_md=md,
+                generated_by="ai_full", status=content_status,
+            )
 
     # 5. vocabulary_words + 6. curriculum_words
     for w_in in ai_unit.words:
@@ -215,8 +197,12 @@ async def reset_semester(
 
     # 按 FK 顺序删子表，再删主表（避免 FK violation）
     from app.models.d4_knowledge import UnitKnowledgePoint
+    from app.models.d17_curriculum_kg import UnitNode
     await db.execute(
-        _sa.delete(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id.in_(unit_ids))
+        _sa.delete(UnitNode).where(UnitNode.unit_id.in_(unit_ids))   # R8.4:单元↔node 边
+    )
+    await db.execute(
+        _sa.delete(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id.in_(unit_ids))  # 旧桥(兼容)
     )
     await db.execute(
         _sa.delete(CurriculumWord).where(CurriculumWord.unit_id.in_(unit_ids))
@@ -314,13 +300,12 @@ async def list_units(
     )
     units = list(r.scalars().all())
 
+    from app.models.d17_curriculum_kg import UnitNode
     out: list[UnitOut] = []
     for u in units:
-        kp_count = len(
-            (await db.execute(
-                select(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id == u.id)
-            )).scalars().all()
-        )
+        kp_count = (await db.execute(
+            select(func.count()).select_from(UnitNode).where(UnitNode.unit_id == u.id)
+        )).scalar_one()
         locked = await is_unit_locked(
             db, user_id=user_id,
             textbook_version=textbook_version, grade=grade, semester=semester,
@@ -359,17 +344,18 @@ async def get_unit_detail(
     if locked:
         raise AppError(code=403, message="该单元需购买学期会员后解锁")
 
-    kp_rows = (await db.execute(
-        select(KnowledgePoint).join(
-            UnitKnowledgePoint,
-            UnitKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
-        ).where(UnitKnowledgePoint.unit_id == u.id)
-        .order_by(KnowledgePoint.sort_order, KnowledgePoint.code)
+    # R8.4:知识点来自 unit_node → knowledge_nodes(id 即 node_id),不再读旧 knowledge_points
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d17_curriculum_kg import UnitNode
+    node_rows = (await db.execute(
+        select(KnowledgeNode).join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
+        .where(UnitNode.unit_id == u.id)
+        .order_by(KnowledgeNode.sort_order, KnowledgeNode.code)
     )).scalars().all()
     kps = [KnowledgePointOut(
-        id=kp.id, code=kp.code, name=kp.name,
-        category=str(kp.category), description=kp.description,
-    ) for kp in kp_rows]
+        id=n.id, code=n.code, name=n.name,
+        category=str(n.node_kind or ""), description=n.description,
+    ) for n in node_rows]
 
     w_rows = (await db.execute(
         select(VocabularyWord).join(
@@ -400,37 +386,27 @@ async def get_kp_contents(
     db: AsyncSession,
     *,
     user_id: uuid.UUID,
-    kp_id: uuid.UUID,
+    node_id: uuid.UUID,
 ) -> list[KPContentOut]:
-    """返回某知识点的 4 维度内容。受其所属单元的锁约束。"""
-    cu = (await db.execute(
-        select(CurriculumUnit).join(
-            UnitKnowledgePoint,
-            UnitKnowledgePoint.unit_id == CurriculumUnit.id,
-        ).where(UnitKnowledgePoint.knowledge_point_id == kp_id)
-        .order_by(CurriculumUnit.unit_no)
-    )).scalars().first()
-    if cu is None:
-        raise AppError(code=404, message="知识点未关联任何单元")
-
-    locked = await is_unit_locked(
-        db, user_id=user_id,
-        textbook_version=cu.textbook_version, grade=cu.grade,
-        semester=str(cu.semester), unit_no=cu.unit_no,
-    )
-    if locked:
-        raise AppError(code=403, message="该知识点所属单元需购买学期会员后解锁")
-
-    # KP-First 直切:讲解读 node_resource(挂新 knowledge_nodes)。旧 kp → 名 → match_kp → node。
-    from app.models.d4_knowledge import KnowledgePoint
+    """返回某知识 node 的六维讲解(R8.4:入参为 node_id)。受其所属单元的锁约束。"""
+    from app.models.d17_curriculum_kg import UnitNode
     from app.models.d19_node_resource import NodeResource
 
-    kp_name = (await db.execute(
-        select(KnowledgePoint.name).where(KnowledgePoint.id == kp_id)
-    )).scalar_one_or_none()
-    node_id = await _match_kp_node(db, kp_name)
-    if node_id is None:
-        return []
+    cu = (await db.execute(
+        select(CurriculumUnit).join(
+            UnitNode, UnitNode.unit_id == CurriculumUnit.id,
+        ).where(UnitNode.node_id == node_id)
+        .order_by(CurriculumUnit.unit_no)
+    )).scalars().first()
+    if cu is not None:
+        locked = await is_unit_locked(
+            db, user_id=user_id,
+            textbook_version=cu.textbook_version, grade=cu.grade,
+            semester=str(cu.semester), unit_no=cu.unit_no,
+        )
+        if locked:
+            raise AppError(code=403, message="该知识点所属单元需购买学期会员后解锁")
+
     contents = (await db.execute(
         select(NodeResource).where(
             NodeResource.node_id == node_id,
@@ -494,12 +470,13 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
 
     unit_ids = [u.id for u in units]
 
-    # 每个单元的 KP 数
+    # 每个单元的 KP 数(R8.4:unit_node 边)
+    from app.models.d17_curriculum_kg import UnitNode as _UN
     kp_counts: dict[uuid.UUID, int] = dict(
         (await db.execute(
-            select(UnitKnowledgePoint.unit_id, func.count())
-            .where(UnitKnowledgePoint.unit_id.in_(unit_ids))
-            .group_by(UnitKnowledgePoint.unit_id)
+            select(_UN.unit_id, func.count())
+            .where(_UN.unit_id.in_(unit_ids))
+            .group_by(_UN.unit_id)
         )).all()
     )
 

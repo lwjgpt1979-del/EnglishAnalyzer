@@ -58,17 +58,20 @@ async def test_seed_grade_units_have_knowledge_points(db_session):
     )
     await db_session.flush()
 
+    # 仅校验本次 seed 建的单元(unit_no≤2);库里可能有历史提交的更高 unit_no(旧数据无 unit_node)
     units = (await db_session.execute(
         select(CurriculumUnit).where(
             CurriculumUnit.textbook_version == "译林版",
             CurriculumUnit.grade == "小学5年级",
+            CurriculumUnit.unit_no <= 2,
         )
     )).scalars().all()
 
+    from app.models.d17_curriculum_kg import UnitNode
     for unit in units:
         kp_count = (await db_session.execute(
-            select(func.count()).select_from(UnitKnowledgePoint).where(
-                UnitKnowledgePoint.unit_id == unit.id
+            select(func.count()).select_from(UnitNode).where(
+                UnitNode.unit_id == unit.id   # R8.4:单元知识点 = unit_node 边
             )
         )).scalar_one()
         assert kp_count >= 3, (
