@@ -360,6 +360,7 @@ export interface PdfUploadOut {
   total_pages: number
   auto_split_success: boolean
   auto_segments: UnitSegment[]
+  page_offset?: number   // 印刷页码 = PDF 页序 − page_offset
 }
 
 export interface PagePreview {

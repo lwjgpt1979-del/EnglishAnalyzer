@@ -1176,6 +1176,7 @@ async def upload_curriculum_pdf(
         total_pages=len(pages),
         auto_split_success=auto_ok,
         auto_segments=[UnitSegment(**s) for s in (segments_raw or [])],
+        page_offset=pdf_upload_service.detect_page_offset(pages),
     ))
 
 

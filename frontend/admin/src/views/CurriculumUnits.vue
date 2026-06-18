@@ -113,7 +113,12 @@ const pdfUploading     = ref(false)
 const pdfFileId        = ref('')
 const pdfTotalPages    = ref(0)
 const pdfAutoSuccess   = ref(false)
+const pdfPageOffset    = ref(0)        // 印刷页码 = PDF 页序 − offset
 const pdfUploadErr     = ref('')
+
+function printedPage(pdfNo: number): string {
+  return pdfPageOffset.value > 0 ? `印刷 P${pdfNo - pdfPageOffset.value}` : ''
+}
 
 // step 2
 const segments     = ref<UnitSegment[]>([])
@@ -129,6 +134,7 @@ function openPdfDialog() {
   pdfFileId.value     = ''
   pdfTotalPages.value = 0
   pdfAutoSuccess.value= false
+  pdfPageOffset.value = 0
   pdfUploadErr.value  = ''
   segments.value      = []
   segErr.value        = ''
@@ -150,6 +156,7 @@ async function doUpload() {
     pdfFileId.value     = out.file_id
     pdfTotalPages.value = out.total_pages
     pdfAutoSuccess.value= out.auto_split_success
+    pdfPageOffset.value = out.page_offset ?? 0
     segments.value      = out.auto_split_success
       ? out.auto_segments.map(s => ({ ...s }))
       : []
@@ -383,20 +390,25 @@ onMounted(load)
           title="未能自动识别单元分界，请手动填写各单元起止页码。"
           type="warning" :closable="false" style="margin-bottom:12px"
         />
+        <div v-if="pdfPageOffset > 0" class="offset-tip">
+          下方为 PDF 页序;本书 PDF 比印刷页码多 {{ pdfPageOffset }} 页 → 印刷页码 = PDF 页序 − {{ pdfPageOffset }}(各页已标「印刷 P」)
+        </div>
 
         <!-- 分段列表 -->
         <el-table :data="segments" border size="small" style="margin-bottom:12px">
           <el-table-column label="单元" width="80" align="center">
             <template #default="{ row }">Unit {{ row.unit_no }}</template>
           </el-table-column>
-          <el-table-column label="起始页" width="100" align="center">
+          <el-table-column label="起始页(PDF)" width="120" align="center">
             <template #default="{ row }">
               <el-input-number v-model="row.start_page" :min="1" :max="pdfTotalPages" size="small" controls-position="right" />
+              <div v-if="pdfPageOffset > 0" class="printed-hint">{{ printedPage(row.start_page) }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="结束页" width="100" align="center">
+          <el-table-column label="结束页(PDF)" width="120" align="center">
             <template #default="{ row }">
               <el-input-number v-model="row.end_page" :min="row.start_page" :max="pdfTotalPages" size="small" controls-position="right" />
+              <div v-if="pdfPageOffset > 0" class="printed-hint">{{ printedPage(row.end_page) }}</div>
             </template>
           </el-table-column>
           <el-table-column label="识别标题" min-width="120" show-overflow-tooltip>
@@ -540,4 +552,7 @@ onMounted(load)
 .spinning { font-size: 36px; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .result-summary { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.offset-tip { color: #b45309; background: #fffbeb; font-size: 12px;
+  padding: 6px 10px; border-radius: 4px; margin-bottom: 10px; }
+.printed-hint { color: #2563eb; font-size: 11px; margin-top: 2px; }
 </style>

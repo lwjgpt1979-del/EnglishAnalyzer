@@ -109,6 +109,30 @@ def _backmatter_start(pages: list[str], after_page: int) -> int | None:
     return None
 
 
+def detect_page_offset(pages: list[str]) -> int:
+    """估算 PDF 页序与书本印刷页码的固定偏移(印刷页码 = PDF 页序 − offset)。
+
+    每页文本几乎都含自己的印刷页码,用"PDF 页序 − 页内数字"投票:真实偏移会被
+    几乎每页投到、拿到压倒性多数;练习号/年份等其它数字散票。不显著则返回 0(按 PDF 页序显示)。
+    """
+    from collections import Counter
+    votes: Counter = Counter()
+    for i, text in enumerate(pages, start=1):
+        for m in re.findall(r"\b(\d{1,3})\b", text or ""):
+            k = i - int(m)
+            if 0 <= k <= 30:               # 前置页(封面/版权/目录)数量合理范围
+                votes[k] += 1
+    if not votes:
+        return 0
+    top = votes.most_common(2)
+    best, cnt = top[0]
+    second = top[1][1] if len(top) > 1 else 0
+    # 需足够多页支持且明显领先次高,否则视为不确定
+    if cnt >= max(5, len(pages) // 3) and cnt >= second * 2:
+        return best
+    return 0
+
+
 def auto_detect_units(pages: list[str]) -> list[dict] | None:
     """
     扫描各页文本，识别单元起始页。

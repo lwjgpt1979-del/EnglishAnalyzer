@@ -161,3 +161,18 @@ async def test_generate_unit_from_text_dev_mode():
     assert result.unit_no == 1
     assert len(result.knowledge_points) >= 1
     assert len(result.words) >= 1
+
+
+def test_detect_page_offset_votes_consistent_offset():
+    """每页含自己的印刷页码 → 投票得出固定偏移(印刷 = PDF − offset)。"""
+    from app.services.pdf_upload_service import detect_page_offset
+    pages = ["封面", "版权", "目录"]              # 前 3 页无印刷页码
+    for printed in range(1, 28):                  # PDF 第 4..30 页 = 印刷 1..27
+        pages.append(f"content exercise 5 page {printed} more text")
+    assert detect_page_offset(pages) == 3
+
+
+def test_detect_page_offset_unclear_returns_zero():
+    """页码无一致序列 → 不确定,返回 0(按 PDF 页序显示)。"""
+    from app.services.pdf_upload_service import detect_page_offset
+    assert detect_page_offset(["random 99", "blah 12", "x 3"]) == 0

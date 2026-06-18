@@ -18,6 +18,7 @@ class PdfUploadOut(BaseModel):
     total_pages: int
     auto_split_success: bool
     auto_segments: list[UnitSegment]
+    page_offset: int = 0   # 印刷页码 = PDF 页序 − page_offset(0=无偏移/未确定)
 
 
 class PagePreview(BaseModel):
