@@ -12,7 +12,6 @@ const router = createRouter({
         { path: '', redirect: '/overview' },
         { path: 'overview', name: 'overview', component: () => import('../views/Overview.vue') },
         { path: 'questions', name: 'questions', component: () => import('../views/QuestionsReview.vue') },
-        { path: 'contents', name: 'contents', component: () => import('../views/ContentsReview.vue') },
         { path: 'kp-candidates', name: 'kp-candidates', component: () => import('../views/KpCandidatesReview.vue') },
         { path: 'vocab-lists', name: 'vocab-lists', component: () => import('../views/VocabLists.vue') },
         { path: 'node-resources', name: 'node-resources', component: () => import('../views/NodeResources.vue') },

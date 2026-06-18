@@ -16,7 +16,6 @@ from app.models.d4_knowledge import (
     CurriculumWord,
 )
 from app.models.d5_learning import VocabularyWord
-from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.schemas.curriculum import AIGeneratedUnit, AIKnowledgePointItem, AIWordItem
 from app.services import curriculum_ai_service, curriculum_service
 
@@ -112,14 +111,9 @@ async def test_persist_unit_creates_all_6_tables(db_session):
     )).scalars().all()
     assert len(found_kps) == len(codes)
 
-    # 4. knowledge_point_contents：每个本次 AI 的 KP × 6 维度
-    kp_ids = [kp.id for kp in found_kps]
-    contents = (await db_session.execute(
-        select(KnowledgePointContent).where(
-            KnowledgePointContent.knowledge_point_id.in_(kp_ids)
-        )
-    )).scalars().all()
-    assert len(contents) == len(kp_ids) * 6
+    # 4. 内容已切 node_resource(lecture);persist_unit 仅对命中 node 的 KP 落 lecture,
+    #    专项覆盖见 tests/api/test_curriculum.py::test_persist_unit_writes_node_resource_lectures_draft。
+    #    本用例专注核心表(units/kps/links/words),不再断言旧 knowledge_point_contents。
 
     # 5/6. curriculum_words ↔ vocabulary_words（>= 同理）
     cw = (await db_session.execute(

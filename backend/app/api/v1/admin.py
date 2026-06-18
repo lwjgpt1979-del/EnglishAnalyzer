@@ -15,16 +15,9 @@ from app.core.security import create_access_token, create_refresh_token, require
 from app.models.d1_users import User
 from app.schemas.auth import AdminLoginRequest, TokenResponse
 from app.models.d5_learning import VocabularyWord
-from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.models.d12_v2_exams import SimulatedQuestion
 from app.schemas.admin import AdminOverviewOut
 from app.schemas.base import BaseResponse, make_ok
-from app.schemas.curriculum import (
-    AdminContentItem,
-    AdminContentListOut,
-    ContentReviewRequest,
-    ContentUpdateRequest,
-)
 from app.schemas.questions import (
     AdminQuestionItem,
     AdminQuestionListOut,
@@ -136,18 +129,6 @@ async def get_overview(db: DbDep, admin: AdminDep):
     return make_ok(await admin_stats_service.get_overview(db))
 
 
-def _to_content_item(r: KnowledgePointContent) -> AdminContentItem:
-    return AdminContentItem(
-        id=r.id,
-        knowledge_point_id=r.knowledge_point_id,
-        dimension=str(r.dimension),
-        content_md=r.content_md,
-        audio_url=r.audio_url,
-        status=str(r.status),
-        generated_by=str(r.generated_by),
-    )
-
-
 def _to_admin_item(r: SimulatedQuestion) -> AdminQuestionItem:
     return AdminQuestionItem(
         id=r.id,
@@ -256,54 +237,8 @@ async def review_question(
     return make_ok(_to_admin_item(r))
 
 
-# ─── 知识点内容审核/编辑（M5）────────────────────────────────────────────────
-
-@router.get("/contents", response_model=BaseResponse[AdminContentListOut])
-async def list_contents_for_review(
-    db: DbDep,
-    admin: AdminDep,
-    status: str = "draft",
-    kp_id: uuid.UUID | None = None,
-    skip: int = 0,
-    limit: int = 20,
-):
-    """运营按状态分页查知识点内容（含正文）。默认看待审草稿。"""
-    rows, total = await curriculum_service.list_contents_for_review(
-        db, status=status, kp_id=kp_id, skip=skip, limit=limit,
-    )
-    return make_ok(AdminContentListOut(
-        total=total, items=[_to_content_item(r) for r in rows],
-    ))
-
-
-@router.post("/contents/{content_id}/review", response_model=BaseResponse[AdminContentItem])
-async def review_content(
-    content_id: uuid.UUID,
-    body: ContentReviewRequest,
-    db: DbDep,
-    admin: AdminDep,
-):
-    """审核一条知识点内容：approve→published，reject→retired。"""
-    r = await curriculum_service.review_content(
-        db, content_id=content_id, approve=body.approve, reviewer_id=admin.id,
-    )
-    await db.commit()
-    return make_ok(_to_content_item(r))
-
-
-@router.put("/contents/{content_id}", response_model=BaseResponse[AdminContentItem])
-async def update_content(
-    content_id: uuid.UUID,
-    body: ContentUpdateRequest,
-    db: DbDep,
-    admin: AdminDep,
-):
-    """编辑知识点内容正文 / 音频 URL（运营人工修订）。"""
-    r = await curriculum_service.update_content(
-        db, content_id=content_id, content_md=body.content_md, audio_url=body.audio_url,
-    )
-    await db.commit()
-    return make_ok(_to_content_item(r))
+# ─── 知识点内容审核/编辑 ───────────────────────────────────────────────────────
+# 已退役:旧 /contents(knowledge_point_contents)审核改由 /node-resources(node_resource lecture)统一承接。
 
 
 # ─── 候选知识点审核（R0.4 KP-First）─────────────────────────────────────────────
@@ -740,7 +675,8 @@ async def generate_unit_content(
 ):
     """触发 AI 生成指定单元的课程内容（dev mock 即时；生产约 5-15s）。
 
-    生成内容 status='draft'，需在 ContentsReview 审核发布后学生才可见。
+    KP-First:内容直写 node_resource(lecture,挂命中 node),status='draft',
+    需在 NodeResources 后台页审核发布后学生才可见;未命中 node 的 KP 落候选,审核合并后可重生。
     """
     from app.models.d4_knowledge import CurriculumUnit
     from app.services import curriculum_ai_service

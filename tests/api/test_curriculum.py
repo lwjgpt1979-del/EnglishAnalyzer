@@ -268,117 +268,51 @@ async def test_get_kp_contents_filters_published(client):
 
 
 @pytest.mark.asyncio
-async def test_persist_unit_content_defaults_draft(client):
-    """persist_unit 不传 content_status 时，内容默认进 draft。"""
-    from sqlalchemy import select
-    from app.models.d4_knowledge import UnitKnowledgePoint
-    from app.models.d11_v2_curriculum import KnowledgePointContent
-    # 用 g7（初中7年级）unit_no=11：生产只 seed 过小学5上(g5)，g7 码无人占用；
-    # 仅 flush 不 commit，退出上下文自动回滚，不污染库。
-    async with _async_session_factory() as s:
-        ai = await curriculum_ai_service.generate_unit(
-            textbook_version="译林版", grade="初中7年级", semester="上", unit_no=11,
-        )
-        cu = await curriculum_service.persist_unit(s, ai_unit=ai)  # 默认 draft
-        await s.flush()
-        rows = (await s.execute(
-            select(KnowledgePointContent)
-            .join(
-                UnitKnowledgePoint,
-                UnitKnowledgePoint.knowledge_point_id == KnowledgePointContent.knowledge_point_id,
-            )
-            .where(UnitKnowledgePoint.unit_id == cu.id)
-        )).scalars().all()
-        assert rows and all(str(r.status) == "draft" for r in rows)
-        await s.rollback()
+async def test_persist_unit_writes_node_resource_lectures_draft(client):
+    """KP-First:persist_unit 把生成内容直写 node_resource(lecture);命中 node 的 KP 默认 draft。
 
+    生成内容仅在 KP 受控匹配到 node 时落 lecture(不建游离点),故预置 mock KP 名的 node+alias。
+    """
+    from sqlalchemy import select, text as _t
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.models.d19_node_resource import NodeResource
+    from app.services.kp_normalize import normalize_kp_name
 
-async def _seed_draft_content() -> tuple[uuid.UUID, uuid.UUID]:
-    """建 1 个 KP + 1 条 draft 内容，返回 (kp_id, content_id)。"""
-    from app.models.d4_knowledge import KnowledgePoint
-    from app.models.d11_v2_curriculum import KnowledgePointContent
+    # g7 unit 11 的 mock KP 名稳定;为其预置 node+alias 供 match_kp 命中
+    ai = await curriculum_ai_service.generate_unit(
+        textbook_version="译林版", grade="初中7年级", semester="上", unit_no=11,
+    )
+    kp_names = [kp.name for kp in ai.knowledge_points]
+    node_ids: list[uuid.UUID] = []
     async with _async_session_factory() as s:
-        kp = KnowledgePoint(
-            id=uuid.uuid4(), code=f"rev-{uuid.uuid4().hex[:6]}", name="审核内容KP",
-            category="grammar", description="d",
-            applicable_grades=["小学5年级"], applicable_textbooks=["译林版"],
-        )
-        s.add(kp)
-        await s.flush()
-        c = KnowledgePointContent(
-            id=uuid.uuid4(), knowledge_point_id=kp.id, dimension="grammar",
-            content_md="待审草稿正文", status="draft", generated_by="ai_full",
-        )
-        s.add(c)
+        for nm in kp_names:
+            nid = uuid.uuid4()
+            s.add(KnowledgeNode(id=nid, axis="knowledge", node_kind="语法", name=nm,
+                                code=f"cuctt-{uuid.uuid4().hex[:8]}", status="active", source="seed"))
+            await s.flush()
+            s.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=nm,
+                            alias_norm=normalize_kp_name(nm), source="seed"))
+            node_ids.append(nid)
         await s.commit()
-        return kp.id, c.id
-
-
-@pytest.mark.asyncio
-async def test_list_contents_for_review_filters_status(client):
-    kp_id, _ = await _seed_draft_content()
-    async with _async_session_factory() as s:
-        rows, total = await curriculum_service.list_contents_for_review(
-            s, status="draft", kp_id=kp_id,
-        )
-        assert total == 1 and len(rows) == 1
-        rows_pub, total_pub = await curriculum_service.list_contents_for_review(
-            s, status="published", kp_id=kp_id,
-        )
-        assert total_pub == 0 and rows_pub == []
-
-
-async def _make_reviewer() -> uuid.UUID:
-    from app.services.auth_service import upsert_user
-    async with _async_session_factory() as s:
-        u = await upsert_user(s, openid=f"rev_user_{uuid.uuid4().hex[:6]}")
-        await s.commit()
-        return u.id
-
-
-@pytest.mark.asyncio
-async def test_review_content_approve_publishes(client):
-    _, cid = await _seed_draft_content()
-    reviewer = await _make_reviewer()
-    async with _async_session_factory() as s:
-        c = await curriculum_service.review_content(
-            s, content_id=cid, approve=True, reviewer_id=reviewer,
-        )
-        assert str(c.status) == "published"
-        assert c.reviewed_by == reviewer
-        assert c.reviewed_at is not None
-        await s.rollback()
-
-
-@pytest.mark.asyncio
-async def test_review_content_reject_retires(client):
-    _, cid = await _seed_draft_content()
-    reviewer = await _make_reviewer()
-    async with _async_session_factory() as s:
-        c = await curriculum_service.review_content(
-            s, content_id=cid, approve=False, reviewer_id=reviewer,
-        )
-        assert str(c.status) == "retired"
-        await s.rollback()
-
-
-@pytest.mark.asyncio
-async def test_update_content_edits_body(client):
-    _, cid = await _seed_draft_content()
-    async with _async_session_factory() as s:
-        c = await curriculum_service.update_content(
-            s, content_id=cid, content_md="人工修订后的正文",
-        )
-        assert c.content_md == "人工修订后的正文"
-        assert str(c.generated_by) == "ai_with_human_review"
-        await s.rollback()
-
-
-@pytest.mark.asyncio
-async def test_review_content_missing_raises(client):
-    from app.core.exceptions import AppError
-    async with _async_session_factory() as s:
-        with pytest.raises(AppError):
-            await curriculum_service.review_content(
-                s, content_id=uuid.uuid4(), approve=True, reviewer_id=uuid.uuid4(),
-            )
+    try:
+        async with _async_session_factory() as s:
+            await curriculum_service.persist_unit(s, ai_unit=ai)  # 默认 draft
+            await s.flush()
+            rows = (await s.execute(
+                select(NodeResource).where(
+                    NodeResource.node_id.in_(node_ids),
+                    NodeResource.resource_type == "lecture",
+                )
+            )).scalars().all()
+            assert rows, "persist_unit 应为命中 node 的 KP 写 node_resource lecture"
+            assert all(str(r.status) == "draft" for r in rows)
+            assert {str(r.dimension) for r in rows} == {
+                "listening", "vocabulary", "grammar", "reading", "translation", "writing"}
+            await s.rollback()  # node_resource 随之回滚,不污染库
+    finally:
+        async with _async_session_factory() as s:
+            for nid in node_ids:
+                await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(nid)})
+                await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(nid)})
+                await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(nid)})
+            await s.commit()

@@ -10,8 +10,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from datetime import datetime, timezone
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +21,6 @@ from app.models.d4_knowledge import (
     CurriculumWord,
 )
 from app.models.d5_learning import VocabularyWord
-from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.schemas.curriculum import (
     AIGeneratedUnit,
     KnowledgePointOut,
@@ -36,6 +33,16 @@ from app.services import semester_service
 
 
 # ─── Persist ────────────────────────────────────────────────────────────────
+
+async def _match_kp_node(db: AsyncSession, kp_name: str | None) -> uuid.UUID | None:
+    """旧 KP 名 → 受控匹配新知识 node(use_llm=False,廉价);未命中返回 None(落候选)。"""
+    if not kp_name:
+        return None
+    from app.services.kp_match_service import match_kp
+    m = await match_kp(db, raw_name=kp_name, axis_hint="knowledge",
+                       source_type="textbook", use_llm=False)
+    return m.node_id
+
 
 async def persist_unit(
     db: AsyncSession,
@@ -104,26 +111,18 @@ async def persist_unit(
         if link_q.scalar_one_or_none() is None:
             db.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
 
-        # contents 4 维度
-        for dim, md in kp_in.contents.items():
-            c_q = await db.execute(
-                select(KnowledgePointContent).where(
-                    KnowledgePointContent.knowledge_point_id == kp.id,
-                    KnowledgePointContent.dimension == dim,
+        # contents 多维度 → KP-First 直写 node_resource lecture(挂句法/知识 node);停写旧 knowledge_point_contents。
+        # KP 走受控匹配得 node;未命中(落候选)则跳过其讲解,候选审核合并后可重生。
+        node_id = await _match_kp_node(db, kp.name)
+        if node_id is not None:
+            from app.services import node_resource_service as nrs
+            for dim, md in kp_in.contents.items():
+                if dim not in nrs._DIMENSIONS:
+                    continue  # node_resource lecture 仅六维;dictation 等非教学维跳过
+                await nrs.upsert_lecture(
+                    db, node_id=node_id, dimension=dim, content_md=md,
+                    generated_by="ai_full", status=content_status,
                 )
-            )
-            kpc = c_q.scalar_one_or_none()
-            if kpc is None:
-                db.add(KnowledgePointContent(
-                    id=uuid.uuid4(),
-                    knowledge_point_id=kp.id,
-                    dimension=dim,  # type: ignore[arg-type]
-                    content_md=md,
-                    status=content_status,
-                    generated_by="ai_full",
-                ))
-            else:
-                kpc.content_md = md
 
     # 5. vocabulary_words + 6. curriculum_words
     for w_in in ai_unit.words:
@@ -399,19 +398,16 @@ async def get_kp_contents(
     # KP-First 直切:讲解读 node_resource(挂新 knowledge_nodes)。旧 kp → 名 → match_kp → node。
     from app.models.d4_knowledge import KnowledgePoint
     from app.models.d19_node_resource import NodeResource
-    from app.services.kp_match_service import match_kp
 
     kp_name = (await db.execute(
         select(KnowledgePoint.name).where(KnowledgePoint.id == kp_id)
     )).scalar_one_or_none()
-    if not kp_name:
-        return []
-    m = await match_kp(db, raw_name=kp_name, axis_hint="knowledge", source_type="textbook", use_llm=False)
-    if m.node_id is None:
+    node_id = await _match_kp_node(db, kp_name)
+    if node_id is None:
         return []
     contents = (await db.execute(
         select(NodeResource).where(
-            NodeResource.node_id == m.node_id,
+            NodeResource.node_id == node_id,
             NodeResource.resource_type == "lecture",
             NodeResource.status == "published",
         )
@@ -423,72 +419,9 @@ async def get_kp_contents(
     ) for c in contents]
 
 
-# ─── 运营审核/编辑（M5）────────────────────────────────────────────────────────
-
-async def list_contents_for_review(
-    db: AsyncSession,
-    *,
-    status: str = "draft",
-    kp_id: uuid.UUID | None = None,
-    skip: int = 0,
-    limit: int = 20,
-) -> tuple[list[KnowledgePointContent], int]:
-    """运营按状态分页查知识点内容（返回完整 ORM 行）。"""
-    base = select(KnowledgePointContent).where(KnowledgePointContent.status == status)
-    if kp_id is not None:
-        base = base.where(KnowledgePointContent.knowledge_point_id == kp_id)
-    total: int = (await db.execute(
-        select(func.count()).select_from(base.subquery())
-    )).scalar_one()
-    rows = (await db.execute(
-        base.order_by(KnowledgePointContent.created_at).offset(skip).limit(limit)
-    )).scalars().all()
-    return list(rows), total
-
-
-async def review_content(
-    db: AsyncSession,
-    *,
-    content_id: uuid.UUID,
-    approve: bool,
-    reviewer_id: uuid.UUID,
-) -> KnowledgePointContent:
-    """审核一条内容：approve→published，reject→retired。记录 reviewed_by/at。"""
-    c = (await db.execute(
-        select(KnowledgePointContent).where(KnowledgePointContent.id == content_id)
-    )).scalar_one_or_none()
-    if c is None:
-        raise AppError(code=404, message="内容不存在")
-    c.status = "published" if approve else "retired"
-    c.reviewed_by = reviewer_id
-    c.reviewed_at = datetime.now(timezone.utc)
-    await db.flush()
-    return c
-
-
-async def update_content(
-    db: AsyncSession,
-    *,
-    content_id: uuid.UUID,
-    content_md: str | None = None,
-    audio_url: str | None = None,
-) -> KnowledgePointContent:
-    """编辑内容正文 / 音频 URL（运营人工修订）。仅更新传入字段。
-
-    一旦人工改过正文，generated_by 记为 ai_with_human_review。
-    """
-    c = (await db.execute(
-        select(KnowledgePointContent).where(KnowledgePointContent.id == content_id)
-    )).scalar_one_or_none()
-    if c is None:
-        raise AppError(code=404, message="内容不存在")
-    if content_md is not None:
-        c.content_md = content_md
-        c.generated_by = "ai_with_human_review"
-    if audio_url is not None:
-        c.audio_url = audio_url
-    await db.flush()
-    return c
+# ─── 运营审核/编辑 ──────────────────────────────────────────────────────────────
+# 旧 knowledge_point_contents 内容审核已退役:内容生成直写 node_resource(lecture),
+# 审核统一走 NodeResources 后台页(node_resource_service.list_for_review/review)。
 
 
 async def search_kps(
@@ -544,16 +477,19 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
         )).all()
     )
 
-    # 每个单元关联 KP 的内容数（via join，左连接保证无内容时为 0）
+    # 每个单元的讲解内容数:KP-First 经 unit_node → node 的 node_resource lecture(左连接,无则 0)
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.models.d19_node_resource import NodeResource
     content_rows = (await db.execute(
-        select(UnitKnowledgePoint.unit_id, func.count(KnowledgePointContent.id))
+        select(UnitNode.unit_id, func.count(NodeResource.id))
         .join(
-            KnowledgePointContent,
-            KnowledgePointContent.knowledge_point_id == UnitKnowledgePoint.knowledge_point_id,
+            NodeResource,
+            (NodeResource.node_id == UnitNode.node_id)
+            & (NodeResource.resource_type == "lecture"),
             isouter=True,
         )
-        .where(UnitKnowledgePoint.unit_id.in_(unit_ids))
-        .group_by(UnitKnowledgePoint.unit_id)
+        .where(UnitNode.unit_id.in_(unit_ids))
+        .group_by(UnitNode.unit_id)
     )).all()
     content_counts: dict[uuid.UUID, int] = dict(content_rows)
 

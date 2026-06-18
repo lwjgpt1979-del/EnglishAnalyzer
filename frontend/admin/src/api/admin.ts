@@ -2,8 +2,6 @@ import request, { unwrap } from './request'
 import type {
   AdminQuestionListOut,
   AdminQuestionItem,
-  AdminContentListOut,
-  AdminContentItem,
   AdminOverview,
   SemesterPricing,
   ReviewStatus,
@@ -53,29 +51,7 @@ export function reviewQuestion(id: string, approve: boolean) {
   )
 }
 
-// ── 知识点内容审核/编辑 ─────────────────────────────────────
-export function listContents(params: {
-  status: ReviewStatus
-  kp_id?: string
-  skip?: number
-  limit?: number
-}) {
-  return unwrap<AdminContentListOut>(
-    request.get('/admin/contents', { params }),
-  )
-}
-
-export function reviewContent(id: string, approve: boolean) {
-  return unwrap<AdminContentItem>(
-    request.post(`/admin/contents/${id}/review`, { approve }),
-  )
-}
-
-export function updateContent(id: string, body: { content_md?: string; audio_url?: string }) {
-  return unwrap<AdminContentItem>(
-    request.put(`/admin/contents/${id}`, body),
-  )
-}
+// 知识点内容审核已退役:改由 node-resources(node_resource lecture)统一承接。
 
 // ── KP 候选审核（R0.4 KP-First）──────────────────────────────
 export function listKpCandidates(params: {

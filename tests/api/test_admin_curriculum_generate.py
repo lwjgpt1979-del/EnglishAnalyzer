@@ -103,7 +103,13 @@ async def test_list_curriculum_units_has_correct_fields(
 async def test_generate_unit_content_success(
     admin_client: AsyncClient, seeded_unit_id: str
 ):
-    """有效 unit_id → 200 + content_count > 0（dev mock 生成）。"""
+    """有效 unit_id → 200 + 统计字段齐全。
+
+    KP-First:内容已切 node_resource,content_count 数经 unit_node 的 lecture;
+    冷启动下新 KP 未命中 node → 落候选、无 lecture(受控匹配代价),故此处只断言生成成功 +
+    统计可计算(content_count≥0)。lecture 写入的严格证明见
+    tests/api/test_curriculum.py::test_persist_unit_writes_node_resource_lectures_draft。
+    """
     r = await admin_client.post(
         f"/api/v1/admin/curriculum/units/{seeded_unit_id}/generate"
     )
@@ -111,7 +117,7 @@ async def test_generate_unit_content_success(
     data = r.json()["data"]
     assert data["unit_id"] == seeded_unit_id
     assert data["kp_count"] > 0
-    assert data["content_count"] > 0
+    assert data["content_count"] >= 0
     assert 0.0 <= data["content_rate"] <= 1.0
 
 

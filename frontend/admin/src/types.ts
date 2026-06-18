@@ -29,20 +29,7 @@ export interface AdminQuestionListOut {
   items: AdminQuestionItem[]
 }
 
-// 知识点内容（运营视图）
-export interface AdminContentItem {
-  id: string
-  knowledge_point_id: string
-  dimension: string
-  content_md: string
-  audio_url: string | null
-  status: string
-  generated_by: string
-}
-export interface AdminContentListOut {
-  total: number
-  items: AdminContentItem[]
-}
+// 知识点内容审核已退役(切 node_resource);AdminContent* 类型随之移除。
 
 // 定价
 export interface SemesterPricing {

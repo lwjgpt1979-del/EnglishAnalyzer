@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import User, Teacher
 from app.models.d2_payments import Order
-from app.models.d11_v2_curriculum import KnowledgePointContent
 from app.models.d12_v2_exams import SimulatedQuestion
+from app.models.d19_node_resource import NodeResource
 from app.schemas.admin import AdminOverviewOut
 
 _STATUSES = ["draft", "reviewing", "published", "retired"]
@@ -24,8 +24,11 @@ async def get_overview(db: AsyncSession) -> AdminOverviewOut:
     q_rows = (await db.execute(
         select(SimulatedQuestion.status, func.count()).group_by(SimulatedQuestion.status)
     )).all()
+    # KP-First:知识点内容已切 node_resource(lecture);旧 knowledge_point_contents 退役
     c_rows = (await db.execute(
-        select(KnowledgePointContent.status, func.count()).group_by(KnowledgePointContent.status)
+        select(NodeResource.status, func.count())
+        .where(NodeResource.resource_type == "lecture")
+        .group_by(NodeResource.status)
     )).all()
     total_users = (await db.execute(
         select(func.count()).select_from(User)

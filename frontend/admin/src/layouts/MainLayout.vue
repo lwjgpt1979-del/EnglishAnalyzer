@@ -41,7 +41,6 @@ function onLogout() {
         <el-menu-item index="/feedback">💡 意见反馈</el-menu-item>
         <el-menu-item index="/coupons">🎟️ 优惠券</el-menu-item>
         <el-menu-item index="/sensitive-words">🛡️ 敏感词库</el-menu-item>
-        <el-menu-item index="/contents">知识点内容审核</el-menu-item>
         <el-menu-item index="/kp-candidates">🧩 候选知识点审核</el-menu-item>
         <el-menu-item index="/vocab-lists">📒 通用词库</el-menu-item>
         <el-menu-item index="/node-resources">🎬 知识点资源</el-menu-item>
