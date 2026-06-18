@@ -61,6 +61,19 @@ async def _add_student_to_class(
     )
 
 
+async def _ledger(client, stu_h: dict) -> list[dict]:
+    """读旧台账 student_kp_mastery(掌握 hook 写入处;/kp-mastery 端点已切 student_kp,
+    本系列验证的是写入,故直接查台账服务)。"""
+    from app.core.database import _async_session_factory
+    from app.services import kp_mastery_service
+    r = await client.get("/api/v1/users/me", headers=stu_h)
+    uid = r.json()["data"]["id"]
+    async with _async_session_factory() as s:
+        rows = await kp_mastery_service.get_mastery_tree(s, student_id=uid)
+    return [{"sources": list(x.sources or []), "correct_count": x.correct_count,
+             "wrong_count": x.wrong_count} for x in rows]
+
+
 # ── 测试：作业提交 → 台账写入 ─────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -99,9 +112,7 @@ async def test_assignment_submit_writes_mastery(client):
     assert r2.status_code == 200, r2.text
 
     # 查知识点台账
-    r3 = await client.get("/api/v1/kp-mastery/", headers=stu_h)
-    assert r3.status_code == 200
-    items = r3.json()["data"]
+    items = await _ledger(client, stu_h)
     assert len(items) >= 1, "提交作业后台账应有写入"
 
     sources_all = [s for item in items for s in item["sources"]]
@@ -137,8 +148,7 @@ async def test_assignment_wrong_answer_writes_wrong_count(client):
     await client.post(f"/api/v1/assignments/{asgn_id}/submit",
                       json={"answers": {0: "A"}}, headers=stu_h)
 
-    r3 = await client.get("/api/v1/kp-mastery/", headers=stu_h)
-    items = r3.json()["data"]
+    items = await _ledger(client, stu_h)
     total_wrong = sum(i["wrong_count"] for i in items)
     assert total_wrong >= 1, "答错题应写入 wrong_count"
 
@@ -162,8 +172,7 @@ async def test_ai_analysis_writes_mastery(client):
     assert r2.status_code == 200
 
     # 查台账
-    r3 = await client.get("/api/v1/kp-mastery/", headers=stu_h)
-    items = r3.json()["data"]
+    items = await _ledger(client, stu_h)
     assert len(items) >= 1, "AI分析完成后台账应有写入"
 
     sources_all = [s for item in items for s in item["sources"]]
@@ -206,8 +215,7 @@ async def test_mastery_sources_merge_assignment_and_wrong_question(client):
     await client.post(f"/api/v1/wrong-questions/{wq_id}/analyze", headers=stu_h)
 
     # 查台账 — 至少有一个 KP 的 sources 包含两种来源
-    r3 = await client.get("/api/v1/kp-mastery/", headers=stu_h)
-    items = r3.json()["data"]
+    items = await _ledger(client, stu_h)
     all_sources = {s for item in items for s in item["sources"]}
     assert "assignment" in all_sources
     assert "wrong_question" in all_sources

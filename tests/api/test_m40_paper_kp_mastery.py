@@ -103,10 +103,14 @@ async def test_paper_pipeline_writes_kp_mastery(client):
     r2 = await client.get(f"/api/v1/user-papers/{paper_id}", headers=headers)
     assert r2.json()["data"]["ocr_status"] == "completed", r2.text
 
-    # 查知识点台账
-    r3 = await client.get("/api/v1/kp-mastery/", headers=headers)
-    assert r3.status_code == 200
-    items = r3.json()["data"]
+    # 查知识点台账(/kp-mastery 端点已切 student_kp;整卷掌握写旧台账,直接查台账服务)
+    from app.core.database import _async_session_factory
+    from app.services import kp_mastery_service
+    me = await client.get("/api/v1/users/me", headers=headers)
+    uid = me.json()["data"]["id"]
+    async with _async_session_factory() as s:
+        rows = await kp_mastery_service.get_mastery_tree(s, student_id=uid)
+    items = [{"sources": list(x.sources or [])} for x in rows]
     assert len(items) >= 1, "整卷完成后台账应有知识点写入"
 
     # 验证来源标注
@@ -130,8 +134,14 @@ async def test_paper_correct_wrong_count(client):
     )
     await user_paper_service.run_paper_pipeline(r0.json()["data"]["id"])
 
-    r = await client.get("/api/v1/kp-mastery/", headers=headers)
-    items = r.json()["data"]
+    # /kp-mastery 端点已切 student_kp(B);整卷掌握写入旧台账,故直接查台账验证写入
+    from app.core.database import _async_session_factory
+    from app.services import kp_mastery_service
+    me = await client.get("/api/v1/users/me", headers=headers)
+    uid = me.json()["data"]["id"]
+    async with _async_session_factory() as s:
+        rows = await kp_mastery_service.get_mastery_tree(s, student_id=uid)
+    items = [{"correct_count": x.correct_count, "wrong_count": x.wrong_count} for x in rows]
     assert len(items) >= 1
 
     total_correct = sum(i["correct_count"] for i in items)

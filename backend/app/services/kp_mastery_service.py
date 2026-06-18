@@ -53,6 +53,32 @@ def review_suggestion(
     return level, msg
 
 
+async def get_kp_mastery_nodes(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
+    """B:个人知识点掌握(node 维度,直读新表 student_kp)→ /kp-mastery 形状。弱项在前。"""
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import StudentKp
+    rows = (await db.execute(
+        select(StudentKp.node_id, KnowledgeNode.name, KnowledgeNode.description,
+               StudentKp.practice_count, StudentKp.wrong_count, StudentKp.source_tags,
+               StudentKp.last_practice_at, StudentKp.mastery)
+        .join(KnowledgeNode, KnowledgeNode.id == StudentKp.node_id)
+        .where(StudentKp.student_id == student_id)
+    )).all()
+    out = []
+    for nid, name, desc, pc, wc, tags, last, mastery in rows:
+        correct = max((pc or 0) - (wc or 0), 0)
+        total = correct + (wc or 0)
+        out.append({
+            "kp_key": name, "kp_id": nid, "kp_description": desc,
+            "correct_count": correct, "wrong_count": wc or 0,
+            "accuracy": round(correct / total, 4) if total else 0.0,
+            "sources": list(tags or []),
+            "last_activity_at": last.isoformat() if last else None,
+        })
+    out.sort(key=lambda x: (x["accuracy"], -(x["correct_count"] + x["wrong_count"])))
+    return out
+
+
 async def upsert_mastery(
     db: AsyncSession,
     *,
@@ -134,6 +160,36 @@ async def upsert_mastery(
             },
         )
         await db.execute(snap_stmt)
+
+    # ── B:同步补写新域 student_kp(node 维度,供 /kp-mastery 直读新表)──────────────
+    # kp_key(名)精确解析到句法/知识 node(node_alias);命中才补写,不创建候选、失败不阻断主台账。
+    try:
+        from app.models.d15_knowledge_graph import NodeAlias
+        from app.models.d16_question_domain import StudentKp
+        from app.services.kp_normalize import normalize_kp_name
+        node_id = (await db.execute(
+            select(NodeAlias.node_id).where(NodeAlias.alias_norm == normalize_kp_name(kp_key))
+        )).scalar_one_or_none()
+        if node_id is not None:
+            await db.execute(
+                pg_insert(StudentKp).values(
+                    student_id=student_id, node_id=node_id,
+                    practice_count=1, wrong_count=delta_wrong,
+                    last_practice_at=now, source_tags=[source], in_scope=True,
+                ).on_conflict_do_update(
+                    index_elements=["student_id", "node_id"],
+                    set_={
+                        "practice_count": StudentKp.practice_count + 1,
+                        "wrong_count": StudentKp.wrong_count + delta_wrong,
+                        "last_practice_at": now,
+                        "source_tags": text(
+                            "ARRAY(SELECT DISTINCT unnest(student_kp.source_tags || ARRAY[:src]))"
+                        ).bindparams(src=source),
+                        "in_scope": True,
+                    },
+                ))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def get_kp_trend(
