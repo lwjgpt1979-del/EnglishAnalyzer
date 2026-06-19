@@ -328,6 +328,218 @@ all the time 一直;at the age of 在……岁时;at the beginning of 在……�
 | 定冠词与零冠词 | out of the question 不可能 | out of question 毫无疑问 |
 | 定冠词与零冠词 | in the charge of 由……掌管 | in charge of 掌管 |
 | 定冠词与零冠词 | take the place of 代替 | take place 发生 |""",
+
+    # ── 词法 · 代词 · 人称代词 ──
+    "cf-3-1-1": """## 代词的定义及分类
+
+**定义**:代词是代替名词或起名词作用的短语、分句和句子的词,在句子中起指代和修饰的作用。
+
+**分类**:英语中的代词一般分为人称代词、物主代词、指示代词、反身代词、相互代词、疑问代词、关系代词、连接代词和不定代词。""",
+
+    "cf-3-1-2": """## 人称代词的定义
+
+人称代词是用来替代人或物的词,有人称、数和格的变化。
+- e.g. It is my best friend.;We are never too old to learn.""",
+
+    "cf-3-1-3": """## 人称代词的形式及分类
+
+人称代词在人称上分为第一、第二、第三人称;在数上分为单数与复数;在句法功能上分为主格与宾格。
+
+| 人称 | 单数主格 | 单数宾格 | 复数主格 | 复数宾格 |
+| --- | --- | --- | --- | --- |
+| 第一人称 | I 我 | me 我 | we 我们 | us 我们 |
+| 第二人称 | you 你 | you 你 | you 你们 | you 你们 |
+| 第三人称 | he/she/it 他/她/它 | him/her/it 他/她/它 | they 他们 | them 他们 |""",
+
+    "cf-3-1-4": """## 人称代词的句法功能
+
+1. 主格是动作的发出者,通常位于句首作主语;一般现在时主语为第三人称单数时,谓语动词用第三单数。
+   - e.g. We often play football after school.;She likes playing the piano in the room.
+2. 宾格是动作的承受者,通常位于谓语动词或介词后作宾语,位于系动词后作表语。
+   - e.g. The man teaches us English.(宾语);It was him who the girl wanted to talk with.(表语)""",
+
+    "cf-3-1-5": """## 人称代词的易错用法
+
+1. 人称代词与所代替的词在人称和数上保持一致。
+   - e.g. Meat and fish are more expensive than they used to be.;I don't like the book because it is too dull.
+2. 多个人称代词并列出现时,单数按"二三一"、复数按"一二三"顺序排列。
+   - e.g. You, she and I must finish the task.;We, you and they should exercise every day.
+3. 表示承担责任、承认错误或检讨工作时,把第一人称放在前。
+   - e.g. I have the responsibility for solving these problems.""",
+
+    # ── 词法 · 代词 · 物主代词和反身代词 ──
+    "cf-3-2-1": """## 物主代词的定义
+
+物主代词是表示所有关系的代词,有人称和数的变化,意为"……的",分为形容词性物主代词和名词性物主代词。
+1. 形容词性物主代词:相当于形容词,置于名词前主要作定语。e.g. Her dress is beautiful.
+2. 名词性物主代词:相当于名词,可作主语、宾语和表语。e.g. The book I have is not as good as his.""",
+
+    "cf-3-2-2": """## 物主代词的形式及分类
+
+物主代词是人称代词的属格形式,表示"所有",分第一、第二、第三人称及单复数。
+
+| 人称 | 形容词性(单/复) | 名词性(单/复) |
+| --- | --- | --- |
+| 第一人称 | my / our | mine / ours |
+| 第二人称 | your / your | yours / yours |
+| 第三人称 | his, her, its / their | his, hers, its / theirs |
+
+形容词性物主代词 + 名词 = 名词性物主代词。e.g. This is mine.""",
+
+    "cf-3-2-3": """## 反身代词的定义
+
+反身代词指动作的承受者就是动作执行者本身,也用于强调语气,有人称和数的变化,意为"……自己"。
+- e.g. I can do it by myself.""",
+
+    "cf-3-2-4": """## 反身代词的形式及分类
+
+| 人称 | 单数 | 复数 |
+| --- | --- | --- |
+| 第一人称 | myself 我自己 | ourselves 我们自己 |
+| 第二人称 | yourself 你自己 | yourselves 你们自己 |
+| 第三人称 | himself / herself / itself 他/她/它自己 | themselves 他们自己 |""",
+
+    "cf-3-2-5": """## 物主代词的句法功能
+
+1. 形容词性物主代词常放在名词前作定语。e.g. His book describes happy memories.
+2. 名词性物主代词可作主语、宾语和表语。e.g. He has a pencil. But mine is lost.(主语);I don't know why you want to steal mine.(宾语)""",
+
+    "cf-3-2-6": """## 反身代词的句法功能
+
+反身代词可作宾语及表语,也可用于谓语或宾语的同位语,表强调。
+- e.g. I study by myself.(宾语);I myself can do it.(作主语的同位语)""",
+
+    "cf-3-2-7": """## 物主代词的常用短语
+
+earn one's living 谋生;lose one's way 迷路;hold one's breath 屏住呼吸;make up one's mind 下决心;take one's time 慢慢来;make one's way 前进;in one's opinion 依某人看;in one's eyes 在某人看来;keep one's word 守信;do one's best 尽某人最大的努力""",
+
+    "cf-3-2-8": """## 反身代词的常用短语
+
+**与介词搭配**:by oneself 单独;for oneself 为自己;of oneself 自发地;to oneself 独自拥有
+**与动词搭配**:dress oneself 自己穿衣服;enjoy oneself 过得愉快;help oneself 自取;teach oneself 自学;make yourself at home 别拘束;devote oneself to 致力于;behave oneself 举止得体;talk to oneself 自言自语;abandon oneself to 沉溺于;come to oneself 恢复知觉;say to oneself 自言自语""",
+
+    # ── 词法 · 代词 · 不定代词(1) ──
+    "cf-3-3-1": """## 不定代词的定义及句法功能
+
+**定义**:① 不明确指代某个人、某个事物、某些人、某些事物的代词;② 表示不同的数量概念且没有主格和宾格之分的代词。
+
+**句法功能**:不定代词在句中可作主语和宾语,部分可作定语;作主语时谓语动词视其指代内容可用单数也可用复数。
+- e.g. Everybody needs to study hard.(主语);I know nothing about this history.(宾语);I would like to buy another one.(定语);We all have our troubles.(作主语的同位语)""",
+
+    "cf-3-3-2": """## some 与 any 的用法
+
+1. **some** 常用于肯定句,意为"一些"。e.g. There is some water in the glass.;用在一般疑问句中,表示提出建议或期望得到肯定回答。e.g. Would you like some bread?
+2. **any** 常用于否定句和疑问句,意为"一些"。e.g. I don't have any money.;用在肯定句中表示强调,意为"任何,任一"。e.g. You can ask me any question.
+3. some 和 any 修饰名词时,谓语动词取决于名词的单复数。e.g. Some advice indeed helps me solve problems.""",
+
+    "cf-3-3-3": """## 复合不定代词的分类
+
+由 some-, any-, every-, no- 加 -one, -body, -thing 构成的代词作复合不定代词,在句中作用相当于名词。
+
+| 后缀 \\ 前缀 | some- | any- | no- | every- |
+| --- | --- | --- | --- | --- |
+| -one | someone 某人 | anyone 任何人 | no one 没有人 | everyone 每个人 |
+| -body | somebody 某人 | anybody 任何人 | nobody 没有人 | everybody 每个人 |
+| -thing | something 某物 | anything 任何事物 | nothing 没什么 | everything 每件事 |""",
+
+    "cf-3-3-4": """## 复合不定代词的常用表达
+
+1. There is something wrong with ... "……出问题了"。e.g. There is something wrong with my computer.
+2. ... have / has something / nothing to do with ... "与……有/无关系"。e.g. It has nothing to do with me.""",
+
+    "cf-3-3-5": """## 复合不定代词的用法
+
+1. some- 和 any- 构成的复合不定代词的用法同 some 和 any。e.g. Something needs to be corrected.;Please don't hold anything back.
+2. 复合不定代词作主语时,谓语动词用第三人称单数。e.g. Everyone is here.
+3. 形容词修饰复合不定代词时,需要放在其后。e.g. something important 某些重要的事情
+4. 复合不定代词后常加 else 表示"另外的",所有格形式为"复合不定代词 + else's"。e.g. You should borrow someone else's car.
+5. every- 系列的复合不定代词用于否定时,常表示部分否定。e.g. Not everybody obeys the rule.
+6. no one 表示"没有人",相当于 nobody。e.g. No one is here. = There is nobody here.""",
+
+    # ── 词法 · 代词 · 不定代词(2) ──
+    "cf-3-4-1": """## each 与 every 的用法及区别
+
+1. 基本用法区别:each 意为"每一个",强调个体,多用于两者及两者以上,可与 of 连用。e.g. There are four apples here and each of them tastes sweet.;every 意为"每一个",强调整体,多用于三者及三者以上,不能直接与主语连用。e.g. I could hear every word they said.
+2. "every + 数词 + 名词" 表示"每……",不能用 each 代替。e.g. We do our homework every three days.
+3. 句法功能区别:each 可作主语、宾语、定语、同位语;every 只能作定语。e.g. We each have our own particular tastes.;Every book is worth reading.""",
+
+    "cf-3-4-2": """## "三三两两"的用法及区别
+
+**三者及三者以上**:
+1. all 意为"全部",all of 结构作主语时谓语动词由后面的名词决定。e.g. All of the students are good in our school.
+2. any 意为"任何一个"。e.g. any girl 任何一位女生
+3. none 意为"没有一个",none of 结构作主语时单复数均可。e.g. None of them believe / believes the story.
+
+**两者**:
+1. both 意为"两者都",both ... and ... 连接主语时谓语动词用复数。e.g. Both Lily and I like playing games.
+2. either 意为"两者之一",either ... or ... 连接主语时遵循就近原则。e.g. Either you or she is going to the park.
+3. neither 意为"两者都不",neither ... nor ... 连接主语时遵循就近原则。e.g. Neither Jerry nor I am a student.""",
+
+    "cf-3-4-3": """## other 系列的用法及区别
+
+1. one ... the other ... 表示两者之间的"另一个"。e.g. I have two pens. One is blue and the other is red.
+2. some ... others ... 表示"一些……另一些……"。e.g. Some are reading books and others are cleaning the window.
+3. another 表示三者或三者以上中的"另一个"。e.g. This coat is too big for me. Can you show me another one?
+4. another + 数词 + 名词复数 = 数字 + more + 名词复数,表示"另外几个"。e.g. another two apples = two more apples 另外两个苹果""",
+
+    "cf-3-4-4": """## "多多少少"的用法及区别
+
+| 含义 | 后加可数名词复数 | 后加不可数名词 |
+| --- | --- | --- |
+| 几乎没有 | few | little |
+| 一点 | a few | a little |
+| 许多 | many | much |
+
+1. not a little / quite a little / not a few / quite a few 意为"很多"。e.g. There's not a little time left.
+2. too much / too many 意为"太多",后面加名词。e.g. There are too many flowers in the garden.
+3. much too 意为"太……",中心词是 too,后面加形容词或副词。e.g. You are much too clever.""",
+
+    # ── 词法 · 代词 · 指示代词、疑问代词和 it ──
+    "cf-3-5-1": """## 指示代词的分类及用法
+
+指示代词是用来指示或标识人或事物的代词。
+
+| 指示代词 | 用法 | 例句 |
+| --- | --- | --- |
+| this 这个(单数,近) | 打电话指自己 | Hello, this is Jane speaking. |
+| these 这些(复数,近) | | These are my books. |
+| that 那个(单数,远) | 打电话指对方 | Who's that speaking? |
+| those 那些(复数,远) | | Those are all basketballs. |""",
+
+    "cf-3-5-2": """## 疑问代词的定义
+
+疑问代词是用来表达疑问的代词,常用来构成特殊疑问句,位于句首。""",
+
+    "cf-3-5-3": """## 疑问代词的用法
+
+| 疑问代词 | 含义 | 基本用法 |
+| --- | --- | --- |
+| who | 谁 | 作主语、表语、宾语 |
+| whom | 谁 | 作宾语(who 的宾格) |
+| whose | 谁的 | 作定语、表语 |
+| what | 什么 | 作主语、宾语、定语 |
+| which | 哪个 | 作主语、宾语、定语 |
+
+1. whom 在句中常作动词或介词的宾语,紧跟介词后作宾语时常用 whom。e.g. Whom / Who do you often play with?
+2. which 表示有具体的范围,在具体范围内进行选择,指人或物。e.g. Which colour do you like better, red or yellow?""",
+
+    "cf-3-5-4": """## what 的常用句型
+
+1. 问职业:What + be 动词 + 主语? = What do / does + 主语 + do? e.g. What is your father? = What does your father do?
+2. 问外貌:What + does + 主语 + look like? e.g. What does Angela look like?
+3. 问天气:What is the weather like? = How is the weather?
+4. 征求意见或提建议:What / How about ...? e.g. What / How about going for a swim?
+5. 问时间:问几点 What time is it now? = What's the time now?;问日期 What date is it today?;问星期 What day is it today?
+6. 问原因或目的:What ... for? / What for? e.g. What did you put it into the soup for?""",
+
+    "cf-3-5-5": """## it 的相关用法及句型
+
+1. 代指上文提到的人或物。e.g. The book is mine. It's very interesting.
+2. 代指天气、时间、距离、不明身份的人或婴儿等。e.g. It is about three-hour drive from my home to school.
+3. 用在固定搭配中:It's time to do / for ... 是时候做……;It's time for supper.
+4. It takes sb. some time to do sth. 做某事花费某人一些时间。e.g. It takes me ten minutes to get to the library.
+5. It's + adj. ( + for sb. ) + to do sth. e.g. It's important for us to learn English well.
+6. make / feel / find / think / consider + it + adj. + to do sth. e.g. I found it difficult to finish the task on time.""",
 }
 
 
