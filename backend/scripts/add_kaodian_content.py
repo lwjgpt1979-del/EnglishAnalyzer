@@ -210,6 +210,124 @@ of 短语可用来表示所属关系,结构为:(名词)A + of + (名词)B,意为
    - e.g. Mike and Jack's desk 迈克和杰克(共有)的书桌
 2. 表示各自拥有时,需要将每个名词都变为所有格形式,这些名词通常要变成复数。
    - e.g. Mike's and Jack's desks 迈克的书桌和杰克的书桌""",
+
+    # ── 词法 · 冠词 · 不定冠词 ──
+    "cf-2-1-1": """## 冠词的用法及分类
+
+冠词是虚词,常用在名词前,帮助说明名词所表示的人或事物,不可单独使用。冠词可分为三种:不定冠词、定冠词和零冠词。""",
+
+    "cf-2-1-2": """## 不定冠词 a / an 的基本用法
+
+1. 泛指一类人或事物,也可以指某人或某物。
+   - e.g. A teacher should be responsible for students.
+2. 表示数量,意为"一"。
+   - e.g. a book 一本书
+3. 用在某些物质名词前,表示"一场、一阵"。
+   - e.g. a terrible storm 一场可怕的暴风雨;a light rain 一场小雨;a wonderful tea 一杯好喝的茶
+4. 用于序数词前,表示"又一,再一"。
+   - e.g. I have three books. I want to buy a fourth book.""",
+
+    "cf-2-1-3": """## 不定冠词 a / an 的用法区别
+
+1. a 用于以辅音音素开头的单词或字母前。e.g. a ball 一个球;a word 一个单词
+2. an 用于以元音音素开头的单词或字母前。e.g. an apple 一个苹果;an hour 一个小时
+3. 以下列字母开头的单词需注意两种情况:
+   - u:发辅音用 a(a university 一所大学);发元音用 an(an umbrella 一把伞)
+   - h:发辅音用 a(a headmaster 一名校长);"h" 不发音用 an(an hour 一个小时;an honest boy 一个诚实的男孩)
+4. 以元音音素开头的字母有 12 个:a, e, f, h, i, l, m, n, o, r, s, x。
+   - e.g. There is an "i" in the word "fish".""",
+
+    "cf-2-1-4": """## 含不定冠词的常用短语
+
+make an effort 努力;make a living 谋生;make a difference 有影响;make a decision 决定;make an agreement 达成一致;make a fortune 发财;take a break 休息一下;take a message 传话;have a rest 休息一会儿;have a good time 玩得愉快;have a try 试一试;have a nice view 旅途愉快;come to an end 结束;catch a cold 得感冒;keep an eye on 照看;pay a visit 参观;in a word 总之;in a moment 一会儿;in a sense 在某种意义上;in a way 在某种程度上;for a while 暂时;once in a while 偶尔;as a matter of fact 事实上;as a result 因此;as a whole 总的来说;as a rule 通常""",
+
+    "cf-2-1-5": """## 不定冠词的位置
+
+不定冠词 a / an 一般用于可数名词单数之前,但要注意以下几种情况:
+1. 位于 such、many、half 等词之后。e.g. such a wonderful book 如此精彩的一本书;many a tale 许多故事;half an hour 半小时
+2. 当名词前的形容词被 so、how 等修饰时,不定冠词应放在形容词之后。e.g. how beautiful a girl 多么美丽的一个女孩;so interesting a movie 如此有趣的一部电影
+3. quite、rather 与可数名词单数连用时,不定冠词位于其后(名词前有形容词时,位于其前后均可)。e.g. quite a clever person = a quite clever person 一个相当聪明的人
+4. 名词被副词 hardly、scarcely、barely、exactly 和一个形容词同时修饰时,冠词须放在上述副词之后、形容词之前。e.g. This is hardly a right thing.""",
+
+    # ── 词法 · 冠词 · 定冠词 ──
+    "cf-2-2-1": """## 定冠词的功能及发音
+
+定冠词在名词前起修饰或限定作用,不能单独使用。""",
+
+    "cf-2-2-2": """## 定冠词的使用原则
+
+1. 表示特指,即某个特定的人或特定的事物等。e.g. The boy standing there is my friend.
+2. 指上文提到的人或事物。e.g. I have a pen. The pen is blue.
+3. 指谈话双方都熟知的人或事物。e.g. Look at the blackboard, please.
+4. 指世界上独一无二的事物。e.g. The sun rises in the east.""",
+
+    "cf-2-2-3": """## 定冠词的常见用法
+
+1. 放在乐器名前,此时通常指一类乐器。e.g. play the piano 弹钢琴
+2. 放在形容词最高级前。e.g. the best person 最好的人
+3. 放在形容词原级前,表示一类人或某种品质。e.g. the young 年轻人;the rich 富人;the old 老年人
+4. 作主语时谓语动词一般用复数。e.g. The young are trying their best to make the world better.
+5. 表示某个人或某种抽象概念时,谓语动词一般用单数。e.g. The good is always what we want.
+6. 放在姓氏复数前,表示一家人。e.g. the Greens 格林一家
+7. 放在序数词前。e.g. the first 第一
+8. 用在江、河、海、洋、山脉、群岛、海峡、海湾等专有名词前。e.g. the Yangtze River 长江;the United Nations 联合国""",
+
+    "cf-2-2-4": """## 含定冠词的常用短语
+
+all the time 一直;at the age of 在……岁时;at the beginning of 在……开始;in the end 最后;in the middle of 在……中间;in the future 在将来;all the best 一切顺利;at the same time 同时;at the back of 在……的后面;in the distance 在远方;in the dark 在黑暗中;in the habit of 有……的习惯;by the way 顺便说;make the most of 充分利用;on the whole 总的说来;on the spot 当场;on the one hand …, on the other hand … 一方面……另一方面……;in the day 在白天;on the right / left 在右边 / 左边;all the same 尽管如此;go to the cinema 去看电影;on the way 在路上""",
+
+    "cf-2-2-5": """## 定冠词的位置
+
+定冠词通常位于名词或名词修饰语之前,但遇到 all、both、half、twice 等词时,定冠词放在这类词之后、名词之前。
+- e.g. all the students 所有的学生""",
+
+    "cf-2-2-6": """## 定冠词的易错用法
+
+1. 有些表示时间的词在习惯用法中不使用定冠词 the。e.g. at dawn 在黎明;at noon 在中午;at dusk 在黄昏;at night 在夜晚
+2. 注意:next 不同于 the next,last 不同于 the last。next Sunday 指从现在算起的"下一个星期天",the next Sunday 指将来或过去某时算起的"下一个星期天"。
+   - e.g. She will be back next week. She went to England in May and went to France the next month.""",
+
+    # ── 词法 · 冠词 · 零冠词 ──
+    "cf-2-3-1": """## 零冠词的使用原则
+
+零冠词是指名词前不加冠词的情况,以下情况会用零冠词:
+1. 表示泛指的物质名词前,通常用零冠词。e.g. Paper is made from wood.
+2. 表示泛指的抽象名词或部分专有名词前,通常不用冠词。e.g. My pet dog brings my family great pleasure!
+3. 表示泛指的可数名词复数前,通常不用冠词。e.g. Apples are my favourite fruit.;Lions and tigers belong to the cat family.
+4. 名词前有指示代词、形容词性物主代词等修饰时,前面不用冠词。e.g. That book is their teacher's.""",
+
+    "cf-2-3-2": """## 零冠词的高频用法
+
+1. 星期、月份、季节、节日等名词前一般不用冠词。e.g. on Monday 在星期一;in May 在五月;on Mother's Day 在母亲节
+2. 表示"一日三餐"的名词前一般不用冠词。e.g. have breakfast 吃早餐;have dinner 吃晚餐
+3. 球类与棋类运动等名词前不用冠词。e.g. play football 踢足球;play chess 下国际象棋
+4. 表示语言或学科的名词前不用冠词。e.g. My favourite subject is English.
+5. man 泛指人类时,其前不加冠词。e.g. Man can't live without water or air.
+6. by + 交通工具,中间无冠词。e.g. by bus 乘公共汽车
+7. 表示官衔、职位、身份的名词前一般不用冠词。e.g. The guards took him to General Lee.""",
+
+    "cf-2-3-3": """## 零冠词的固定搭配
+
+1. 两个相对的名词并用:father and son 父子;war and peace 战争与和平;husband and wife 夫妇
+2. 对称的名词搭配:day by day 一天天;face to face 面对面;hand in hand 手拉手;one by one 逐个地;step by step 一步一步地
+3. 介词短语搭配:by chance 偶然;on purpose 故意;on board 在船(或火车、飞机)上;in fact 事实上;in return 作为回报
+4. 动词短语搭配:make friends with 与……交朋友;pay attention to 注意;keep in touch with 与……保持联系;keep ... in mind 记住""",
+
+    "cf-2-3-4": """## 有无冠词的短语辨析
+
+| 情况 | 有冠词 | 无冠词 |
+| --- | --- | --- |
+| 不定冠词与零冠词 | in a word 总而言之 | in words 口头上 |
+| 定冠词与零冠词 | go to the school 去学校 | go to school 去上学 |
+| 定冠词与零冠词 | go to the bed 去床边 | go to bed 去睡觉 |
+| 定冠词与零冠词 | go to the church 去教堂(建筑) | go to church 去做礼拜 |
+| 定冠词与零冠词 | at the table 在桌子旁 | at table 在吃饭 |
+| 定冠词与零冠词 | by the day 按日计算 | by day 在白天 |
+| 定冠词与零冠词 | in the front of 在(内部)的前面 | in front of 在……前面 |
+| 定冠词与零冠词 | in the prison 在监狱(建筑) | in prison 在坐牢 |
+| 定冠词与零冠词 | out of the question 不可能 | out of question 毫无疑问 |
+| 定冠词与零冠词 | in the charge of 由……掌管 | in charge of 掌管 |
+| 定冠词与零冠词 | take the place of 代替 | take place 发生 |""",
 }
 
 
