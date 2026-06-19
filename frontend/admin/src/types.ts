@@ -223,6 +223,17 @@ export interface VersionDiffSide {
 }
 export interface VersionDiffOut { base: VersionDiffSide; incoming: VersionDiffSide }
 
+// 版本历史(C3)
+export interface VersionItem {
+  id: string
+  version_no: number
+  source: string
+  status: string
+  content_md?: string | null
+  created_at?: string | null
+  reviewed_at?: string | null
+}
+
 // ── 长难句管理(KP-First L7)──────────────────────────────
 export interface LSAdminItem {
   id: string

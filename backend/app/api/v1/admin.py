@@ -79,6 +79,8 @@ from app.schemas.kp import (
     UnitContentOverviewOut,
     UnitPublishOut,
     VersionDiffOut,
+    VersionItem,
+    VersionListOut,
     AddResourceIn,
     UpdateResourceIn,
     LSAdminItem,
@@ -988,6 +990,26 @@ async def reject_version_api(version_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """驳回待审版本(线上不变)。"""
     from app.services import node_resource_service as nrs
     r = await nrs.reject_version(db, version_id=version_id, reviewer_id=admin.id)
+    await db.commit()
+    return make_ok({k: str(v) for k, v in r.items()})
+
+
+@router.get("/node-resources/{resource_id}/versions", response_model=BaseResponse[VersionListOut])
+async def list_versions_api(resource_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """某讲解的版本历史(版本号倒序),供查看/对比/回滚。"""
+    from app.services import node_resource_service as nrs
+    rows = await nrs.list_versions(db, resource_id=resource_id)
+    items = [VersionItem(id=r.id, version_no=r.version_no, source=r.source, status=r.status,
+                         content_md=r.content_md, created_at=r.created_at, reviewed_at=r.reviewed_at)
+             for r in rows]
+    return make_ok(VersionListOut(resource_id=resource_id, total=len(items), items=items))
+
+
+@router.post("/node-resources/{resource_id}/rollback/{version_id}", response_model=BaseResponse[dict])
+async def rollback_version_api(resource_id: uuid.UUID, version_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """回滚:把某历史(archived)版本重新提升为线上。"""
+    from app.services import node_resource_service as nrs
+    r = await nrs.rollback_to_version(db, resource_id=resource_id, version_id=version_id, reviewer_id=admin.id)
     await db.commit()
     return make_ok({k: str(v) for k, v in r.items()})
 

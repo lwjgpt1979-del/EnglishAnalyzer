@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listNodeResources, addNodeResource, updateNodeResource, reviewNodeResource,
   listCurriculumUnits, unitContentOverview, publishUnit,
-  versionDiff, approveVersion, rejectVersion,
+  versionDiff, approveVersion, rejectVersion, listResourceVersions, rollbackVersion,
 } from '../api/admin'
-import type { NodeResourceItem2, AdminCurriculumUnit, UnitContentNode, VersionDiffOut } from '../types'
+import type { NodeResourceItem2, AdminCurriculumUnit, UnitContentNode, VersionDiffOut, VersionItem } from '../types'
 import { lineDiff, type DiffLine } from '../utils/linediff'
 
 const route = useRoute()
@@ -128,21 +128,54 @@ const diffLoading = ref(false)
 const diffBusy = ref(false)
 const diffVersionId = ref('')
 const diffCtx = ref('')                       // 知识点 · 维度 标题
+const diffMode = ref<'review' | 'view'>('review')  // review=待审(可通过/驳回);view=历史只读
 const diffData = ref<VersionDiffOut | null>(null)
 const diffLines = computed<DiffLine[]>(() =>
   diffData.value ? lineDiff(diffData.value.base.content_md, diffData.value.incoming.content_md) : [])
 
-async function openDiff(node: UnitContentNode, dim: string) {
-  const vid = node.dims[dim]?.pending_version_id
-  if (!vid) return
-  diffVersionId.value = vid
-  diffCtx.value = `${node.name} · ${DIM_LABEL[dim] || dim}`
+async function openDiffByVersion(versionId: string, ctx: string, mode: 'review' | 'view') {
+  diffVersionId.value = versionId
+  diffCtx.value = ctx
+  diffMode.value = mode
   diffOpen.value = true
   diffLoading.value = true
   diffData.value = null
-  try { diffData.value = await versionDiff(vid) }
+  try { diffData.value = await versionDiff(versionId) }
   catch (e: any) { ElMessage.error(e?.message || '加载对比失败') }
   finally { diffLoading.value = false }
+}
+function openDiff(node: UnitContentNode, dim: string) {
+  const vid = node.dims[dim]?.pending_version_id
+  if (vid) openDiffByVersion(vid, `${node.name} · ${DIM_LABEL[dim] || dim}`, 'review')
+}
+
+// ── 版本历史 + 回滚(C3)──
+const STATUS_LABEL: Record<string, string> = {
+  pending: '待审', published: '当前线上', archived: '历史', rejected: '已驳回' }
+const STATUS_TAG: Record<string, string> = {
+  pending: 'warning', published: 'success', archived: 'info', rejected: 'danger' }
+const histOpen = ref(false)
+const histLoading = ref(false)
+const histRows = ref<VersionItem[]>([])
+const histResourceId = ref('')
+const histCtx = ref('')
+async function openHistory(row: NodeResourceItem2) {
+  histResourceId.value = row.id
+  histCtx.value = `${row.node_name || row.node_id} · ${row.dimension ? DIM_LABEL[row.dimension] || row.dimension : ''}`
+  histOpen.value = true
+  histLoading.value = true
+  try { histRows.value = (await listResourceVersions(row.id)).items }
+  catch (e: any) { ElMessage.error(e?.message || '加载历史失败'); histRows.value = [] }
+  finally { histLoading.value = false }
+}
+async function onRollback(v: VersionItem) {
+  await ElMessageBox.confirm(`回滚到 v${v.version_no}(${v.source})?当前线上将被替换、自动归档。`, '回滚', { type: 'warning' })
+  try {
+    await rollbackVersion(histResourceId.value, v.id)
+    ElMessage.success(`已回滚到 v${v.version_no}`)
+    histRows.value = (await listResourceVersions(histResourceId.value)).items
+    await load(); await loadOverview()
+  } catch (e: any) { ElMessage.error(e?.message || '回滚失败') }
 }
 async function onApproveVersion() {
   diffBusy.value = true
@@ -217,19 +250,28 @@ async function confirmEdit() {
   } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
 }
 
+// 从单元页跳转携带 unit_id → 预置过滤(onMounted 与路由变化都生效)
+async function applyUnitFromQuery() {
+  const qUnit = route.query.unit_id as string | undefined
+  if (!qUnit) return
+  const u = allUnits.value.find(x => x.unit_id === qUnit)
+  if (u) {
+    fTextbook.value = u.textbook_version; fGrade.value = u.grade
+    fSemester.value = u.semester; fUnitId.value = u.unit_id
+    status.value = ''            // 跳转补全场景:默认看全部状态
+    await loadOverview()
+  }
+}
+
 onMounted(async () => {
   try { allUnits.value = await listCurriculumUnits() } catch { /* 忽略 */ }
-  // 从单元页跳转携带 unit_id → 预置过滤
-  const qUnit = route.query.unit_id as string | undefined
-  if (qUnit) {
-    const u = allUnits.value.find(x => x.unit_id === qUnit)
-    if (u) {
-      fTextbook.value = u.textbook_version; fGrade.value = u.grade
-      fSemester.value = u.semester; fUnitId.value = u.unit_id
-      status.value = ''            // 跳转补全场景:默认看全部状态
-      await loadOverview()
-    }
-  }
+  await applyUnitFromQuery()
+  await load()
+})
+
+// SPA 内再次跳转(已在本页时 unit_id 变化)也刷新过滤
+watch(() => route.query.unit_id, async () => {
+  await applyUnitFromQuery()
   await load()
 })
 </script>
@@ -317,6 +359,7 @@ onMounted(async () => {
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="row.resource_type === 'lecture'" size="small" @click="openHistory(row)">历史</el-button>
           <template v-if="row.status !== 'published'">
             <el-button size="small" type="success" @click="onReview(row, true)">发布</el-button>
             <el-button size="small" type="danger" @click="onReview(row, false)">驳回</el-button>
@@ -383,10 +426,39 @@ onMounted(async () => {
       </div>
       <template #footer>
         <el-button @click="diffOpen = false">关闭</el-button>
-        <el-button type="danger" plain :loading="diffBusy" @click="onRejectVersion">驳回</el-button>
-        <el-button type="success" :loading="diffBusy" @click="onApproveVersion">通过 · 替换线上</el-button>
+        <template v-if="diffMode === 'review'">
+          <el-button type="danger" plain :loading="diffBusy" @click="onRejectVersion">驳回</el-button>
+          <el-button type="success" :loading="diffBusy" @click="onApproveVersion">通过 · 替换线上</el-button>
+        </template>
       </template>
     </el-drawer>
+
+    <!-- 版本历史 + 回滚 -->
+    <el-dialog v-model="histOpen" :title="`版本历史 · ${histCtx}`" width="720px">
+      <el-table v-loading="histLoading" :data="histRows" border style="width:100%">
+        <el-table-column label="版本" width="70" align="center">
+          <template #default="{ row }">v{{ row.version_no }}</template>
+        </el-table-column>
+        <el-table-column prop="source" label="来源" width="100" />
+        <el-table-column label="状态" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="STATUS_TAG[row.status] || 'info'" size="small">{{ STATUS_LABEL[row.status] || row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="content_md" label="内容" min-width="200" show-overflow-tooltip />
+        <el-table-column label="时间" width="160">
+          <template #default="{ row }">{{ (row.reviewed_at || row.created_at || '').slice(0, 19).replace('T', ' ') }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="openDiffByVersion(row.id, histCtx, 'view')">对比当前</el-button>
+            <el-button v-if="row.status === 'archived' || row.status === 'rejected'"
+              size="small" type="warning" plain @click="onRollback(row)">回滚</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!histLoading && !histRows.length" description="暂无版本记录" />
+    </el-dialog>
   </div>
 </template>
 

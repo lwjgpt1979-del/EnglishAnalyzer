@@ -213,31 +213,28 @@ async def version_diff(db: AsyncSession, *, version_id: uuid.UUID, against: str 
     return {"base": base, "incoming": incoming}
 
 
-async def approve_version(db: AsyncSession, *, version_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:
-    """审核通过待审版本 → 替换线上、旧 published 转 archived。一个事务内完成。"""
-    v = await db.get(NodeResourceVersion, version_id)
-    if v is None:
-        raise AppError(code=404, message="版本不存在")
-    if v.status != "pending":
-        raise AppError(code=400, message="仅待审版本可通过")
+async def _promote_to_live(db: AsyncSession, *, v: NodeResourceVersion, reviewer_id: uuid.UUID) -> dict:
+    """把某版本提升为线上(approve / rollback 共用):旧 published 转 archived、
+    若当前线上内容未被任何 published 版本捕获则补存 archived 快照(防直接编辑丢失),
+    再把 v 写入线上 node_resource。一个事务内完成。"""
     res = await db.get(NodeResource, v.resource_id)
     if res is None:
         raise AppError(code=404, message="资源不存在")
     now = datetime.now(timezone.utc)
-    # 归档当前 published 版本行
-    cur = (await db.execute(sa.select(NodeResourceVersion).where(
+    published_rows = (await db.execute(sa.select(NodeResourceVersion).where(
         NodeResourceVersion.resource_id == res.id,
         NodeResourceVersion.status == "published"))).scalars().all()
-    for c in cur:
-        c.status = "archived"
-    # 历史遗留:线上内容无对应版本行 → 补存一条 archived 快照,避免丢失
-    if not cur and res.content_md is not None:
+    live_captured = any((p.content_md or "") == (res.content_md or "") for p in published_rows)
+    for p in published_rows:
+        if p.id != v.id:
+            p.status = "archived"
+    # 当前线上内容未被任何版本捕获(遗留 / 被直接编辑过)→ 补存 archived 快照
+    if not live_captured and res.content_md is not None and res.content_md != v.content_md:
         db.add(NodeResourceVersion(
             id=uuid.uuid4(), resource_id=res.id, node_id=res.node_id, dimension=res.dimension,
             version_no=await _next_version_no(db, res.id), content_md=res.content_md,
             media_url=res.media_url, source=res.generated_by or "manual", status="archived",
             reviewed_by=reviewer_id, reviewed_at=now))
-    # 升级 incoming → published,并同步到线上 node_resource(学生读它)
     v.status = "published"
     v.reviewed_by = reviewer_id
     v.reviewed_at = now
@@ -249,6 +246,38 @@ async def approve_version(db: AsyncSession, *, version_id: uuid.UUID, reviewer_i
     res.generated_by = "ai_with_human_review" if v.source == "ai_full" else (v.source or res.generated_by)
     await db.flush()
     return {"resource_id": res.id, "version_id": v.id, "version_no": v.version_no}
+
+
+async def approve_version(db: AsyncSession, *, version_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:
+    """审核通过待审版本 → 替换线上、旧 published 转 archived。"""
+    v = await db.get(NodeResourceVersion, version_id)
+    if v is None:
+        raise AppError(code=404, message="版本不存在")
+    if v.status != "pending":
+        raise AppError(code=400, message="仅待审版本可通过")
+    return await _promote_to_live(db, v=v, reviewer_id=reviewer_id)
+
+
+async def rollback_to_version(
+    db: AsyncSession, *, resource_id: uuid.UUID, version_id: uuid.UUID, reviewer_id: uuid.UUID,
+) -> dict:
+    """回滚:把某历史版本(archived)重新提升为线上。"""
+    v = await db.get(NodeResourceVersion, version_id)
+    if v is None or v.resource_id != resource_id:
+        raise AppError(code=404, message="版本不存在")
+    if v.status == "published":
+        raise AppError(code=400, message="该版本已是当前线上")
+    if v.status == "pending":
+        raise AppError(code=400, message="待审版本请走审核通过,而非回滚")
+    return await _promote_to_live(db, v=v, reviewer_id=reviewer_id)
+
+
+async def list_versions(db: AsyncSession, *, resource_id: uuid.UUID) -> list[NodeResourceVersion]:
+    """某讲解的全部版本(版本号倒序)。"""
+    return list((await db.execute(
+        sa.select(NodeResourceVersion)
+        .where(NodeResourceVersion.resource_id == resource_id)
+        .order_by(NodeResourceVersion.version_no.desc()))).scalars().all())
 
 
 async def reject_version(db: AsyncSession, *, version_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:

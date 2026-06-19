@@ -25,6 +25,7 @@ import type {
   NodeResourceItem2,
   UnitContentOverview,
   VersionDiffOut,
+  VersionItem,
   LSAdminItem,
   LSExtractResult,
   LSConfig,
@@ -348,6 +349,13 @@ export function approveVersion(versionId: string): Promise<Record<string, string
 }
 export function rejectVersion(versionId: string): Promise<Record<string, string>> {
   return unwrap(request.post(`/admin/node-resource-versions/${versionId}/reject`))
+}
+// 版本历史 + 回滚(C3)
+export function listResourceVersions(resourceId: string): Promise<{ resource_id: string; total: number; items: VersionItem[] }> {
+  return unwrap(request.get(`/admin/node-resources/${resourceId}/versions`))
+}
+export function rollbackVersion(resourceId: string, versionId: string): Promise<Record<string, string>> {
+  return unwrap(request.post(`/admin/node-resources/${resourceId}/rollback/${versionId}`))
 }
 
 // ── 长难句管理（KP-First L7）──────────────────────────────

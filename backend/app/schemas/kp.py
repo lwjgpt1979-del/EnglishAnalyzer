@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -348,6 +349,22 @@ class VersionDiffSide(BaseModel):
 class VersionDiffOut(BaseModel):
     base: VersionDiffSide
     incoming: VersionDiffSide
+
+
+class VersionItem(BaseModel):
+    id: uuid.UUID
+    version_no: int
+    source: str
+    status: str
+    content_md: str | None = None
+    created_at: datetime | None = None
+    reviewed_at: datetime | None = None
+
+
+class VersionListOut(BaseModel):
+    resource_id: uuid.UUID
+    total: int
+    items: list[VersionItem]
 
 
 class AddResourceIn(BaseModel):

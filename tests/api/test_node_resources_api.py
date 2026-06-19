@@ -194,6 +194,56 @@ async def test_version_diff_approve_reject(client):
 
 
 @pytest.mark.asyncio
+async def test_version_history_and_rollback(client):
+    """C3:版本历史列表 + 回滚(把归档版重新提升为线上)。"""
+    node_id = await _seed_node()
+    try:
+        admin = await _make_admin(client, "c3")
+
+        async def _submit(content):
+            r = await client.post("/api/v1/admin/node-resources", headers=admin, json={
+                "node_id": str(node_id), "resource_type": "lecture", "dimension": "grammar",
+                "content_md": content, "status": "published"})
+            assert r.status_code == 200, r.text
+            return r.json()["data"]["id"]
+
+        rid = await _submit("内容 v1")          # published
+        await _submit("内容 v2")                 # pending v2
+        async with _async_session_factory() as db:
+            vid2 = (await db.execute(text(
+                "SELECT id FROM node_resource_version WHERE resource_id=:r AND status='pending'"),
+                {"r": rid})).scalar()
+        # 通过 v2 → 线上=v2,v1 归档
+        await client.post(f"/api/v1/admin/node-resource-versions/{vid2}/approve", headers=admin)
+
+        # 历史列表:2 版,倒序 v2(published)/v1(archived)
+        r = await client.get(f"/api/v1/admin/node-resources/{rid}/versions", headers=admin)
+        items = r.json()["data"]["items"]
+        assert [it["version_no"] for it in items] == [2, 1]
+        v1 = next(it for it in items if it["version_no"] == 1)
+        assert v1["status"] == "archived"
+
+        # 回滚到 v1 → 线上变回 v1,v2 归档
+        r = await client.post(f"/api/v1/admin/node-resources/{rid}/rollback/{v1['id']}", headers=admin)
+        assert r.status_code == 200, r.text
+        async with _async_session_factory() as db:
+            live = (await db.execute(text("SELECT content_md FROM node_resource WHERE id=:i"), {"i": rid})).scalar()
+            assert live == "内容 v1"
+            st = dict((await db.execute(text(
+                "SELECT content_md, status FROM node_resource_version WHERE resource_id=:r"), {"r": rid})).all())
+            assert st["内容 v1"] == "published" and st["内容 v2"] == "archived"
+
+        # 当前线上版本不可回滚
+        r = await client.post(f"/api/v1/admin/node-resources/{rid}/rollback/{v1['id']}", headers=admin)
+        assert r.status_code == 400
+    finally:
+        async with _async_session_factory() as db:
+            await db.execute(text("DELETE FROM node_resource_version WHERE node_id = :n"), {"n": str(node_id)})
+            await db.commit()
+        await _cleanup(node_id)
+
+
+@pytest.mark.asyncio
 async def test_unit_filter_and_content_overview(client):
     """A 期:按 unit_id 过滤 node-resources + 单元补全总览(六维缺失)。"""
     from app.models.d4_knowledge import CurriculumUnit
