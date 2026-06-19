@@ -52,6 +52,58 @@ class KpNodeOverviewOut(BaseModel):
     items: list[KpNodeOverviewItem]
 
 
+# ── 节点详情 / 维护(D2)──
+class NodeAliasItem(BaseModel):
+    alias: str
+    source: str
+
+
+class NodeUnitRef(BaseModel):
+    unit_id: uuid.UUID
+    unit_title: str
+    textbook_version: str
+    grade: str
+    semester: str
+
+
+class NodeDimCell(BaseModel):
+    id: uuid.UUID
+    status: str
+
+
+class NodeMastery(BaseModel):
+    learners: int
+    avg: float | None = None
+    mastered: int
+    mid: int
+    weak: int
+
+
+class KpNodeDetailOut(BaseModel):
+    id: uuid.UUID
+    axis: str
+    node_kind: str | None = None
+    name: str
+    code: str
+    status: str
+    applicable_stages: list[str] | None = None
+    description: str | None = None
+    source: str
+    dims: dict[str, NodeDimCell | None]
+    aliases: list[NodeAliasItem]
+    units: list[NodeUnitRef]
+    question_real: int
+    question_sim: int
+    mastery: NodeMastery
+
+
+class UpdateNodeIn(BaseModel):
+    name: str | None = None
+    node_kind: str | None = None
+    applicable_stages: list[str] | None = None
+    description: str | None = None
+
+
 class KpNodeListOut(BaseModel):
     total: int
     items: list[KpNodeItem]

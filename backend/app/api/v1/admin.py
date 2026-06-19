@@ -51,6 +51,8 @@ from app.schemas.kp import (
     KpNodeListOut,
     KpNodeOverviewItem,
     KpNodeOverviewOut,
+    KpNodeDetailOut,
+    UpdateNodeIn,
     MergeCandidateRequest,
     RejectCandidateRequest,
     UnitExtractOut,
@@ -319,6 +321,38 @@ async def knowledge_nodes_overview_api(
     items, total = await kp_candidate_service.list_nodes_overview(
         db, axis=axis, stage=stage, status=status or None, q=q, skip=skip, limit=limit)
     return make_ok(KpNodeOverviewOut(total=total, items=[KpNodeOverviewItem(**it) for it in items]))
+
+
+@router.get("/knowledge-nodes/{node_id}", response_model=BaseResponse[KpNodeDetailOut])
+async def knowledge_node_detail_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """节点详情(D2):别名 / 引用单元 / 引用真题 / 六维完整度 / 学生掌握分布。"""
+    return make_ok(KpNodeDetailOut(**(await kp_candidate_service.node_detail(db, node_id=node_id))))
+
+
+@router.patch("/knowledge-nodes/{node_id}", response_model=BaseResponse[KpNodeDetailOut])
+async def update_knowledge_node_api(node_id: uuid.UUID, body: UpdateNodeIn, db: DbDep, admin: AdminDep):
+    """改节点:名称 / 子类型 / 适用学段 / 描述。"""
+    await kp_candidate_service.update_node(
+        db, node_id=node_id, name=body.name, node_kind=body.node_kind,
+        applicable_stages=body.applicable_stages, description=body.description)
+    await db.commit()
+    return make_ok(KpNodeDetailOut(**(await kp_candidate_service.node_detail(db, node_id=node_id))))
+
+
+@router.post("/knowledge-nodes/{node_id}/retire", response_model=BaseResponse[dict])
+async def retire_knowledge_node_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """停用节点(status=retired,不硬删;学生/真题引用保留)。"""
+    n = await kp_candidate_service.set_node_status(db, node_id=node_id, status="retired")
+    await db.commit()
+    return make_ok({"id": str(n.id), "status": n.status})
+
+
+@router.post("/knowledge-nodes/{node_id}/restore", response_model=BaseResponse[dict])
+async def restore_knowledge_node_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """恢复节点(status=active)。"""
+    n = await kp_candidate_service.set_node_status(db, node_id=node_id, status="active")
+    await db.commit()
+    return make_ok({"id": str(n.id), "status": n.status})
 
 
 @router.post("/kp-candidates/{candidate_id}/approve", response_model=BaseResponse[KpNodeItem])

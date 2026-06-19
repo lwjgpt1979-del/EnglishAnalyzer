@@ -27,6 +27,7 @@ import type {
   VersionDiffOut,
   VersionItem,
   KpNodeOverviewOut,
+  KpNodeDetail,
   LSAdminItem,
   LSExtractResult,
   LSConfig,
@@ -346,6 +347,21 @@ export function listKnowledgeNodes(params: {
   axis?: string; stage?: string; status?: string; q?: string; skip?: number; limit?: number
 }): Promise<KpNodeOverviewOut> {
   return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params }))
+}
+// 节点详情 / 维护(D2)
+export function getKnowledgeNode(id: string): Promise<KpNodeDetail> {
+  return unwrap<KpNodeDetail>(request.get(`/admin/knowledge-nodes/${id}`))
+}
+export function updateKnowledgeNode(id: string, body: {
+  name?: string; node_kind?: string | null; applicable_stages?: string[] | null; description?: string | null
+}): Promise<KpNodeDetail> {
+  return unwrap<KpNodeDetail>(request.patch(`/admin/knowledge-nodes/${id}`, body))
+}
+export function retireKnowledgeNode(id: string): Promise<{ id: string; status: string }> {
+  return unwrap(request.post(`/admin/knowledge-nodes/${id}/retire`))
+}
+export function restoreKnowledgeNode(id: string): Promise<{ id: string; status: string }> {
+  return unwrap(request.post(`/admin/knowledge-nodes/${id}/restore`))
 }
 
 // 内容版本对比 / 审核(C2)

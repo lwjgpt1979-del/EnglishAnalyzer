@@ -155,6 +155,91 @@ async def list_nodes_overview(
     return items, total
 
 
+async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
+    """节点详情(D2):基础字段 + 别名 + 引用单元 + 引用真题 + 六维完整度 + 学生掌握分布。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, StudentKp
+    from app.models.d19_node_resource import NodeResource
+    from app.services.node_resource_service import LECTURE_DIMENSIONS
+
+    node = await db.get(KnowledgeNode, node_id)
+    if node is None:
+        raise AppError(code=404, message="节点不存在")
+
+    aliases = [{"alias": a, "source": s} for a, s in (await db.execute(
+        sa.select(NodeAlias.alias, NodeAlias.source).where(NodeAlias.node_id == node_id)
+        .order_by(NodeAlias.alias))).all()]
+
+    units = [{"unit_id": uid, "unit_title": title, "textbook_version": tv, "grade": g, "semester": sem}
+             for uid, title, tv, g, sem in (await db.execute(
+                 sa.select(CurriculumUnit.id, CurriculumUnit.unit_title, CurriculumUnit.textbook_version,
+                           CurriculumUnit.grade, CurriculumUnit.semester)
+                 .join(UnitNode, UnitNode.unit_id == CurriculumUnit.id)
+                 .where(UnitNode.node_id == node_id)
+                 .order_by(CurriculumUnit.textbook_version, CurriculumUnit.grade,
+                           CurriculumUnit.semester, CurriculumUnit.unit_no))).all()]
+
+    qbtype = dict((await db.execute(
+        sa.select(PlatformQuestion.type, sa.func.count())
+        .join(PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id)
+        .where(PlatformQuestionKp.node_id == node_id).group_by(PlatformQuestion.type))).all())
+
+    lec = {dim: {"id": rid, "status": st} for rid, dim, st in (await db.execute(
+        sa.select(NodeResource.id, NodeResource.dimension, NodeResource.status)
+        .where(NodeResource.node_id == node_id, NodeResource.resource_type == "lecture"))).all() if dim}
+    dims = {d: lec.get(d) for d in LECTURE_DIMENSIONS}
+
+    m = (await db.execute(sa.select(
+        sa.func.count(), sa.func.avg(StudentKp.mastery),
+        sa.func.count().filter(StudentKp.mastery >= 0.7),
+        sa.func.count().filter(sa.and_(StudentKp.mastery >= 0.4, StudentKp.mastery < 0.7)),
+        sa.func.count().filter(StudentKp.mastery < 0.4),
+    ).where(StudentKp.node_id == node_id, StudentKp.mastery.isnot(None)))).one()
+    mastery = {"learners": int(m[0]), "avg": round(float(m[1]), 3) if m[1] is not None else None,
+               "mastered": int(m[2]), "mid": int(m[3]), "weak": int(m[4])}
+
+    return {
+        "id": node.id, "axis": node.axis, "node_kind": node.node_kind, "name": node.name,
+        "code": node.code, "status": node.status, "applicable_stages": node.applicable_stages,
+        "description": node.description, "source": node.source,
+        "dims": dims, "aliases": aliases, "units": units,
+        "question_real": int(qbtype.get("real", 0)), "question_sim": int(qbtype.get("sim", 0)),
+        "mastery": mastery,
+    }
+
+
+async def update_node(
+    db: AsyncSession, *, node_id: uuid.UUID, name: str | None = None, node_kind: str | None = None,
+    applicable_stages: list[str] | None = None, description: str | None = None,
+) -> KnowledgeNode:
+    node = await db.get(KnowledgeNode, node_id)
+    if node is None:
+        raise AppError(code=404, message="节点不存在")
+    if name is not None:
+        if not name.strip():
+            raise AppError(code=400, message="名称不能为空")
+        node.name = name.strip()
+    if node_kind is not None:
+        node.node_kind = node_kind or None
+    if applicable_stages is not None:
+        node.applicable_stages = applicable_stages or None
+    if description is not None:
+        node.description = description or None
+    await db.flush()
+    return node
+
+
+async def set_node_status(db: AsyncSession, *, node_id: uuid.UUID, status: str) -> KnowledgeNode:
+    if status not in ("active", "retired"):
+        raise AppError(code=400, message="状态仅支持 active / retired")
+    node = await db.get(KnowledgeNode, node_id)
+    if node is None:
+        raise AppError(code=404, message="节点不存在")
+    node.status = status
+    await db.flush()
+    return node
+
+
 async def list_nodes(
     db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
     q: str | None = None, limit: int = 20,

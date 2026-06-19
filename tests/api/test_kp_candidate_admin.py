@@ -67,10 +67,45 @@ async def _seed_node(name: str) -> uuid.UUID:
 
 async def _cleanup():
     async with _async_session_factory() as s:
-        await s.execute(text("DELETE FROM kp_candidates WHERE raw_name LIKE :p"), {"p": f"{_TAG}%"})
-        await s.execute(text("DELETE FROM knowledge_node_aliases WHERE alias LIKE :p"), {"p": f"{_TAG}%"})
-        await s.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_TAG}%"})
+        p = f"{_TAG}%"
+        # approve 建的节点 code 为 kp-<norm>(不以 _TAG 开头),故按 name 也删一遍,避免泄漏
+        await s.execute(text(
+            "DELETE FROM knowledge_node_aliases WHERE alias LIKE :p "
+            "OR node_id IN (SELECT id FROM knowledge_nodes WHERE name LIKE :p OR code LIKE :p)"), {"p": p})
+        await s.execute(text("DELETE FROM kp_candidates WHERE raw_name LIKE :p"), {"p": p})
+        await s.execute(text("DELETE FROM knowledge_nodes WHERE name LIKE :p OR code LIKE :p"), {"p": p})
         await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_knowledge_node_detail_update_retire(client):
+    """D2:节点详情 + 改信息 + 停用/恢复。"""
+    node_id = await _seed_node(f"{_TAG}详情点")
+    try:
+        admin = await _make_admin(client, "d2")
+        # 详情
+        r = await client.get(f"/api/v1/admin/knowledge-nodes/{node_id}", headers=admin)
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert d["name"] == f"{_TAG}详情点" and d["status"] == "active"
+        assert "dims" in d and "mastery" in d and d["mastery"]["learners"] == 0
+
+        # 改名 + 子类型 + 学段 + 描述
+        r = await client.patch(f"/api/v1/admin/knowledge-nodes/{node_id}", headers=admin, json={
+            "name": f"{_TAG}改名后", "node_kind": "时态", "applicable_stages": ["初", "高"],
+            "description": "测试描述"})
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert d["name"] == f"{_TAG}改名后" and d["node_kind"] == "时态"
+        assert d["applicable_stages"] == ["初", "高"] and d["description"] == "测试描述"
+
+        # 停用 → retired;恢复 → active
+        r = await client.post(f"/api/v1/admin/knowledge-nodes/{node_id}/retire", headers=admin)
+        assert r.status_code == 200 and r.json()["data"]["status"] == "retired"
+        r = await client.post(f"/api/v1/admin/knowledge-nodes/{node_id}/restore", headers=admin)
+        assert r.status_code == 200 and r.json()["data"]["status"] == "active"
+    finally:
+        await _cleanup()
 
 
 @pytest.mark.asyncio

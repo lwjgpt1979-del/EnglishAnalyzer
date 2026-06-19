@@ -239,6 +239,28 @@ export interface KpNodeOverviewItem {
 }
 export interface KpNodeOverviewOut { total: number; items: KpNodeOverviewItem[] }
 
+// 节点详情(D2)
+export interface NodeDimCell2 { id: string; status: string }
+export interface NodeUnitRef { unit_id: string; unit_title: string; textbook_version: string; grade: string; semester: string }
+export interface NodeMastery { learners: number; avg?: number | null; mastered: number; mid: number; weak: number }
+export interface KpNodeDetail {
+  id: string
+  axis: string
+  node_kind?: string | null
+  name: string
+  code: string
+  status: string
+  applicable_stages?: string[] | null
+  description?: string | null
+  source: string
+  dims: Record<string, NodeDimCell2 | null>
+  aliases: { alias: string; source: string }[]
+  units: NodeUnitRef[]
+  question_real: number
+  question_sim: number
+  mastery: NodeMastery
+}
+
 // 版本历史(C3)
 export interface VersionItem {
   id: string
