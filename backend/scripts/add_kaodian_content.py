@@ -628,6 +628,17 @@ earn one's living 谋生;lose one's way 迷路;hold one's breath 屏住呼吸;ma
 2. can 用于自身具备的能力,be able to 表示通过努力具备的能力。e.g. I can jump high.;I am able to run 3,000 metres in 10 minutes if I practise more.
 3. can 是情态动词,无人称和数的变化,主语可以是人或物;be able to 有人称和数的变化,主语一般是人。e.g. Many birds can fly.;Lucy is able to finish her homework by herself.""",
 
+    "cf-4-3-3": """## 情态动词表请求
+
+1. can 在疑问句中可表示请求,肯定回答用 can,否定回答用 can't;could 是 can 的委婉表达,不表示过去。e.g. — Can / Could you please give that book to me? — Yes, I can. / No, I can't.
+2. may 和 might 在疑问句中可表示请求,肯定回答用 can 或 may,否定回答用 can't / mustn't;此时 might 是 may 的委婉表达,不表示过去。e.g. — May I play computer games? — Yes, you may. / No, you can't.
+3. will 在疑问句中表示请求或允许,多用于第二人称作主语的疑问句中;would 是 will 的委婉表达。e.g. Would you please give me the book?""",
+
+    "cf-4-3-4": """## 情态动词表意见或意愿
+
+1. shall 可表示征求意见或提出请求,强调对方的想法或意志,多用于第一、三人称的疑问句,意为"……好吗?"或"要不要……?"。e.g. Shall we have a rest?;Shall he come in?
+2. will 或 would 可表示意愿,强调自愿或主动提出做某事,可用于各种人称;will 表示现在的意愿,would 表示过去的意愿。""",
+
     # ── 词法 · 动词 · 情态动词(2) ──
     "cf-4-4-1": """## 情态动词表推测
 
