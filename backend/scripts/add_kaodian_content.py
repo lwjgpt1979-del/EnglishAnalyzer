@@ -814,6 +814,193 @@ need 和 dare 既可作情态动词又可作实义动词。
 3. the + 序数词 + 最高级 + 名词 + 范围,意为"第几……"。e.g. This is the second longest river in the world.
 4. 形容词最高级前一般加定冠词 the,但前有名词性物主代词或 's 时不加。e.g. She is my best friend.;You are the youngest and tallest boy in the class.
 5. 一些固定用法中最高级前通常省略 the。e.g. Best wishes for you.""",
+
+    # ── 词法 · 数词 · 基数词和序数词 ──
+    "cf-6-1-1": """## 基数词定义及构成
+
+**定义**:表示数目多少的词。
+
+**构成规则**:
+1. 1—12 无规律。
+2. 13—19 大多在个位数词后加 -teen。
+3. 20—90 整十的大多在个位数词后加 -ty。
+4. 21—99 的非整十数:十位数 + 连字符 + 个位数。
+
+例:twenty-two 22;thirty-three 33;forty-four 44;sixty-six 66;ninety-nine 99""",
+
+    "cf-6-1-2": """## 序数词的定义及构成
+
+**定义**:表示数目顺序的词,意为"第几"。
+
+**构成规则**:
+1. 第一到第三特殊记:first(1st)、second(2nd)、third(3rd)。
+2. 其他大多加 -th;fifth、ninth、twelfth 拼写不规则;整十的序数词把词尾 y 变为 ie 再加 -th(twentieth 20th)。
+3. 多位数基数词变序数词,只将个位的基数词变序数词。
+
+例:fourth 4th;eighth 8th;twenty-first 21st;one hundredth 100th;one hundred and first 101st""",
+
+    "cf-6-1-3": """## 基数词的用法
+
+1. hundred / thousand / million / billion 前有具体基数词时不加 -s。e.g. two hundred 两百;前无基数词、表约数时用复数并加 of。e.g. thousands of tourists 成千上万的游客
+2. 表示年份:in + 基数词。e.g. in 2023;in the 1980s 在 20 世纪 80 年代;at the age of + 年龄
+3. 表示年龄:in one's + 整十基数词复数,意为"在几十几岁时"。e.g. in his fifties 在他五十多岁时
+4. 表示时间:整点 基数词 + o'clock;分钟数 + past + 基数词;分钟数 = 30,所差分钟数 + to + 下一整点。e.g. 2:30 half past two;9:50 ten to ten""",
+
+    "cf-6-1-4": """## 序数词的用法
+
+1. 序数词前加定冠词,意为"第几";加不定冠词 a / an,意为"又一,再一"。e.g. the first month 第一个月;Please read it a second time. 请再读一遍。
+2. 序数词前有物主代词、指示代词或名词所有格时,不用定冠词。e.g. my second son 我的第二个儿子
+3. 序数词与基数词连用时,常放在基数词前。e.g. the first three pages 前三页""",
+
+    "cf-6-1-5": """## 数词表达易错点
+
+1. 美式日期写法:月 / 日 / 年;英式写法:日 / 月 / 年。e.g. 2021 年 6 月 1 日,美式 June 1(st), 2021,英式 1(st) June, 2021
+2. 两个名词均为数字时,中心词放在前面。e.g. Page Two = the second page 第二页
+3. 表示某个世纪:in the 20th century 在 20 世纪""",
+
+    # ── 词法 · 数词 · 数词的用法 ──
+    "cf-6-2-1": """## 数词的句法功能
+
+数词在句子中起名词或形容词的作用。
+1. 作主语:e.g. The first is the best.
+2. 作宾语:e.g. I'm twenty.;He was the first to arrive here.
+3. 作定语:e.g. There are five students in the classroom.;The second person is fit for this job.
+4. 作同位语:e.g. I want the big one, the first on the right.""",
+
+    "cf-6-2-2": """## 分数 / 小数 / 百分数的表达
+
+1. **分数**:分子用基数词,分母用序数词;分子大于 1 时分母序数词用复数。e.g. one third 三分之一;two fifths 五分之二;分数大于 1 时用"整数部分 + and + 分数"。e.g. eight and three fifths 八又五分之三;1/2 = a / one half;3/4 = three quarters = three fourths
+2. **小数**:小数点前用基数词,小数点读作 point,右边各位都按基数词读。e.g. 3.1415 three point one four one five
+3. **百分数**:基数词 + %,百分号读作 per cent / percent。e.g. 9% nine per cent;"分数或百分数 + of + 名词"作主语,谓语动词由名词决定。e.g. Sixty per cent of water is still clean.""",
+
+    "cf-6-2-3": """## 概数的表达
+
+1. 表示"大约"常用 about, around, nearly, approximately, roughly 等。e.g. about ten metres 大约十米
+2. 常用 dozen(十二,一打)、score(二十)等表示确数,与基数词连用。e.g. two dozen eggs 两打鸡蛋;表示约的短语:scores of 几十个;dozens of 几十个;hundreds of 数以百计""",
+
+    "cf-6-2-4": """## 倍数的表达
+
+倍数表达:两倍用 twice,三倍及以上用"基数词 + times"。
+1. A + 倍数 + as + 形容词 / 副词原级 + as + B,意为"A 是 B 的几倍"。e.g. We have five times as many cups as B.
+2. A + 倍数 + 形容词比较级 + than + B,意为"A 是 B 的几倍"。e.g. This hall is five times bigger than our classroom.
+3. A + 倍数 + the + size / length / weight ... + of + B,意为"A 是 B 大小 / 长度 / 重量……的几倍"。e.g. This table is twice the size of that one.""",
+
+    # ── 词法 · 介词 · 时间、地点、方位介词 ──
+    "cf-7-1-1": """## 介词的定义及分类
+
+**定义**:介词又称前置词,是一种虚词,不能单独作谓语,常用在名词、代词或相当于名词的其他词类、短语或从句之前,一起构成介词短语后作句子成分。
+
+**分类**:
+1. 按结构分:简单介词(in)、合成介词(without)、派生介词(across)、短语介词(thanks to)、分词介词(including, regarding)。
+2. 按意义分:时间介词(during 在……期间)、地点与方位介词(before 在……之前,below 在下面,over 在……正上方)。""",
+
+    "cf-7-1-2": """## 时间介词的用法
+
+1. in + 时间段(年 / 月 / 季 / 早 / 午 / 晚)。e.g. in January;in the evening
+2. on + 星期 / 具体某一天 / 有修饰语的具体某个早午晚。e.g. on July 2nd;on a cold morning
+3. at + 某一时刻或固定搭配。e.g. at four o'clock;at night
+4. before / after + 时间点或时间段,意为"在……之前 / 后"。e.g. after three days 三天后
+5. during + 时间段,意为"在……期间"。e.g. during my childhood
+6. for + 时间段,意为"持续多久",常用于完成时。e.g. for ten years
+7. since + 时间点,意为"自……以来",常用于完成时。e.g. since 1993""",
+
+    "cf-7-1-3": """## 地点介词的用法
+
+| 用法 | 示例 |
+| --- | --- |
+| at + 小地点 | at the bus stop 在公共汽车站 |
+| in + 大地点 | in Shanghai 在上海 |
+| on(一般指与表面接触) | on the table 在桌子上 |""",
+
+    "cf-7-1-4": """## 方位介词的用法
+
+| 方位 | 介词 |
+| --- | --- |
+| 上下 | over 在……正上方;under 在……正下方 |
+| 上下(有距离) | above 在……上面;beneath 在……下面 |
+| 左右 | on the left 在左边;on the right 在右边 |
+| 前后(外部) | in front of 在……前面;behind 在……后面 |
+| 前后(内部) | in the front of 在内部前面;at the back of 在内部后面 |
+| 里外 | inside 在里面;outside 在外面 |
+| 旁边 | next to 紧靠;beside 在旁边 |""",
+
+    "cf-7-1-5": """## 易错地点、方位介词辨析
+
+1. **in, on, to 表示"地理位置"**:in 表示在某范围之内(属于);on 表示与某地接壤;to 表示在某范围之外(不属于)。e.g. Dalian is in the north of China.;Vietnam is on the south of China.;Japan is to the east of China.
+2. **in 和 on 表示"在……上"**:on the tree 长在树上;in the tree 落在树上;on the wall 在墙表面;in the wall 在墙里面。
+3. **across, through, over 的辨析**:across 从表面通过(go across the bridge 过桥);through 从内部通过(walk through the forest 穿过森林);over 越过(over the mountain 越过山)。""",
+
+    # ── 词法 · 介词 · 方式介词和其他介词 ──
+    "cf-7-2-1": """## 介词短语的句法功能
+
+介词与其他词类或词组结合后构成介词短语,常在句中作表语、定语、状语等,不能单独作句子成分。
+- e.g. She is at school now.(表语);The man next to Jack is my best friend.(定语);I study English in the morning.(状语)""",
+
+    "cf-7-2-2": """## 常见的介词短语
+
+at night 在夜里;at noon 在中午;on business 出差;by accident 偶然;by hand 手工;on duty 值班;in secret 秘密地;in time 及时;at dawn 在拂晓;at work 在工作中;at table 在进餐;by chance 偶然;at present 目前;in tears 流泪;in fact 事实上""",
+
+    "cf-7-2-3": """## 方式介词的用法
+
+in / with / by / on 表示手段或工具:
+1. in + 语言 / 颜色 / 材料,意为"用……"。e.g. Can you say it in English?
+2. with + one's + 工具,意为"用……(工具)"。e.g. I do my homework with a pencil.
+3. by + 交通工具名词单数,意为"乘坐……";by + on + 通讯设备。e.g. by bus 乘公共汽车;They talked on the phone.
+4. by / in + 冠词 / one's + 交通工具。e.g. by my bike 骑我的自行车;in the car 乘小汽车""",
+
+    "cf-7-2-4": """## 其他介词的用法
+
+1. like 意为"像……一样"。e.g. She acts like a teacher.
+2. as 意为"作为……;以……身份",也可表示"当……时"。e.g. He is very responsible as a doctor.;Tom was very naughty as he was a little boy.
+3. with 意为"和……在一起;具有,附带"。e.g. She will go shopping with her friends.;Wisdom comes with age. 智慧随着年龄增长。
+4. without 意为"没有,不具有"。e.g. He left without saying anything.
+5. for 意为"为了;支持";against 意为"反对;不利;相反"。e.g. I did that for you.;I'm sorry he is against your ideas.""",
+
+    "cf-7-2-5": """## 易混淆的介词辨析
+
+1. **between 和 among**:between 意为"两者之间",常与 and 连用。e.g. She is standing between Alice and Mary.;among 意为"在(三者或以上)之间"。e.g. He is the best among the students in my class.
+2. **except, besides, except for**:① except 意为"除……之外(其余都)",其后内容被排除。e.g. Everyone got a good grade except him.;② besides 意为"除……之外还有……",其后内容被包括。e.g. Besides reading books, he also likes collecting stamps.;③ except for 意为"除……了",指排除不同类的事物或某种不足。e.g. The article is good except for some grammar mistakes.""",
+
+    # ── 词法 · 连词 · 并列连词和从属连词 ──
+    "cf-8-1-1": """## 连词的定义及分类
+
+连词用于连接单词、短语、从句或句子。根据性质和意义,可分为并列连词和从属连词。并列连词连接两个互不依赖的单词、短语或句子;从属连词主要引导状语从句和名词性从句。""",
+
+    "cf-8-1-2": """## 并列连词的用法
+
+| 表示的关系 | 并列连词 |
+| --- | --- |
+| 并列或递进 | and 和;both ... and ...;neither ... nor ... 既不……也不……;not only ... but also ... 不仅……而且 |
+| 转折 | but 但是;yet 然而 |
+| 选择 | or 或者;either ... or ... 或者……或者……;not ... but ... 不是……而是 |
+| 因果 | for 因为(后跟原因);so 所以(后跟结果) |""",
+
+    "cf-8-1-3": """## 引导原因、结果状语从句
+
+**引导原因状语从句**:
+1. because 意为"因为",语气最强,可回答 why 引导的疑问句,不能与 so 连用。e.g. She didn't follow the rule because she disliked it.
+2. since 意为"由于;既然",通常位于句首。e.g. Since you have known it, I don't have to tell you about it.
+3. as 意为"由于",语气较弱。e.g. As it is raining, please take an umbrella.
+
+**引导结果状语从句**:
+1. so ... that ...,意为"如此……以至于……",so 后加形容词或副词。e.g. He is so nice that everyone likes him.
+2. such ... that ...,意为"如此……以至于……",such 后加名词词组。e.g. He is such a smart person that he can solve any problem.""",
+
+    "cf-8-1-4": """## 引导目的、让步、方式状语从句
+
+1. **目的**:so that / in order that 意为"为了……"。e.g. He runs quickly so that he won't be late.;He studies hard in order that he can get high marks.
+2. **让步**:though / although 意为"尽管",不能与 but 连用;even though 意为"虽然"。e.g. Although it was raining, he still went out.
+3. **方式**:① as 意为"按照……方式"。e.g. She always does as her father tells her.;② as if / though 意为"似乎;好像"。e.g. He seemed unhappy as if someone bothered him.""",
+
+    "cf-8-1-5": """## 引导时间、条件状语从句
+
+1. **时间**:① before 意为"在……之前",after 意为"在……之后"。e.g. After he came home, he turned on the light first.;② when 与 while 意为"当……时",when 可加短暂性或非延续性动词,while 后只能加延续性动词。e.g. She went to school while her parents were sleeping.
+2. **条件**:① if 意为"如果";unless 意为"除非"。e.g. He will not succeed unless he works hard.;② as long as 意为"只要"。e.g. As long as you like, you can take it home.""",
+
+    "cf-8-1-6": """## 引导名词性从句
+
+名词性从句包括主语从句、宾语从句、表语从句和同位语从句,其从属连接词常有 that, if, whether 等。
+- e.g. I don't know whether you like flowers.""",
 }
 
 
