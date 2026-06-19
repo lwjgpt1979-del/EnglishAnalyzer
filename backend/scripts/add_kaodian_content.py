@@ -1682,6 +1682,192 @@ by / by the end of + 过去时间(by that time;by the end of last week);before +
 1. 简单句转并列复合句:把简单句中的某一短语转换为并列复合句中的一个分句。e.g. Jerry is too small to carry the bag. → Jerry is very small, and he can't carry the bag.
 2. 多个简单句合并:在最后一个简单句前用连接词连接。e.g. I like apples. My brother likes bananas. → I like apples and my brother likes bananas.
 3. 并列复合句也可转换为简单句,常把其中一个分句变为短语。e.g. He didn't come yesterday, for he was ill. → He didn't come yesterday because of his illness.""",
+
+    # ── 句法 · 主从复合句 · 宾语从句的用法 ──
+    "jf-7-1-1": """## 主从复合句的定义
+
+主从复合句是指有两个或两个以上主谓结构构成的句子,其中一个主谓结构在句中充当成分。主从复合句分为三大类:名词性从句(主语从句、表语从句、宾语从句、同位语从句)、状语从句、定语从句。
+- e.g. I am afraid that I have made a mistake.(作宾语)""",
+
+    "jf-7-1-2": """## 宾语从句的句法功能
+
+在句子中起宾语作用的从句称为宾语从句。
+1. 作动词的宾语。e.g. I know that the Water Festival is fun.
+2. 作介词的宾语。e.g. She pointed to what looked like a box.
+3. 作系表结构的宾语。e.g. I'm sure that you will pass the exam.""",
+
+    "jf-7-1-3": """## 宾语从句的连接词
+
+1. that 引导宾语从句时在从句中不充当成分,可省略。e.g. I hope (that) he can understand me.
+2. if / whether 意为"是否",不可省略,两者通常可以互换。e.g. I don't know whether / if they will leave tomorrow.
+3. 连接代词(what, who, whose, whom, which 等)在从句中作主语、宾语、表语或定语,不可省略。e.g. We never know what will happen in the future.;I know whose bag it is.
+4. 连接副词(when, where, how, why 等)在从句中作状语。e.g. I don't know how to answer the question.;Could you tell me where the market is?""",
+
+    "jf-7-1-4": """## 只能用 whether 的情况
+
+1. 与 or not 连用时。e.g. I don't know whether or not they will come on time.
+2. 引导介词后的宾语从句。e.g. It all depends on whether it will be sunny tomorrow.
+3. 与动词不定式连用时。e.g. We have to decide whether to visit there.""",
+
+    "jf-7-1-5": """## 宾语从句的简化
+
+当主句和从句的主语相同,且从句的谓语动词为 remember, forget, learn, know 等时,从句可简化为"疑问词 + 动词不定式"结构。
+- e.g. I don't know what I can do to help her.""",
+
+    "jf-7-1-6": """## 宾语从句的时态
+
+1. 主句为一般现在时或一般将来时,从句的时态要根据实际情况选择。e.g. We want to know which team will win.
+2. 主句为一般过去时,从句一般要用对应的过去时态。e.g. The teacher asked the boy where he lived.
+3. 宾语从句句意表示客观真理或事实时,从句仍需用一般现在时。e.g. He told me that light travels faster than sound.""",
+
+    "jf-7-1-7": """## 宾语从句的语序
+
+1. 陈述句作宾语从句时,仍用陈述语序。e.g. He ordered that we should start at once.
+2. 疑问句作宾语从句时,大部分情况下,原本的疑问语序变为陈述语序。e.g. I don't know when you usually do your homework.""",
+
+    # ── 句法 · 主从复合句 · 地点、时间、原因状语从句 ──
+    "jf-7-2-1": """## 状语从句的定义
+
+句中作状语的从句称作状语从句,用于修饰主句中的动词、形容词或整个句子。状语从句分为地点、时间、原因、目的、结果、让步、条件、比较和方式状语从句。
+- e.g. I like drinking juice because it is delicious.(作状语)""",
+
+    "jf-7-2-2": """## 地点状语从句的用法
+
+1. where 引导地点状语从句时意为"在……地方",强调特定的地点。e.g. Where there is a will, there is a way.;You should put the book where it was.
+2. wherever 引导地点状语从句意为"无论何处",强调非特定的地点。e.g. You may sit wherever you like.""",
+
+    "jf-7-2-3": """## 时间状语从句的用法
+
+1. when 意为"当……时",可与延续性和非延续性动词连用。e.g. It is cold when it snows.
+2. while 意为"当……时",强调动作同时发生,常与延续性动词连用。e.g. I was dancing while my mum was singing.
+3. as soon as 意为"一……就……"。e.g. I will call you as soon as I get the ticket.
+4. since 意为"自……以来"。e.g. I have learned English since I was five.
+5. before 意为"在……之前",after 意为"在……之后"。e.g. Wash your hands before you eat.
+6. till / until 意为"直到……",not ... until 意为"直到……才……"。e.g. You can stay here till / until he comes back.
+7. as 意为"正当;随着",强调动作同时进行。e.g. I listened to music as I washed dishes.""",
+
+    "jf-7-2-4": """## 原因状语从句的用法
+
+1. because 引导原因状语从句,意为"因为",回答 why 提问的问句。e.g. I didn't go to school because I was ill.
+2. since 引导原因状语从句时,意为"既然",通常位于主句之前。e.g. Since we are in the town, we should go to visit him.
+3. as 引导原因状语从句,意为"由于",语气最弱。e.g. She didn't hear us come in as she was asleep.""",
+
+    "jf-7-2-5": """## 时间状语从句的时态
+
+1. when, while, till, until, before, after, as soon as 等引导时间状语从句,主句一般将来时,从句用一般现在时表示将来。e.g. When he comes, I will tell him the news.
+2. 主句一般过去时,从句也用一般过去时。e.g. Stay at home till / until the rain stops.
+3. since 引导的时间状语从句中,主句常用现在完成时,从句用一般过去时。e.g. He has worked in this factory since I left.
+4. before, after 引导的时间状语从句,先发生的动作用过去完成时,后发生的用一般过去时。e.g. Tom had left before I arrived there.""",
+
+    # ── 句法 · 主从复合句 · 目的、结果、让步状语从句 ──
+    "jf-7-3-1": """## 目的状语从句的用法
+
+1. 引导词:so that 和 in order that 意为"以便;为了"。e.g. He works hard every day so that he can pass the exam.;She dressed up in order that everyone could notice her.
+2. in case 和 for fear that 意为"以防;唯恐"。e.g. You'd better bring more clothes in case the weather changes.
+3. 当主句和从句主语一致时,so that / in order that 可替换成 so as to / in order to。e.g. He works hard every day so as to pass the exam.""",
+
+    "jf-7-3-2": """## 结果状语从句的用法
+
+"so ... that ..." 和 "such ... that ..." 引导结果状语从句意为"如此……以至于……":
+1. so + 形容词 / 副词 + that ...。e.g. It is so lovely a dog that we decide to take it home.
+2. so + many / few / much / little + 可数名词复数 / 不可数名词 + that ...。e.g. He had so many things to do that he was busy all day long.
+3. such + a / an + 形容词 + 可数名词单数 + that ...。e.g. It is such an interesting book that I have read it three times.
+4. such + 形容词 + 可数名词复数 / 不可数名词 + that ...。e.g. It is such fine weather that I would like to go to the park.""",
+
+    "jf-7-3-3": """## 让步状语从句的用法
+
+1. though / although 意为"虽然;尽管",不能与 but 连用,但能与 yet 连用。e.g. Though he is very young, he can do many things.;Although it is late, yet he is working hard.
+2. even if / even though 意为"即使;尽管",语气更强烈。e.g. We will make a trip even if / even though the weather is bad.
+3. whatever, whenever, wherever, however 等可与"no matter + 对应疑问词"互换。e.g. Whatever I say, he always disagrees. = No matter what I say, he always disagrees.""",
+
+    "jf-7-3-4": """## "so ... that ..." 和 "such ... that ..." 的区别
+
+1. 当名词前有 much / many 修饰时,只能用 "so ... that ..."。e.g. We have so much time that we can finish the work very well.
+2. "so ... that ..." 引导的结果状语从句可与 "too ... to ..." 和 "not ... enough to ..." 结构互换。e.g. He was so young that he couldn't dress himself. = He was too young to dress himself. = He was not old enough to dress himself.""",
+
+    "jf-7-3-5": """## so that 引导的目的状语从句和结果状语从句的区别
+
+so that 引导目的状语从句时,从句谓语部分常含有 can, could, will, would, may, might 等情态动词;而引导结果状语从句时一般没有。
+- e.g. You'd better tell him so that he can know it in time.(目的状语从句)
+- They missed the bus so that they were late for class.(结果状语从句)""",
+
+    # ── 句法 · 主从复合句 · 比较、条件、方式状语从句 ──
+    "jf-7-4-1": """## 比较状语从句的用法
+
+1. 同级比较:as ... as ... 意为"和……一样",not so / as ... as ... 意为"不如……"。e.g. He speaks English as well as you do.;The river is not so / as clean as it used to be.
+2. 不同级比较:① 形容词 / 副词比较级 + than 意为"比"。e.g. Tom plays violin better than Mike does.;② less than 意为"不及",more than 意为"超过"。e.g. The time available is less than we had hoped for.;He loves cooking more than I do.""",
+
+    "jf-7-4-2": """## 条件状语从句的用法
+
+1. if 是常见的条件状语从句引导词,意为"如果"。e.g. If you go to the party, you'll have a great time.
+2. unless 表示反面的条件,意为"除非;如果不"。e.g. I will leave unless you arrive here before five o'clock.
+3. so / as long as 表示真实条件,意为"只要"。e.g. So / As long as you keep practising, you will have better results.
+4. in case 表示不确定的条件,意为"万一"。e.g. In case I forget, please remind me about it.
+5. once 意为"一旦"。e.g. Once you began you couldn't stop.""",
+
+    "jf-7-4-3": """## 方式状语从句的用法
+
+1. as 意为"如同;按照;就像",通常位于主句之后。e.g. Please do it as your teacher told you.;You'd better do it as your mother did.
+2. as if / as though 意为"好像……;似乎……"。① 若从句所表示的情况不是真实的,用虚拟语气;表示现在的情况,从句用一般过去时。e.g. He is a happy boy as if / as though he has no worries in the world.;② 若从句所表示的情况可能是事实或有很大可能性,用陈述语气。e.g. He talked about Rome as if he had been there before.""",
+
+    "jf-7-4-4": """## 条件状语从句的时态
+
+主句一般将来时、祈使句或含有情态动词时,从句用一般现在时表示将来。
+- e.g. If it snows tomorrow, we will stay here.;Go to school if it doesn't rain.""",
+
+    "jf-7-4-5": """## 条件状语从句的转换
+
+1. if not 相当于 unless,意为"如果不;除非"。e.g. Unless you listen carefully, you won't know the answer. = If you don't listen carefully, you won't know the answer.
+2. 祈使句 + and / or + 一般将来时句子 = If 句子(肯 / 否定)+ 一般将来时句子。e.g. Hurry up, or you will be late. = If you don't hurry up, you will be late.""",
+
+    # ── 句法 · 主从复合句 · 定语从句的用法 ──
+    "jf-7-5-1": """## 定语从句的定义
+
+限制、修饰名词、代词或整个主句的从句称为定语从句,在句中作用相当于形容词。
+- e.g. He is the man who often helps me.""",
+
+    "jf-7-5-2": """## 定语从句的构成和分类
+
+1. 先行词:被定语从句所修饰的词。关系词:引导定语从句的词,在从句中充当成分,且与先行词关系密切。e.g. He has a car which has 7 seats.
+2. 分类:① 限制性定语从句:起限制作用,不可省略,与先行词之间一般不用逗号隔开。e.g. He is the man who often helps me.;② 非限制性定语从句:去掉之后不影响整个主句的意思,与先行词一般用逗号隔开。e.g. I met Ada, who invited me to a party.""",
+
+    "jf-7-5-3": """## 关系代词的用法
+
+| 关系代词 | 先行词 | 在定语从句中充当成分 |
+| --- | --- | --- |
+| that | 人或物 | 作主语(不可省略)、作宾语(可省略)、表语 |
+| which | 物 | 作主语(不可省略)、作宾语(可省略)、介词后宾语 |
+| who | 人 | 作主语、作宾语、直接 / 间接宾语 |
+| whom | 人 | 作宾语(可省略)、介词后宾语 |
+| whose | 人或物 | 作定语 |
+
+e.g. Yang Liwei is a hero whom we are proud of.(作宾语)""",
+
+    "jf-7-5-4": """## 关系副词的用法
+
+| 关系副词 | 先行词 | 在定语从句中充当成分 |
+| --- | --- | --- |
+| when | 时间名词 | 时间状语(= in / on / at / during + which) |
+| where | 地点名词 | 地点状语(= in / on / at + which) |
+| why | 原因名词 | 原因状语(= for + which) |
+
+e.g. We want to visit the place where the people are friendly.""",
+
+    "jf-7-5-5": """## "介词 + 关系代词" 的用法
+
+定语从句中如用介词和关系代词,关系代词只用 which 和 whom,介词的选择根据从句中谓语动词的搭配、先行词的搭配或句意来确定。
+- e.g. This is the boy by whom I was saved.""",
+
+    "jf-7-5-6": """## 只用 who 不用 that 的情况
+
+1. 先行词是 he, they, any 等指人的代词。e.g. They who passed the exam can go home.
+2. 先行词是 one, ones, those 等代词,指人时通常用 who。e.g. God helps those who help themselves.
+3. 同一句话中有两个指人的先行词,且 it 引导的定语从句也修饰。e.g. The girl that you met yesterday is my friend who studies very hard.""",
+
+    "jf-7-5-7": """## 关系代词 that 和 which 的辨析
+
+1. 只用 that 不用 which:① 先行词被 the only, the very, all, some, little 等修饰。e.g. This is the only car that I can find.;② 先行词是序数词、不定代词、形容词最高级修饰。e.g. A product is something that you sell.;③ 先行词既有人又有物时。e.g. I can remember the people and some animals that I saw in this park.
+2. 只用 which 不用 that:① 先行词本身是 that 指物时。e.g. What's that which she is looking at?;② 引导非限制性定语从句时。e.g. I like that nice book, which he gave me on my birthday.""",
 }
 
 
