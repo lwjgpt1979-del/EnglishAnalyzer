@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
@@ -92,8 +92,26 @@ let pollTimer: ReturnType<typeof setTimeout> | null = null
 interface EditRow {
   question_no?: string | null; question_type: string; stem: string
   answer: string; explanation: string; difficulty: number | null; kp_names: string
+  block_key?: string | null
 }
 const editRows = ref<EditRow[]>([])
+const passages = ref<Record<string, string>>({})    // block_key → 短文正文(组内共享，可编辑)
+
+// 按 block_key 把小问归组：同短文小问一组(置顶短文)，独立题(无 block_key)合为一组
+const editGroups = computed(() => {
+  const out: { key: string | null; rows: EditRow[] }[] = []
+  for (const row of editRows.value) {
+    const key = row.block_key || null
+    const last = out[out.length - 1]
+    if (last && last.key === key) last.rows.push(row)
+    else out.push({ key, rows: [row] })
+  }
+  return out
+})
+function delRow(row: EditRow) {
+  const i = editRows.value.indexOf(row)
+  if (i >= 0) editRows.value.splice(i, 1)
+}
 
 function stopPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
 
@@ -151,11 +169,16 @@ async function pollExtract(jobId: string) {
     if (job.status === 'running') { pollTimer = setTimeout(() => pollExtract(jobId), 2500); return }
     extracting.value = false
     if (job.status === 'failed') { ElMessage.error(`抽题失败:${job.error || ''}`); step.value = 0; return }
-    editRows.value = job.parsed.map(p => ({
-      question_no: p.question_no, question_type: p.question_type || '单选',
-      stem: p.stem || '', answer: p.answer || '', explanation: p.explanation || '',
-      difficulty: null, kp_names: '',
-    }))
+    const pmap: Record<string, string> = {}
+    editRows.value = job.parsed.map(p => {
+      if (p.block_key && p.passage && !(p.block_key in pmap)) pmap[p.block_key] = p.passage
+      return {
+        question_no: p.question_no, question_type: p.question_type || '单选',
+        stem: p.stem || '', answer: p.answer || '', explanation: p.explanation || '',
+        difficulty: null, kp_names: '', block_key: p.block_key || null,
+      }
+    })
+    passages.value = pmap
     step.value = 2
     if (!editRows.value.length) ElMessage.warning('未抽到题,请检查文件或改用图片上传')
   } catch (e: any) { extracting.value = false; ElMessage.error(e?.message || '查询失败') }
@@ -166,6 +189,8 @@ async function doImport() {
     stem: r.stem.trim(), answer: r.answer || null, question_type: r.question_type || null,
     explanation: r.explanation || null, difficulty: r.difficulty, question_no: r.question_no,
     kp_names: r.kp_names.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+    block_key: r.block_key || null,
+    passage: r.block_key ? (passages.value[r.block_key] || null) : null,
   }))
   if (!items.length) { ElMessage.warning('没有可导入的题'); return }
   importing.value = true
@@ -284,24 +309,32 @@ onMounted(load)
 
       <!-- 校对 -->
       <div v-else-if="step === 2">
-        <div style="margin-bottom:8px;color:#606266">抽出 {{ editRows.length }} 题,核对/编辑后导入(可填 KP 名挂知识节点)</div>
-        <el-table :data="editRows" border size="small" max-height="440">
-          <el-table-column label="#" width="48" align="center"><template #default="{ row }">{{ row.question_no }}</template></el-table-column>
-          <el-table-column label="题干" min-width="240">
-            <template #default="{ row }"><el-input v-model="row.stem" type="textarea" :rows="2" /></template>
-          </el-table-column>
-          <el-table-column label="答案" width="90"><template #default="{ row }"><el-input v-model="row.answer" /></template></el-table-column>
-          <el-table-column label="题型" width="96"><template #default="{ row }">
-            <el-select v-model="row.question_type" size="small">
-              <el-option v-for="t in QUESTION_TYPES" :key="t" :label="t" :value="t" />
-            </el-select>
-          </template></el-table-column>
-          <el-table-column label="难度" width="80"><template #default="{ row }"><el-input-number v-model="row.difficulty" :min="1" :max="5" size="small" controls-position="right" /></template></el-table-column>
-          <el-table-column label="知识点(逗号分隔)" width="160"><template #default="{ row }"><el-input v-model="row.kp_names" placeholder="如:定语从句" /></template></el-table-column>
-          <el-table-column label="" width="50" align="center">
-            <template #default="{ $index }"><el-button size="small" type="danger" link @click="editRows.splice($index, 1)">删</el-button></template>
-          </el-table-column>
-        </el-table>
+        <div style="margin-bottom:8px;color:#606266">抽出 {{ editRows.length }} 题,核对/编辑后导入(可填 KP 名挂知识节点);阅读/完形等「短文+小问」按题组呈现,短文存一份</div>
+        <div style="max-height:460px;overflow:auto">
+          <div v-for="(g, gi) in editGroups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:10px;background:#fafcff' : 'margin-bottom:10px'">
+            <div v-if="g.key" style="margin-bottom:6px">
+              <span style="font-size:12px;color:#409eff;font-weight:600">📖 短文题组 · {{ g.rows.length }} 小问共享</span>
+              <el-input v-model="passages[g.key]" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" placeholder="短文/材料正文(本组小问共用)" style="margin-top:4px" />
+            </div>
+            <el-table :data="g.rows" border size="small">
+              <el-table-column label="#" width="48" align="center"><template #default="{ row }">{{ row.question_no }}</template></el-table-column>
+              <el-table-column :label="g.key ? '小问题干' : '题干'" min-width="240">
+                <template #default="{ row }"><el-input v-model="row.stem" type="textarea" :rows="2" /></template>
+              </el-table-column>
+              <el-table-column label="答案" width="90"><template #default="{ row }"><el-input v-model="row.answer" /></template></el-table-column>
+              <el-table-column label="题型" width="96"><template #default="{ row }">
+                <el-select v-model="row.question_type" size="small">
+                  <el-option v-for="t in QUESTION_TYPES" :key="t" :label="t" :value="t" />
+                </el-select>
+              </template></el-table-column>
+              <el-table-column label="难度" width="80"><template #default="{ row }"><el-input-number v-model="row.difficulty" :min="1" :max="5" size="small" controls-position="right" /></template></el-table-column>
+              <el-table-column label="知识点(逗号分隔)" width="160"><template #default="{ row }"><el-input v-model="row.kp_names" placeholder="如:定语从句" /></template></el-table-column>
+              <el-table-column label="" width="50" align="center">
+                <template #default="{ row }"><el-button size="small" type="danger" link @click="delRow(row)">删</el-button></template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
         <div style="text-align:right;margin-top:16px">
           <el-button @click="step = 0">上一步</el-button>
           <el-button type="primary" :loading="importing" @click="doImport">导入 {{ editRows.length }} 题</el-button>

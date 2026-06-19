@@ -86,6 +86,8 @@ async def _run_extract(job_id: uuid.UUID) -> None:
                 parsed = [{
                     "question_no": r.question_no, "question_type": r.question_type,
                     "stem": r.stem, "answer": r.correct_answer, "explanation": r.explanation,
+                    "passage": getattr(r, "passage", None),
+                    "block_key": getattr(r, "block_key", None),
                 } for r in rows if (r.stem or "").strip()]
                 break
             except Exception as exc:  # noqa: BLE001

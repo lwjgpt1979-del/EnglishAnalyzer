@@ -85,13 +85,24 @@ def test_structural_split_is_faithful_no_hallucinated_answers():
     rows = split_paper_text_structural(_PAPER)
     # 原卷无答案 → 一律留空，绝不臆造
     assert all(r.correct_answer is None and r.student_answer is None for r in rows)
-    # 题干逐字保留：选项、完形短文、完成句子模板都在
-    by_no = {r.question_no: r.stem for r in rows}
-    assert "B. am eating" in by_no["1"]
-    assert "Tom is a boy." in by_no["3"]          # 完形短文挂到题组
-    assert "He ________ every day." in by_no["7"]  # 完成句子下划线模板保留
-    # 信息还原：每空自带短文 + 共享选项框
-    assert "Football is my favourite." in by_no["5"]
+    by_no = {r.question_no: r for r in rows}
+    assert "B. am eating" in by_no["1"].stem
+    assert "He ________ every day." in by_no["7"].stem   # 完成句子下划线模板保留
+
+
+def test_structural_split_groups_passage_questions():
+    rows = split_paper_text_structural(_PAPER)
+    by_no = {r.question_no: r for r in rows}
+    # 完形 3/4 同短文一组：题干只留小问，短文进 passage、共享 block_key
+    assert by_no["3"].block_key and by_no["3"].block_key == by_no["4"].block_key
+    assert "Tom is a boy." not in by_no["3"].stem      # 短文不再塞进题干
+    assert "Tom is a boy." in (by_no["3"].passage or "")
+    # 信息还原 5/6 同组：题干为空位标签，短文+选项框在 passage
+    assert by_no["5"].block_key and by_no["5"].block_key == by_no["6"].block_key
+    assert "Football is my favourite." in (by_no["5"].passage or "")
+    # 独立题(单选/完成句子)无 block_key/passage
+    assert by_no["1"].block_key is None and by_no["1"].passage is None
+    assert by_no["7"].block_key is None
 
 
 def test_structural_split_unknown_format_returns_empty():

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d15_knowledge_graph import KnowledgeNode
-from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
+from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, Passage
 from app.services.kp_match_service import match_kp
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
@@ -31,6 +31,14 @@ class ImportResult:
     question_id: uuid.UUID
     matched_nodes: list[uuid.UUID] = field(default_factory=list)
     candidates: list[uuid.UUID] = field(default_factory=list)
+
+
+async def create_passage(db: AsyncSession, *, text: str, kind: str = "reading_text") -> uuid.UUID:
+    """新建一份题组语料(平台域),返回 passage.id;供阅读/完形/信息还原题组挂 block_id。"""
+    p = Passage(id=uuid.uuid4(), scope="platform", kind=kind, text=text)
+    db.add(p)
+    await db.flush()
+    return p.id
 
 
 async def attach_node(db: AsyncSession, question_id: uuid.UUID, node_id: uuid.UUID) -> bool:
@@ -57,13 +65,15 @@ async def import_real_question(
     difficulty: int | None = None, meta: dict | None = None,
     kp_names: list[str] | None = None, stage_hint: str | None = None,
     question_no: str | None = None, status: str = "published",
+    block_id: uuid.UUID | None = None,
 ) -> ImportResult:
     """导入一道真题 → platform_question(type='real'),kp_names 走受控匹配挂 node/落候选。
 
     命中某 node 后调 deprecate_fallbacks_for_node:该 node 有真题了 → 其 KP 直生备选下架(决策④)。
+    block_id:题组短文(passage)外键,阅读/完形/信息还原的同篇小问共享。
     """
     q = PlatformQuestion(
-        id=uuid.uuid4(), type="real", question_no=question_no,
+        id=uuid.uuid4(), type="real", question_no=question_no, block_id=block_id,
         question_type=question_type, stem=stem, options=options, answer=answer,
         explanation=explanation, difficulty=difficulty, meta=meta, status=status,
     )

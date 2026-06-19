@@ -1052,6 +1052,8 @@ export interface ParsedRealQuestion {
   stem?: string | null
   answer?: string | null
   explanation?: string | null
+  passage?: string | null        // 题组短文(阅读/完形/信息还原);独立题为空
+  block_key?: string | null      // 同短文小问共享;独立题为空
 }
 export interface RealExtractJob {
   job_id: string
@@ -1100,7 +1102,8 @@ export async function uploadImageViaPresign(file: File): Promise<string> {
 
 export function bulkImportRealQuestions(
   items: Array<{ stem: string; options?: unknown; answer?: string | null; question_type?: string | null
-    explanation?: string | null; difficulty?: number | null; question_no?: string | null; kp_names?: string[] }>,
+    explanation?: string | null; difficulty?: number | null; question_no?: string | null; kp_names?: string[]
+    passage?: string | null; block_key?: string | null }>,
   opts?: { status?: string; stage_hint?: string; meta?: Record<string, unknown> },
 ): Promise<{ imported: number; failed: number }> {
   return unwrap(request.post('/admin/platform-questions/bulk', { items, ...opts }))

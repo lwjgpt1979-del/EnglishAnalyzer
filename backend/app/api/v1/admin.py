@@ -861,8 +861,21 @@ async def import_real_question_api(body: RealQuestionIn, db: DbDep, admin: Admin
 
 @router.post("/platform-questions/bulk", response_model=BaseResponse[RealImportBulkOut])
 async def import_real_questions_bulk_api(body: RealQuestionBulkIn, db: DbDep, admin: AdminDep):
-    """批量导入真题(校对后一次落多题);单题失败 savepoint 隔离,不连累其余(TK1)。"""
+    """批量导入真题(校对后一次落多题);单题失败 savepoint 隔离,不连累其余(TK1)。
+
+    题组:同一 block_key 的小问先建一份 passage(短文存一份),再以 block_id 关联,
+    避免阅读/完形/信息还原把整篇短文复制到每道小问。
+    """
     from app.services import platform_question_service as pqs
+    # 先按 block_key 建 passage(取该组任一非空 passage 文本)
+    block_pid: dict[str, uuid.UUID] = {}
+    for it in body.items:
+        if it.block_key and it.block_key not in block_pid and (it.passage or "").strip():
+            try:
+                async with db.begin_nested():
+                    block_pid[it.block_key] = await pqs.create_passage(db, text=it.passage.strip())
+            except Exception:  # noqa: BLE001
+                pass
     items: list[RealImportItemOut] = []
     failed = 0
     for it in body.items:
@@ -873,7 +886,8 @@ async def import_real_questions_bulk_api(body: RealQuestionBulkIn, db: DbDep, ad
                     question_type=it.question_type, explanation=it.explanation,
                     difficulty=it.difficulty, meta=(it.meta or body.meta), kp_names=it.kp_names,
                     stage_hint=it.stage_hint or body.stage_hint,
-                    question_no=it.question_no, status=body.status or it.status)
+                    question_no=it.question_no, status=body.status or it.status,
+                    block_id=block_pid.get(it.block_key) if it.block_key else None)
             items.append(RealImportItemOut(
                 question_id=res.question_id, matched_nodes=res.matched_nodes, candidates=res.candidates))
         except Exception:  # noqa: BLE001

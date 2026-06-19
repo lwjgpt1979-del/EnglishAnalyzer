@@ -210,6 +210,8 @@ class RealQuestionIn(BaseModel):
     meta: dict | None = None               # 考试元信息(地区/年份/卷别…)
     stage_hint: str | None = None
     status: str = "published"
+    passage: str | None = None             # 题组短文正文(同 block_key 的题共享一份)
+    block_key: str | None = None           # 同短文小问共享;为空=独立题
 
 
 class RealQuestionBulkIn(BaseModel):
@@ -238,6 +240,8 @@ class ParsedRealQuestion(BaseModel):
     stem: str | None = None
     answer: str | None = None
     explanation: str | None = None
+    passage: str | None = None             # 题组短文(阅读/完形/信息还原);独立题为空
+    block_key: str | None = None           # 同短文小问共享;独立题为空
 
 
 class RealExtractCreatedOut(BaseModel):

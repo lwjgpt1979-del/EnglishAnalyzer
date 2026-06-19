@@ -23,13 +23,20 @@ _VALID_TYPES = {"单选", "填空", "完型", "阅读", "写作", "判断", "连
 
 @dataclass
 class ParsedPaperQuestion:
-    """DeepSeek 从整卷 OCR 文字拆出的单题结构化字段。"""
+    """从整卷文字拆出的单题结构化字段。
+
+    passage/block_key 用于「短文 + 多小问」题组(阅读/完形/信息还原):同一短文的小问
+    共享同一 block_key,passage 为短文正文(仅在组内重复，导入时去重存一份 passage)。
+    标准独立题(单选/完成句子/书面)passage 与 block_key 均为 None。
+    """
     question_no: str | None
     question_type: str | None
     stem: str | None
     student_answer: str | None
     correct_answer: str | None
     explanation: str | None
+    passage: str | None = None
+    block_key: str | None = None
 
 
 _SYSTEM_PROMPT = (
@@ -81,6 +88,7 @@ _INSTRUCTION_HINTS = (
     "答题卡", "满分", "选出最佳", "请认真", "请先通读", "将所译", "根据下列",
     "从方框中", "从短文后", "写在答题卡", "每小题", "每空", "仅用一次", "听两遍",
     "选择适当", "第一部分", "第二部分", "第一节", "第二节", "将下列句子译成英语",
+    "阅读表达",   # 大题子标题(仅作判题型,不入短文)；正文段落不含此词
 )
 
 
@@ -184,20 +192,21 @@ def _split_one_section(qtype: str, lines: list[str], sec_text: str,
     bank = "\n".join(loose).strip()
     embed_passage = "\n".join(cur_passage).strip()
 
-    rows: list[tuple[int, str]] = []
+    # (题号, 题干, 短文)；短文非空 = 属于某题组(短文与小问分离，不再塞进题干)
+    rows: list[tuple[int, str, str]] = []
     for q in questions:
-        stem = (q["passage"] + "\n\n" if q["passage"] else "") + "\n".join(q["stem"])
-        rows.append((int(q["no"]), stem.strip()))
+        rows.append((int(q["no"]), "\n".join(q["stem"]).strip(), q["passage"]))
+    embed_material = "\n".join(p for p in (embed_passage, bank) if p).strip()
     for n in missing:
-        stem = "\n".join(p for p in (embed_passage, bank) if p).strip()
-        rows.append((n, stem))
+        rows.append((n, f"第 {n} 空", embed_material))   # 嵌入空：题干为空位标签，材料在短文
 
     rows.sort(key=lambda r: r[0])
-    for no, stem in rows:
+    for no, stem, passage in rows:
         if stem:
             out.append(ParsedPaperQuestion(
                 question_no=str(no), question_type=qtype, stem=stem,
                 student_answer=None, correct_answer=None, explanation=None,
+                passage=passage or None, block_key=None,   # block_key 在全局分配
             ))
 
 
@@ -223,6 +232,18 @@ def split_paper_text_structural(text: str) -> list[ParsedPaperQuestion]:
             continue  # 卷首标题段
         qtype = _section_type(header, sec[1:])
         _split_one_section(qtype, sec[1:], "\n".join(sec), out)
+
+    # 全局分配题组 block_key：连续同一短文的小问归一组，短文为空的题保持独立
+    blk_seq, prev_passage, prev_key = 0, None, None
+    for q in out:
+        if q.passage:
+            if q.passage != prev_passage:
+                blk_seq += 1
+                prev_key = f"blk{blk_seq}"
+            q.block_key = prev_key
+            prev_passage = q.passage
+        else:
+            prev_passage, prev_key = None, None
     return out
 
 
