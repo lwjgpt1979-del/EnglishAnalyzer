@@ -89,8 +89,8 @@
           </picker>
 
           <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">省份</text>
-          <picker :range="PROVINCE_NAMES" :value="prefForm.provIdx" @change="onProvChange">
-            <view class="picker-row">{{ PROVINCE_NAMES[prefForm.provIdx] }} ›</view>
+          <picker :range="provinceNames" :value="prefForm.provIdx" @change="onProvChange">
+            <view class="picker-row">{{ provinceNames[prefForm.provIdx] || '—' }} ›</view>
           </picker>
 
           <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">城市</text>
@@ -282,7 +282,7 @@ import { listMySemesters } from '@/api/semesters'
 import { getSemesterPricing } from '@/api/orders'
 import { updateProfile, wxBindPhone, getInfoChangeQuota } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
-import { PROVINCES, PROVINCE_NAMES, getCitiesForProvince, getCityName, getProvinceName } from '@/data/cities'
+import { listRegions, type RegionNode } from '@/api/regions'
 import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
 
 const TEXTBOOK_VERSIONS = ['译林版', '人教版', '外研版', '北师大版', '冀教版']
@@ -323,50 +323,62 @@ const prefForm = reactive({
   cityIdx: 0,
 })
 
-const currentCityNames = computed(() => {
-  const prov = PROVINCES[prefForm.provIdx]
-  return getCitiesForProvince(prov?.name ?? '').map(c => c.name)
-})
+// 地区（后端 region 表唯一源，懒加载）
+const provinces = ref<RegionNode[]>([])
+const cities = ref<RegionNode[]>([])          // 当前所选省份下的市
+const provinceNames = computed(() => provinces.value.map(p => p.name))
+const currentCityNames = computed(() => cities.value.map(c => c.name))
+const cityDisplayName = ref('')               // 由 city_code 异步解析的展示名
 
-const cityDisplayName = computed(() => {
-  const code = (auth.user as any)?.city_code
-  if (!code) return ''
-  const city = getCityName(code)
-  const prov = getProvinceName(code)
-  return city === prov ? city : (prov ? `${prov} ${city}` : city)
-})
-
-function onProvChange(e: any) {
-  prefForm.provIdx = +e.detail.value
-  prefForm.cityIdx = 0
+async function ensureProvinces() {
+  if (!provinces.value.length) {
+    try { provinces.value = await listRegions() } catch { /* 忽略 */ }
+  }
 }
 
-function openPrefEdit() {
+/** 由 auth.user.city_code 解析「省 市」展示名 */
+async function resolveCityDisplay() {
+  const code = (auth.user as any)?.city_code
+  if (!code) { cityDisplayName.value = ''; return }
+  await ensureProvinces()
+  const prov = provinces.value.find(p => p.code === code.slice(0, 2))
+  let cityName = ''
+  try {
+    if (prov) cityName = (await listRegions(prov.code)).find(c => c.code === code)?.name ?? ''
+  } catch { /* 忽略 */ }
+  const provName = prov?.name ?? ''
+  cityDisplayName.value = cityName === provName ? cityName : (provName ? `${provName} ${cityName}` : cityName)
+}
+
+async function onProvChange(e: any) {
+  prefForm.provIdx = +e.detail.value
+  prefForm.cityIdx = 0
+  const p = provinces.value[prefForm.provIdx]
+  cities.value = p ? await listRegions(p.code).catch(() => []) : []
+}
+
+async function openPrefEdit() {
   const u: any = auth.user
   prefForm.textbookIdx = Math.max(0, TEXTBOOK_VERSIONS.indexOf(u?.preferred_textbook_version || ''))
   prefForm.gradeIdx = Math.max(0, GRADES.indexOf(u?.preferred_grade || ''))
   prefForm.semIdx = Math.max(0, SEMESTERS.indexOf(u?.preferred_semester || ''))
-  // init city picker
-  const code = u?.city_code
-  if (code) {
-    const provCode = code.slice(0, 2)
-    const pIdx = PROVINCES.findIndex(p => p.code === provCode)
-    if (pIdx >= 0) {
-      prefForm.provIdx = pIdx
-      const cities = getCitiesForProvince(PROVINCES[pIdx].name)
-      const cIdx = cities.findIndex(c => c.code === code)
-      prefForm.cityIdx = Math.max(0, cIdx)
-    }
-  }
   showPrefEdit.value = true
   getInfoChangeQuota().then(q => { infoChangeRemaining.value = q.remaining; infoChangeLimit.value = q.limit }).catch(() => {})
+  // init city picker（懒加载省→市）
+  await ensureProvinces()
+  const code = u?.city_code
+  const pIdx = code ? provinces.value.findIndex(p => p.code === code.slice(0, 2)) : 0
+  prefForm.provIdx = Math.max(0, pIdx)
+  const prov = provinces.value[prefForm.provIdx]
+  cities.value = prov ? await listRegions(prov.code).catch(() => []) : []
+  const cIdx = code ? cities.value.findIndex(c => c.code === code) : 0
+  prefForm.cityIdx = Math.max(0, cIdx)
 }
 
 async function onSavePref() {
   prefSaving.value = true
   try {
-    const cities = getCitiesForProvince(PROVINCES[prefForm.provIdx]?.name ?? '')
-    const cityCode = cities[prefForm.cityIdx]?.code ?? null
+    const cityCode = cities.value[prefForm.cityIdx]?.code ?? null
     await updateProfile({
       preferred_textbook_version: TEXTBOOK_VERSIONS[prefForm.textbookIdx],
       preferred_grade: GRADES[prefForm.gradeIdx],
@@ -380,6 +392,7 @@ async function onSavePref() {
       u.preferred_semester = SEMESTERS[prefForm.semIdx]
       u.city_code = cityCode
     }
+    await resolveCityDisplay()
     showPrefEdit.value = false
     uni.showToast({ title: '已保存', icon: 'success' })
   } catch (e: any) {
@@ -402,6 +415,7 @@ const cancelInfo = computed(() => {
 onMounted(async () => {
   try { semPrice.value = await getSemesterPricing() } catch { /* 取价失败保留默认 */ }
   if (auth.isLoggedIn()) {
+    resolveCityDisplay()  // 解析所在城市展示名（异步，不阻塞）
     try { mySemesters.value = await listMySemesters() || [] } catch { /* 忽略 */ }
     try {
       myRelatives.value = await getMyRelatives() || []

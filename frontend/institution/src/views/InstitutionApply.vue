@@ -2,8 +2,7 @@
 import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { PROVINCES, CITIES_BY_PROVINCE } from '../data/cities'
-import { getApplyCaptcha, applySendCode, applyInstitution } from '../api/institution'
+import { getApplyCaptcha, applySendCode, applyInstitution, listRegions, type RegionNode } from '../api/institution'
 
 const router = useRouter()
 
@@ -31,12 +30,20 @@ async function refreshCaptcha() {
     // 静默：用户点图可重试
   }
 }
-onMounted(refreshCaptcha)
+// ── 地区(后端 region 表唯一源，懒加载省→市)──
+const provinces = ref<RegionNode[]>([])
+const cityOptions = ref<RegionNode[]>([])
 
-const cityOptions = computed(() => CITIES_BY_PROVINCE[form.province_code] ?? [])
+onMounted(async () => {
+  refreshCaptcha()
+  try { provinces.value = await listRegions() } catch { /* 静默，可重试 */ }
+})
 
-function onProvinceChange() {
+async function onProvinceChange() {
   form.city_code = ''
+  cityOptions.value = []
+  if (!form.province_code) return
+  try { cityOptions.value = await listRegions(form.province_code) } catch { /* 忽略 */ }
 }
 
 // ── 验证码倒计时 ──
@@ -149,7 +156,7 @@ async function onSubmit() {
             <div class="region-row">
               <el-select v-model="form.province_code" placeholder="省份" filterable
                 style="flex:1" @change="onProvinceChange">
-                <el-option v-for="p in PROVINCES" :key="p.code" :label="p.name" :value="p.code" />
+                <el-option v-for="p in provinces" :key="p.code" :label="p.name" :value="p.code" />
               </el-select>
               <el-select v-model="form.city_code" placeholder="城市" filterable
                 style="flex:1" :disabled="!form.province_code">

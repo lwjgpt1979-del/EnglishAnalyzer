@@ -104,6 +104,12 @@ export function listBills(): Promise<BillItem[]> {
 }
 
 // ── 机构自助入驻申请（M47，公开免登录）──────────────────────────────────
+// 行政区划地区（后端 region 表唯一源，公开免登录，懒加载）
+export interface RegionNode { code: string; name: string; parent_code: string | null; level: number; leaf: boolean }
+export function listRegions(parent?: string): Promise<RegionNode[]> {
+  return unwrap<RegionNode[]>(request.get('/regions', { params: parent ? { parent } : {} }))
+}
+
 export interface InstitutionApplyPayload {
   name: string
   contact_phone: string
