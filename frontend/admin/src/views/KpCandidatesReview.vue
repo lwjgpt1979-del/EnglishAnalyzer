@@ -7,8 +7,9 @@ import {
   approveKpCandidate,
   mergeKpCandidate,
   rejectKpCandidate,
+  getNodeTree,
 } from '../api/admin'
-import type { KpCandidateItem, KpCandidateStatus, KpNodeItem } from '../types'
+import type { KpCandidateItem, KpCandidateStatus, KpNodeItem, NodeTreeItem } from '../types'
 
 const status = ref<KpCandidateStatus>('pending')
 const axis = ref<string>('')
@@ -51,26 +52,44 @@ function onFilterChange() {
 // ── 通过（建节点）──────────────────────────────────────────
 const approveDlg = ref(false)
 const approving = ref<KpCandidateItem | null>(null)
-const approveForm = ref({ axis: 'knowledge', stage: '' as string, node_kind: '' })
+const approveForm = ref({ axis: 'knowledge', stage: '' as string, node_kind: '',
+                          parent_id: '' as string, asTop: false })
+const parentTree = ref<NodeTreeItem[]>([])
+const parentTreeProps = { label: 'name', children: 'children', value: 'id' }
 
-function openApprove(row: KpCandidateItem) {
+async function loadParentTree() {
+  try { parentTree.value = (await getNodeTree(approveForm.value.axis)).items }
+  catch { parentTree.value = [] }
+}
+async function onApproveAxisChange() {
+  approveForm.value.parent_id = ''      // 换轴 → 清上级,重载该轴树
+  await loadParentTree()
+}
+async function openApprove(row: KpCandidateItem) {
   approving.value = row
   approveForm.value = {
     axis: row.suggested_axis || 'knowledge',
     stage: row.suggested_stage || '',
-    node_kind: '',
+    node_kind: '', parent_id: '', asTop: false,
   }
   approveDlg.value = true
+  await loadParentTree()
 }
 
 async function confirmApprove() {
   if (!approving.value) return
+  // E3:强制做放置决策——选上级分类,或显式勾选"作为顶层"
+  if (!approveForm.value.asTop && !approveForm.value.parent_id) {
+    ElMessage.warning('请选择挂到的上级分类,或勾选"作为顶层节点"')
+    return
+  }
   await approveKpCandidate(approving.value.id, {
     axis: approveForm.value.axis,
     stage: approveForm.value.stage || null,
     node_kind: approveForm.value.node_kind || null,
+    parent_id: approveForm.value.asTop ? null : (approveForm.value.parent_id || null),
   })
-  ElMessage.success('已通过并建立标准节点')
+  ElMessage.success('已通过并挂到知识树')
   approveDlg.value = false
   await load()
 }
@@ -173,9 +192,15 @@ onMounted(load)
       <p v-if="approving" class="dlg-name">{{ approving.raw_name }}</p>
       <el-form label-width="72px">
         <el-form-item label="轴">
-          <el-select v-model="approveForm.axis" style="width: 100%">
+          <el-select v-model="approveForm.axis" style="width: 100%" @change="onApproveAxisChange">
             <el-option v-for="a in axisOptions.filter((x) => x.value)" :key="a.value" :label="a.label" :value="a.value" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="上级分类" required>
+          <el-tree-select v-model="approveForm.parent_id" :data="parentTree" :props="parentTreeProps"
+            check-strictly node-key="id" :disabled="approveForm.asTop" filterable
+            placeholder="挂到知识树哪个分类下" style="width: 100%" />
+          <el-checkbox v-model="approveForm.asTop" style="margin-top:6px">作为顶层节点(无上级)</el-checkbox>
         </el-form-item>
         <el-form-item label="学段">
           <el-select v-model="approveForm.stage" clearable placeholder="空=全学段通用" style="width: 100%">

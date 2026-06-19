@@ -78,6 +78,27 @@ async def _cleanup():
 
 
 @pytest.mark.asyncio
+async def test_approve_candidate_attaches_under_parent(client):
+    """E3:审批候选时带 parent_id → 新节点挂到受控树该父节点下。"""
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    admin = await _make_admin(client, "e3")
+    # 受控树父节点
+    parent_id = await _seed_node(f"{_TAG}句法大类")
+    cid = await _seed_candidate(f"{_TAG}宾语从句细分")
+    try:
+        r = await client.post(f"/api/v1/admin/kp-candidates/{cid}/approve", headers=admin, json={
+            "axis": "knowledge", "stage": "初", "parent_id": str(parent_id)})
+        assert r.status_code == 200, r.text
+        node_id = uuid.UUID(r.json()["data"]["id"])
+        async with _async_session_factory() as s:
+            node = (await s.execute(select(KnowledgeNode).where(KnowledgeNode.id == node_id))).scalar_one()
+            assert node.parent_id == parent_id     # 已挂到父节点下
+            assert node.status == "active"
+    finally:
+        await _cleanup()
+
+
+@pytest.mark.asyncio
 async def test_knowledge_tree_build_create_move(client):
     """E1:建顶层/子节点 + 树嵌套 + 移动 + 防环/防跨轴。"""
     admin = await _make_admin(client, "tree")
