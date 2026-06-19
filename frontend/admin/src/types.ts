@@ -223,6 +223,22 @@ export interface VersionDiffSide {
 }
 export interface VersionDiffOut { base: VersionDiffSide; incoming: VersionDiffSide }
 
+// 知识图谱总览(D1)
+export interface KpNodeOverviewItem {
+  id: string
+  axis: string
+  node_kind?: string | null
+  name: string
+  code: string
+  status: string
+  applicable_stages?: string[] | null
+  dims_filled: number
+  unit_refs: number
+  question_refs: number
+  alias_count: number
+}
+export interface KpNodeOverviewOut { total: number; items: KpNodeOverviewItem[] }
+
 // 版本历史(C3)
 export interface VersionItem {
   id: string

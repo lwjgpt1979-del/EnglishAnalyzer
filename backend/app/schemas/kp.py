@@ -33,6 +33,25 @@ class KpNodeItem(BaseModel):
     applicable_stages: list[str] | None = None
 
 
+class KpNodeOverviewItem(BaseModel):
+    id: uuid.UUID
+    axis: str
+    node_kind: str | None = None
+    name: str
+    code: str
+    status: str
+    applicable_stages: list[str] | None = None
+    dims_filled: int          # 六维讲解已有几维(0-6)
+    unit_refs: int            # 被多少教材单元引用
+    question_refs: int        # 被多少真题/仿真引用
+    alias_count: int
+
+
+class KpNodeOverviewOut(BaseModel):
+    total: int
+    items: list[KpNodeOverviewItem]
+
+
 class KpNodeListOut(BaseModel):
     total: int
     items: list[KpNodeItem]

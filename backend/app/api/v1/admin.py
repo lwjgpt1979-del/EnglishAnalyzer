@@ -49,6 +49,8 @@ from app.schemas.kp import (
     KpCandidateListOut,
     KpNodeItem,
     KpNodeListOut,
+    KpNodeOverviewItem,
+    KpNodeOverviewOut,
     MergeCandidateRequest,
     RejectCandidateRequest,
     UnitExtractOut,
@@ -305,6 +307,18 @@ async def list_kp_nodes(
     """归并目标选择器:按 axis/学段/名称模糊查 active 节点。"""
     rows = await kp_candidate_service.list_nodes(db, axis=axis, stage=stage, q=q, limit=limit)
     return make_ok(KpNodeListOut(total=len(rows), items=[_to_kp_node_item(r) for r in rows]))
+
+
+@router.get("/knowledge-nodes", response_model=BaseResponse[KpNodeOverviewOut])
+async def knowledge_nodes_overview_api(
+    db: DbDep, admin: AdminDep,
+    axis: str | None = None, stage: str | None = None, status: str | None = None,
+    q: str | None = None, skip: int = 0, limit: int = 30,
+):
+    """知识图谱总览(D1):节点分页 + 每节点完整度/引用计数。status 空=全部。"""
+    items, total = await kp_candidate_service.list_nodes_overview(
+        db, axis=axis, stage=stage, status=status or None, q=q, skip=skip, limit=limit)
+    return make_ok(KpNodeOverviewOut(total=total, items=[KpNodeOverviewItem(**it) for it in items]))
 
 
 @router.post("/kp-candidates/{candidate_id}/approve", response_model=BaseResponse[KpNodeItem])

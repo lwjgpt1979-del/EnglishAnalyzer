@@ -104,6 +104,57 @@ async def list_candidates(
     return list(rows), total
 
 
+async def list_nodes_overview(
+    db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
+    status: str | None = None, q: str | None = None, skip: int = 0, limit: int = 20,
+) -> tuple[list[dict], int]:
+    """知识图谱总览(D1):节点分页 + 每节点摘要(六维完整度/引用单元/引用真题/别名数)。"""
+    from sqlalchemy.dialects.postgresql import JSONB
+    from app.models.d16_question_domain import PlatformQuestionKp
+    from app.models.d19_node_resource import NodeResource
+
+    base = sa.select(KnowledgeNode)
+    if axis:
+        base = base.where(KnowledgeNode.axis == axis)
+    if status:
+        base = base.where(KnowledgeNode.status == status)
+    if q:
+        base = base.where(KnowledgeNode.name.ilike(f"%{q}%"))
+    if stage:                                   # JSONB:空(适用全部)或含该学段
+        base = base.where(sa.or_(
+            KnowledgeNode.applicable_stages.is_(None),
+            KnowledgeNode.applicable_stages.op("@>")(sa.cast([stage], JSONB))))
+    total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
+    rows = (await db.execute(
+        base.order_by(KnowledgeNode.name).offset(skip).limit(limit))).scalars().all()
+    ids = [r.id for r in rows]
+    if not ids:
+        return [], total
+
+    async def _counts(stmt):
+        return {nid: c for nid, c in (await db.execute(stmt)).all()}
+    dims = await _counts(
+        sa.select(NodeResource.node_id, sa.func.count(sa.distinct(NodeResource.dimension)))
+        .where(NodeResource.node_id.in_(ids), NodeResource.resource_type == "lecture")
+        .group_by(NodeResource.node_id))
+    units = await _counts(
+        sa.select(UnitNode.node_id, sa.func.count()).where(UnitNode.node_id.in_(ids))
+        .group_by(UnitNode.node_id))
+    ques = await _counts(
+        sa.select(PlatformQuestionKp.node_id, sa.func.count())
+        .where(PlatformQuestionKp.node_id.in_(ids)).group_by(PlatformQuestionKp.node_id))
+    aliases = await _counts(
+        sa.select(NodeAlias.node_id, sa.func.count()).where(NodeAlias.node_id.in_(ids))
+        .group_by(NodeAlias.node_id))
+    items = [{
+        "id": r.id, "axis": r.axis, "node_kind": r.node_kind, "name": r.name, "code": r.code,
+        "status": r.status, "applicable_stages": r.applicable_stages,
+        "dims_filled": int(dims.get(r.id, 0)), "unit_refs": int(units.get(r.id, 0)),
+        "question_refs": int(ques.get(r.id, 0)), "alias_count": int(aliases.get(r.id, 0)),
+    } for r in rows]
+    return items, total
+
+
 async def list_nodes(
     db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
     q: str | None = None, limit: int = 20,

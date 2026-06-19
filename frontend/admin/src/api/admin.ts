@@ -26,6 +26,7 @@ import type {
   UnitContentOverview,
   VersionDiffOut,
   VersionItem,
+  KpNodeOverviewOut,
   LSAdminItem,
   LSExtractResult,
   LSConfig,
@@ -338,6 +339,13 @@ export function unitContentOverview(unitId: string): Promise<UnitContentOverview
 // 一键发布整单元:所有对齐节点下 draft/reviewing 讲解 → published
 export function publishUnit(unitId: string): Promise<{ published: number; already_published: number; missing_dims: number }> {
   return unwrap(request.post(`/admin/curriculum/units/${unitId}/publish`))
+}
+
+// 知识图谱总览(D1)
+export function listKnowledgeNodes(params: {
+  axis?: string; stage?: string; status?: string; q?: string; skip?: number; limit?: number
+}): Promise<KpNodeOverviewOut> {
+  return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params }))
 }
 
 // 内容版本对比 / 审核(C2)

@@ -20,6 +20,7 @@ const navGroups: NavGroup[] = [
     { path: '/platform-questions', label: '平台真题(上传真题)' },
     { path: '/questions', label: '仿真题审核' },
     { path: '/kp-candidates', label: '候选知识点审核' },
+    { path: '/knowledge-graph', label: '🧠 知识图谱(节点总览)' },
     { path: '/node-resources', label: '知识点资源' },
     { path: '/long-sentences', label: '长难句管理' },
     { path: '/exam-papers', label: '真题试卷管理' },

@@ -74,6 +74,49 @@ async def _cleanup():
 
 
 @pytest.mark.asyncio
+async def test_knowledge_nodes_overview(client):
+    """D1:知识图谱总览——节点带 完整度/引用单元/引用真题/别名数,且分页/状态过滤。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
+    from app.models.d19_node_resource import NodeResource
+    node_id = await _seed_node(f"{_TAG}总览点")          # 自带 1 别名
+    unit_id, q_id = uuid.uuid4(), uuid.uuid4()
+    async with _async_session_factory() as s:
+        s.add(CurriculumUnit(id=unit_id, textbook_version=f"{_TAG}版", grade="七年级",
+                             semester="下", unit_no=1, unit_title=f"{_TAG}U"))
+        await s.flush()
+        s.add(UnitNode(unit_id=unit_id, node_id=node_id, source="manual"))
+        # 两维讲解
+        for dim in ("grammar", "reading"):
+            s.add(NodeResource(id=uuid.uuid4(), node_id=node_id, resource_type="lecture",
+                               dimension=dim, content_md="x", status="draft"))
+        s.add(PlatformQuestion(id=q_id, type="real", question_type="单选",
+                               stem=f"{_TAG}题", answer="A", status="published"))
+        await s.flush()
+        s.add(PlatformQuestionKp(question_id=q_id, node_id=node_id))
+        await s.commit()
+    try:
+        admin = await _make_admin(client, "ov")
+        r = await client.get(f"/api/v1/admin/knowledge-nodes?status=active&q={_TAG}总览", headers=admin)
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        item = next(it for it in data["items"] if it["name"] == f"{_TAG}总览点")
+        assert item["dims_filled"] == 2 and item["unit_refs"] == 1
+        assert item["question_refs"] == 1 and item["alias_count"] == 1
+        assert item["status"] == "active"
+    finally:
+        async with _async_session_factory() as s:
+            await s.execute(text("DELETE FROM platform_question_kp WHERE node_id=:n"), {"n": str(node_id)})
+            await s.execute(text("DELETE FROM platform_question WHERE id=:q"), {"q": str(q_id)})
+            await s.execute(text("DELETE FROM node_resource WHERE node_id=:n"), {"n": str(node_id)})
+            await s.execute(text("DELETE FROM unit_node WHERE unit_id=:u"), {"u": str(unit_id)})
+            await s.execute(text("DELETE FROM curriculum_units WHERE id=:u"), {"u": str(unit_id)})
+            await s.commit()
+        await _cleanup()
+
+
+@pytest.mark.asyncio
 async def test_approve_creates_node_and_alias(client):
     cid = await _seed_candidate(f"{_TAG}过去完成时")
     try:
