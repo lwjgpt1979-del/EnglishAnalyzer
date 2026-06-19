@@ -112,4 +112,7 @@ from .d19_node_resource import NodeResource  # noqa: F401
 # 域20: 长难句解析 KP-First (2 张表)
 from .d20_long_sentence import LongSentence, LongSentenceNode  # noqa: F401
 
+# 域21: 行政区划地区表(唯一数据源)
+from .d21_region import Region  # noqa: F401
+
 __all__ = ["Base"]

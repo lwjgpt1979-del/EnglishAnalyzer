@@ -4,10 +4,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformQuestions, extractRealQuestions, getExtractJob, bulkImportRealQuestions,
-  genSimFromReal, reviewPlatformQuestion,
+  genSimFromReal, reviewPlatformQuestion, listRegions,
   type PlatformQuestion,
 } from '../api/admin'
-import { PROVINCES, CITIES_BY_PROVINCE, getProvinceName, getCityName } from '../data/cities'
 
 // ── 列表 ──
 const typeFilter = ref('')          // ''=全部, real, sim
@@ -64,12 +63,22 @@ const metaStage = ref('初')
 const metaGrade = ref('')
 const metaSemester = ref('')
 const metaExamType = ref('')
-const metaProvince = ref('')        // 省 code(与学生端 city_code 同源)
-const metaCity = ref('')            // 市 code(4位)
-const cityOpts = ref<{ code: string; name: string }[]>([])
-function onProvinceChange() {
-  metaCity.value = ''
-  cityOpts.value = CITIES_BY_PROVINCE[metaProvince.value] || []
+// 地区:后端 region 表懒加载级联(省→市→区县→乡镇),code 与学生 user.city_code 同源
+const regionPath = ref<string[]>([])
+const regionLabels = ref<string[]>([])
+const regionCascader = ref()
+const regionProps = {
+  lazy: true,
+  async lazyLoad(node: any, resolve: (n: any[]) => void) {
+    try {
+      const rows = await listRegions(node.value || undefined)
+      resolve(rows.map(r => ({ value: r.code, label: r.name, leaf: r.leaf })))
+    } catch { resolve([]) }
+  },
+}
+function onRegionChange() {
+  const nodes = regionCascader.value?.getCheckedNodes?.()
+  regionLabels.value = nodes?.[0]?.pathLabels || []
 }
 const pickedFile = ref<File | null>(null)
 const imageUrlsText = ref('')
@@ -89,7 +98,7 @@ function openDlg() {
   stopPoll()
   step.value = 0; pickedFile.value = null; imageUrlsText.value = ''
   metaGrade.value = ''; metaSemester.value = ''; metaExamType.value = ''
-  metaProvince.value = ''; metaCity.value = ''; cityOpts.value = []
+  regionPath.value = []; regionLabels.value = []
   extracting.value = false; importing.value = false; editRows.value = []
   dlg.value = true
 }
@@ -99,10 +108,12 @@ function batchMeta(): Record<string, unknown> {
   if (metaGrade.value) m.grade = metaGrade.value
   if (metaSemester.value) m.semester = metaSemester.value
   if (metaExamType.value) m.exam_type = metaExamType.value
-  if (metaProvince.value) { m.province_code = metaProvince.value; m.region_name = getProvinceName(metaProvince.value) }
-  if (metaCity.value) {     // 与学生端 city_code 同源 → 中考可按地区匹配
-    m.city_code = metaCity.value
-    m.region_name = `${getProvinceName(metaProvince.value)}${getCityName(metaCity.value)}`
+  const path = regionPath.value
+  if (path.length) {        // code 与学生 user.city_code 同源 → 中考可按地区匹配
+    m.province_code = path[0]
+    if (path[1]) m.city_code = path[1]      // 市(4位)
+    m.region_code = path[path.length - 1]   // 选到的最细级(可到区县/乡镇)
+    if (regionLabels.value.length) m.region_name = regionLabels.value.join('')
   }
   return m
 }
@@ -225,15 +236,9 @@ onMounted(load)
               <el-option v-for="e in EXAM_TYPES" :key="e.value" :label="e.label" :value="e.value" />
             </el-select>
           </el-form-item>
-          <el-form-item label="地区(省)">
-            <el-select v-model="metaProvince" clearable filterable placeholder="选填" style="width:140px" @change="onProvinceChange">
-              <el-option v-for="p in PROVINCES" :key="p.code" :label="p.name" :value="p.code" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="地区(市)">
-            <el-select v-model="metaCity" clearable filterable :disabled="!metaProvince" placeholder="中考按市" style="width:140px">
-              <el-option v-for="c in cityOpts" :key="c.code" :label="c.name" :value="c.code" />
-            </el-select>
+          <el-form-item label="地区">
+            <el-cascader ref="regionCascader" v-model="regionPath" :props="regionProps"
+              clearable placeholder="选填:省→市(中考按市)" style="width:240px" @change="onRegionChange" />
           </el-form-item>
         </el-form>
         <el-alert type="info" :closable="false" style="margin-bottom:12px"

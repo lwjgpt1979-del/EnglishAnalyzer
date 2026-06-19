@@ -1020,3 +1020,9 @@ export function genSimFromReal(realId: string, count = 3): Promise<{ generated: 
 export function reviewPlatformQuestion(id: string, approve: boolean): Promise<PlatformQuestion> {
   return unwrap(request.post(`/admin/platform-questions/${id}/review`, { approve }))
 }
+
+// ── 行政区划地区(后端唯一源,懒加载)──────────────────────────
+export interface RegionNode { code: string; name: string; parent_code: string | null; level: number; leaf: boolean }
+export function listRegions(parent?: string): Promise<RegionNode[]> {
+  return unwrap(request.get('/regions', { params: parent ? { parent } : {} }))
+}
