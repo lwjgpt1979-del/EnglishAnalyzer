@@ -119,6 +119,37 @@ async def unit_content_overview(db: AsyncSession, *, unit_id: uuid.UUID) -> list
     ]
 
 
+async def publish_unit(db: AsyncSession, *, unit_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:
+    """一键发布整单元:把该单元所有对齐节点下 draft/reviewing 的讲解置 published。
+
+    返回 {published, already_published, missing_dims}。missing_dims 为仍缺讲解的
+    (节点×维度)数,供前端发布前提示(不阻断,由前端决定是否继续)。
+    """
+    from app.models.d17_curriculum_kg import UnitNode
+    node_ids = (await db.execute(
+        sa.select(UnitNode.node_id).where(UnitNode.unit_id == unit_id))).scalars().all()
+    if not node_ids:
+        return {"published": 0, "already_published": 0, "missing_dims": 0}
+    now = datetime.now(timezone.utc)
+    res = await db.execute(
+        sa.update(NodeResource)
+        .where(NodeResource.node_id.in_(node_ids),
+               NodeResource.resource_type == "lecture",
+               NodeResource.status.in_(["draft", "reviewing"]))
+        .values(status="published", reviewed_by=reviewer_id, reviewed_at=now)
+    )
+    published = res.rowcount or 0
+    already = (await db.execute(
+        sa.select(sa.func.count()).select_from(NodeResource)
+        .where(NodeResource.node_id.in_(node_ids),
+               NodeResource.resource_type == "lecture",
+               NodeResource.status == "published"))).scalar_one() - published
+    overview = await unit_content_overview(db, unit_id=unit_id)
+    missing = sum(1 for n in overview for d in LECTURE_DIMENSIONS if n["dims"][d] is None)
+    await db.flush()
+    return {"published": published, "already_published": already, "missing_dims": missing}
+
+
 async def review(db: AsyncSession, *, resource_id: uuid.UUID, approve: bool, reviewer_id: uuid.UUID) -> NodeResource:
     r = (await db.execute(sa.select(NodeResource).where(NodeResource.id == resource_id))).scalar_one_or_none()
     if r is None:

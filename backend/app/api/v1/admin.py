@@ -77,6 +77,7 @@ from app.schemas.kp import (
     NodeResourceItem,
     NodeResourceListOut,
     UnitContentOverviewOut,
+    UnitPublishOut,
     AddResourceIn,
     UpdateResourceIn,
     LSAdminItem,
@@ -953,6 +954,15 @@ async def unit_content_overview_api(unit_id: uuid.UUID, db: DbDep, admin: AdminD
     from app.services import node_resource_service as nrs
     nodes = await nrs.unit_content_overview(db, unit_id=unit_id)
     return make_ok(UnitContentOverviewOut(total_nodes=len(nodes), items=nodes))
+
+
+@router.post("/curriculum/units/{unit_id}/publish", response_model=BaseResponse[UnitPublishOut])
+async def publish_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """一键发布整单元:该单元所有对齐节点下 draft/reviewing 讲解 → published。"""
+    from app.services import node_resource_service as nrs
+    r = await nrs.publish_unit(db, unit_id=unit_id, reviewer_id=admin.id)
+    await db.commit()
+    return make_ok(UnitPublishOut(**r))
 
 
 @router.post("/node-resources", response_model=BaseResponse[NodeResourceItem])

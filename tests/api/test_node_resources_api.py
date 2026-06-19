@@ -132,6 +132,16 @@ async def test_unit_filter_and_content_overview(client):
         assert dims["grammar"]["status"] == "draft"
         assert dims["listening"] is None and dims["writing"] is None
         assert sum(1 for d in dims.values() if d is None) == 5
+
+        # B 期:一键发布整单元 → grammar 草稿转 published,仍缺 5 维
+        r = await client.post(f"/api/v1/admin/curriculum/units/{unit_id}/publish", headers=admin)
+        assert r.status_code == 200, r.text
+        pub = r.json()["data"]
+        assert pub["published"] == 1 and pub["missing_dims"] == 5
+        # 学生现在能读到该 published 讲解
+        stu = await _login(client, f"{_TAG}_stu_{uuid.uuid4().hex[:6]}")
+        r = await client.get(f"/api/v1/curriculum/nodes/{node_id}/resources", headers=stu)
+        assert any(it["dimension"] == "grammar" for it in r.json()["data"]["items"])
     finally:
         async with _async_session_factory() as db:
             await db.execute(text("DELETE FROM unit_node WHERE unit_id = :u"), {"u": str(unit_id)})

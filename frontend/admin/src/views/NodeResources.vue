@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listNodeResources, addNodeResource, updateNodeResource, reviewNodeResource,
-  listCurriculumUnits, unitContentOverview,
+  listCurriculumUnits, unitContentOverview, publishUnit,
 } from '../api/admin'
 import type { NodeResourceItem2, AdminCurriculumUnit, UnitContentNode } from '../types'
 
@@ -75,6 +75,27 @@ function cellClass(cell: { status: string } | null): string {
 }
 const missingCount = computed(() =>
   overview.value.reduce((n, node) => n + dimensions.filter(d => !node.dims[d]).length, 0))
+const draftCount = computed(() =>
+  overview.value.reduce((n, node) =>
+    n + dimensions.filter(d => node.dims[d] && node.dims[d]!.status !== 'published').length, 0))
+
+// 一键发布整单元
+const publishing = ref(false)
+async function onPublishUnit() {
+  if (!fUnitId.value) return
+  const warn = missingCount.value
+    ? `当前还有 ${missingCount.value} 个维度缺讲解(发布后这些维度学生看不到)。仍要发布已就绪的 ${draftCount.value} 条草稿吗？`
+    : `确认发布本单元 ${draftCount.value} 条草稿讲解？发布后学生可见。`
+  if (!draftCount.value && !missingCount.value) { ElMessage.info('本单元讲解已全部发布'); return }
+  await ElMessageBox.confirm(warn, '发布本单元', { type: missingCount.value ? 'warning' : 'info' })
+  publishing.value = true
+  try {
+    const r = await publishUnit(fUnitId.value)
+    ElMessage.success(`已发布 ${r.published} 条${r.missing_dims ? `,仍缺 ${r.missing_dims} 维度未补全` : ''}`)
+    await load(); await loadOverview()
+  } catch (e: any) { ElMessage.error(e?.message || '发布失败') }
+  finally { publishing.value = false }
+}
 
 async function load() {
   loading.value = true
@@ -208,7 +229,10 @@ onMounted(async () => {
         <span class="ov-sum">知识点 {{ overview.length }} · 缺失维度
           <b :class="missingCount ? 'warn' : 'ok'">{{ missingCount }}</b>
           <template v-if="!missingCount"> ✓ 全部就绪</template>
+          <template v-if="draftCount"> · 待发布草稿 <b class="warn">{{ draftCount }}</b></template>
         </span>
+        <el-button v-if="overview.length" size="small" type="success" :loading="publishing"
+          :disabled="!draftCount" @click="onPublishUnit">🚀 一键发布本单元</el-button>
         <span class="ov-legend"><i class="dot cell-missing" />缺<i class="dot cell-draft" />草稿<i class="dot cell-pub" />已发布</span>
       </div>
       <el-empty v-if="!overviewLoading && !overview.length" description="该单元暂无对齐的知识图谱节点(先在单元页「对齐图谱」)" />

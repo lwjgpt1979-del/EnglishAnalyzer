@@ -333,6 +333,11 @@ export function unitContentOverview(unitId: string): Promise<UnitContentOverview
   return unwrap<UnitContentOverview>(request.get(`/admin/curriculum/units/${unitId}/content-overview`))
 }
 
+// 一键发布整单元:所有对齐节点下 draft/reviewing 讲解 → published
+export function publishUnit(unitId: string): Promise<{ published: number; already_published: number; missing_dims: number }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/publish`))
+}
+
 // ── 长难句管理（KP-First L7）──────────────────────────────
 export function extractLongSentences(params: { source?: string; limit?: number }) {
   return unwrap<LSExtractResult>(request.post('/admin/long-sentences/extract', null, { params }))

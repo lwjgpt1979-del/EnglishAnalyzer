@@ -329,6 +329,12 @@ class UnitContentOverviewOut(BaseModel):
     items: list[UnitContentNode]
 
 
+class UnitPublishOut(BaseModel):
+    published: int
+    already_published: int
+    missing_dims: int
+
+
 class AddResourceIn(BaseModel):
     node_id: uuid.UUID
     resource_type: str = Field(..., description="lecture|video|example|essay|mindmap")
