@@ -971,11 +971,13 @@ async def add_node_resource_api(body: AddResourceIn, db: DbDep, admin: AdminDep)
     if body.resource_type == "lecture":
         if not body.dimension or not body.content_md:
             raise AppError(code=400, message="lecture 需 dimension + content_md")
-        rid = await nrs.upsert_lecture(db, node_id=body.node_id, dimension=body.dimension,
-                                       content_md=body.content_md, media_url=body.media_url, status=body.status)
+        # C1:走版本流——覆盖已发布讲解则产生待审新版(不覆盖线上)
+        ret = await nrs.submit_lecture_version(
+            db, node_id=body.node_id, dimension=body.dimension, content_md=body.content_md,
+            media_url=body.media_url, source="manual", status_if_new=body.status, created_by=admin.id)
         await db.commit()
         from app.models.d19_node_resource import NodeResource as _NR
-        r = (await db.execute(select(_NR).where(_NR.id == rid))).scalar_one()
+        r = (await db.execute(select(_NR).where(_NR.id == ret["resource_id"]))).scalar_one()
     else:
         r = await nrs.add_resource(db, node_id=body.node_id, resource_type=body.resource_type,
                                    title=body.title, content_md=body.content_md, media_url=body.media_url,

@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d19_node_resource import NodeResource
+from app.models.d19_node_resource import NodeResource, NodeResourceVersion
 
 _TYPES = {"lecture", "video", "example", "essay", "mindmap"}
 _DIMENSIONS = {"listening", "vocabulary", "grammar", "reading", "translation", "writing"}
@@ -39,6 +39,65 @@ async def upsert_lecture(
     rid = (await db.execute(stmt)).scalar_one()
     await db.flush()
     return rid
+
+
+async def _next_version_no(db: AsyncSession, resource_id: uuid.UUID) -> int:
+    n = (await db.execute(
+        sa.select(sa.func.coalesce(sa.func.max(NodeResourceVersion.version_no), 0))
+        .where(NodeResourceVersion.resource_id == resource_id))).scalar_one()
+    return int(n) + 1
+
+
+async def submit_lecture_version(
+    db: AsyncSession, *, node_id: uuid.UUID, dimension: str, content_md: str,
+    media_url: str | None = None, source: str = "manual", status_if_new: str = "draft",
+    origin_ref=None, created_by: uuid.UUID | None = None,
+) -> dict:
+    """C1 写入入口(取代覆盖式 upsert_lecture):
+
+    - 该维度无内容 → 建当前行(状态=status_if_new)+ v1 版本(首铺,published 则直发)。
+    - 当前行已 published → **不覆盖线上**,插一条 pending 版本(重生成/重传待审对比)。
+    - 当前行为草稿(未发布)→ 直接更新草稿正文 + 记一条 pending 版本(从未对学生可见,可覆盖)。
+
+    返回 {action: created|pending_version|updated, resource_id, version_id, version_no, status}。
+    """
+    if dimension not in _DIMENSIONS:
+        raise AppError(code=400, message=f"非法维度 {dimension}")
+    res = (await db.execute(sa.select(NodeResource).where(
+        NodeResource.node_id == node_id, NodeResource.resource_type == "lecture",
+        NodeResource.dimension == dimension))).scalar_one_or_none()
+
+    created = res is None
+    if created:
+        res = NodeResource(
+            id=uuid.uuid4(), node_id=node_id, resource_type="lecture", dimension=dimension,
+            content_md=content_md, media_url=media_url, generated_by=source, status=status_if_new)
+        db.add(res)
+        await db.flush()
+        action = "created"
+    elif res.status == "published":
+        action = "pending_version"          # 线上不动,仅产生待审版本
+    else:
+        res.content_md = content_md          # 草稿可直接覆盖
+        res.media_url = media_url
+        res.generated_by = source
+        action = "updated"
+
+    vno = await _next_version_no(db, res.id)
+    now = datetime.now(timezone.utc)
+    v_published = created and status_if_new == "published"
+    v = NodeResourceVersion(
+        id=uuid.uuid4(), resource_id=res.id, node_id=node_id, dimension=dimension,
+        version_no=vno, content_md=content_md, media_url=media_url, source=source,
+        origin_ref=origin_ref, status="published" if v_published else "pending",
+        created_by=created_by,
+        reviewed_by=created_by if v_published else None,
+        reviewed_at=now if v_published else None,
+    )
+    db.add(v)
+    await db.flush()
+    return {"action": action, "resource_id": res.id, "version_id": v.id,
+            "version_no": vno, "status": res.status}
 
 
 async def add_resource(

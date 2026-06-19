@@ -98,6 +98,44 @@ async def test_admin_crud_and_student_read(client):
 
 
 @pytest.mark.asyncio
+async def test_lecture_versioning_no_overwrite(client):
+    """C1:覆盖已发布讲解 → 产生 pending 版本,线上内容不变。"""
+    node_id = await _seed_node()
+    try:
+        admin = await _make_admin(client, "ver")
+        # 首铺一条 published 讲解(直发)
+        r = await client.post("/api/v1/admin/node-resources", headers=admin, json={
+            "node_id": str(node_id), "resource_type": "lecture", "dimension": "grammar",
+            "content_md": "原始语法讲解 v1", "status": "published"})
+        assert r.status_code == 200, r.text
+        rid = r.json()["data"]["id"]
+
+        # 再次提交同维度新内容 → 不应覆盖线上,而是产生 pending 版本
+        r = await client.post("/api/v1/admin/node-resources", headers=admin, json={
+            "node_id": str(node_id), "resource_type": "lecture", "dimension": "grammar",
+            "content_md": "重写后的语法讲解 v2", "status": "published"})
+        assert r.status_code == 200, r.text
+
+        async with _async_session_factory() as db:
+            # 线上内容仍是 v1(未被覆盖)
+            live = (await db.execute(text(
+                "SELECT content_md, status FROM node_resource WHERE id = :i"), {"i": rid})).first()
+            assert live[0] == "原始语法讲解 v1" and live[1] == "published"
+            # 版本表:v1=published(首铺直发),v2=pending(待审新版)
+            vrows = (await db.execute(text(
+                "SELECT version_no, status, content_md FROM node_resource_version "
+                "WHERE resource_id = :i ORDER BY version_no"), {"i": rid})).all()
+            assert len(vrows) == 2
+            assert vrows[0][1] == "published" and vrows[0][2] == "原始语法讲解 v1"
+            assert vrows[1][1] == "pending" and vrows[1][2] == "重写后的语法讲解 v2"
+    finally:
+        async with _async_session_factory() as db:
+            await db.execute(text("DELETE FROM node_resource_version WHERE node_id = :n"), {"n": str(node_id)})
+            await db.commit()
+        await _cleanup(node_id)
+
+
+@pytest.mark.asyncio
 async def test_unit_filter_and_content_overview(client):
     """A 期:按 unit_id 过滤 node-resources + 单元补全总览(六维缺失)。"""
     from app.models.d4_knowledge import CurriculumUnit

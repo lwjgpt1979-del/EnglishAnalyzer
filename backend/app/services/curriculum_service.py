@@ -127,9 +127,11 @@ async def persist_unit(
         for dim, md in kp_in.contents.items():
             if dim not in nrs._DIMENSIONS:
                 continue  # node_resource lecture 仅六维;dictation 等非教学维跳过
-            await nrs.upsert_lecture(
+            # C1:走版本流——首铺按 content_status,覆盖已发布内容则产生待审新版(不覆盖线上)
+            await nrs.submit_lecture_version(
                 db, node_id=node_id, dimension=dim, content_md=md,
-                generated_by="ai_full", status=content_status,
+                source="ai_full", status_if_new=content_status,
+                origin_ref={"flow": "generate"},
             )
 
     # 5. vocabulary_words + 6. curriculum_words
