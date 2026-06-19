@@ -540,6 +540,129 @@ earn one's living 谋生;lose one's way 迷路;hold one's breath 屏住呼吸;ma
 4. It takes sb. some time to do sth. 做某事花费某人一些时间。e.g. It takes me ten minutes to get to the library.
 5. It's + adj. ( + for sb. ) + to do sth. e.g. It's important for us to learn English well.
 6. make / feel / find / think / consider + it + adj. + to do sth. e.g. I found it difficult to finish the task on time.""",
+
+    # ── 词法 · 动词 · 实义动词与助动词 ──
+    "cf-4-1-1": """## 动词的概念及分类
+
+**定义**:表示动作或状态的词,在句子中主要作谓语。
+
+**分类**:
+1. 实义动词:有完整意义,可以单独作谓语。e.g. I like reading books after school.
+2. 连系动词:不能单独作谓语,需加表语构成系表结构。e.g. The candy tastes very sweet.
+3. 助动词:本身无意义,不能单独作谓语,可帮助实义动词构成各种语法形式。e.g. She didn't finish her homework on time.
+4. 情态动词:有本身词义,不能单独作谓语,表示说话人的态度或观点,后加动词原形。e.g. The bird can fly in the sky.""",
+
+    "cf-4-1-2": """## 实义动词的分类及用法
+
+1. 按是否带宾语:及物动词(后可直接带宾语,分单宾语、双宾语、复合宾语)e.g. Please give me the salt.;不及物动词(本身意义完整,后不需宾语,加宾语需在宾语前加合适介词)e.g. Please listen to it carefully.;有些动词既可作及物动词又可作不及物动词。e.g. We study English.
+2. 按动作是否延续:持续性动词(又称延续性动词,表示可以持续的行为/过程/状态)e.g. have, keep;终止性动词(又称非延续性动词,表示瞬间完成)e.g. come, go;持续性动词可与表示"一段时间"的状语连用,终止性动词不能。e.g. I have learnt English for three years.""",
+
+    "cf-4-1-3": """## 助动词的分类及用法
+
+| 助动词 | 现在时 | 过去时 |
+| --- | --- | --- |
+| be | am / is / are | was / were |
+| do | do / does | did |
+| have | have / has | had |
+| shall | shall | should |
+| will | will | would |
+
+1. 助动词 be:有人称、数和时态变化,可构成进行时、完成时或被动语态及疑问句形式。e.g. She is swimming now.
+2. 助动词 do:主要帮助实义动词构成否定、疑问句形式。e.g. Do you like music?
+3. 助动词 have:e.g. We haven't learnt English for many years.(助动词);I don't have that pen.(实义动词)
+4. 助动词 will / would / shall / should:will 用于将来时或表示意愿,shall 用于各种人称。e.g. I shall leave for Canada tomorrow.""",
+
+    "cf-4-1-4": """## 常见动词短语搭配
+
+**动词 + 介词**:arrive at / in 到达;believe in 相信;care for 关心;go through 经历;deal with 处理;look into 调查;ask for 请求;break into 闯入;think of 想起;laugh at 嘲笑;lead to 导致;depend on 依靠
+**动词 + 副词**:find out 查明;give up 放弃;give out 分发;clear up 清理;cut down 削减;hand out 分发;grow up 长大;break out 发生;break down 出故障
+**动词 + 名词 + 介词**:get rid of 摆脱;catch sight of 看见;take care of 照料;take part in 参加;have an effect on 对……有影响;keep an eye on 留心;make friends with 和……交朋友;have influence on 对……有影响""",
+
+    # ── 词法 · 动词 · 系动词 ──
+    "cf-4-2-1": """## 系动词的定义及分类
+
+连系动词又称系动词,常用于说明主语的身份、性质和状态等,不可单独作谓语,需与表语一起构成系表结构。
+
+| 系动词类型 | 例词 |
+| --- | --- |
+| be 动词 | am, is, are, was, were |
+| 感官系动词 | look, sound, smell, taste, feel |
+| 变化系动词 | become, get, grow, turn |
+| 持续系动词 | keep, stay, remain |
+| 表象系动词 | seem, appear |""",
+
+    "cf-4-2-2": """## 感官系动词
+
+感官系动词是表示与人的某种感觉相关的系动词,后接形容词,意为"……起来"(look 看起来;sound 听起来;smell 闻起来;taste 尝起来;feel 摸起来)。
+
+**与实义动词的区别**:
+1. 作系动词时意为"……起来",后跟形容词。e.g. The girl looks very happy.
+2. 作实义动词时意为"看/听/闻"等,可单独作谓语,后接副词或宾语。e.g. The girl looks at her friends happily.""",
+
+    "cf-4-2-3": """## 持续系动词和表象系动词
+
+1. 持续系动词表示主语的特征、状态和身份,意为"保持……状态",常见的有 keep, stay, remain。
+   - e.g. Her grandchildren keep her young.;The bookstore stays open until 10:00 p.m.;They remain opposed to the idea.
+2. 表象系动词常意为"似乎;看起来",常见的有 seem, appear。
+   - e.g. Life seems so unfair sometimes.;He appears to be happy.""",
+
+    "cf-4-2-4": """## 变化系动词
+
+变化系动词常意为"变得……",其后常跟形容词或形容词比较级形式。
+- **become / get**:表示状态、心情、天气等变化(get 后跟形容词比较级)。e.g. I became nervous.;The weather gets hotter.
+- **grow**:表示成长、发展中的变化。e.g. His hair grows longer and longer.
+- **turn**:表示自然现象的变化(turn + 形容词;turn + 名词表示几岁)。e.g. My face turned pale.;Our son turns 3 today.
+- **go**:表示朝坏的方向变化。e.g. Things go bad.""",
+
+    # ── 词法 · 动词 · 情态动词(1) ──
+    "cf-4-3-1": """## 情态动词的特征
+
+1. 本身有词义,但不能单独作谓语,要和动词原形一起构成谓语。e.g. He can play the piano.(√)
+2. 没有人称和数的变化(have to 除外)。e.g. She must go home now.(√)
+3. 具有助动词的功能,可构成否定句、疑问句及肯定简略答语。e.g. You should not cross the road when the traffic lights are red.
+4. 有些情态动词有过去式。e.g. can—could;may—might""",
+
+    "cf-4-3-2": """## 情态动词表能力
+
+1. can 表示说话人现在具备的一般能力,意为"能够";could 是 can 的过去式,表示过去具备的能力。e.g. I can speak Spanish.;When I was young, I could climb a tree in the forest.
+2. can 用于自身具备的能力,be able to 表示通过努力具备的能力。e.g. I can jump high.;I am able to run 3,000 metres in 10 minutes if I practise more.
+3. can 是情态动词,无人称和数的变化,主语可以是人或物;be able to 有人称和数的变化,主语一般是人。e.g. Many birds can fly.;Lucy is able to finish her homework by herself.""",
+
+    # ── 词法 · 动词 · 情态动词(2) ──
+    "cf-4-4-1": """## 情态动词表推测
+
+| 情态动词 | 含义 | 用法 |
+| --- | --- | --- |
+| must | 一定 | 确定推测(肯定) |
+| can't | 一定不 | 确定推测(否定) |
+| may / might / can / could | 可能 | 不确定推测 |
+
+1. 对现在或将来的情况推测:情态动词 + 动词原形。e.g. He might be at home.
+2. 对现在或正在发生的情况推测:情态动词 + be doing。e.g. She may be watching TV at home now.
+3. 对过去的情况推测:情态动词 + have done。e.g. He can't have seen the film yesterday.""",
+
+    "cf-4-4-2": """## 情态动词表命令或禁止
+
+1. must 表示义务、命令或要求,意为"必须;应该";一般疑问句肯定回答常用 must,否定回答常用 needn't 或 don't have to。e.g. — Must I drink a glass of milk before going to bed? — Yes, you must. / No, you needn't.
+2. must 的否定形式为 mustn't,意为"不准;禁止"。e.g. You mustn't swim here.
+3. have to 表示客观的需要,must 表示主观上的必要;have to 有人称、数和时态的变化,must 只有一种形式。e.g. My brother was ill, so I had to call the doctor.""",
+
+    "cf-4-4-3": """## 其他常用情态动词
+
+1. **should 的用法**:① 表示义务或责任,意为"应该",常表示主观看法。e.g. You should go home before 9 p.m.;② 用于疑问句表示惊奇、愤怒、失望等,意为"竟然"。e.g. Why should you beat that boy?;③ 表示对可能性的推测,意为"可能"。e.g. Jim should be at home because it is raining outside.
+2. **had better 的用法**:① had better (not) 表示劝告或建议,意为"最好(不要)"。e.g. You had better not go by air.;② would rather 表示选择,意为"宁愿",后接动词原形。e.g. I'd rather stay alone.""",
+
+    "cf-4-4-4": """## 情态共存的动词
+
+need 和 dare 既可作情态动词又可作实义动词。
+
+| 动词 | 情态动词用法 | 实义动词用法 |
+| --- | --- | --- |
+| need 需要 | 肯定 need + do;否定 need not + do | need + to do;don't / doesn't / didn't + need to do |
+| dare 敢 | 肯定 dare + do;否定 dare not + do | dare + (to) do;don't / doesn't / didn't + dare (to) do |
+
+- e.g. She need come here.(情态动词);She needs to come here.(实义动词)
+- e.g. I dare not go home alone.(情态动词);My brother dares (to) travel by himself.(实义动词)""",
 }
 
 
