@@ -58,6 +58,7 @@ const dlg = ref(false)
 const step = ref(0)                 // 0=选源, 1=抽题中, 2=校对
 // 批次元信息:教材+学段 必选;年级/学期/地区 选填
 const EXAM_TYPES = [{ label: '普通(无)', value: '' }, { label: '中考', value: '中考' }, { label: '高考', value: '高考' }]
+const QUESTION_TYPES = ['单选', '填空', '完型', '阅读', '写作', '判断', '连线']  // 与 ai_question_type_enum 对齐
 const metaTextbook = ref('译林版')
 const metaStage = ref('初')
 const metaGrade = ref('')
@@ -290,7 +291,11 @@ onMounted(load)
             <template #default="{ row }"><el-input v-model="row.stem" type="textarea" :rows="2" /></template>
           </el-table-column>
           <el-table-column label="答案" width="90"><template #default="{ row }"><el-input v-model="row.answer" /></template></el-table-column>
-          <el-table-column label="题型" width="90"><template #default="{ row }"><el-input v-model="row.question_type" /></template></el-table-column>
+          <el-table-column label="题型" width="96"><template #default="{ row }">
+            <el-select v-model="row.question_type" size="small">
+              <el-option v-for="t in QUESTION_TYPES" :key="t" :label="t" :value="t" />
+            </el-select>
+          </template></el-table-column>
           <el-table-column label="难度" width="80"><template #default="{ row }"><el-input-number v-model="row.difficulty" :min="1" :max="5" size="small" controls-position="right" /></template></el-table-column>
           <el-table-column label="知识点(逗号分隔)" width="160"><template #default="{ row }"><el-input v-model="row.kp_names" placeholder="如:定语从句" /></template></el-table-column>
           <el-table-column label="" width="50" align="center">
