@@ -76,6 +76,7 @@ from app.schemas.kp import (
     VocabItemsOut,
     NodeResourceItem,
     NodeResourceListOut,
+    UnitContentOverviewOut,
     AddResourceIn,
     UpdateResourceIn,
     LSAdminItem,
@@ -918,10 +919,10 @@ async def delete_region_admin(code: str, db: DbDep, admin: AdminDep):
 
 # ─── 知识节点资源管理（R6 资源层补全）────────────────────────────────────────────
 
-def _to_node_resource_item(r) -> NodeResourceItem:
+def _to_node_resource_item(r, node_name: str | None = None) -> NodeResourceItem:
     return NodeResourceItem(
-        id=r.id, node_id=r.node_id, resource_type=r.resource_type, dimension=r.dimension,
-        title=r.title, content_md=r.content_md, media_url=r.media_url,
+        id=r.id, node_id=r.node_id, node_name=node_name, resource_type=r.resource_type,
+        dimension=r.dimension, title=r.title, content_md=r.content_md, media_url=r.media_url,
         resource_json=r.resource_json, status=r.status,
     )
 
@@ -930,12 +931,28 @@ def _to_node_resource_item(r) -> NodeResourceItem:
 async def list_node_resources_api(
     db: DbDep, admin: AdminDep, status: str | None = "draft",
     node_id: uuid.UUID | None = None, resource_type: str | None = None,
-    skip: int = 0, limit: int = 20,
+    unit_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
 ):
     from app.services import node_resource_service as nrs
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    status = status or None        # 空串 = 全部状态
     rows, total = await nrs.list_for_review(db, status=status, node_id=node_id,
-                                            resource_type=resource_type, skip=skip, limit=limit)
-    return make_ok(NodeResourceListOut(total=total, items=[_to_node_resource_item(r) for r in rows]))
+                                            resource_type=resource_type, unit_id=unit_id,
+                                            skip=skip, limit=limit)
+    nids = {r.node_id for r in rows}
+    names = dict((await db.execute(
+        select(KnowledgeNode.id, KnowledgeNode.name).where(KnowledgeNode.id.in_(nids)))).all()) if nids else {}
+    return make_ok(NodeResourceListOut(
+        total=total, items=[_to_node_resource_item(r, names.get(r.node_id)) for r in rows]))
+
+
+@router.get("/curriculum/units/{unit_id}/content-overview",
+            response_model=BaseResponse[UnitContentOverviewOut])
+async def unit_content_overview_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """单元补全总览:每个对齐节点 × 六维讲解状态(缺失/草稿/已发布),供发布前预览+补全。"""
+    from app.services import node_resource_service as nrs
+    nodes = await nrs.unit_content_overview(db, unit_id=unit_id)
+    return make_ok(UnitContentOverviewOut(total_nodes=len(nodes), items=nodes))
 
 
 @router.post("/node-resources", response_model=BaseResponse[NodeResourceItem])

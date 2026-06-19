@@ -95,3 +95,46 @@ async def test_admin_crud_and_student_read(client):
         assert r.status_code == 403
     finally:
         await _cleanup(node_id)
+
+
+@pytest.mark.asyncio
+async def test_unit_filter_and_content_overview(client):
+    """A 期:按 unit_id 过滤 node-resources + 单元补全总览(六维缺失)。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d17_curriculum_kg import UnitNode
+    node_id = await _seed_node()
+    unit_id = uuid.uuid4()
+    async with _async_session_factory() as db:
+        db.add(CurriculumUnit(id=unit_id, textbook_version=f"{_TAG}版", grade="七年级",
+                              semester="下", unit_no=1, unit_title=f"{_TAG}单元"))
+        await db.flush()
+        db.add(UnitNode(unit_id=unit_id, node_id=node_id, source="manual"))
+        await db.commit()
+    try:
+        admin = await _make_admin(client, "ov")
+        # 只给 grammar 维度建讲解 → 其余 5 维缺失
+        r = await client.post("/api/v1/admin/node-resources", headers=admin, json={
+            "node_id": str(node_id), "resource_type": "lecture", "dimension": "grammar",
+            "content_md": "语法", "status": "draft"})
+        assert r.status_code == 200, r.text
+
+        # 按 unit_id 过滤(全状态)→ 命中 1 条,且带 node_name
+        r = await client.get(f"/api/v1/admin/node-resources?unit_id={unit_id}&status=", headers=admin)
+        data = r.json()["data"]
+        assert data["total"] == 1
+        assert data["items"][0]["node_name"] == f"{_TAG}KP"
+
+        # 补全总览:1 节点,grammar=draft,其余 5 维为 null
+        r = await client.get(f"/api/v1/admin/curriculum/units/{unit_id}/content-overview", headers=admin)
+        ov = r.json()["data"]
+        assert ov["total_nodes"] == 1
+        dims = ov["items"][0]["dims"]
+        assert dims["grammar"]["status"] == "draft"
+        assert dims["listening"] is None and dims["writing"] is None
+        assert sum(1 for d in dims.values() if d is None) == 5
+    finally:
+        async with _async_session_factory() as db:
+            await db.execute(text("DELETE FROM unit_node WHERE unit_id = :u"), {"u": str(unit_id)})
+            await db.execute(text("DELETE FROM curriculum_units WHERE id = :u"), {"u": str(unit_id)})
+            await db.commit()
+        await _cleanup(node_id)

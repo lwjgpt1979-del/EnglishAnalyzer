@@ -23,6 +23,7 @@ import type {
   VocabListItem2,
   VocabWordItem,
   NodeResourceItem2,
+  UnitContentOverview,
   LSAdminItem,
   LSExtractResult,
   LSConfig,
@@ -304,7 +305,7 @@ export function addVocabItems(listId: string, items: Array<{ word: string; rank?
 
 // ── 知识节点资源（KP-First R6）──────────────────────────────
 export function listNodeResources(params: {
-  status?: string; node_id?: string; resource_type?: string; skip?: number; limit?: number
+  status?: string; node_id?: string; resource_type?: string; unit_id?: string; skip?: number; limit?: number
 }) {
   return unwrap<{ total: number; items: NodeResourceItem2[] }>(
     request.get('/admin/node-resources', { params }))
@@ -317,8 +318,19 @@ export function addNodeResource(body: {
   return unwrap<NodeResourceItem2>(request.post('/admin/node-resources', body))
 }
 
+export function updateNodeResource(id: string, body: {
+  content_md?: string; media_url?: string; title?: string
+}) {
+  return unwrap<NodeResourceItem2>(request.put(`/admin/node-resources/${id}`, body))
+}
+
 export function reviewNodeResource(id: string, approve: boolean) {
   return unwrap<NodeResourceItem2>(request.post(`/admin/node-resources/${id}/review`, { approve }))
+}
+
+// 单元补全总览:每个对齐节点 × 六维讲解状态(缺失/草稿/已发布)
+export function unitContentOverview(unitId: string): Promise<UnitContentOverview> {
+  return unwrap<UnitContentOverview>(request.get(`/admin/curriculum/units/${unitId}/content-overview`))
 }
 
 // ── 长难句管理（KP-First L7）──────────────────────────────

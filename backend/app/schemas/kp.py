@@ -296,6 +296,7 @@ class VocabItemsOut(BaseModel):
 class NodeResourceItem(BaseModel):
     id: uuid.UUID
     node_id: uuid.UUID
+    node_name: str | None = None
     resource_type: str
     dimension: str | None = None
     title: str | None = None
@@ -308,6 +309,24 @@ class NodeResourceItem(BaseModel):
 class NodeResourceListOut(BaseModel):
     total: int
     items: list[NodeResourceItem]
+
+
+# ── 单元补全总览(发布前预览完整度 + 补全缺失维度)──
+class LectureCell(BaseModel):
+    id: uuid.UUID
+    status: str
+    has_content: bool
+
+
+class UnitContentNode(BaseModel):
+    node_id: uuid.UUID
+    name: str
+    dims: dict[str, LectureCell | None]
+
+
+class UnitContentOverviewOut(BaseModel):
+    total_nodes: int
+    items: list[UnitContentNode]
 
 
 class AddResourceIn(BaseModel):

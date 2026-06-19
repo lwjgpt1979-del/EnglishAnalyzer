@@ -195,6 +195,7 @@ export interface VocabWordItem {
 export interface NodeResourceItem2 {
   id: string
   node_id: string
+  node_name?: string | null
   resource_type: string
   dimension?: string | null
   title?: string | null
@@ -202,6 +203,15 @@ export interface NodeResourceItem2 {
   media_url?: string | null
   status: string
 }
+
+// 单元补全总览(发布前预览完整度 + 补全缺失维度)
+export interface LectureCell { id: string; status: string; has_content: boolean }
+export interface UnitContentNode {
+  node_id: string
+  name: string
+  dims: Record<string, LectureCell | null>
+}
+export interface UnitContentOverview { total_nodes: number; items: UnitContentNode[] }
 
 // ── 长难句管理(KP-First L7)──────────────────────────────
 export interface LSAdminItem {

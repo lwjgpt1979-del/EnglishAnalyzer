@@ -63,7 +63,8 @@ async def add_resource(
 
 async def list_for_review(
     db: AsyncSession, *, status: str | None = "draft", node_id: uuid.UUID | None = None,
-    resource_type: str | None = None, skip: int = 0, limit: int = 20,
+    resource_type: str | None = None, unit_id: uuid.UUID | None = None,
+    skip: int = 0, limit: int = 20,
 ) -> tuple[list[NodeResource], int]:
     base = sa.select(NodeResource)
     if status is not None:
@@ -72,10 +73,50 @@ async def list_for_review(
         base = base.where(NodeResource.node_id == node_id)
     if resource_type is not None:
         base = base.where(NodeResource.resource_type == resource_type)
+    if unit_id is not None:                       # 按单元过滤:取该单元对齐的节点
+        from app.models.d17_curriculum_kg import UnitNode
+        base = base.where(NodeResource.node_id.in_(
+            sa.select(UnitNode.node_id).where(UnitNode.unit_id == unit_id)))
     total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(
         base.order_by(NodeResource.created_at).offset(skip).limit(limit))).scalars().all()
     return list(rows), total
+
+
+LECTURE_DIMENSIONS = ["listening", "vocabulary", "grammar", "reading", "translation", "writing"]
+
+
+async def unit_content_overview(db: AsyncSession, *, unit_id: uuid.UUID) -> list[dict]:
+    """单元补全总览:该单元每个对齐节点 × 六维讲解的状态(缺失/草稿/已发布)。
+
+    返回 [{node_id, name, dims: {dimension: {id, status, has_content} | None}}]，
+    供发布前预览完整度 + 一键补全缺失维度。
+    """
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d17_curriculum_kg import UnitNode
+    node_rows = (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name)
+        .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
+        .where(UnitNode.unit_id == unit_id)
+        .order_by(KnowledgeNode.name)
+    )).all()
+    node_ids = [r[0] for r in node_rows]
+    by_node: dict[uuid.UUID, dict[str, dict]] = {}
+    if node_ids:
+        lrows = (await db.execute(
+            sa.select(NodeResource.id, NodeResource.node_id, NodeResource.dimension,
+                      NodeResource.status, NodeResource.content_md)
+            .where(NodeResource.node_id.in_(node_ids), NodeResource.resource_type == "lecture")
+        )).all()
+        for rid, nid, dim, status, content in lrows:
+            if dim:
+                by_node.setdefault(nid, {})[dim] = {
+                    "id": rid, "status": status, "has_content": bool((content or "").strip())}
+    return [
+        {"node_id": nid, "name": name,
+         "dims": {d: by_node.get(nid, {}).get(d) for d in LECTURE_DIMENSIONS}}
+        for nid, name in node_rows
+    ]
 
 
 async def review(db: AsyncSession, *, resource_id: uuid.UUID, approve: bool, reviewer_id: uuid.UUID) -> NodeResource:

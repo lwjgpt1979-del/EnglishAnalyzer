@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
@@ -61,6 +62,12 @@ const nodesDlg = ref(false)
 const nodesLoading = ref(false)
 const unitNodes = ref<AdminUnitNodeItem[]>([])
 const nodesUnitTitle = ref('')
+const nodesUnitId = ref('')
+const router = useRouter()
+
+function goSupplement(unitId: string) {
+  router.push({ path: '/node-resources', query: { unit_id: unitId } })
+}
 
 async function onAlign(row: AdminCurriculumUnit) {
   aligning.value[row.unit_id] = true
@@ -76,6 +83,7 @@ async function onAlign(row: AdminCurriculumUnit) {
 
 async function onViewNodes(row: AdminCurriculumUnit) {
   nodesUnitTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
+  nodesUnitId.value = row.unit_id
   nodesDlg.value = true
   nodesLoading.value = true
   try {
@@ -316,7 +324,7 @@ onMounted(load)
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="290" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
           <el-button size="small" type="primary" :loading="generating[row.unit_id]" @click="onGenerate(row)">
             🤖 生成内容
@@ -325,6 +333,7 @@ onMounted(load)
             🧩 对齐图谱
           </el-button>
           <el-button size="small" @click="onViewNodes(row)">查看节点</el-button>
+          <el-button size="small" type="warning" plain @click="goSupplement(row.unit_id)">📝 补全资料</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -338,6 +347,11 @@ onMounted(load)
         <el-table-column prop="source" label="来源" width="110" />
       </el-table>
       <el-empty v-if="!nodesLoading && !unitNodes.length" description="该单元暂无对齐的知识图谱节点" />
+      <template #footer>
+        <span style="float:left;color:#909399;font-size:12px">发布前在补全页查看六维完整度并补齐</span>
+        <el-button @click="nodesDlg = false">关闭</el-button>
+        <el-button type="warning" @click="goSupplement(nodesUnitId)">📝 去补全资料</el-button>
+      </template>
     </el-dialog>
 
     <!-- ── PDF 上传 Dialog ── -->
