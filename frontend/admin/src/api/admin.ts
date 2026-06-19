@@ -1026,3 +1026,16 @@ export interface RegionNode { code: string; name: string; parent_code: string | 
 export function listRegions(parent?: string): Promise<RegionNode[]> {
   return unwrap(request.get('/regions', { params: parent ? { parent } : {} }))
 }
+// 后台维护
+export function adminListRegions(parent?: string): Promise<RegionNode[]> {
+  return unwrap(request.get('/admin/regions', { params: parent ? { parent } : {} }))
+}
+export function createRegion(body: { code: string; name: string; parent_code?: string | null; level: number }): Promise<RegionNode> {
+  return unwrap(request.post('/admin/regions', body))
+}
+export function updateRegion(code: string, name: string): Promise<RegionNode> {
+  return unwrap(request.put(`/admin/regions/${code}`, { name }))
+}
+export function deleteRegion(code: string): Promise<{ deleted: string }> {
+  return unwrap(request.delete(`/admin/regions/${code}`))
+}

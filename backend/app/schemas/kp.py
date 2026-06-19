@@ -150,6 +150,26 @@ class RealExtractJobOut(BaseModel):
     parsed: list[ParsedRealQuestion] = []
 
 
+# ── 地区维护(后台)──────────────────────────────────────────
+class RegionIn(BaseModel):
+    code: str = Field(..., min_length=2, max_length=12)
+    name: str = Field(..., min_length=1, max_length=64)
+    parent_code: str | None = None
+    level: int = Field(..., ge=1, le=4)
+
+
+class RegionRename(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+class RegionItem(BaseModel):
+    code: str
+    name: str
+    parent_code: str | None = None
+    level: int
+    leaf: bool = True
+
+
 class ReviewRequest(BaseModel):
     approve: bool = Field(..., description="true=通过→published,false=驳回→retired")
 

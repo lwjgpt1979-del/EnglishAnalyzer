@@ -63,6 +63,9 @@ from app.schemas.kp import (
     RealExtractCreatedOut,
     RealExtractJobOut,
     ParsedRealQuestion,
+    RegionIn,
+    RegionRename,
+    RegionItem,
     ReviewRequest,
     VocabListCreate,
     VocabListOut,
@@ -854,6 +857,44 @@ async def get_real_extract_job_api(job_id: uuid.UUID, db: DbDep, admin: AdminDep
     return make_ok(RealExtractJobOut(
         job_id=job.id, source=job.source, status=job.status, error=job.error,
         parsed=[ParsedRealQuestion(**p) for p in (job.parsed or [])]))
+
+
+# ─── 地区维护（行政区划 region 表,唯一数据源)────────────────────────────────────
+
+@router.get("/regions", response_model=BaseResponse[list[RegionItem]])
+async def list_regions_admin(db: DbDep, admin: AdminDep, parent: str | None = None):
+    """后台懒加载地区:无 parent → 省;有 parent → 下级。"""
+    from app.services import region_service
+    return make_ok([RegionItem(**r) for r in await region_service.list_children(db, parent)])
+
+
+@router.post("/regions", response_model=BaseResponse[RegionItem])
+async def create_region_admin(body: RegionIn, db: DbDep, admin: AdminDep):
+    """新增一个地区(省/市/区县/乡镇)。code 须唯一、上级须存在。"""
+    from app.services import region_service
+    r = await region_service.create_region(
+        db, code=body.code.strip(), name=body.name.strip(),
+        parent_code=body.parent_code, level=body.level)
+    await db.commit()
+    return make_ok(RegionItem(code=r.code, name=r.name, parent_code=r.parent_code, level=r.level, leaf=True))
+
+
+@router.put("/regions/{code}", response_model=BaseResponse[RegionItem])
+async def update_region_admin(code: str, body: RegionRename, db: DbDep, admin: AdminDep):
+    """改地区名称。"""
+    from app.services import region_service
+    r = await region_service.update_region(db, code=code, name=body.name.strip())
+    await db.commit()
+    return make_ok(RegionItem(code=r.code, name=r.name, parent_code=r.parent_code, level=r.level, leaf=True))
+
+
+@router.delete("/regions/{code}", response_model=BaseResponse[dict])
+async def delete_region_admin(code: str, db: DbDep, admin: AdminDep):
+    """删地区(有下级则拒绝,先删下级)。"""
+    from app.services import region_service
+    await region_service.delete_region(db, code=code)
+    await db.commit()
+    return make_ok({"deleted": code})
 
 
 # ─── 知识节点资源管理（R6 资源层补全）────────────────────────────────────────────
