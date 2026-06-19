@@ -10,6 +10,7 @@ Dev 模式（deepseek_api_key 以 'sk-placeholder' 开头）跳过真实 API，�
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from app.core.exceptions import AppError
@@ -62,6 +63,167 @@ _USER_PROMPT_TEMPLATE = """以下是从一整张英语试卷图片中识别到�
 def _normalize_type(raw: object) -> str:
     """归一化题型到 ai_question_type_enum 合法值，非法值兜底为 单选。"""
     return raw if raw in _VALID_TYPES else "单选"
+
+
+# ─── 确定性结构拆题（文字版 docx/PDF）──────────────────────────────────────────
+# 文字版试卷文本已干净，无需过大模型「重写」（会臆造答案、错判题型、丢题/重排）。
+# 这里按卷面结构如实切：大题标题定题型 → 题号在大题内切题（题号按卷面循环）→
+# 题干/选项逐字保留 → 完形/阅读短文挂到题组 → 嵌入空（信息还原/选词填空）按下划线
+# 题号合成 → 答案一律留空（原卷无答案）。
+
+_SECTION_RE = re.compile(r"^[一二三四五六七八九十]+、")
+_QNUM_RE = re.compile(r"^\s*(\d{1,2})(?:[.、．)]|\s)")
+_BLANK_NUM_RE = re.compile(r"_{2,}\s*(\d{1,2})\s*_{2,}")
+_OPTION_RE = re.compile(r"^[A-GＡ-Ｇ]\s*[.、．)]")
+_CIRCLE_RE = re.compile(r"^[①②③④⑤⑥⑦⑧⑨⑩]")
+_GROUP_BREAK_RE = re.compile(r"^第[一二三四五六七八九十]+[节部]")
+_INSTRUCTION_HINTS = (
+    "答题卡", "满分", "选出最佳", "请认真", "请先通读", "将所译", "根据下列",
+    "从方框中", "从短文后", "写在答题卡", "每小题", "每空", "仅用一次", "听两遍",
+    "选择适当", "第一部分", "第二部分", "第一节", "第二节", "将下列句子译成英语",
+)
+
+
+def _is_instruction(s: str) -> bool:
+    return any(h in s for h in _INSTRUCTION_HINTS)
+
+
+def _is_option_like(s: str) -> bool:
+    if _OPTION_RE.match(s) or _CIRCLE_RE.match(s) or s.startswith("—"):
+        return True
+    head = s.split("\t", 1)[0].strip() if "\t" in s else ""
+    return bool(head and _OPTION_RE.match(head))
+
+
+def _classify_kw(blob: str) -> str | None:
+    if "完形" in blob or "完型" in blob:
+        return "完型"
+    if "单项" in blob or "听力" in blob:
+        return "单选"
+    if "完成句子" in blob:
+        return "填空"
+    if "拼写" in blob or "单词" in blob:
+        return "填空"
+    if "书面表达" in blob or "作文" in blob:
+        return "写作"
+    if "信息还原" in blob or "阅读" in blob:  # 阅读理解 / 阅读表达 / 信息还原
+        return "阅读"
+    return None
+
+
+def _section_type(header: str, lines: list[str]) -> str:
+    """优先用大题标题判题型；标题无关键词（如「八、（满分6分）」）再补扫前几行正文。"""
+    if t := _classify_kw(header):
+        return t
+    blob = header
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        if _QNUM_RE.match(s):
+            break
+        blob += " " + s
+        if t := _classify_kw(blob):
+            return t
+    return "单选"
+
+
+def _split_one_section(qtype: str, lines: list[str], sec_text: str,
+                       out: list[ParsedPaperQuestion]) -> None:
+    cur_passage: list[str] = []
+    mode = "passage"          # 'passage' | 'questions'
+    cur_q: dict | None = None
+    last_no = 0
+    loose: list[str] = []     # 未挂到题号的选项框（信息还原 A-G / 选词框）
+    questions: list[dict] = []
+
+    def flush_q() -> None:
+        nonlocal cur_q
+        if cur_q:
+            questions.append(cur_q)
+            cur_q = None
+
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        if _GROUP_BREAK_RE.match(s):     # 第一节/第二节 → 断开上一题组并重置短文
+            flush_q()
+            cur_passage, mode = [], "passage"
+            continue
+        if _is_instruction(s):
+            continue
+        m = _QNUM_RE.match(s)
+        if m and int(m.group(1)) > last_no:          # 新题号（大题内单调递增）
+            flush_q()
+            last_no = int(m.group(1))
+            cur_q = {"no": m.group(1), "stem": [s],
+                     "passage": "\n".join(cur_passage).strip(), "has_opt": False}
+            mode = "questions"
+        elif _is_option_like(s) or ("____" in s and cur_q is not None):
+            if cur_q is not None:                    # 选项 / 完成句子下划线模板 → 并入本题
+                cur_q["stem"].append(s)
+                if _is_option_like(s):
+                    cur_q["has_opt"] = True
+            else:
+                loose.append(s)
+            mode = "questions"
+        elif cur_q is not None and not cur_q["has_opt"]:
+            cur_q["stem"].append(s)                  # 选项前的嵌入材料（如 Noticeboard 阅读框）
+        elif mode == "questions":
+            flush_q()                                # 题组已完，散文 = 下一题组短文
+            cur_passage, mode = [s], "passage"
+        else:
+            cur_passage.append(s)
+    flush_q()
+
+    # 嵌入空题（信息还原 ____33____ / 选词填空 ____43____）：无独立题号行，按下划线题号合成
+    blank_nums = sorted({int(x) for x in _BLANK_NUM_RE.findall(sec_text)})
+    existing = {int(q["no"]) for q in questions}
+    missing = [n for n in blank_nums if n not in existing]
+    bank = "\n".join(loose).strip()
+    embed_passage = "\n".join(cur_passage).strip()
+
+    rows: list[tuple[int, str]] = []
+    for q in questions:
+        stem = (q["passage"] + "\n\n" if q["passage"] else "") + "\n".join(q["stem"])
+        rows.append((int(q["no"]), stem.strip()))
+    for n in missing:
+        stem = "\n".join(p for p in (embed_passage, bank) if p).strip()
+        rows.append((n, stem))
+
+    rows.sort(key=lambda r: r[0])
+    for no, stem in rows:
+        if stem:
+            out.append(ParsedPaperQuestion(
+                question_no=str(no), question_type=qtype, stem=stem,
+                student_answer=None, correct_answer=None, explanation=None,
+            ))
+
+
+def split_paper_text_structural(text: str) -> list[ParsedPaperQuestion]:
+    """文字版试卷 → 确定性结构拆题。识别不到大题/题号时返回 []（由调用方决定兜底）。"""
+    lines = (text or "").splitlines()
+    sections: list[list[str]] = []
+    cur: list[str] = []
+    for ln in lines:
+        if _SECTION_RE.match(ln.strip()):
+            if cur:
+                sections.append(cur)
+            cur = [ln]
+        else:
+            cur.append(ln)
+    if cur:
+        sections.append(cur)
+
+    out: list[ParsedPaperQuestion] = []
+    for sec in sections:
+        header = sec[0].strip()
+        if not _SECTION_RE.match(header):
+            continue  # 卷首标题段
+        qtype = _section_type(header, sec[1:])
+        _split_one_section(qtype, sec[1:], "\n".join(sec), out)
+    return out
 
 
 def _dev_mock_split(ocr: OcrResult) -> list[ParsedPaperQuestion]:

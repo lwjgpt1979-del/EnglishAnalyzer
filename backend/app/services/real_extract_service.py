@@ -59,7 +59,9 @@ async def _build_ocr(source: str, file_id: str | None, image_urls: list[str] | N
 
 
 async def _run_extract(job_id: uuid.UUID) -> None:
-    from app.services.paper_split_service import split_paper_questions
+    from app.services.paper_split_service import (
+        split_paper_questions, split_paper_text_structural,
+    )
     try:
         async with _async_session_factory() as s:
             job = await s.get(RealExtractJob, job_id)
@@ -74,7 +76,13 @@ async def _run_extract(job_id: uuid.UUID) -> None:
                 ocr = await _build_ocr(source, file_id, image_urls)
                 if not (ocr.printed_text or "").strip():
                     raise RuntimeError("未提取到文本(扫描版 PDF 请改用图片上传走 OCR)")
-                rows = await split_paper_questions(ocr)
+                # 文字版 docx/PDF:确定性结构拆题(忠实卷面、不臆造答案);
+                # 拆不出(非标准卷式)再兜底走 LLM。图片走 OCR + LLM 拆题。
+                rows = []
+                if source in ("docx", "pdf"):
+                    rows = split_paper_text_structural(ocr.printed_text or "")
+                if not rows:
+                    rows = await split_paper_questions(ocr)
                 parsed = [{
                     "question_no": r.question_no, "question_type": r.question_type,
                     "stem": r.stem, "answer": r.correct_answer, "explanation": r.explanation,

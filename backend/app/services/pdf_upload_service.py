@@ -55,9 +55,17 @@ def save_upload_docx(file_bytes: bytes) -> str:
 
 
 def extract_docx_text(file_id: str) -> str:
-    """提取 .docx 全文（段落 + 表格单元格，按阅读顺序）。需要 python-docx。"""
+    """提取 .docx 全文，**按文档真实顺序**交错段落与表格。需要 python-docx。
+
+    关键：python-docx 的 doc.paragraphs / doc.tables 会把所有表格甩到段落之后，
+    导致卷中内联的阅读框（如 Noticeboard）、选词框与其题目脱节。这里改为遍历
+    body 子节点，按出现次序还原，保证拆题时材料挂回正确的题。
+    """
     try:
         from docx import Document
+        from docx.oxml.ns import qn
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("python-docx 未安装，请 pip install python-docx") from exc
 
@@ -66,12 +74,17 @@ def extract_docx_text(file_id: str) -> str:
         raise FileNotFoundError(f"DOCX not found: {file_id}")
 
     doc = Document(str(path))
-    parts: list[str] = [p.text for p in doc.paragraphs if p.text.strip()]
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [c.text.strip() for c in row.cells if c.text.strip()]
-            if cells:
-                parts.append("\t".join(cells))
+    parts: list[str] = []
+    for child in doc.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            text = Paragraph(child, doc).text
+            if text.strip():
+                parts.append(text)
+        elif child.tag == qn("w:tbl"):
+            for row in Table(child, doc).rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    parts.append("\t".join(cells))
     return "\n".join(parts).strip()
 
 
