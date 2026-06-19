@@ -785,7 +785,7 @@ async def import_real_questions_bulk_api(body: RealQuestionBulkIn, db: DbDep, ad
                 res = await pqs.import_real_question(
                     db, stem=it.stem, answer=it.answer, options=it.options,
                     question_type=it.question_type, explanation=it.explanation,
-                    difficulty=it.difficulty, meta=it.meta, kp_names=it.kp_names,
+                    difficulty=it.difficulty, meta=(it.meta or body.meta), kp_names=it.kp_names,
                     stage_hint=it.stage_hint or body.stage_hint,
                     question_no=it.question_no, status=body.status or it.status)
             items.append(RealImportItemOut(

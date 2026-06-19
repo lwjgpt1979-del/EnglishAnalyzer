@@ -112,8 +112,9 @@ class RealQuestionIn(BaseModel):
 
 class RealQuestionBulkIn(BaseModel):
     items: list[RealQuestionIn] = Field(..., min_length=1)
-    stage_hint: str | None = None
+    stage_hint: str | None = None          # 学段(小/初/高)→ 助 KP 匹配,批次统一
     status: str | None = None              # 覆盖每题 status(可空)
+    meta: dict | None = None               # 批次考试元信息(教材/学段/年级/学期/地区),并入每题
 
 
 class RealImportItemOut(BaseModel):

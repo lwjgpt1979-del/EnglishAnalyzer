@@ -1008,9 +1008,9 @@ export function getExtractJob(jobId: string): Promise<RealExtractJob> {
 export function bulkImportRealQuestions(
   items: Array<{ stem: string; options?: unknown; answer?: string | null; question_type?: string | null
     explanation?: string | null; difficulty?: number | null; question_no?: string | null; kp_names?: string[] }>,
-  status?: string,
+  opts?: { status?: string; stage_hint?: string; meta?: Record<string, unknown> },
 ): Promise<{ imported: number; failed: number }> {
-  return unwrap(request.post('/admin/platform-questions/bulk', { items, status }))
+  return unwrap(request.post('/admin/platform-questions/bulk', { items, ...opts }))
 }
 
 export function genSimFromReal(realId: string, count = 3): Promise<{ generated: number; sim_ids: string[] }> {

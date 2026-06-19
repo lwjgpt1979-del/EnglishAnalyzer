@@ -46,8 +46,22 @@ async function onReview(row: PlatformQuestion, approve: boolean) {
 }
 
 // ── 上传抽题向导 ──
+const VERSIONS = ['译林版', '人教版', '外研版', '北师大版']
+const STAGES = ['小', '初', '高']          // 学段(对接 stage_hint:小/初/高)
+const STAGE_LABEL: Record<string, string> = { 小: '小学', 初: '初中', 高: '高中' }
+const GRADES: Record<string, string[]> = {
+  小: ['三年级', '四年级', '五年级', '六年级'],
+  初: ['七年级', '八年级', '九年级'],
+  高: ['高一', '高二', '高三'],
+}
 const dlg = ref(false)
 const step = ref(0)                 // 0=选源, 1=抽题中, 2=校对
+// 批次元信息:教材+学段 必选;年级/学期/地区 选填
+const metaTextbook = ref('译林版')
+const metaStage = ref('初')
+const metaGrade = ref('')
+const metaSemester = ref('')
+const metaRegion = ref('')
 const pickedFile = ref<File | null>(null)
 const imageUrlsText = ref('')
 const extracting = ref(false)
@@ -65,13 +79,23 @@ function stopPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null
 function openDlg() {
   stopPoll()
   step.value = 0; pickedFile.value = null; imageUrlsText.value = ''
+  metaGrade.value = ''; metaSemester.value = ''; metaRegion.value = ''
   extracting.value = false; importing.value = false; editRows.value = []
   dlg.value = true
+}
+
+function batchMeta(): Record<string, unknown> {
+  const m: Record<string, unknown> = { textbook_version: metaTextbook.value, stage: metaStage.value }
+  if (metaGrade.value) m.grade = metaGrade.value
+  if (metaSemester.value) m.semester = metaSemester.value
+  if (metaRegion.value.trim()) m.region = metaRegion.value.trim()
+  return m
 }
 
 function onFileChange(f: any) { pickedFile.value = f.raw as File }
 
 async function startExtract() {
+  if (!metaTextbook.value || !metaStage.value) { ElMessage.warning('请先选教材版本和学段'); return }
   const urls = imageUrlsText.value.split('\n').map(s => s.trim()).filter(Boolean)
   if (!pickedFile.value && !urls.length) { ElMessage.warning('请选 PDF 或填图片 URL'); return }
   extracting.value = true; step.value = 1
@@ -106,7 +130,9 @@ async function doImport() {
   if (!items.length) { ElMessage.warning('没有可导入的题'); return }
   importing.value = true
   try {
-    const r = await bulkImportRealQuestions(items, 'published')
+    const r = await bulkImportRealQuestions(items, {
+      status: 'published', stage_hint: metaStage.value, meta: batchMeta(),
+    })
     ElMessage.success(`导入 ${r.imported} 题${r.failed ? `,失败 ${r.failed}` : ''}`)
     dlg.value = false
     await load()
@@ -158,8 +184,33 @@ onMounted(load)
     <el-dialog v-model="dlg" title="上传真题 → 抽题 → 校对导入" width="900px" @close="stopPoll" :close-on-click-modal="false">
       <!-- 选源 -->
       <div v-if="step === 0">
+        <el-form :inline="true" label-width="72px" style="margin-bottom:10px">
+          <el-form-item label="教材版本" required>
+            <el-select v-model="metaTextbook" style="width:140px">
+              <el-option v-for="v in VERSIONS" :key="v" :label="v" :value="v" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="学段" required>
+            <el-select v-model="metaStage" style="width:100px" @change="metaGrade = ''">
+              <el-option v-for="s in STAGES" :key="s" :label="STAGE_LABEL[s]" :value="s" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="年级">
+            <el-select v-model="metaGrade" clearable placeholder="选填" style="width:120px">
+              <el-option v-for="g in GRADES[metaStage]" :key="g" :label="g" :value="g" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="上下册">
+            <el-select v-model="metaSemester" clearable placeholder="选填" style="width:100px">
+              <el-option label="上册" value="上" /><el-option label="下册" value="下" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="地区">
+            <el-input v-model="metaRegion" placeholder="选填,如 江苏南京" style="width:140px" />
+          </el-form-item>
+        </el-form>
         <el-alert type="info" :closable="false" style="margin-bottom:12px"
-          title="文本版 PDF 直接取字;扫描版/图片请填图片 URL(走 OCR)。Word 暂不支持。" />
+          title="教材+学段必选(挂知识节点/匹配);年级/上下册/地区选填存档。文本版 PDF 直接取字;扫描版/图片填 URL 走 OCR;Word 暂不支持。" />
         <el-upload drag :auto-upload="false" :limit="1" :on-change="onFileChange" accept=".pdf">
           <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
           <div class="el-upload__text">拖入或点击选择 <b>真题 PDF</b>(文本版)</div>
