@@ -104,6 +104,36 @@ class UpdateNodeIn(BaseModel):
     description: str | None = None
 
 
+# ── 受控知识树(E1)──
+class NodeTreeItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    axis: str
+    node_kind: str | None = None
+    status: str
+    code: str
+    children: list["NodeTreeItem"] = []
+
+
+class NodeTreeOut(BaseModel):
+    items: list[NodeTreeItem]
+
+
+NodeTreeItem.model_rebuild()
+
+
+class CreateNodeIn(BaseModel):
+    name: str
+    parent_id: uuid.UUID | None = None
+    axis: str | None = None
+    node_kind: str | None = None
+    applicable_stages: list[str] | None = None
+
+
+class MoveNodeIn(BaseModel):
+    parent_id: uuid.UUID | None = None
+
+
 class KpNodeListOut(BaseModel):
     total: int
     items: list[KpNodeItem]

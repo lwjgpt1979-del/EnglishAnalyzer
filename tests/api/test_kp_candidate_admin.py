@@ -78,6 +78,49 @@ async def _cleanup():
 
 
 @pytest.mark.asyncio
+async def test_knowledge_tree_build_create_move(client):
+    """E1:建顶层/子节点 + 树嵌套 + 移动 + 防环/防跨轴。"""
+    admin = await _make_admin(client, "tree")
+    try:
+        async def _create(name, parent_id=None, axis=None):
+            body = {"name": f"{_TAG}{name}"}
+            if parent_id: body["parent_id"] = parent_id
+            if axis: body["axis"] = axis
+            r = await client.post("/api/v1/admin/knowledge-nodes", headers=admin, json=body)
+            assert r.status_code == 200, r.text
+            return r.json()["data"]["id"]
+
+        top = await _create("顶", axis="knowledge")
+        mid = await _create("中", parent_id=top)
+        leaf = await _create("叶", parent_id=mid)
+        # 无 parent 又无 axis → 400
+        r = await client.post("/api/v1/admin/knowledge-nodes", headers=admin, json={"name": f"{_TAG}孤"})
+        assert r.status_code == 400
+
+        # 树:顶 → 中 → 叶
+        r = await client.get("/api/v1/admin/knowledge-nodes/tree?axis=knowledge", headers=admin)
+        roots = r.json()["data"]["items"]
+        node_top = next(n for n in roots if n["id"] == top)
+        assert node_top["children"][0]["id"] == mid
+        assert node_top["children"][0]["children"][0]["id"] == leaf
+
+        # 防环:把"顶"挂到"叶"下 → 400
+        r = await client.post(f"/api/v1/admin/knowledge-nodes/{top}/move", headers=admin, json={"parent_id": leaf})
+        assert r.status_code == 400
+
+        # 跨轴:建一个 ability 顶层,把"叶"挂过去 → 400
+        ab = await _create("能力顶", axis="ability")
+        r = await client.post(f"/api/v1/admin/knowledge-nodes/{leaf}/move", headers=admin, json={"parent_id": ab})
+        assert r.status_code == 400
+
+        # 合法移动:把"叶"升为顶层(parent_id=null)
+        r = await client.post(f"/api/v1/admin/knowledge-nodes/{leaf}/move", headers=admin, json={"parent_id": None})
+        assert r.status_code == 200 and r.json()["data"]["parent_id"] is None
+    finally:
+        await _cleanup()
+
+
+@pytest.mark.asyncio
 async def test_knowledge_node_detail_update_retire(client):
     """D2:节点详情 + 改信息 + 停用/恢复。"""
     node_id = await _seed_node(f"{_TAG}详情点")

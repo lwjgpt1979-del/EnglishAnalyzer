@@ -5,8 +5,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listKnowledgeNodes, getKnowledgeNode, updateKnowledgeNode,
   retireKnowledgeNode, restoreKnowledgeNode,
+  getNodeTree, createKnowledgeNode, moveKnowledgeNode,
 } from '../api/admin'
-import type { KpNodeOverviewItem, KpNodeDetail } from '../types'
+import type { KpNodeOverviewItem, KpNodeDetail, NodeTreeItem } from '../types'
 
 const router = useRouter()
 const DIMS = ['listening', 'vocabulary', 'grammar', 'reading', 'translation', 'writing']
@@ -52,6 +53,54 @@ async function load() {
 }
 function reload() { page.value = 1; load() }
 
+// ── 树视图(E1)──
+const viewMode = ref<'tree' | 'list'>('tree')
+const treeAxis = ref('knowledge')
+const TREE_AXES = [{ label: '知识', value: 'knowledge' }, { label: '能力', value: 'ability' }, { label: '考点', value: 'exam' }]
+const treeData = ref<NodeTreeItem[]>([])
+const treeLoading = ref(false)
+const treeProps = { label: 'name', children: 'children' }
+
+async function loadTree() {
+  treeLoading.value = true
+  try { treeData.value = (await getNodeTree(treeAxis.value)).items }
+  catch (e: any) { ElMessage.error(e?.message || '加载树失败') }
+  finally { treeLoading.value = false }
+}
+function switchView(m: 'tree' | 'list') {
+  viewMode.value = m
+  if (m === 'tree') loadTree(); else load()
+}
+async function addChild(parent: NodeTreeItem | null) {
+  const { value } = await ElMessageBox.prompt(
+    parent ? `在「${parent.name}」下新增子节点` : `新增${TREE_AXES.find(a=>a.value===treeAxis.value)?.label}顶层节点`,
+    '新增节点', { inputPattern: /\S/, inputErrorMessage: '名称不能为空' })
+  try {
+    await createKnowledgeNode({ name: value.trim(),
+      parent_id: parent ? parent.id : null, axis: parent ? undefined : treeAxis.value })
+    ElMessage.success('已新增')
+    await loadTree()
+  } catch (e: any) { ElMessage.error(e?.message || '新增失败') }
+}
+async function retireTreeNode(node: NodeTreeItem) {
+  await ElMessageBox.confirm(`停用「${node.name}」?(子节点不受影响,可恢复)`, '停用', { type: 'warning' })
+  try { await retireKnowledgeNode(node.id); ElMessage.success('已停用'); await loadTree() }
+  catch (e: any) { ElMessage.error(e?.message || '停用失败') }
+}
+// 拖拽移动:drop 到节点内部=成为其子;前后=成为其兄弟(同父)
+function allowDrop(_drag: any, drop: any, type: string) {
+  return type === 'inner' || drop.level >= 1
+}
+async function onNodeDrop(dragNode: any, dropNode: any, dropType: string) {
+  const newParentId = dropType === 'inner' ? dropNode.data.id
+    : (dropNode.parent && dropNode.parent.data.id ? dropNode.parent.data.id : null)
+  try {
+    await moveKnowledgeNode(dragNode.data.id, newParentId)
+    ElMessage.success('已移动')
+    await loadTree()
+  } catch (e: any) { ElMessage.error(e?.message || '移动失败'); await loadTree() }
+}
+
 // ── 节点详情 + 维护(D2)──
 const detailOpen = ref(false)
 const detailLoading = ref(false)
@@ -84,7 +133,7 @@ async function saveEdit() {
       name: edit.value.name.trim(), node_kind: edit.value.node_kind || null,
       applicable_stages: edit.value.applicable_stages, description: edit.value.description || null })
     ElMessage.success('已保存')
-    await load()
+    await (viewMode.value === 'tree' ? loadTree() : load())
   } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
   finally { detailBusy.value = false }
 }
@@ -99,7 +148,7 @@ async function toggleStatus() {
     const r = retire ? await retireKnowledgeNode(detail.value.id) : await restoreKnowledgeNode(detail.value.id)
     detail.value.status = r.status
     ElMessage.success(retire ? '已停用' : '已恢复')
-    await load()
+    await (viewMode.value === 'tree' ? loadTree() : load())
   } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
   finally { detailBusy.value = false }
 }
@@ -109,11 +158,48 @@ function goSupplement() {
   else ElMessage.info('该节点暂未挂到任何单元,无法定位补全页')
 }
 
-onMounted(load)
+onMounted(loadTree)
 </script>
 
 <template>
   <div>
+    <div class="toolbar">
+      <el-radio-group v-model="viewMode" @change="switchView($event as any)">
+        <el-radio-button value="tree">🌳 树视图</el-radio-button>
+        <el-radio-button value="list">列表</el-radio-button>
+      </el-radio-group>
+      <span class="hint" style="margin-left:12px">受控知识树:后台定结构,教材/真题生成只能映射到树上既有节点。</span>
+    </div>
+
+    <!-- 树视图 -->
+    <div v-if="viewMode === 'tree'">
+      <div class="toolbar">
+        <span>轴：</span>
+        <el-select v-model="treeAxis" style="width:110px" @change="loadTree">
+          <el-option v-for="a in TREE_AXES" :key="a.value" :label="a.label" :value="a.value" />
+        </el-select>
+        <el-button type="primary" style="margin-left:12px" @click="addChild(null)">+ 新增顶层</el-button>
+        <el-button @click="loadTree">刷新</el-button>
+        <span class="hint">拖拽可移动/调整层级(放到节点内=成为其子)。点名称看详情/改信息。</span>
+      </div>
+      <el-tree v-loading="treeLoading" :data="treeData" :props="treeProps" node-key="id"
+        draggable :allow-drop="allowDrop" @node-drop="onNodeDrop"
+        :expand-on-click-node="false" default-expand-all style="max-width:900px">
+        <template #default="{ data }">
+          <span class="tnode">
+            <el-link type="primary" @click.stop="openDetail(data.id)">{{ data.name }}</el-link>
+            <span class="tmeta" v-if="data.node_kind">{{ data.node_kind }}</span>
+            <span class="tops">
+              <el-button link size="small" type="primary" @click.stop="addChild(data)">+ 子节点</el-button>
+              <el-button link size="small" type="danger" @click.stop="retireTreeNode(data)">停用</el-button>
+            </span>
+          </span>
+        </template>
+      </el-tree>
+    </div>
+
+    <!-- 列表视图 -->
+    <div v-else>
     <div class="toolbar">
       <span>轴：</span>
       <el-select v-model="axis" style="width:110px" @change="reload">
@@ -170,6 +256,7 @@ onMounted(load)
       <el-pagination layout="total, prev, pager, next" :total="total" :page-size="pageSize"
         v-model:current-page="page" @current-change="load" />
     </div>
+    </div><!-- /列表视图 -->
 
     <!-- 节点详情 + 维护抽屉 -->
     <el-drawer v-model="detailOpen" :title="detail ? detail.name : '节点详情'" size="50%" direction="rtl">
@@ -249,6 +336,10 @@ onMounted(load)
 .hint { margin-left: 16px; color: #909399; font-size: 12px; }
 .pager { margin-top: 16px; display: flex; justify-content: flex-end; }
 .muted { color: #c0c4cc; font-size: 12px; }
+.tnode { display: flex; align-items: center; gap: 10px; flex: 1; padding-right: 8px; }
+.tmeta { font-size: 11px; color: #909399; background: #f4f4f5; padding: 0 6px; border-radius: 3px; }
+.tops { margin-left: auto; visibility: hidden; }
+.tnode:hover .tops { visibility: visible; }
 .d-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .d-code { font-family: monospace; font-size: 12px; color: #909399; }
 .d-src { font-size: 12px; color: #909399; }

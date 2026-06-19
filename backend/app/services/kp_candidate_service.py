@@ -155,6 +155,72 @@ async def list_nodes_overview(
     return items, total
 
 
+async def node_tree(db: AsyncSession, *, axis: str | None = None) -> list[dict]:
+    """受控知识树(E1):按 parent_id 组装嵌套(排除已停用)。"""
+    stmt = sa.select(KnowledgeNode).where(KnowledgeNode.status != "retired")
+    if axis:
+        stmt = stmt.where(KnowledgeNode.axis == axis)
+    rows = (await db.execute(stmt.order_by(KnowledgeNode.sort_order, KnowledgeNode.name))).scalars().all()
+    nodes = {r.id: {"id": r.id, "name": r.name, "axis": r.axis, "node_kind": r.node_kind,
+                    "status": r.status, "code": r.code, "parent_id": r.parent_id, "children": []}
+             for r in rows}
+    roots: list[dict] = []
+    for r in rows:
+        item = nodes[r.id]
+        parent = nodes.get(r.parent_id) if r.parent_id else None
+        (parent["children"] if parent else roots).append(item)
+    return roots
+
+
+async def create_node(
+    db: AsyncSession, *, name: str, parent_id: uuid.UUID | None = None, axis: str | None = None,
+    node_kind: str | None = None, applicable_stages: list[str] | None = None,
+) -> KnowledgeNode:
+    """在树上手建节点:有 parent 则继承其轴;否则需显式 axis。"""
+    if not name.strip():
+        raise AppError(code=400, message="名称不能为空")
+    if parent_id is not None:
+        parent = await db.get(KnowledgeNode, parent_id)
+        if parent is None:
+            raise AppError(code=404, message="父节点不存在")
+        axis = parent.axis
+    elif axis not in ("knowledge", "ability", "exam"):
+        raise AppError(code=400, message="顶层节点需指定 axis(knowledge/ability/exam)")
+    nid = uuid.uuid4()
+    node = KnowledgeNode(
+        id=nid, axis=axis, node_kind=node_kind or None, name=name.strip(),
+        code=f"m-{uuid.uuid4().hex[:10]}", applicable_stages=applicable_stages or None,
+        status="active", source="manual", parent_id=parent_id)
+    db.add(node)
+    db.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=name.strip(),
+                     alias_norm=normalize_kp_name(name), source="manual"))
+    await db.flush()
+    return node
+
+
+async def set_parent(db: AsyncSession, *, node_id: uuid.UUID, parent_id: uuid.UUID | None) -> KnowledgeNode:
+    """移动节点(改 parent)。禁跨轴、禁成环。parent_id=None 升为顶层。"""
+    node = await db.get(KnowledgeNode, node_id)
+    if node is None:
+        raise AppError(code=404, message="节点不存在")
+    if parent_id is not None:
+        if parent_id == node_id:
+            raise AppError(code=400, message="不能挂到自身")
+        parent = await db.get(KnowledgeNode, parent_id)
+        if parent is None:
+            raise AppError(code=404, message="父节点不存在")
+        if parent.axis != node.axis:
+            raise AppError(code=400, message="不能跨轴移动")
+        cur = parent                                  # 防环:目标不能是自己的后代
+        while cur is not None:
+            if cur.id == node_id:
+                raise AppError(code=400, message="不能挂到自己的子孙下(成环)")
+            cur = await db.get(KnowledgeNode, cur.parent_id) if cur.parent_id else None
+    node.parent_id = parent_id
+    await db.flush()
+    return node
+
+
 async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
     """节点详情(D2):基础字段 + 别名 + 引用单元 + 引用真题 + 六维完整度 + 学生掌握分布。"""
     from app.models.d4_knowledge import CurriculumUnit

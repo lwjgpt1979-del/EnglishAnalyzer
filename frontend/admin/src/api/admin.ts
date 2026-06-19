@@ -28,6 +28,7 @@ import type {
   VersionItem,
   KpNodeOverviewOut,
   KpNodeDetail,
+  NodeTreeItem,
   LSAdminItem,
   LSExtractResult,
   LSConfig,
@@ -348,6 +349,19 @@ export function listKnowledgeNodes(params: {
 }): Promise<KpNodeOverviewOut> {
   return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params }))
 }
+// 受控知识树(E1)
+export function getNodeTree(axis?: string): Promise<{ items: NodeTreeItem[] }> {
+  return unwrap(request.get('/admin/knowledge-nodes/tree', { params: axis ? { axis } : {} }))
+}
+export function createKnowledgeNode(body: {
+  name: string; parent_id?: string | null; axis?: string; node_kind?: string | null
+}): Promise<{ id: string; code: string; name: string }> {
+  return unwrap(request.post('/admin/knowledge-nodes', body))
+}
+export function moveKnowledgeNode(id: string, parentId: string | null): Promise<{ id: string; parent_id: string | null }> {
+  return unwrap(request.post(`/admin/knowledge-nodes/${id}/move`, { parent_id: parentId }))
+}
+
 // 节点详情 / 维护(D2)
 export function getKnowledgeNode(id: string): Promise<KpNodeDetail> {
   return unwrap<KpNodeDetail>(request.get(`/admin/knowledge-nodes/${id}`))

@@ -53,6 +53,10 @@ from app.schemas.kp import (
     KpNodeOverviewOut,
     KpNodeDetailOut,
     UpdateNodeIn,
+    NodeTreeItem,
+    NodeTreeOut,
+    CreateNodeIn,
+    MoveNodeIn,
     MergeCandidateRequest,
     RejectCandidateRequest,
     UnitExtractOut,
@@ -321,6 +325,31 @@ async def knowledge_nodes_overview_api(
     items, total = await kp_candidate_service.list_nodes_overview(
         db, axis=axis, stage=stage, status=status or None, q=q, skip=skip, limit=limit)
     return make_ok(KpNodeOverviewOut(total=total, items=[KpNodeOverviewItem(**it) for it in items]))
+
+
+@router.get("/knowledge-nodes/tree", response_model=BaseResponse[NodeTreeOut])
+async def knowledge_node_tree_api(db: DbDep, admin: AdminDep, axis: str | None = None):
+    """受控知识树(E1):按 parent_id 组装的嵌套结构(排除停用)。"""
+    items = await kp_candidate_service.node_tree(db, axis=axis)
+    return make_ok(NodeTreeOut(items=[NodeTreeItem(**it) for it in items]))
+
+
+@router.post("/knowledge-nodes", response_model=BaseResponse[dict])
+async def create_knowledge_node_api(body: CreateNodeIn, db: DbDep, admin: AdminDep):
+    """在树上手建节点(有 parent 继承轴;否则需 axis)。"""
+    n = await kp_candidate_service.create_node(
+        db, name=body.name, parent_id=body.parent_id, axis=body.axis,
+        node_kind=body.node_kind, applicable_stages=body.applicable_stages)
+    await db.commit()
+    return make_ok({"id": str(n.id), "code": n.code, "name": n.name})
+
+
+@router.post("/knowledge-nodes/{node_id}/move", response_model=BaseResponse[dict])
+async def move_knowledge_node_api(node_id: uuid.UUID, body: MoveNodeIn, db: DbDep, admin: AdminDep):
+    """移动节点(改 parent;parent_id 省略=升为顶层)。禁跨轴/成环。"""
+    n = await kp_candidate_service.set_parent(db, node_id=node_id, parent_id=body.parent_id)
+    await db.commit()
+    return make_ok({"id": str(n.id), "parent_id": str(n.parent_id) if n.parent_id else None})
 
 
 @router.get("/knowledge-nodes/{node_id}", response_model=BaseResponse[KpNodeDetailOut])

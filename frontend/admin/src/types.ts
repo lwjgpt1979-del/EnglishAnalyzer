@@ -239,6 +239,17 @@ export interface KpNodeOverviewItem {
 }
 export interface KpNodeOverviewOut { total: number; items: KpNodeOverviewItem[] }
 
+// 受控知识树(E1)
+export interface NodeTreeItem {
+  id: string
+  name: string
+  axis: string
+  node_kind?: string | null
+  status: string
+  code: string
+  children: NodeTreeItem[]
+}
+
 // 节点详情(D2)
 export interface NodeDimCell2 { id: string; status: string }
 export interface NodeUnitRef { unit_id: string; unit_title: string; textbook_version: string; grade: string; semester: string }
