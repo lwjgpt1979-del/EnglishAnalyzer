@@ -1001,6 +1001,156 @@ in / with / by / on 表示手段或工具:
 
 名词性从句包括主语从句、宾语从句、表语从句和同位语从句,其从属连接词常有 that, if, whether 等。
 - e.g. I don't know whether you like flowers.""",
+
+    # ── 句法 · 句子种类 · 陈述句 ──
+    "jf-1-1-1": """## 句子分类
+
+1. 按使用目的和交际功能可分为陈述句、疑问句、祈使句和感叹句。
+2. 按照结构可分为简单句、并列复合句和主从复合句。""",
+
+    "jf-1-1-2": """## 陈述句的肯定形式
+
+1. 主语 + 实义动词 + 其他。e.g. The sun rises in the east.
+2. 主语 + 系动词 + 其他。e.g. These are his books.
+3. 主语 + 助动词 + 动词原形 / 分词 + 其他。e.g. We will know the result tomorrow.;The rain has already stopped.
+4. 主语 + 情态动词 + 动词原形 + 其他。e.g. She can speak English well.""",
+
+    "jf-1-1-3": """## 陈述句的否定形式
+
+1. 主语 + 系动词 / 助动词 / 情态动词 + not + 其他。e.g. These aren't his books.
+2. 用否定代词或副词进行否定。e.g. He never tells a lie.""",
+
+    "jf-1-1-4": """## 含否定前后缀词的句子的否定
+
+含否定前后缀的词不视作否定词,不改变陈述句本身的肯定。e.g. Lucy is careless.
+
+常见否定前后缀:dis-(dislike 不喜欢;disagree 不同意);un-(unhappy 不开心;unimportant 不重要);-less(hopeless 没有希望的;useless 无用的)""",
+
+    "jf-1-1-5": """## 宾语从句的否定转移
+
+主句谓语动词是 think, believe, suppose, expect 等,且主句主语是第一人称的一般现在时时,从句的否定一般要转移到主句。
+- e.g. I don't think you are right. 我认为你不对。""",
+
+    "jf-1-1-6": """## 全部否定、部分否定与半否定
+
+1. **全部否定**:具有完全否定意义的词,如 no、none(没有一个)、nobody(没有人)、nothing(没有什么)、never(从不)、neither(两者都不)、without(没有)等。e.g. Neither of us likes this kind of food.
+2. **部分否定**:具有总括含义的代词、限定词或副词,如 all, both, every, always 等与 not 连用。e.g. Not all birds can fly.
+3. **半否定**:具有半否定意义的词,如 hardly(几乎不)、seldom(很少)、little(几乎不)、few(几乎没有)等。e.g. He hardly watches TV.""",
+
+    "jf-1-1-7": """## 肯定句和否定句的转换
+
+1. 含系动词 / 助动词 / 情态动词的句子变否定,直接在其后加 not。e.g. She is a teacher. → She isn't a teacher.;He can play football. → He can't play football.
+2. 含实义动词的句子变否定,借助 do / does / did,在助动词后加 not,实义动词变原形。e.g. He got up early yesterday. → He didn't get up early yesterday.
+3. 其他需一同变否定的词:some→any;both→neither;many→much / little;and→or;all→none;already→yet""",
+
+    # ── 句法 · 句子种类 · 疑问句 ──
+    "jf-1-2-1": """## 疑问句的分类
+
+疑问句可分四类:一般疑问句、特殊疑问句、选择疑问句和反意疑问句。""",
+
+    "jf-1-2-2": """## 一般疑问句
+
+1. **功能**:询问某种事情或情况是否属实,表示"是否"或"是不是"。
+2. **结构**:① be 动词 + 主语 + 表语 + 其他?e.g. Is he a student?;② 情态动词 + 主语 + 动词原形 + 其他?e.g. Can you speak Chinese?;③ 助动词 + 主语 + 动词原形 + 其他?e.g. Does she go to school on foot?
+3. **回答**:肯定 Yes, 主语 + be / 情态 / 助动词;否定 No, 主语 + be / 情态 / 助动词 + not。e.g. Yes, she does.;No, she doesn't.""",
+
+    "jf-1-2-3": """## 特殊疑问句
+
+1. **功能**:由特殊疑问词引导,就句中某一特殊情况进行提问。
+2. **结构**:特殊疑问词 + be / 情态 / 助动词 + 主语 + 谓语 + 其他?e.g. Where are you from?
+3. **特殊疑问词**:疑问代词 what, who, whom, whose, which;疑问副词 where, when, why, how。
+4. **how 的特殊疑问词组**:how old(多大,问年龄);how often(多久一次,问频率);how far(多远,问距离);how many(多少,问数量,可数);how much(多少 / 多少钱,问数量不可数 / 价格);how long(多长 / 多久,问长度 / 时间段);how soon(多久之后,回答 in + 一段时间)。""",
+
+    "jf-1-2-4": """## 特殊疑问词 what 的句式搭配
+
+1. 问日期 / 星期:What date is it today? = What's the date today?;What day is it today?
+2. 问天气:What's the weather like today? = How's the weather today?
+3. 问人口:What's the population of ...?
+4. 问意见:What do you think of ...? = How do you like ...?""",
+
+    "jf-1-2-5": """## 选择疑问句
+
+1. **功能**:提供两个或多个选项,供对方选择。e.g. Which would you like better, juice or milk?
+2. **回答**:一般不用 Yes、No。e.g. — Do you like juice or milk? — I like milk. / Milk.""",
+
+    "jf-1-2-6": """## 反意疑问句
+
+1. **功能**:说话人根据某种看法或情况,向对方证实情况而提出。
+2. **结构**:① 肯定陈述句 + 否定简略疑问句(前肯后否)。e.g. It's hot today, isn't it?;② 否定陈述句 + 肯定简略疑问句(前否后肯)。e.g. You don't like oranges, do you?
+3. **回答**:无论陈述句肯定还是否定,根据实际情况回答:实际肯定用"Yes + 肯定结构",实际否定用"No + 否定结构"。e.g. — The sun doesn't rise in the east, does it? — Yes, it does. / No, it doesn't.""",
+
+    # ── 句法 · 句子种类 · 祈使句 ──
+    "jf-1-3-1": """## 祈使句的含义
+
+祈使句用来表达命令、请求、劝告、禁止等。
+- e.g. Go and wash your hands.(命令);Be quiet, please.(请求);Be kind to your sister.(劝告)""",
+
+    "jf-1-3-2": """## 祈使句的句式特点
+
+1. 主语第二人称 you 通常省略。e.g. Open the door, please.
+2. 通常以动词原形开头,动词不带时态和数的变化。e.g. Listen to me carefully.;注意:为加强语气可在句首或句尾加 please,加在句尾时其前要用逗号。
+3. 句末用句号或感叹号。e.g. Please don't be noisy!""",
+
+    "jf-1-3-3": """## 祈使句的肯定形式
+
+| 句式 | 示例 |
+| --- | --- |
+| do 型:动词原形 + (其他) | Close the window. 关上窗户。Run! 跑! |
+| be 型:Be + 形容词 + (其他) | Be careful. 小心。Be a good boy. |
+| let 型:Let + 宾语 + 动词原形 + (其他) | Let's go. 我们走吧。Let her go. |""",
+
+    "jf-1-3-4": """## 祈使句的否定形式
+
+| 句式 | 示例 |
+| --- | --- |
+| do 型:Don't + 动词原形 + (其他) | Don't be late. 不要迟到。 |
+| let 型 | Don't let her go.;Let her not go. |
+| never 型 | Never do that again. |
+| 名词型:No + 名词 / 动名词 | No photos. 禁止拍照。No smoking. 禁止吸烟。 |
+
+注:"No + 名词 / 动名词"结构表示"禁止……",一般用于指示、标牌、布告等。""",
+
+    "jf-1-3-5": """## 祈使句的反意疑问句
+
+1. 肯定祈使句:① 一般用 will you 或 won't you。e.g. Listen to me carefully, will / won't you?;② 以 let's 开头的用 shall we。e.g. Let's go shopping, shall we?
+2. 以 let us / me 开头的用 will you。e.g. Let me help you, will you?
+3. 否定祈使句用肯定式 will you。e.g. Don't be late, will you?""",
+
+    # ── 句法 · 句子种类 · 感叹句 ──
+    "jf-1-4-1": """## 感叹句的含义
+
+感叹句是用来表达喜、怒、哀、乐等强烈感情的句子,句末用感叹号,朗读时用降调。""",
+
+    "jf-1-4-2": """## 感叹句的分类
+
+1. **what 型**:what 在句中作定语,修饰名词。e.g. What delicious food it is!
+2. **how 型**:how 在句中作状语,修饰形容词、副词或动词。e.g. How cold it is today!
+3. **陈述句型**:通常含有 so, such 等表示强烈感情的词。e.g. They are so happy!
+4. **单词 / 短语感叹句**。e.g. Great!;Good job!""",
+
+    "jf-1-4-3": """## what 型感叹句结构
+
+1. What + a / an + 形容词 + 可数名词单数 + (主语 + 谓语)!e.g. What a clever boy he is!
+2. What + 形容词 + 可数名词复数 + (主语 + 谓语)!e.g. What beautiful flowers they are!
+3. What + 形容词 + 不可数名词 + (主语 + 谓语)!e.g. What sweet water it is!""",
+
+    "jf-1-4-4": """## how 型感叹句结构
+
+1. How + 形容词 / 副词 + (主语 + 谓语)!e.g. How fast she runs!
+2. How + 形容词 / 副词 + a / an + 可数名词单数 + (主语 + 谓语)!e.g. How useful a book it is!
+3. How + 主语 + 谓语!e.g. How time flies!
+4. How + many / much / few / little + 名词 + (主语 + 谓语)!e.g. How many books he has!""",
+
+    "jf-1-4-5": """## 感叹句中引导词的选择
+
+1. 一找:找句子中的主语和谓语。
+2. 二划:划掉句子中的主谓及其后内容。
+3. 三判:看剩余部分——剩余为"a / an + 形容词 + 可数名词单数"或"形容词 + 可数名词复数",用 what;剩余为"形容词 + a / an + 可数名词单数"、"形容词"或"many / much / few / little + 名词",用 how。""",
+
+    "jf-1-4-6": """## 感叹句的句型转换
+
+1. what 型与 how 型同义互换:What + a / an + 形容词 + 可数名词单数 + (主语 + 谓语)! = How + 形容词 + a / an + 可数名词单数 + (主语 + 谓语)!e.g. What a clever boy he is! = How clever a boy he is!
+2. 陈述句与感叹句转换:① 一找:找陈述句中要感叹的部分;② 二选:要感叹的是名词用 what,是形容词或副词用 how。e.g. The room is big. → What a big room (it is)! / How big the room is!""",
 }
 
 
