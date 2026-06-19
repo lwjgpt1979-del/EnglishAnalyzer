@@ -7,6 +7,7 @@ import {
   genSimFromReal, reviewPlatformQuestion,
   type PlatformQuestion,
 } from '../api/admin'
+import { PROVINCES, CITIES_BY_PROVINCE, getProvinceName, getCityName } from '../data/cities'
 
 // ── 列表 ──
 const typeFilter = ref('')          // ''=全部, real, sim
@@ -57,11 +58,19 @@ const GRADES: Record<string, string[]> = {
 const dlg = ref(false)
 const step = ref(0)                 // 0=选源, 1=抽题中, 2=校对
 // 批次元信息:教材+学段 必选;年级/学期/地区 选填
+const EXAM_TYPES = [{ label: '普通(无)', value: '' }, { label: '中考', value: '中考' }, { label: '高考', value: '高考' }]
 const metaTextbook = ref('译林版')
 const metaStage = ref('初')
 const metaGrade = ref('')
 const metaSemester = ref('')
-const metaRegion = ref('')
+const metaExamType = ref('')
+const metaProvince = ref('')        // 省 code(与学生端 city_code 同源)
+const metaCity = ref('')            // 市 code(4位)
+const cityOpts = ref<{ code: string; name: string }[]>([])
+function onProvinceChange() {
+  metaCity.value = ''
+  cityOpts.value = CITIES_BY_PROVINCE[metaProvince.value] || []
+}
 const pickedFile = ref<File | null>(null)
 const imageUrlsText = ref('')
 const extracting = ref(false)
@@ -79,7 +88,8 @@ function stopPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null
 function openDlg() {
   stopPoll()
   step.value = 0; pickedFile.value = null; imageUrlsText.value = ''
-  metaGrade.value = ''; metaSemester.value = ''; metaRegion.value = ''
+  metaGrade.value = ''; metaSemester.value = ''; metaExamType.value = ''
+  metaProvince.value = ''; metaCity.value = ''; cityOpts.value = []
   extracting.value = false; importing.value = false; editRows.value = []
   dlg.value = true
 }
@@ -88,7 +98,12 @@ function batchMeta(): Record<string, unknown> {
   const m: Record<string, unknown> = { textbook_version: metaTextbook.value, stage: metaStage.value }
   if (metaGrade.value) m.grade = metaGrade.value
   if (metaSemester.value) m.semester = metaSemester.value
-  if (metaRegion.value.trim()) m.region = metaRegion.value.trim()
+  if (metaExamType.value) m.exam_type = metaExamType.value
+  if (metaProvince.value) { m.province_code = metaProvince.value; m.region_name = getProvinceName(metaProvince.value) }
+  if (metaCity.value) {     // 与学生端 city_code 同源 → 中考可按地区匹配
+    m.city_code = metaCity.value
+    m.region_name = `${getProvinceName(metaProvince.value)}${getCityName(metaCity.value)}`
+  }
   return m
 }
 
@@ -205,8 +220,20 @@ onMounted(load)
               <el-option label="上册" value="上" /><el-option label="下册" value="下" />
             </el-select>
           </el-form-item>
-          <el-form-item label="地区">
-            <el-input v-model="metaRegion" placeholder="选填,如 江苏南京" style="width:140px" />
+          <el-form-item label="考试类型">
+            <el-select v-model="metaExamType" style="width:120px">
+              <el-option v-for="e in EXAM_TYPES" :key="e.value" :label="e.label" :value="e.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="地区(省)">
+            <el-select v-model="metaProvince" clearable filterable placeholder="选填" style="width:140px" @change="onProvinceChange">
+              <el-option v-for="p in PROVINCES" :key="p.code" :label="p.name" :value="p.code" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="地区(市)">
+            <el-select v-model="metaCity" clearable filterable :disabled="!metaProvince" placeholder="中考按市" style="width:140px">
+              <el-option v-for="c in cityOpts" :key="c.code" :label="c.name" :value="c.code" />
+            </el-select>
           </el-form-item>
         </el-form>
         <el-alert type="info" :closable="false" style="margin-bottom:12px"
