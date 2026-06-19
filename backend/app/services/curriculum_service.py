@@ -34,40 +34,25 @@ from app.services import semester_service
 
 # ─── Persist ────────────────────────────────────────────────────────────────
 
-async def _get_or_create_node(
-    db: AsyncSession, *, name: str, code: str | None,
-    description: str | None, stages: list[str] | None,
-) -> uuid.UUID | None:
-    """R8.4:教材是知识点的权威来源 → 生成时按名 get-or-create **active** 知识 node + 别名。
-
-    已有同名(归一化)别名 → 复用其 node;否则新建 active node(source=textbook)。
-    取代旧"建 knowledge_points + match_kp/落候选"链:教材直接定义 node,内容直挂 node。
-    """
-    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
-    from app.services.kp_normalize import normalize_kp_name
-    norm = normalize_kp_name(name)
-    if not norm:
-        return None
+async def _park_pending_content(
+    db: AsyncSession, *, norm: str, dimension: str, content_md: str, unit_id: uuid.UUID,
+) -> None:
+    """E2:未命中树上节点时,把该 KP 名某维讲解暂存(按 norm+dim 覆盖),
+    待人工把候选挂到树上后 _materialize_pending_content 物化为 node_resource。"""
+    from app.models.d11_v2_curriculum import PendingKpContent
     existing = (await db.execute(
-        select(NodeAlias.node_id).where(NodeAlias.alias_norm == norm)
+        select(PendingKpContent).where(
+            PendingKpContent.kp_name_norm == norm,
+            PendingKpContent.dimension == dimension)
     )).scalar_one_or_none()
     if existing is not None:
-        return existing
-    node_code = code or f"kp-{norm[:48]}"
-    if (await db.execute(
-        select(KnowledgeNode.id).where(KnowledgeNode.code == node_code)
-    )).scalar_one_or_none() is not None:
-        node_code = f"{node_code[:54]}-{uuid.uuid4().hex[:6]}"
-    nid = uuid.uuid4()
-    db.add(KnowledgeNode(
-        id=nid, axis="knowledge", node_kind=None, name=name, code=node_code,
-        applicable_stages=stages or None, status="active", source="textbook",
-        description=description,
-    ))
+        existing.content_md = content_md
+        existing.source_unit_id = unit_id
+    else:
+        db.add(PendingKpContent(
+            id=uuid.uuid4(), kp_name_norm=norm, dimension=dimension,
+            content_md=content_md, source_unit_id=unit_id, generated_by="ai_full"))
     await db.flush()
-    db.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=name, alias_norm=norm, source="textbook"))
-    await db.flush()
-    return nid
 
 
 async def persist_unit(
@@ -105,34 +90,39 @@ async def persist_unit(
     else:
         cu.unit_title = ai_unit.unit_title
 
-    # 2. 知识点 → R8.4 直接建/复用 active 知识 node + unit_node 边;讲解直写 node_resource。
-    #    不再建 knowledge_points / unit_knowledge_points(旧桥退役),内容 node-native、无 pending。
+    # 2. 知识点 → E2 受控映射:AI 知识点名 match_kp 到受控树上的既有节点。
+    #    命中 → 建 unit_node 边 + 版本化挂讲解;未命中 → 落候选(附 unit 来源)+ 暂存六维内容,
+    #    待人工把候选挂到树上后物化。**不再自建节点**(知识点骨架由后台受控树定义)。
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.models.d17_curriculum_kg import UnitNode
     from app.services import node_resource_service as nrs
-    from app.services.kp_normalize import stages_from_grades
+    from app.services import curriculum_kp_service as ckp
+    from app.services.kp_match_service import match_kp
+    from app.services.kp_normalize import stages_from_grades, normalize_kp_name
     stages = stages_from_grades([ai_unit.grade])
+    stage = stages[0] if stages else None
     for kp_in in ai_unit.knowledge_points:
-        node_id = await _get_or_create_node(
-            db, name=kp_in.name, code=kp_in.code,
-            description=kp_in.description, stages=stages,
-        )
-        if node_id is None:
+        if not kp_in.name or not kp_in.name.strip():
             continue
-        await db.execute(
-            pg_insert(UnitNode)
-            .values(unit_id=cu.id, node_id=node_id, source="ai_extract")
-            .on_conflict_do_nothing(index_elements=["unit_id", "node_id"])
-        )
-        for dim, md in kp_in.contents.items():
-            if dim not in nrs._DIMENSIONS:
-                continue  # node_resource lecture 仅六维;dictation 等非教学维跳过
-            # C1:走版本流——首铺按 content_status,覆盖已发布内容则产生待审新版(不覆盖线上)
-            await nrs.submit_lecture_version(
-                db, node_id=node_id, dimension=dim, content_md=md,
-                source="ai_full", status_if_new=content_status,
-                origin_ref={"flow": "generate"},
-            )
+        dims = [(d, md) for d, md in kp_in.contents.items() if d in nrs._DIMENSIONS]
+        r = await match_kp(
+            db, raw_name=kp_in.name, axis_hint="knowledge", stage_hint=stage,
+            source_type="textbook", source_ref={"unit_ids": [str(cu.id)]})
+        if r.node_id is not None:                       # 命中受控树节点 → 挂内容 + 建边
+            await db.execute(
+                pg_insert(UnitNode)
+                .values(unit_id=cu.id, node_id=r.node_id, source="ai_extract")
+                .on_conflict_do_nothing(index_elements=["unit_id", "node_id"]))
+            for dim, md in dims:
+                await nrs.submit_lecture_version(
+                    db, node_id=r.node_id, dimension=dim, content_md=md,
+                    source="ai_full", status_if_new=content_status,
+                    origin_ref={"flow": "generate", "unit_id": str(cu.id)})
+        elif r.candidate_id is not None:                # 未命中 → 候选 + 暂存内容,待人工挂树
+            await ckp._attach_unit_to_candidate(db, r.candidate_id, cu.id)
+            norm = normalize_kp_name(kp_in.name)
+            for dim, md in dims:
+                await _park_pending_content(db, norm=norm, dimension=dim, content_md=md, unit_id=cu.id)
 
     # 5. vocabulary_words + 6. curriculum_words
     for w_in in ai_unit.words:

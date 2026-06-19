@@ -54,6 +54,21 @@ async def _seed_unit(unit_no: int = 19) -> None:
             textbook_version="译林版", grade="小学5年级", semester="上",
             unit_no=unit_no,
         )
+        # E2:受控树先有这些知识点名(模拟后台已定义),persist 才能映射建边/挂内容
+        from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+        from app.services.kp_normalize import normalize_kp_name
+        from sqlalchemy import select as _select
+        for kp in ai.knowledge_points:
+            norm = normalize_kp_name(kp.name)
+            if (await s.execute(_select(NodeAlias.node_id)
+                                .where(NodeAlias.alias_norm == norm))).scalar_one_or_none() is not None:
+                continue
+            nid = uuid.uuid4()
+            s.add(KnowledgeNode(id=nid, axis="knowledge", name=kp.name,
+                                code=f"ttree-{uuid.uuid4().hex[:8]}", status="active", source="seed"))
+            await s.flush()
+            s.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=kp.name,
+                            alias_norm=norm, source="seed"))
         await curriculum_service.persist_unit(s, ai_unit=ai, content_status="published")
         await s.commit()
 

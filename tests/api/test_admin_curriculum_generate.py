@@ -53,6 +53,23 @@ async def seeded_unit_id(db: AsyncSession) -> str:
     db.add(unit)
     await db.flush()
     await db.commit()
+    # E2:受控树先有 unit18 mock 知识点名(模拟后台已定义),生成端点才能映射建边/挂内容
+    from app.services import curriculum_ai_service as _ais
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.services.kp_normalize import normalize_kp_name
+    from sqlalchemy import select as _select
+    ai = await _ais.generate_unit(textbook_version="译林版", grade="小学5年级", semester="上", unit_no=18)
+    for kp in ai.knowledge_points:
+        norm = normalize_kp_name(kp.name)
+        if (await db.execute(_select(NodeAlias.node_id)
+                             .where(NodeAlias.alias_norm == norm))).scalar_one_or_none() is not None:
+            continue
+        nid = uuid.uuid4()
+        db.add(KnowledgeNode(id=nid, axis="knowledge", name=kp.name,
+                             code=f"ttree-{uuid.uuid4().hex[:8]}", status="active", source="seed"))
+        await db.flush()
+        db.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=kp.name, alias_norm=norm, source="seed"))
+    await db.commit()
     return str(unit.id)
 
 
@@ -195,19 +212,15 @@ async def test_generate_from_pdf_async_job_isolates_failed_unit(admin_client: As
                 {"tb": tb})).scalars().all()
         assert list(unos) == [1, 3]
     finally:
+        # E2:生成只映射到受控树既有节点(共享),本测试不再自建 node。
+        # 故仅清本测试自身产物:单元边/词/暂存内容/单元/任务,不动 knowledge_nodes。
         async with _async_session_factory() as s:
             ids = (await s.execute(_t("SELECT id FROM curriculum_units WHERE textbook_version=:tb"),
                                    {"tb": tb})).scalars().all()
             for uid in ids:
-                nids = (await s.execute(_t("SELECT node_id FROM unit_node WHERE unit_id=:u"),
-                                        {"u": str(uid)})).scalars().all()
                 await s.execute(_t("DELETE FROM unit_node WHERE unit_id=:u"), {"u": str(uid)})
                 await s.execute(_t("DELETE FROM curriculum_words WHERE unit_id=:u"), {"u": str(uid)})
-                for nid in nids:   # R8.4:清掉本测试新建的 node 及其资源/别名
-                    await s.execute(_t("DELETE FROM node_resource WHERE node_id=:n"), {"n": str(nid)})
-                    await s.execute(_t("DELETE FROM vocab_node WHERE node_id=:n"), {"n": str(nid)})
-                    await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id=:n"), {"n": str(nid)})
-                    await s.execute(_t("DELETE FROM knowledge_nodes WHERE id=:n"), {"n": str(nid)})
+                await s.execute(_t("DELETE FROM pending_kp_content WHERE source_unit_id=:u"), {"u": str(uid)})
             await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
             await s.execute(_t("DELETE FROM curriculum_gen_job WHERE textbook_version=:tb"), {"tb": tb})
             await s.commit()

@@ -44,13 +44,21 @@ async def _make_admin(client, suffix):
 
 
 async def _seed():
-    node_id, pq_id = uuid.uuid4(), uuid.uuid4()
+    """E1 受控树已 seed「定语从句」→ 复用既有节点(不重复建);否则新建。"""
+    pq_id = uuid.uuid4()
+    norm = normalize_kp_name("定语从句")
     async with _async_session_factory() as db:
-        db.add(KnowledgeNode(id=node_id, axis="knowledge", node_kind="句法", name="定语从句",
-                             code=f"{_TAG}-n", status="active", source="seed"))
-        await db.flush()
-        db.add(NodeAlias(id=uuid.uuid4(), node_id=node_id, alias="定语从句",
-                         alias_norm=normalize_kp_name("定语从句"), source="seed"))
+        existing = (await db.execute(
+            select(NodeAlias.node_id).where(NodeAlias.alias_norm == norm))).scalar_one_or_none()
+        if existing is not None:
+            node_id = existing
+        else:
+            node_id = uuid.uuid4()
+            db.add(KnowledgeNode(id=node_id, axis="knowledge", node_kind="句法", name="定语从句",
+                                 code=f"{_TAG}-n", status="active", source="seed"))
+            await db.flush()
+            db.add(NodeAlias(id=uuid.uuid4(), node_id=node_id, alias="定语从句",
+                             alias_norm=norm, source="seed"))
         db.add(PlatformQuestion(id=pq_id, type="real", question_type="阅读", stem=LONG, status="published"))
         await db.commit()
     return node_id, pq_id
@@ -61,8 +69,9 @@ async def _cleanup(node_id, pq_id):
         await db.execute(text("DELETE FROM long_sentence_node WHERE node_id = :n"), {"n": str(node_id)})
         await db.execute(text("DELETE FROM long_sentence WHERE source_question_id = :q"), {"q": str(pq_id)})
         await db.execute(text("DELETE FROM platform_question WHERE id = :q"), {"q": str(pq_id)})
-        await db.execute(text("DELETE FROM knowledge_node_aliases WHERE alias_norm = :a"),
-                         {"a": normalize_kp_name("定语从句")})
+        # 仅清本测试可能新建的节点(code 带 _TAG);复用的受控树节点不动
+        await db.execute(text("DELETE FROM knowledge_node_aliases WHERE node_id IN "
+                              "(SELECT id FROM knowledge_nodes WHERE code LIKE :p)"), {"p": f"{_TAG}%"})
         await db.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_TAG}%"})
         await db.commit()
 

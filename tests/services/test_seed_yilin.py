@@ -23,6 +23,30 @@ async def db_session():
         await session.rollback()
 
 
+async def _seed_tree_for_units(db, unit_nos, *, textbook="译林版", grade="小学5年级"):
+    """E2:受控树先有 mock 各单元的知识点名,seed_grade 才能映射建边。
+    用 generate_unit 取 mock 名(确定性,仅依赖 unit_no),在本 session 建节点+别名。"""
+    import uuid
+    from app.services import curriculum_ai_service as ais
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.services.kp_normalize import normalize_kp_name
+    seen = set()
+    for uno in unit_nos:
+        ai = await ais.generate_unit(textbook_version=textbook, grade=grade, semester="上", unit_no=uno)
+        for kp in ai.knowledge_points:
+            norm = normalize_kp_name(kp.name)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            nid = uuid.uuid4()
+            db.add(KnowledgeNode(id=nid, axis="knowledge", name=kp.name,
+                                 code=f"ttree-{uuid.uuid4().hex[:8]}", status="active", source="seed"))
+            await db.flush()
+            db.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=kp.name,
+                             alias_norm=norm, source="seed"))
+            await db.flush()
+
+
 @pytest.mark.asyncio
 async def test_seed_grade_creates_units(db_session):
     """seed_grade 小学5年级 2单元/学期 → DB 里该年级单元数 >= 4。"""
@@ -47,9 +71,11 @@ async def test_seed_grade_creates_units(db_session):
 
 @pytest.mark.asyncio
 async def test_seed_grade_units_have_knowledge_points(db_session):
-    """每个种子单元下至少有 3 个知识点。"""
+    """E2:受控树有匹配节点时,每个种子单元映射出 >= 3 条 unit_node 边。"""
     from scripts.seed_yilin import seed_grade
 
+    # E2 前提:树先有 mock 单元(1,2)的知识点名
+    await _seed_tree_for_units(db_session, [1, 2])
     await seed_grade(
         db_session,
         textbook_version="译林版",

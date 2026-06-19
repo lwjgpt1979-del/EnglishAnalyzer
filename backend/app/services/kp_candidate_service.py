@@ -54,9 +54,10 @@ async def _materialize_pending_content(db, node_id: uuid.UUID, norm: str) -> int
     for r in rows:
         if r.dimension not in nrs._DIMENSIONS:
             continue
-        await nrs.upsert_lecture(
+        # 走 C1 版本流:挂到既有节点若已有发布内容,产生待审版本而非覆盖
+        await nrs.submit_lecture_version(
             db, node_id=node_id, dimension=r.dimension, content_md=r.content_md,
-            generated_by=r.generated_by or "ai_full", status="draft")
+            source=r.generated_by or "ai_full", status_if_new="draft")
         await db.delete(r)
         count += 1
     if count:

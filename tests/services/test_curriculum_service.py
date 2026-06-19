@@ -20,6 +20,32 @@ from app.schemas.curriculum import AIGeneratedUnit, AIKnowledgePointItem, AIWord
 from app.services import curriculum_ai_service, curriculum_service
 
 
+async def _seed_kp_nodes(db, names, *, axis="knowledge"):
+    """E2:为给定知识点名建受控树节点+别名(幂等)。模拟"后台已定义的树",
+    使 persist_unit 的 match_kp 能命中并挂内容。"""
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.services.kp_normalize import normalize_kp_name
+    ids = {}
+    for nm in names:
+        if not nm or not nm.strip():
+            continue
+        norm = normalize_kp_name(nm)
+        exists = (await db.execute(
+            select(NodeAlias.node_id).where(NodeAlias.alias_norm == norm))).scalar_one_or_none()
+        if exists is not None:
+            ids[nm] = exists
+            continue
+        nid = uuid.uuid4()
+        db.add(KnowledgeNode(id=nid, axis=axis, name=nm, code=f"ttree-{uuid.uuid4().hex[:8]}",
+                             status="active", source="seed"))
+        await db.flush()
+        db.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=nm,
+                         alias_norm=normalize_kp_name(nm), source="seed"))
+        await db.flush()
+        ids[nm] = nid
+    return ids
+
+
 def _make_unique_unit() -> AIGeneratedUnit:
     """构造一个 code 含唯一 nonce 的 mock 单元。
 
@@ -81,12 +107,10 @@ async def db_session():
 
 @pytest.mark.asyncio
 async def test_persist_unit_creates_all_6_tables(db_session):
-    """persist_unit 一次性写入 6 张表（针对本次单元 + 知识点的行）。
-
-    用 code 含唯一 nonce 的 mock 单元（见 _make_unique_unit），避免 dev-mock 固定
-    code 导致历史已提交数据污染 contents 计数。
-    """
+    """E2:受控树已有匹配节点时,persist_unit 映射上树——建 unit_node 边 + 挂六维讲解 + 词汇。"""
     ai = _make_unique_unit()
+    # E2 前提:受控树先有这些知识点(模拟后台已定义),persist 才能命中并挂内容
+    node_ids = await _seed_kp_nodes(db_session, [kp.name for kp in ai.knowledge_points])
 
     cu = await curriculum_service.persist_unit(db_session, ai_unit=ai)
     await db_session.flush()
@@ -97,31 +121,55 @@ async def test_persist_unit_creates_all_6_tables(db_session):
     )).scalar_one()
     assert cu_found.unit_title == ai.unit_title
 
-    # 2/3. R8.4:persist 直接建 unit_node 边 + active 知识 node(不再建 knowledge_points/unit_knowledge_points)
-    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    # 2. unit_node 边挂到受控树节点(每个 KP 一条)
     from app.models.d17_curriculum_kg import UnitNode
-    from app.services.kp_normalize import normalize_kp_name
+    from app.models.d19_node_resource import NodeResource
     edges = (await db_session.execute(
         select(UnitNode).where(UnitNode.unit_id == cu.id)
     )).scalars().all()
-    assert len(edges) >= len(ai.knowledge_points)
+    assert len(edges) == len(ai.knowledge_points)
+    assert {e.node_id for e in edges} == set(node_ids.values())
 
-    norms = [normalize_kp_name(kp.name) for kp in ai.knowledge_points]
-    nodes = (await db_session.execute(
-        select(KnowledgeNode).join(NodeAlias, NodeAlias.node_id == KnowledgeNode.id)
-        .where(NodeAlias.alias_norm.in_(norms))
+    # 3. 六维讲解挂到这些节点(KP 数 × 6)
+    lec = (await db_session.execute(
+        select(NodeResource).where(
+            NodeResource.node_id.in_(list(node_ids.values())),
+            NodeResource.resource_type == "lecture")
     )).scalars().all()
-    assert len(nodes) >= len(ai.knowledge_points)
-    assert all(str(n.status) == "active" and str(n.source) == "textbook" for n in nodes)
-
-    # 4. 讲解内容已 node-native:专项覆盖见
-    #    tests/api/test_curriculum.py::test_persist_unit_writes_node_resource_lectures_draft。
+    assert len(lec) == len(ai.knowledge_points) * 6
 
     # 5/6. curriculum_words ↔ vocabulary_words（>= 同理）
     cw = (await db_session.execute(
         select(CurriculumWord).where(CurriculumWord.unit_id == cu.id)
     )).scalars().all()
     assert len(cw) >= len(ai.words)
+
+
+@pytest.mark.asyncio
+async def test_persist_unit_unmatched_parks_pending(db_session):
+    """E2:树上无匹配节点时,persist_unit 不自建节点——落候选 + 六维内容暂存,无 unit_node 边。"""
+    from app.models.d11_v2_curriculum import PendingKpContent
+    from app.models.d15_knowledge_graph import KpCandidate
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.services.kp_normalize import normalize_kp_name
+    ai = _make_unique_unit()                      # KP 名不在树上 → 全部未命中
+    norms = [normalize_kp_name(kp.name) for kp in ai.knowledge_points]
+
+    cu = await curriculum_service.persist_unit(db_session, ai_unit=ai)
+    await db_session.flush()
+
+    # 无 unit_node 边(未自建节点)
+    edges = (await db_session.execute(
+        select(UnitNode).where(UnitNode.unit_id == cu.id))).scalars().all()
+    assert len(edges) == 0
+    # 六维内容暂存 pending(KP 数 × 6)
+    pend = (await db_session.execute(
+        select(PendingKpContent).where(PendingKpContent.kp_name_norm.in_(norms)))).scalars().all()
+    assert len(pend) == len(ai.knowledge_points) * 6
+    # 候选已建(供人工挂到树上)
+    cand = (await db_session.execute(
+        select(KpCandidate).where(KpCandidate.name_norm.in_(norms)))).scalars().all()
+    assert len(cand) >= len(ai.knowledge_points)
 
 
 @pytest.mark.asyncio

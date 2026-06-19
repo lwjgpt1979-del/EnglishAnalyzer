@@ -28,20 +28,29 @@ async def db():
 
 @pytest_asyncio.fixture
 async def seed_node():
-    """预置句法 node「定语从句」+ 别名,供 match_kp 挂边。"""
-    nid = uuid.uuid4()
+    """预置句法 node「定语从句」+ 别名,供 match_kp 挂边。
+
+    E1 受控树已 seed「定语从句」→ 已存在则复用(不重复建、teardown 不删该共享节点)。"""
+    norm = normalize_kp_name("定语从句")
     async with _async_session_factory() as s:
-        s.add(KnowledgeNode(id=nid, axis="knowledge", node_kind="句法", name="定语从句",
-                            code=f"{_TAG}-n", status="active", source="seed"))
-        await s.flush()
-        s.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias="定语从句",
-                        alias_norm=normalize_kp_name("定语从句"), source="seed"))
-        await s.commit()
+        existing = (await s.execute(
+            select(NodeAlias.node_id).where(NodeAlias.alias_norm == norm))).scalar_one_or_none()
+        if existing is not None:
+            nid, owned = existing, False
+        else:
+            nid, owned = uuid.uuid4(), True
+            s.add(KnowledgeNode(id=nid, axis="knowledge", node_kind="句法", name="定语从句",
+                                code=f"{_TAG}-n", status="active", source="seed"))
+            await s.flush()
+            s.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias="定语从句",
+                            alias_norm=norm, source="seed"))
+            await s.commit()
     yield nid
     async with _async_session_factory() as s:
         await s.execute(text("DELETE FROM long_sentence_node WHERE node_id = :n"), {"n": str(nid)})
-        await s.execute(text("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(nid)})
-        await s.execute(text("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(nid)})
+        if owned:   # 仅清本测试新建的节点;复用的受控树节点保留
+            await s.execute(text("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(nid)})
+            await s.execute(text("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(nid)})
         await s.commit()
 
 
