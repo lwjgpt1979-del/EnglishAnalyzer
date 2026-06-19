@@ -674,6 +674,146 @@ need 和 dare 既可作情态动词又可作实义动词。
 
 - e.g. She need come here.(情态动词);She needs to come here.(实义动词)
 - e.g. I dare not go home alone.(情态动词);My brother dares (to) travel by himself.(实义动词)""",
+
+    # ── 词法 · 形容词和副词 · 形容词 ──
+    "cf-5-1-1": """## 形容词的定义及构成
+
+**定义**:用来描述或修饰名词和代词,说明人或事物的性质、特征或属性。
+
+**常见形容词词缀**:-able(valuable 宝贵的);-al(personal 个人的);-ish(childish 幼稚的);-ive(active 积极的);-ful(useful 有用的);-ous(dangerous 危险的);-ly(lovely 可爱的);-y(fussy 大惊小怪的)
+
+**常见复合形容词构成**:名词 + 现在分词(time-consuming 费时的);名词 + 过去分词(hand-made 手工制作的);形容词 + 名词(duty-free 免税的;high-speed 高速的);形容词 + 现在分词(good-looking 漂亮的);副词 + 过去分词(hard-working 勤劳的;well-known 众所周知的);数词 + 名词(two-piece 两件套的)""",
+
+    "cf-5-1-2": """## 形容词的句法功能
+
+1. 作定语:一般位于所修饰的词前。e.g. She has beautiful long curly hair.
+2. 作表语:位于系动词后。e.g. The food tastes very good.;We are very busy.
+3. 作补语:说明宾语或主语的性质、状态或特征。e.g. Keep the classroom clean, please.;He was found not guilty.
+4. 作状语:e.g. Hungry and tired, I had to stop to have a rest.(原因状语);The criminal hid himself in the corner, excited and nervous.(伴随状语)""",
+
+    "cf-5-1-3": """## 常考的形容词修饰名词的搭配
+
+| 含义 | 短语搭配 |
+| --- | --- |
+| 一场大雨 | a heavy rain |
+| 一场大雪 | a heavy snow |
+| 强大的风 | a strong wind |
+| 繁忙的交通 | the heavy traffic |
+| 价格高 / 低 | a high / low price |
+| 人口众多 | a large / small population |
+| 大量 / 少量 | a large / small number of |""",
+
+    "cf-5-1-4": """## -ing 和 -ed 结尾的形容词
+
+以 -ing 结尾的形容词,常用于修饰事物的性质或描述事物,意为"令人……的";以 -ed 结尾的形容词,常用于表达人的状态或感受,意为"(某人)感到……的"。
+- e.g. I think it is an interesting book.;She was bored with the long story.""",
+
+    "cf-5-1-5": """## 形容词的排列顺序
+
+多个形容词作定语时的先后顺序为:限定词→外观→大小→新旧→颜色→国家→材料。
+- e.g. those beautiful little old blue Chinese earthen vases""",
+
+    "cf-5-1-6": """## 形容词的特殊用法
+
+1. the + 形容词,指一类人,作主语时谓语动词用复数。e.g. The young often work hard.
+2. 有些形容词一般只能作表语,如 well, sorry,或以 a 开头的 afraid, alike, alive, alone, asleep, awake 等。e.g. The baby is asleep.;She feels sorry.
+3. enough 作为形容词放在名词前,作为副词放在形容词或副词之后。e.g. enough food 足够的食物;confident enough 足够自信""",
+
+    # ── 词法 · 形容词和副词 · 副词 ──
+    "cf-5-2-1": """## 副词的定义及构成
+
+**定义**:用来修饰动词、形容词、其他副词或者整个句子,表示时间、地点、程度或方式等概念。
+
+**常见构成(形容词变副词)**:一般情况加 -ly(slow—slowly, bad—badly);以辅音字母 + y 结尾,变 y 为 i 加 -ly(happy—happily, lucky—luckily);以 -le 结尾,去 e 加 -y(wide—widely, simple—simply, comfortable—comfortably);以 -ue 结尾,去 e 加 -ly(true—truly, due—duly);以 -ic 结尾,加 -ally(economic—economically);特殊变化(good—well)""",
+
+    "cf-5-2-2": """## 副词的句法功能
+
+1. 作状语:修饰动词、形容词、其他副词或整个句子。e.g. They welcomed us warmly.
+2. 作定语:表示方向、地点、动作等,常放在名词后。e.g. The meeting is on.;Her life abroad is colourful.
+3. 作补语:作主语补足语或宾语补足语。e.g. The boy was seen upstairs.""",
+
+    "cf-5-2-6": """## 同形的副词和形容词
+
+有些词形容词与副词同形,需根据在句中的作用判断词性。
+
+| 单词 | 形容词义 | 副词义 |
+| --- | --- | --- |
+| early | 早的 | 早地 |
+| hard | 坚硬的;艰难的 | 努力地 |
+| right | 正确的 | 正确地 |
+| loud | 大声的 | 大声地 |
+| deep | 深的 | 深地 |
+| fast | 快的 | 快地 |""",
+
+    "cf-5-2-3": """## 常见副词的分类
+
+| 分类 | 例词 |
+| --- | --- |
+| 时间副词 | recently, today, now, tomorrow |
+| 地点副词 | here, there, above, anywhere |
+| 方式副词 | fast, slowly, well, badly |
+| 程度副词 | much, very, quite, rather |
+| 连接副词 | however, then, therefore |
+| 疑问副词 | when, why, how |""",
+
+    "cf-5-2-4": """## 副词的位置
+
+1. 大部分副词作状语时,常位于被修饰动词后。e.g. He wrote a poem yesterday.
+2. 修饰形容词或副词时,位于被修饰词前。e.g. She walked terribly slowly.
+3. 修饰整个句子时,一般置于实义动词之前、助动词之后。e.g. I can hardly believe what he said.""",
+
+    "cf-5-2-5": """## 易混淆的形容词和副词
+
+1. **good / well**:good(形容词)意为"好的";well(形容词)意为"健康的",(副词)意为"好"。e.g. He is good in all things because he can do things well.
+2. **hard / hardly**:hard(形容词)意为"坚硬的;艰辛的",(副词)意为"努力地";hardly(副词)意为"几乎不"。e.g. He always works hard and hardly.
+3. **alone / lonely**:alone(形容词)意为"独自的",(副词)意为"独自地";lonely(形容词)意为"孤独的",强调内心感受。e.g. He lives alone but never feels lonely.
+4. **high / highly**:high(形容词)意为"高的",(副词)意为"高地";highly(副词)意为"高度地"。e.g. The mountain is very high.;He thinks highly of me.""",
+
+    # ── 词法 · 形容词和副词 · 形容词和副词的级 ──
+    "cf-5-3-2": """## 形容词和副词的原级句型
+
+1. 肯定:as + 原级 + as,意为"和……一样"。e.g. She is as confident as her best friend.
+2. 否定:not + as / so + 原级 + as,意为"不如……"。e.g. He doesn't run so fast as you.
+3. 同级比较结构的习惯用语:as long as 只要;as soon as 一……就……;as well as 既……又……;as good as 几乎,近乎;as far as 就……而言""",
+
+    "cf-5-3-3": """## 比较级与最高级的规则变化
+
+| 规则 | 原级 / 比较级 / 最高级 |
+| --- | --- |
+| 词尾加 -er / -est | small / smaller / smallest |
+| 以不发音 e 结尾,加 -r / -st | large / larger / largest |
+| 以重读闭音节(一辅音字母结尾),双写词尾辅音字母再加 -er / -est | big / bigger / biggest |
+| 以辅音字母 + y 结尾,变 y 为 i 加 -er / -est | happy / happier / happiest |
+| 多音节词加 more / most | popular / more popular / most popular |""",
+
+    "cf-5-3-4": """## 比较级与最高级的不规则变化
+
+| 原级 | 比较级 | 最高级 |
+| --- | --- | --- |
+| good / well | better | best |
+| bad / badly | worse | worst |
+| many / much | more | most |
+| old | older / elder | oldest / eldest |
+| far | farther / further | farthest / furthest |
+
+注意:① older / oldest 强调新旧和大小,elder / eldest 侧重长幼关系;② farther / farthest 用于描述地点或距离,further / furthest 侧重程度之深。""",
+
+    "cf-5-3-5": """## 形容词和副词的比较级句型
+
+1. 比较级 + than,意为"比……更……"。e.g. Tom is smarter than Jack.
+2. 比较级 + and + 比较级,意为"越来越……"。e.g. The weather is becoming warmer and warmer.
+3. the + 比较级, the + 比较级,意为"越……越……"。e.g. The more, the better.
+4. less + 原级 + than,意为"不如……"。e.g. He thinks English is less important than Chinese.
+5. 比较级 + than + any other + 单数名词,意为"比其他任何一个……更……"。e.g. He is taller than any other student in this class.
+6. much, still 等修饰比较级。e.g. The skirt is much more expensive than that one.""",
+
+    "cf-5-3-6": """## 形容词和副词的最高级句型
+
+1. the + 最高级 + 范围,意为"最……的"。e.g. He swims (the) farthest of all.
+2. one of the + 最高级 + 名词复数 + 范围,意为"最……之一"。e.g. He is one of the best actors in China.
+3. the + 序数词 + 最高级 + 名词 + 范围,意为"第几……"。e.g. This is the second longest river in the world.
+4. 形容词最高级前一般加定冠词 the,但前有名词性物主代词或 's 时不加。e.g. She is my best friend.;You are the youngest and tallest boy in the class.
+5. 一些固定用法中最高级前通常省略 the。e.g. Best wishes for you.""",
 }
 
 
