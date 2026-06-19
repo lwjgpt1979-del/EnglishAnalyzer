@@ -1151,6 +1151,342 @@ in / with / by / on 表示手段或工具:
 
 1. what 型与 how 型同义互换:What + a / an + 形容词 + 可数名词单数 + (主语 + 谓语)! = How + 形容词 + a / an + 可数名词单数 + (主语 + 谓语)!e.g. What a clever boy he is! = How clever a boy he is!
 2. 陈述句与感叹句转换:① 一找:找陈述句中要感叹的部分;② 二选:要感叹的是名词用 what,是形容词或副词用 how。e.g. The room is big. → What a big room (it is)! / How big the room is!""",
+
+    # ── 句法 · 句子结构 · 简单句的基本句型 ──
+    "jf-2-1-1": """## 句子成分
+
+1. **主语**:句子所叙述的主体,一般由名词、代词等充当,常位于句首、谓语动词之前。
+2. **谓语**:说明主语的行为或状态,一般由动词或动词短语充当。
+3. **宾语**:谓语动词的承受者或动作的对象,一般由名词、代词、动词不定式等充当。
+4. **表语**:说明主语的特征、状态、身份、类属等,一般由名词、形容词、动词不定式、介词短语、从句等充当,位于系动词后。
+5. **定语**:修饰或限制名词或代词,一般由形容词、名词、代词、动词不定式、介词短语、从句等充当。
+6. **状语**:修饰动词、形容词、副词或整个句子,一般由副词、介词短语等充当。
+7. **宾语补足语**:说明宾语的身份、动作、特征和状态,常位于宾语之后。
+8. **同位语**:解释或补充说明前面的名词或代词,常跟在其后。""",
+
+    "jf-2-1-2": """## 主谓结构(S + V)
+
+1. 句子结构:主语 + 不及物动词。e.g. The baby cried.
+2. 常见不及物动词:look 看, come 来, smile 微笑, listen 听, appear 出现, fly 飞, fail 失败, stand 站立, go 去, run 跑, work 工作, arrive 到达""",
+
+    "jf-2-1-3": """## 主谓宾结构(S + V + O)
+
+1. 句子结构:主语 + 及物动词 + 宾语。e.g. I like apples.
+2. 常见跟单宾语的及物动词:worry 担心, like 喜欢, find 发现, enjoy 享受, study 学习, use 使用, love 热爱, set 放""",
+
+    "jf-2-1-4": """## 主系表结构(S + LV + P)
+
+1. 句子结构:主语 + 系动词 + 表语。e.g. He looks sad.
+2. 常见系动词:be, remain 保持, feel 感觉, sound 听起来, seem 似乎, taste 尝起来, keep 保持, look 看起来, smell 闻起来, get 变得""",
+
+    "jf-2-1-5": """## 主谓双宾结构(S + V + IO + DO)
+
+1. 句子结构:主语 + 及物动词 + 间接宾语 + 直接宾语。e.g. She gave me sweets. = She gave sweets to me.
+2. 直接宾语为动作的直接对象,间接宾语为动作次要承受者,一般在直接宾语前,可加介词后向后移。
+3. 常见跟双宾语的动词:ask, answer, cost, wish;用 to 引导宾语后移(give, offer, tell, show);用 for 引导宾语后移(buy, choose, prepare, make)。""",
+
+    "jf-2-1-6": """## 主谓宾补结构(S + V + O + OC)
+
+1. 句子结构:主语 + 及物动词 + 宾语 + 宾语补足语。e.g. He made me angry.
+2. 常见宾语补足语:① 名词作宾补,表示宾语的类属、身份或职务。e.g. They named their son Tom.;② 形容词作宾补,表示谓语动词的结果或宾语的状态。e.g. I prefer my tea strong.;③ 分词作宾补,现在分词表示宾语是动作执行者,过去分词表示宾语是动作承受者。e.g. I felt the house shaking.;I want this done at once.""",
+
+    "jf-2-1-7": """## 双宾结构和宾补结构的区别
+
+双宾结构中,直接宾语和间接宾语之间不存在逻辑上的主谓关系;而宾语补足语和宾语构成逻辑上的主谓关系。""",
+
+    # ── 句法 · 句子结构 · there be 句型 ──
+    "jf-2-2-1": """## there be 句型的含义
+
+表示"某地有某物或某人"。
+- e.g. There is a tree in the park. 公园里有一棵树。""",
+
+    "jf-2-2-2": """## there be 句型的结构
+
+1. 肯定句:There + be + 主语 + (状语)。e.g. There are some books on the desk.
+2. 否定句:There + be + not / no + 主语 + (状语)。e.g. There aren't any books on the desk.
+3. 一般疑问句:Be + there + 主语 + (状语)?e.g. Are there any books on the desk?
+4. 特殊疑问句(对数量提问):How many / much + 名词 + be + there + (介词短语)?e.g. How many books are there on the desk?""",
+
+    "jf-2-2-3": """## there be 句型的主谓一致
+
+基本原则:there be 句型中只有一个主语时,be 动词与主语的单复数保持一致。
+1. 主语为可数名词单数或不可数名词时谓语用单数,主语为可数名词复数时谓语用复数。e.g. There is an apple / some paper on the table.;There are some apples on the table.
+2. 主语前有 a pair of, a series of 用单数;有 pairs of, kinds of 用复数。e.g. There is a pair of shoes on the table.
+3. 就近原则:有两个或以上主语时,be 动词与邻近主语保持一致。e.g. There is an apple and three oranges on the table.""",
+
+    "jf-2-2-4": """## there be 句型和 have / has 的区别
+
+两者都表示"有",但 there be 句型强调客观存在,have / has 强调主观所属。注意:不存在 there have 或 there has 结构。""",
+
+    "jf-2-2-5": """## there be 句型的时态
+
+1. 一般现在时:There is / are (not) + 主语 + (状语);Is / Are there + 主语 + (状语)?
+2. 一般过去时:There was / were (not) + 主语 + (状语);Was / Were there + 主语 + (状语)?
+3. 一般将来时:There will be + 主语 + (状语);There is going to be + 主语 + (状语);Will there be ...? / Is / Are there going to be ...?""",
+
+    "jf-2-2-6": """## there be 句型的反意疑问句
+
+1. 当陈述部分有 be 动词时,陈述句肯定则附加疑问用否定,反之用"be + there"。e.g. There are many trees, aren't there?;There aren't any trees, are there?
+2. 当陈述部分有情态动词或 will 时,肯定则用"won't + there"。e.g. There will be a football match tomorrow, won't there?""",
+
+    "jf-2-2-7": """## there used to be 的用法
+
+意为"(某地)曾经有……",强调曾经有过、而现在已经没有了。
+- e.g. There used to be 3 chickens in the cage two months ago.(现在已经没了)""",
+
+    # ── 句法 · 时态 · 一般现在时 ──
+    "jf-3-1-1": """## 一般现在时的定义
+
+1. 表示现在的情况或状态。e.g. I am twelve years old.
+2. 表示经常性、习惯性或反复发生的动作或状态。e.g. I usually go to school on foot.
+3. 表示客观真理、事实。e.g. The sun rises in the east.""",
+
+    "jf-3-1-2": """## 常与一般现在时连用的时间标志词
+
+always 总是;usually 通常;often 经常;sometimes 有时;seldom 很少;never 从不;on Mondays 在周一;on weekends 在周末;every day 每天;every week 每周;three times a year 一年三次""",
+
+    "jf-3-1-3": """## 含有实义动词的一般现在时构成
+
+1. 肯定句:主语 + 动词原形 / 动词第三人称单数 + 其他。e.g. She likes milk.
+2. 否定句:主语 + don't / doesn't + 动词原形 + 其他。e.g. She doesn't like milk.
+3. 一般疑问句:Do / Does + 主语 + 动词原形 + 其他?肯定 Yes, 主语 + do / does.;否定 No, 主语 + don't / doesn't.""",
+
+    "jf-3-1-4": """## 常见的第三人称单数主语
+
+| 类别 | 例词 |
+| --- | --- |
+| 人称代词单数 | he, she, it |
+| 代词类 | everyone, something, everything |
+| 指示代词 | this, that |
+| 可数名词单数 | a dog, my school, my friend |
+| 不可数名词 | water, bread, news |
+| 国名、地名、人名 | China, Beijing, Mike |""",
+
+    "jf-3-1-5": """## 实义动词的第三人称单数的变化规则
+
+1. 一般情况,直接在词尾加 -s。e.g. play—plays;run—runs
+2. 以 s, x, ch, sh 结尾的单词加 -es。e.g. teach—teaches
+3. 以"辅音字母 + y"结尾,变 y 为 i 再加 -es。e.g. study—studies;fly—flies
+4. 不规则变化:have—has""",
+
+    "jf-3-1-6": """## 只能用一般现在时的情况
+
+用在客观真理、科学事实、自然现象、节日日期、名言警句等时,要用一般现在时。
+- e.g. Light travels faster than sound.;Summer follows spring.;Children's Day is on June 1st.;Practice makes perfect.
+
+注意:在复合句中,当从句表示客观真理时,从句要用一般现在时。""",
+
+    "jf-3-1-7": """## 一般现在时表将来
+
+表示按照计划要发生的动作或事件,或预先安排好的动作。多用于非延续性动词,如 come, go, arrive, leave, start, begin, return 等。
+- e.g. The train starts at 7:30 a.m.""",
+
+    # ── 句法 · 时态 · 一般过去时 ──
+    "jf-3-2-1": """## 一般过去时的定义
+
+1. 表示过去某一特定时间或某一段过去发生的动作或状态。e.g. I went to Beijing last week.
+2. 表示过去一段时间经常或反复发生的动作或习惯。e.g. When I was a child, I often listened to music.""",
+
+    "jf-3-2-2": """## 常与一般过去时连用的标志词或句子
+
+yesterday 昨天;the day before yesterday 前天;last week 上周;last year 去年;three days ago 三天前;ten years ago 十年前;in 1991;when I was a child;just now 刚才;in the past 在过去;at that time 在那时""",
+
+    "jf-3-2-3": """## 一般过去时的结构
+
+**含 be 动词**:① 肯定 主语 + was / were + 其他。e.g. He was at home yesterday.;② 否定 主语 + was / were + not + 其他;③ 一般疑问 Was / Were + 主语 + 其他?
+
+**含实义动词**:① 肯定 主语 + 动词过去式 + 其他。e.g. I went to school yesterday.;② 否定 主语 + didn't + 动词原形 + 其他;③ 一般疑问 Did + 主语 + 动词原形 + 其他?(肯定 Yes, 主语 + did.;否定 No, 主语 + didn't.)""",
+
+    "jf-3-2-4": """## 动词过去式的变化规则
+
+**规则变化**:① 一般加 -ed(work—worked);② 以不发音 e 结尾去 e 加 -ed(live—lived);③ 重读闭音节单辅音字母结尾,双写再加 -ed(stop—stopped;plan—planned);④ "辅音字母 + y"结尾,改 y 为 i 再加 -ed。
+
+**不规则变化**:A—A 型(cost—cost;read—read;hurt—hurt);A—B 型(feel—felt;hear—heard;ride—rode;write—wrote;lose—lost;take—took;teach—taught;buy—bought;bring—brought)""",
+
+    "jf-3-2-5": """## 一般过去时的辨别方法
+
+1. 句中有表示一般过去时的时间标志词。e.g. I read this book last month.
+2. 以下语境用一般过去时:① 句中动词为一般过去式,描述过去的事情。e.g. He didn't do homework because he was ill.;② 句中含义为"昨/看/前/注意到"等。e.g. Will you please say it again? I didn't quite hear you.""",
+
+    "jf-3-2-6": """## used to do & be used to doing
+
+1. used to do sth. 意为"过去常常做某事",表示过去经常性的动作,现在不做了。e.g. I used to go swimming.
+2. be used to doing sth. 意为"习惯做某事",表示习惯性动作。e.g. I am used to teaching English.
+
+注意:be used to do sth. 表示被动,意为"被用来做某事"。e.g. Computers can be used to do many things.""",
+
+    # ── 句法 · 时态 · 一般将来时 ──
+    "jf-3-3-1": """## 一般将来时的定义
+
+1. 表示将来某个时间将要发生的动作或存在的状态。e.g. I will go to work next week.
+2. 表示在最近或将来计划、打算做某事。e.g. I am going to have a picnic tomorrow.""",
+
+    "jf-3-3-2": """## 常与一般将来时连用的标志词
+
+next week / month / year 下周 / 下个月 / 明年;tomorrow morning 明天早上;the day after tomorrow 后天;in 2066;in an hour 一小时后;in three days 三天后;in the future 在将来;later 稍后;soon 不久;some day 某天""",
+
+    "jf-3-3-3": """## 一般将来时的结构
+
+**will 型**:① 肯定 主语 + will + 动词原形 + 其他。e.g. She will come tomorrow.;② 否定 主语 + won't + 动词原形;③ 一般疑问 Will + 主语 + 动词原形 + 其他?
+
+**be going to 型**:① 肯定 主语 + am / is / are + going to + 动词原形 + 其他。e.g. He is going to watch TV.;② 否定 主语 + am / is / are + not + going to + 动词原形;③ 一般疑问 Am / Is / Are + 主语 + going to + 动词原形 + 其他?""",
+
+    "jf-3-3-4": """## there be 句型的一般将来时结构
+
+1. There will be + 其他。e.g. There will be an English contest next Monday.
+2. There is / are going to be + 其他。e.g. There is going to be a sports meeting next week.""",
+
+    "jf-3-3-5": """## will 和 be going to 的区别
+
+1. will 表示说话人认为、相信、希望、预测或假定要发生的事,不含具体时间,可指遥远的将来。e.g. There will be a day when man can travel to Mars.
+2. be going to 表示决定、打算做某事,或根据现状预测要发生的事。e.g. Look at the dark clouds. There is going to be a storm.""",
+
+    "jf-3-3-6": """## 主将从现
+
+在时间、条件、让步状语从句中,当主句是一般将来时时,从句常用一般现在时表将来。
+1. when, while, until / till, as soon as 等引导的时间状语从句。e.g. I will tell her when she comes back.
+2. if, unless, as long as 等引导的条件状语从句。e.g. I won't go unless you go with me.""",
+
+    # ── 句法 · 时态 · 现在进行时 ──
+    "jf-3-4-1": """## 现在进行时的定义
+
+1. 表示此时此刻正在进行的动作或发生的事。e.g. She is singing now.
+2. 表示现阶段正在进行的动作或发生的事(此刻不一定在进行)。e.g. I am reading an interesting book these days.""",
+
+    "jf-3-4-2": """## 常与现在进行时连用的标志
+
+now, right now, at the moment, at present;these days, this month;祈使语气提示词:look, listen, watch out, be careful, hurry up 等。""",
+
+    "jf-3-4-3": """## 现在进行时的结构
+
+1. 肯定句:主语 + am / is / are + 现在分词 + 其他。e.g. He is drinking water now.
+2. 否定句:主语 + am / is / are + not + 现在分词 + 其他。e.g. He isn't drinking water now.
+3. 一般疑问句:Am / Is / Are + 主语 + 现在分词 + 其他?
+4. 特殊疑问句:① 对主语提问 Who + am / is / are + 现在分词 + 其他?② 对非主语提问 特殊疑问词 + 一般疑问句语序?e.g. What is he doing now?""",
+
+    "jf-3-4-4": """## 现在分词的变化规则
+
+1. 一般加 -ing(clean—cleaning;ask—asking)。
+2. 以不发音 e 结尾去 e 加 -ing(have—having;write—writing)。
+3. 重读闭音节单辅音字母结尾,双写再加 -ing(run—running;stop—stopping)。
+4. 以 ie 结尾,改 ie 为 y 再加 -ing(die—dying;lie—lying)。""",
+
+    "jf-3-4-5": """## 不用于现在进行时的动词
+
+1. 感官系动词 look, smell, sound 等。e.g. These flowers look beautiful.
+2. 表示"知道"的动词 know, realize 等。e.g. I know you.
+3. 表示"拥有"的动词 have, hold 等。e.g. I have a cute dog.
+4. 表示喜好或情感的动词 love, hate, wish 等。e.g. I love the cute dog.""",
+
+    "jf-3-4-6": """## 现在进行时表将来
+
+表示瞬间动作时,常用现在进行时表示要发生的动作。常见动词:come, arrive, go, leave, die。
+- e.g. Be careful! The bus is arriving soon.;Hurry up! The train is leaving.""",
+
+    "jf-3-4-7": """## 现在进行时表情感
+
+现在进行时与 always, forever, constantly, all the time 等连用,表示反复发生的动作,有强烈的赞许、喜好、厌恶等感情色彩。
+- e.g. He is always telling lies.;My sister is always helping others. We are all proud of her.""",
+
+    # ── 句法 · 时态 · 过去进行时 ──
+    "jf-3-5-1": """## 过去进行时的定义
+
+1. 表示过去某一时刻正在进行的动作。e.g. I was working at 9 last night.
+2. 表示过去某一段时间一直在进行的动作。e.g. We were expecting you yesterday.""",
+
+    "jf-3-5-2": """## 常与过去进行时连用的标志
+
+at that time 在那时;then 那时;at six yesterday 昨天六点;at this time yesterday 昨天这个时间;the whole morning 整个早上;all day yesterday 昨天一整天;from 7 to 9 last night 昨晚七点到九点;以及 when, while 等引导的时间状语从句。""",
+
+    "jf-3-5-3": """## 过去进行时的结构
+
+1. 肯定句:主语 + was / were + 现在分词 + 其他。e.g. He was playing football at that time.
+2. 否定句:主语 + was / were + not + 现在分词 + 其他。
+3. 一般疑问句:Was / Were + 主语 + 现在分词 + 其他?
+4. 特殊疑问句:① 对主语提问 Who + was / were + 现在分词 + 其他?② 对非主语提问 特殊疑问词 + 一般疑问句语序?e.g. What was he doing at that time?""",
+
+    "jf-3-5-4": """## 过去进行时的用法
+
+1. 表示在过去某一时间或某一时段正在进行的动作。e.g. She was listening to music at that time.
+2. 与 always, forever, constantly, all the time 等连用,含强烈的赞赏、喜好、厌恶等感情色彩。e.g. She was always changing her mind.;He was always making mistakes.""",
+
+    "jf-3-5-5": """## when & while 的用法辨析
+
+1. when 引导的从句可以是延续性或非延续性动词;主句可表示过去某一时刻正在进行的动作,用过去进行时。e.g. It was raining when I got up.;His mother came back when he was cooking.
+2. while 引导的从句必须是延续性动词,表示长动作,用过去进行时。e.g. He fell asleep while he was reading.
+
+注意:若主句和从句均为延续性动词,只能用 while 引导,不能用 when,表示动作同时进行。e.g. I was writing while she was cooking.""",
+
+    # ── 句法 · 时态 · 现在完成时 ──
+    "jf-3-6-1": """## 现在完成时的定义
+
+1. 表示从过去某一时间开始,延续到现在,并可能继续下去的动作或状态。e.g. I have been a chef for two years.
+2. 表示过去已发生的动作对现在造成某种影响。e.g. I have already finished my lunch.;I have read this book twice.""",
+
+    "jf-3-6-2": """## 常与现在完成时连用的标志词或句子
+
+for + 时间段(for two years);since + 过去时间点 / 从句(since 2016;since I helped him);so far 至今;in the past / last ... 在过去的几个月 / 几年里;already 已经(肯定句、疑问句);yet 已经(否定句、疑问句);... times 几次;ever 曾经""",
+
+    "jf-3-6-3": """## 动词过去分词的变化规则
+
+**规则变化**:① 一般加 -ed(work—worked;climb—climbed);② 以不发音 e 结尾去 e 加 -ed(live—lived);③ 重读闭音节单辅音字母结尾双写再加 -ed(stop—stopped;drop—dropped);④ "辅音字母 + y"结尾改 y 为 i 再加 -ed。
+
+**不规则变化**:A—A—A 型(read—read—read;cut—cut—cut);A—A—B 型(beat—beat—beaten);A—B—B 型(teach—taught—taught;find—found—found);A—B—A 型(come—came—come;run—ran—run);A—B—C 型(eat—ate—eaten)""",
+
+    "jf-3-6-4": """## 现在完成时的结构
+
+1. 肯定句:主语 + have / has + 过去分词 + 其他。
+2. 否定句:主语 + have / has + not + 过去分词 + 其他。
+3. 一般疑问句:Have / Has + 主语 + 过去分词 + 其他?""",
+
+    "jf-3-6-5": """## 一般过去时和现在完成时的区别
+
+一般过去时只表示过去,与现在无关;现在完成时强调过去对现在产生影响或造成结果。
+- e.g. He has worked in a factory for two years.(现在还在工作);He worked in a factory two years ago.(现在不在工厂工作)""",
+
+    "jf-3-6-6": """## have gone to & have been to & have been in
+
+1. have gone to + 地点:意为"已经去了某地",表示还没有回来。e.g. He isn't here. He has gone to London.
+2. have been to + 地点:意为"曾经去过某地",表示现在已回来,常与次数连用。e.g. He has been to London three times.
+3. have been in + 地点:意为"在某地待了多久",常与时间段连用。e.g. He has been in London for two years.""",
+
+    "jf-3-6-7": """## 非延续性动词(词组)和延续性动词(词组)
+
+在现在完成时中,非延续性动词不能与表示一段时间的状语(for + 时间段、since + 时间点、how long 等)连用,若要连用,需将非延续性动词转化为延续性动词。
+
+| 非延续性 | 延续性 |
+| --- | --- |
+| buy | have |
+| borrow / lend | keep |
+| finish | be over |
+| leave | be away |
+| die | be dead |""",
+
+    # ── 句法 · 时态 · 过去完成时 ──
+    "jf-3-7-1": """## 过去完成时的定义
+
+1. 表示在过去某一时间或某一动作之前已经发生或完成的动作。e.g. They had got everything ready before I came.
+2. 表示一个动作或状态开始于过去某时之前,一直延续到过去某时,并可能延续下去。e.g. She had made much progress since she came here.""",
+
+    "jf-3-7-2": """## 常与过去完成时连用的标志
+
+by / by the end of + 过去时间(by that time;by the end of last week);before + 过去时间(before 2020);when / before / by the time + 过去时间从句(before I got up;when I woke up)""",
+
+    "jf-3-7-3": """## 过去完成时的结构
+
+1. 肯定句:主语 + had + 过去分词 + 其他。e.g. She had read two books before last week.
+2. 否定句:主语 + had + not + 过去分词 + 其他。
+3. 一般疑问句:Had + 主语 + 过去分词 + 其他?(肯定 Yes, 主语 + had.;否定 No, 主语 + had not.)""",
+
+    "jf-3-7-4": """## 过去完成时和其他时态的区别
+
+1. **与一般过去时**:过去完成时强调"过去的过去",一般过去时强调过去发生。e.g. They had arrived in Beijing before last week.(过去的过去);They arrived in Beijing last week.(过去)
+2. **与现在完成时**:过去完成时表示在过去某时之前已完成或延续到过去某时之前;现在完成时延续到现在或对现在有影响。e.g. He had been ill for three days.(已不生病);He has been ill for three days.(现在还在生病)""",
+
+    "jf-3-7-5": """## 从句中的过去完成时
+
+1. 宾语从句中,主句为一般过去时且从句动作先于主句动作时,从句用过去完成时(常用于 asked, said, told, knew, thought, heard 等动词)。e.g. He said he had seen the film.;I asked my mother what had happened to the girl.
+2. 在 when, before, by the time 等引导的时间状语从句中,先发生的动作用过去完成时,后发生的用一般过去时。e.g. When I woke up, it had already stopped raining.""",
 }
 
 
