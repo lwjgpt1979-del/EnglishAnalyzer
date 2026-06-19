@@ -1868,6 +1868,189 @@ e.g. We want to visit the place where the people are friendly.""",
 
 1. 只用 that 不用 which:① 先行词被 the only, the very, all, some, little 等修饰。e.g. This is the only car that I can find.;② 先行词是序数词、不定代词、形容词最高级修饰。e.g. A product is something that you sell.;③ 先行词既有人又有物时。e.g. I can remember the people and some animals that I saw in this park.
 2. 只用 which 不用 that:① 先行词本身是 that 指物时。e.g. What's that which she is looking at?;② 引导非限制性定语从句时。e.g. I like that nice book, which he gave me on my birthday.""",
+
+    # ── 句法 · 主谓一致 · 必单原则 & 必复原则 ──
+    "jf-8-1-1": """## 主谓一致的定义
+
+主谓一致是指主语和谓语在人称和数上保持一致。
+- e.g. This book is very interesting.;These books are very interesting.""",
+
+    "jf-8-1-2": """## 人称代词作主语
+
+1. 第三人称单数作主语,谓语动词用单数。e.g. He is playing basketball.
+2. 第二人称和第一、三人称复数作主语,谓语动词用复数。e.g. They have three books.""",
+
+    "jf-8-1-3": """## 必单原则——名词作主语
+
+1. 可数名词单数或不可数名词作主语。e.g. Water is important for all living things.
+2. 带有数量修饰的名词作主语:① 分数 / 百分数 + of + 可数名词单数或不可数名词作主语。e.g. 90% of the damage is caused by fire.;② a + 量词 + of + 可数名词复数作主语。e.g. A bottle of water is on the desk.
+3. more than one / many a + 可数名词单数,意为"不止一位 / 许多"。e.g. More than one student has ever been to Beijing.
+4. the number of + 复数名词作主语,意为"……的数量"。e.g. The number of students in my class is 50.
+5. 表示时间、距离、数量、金钱和价值等的名词作主语。e.g. Three days is enough to finish the work.""",
+
+    "jf-8-1-4": """## 必单原则——不定代词作主语
+
+1. one / each / either / neither + of + 可数名词复数作主语。e.g. Each of the students has a pen.
+2. some-系列 / every-系列 / any-系列 / no-系列 / either / each / another / the other 等不定代词作主语。e.g. Something is wrong with my TV set.""",
+
+    "jf-8-1-5": """## 必复原则——"the + 姓氏复数" 作主语
+
+"the + 姓氏复数"表示"一家人",谓语动词用复数。
+- e.g. The Browns are having supper now.""",
+
+    "jf-8-1-6": """## 必复原则——名词作主语
+
+1. 可数名词复数作主语。e.g. These books are better than those books.
+2. 带有数量修饰的名词作主语:① 分数 / 百分数 + of + 可数名词复数作主语。e.g. A quarter of the students are boys.;② "表示复数的量词 + of + 可数名词复数"作主语。e.g. Two pairs of shoes are under the bed.
+3. 集体名词 people, police, cattle, clothes 作主语。e.g. The Chinese people are friendly.
+4. "a number of + 可数名词复数"作主语,意为"许多……"。e.g. A number of products are on sale.
+5. shoes, pants, glasses, trousers, shorts 等用作复数的名词作主语。e.g. My shoes are white.""",
+
+    # ── 句法 · 主谓一致 · 可单可复原则和并列主语 ──
+    "jf-8-2-1": """## 集体名词作主语
+
+1. 表示整体概念时,谓语动词用单数。e.g. The class is a united one.
+2. 表示具体的成员时,谓语动词用复数。e.g. This class are reading English now.
+
+常见的集体名词有:family, class, group, team, audience, public, government, army 等。""",
+
+    "jf-8-2-2": """## "the + 形容词 / 分词" 作主语
+
+1. 表示一类人时,谓语动词用复数。e.g. The old are living a happy life in their hometown.
+2. 表示一类事物或抽象概念时,谓语动词用单数。e.g. The new is sure to replace the old.;The beautiful goes with the true and good.""",
+
+    "jf-8-2-3": """## 部分不定代词作主语
+
+1. all 作主语:① 指代复数名词,谓语动词用复数。e.g. All of the boys are playing football in my class.;② 指代不可数名词或抽象概念,谓语动词用单数。e.g. All is going on very well.
+2. none 作主语,可用单数或复数。e.g. None of the pens are / is mine.;指代不可数名词时谓语动词一般用单数。e.g. None of the money was wasted.
+3. "neither / either of + 可数名词复数"作主语,谓语动词用单数。e.g. Neither of us knows / know where he is going.""",
+
+    "jf-8-2-4": """## a group / couple of 及单复数同形的名词作主语
+
+1. a group of 和 "a couple of + 可数名词复数"作主语时,谓语动词可用单数或复数。e.g. A group of children is in the room.(强调整体);A group of children are in the room.(强调个体)
+2. 单复数同形的名词作主语:① 表示单数意义时,谓语动词用单数。e.g. Fish is delicious.;② 表示复数意义时,谓语动词用复数。e.g. Fish live in the water.""",
+
+    "jf-8-2-5": """## 疑问代词 what, which, who 作主语
+
+疑问代词 what, which, who 作主语时,如果指单数概念,谓语动词用单数;如果指复数的人或物,谓语动词用复数。
+- e.g. Who else was there when you left?""",
+
+    "jf-8-2-6": """## 由连词连接名词或代词作主语
+
+1. 由 and, "both ... and ..." 连接的两个并列主语:① 表示两个不同的人或物,谓语动词用复数。e.g. Both my brother and I like apples.;② 表示同一人或物,谓语动词用单数。e.g. The poet and writer has come.;③ 表示抽象名词时,可用单数或复数。e.g. Care and understanding is / are important.
+2. "not only ... but also ...""or""either ... or ...""neither ... nor ..." 连接的并列主语,谓语动词的数和邻近的主语保持一致,即就近原则。e.g. Neither you nor I am fit for the work.
+3. 主语后有 with, as well as 等短语时,谓语动词的数与前面较远的名词或代词保持一致,即就远原则。e.g. The children together with their mum are doing housework.""",
+
+    # ── 句法 · 特殊句式 · 倒装句 ──
+    "jf-9-1-1": """## 倒装句的定义
+
+英语中句子基本的语序是"主语 + 谓语 + 宾语 + 其他成分",但有时为了突出强调等目的,要把宾语或其他成分,甚至谓语的一部分或全部移到主语之前,构成倒装语序,这样的句子被称为倒装句。
+- e.g. The box is behind me. → Behind me is the box.""",
+
+    "jf-9-1-2": """## 倒装句的分类
+
+1. 部分倒装:将谓语的一部分(如助动词、情态动词)置于主语之前的句子。e.g. Only in this way can we learn English well.
+2. 完全倒装:谓语部分完全置于主语之前的句子。e.g. Here comes the bus.;On the bed are two books.""",
+
+    "jf-9-1-3": """## 部分倒装
+
+1. "Only + 状语"位于句首时,用部分倒装。e.g. Only then did he realise his mistakes.
+2. "so / neither / nor"意为"也(不)……",表示前句情况也适用于后面的句子,用部分倒装。① "so + 助动词 / 情态动词 + 主语"。e.g. They can leave now and so can we.;② "neither / nor + be 动词 / 助动词 / 情态动词 + 主语"。e.g. Lily can't ride a bicycle and neither can Lucy.
+3. 否定或含有否定意义的词(组)位于句首时,用部分倒装。e.g. Never before have I seen such a moving film.""",
+
+    "jf-9-1-4": """## 完全倒装
+
+1. 以表示时间、地点、方位等副词开头,且主语是名词(短语)时,用完全倒装。常见副词:now, then, here, there, out, in, up, down, away 等。e.g. There goes the train!;Out went the children.
+2. 以介词或介词短语开头,且主语为名词的句子,用完全倒装。e.g. Between the two buildings stands a tall tree.;Next to the table is a chair.""",
+
+    "jf-9-1-5": """## 常见倒装句句型
+
+1. not until + 时间 / 从句 + 部分倒装,意为"直到……才……"。e.g. Not until 8:00 at night did we have supper.
+2. not only + 部分倒装, but (also) + 正常语序,意为"不仅……而且……"。e.g. Not only did he pass the exam but he also got the highest score.
+3. no sooner + 部分倒装 + than + 正常语序,意为"……一……就……"。e.g. No sooner had his head touched the pillow than he fell asleep.
+4. so / such + 形容词 / 副词 + 部分倒装 + that + 正常语序,意为"如此……以至于……"。e.g. So badly did he write the letter that I couldn't read it.""",
+
+    # ── 句法 · 特殊句式 · 虚拟语气 ──
+    "jf-9-2-1": """## 英语中的语气
+
+语气用来表示讲话人意愿或态度的动词形式,英语中一般有三种语气:陈述语气、祈使语气、虚拟语气。
+- e.g. I can play the piano.(陈述语气);Don't open the window.(祈使语气);If I were you, I would try my best to learn English.(虚拟语气)""",
+
+    "jf-9-2-2": """## 虚拟语气的定义
+
+虚拟语气用来表示说话人的主观愿望、假设、建议、请求、想象等。
+- e.g. I wish I were a white cloud.;If I were you, I'd take an umbrella.;My mother suggested that we should go at once.""",
+
+    "jf-9-2-3": """## 条件句中的虚拟语气
+
+| 虚拟情况 | 从句谓语 | 主句谓语 |
+| --- | --- | --- |
+| 与现在事实相反 | 动词过去式(be 用 were) | should / would / could / might + 动词原形 |
+| 与过去事实相反 | had + 过去分词 | should / would / could / might + have + 过去分词 |
+| 与将来事实相反 | 动词过去式 / were + 动词不定式 / should + 动词原形 | should / would / could / might + 动词原形 |
+
+e.g. You would not have caught a cold if you had put on more clothes.;If you missed the film tonight, you would feel sorry.""",
+
+    "jf-9-2-4": """## 虚拟条件句的倒装
+
+虚拟条件句中含有 were, had, should, could 时,可以省略 if,把 were, had, should, could 放在主语前。
+- e.g. If it were not for the sun, there would be no life on the earth. = Were it not for the sun, there would be no life on the earth.""",
+
+    "jf-9-2-5": """## 含 wish 的虚拟语气
+
+| 虚拟情况 | 从句谓语 |
+| --- | --- |
+| 与过去事实相反 | had + 过去分词 |
+| 与现在事实相反 | 动词过去式(be 用 were) |
+| 与将来事实相反 | would / could / might + 动词原形 |
+
+e.g. I wish I had visited the Great Wall when I was in Beijing.;I wish I were a fish.;I wish you would do that again.""",
+
+    "jf-9-2-6": """## 表 "坚持、建议、要求、命令" 的虚拟语气
+
+1. 表"坚持、建议、要求、命令"的动词后的宾语从句,可用虚拟语气,从句谓语用"should + 动词原形",should 可省略。e.g. She insisted that the seats (should) be booked in advance.
+2. 常用动词:insist(坚持), order(命令), command(命令), demand(要求), require(需要), request(请求), advise(劝告;建议), propose(提议), suggest(建议), recommend(建议)。注意:① suggest 表示"暗示,认为"时,不用虚拟语气;② insist 表示"坚持说;坚持认为某种观点、事实"时,不用虚拟语气。""",
+
+    # ── 句法 · 特殊句式 · 强调句与省略句 ──
+    "jf-9-3-1": """## 强调句的定义
+
+对句子中的部分内容进行强调,表示句子的重点信息,这种就叫做强调句。
+- e.g. It was last summer that I graduated from university.(强调时间状语);Do be careful when you cross the road.(强调谓语)""",
+
+    "jf-9-3-2": """## 单词表示强调
+
+1. 用 very, only, such 等修饰名词或形容词进行强调。e.g. This is the very lowest price.
+2. 用 ever, just, really, badly 等副词进行强调。e.g. What ever do you mean by saying that?;I really don't know how to solve this problem.""",
+
+    "jf-9-3-3": """## 助动词表示强调
+
+1. 强调谓语表示的动作,常用助动词 do / does / did,在一般现在时和一般过去时的肯定句中,意为"确实"。e.g. She did send you a letter last week.
+2. 在祈使句中表示"务必",意为"一定"。e.g. Do come early.""",
+
+    "jf-9-3-4": """## 句式表示强调
+
+1. 强调时间、宾语、状语等,用句型"It is / was + 被强调部分 + that / who ..."。e.g. It is Lily that / who sent me the letter.(强调主语);It is red that he has painted the door.(强调状语)注意:强调主语指人时,单数还是复数,be 动词用 is / was。
+2. "It is / was + not until + 被强调部分 + that ...",意为"直到……才"。e.g. It was not until 1920 that regular radio broadcasts began.;It was not until the end of the letter that she mentioned her plan.""",
+
+    "jf-9-3-5": """## 省略句的定义
+
+在说话或写文章时,为了避免重复,常省略句子中的部分成分,但仍能表达完整意义,这样的句子叫做省略句。
+- e.g. — How are you today? — (I'm) Fine. Thank you.""",
+
+    "jf-9-3-6": """## 句子成分的省略
+
+| 省略部分 | 示例 |
+| --- | --- |
+| 省略主语 | (It) Sounds good. |
+| 省略谓语 | Shake it well before use. |
+| 省略宾语 | — Are you hungry? — Yes, I am (hungry). |
+| 省略宾语 | If you need these books, I can lend you all (of them). |
+| 省略定语 | I got first place. (How) Wonderful! |""",
+
+    "jf-9-3-7": """## 不同句式中的省略
+
+1. 简单句中的省略:对话双方都知道讨论的对象时,可以省略句中的主语。e.g. (You) Didn't go to the party?
+2. 复合句中的省略:① 在并列复合句中,有相同成分,相同的成分可以省略。e.g. Suzhou is called "the paradise on earth", and it is (the paradise on earth).;The city is famous for the lake and the lake (is famous) for the city.;② 主从复合句的省略:主从句主语相同时,可省略从句主语和谓语 be 动词;在限制性定语从句中,作宾语的关系代词 that, which, who, whom 一般可省略。e.g. The computer won't work. I wonder why (it won't work).;I met the girl while (I was) on a visit to New York.""",
 }
 
 
