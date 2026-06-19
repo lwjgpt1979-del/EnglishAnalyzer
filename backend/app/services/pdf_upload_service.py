@@ -47,6 +47,34 @@ def delete_upload(file_id: str) -> None:
     (UPLOAD_DIR / f"{file_id}.pdf").unlink(missing_ok=True)
 
 
+def save_upload_docx(file_bytes: bytes) -> str:
+    """保存上传的 Word(.docx)，返回 file_id（hex UUID，不含扩展名）。"""
+    file_id = uuid.uuid4().hex
+    (UPLOAD_DIR / f"{file_id}.docx").write_bytes(file_bytes)
+    return file_id
+
+
+def extract_docx_text(file_id: str) -> str:
+    """提取 .docx 全文（段落 + 表格单元格，按阅读顺序）。需要 python-docx。"""
+    try:
+        from docx import Document
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("python-docx 未安装，请 pip install python-docx") from exc
+
+    path = UPLOAD_DIR / f"{file_id}.docx"
+    if not path.exists():
+        raise FileNotFoundError(f"DOCX not found: {file_id}")
+
+    doc = Document(str(path))
+    parts: list[str] = [p.text for p in doc.paragraphs if p.text.strip()]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells if c.text.strip()]
+            if cells:
+                parts.append("\t".join(cells))
+    return "\n".join(parts).strip()
+
+
 # ─── 文本提取 ─────────────────────────────────────────────────────────────────
 
 def extract_pages(file_id: str) -> list[str]:

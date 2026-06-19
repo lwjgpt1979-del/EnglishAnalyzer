@@ -1005,6 +1005,24 @@ export function getExtractJob(jobId: string): Promise<RealExtractJob> {
   return unwrap(request.get(`/admin/platform-questions/extract-jobs/${jobId}`))
 }
 
+// 真题图片直传:presign → PUT 到 COS → 拿 file_url 走 OCR
+export interface AdminPresign { presign_url: string; file_url: string; key: string; expires_in: number; is_mock: boolean }
+export function adminPresign(contentType: string): Promise<AdminPresign> {
+  return unwrap(request.post('/admin/uploads/presign', { content_type: contentType }))
+}
+const _IMG_MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
+/** 上传单张图片到 COS,返回可访问 file_url。dev(is_mock)跳过 PUT 直接用占位图。 */
+export async function uploadImageViaPresign(file: File): Promise<string> {
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  const contentType = file.type || _IMG_MIME[ext] || 'image/jpeg'
+  const ps = await adminPresign(contentType)
+  if (!ps.is_mock) {
+    const r = await fetch(ps.presign_url, { method: 'PUT', body: file, headers: { 'Content-Type': contentType } })
+    if (r.status !== 200 && r.status !== 204) throw new Error(`COS 上传失败:HTTP ${r.status}`)
+  }
+  return ps.file_url
+}
+
 export function bulkImportRealQuestions(
   items: Array<{ stem: string; options?: unknown; answer?: string | null; question_type?: string | null
     explanation?: string | null; difficulty?: number | null; question_no?: string | null; kp_names?: string[] }>,

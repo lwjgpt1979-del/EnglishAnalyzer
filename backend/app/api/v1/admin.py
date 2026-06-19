@@ -18,6 +18,7 @@ from app.models.d5_learning import VocabularyWord
 from app.models.d12_v2_exams import SimulatedQuestion
 from app.schemas.admin import AdminOverviewOut
 from app.schemas.base import BaseResponse, make_ok
+from app.api.v1.upload import PresignRequest, PresignOut
 from app.schemas.questions import (
     AdminQuestionItem,
     AdminQuestionListOut,
@@ -824,15 +825,22 @@ async def review_platform_question_api(
 @router.post("/platform-questions/extract", response_model=BaseResponse[RealExtractCreatedOut])
 async def extract_real_questions_api(
     db: DbDep, admin: AdminDep,
-    file: UploadFile | None = File(None, description="真题 PDF(文本版)"),
+    file: UploadFile | None = File(None, description="真题 PDF(文本版)或 Word(.docx)"),
     image_urls: str | None = Form(None, description="图片 URL 列表(JSON 数组字符串,走 OCR)"),
 ):
-    """传 PDF(pdfplumber 取文本)或图片 URL(run_ocr)→ 秒回 job_id,后台拆题。"""
+    """传 PDF / Word(取文本)或图片 URL(run_ocr)→ 秒回 job_id,后台拆题。"""
     import json as _json
     from app.services import real_extract_service as res, pdf_upload_service as pus
     if file is not None:
-        file_id = pus.save_upload(await file.read())
-        job = await res.create_job(db, source="pdf", file_id=file_id)
+        name = (file.filename or "").lower()
+        if name.endswith(".docx"):
+            file_id = pus.save_upload_docx(await file.read())
+            job = await res.create_job(db, source="docx", file_id=file_id)
+        elif name.endswith(".pdf") or not name:
+            file_id = pus.save_upload(await file.read())
+            job = await res.create_job(db, source="pdf", file_id=file_id)
+        else:
+            raise AppError(code=400, message="仅支持 PDF 或 Word(.docx)文件")
     elif image_urls:
         try:
             urls = _json.loads(image_urls)
@@ -845,6 +853,17 @@ async def extract_real_questions_api(
     await db.commit()
     res.schedule(job.id)
     return make_ok(RealExtractCreatedOut(job_id=job.id))
+
+
+@router.post("/uploads/presign", response_model=BaseResponse[PresignOut])
+async def admin_upload_presign(body: PresignRequest, admin: AdminDep):
+    """平台后台图片上传预签名(真题图片直传 COS→拿 file_url 走 OCR)。dev 返回 mock。"""
+    from app.services.upload_service import ALLOWED_CONTENT_TYPES, generate_presign
+    if body.content_type not in ALLOWED_CONTENT_TYPES:
+        allowed = "、".join(ALLOWED_CONTENT_TYPES)
+        raise AppError(code=400, message=f"不支持的图片类型:{body.content_type},允许:{allowed}")
+    result = generate_presign(user_id=admin.id, content_type=body.content_type)
+    return make_ok(PresignOut(**result))
 
 
 @router.get("/platform-questions/extract-jobs/{job_id}", response_model=BaseResponse[RealExtractJobOut])

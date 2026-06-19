@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformQuestions, extractRealQuestions, getExtractJob, bulkImportRealQuestions,
-  genSimFromReal, reviewPlatformQuestion, listRegions,
+  genSimFromReal, reviewPlatformQuestion, listRegions, uploadImageViaPresign,
   type PlatformQuestion,
 } from '../api/admin'
 
@@ -80,7 +80,9 @@ function onRegionChange() {
   const nodes = regionCascader.value?.getCheckedNodes?.()
   regionLabels.value = nodes?.[0]?.pathLabels || []
 }
-const pickedFile = ref<File | null>(null)
+const pickedFile = ref<File | null>(null)       // PDF / Word(.docx)
+const pickedImages = ref<File[]>([])             // 直传图片(走 OCR)
+const uploadingImg = ref(false)
 const imageUrlsText = ref('')
 const extracting = ref(false)
 const importing = ref(false)
@@ -96,7 +98,7 @@ function stopPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null
 
 function openDlg() {
   stopPoll()
-  step.value = 0; pickedFile.value = null; imageUrlsText.value = ''
+  step.value = 0; pickedFile.value = null; pickedImages.value = []; uploadingImg.value = false; imageUrlsText.value = ''
   metaGrade.value = ''; metaSemester.value = ''; metaExamType.value = ''
   regionPath.value = []; regionLabels.value = []
   extracting.value = false; importing.value = false; editRows.value = []
@@ -119,16 +121,27 @@ function batchMeta(): Record<string, unknown> {
 }
 
 function onFileChange(f: any) { pickedFile.value = f.raw as File }
+function onImagesChange(_f: any, list: any[]) { pickedImages.value = list.map(x => x.raw).filter(Boolean) }
 
 async function startExtract() {
   if (!metaTextbook.value || !metaStage.value) { ElMessage.warning('请先选教材版本和学段'); return }
-  const urls = imageUrlsText.value.split('\n').map(s => s.trim()).filter(Boolean)
-  if (!pickedFile.value && !urls.length) { ElMessage.warning('请选 PDF 或填图片 URL'); return }
+  const typedUrls = imageUrlsText.value.split('\n').map(s => s.trim()).filter(Boolean)
+  if (!pickedFile.value && !pickedImages.value.length && !typedUrls.length) {
+    ElMessage.warning('请选 PDF/Word 文件,或上传/粘贴图片'); return
+  }
   extracting.value = true; step.value = 1
   try {
+    let urls = typedUrls
+    if (pickedImages.value.length) {        // 图片先直传 COS 拿 file_url
+      uploadingImg.value = true
+      const uploaded = await Promise.all(pickedImages.value.map(f => uploadImageViaPresign(f)))
+      urls = [...uploaded, ...typedUrls]
+      uploadingImg.value = false
+    }
+    // file(PDF/Word)优先;无 file 时走图片/URL 的 OCR
     const { job_id } = await extractRealQuestions({ file: pickedFile.value || undefined, imageUrls: urls })
     pollExtract(job_id)
-  } catch (e: any) { extracting.value = false; ElMessage.error(e?.message || '抽题失败') }
+  } catch (e: any) { extracting.value = false; uploadingImg.value = false; ElMessage.error(e?.message || '抽题失败') }
 }
 
 async function pollExtract(jobId: string) {
@@ -242,15 +255,22 @@ onMounted(load)
           </el-form-item>
         </el-form>
         <el-alert type="info" :closable="false" style="margin-bottom:12px"
-          title="教材+学段必选(挂知识节点/匹配);年级/上下册/地区选填存档。文本版 PDF 直接取字;扫描版/图片填 URL 走 OCR;Word 暂不支持。" />
-        <el-upload drag :auto-upload="false" :limit="1" :on-change="onFileChange" accept=".pdf">
+          title="教材+学段必选(挂知识节点/匹配);年级/上下册/地区选填存档。文本版 PDF / Word(.docx)直接取字;扫描版/拍照请上传图片走 OCR。文件优先,有文件时忽略图片。" />
+        <el-upload drag :auto-upload="false" :limit="1" :on-change="onFileChange" accept=".pdf,.docx">
           <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-          <div class="el-upload__text">拖入或点击选择 <b>真题 PDF</b>(文本版)</div>
+          <div class="el-upload__text">拖入或点击选择 <b>真题 PDF / Word(.docx)</b>(文本版)</div>
         </el-upload>
-        <div style="margin:14px 0 6px;color:#909399;font-size:13px">或:图片 URL(每行一个,走 OCR)</div>
-        <el-input v-model="imageUrlsText" type="textarea" :rows="3" placeholder="https://.../p1.jpg&#10;https://.../p2.jpg" />
+        <div style="margin:16px 0 6px;color:#909399;font-size:13px">或:上传真题图片(扫描/拍照,走 OCR,可多张)</div>
+        <el-upload :auto-upload="false" list-type="picture-card" multiple
+          :on-change="onImagesChange" :on-remove="onImagesChange" accept="image/*">
+          <el-icon><UploadFilled /></el-icon>
+        </el-upload>
+        <div style="margin:10px 0 6px;color:#c0c4cc;font-size:12px">高级:也可直接粘贴图片 URL(每行一个)</div>
+        <el-input v-model="imageUrlsText" type="textarea" :rows="2" placeholder="https://.../p1.jpg&#10;https://.../p2.jpg" />
         <div style="text-align:right;margin-top:16px">
-          <el-button type="primary" @click="startExtract">开始抽题</el-button>
+          <el-button type="primary" :loading="uploadingImg" @click="startExtract">
+            {{ uploadingImg ? '图片上传中…' : '开始抽题' }}
+          </el-button>
         </div>
       </div>
 

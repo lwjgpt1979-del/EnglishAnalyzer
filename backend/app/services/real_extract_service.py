@@ -47,6 +47,8 @@ async def _build_ocr(source: str, file_id: str | None, image_urls: list[str] | N
         pages = pus.extract_pages(file_id)
         printed = "\n".join(p for p in pages if p).strip()
         return OcrResult(printed_text=printed, handwritten_text="")
+    if source == "docx":
+        return OcrResult(printed_text=pus.extract_docx_text(file_id), handwritten_text="")
     # image:逐图 OCR,合并印刷体
     parts: list[str] = []
     for url in (image_urls or []):

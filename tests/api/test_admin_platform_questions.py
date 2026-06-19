@@ -184,6 +184,58 @@ async def test_extract_job_pdf_text(client):
 
 
 @pytest.mark.asyncio
+async def test_extract_job_docx_text(client):
+    """TK2:传 Word(.docx)→ python-docx 取文本 → 拆题 → parsed 待校对。"""
+    import asyncio as _aio
+    admin = await _make_admin(client, "docx")
+    job_id = None
+    try:
+        with patch("app.services.pdf_upload_service.extract_docx_text",
+                   lambda fid: "1. Word question one\n2. Word question two"):
+            r = await client.post("/api/v1/admin/platform-questions/extract", headers=admin,
+                                  files={"file": ("t.docx", b"PK fake docx", "application/vnd.openxmlformats")})
+            assert r.status_code == 200, r.text
+            job_id = r.json()["data"]["job_id"]
+            data = None
+            for _ in range(50):
+                jr = await client.get(f"/api/v1/admin/platform-questions/extract-jobs/{job_id}", headers=admin)
+                data = jr.json()["data"]
+                if data["status"] != "running":
+                    break
+                await _aio.sleep(0.2)
+        assert data["status"] == "done", data
+        assert sorted(p["question_no"] for p in data["parsed"]) == ["1", "2"]
+    finally:
+        if job_id:
+            async with _async_session_factory() as db:
+                await db.execute(text("DELETE FROM real_extract_job WHERE id = :i"), {"i": job_id})
+                await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_extract_rejects_unknown_file(client):
+    """非 PDF/DOCX 文件 → 400。"""
+    admin = await _make_admin(client, "ext3")
+    r = await client.post("/api/v1/admin/platform-questions/extract", headers=admin,
+                          files={"file": ("t.txt", b"hello", "text/plain")})
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_admin_upload_presign(client):
+    """图片直传预签名:合法 content_type → 返回 file_url(dev is_mock);非法 → 400。"""
+    admin = await _make_admin(client, "psg")
+    r = await client.post("/api/v1/admin/uploads/presign", headers=admin,
+                          json={"content_type": "image/jpeg"})
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["file_url"] and "presign_url" in data and "is_mock" in data
+    r2 = await client.post("/api/v1/admin/uploads/presign", headers=admin,
+                           json={"content_type": "application/pdf"})
+    assert r2.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_extract_requires_input(client):
     """既无文件也无 image_urls → 400。"""
     admin = await _make_admin(client, "ext2")
