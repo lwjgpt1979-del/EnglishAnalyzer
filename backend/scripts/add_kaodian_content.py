@@ -1487,6 +1487,201 @@ by / by the end of + 过去时间(by that time;by the end of last week);before +
 
 1. 宾语从句中,主句为一般过去时且从句动作先于主句动作时,从句用过去完成时(常用于 asked, said, told, knew, thought, heard 等动词)。e.g. He said he had seen the film.;I asked my mother what had happened to the girl.
 2. 在 when, before, by the time 等引导的时间状语从句中,先发生的动作用过去完成时,后发生的用一般过去时。e.g. When I woke up, it had already stopped raining.""",
+
+    # ── 句法 · 被动语态 · 基本用法 ──
+    "jf-4-1-1": """## 被动语态的定义
+
+语态是表明句子主语和谓语之间的主动或被动关系的动词形式。
+1. **主动语态**:主语是谓语动词所表示的动作的执行者。e.g. She takes care of cats.
+2. **被动语态**:主语是谓语动词所表示的动作的承受者。e.g. Cats are taken care of by her.""",
+
+    "jf-4-1-2": """## 被动语态的用法
+
+1. 不知道或者没必要知道动作的执行者。e.g. His bike was stolen yesterday.
+2. 动作的执行者不易找到。e.g. We were stopped by the storm.
+3. 强调动作的承受者。e.g. Rome was not built in a day.""",
+
+    "jf-4-1-3": """## 不同时态的被动语态结构
+
+| 时态 | 结构 | 示例 |
+| --- | --- | --- |
+| 一般现在时 | am / is / are ( + not ) + 过去分词 | The film is called Snow White. |
+| 一般过去时 | was / were ( + not ) + 过去分词 | This poem wasn't written by him. |
+| 一般将来时 | will / be ( + not ) going to be + 过去分词 | The work will be done next week. |
+| 现在进行时 | am / is / are ( + not ) + being + 过去分词 | A new film is being shown in the theatre. |
+| 过去进行时 | was / were ( + not ) + being + 过去分词 | The road was being widened at that time. |
+| 现在完成时 | have / has ( + not ) + been + 过去分词 | The flowers have been destroyed by the rain. |""",
+
+    "jf-4-1-4": """## 常用于被动语态的短语和句型
+
+- be made of(由……制作,能看出原材料):The scarf is made of silk.
+- be made from(由……制作,看不出原材料):The wine is made from grapes.
+- be used for doing sth.(被用来做某事):This machine is used for getting water.
+- be located in(位于):The building is located in the centre of the town.
+- be known / regarded as(被认为是):He is known as an excellent singer.
+- It is said / reported that(据说 / 据报道):It is said that the great man has gone to China.""",
+
+    "jf-4-1-5": """## 含有情态动词的被动语态
+
+结构:情态动词 ( + not ) + be + 过去分词。
+- e.g. It can be done by myself.;It needn't be mentioned in your talk.""",
+
+    "jf-4-1-6": """## 主谓宾结构变被动语态
+
+主动语态:I(主语) clean(谓语) the room(宾语)。
+被动语态:The room(原宾语) is cleaned(be + 过去分词) by me(by + 主语)。""",
+
+    # ── 句法 · 被动语态 · 特殊用法 ──
+    "jf-4-2-1": """## 主谓双宾结构变被动语态
+
+主动语态:They gave us many books.
+1. 若将直接宾语转换为被动语态的主语,则保留间接宾语。e.g. We were given many books by them.
+2. 若将间接宾语转换为被动语态的主语,则保留直接宾语,需加 to 或 for。e.g. Many books were given to us by them.
+
+注意:间接宾语前加 to 的动词有 give, send, bring 等;加 for 的有 buy, make, find 等。""",
+
+    "jf-4-2-2": """## 主谓宾补结构变被动语态
+
+将主动语态的宾语变为被动语态中的主语,宾语补足语放在谓语动词后,成为主语补足语。
+- 主动:Her mother asked her to wash dishes.
+- 被动:She was asked to wash dishes by her mother.""",
+
+    "jf-4-2-3": """## 不能用于被动语态的动词(短语 / 词组)
+
+1. 表示状态的系动词 feel, smell, taste, sound, remain, prove 等,用主动形式表示被动意义。e.g. These flowers smell good.
+2. begin, start, stop, finish, happen, take place, occur 等表示"开始""结束""发生"的动词。e.g. The sports meeting starts at 2 p.m.
+3. have, belong to 等表示所属关系的动词。e.g. This book belongs to Mike.
+4. hold, cost, fit, last 等表示状态的动词作谓语时。e.g. The hall can hold 3,000 people.
+5. open, read, write, sell 等与 well, easily 等副词连用且主语为物表特征时,主动表被动。e.g. His book sells well.""",
+
+    "jf-4-2-4": """## 不能变为被动语态的情况
+
+1. 动词的宾语是反身代词。e.g. We should look after ourselves.
+2. 动词的宾语是动名词 -ing 形式或动词不定式。e.g. The computer needs fixing.
+3. 动词的宾语是主语身体的一部分。e.g. He couldn't believe his ears.""",
+
+    "jf-4-2-5": """## 感官动词和使役动词的被动语态
+
+在主动句中,感官动词(see, hear 等)和使役动词(make, let, have 等)后接省略 to 的动词不定式作宾语补足语,变被动语态后要加上 to。
+- e.g. The boss made them work 14 hours every day. → They were made to work 14 hours every day by the boss.""",
+
+    "jf-4-2-6": """## 被动语态和系表结构的区别
+
+1. "be + 过去分词"既可以是被动语态(过去分词是动词,表动作),也可以是系表结构(过去分词是形容词,表状态)。e.g. The window is closed by Lucy.(被动语态);The window is closed.(系表结构)
+2. 被动语态可用于进行时态,系表结构不用于进行时态。e.g. The plan is being carried out.;My key is lost.
+3. 被动语态常用 by + 执行者;系表结构与其他介词连用作固定搭配(be interested in, be connected with, be surprised at 等)。e.g. He is interested in physics.""",
+
+    # ── 句法 · 非谓语 · 动词的非谓语形式(1) ──
+    "jf-5-1-1": """## 非谓语动词的定义及形式
+
+非谓语动词,又叫非限定动词,在句子中充当谓语动词以外的其他句子成分。主要形式包括动名词、分词(现在分词和过去分词)和动词不定式。""",
+
+    "jf-5-1-2": """## 动词不定式的构成
+
+动词不定式由"(to) + 动词原形"构成,其否定形式为"not (to) + 动词原形"。""",
+
+    "jf-5-1-3": """## 动词不定式的特征
+
+1. 可以跟宾语,也可以有状语修饰。e.g. She asked me to read this word aloud.
+2. 没有人称和数的变化,但有时态和语态的变化。e.g. She wants to drink water.;I am sorry to have done that.
+3. 具有名词、形容词和副词的特征。e.g. To know oneself is difficult.""",
+
+    "jf-5-1-4": """## 动词不定式作宾语
+
+1. 作及物动词宾语:动词不定式有宾语时作宾语,真正的宾语后置。e.g. I think it necessary to learn a foreign language.
+2. 作介宾:常用"疑问词 + 动词不定式"结构。e.g. They are talking about how to protect the environment.
+
+补充:后接动词不定式作宾语的动词:pretend 假装, promise 承诺, agree 同意, want / would like 想要, plan 计划, offer 提供, hope / wish 希望, refuse 拒绝, decide 决定, expect 期待, learn 学习。""",
+
+    "jf-5-1-5": """## 动词不定式的其他句法功能
+
+1. 作主语:常用 it 作形式主语,真正的主语后置。e.g. To learn English is useful. = It is useful to learn English.
+2. 常用句型:It is / was + adj. ( + for / of sb. ) + to do sth.;It's time (for sb.) to do sth.
+3. 作状语:表示目的、原因、结果。e.g. I'm sorry to hear the news.
+4. 作定语:被前面的名词修饰,相当于定语从句。e.g. Suzhou is a good place to visit.
+5. 作表语:常位于系动词后,表示主语的具体动作内容。e.g. Her job is to teach children painting.""",
+
+    "jf-5-1-6": """## 不带 to 的动词不定式
+
+1. 主动语态中,感官动词和使役动词后接省略 to 的动词不定式。e.g. Tom's father makes him clean the window.;常见:feel, hear, listen to, let, make, have, see, watch, notice, look at, observe。
+2. had better, would rather 后接省略 to 的动词不定式。e.g. I would rather have Chinese food.
+3. 两个或以上的动词不定式短语并列时,后面的省略 to。e.g. The teacher asked me to read this word and spell it.""",
+
+    "jf-5-1-7": """## 与疑问词连用的动词不定式
+
+动词不定式与疑问词(what, when 等)和疑问副词连用,起名词的作用,常用作主语、宾语、表语、宾语补足语。
+- e.g. How to get the information is a big problem.(作主语)""",
+
+    # ── 句法 · 非谓语 · 动词的非谓语形式(2) ──
+    "jf-5-2-1": """## 动名词的构成
+
+动名词由动词原形 + -ing 构成,具有名词的性质,在句中可充当主语、表语、宾语、定语。
+- e.g. Jack enjoys running around the park.""",
+
+    "jf-5-2-2": """## 分词的构成
+
+分词分为现在分词和过去分词两种,起形容词和副词的作用,在句中作定语、宾语补足语、状语和表语。现在分词表示主动正在进行,过去分词表示被动或完成。
+- e.g. There are some boys swimming in the river.;The meeting held yesterday was very important.""",
+
+    "jf-5-2-3": """## 动名词的句法功能
+
+1. 作主语:谓语动词用第三人称单数形式。e.g. Learning English is very difficult.
+2. 作宾语:① 作动名词宾语。e.g. I like reading books.;② 作介宾。e.g. Can you prevent him from smoking?
+3. 作定语:e.g. His job is driving a bus.
+4. 作宾语(表用途、所属):e.g. The reading room can hold 100 people.
+
+补充:常接动名词作宾语的词:suggest, allow, avoid, consider, enjoy, mind, admit, be worth, finish, can't help, keep on, be busy, give up, be used to, have difficulty / trouble (in)。""",
+
+    "jf-5-2-4": """## 动词不定式和动名词作宾语或宾语补足语的区别
+
+1. 动名词作宾语表示习惯性动作,动词不定式表示具体的一次动作。e.g. I like playing football. = I like to play football with my friends.
+2. 感官动词后接动名词表示动作正在进行,接动词不定式表示全过程或经常发生。e.g. I see her dancing in the classroom.;I often see her dance in the classroom.
+3. 语义区别:remember to do(记得要做,未做)/ remember doing(记得做过,已做);forget to do / forget doing;regret to do(遗憾要做)/ regret doing(后悔做过);try to do(努力做)/ try doing(尝试做)。""",
+
+    "jf-5-2-5": """## 分词的句法功能
+
+1. 作表语:现在分词说明事物的特点、性质,过去分词表示事物的状态。e.g. The movie is interesting.;The computer is broken.
+2. 作定语:单个分词作定语常位于被修饰词前,分词短语作定语位于被修饰词后。e.g. The man speaking to the teacher is my father.
+3. 作状语:其逻辑主语是句子的主语。e.g. He sat there, reading a book.
+4. 作补足语:e.g. They kept us waiting for a long time.;They hope to see the problem solved peacefully.""",
+
+    # ── 句法 · 并列复合句 · 并列复合句的用法 ──
+    "jf-6-1-1": """## 并列复合句的定义
+
+并列复合句,指由并列连词把两个或两个以上的独立分句连在一起的句子。各分句在意义上有关联,处在并列地位,无主从之分。""",
+
+    "jf-6-1-2": """## 并列复合句的结构
+
+结构:独立分句 1 + 并列连词(组) + 独立分句 2。
+- e.g. It is a sunny day and I want to go to the park.(陈述句 + and + 陈述句)
+- Take out your book and open it.(祈使句 + and + 祈使句)
+- Where are you from and what do you want to do?(疑问句 + and + 疑问句)""",
+
+    "jf-6-1-3": """## 表示并列、顺承和递进关系的并列复合句
+
+连词:and(和;然后);both ... and ...;not only ... but also ...(不仅……而且);neither ... nor ...(既不……也不……)等。
+- e.g. Follow the doctor's advice, and you will be better.;He not only gave me useful advice, but also helped me a lot.""",
+
+    "jf-6-1-4": """## 表示对比、转折关系的并列复合句
+
+连词:but(但是), yet(然而)。
+- e.g. She didn't like milk at first, but now she likes it.;Tom worked hard, yet he still failed in the exam.""",
+
+    "jf-6-1-5": """## 表示选择关系的并列复合句
+
+连词:or(否则;或者), either ... or ...(要么……要么……)等。
+- e.g. Hurry up, or you will be late.;You can either play football with us, or you can stay at home.""",
+
+    "jf-6-1-6": """## 表示因果关系的并列复合句
+
+连词:so(因此;所以,后接结果), for(因为,后接原因)。
+- e.g. It's raining outside, so we have to stay at home.;Linda is popular with us, for she is very kind.""",
+
+    "jf-6-1-7": """## 简单句和并列复合句的转换
+
+1. 简单句转并列复合句:把简单句中的某一短语转换为并列复合句中的一个分句。e.g. Jerry is too small to carry the bag. → Jerry is very small, and he can't carry the bag.
+2. 多个简单句合并:在最后一个简单句前用连接词连接。e.g. I like apples. My brother likes bananas. → I like apples and my brother likes bananas.
+3. 并列复合句也可转换为简单句,常把其中一个分句变为短语。e.g. He didn't come yesterday, for he was ill. → He didn't come yesterday because of his illness.""",
 }
 
 
