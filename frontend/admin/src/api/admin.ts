@@ -24,6 +24,7 @@ import type {
   VocabWordItem,
   NodeResourceItem2,
   UnitContentOverview,
+  VersionDiffOut,
   LSAdminItem,
   LSExtractResult,
   LSConfig,
@@ -336,6 +337,17 @@ export function unitContentOverview(unitId: string): Promise<UnitContentOverview
 // 一键发布整单元:所有对齐节点下 draft/reviewing 讲解 → published
 export function publishUnit(unitId: string): Promise<{ published: number; already_published: number; missing_dims: number }> {
   return unwrap(request.post(`/admin/curriculum/units/${unitId}/publish`))
+}
+
+// 内容版本对比 / 审核(C2)
+export function versionDiff(versionId: string, against = 'current'): Promise<VersionDiffOut> {
+  return unwrap<VersionDiffOut>(request.get(`/admin/node-resource-versions/${versionId}/diff`, { params: { against } }))
+}
+export function approveVersion(versionId: string): Promise<Record<string, string>> {
+  return unwrap(request.post(`/admin/node-resource-versions/${versionId}/approve`))
+}
+export function rejectVersion(versionId: string): Promise<Record<string, string>> {
+  return unwrap(request.post(`/admin/node-resource-versions/${versionId}/reject`))
 }
 
 // ── 长难句管理（KP-First L7）──────────────────────────────

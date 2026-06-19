@@ -5,8 +5,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listNodeResources, addNodeResource, updateNodeResource, reviewNodeResource,
   listCurriculumUnits, unitContentOverview, publishUnit,
+  versionDiff, approveVersion, rejectVersion,
 } from '../api/admin'
-import type { NodeResourceItem2, AdminCurriculumUnit, UnitContentNode } from '../types'
+import type { NodeResourceItem2, AdminCurriculumUnit, UnitContentNode, VersionDiffOut } from '../types'
+import { lineDiff, type DiffLine } from '../utils/linediff'
 
 const route = useRoute()
 
@@ -118,6 +120,49 @@ async function onReview(row: NodeResourceItem2, approve: boolean) {
   ElMessage.success(approve ? '已发布' : '已驳回')
   await load()
   await loadOverview()
+}
+
+// ── 待审新版对比 + 审核(C2)──
+const diffOpen = ref(false)
+const diffLoading = ref(false)
+const diffBusy = ref(false)
+const diffVersionId = ref('')
+const diffCtx = ref('')                       // 知识点 · 维度 标题
+const diffData = ref<VersionDiffOut | null>(null)
+const diffLines = computed<DiffLine[]>(() =>
+  diffData.value ? lineDiff(diffData.value.base.content_md, diffData.value.incoming.content_md) : [])
+
+async function openDiff(node: UnitContentNode, dim: string) {
+  const vid = node.dims[dim]?.pending_version_id
+  if (!vid) return
+  diffVersionId.value = vid
+  diffCtx.value = `${node.name} · ${DIM_LABEL[dim] || dim}`
+  diffOpen.value = true
+  diffLoading.value = true
+  diffData.value = null
+  try { diffData.value = await versionDiff(vid) }
+  catch (e: any) { ElMessage.error(e?.message || '加载对比失败') }
+  finally { diffLoading.value = false }
+}
+async function onApproveVersion() {
+  diffBusy.value = true
+  try {
+    await approveVersion(diffVersionId.value)
+    ElMessage.success('已通过,新版替换线上')
+    diffOpen.value = false
+    await load(); await loadOverview()
+  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+  finally { diffBusy.value = false }
+}
+async function onRejectVersion() {
+  diffBusy.value = true
+  try {
+    await rejectVersion(diffVersionId.value)
+    ElMessage.success('已驳回,线上不变')
+    diffOpen.value = false
+    await load(); await loadOverview()
+  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+  finally { diffBusy.value = false }
 }
 
 // ── 新增 / 补全缺失维度 ──
@@ -233,7 +278,7 @@ onMounted(async () => {
         </span>
         <el-button v-if="overview.length" size="small" type="success" :loading="publishing"
           :disabled="!draftCount" @click="onPublishUnit">🚀 一键发布本单元</el-button>
-        <span class="ov-legend"><i class="dot cell-missing" />缺<i class="dot cell-draft" />草稿<i class="dot cell-pub" />已发布</span>
+        <span class="ov-legend"><i class="dot cell-missing" />缺<i class="dot cell-draft" />草稿<i class="dot cell-pub" />已发布<em style="margin-left:10px">🆕 待审新版(点击对比)</em></span>
       </div>
       <el-empty v-if="!overviewLoading && !overview.length" description="该单元暂无对齐的知识图谱节点(先在单元页「对齐图谱」)" />
       <table v-else class="ov-table">
@@ -244,8 +289,12 @@ onMounted(async () => {
           <tr v-for="node in overview" :key="node.node_id">
             <td class="kp" :title="node.name">{{ node.name }}</td>
             <td v-for="d in dimensions" :key="d">
-              <span v-if="node.dims[d]" :class="['cell', cellClass(node.dims[d])]">
+              <span v-if="node.dims[d]"
+                :class="['cell', cellClass(node.dims[d]), node.dims[d]!.pending_version_id ? 'clickable' : '']"
+                :title="node.dims[d]!.pending_version_id ? '有待审新版,点击对比' : ''"
+                @click="node.dims[d]!.pending_version_id && openDiff(node, d)">
                 {{ node.dims[d]!.status === 'published' ? '已发布' : '草稿' }}
+                <em v-if="node.dims[d]!.pending_version_id" class="newbadge">🆕</em>
               </span>
               <span v-else class="cell cell-missing clickable" @click="fillMissing(node, d)">补全</span>
             </td>
@@ -314,6 +363,30 @@ onMounted(async () => {
         <el-button type="primary" @click="confirmEdit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 待审新版对比抽屉:左=当前线上,右=新版;通过则替换、驳回则线上不变 -->
+    <el-drawer v-model="diffOpen" :title="`对比待审新版 · ${diffCtx}`" size="62%" direction="rtl">
+      <div v-loading="diffLoading">
+        <div v-if="diffData" class="diff-meta">
+          <span class="side base">{{ diffData.base.label }}</span>
+          <span class="arrow">→</span>
+          <span class="side incoming">{{ diffData.incoming.label }}</span>
+          <span style="margin-left:auto;color:#909399;font-size:12px">行级对比:<i class="ln del" />删除 <i class="ln add" />新增</span>
+        </div>
+        <div class="diff-box">
+          <div v-for="(l, i) in diffLines" :key="i" :class="['diff-line', l.type]">
+            <span class="gutter">{{ l.type === 'add' ? '+' : l.type === 'del' ? '-' : '' }}</span>
+            <span class="txt">{{ l.text || ' ' }}</span>
+          </div>
+          <el-empty v-if="!diffLoading && !diffLines.length" description="无内容" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="diffOpen = false">关闭</el-button>
+        <el-button type="danger" plain :loading="diffBusy" @click="onRejectVersion">驳回</el-button>
+        <el-button type="success" :loading="diffBusy" @click="onApproveVersion">通过 · 替换线上</el-button>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -335,5 +408,20 @@ onMounted(async () => {
 .cell-draft { background: #fdf6ec; color: #e6a23c; }
 .cell-missing { background: #fef0f0; color: #f56c6c; border: 1px dashed #fbc4c4; }
 .clickable { cursor: pointer; }
-.clickable:hover { background: #f56c6c; color: #fff; }
+.cell-missing.clickable:hover { background: #f56c6c; color: #fff; }
+.newbadge { font-style: normal; margin-left: 2px; }
+/* diff 抽屉 */
+.diff-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+.diff-meta .side { padding: 2px 10px; border-radius: 4px; }
+.diff-meta .base { background: #fef0f0; color: #f56c6c; }
+.diff-meta .incoming { background: #f0f9eb; color: #67c23a; }
+.diff-meta .ln { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: middle; }
+.diff-meta .ln.del { background: #fde2e2; } .diff-meta .ln.add { background: #e1f3d8; }
+.diff-box { border: 1px solid #ebeef5; border-radius: 6px; overflow: auto; max-height: calc(100vh - 220px);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+.diff-line { display: flex; white-space: pre-wrap; word-break: break-word; padding: 1px 0; }
+.diff-line .gutter { flex: 0 0 22px; text-align: center; color: #c0c4cc; user-select: none; }
+.diff-line .txt { flex: 1; padding-right: 10px; }
+.diff-line.add { background: #f0f9eb; } .diff-line.add .gutter { color: #67c23a; }
+.diff-line.del { background: #fef0f0; } .diff-line.del .gutter { color: #f56c6c; }
 </style>

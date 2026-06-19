@@ -316,6 +316,7 @@ class LectureCell(BaseModel):
     id: uuid.UUID
     status: str
     has_content: bool
+    pending_version_id: uuid.UUID | None = None
 
 
 class UnitContentNode(BaseModel):
@@ -333,6 +334,20 @@ class UnitPublishOut(BaseModel):
     published: int
     already_published: int
     missing_dims: int
+
+
+# ── 版本对比 / 审核(C2)──
+class VersionDiffSide(BaseModel):
+    label: str
+    content_md: str
+    version_no: int | None = None
+    source: str | None = None
+    status: str | None = None
+
+
+class VersionDiffOut(BaseModel):
+    base: VersionDiffSide
+    incoming: VersionDiffSide
 
 
 class AddResourceIn(BaseModel):

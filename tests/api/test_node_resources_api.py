@@ -136,6 +136,64 @@ async def test_lecture_versioning_no_overwrite(client):
 
 
 @pytest.mark.asyncio
+async def test_version_diff_approve_reject(client):
+    """C2:待审版本 diff + approve 替换线上&归档旧版 + reject 线上不变。"""
+    node_id = await _seed_node()
+    try:
+        admin = await _make_admin(client, "c2")
+
+        async def _submit(content):
+            r = await client.post("/api/v1/admin/node-resources", headers=admin, json={
+                "node_id": str(node_id), "resource_type": "lecture", "dimension": "grammar",
+                "content_md": content, "status": "published"})
+            assert r.status_code == 200, r.text
+            return r.json()["data"]["id"]
+
+        rid = await _submit("v1 正文")           # 首铺 published
+        await _submit("v2 正文")                  # 覆盖已发布 → 产生 pending v2
+
+        # 取 pending 版本 id
+        async with _async_session_factory() as db:
+            vid = (await db.execute(text(
+                "SELECT id FROM node_resource_version WHERE resource_id=:r AND status='pending'"),
+                {"r": rid})).scalar()
+
+        # diff(against current)
+        r = await client.get(f"/api/v1/admin/node-resource-versions/{vid}/diff", headers=admin)
+        d = r.json()["data"]
+        assert d["base"]["content_md"] == "v1 正文" and d["incoming"]["content_md"] == "v2 正文"
+
+        # 先验证 reject 不动线上
+        await _submit("v3 正文")                  # 再产生一个 pending v3
+        async with _async_session_factory() as db:
+            vid3 = (await db.execute(text(
+                "SELECT id FROM node_resource_version WHERE resource_id=:r AND status='pending' "
+                "ORDER BY version_no DESC LIMIT 1"), {"r": rid})).scalar()
+        r = await client.post(f"/api/v1/admin/node-resource-versions/{vid3}/reject", headers=admin)
+        assert r.status_code == 200, r.text
+        async with _async_session_factory() as db:
+            live = (await db.execute(text("SELECT content_md FROM node_resource WHERE id=:i"), {"i": rid})).scalar()
+            assert live == "v1 正文"              # 驳回后线上仍 v1
+
+        # approve v2 → 线上变 v2,v1 归档,v2 published
+        r = await client.post(f"/api/v1/admin/node-resource-versions/{vid}/approve", headers=admin)
+        assert r.status_code == 200, r.text
+        async with _async_session_factory() as db:
+            live = (await db.execute(text("SELECT content_md, status FROM node_resource WHERE id=:i"), {"i": rid})).first()
+            assert live[0] == "v2 正文" and live[1] == "published"
+            statuses = dict((await db.execute(text(
+                "SELECT content_md, status FROM node_resource_version WHERE resource_id=:r"), {"r": rid})).all())
+            assert statuses["v1 正文"] == "archived"
+            assert statuses["v2 正文"] == "published"
+            assert statuses["v3 正文"] == "rejected"
+    finally:
+        async with _async_session_factory() as db:
+            await db.execute(text("DELETE FROM node_resource_version WHERE node_id = :n"), {"n": str(node_id)})
+            await db.commit()
+        await _cleanup(node_id)
+
+
+@pytest.mark.asyncio
 async def test_unit_filter_and_content_overview(client):
     """A 期:按 unit_id 过滤 node-resources + 单元补全总览(六维缺失)。"""
     from app.models.d4_knowledge import CurriculumUnit

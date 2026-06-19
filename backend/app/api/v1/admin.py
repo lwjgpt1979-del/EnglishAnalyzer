@@ -78,6 +78,7 @@ from app.schemas.kp import (
     NodeResourceListOut,
     UnitContentOverviewOut,
     UnitPublishOut,
+    VersionDiffOut,
     AddResourceIn,
     UpdateResourceIn,
     LSAdminItem,
@@ -963,6 +964,32 @@ async def publish_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
     r = await nrs.publish_unit(db, unit_id=unit_id, reviewer_id=admin.id)
     await db.commit()
     return make_ok(UnitPublishOut(**r))
+
+
+# ─── 内容版本对比 / 审核(C2)────────────────────────────────────────
+@router.get("/node-resource-versions/{version_id}/diff", response_model=BaseResponse[VersionDiffOut])
+async def version_diff_api(version_id: uuid.UUID, db: DbDep, admin: AdminDep, against: str = "current"):
+    """取待审版本与对比基准(当前线上 / 另一版本)的两份正文,供前端行级 diff。"""
+    from app.services import node_resource_service as nrs
+    return make_ok(VersionDiffOut(**(await nrs.version_diff(db, version_id=version_id, against=against))))
+
+
+@router.post("/node-resource-versions/{version_id}/approve", response_model=BaseResponse[dict])
+async def approve_version_api(version_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """审核通过待审版本 → 替换线上、旧版归档。"""
+    from app.services import node_resource_service as nrs
+    r = await nrs.approve_version(db, version_id=version_id, reviewer_id=admin.id)
+    await db.commit()
+    return make_ok({k: str(v) for k, v in r.items()})
+
+
+@router.post("/node-resource-versions/{version_id}/reject", response_model=BaseResponse[dict])
+async def reject_version_api(version_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """驳回待审版本(线上不变)。"""
+    from app.services import node_resource_service as nrs
+    r = await nrs.reject_version(db, version_id=version_id, reviewer_id=admin.id)
+    await db.commit()
+    return make_ok({k: str(v) for k, v in r.items()})
 
 
 @router.post("/node-resources", response_model=BaseResponse[NodeResourceItem])

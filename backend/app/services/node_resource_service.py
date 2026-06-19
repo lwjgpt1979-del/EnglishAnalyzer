@@ -167,15 +167,101 @@ async def unit_content_overview(db: AsyncSession, *, unit_id: uuid.UUID) -> list
                       NodeResource.status, NodeResource.content_md)
             .where(NodeResource.node_id.in_(node_ids), NodeResource.resource_type == "lecture")
         )).all()
+        res_ids = [r[0] for r in lrows]
+        # 每个 resource 的最新 pending 版本(C2:待审新版标记)
+        pending: dict[uuid.UUID, uuid.UUID] = {}
+        if res_ids:
+            prows = (await db.execute(
+                sa.select(NodeResourceVersion.resource_id, NodeResourceVersion.id,
+                          NodeResourceVersion.version_no)
+                .where(NodeResourceVersion.resource_id.in_(res_ids),
+                       NodeResourceVersion.status == "pending")
+                .order_by(NodeResourceVersion.version_no)
+            )).all()
+            for rid_, vid, _vno in prows:
+                pending[rid_] = vid          # 留最大 version_no(已按升序,后者覆盖)
         for rid, nid, dim, status, content in lrows:
             if dim:
                 by_node.setdefault(nid, {})[dim] = {
-                    "id": rid, "status": status, "has_content": bool((content or "").strip())}
+                    "id": rid, "status": status, "has_content": bool((content or "").strip()),
+                    "pending_version_id": pending.get(rid)}
     return [
         {"node_id": nid, "name": name,
          "dims": {d: by_node.get(nid, {}).get(d) for d in LECTURE_DIMENSIONS}}
         for nid, name in node_rows
     ]
+
+
+async def version_diff(db: AsyncSession, *, version_id: uuid.UUID, against: str = "current") -> dict:
+    """取两份讲解内容供前端 diff。against='current' 对比当前线上;否则对比另一版本 id。"""
+    v = await db.get(NodeResourceVersion, version_id)
+    if v is None:
+        raise AppError(code=404, message="版本不存在")
+    incoming = {"label": f"v{v.version_no} · {v.source}", "content_md": v.content_md or "",
+                "version_no": v.version_no, "source": v.source, "status": v.status}
+    if against == "current":
+        res = await db.get(NodeResource, v.resource_id)
+        base = {"label": "当前线上", "content_md": (res.content_md if res else "") or "",
+                "version_no": None, "source": res.generated_by if res else None,
+                "status": res.status if res else None}
+    else:
+        other = await db.get(NodeResourceVersion, uuid.UUID(against))
+        if other is None:
+            raise AppError(code=404, message="对比版本不存在")
+        base = {"label": f"v{other.version_no} · {other.source}", "content_md": other.content_md or "",
+                "version_no": other.version_no, "source": other.source, "status": other.status}
+    return {"base": base, "incoming": incoming}
+
+
+async def approve_version(db: AsyncSession, *, version_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:
+    """审核通过待审版本 → 替换线上、旧 published 转 archived。一个事务内完成。"""
+    v = await db.get(NodeResourceVersion, version_id)
+    if v is None:
+        raise AppError(code=404, message="版本不存在")
+    if v.status != "pending":
+        raise AppError(code=400, message="仅待审版本可通过")
+    res = await db.get(NodeResource, v.resource_id)
+    if res is None:
+        raise AppError(code=404, message="资源不存在")
+    now = datetime.now(timezone.utc)
+    # 归档当前 published 版本行
+    cur = (await db.execute(sa.select(NodeResourceVersion).where(
+        NodeResourceVersion.resource_id == res.id,
+        NodeResourceVersion.status == "published"))).scalars().all()
+    for c in cur:
+        c.status = "archived"
+    # 历史遗留:线上内容无对应版本行 → 补存一条 archived 快照,避免丢失
+    if not cur and res.content_md is not None:
+        db.add(NodeResourceVersion(
+            id=uuid.uuid4(), resource_id=res.id, node_id=res.node_id, dimension=res.dimension,
+            version_no=await _next_version_no(db, res.id), content_md=res.content_md,
+            media_url=res.media_url, source=res.generated_by or "manual", status="archived",
+            reviewed_by=reviewer_id, reviewed_at=now))
+    # 升级 incoming → published,并同步到线上 node_resource(学生读它)
+    v.status = "published"
+    v.reviewed_by = reviewer_id
+    v.reviewed_at = now
+    res.content_md = v.content_md
+    res.media_url = v.media_url
+    res.status = "published"
+    res.reviewed_by = reviewer_id
+    res.reviewed_at = now
+    res.generated_by = "ai_with_human_review" if v.source == "ai_full" else (v.source or res.generated_by)
+    await db.flush()
+    return {"resource_id": res.id, "version_id": v.id, "version_no": v.version_no}
+
+
+async def reject_version(db: AsyncSession, *, version_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:
+    v = await db.get(NodeResourceVersion, version_id)
+    if v is None:
+        raise AppError(code=404, message="版本不存在")
+    if v.status != "pending":
+        raise AppError(code=400, message="仅待审版本可驳回")
+    v.status = "rejected"
+    v.reviewed_by = reviewer_id
+    v.reviewed_at = datetime.now(timezone.utc)
+    await db.flush()
+    return {"version_id": v.id}
 
 
 async def publish_unit(db: AsyncSession, *, unit_id: uuid.UUID, reviewer_id: uuid.UUID) -> dict:

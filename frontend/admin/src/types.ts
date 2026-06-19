@@ -205,13 +205,23 @@ export interface NodeResourceItem2 {
 }
 
 // 单元补全总览(发布前预览完整度 + 补全缺失维度)
-export interface LectureCell { id: string; status: string; has_content: boolean }
+export interface LectureCell { id: string; status: string; has_content: boolean; pending_version_id?: string | null }
 export interface UnitContentNode {
   node_id: string
   name: string
   dims: Record<string, LectureCell | null>
 }
 export interface UnitContentOverview { total_nodes: number; items: UnitContentNode[] }
+
+// 版本对比(C2)
+export interface VersionDiffSide {
+  label: string
+  content_md: string
+  version_no?: number | null
+  source?: string | null
+  status?: string | null
+}
+export interface VersionDiffOut { base: VersionDiffSide; incoming: VersionDiffSide }
 
 // ── 长难句管理(KP-First L7)──────────────────────────────
 export interface LSAdminItem {
