@@ -151,7 +151,9 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
     for q in group:
         if q.block_id and q.block_id in passages and q.block_id not in blk_label:
             blk_label[q.block_id] = chr(ord("A") + len(blk_label))
-    mat = "".join(f"[材料{lab}] {passages[bid][:600]}\n"
+    # 材料给足上下文:短文填空/完型常 1000-2000 字,且空号(如 ____59____)散落全篇,
+    # 截太短会让靠后的空(60/61/62…)看不到上下文而漏挂。放到 2400 字符。
+    mat = "".join(f"[材料{lab}] {passages[bid][:2400]}\n"
                   for bid, lab in blk_label.items())
 
     qlines = "\n".join(
