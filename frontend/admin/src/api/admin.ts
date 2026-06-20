@@ -187,6 +187,15 @@ export function updateEssayTemplates(payload: Record<string, { template: string;
   return unwrap<Record<string, { template: string; samples: string[] }>>(request.put('/admin/essay-templates', payload))
 }
 
+// 知识点 AI 提示词(按题型,多套选默认)
+export interface KpPrompt { id?: string | null; name: string; text: string; question_type: string; is_default: boolean }
+export function getKpPrompts(): Promise<{ prompts: KpPrompt[] }> {
+  return unwrap(request.get('/admin/kp-prompts'))
+}
+export function saveKpPrompts(prompts: KpPrompt[]): Promise<{ prompts: KpPrompt[] }> {
+  return unwrap(request.put('/admin/kp-prompts', { prompts }))
+}
+
 // ── 机构入驻审核（D-123）──
 export interface AdminInstitution {
   id: string; name: string; contact_phone: string
