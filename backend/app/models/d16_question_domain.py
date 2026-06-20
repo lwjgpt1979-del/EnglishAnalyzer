@@ -49,7 +49,15 @@ class PlatformQuestion(Base):
     answer = mapped_column(sa.Text, nullable=True)
     explanation = mapped_column(sa.Text, nullable=True)
     difficulty = mapped_column(sa.SmallInteger, nullable=True)          # 认知层级 1–5
-    meta = mapped_column(JSONB, nullable=True)                          # 地区/年份/学段
+    # ── 可筛选字段(从批次 meta 落列,便于按教材/学段/年级/地区/考试类型查询)──
+    textbook_version = mapped_column(sa.String(24), nullable=True)
+    stage = mapped_column(sa.String(8), nullable=True)                  # 小|初|高
+    grade = mapped_column(sa.String(12), nullable=True)
+    semester = mapped_column(sa.String(4), nullable=True)               # 上|下
+    region_code = mapped_column(sa.String(12), nullable=True)           # 省/市 code
+    region_name = mapped_column(sa.String(64), nullable=True)
+    exam_type = mapped_column(sa.String(12), nullable=True)             # 中考|高考|普通
+    meta = mapped_column(JSONB, nullable=True)                          # 其余元信息(年份等)
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'draft'"))
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at = mapped_column(
@@ -61,6 +69,9 @@ class PlatformQuestion(Base):
         sa.Index("ix_platform_question_type_status", "type", "status"),
         sa.Index("ix_platform_question_parent", "parent_real_id"),
         sa.Index("ix_platform_question_paper", "paper_id"),
+        sa.Index("ix_platform_question_book", "textbook_version", "stage", "grade"),
+        sa.Index("ix_platform_question_region", "region_code"),
+        sa.Index("ix_platform_question_exam", "exam_type"),
     )
 
 

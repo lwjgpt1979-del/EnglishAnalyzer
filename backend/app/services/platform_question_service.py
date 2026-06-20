@@ -29,6 +29,17 @@ from app.services.llm_provider import chat_completion, is_llm_dev_mode
 _log = logging.getLogger(__name__)
 
 
+_EXAM_COLS = ("textbook_version", "stage", "grade", "semester", "region_name", "exam_type")
+
+
+def _exam_cols_from_meta(meta: dict | None) -> dict:
+    """从批次 meta 提取可筛选字段(落 platform_question 独立列)。"""
+    m = meta or {}
+    out = {c: m.get(c) for c in _EXAM_COLS}
+    out["region_code"] = m.get("city_code") or m.get("region_code")
+    return out
+
+
 @dataclass
 class ImportResult:
     question_id: uuid.UUID
@@ -256,6 +267,7 @@ async def import_real_question(
         paper_id=paper_id, section=section,
         question_type=question_type, stem=stem, options=options, answer=answer,
         explanation=explanation, difficulty=difficulty, meta=meta, status=status,
+        **_exam_cols_from_meta(meta),
     )
     db.add(q)
     await db.flush()
@@ -380,6 +392,8 @@ async def generate_sim_from_real(
             question_type=real.question_type, explanation=v.get("explanation"),
             difficulty=real.difficulty, status=status,
         )
+        for c in (*_EXAM_COLS, "region_code", "meta", "section"):   # 继承母题可筛选字段
+            setattr(sim, c, getattr(real, c))
         for nid in parent_nodes:   # 继承母题 KP
             await attach_node(db, sim.id, nid)
         out.append(sim.id)
