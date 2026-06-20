@@ -23,6 +23,14 @@ async def lifespan(app: FastAPI):
         await _resume_extract()
     except Exception:  # noqa: BLE001
         pass
+    # 预热 LLM 生效模型缓存(后台「模型配置」页可改,无需重启)
+    try:
+        from app.core.database import async_session_factory
+        from app.services import llm_config_service
+        async with async_session_factory() as _db:
+            await llm_config_service.get_model(_db)
+    except Exception:  # noqa: BLE001
+        pass
     yield
     # shutdown: release connection pool
     await close_async_engine()

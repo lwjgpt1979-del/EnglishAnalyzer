@@ -68,6 +68,7 @@ const navGroups: NavGroup[] = [
     { path: '/content-feedback', label: '内容反馈' },
   ] },
   { key: 'g-system', title: '⚙️ 系统配置', items: [
+    { path: '/llm-config', label: '🤖 模型配置' },
     { path: '/sensitive-words', label: '敏感词库' },
     { path: '/regions', label: '地区管理' },
     { path: '/system-settings', label: '系统参数' },

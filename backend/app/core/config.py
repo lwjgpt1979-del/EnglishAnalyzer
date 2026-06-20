@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # 换厂商只需改 llm_base_url + llm_model + 对应 api_key，业务 service 零改动。
     deepseek_api_key: str = "sk-placeholder-for-dev"  # LLM api key（dev 以 sk-placeholder 开头触发 mock）
     llm_base_url: str = "https://api.deepseek.com"     # OpenAI 兼容 endpoint
-    llm_model: str = "deepseek-chat"                   # 模型名
+    llm_model: str = "deepseek-v4-pro"                 # 模型名(默认;可在后台「模型配置」页覆盖)
 
     # 微信支付 v3
     wechat_pay_mch_id: str = "placeholder_mch_id"

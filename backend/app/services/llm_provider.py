@@ -46,9 +46,10 @@ async def chat_completion(
         max_tokens: 最大生成 token 数。
         response_format: 可选，如 {"type": "json_object"} 强制 JSON 输出。
     """
+    from app.services import llm_config_service
     client = get_llm_client()
     kwargs: dict = {
-        "model": settings.llm_model,
+        "model": llm_config_service.active_model(),   # 后台「模型配置」页可改;缓存优先
         "max_tokens": max_tokens,
         "messages": [
             {"role": "system", "content": system_prompt},

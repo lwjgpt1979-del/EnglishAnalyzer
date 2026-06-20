@@ -99,6 +99,14 @@ export function getPricing() {
   return unwrap<SemesterPricing>(request.get('/admin/pricing'))
 }
 
+export interface LlmModelConfig { model: string; presets: string[]; base_url: string; dev_mock: boolean }
+export function getLlmConfig() {
+  return unwrap<LlmModelConfig>(request.get('/admin/llm-config'))
+}
+export function updateLlmConfig(model: string) {
+  return unwrap<LlmModelConfig>(request.put('/admin/llm-config', { model }))
+}
+
 export interface TtsSpeed { primary: number; junior: number; senior: number }
 export function getTtsSpeed() {
   return unwrap<TtsSpeed>(request.get('/admin/tts-speed'))
