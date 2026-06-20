@@ -86,32 +86,29 @@ async function openPaper(p: PlatformPaper) {
   finally { paperLoading.value = false }
 }
 
-// ── 知识点选择器(受控树:知识/能力/题型 三轴)──
-const KP_AXES = [{ k: 'knowledge', n: '知识点' }, { k: 'ability', n: '能力' }, { k: 'exam', n: '题型' }]
+// ── 知识点选择器(受控知识分类树,单树)──
 const kpPickerDlg = ref(false)
-const kpAxis = ref('knowledge')
-const kpTreeCache = ref<Record<string, NodeTreeItem[]>>({})
+const kpTree = ref<NodeTreeItem[]>([])
 const kpFilter = ref('')
 const kpTreeRef = ref()
 const kpTarget = ref<PaperQuestion | null>(null)       // 单题挂载目标
 const kpTargetSection = ref<string | null>(null)       // 按大题挂载目标(整段)
 const kpTreeProps = { label: 'name', children: 'children' }
-const kpTree = computed(() => kpTreeCache.value[kpAxis.value] || [])
 
-async function loadAxisTree(axis: string) {
-  if (kpTreeCache.value[axis]) return
-  try { kpTreeCache.value = { ...kpTreeCache.value, [axis]: (await getNodeTree(axis)).items } }
+async function loadKpTree() {
+  if (kpTree.value.length) return
+  try { kpTree.value = (await getNodeTree('knowledge')).items }
   catch (e: any) { ElMessage.error(e?.message || '加载知识点树失败') }
 }
 async function openKpPicker(q: PaperQuestion) {
   kpTarget.value = q; kpTargetSection.value = null
   kpFilter.value = ''; kpPickerDlg.value = true
-  await loadAxisTree(kpAxis.value)
+  await loadKpTree()
 }
 async function openSectionKpPicker(section: string) {
   kpTarget.value = null; kpTargetSection.value = section
   kpFilter.value = ''; kpPickerDlg.value = true
-  await loadAxisTree(kpAxis.value)
+  await loadKpTree()
 }
 function filterKpNode(val: string, data: NodeTreeItem) {
   return !val || data.name.includes(val)
@@ -168,7 +165,6 @@ function dismissSuggest(q: PaperQuestion, s: QuestionKpRef) {
 }
 
 watch(kpFilter, v => kpTreeRef.value?.filter(v))
-watch(kpAxis, async a => { await loadAxisTree(a); kpTreeRef.value?.filter(kpFilter.value) })
 
 async function onPublishPaper() {
   if (!curPaper.value) return
@@ -463,10 +459,7 @@ onMounted(load)
       <div style="font-size:12px;color:#909399;margin-bottom:8px">
         {{ kpTargetSection ? `为「${kpTargetSection}」整段挑知识点(挂到该大题所有小问)` : `为「${kpTarget?.question_no}」题挑知识点` }},点击节点即挂上
       </div>
-      <el-radio-group v-model="kpAxis" size="small" style="margin-bottom:8px">
-        <el-radio-button v-for="a in KP_AXES" :key="a.k" :value="a.k">{{ a.n }}</el-radio-button>
-      </el-radio-group>
-      <el-input v-model="kpFilter" placeholder="搜索名称" clearable style="margin-bottom:8px" />
+      <el-input v-model="kpFilter" placeholder="搜索知识点名" clearable style="margin-bottom:8px" />
       <el-tree ref="kpTreeRef" :data="kpTree" :props="kpTreeProps" node-key="id"
         :filter-node-method="filterKpNode" :expand-on-click-node="false"
         style="max-height:420px;overflow:auto">
