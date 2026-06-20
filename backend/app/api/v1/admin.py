@@ -346,10 +346,10 @@ async def knowledge_nodes_overview_api(
 
 
 @router.get("/knowledge-nodes/tree", response_model=BaseResponse[NodeTreeOut])
-async def knowledge_node_tree_api(db: DbDep, admin: AdminDep,
-                                  axis: str | None = None, with_counts: bool = False):
-    """受控知识树(E1):嵌套结构。with_counts=true 时每节点带教材/真题挂载数(子树聚合)。"""
-    items = await kp_candidate_service.node_tree(db, axis=axis, with_counts=with_counts)
+async def knowledge_node_tree_api(db: DbDep, admin: AdminDep, axis: str | None = None,
+                                  with_counts: bool = False, stage: str | None = None):
+    """受控知识树(E1):嵌套结构。with_counts=true 每节点带教材/真题挂载数;stage 按学段过滤。"""
+    items = await kp_candidate_service.node_tree(db, axis=axis, with_counts=with_counts, stage=stage)
     return make_ok(NodeTreeOut(items=[NodeTreeItem(**it) for it in items]))
 
 
@@ -1074,7 +1074,7 @@ async def save_kp_prompts_api(body: KpPromptsIn, db: DbDep, admin: AdminDep):
 async def suggest_kp_text_api(body: SuggestTextIn, db: DbDep, admin: AdminDep):
     """一段正文(教材等)→ 受控考点 AI 建议(用该来源类型的提示词+关注分类)。"""
     from app.services import kp_suggest_service as kss
-    refs = await kss.suggest_kps_for_text(db, body.text, source_type=body.source_type)
+    refs = await kss.suggest_kps_for_text(db, body.text, source_type=body.source_type, stage=body.stage)
     return make_ok([QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs])
 
 

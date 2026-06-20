@@ -247,6 +247,7 @@ export interface NodeTreeItem {
   node_kind?: string | null
   status: string
   code: string
+  applicable_stages?: string[] | null
   unit_refs?: number | null
   question_refs?: number | null
   children: NodeTreeItem[]

@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d15_knowledge_graph import KnowledgeNode
-from app.models.d16_question_domain import PlatformQuestion, Passage
+from app.models.d16_question_domain import PlatformPaper, PlatformQuestion, Passage
 from app.models.d19_node_resource import NodeResource
 from app.services import kp_prompt_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
@@ -43,11 +43,11 @@ def _gist(md: str | None) -> str:
     return ""
 
 
-async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple[str, str]]]:
-    """考点目录 + 释义。返回 (code2node, entries[(code, 行文本)])。"""
+async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple[str, str, list]]]:
+    """考点目录 + 释义。返回 (code2node, entries[(code, 行文本, 适用学段)])。"""
     rows = (await db.execute(
         sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
-                  NodeResource.content_md)
+                  KnowledgeNode.applicable_stages, NodeResource.content_md)
         .outerjoin(NodeResource, sa.and_(
             NodeResource.node_id == KnowledgeNode.id,
             NodeResource.resource_type == "lecture"))
@@ -56,23 +56,27 @@ async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple[str, str]]]:
         .order_by(KnowledgeNode.code)
     )).all()
     code2node: dict[str, tuple[uuid.UUID, str]] = {}
-    entries: list[tuple[str, str]] = []
-    for nid, nm, code, md in rows:
+    entries: list[tuple[str, str, list]] = []
+    for nid, nm, code, stages, md in rows:
         if code in code2node:
             continue
         code2node[code] = (nid, nm)
-        entries.append((code, f"{code}\t{nm}\t{_gist(md)}"))
+        entries.append((code, f"{code}\t{nm}\t{_gist(md)}", stages or []))
     return code2node, entries
 
 
-def _system_for(entries: list[tuple[str, str]], focus_codes: list[str]) -> str:
-    """按关注分类编码前缀过滤考点目录,拼成该题型的稳定 system 前缀(空 focus=全部)。"""
-    if focus_codes:
-        fc = [c for c in focus_codes if c]
-        lines = [ln for code, ln in entries
-                 if any(code == f or code.startswith(f + "-") for f in fc)]
-    else:
-        lines = [ln for _c, ln in entries]
+def _system_for(entries: list[tuple[str, str, list]], focus_codes: list[str],
+                stage: str | None = None) -> str:
+    """过滤考点目录拼稳定 system 前缀。focus=关注分类编码前缀(空=全部);
+    stage=题/卷学段软过滤(考点未标学段=通用,或含该学段才纳入)。"""
+    fc = [c for c in focus_codes if c] if focus_codes else None
+    lines: list[str] = []
+    for code, ln, stages in entries:
+        if fc and not any(code == f or code.startswith(f + "-") for f in fc):
+            continue
+        if stage and stages and stage not in stages:
+            continue
+        lines.append(ln)
     return _SYS_HEAD + "\n".join(lines)
 
 
@@ -139,9 +143,9 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
 
 
 async def suggest_kps_for_text(
-    db: AsyncSession, text: str, *, source_type: str = "教材",
+    db: AsyncSession, text: str, *, source_type: str = "教材", stage: str | None = None,
 ) -> list[tuple[uuid.UUID, str, str]]:
-    """一段正文(教材等)→ 受控考点建议。用该来源类型的提示词 + 关注分类过滤目录。"""
+    """一段正文(教材等)→ 受控考点建议。用该来源类型的提示词 + 关注分类 + 学段过滤目录。"""
     if not (text or "").strip() or is_llm_dev_mode():
         return []
     code2node, entries = await _load_catalog(db)
@@ -149,7 +153,7 @@ async def suggest_kps_for_text(
     item = kp_prompt_service.default_item_for(prompts, source_type)
     id2code = await _codes_of_nodes(db, item.get("focus_node_ids") or [])
     focus_codes = [id2code[str(n)] for n in (item.get("focus_node_ids") or []) if str(n) in id2code]
-    system_msg = _system_for(entries, focus_codes)
+    system_msg = _system_for(entries, focus_codes, stage)
     max_kp = int(item.get("max_kp", 8))
     user = (
         f"{item['text']}\n挑出正文覆盖到的考点(至多 {max_kp} 个)。\n\n【正文】\n{text[:4000]}\n\n"
@@ -196,6 +200,11 @@ async def suggest_kps_for_paper(
     passages = await _passages_for(db, [q.block_id for q in qs])
     prompts = await kp_prompt_service.get_prompts(db)
     override = kp_prompt_service.item_by_id(prompts, prompt_id) if prompt_id else None
+    # 卷的学段(优先卷,回退小题)→ 候选考点按学段软过滤(未标学段=通用)
+    stage = (await db.execute(sa.select(PlatformPaper.stage)
+                              .where(PlatformPaper.id == paper_id))).scalar_one_or_none()
+    if not stage:
+        stage = next((q.stage for q in qs if getattr(q, "stage", None)), None)
 
     def _etype(q: PlatformQuestion) -> str:        # 听力题(section 含"听力")单列题型
         if "听力" in (q.section or ""):
@@ -215,7 +224,7 @@ async def suggest_kps_for_paper(
     for qtype, group in groups.items():
         it = items[qtype]
         focus_codes = [id2code[str(n)] for n in (it.get("focus_node_ids") or []) if str(n) in id2code]
-        system_msg = _system_for(entries, focus_codes)     # 该题型稳定前缀(同题型→命中缓存)
+        system_msg = _system_for(entries, focus_codes, stage)   # 题型+学段稳定前缀(同题型同学段→命中缓存)
         out.update(await _suggest_group(group, code2node, system_msg, it["text"], passages,
                                         int(it.get("min_kp", 0)), int(it.get("max_kp", 2))))
     return out

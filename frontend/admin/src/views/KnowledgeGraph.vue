@@ -52,11 +52,12 @@ function reload() { page.value = 1; load() }
 const viewMode = ref<'tree' | 'list'>('tree')
 const treeData = ref<NodeTreeItem[]>([])
 const treeLoading = ref(false)
+const treeStage = ref('')      // 树视图按学段过滤(空=全部)
 const treeProps = { label: 'name', children: 'children' }
 
 async function loadTree() {
   treeLoading.value = true
-  try { treeData.value = (await getNodeTree('knowledge', true)).items }
+  try { treeData.value = (await getNodeTree('knowledge', true, treeStage.value || undefined)).items }
   catch (e: any) { ElMessage.error(e?.message || '加载树失败') }
   finally { treeLoading.value = false }
 }
@@ -171,8 +172,12 @@ onMounted(loadTree)
     <div v-if="viewMode === 'tree'">
       <div class="toolbar">
         <el-button type="primary" @click="addChild(null)">+ 新增顶层分类</el-button>
-        <el-button @click="loadTree">刷新</el-button>
-        <span class="hint">知识分类树(词法/句法/篇章→考点)。拖拽可移动/调整层级(放到节点内=成为其子)。点名称看详情/反向关联。</span>
+        <span style="margin:0 6px 0 10px">学段：</span>
+        <el-select v-model="treeStage" style="width:110px" @change="loadTree">
+          <el-option v-for="s in STAGES" :key="s.value" :label="s.label" :value="s.value" />
+        </el-select>
+        <el-button style="margin-left:8px" @click="loadTree">刷新</el-button>
+        <span class="hint">知识分类树(词法/句法/篇章→考点)。学段过滤:只看某学段适用的考点(分类为通用脚手架,各学段共用)。拖拽可移动层级。点名称看详情。</span>
       </div>
       <el-tree v-loading="treeLoading" :data="treeData" :props="treeProps" node-key="id"
         draggable :allow-drop="allowDrop" @node-drop="onNodeDrop"
@@ -181,6 +186,8 @@ onMounted(loadTree)
           <span class="tnode">
             <el-link type="primary" @click.stop="openDetail(data.id)">{{ data.name }}</el-link>
             <span class="tmeta" v-if="data.node_kind">{{ data.node_kind }}</span>
+            <span v-if="data.applicable_stages && data.applicable_stages.length" class="cnt cnt-s"
+              title="适用学段">{{ data.applicable_stages.join('/') }}</span>
             <span v-if="data.unit_refs" class="cnt cnt-u" title="教材单元挂载数(含子节点)">教 {{ data.unit_refs }}</span>
             <span v-if="data.question_refs" class="cnt cnt-q" title="真题挂载数(含子节点)">真 {{ data.question_refs }}</span>
             <span class="tops">
@@ -355,6 +362,7 @@ onMounted(loadTree)
 .cnt { font-size: 11px; padding: 0 6px; border-radius: 8px; }
 .cnt-u { color: #409eff; background: #ecf5ff; }
 .cnt-q { color: #e6a23c; background: #fdf6ec; }
+.cnt-s { color: #67c23a; background: #f0f9eb; }
 .tops { margin-left: auto; visibility: hidden; }
 .tnode:hover .tops { visibility: visible; }
 .d-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }

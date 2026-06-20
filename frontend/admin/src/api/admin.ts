@@ -362,10 +362,11 @@ export function listKnowledgeNodes(params: {
   return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params }))
 }
 // 受控知识树(E1)
-export function getNodeTree(axis?: string, withCounts = false): Promise<{ items: NodeTreeItem[] }> {
+export function getNodeTree(axis?: string, withCounts = false, stage?: string): Promise<{ items: NodeTreeItem[] }> {
   const params: Record<string, unknown> = {}
   if (axis) params.axis = axis
   if (withCounts) params.with_counts = true
+  if (stage) params.stage = stage
   return unwrap(request.get('/admin/knowledge-nodes/tree', { params }))
 }
 export function createKnowledgeNode(body: {

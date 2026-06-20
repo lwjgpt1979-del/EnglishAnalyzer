@@ -157,18 +157,25 @@ async def list_nodes_overview(
 
 
 async def node_tree(db: AsyncSession, *, axis: str | None = None,
-                    with_counts: bool = False) -> list[dict]:
+                    with_counts: bool = False, stage: str | None = None) -> list[dict]:
     """受控知识树(E1):按 parent_id 组装嵌套(排除已停用)。
 
     with_counts=True 时,每个节点附 unit_refs/question_refs(教材单元 / 真题挂载数),
     分类节点取其**整棵子树聚合**(自身+所有后代直接挂载之和),便于一眼看哪类挂得多。
+    stage(小|初|高)软过滤:只保留「未标学段(通用脚手架/分类)或含该学段」的节点。
     """
     stmt = sa.select(KnowledgeNode).where(KnowledgeNode.status != "retired")
     if axis:
         stmt = stmt.where(KnowledgeNode.axis == axis)
+    if stage:
+        from sqlalchemy.dialects.postgresql import JSONB
+        stmt = stmt.where(sa.or_(
+            KnowledgeNode.applicable_stages.is_(None),
+            KnowledgeNode.applicable_stages.op("@>")(sa.cast([stage], JSONB))))
     rows = (await db.execute(stmt.order_by(KnowledgeNode.sort_order, KnowledgeNode.name))).scalars().all()
     nodes = {r.id: {"id": r.id, "name": r.name, "axis": r.axis, "node_kind": r.node_kind,
-                    "status": r.status, "code": r.code, "parent_id": r.parent_id, "children": []}
+                    "status": r.status, "code": r.code, "parent_id": r.parent_id,
+                    "applicable_stages": r.applicable_stages, "children": []}
              for r in rows}
 
     if with_counts:

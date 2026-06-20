@@ -112,6 +112,7 @@ class NodeTreeItem(BaseModel):
     node_kind: str | None = None
     status: str
     code: str
+    applicable_stages: list[str] | None = None   # 适用学段(小/初/高);null=通用脚手架
     unit_refs: int | None = None          # 教材单元挂载数(子树聚合,with_counts 时有)
     question_refs: int | None = None       # 真题挂载数(子树聚合)
     children: list["NodeTreeItem"] = []
@@ -332,6 +333,7 @@ class KpPromptsIn(BaseModel):
 class SuggestTextIn(BaseModel):
     text: str
     source_type: str = "教材"
+    stage: str | None = None        # 小|初|高;限定候选考点学段(空=不限)
 
 
 class KpPromptsOut(BaseModel):
