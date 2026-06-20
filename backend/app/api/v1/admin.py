@@ -1072,15 +1072,23 @@ async def detach_question_kp_api(question_id: uuid.UUID, node_id: uuid.UUID, db:
 async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep,
                                body: SuggestKpIn | None = None):
     """AI 建议:按题型默认提示词给每题挑考点;可按 sections 限大题、prompt_id 指定提示词。"""
+    from app.schemas.kp import KpProposal
     from app.services import kp_suggest_service as kss
-    sug = await kss.suggest_kps_for_paper(
+    matches, proposals = await kss.suggest_kps_for_paper(
         db, paper_id,
         sections=(body.sections if body else None),
         prompt_id=(body.prompt_id if body else None))
-    items = [SuggestKpItem(
-        question_id=qid,
-        suggestions=[QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs],
-    ) for qid, refs in sug.items() if refs]
+    items = []
+    for qid in set(matches) | set(proposals):
+        refs = matches.get(qid) or []
+        props = proposals.get(qid) or []
+        if not refs and not props:
+            continue
+        items.append(SuggestKpItem(
+            question_id=qid,
+            suggestions=[QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs],
+            proposals=[KpProposal(name=nm, parent_node_id=pid, parent_name=pn) for nm, pid, pn in props],
+        ))
     return make_ok(SuggestKpOut(items=items))
 
 

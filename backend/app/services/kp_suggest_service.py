@@ -18,6 +18,7 @@ import uuid
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d16_question_domain import PlatformPaper, PlatformQuestion, Passage
@@ -67,7 +68,6 @@ async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple]]:
     不再按 code 正则(原 ^(cf|jf)-n-n-n$ 会漏掉篇章 k-3-* 与三段叶子)——凡叶子皆考点,
     与 code 命名方案解耦。
     """
-    from sqlalchemy.orm import aliased
     child = aliased(KnowledgeNode)
     is_leaf = ~sa.exists().where(child.parent_id == KnowledgeNode.id)
     rows = (await db.execute(
@@ -88,6 +88,20 @@ async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple]]:
         code2node[code] = (nid, nm)
         entries.append((nid, code, f"{code}\t{nm}\t{_gist(md)}", stages or []))
     return code2node, entries
+
+
+async def _load_categories(db: AsyncSession) -> tuple[dict, str]:
+    """可挂分类 = 受控树里**有子节点的(非叶)**节点(供"新建考点"提议选归属)。
+    返回 (code2node{code:(id,name)}, lines="code<TAB>名称\\n...")。"""
+    child = aliased(KnowledgeNode)
+    has_child = sa.exists().where(child.parent_id == KnowledgeNode.id)
+    rows = (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
+        .where(KnowledgeNode.axis == "knowledge", KnowledgeNode.status == "active", has_child)
+        .order_by(KnowledgeNode.code))).all()
+    code2node = {code: (nid, nm) for nid, nm, code in rows}
+    lines = "\n".join(f"{code}\t{nm}" for nid, nm, code in rows)
+    return code2node, lines
 
 
 async def _descendant_node_ids(db: AsyncSession, root_ids: list) -> set | None:
@@ -134,9 +148,18 @@ async def _passages_for(db: AsyncSession, block_ids: list[uuid.UUID]) -> dict[uu
 
 async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_msg: str,
                          type_prompt: str, passages: dict[uuid.UUID, str],
-                         min_kp: int = 0, max_kp: int = 2) -> dict[uuid.UUID, list[tuple]]:
-    """同题型一组题调一次 LLM(system=稳定目录前缀,user=题型提示词+短文+小题)。"""
-    out = {q.id: [] for q in group}
+                         min_kp: int = 0, max_kp: int = 2,
+                         cat_lines: str = "", cat_code2node: dict | None = None,
+                         ) -> tuple[dict[uuid.UUID, list[tuple]], dict[uuid.UUID, list[tuple]]]:
+    """同题型一组题调一次 LLM(system=稳定目录前缀,user=题型提示词+短文+小题)。
+
+    返回 (matches, proposals):
+      matches[qid]   = [(node_id, name, code)]      命中的现有考点
+      proposals[qid] = [(name, parent_node_id, parent_name)]  目录无对应 → 建议新建考点+归属分类
+    """
+    out: dict = {q.id: [] for q in group}
+    proposals: dict = {q.id: [] for q in group}
+    cat_code2node = cat_code2node or {}
     # 短 id(question_id 前 8 位 hex)做小题标识——不与题干里的题号(8.9.…)相混
     by_qid: dict[str, PlatformQuestion] = {}
     for q in group:
@@ -163,13 +186,19 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
 
     cnt = (f"每题挑 {min_kp}-{max_kp} 个" if min_kp else f"每题挑至多 {max_kp} 个") + "最贴切考点(无明确考点给 [])。"
     nq = len(group)
+    # 缺口建议:目录里没有合适考点但该题确有明确考点时,提议新建考点并归到某分类
+    gap = ("\n\n【可挂分类(catCode<TAB>名称)——仅当目录无现成考点、但本题确有明确考点时,"
+           "用 propose 提议新建一个考点并归到最贴切的分类】\n" + cat_lines) if cat_lines else ""
+    propose_spec = (',"propose":{"name":"建议新建的考点名","cat":"归属分类catCode"}'
+                    if cat_lines else "")
     user = (
         f"{type_prompt}\n{cnt}\n\n"
         + (f"【本大题短文/材料】\n{mat}\n" if mat else "")
-        + f"【小题(qid<TAB>[大题·材料]<TAB>题干)】\n{qlines}\n\n"
-        f'返回 JSON:{{"items":[{{"qid":"小题qid","codes":["编码",...]}}]}}。'
+        + f"【小题(qid<TAB>[大题·材料]<TAB>题干)】\n{qlines}\n"
+        + gap + "\n\n"
+        f'返回 JSON:{{"items":[{{"qid":"小题qid","codes":["编码",...]{propose_spec}}}]}}。'
         f'**必须为上面全部 {nq} 道小题各返回一条**(逐一判断,无考点才给 codes:[]),不得遗漏任何 qid;'
-        'qid 原样回传,只用目录里的编码。'
+        'qid 原样回传,codes 只用目录里的编码;propose 仅在 codes 为空且确有明确考点时给(否则省略)。'
     )
     try:
         resp = await chat_completion(
@@ -177,7 +206,7 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
             response_format={"type": "json_object"})
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception:  # noqa: BLE001
-        return out
+        return out, proposals
     for it in (data.get("items") or []):
         q = by_qid.get(str(it.get("qid")))
         if q is None:
@@ -188,7 +217,13 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
             if ref and ref[0] not in seen:
                 seen.add(ref[0])
                 out[q.id].append((ref[0], ref[1], code))
-    return out
+        # 无命中且 AI 给了 propose → 收为"新建考点"建议(解析归属分类)
+        pr = it.get("propose")
+        if not out[q.id] and isinstance(pr, dict) and (pr.get("name") or "").strip():
+            cat = cat_code2node.get(str(pr.get("cat")))
+            proposals[q.id].append(
+                (pr["name"].strip()[:60], cat[0] if cat else None, cat[1] if cat else None))
+    return out, proposals
 
 
 async def suggest_kps_for_text(
@@ -225,17 +260,22 @@ async def suggest_kps_for_text(
 async def suggest_kps_for_paper(
     db: AsyncSession, paper_id: uuid.UUID, *,
     sections: list[str] | None = None, prompt_id: str | None = None,
-) -> dict[uuid.UUID, list[tuple[uuid.UUID, str, str]]]:
-    """按题型分组建议考点;每题型用其(默认/指定)提示词 + 关注分类过滤目录。"""
+) -> tuple[dict[uuid.UUID, list[tuple]], dict[uuid.UUID, list[tuple]]]:
+    """按题型分组建议考点;每题型用其(默认/指定)提示词 + 关注分类过滤目录。
+
+    返回 (matches, proposals):matches[qid]=[(node_id,name,code)];
+    proposals[qid]=[(新考点名, 归属分类node_id, 归属分类名)]——目录无对应时 AI 的"新建考点"建议。
+    """
     stmt = sa.select(PlatformQuestion).where(
         PlatformQuestion.paper_id == paper_id, PlatformQuestion.type == "real")
     if sections:
         stmt = stmt.where(PlatformQuestion.section.in_(sections))
     qs = list((await db.execute(stmt)).scalars().all())
     if not qs or is_llm_dev_mode():
-        return {q.id: [] for q in qs}
+        return {q.id: [] for q in qs}, {}
 
     code2node, entries = await _load_catalog(db)
+    cat_code2node, cat_lines = await _load_categories(db)
     passages = await _passages_for(db, [q.block_id for q in qs])
     prompts = await kp_prompt_service.get_prompts(db)
     override = kp_prompt_service.item_by_id(prompts, prompt_id) if prompt_id else None
@@ -261,17 +301,20 @@ async def suggest_kps_for_paper(
     for qt, it in items.items():
         focus_allowed[qt] = await _descendant_node_ids(db, it.get("focus_node_ids") or [])
 
-    async def _run_group(qtype: str, group: list[PlatformQuestion], it: dict) -> dict:
+    async def _run_group(qtype: str, group: list[PlatformQuestion], it: dict) -> tuple[dict, dict]:
         system_msg = _system_for(entries, focus_allowed[qtype], stage)   # 题型+学段稳定前缀(同→命中缓存)
         return await _suggest_group(group, code2node, system_msg, it["text"], passages,
-                                    int(it.get("min_kp", 0)), int(it.get("max_kp", 2)))
+                                    int(it.get("min_kp", 0)), int(it.get("max_kp", 2)),
+                                    cat_lines, cat_code2node)
 
     # 各题型分组**并行**调用大模型:墙钟时间 = 最慢一组,而非求和(整卷不再超时)
     out: dict[uuid.UUID, list[tuple]] = {q.id: [] for q in qs}
+    proposals: dict[uuid.UUID, list[tuple]] = {}
     results = await asyncio.gather(
         *(_run_group(qtype, group, items[qtype]) for qtype, group in groups.items()),
         return_exceptions=True)
     for r in results:
-        if isinstance(r, dict):     # 单组失败(异常)不拖垮整卷,其余照常合并
-            out.update(r)
-    return out
+        if isinstance(r, tuple):     # (matches, proposals);单组失败(异常)跳过,不拖垮整卷
+            out.update(r[0])
+            proposals.update({q: v for q, v in r[1].items() if v})
+    return out, proposals

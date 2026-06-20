@@ -5,7 +5,8 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
-  type QuestionKpRef, type KpPrompt,
+  createKnowledgeNode,
+  type QuestionKpRef, type KpPrompt, type KpProposal,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions,
   listRegions, uploadImageViaPresign,
   type PlatformPaper, type PaperQuestion,
@@ -94,7 +95,7 @@ const unmappedCount = computed(() => paperQuestions.value.filter(q => !(q.kps &&
 
 async function openPaper(p: PlatformPaper) {
   paperDlg.value = true; paperLoading.value = true; curPaper.value = p
-  paperQuestions.value = []; checkedIds.value = []; kpSuggest.value = {}
+  paperQuestions.value = []; checkedIds.value = []; kpSuggest.value = {}; kpProposals.value = {}
   try {
     const d = await getPlatformPaper(p.id)
     curPaper.value = d.paper
@@ -153,17 +154,21 @@ async function onRemoveKp(q: PaperQuestion, nodeId: string) {
 // ── AI 建议考点 ── 建议不自动挂,点 ✓ 采纳
 const suggesting = ref(false)
 const kpSuggest = ref<Record<string, QuestionKpRef[]>>({})
-// 把 suggest 返回合并进 kpSuggest(过滤已挂);merge=true 仅并入(整段),false 整体替换(整卷)
-function mergeSuggestions(items: { question_id: string; suggestions: QuestionKpRef[] }[], merge: boolean) {
+const kpProposals = ref<Record<string, KpProposal[]>>({})   // 缺口:AI 建议新建的考点(待人工确认)
+// 把 suggest 返回合并进 kpSuggest/kpProposals(过滤已挂);merge=true 仅并入(整段),false 整体替换(整卷)
+function mergeSuggestions(items: { question_id: string; suggestions: QuestionKpRef[]; proposals?: KpProposal[] }[], merge: boolean) {
   const map: Record<string, QuestionKpRef[]> = merge ? { ...kpSuggest.value } : {}
+  const pmap: Record<string, KpProposal[]> = merge ? { ...kpProposals.value } : {}
   let n = 0
   for (const it of items) {
     const q = paperQuestions.value.find(x => x.id === it.question_id)
     const have = new Set((q?.kps || []).map(k => k.node_id))
-    const fresh = it.suggestions.filter(s => !have.has(s.node_id))
+    const fresh = (it.suggestions || []).filter(s => !have.has(s.node_id))
     if (fresh.length) { map[it.question_id] = fresh; n++ }
+    if (it.proposals?.length) { pmap[it.question_id] = it.proposals; n++ }
   }
   kpSuggest.value = map
+  kpProposals.value = pmap
   return n
 }
 async function onSuggestKp() {
@@ -239,6 +244,19 @@ async function acceptAllSuggest() {
 const acceptingAll = ref(false)
 function dismissSuggest(q: PaperQuestion, s: QuestionKpRef) {
   kpSuggest.value[q.id] = (kpSuggest.value[q.id] || []).filter(x => x.node_id !== s.node_id)
+}
+// 缺口建议:✓ 确认 = 在归属分类下新建该考点 + 挂到本题;✕ = 忽略
+async function acceptProposal(q: PaperQuestion, p: KpProposal) {
+  if (!p.parent_node_id) { ElMessage.warning('该建议未给归属分类,请用「+ 知识点」手动挂'); return }
+  try {
+    const node = await createKnowledgeNode({ name: p.name, parent_id: p.parent_node_id })
+    q.kps = await attachQuestionKp(q.id, node.id)
+    kpProposals.value[q.id] = (kpProposals.value[q.id] || []).filter(x => x !== p)
+    ElMessage.success(`已新建考点「${p.name}」并挂到本题`)
+  } catch (e: any) { ElMessage.error(e?.message || '新建并挂载失败') }
+}
+function dismissProposal(q: PaperQuestion, p: KpProposal) {
+  kpProposals.value[q.id] = (kpProposals.value[q.id] || []).filter(x => x !== p)
 }
 
 watch(kpFilter, v => kpTreeRef.value?.filter(v))
@@ -560,11 +578,17 @@ onMounted(load)
                     <div style="white-space:pre-wrap">{{ q.stem }}</div>
                     <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
                       <el-tag v-for="k in q.kps" :key="k.node_id" size="small" closable @close="onRemoveKp(q, k.node_id)">{{ k.name }}</el-tag>
-                      <el-tag v-if="(!q.kps || !q.kps.length) && !(kpSuggest[q.id] && kpSuggest[q.id].length)" size="small" type="warning" effect="plain">未挂知识点</el-tag>
+                      <el-tag v-if="(!q.kps || !q.kps.length) && !(kpSuggest[q.id] && kpSuggest[q.id].length) && !(kpProposals[q.id] && kpProposals[q.id].length)" size="small" type="warning" effect="plain">未挂知识点</el-tag>
                       <el-tag v-for="s in (kpSuggest[q.id] || [])" :key="'s' + s.node_id" size="small" type="primary" effect="plain" style="border-style:dashed">
                         AI建议:{{ s.name }}
                         <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptSuggest(q, s)">✓</span>
                         <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissSuggest(q, s)">✕</span>
+                      </el-tag>
+                      <el-tag v-for="(p, pi) in (kpProposals[q.id] || [])" :key="'p' + pi" size="small" type="danger" effect="plain" style="border-style:dashed"
+                        :title="'目录无对应考点 → 新建并归到「' + (p.parent_name || '?') + '」,点 ✓ 确认'">
+                        🆕新建:{{ p.name }}<span style="color:#909399"> → {{ p.parent_name || '未定分类' }}</span>
+                        <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptProposal(q, p)">✓</span>
+                        <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissProposal(q, p)">✕</span>
                       </el-tag>
                       <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openKpPicker(q)">+ 知识点</el-button>
                     </div>

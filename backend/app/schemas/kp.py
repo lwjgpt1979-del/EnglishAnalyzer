@@ -300,9 +300,17 @@ class SectionKpIn(BaseModel):
     node_id: uuid.UUID
 
 
+class KpProposal(BaseModel):
+    """AI 发现考点缺口:目录里没有合适考点 → 建议新建一个并归到某分类(人工确认后创建)。"""
+    name: str                              # 建议的新考点名
+    parent_node_id: uuid.UUID | None = None   # 建议归属分类(现有节点)
+    parent_name: str | None = None
+
+
 class SuggestKpItem(BaseModel):
     question_id: uuid.UUID
     suggestions: list[QuestionKpRef] = []
+    proposals: list[KpProposal] = []       # 无现成考点时的"新建考点"建议
 
 
 class SuggestKpOut(BaseModel):

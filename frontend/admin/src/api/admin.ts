@@ -1157,7 +1157,8 @@ export function attachSectionKp(paperId: string, section: string, nodeId: string
 export function attachKpBulk(pairs: { question_id: string; node_id: string }[]): Promise<{ attached: number }> {
   return unwrap(request.post('/admin/platform-questions/kp-bulk', { pairs }))
 }
-export interface SuggestKpItem { question_id: string; suggestions: QuestionKpRef[] }
+export interface KpProposal { name: string; parent_node_id?: string | null; parent_name?: string | null }
+export interface SuggestKpItem { question_id: string; suggestions: QuestionKpRef[]; proposals?: KpProposal[] }
 export function suggestPaperKp(paperId: string, opts?: { sections?: string[]; prompt_id?: string }): Promise<{ items: SuggestKpItem[] }> {
   // 整卷匹配并行调多组大模型,放宽超时到 3 分钟(默认 20s 远不够)
   return unwrap(request.post(`/admin/platform-papers/${paperId}/suggest-kp`, opts || {}, { timeout: 180000 }))
