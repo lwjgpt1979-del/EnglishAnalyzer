@@ -149,7 +149,7 @@ async def list_nodes_overview(
         .group_by(NodeAlias.node_id))
     items = [{
         "id": r.id, "axis": r.axis, "node_kind": r.node_kind, "name": r.name, "code": r.code,
-        "status": r.status, "applicable_stages": r.applicable_stages,
+        "status": r.status, "applicable_stages": r.applicable_stages, "source": r.source,
         "dims_filled": int(dims.get(r.id, 0)), "unit_refs": int(units.get(r.id, 0)),
         "question_refs": int(ques.get(r.id, 0)), "alias_count": int(aliases.get(r.id, 0)),
     } for r in rows]
@@ -178,7 +178,7 @@ async def node_tree(db: AsyncSession, *, axis: str | None = None,
     rows = (await db.execute(stmt.order_by(KnowledgeNode.sort_order, KnowledgeNode.name))).scalars().all()
     nodes = {r.id: {"id": r.id, "name": r.name, "axis": r.axis, "node_kind": r.node_kind,
                     "status": r.status, "code": r.code, "parent_id": r.parent_id,
-                    "applicable_stages": r.applicable_stages, "children": []}
+                    "applicable_stages": r.applicable_stages, "source": r.source, "children": []}
              for r in rows}
 
     if with_counts:

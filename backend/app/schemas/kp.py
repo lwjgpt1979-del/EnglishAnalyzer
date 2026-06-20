@@ -41,6 +41,7 @@ class KpNodeOverviewItem(BaseModel):
     code: str
     status: str
     applicable_stages: list[str] | None = None
+    source: str | None = None     # seed/textbook/exam/manual(manual=人工新建)
     dims_filled: int          # 六维讲解已有几维(0-6)
     unit_refs: int            # 被多少教材单元引用
     question_refs: int        # 被多少真题/仿真引用
@@ -113,6 +114,7 @@ class NodeTreeItem(BaseModel):
     status: str
     code: str
     applicable_stages: list[str] | None = None   # 适用学段(小/初/高);null=通用脚手架
+    source: str | None = None             # 来源:seed/textbook/exam/manual(manual=人工新建)
     unit_refs: int | None = None          # 教材单元挂载数(子树聚合,with_counts 时有)
     question_refs: int | None = None       # 真题挂载数(子树聚合)
     children: list["NodeTreeItem"] = []

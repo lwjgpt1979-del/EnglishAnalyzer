@@ -232,6 +232,7 @@ export interface KpNodeOverviewItem {
   code: string
   status: string
   applicable_stages?: string[] | null
+  source?: string | null
   dims_filled: number
   unit_refs: number
   question_refs: number
@@ -248,6 +249,7 @@ export interface NodeTreeItem {
   status: string
   code: string
   applicable_stages?: string[] | null
+  source?: string | null
   unit_refs?: number | null
   question_refs?: number | null
   children: NodeTreeItem[]

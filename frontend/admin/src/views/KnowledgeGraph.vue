@@ -185,6 +185,7 @@ onMounted(loadTree)
         <template #default="{ data }">
           <span class="tnode">
             <el-link type="primary" @click.stop="openDetail(data.id)">{{ data.name }}</el-link>
+            <span v-if="data.source === 'manual'" class="cnt cnt-m" title="人工新建的考点">✍ 人工</span>
             <span class="tmeta" v-if="data.node_kind">{{ data.node_kind }}</span>
             <span v-if="data.applicable_stages && data.applicable_stages.length" class="cnt cnt-s"
               title="适用学段">{{ data.applicable_stages.join('/') }}</span>
@@ -220,6 +221,7 @@ onMounted(loadTree)
       <el-table-column prop="name" label="知识点" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <el-link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-link>
+          <span v-if="row.source === 'manual'" class="manual-tag" title="人工新建的考点">✍ 人工</span>
         </template>
       </el-table-column>
       <el-table-column prop="node_kind" label="子类型" width="100">
@@ -363,6 +365,8 @@ onMounted(loadTree)
 .cnt-u { color: #409eff; background: #ecf5ff; }
 .cnt-q { color: #e6a23c; background: #fdf6ec; }
 .cnt-s { color: #67c23a; background: #f0f9eb; }
+.cnt-m { color: #e6a23c; background: #fdf6ec; font-weight: 600; }
+.manual-tag { margin-left: 8px; font-size: 11px; color: #e6a23c; background: #fdf6ec; padding: 0 6px; border-radius: 8px; }
 .tops { margin-left: auto; visibility: hidden; }
 .tnode:hover .tops { visibility: visible; }
 .d-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
