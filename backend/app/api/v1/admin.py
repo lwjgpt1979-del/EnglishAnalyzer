@@ -75,6 +75,7 @@ from app.schemas.kp import (
     PaperDetailOut,
     QuestionKpRef,
     AttachKpIn,
+    SectionKpIn,
     GenSimBulkIn,
     GenSimBulkOut,
     RealExtractCreatedOut,
@@ -1000,6 +1001,18 @@ async def detach_question_kp_api(question_id: uuid.UUID, node_id: uuid.UUID, db:
     await db.commit()
     kps = (await pqs.kps_of_questions(db, [question_id])).get(question_id, [])
     return make_ok([QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in kps])
+
+
+@router.post("/platform-papers/{paper_id}/section-kp", response_model=BaseResponse[dict])
+async def attach_section_kp_api(paper_id: uuid.UUID, body: SectionKpIn, db: DbDep, admin: AdminDep):
+    """按大题一键挂:把某大题下所有真题挂同一个受控知识点。返回挂载题数。"""
+    from app.services import platform_question_service as pqs
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    if await db.get(KnowledgeNode, body.node_id) is None:
+        raise AppError(code=404, message="知识点不存在")
+    n = await pqs.attach_node_to_section(db, paper_id=paper_id, section=body.section, node_id=body.node_id)
+    await db.commit()
+    return make_ok({"attached": n})
 
 
 @router.post("/platform-papers/{paper_id}/publish", response_model=BaseResponse[PaperListItem])

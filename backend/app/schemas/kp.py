@@ -283,6 +283,11 @@ class AttachKpIn(BaseModel):
     node_id: uuid.UUID
 
 
+class SectionKpIn(BaseModel):
+    section: str
+    node_id: uuid.UUID
+
+
 class PaperDetailOut(BaseModel):
     paper: PaperListItem
     questions: list[PaperQuestionItem]

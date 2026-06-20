@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, genSimBulk,
-  attachQuestionKp, detachQuestionKp, getNodeTree,
+  attachQuestionKp, detachQuestionKp, attachSectionKp, getNodeTree,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions,
   listRegions, uploadImageViaPresign,
   type PlatformPaper, type PaperQuestion,
@@ -64,29 +64,48 @@ async function openPaper(p: PlatformPaper) {
   finally { paperLoading.value = false }
 }
 
-// ── 知识点选择器(受控树)──
+// ── 知识点选择器(受控树:知识/能力/题型 三轴)──
+const KP_AXES = [{ k: 'knowledge', n: '知识点' }, { k: 'ability', n: '能力' }, { k: 'exam', n: '题型' }]
 const kpPickerDlg = ref(false)
-const kpTree = ref<NodeTreeItem[]>([])
+const kpAxis = ref('knowledge')
+const kpTreeCache = ref<Record<string, NodeTreeItem[]>>({})
 const kpFilter = ref('')
 const kpTreeRef = ref()
-const kpTarget = ref<PaperQuestion | null>(null)
+const kpTarget = ref<PaperQuestion | null>(null)       // 单题挂载目标
+const kpTargetSection = ref<string | null>(null)       // 按大题挂载目标(整段)
 const kpTreeProps = { label: 'name', children: 'children' }
+const kpTree = computed(() => kpTreeCache.value[kpAxis.value] || [])
 
+async function loadAxisTree(axis: string) {
+  if (kpTreeCache.value[axis]) return
+  try { kpTreeCache.value = { ...kpTreeCache.value, [axis]: (await getNodeTree(axis)).items } }
+  catch (e: any) { ElMessage.error(e?.message || '加载知识点树失败') }
+}
 async function openKpPicker(q: PaperQuestion) {
-  kpTarget.value = q; kpFilter.value = ''; kpPickerDlg.value = true
-  if (!kpTree.value.length) {
-    try { kpTree.value = (await getNodeTree('knowledge')).items } catch (e: any) { ElMessage.error(e?.message || '加载知识点树失败') }
-  }
+  kpTarget.value = q; kpTargetSection.value = null
+  kpFilter.value = ''; kpPickerDlg.value = true
+  await loadAxisTree(kpAxis.value)
+}
+async function openSectionKpPicker(section: string) {
+  kpTarget.value = null; kpTargetSection.value = section
+  kpFilter.value = ''; kpPickerDlg.value = true
+  await loadAxisTree(kpAxis.value)
 }
 function filterKpNode(val: string, data: NodeTreeItem) {
   return !val || data.name.includes(val)
 }
 async function onPickKp(node: NodeTreeItem) {
-  if (!kpTarget.value) return
-  if (kpTarget.value.kps?.some(k => k.node_id === node.id)) { ElMessage.info('已挂该知识点'); return }
   try {
-    kpTarget.value.kps = await attachQuestionKp(kpTarget.value.id, node.id)
-    ElMessage.success(`已挂「${node.name}」`)
+    if (kpTargetSection.value && curPaper.value) {           // 按大题整段挂
+      const r = await attachSectionKp(curPaper.value.id, kpTargetSection.value, node.id)
+      const d = await getPlatformPaper(curPaper.value.id)    // 刷新整卷 KP
+      paperQuestions.value = d.questions
+      ElMessage.success(`「${kpTargetSection.value}」${r.attached} 题已挂「${node.name}」`)
+    } else if (kpTarget.value) {                             // 单题挂
+      if (kpTarget.value.kps?.some(k => k.node_id === node.id)) { ElMessage.info('已挂该知识点'); return }
+      kpTarget.value.kps = await attachQuestionKp(kpTarget.value.id, node.id)
+      ElMessage.success(`已挂「${node.name}」`)
+    }
     kpPickerDlg.value = false
   } catch (e: any) { ElMessage.error(e?.message || '挂载失败') }
 }
@@ -96,6 +115,7 @@ async function onRemoveKp(q: PaperQuestion, nodeId: string) {
 }
 
 watch(kpFilter, v => kpTreeRef.value?.filter(v))
+watch(kpAxis, async a => { await loadAxisTree(a); kpTreeRef.value?.filter(kpFilter.value) })
 
 async function onPublishPaper() {
   if (!curPaper.value) return
@@ -341,7 +361,10 @@ onMounted(load)
           <!-- font-size:14px 复位:el-checkbox-group 默认 font-size:0 会让组内纯文本不可见 -->
           <el-checkbox-group v-model="checkedIds" style="font-size:14px;line-height:1.5">
             <div v-for="(sec, si) in paperSections" :key="si" style="margin-bottom:14px">
-              <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px">{{ sec.name }}</div>
+              <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px;display:flex;align-items:center;gap:8px">
+                <span>{{ sec.name }}</span>
+                <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openSectionKpPicker(sec.name)">一键挂知识点</el-button>
+              </div>
               <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
                 <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto">📄 {{ g.passage }}</div>
                 <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dashed #f0f0f0;font-size:13px">
@@ -364,10 +387,15 @@ onMounted(load)
       </div>
     </el-dialog>
 
-    <!-- 受控知识点树选择器:给某题挂知识点(只能挑已建节点) -->
+    <!-- 受控知识点树选择器:给某题/某大题挂知识点(只能挑已建节点) -->
     <el-dialog v-model="kpPickerDlg" title="挂知识点(受控树)" width="460px" append-to-body>
-      <div style="font-size:12px;color:#909399;margin-bottom:8px">为「{{ kpTarget?.question_no }}」题挑选知识点,点击节点即挂上</div>
-      <el-input v-model="kpFilter" placeholder="搜索知识点名" clearable style="margin-bottom:8px" />
+      <div style="font-size:12px;color:#909399;margin-bottom:8px">
+        {{ kpTargetSection ? `为「${kpTargetSection}」整段挑知识点(挂到该大题所有小问)` : `为「${kpTarget?.question_no}」题挑知识点` }},点击节点即挂上
+      </div>
+      <el-radio-group v-model="kpAxis" size="small" style="margin-bottom:8px">
+        <el-radio-button v-for="a in KP_AXES" :key="a.k" :value="a.k">{{ a.n }}</el-radio-button>
+      </el-radio-group>
+      <el-input v-model="kpFilter" placeholder="搜索名称" clearable style="margin-bottom:8px" />
       <el-tree ref="kpTreeRef" :data="kpTree" :props="kpTreeProps" node-key="id"
         :filter-node-method="filterKpNode" :expand-on-click-node="false"
         style="max-height:420px;overflow:auto">
