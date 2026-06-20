@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getKpPrompts, saveKpPrompts, type KpPrompt } from '../api/admin'
+import { getKpPrompts, saveKpPrompts, getNodeTree, type KpPrompt } from '../api/admin'
+import type { NodeTreeItem } from '../types'
 
 const TYPES = ['单选', '填空', '完型', '阅读', '写作']
 const TYPE_HINT: Record<string, string> = {
@@ -12,6 +13,8 @@ const TYPE_HINT: Record<string, string> = {
   写作: '书面表达 — 一般留空',
 }
 const prompts = ref<KpPrompt[]>([])
+const kpTree = ref<NodeTreeItem[]>([])     // 知识脑图分类树(供"关注分类"选择)
+const treeProps = { label: 'name', children: 'children', value: 'id' }
 const loading = ref(false)
 const saving = ref(false)
 
@@ -20,12 +23,15 @@ const totalByType = computed(() => Object.fromEntries(TYPES.map(t => [t, byType(
 
 async function load() {
   loading.value = true
-  try { prompts.value = (await getKpPrompts()).prompts }
-  catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+  try {
+    const [pr, tree] = await Promise.all([getKpPrompts(), getNodeTree('knowledge')])
+    prompts.value = pr.prompts.map(p => ({ ...p, focus_node_ids: p.focus_node_ids || [] }))
+    kpTree.value = tree.items
+  } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
 function addPrompt(t: string) {
-  prompts.value.push({ id: null, name: '新提示词', text: '', question_type: t, is_default: !byType(t).length })
+  prompts.value.push({ id: null, name: '新提示词', text: '', question_type: t, is_default: !byType(t).length, focus_node_ids: [] })
 }
 function removePrompt(p: KpPrompt) {
   const i = prompts.value.indexOf(p)
@@ -55,8 +61,8 @@ onMounted(load)
 <template>
   <div v-loading="loading">
     <div class="toolbar">
-      <h3 style="margin:0">知识点 AI 提示词(按题型)</h3>
-      <span class="hint">「AI 建议知识点 / 一键挂」按题型用对应提示词;每题型可多套、选一个默认。</span>
+      <h3 style="margin:0">习题匹配知识脑图提示词(按题型)</h3>
+      <span class="hint">「AI 建议知识点 / 一键挂」按题型用对应提示词;每题型可多套、选一个默认;可配「关注分类」限定 AI 只在所选知识脑图分类的考点里匹配(空=全部)。</span>
       <el-button type="primary" :loading="saving" style="margin-left:auto" @click="save">保存</el-button>
     </div>
 
@@ -75,7 +81,13 @@ onMounted(load)
           <el-button size="small" type="danger" link style="margin-left:auto" @click="removePrompt(p)">删除</el-button>
         </div>
         <el-input v-model="p.text" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }"
-          placeholder="给 AI 的指令(system 提示):如何为该题型的题挑受控考点" />
+          placeholder="给 AI 的指令:如何为该题型的题挑受控考点" />
+        <div class="focus-row">
+          <span class="focus-label">关注分类</span>
+          <el-tree-select v-model="p.focus_node_ids" :data="kpTree" :props="treeProps" node-key="id"
+            multiple :render-after-expand="false" check-strictly collapse-tags collapse-tags-tooltip
+            placeholder="空 = 全部考点;选几个分类则 AI 只在其下考点里匹配" style="flex:1" />
+        </div>
       </div>
     </el-card>
   </div>
@@ -91,4 +103,6 @@ onMounted(load)
 .type-hint { color: #909399; font-size: 12px; }
 .prompt-row { border-top: 1px dashed #ebeef5; padding: 10px 0; }
 .prompt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.focus-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.focus-label { font-size: 12px; color: #909399; flex-shrink: 0; }
 </style>

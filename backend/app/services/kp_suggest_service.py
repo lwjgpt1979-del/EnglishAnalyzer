@@ -43,8 +43,8 @@ def _gist(md: str | None) -> str:
     return ""
 
 
-async def _load_catalog(db: AsyncSession) -> tuple[dict, str]:
-    """考点目录 + 释义。返回 (code2node, system 稳定消息)。"""
+async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple[str, str]]]:
+    """考点目录 + 释义。返回 (code2node, entries[(code, 行文本)])。"""
     rows = (await db.execute(
         sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
                   NodeResource.content_md)
@@ -56,13 +56,24 @@ async def _load_catalog(db: AsyncSession) -> tuple[dict, str]:
         .order_by(KnowledgeNode.code)
     )).all()
     code2node: dict[str, tuple[uuid.UUID, str]] = {}
-    lines: list[str] = []
+    entries: list[tuple[str, str]] = []
     for nid, nm, code, md in rows:
         if code in code2node:
             continue
         code2node[code] = (nid, nm)
-        lines.append(f"{code}\t{nm}\t{_gist(md)}")
-    return code2node, _SYS_HEAD + "\n".join(lines)
+        entries.append((code, f"{code}\t{nm}\t{_gist(md)}"))
+    return code2node, entries
+
+
+def _system_for(entries: list[tuple[str, str]], focus_codes: list[str]) -> str:
+    """按关注分类编码前缀过滤考点目录,拼成该题型的稳定 system 前缀(空 focus=全部)。"""
+    if focus_codes:
+        fc = [c for c in focus_codes if c]
+        lines = [ln for code, ln in entries
+                 if any(code == f or code.startswith(f + "-") for f in fc)]
+    else:
+        lines = [ln for _c, ln in entries]
+    return _SYS_HEAD + "\n".join(lines)
 
 
 async def _passages_for(db: AsyncSession, block_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -126,11 +137,20 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
     return out
 
 
+async def _codes_of_nodes(db: AsyncSession, node_ids: list) -> dict[str, str]:
+    """node_id(str)→ code,用于把关注分类解析成编码前缀。"""
+    if not node_ids:
+        return {}
+    rows = (await db.execute(sa.select(KnowledgeNode.id, KnowledgeNode.code)
+                             .where(KnowledgeNode.id.in_(node_ids)))).all()
+    return {str(nid): code for nid, code in rows}
+
+
 async def suggest_kps_for_paper(
     db: AsyncSession, paper_id: uuid.UUID, *,
-    sections: list[str] | None = None, prompt_text: str | None = None,
+    sections: list[str] | None = None, prompt_id: str | None = None,
 ) -> dict[uuid.UUID, list[tuple[uuid.UUID, str, str]]]:
-    """按题型分组建议考点;sections 过滤、prompt_text 覆盖(供一键挂)。"""
+    """按题型分组建议考点;每题型用其(默认/指定)提示词 + 关注分类过滤目录。"""
     stmt = sa.select(PlatformQuestion).where(
         PlatformQuestion.paper_id == paper_id, PlatformQuestion.type == "real")
     if sections:
@@ -139,16 +159,24 @@ async def suggest_kps_for_paper(
     if not qs or is_llm_dev_mode():
         return {q.id: [] for q in qs}
 
-    code2node, system_msg = await _load_catalog(db)        # 稳定缓存前缀
+    code2node, entries = await _load_catalog(db)
     passages = await _passages_for(db, [q.block_id for q in qs])
     prompts = await kp_prompt_service.get_prompts(db)
+    override = kp_prompt_service.item_by_id(prompts, prompt_id) if prompt_id else None
 
     groups: dict[str, list[PlatformQuestion]] = {}
     for q in qs:
         groups.setdefault(q.question_type or "单选", []).append(q)
 
+    # 解析各题型关注分类 → 编码
+    items = {qt: (override or kp_prompt_service.default_item_for(prompts, qt)) for qt in groups}
+    all_focus = {nid for it in items.values() for nid in (it.get("focus_node_ids") or [])}
+    id2code = await _codes_of_nodes(db, list(all_focus))
+
     out: dict[uuid.UUID, list[tuple]] = {q.id: [] for q in qs}
     for qtype, group in groups.items():
-        tp = prompt_text or kp_prompt_service.default_prompt_for(prompts, qtype)
-        out.update(await _suggest_group(group, code2node, system_msg, tp, passages))
+        it = items[qtype]
+        focus_codes = [id2code[str(n)] for n in (it.get("focus_node_ids") or []) if str(n) in id2code]
+        system_msg = _system_for(entries, focus_codes)     # 该题型稳定前缀(同题型→命中缓存)
+        out.update(await _suggest_group(group, code2node, system_msg, it["text"], passages))
     return out

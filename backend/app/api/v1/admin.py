@@ -1039,12 +1039,11 @@ async def detach_question_kp_api(question_id: uuid.UUID, node_id: uuid.UUID, db:
 async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep,
                                body: SuggestKpIn | None = None):
     """AI 建议:按题型默认提示词给每题挑考点;可按 sections 限大题、prompt_id 指定提示词。"""
-    from app.services import kp_suggest_service as kss, kp_prompt_service as kps
-    sections = body.sections if body else None
-    prompt_text = None
-    if body and body.prompt_id:
-        prompt_text = kps.prompt_by_id(await kps.get_prompts(db), body.prompt_id)
-    sug = await kss.suggest_kps_for_paper(db, paper_id, sections=sections, prompt_text=prompt_text)
+    from app.services import kp_suggest_service as kss
+    sug = await kss.suggest_kps_for_paper(
+        db, paper_id,
+        sections=(body.sections if body else None),
+        prompt_id=(body.prompt_id if body else None))
     items = [SuggestKpItem(
         question_id=qid,
         suggestions=[QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs],

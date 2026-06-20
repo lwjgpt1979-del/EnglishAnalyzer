@@ -188,7 +188,7 @@ export function updateEssayTemplates(payload: Record<string, { template: string;
 }
 
 // 知识点 AI 提示词(按题型,多套选默认)
-export interface KpPrompt { id?: string | null; name: string; text: string; question_type: string; is_default: boolean }
+export interface KpPrompt { id?: string | null; name: string; text: string; question_type: string; is_default: boolean; focus_node_ids?: string[] }
 export function getKpPrompts(): Promise<{ prompts: KpPrompt[] }> {
   return unwrap(request.get('/admin/kp-prompts'))
 }

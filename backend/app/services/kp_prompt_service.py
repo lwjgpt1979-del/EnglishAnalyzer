@@ -33,7 +33,8 @@ _BUILTIN: dict[str, str] = {
 
 def _builtin_list() -> list[dict]:
     return [{"id": f"builtin-{t}", "name": "内置默认", "text": _BUILTIN[t],
-             "question_type": t, "is_default": True} for t in QUESTION_TYPES]
+             "question_type": t, "is_default": True, "focus_node_ids": []}
+            for t in QUESTION_TYPES]
 
 
 async def get_prompts(db: AsyncSession) -> list[dict]:
@@ -59,6 +60,7 @@ async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uui
             "id": p.get("id") or f"p-{uuid.uuid4().hex[:8]}",
             "name": (p.get("name") or "未命名").strip(),
             "text": p["text"].strip(), "question_type": qt, "is_default": is_def,
+            "focus_node_ids": [str(x) for x in (p.get("focus_node_ids") or [])],
         })
     # 每题型若无默认,把该型第一个置默认
     for t in QUESTION_TYPES:
@@ -77,20 +79,20 @@ async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uui
     return cleaned
 
 
-def default_prompt_for(prompts: list[dict], qtype: str | None) -> str:
-    """取某题型的默认提示词文本;无配置回内置;再无回单选内置。"""
+def default_item_for(prompts: list[dict], qtype: str | None) -> dict:
+    """取某题型的默认提示词条目(text + focus_node_ids);无配置回内置。"""
     qt = qtype or "单选"
     for p in prompts:
         if p["question_type"] == qt and p.get("is_default"):
-            return p["text"]
+            return p
     for p in prompts:
         if p["question_type"] == qt:
-            return p["text"]
-    return _BUILTIN.get(qt, _BUILTIN["单选"])
+            return p
+    return {"text": _BUILTIN.get(qt, _BUILTIN["单选"]), "focus_node_ids": []}
 
 
-def prompt_by_id(prompts: list[dict], prompt_id: str | None) -> str | None:
+def item_by_id(prompts: list[dict], prompt_id: str | None) -> dict | None:
     for p in prompts:
         if p["id"] == prompt_id:
-            return p["text"]
+            return p
     return None
