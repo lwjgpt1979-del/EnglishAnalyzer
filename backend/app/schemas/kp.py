@@ -285,6 +285,15 @@ class AttachKpIn(BaseModel):
     node_id: uuid.UUID
 
 
+class KpBulkPair(BaseModel):
+    question_id: uuid.UUID
+    node_id: uuid.UUID
+
+
+class KpBulkAttachIn(BaseModel):
+    pairs: list[KpBulkPair] = Field(..., min_length=1)
+
+
 class SectionKpIn(BaseModel):
     section: str
     node_id: uuid.UUID

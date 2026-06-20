@@ -75,6 +75,7 @@ from app.schemas.kp import (
     PaperDetailOut,
     QuestionKpRef,
     AttachKpIn,
+    KpBulkAttachIn,
     SectionKpIn,
     PaperDeleteIn,
     SuggestKpItem,
@@ -1010,6 +1011,18 @@ async def attach_question_kp_api(question_id: uuid.UUID, body: AttachKpIn, db: D
     await db.commit()
     kps = (await pqs.kps_of_questions(db, [question_id])).get(question_id, [])
     return make_ok([QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in kps])
+
+
+@router.post("/platform-questions/kp-bulk", response_model=BaseResponse[dict])
+async def attach_kp_bulk_api(body: KpBulkAttachIn, db: DbDep, admin: AdminDep):
+    """批量挂载题↔知识点(采纳全部 AI 建议)。幂等。返回挂载条数。"""
+    from app.services import platform_question_service as pqs
+    n = 0
+    for p in body.pairs:
+        if await pqs.attach_node(db, p.question_id, p.node_id):
+            n += 1
+    await db.commit()
+    return make_ok({"attached": n})
 
 
 @router.delete("/platform-questions/{question_id}/kp/{node_id}", response_model=BaseResponse[list[QuestionKpRef]])

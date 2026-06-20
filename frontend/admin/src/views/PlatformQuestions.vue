@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk,
-  attachQuestionKp, detachQuestionKp, attachSectionKp, suggestPaperKp, getNodeTree, getKpPrompts,
+  attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
   type QuestionKpRef, type KpPrompt,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions,
   listRegions, uploadImageViaPresign,
@@ -215,6 +215,28 @@ async function acceptSuggest(q: PaperQuestion, s: QuestionKpRef) {
     kpSuggest.value[q.id] = (kpSuggest.value[q.id] || []).filter(x => x.node_id !== s.node_id)
   } catch (e: any) { ElMessage.error(e?.message || '采纳失败') }
 }
+// 待确认建议总条数
+const suggestTotal = computed(() =>
+  Object.values(kpSuggest.value).reduce((n, arr) => n + (arr?.length || 0), 0))
+async function acceptAllSuggest() {
+  const pairs: { question_id: string; node_id: string }[] = []
+  for (const [qid, arr] of Object.entries(kpSuggest.value)) {
+    for (const s of (arr || [])) pairs.push({ question_id: qid, node_id: s.node_id })
+  }
+  if (!pairs.length) { ElMessage.warning('暂无可采纳的 AI 建议'); return }
+  acceptingAll.value = true
+  try {
+    const r = await attachKpBulk(pairs)
+    if (curPaper.value) {        // 刷新整卷 KP(已入库)
+      const d = await getPlatformPaper(curPaper.value.id)
+      paperQuestions.value = d.questions
+    }
+    kpSuggest.value = {}
+    ElMessage.success(`已采纳并保存 ${r.attached} 条知识点关联`)
+  } catch (e: any) { ElMessage.error(e?.message || '采纳失败') }
+  finally { acceptingAll.value = false }
+}
+const acceptingAll = ref(false)
 function dismissSuggest(q: PaperQuestion, s: QuestionKpRef) {
   kpSuggest.value[q.id] = (kpSuggest.value[q.id] || []).filter(x => x.node_id !== s.node_id)
 }
@@ -473,6 +495,7 @@ onMounted(load)
           <el-tag v-if="unmappedCount" type="warning" size="small">⚠️ {{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
           <el-button :loading="suggesting" @click="onSuggestKp">AI 建议知识点</el-button>
+          <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
           <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
         </div>
