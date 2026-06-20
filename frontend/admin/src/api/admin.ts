@@ -1056,6 +1056,49 @@ export interface ParsedRealQuestion {
   explanation?: string | null
   passage?: string | null        // 题组短文(阅读/完形/信息还原);独立题为空
   block_key?: string | null      // 同短文小问共享;独立题为空
+  section?: string | null        // 原卷大题名(听力选择/单项填空/完形填空…)
+}
+
+// ── 平台试卷(整卷聚合)──────────────────────────────────────
+export interface PlatformPaper {
+  id: string
+  name: string
+  textbook_version?: string | null
+  stage?: string | null
+  grade?: string | null
+  semester?: string | null
+  region_name?: string | null
+  exam_type?: string | null
+  status: string
+  question_count: number
+  published_count: number
+  created_at?: string | null
+}
+export interface PaperQuestion {
+  id: string
+  question_no?: string | null
+  section?: string | null
+  question_type?: string | null
+  stem?: string | null
+  answer?: string | null
+  difficulty?: number | null
+  status: string
+  block_id?: string | null
+  passage?: string | null
+}
+export interface PaperDetail { paper: PlatformPaper; questions: PaperQuestion[] }
+
+export function listPlatformPapers(params: { status?: string; skip?: number; limit?: number }): Promise<{ total: number; items: PlatformPaper[] }> {
+  return unwrap(request.get('/admin/platform-papers', { params }))
+}
+export function getPlatformPaper(paperId: string): Promise<PaperDetail> {
+  return unwrap(request.get(`/admin/platform-papers/${paperId}`))
+}
+export function publishPlatformPaper(paperId: string): Promise<PlatformPaper> {
+  return unwrap(request.post(`/admin/platform-papers/${paperId}/publish`))
+}
+export function genSimBulk(questionIds: string[], count = 3): Promise<{ generated: number; per_question: number }> {
+  return unwrap(request.post('/admin/platform-questions/gen-sim-bulk', { question_ids: questionIds, count }))
 }
 export interface RealExtractJob {
   job_id: string
@@ -1105,9 +1148,9 @@ export async function uploadImageViaPresign(file: File): Promise<string> {
 export function bulkImportRealQuestions(
   items: Array<{ stem: string; options?: unknown; answer?: string | null; question_type?: string | null
     explanation?: string | null; difficulty?: number | null; question_no?: string | null; kp_names?: string[]
-    passage?: string | null; block_key?: string | null }>,
-  opts?: { status?: string; stage_hint?: string; meta?: Record<string, unknown> },
-): Promise<{ imported: number; failed: number }> {
+    passage?: string | null; block_key?: string | null; section?: string | null }>,
+  opts?: { status?: string; stage_hint?: string; meta?: Record<string, unknown>; paper_name?: string },
+): Promise<{ imported: number; failed: number; paper_id?: string | null }> {
   return unwrap(request.post('/admin/platform-questions/bulk', { items, ...opts }))
 }
 

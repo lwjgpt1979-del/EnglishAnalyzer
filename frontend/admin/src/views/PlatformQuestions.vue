@@ -3,63 +3,80 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
-  listPlatformQuestions, extractRealQuestions, getExtractJob, bulkImportRealQuestions,
-  genSimFromReal, reviewPlatformQuestion, listRegions, uploadImageViaPresign,
-  type PlatformQuestion,
+  listPlatformPapers, getPlatformPaper, publishPlatformPaper, genSimBulk,
+  extractRealQuestions, getExtractJob, bulkImportRealQuestions,
+  listRegions, uploadImageViaPresign,
+  type PlatformPaper, type PaperQuestion,
 } from '../api/admin'
 
-// ── 列表 ──
-const typeFilter = ref('')          // ''=全部, real, sim
+// ── 试卷列表(一卷一条)──
 const statusFilter = ref('')
-const rows = ref<PlatformQuestion[]>([])
+const papers = ref<PlatformPaper[]>([])
 const total = ref(0)
 const loading = ref(false)
-const typeOpts = [{ label: '全部', value: '' }, { label: '真题', value: 'real' }, { label: '仿真', value: 'sim' }]
-const statusOpts = ['', 'draft', 'published', 'retired']
-
-// 列表按 block_id 聚合:同一短文的连续小问折叠为一个「阅读题组」父行(树形展开看小问)
-const displayRows = computed(() => {
-  const out: any[] = []
-  let i = 0
-  while (i < rows.value.length) {
-    const r = rows.value[i]
-    if (r.block_id) {
-      const children: PlatformQuestion[] = []
-      while (i < rows.value.length && rows.value[i].block_id === r.block_id) children.push(rows.value[i++])
-      out.push({ id: r.block_id, _group: true, passage: r.passage, count: children.length, children })
-    } else {
-      out.push(r); i++
-    }
-  }
-  return out
-})
+const statusOpts = ['', 'draft', 'published']
 
 async function load() {
   loading.value = true
   try {
-    const data = await listPlatformQuestions({
-      type: typeFilter.value || undefined, status: statusFilter.value || undefined, limit: 50,
-    })
-    rows.value = data.items
+    const data = await listPlatformPapers({ status: statusFilter.value || undefined, limit: 50 })
+    papers.value = data.items
     total.value = data.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
 
-async function onGenSim(row: PlatformQuestion) {
-  const { value } = await ElMessageBox.prompt('预生成几道仿真?', '派生仿真', {
-    inputValue: '3', inputPattern: /^[1-9]\d*$/, inputErrorMessage: '请输入正整数',
-  })
-  const r = await genSimFromReal(row.id, Number(value))
-  ElMessage.success(`已生成 ${r.generated} 道仿真`)
+// ── 试卷详情弹框(整卷题 + 勾选发布/仿真)──
+const paperDlg = ref(false)
+const paperLoading = ref(false)
+const curPaper = ref<PlatformPaper | null>(null)
+const paperQuestions = ref<PaperQuestion[]>([])
+const checkedIds = ref<string[]>([])
+
+// 整卷题按「大题」分节,阅读/完形等同短文小问折叠为题组
+const paperSections = computed(() => {
+  const secs: { name: string; groups: { key: string | null; passage?: string | null; rows: PaperQuestion[] }[] }[] = []
+  for (const q of paperQuestions.value) {
+    const secName = q.section || '其他'
+    let sec = secs[secs.length - 1]
+    if (!sec || sec.name !== secName) { sec = { name: secName, groups: [] }; secs.push(sec) }
+    const key = q.block_id || null
+    const last = sec.groups[sec.groups.length - 1]
+    if (last && last.key === key && key) last.rows.push(q)
+    else sec.groups.push({ key, passage: q.passage, rows: [q] })
+  }
+  return secs
+})
+
+async function openPaper(p: PlatformPaper) {
+  paperDlg.value = true; paperLoading.value = true; curPaper.value = p
+  paperQuestions.value = []; checkedIds.value = []
+  try {
+    const d = await getPlatformPaper(p.id)
+    curPaper.value = d.paper
+    paperQuestions.value = d.questions
+  } catch (e: any) { ElMessage.error(e?.message || '加载试卷失败') }
+  finally { paperLoading.value = false }
+}
+
+async function onPublishPaper() {
+  if (!curPaper.value) return
+  await ElMessageBox.confirm(`整卷发布「${curPaper.value.name}」共 ${curPaper.value.question_count} 题?`, '整卷发布', { type: 'warning' })
+  const p = await publishPlatformPaper(curPaper.value.id)
+  curPaper.value = p
+  for (const q of paperQuestions.value) q.status = 'published'
+  ElMessage.success(`已发布 ${p.published_count} 题`)
   await load()
 }
 
-async function onReview(row: PlatformQuestion, approve: boolean) {
-  await ElMessageBox.confirm(`确认${approve ? '通过发布' : '驳回'}该题?`, '确认', { type: 'warning' })
-  await reviewPlatformQuestion(row.id, approve)
-  ElMessage.success(approve ? '已发布' : '已驳回')
-  await load()
+async function onGenSimChecked() {
+  if (!checkedIds.value.length) { ElMessage.warning('请先勾选要派生仿真的题'); return }
+  const { value } = await ElMessageBox.prompt(`为勾选的 ${checkedIds.value.length} 道题各派生几道仿真?`, '派生仿真', {
+    inputValue: '3', inputPattern: /^[1-9]\d*$/, inputErrorMessage: '请输入正整数',
+  })
+  const r = await genSimBulk(checkedIds.value, Number(value))
+  ElMessage.success(`已生成 ${r.generated} 道仿真`)
+  checkedIds.value = []
 }
 
 // ── 上传抽题向导 ──
@@ -90,7 +107,9 @@ const regionProps = {
   async lazyLoad(node: any, resolve: (n: any[]) => void) {
     try {
       const rows = await listRegions(node.value || undefined)
-      resolve(rows.map(r => ({ value: r.code, label: r.name, leaf: r.leaf })))
+      // 地区最细到市:root(level0)→省(可下钻),省(level1)→市(置 leaf,不再下钻区县)
+      const capCity = node.level >= 1
+      resolve(rows.map(r => ({ value: r.code, label: r.name, leaf: capCity || r.leaf })))
     } catch { resolve([]) }
   },
 }
@@ -106,22 +125,25 @@ const extracting = ref(false)
 const importing = ref(false)
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
+const metaPaperName = ref('')        // 试卷名(选填,缺省后端按地区/教材/年级自动合成)
 interface EditRow {
   question_no?: string | null; question_type: string; stem: string
   answer: string; explanation: string; difficulty: number | null; kp_names: string
-  block_key?: string | null
+  block_key?: string | null; section?: string | null
 }
 const editRows = ref<EditRow[]>([])
 const passages = ref<Record<string, string>>({})    // block_key → 短文正文(组内共享，可编辑)
 
-// 按 block_key 把小问归组：同短文小问一组(置顶短文)，独立题(无 block_key)合为一组
+// 校对分组:按大题(section)分节,节内同短文小问折叠为题组,独立题各占一行组
 const editGroups = computed(() => {
-  const out: { key: string | null; rows: EditRow[] }[] = []
+  const out: { key: string | null; section: string | null; rows: EditRow[] }[] = []
   for (const row of editRows.value) {
     const key = row.block_key || null
+    const ident = key || `sec:${row.section || ''}`     // 无短文时按大题归并
     const last = out[out.length - 1]
-    if (last && last.key === key) last.rows.push(row)
-    else out.push({ key, rows: [row] })
+    const lastIdent = last ? (last.key || `sec:${last.section || ''}`) : null
+    if (last && lastIdent === ident) last.rows.push(row)
+    else out.push({ key, section: row.section || null, rows: [row] })
   }
   return out
 })
@@ -135,7 +157,7 @@ function stopPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null
 function openDlg() {
   stopPoll()
   step.value = 0; pickedFile.value = null; pickedImages.value = []; uploadingImg.value = false; imageUrlsText.value = ''
-  metaGrade.value = ''; metaSemester.value = ''; metaExamType.value = ''
+  metaGrade.value = ''; metaSemester.value = ''; metaExamType.value = ''; metaPaperName.value = ''
   regionPath.value = []; regionLabels.value = []
   extracting.value = false; importing.value = false; editRows.value = []
   dlg.value = true
@@ -192,7 +214,7 @@ async function pollExtract(jobId: string) {
       return {
         question_no: p.question_no, question_type: p.question_type || '单选',
         stem: p.stem || '', answer: p.answer || '', explanation: p.explanation || '',
-        difficulty: null, kp_names: '', block_key: p.block_key || null,
+        difficulty: null, kp_names: '', block_key: p.block_key || null, section: p.section || null,
       }
     })
     passages.value = pmap
@@ -206,16 +228,17 @@ async function doImport() {
     stem: r.stem.trim(), answer: r.answer || null, question_type: r.question_type || null,
     explanation: r.explanation || null, difficulty: r.difficulty, question_no: r.question_no,
     kp_names: r.kp_names.split(/[,，]/).map(s => s.trim()).filter(Boolean),
-    block_key: r.block_key || null,
+    block_key: r.block_key || null, section: r.section || null,
     passage: r.block_key ? (passages.value[r.block_key] || null) : null,
   }))
   if (!items.length) { ElMessage.warning('没有可导入的题'); return }
   importing.value = true
   try {
+    // 整卷先入草稿;回列表后点试卷「发布」整卷上架
     const r = await bulkImportRealQuestions(items, {
-      status: 'published', stage_hint: metaStage.value, meta: batchMeta(),
+      status: 'draft', stage_hint: metaStage.value, meta: batchMeta(), paper_name: metaPaperName.value || undefined,
     })
-    ElMessage.success(`导入 ${r.imported} 题${r.failed ? `,失败 ${r.failed}` : ''}`)
+    ElMessage.success(`已导入试卷:${r.imported} 题${r.failed ? `,失败 ${r.failed}` : ''}。回列表点「发布」上架`)
     dlg.value = false
     await load()
   } catch (e: any) { ElMessage.error(e?.message || '导入失败') }
@@ -228,46 +251,69 @@ onMounted(load)
 <template>
   <div>
     <div class="toolbar">
-      <span>类型:</span>
-      <el-select v-model="typeFilter" style="width:110px" @change="load">
-        <el-option v-for="t in typeOpts" :key="t.value" :label="t.label" :value="t.value" />
-      </el-select>
-      <span style="margin-left:16px">状态:</span>
+      <span>状态:</span>
       <el-select v-model="statusFilter" style="width:120px" @change="load">
         <el-option v-for="s in statusOpts" :key="s" :label="s || '全部'" :value="s" />
       </el-select>
       <el-button style="margin-left:12px" type="primary" @click="openDlg">+ 上传真题</el-button>
       <el-button @click="load">刷新</el-button>
-      <span class="hint">真题挂知识节点;有真题的点其直生备选自动下架,可派生仿真供学生"有源"练习。共 {{ total }} 条</span>
+      <span class="hint">一份上传 = 一份试卷,点「查看/发布」弹整卷题,可整卷发布并勾选具体题派生仿真。共 {{ total }} 份</span>
     </div>
 
-    <el-table v-loading="loading" :data="displayRows" border style="width:100%"
-              row-key="id" :tree-props="{ children: 'children' }">
-      <el-table-column label="类型" width="96" align="center">
+    <el-table v-loading="loading" :data="papers" border style="width:100%">
+      <el-table-column label="试卷" min-width="240">
         <template #default="{ row }">
-          <el-tag v-if="row._group" type="warning" size="small">📖 阅读题组·{{ row.count }}小问</el-tag>
-          <el-tag v-else :type="row.type === 'real' ? 'danger' : 'info'" size="small">
-            {{ row.type === 'real' ? '真题' : '仿真' }}<span v-if="row.is_fallback">·备</span>
-          </el-tag>
+          <div style="font-weight:600">{{ row.name }}</div>
+          <div style="font-size:12px;color:#909399">
+            {{ [row.textbook_version, row.grade, row.semester ? row.semester + '册' : '', row.region_name, row.exam_type].filter(Boolean).join(' · ') }}
+          </div>
         </template>
       </el-table-column>
-      <el-table-column label="题型" width="80"><template #default="{ row }">{{ row._group ? '' : row.question_type }}</template></el-table-column>
-      <el-table-column label="题干 / 短文" min-width="280" show-overflow-tooltip>
-        <template #default="{ row }">{{ row._group ? '📄 ' + (row.passage || '').slice(0, 120) : row.stem }}</template>
+      <el-table-column label="题数" width="80" align="center"><template #default="{ row }">{{ row.question_count }}</template></el-table-column>
+      <el-table-column label="已发布" width="90" align="center">
+        <template #default="{ row }">{{ row.published_count }}/{{ row.question_count }}</template>
       </el-table-column>
-      <el-table-column label="答案" width="90" show-overflow-tooltip><template #default="{ row }">{{ row._group ? '' : row.answer }}</template></el-table-column>
-      <el-table-column label="难度" width="60" align="center"><template #default="{ row }">{{ row._group ? '' : row.difficulty }}</template></el-table-column>
-      <el-table-column label="状态" width="90"><template #default="{ row }">{{ row._group ? '' : row.status }}</template></el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
-          <template v-if="!row._group">
-            <el-button v-if="row.type === 'real'" size="small" @click="onGenSim(row)">派生仿真</el-button>
-            <el-button v-if="row.status !== 'published'" size="small" type="success" @click="onReview(row, true)">发布</el-button>
-            <el-button v-if="row.status !== 'retired'" size="small" type="danger" @click="onReview(row, false)">驳回</el-button>
-          </template>
+          <el-tag :type="row.status === 'published' ? 'success' : 'info'" size="small">{{ row.status === 'published' ? '已发布' : '草稿' }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="160" fixed="right">
+        <template #default="{ row }">
+          <el-button size="small" type="primary" @click="openPaper(row)">查看 / 发布</el-button>
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- 试卷详情:整卷题(按大题分节、阅读题组折叠)+ 整卷发布 + 勾选派生仿真 -->
+    <el-dialog v-model="paperDlg" :title="curPaper ? curPaper.name : '试卷详情'" width="960px" :close-on-click-modal="false">
+      <div v-loading="paperLoading">
+        <div style="display:flex;align-items:center;margin-bottom:10px;gap:12px">
+          <el-tag :type="curPaper?.status === 'published' ? 'success' : 'info'" size="small">{{ curPaper?.status === 'published' ? '已发布' : '草稿' }}</el-tag>
+          <span style="color:#606266">共 {{ curPaper?.question_count }} 题,已发布 {{ curPaper?.published_count }}</span>
+          <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
+          <div style="flex:1"></div>
+          <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">整卷发布</el-button>
+          <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
+        </div>
+        <div style="max-height:520px;overflow:auto">
+          <el-checkbox-group v-model="checkedIds">
+            <div v-for="(sec, si) in paperSections" :key="si" style="margin-bottom:14px">
+              <div style="font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px">{{ sec.name }}</div>
+              <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
+                <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto">📄 {{ g.passage }}</div>
+                <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:3px 0;border-bottom:1px dashed #f0f0f0">
+                  <el-checkbox :value="q.id" style="margin-top:2px" />
+                  <span style="color:#909399;width:30px;flex-shrink:0">{{ q.question_no }}</span>
+                  <span style="flex:1;white-space:pre-wrap">{{ q.stem }}</span>
+                  <el-tag size="small" :type="q.status === 'published' ? 'success' : 'info'" style="flex-shrink:0">{{ q.status === 'published' ? '已发布' : '草稿' }}</el-tag>
+                </div>
+              </div>
+            </div>
+          </el-checkbox-group>
+        </div>
+      </div>
+    </el-dialog>
 
     <el-dialog v-model="dlg" title="上传真题 → 抽题 → 校对导入" width="900px" @close="stopPoll" :close-on-click-modal="false">
       <!-- 选源 -->
@@ -300,7 +346,10 @@ onMounted(load)
           </el-form-item>
           <el-form-item label="地区">
             <el-cascader ref="regionCascader" v-model="regionPath" :props="regionProps"
-              clearable placeholder="选填:省→市(中考按市)" style="width:240px" @change="onRegionChange" />
+              clearable placeholder="选填:省→市(最细到市)" style="width:240px" @change="onRegionChange" />
+          </el-form-item>
+          <el-form-item label="试卷名">
+            <el-input v-model="metaPaperName" clearable placeholder="选填:缺省按地区/教材/年级自动命名" style="width:300px" />
           </el-form-item>
         </el-form>
         <el-alert type="info" :closable="false" style="margin-bottom:12px"
@@ -335,6 +384,7 @@ onMounted(load)
         <div style="margin-bottom:8px;color:#606266">抽出 {{ editRows.length }} 题,核对/编辑后导入(可填 KP 名挂知识节点);阅读/完形等「短文+小问」按题组呈现,短文存一份</div>
         <div style="max-height:460px;overflow:auto">
           <div v-for="(g, gi) in editGroups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:10px;background:#fafcff' : 'margin-bottom:10px'">
+            <div v-if="g.section" style="font-size:12px;color:#67c23a;font-weight:600;margin-bottom:4px">【{{ g.section }}】</div>
             <div v-if="g.key" style="margin-bottom:6px">
               <span style="font-size:12px;color:#409eff;font-weight:600">📖 短文题组 · {{ g.rows.length }} 小问共享</span>
               <el-input v-model="passages[g.key]" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" placeholder="短文/材料正文(本组小问共用)" style="margin-top:4px" />
