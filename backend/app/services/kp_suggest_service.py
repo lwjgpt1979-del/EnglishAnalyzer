@@ -25,8 +25,6 @@ from app.models.d19_node_resource import NodeResource
 from app.services import kp_prompt_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
-_KAODIAN_RE = r"^(cf|jf)-[0-9]+-[0-9]+-[0-9]+$"   # 四段 = 考点叶子
-
 # 学段包含关系:高 ⊇ 初 ⊇ 小。匹配某学段卷时,该学段「及更低」的考点都算候选。
 _STAGE_RANK = {"小": 0, "初": 1, "高": 2}
 
@@ -62,8 +60,16 @@ def _gist(md: str | None) -> str:
     return ""
 
 
-async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple[str, str, list]]]:
-    """考点目录 + 释义。返回 (code2node, entries[(code, 行文本, 适用学段)])。"""
+async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple]]:
+    """考点目录 + 释义。返回 (code2node, entries[(node_id, code, 行文本, 适用学段)])。
+
+    考点口径 = 受控知识树里**有父且无子的叶子节点**(分类/中间节点不入目录)。
+    不再按 code 正则(原 ^(cf|jf)-n-n-n$ 会漏掉篇章 k-3-* 与三段叶子)——凡叶子皆考点,
+    与 code 命名方案解耦。
+    """
+    from sqlalchemy.orm import aliased
+    child = aliased(KnowledgeNode)
+    is_leaf = ~sa.exists().where(child.parent_id == KnowledgeNode.id)
     rows = (await db.execute(
         sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
                   KnowledgeNode.applicable_stages, NodeResource.content_md)
@@ -71,30 +77,48 @@ async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple[str, str, li
             NodeResource.node_id == KnowledgeNode.id,
             NodeResource.resource_type == "lecture"))
         .where(KnowledgeNode.axis == "knowledge", KnowledgeNode.status == "active",
-               KnowledgeNode.code.op("~")(_KAODIAN_RE))
+               KnowledgeNode.parent_id.isnot(None), is_leaf)
         .order_by(KnowledgeNode.code)
     )).all()
     code2node: dict[str, tuple[uuid.UUID, str]] = {}
-    entries: list[tuple[str, str, list]] = []
+    entries: list[tuple] = []
     for nid, nm, code, stages, md in rows:
         if code in code2node:
             continue
         code2node[code] = (nid, nm)
-        entries.append((code, f"{code}\t{nm}\t{_gist(md)}", stages or []))
+        entries.append((nid, code, f"{code}\t{nm}\t{_gist(md)}", stages or []))
     return code2node, entries
 
 
-def _system_for(entries: list[tuple[str, str, list]], focus_codes: list[str],
+async def _descendant_node_ids(db: AsyncSession, root_ids: list) -> set | None:
+    """关注分类 → 该分类**整棵子树**的全部节点 id(含自身)。空=不限(返回 None)。
+
+    按 parent_id 树展开(而非 code 前缀):手动建的分类(m-*/k-* code)也能正确囊括其后代考点。
+    """
+    roots = [r for r in root_ids if r]
+    if not roots:
+        return None
+    sql = sa.text("""
+        WITH RECURSIVE t AS (
+            SELECT id FROM knowledge_nodes WHERE id = ANY(:roots)
+            UNION ALL
+            SELECT k.id FROM knowledge_nodes k JOIN t ON k.parent_id = t.id
+        ) SELECT id FROM t
+    """)
+    rows = (await db.execute(sql, {"roots": [str(r) for r in roots]})).all()
+    return {r[0] for r in rows}
+
+
+def _system_for(entries: list[tuple], allowed_node_ids: set | None,
                 stage: str | None = None) -> str:
-    """过滤考点目录拼稳定 system 前缀。focus=关注分类编码前缀(空=全部);
+    """过滤考点目录拼稳定 system 前缀。allowed_node_ids=关注分类子树节点集(None=全部);
     stage=题/卷学段过滤,包含式(高⊇初⊇小):该学段及更低的考点 + 通用考点都纳入。"""
-    fc = [c for c in focus_codes if c] if focus_codes else None
-    allowed = _stages_at_or_below(stage)
+    allowed_stages = _stages_at_or_below(stage)
     lines: list[str] = []
-    for code, ln, stages in entries:
-        if fc and not any(code == f or code.startswith(f + "-") for f in fc):
+    for nid, _code, ln, stages in entries:
+        if allowed_node_ids is not None and nid not in allowed_node_ids:
             continue
-        if not _stage_allows(stages, allowed):
+        if not _stage_allows(stages, allowed_stages):
             continue
         lines.append(ln)
     return _SYS_HEAD + "\n".join(lines)
@@ -174,9 +198,8 @@ async def suggest_kps_for_text(
     code2node, entries = await _load_catalog(db)
     prompts = await kp_prompt_service.get_prompts(db)
     item = kp_prompt_service.default_item_for(prompts, source_type)
-    id2code = await _codes_of_nodes(db, item.get("focus_node_ids") or [])
-    focus_codes = [id2code[str(n)] for n in (item.get("focus_node_ids") or []) if str(n) in id2code]
-    system_msg = _system_for(entries, focus_codes, stage)
+    allowed = await _descendant_node_ids(db, item.get("focus_node_ids") or [])
+    system_msg = _system_for(entries, allowed, stage)
     max_kp = int(item.get("max_kp", 8))
     user = (
         f"{item['text']}\n挑出正文覆盖到的考点(至多 {max_kp} 个)。\n\n【正文】\n{text[:4000]}\n\n"
@@ -195,15 +218,6 @@ async def suggest_kps_for_text(
             seen.add(ref[0])
             out.append((ref[0], ref[1], code))
     return out
-
-
-async def _codes_of_nodes(db: AsyncSession, node_ids: list) -> dict[str, str]:
-    """node_id(str)→ code,用于把关注分类解析成编码前缀。"""
-    if not node_ids:
-        return {}
-    rows = (await db.execute(sa.select(KnowledgeNode.id, KnowledgeNode.code)
-                             .where(KnowledgeNode.id.in_(node_ids)))).all()
-    return {str(nid): code for nid, code in rows}
 
 
 async def suggest_kps_for_paper(
@@ -238,21 +252,22 @@ async def suggest_kps_for_paper(
     for q in qs:
         groups.setdefault(_etype(q), []).append(q)
 
-    # 解析各题型关注分类 → 编码
+    # 各题型关注分类 → 其**子树节点集**(按 parent_id 展开;空=全部考点)
+    # 串行预算:并行期各组共用同一 db session,不能并发查询,故先算好再并行调模型
     items = {qt: (override or kp_prompt_service.default_item_for(prompts, qt)) for qt in groups}
-    all_focus = {nid for it in items.values() for nid in (it.get("focus_node_ids") or [])}
-    id2code = await _codes_of_nodes(db, list(all_focus))
+    focus_allowed: dict[str, set | None] = {}
+    for qt, it in items.items():
+        focus_allowed[qt] = await _descendant_node_ids(db, it.get("focus_node_ids") or [])
 
-    async def _run_group(group: list[PlatformQuestion], it: dict) -> dict:
-        focus_codes = [id2code[str(n)] for n in (it.get("focus_node_ids") or []) if str(n) in id2code]
-        system_msg = _system_for(entries, focus_codes, stage)   # 题型+学段稳定前缀(同题型同学段→命中缓存)
+    async def _run_group(qtype: str, group: list[PlatformQuestion], it: dict) -> dict:
+        system_msg = _system_for(entries, focus_allowed[qtype], stage)   # 题型+学段稳定前缀(同→命中缓存)
         return await _suggest_group(group, code2node, system_msg, it["text"], passages,
                                     int(it.get("min_kp", 0)), int(it.get("max_kp", 2)))
 
     # 各题型分组**并行**调用大模型:墙钟时间 = 最慢一组,而非求和(整卷不再超时)
     out: dict[uuid.UUID, list[tuple]] = {q.id: [] for q in qs}
     results = await asyncio.gather(
-        *(_run_group(group, items[qtype]) for qtype, group in groups.items()),
+        *(_run_group(qtype, group, items[qtype]) for qtype, group in groups.items()),
         return_exceptions=True)
     for r in results:
         if isinstance(r, dict):     # 单组失败(异常)不拖垮整卷,其余照常合并
