@@ -54,7 +54,7 @@ async def main(reset: bool, execute: bool):
     rows: list[dict] = []
     for axis, tops in tree.items():
         _flatten(axis, tops, None, AXIS_SHORT.get(axis, axis), rows)
-    print(f"[seed-tree] 骨架节点 {len(rows)} 个(知识/能力/考点三轴)")
+    print(f"[seed-tree] 骨架节点 {len(rows)} 个(知识分类单树 · F 方案去 3 轴)")
 
     if not execute:
         print("[seed-tree] DRY-RUN(未写库)。加 --execute 执行;加 --reset 先清空。")
