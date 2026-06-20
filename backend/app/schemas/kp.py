@@ -327,6 +327,11 @@ class KpPromptsIn(BaseModel):
     prompts: list[KpPromptItem]
 
 
+class SuggestTextIn(BaseModel):
+    text: str
+    source_type: str = "教材"
+
+
 class KpPromptsOut(BaseModel):
     prompts: list[KpPromptItem]
 

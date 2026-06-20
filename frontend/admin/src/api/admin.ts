@@ -195,6 +195,9 @@ export function getKpPrompts(): Promise<{ prompts: KpPrompt[] }> {
 export function saveKpPrompts(prompts: KpPrompt[]): Promise<{ prompts: KpPrompt[] }> {
   return unwrap(request.put('/admin/kp-prompts', { prompts }))
 }
+export function suggestKpText(text: string, sourceType = '教材'): Promise<QuestionKpRef[]> {
+  return unwrap(request.post('/admin/kp-suggest-text', { text, source_type: sourceType }))
+}
 
 // ── 机构入驻审核（D-123）──
 export interface AdminInstitution {

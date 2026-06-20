@@ -84,6 +84,7 @@ from app.schemas.kp import (
     KpPromptItem,
     KpPromptsIn,
     KpPromptsOut,
+    SuggestTextIn,
     GenSimBulkIn,
     GenSimBulkOut,
     RealExtractCreatedOut,
@@ -1067,6 +1068,14 @@ async def save_kp_prompts_api(body: KpPromptsIn, db: DbDep, admin: AdminDep):
         db, prompts=[p.model_dump() for p in body.prompts], updated_by=admin.id)
     await db.commit()
     return make_ok(KpPromptsOut(prompts=[KpPromptItem(**p) for p in saved]))
+
+
+@router.post("/kp-suggest-text", response_model=BaseResponse[list[QuestionKpRef]])
+async def suggest_kp_text_api(body: SuggestTextIn, db: DbDep, admin: AdminDep):
+    """一段正文(教材等)→ 受控考点 AI 建议(用该来源类型的提示词+关注分类)。"""
+    from app.services import kp_suggest_service as kss
+    refs = await kss.suggest_kps_for_text(db, body.text, source_type=body.source_type)
+    return make_ok([QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs])
 
 
 @router.post("/platform-papers/delete", response_model=BaseResponse[dict])

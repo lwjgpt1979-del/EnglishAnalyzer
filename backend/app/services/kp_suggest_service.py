@@ -137,6 +137,37 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
     return out
 
 
+async def suggest_kps_for_text(
+    db: AsyncSession, text: str, *, source_type: str = "教材",
+) -> list[tuple[uuid.UUID, str, str]]:
+    """一段正文(教材等)→ 受控考点建议。用该来源类型的提示词 + 关注分类过滤目录。"""
+    if not (text or "").strip() or is_llm_dev_mode():
+        return []
+    code2node, entries = await _load_catalog(db)
+    prompts = await kp_prompt_service.get_prompts(db)
+    item = kp_prompt_service.default_item_for(prompts, source_type)
+    id2code = await _codes_of_nodes(db, item.get("focus_node_ids") or [])
+    focus_codes = [id2code[str(n)] for n in (item.get("focus_node_ids") or []) if str(n) in id2code]
+    system_msg = _system_for(entries, focus_codes)
+    user = (
+        f"{item['text']}\n\n【正文】\n{text[:4000]}\n\n"
+        '返回 JSON:{"codes":["编码",...]};挑出正文覆盖到的考点编码,只用目录里的编码。'
+    )
+    try:
+        resp = await chat_completion(system_prompt=system_msg, user_prompt=user,
+                                     max_tokens=2048, response_format={"type": "json_object"})
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001
+        return []
+    out, seen = [], set()
+    for code in (data.get("codes") or [])[:20]:
+        ref = code2node.get(code)
+        if ref and ref[0] not in seen:
+            seen.add(ref[0])
+            out.append((ref[0], ref[1], code))
+    return out
+
+
 async def _codes_of_nodes(db: AsyncSession, node_ids: list) -> dict[str, str]:
     """node_id(str)→ code,用于把关注分类解析成编码前缀。"""
     if not node_ids:

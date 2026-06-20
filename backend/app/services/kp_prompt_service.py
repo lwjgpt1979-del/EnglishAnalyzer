@@ -14,6 +14,8 @@ from app.models.d9_system import SystemConfig
 
 _KEY = "kp_suggest_prompts"
 QUESTION_TYPES = ["单选", "听力", "填空", "完型", "阅读", "写作"]
+SOURCE_TYPES = ["教材"]                 # 非题型来源(教材正文→考点)
+ALL_TYPES = QUESTION_TYPES + SOURCE_TYPES
 
 # 内置默认提示词:仅"该题型怎么挑"的指引(放 user 端);
 # 角色、知识点目录、输出 JSON 格式由 kp_suggest_service 的稳定 system 前缀统一给出。
@@ -30,13 +32,15 @@ _BUILTIN: dict[str, str] = {
             "仅当某题明确考查某语法/词汇/篇章考点时才挑 1 个,否则 codes 给空数组。",
     "写作": "【本大题:书面表达】综合性写作,一般不对应单一语言考点。codes 一律给空数组,"
             "除非题干明确限定考查某语法点。",
+    "教材": "下面是一段教材正文(语法讲解/词汇/课文)。请从受控考点目录里挑出这段教材"
+            "覆盖/讲解到的考点(可多个),只用目录内编码。",
 }
 
 
 def _builtin_list() -> list[dict]:
     return [{"id": f"builtin-{t}", "name": "内置默认", "text": _BUILTIN[t],
              "question_type": t, "is_default": True, "focus_node_ids": []}
-            for t in QUESTION_TYPES]
+            for t in ALL_TYPES]
 
 
 async def get_prompts(db: AsyncSession) -> list[dict]:
@@ -53,7 +57,7 @@ async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uui
     seen_default: set[str] = set()
     for p in prompts:
         qt = p.get("question_type")
-        if qt not in QUESTION_TYPES or not (p.get("text") or "").strip():
+        if qt not in ALL_TYPES or not (p.get("text") or "").strip():
             continue
         is_def = bool(p.get("is_default")) and qt not in seen_default
         if is_def:
@@ -65,7 +69,7 @@ async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uui
             "focus_node_ids": [str(x) for x in (p.get("focus_node_ids") or [])],
         })
     # 每题型若无默认,把该型第一个置默认
-    for t in QUESTION_TYPES:
+    for t in ALL_TYPES:
         group = [p for p in cleaned if p["question_type"] == t]
         if group and not any(p["is_default"] for p in group):
             group[0]["is_default"] = True

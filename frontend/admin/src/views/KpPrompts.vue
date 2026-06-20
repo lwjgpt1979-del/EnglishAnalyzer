@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getKpPrompts, saveKpPrompts, getNodeTree, type KpPrompt } from '../api/admin'
+import { getKpPrompts, saveKpPrompts, getNodeTree, suggestKpText, type KpPrompt, type QuestionKpRef } from '../api/admin'
 import type { NodeTreeItem } from '../types'
 
-const TYPES = ['单选', '听力', '填空', '完型', '阅读', '写作']
+const TYPES = ['单选', '听力', '填空', '完型', '阅读', '写作', '教材']
 const TYPE_HINT: Record<string, string> = {
   单选: '单项填空/语法选择 — 多挂语法/词汇考点',
   听力: '听力理解(section 含"听力") — 一般留空',
@@ -12,6 +12,7 @@ const TYPE_HINT: Record<string, string> = {
   完型: '完形填空每空 — 语法/词汇/篇章考点',
   阅读: '阅读理解/信息还原 — 篇章为主,无明确点可留空',
   写作: '书面表达 — 一般留空',
+  教材: '教材正文(语法讲解/词汇/课文)→ 抽出覆盖到的考点',
 }
 const prompts = ref<KpPrompt[]>([])
 const kpTree = ref<NodeTreeItem[]>([])     // 知识脑图分类树(供"关注分类"选择)
@@ -44,6 +45,18 @@ function removePrompt(p: KpPrompt) {
 function setDefault(p: KpPrompt) {
   prompts.value.forEach(x => { if (x.question_type === p.question_type) x.is_default = (x === p) })
 }
+// 教材正文试匹配
+const tryText = ref('')
+const trying = ref(false)
+const tryResult = ref<QuestionKpRef[] | null>(null)
+async function tryMatch() {
+  if (!tryText.value.trim()) { ElMessage.warning('请粘贴一段教材正文'); return }
+  trying.value = true; tryResult.value = null
+  try { tryResult.value = await suggestKpText(tryText.value, '教材') }
+  catch (e: any) { ElMessage.error(e?.message || '试匹配失败') }
+  finally { trying.value = false }
+}
+
 async function save() {
   for (const p of prompts.value) {
     if (!p.text.trim()) { ElMessage.warning(`「${p.name}」提示词内容不能为空`); return }
@@ -90,6 +103,20 @@ onMounted(load)
             placeholder="空 = 全部考点;选几个分类则 AI 只在其下考点里匹配" style="flex:1" />
         </div>
       </div>
+
+      <!-- 教材:粘贴正文试匹配 -->
+      <div v-if="t === '教材'" class="try-box">
+        <div class="focus-label" style="margin-bottom:6px">试匹配:粘贴一段教材正文,用上面默认提示词看 AI 抽出哪些考点</div>
+        <el-input v-model="tryText" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }"
+          placeholder="粘贴教材正文(语法讲解/词汇/课文)…" />
+        <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <el-button size="small" type="primary" :loading="trying" @click="tryMatch">试匹配</el-button>
+          <template v-if="tryResult">
+            <el-tag v-for="r in tryResult" :key="r.node_id" size="small">{{ r.name }}</el-tag>
+            <span v-if="!tryResult.length" class="muted">未匹配到考点</span>
+          </template>
+        </div>
+      </div>
     </el-card>
   </div>
 </template>
@@ -106,4 +133,5 @@ onMounted(load)
 .prompt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .focus-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .focus-label { font-size: 12px; color: #909399; flex-shrink: 0; }
+.try-box { border-top: 1px dashed #ebeef5; padding-top: 12px; margin-top: 6px; }
 </style>
