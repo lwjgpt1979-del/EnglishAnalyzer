@@ -76,6 +76,8 @@ from app.schemas.kp import (
     QuestionKpRef,
     AttachKpIn,
     SectionKpIn,
+    SuggestKpItem,
+    SuggestKpOut,
     GenSimBulkIn,
     GenSimBulkOut,
     RealExtractCreatedOut,
@@ -1001,6 +1003,18 @@ async def detach_question_kp_api(question_id: uuid.UUID, node_id: uuid.UUID, db:
     await db.commit()
     kps = (await pqs.kps_of_questions(db, [question_id])).get(question_id, [])
     return make_ok([QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in kps])
+
+
+@router.post("/platform-papers/{paper_id}/suggest-kp", response_model=BaseResponse[SuggestKpOut])
+async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """AI 建议:给语法类题在受控考点树里挑 1-2 个考点(不自动挂,前端确认)。"""
+    from app.services import kp_suggest_service as kss
+    sug = await kss.suggest_kps_for_paper(db, paper_id)
+    items = [SuggestKpItem(
+        question_id=qid,
+        suggestions=[QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs],
+    ) for qid, refs in sug.items() if refs]
+    return make_ok(SuggestKpOut(items=items))
 
 
 @router.post("/platform-papers/{paper_id}/section-kp", response_model=BaseResponse[dict])

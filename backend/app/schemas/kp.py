@@ -288,6 +288,15 @@ class SectionKpIn(BaseModel):
     node_id: uuid.UUID
 
 
+class SuggestKpItem(BaseModel):
+    question_id: uuid.UUID
+    suggestions: list[QuestionKpRef] = []
+
+
+class SuggestKpOut(BaseModel):
+    items: list[SuggestKpItem] = []
+
+
 class PaperDetailOut(BaseModel):
     paper: PaperListItem
     questions: list[PaperQuestionItem]

@@ -1111,6 +1111,10 @@ export function detachQuestionKp(questionId: string, nodeId: string): Promise<Qu
 export function attachSectionKp(paperId: string, section: string, nodeId: string): Promise<{ attached: number }> {
   return unwrap(request.post(`/admin/platform-papers/${paperId}/section-kp`, { section, node_id: nodeId }))
 }
+export interface SuggestKpItem { question_id: string; suggestions: QuestionKpRef[] }
+export function suggestPaperKp(paperId: string): Promise<{ items: SuggestKpItem[] }> {
+  return unwrap(request.post(`/admin/platform-papers/${paperId}/suggest-kp`))
+}
 export interface RealExtractJob {
   job_id: string
   source: string

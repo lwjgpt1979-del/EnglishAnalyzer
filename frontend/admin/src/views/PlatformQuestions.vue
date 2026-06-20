@@ -4,7 +4,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, genSimBulk,
-  attachQuestionKp, detachQuestionKp, attachSectionKp, getNodeTree,
+  attachQuestionKp, detachQuestionKp, attachSectionKp, suggestPaperKp, getNodeTree,
+  type QuestionKpRef,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions,
   listRegions, uploadImageViaPresign,
   type PlatformPaper, type PaperQuestion,
@@ -55,7 +56,7 @@ const unmappedCount = computed(() => paperQuestions.value.filter(q => !(q.kps &&
 
 async function openPaper(p: PlatformPaper) {
   paperDlg.value = true; paperLoading.value = true; curPaper.value = p
-  paperQuestions.value = []; checkedIds.value = []
+  paperQuestions.value = []; checkedIds.value = []; kpSuggest.value = {}
   try {
     const d = await getPlatformPaper(p.id)
     curPaper.value = d.paper
@@ -112,6 +113,37 @@ async function onPickKp(node: NodeTreeItem) {
 async function onRemoveKp(q: PaperQuestion, nodeId: string) {
   try { q.kps = await detachQuestionKp(q.id, nodeId) }
   catch (e: any) { ElMessage.error(e?.message || '解挂失败') }
+}
+
+// ── AI 建议考点(语法题)── 建议不自动挂,点 ✓ 采纳
+const suggesting = ref(false)
+const kpSuggest = ref<Record<string, QuestionKpRef[]>>({})
+async function onSuggestKp() {
+  if (!curPaper.value) return
+  suggesting.value = true
+  try {
+    const r = await suggestPaperKp(curPaper.value.id)
+    const map: Record<string, QuestionKpRef[]> = {}
+    for (const it of r.items) {
+      const q = paperQuestions.value.find(x => x.id === it.question_id)
+      const have = new Set((q?.kps || []).map(k => k.node_id))
+      const fresh = it.suggestions.filter(s => !have.has(s.node_id))
+      if (fresh.length) map[it.question_id] = fresh
+    }
+    kpSuggest.value = map
+    const n = Object.keys(map).length
+    ElMessage.success(n ? `AI 为 ${n} 道语法题给出建议,点 ✓ 采纳` : 'AI 未给出新建议(技能题用「按大题一键挂」)')
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 建议失败') }
+  finally { suggesting.value = false }
+}
+async function acceptSuggest(q: PaperQuestion, s: QuestionKpRef) {
+  try {
+    q.kps = await attachQuestionKp(q.id, s.node_id)
+    kpSuggest.value[q.id] = (kpSuggest.value[q.id] || []).filter(x => x.node_id !== s.node_id)
+  } catch (e: any) { ElMessage.error(e?.message || '采纳失败') }
+}
+function dismissSuggest(q: PaperQuestion, s: QuestionKpRef) {
+  kpSuggest.value[q.id] = (kpSuggest.value[q.id] || []).filter(x => x.node_id !== s.node_id)
 }
 
 watch(kpFilter, v => kpTreeRef.value?.filter(v))
@@ -354,6 +386,7 @@ onMounted(load)
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
           <el-tag v-if="unmappedCount" type="warning" size="small">⚠️ {{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
+          <el-button :loading="suggesting" @click="onSuggestKp">AI 建议知识点</el-button>
           <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
         </div>
@@ -374,7 +407,12 @@ onMounted(load)
                     <div style="white-space:pre-wrap">{{ q.stem }}</div>
                     <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
                       <el-tag v-for="k in q.kps" :key="k.node_id" size="small" closable @close="onRemoveKp(q, k.node_id)">{{ k.name }}</el-tag>
-                      <el-tag v-if="!q.kps || !q.kps.length" size="small" type="warning" effect="plain">未挂知识点</el-tag>
+                      <el-tag v-if="(!q.kps || !q.kps.length) && !(kpSuggest[q.id] && kpSuggest[q.id].length)" size="small" type="warning" effect="plain">未挂知识点</el-tag>
+                      <el-tag v-for="s in (kpSuggest[q.id] || [])" :key="'s' + s.node_id" size="small" type="primary" effect="plain" style="border-style:dashed">
+                        AI建议:{{ s.name }}
+                        <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptSuggest(q, s)">✓</span>
+                        <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissSuggest(q, s)">✕</span>
+                      </el-tag>
                       <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openKpPicker(q)">+ 知识点</el-button>
                     </div>
                   </div>
