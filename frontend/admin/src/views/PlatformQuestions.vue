@@ -297,12 +297,13 @@ onMounted(load)
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
         </div>
         <div style="max-height:520px;overflow:auto">
-          <el-checkbox-group v-model="checkedIds">
+          <!-- font-size:14px 复位:el-checkbox-group 默认 font-size:0 会让组内纯文本不可见 -->
+          <el-checkbox-group v-model="checkedIds" style="font-size:14px;line-height:1.5">
             <div v-for="(sec, si) in paperSections" :key="si" style="margin-bottom:14px">
-              <div style="font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px">{{ sec.name }}</div>
+              <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px">{{ sec.name }}</div>
               <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
                 <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto">📄 {{ g.passage }}</div>
-                <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:3px 0;border-bottom:1px dashed #f0f0f0">
+                <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:3px 0;border-bottom:1px dashed #f0f0f0;font-size:13px">
                   <el-checkbox :value="q.id" style="margin-top:2px" />
                   <span style="color:#909399;width:30px;flex-shrink:0">{{ q.question_no }}</span>
                   <span style="flex:1;white-space:pre-wrap">{{ q.stem }}</span>
