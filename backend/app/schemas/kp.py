@@ -185,6 +185,8 @@ class PlatformQuestionItem(BaseModel):
     answer: str | None = None
     difficulty: int | None = None
     status: str
+    block_id: uuid.UUID | None = None       # 题组(短文)外键;同篇阅读/完形小问共享
+    passage: str | None = None              # 题组短文正文(同 block_id 的题相同)
 
 
 class PlatformQuestionListOut(BaseModel):

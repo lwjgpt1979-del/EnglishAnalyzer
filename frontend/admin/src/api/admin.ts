@@ -1045,6 +1045,8 @@ export interface PlatformQuestion {
   answer?: string | null
   difficulty?: number | null
   status: string
+  block_id?: string | null      // 题组(短文)外键;同篇阅读/完形小问共享
+  passage?: string | null       // 题组短文正文
 }
 export interface ParsedRealQuestion {
   question_no?: string | null

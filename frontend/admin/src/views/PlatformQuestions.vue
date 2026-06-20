@@ -17,6 +17,23 @@ const loading = ref(false)
 const typeOpts = [{ label: '全部', value: '' }, { label: '真题', value: 'real' }, { label: '仿真', value: 'sim' }]
 const statusOpts = ['', 'draft', 'published', 'retired']
 
+// 列表按 block_id 聚合:同一短文的连续小问折叠为一个「阅读题组」父行(树形展开看小问)
+const displayRows = computed(() => {
+  const out: any[] = []
+  let i = 0
+  while (i < rows.value.length) {
+    const r = rows.value[i]
+    if (r.block_id) {
+      const children: PlatformQuestion[] = []
+      while (i < rows.value.length && rows.value[i].block_id === r.block_id) children.push(rows.value[i++])
+      out.push({ id: r.block_id, _group: true, passage: r.passage, count: children.length, children })
+    } else {
+      out.push(r); i++
+    }
+  }
+  return out
+})
+
 async function load() {
   loading.value = true
   try {
@@ -224,24 +241,30 @@ onMounted(load)
       <span class="hint">真题挂知识节点;有真题的点其直生备选自动下架,可派生仿真供学生"有源"练习。共 {{ total }} 条</span>
     </div>
 
-    <el-table v-loading="loading" :data="rows" border style="width:100%">
-      <el-table-column label="类型" width="80" align="center">
+    <el-table v-loading="loading" :data="displayRows" border style="width:100%"
+              row-key="id" :tree-props="{ children: 'children' }">
+      <el-table-column label="类型" width="96" align="center">
         <template #default="{ row }">
-          <el-tag :type="row.type === 'real' ? 'danger' : 'info'" size="small">
+          <el-tag v-if="row._group" type="warning" size="small">📖 阅读题组·{{ row.count }}小问</el-tag>
+          <el-tag v-else :type="row.type === 'real' ? 'danger' : 'info'" size="small">
             {{ row.type === 'real' ? '真题' : '仿真' }}<span v-if="row.is_fallback">·备</span>
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="question_type" label="题型" width="80" />
-      <el-table-column prop="stem" label="题干" min-width="280" show-overflow-tooltip />
-      <el-table-column prop="answer" label="答案" width="90" show-overflow-tooltip />
-      <el-table-column prop="difficulty" label="难度" width="60" align="center" />
-      <el-table-column prop="status" label="状态" width="90" />
+      <el-table-column label="题型" width="80"><template #default="{ row }">{{ row._group ? '' : row.question_type }}</template></el-table-column>
+      <el-table-column label="题干 / 短文" min-width="280" show-overflow-tooltip>
+        <template #default="{ row }">{{ row._group ? '📄 ' + (row.passage || '').slice(0, 120) : row.stem }}</template>
+      </el-table-column>
+      <el-table-column label="答案" width="90" show-overflow-tooltip><template #default="{ row }">{{ row._group ? '' : row.answer }}</template></el-table-column>
+      <el-table-column label="难度" width="60" align="center"><template #default="{ row }">{{ row._group ? '' : row.difficulty }}</template></el-table-column>
+      <el-table-column label="状态" width="90"><template #default="{ row }">{{ row._group ? '' : row.status }}</template></el-table-column>
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="row.type === 'real'" size="small" @click="onGenSim(row)">派生仿真</el-button>
-          <el-button v-if="row.status !== 'published'" size="small" type="success" @click="onReview(row, true)">发布</el-button>
-          <el-button v-if="row.status !== 'retired'" size="small" type="danger" @click="onReview(row, false)">驳回</el-button>
+          <template v-if="!row._group">
+            <el-button v-if="row.type === 'real'" size="small" @click="onGenSim(row)">派生仿真</el-button>
+            <el-button v-if="row.status !== 'published'" size="small" type="success" @click="onReview(row, true)">发布</el-button>
+            <el-button v-if="row.status !== 'retired'" size="small" type="danger" @click="onReview(row, false)">驳回</el-button>
+          </template>
         </template>
       </el-table-column>
     </el-table>

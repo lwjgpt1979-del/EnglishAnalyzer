@@ -824,11 +824,12 @@ async def reextract_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
 
 # ─── 平台题管理（R2 真题/仿真接入）──────────────────────────────────────────────
 
-def _to_pq_item(q) -> PlatformQuestionItem:
+def _to_pq_item(q, passage: str | None = None) -> PlatformQuestionItem:
     return PlatformQuestionItem(
         id=q.id, type=q.type, parent_real_id=q.parent_real_id, is_fallback=q.is_fallback,
         question_type=q.question_type, stem=q.stem, answer=q.answer,
         difficulty=q.difficulty, status=q.status,
+        block_id=q.block_id, passage=passage,
     )
 
 
@@ -842,7 +843,9 @@ async def list_platform_questions_api(
     from app.services import platform_question_service as pqs
     rows, total = await pqs.list_platform_questions(
         db, type=type, status=status, node_id=node_id, skip=skip, limit=limit)
-    return make_ok(PlatformQuestionListOut(total=total, items=[_to_pq_item(r) for r in rows]))
+    pmap = await pqs.passages_for(db, [r.block_id for r in rows if r.block_id])
+    return make_ok(PlatformQuestionListOut(
+        total=total, items=[_to_pq_item(r, pmap.get(r.block_id)) for r in rows]))
 
 
 @router.post("/platform-questions", response_model=BaseResponse[RealImportItemOut])

@@ -41,6 +41,19 @@ async def create_passage(db: AsyncSession, *, text: str, kind: str = "reading_te
     return p.id
 
 
+async def passages_for(
+    db: AsyncSession, block_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str | None]:
+    """批量取题组短文正文 {passage_id: text}，供列表按 block_id 聚合显示。"""
+    ids = list({b for b in block_ids if b})
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        sa.select(Passage.id, Passage.text).where(Passage.id.in_(ids))
+    )).all()
+    return {pid: text for pid, text in rows}
+
+
 async def attach_node(db: AsyncSession, question_id: uuid.UUID, node_id: uuid.UUID) -> bool:
     """platform_question_kp 挂边(幂等)。返回是否新建。"""
     stmt = (
