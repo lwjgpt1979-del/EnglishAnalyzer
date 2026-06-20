@@ -364,7 +364,12 @@ function batchMeta(): Record<string, unknown> {
   return m
 }
 
-function onFileChange(f: any) { pickedFile.value = f.raw as File }
+function onFileChange(f: any) {
+  pickedFile.value = f.raw as File
+  // 试卷名缺省取上传文件名(去扩展名);已手填则不覆盖
+  const fn = (f.raw?.name || '').replace(/\.(pdf|docx?)$/i, '').trim()
+  if (fn && !metaPaperName.value.trim()) metaPaperName.value = fn
+}
 function onImagesChange(_f: any, list: any[]) { pickedImages.value = list.map(x => x.raw).filter(Boolean) }
 
 async function startExtract() {
