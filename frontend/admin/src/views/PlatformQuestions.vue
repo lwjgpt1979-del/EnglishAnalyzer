@@ -189,7 +189,7 @@ async function openSectionSuggest(section: string) {
   if (!curPaper.value) return
   const q = paperQuestions.value.find(x => x.section === section)
   secSuggestName.value = section
-  secSuggestType.value = q?.question_type || '单选'
+  secSuggestType.value = section.includes('听力') ? '听力' : (q?.question_type || '单选')
   if (!allPrompts.length) {
     try { allPrompts = (await getKpPrompts()).prompts } catch { allPrompts = [] }
   }

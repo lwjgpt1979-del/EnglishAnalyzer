@@ -13,13 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d9_system import SystemConfig
 
 _KEY = "kp_suggest_prompts"
-QUESTION_TYPES = ["单选", "填空", "完型", "阅读", "写作"]
+QUESTION_TYPES = ["单选", "听力", "填空", "完型", "阅读", "写作"]
 
 # 内置默认提示词:仅"该题型怎么挑"的指引(放 user 端);
 # 角色、知识点目录、输出 JSON 格式由 kp_suggest_service 的稳定 system 前缀统一给出。
 _BUILTIN: dict[str, str] = {
     "单选": "【本大题:单项填空 / 语法选择】主要考语法与词汇辨析。为每道小题挑 1-2 个最贴切的"
             "语法或词汇考点(如时态、介词、从句、词义辨析等)。",
+    "听力": "【本大题:听力】听力理解题,主要考听力能力,一般不对应具体语言考点。codes 一律"
+            "给空数组,除非题干明确考查某语法/词汇点。",
     "填空": "【本大题:单词拼写 / 选词填空 / 完成句子】考词汇运用与基础语法。为每题挑 1-2 个"
             "最贴切的词汇或语法考点。",
     "完型": "【本大题:完形填空】每空考查一个词汇/语法/语境点。请结合短文语境,为每空挑 1-2 个"

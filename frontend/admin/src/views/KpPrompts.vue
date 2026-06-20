@@ -4,9 +4,10 @@ import { ElMessage } from 'element-plus'
 import { getKpPrompts, saveKpPrompts, getNodeTree, type KpPrompt } from '../api/admin'
 import type { NodeTreeItem } from '../types'
 
-const TYPES = ['单选', '填空', '完型', '阅读', '写作']
+const TYPES = ['单选', '听力', '填空', '完型', '阅读', '写作']
 const TYPE_HINT: Record<string, string> = {
   单选: '单项填空/语法选择 — 多挂语法/词汇考点',
+  听力: '听力理解(section 含"听力") — 一般留空',
   填空: '单词拼写/选词/完成句子 — 词汇/语法考点',
   完型: '完形填空每空 — 语法/词汇/篇章考点',
   阅读: '阅读理解/信息还原 — 篇章为主,无明确点可留空',

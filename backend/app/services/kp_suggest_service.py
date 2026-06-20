@@ -164,9 +164,14 @@ async def suggest_kps_for_paper(
     prompts = await kp_prompt_service.get_prompts(db)
     override = kp_prompt_service.item_by_id(prompts, prompt_id) if prompt_id else None
 
+    def _etype(q: PlatformQuestion) -> str:        # 听力题(section 含"听力")单列题型
+        if "听力" in (q.section or ""):
+            return "听力"
+        return q.question_type or "单选"
+
     groups: dict[str, list[PlatformQuestion]] = {}
     for q in qs:
-        groups.setdefault(q.question_type or "单选", []).append(q)
+        groups.setdefault(_etype(q), []).append(q)
 
     # 解析各题型关注分类 → 编码
     items = {qt: (override or kp_prompt_service.default_item_for(prompts, qt)) for qt in groups}
