@@ -302,6 +302,10 @@ class PaperDetailOut(BaseModel):
     questions: list[PaperQuestionItem]
 
 
+class PaperDeleteIn(BaseModel):
+    paper_ids: list[uuid.UUID] = Field(..., min_length=1)
+
+
 class GenSimBulkIn(BaseModel):
     question_ids: list[uuid.UUID] = Field(..., min_length=1)
     count: int = 3

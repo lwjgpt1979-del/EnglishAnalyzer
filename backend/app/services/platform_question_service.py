@@ -172,6 +172,39 @@ async def paper_questions(
     return paper, rows, pmap
 
 
+async def delete_papers(db: AsyncSession, paper_ids: list[uuid.UUID]) -> int:
+    """批量删除试卷:连带删其真题、派生仿真、题组短文、KP 边、错题/作答引用。返回删除卷数。"""
+    if not paper_ids:
+        return 0
+    real_ids = list((await db.execute(
+        sa.select(PlatformQuestion.id).where(PlatformQuestion.paper_id.in_(paper_ids)))).scalars().all())
+    block_ids = list({b for b in (await db.execute(
+        sa.select(PlatformQuestion.block_id).where(
+            PlatformQuestion.paper_id.in_(paper_ids),
+            PlatformQuestion.block_id.isnot(None)))).scalars().all() if b})
+    sim_ids = list((await db.execute(
+        sa.select(PlatformQuestion.id).where(
+            PlatformQuestion.parent_real_id.in_(real_ids)))).scalars().all()) if real_ids else []
+    all_qids = real_ids + sim_ids
+
+    if all_qids:
+        # 题↔KP 边(虽 CASCADE,显式清更稳)+ 学生侧无 FK 的引用(错题/作答)
+        await db.execute(sa.delete(PlatformQuestionKp).where(PlatformQuestionKp.question_id.in_(all_qids)))
+        for tbl, col in (("wrong_record", "question_id"), ("answer_log", "question_id")):
+            try:
+                await db.execute(sa.text(f"DELETE FROM {tbl} WHERE {col} = ANY(:ids)"), {"ids": all_qids})
+            except Exception:  # noqa: BLE001
+                pass
+    if sim_ids:   # 先删仿真(parent_real_id 自引用),再删真题
+        await db.execute(sa.delete(PlatformQuestion).where(PlatformQuestion.id.in_(sim_ids)))
+    if real_ids:
+        await db.execute(sa.delete(PlatformQuestion).where(PlatformQuestion.id.in_(real_ids)))
+    if block_ids:
+        await db.execute(sa.delete(Passage).where(Passage.id.in_(block_ids)))
+    res = await db.execute(sa.delete(PlatformPaper).where(PlatformPaper.id.in_(paper_ids)))
+    return res.rowcount or 0
+
+
 async def publish_paper(db: AsyncSession, paper_id: uuid.UUID) -> int:
     """整卷发布:试卷下所有真题置 published + 试卷置 published;返回发布题数。"""
     paper = await db.get(PlatformPaper, paper_id)

@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
-  listPlatformPapers, getPlatformPaper, publishPlatformPaper, genSimBulk,
+  listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk,
   attachQuestionKp, detachQuestionKp, attachSectionKp, suggestPaperKp, getNodeTree,
   type QuestionKpRef,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions,
@@ -23,6 +23,23 @@ const papers = ref<PlatformPaper[]>([])
 const total = ref(0)
 const loading = ref(false)
 const statusOpts = ['', 'draft', 'published']
+
+const selectedPapers = ref<PlatformPaper[]>([])
+function onSelectionChange(rows: PlatformPaper[]) { selectedPapers.value = rows }
+async function onDeleteSelected() {
+  const ids = selectedPapers.value.map(p => p.id)
+  if (!ids.length) { ElMessage.warning('请先勾选要删除的试卷'); return }
+  const qsum = selectedPapers.value.reduce((s, p) => s + (p.question_count || 0), 0)
+  await ElMessageBox.confirm(
+    `确认删除选中的 ${ids.length} 份试卷(连带 ${qsum} 道题及其仿真/短文/知识点关联)?此操作不可恢复。`,
+    '批量删除试卷', { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+  try {
+    const r = await deletePlatformPapers(ids)
+    ElMessage.success(`已删除 ${r.deleted} 份试卷`)
+    selectedPapers.value = []
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '删除失败') }
+}
 
 function onStageFilterChange() { filGrade.value = ''; load() }
 function resetFilters() {
@@ -378,10 +395,12 @@ onMounted(load)
       </el-select>
       <el-button @click="resetFilters">重置</el-button>
       <el-button type="primary" @click="openDlg">+ 上传真题</el-button>
+      <el-button type="danger" plain :disabled="!selectedPapers.length" @click="onDeleteSelected">删除选中{{ selectedPapers.length ? ` (${selectedPapers.length})` : '' }}</el-button>
       <span class="hint">一份上传 = 一份试卷;点「查看/发布」弹整卷题。共 {{ total }} 份</span>
     </div>
 
-    <el-table v-loading="loading" :data="papers" border style="width:100%">
+    <el-table v-loading="loading" :data="papers" border style="width:100%" row-key="id" @selection-change="onSelectionChange">
+      <el-table-column type="selection" width="44" />
       <el-table-column label="试卷" min-width="240">
         <template #default="{ row }">
           <div style="font-weight:600">{{ row.name }}</div>

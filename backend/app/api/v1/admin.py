@@ -76,6 +76,7 @@ from app.schemas.kp import (
     QuestionKpRef,
     AttachKpIn,
     SectionKpIn,
+    PaperDeleteIn,
     SuggestKpItem,
     SuggestKpOut,
     GenSimBulkIn,
@@ -1026,6 +1027,15 @@ async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
         suggestions=[QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs],
     ) for qid, refs in sug.items() if refs]
     return make_ok(SuggestKpOut(items=items))
+
+
+@router.post("/platform-papers/delete", response_model=BaseResponse[dict])
+async def delete_platform_papers_api(body: PaperDeleteIn, db: DbDep, admin: AdminDep):
+    """批量删除试卷(连带其真题/仿真/短文/KP 边/错题作答引用)。"""
+    from app.services import platform_question_service as pqs
+    n = await pqs.delete_papers(db, body.paper_ids)
+    await db.commit()
+    return make_ok({"deleted": n})
 
 
 @router.post("/platform-papers/{paper_id}/section-kp", response_model=BaseResponse[dict])

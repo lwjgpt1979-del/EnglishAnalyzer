@@ -1114,6 +1114,9 @@ export function getPlatformPaper(paperId: string): Promise<PaperDetail> {
 export function publishPlatformPaper(paperId: string): Promise<PlatformPaper> {
   return unwrap(request.post(`/admin/platform-papers/${paperId}/publish`))
 }
+export function deletePlatformPapers(paperIds: string[]): Promise<{ deleted: number }> {
+  return unwrap(request.post('/admin/platform-papers/delete', { paper_ids: paperIds }))
+}
 export function genSimBulk(questionIds: string[], count = 3): Promise<{ generated: number; per_question: number }> {
   return unwrap(request.post('/admin/platform-questions/gen-sim-bulk', { question_ids: questionIds, count }))
 }
