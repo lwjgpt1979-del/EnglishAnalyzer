@@ -89,12 +89,25 @@ async def create_paper(db: AsyncSession, *, name: str | None, meta: dict | None)
 
 
 async def list_papers(
-    db: AsyncSession, *, status: str | None = None, skip: int = 0, limit: int = 20
+    db: AsyncSession, *, status: str | None = None,
+    textbook_version: str | None = None, stage: str | None = None,
+    grade: str | None = None, exam_type: str | None = None,
+    region_code: str | None = None, skip: int = 0, limit: int = 20
 ) -> tuple[list[tuple[PlatformPaper, int, int]], int]:
-    """试卷分页:每项含 (paper, 题数, 已发布题数)。"""
+    """试卷分页:每项含 (paper, 题数, 已发布题数)。支持按教材/学段/年级/地区/考试筛选。"""
     base = sa.select(PlatformPaper)
     if status is not None:
         base = base.where(PlatformPaper.status == status)
+    if textbook_version:
+        base = base.where(PlatformPaper.textbook_version == textbook_version)
+    if stage:
+        base = base.where(PlatformPaper.stage == stage)
+    if grade:
+        base = base.where(PlatformPaper.grade == grade)
+    if exam_type:
+        base = base.where(PlatformPaper.exam_type == exam_type)
+    if region_code:        # 前缀匹配:省码(2位)含其下所有市;市码(4位)精确
+        base = base.where(PlatformPaper.region_code.like(f"{region_code}%"))
     total = (await db.execute(
         sa.select(sa.func.count()).select_from(base.subquery())
     )).scalar_one()

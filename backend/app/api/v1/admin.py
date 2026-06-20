@@ -952,11 +952,16 @@ def _to_paper_item(p, cnt: int = 0, pub: int = 0) -> PaperListItem:
 
 @router.get("/platform-papers", response_model=BaseResponse[PaperListOut])
 async def list_platform_papers_api(
-    db: DbDep, admin: AdminDep, status: str | None = None, skip: int = 0, limit: int = 20,
+    db: DbDep, admin: AdminDep, status: str | None = None,
+    textbook_version: str | None = None, stage: str | None = None,
+    grade: str | None = None, exam_type: str | None = None,
+    region_code: str | None = None, skip: int = 0, limit: int = 20,
 ):
-    """平台试卷分页(一卷一条,含题数/已发布数)。"""
+    """平台试卷分页(一卷一条,含题数/已发布数);可按教材/学段/年级/地区/考试筛选。"""
     from app.services import platform_question_service as pqs
-    rows, total = await pqs.list_papers(db, status=status, skip=skip, limit=limit)
+    rows, total = await pqs.list_papers(
+        db, status=status, textbook_version=textbook_version, stage=stage,
+        grade=grade, exam_type=exam_type, region_code=region_code, skip=skip, limit=limit)
     return make_ok(PaperListOut(
         total=total, items=[_to_paper_item(p, c, pub) for p, c, pub in rows]))
 

@@ -12,17 +12,38 @@ import {
 } from '../api/admin'
 import type { NodeTreeItem } from '../types'
 
-// ── 试卷列表(一卷一条)──
+// ── 试卷列表(一卷一条)+ 筛选 ──
 const statusFilter = ref('')
+const filTextbook = ref('')
+const filStage = ref('')
+const filGrade = ref('')
+const filExam = ref('')
+const filRegionPath = ref<string[]>([])
 const papers = ref<PlatformPaper[]>([])
 const total = ref(0)
 const loading = ref(false)
 const statusOpts = ['', 'draft', 'published']
 
+function onStageFilterChange() { filGrade.value = ''; load() }
+function resetFilters() {
+  statusFilter.value = ''; filTextbook.value = ''; filStage.value = ''
+  filGrade.value = ''; filExam.value = ''; filRegionPath.value = []
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
-    const data = await listPlatformPapers({ status: statusFilter.value || undefined, limit: 50 })
+    const region = filRegionPath.value
+    const data = await listPlatformPapers({
+      status: statusFilter.value || undefined,
+      textbook_version: filTextbook.value || undefined,
+      stage: filStage.value || undefined,
+      grade: filGrade.value || undefined,
+      exam_type: filExam.value || undefined,
+      region_code: region.length ? region[region.length - 1] : undefined,  // 选到的最细级(省/市)
+      limit: 50,
+    })
     papers.value = data.items
     total.value = data.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
@@ -343,13 +364,25 @@ onMounted(load)
 <template>
   <div>
     <div class="toolbar">
-      <span>状态:</span>
-      <el-select v-model="statusFilter" style="width:120px" @change="load">
-        <el-option v-for="s in statusOpts" :key="s" :label="s || '全部'" :value="s" />
+      <el-select v-model="filTextbook" placeholder="教材" clearable style="width:108px" @change="load">
+        <el-option v-for="v in VERSIONS" :key="v" :label="v" :value="v" />
       </el-select>
-      <el-button style="margin-left:12px" type="primary" @click="openDlg">+ 上传真题</el-button>
-      <el-button @click="load">刷新</el-button>
-      <span class="hint">一份上传 = 一份试卷,点「查看/发布」弹整卷题,可「发布成为母题」并勾选具体题派生仿真供学生练习。共 {{ total }} 份</span>
+      <el-select v-model="filStage" placeholder="学段" clearable style="width:88px" @change="onStageFilterChange">
+        <el-option v-for="s in STAGES" :key="s" :label="STAGE_LABEL[s]" :value="s" />
+      </el-select>
+      <el-select v-model="filGrade" placeholder="年级" clearable :disabled="!filStage" style="width:98px" @change="load">
+        <el-option v-for="g in (GRADES[filStage] || [])" :key="g" :label="g" :value="g" />
+      </el-select>
+      <el-cascader v-model="filRegionPath" :props="regionProps" clearable placeholder="地区" style="width:160px" @change="load" />
+      <el-select v-model="filExam" placeholder="考试" clearable style="width:96px" @change="load">
+        <el-option v-for="e in EXAM_TYPES.filter(x => x.value)" :key="e.value" :label="e.label" :value="e.value" />
+      </el-select>
+      <el-select v-model="statusFilter" placeholder="状态" clearable style="width:96px" @change="load">
+        <el-option v-for="s in statusOpts.filter(Boolean)" :key="s" :label="s === 'published' ? '已发布' : '草稿'" :value="s" />
+      </el-select>
+      <el-button @click="resetFilters">重置</el-button>
+      <el-button type="primary" @click="openDlg">+ 上传真题</el-button>
+      <span class="hint">一份上传 = 一份试卷;点「查看/发布」弹整卷题。共 {{ total }} 份</span>
     </div>
 
     <el-table v-loading="loading" :data="papers" border style="width:100%">

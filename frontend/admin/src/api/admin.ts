@@ -1090,7 +1090,10 @@ export interface PaperQuestion {
 }
 export interface PaperDetail { paper: PlatformPaper; questions: PaperQuestion[] }
 
-export function listPlatformPapers(params: { status?: string; skip?: number; limit?: number }): Promise<{ total: number; items: PlatformPaper[] }> {
+export function listPlatformPapers(params: {
+  status?: string; textbook_version?: string; stage?: string; grade?: string
+  exam_type?: string; region_code?: string; skip?: number; limit?: number
+}): Promise<{ total: number; items: PlatformPaper[] }> {
   return unwrap(request.get('/admin/platform-papers', { params }))
 }
 export function getPlatformPaper(paperId: string): Promise<PaperDetail> {
