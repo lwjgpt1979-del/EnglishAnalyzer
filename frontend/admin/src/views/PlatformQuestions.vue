@@ -172,8 +172,8 @@ async function onSuggestKp() {
   try {
     const r = await suggestPaperKp(curPaper.value.id)
     const n = mergeSuggestions(r.items, false)
-    ElMessage.success(n ? `AI 为 ${n} 道题给出建议,点 ✓ 采纳` : 'AI 未给出新建议')
-  } catch (e: any) { ElMessage.error(e?.message || 'AI 建议失败') }
+    ElMessage.success(n ? `整卷匹配:AI 为 ${n} 道题给出建议,点 ✓ 采纳` : 'AI 未给出新建议')
+  } catch (e: any) { ElMessage.error(e?.message || '整卷匹配失败') }
   finally { suggesting.value = false }
 }
 
@@ -494,7 +494,8 @@ onMounted(load)
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
           <el-tag v-if="unmappedCount" type="warning" size="small">⚠️ {{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
-          <el-button :loading="suggesting" @click="onSuggestKp">AI 建议知识点</el-button>
+          <el-button :loading="suggesting" @click="onSuggestKp"
+            title="整卷按每个大题/题型分别调用其匹配提示词,候选考点按本卷学段(高⊇初⊇小)过滤">AI 整卷匹配知识点</el-button>
           <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
           <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>

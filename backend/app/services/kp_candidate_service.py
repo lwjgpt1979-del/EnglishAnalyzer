@@ -162,16 +162,19 @@ async def node_tree(db: AsyncSession, *, axis: str | None = None,
 
     with_counts=True 时,每个节点附 unit_refs/question_refs(教材单元 / 真题挂载数),
     分类节点取其**整棵子树聚合**(自身+所有后代直接挂载之和),便于一眼看哪类挂得多。
-    stage(小|初|高)软过滤:只保留「未标学段(通用脚手架/分类)或含该学段」的节点。
+    stage(小|初|高)过滤,包含式(高⊇初⊇小):保留「未标学段(通用脚手架/分类)
+    或含该学段及更低学段」的节点(看初中卷=小+初考点,看高中=全部)。
     """
     stmt = sa.select(KnowledgeNode).where(KnowledgeNode.status != "retired")
     if axis:
         stmt = stmt.where(KnowledgeNode.axis == axis)
     if stage:
         from sqlalchemy.dialects.postgresql import JSONB
-        stmt = stmt.where(sa.or_(
-            KnowledgeNode.applicable_stages.is_(None),
-            KnowledgeNode.applicable_stages.op("@>")(sa.cast([stage], JSONB))))
+        _rank = {"小": 0, "初": 1, "高": 2}
+        allowed = [s for s, r in _rank.items() if r <= _rank.get(stage, 99)]
+        conds = [KnowledgeNode.applicable_stages.is_(None)]
+        conds += [KnowledgeNode.applicable_stages.op("@>")(sa.cast([s], JSONB)) for s in allowed]
+        stmt = stmt.where(sa.or_(*conds))
     rows = (await db.execute(stmt.order_by(KnowledgeNode.sort_order, KnowledgeNode.name))).scalars().all()
     nodes = {r.id: {"id": r.id, "name": r.name, "axis": r.axis, "node_kind": r.node_kind,
                     "status": r.status, "code": r.code, "parent_id": r.parent_id,

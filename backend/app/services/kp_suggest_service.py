@@ -26,6 +26,24 @@ from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _KAODIAN_RE = r"^(cf|jf)-[0-9]+-[0-9]+-[0-9]+$"   # 四段 = 考点叶子
 
+# 学段包含关系:高 ⊇ 初 ⊇ 小。匹配某学段卷时,该学段「及更低」的考点都算候选。
+_STAGE_RANK = {"小": 0, "初": 1, "高": 2}
+
+
+def _stages_at_or_below(stage: str | None) -> list[str] | None:
+    """某学段可用的考点学段集合(含更低)。None=不限(返回 None 表示不过滤)。"""
+    pr = _STAGE_RANK.get(stage or "")
+    if pr is None:
+        return None
+    return [s for s, r in _STAGE_RANK.items() if r <= pr]
+
+
+def _stage_allows(cand_stages: list | None, allowed: list[str] | None) -> bool:
+    """考点是否适用:通用(未标)恒可;否则其任一学段落在 allowed 集合内。"""
+    if allowed is None or not cand_stages:
+        return True
+    return any(s in allowed for s in cand_stages)
+
 # system 前缀固定开头(与目录拼成稳定缓存前缀)
 _SYS_HEAD = (
     "你是初中英语考点标注专家。下面给出受控「知识点目录」,每行:编码<TAB>名称<TAB>释义。\n"
@@ -68,13 +86,14 @@ async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple[str, str, li
 def _system_for(entries: list[tuple[str, str, list]], focus_codes: list[str],
                 stage: str | None = None) -> str:
     """过滤考点目录拼稳定 system 前缀。focus=关注分类编码前缀(空=全部);
-    stage=题/卷学段软过滤(考点未标学段=通用,或含该学段才纳入)。"""
+    stage=题/卷学段过滤,包含式(高⊇初⊇小):该学段及更低的考点 + 通用考点都纳入。"""
     fc = [c for c in focus_codes if c] if focus_codes else None
+    allowed = _stages_at_or_below(stage)
     lines: list[str] = []
     for code, ln, stages in entries:
         if fc and not any(code == f or code.startswith(f + "-") for f in fc):
             continue
-        if stage and stages and stage not in stages:
+        if not _stage_allows(stages, allowed):
             continue
         lines.append(ln)
     return _SYS_HEAD + "\n".join(lines)
