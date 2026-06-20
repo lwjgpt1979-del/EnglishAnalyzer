@@ -61,11 +61,13 @@ async function openPaper(p: PlatformPaper) {
 
 async function onPublishPaper() {
   if (!curPaper.value) return
-  await ElMessageBox.confirm(`整卷发布「${curPaper.value.name}」共 ${curPaper.value.question_count} 题?`, '整卷发布', { type: 'warning' })
+  await ElMessageBox.confirm(
+    `发布「${curPaper.value.name}」共 ${curPaper.value.question_count} 题为母题?发布后这些真题成为对应知识点的「母题」,可勾选题派生仿真供学生练习。`,
+    '发布成为母题', { type: 'warning' })
   const p = await publishPlatformPaper(curPaper.value.id)
   curPaper.value = p
   for (const q of paperQuestions.value) q.status = 'published'
-  ElMessage.success(`已发布 ${p.published_count} 题`)
+  ElMessage.success(`已发布 ${p.published_count} 题为母题,可勾选题派生仿真`)
   await load()
 }
 
@@ -257,7 +259,7 @@ onMounted(load)
       </el-select>
       <el-button style="margin-left:12px" type="primary" @click="openDlg">+ 上传真题</el-button>
       <el-button @click="load">刷新</el-button>
-      <span class="hint">一份上传 = 一份试卷,点「查看/发布」弹整卷题,可整卷发布并勾选具体题派生仿真。共 {{ total }} 份</span>
+      <span class="hint">一份上传 = 一份试卷,点「查看/发布」弹整卷题,可「发布成为母题」并勾选具体题派生仿真供学生练习。共 {{ total }} 份</span>
     </div>
 
     <el-table v-loading="loading" :data="papers" border style="width:100%">
@@ -293,7 +295,7 @@ onMounted(load)
           <span style="color:#606266">共 {{ curPaper?.question_count }} 题,已发布 {{ curPaper?.published_count }}</span>
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
           <div style="flex:1"></div>
-          <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">整卷发布</el-button>
+          <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
         </div>
         <div style="max-height:520px;overflow:auto">
