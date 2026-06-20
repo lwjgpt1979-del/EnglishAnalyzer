@@ -56,7 +56,7 @@ const treeProps = { label: 'name', children: 'children' }
 
 async function loadTree() {
   treeLoading.value = true
-  try { treeData.value = (await getNodeTree('knowledge')).items }
+  try { treeData.value = (await getNodeTree('knowledge', true)).items }
   catch (e: any) { ElMessage.error(e?.message || '加载树失败') }
   finally { treeLoading.value = false }
 }
@@ -181,6 +181,8 @@ onMounted(loadTree)
           <span class="tnode">
             <el-link type="primary" @click.stop="openDetail(data.id)">{{ data.name }}</el-link>
             <span class="tmeta" v-if="data.node_kind">{{ data.node_kind }}</span>
+            <span v-if="data.unit_refs" class="cnt cnt-u" title="教材单元挂载数(含子节点)">教 {{ data.unit_refs }}</span>
+            <span v-if="data.question_refs" class="cnt cnt-q" title="真题挂载数(含子节点)">真 {{ data.question_refs }}</span>
             <span class="tops">
               <el-button link size="small" type="primary" @click.stop="addChild(data)">+ 子节点</el-button>
               <el-button link size="small" type="danger" @click.stop="retireTreeNode(data)">停用</el-button>
@@ -350,6 +352,9 @@ onMounted(loadTree)
 .muted { color: #c0c4cc; font-size: 12px; }
 .tnode { display: flex; align-items: center; gap: 10px; flex: 1; padding-right: 8px; }
 .tmeta { font-size: 11px; color: #909399; background: #f4f4f5; padding: 0 6px; border-radius: 3px; }
+.cnt { font-size: 11px; padding: 0 6px; border-radius: 8px; }
+.cnt-u { color: #409eff; background: #ecf5ff; }
+.cnt-q { color: #e6a23c; background: #fdf6ec; }
 .tops { margin-left: auto; visibility: hidden; }
 .tnode:hover .tops { visibility: visible; }
 .d-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }

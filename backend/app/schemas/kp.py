@@ -112,6 +112,8 @@ class NodeTreeItem(BaseModel):
     node_kind: str | None = None
     status: str
     code: str
+    unit_refs: int | None = None          # 教材单元挂载数(子树聚合,with_counts 时有)
+    question_refs: int | None = None       # 真题挂载数(子树聚合)
     children: list["NodeTreeItem"] = []
 
 

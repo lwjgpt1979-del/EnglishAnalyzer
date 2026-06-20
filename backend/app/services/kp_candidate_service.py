@@ -156,8 +156,13 @@ async def list_nodes_overview(
     return items, total
 
 
-async def node_tree(db: AsyncSession, *, axis: str | None = None) -> list[dict]:
-    """受控知识树(E1):按 parent_id 组装嵌套(排除已停用)。"""
+async def node_tree(db: AsyncSession, *, axis: str | None = None,
+                    with_counts: bool = False) -> list[dict]:
+    """受控知识树(E1):按 parent_id 组装嵌套(排除已停用)。
+
+    with_counts=True 时,每个节点附 unit_refs/question_refs(教材单元 / 真题挂载数),
+    分类节点取其**整棵子树聚合**(自身+所有后代直接挂载之和),便于一眼看哪类挂得多。
+    """
     stmt = sa.select(KnowledgeNode).where(KnowledgeNode.status != "retired")
     if axis:
         stmt = stmt.where(KnowledgeNode.axis == axis)
@@ -165,11 +170,37 @@ async def node_tree(db: AsyncSession, *, axis: str | None = None) -> list[dict]:
     nodes = {r.id: {"id": r.id, "name": r.name, "axis": r.axis, "node_kind": r.node_kind,
                     "status": r.status, "code": r.code, "parent_id": r.parent_id, "children": []}
              for r in rows}
+
+    if with_counts:
+        from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
+        from app.models.d17_curriculum_kg import UnitNode
+        units = dict((await db.execute(
+            sa.select(UnitNode.node_id, sa.func.count()).group_by(UnitNode.node_id))).all())
+        reals = dict((await db.execute(
+            sa.select(PlatformQuestionKp.node_id, sa.func.count())
+            .join(PlatformQuestion, PlatformQuestion.id == PlatformQuestionKp.question_id)
+            .where(PlatformQuestion.type == "real")
+            .group_by(PlatformQuestionKp.node_id))).all())
+        for nid, item in nodes.items():
+            item["unit_refs"] = int(units.get(nid, 0))
+            item["question_refs"] = int(reals.get(nid, 0))
+
     roots: list[dict] = []
     for r in rows:
         item = nodes[r.id]
         parent = nodes.get(r.parent_id) if r.parent_id else None
         (parent["children"] if parent else roots).append(item)
+
+    if with_counts:                       # 后序聚合:子树求和
+        def _rollup(n: dict) -> tuple[int, int]:
+            u, q = n["unit_refs"], n["question_refs"]
+            for c in n["children"]:
+                cu, cq = _rollup(c)
+                u += cu; q += cq
+            n["unit_refs"], n["question_refs"] = u, q
+            return u, q
+        for r in roots:
+            _rollup(r)
     return roots
 
 

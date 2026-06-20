@@ -359,8 +359,11 @@ export function listKnowledgeNodes(params: {
   return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params }))
 }
 // 受控知识树(E1)
-export function getNodeTree(axis?: string): Promise<{ items: NodeTreeItem[] }> {
-  return unwrap(request.get('/admin/knowledge-nodes/tree', { params: axis ? { axis } : {} }))
+export function getNodeTree(axis?: string, withCounts = false): Promise<{ items: NodeTreeItem[] }> {
+  const params: Record<string, unknown> = {}
+  if (axis) params.axis = axis
+  if (withCounts) params.with_counts = true
+  return unwrap(request.get('/admin/knowledge-nodes/tree', { params }))
 }
 export function createKnowledgeNode(body: {
   name: string; parent_id?: string | null; axis?: string; node_kind?: string | null
