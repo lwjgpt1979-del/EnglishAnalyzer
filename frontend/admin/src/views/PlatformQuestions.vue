@@ -4,8 +4,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk,
-  attachQuestionKp, detachQuestionKp, attachSectionKp, suggestPaperKp, getNodeTree,
-  type QuestionKpRef,
+  attachQuestionKp, detachQuestionKp, attachSectionKp, suggestPaperKp, getNodeTree, getKpPrompts,
+  type QuestionKpRef, type KpPrompt,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions,
   listRegions, uploadImageViaPresign,
   type PlatformPaper, type PaperQuestion,
@@ -150,26 +150,64 @@ async function onRemoveKp(q: PaperQuestion, nodeId: string) {
   catch (e: any) { ElMessage.error(e?.message || '解挂失败') }
 }
 
-// ── AI 建议考点(语法题)── 建议不自动挂,点 ✓ 采纳
+// ── AI 建议考点 ── 建议不自动挂,点 ✓ 采纳
 const suggesting = ref(false)
 const kpSuggest = ref<Record<string, QuestionKpRef[]>>({})
+// 把 suggest 返回合并进 kpSuggest(过滤已挂);merge=true 仅并入(整段),false 整体替换(整卷)
+function mergeSuggestions(items: { question_id: string; suggestions: QuestionKpRef[] }[], merge: boolean) {
+  const map: Record<string, QuestionKpRef[]> = merge ? { ...kpSuggest.value } : {}
+  let n = 0
+  for (const it of items) {
+    const q = paperQuestions.value.find(x => x.id === it.question_id)
+    const have = new Set((q?.kps || []).map(k => k.node_id))
+    const fresh = it.suggestions.filter(s => !have.has(s.node_id))
+    if (fresh.length) { map[it.question_id] = fresh; n++ }
+  }
+  kpSuggest.value = map
+  return n
+}
 async function onSuggestKp() {
   if (!curPaper.value) return
   suggesting.value = true
   try {
     const r = await suggestPaperKp(curPaper.value.id)
-    const map: Record<string, QuestionKpRef[]> = {}
-    for (const it of r.items) {
-      const q = paperQuestions.value.find(x => x.id === it.question_id)
-      const have = new Set((q?.kps || []).map(k => k.node_id))
-      const fresh = it.suggestions.filter(s => !have.has(s.node_id))
-      if (fresh.length) map[it.question_id] = fresh
-    }
-    kpSuggest.value = map
-    const n = Object.keys(map).length
-    ElMessage.success(n ? `AI 为 ${n} 道语法题给出建议,点 ✓ 采纳` : 'AI 未给出新建议(技能题用「按大题一键挂」)')
+    const n = mergeSuggestions(r.items, false)
+    ElMessage.success(n ? `AI 为 ${n} 道题给出建议,点 ✓ 采纳` : 'AI 未给出新建议')
   } catch (e: any) { ElMessage.error(e?.message || 'AI 建议失败') }
   finally { suggesting.value = false }
+}
+
+// ── 一键挂某大题:选该题型提示词 → AI 对该段每题建议 ──
+const secSuggestDlg = ref(false)
+const secSuggestName = ref('')
+const secSuggestType = ref('')
+const secPrompts = ref<KpPrompt[]>([])
+const secPromptId = ref('')
+const secSuggesting = ref(false)
+let allPrompts: KpPrompt[] = []
+async function openSectionSuggest(section: string) {
+  if (!curPaper.value) return
+  const q = paperQuestions.value.find(x => x.section === section)
+  secSuggestName.value = section
+  secSuggestType.value = q?.question_type || '单选'
+  if (!allPrompts.length) {
+    try { allPrompts = (await getKpPrompts()).prompts } catch { allPrompts = [] }
+  }
+  secPrompts.value = allPrompts.filter(p => p.question_type === secSuggestType.value)
+  secPromptId.value = (secPrompts.value.find(p => p.is_default) || secPrompts.value[0])?.id || ''
+  secSuggestDlg.value = true
+}
+async function runSectionSuggest() {
+  if (!curPaper.value) return
+  secSuggesting.value = true
+  try {
+    const r = await suggestPaperKp(curPaper.value.id, {
+      sections: [secSuggestName.value], prompt_id: secPromptId.value || undefined })
+    const n = mergeSuggestions(r.items, true)
+    ElMessage.success(n ? `「${secSuggestName.value}」AI 为 ${n} 题给出建议,点 ✓ 采纳` : '该大题 AI 未给出新建议')
+    secSuggestDlg.value = false
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 建议失败') }
+  finally { secSuggesting.value = false }
 }
 async function acceptSuggest(q: PaperQuestion, s: QuestionKpRef) {
   try {
@@ -444,7 +482,8 @@ onMounted(load)
             <div v-for="(sec, si) in paperSections" :key="si" style="margin-bottom:14px">
               <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px;display:flex;align-items:center;gap:8px">
                 <span>{{ sec.name }}</span>
-                <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openSectionKpPicker(sec.name)">一键挂知识点</el-button>
+                <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openSectionSuggest(sec.name)">一键挂知识点(AI)</el-button>
+                <el-button size="small" text style="height:22px;padding:0 6px;color:#909399" @click="openSectionKpPicker(sec.name)">手动挂</el-button>
               </div>
               <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
                 <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto">📄 {{ g.passage }}</div>
@@ -486,6 +525,26 @@ onMounted(load)
           <span @click="onPickKp(data)" style="cursor:pointer">{{ data.name }}</span>
         </template>
       </el-tree>
+    </el-dialog>
+
+    <!-- 大题级 AI 建议:选该题型提示词 → AI 对整段每题建议考点 -->
+    <el-dialog v-model="secSuggestDlg" title="一键挂知识点(AI 建议)" width="560px" append-to-body>
+      <div style="font-size:13px;color:#606266;margin-bottom:10px">
+        大题「{{ secSuggestName }}」(题型:{{ secSuggestType }})—— 选一套提示词,AI 为该段每题建议考点(不自动挂,逐题 ✓ 采纳)。
+      </div>
+      <el-empty v-if="!secPrompts.length" description="该题型暂无提示词,请先到「知识点 AI 提示词」配置" :image-size="44" />
+      <el-radio-group v-else v-model="secPromptId" style="display:block">
+        <div v-for="p in secPrompts" :key="p.id || p.name" style="border:1px solid #ebeef5;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <el-radio :value="p.id">
+            {{ p.name }}<span v-if="p.is_default" style="color:#67c23a;font-size:12px;margin-left:6px">默认</span>
+          </el-radio>
+          <div style="font-size:12px;color:#909399;white-space:pre-wrap;margin-top:4px">{{ p.text }}</div>
+        </div>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="secSuggestDlg = false">取消</el-button>
+        <el-button type="primary" :loading="secSuggesting" :disabled="!secPrompts.length" @click="runSectionSuggest">开始 AI 建议</el-button>
+      </template>
     </el-dialog>
 
     <el-dialog v-model="dlg" title="上传真题 → 抽题 → 校对导入" width="900px" @close="stopPoll" :close-on-click-modal="false">

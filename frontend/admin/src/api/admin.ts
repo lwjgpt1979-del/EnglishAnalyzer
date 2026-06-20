@@ -1139,8 +1139,8 @@ export function attachSectionKp(paperId: string, section: string, nodeId: string
   return unwrap(request.post(`/admin/platform-papers/${paperId}/section-kp`, { section, node_id: nodeId }))
 }
 export interface SuggestKpItem { question_id: string; suggestions: QuestionKpRef[] }
-export function suggestPaperKp(paperId: string): Promise<{ items: SuggestKpItem[] }> {
-  return unwrap(request.post(`/admin/platform-papers/${paperId}/suggest-kp`))
+export function suggestPaperKp(paperId: string, opts?: { sections?: string[]; prompt_id?: string }): Promise<{ items: SuggestKpItem[] }> {
+  return unwrap(request.post(`/admin/platform-papers/${paperId}/suggest-kp`, opts || {}))
 }
 export interface RealExtractJob {
   job_id: string
