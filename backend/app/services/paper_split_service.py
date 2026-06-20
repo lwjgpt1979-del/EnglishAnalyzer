@@ -37,6 +37,7 @@ class ParsedPaperQuestion:
     explanation: str | None
     passage: str | None = None
     block_key: str | None = None
+    section: str | None = None     # 原卷大题名(听力选择/单项填空/完形填空…)
 
 
 _SYSTEM_PROMPT = (
@@ -119,6 +120,27 @@ def _classify_kw(blob: str) -> str | None:
     return None
 
 
+def _section_name(header: str, lines: list[str]) -> str:
+    """原卷大题名(听力选择/单项填空/完形填空…),供列表/校对按大题区分。
+
+    标题去掉「序号、」「（满分N分）」即为大题名；标题无名(如「八、（满分6分）」)时,
+    取首个短中文标签行(如「阅读表达」)。
+    """
+    name = re.sub(r"^[一二三四五六七八九十]+、", "", header)
+    name = re.sub(r"[（(]\s*满分.*?[)）]", "", name).strip()
+    if name:
+        return name
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        if _QNUM_RE.match(s):
+            break
+        if 2 <= len(s) <= 8 and re.fullmatch(r"[一-龥]+", s):
+            return s
+    return "其他"
+
+
 def _section_type(header: str, lines: list[str]) -> str:
     """优先用大题标题判题型；标题无关键词（如「八、（满分6分）」）再补扫前几行正文。"""
     if t := _classify_kw(header):
@@ -136,7 +158,7 @@ def _section_type(header: str, lines: list[str]) -> str:
     return "单选"
 
 
-def _split_one_section(qtype: str, lines: list[str], sec_text: str,
+def _split_one_section(qtype: str, sname: str, lines: list[str], sec_text: str,
                        out: list[ParsedPaperQuestion]) -> None:
     cur_passage: list[str] = []
     mode = "passage"          # 'passage' | 'questions'
@@ -207,6 +229,7 @@ def _split_one_section(qtype: str, lines: list[str], sec_text: str,
                 question_no=str(no), question_type=qtype, stem=stem,
                 student_answer=None, correct_answer=None, explanation=None,
                 passage=passage or None, block_key=None,   # block_key 在全局分配
+                section=sname,
             ))
 
 
@@ -231,7 +254,8 @@ def split_paper_text_structural(text: str) -> list[ParsedPaperQuestion]:
         if not _SECTION_RE.match(header):
             continue  # 卷首标题段
         qtype = _section_type(header, sec[1:])
-        _split_one_section(qtype, sec[1:], "\n".join(sec), out)
+        sname = _section_name(header, sec[1:])
+        _split_one_section(qtype, sname, sec[1:], "\n".join(sec), out)
 
     # 全局分配题组 block_key：连续同一短文的小问归一组，短文为空的题保持独立
     blk_seq, prev_passage, prev_key = 0, None, None

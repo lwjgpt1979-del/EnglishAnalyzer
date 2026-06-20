@@ -35,6 +35,10 @@ class PlatformQuestion(Base):
     )  # sim 派生自哪道真题；real 为 null
     is_fallback = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
     deprecated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    paper_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("platform_paper.id"), nullable=True
+    )  # 所属试卷(整卷上传分组);单题/仿真可为 null
+    section = mapped_column(sa.String(24), nullable=True)              # 原卷大题名(听力选择/单项填空/完形填空…)
     block_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("passage.id"), nullable=True
     )  # 所属题型块(承载 passage)
@@ -56,7 +60,27 @@ class PlatformQuestion(Base):
     __table_args__ = (
         sa.Index("ix_platform_question_type_status", "type", "status"),
         sa.Index("ix_platform_question_parent", "parent_real_id"),
+        sa.Index("ix_platform_question_paper", "paper_id"),
     )
+
+
+class PlatformPaper(Base):
+    """平台试卷:一次整卷上传 = 一份试卷,聚合其下所有真题(小题挂 paper_id)。"""
+
+    __tablename__ = "platform_paper"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = mapped_column(sa.String(128), nullable=False)               # 试卷名(可自动合成)
+    textbook_version = mapped_column(sa.String(24), nullable=True)
+    stage = mapped_column(sa.String(8), nullable=True)                 # 小|初|高
+    grade = mapped_column(sa.String(12), nullable=True)
+    semester = mapped_column(sa.String(4), nullable=True)              # 上|下
+    region_code = mapped_column(sa.String(12), nullable=True)          # 最细到市(4位)
+    region_name = mapped_column(sa.String(64), nullable=True)
+    exam_type = mapped_column(sa.String(12), nullable=True)            # 中考/高考/普通
+    status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'draft'"))
+    meta = mapped_column(JSONB, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
 class UploadedQuestion(Base):

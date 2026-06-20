@@ -214,6 +214,7 @@ class RealQuestionIn(BaseModel):
     status: str = "published"
     passage: str | None = None             # 题组短文正文(同 block_key 的题共享一份)
     block_key: str | None = None           # 同短文小问共享;为空=独立题
+    section: str | None = None             # 原卷大题名(听力选择/单项填空…)
 
 
 class RealQuestionBulkIn(BaseModel):
@@ -221,6 +222,7 @@ class RealQuestionBulkIn(BaseModel):
     stage_hint: str | None = None          # 学段(小/初/高)→ 助 KP 匹配,批次统一
     status: str | None = None              # 覆盖每题 status(可空)
     meta: dict | None = None               # 批次考试元信息(教材/学段/年级/学期/地区),并入每题
+    paper_name: str | None = None          # 试卷名(可空,缺省由 meta 自动合成)
 
 
 class RealImportItemOut(BaseModel):
@@ -232,7 +234,57 @@ class RealImportItemOut(BaseModel):
 class RealImportBulkOut(BaseModel):
     imported: int
     failed: int
+    paper_id: uuid.UUID | None = None
     items: list[RealImportItemOut] = []
+
+
+# ── 平台试卷(整卷聚合 / 发布 / 选题仿真)────────────────────────
+class PaperListItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    textbook_version: str | None = None
+    stage: str | None = None
+    grade: str | None = None
+    semester: str | None = None
+    region_name: str | None = None
+    exam_type: str | None = None
+    status: str
+    question_count: int = 0
+    published_count: int = 0
+    created_at: datetime | None = None
+
+
+class PaperListOut(BaseModel):
+    total: int
+    items: list[PaperListItem]
+
+
+class PaperQuestionItem(BaseModel):
+    id: uuid.UUID
+    question_no: str | None = None
+    section: str | None = None
+    question_type: str | None = None
+    stem: str | None = None
+    answer: str | None = None
+    difficulty: int | None = None
+    status: str
+    block_id: uuid.UUID | None = None
+    passage: str | None = None
+
+
+class PaperDetailOut(BaseModel):
+    paper: PaperListItem
+    questions: list[PaperQuestionItem]
+
+
+class GenSimBulkIn(BaseModel):
+    question_ids: list[uuid.UUID] = Field(..., min_length=1)
+    count: int = 3
+
+
+class GenSimBulkOut(BaseModel):
+    generated: int
+    per_question: int
 
 
 # ── 真题抽题任务(TK2)──────────────────────────────────────────
@@ -244,6 +296,7 @@ class ParsedRealQuestion(BaseModel):
     explanation: str | None = None
     passage: str | None = None             # 题组短文(阅读/完形/信息还原);独立题为空
     block_key: str | None = None           # 同短文小问共享;独立题为空
+    section: str | None = None             # 原卷大题名(听力选择/单项填空/完形填空…)
 
 
 class RealExtractCreatedOut(BaseModel):

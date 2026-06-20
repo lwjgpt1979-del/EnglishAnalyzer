@@ -79,6 +79,10 @@ def test_structural_split_section_types_and_numbering():
     assert ("5", "阅读") in got and ("6", "阅读") in got   # 信息还原嵌入空合成
     assert ("7", "填空") in got                            # 完成句子
     assert ("8", "写作") in got                            # 书面表达
+    # 大题名:听力与单选同为「单选」题型但 section 名不同,可区分
+    by_no = {r.question_no: r for r in rows}
+    assert by_no["1"].section == "单项填空"
+    assert by_no["3"].section == "完形填空"
 
 
 def test_structural_split_is_faithful_no_hallucinated_answers():

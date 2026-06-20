@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d15_knowledge_graph import KnowledgeNode
-from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, Passage
+from app.models.d16_question_domain import (
+    PlatformQuestion, PlatformQuestionKp, Passage, PlatformPaper,
+)
 from app.services.kp_match_service import match_kp
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
@@ -39,6 +41,94 @@ async def create_passage(db: AsyncSession, *, text: str, kind: str = "reading_te
     db.add(p)
     await db.flush()
     return p.id
+
+
+_STAGE_LABEL = {"小": "小学", "初": "初中", "高": "高中"}
+
+
+def _compose_paper_name(meta: dict | None) -> str:
+    """无显式试卷名时，由批次 meta 自动合成一个可读名。"""
+    m = meta or {}
+    parts = [
+        m.get("region_name") or "",
+        m.get("textbook_version") or "",
+        m.get("grade") or _STAGE_LABEL.get(m.get("stage") or "", ""),
+        f"{m.get('semester')}册" if m.get("semester") else "",
+        m.get("exam_type") or "",
+    ]
+    name = " ".join(p for p in parts if p).strip()
+    return name or "未命名试卷"
+
+
+async def create_paper(db: AsyncSession, *, name: str | None, meta: dict | None) -> uuid.UUID:
+    """整卷上传时建一份试卷，聚合其下所有真题；返回 paper.id。"""
+    m = meta or {}
+    p = PlatformPaper(
+        id=uuid.uuid4(), name=(name or "").strip() or _compose_paper_name(m),
+        textbook_version=m.get("textbook_version"), stage=m.get("stage"),
+        grade=m.get("grade"), semester=m.get("semester"),
+        region_code=m.get("city_code") or m.get("region_code"),
+        region_name=m.get("region_name"), exam_type=m.get("exam_type"),
+        status="draft", meta=m or None,
+    )
+    db.add(p)
+    await db.flush()
+    return p.id
+
+
+async def list_papers(
+    db: AsyncSession, *, status: str | None = None, skip: int = 0, limit: int = 20
+) -> tuple[list[tuple[PlatformPaper, int, int]], int]:
+    """试卷分页:每项含 (paper, 题数, 已发布题数)。"""
+    base = sa.select(PlatformPaper)
+    if status is not None:
+        base = base.where(PlatformPaper.status == status)
+    total = (await db.execute(
+        sa.select(sa.func.count()).select_from(base.subquery())
+    )).scalar_one()
+    papers = (await db.execute(
+        base.order_by(PlatformPaper.created_at.desc()).offset(skip).limit(limit)
+    )).scalars().all()
+    out: list[tuple[PlatformPaper, int, int]] = []
+    for p in papers:
+        cnt = (await db.execute(sa.select(sa.func.count()).where(
+            PlatformQuestion.paper_id == p.id))).scalar_one()
+        pub = (await db.execute(sa.select(sa.func.count()).where(
+            PlatformQuestion.paper_id == p.id,
+            PlatformQuestion.status == "published"))).scalar_one()
+        out.append((p, cnt, pub))
+    return out, total
+
+
+async def paper_questions(
+    db: AsyncSession, paper_id: uuid.UUID
+) -> tuple[PlatformPaper | None, list[PlatformQuestion], dict[uuid.UUID, str | None]]:
+    """试卷详情:试卷 + 其全部真题(按题号)+ 题组短文映射。"""
+    paper = await db.get(PlatformPaper, paper_id)
+    if paper is None:
+        return None, [], {}
+    rows = (await db.execute(
+        sa.select(PlatformQuestion).where(
+            PlatformQuestion.paper_id == paper_id, PlatformQuestion.type == "real"
+        ).order_by(PlatformQuestion.created_at)
+    )).scalars().all()
+    pmap = await passages_for(db, [r.block_id for r in rows if r.block_id])
+    return paper, list(rows), pmap
+
+
+async def publish_paper(db: AsyncSession, paper_id: uuid.UUID) -> int:
+    """整卷发布:试卷下所有真题置 published + 试卷置 published;返回发布题数。"""
+    paper = await db.get(PlatformPaper, paper_id)
+    if paper is None:
+        raise AppError(code=404, message="试卷不存在")
+    res = await db.execute(
+        sa.update(PlatformQuestion)
+        .where(PlatformQuestion.paper_id == paper_id, PlatformQuestion.type == "real")
+        .values(status="published")
+    )
+    paper.status = "published"
+    await db.flush()
+    return res.rowcount or 0
 
 
 async def passages_for(
@@ -78,15 +168,17 @@ async def import_real_question(
     difficulty: int | None = None, meta: dict | None = None,
     kp_names: list[str] | None = None, stage_hint: str | None = None,
     question_no: str | None = None, status: str = "published",
-    block_id: uuid.UUID | None = None,
+    block_id: uuid.UUID | None = None, paper_id: uuid.UUID | None = None,
+    section: str | None = None,
 ) -> ImportResult:
     """导入一道真题 → platform_question(type='real'),kp_names 走受控匹配挂 node/落候选。
 
     命中某 node 后调 deprecate_fallbacks_for_node:该 node 有真题了 → 其 KP 直生备选下架(决策④)。
-    block_id:题组短文(passage)外键,阅读/完形/信息还原的同篇小问共享。
+    block_id:题组短文(passage)外键;paper_id:所属试卷;section:原卷大题名。
     """
     q = PlatformQuestion(
         id=uuid.uuid4(), type="real", question_no=question_no, block_id=block_id,
+        paper_id=paper_id, section=section,
         question_type=question_type, stem=stem, options=options, answer=answer,
         explanation=explanation, difficulty=difficulty, meta=meta, status=status,
     )

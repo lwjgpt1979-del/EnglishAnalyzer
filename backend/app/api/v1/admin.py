@@ -69,6 +69,12 @@ from app.schemas.kp import (
     RealQuestionBulkIn,
     RealImportItemOut,
     RealImportBulkOut,
+    PaperListItem,
+    PaperListOut,
+    PaperQuestionItem,
+    PaperDetailOut,
+    GenSimBulkIn,
+    GenSimBulkOut,
     RealExtractCreatedOut,
     RealExtractJobOut,
     ParsedRealQuestion,
@@ -866,10 +872,12 @@ async def import_real_question_api(body: RealQuestionIn, db: DbDep, admin: Admin
 async def import_real_questions_bulk_api(body: RealQuestionBulkIn, db: DbDep, admin: AdminDep):
     """批量导入真题(校对后一次落多题);单题失败 savepoint 隔离,不连累其余(TK1)。
 
-    题组:同一 block_key 的小问先建一份 passage(短文存一份),再以 block_id 关联,
-    避免阅读/完形/信息还原把整篇短文复制到每道小问。
+    整卷:先建一份 platform_paper(批次 meta + 试卷名),每题挂 paper_id + section。
+    题组:同一 block_key 的小问先建一份 passage(短文存一份),再以 block_id 关联。
     """
     from app.services import platform_question_service as pqs
+    # 整卷建一份试卷(默认 draft,导入完成后整卷发布)
+    paper_id = await pqs.create_paper(db, name=body.paper_name, meta=body.meta)
     # 先按 block_key 建 passage(取该组任一非空 passage 文本)
     block_pid: dict[str, uuid.UUID] = {}
     for it in body.items:
@@ -890,13 +898,15 @@ async def import_real_questions_bulk_api(body: RealQuestionBulkIn, db: DbDep, ad
                     difficulty=it.difficulty, meta=(it.meta or body.meta), kp_names=it.kp_names,
                     stage_hint=it.stage_hint or body.stage_hint,
                     question_no=it.question_no, status=body.status or it.status,
-                    block_id=block_pid.get(it.block_key) if it.block_key else None)
+                    block_id=block_pid.get(it.block_key) if it.block_key else None,
+                    paper_id=paper_id, section=it.section)
             items.append(RealImportItemOut(
                 question_id=res.question_id, matched_nodes=res.matched_nodes, candidates=res.candidates))
         except Exception:  # noqa: BLE001
             failed += 1
     await db.commit()
-    return make_ok(RealImportBulkOut(imported=len(items), failed=failed, items=items))
+    return make_ok(RealImportBulkOut(
+        imported=len(items), failed=failed, paper_id=paper_id, items=items))
 
 
 @router.post("/platform-questions/{real_id}/gen-sim", response_model=BaseResponse[GenSimOut])
@@ -906,6 +916,72 @@ async def gen_sim_from_real_api(real_id: uuid.UUID, db: DbDep, admin: AdminDep, 
     sim_ids = await pqs.generate_sim_from_real(db, real_id=real_id, count=count)
     await db.commit()
     return make_ok(GenSimOut(generated=len(sim_ids), sim_ids=sim_ids))
+
+
+@router.post("/platform-questions/gen-sim-bulk", response_model=BaseResponse[GenSimBulkOut])
+async def gen_sim_bulk_api(body: GenSimBulkIn, db: DbDep, admin: AdminDep):
+    """整卷弹框里勾选若干真题,批量各派生 count 道仿真。"""
+    from app.services import platform_question_service as pqs
+    total = 0
+    for qid in body.question_ids:
+        try:
+            async with db.begin_nested():
+                sim_ids = await pqs.generate_sim_from_real(db, real_id=qid, count=body.count)
+            total += len(sim_ids)
+        except Exception:  # noqa: BLE001
+            pass
+    await db.commit()
+    return make_ok(GenSimBulkOut(generated=total, per_question=body.count))
+
+
+# ─── 平台试卷(整卷聚合 / 发布 / 选题仿真)────────────────────────────────────────
+
+def _to_paper_item(p, cnt: int = 0, pub: int = 0) -> PaperListItem:
+    return PaperListItem(
+        id=p.id, name=p.name, textbook_version=p.textbook_version, stage=p.stage,
+        grade=p.grade, semester=p.semester, region_name=p.region_name,
+        exam_type=p.exam_type, status=p.status, question_count=cnt,
+        published_count=pub, created_at=p.created_at,
+    )
+
+
+@router.get("/platform-papers", response_model=BaseResponse[PaperListOut])
+async def list_platform_papers_api(
+    db: DbDep, admin: AdminDep, status: str | None = None, skip: int = 0, limit: int = 20,
+):
+    """平台试卷分页(一卷一条,含题数/已发布数)。"""
+    from app.services import platform_question_service as pqs
+    rows, total = await pqs.list_papers(db, status=status, skip=skip, limit=limit)
+    return make_ok(PaperListOut(
+        total=total, items=[_to_paper_item(p, c, pub) for p, c, pub in rows]))
+
+
+@router.get("/platform-papers/{paper_id}", response_model=BaseResponse[PaperDetailOut])
+async def get_platform_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """试卷详情:整卷全部真题(按题号,带大题名/题组短文)。"""
+    from app.services import platform_question_service as pqs
+    paper, qs, pmap = await pqs.paper_questions(db, paper_id)
+    if paper is None:
+        raise AppError(code=404, message="试卷不存在")
+    pub = sum(1 for q in qs if q.status == "published")
+    items = [PaperQuestionItem(
+        id=q.id, question_no=q.question_no, section=q.section,
+        question_type=q.question_type, stem=q.stem, answer=q.answer,
+        difficulty=q.difficulty, status=q.status, block_id=q.block_id,
+        passage=pmap.get(q.block_id) if q.block_id else None,
+    ) for q in qs]
+    return make_ok(PaperDetailOut(paper=_to_paper_item(paper, len(qs), pub), questions=items))
+
+
+@router.post("/platform-papers/{paper_id}/publish", response_model=BaseResponse[PaperListItem])
+async def publish_platform_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """整卷发布:试卷下所有真题置 published + 试卷置 published。"""
+    from app.services import platform_question_service as pqs
+    await pqs.publish_paper(db, paper_id)
+    paper, qs, _ = await pqs.paper_questions(db, paper_id)
+    await db.commit()
+    pub = sum(1 for q in qs if q.status == "published")
+    return make_ok(_to_paper_item(paper, len(qs), pub))
 
 
 @router.post("/platform-questions/{question_id}/review", response_model=BaseResponse[PlatformQuestionItem])
