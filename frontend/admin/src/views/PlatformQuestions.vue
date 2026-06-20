@@ -369,6 +369,43 @@ function onFileChange(f: any) {
   // 试卷名缺省取上传文件名(去扩展名);已手填则不覆盖
   const fn = (f.raw?.name || '').replace(/\.(pdf|docx?)$/i, '').trim()
   if (fn && !metaPaperName.value.trim()) metaPaperName.value = fn
+  if (fn) autoFillMetaFromName(fn)        // 文件名里出现的教材/学段/年级/上下册/考试/地区 → 自动选
+}
+
+// 从试卷名识别上方各下拉并自动选中(文件名为准)
+function autoFillMetaFromName(name: string) {
+  const v = VERSIONS.find(x => name.includes(x))
+  if (v) metaTextbook.value = v
+  let gradeHit = false
+  for (const [stage, grades] of Object.entries(GRADES)) {
+    const g = grades.find(x => name.includes(x))
+    if (g) { metaStage.value = stage; metaGrade.value = g; gradeHit = true; break }
+  }
+  if (!gradeHit) {           // 无年级时按"小学/初中/高中"判学段
+    if (name.includes('初中')) metaStage.value = '初'
+    else if (name.includes('小学')) metaStage.value = '小'
+    else if (name.includes('高中')) metaStage.value = '高'
+  }
+  if (/下学期|下册/.test(name)) metaSemester.value = '下'
+  else if (/上学期|上册/.test(name)) metaSemester.value = '上'
+  if (name.includes('中考')) metaExamType.value = '中考'
+  else if (name.includes('高考')) metaExamType.value = '高考'
+  autoPickRegionFromName(name)
+}
+
+// 地区:从试卷名匹配 省→市(懒加载两级),自动选中
+async function autoPickRegionFromName(name: string) {
+  if (regionPath.value.length) return     // 已选则不覆盖
+  const bare = (s: string) => s.replace(/(省|市|自治区|特别行政区|壮族|回族|维吾尔|自治州|地区)/g, '')
+  try {
+    const provs = await listRegions()
+    const prov = provs.find((p: any) => name.includes(p.name) || (bare(p.name).length >= 2 && name.includes(bare(p.name))))
+    if (!prov) return
+    const cities = await listRegions(prov.code)
+    const city = cities.find((c: any) => name.includes(c.name) || (bare(c.name).length >= 2 && name.includes(bare(c.name))))
+    regionPath.value = city ? [prov.code, city.code] : [prov.code]
+    regionLabels.value = city ? [prov.name, city.name] : [prov.name]
+  } catch { /* 地区识别失败不影响其它 */ }
 }
 function onImagesChange(_f: any, list: any[]) { pickedImages.value = list.map(x => x.raw).filter(Boolean) }
 
