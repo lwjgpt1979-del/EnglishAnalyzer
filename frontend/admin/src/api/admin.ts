@@ -204,7 +204,8 @@ export function saveKpPrompts(prompts: KpPrompt[]): Promise<{ prompts: KpPrompt[
   return unwrap(request.put('/admin/kp-prompts', { prompts }))
 }
 export function suggestKpText(text: string, sourceType = '教材'): Promise<QuestionKpRef[]> {
-  return unwrap(request.post('/admin/kp-suggest-text', { text, source_type: sourceType }))
+  // AI 调用慢,放宽超时(默认 20s 不够)
+  return unwrap(request.post('/admin/kp-suggest-text', { text, source_type: sourceType }, { timeout: 90000 }))
 }
 
 // ── 机构入驻审核（D-123）──
@@ -1158,7 +1159,8 @@ export function attachKpBulk(pairs: { question_id: string; node_id: string }[]):
 }
 export interface SuggestKpItem { question_id: string; suggestions: QuestionKpRef[] }
 export function suggestPaperKp(paperId: string, opts?: { sections?: string[]; prompt_id?: string }): Promise<{ items: SuggestKpItem[] }> {
-  return unwrap(request.post(`/admin/platform-papers/${paperId}/suggest-kp`, opts || {}))
+  // 整卷匹配并行调多组大模型,放宽超时到 3 分钟(默认 20s 远不够)
+  return unwrap(request.post(`/admin/platform-papers/${paperId}/suggest-kp`, opts || {}, { timeout: 180000 }))
 }
 export interface RealExtractJob {
   job_id: string

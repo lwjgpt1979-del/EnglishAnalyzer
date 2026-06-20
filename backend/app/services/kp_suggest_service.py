@@ -11,6 +11,7 @@ LLM 用短「编码/序号」回映(避免 UUID 抄错),服务端映射回真实
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import uuid
@@ -242,11 +243,18 @@ async def suggest_kps_for_paper(
     all_focus = {nid for it in items.values() for nid in (it.get("focus_node_ids") or [])}
     id2code = await _codes_of_nodes(db, list(all_focus))
 
-    out: dict[uuid.UUID, list[tuple]] = {q.id: [] for q in qs}
-    for qtype, group in groups.items():
-        it = items[qtype]
+    async def _run_group(group: list[PlatformQuestion], it: dict) -> dict:
         focus_codes = [id2code[str(n)] for n in (it.get("focus_node_ids") or []) if str(n) in id2code]
         system_msg = _system_for(entries, focus_codes, stage)   # 题型+学段稳定前缀(同题型同学段→命中缓存)
-        out.update(await _suggest_group(group, code2node, system_msg, it["text"], passages,
-                                        int(it.get("min_kp", 0)), int(it.get("max_kp", 2))))
+        return await _suggest_group(group, code2node, system_msg, it["text"], passages,
+                                    int(it.get("min_kp", 0)), int(it.get("max_kp", 2)))
+
+    # 各题型分组**并行**调用大模型:墙钟时间 = 最慢一组,而非求和(整卷不再超时)
+    out: dict[uuid.UUID, list[tuple]] = {q.id: [] for q in qs}
+    results = await asyncio.gather(
+        *(_run_group(group, items[qtype]) for qtype, group in groups.items()),
+        return_exceptions=True)
+    for r in results:
+        if isinstance(r, dict):     # 单组失败(异常)不拖垮整卷,其余照常合并
+            out.update(r)
     return out

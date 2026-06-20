@@ -19,8 +19,9 @@ from app.models.d9_system import SystemConfig
 
 _KEY = "llm_model"
 
-# 常见 DeepSeek 模型(配置页下拉建议;仍允许自填其它 OpenAI 兼容模型名)
-PRESET_MODELS = ["deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"]
+# 当前 endpoint 支持的模型(配置页下拉建议;仍允许自填其它 OpenAI 兼容模型名)
+# 经接口确认:支持 deepseek-v4-pro / deepseek-v4-flash;deepseek-chat 亦可(兼容别名)。
+PRESET_MODELS = ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat"]
 
 # 进程内缓存:active_model() 无需每次查库
 _cached_model: str | None = None
