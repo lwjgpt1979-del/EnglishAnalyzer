@@ -193,6 +193,34 @@ async def _node_ids_of(db: AsyncSession, question_id: uuid.UUID) -> list[uuid.UU
     )).scalars().all())
 
 
+async def detach_node(db: AsyncSession, question_id: uuid.UUID, node_id: uuid.UUID) -> None:
+    """解挂 platform_question_kp 的一条题↔KP 边。"""
+    await db.execute(
+        sa.delete(PlatformQuestionKp).where(
+            PlatformQuestionKp.question_id == question_id,
+            PlatformQuestionKp.node_id == node_id)
+    )
+
+
+async def kps_of_questions(
+    db: AsyncSession, question_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[tuple[uuid.UUID, str, str | None]]]:
+    """批量取每题关联的受控知识点 {question_id: [(node_id, name, code), ...]}。"""
+    if not question_ids:
+        return {}
+    rows = (await db.execute(
+        sa.select(PlatformQuestionKp.question_id, KnowledgeNode.id,
+                  KnowledgeNode.name, KnowledgeNode.code)
+        .join(KnowledgeNode, KnowledgeNode.id == PlatformQuestionKp.node_id)
+        .where(PlatformQuestionKp.question_id.in_(question_ids))
+        .order_by(KnowledgeNode.code)
+    )).all()
+    out: dict[uuid.UUID, list[tuple[uuid.UUID, str, str | None]]] = {}
+    for qid, nid, name, code in rows:
+        out.setdefault(qid, []).append((nid, name, code))
+    return out
+
+
 async def import_real_question(
     db: AsyncSession, *,
     stem: str, answer: str | None = None, options: dict | list | None = None,

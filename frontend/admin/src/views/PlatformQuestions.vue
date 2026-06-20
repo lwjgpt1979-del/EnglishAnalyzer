@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, genSimBulk,
+  attachQuestionKp, detachQuestionKp, getNodeTree,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions,
   listRegions, uploadImageViaPresign,
   type PlatformPaper, type PaperQuestion,
 } from '../api/admin'
+import type { NodeTreeItem } from '../types'
 
 // ── 试卷列表(一卷一条)──
 const statusFilter = ref('')
@@ -48,6 +50,9 @@ const paperSections = computed(() => {
   return secs
 })
 
+// 未挂知识点的题数(母题靠 KP 派生仿真,提醒别漏)
+const unmappedCount = computed(() => paperQuestions.value.filter(q => !(q.kps && q.kps.length)).length)
+
 async function openPaper(p: PlatformPaper) {
   paperDlg.value = true; paperLoading.value = true; curPaper.value = p
   paperQuestions.value = []; checkedIds.value = []
@@ -58,6 +63,39 @@ async function openPaper(p: PlatformPaper) {
   } catch (e: any) { ElMessage.error(e?.message || '加载试卷失败') }
   finally { paperLoading.value = false }
 }
+
+// ── 知识点选择器(受控树)──
+const kpPickerDlg = ref(false)
+const kpTree = ref<NodeTreeItem[]>([])
+const kpFilter = ref('')
+const kpTreeRef = ref()
+const kpTarget = ref<PaperQuestion | null>(null)
+const kpTreeProps = { label: 'name', children: 'children' }
+
+async function openKpPicker(q: PaperQuestion) {
+  kpTarget.value = q; kpFilter.value = ''; kpPickerDlg.value = true
+  if (!kpTree.value.length) {
+    try { kpTree.value = (await getNodeTree('knowledge')).items } catch (e: any) { ElMessage.error(e?.message || '加载知识点树失败') }
+  }
+}
+function filterKpNode(val: string, data: NodeTreeItem) {
+  return !val || data.name.includes(val)
+}
+async function onPickKp(node: NodeTreeItem) {
+  if (!kpTarget.value) return
+  if (kpTarget.value.kps?.some(k => k.node_id === node.id)) { ElMessage.info('已挂该知识点'); return }
+  try {
+    kpTarget.value.kps = await attachQuestionKp(kpTarget.value.id, node.id)
+    ElMessage.success(`已挂「${node.name}」`)
+    kpPickerDlg.value = false
+  } catch (e: any) { ElMessage.error(e?.message || '挂载失败') }
+}
+async function onRemoveKp(q: PaperQuestion, nodeId: string) {
+  try { q.kps = await detachQuestionKp(q.id, nodeId) }
+  catch (e: any) { ElMessage.error(e?.message || '解挂失败') }
+}
+
+watch(kpFilter, v => kpTreeRef.value?.filter(v))
 
 async function onPublishPaper() {
   if (!curPaper.value) return
@@ -294,6 +332,7 @@ onMounted(load)
           <el-tag :type="curPaper?.status === 'published' ? 'success' : 'info'" size="small">{{ curPaper?.status === 'published' ? '已发布' : '草稿' }}</el-tag>
           <span style="color:#606266">共 {{ curPaper?.question_count }} 题,已发布 {{ curPaper?.published_count }}</span>
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
+          <el-tag v-if="unmappedCount" type="warning" size="small">⚠️ {{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
           <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
@@ -305,10 +344,17 @@ onMounted(load)
               <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px">{{ sec.name }}</div>
               <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
                 <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto">📄 {{ g.passage }}</div>
-                <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:3px 0;border-bottom:1px dashed #f0f0f0;font-size:13px">
+                <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dashed #f0f0f0;font-size:13px">
                   <el-checkbox :value="q.id" style="margin-top:2px" />
                   <span style="color:#909399;width:30px;flex-shrink:0">{{ q.question_no }}</span>
-                  <span style="flex:1;white-space:pre-wrap">{{ q.stem }}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="white-space:pre-wrap">{{ q.stem }}</div>
+                    <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+                      <el-tag v-for="k in q.kps" :key="k.node_id" size="small" closable @close="onRemoveKp(q, k.node_id)">{{ k.name }}</el-tag>
+                      <el-tag v-if="!q.kps || !q.kps.length" size="small" type="warning" effect="plain">未挂知识点</el-tag>
+                      <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openKpPicker(q)">+ 知识点</el-button>
+                    </div>
+                  </div>
                   <el-tag size="small" :type="q.status === 'published' ? 'success' : 'info'" style="flex-shrink:0">{{ q.status === 'published' ? '已发布' : '草稿' }}</el-tag>
                 </div>
               </div>
@@ -316,6 +362,19 @@ onMounted(load)
           </el-checkbox-group>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- 受控知识点树选择器:给某题挂知识点(只能挑已建节点) -->
+    <el-dialog v-model="kpPickerDlg" title="挂知识点(受控树)" width="460px" append-to-body>
+      <div style="font-size:12px;color:#909399;margin-bottom:8px">为「{{ kpTarget?.question_no }}」题挑选知识点,点击节点即挂上</div>
+      <el-input v-model="kpFilter" placeholder="搜索知识点名" clearable style="margin-bottom:8px" />
+      <el-tree ref="kpTreeRef" :data="kpTree" :props="kpTreeProps" node-key="id"
+        :filter-node-method="filterKpNode" :expand-on-click-node="false"
+        style="max-height:420px;overflow:auto">
+        <template #default="{ data }">
+          <span @click="onPickKp(data)" style="cursor:pointer">{{ data.name }}</span>
+        </template>
+      </el-tree>
     </el-dialog>
 
     <el-dialog v-model="dlg" title="上传真题 → 抽题 → 校对导入" width="900px" @close="stopPoll" :close-on-click-modal="false">

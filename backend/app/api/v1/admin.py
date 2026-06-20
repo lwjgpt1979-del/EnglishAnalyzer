@@ -73,6 +73,8 @@ from app.schemas.kp import (
     PaperListOut,
     PaperQuestionItem,
     PaperDetailOut,
+    QuestionKpRef,
+    AttachKpIn,
     GenSimBulkIn,
     GenSimBulkOut,
     RealExtractCreatedOut,
@@ -964,13 +966,40 @@ async def get_platform_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep
     if paper is None:
         raise AppError(code=404, message="试卷不存在")
     pub = sum(1 for q in qs if q.status == "published")
+    kpmap = await pqs.kps_of_questions(db, [q.id for q in qs])
     items = [PaperQuestionItem(
         id=q.id, question_no=q.question_no, section=q.section,
         question_type=q.question_type, stem=q.stem, answer=q.answer,
         difficulty=q.difficulty, status=q.status, block_id=q.block_id,
         passage=pmap.get(q.block_id) if q.block_id else None,
+        kps=[QuestionKpRef(node_id=nid, name=name, code=code)
+             for nid, name, code in kpmap.get(q.id, [])],
     ) for q in qs]
     return make_ok(PaperDetailOut(paper=_to_paper_item(paper, len(qs), pub), questions=items))
+
+
+@router.post("/platform-questions/{question_id}/kp", response_model=BaseResponse[list[QuestionKpRef]])
+async def attach_question_kp_api(question_id: uuid.UUID, body: AttachKpIn, db: DbDep, admin: AdminDep):
+    """给某真题挂一个受控知识点(节点须存在);返回该题最新 KP 列表。"""
+    from app.services import platform_question_service as pqs
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    node = await db.get(KnowledgeNode, body.node_id)
+    if node is None:
+        raise AppError(code=404, message="知识点不存在")
+    await pqs.attach_node(db, question_id, body.node_id)
+    await db.commit()
+    kps = (await pqs.kps_of_questions(db, [question_id])).get(question_id, [])
+    return make_ok([QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in kps])
+
+
+@router.delete("/platform-questions/{question_id}/kp/{node_id}", response_model=BaseResponse[list[QuestionKpRef]])
+async def detach_question_kp_api(question_id: uuid.UUID, node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """解挂某真题的一个知识点;返回该题最新 KP 列表。"""
+    from app.services import platform_question_service as pqs
+    await pqs.detach_node(db, question_id, node_id)
+    await db.commit()
+    kps = (await pqs.kps_of_questions(db, [question_id])).get(question_id, [])
+    return make_ok([QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in kps])
 
 
 @router.post("/platform-papers/{paper_id}/publish", response_model=BaseResponse[PaperListItem])

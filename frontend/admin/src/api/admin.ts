@@ -1074,6 +1074,7 @@ export interface PlatformPaper {
   published_count: number
   created_at?: string | null
 }
+export interface QuestionKpRef { node_id: string; name: string; code?: string | null }
 export interface PaperQuestion {
   id: string
   question_no?: string | null
@@ -1085,6 +1086,7 @@ export interface PaperQuestion {
   status: string
   block_id?: string | null
   passage?: string | null
+  kps?: QuestionKpRef[]
 }
 export interface PaperDetail { paper: PlatformPaper; questions: PaperQuestion[] }
 
@@ -1099,6 +1101,12 @@ export function publishPlatformPaper(paperId: string): Promise<PlatformPaper> {
 }
 export function genSimBulk(questionIds: string[], count = 3): Promise<{ generated: number; per_question: number }> {
   return unwrap(request.post('/admin/platform-questions/gen-sim-bulk', { question_ids: questionIds, count }))
+}
+export function attachQuestionKp(questionId: string, nodeId: string): Promise<QuestionKpRef[]> {
+  return unwrap(request.post(`/admin/platform-questions/${questionId}/kp`, { node_id: nodeId }))
+}
+export function detachQuestionKp(questionId: string, nodeId: string): Promise<QuestionKpRef[]> {
+  return unwrap(request.delete(`/admin/platform-questions/${questionId}/kp/${nodeId}`))
 }
 export interface RealExtractJob {
   job_id: string

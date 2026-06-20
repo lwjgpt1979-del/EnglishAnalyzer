@@ -259,6 +259,12 @@ class PaperListOut(BaseModel):
     items: list[PaperListItem]
 
 
+class QuestionKpRef(BaseModel):
+    node_id: uuid.UUID
+    name: str
+    code: str | None = None
+
+
 class PaperQuestionItem(BaseModel):
     id: uuid.UUID
     question_no: str | None = None
@@ -270,6 +276,11 @@ class PaperQuestionItem(BaseModel):
     status: str
     block_id: uuid.UUID | None = None
     passage: str | None = None
+    kps: list[QuestionKpRef] = []        # 该题关联的受控知识点(母题派生仿真依据)
+
+
+class AttachKpIn(BaseModel):
+    node_id: uuid.UUID
 
 
 class PaperDetailOut(BaseModel):
