@@ -135,11 +135,14 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
         for q in group)
 
     cnt = (f"每题挑 {min_kp}-{max_kp} 个" if min_kp else f"每题挑至多 {max_kp} 个") + "最贴切考点(无明确考点给 [])。"
+    nq = len(group)
     user = (
         f"{type_prompt}\n{cnt}\n\n"
         + (f"【本大题短文/材料】\n{mat}\n" if mat else "")
         + f"【小题(qid<TAB>[大题·材料]<TAB>题干)】\n{qlines}\n\n"
-        '返回 JSON:{"items":[{"qid":"小题qid","codes":["编码",...]}]};qid 原样回传,只用目录里的编码。'
+        f'返回 JSON:{{"items":[{{"qid":"小题qid","codes":["编码",...]}}]}}。'
+        f'**必须为上面全部 {nq} 道小题各返回一条**(逐一判断,无考点才给 codes:[]),不得遗漏任何 qid;'
+        'qid 原样回传,只用目录里的编码。'
     )
     try:
         resp = await chat_completion(
