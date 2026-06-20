@@ -77,7 +77,14 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
                          type_prompt: str, passages: dict[uuid.UUID, str]) -> dict[uuid.UUID, list[tuple]]:
     """同题型一组题调一次 LLM(system=稳定目录前缀,user=题型提示词+短文+小题)。"""
     out = {q.id: [] for q in group}
-    q_by_idx = {i: q for i, q in enumerate(group)}
+    # 短 id(question_id 前 8 位 hex)做小题标识——不与题干里的题号(8.9.…)相混
+    by_qid: dict[str, PlatformQuestion] = {}
+    for q in group:
+        k = str(q.id)[:8]
+        while k in by_qid:          # 极罕见前缀碰撞 → 加长
+            k = str(q.id)[:len(k) + 4]
+        by_qid[k] = q
+    q_qid = {q.id: k for k, q in by_qid.items()}
 
     # 本组涉及的短文,按 A/B/C 标号(供小题引用)
     blk_label: dict[uuid.UUID, str] = {}
@@ -88,15 +95,16 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
                   for bid, lab in blk_label.items())
 
     qlines = "\n".join(
-        f"#{i}\t[{q.section or ''}{('·材料' + blk_label[q.block_id]) if q.block_id in blk_label else ''}]\t"
+        f"qid={q_qid[q.id]}\t[{q.section or ''}{('·材料' + blk_label[q.block_id]) if q.block_id in blk_label else ''}]\t"
         f"{(q.stem or '').replace(chr(10), ' ')[:160]}"
-        for i, q in q_by_idx.items())
+        for q in group)
 
     user = (
         f"{type_prompt}\n\n"
         + (f"【本大题短文/材料】\n{mat}\n" if mat else "")
-        + f"【小题(#序号<TAB>[大题·材料]<TAB>题干)】\n{qlines}\n\n"
-        '返回 JSON:{"items":[{"i":序号,"codes":["编码",...]}]};只用目录里的编码,无明确考点给 []。'
+        + f"【小题(qid<TAB>[大题·材料]<TAB>题干)】\n{qlines}\n\n"
+        '返回 JSON:{"items":[{"qid":"小题qid","codes":["编码",...]}]};qid 原样回传,'
+        "只用目录里的编码,无明确考点给 []。"
     )
     try:
         resp = await chat_completion(
@@ -106,7 +114,7 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
     except Exception:  # noqa: BLE001
         return out
     for it in (data.get("items") or []):
-        q = q_by_idx.get(it.get("i"))
+        q = by_qid.get(str(it.get("qid")))
         if q is None:
             continue
         seen: set[uuid.UUID] = set()
