@@ -366,6 +366,18 @@ export function moveKnowledgeNode(id: string, parentId: string | null): Promise<
 export function getKnowledgeNode(id: string): Promise<KpNodeDetail> {
   return unwrap<KpNodeDetail>(request.get(`/admin/knowledge-nodes/${id}`))
 }
+// 知识点详情枢纽(F):详解正文 + 反向关联(教材/真题/仿真)+ 关系边
+export interface NodeHubQuestion { id: string; question_no?: string | null; section?: string | null; stem?: string | null; status: string; paper_name?: string | null }
+export interface NodeHub {
+  id: string; name: string; code: string; status: string; node_kind?: string | null; description?: string | null
+  lectures: { dimension?: string | null; status?: string | null; content_md?: string | null }[]
+  units: { unit_id: string; unit_title?: string; textbook_version?: string; grade?: string; semester?: string }[]
+  real_questions: NodeHubQuestion[]; sim_questions: NodeHubQuestion[]
+  relations: { node_id: string; name: string; code?: string | null; relation: string }[]
+}
+export function getNodeHub(id: string): Promise<NodeHub> {
+  return unwrap<NodeHub>(request.get(`/admin/knowledge-nodes/${id}/hub`))
+}
 export function updateKnowledgeNode(id: string, body: {
   name?: string; node_kind?: string | null; applicable_stages?: string[] | null; description?: string | null
 }): Promise<KpNodeDetail> {

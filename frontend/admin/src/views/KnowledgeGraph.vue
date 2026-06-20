@@ -3,9 +3,10 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  listKnowledgeNodes, getKnowledgeNode, updateKnowledgeNode,
+  listKnowledgeNodes, getKnowledgeNode, getNodeHub, updateKnowledgeNode,
   retireKnowledgeNode, restoreKnowledgeNode,
   getNodeTree, createKnowledgeNode, moveKnowledgeNode,
+  type NodeHub,
 } from '../api/admin'
 import type { KpNodeOverviewItem, KpNodeDetail, NodeTreeItem } from '../types'
 
@@ -15,11 +16,6 @@ const DIM_LABEL: Record<string, string> = {
   listening: '听力', vocabulary: '词汇', grammar: '语法', reading: '阅读', translation: '翻译', writing: '写作' }
 const STAGE_OPTS = ['小', '初', '高']
 
-const AXES = [
-  { label: '全部轴', value: '' }, { label: '知识', value: 'knowledge' },
-  { label: '能力', value: 'ability' }, { label: '考点', value: 'exam' },
-]
-const AXIS_LABEL: Record<string, string> = { knowledge: '知识', ability: '能力', exam: '考点' }
 const STAGES = [{ label: '全部学段', value: '' }, { label: '小', value: '小' }, { label: '初', value: '初' }, { label: '高', value: '高' }]
 const STATUSES = [
   { label: '启用', value: 'active' }, { label: '候选', value: 'candidate' },
@@ -28,7 +24,6 @@ const STATUSES = [
 const STATUS_TAG: Record<string, string> = { active: 'success', candidate: 'warning', retired: 'info' }
 const STATUS_LABEL: Record<string, string> = { active: '启用', candidate: '候选', retired: '停用' }
 
-const axis = ref('')
 const stage = ref('')
 const status = ref('active')
 const q = ref('')
@@ -42,7 +37,7 @@ async function load() {
   loading.value = true
   try {
     const data = await listKnowledgeNodes({
-      axis: axis.value || undefined, stage: stage.value || undefined,
+      stage: stage.value || undefined,
       status: status.value || undefined, q: q.value || undefined,
       skip: (page.value - 1) * pageSize, limit: pageSize,
     })
@@ -53,17 +48,15 @@ async function load() {
 }
 function reload() { page.value = 1; load() }
 
-// ── 树视图(E1)──
+// ── 知识分类树(F:单树,去 3 轴)──
 const viewMode = ref<'tree' | 'list'>('tree')
-const treeAxis = ref('knowledge')
-const TREE_AXES = [{ label: '知识', value: 'knowledge' }, { label: '能力', value: 'ability' }, { label: '考点', value: 'exam' }]
 const treeData = ref<NodeTreeItem[]>([])
 const treeLoading = ref(false)
 const treeProps = { label: 'name', children: 'children' }
 
 async function loadTree() {
   treeLoading.value = true
-  try { treeData.value = (await getNodeTree(treeAxis.value)).items }
+  try { treeData.value = (await getNodeTree('knowledge')).items }
   catch (e: any) { ElMessage.error(e?.message || '加载树失败') }
   finally { treeLoading.value = false }
 }
@@ -73,11 +66,11 @@ function switchView(m: 'tree' | 'list') {
 }
 async function addChild(parent: NodeTreeItem | null) {
   const { value } = await ElMessageBox.prompt(
-    parent ? `在「${parent.name}」下新增子节点` : `新增${TREE_AXES.find(a=>a.value===treeAxis.value)?.label}顶层节点`,
+    parent ? `在「${parent.name}」下新增子节点` : '新增顶层分类(词法/句法/篇章…)',
     '新增节点', { inputPattern: /\S/, inputErrorMessage: '名称不能为空' })
   try {
     await createKnowledgeNode({ name: value.trim(),
-      parent_id: parent ? parent.id : null, axis: parent ? undefined : treeAxis.value })
+      parent_id: parent ? parent.id : null, axis: parent ? undefined : 'knowledge' })
     ElMessage.success('已新增')
     await loadTree()
   } catch (e: any) { ElMessage.error(e?.message || '新增失败') }
@@ -106,20 +99,23 @@ const detailOpen = ref(false)
 const detailLoading = ref(false)
 const detailBusy = ref(false)
 const detail = ref<KpNodeDetail | null>(null)
+const hub = ref<NodeHub | null>(null)
 const edit = ref({ name: '', node_kind: '', applicable_stages: [] as string[], description: '' })
 
 async function openDetail(id: string) {
   detailOpen.value = true
   detailLoading.value = true
-  detail.value = null
+  detail.value = null; hub.value = null
   try {
-    const d = await getKnowledgeNode(id)
+    const [d, h] = await Promise.all([getKnowledgeNode(id), getNodeHub(id)])
     detail.value = d
+    hub.value = h
     edit.value = { name: d.name, node_kind: d.node_kind || '',
                    applicable_stages: d.applicable_stages || [], description: d.description || '' }
   } catch (e: any) { ElMessage.error(e?.message || '加载详情失败') }
   finally { detailLoading.value = false }
 }
+function gotoQuestions() { router.push({ path: '/platform-questions' }) }
 function dimClass(cell: { status: string } | null): string {
   if (!cell) return 'cell-missing'
   return cell.status === 'published' ? 'cell-pub' : 'cell-draft'
@@ -174,13 +170,9 @@ onMounted(loadTree)
     <!-- 树视图 -->
     <div v-if="viewMode === 'tree'">
       <div class="toolbar">
-        <span>轴：</span>
-        <el-select v-model="treeAxis" style="width:110px" @change="loadTree">
-          <el-option v-for="a in TREE_AXES" :key="a.value" :label="a.label" :value="a.value" />
-        </el-select>
-        <el-button type="primary" style="margin-left:12px" @click="addChild(null)">+ 新增顶层</el-button>
+        <el-button type="primary" @click="addChild(null)">+ 新增顶层分类</el-button>
         <el-button @click="loadTree">刷新</el-button>
-        <span class="hint">拖拽可移动/调整层级(放到节点内=成为其子)。点名称看详情/改信息。</span>
+        <span class="hint">知识分类树(词法/句法/篇章→考点)。拖拽可移动/调整层级(放到节点内=成为其子)。点名称看详情/反向关联。</span>
       </div>
       <el-tree v-loading="treeLoading" :data="treeData" :props="treeProps" node-key="id"
         draggable :allow-drop="allowDrop" @node-drop="onNodeDrop"
@@ -201,11 +193,7 @@ onMounted(loadTree)
     <!-- 列表视图 -->
     <div v-else>
     <div class="toolbar">
-      <span>轴：</span>
-      <el-select v-model="axis" style="width:110px" @change="reload">
-        <el-option v-for="a in AXES" :key="a.value" :label="a.label" :value="a.value" />
-      </el-select>
-      <span style="margin-left:12px">学段：</span>
+      <span>学段：</span>
       <el-select v-model="stage" style="width:110px" @change="reload">
         <el-option v-for="s in STAGES" :key="s.value" :label="s.label" :value="s.value" />
       </el-select>
@@ -224,9 +212,6 @@ onMounted(loadTree)
         <template #default="{ row }">
           <el-link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-link>
         </template>
-      </el-table-column>
-      <el-table-column label="轴" width="80" align="center">
-        <template #default="{ row }">{{ AXIS_LABEL[row.axis] || row.axis }}</template>
       </el-table-column>
       <el-table-column prop="node_kind" label="子类型" width="100">
         <template #default="{ row }">{{ row.node_kind || '—' }}</template>
@@ -277,8 +262,7 @@ onMounted(loadTree)
 
           <el-form label-width="76px" class="d-form">
             <el-form-item label="名称"><el-input v-model="edit.name" /></el-form-item>
-            <el-form-item label="轴"><span>{{ detail.axis }}(不可改)</span></el-form-item>
-            <el-form-item label="子类型"><el-input v-model="edit.node_kind" placeholder="如 句法/词汇/题型" /></el-form-item>
+            <el-form-item label="子类型"><el-input v-model="edit.node_kind" placeholder="如 板块/专题/考点" /></el-form-item>
             <el-form-item label="适用学段">
               <el-checkbox-group v-model="edit.applicable_stages">
                 <el-checkbox v-for="s in STAGE_OPTS" :key="s" :value="s">{{ s }}</el-checkbox>
@@ -306,23 +290,51 @@ onMounted(loadTree)
             <span v-if="!detail.mastery.learners" class="muted">暂无学生学习数据</span>
           </div>
 
-          <el-divider content-position="left">引用</el-divider>
-          <div class="d-refs">
-            <el-tag type="danger" effect="plain">真题 {{ detail.question_real }}</el-tag>
-            <el-tag type="info" effect="plain">仿真 {{ detail.question_sim }}</el-tag>
-            <span class="muted" style="margin-left:8px">别名 {{ detail.aliases.length }}</span>
+          <el-divider content-position="left">详解正文</el-divider>
+          <el-empty v-if="!hub || !hub.lectures.length" description="该知识点暂无详解" :image-size="48" />
+          <div v-else>
+            <div v-for="(l, i) in hub.lectures" :key="i" class="d-lecture">
+              <div class="sub">{{ DIM_LABEL[l.dimension || ''] || l.dimension }}维 ·
+                <el-tag size="small" :type="l.status === 'published' ? 'success' : 'info'">{{ l.status === 'published' ? '已发布' : '草稿' }}</el-tag>
+              </div>
+              <pre class="md">{{ l.content_md }}</pre>
+            </div>
           </div>
-          <div class="d-units">
-            <div class="sub">被以下单元引用({{ detail.units.length }}):</div>
-            <el-empty v-if="!detail.units.length" description="未挂到任何单元" :image-size="48" />
-            <ul v-else>
-              <li v-for="u in detail.units" :key="u.unit_id">
-                {{ u.textbook_version }} · {{ u.grade }}{{ u.semester }} · {{ u.unit_title }}
+
+          <el-divider content-position="left">反向关联 · 教材单元({{ hub ? hub.units.length : 0 }})</el-divider>
+          <el-empty v-if="!hub || !hub.units.length" description="未被任何教材单元引用" :image-size="40" />
+          <ul v-else class="d-list">
+            <li v-for="u in hub.units" :key="u.unit_id">{{ u.textbook_version }} · {{ u.grade }}{{ u.semester }} · {{ u.unit_title }}</li>
+          </ul>
+
+          <el-divider content-position="left">
+            反向关联 · 真题({{ hub ? hub.real_questions.length : 0 }}) / 仿真({{ hub ? hub.sim_questions.length : 0 }})
+            <el-button link type="primary" size="small" @click="gotoQuestions">去平台真题 →</el-button>
+          </el-divider>
+          <el-empty v-if="!hub || (!hub.real_questions.length && !hub.sim_questions.length)" description="暂无真题/仿真挂到本点" :image-size="40" />
+          <template v-else>
+            <ul class="d-list" v-if="hub.real_questions.length">
+              <li v-for="qq in hub.real_questions" :key="qq.id">
+                <el-tag size="small" type="danger" effect="plain">真</el-tag>
+                <span class="muted">{{ qq.paper_name }} · {{ qq.section }} {{ qq.question_no }}</span> {{ qq.stem }}
               </li>
             </ul>
+            <ul class="d-list" v-if="hub.sim_questions.length">
+              <li v-for="qq in hub.sim_questions" :key="qq.id">
+                <el-tag size="small" type="info" effect="plain">仿</el-tag> {{ qq.stem }}
+              </li>
+            </ul>
+          </template>
+
+          <el-divider content-position="left">关系边({{ hub ? hub.relations.length : 0 }})</el-divider>
+          <el-empty v-if="!hub || !hub.relations.length" description="暂无关系" :image-size="40" />
+          <div v-else>
+            <el-tag v-for="r in hub.relations" :key="r.node_id + r.relation" size="small" effect="plain" style="margin:3px"
+              @click="openDetail(r.node_id)" class="rel-tag">{{ r.relation }} → {{ r.name }}</el-tag>
           </div>
+
+          <el-divider content-position="left" v-if="detail.aliases.length">别名</el-divider>
           <div class="d-aliases" v-if="detail.aliases.length">
-            <div class="sub">别名:</div>
             <el-tag v-for="a in detail.aliases" :key="a.alias" size="small" effect="plain" style="margin:2px">{{ a.alias }}</el-tag>
           </div>
         </template>
@@ -354,4 +366,11 @@ onMounted(loadTree)
 .d-units .sub, .d-aliases .sub { font-size: 13px; color: #606266; margin: 8px 0 4px; }
 .d-units ul { margin: 0; padding-left: 18px; font-size: 13px; color: #303133; }
 .d-units li { margin: 3px 0; }
+.d-lecture .sub { font-size: 13px; color: #606266; margin: 6px 0 4px; }
+.md { white-space: pre-wrap; word-break: break-word; font-family: var(--el-font-family, sans-serif);
+  font-size: 13px; line-height: 1.6; color: #303133; background: #fafafa; border: 1px solid #ebeef5;
+  border-radius: 6px; padding: 10px 12px; margin: 0 0 10px; max-height: 360px; overflow: auto; }
+.d-list { margin: 0; padding-left: 18px; font-size: 13px; color: #303133; }
+.d-list li { margin: 4px 0; }
+.rel-tag { cursor: pointer; }
 </style>
