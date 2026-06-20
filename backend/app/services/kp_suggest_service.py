@@ -1,9 +1,9 @@
 """真题 → 受控考点 AI 建议(母题挂 KP 提效)。
 
 KV 缓存优化(https://api-docs.deepseek.com/zh-cn/guides/kv_cache):
-把**稳定不变的「知识点目录(编码+名称+详解)」放进 system 消息当缓存前缀**——无论哪个
-题型、哪份卷,该前缀逐 token 一致 → 命中 DeepSeek KV 缓存;把**可变的(题型提示词 +
-本大题短文 + 小题)放进 user 消息**(在前缀之后)。
+把**稳定不变的「知识点目录(仅编码+名称,不含详解正文)」放进 system 消息当缓存前缀**——
+无论哪个题型、哪份卷,该前缀逐 token 一致 → 命中 DeepSeek KV 缓存;把**可变的(题型提示词
++ 本大题短文 + 小题)放进 user 消息**(在前缀之后)。
 
 按 question_type 分组,各用「题型 AI 提示词」(kp_prompt_service)做 user 端指引;
 LLM 用短「编码/序号」回映(避免 UUID 抄错),服务端映射回真实 node_id / question_id。
@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import uuid
 
 import sqlalchemy as sa
@@ -22,7 +21,6 @@ from sqlalchemy.orm import aliased
 
 from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d16_question_domain import PlatformPaper, PlatformQuestion, Passage
-from app.models.d19_node_resource import NodeResource
 from app.services import kp_prompt_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
@@ -46,47 +44,34 @@ def _stage_allows(cand_stages: list | None, allowed: list[str] | None) -> bool:
 
 # system 前缀固定开头(与目录拼成稳定缓存前缀)
 _SYS_HEAD = (
-    "你是初中英语考点标注专家。下面给出受控「知识点目录」,每行:编码<TAB>名称<TAB>释义。\n"
+    "你是初中英语考点标注专家。下面给出受控「知识点目录」,每行:编码<TAB>名称。\n"
     "规则:只能从该目录为题目挑考点并返回其编码;不得编造目录外的编码;每道小题最多挑 2 个"
     "最贴切的考点,无明确考点给空数组。严格输出 JSON,不要任何解释。\n\n【知识点目录】\n"
 )
 
 
-def _gist(md: str | None) -> str:
-    """从讲解 markdown 取一句释义(跳过标题/表格/空行),去掉强调符,截断。"""
-    for ln in (md or "").splitlines():
-        s = ln.strip()
-        if s and not s.startswith("#") and not s.startswith("|"):
-            return re.sub(r"[*_`]", "", s.lstrip("-• ")).replace("\t", " ")[:70]
-    return ""
-
-
 async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple]]:
-    """考点目录 + 释义。返回 (code2node, entries[(node_id, code, 行文本, 适用学段)])。
+    """考点目录。返回 (code2node, entries[(node_id, code, 行文本, 适用学段)])。
 
+    每行只含「编码<TAB>名称」——**不带 node_resource 详解内容**(避免请求臃肿/破坏缓存)。
     考点口径 = 受控知识树里**有父且无子的叶子节点**(分类/中间节点不入目录)。
-    不再按 code 正则(原 ^(cf|jf)-n-n-n$ 会漏掉篇章 k-3-* 与三段叶子)——凡叶子皆考点,
-    与 code 命名方案解耦。
     """
     child = aliased(KnowledgeNode)
     is_leaf = ~sa.exists().where(child.parent_id == KnowledgeNode.id)
     rows = (await db.execute(
         sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
-                  KnowledgeNode.applicable_stages, NodeResource.content_md)
-        .outerjoin(NodeResource, sa.and_(
-            NodeResource.node_id == KnowledgeNode.id,
-            NodeResource.resource_type == "lecture"))
+                  KnowledgeNode.applicable_stages)
         .where(KnowledgeNode.axis == "knowledge", KnowledgeNode.status == "active",
                KnowledgeNode.parent_id.isnot(None), is_leaf)
         .order_by(KnowledgeNode.code)
     )).all()
     code2node: dict[str, tuple[uuid.UUID, str]] = {}
     entries: list[tuple] = []
-    for nid, nm, code, stages, md in rows:
+    for nid, nm, code, stages in rows:
         if code in code2node:
             continue
         code2node[code] = (nid, nm)
-        entries.append((nid, code, f"{code}\t{nm}\t{_gist(md)}", stages or []))
+        entries.append((nid, code, f"{code}\t{nm}", stages or []))
     return code2node, entries
 
 
