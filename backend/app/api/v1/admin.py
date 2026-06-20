@@ -369,6 +369,12 @@ async def knowledge_node_detail_api(node_id: uuid.UUID, db: DbDep, admin: AdminD
     return make_ok(KpNodeDetailOut(**(await kp_candidate_service.node_detail(db, node_id=node_id))))
 
 
+@router.get("/knowledge-nodes/{node_id}/hub", response_model=BaseResponse[dict])
+async def knowledge_node_hub_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """知识点详情枢纽(F):详解正文 + 反向关联(教材/真题/仿真)+ 关系边。"""
+    return make_ok(await kp_candidate_service.node_hub(db, node_id=node_id))
+
+
 @router.patch("/knowledge-nodes/{node_id}", response_model=BaseResponse[KpNodeDetailOut])
 async def update_knowledge_node_api(node_id: uuid.UUID, body: UpdateNodeIn, db: DbDep, admin: AdminDep):
     """改节点:名称 / 子类型 / 适用学段 / 描述。"""

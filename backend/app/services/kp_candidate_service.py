@@ -275,6 +275,67 @@ async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
     }
 
 
+async def node_hub(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
+    """知识点详情枢纽(F 方案):详解正文 + 反向关联(教材/真题/仿真)+ 关系边。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d15_knowledge_graph import NodeRelation
+    from app.models.d16_question_domain import (
+        PlatformQuestion, PlatformQuestionKp, PlatformPaper,
+    )
+    from app.models.d19_node_resource import NodeResource
+
+    node = await db.get(KnowledgeNode, node_id)
+    if node is None:
+        raise AppError(code=404, message="知识点不存在")
+
+    # 详解正文(考点通常 1 条 vocabulary/grammar)
+    lectures = [{"dimension": dim, "status": st, "content_md": md} for dim, st, md in (await db.execute(
+        sa.select(NodeResource.dimension, NodeResource.status, NodeResource.content_md)
+        .where(NodeResource.node_id == node_id, NodeResource.resource_type == "lecture")
+        .order_by(NodeResource.dimension))).all()]
+
+    # 反向 · 教材单元
+    units = [{"unit_id": uid, "unit_title": title, "textbook_version": tv, "grade": g, "semester": sem}
+             for uid, title, tv, g, sem in (await db.execute(
+                 sa.select(CurriculumUnit.id, CurriculumUnit.unit_title, CurriculumUnit.textbook_version,
+                           CurriculumUnit.grade, CurriculumUnit.semester)
+                 .join(UnitNode, UnitNode.unit_id == CurriculumUnit.id)
+                 .where(UnitNode.node_id == node_id)
+                 .order_by(CurriculumUnit.textbook_version, CurriculumUnit.grade))).all()]
+
+    # 反向 · 真题 / 仿真(挂本点的题,带题干摘要 + 所属试卷)
+    qrows = (await db.execute(
+        sa.select(PlatformQuestion.id, PlatformQuestion.type, PlatformQuestion.question_no,
+                  PlatformQuestion.section, PlatformQuestion.stem, PlatformQuestion.status,
+                  PlatformQuestion.parent_real_id, PlatformPaper.name)
+        .join(PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id)
+        .outerjoin(PlatformPaper, PlatformPaper.id == PlatformQuestion.paper_id)
+        .where(PlatformQuestionKp.node_id == node_id)
+        .order_by(PlatformQuestion.type, PlatformQuestion.created_at).limit(200))).all()
+    real_qs, sim_qs = [], []
+    for qid, qtype, qno, sec, stem, st, parent, pname in qrows:
+        item = {"id": qid, "question_no": qno, "section": sec,
+                "stem": (stem or "")[:120], "status": st, "paper_name": pname}
+        (real_qs if qtype == "real" else sim_qs).append(item)
+
+    # 关系边(双向)
+    rels = []
+    for fid, tid, rel in (await db.execute(
+        sa.select(NodeRelation.from_node_id, NodeRelation.to_node_id, NodeRelation.relation)
+        .where(sa.or_(NodeRelation.from_node_id == node_id, NodeRelation.to_node_id == node_id)))).all():
+        other = tid if fid == node_id else fid
+        n2 = await db.get(KnowledgeNode, other)
+        if n2 is not None:
+            rels.append({"node_id": other, "name": n2.name, "code": n2.code, "relation": rel})
+
+    return {
+        "id": node.id, "name": node.name, "code": node.code, "status": node.status,
+        "node_kind": node.node_kind, "description": node.description,
+        "lectures": lectures, "units": units,
+        "real_questions": real_qs, "sim_questions": sim_qs, "relations": rels,
+    }
+
+
 async def update_node(
     db: AsyncSession, *, node_id: uuid.UUID, name: str | None = None, node_kind: str | None = None,
     applicable_stages: list[str] | None = None, description: str | None = None,
