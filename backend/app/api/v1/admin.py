@@ -79,6 +79,10 @@ from app.schemas.kp import (
     PaperDeleteIn,
     SuggestKpItem,
     SuggestKpOut,
+    SuggestKpIn,
+    KpPromptItem,
+    KpPromptsIn,
+    KpPromptsOut,
     GenSimBulkIn,
     GenSimBulkOut,
     RealExtractCreatedOut,
@@ -1018,15 +1022,38 @@ async def detach_question_kp_api(question_id: uuid.UUID, node_id: uuid.UUID, db:
 
 
 @router.post("/platform-papers/{paper_id}/suggest-kp", response_model=BaseResponse[SuggestKpOut])
-async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """AI 建议:给语法类题在受控考点树里挑 1-2 个考点(不自动挂,前端确认)。"""
-    from app.services import kp_suggest_service as kss
-    sug = await kss.suggest_kps_for_paper(db, paper_id)
+async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep,
+                               body: SuggestKpIn | None = None):
+    """AI 建议:按题型默认提示词给每题挑考点;可按 sections 限大题、prompt_id 指定提示词。"""
+    from app.services import kp_suggest_service as kss, kp_prompt_service as kps
+    sections = body.sections if body else None
+    prompt_text = None
+    if body and body.prompt_id:
+        prompt_text = kps.prompt_by_id(await kps.get_prompts(db), body.prompt_id)
+    sug = await kss.suggest_kps_for_paper(db, paper_id, sections=sections, prompt_text=prompt_text)
     items = [SuggestKpItem(
         question_id=qid,
         suggestions=[QuestionKpRef(node_id=n, name=nm, code=c) for n, nm, c in refs],
     ) for qid, refs in sug.items() if refs]
     return make_ok(SuggestKpOut(items=items))
+
+
+@router.get("/kp-prompts", response_model=BaseResponse[KpPromptsOut])
+async def get_kp_prompts_api(db: DbDep, admin: AdminDep):
+    """知识点 AI 提示词(按题型,缺省返回内置默认)。"""
+    from app.services import kp_prompt_service as kps
+    prompts = await kps.get_prompts(db)
+    return make_ok(KpPromptsOut(prompts=[KpPromptItem(**p) for p in prompts]))
+
+
+@router.put("/kp-prompts", response_model=BaseResponse[KpPromptsOut])
+async def save_kp_prompts_api(body: KpPromptsIn, db: DbDep, admin: AdminDep):
+    """保存知识点 AI 提示词(整体覆盖,每题型至多一个默认)。"""
+    from app.services import kp_prompt_service as kps
+    saved = await kps.save_prompts(
+        db, prompts=[p.model_dump() for p in body.prompts], updated_by=admin.id)
+    await db.commit()
+    return make_ok(KpPromptsOut(prompts=[KpPromptItem(**p) for p in saved]))
 
 
 @router.post("/platform-papers/delete", response_model=BaseResponse[dict])

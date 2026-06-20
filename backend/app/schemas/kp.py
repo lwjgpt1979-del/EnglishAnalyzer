@@ -297,6 +297,28 @@ class SuggestKpOut(BaseModel):
     items: list[SuggestKpItem] = []
 
 
+class SuggestKpIn(BaseModel):
+    sections: list[str] | None = None      # 仅对这些大题(供「一键挂某大题」)
+    prompt_id: str | None = None           # 指定提示词;空=按题型默认
+
+
+# ── 知识点 AI 提示词配置(按题型,多套选默认)──
+class KpPromptItem(BaseModel):
+    id: str | None = None
+    name: str
+    text: str
+    question_type: str                     # 单选/填空/完型/阅读/写作
+    is_default: bool = False
+
+
+class KpPromptsIn(BaseModel):
+    prompts: list[KpPromptItem]
+
+
+class KpPromptsOut(BaseModel):
+    prompts: list[KpPromptItem]
+
+
 class PaperDetailOut(BaseModel):
     paper: PaperListItem
     questions: list[PaperQuestionItem]
