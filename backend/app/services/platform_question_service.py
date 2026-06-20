@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 
@@ -100,20 +101,51 @@ async def list_papers(
     return out, total
 
 
+def _qnum(no: str | None) -> int:
+    """题号前导数字,用于卷内排序;无则置大数殿后。"""
+    m = re.match(r"\s*(\d+)", no or "")
+    return int(m.group(1)) if m else 9999
+
+
+# 标准卷面大题次序(关键词命中即定序);同一事务 created_at 相同不可靠,故用此还原卷序
+_SECTION_ORDER = [
+    "听力", "单项", "单选", "语法", "完形", "完型", "阅读理解", "信息还原",
+    "单词", "选词", "短文填空", "首字母", "完成句子", "翻译", "句子", "阅读表达",
+    "书面", "作文",
+]
+
+
+def _section_rank(section: str | None) -> int:
+    s = section or ""
+    for i, kw in enumerate(_SECTION_ORDER):
+        if kw in s:
+            return i
+    return len(_SECTION_ORDER)      # 未知大题殿后(再按出现序细分)
+
+
 async def paper_questions(
     db: AsyncSession, paper_id: uuid.UUID
 ) -> tuple[PlatformPaper | None, list[PlatformQuestion], dict[uuid.UUID, str | None]]:
-    """试卷详情:试卷 + 其全部真题(按题号)+ 题组短文映射。"""
+    """试卷详情:试卷 + 其全部真题 + 题组短文映射。
+
+    稳定排序(大题首次出现次序 → 题号 → created_at):即使入库 created_at 乱序,
+    也能把同一大题归并、题号顺序还原,贴近原卷呈现。
+    """
     paper = await db.get(PlatformPaper, paper_id)
     if paper is None:
         return None, [], {}
-    rows = (await db.execute(
+    rows = list((await db.execute(
         sa.select(PlatformQuestion).where(
             PlatformQuestion.paper_id == paper_id, PlatformQuestion.type == "real"
         ).order_by(PlatformQuestion.created_at)
-    )).scalars().all()
+    )).scalars().all())
+    seen: dict[str, int] = {}
+    for r in rows:
+        seen.setdefault(r.section or "", len(seen))
+    # 主序:标准大题次序;未知大题按出现序殿后;段内按题号
+    rows.sort(key=lambda r: (_section_rank(r.section), seen.get(r.section or "", 0), _qnum(r.question_no)))
     pmap = await passages_for(db, [r.block_id for r in rows if r.block_id])
-    return paper, list(rows), pmap
+    return paper, rows, pmap
 
 
 async def publish_paper(db: AsyncSession, paper_id: uuid.UUID) -> int:
