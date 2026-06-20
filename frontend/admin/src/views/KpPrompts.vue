@@ -33,7 +33,7 @@ async function load() {
   finally { loading.value = false }
 }
 function addPrompt(t: string) {
-  prompts.value.push({ id: null, name: '新提示词', text: '', question_type: t, is_default: !byType(t).length, focus_node_ids: [] })
+  prompts.value.push({ id: null, name: '新提示词', text: '', question_type: t, is_default: !byType(t).length, focus_node_ids: [], min_kp: 0, max_kp: 2 })
 }
 function removePrompt(p: KpPrompt) {
   const i = prompts.value.indexOf(p)
@@ -101,6 +101,14 @@ onMounted(load)
           <el-tree-select v-model="p.focus_node_ids" :data="kpTree" :props="treeProps" node-key="id"
             multiple :render-after-expand="false" check-strictly collapse-tags collapse-tags-tooltip
             placeholder="空 = 全部考点;选几个分类则 AI 只在其下考点里匹配" style="flex:1" />
+        </div>
+        <div class="focus-row">
+          <span class="focus-label">每{{ t === '教材' ? '段' : '题' }}考点数</span>
+          <span class="muted">至少</span>
+          <el-input-number v-model="p.min_kp" :min="0" :max="10" size="small" controls-position="right" style="width:96px" />
+          <span class="muted">至多</span>
+          <el-input-number v-model="p.max_kp" :min="1" :max="10" size="small" controls-position="right" style="width:96px" />
+          <span class="muted">(至少给 AI 提示;至多解析时封顶)</span>
         </div>
       </div>
 

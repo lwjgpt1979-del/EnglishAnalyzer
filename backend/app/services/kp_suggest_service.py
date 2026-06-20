@@ -85,7 +85,8 @@ async def _passages_for(db: AsyncSession, block_ids: list[uuid.UUID]) -> dict[uu
 
 
 async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_msg: str,
-                         type_prompt: str, passages: dict[uuid.UUID, str]) -> dict[uuid.UUID, list[tuple]]:
+                         type_prompt: str, passages: dict[uuid.UUID, str],
+                         min_kp: int = 0, max_kp: int = 2) -> dict[uuid.UUID, list[tuple]]:
     """同题型一组题调一次 LLM(system=稳定目录前缀,user=题型提示词+短文+小题)。"""
     out = {q.id: [] for q in group}
     # 短 id(question_id 前 8 位 hex)做小题标识——不与题干里的题号(8.9.…)相混
@@ -110,12 +111,12 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
         f"{(q.stem or '').replace(chr(10), ' ')[:160]}"
         for q in group)
 
+    cnt = (f"每题挑 {min_kp}-{max_kp} 个" if min_kp else f"每题挑至多 {max_kp} 个") + "最贴切考点(无明确考点给 [])。"
     user = (
-        f"{type_prompt}\n\n"
+        f"{type_prompt}\n{cnt}\n\n"
         + (f"【本大题短文/材料】\n{mat}\n" if mat else "")
         + f"【小题(qid<TAB>[大题·材料]<TAB>题干)】\n{qlines}\n\n"
-        '返回 JSON:{"items":[{"qid":"小题qid","codes":["编码",...]}]};qid 原样回传,'
-        "只用目录里的编码,无明确考点给 []。"
+        '返回 JSON:{"items":[{"qid":"小题qid","codes":["编码",...]}]};qid 原样回传,只用目录里的编码。'
     )
     try:
         resp = await chat_completion(
@@ -129,7 +130,7 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
         if q is None:
             continue
         seen: set[uuid.UUID] = set()
-        for code in (it.get("codes") or [])[:2]:
+        for code in (it.get("codes") or [])[:max_kp]:
             ref = code2node.get(code)
             if ref and ref[0] not in seen:
                 seen.add(ref[0])
@@ -149,9 +150,10 @@ async def suggest_kps_for_text(
     id2code = await _codes_of_nodes(db, item.get("focus_node_ids") or [])
     focus_codes = [id2code[str(n)] for n in (item.get("focus_node_ids") or []) if str(n) in id2code]
     system_msg = _system_for(entries, focus_codes)
+    max_kp = int(item.get("max_kp", 8))
     user = (
-        f"{item['text']}\n\n【正文】\n{text[:4000]}\n\n"
-        '返回 JSON:{"codes":["编码",...]};挑出正文覆盖到的考点编码,只用目录里的编码。'
+        f"{item['text']}\n挑出正文覆盖到的考点(至多 {max_kp} 个)。\n\n【正文】\n{text[:4000]}\n\n"
+        '返回 JSON:{"codes":["编码",...]};只用目录里的编码。'
     )
     try:
         resp = await chat_completion(system_prompt=system_msg, user_prompt=user,
@@ -160,7 +162,7 @@ async def suggest_kps_for_text(
     except Exception:  # noqa: BLE001
         return []
     out, seen = [], set()
-    for code in (data.get("codes") or [])[:20]:
+    for code in (data.get("codes") or [])[:max_kp]:
         ref = code2node.get(code)
         if ref and ref[0] not in seen:
             seen.add(ref[0])
@@ -214,5 +216,6 @@ async def suggest_kps_for_paper(
         it = items[qtype]
         focus_codes = [id2code[str(n)] for n in (it.get("focus_node_ids") or []) if str(n) in id2code]
         system_msg = _system_for(entries, focus_codes)     # 该题型稳定前缀(同题型→命中缓存)
-        out.update(await _suggest_group(group, code2node, system_msg, it["text"], passages))
+        out.update(await _suggest_group(group, code2node, system_msg, it["text"], passages,
+                                        int(it.get("min_kp", 0)), int(it.get("max_kp", 2))))
     return out

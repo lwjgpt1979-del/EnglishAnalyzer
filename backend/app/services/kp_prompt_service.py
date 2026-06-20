@@ -37,9 +37,17 @@ _BUILTIN: dict[str, str] = {
 }
 
 
+# 每题挑考点的数量范围(至少, 至多)默认
+_RANGE: dict[str, tuple[int, int]] = {
+    "单选": (1, 2), "听力": (0, 1), "填空": (1, 2), "完型": (1, 2),
+    "阅读": (0, 1), "写作": (0, 1), "教材": (1, 8),
+}
+
+
 def _builtin_list() -> list[dict]:
     return [{"id": f"builtin-{t}", "name": "内置默认", "text": _BUILTIN[t],
-             "question_type": t, "is_default": True, "focus_node_ids": []}
+             "question_type": t, "is_default": True, "focus_node_ids": [],
+             "min_kp": _RANGE.get(t, (0, 2))[0], "max_kp": _RANGE.get(t, (0, 2))[1]}
             for t in ALL_TYPES]
 
 
@@ -62,11 +70,16 @@ async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uui
         is_def = bool(p.get("is_default")) and qt not in seen_default
         if is_def:
             seen_default.add(qt)
+        mn = max(0, min(10, int(p.get("min_kp") or 0)))
+        mx = max(1, min(10, int(p.get("max_kp") or 2)))
+        if mn > mx:
+            mn = mx
         cleaned.append({
             "id": p.get("id") or f"p-{uuid.uuid4().hex[:8]}",
             "name": (p.get("name") or "未命名").strip(),
             "text": p["text"].strip(), "question_type": qt, "is_default": is_def,
             "focus_node_ids": [str(x) for x in (p.get("focus_node_ids") or [])],
+            "min_kp": mn, "max_kp": mx,
         })
     # 每题型若无默认,把该型第一个置默认
     for t in ALL_TYPES:
@@ -94,7 +107,9 @@ def default_item_for(prompts: list[dict], qtype: str | None) -> dict:
     for p in prompts:
         if p["question_type"] == qt:
             return p
-    return {"text": _BUILTIN.get(qt, _BUILTIN["单选"]), "focus_node_ids": []}
+    rng = _RANGE.get(qt, (0, 2))
+    return {"text": _BUILTIN.get(qt, _BUILTIN["单选"]), "focus_node_ids": [],
+            "min_kp": rng[0], "max_kp": rng[1]}
 
 
 def item_by_id(prompts: list[dict], prompt_id: str | None) -> dict | None:

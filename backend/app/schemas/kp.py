@@ -321,6 +321,8 @@ class KpPromptItem(BaseModel):
     question_type: str                     # 单选/填空/完型/阅读/写作
     is_default: bool = False
     focus_node_ids: list[uuid.UUID] = []   # 关注的知识脑图分类(空=全部考点)
+    min_kp: int = 0                        # 每题至少挑几个考点(提示给 AI)
+    max_kp: int = 2                        # 每题至多挑几个考点(解析封顶)
 
 
 class KpPromptsIn(BaseModel):
