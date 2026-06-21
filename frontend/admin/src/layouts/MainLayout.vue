@@ -21,6 +21,7 @@ const navGroups: NavGroup[] = [
     { path: '/questions', label: '仿真题审核' },
     { path: '/kp-candidates', label: '候选知识点审核' },
     { path: '/knowledge-graph', label: '🧠 知识图谱(节点总览)' },
+    { path: '/exam-type-stats', label: '考试类型统计' },
     { path: '/kp-prompts', label: '习题匹配知识脑图提示词' },
     { path: '/node-resources', label: '知识点资源' },
     { path: '/lecture-split', label: '详解拆分审核' },

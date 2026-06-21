@@ -363,6 +363,12 @@ async def create_knowledge_node_api(body: CreateNodeIn, db: DbDep, admin: AdminD
     return make_ok({"id": str(n.id), "code": n.code, "name": n.name})
 
 
+@router.get("/kp-exam-stats", response_model=BaseResponse[dict])
+async def kp_exam_stats_api(db: DbDep, admin: AdminDep, grp: str | None = None):
+    """按考点统计已挂真题的考试类型分布(普通/中考/高考),供「考试类型统计」页。"""
+    return make_ok(await kp_candidate_service.exam_type_stats(db, grp=grp))
+
+
 @router.get("/lecture-nodes", response_model=BaseResponse[dict])
 async def list_lecture_nodes_api(db: DbDep, admin: AdminDep,
                                  grp: str | None = None, skip: int = 0, limit: int = 20):

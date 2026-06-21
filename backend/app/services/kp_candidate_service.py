@@ -156,6 +156,45 @@ async def list_nodes_overview(
     return items, total
 
 
+_GRP_PREFIX = {"词法": "cf", "句法": "jf", "阅读": "rc", "听力": "lt", "作文": "wr"}
+
+
+async def exam_type_stats(db: AsyncSession, *, grp: str | None = None) -> dict:
+    """按考点统计已挂**真题**的考试类型分布(普通/中考/高考)。
+
+    返回 {totals:{普通,中考,高考,合计}, items:[{id,name,code,普通,中考,高考,合计}]},按合计降序。
+    grp(词法/句法/阅读/听力/作文)按 code 前缀筛。
+    """
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
+    et = sa.func.coalesce(sa.func.nullif(PlatformQuestion.exam_type, ""), "普通")
+    rows = (await db.execute(
+        sa.select(PlatformQuestionKp.node_id, et.label("et"),
+                  sa.func.count(sa.distinct(PlatformQuestionKp.question_id)))
+        .join(PlatformQuestion, PlatformQuestion.id == PlatformQuestionKp.question_id)
+        .where(PlatformQuestion.type == "real")
+        .group_by(PlatformQuestionKp.node_id, et))).all()
+    agg: dict = {}
+    for nid, etv, cnt in rows:
+        d = agg.setdefault(nid, {"普通": 0, "中考": 0, "高考": 0})
+        d[etv if etv in d else "普通"] += int(cnt)
+    if not agg:
+        return {"totals": {"普通": 0, "中考": 0, "高考": 0, "合计": 0}, "items": []}
+    info = (await db.execute(sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
+                             .where(KnowledgeNode.id.in_(list(agg))))).all()
+    pref = _GRP_PREFIX.get(grp or "")
+    items: list[dict] = []
+    for nid, name, code in info:
+        if pref and not (code or "").startswith(pref):
+            continue
+        d = agg[nid]
+        items.append({"id": str(nid), "name": name, "code": code, **d,
+                      "合计": d["普通"] + d["中考"] + d["高考"]})
+    items.sort(key=lambda x: -x["合计"])
+    totals = {k: sum(it[k] for it in items) for k in ("普通", "中考", "高考")}
+    totals["合计"] = sum(totals.values())
+    return {"totals": totals, "items": items}
+
+
 async def node_tree(db: AsyncSession, *, axis: str | None = None,
                     with_counts: bool = False, stage: str | None = None) -> list[dict]:
     """受控知识树(E1):按 parent_id 组装嵌套(排除已停用)。

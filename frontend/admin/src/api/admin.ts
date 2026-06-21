@@ -387,6 +387,13 @@ export function moveKnowledgeNode(id: string, parentId: string | null): Promise<
   return unwrap(request.post(`/admin/knowledge-nodes/${id}/move`, { parent_id: parentId }))
 }
 
+// 考试类型统计
+export interface ExamStatRow { id: string; name: string; code: string; 普通: number; 中考: number; 高考: number; 合计: number }
+export interface ExamStats { totals: { 普通: number; 中考: number; 高考: number; 合计: number }; items: ExamStatRow[] }
+export function getKpExamStats(grp?: string): Promise<ExamStats> {
+  return unwrap(request.get('/admin/kp-exam-stats', { params: grp ? { grp } : {} }))
+}
+
 // 详解拆分审核
 export interface LectureNode { id: string; name: string; code: string; content: string; child_count: number }
 export function listLectureNodes(params: { grp?: string; skip?: number; limit?: number }): Promise<{ items: LectureNode[]; total: number }> {
