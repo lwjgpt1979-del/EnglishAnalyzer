@@ -443,20 +443,22 @@ onMounted(load)
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="430" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
-          <div class="act-group">
-            <span class="act-label">讲解内容</span>
-            <el-button size="small" type="primary" :loading="generating[row.unit_id]" @click="onGenerate(row)">🤖 生成内容</el-button>
-            <el-button size="small" type="success" :loading="aligning[row.unit_id]" @click="onAlign(row)">🧩 对齐图谱</el-button>
+          <div class="act-row">
+            <el-button size="small" type="primary" @click="onViewPassages(row)">📄 短文</el-button>
+            <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)">📕 原版PDF</el-button>
             <el-button size="small" @click="onViewNodes(row)">单元考点</el-button>
             <el-button size="small" type="warning" plain @click="goSupplement(row.unit_id)">📝 补全资料</el-button>
-          </div>
-          <div class="act-group">
-            <span class="act-label">教材素材</span>
-            <el-button size="small" @click="onViewPassages(row)">📄 短文</el-button>
-            <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)">📕 原版PDF</el-button>
-            <span v-else class="act-muted">原版PDF（重走PDF生成后有）</span>
+            <el-dropdown trigger="click">
+              <el-button size="small" text>更多 ▾</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :disabled="generating[row.unit_id]" @click="onGenerate(row)">🤖 生成内容（AI 讲解）</el-dropdown-item>
+                  <el-dropdown-item :disabled="aligning[row.unit_id]" @click="onAlign(row)">🧩 对齐图谱</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </template>
       </el-table-column>
@@ -787,10 +789,7 @@ onMounted(load)
   padding: 8px 10px; margin: 0; max-height: 280px; overflow: auto; }
 .pass-kp { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-top: 5px; }
 .kp-label { font-size: 12px; color: #909399; }
-.act-group { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.act-group + .act-group { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #ebeef5; }
-.act-label { font-size: 11px; color: #909399; background: #f4f4f5; padding: 1px 6px; border-radius: 3px; margin-right: 2px; }
-.act-muted { font-size: 11px; color: #c0c4cc; }
+.act-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .unit-sug { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-bottom: 10px;
   padding: 6px 8px; background: #f4f8ff; border-radius: 6px; }
 </style>
