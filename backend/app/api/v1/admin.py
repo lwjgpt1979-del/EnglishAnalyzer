@@ -872,16 +872,28 @@ async def generate_unit_content(
     if unit is None:
         raise AppError(code=404, message="单元不存在")
 
-    ai_unit = await curriculum_ai_service.generate_unit(
-        textbook_version=unit.textbook_version,
-        grade=str(unit.grade),
-        semester=str(unit.semester),
-        unit_no=unit.unit_no,
-    )
+    # 有 PDF 原文 → 用原文生成(更准)并析出短文;否则按教材元信息生成(无短文)
+    if unit.source_text:
+        ai_unit = await curriculum_ai_service.generate_unit_from_text(
+            textbook_version=unit.textbook_version, grade=str(unit.grade),
+            semester=str(unit.semester), unit_no=unit.unit_no,
+            unit_text=unit.source_text, detected_title=unit.unit_title)
+    else:
+        ai_unit = await curriculum_ai_service.generate_unit(
+            textbook_version=unit.textbook_version, grade=str(unit.grade),
+            semester=str(unit.semester), unit_no=unit.unit_no)
     await curriculum_service.persist_unit(db, ai_unit=ai_unit, content_status="draft")
     # R1:生成后自动对齐知识图谱(防御式,失败不阻断生成)
     from app.services import curriculum_kp_service
     await curriculum_kp_service.extract_for_ai_unit(db, unit_id=unit_id, ai_unit=ai_unit)
+    # 有原文 → 析出短文(听力/阅读/写作)
+    if unit.source_text:
+        try:
+            passages = await curriculum_ai_service.extract_unit_passages(unit.source_text)
+            if passages:
+                await curriculum_service.persist_unit_passages(db, unit_id=unit_id, passages=passages)
+        except Exception:  # noqa: BLE001
+            pass
     await db.commit()
 
     # 返回更新后的统计

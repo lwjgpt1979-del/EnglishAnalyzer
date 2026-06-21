@@ -61,6 +61,8 @@ async def _gen_one(seg: dict, *, file_id: str | None, textbook_version: str,
             # 核心落库:独立 session,成功即 commit
             async with _async_session_factory() as s:
                 cu = await cs.persist_unit(s, ai_unit=unit, content_status=content_status)
+                if unit_text:
+                    cu.source_text = unit_text   # 存原文,供单个"生成内容"重生成 + 重新析短文
                 await s.flush()
                 cu_id = cu.id
                 await s.commit()
