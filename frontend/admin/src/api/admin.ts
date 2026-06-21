@@ -308,6 +308,16 @@ export function listUnitNodes(unitId: string): Promise<{ total: number; items: A
   )
 }
 export interface PassageKp { node_id: string; name: string; code: string }
+export function suggestUnitKpFromText(unitId: string): Promise<{ items: PassageKp[]; no_text?: boolean }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/suggest-kp-text`, {}, { timeout: 90000 }))
+}
+export function attachUnitNode(unitId: string, nodeId: string): Promise<{ ok: boolean }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/node`, { node_id: nodeId }))
+}
+export function detachUnitNode(unitId: string, nodeId: string): Promise<{ ok: boolean }> {
+  return unwrap(request.delete(`/admin/curriculum/units/${unitId}/node/${nodeId}`))
+}
+
 export interface UnitPassage { id: string; unit_id: string; kind: string; title: string | null; text: string; sort_order: number; kps: PassageKp[] }
 export function getUnitPassages(unitId: string): Promise<{ total: number; items: UnitPassage[] }> {
   return unwrap(request.get(`/admin/curriculum/units/${unitId}/passages`))

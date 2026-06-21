@@ -976,6 +976,52 @@ async def list_unit_nodes_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(UnitNodeListOut(total=len(rows), items=[UnitNodeItem(**r) for r in rows]))
 
 
+def _stage_of_grade(grade: str) -> str | None:
+    g = grade or ""
+    if any(x in g for x in ("七", "八", "九")) or "初" in g:
+        return "初"
+    if "高" in g:
+        return "高"
+    if "小" in g or any(x in g for x in ("三", "四", "五", "六")):
+        return "小"
+    return None
+
+
+@router.post("/curriculum/units/{unit_id}/suggest-kp-text", response_model=BaseResponse[dict])
+async def suggest_unit_kp_from_text_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """用该单元 PDF 原文 → AI 直接匹配考点(不生成讲解);只返回建议,人工确认后挂。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.services import kp_suggest_service as kss
+    unit = await db.get(CurriculumUnit, unit_id)
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+    if not (unit.source_text or "").strip():
+        return make_ok({"items": [], "no_text": True})
+    refs = await kss.suggest_kps_for_text(
+        db, unit.source_text, source_type="教材", stage=_stage_of_grade(str(unit.grade)))
+    return make_ok({"items": [{"node_id": str(n), "name": nm, "code": c} for n, nm, c in refs]})
+
+
+@router.post("/curriculum/units/{unit_id}/node", response_model=BaseResponse[dict])
+async def attach_unit_node_api(unit_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """把考点关联到单元(人工确认 AI 建议或手动挂)→ unit_node 边。"""
+    from app.services import curriculum_kp_service
+    node_id = uuid.UUID(str(body.get("node_id")))
+    await curriculum_kp_service._upsert_unit_node(db, unit_id, node_id, "manual")
+    await db.commit()
+    return make_ok({"ok": True})
+
+
+@router.delete("/curriculum/units/{unit_id}/node/{node_id}", response_model=BaseResponse[dict])
+async def detach_unit_node_api(unit_id: uuid.UUID, node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """取消该单元的某考点关联。"""
+    import sqlalchemy as _sa
+    from app.models.d17_curriculum_kg import UnitNode as _UN
+    await db.execute(_sa.delete(_UN).where(_UN.unit_id == unit_id, _UN.node_id == node_id))
+    await db.commit()
+    return make_ok({"ok": True})
+
+
 @router.post("/curriculum/units/{unit_id}/extract-kps", response_model=BaseResponse[UnitExtractOut])
 async def reextract_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """重跑对齐:从该单元已有知识点名再走受控匹配(命中建边/未命中候选)。幂等。"""
