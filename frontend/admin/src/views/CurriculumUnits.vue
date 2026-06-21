@@ -1,22 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
-  listCurriculumUnits, generateUnitContent,
+  listCurriculumUnits,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
-  reextractUnit, getUnitPassages,
+  getUnitPassages,
   suggestPassageKp, attachPassageKp, detachPassageKp,
   type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage, type PassageKp,
 } from '../api/admin'
-import type { AdminCurriculumUnit, AdminUnitNodeItem } from '../types'
+import type { AdminCurriculumUnit } from '../types'
 
 // ── 单元列表 ──────────────────────────────────────────────────────────────────
 const rows = ref<AdminCurriculumUnit[]>([])
 const loading = ref(false)
-const generating = ref<Record<string, boolean>>({})
 
 const filterTextbook = ref('')
 const filterGrade    = ref('')
@@ -40,49 +38,13 @@ async function load() {
   finally { loading.value = false }
 }
 
-async function onGenerate(row: AdminCurriculumUnit) {
-  await ElMessageBox.confirm(
-    `确认为「${row.textbook_version} ${row.grade} ${row.semester}学期 Unit ${row.unit_no}」生成内容？\n草稿状态，需在"内容审核"发布后学生可见。`,
-    '生成确认', { type: 'warning', confirmButtonText: '生成', cancelButtonText: '取消' },
-  )
-  generating.value[row.unit_id] = true
-  try {
-    const result = await generateUnitContent(row.unit_id)
-    ElMessage.success(`生成完成！KP 数: ${result.kp_count}，内容条数: ${result.content_count}`)
-    const idx = rows.value.findIndex(r => r.unit_id === row.unit_id)
-    if (idx !== -1) rows.value[idx] = { ...rows.value[idx], ...result }
-  } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
-  } finally {
-    generating.value[row.unit_id] = false
-  }
-}
-
-// ── 知识图谱对齐（R1）────────────────────────────────────────
-const aligning = ref<Record<string, boolean>>({})
 const nodesDlg = ref(false)
 const nodesLoading = ref(false)
 // 单元考点 = 各短文已关联考点的并集(从短文级 unit_passage_kp 汇总;单一来源)
 const unitKps = ref<{ node_id: string; name: string; kinds: string[] }[]>([])
 const nodesUnitTitle = ref('')
 const nodesUnitId = ref('')
-const router = useRouter()
 
-function goSupplement(unitId: string) {
-  router.push({ path: '/node-resources', query: { unit_id: unitId } })
-}
-
-async function onAlign(row: AdminCurriculumUnit) {
-  aligning.value[row.unit_id] = true
-  try {
-    const r = await reextractUnit(row.unit_id)
-    ElMessage.success(`对齐完成：命中 ${r.matched}、新建边 ${r.edges_created}、待审候选 ${r.candidate}`)
-  } catch (e: any) {
-    ElMessage.error(e?.message || '对齐失败')
-  } finally {
-    aligning.value[row.unit_id] = false
-  }
-}
 
 async function onViewNodes(row: AdminCurriculumUnit) {
   nodesUnitTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
@@ -443,22 +405,12 @@ onMounted(load)
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="380" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <div class="act-row">
             <el-button size="small" type="primary" @click="onViewPassages(row)">📄 短文</el-button>
             <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)">📕 原版PDF</el-button>
             <el-button size="small" @click="onViewNodes(row)">单元考点</el-button>
-            <el-button size="small" type="warning" plain @click="goSupplement(row.unit_id)">📝 补全资料</el-button>
-            <el-dropdown trigger="click">
-              <el-button size="small" text>更多 ▾</el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item :disabled="generating[row.unit_id]" @click="onGenerate(row)">🤖 生成内容（AI 讲解）</el-dropdown-item>
-                  <el-dropdown-item :disabled="aligning[row.unit_id]" @click="onAlign(row)">🧩 对齐图谱</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
           </div>
         </template>
       </el-table-column>
@@ -476,7 +428,6 @@ onMounted(load)
       <el-empty v-if="!nodesLoading && !unitKps.length" description="该单元暂无考点,去「📄 短文」给短文关联考点" :image-size="50" />
       <template #footer>
         <el-button @click="nodesDlg = false">关闭</el-button>
-        <el-button type="warning" @click="goSupplement(nodesUnitId)">📝 去补全资料</el-button>
       </template>
     </el-dialog>
 
