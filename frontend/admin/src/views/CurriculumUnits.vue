@@ -7,9 +7,8 @@ import {
   listCurriculumUnits, generateUnitContent,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
-  reextractUnit, listUnitNodes, getUnitPassages,
+  reextractUnit, getUnitPassages,
   suggestPassageKp, attachPassageKp, detachPassageKp,
-  suggestUnitKpFromText, attachUnitNode, detachUnitNode,
   type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage, type PassageKp,
 } from '../api/admin'
 import type { AdminCurriculumUnit, AdminUnitNodeItem } from '../types'
@@ -63,7 +62,8 @@ async function onGenerate(row: AdminCurriculumUnit) {
 const aligning = ref<Record<string, boolean>>({})
 const nodesDlg = ref(false)
 const nodesLoading = ref(false)
-const unitNodes = ref<AdminUnitNodeItem[]>([])
+// 单元考点 = 各短文已关联考点的并集(从短文级 unit_passage_kp 汇总;单一来源)
+const unitKps = ref<{ node_id: string; name: string; kinds: string[] }[]>([])
 const nodesUnitTitle = ref('')
 const nodesUnitId = ref('')
 const router = useRouter()
@@ -84,49 +84,28 @@ async function onAlign(row: AdminCurriculumUnit) {
   }
 }
 
-const unitKpSuggest = ref<PassageKp[]>([])   // 原文→AI 建议考点(待确认)
-const unitKpBusy = ref(false)
 async function onViewNodes(row: AdminCurriculumUnit) {
   nodesUnitTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
   nodesUnitId.value = row.unit_id
   nodesDlg.value = true
   nodesLoading.value = true
-  unitKpSuggest.value = []
+  unitKps.value = []
   try {
-    unitNodes.value = (await listUnitNodes(row.unit_id)).items
+    const passages = (await getUnitPassages(row.unit_id)).items
+    const map = new Map<string, { node_id: string; name: string; kinds: string[] }>()
+    for (const p of passages) {
+      for (const k of (p.kps || [])) {
+        const e = map.get(k.node_id) || { node_id: k.node_id, name: k.name, kinds: [] }
+        if (!e.kinds.includes(p.kind)) e.kinds.push(p.kind)
+        map.set(k.node_id, e)
+      }
+    }
+    unitKps.value = [...map.values()]
   } catch (e: any) {
     ElMessage.error(e?.message || '加载失败')
   } finally {
     nodesLoading.value = false
   }
-}
-async function doSuggestUnitKp() {
-  unitKpBusy.value = true
-  try {
-    const r = await suggestUnitKpFromText(nodesUnitId.value)
-    if (r.no_text) { ElMessage.warning('该单元无 PDF 原文,需走 PDF 上传生成才有原文'); return }
-    const have = new Set(unitNodes.value.map(n => n.node_id))
-    unitKpSuggest.value = r.items.filter(k => !have.has(k.node_id))
-    if (!unitKpSuggest.value.length) ElMessage.info('AI 未匹配到新考点')
-  } catch (e: any) { ElMessage.error(e?.message || 'AI 匹配失败') }
-  finally { unitKpBusy.value = false }
-}
-async function acceptUnitKp(k: PassageKp) {
-  try {
-    await attachUnitNode(nodesUnitId.value, k.node_id)
-    unitNodes.value = (await listUnitNodes(nodesUnitId.value)).items
-    unitKpSuggest.value = unitKpSuggest.value.filter(x => x.node_id !== k.node_id)
-    ElMessage.success(`已关联「${k.name}」`)
-  } catch (e: any) { ElMessage.error(e?.message || '关联失败') }
-}
-function dismissUnitKp(k: PassageKp) {
-  unitKpSuggest.value = unitKpSuggest.value.filter(x => x.node_id !== k.node_id)
-}
-async function removeUnitNode(nodeId: string) {
-  try {
-    await detachUnitNode(nodesUnitId.value, nodeId)
-    unitNodes.value = unitNodes.value.filter(n => n.node_id !== nodeId)
-  } catch (e: any) { ElMessage.error(e?.message || '取消失败') }
 }
 
 // ── 单元短文(听力/阅读/写作)──
@@ -470,7 +449,7 @@ onMounted(load)
             <span class="act-label">讲解内容</span>
             <el-button size="small" type="primary" :loading="generating[row.unit_id]" @click="onGenerate(row)">🤖 生成内容</el-button>
             <el-button size="small" type="success" :loading="aligning[row.unit_id]" @click="onAlign(row)">🧩 对齐图谱</el-button>
-            <el-button size="small" type="primary" plain @click="onViewNodes(row)">🔗 关联考点</el-button>
+            <el-button size="small" @click="onViewNodes(row)">单元考点</el-button>
             <el-button size="small" type="warning" plain @click="goSupplement(row.unit_id)">📝 补全资料</el-button>
           </div>
           <div class="act-group">
@@ -484,28 +463,15 @@ onMounted(load)
     </el-table>
 
     <!-- ── 单元知识图谱节点 Dialog ── -->
-    <el-dialog v-model="nodesDlg" :title="`单元考点关联 · ${nodesUnitTitle}`" width="600px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <el-button type="primary" :loading="unitKpBusy" @click="doSuggestUnitKp">🔗 用原文匹配考点(AI)</el-button>
-        <span class="hint">读该单元 PDF 原文 → AI 建议考点 → ✓ 确认挂入(不生成讲解)</span>
-      </div>
-      <div v-if="unitKpSuggest.length" class="unit-sug">
-        <span class="kp-label">AI 建议:</span>
-        <el-tag v-for="k in unitKpSuggest" :key="k.node_id" size="small" type="primary" effect="plain" style="border-style:dashed;margin:2px">
-          {{ k.name }}
-          <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptUnitKp(k)">✓</span>
-          <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissUnitKp(k)">✕</span>
-        </el-tag>
-      </div>
-      <el-table v-loading="nodesLoading" :data="unitNodes" border style="width:100%">
-        <el-table-column prop="name" label="已关联考点" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="node_kind" label="子类型" width="100" />
-        <el-table-column prop="source" label="来源" width="100" />
-        <el-table-column label="操作" width="70" align="center">
-          <template #default="{ row }"><el-button link type="danger" size="small" @click="removeUnitNode(row.node_id)">取消</el-button></template>
+    <el-dialog v-model="nodesDlg" :title="`单元考点 · ${nodesUnitTitle}`" width="560px">
+      <div class="hint" style="margin-bottom:10px">单元考点 = 各短文已关联考点的汇总。要增删请到「📄 短文」里给对应短文关联考点。</div>
+      <el-table v-loading="nodesLoading" :data="unitKps" border style="width:100%">
+        <el-table-column prop="name" label="考点" min-width="200" show-overflow-tooltip />
+        <el-table-column label="来自短文" width="180">
+          <template #default="{ row }">{{ row.kinds.join(' / ') }}</template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!nodesLoading && !unitNodes.length" description="该单元暂无关联考点,点上方「用原文匹配考点」" :image-size="50" />
+      <el-empty v-if="!nodesLoading && !unitKps.length" description="该单元暂无考点,去「📄 短文」给短文关联考点" :image-size="50" />
       <template #footer>
         <el-button @click="nodesDlg = false">关闭</el-button>
         <el-button type="warning" @click="goSupplement(nodesUnitId)">📝 去补全资料</el-button>
