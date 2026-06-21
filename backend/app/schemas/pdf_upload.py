@@ -77,4 +77,5 @@ class GenJobOut(BaseModel):
     total: int
     done: int
     failed: int
+    created_at: str | None = None
     results: list[UnitGenerateResult] = []

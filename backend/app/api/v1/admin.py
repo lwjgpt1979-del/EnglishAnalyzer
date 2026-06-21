@@ -1899,6 +1899,7 @@ def _to_gen_job_out(job) -> GenJobOut:
         job_id=job.id, source=job.source, textbook_version=job.textbook_version,
         grade=job.grade, semester=job.semester, status=job.status,
         total=job.total, done=job.done, failed=job.failed,
+        created_at=job.created_at.isoformat() if job.created_at else None,
         results=[UnitGenerateResult(**r) for r in (job.results or [])],
     )
 

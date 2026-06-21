@@ -552,6 +552,7 @@ export interface GenJob {
   total: number
   done: number
   failed: number
+  created_at?: string | null
   results: UnitGenerateResult[]
 }
 

@@ -25,6 +25,7 @@ const router = createRouter({
         { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },
         { path: 'regions', name: 'regions', component: () => import('../views/RegionAdmin.vue') },
         { path: 'curriculum-units', name: 'curriculum-units', component: () => import('../views/CurriculumUnits.vue') },
+        { path: 'curriculum-gen-jobs', name: 'curriculum-gen-jobs', component: () => import('../views/CurriculumGenJobs.vue') },
         { path: 'theme-center', name: 'theme-center', component: () => import('../views/ThemeCenter.vue') },
         { path: 'vocab-media', name: 'vocab-media', component: () => import('../views/VocabMedia.vue') },
         { path: 'teacher-cert', name: 'teacher-cert', component: () => import('../views/TeacherCertReview.vue') },

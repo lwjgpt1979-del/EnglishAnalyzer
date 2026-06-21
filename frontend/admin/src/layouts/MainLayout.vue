@@ -17,6 +17,7 @@ interface NavGroup { key: string; title: string; items: NavItem[] }
 const navGroups: NavGroup[] = [
   { key: 'g-content', title: '📚 内容生产', items: [
     { path: '/curriculum-units', label: '课程内容生成' },
+    { path: '/curriculum-gen-jobs', label: '课程生成任务' },
     { path: '/platform-questions', label: '平台真题(上传真题)' },
     { path: '/questions', label: '仿真题审核' },
     { path: '/kp-candidates', label: '候选知识点审核' },
