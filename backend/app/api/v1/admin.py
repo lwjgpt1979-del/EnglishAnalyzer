@@ -1819,6 +1819,10 @@ async def upload_curriculum_pdf(
         pdf_upload_service.delete_upload(file_id)
         raise AppError(code=422, message=f"PDF 文本提取失败：{exc}") from exc
 
+    # 扫描件检测:无文字层(>90% 页空文本)→ 抽不出文字,识别/生成都会失败,需文字版或 OCR
+    empty = sum(1 for p in pages if not (p or "").strip())
+    is_scanned = bool(pages) and empty >= max(1, int(len(pages) * 0.9))
+
     segments_raw = pdf_upload_service.auto_detect_units(pages)
     auto_ok = segments_raw is not None
 
@@ -1829,6 +1833,7 @@ async def upload_curriculum_pdf(
         auto_split_success=auto_ok,
         auto_segments=[UnitSegment(**s) for s in (segments_raw or [])],
         page_offset=pdf_upload_service.detect_page_offset(pages),
+        is_scanned=is_scanned,
     ))
 
 

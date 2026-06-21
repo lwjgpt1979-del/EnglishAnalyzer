@@ -19,6 +19,7 @@ class PdfUploadOut(BaseModel):
     auto_split_success: bool
     auto_segments: list[UnitSegment]
     page_offset: int = 0   # 印刷页码 = PDF 页序 − page_offset(0=无偏移/未确定)
+    is_scanned: bool = False   # 扫描件(无文字层):抽不出文字,需换文字版 PDF 或 OCR
 
 
 class PagePreview(BaseModel):

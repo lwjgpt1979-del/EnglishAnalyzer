@@ -243,6 +243,10 @@ async function doUpload() {
   pdfUploadErr.value = ''
   try {
     const out = await uploadCurriculumPdf(pdfFile.value)
+    if (out.is_scanned) {       // 扫描件:无文字层,识别/生成都做不了,直接拦下
+      pdfUploadErr.value = '这是扫描件 PDF（无文字层），抽不出文字，无法识别单元或生成内容。请改用「文字版 PDF」(可复制选中文字的那种)。'
+      return
+    }
     pdfFileId.value     = out.file_id
     pdfTotalPages.value = out.total_pages
     pdfAutoSuccess.value= out.auto_split_success

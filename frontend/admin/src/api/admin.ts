@@ -517,6 +517,7 @@ export interface PdfUploadOut {
   auto_split_success: boolean
   auto_segments: UnitSegment[]
   page_offset?: number   // 印刷页码 = PDF 页序 − page_offset
+  is_scanned?: boolean   // 扫描件(无文字层)
 }
 
 export interface PagePreview {
