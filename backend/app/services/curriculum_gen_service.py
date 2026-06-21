@@ -71,6 +71,15 @@ async def _gen_one(seg: dict, *, file_id: str | None, textbook_version: str,
                     await s2.commit()
             except Exception as exc2:  # noqa: BLE001
                 _log.warning("extract_for_ai_unit failed (unit=%s): %s", uno, exc2)
+            # 析出单元短文(听力脚本/阅读短文/写作范文)best-effort 落库
+            try:
+                passages = await ai.extract_unit_passages(unit_text)
+                if passages:
+                    async with _async_session_factory() as s3:
+                        await cs.persist_unit_passages(s3, unit_id=cu_id, passages=passages)
+                        await s3.commit()
+            except Exception as exc3:  # noqa: BLE001
+                _log.warning("extract_unit_passages failed (unit=%s): %s", uno, exc3)
             return {"unit_no": uno, "unit_title": unit.unit_title,
                     "kp_count": len(unit.knowledge_points),
                     "word_count": len(unit.words), "status": "ok"}

@@ -41,6 +41,22 @@ class AIGeneratedUnit(BaseModel):
     words: list[AIWordItem] = Field(..., min_length=5)
 
 
+class AIUnitPassage(BaseModel):
+    """单元析出的一篇短文/范文(原样抽取)。kind ∈ 听力/阅读/写作。"""
+    kind: Literal["听力", "阅读", "写作"]
+    title: str | None = None
+    text: str
+
+
+class UnitPassageOut(BaseModel):
+    id: uuid.UUID
+    unit_id: uuid.UUID
+    kind: str
+    title: str | None = None
+    text: str
+    sort_order: int = 0
+
+
 # ─── API 响应 ───────────────────────────────────────────────────────────────
 
 class UnitOut(BaseModel):

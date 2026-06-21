@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.models.d4_knowledge import (
     CurriculumUnit,
+    CurriculumUnitPassage,
     KnowledgePoint,
     UnitKnowledgePoint,
     CurriculumWord,
@@ -53,6 +54,23 @@ async def _park_pending_content(
             id=uuid.uuid4(), kp_name_norm=norm, dimension=dimension,
             content_md=content_md, source_unit_id=unit_id, generated_by="ai_full"))
     await db.flush()
+
+
+async def persist_unit_passages(db: AsyncSession, *, unit_id: uuid.UUID, passages: list) -> int:
+    """落库单元析出的短文(听力/阅读/写作)。整体覆盖该单元的旧短文(重生成幂等)。"""
+    from sqlalchemy import delete
+    await db.execute(delete(CurriculumUnitPassage).where(CurriculumUnitPassage.unit_id == unit_id))
+    n = 0
+    for i, p in enumerate(passages):
+        text = (getattr(p, "text", "") or "").strip()
+        if not text:
+            continue
+        db.add(CurriculumUnitPassage(
+            id=uuid.uuid4(), unit_id=unit_id, kind=p.kind,
+            title=(getattr(p, "title", None) or None), text=text, sort_order=i))
+        n += 1
+    await db.flush()
+    return n
 
 
 async def persist_unit(

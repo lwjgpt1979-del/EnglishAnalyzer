@@ -889,6 +889,18 @@ async def generate_unit_content(
 
 # ─── 单元 ↔ 知识图谱节点（R1 教材接入）─────────────────────────────────────────
 
+@router.get("/curriculum/units/{unit_id}/passages", response_model=BaseResponse[dict])
+async def list_unit_passages_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """该单元析出的短文(听力脚本/阅读短文/写作范文)。"""
+    import sqlalchemy as _sa
+    from app.models.d4_knowledge import CurriculumUnitPassage as _P
+    rows = (await db.execute(_sa.select(_P).where(_P.unit_id == unit_id)
+                             .order_by(_P.kind, _P.sort_order))).scalars().all()
+    return make_ok({"total": len(rows), "items": [
+        {"id": str(p.id), "unit_id": str(p.unit_id), "kind": p.kind,
+         "title": p.title, "text": p.text, "sort_order": p.sort_order} for p in rows]})
+
+
 @router.get("/curriculum/units/{unit_id}/nodes", response_model=BaseResponse[UnitNodeListOut])
 async def list_unit_nodes_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """查看该单元已对齐的知识图谱节点(unit_node 边)。"""

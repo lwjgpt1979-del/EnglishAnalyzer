@@ -64,6 +64,30 @@ class CurriculumUnit(Base):
     )
 
 
+class CurriculumUnitPassage(Base):
+    """单元析出的短文/范文:听力脚本 / 阅读短文(可多篇) / 写作要求与范文。
+
+    生成时从单元原文 AI 拆出并落库,后续可逐篇关联知识点(听力→lt-*/阅读→rc-*/写作→wr-*)。
+    """
+
+    __tablename__ = "curriculum_unit_passages"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    unit_id = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("curriculum_units.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind = mapped_column(sa.String(12), nullable=False)        # 听力|阅读|写作
+    title = mapped_column(sa.String(200), nullable=True)
+    text = mapped_column(sa.Text, nullable=False)
+    sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                               server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_cu_passage_unit", "unit_id", "kind"),)
+
+
 class UnitKnowledgePoint(Base):
     """课单元与知识点多对多（复合 PK）。"""
 

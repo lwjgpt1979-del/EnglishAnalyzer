@@ -9,8 +9,42 @@ from __future__ import annotations
 import json
 
 from app.core.exceptions import AppError
-from app.schemas.curriculum import AIGeneratedUnit
+from app.schemas.curriculum import AIGeneratedUnit, AIUnitPassage
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
+
+_PASSAGE_SYS = (
+    "你是初中英语教材分析专家。从给定单元原文里**原样抽取**(不改写、不翻译、保留英文原文)以下三类内容:\n"
+    "1) 听力:听力部分的对话/独白脚本(Listening/Tapescript);\n"
+    "2) 阅读:阅读短文(Reading,可能有多篇,逐篇分开);\n"
+    "3) 写作:写作部分的题目要求与范文(Writing,要求中文/英文照原文,范文若有则附上)。\n"
+    "找不到的类别就不返回。严格输出 JSON,不要解释。"
+)
+
+
+async def extract_unit_passages(unit_text: str) -> list[AIUnitPassage]:
+    """从单元原文拆出 听力脚本/阅读短文(可多)/写作要求与范文。dev-mock 返回空。"""
+    if not (unit_text or "").strip() or is_llm_dev_mode():
+        return []
+    user = (
+        f"【单元原文】\n{unit_text[:9000]}\n\n"
+        '请抽取。返回 JSON:{"passages":[{"kind":"听力|阅读|写作","title":"小标题(可空)","text":"原文"}]}。'
+        "text 必须是原文片段;阅读多篇就给多条。"
+    )
+    try:
+        resp = await chat_completion(system_prompt=_PASSAGE_SYS, user_prompt=user,
+                                     max_tokens=4096, response_format={"type": "json_object"})
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[AIUnitPassage] = []
+    for p in (data.get("passages") or []):
+        try:
+            ap = AIUnitPassage(**p)
+        except Exception:  # noqa: BLE001
+            continue
+        if ap.text.strip():
+            out.append(ap)
+    return out
 
 _SYSTEM_PROMPT = (
     "你是资深英语教材编辑，擅长按教材大纲为每个单元拆解知识点并生成教学解读。"
