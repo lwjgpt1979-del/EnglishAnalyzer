@@ -590,6 +590,9 @@ export function generateFromPdf(
 export function getGenJob(jobId: string): Promise<GenJob> {
   return unwrap<GenJob>(request.get(`/admin/curriculum/pdf-jobs/${jobId}`))
 }
+export function retryGenJob(jobId: string): Promise<GenJob> {
+  return unwrap<GenJob>(request.post(`/admin/curriculum/pdf-jobs/${jobId}/retry`))
+}
 
 export function listGenJobs(params: {
   status?: string; textbook_version?: string; grade?: string; semester?: string; limit?: number

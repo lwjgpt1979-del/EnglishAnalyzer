@@ -1940,6 +1940,17 @@ async def get_gen_job(job_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(_to_gen_job_out(job))
 
 
+@router.post("/curriculum/pdf-jobs/{job_id}/retry", response_model=BaseResponse[GenJobOut])
+async def retry_gen_job(job_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """重试生成任务:只重跑失败的单元(已成功的跳过)。文字版/扫描版均可。"""
+    from app.services import curriculum_gen_service as gen
+    ok = await gen.retry_job(db, job_id)
+    if not ok:
+        raise AppError(code=404, message="生成任务不存在")
+    job = await gen.get_job(db, job_id)
+    return make_ok(_to_gen_job_out(job))
+
+
 @router.get("/curriculum/pdf-jobs", response_model=BaseResponse[list[GenJobOut]])
 async def list_gen_jobs(
     db: DbDep, admin: AdminDep, status: str | None = None,

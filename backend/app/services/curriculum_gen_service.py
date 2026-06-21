@@ -150,6 +150,24 @@ async def get_job(db: AsyncSession, job_id: uuid.UUID) -> CurriculumGenJob | Non
     return await db.get(CurriculumGenJob, job_id)
 
 
+async def retry_job(db: AsyncSession, job_id: uuid.UUID) -> bool:
+    """重试:重新跑该任务(_run_job 自动跳过已成功单元、只重跑失败的)。
+
+    适用文字版与扫描版(扫描件 OCR sidecar 仍在磁盘,extract_pages 透明复用)。
+    """
+    job = await db.get(CurriculumGenJob, job_id)
+    if job is None:
+        return False
+    if job.status == "running":
+        return True
+    job.status = "running"
+    await db.commit()
+    t = asyncio.create_task(_run_job(job_id))
+    _tasks.add(t)
+    t.add_done_callback(_tasks.discard)
+    return True
+
+
 async def list_jobs(
     db: AsyncSession, *, status: str | None = None, textbook_version: str | None = None,
     grade: str | None = None, semester: str | None = None, limit: int = 20,

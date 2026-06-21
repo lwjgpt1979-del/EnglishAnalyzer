@@ -6,7 +6,7 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listCurriculumUnits, generateUnitContent,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
-  startPdfOcr, getPdfOcrStatus,
+  startPdfOcr, getPdfOcrStatus, retryGenJob,
   reextractUnit, listUnitNodes, getUnitPassages,
   suggestPassageKp, attachPassageKp, detachPassageKp,
   type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage, type PassageKp,
@@ -231,12 +231,22 @@ async function pollJob(jobId: string) {
     } else {
       pdfGenerating.value = false
       if (pdfJob.value.done > 0) { ElMessage.success(`生成完成:成功 ${pdfJob.value.done} 个单元`); await load() }
-      if (pdfJob.value.failed > 0) ElMessage.warning(`${pdfJob.value.failed} 个单元失败,可重新上传该书补齐`)
+      if (pdfJob.value.failed > 0) ElMessage.warning(`${pdfJob.value.failed} 个单元失败,可点「重试失败单元」`)
     }
   } catch (e: any) {
     pdfGenerating.value = false
     ElMessage.error(e?.message || '查询进度失败')
   }
+}
+async function retryFailedUnits() {
+  if (!pdfJob.value) return
+  try {
+    pdfGenerating.value = true
+    const j = await retryGenJob(pdfJob.value.job_id)
+    pdfJob.value = j
+    pollJob(j.job_id)
+    ElMessage.info('已重试失败单元')
+  } catch (e: any) { pdfGenerating.value = false; ElMessage.error(e?.message || '重试失败') }
 }
 
 async function openPdfDialog() {
@@ -255,13 +265,20 @@ async function openPdfDialog() {
   pdfJob.value        = null
   pdfGenerating.value = false
   pdfDialogVisible.value = true
-  // 重开时若仍有在跑的生成任务 → 直接挂回进度(关窗口不影响后台)
+  // 重开时:有在跑的任务 → 挂回进度;否则最近有失败的任务 → 显示结果供「重试失败单元」
   try {
     const running = await listGenJobs({ status: 'running', limit: 1 })
     if (running.length) {
       pdfStep.value = 3
       pdfGenerating.value = true
       pollJob(running[0].job_id)
+      return
+    }
+    const failed = await listGenJobs({ status: 'failed', limit: 1 })
+    if (failed.length) {
+      pdfStep.value = 3
+      pdfGenerating.value = false
+      pdfJob.value = await getGenJob(failed[0].job_id)
     }
   } catch { /* 忽略 */ }
 }
@@ -658,7 +675,11 @@ onMounted(load)
               </template>
             </el-table-column>
           </el-table>
-          <div style="text-align:right;margin-top:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+            <el-button v-if="pdfJob.failed" type="warning" @click="retryFailedUnits">
+              🔄 重试失败的 {{ pdfJob.failed }} 个单元
+            </el-button>
+            <span v-else></span>
             <el-button @click="pdfDialogVisible = false">关闭</el-button>
           </div>
         </div>
