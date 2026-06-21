@@ -6,8 +6,8 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listCurriculumUnits, generateUnitContent,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
-  reextractUnit, listUnitNodes,
-  type UnitSegment, type UnitGenerateResult, type GenJob,
+  reextractUnit, listUnitNodes, getUnitPassages,
+  type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage,
 } from '../api/admin'
 import type { AdminCurriculumUnit, AdminUnitNodeItem } from '../types'
 
@@ -93,6 +93,25 @@ async function onViewNodes(row: AdminCurriculumUnit) {
   } finally {
     nodesLoading.value = false
   }
+}
+
+// ── 单元短文(听力/阅读/写作)──
+const passDlg = ref(false)
+const passLoading = ref(false)
+const passTitle = ref('')
+const passages = ref<UnitPassage[]>([])
+const PASS_KINDS = ['听力', '阅读', '写作']
+const passGroups = computed(() =>
+  PASS_KINDS.map(kind => ({ kind, items: passages.value.filter(p => p.kind === kind) }))
+    .filter(g => g.items.length))
+async function onViewPassages(row: AdminCurriculumUnit) {
+  passTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
+  passDlg.value = true
+  passLoading.value = true
+  passages.value = []
+  try { passages.value = (await getUnitPassages(row.unit_id)).items }
+  catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+  finally { passLoading.value = false }
 }
 
 function rateColor(rate: number) {
@@ -324,7 +343,7 @@ onMounted(load)
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="380" fixed="right">
+      <el-table-column label="操作" width="460" fixed="right">
         <template #default="{ row }">
           <el-button size="small" type="primary" :loading="generating[row.unit_id]" @click="onGenerate(row)">
             🤖 生成内容
@@ -333,6 +352,7 @@ onMounted(load)
             🧩 对齐图谱
           </el-button>
           <el-button size="small" @click="onViewNodes(row)">查看节点</el-button>
+          <el-button size="small" @click="onViewPassages(row)">📄 短文</el-button>
           <el-button size="small" type="warning" plain @click="goSupplement(row.unit_id)">📝 补全资料</el-button>
         </template>
       </el-table-column>
@@ -352,6 +372,23 @@ onMounted(load)
         <el-button @click="nodesDlg = false">关闭</el-button>
         <el-button type="warning" @click="goSupplement(nodesUnitId)">📝 去补全资料</el-button>
       </template>
+    </el-dialog>
+
+    <!-- ── 单元短文(听力/阅读/写作)Dialog ── -->
+    <el-dialog v-model="passDlg" :title="`单元短文 · ${passTitle}`" width="720px">
+      <div v-loading="passLoading">
+        <el-empty v-if="!passLoading && !passages.length" description="该单元暂无析出短文(生成时未拆到,或该单元未重新生成)" />
+        <template v-else>
+          <div v-for="g in passGroups" :key="g.kind" class="pass-group">
+            <div class="pass-kind">{{ g.kind }}<span class="muted">（{{ g.items.length }} 篇）</span></div>
+            <div v-for="p in g.items" :key="p.id" class="pass-item">
+              <div v-if="p.title" class="pass-title">{{ p.title }}</div>
+              <pre class="pass-text">{{ p.text }}</pre>
+            </div>
+          </div>
+        </template>
+      </div>
+      <template #footer><el-button @click="passDlg = false">关闭</el-button></template>
     </el-dialog>
 
     <!-- ── PDF 上传 Dialog ── -->
@@ -602,4 +639,13 @@ onMounted(load)
 .offset-tip { color: #b45309; background: #fffbeb; font-size: 12px;
   padding: 6px 10px; border-radius: 4px; margin-bottom: 10px; }
 .printed-hint { color: #2563eb; font-size: 11px; margin-top: 2px; }
+.pass-group { margin-bottom: 14px; }
+.pass-kind { font-weight: 600; font-size: 14px; color: #303133; margin-bottom: 6px;
+  border-left: 3px solid #409eff; padding-left: 8px; }
+.pass-kind .muted { color: #909399; font-weight: 400; font-size: 12px; }
+.pass-item { margin-bottom: 8px; }
+.pass-title { font-size: 13px; color: #606266; font-weight: 600; margin-bottom: 2px; }
+.pass-text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6;
+  color: #303133; background: #fafafa; border: 1px solid #ebeef5; border-radius: 6px;
+  padding: 8px 10px; margin: 0; max-height: 280px; overflow: auto; }
 </style>

@@ -307,6 +307,10 @@ export function listUnitNodes(unitId: string): Promise<{ total: number; items: A
     request.get(`/admin/curriculum/units/${unitId}/nodes`)
   )
 }
+export interface UnitPassage { id: string; unit_id: string; kind: string; title: string | null; text: string; sort_order: number }
+export function getUnitPassages(unitId: string): Promise<{ total: number; items: UnitPassage[] }> {
+  return unwrap(request.get(`/admin/curriculum/units/${unitId}/passages`))
+}
 
 // ── 通用词库（KP-First R5）──────────────────────────────────
 export function listVocabLists(params?: { status?: string }) {
