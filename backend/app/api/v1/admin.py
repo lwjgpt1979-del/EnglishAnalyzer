@@ -363,6 +363,14 @@ async def create_knowledge_node_api(body: CreateNodeIn, db: DbDep, admin: AdminD
     return make_ok({"id": str(n.id), "code": n.code, "name": n.name})
 
 
+@router.get("/textbook-word-stats", response_model=BaseResponse[dict])
+async def textbook_word_stats_api(db: DbDep, admin: AdminDep,
+                                  textbook: str | None = None, grade: str | None = None):
+    """教材高频词统计:某教材版+年级下每个词出现在多少单元(出现单元数=教材内词频)。"""
+    from app.services import curriculum_service as cs
+    return make_ok(await cs.textbook_word_stats(db, textbook=textbook, grade=grade))
+
+
 @router.get("/kp-exam-stats", response_model=BaseResponse[dict])
 async def kp_exam_stats_api(db: DbDep, admin: AdminDep, grp: str | None = None,
                            textbook: str | None = None, stage: str | None = None,

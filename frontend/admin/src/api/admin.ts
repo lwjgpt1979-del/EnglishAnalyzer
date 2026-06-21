@@ -391,6 +391,16 @@ export function moveKnowledgeNode(id: string, parentId: string | null): Promise<
   return unwrap(request.post(`/admin/knowledge-nodes/${id}/move`, { parent_id: parentId }))
 }
 
+// 教材高频词统计
+export interface WordStatRow { word: string; unit_count: number; gloss: string; star: number }
+export interface WordStats { totals: { words: number; high_freq: number; max_units: number }; items: WordStatRow[]; options: { textbooks: string[]; grades: string[] } }
+export function getTextbookWordStats(textbook?: string, grade?: string): Promise<WordStats> {
+  const params: Record<string, string> = {}
+  if (textbook) params.textbook = textbook
+  if (grade) params.grade = grade
+  return unwrap(request.get('/admin/textbook-word-stats', { params }))
+}
+
 // 考试类型统计
 export interface ExamStatRow { id: string; name: string; code: string; 普通: number; 中考: number; 高考: number; 合计: number }
 export interface ExamStatOptions { textbooks: string[]; stages: string[]; grades: string[]; regions: { code: string; name: string }[] }

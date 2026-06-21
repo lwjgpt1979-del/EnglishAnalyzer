@@ -20,6 +20,7 @@ const router = createRouter({
         { path: 'llm-config', name: 'llm-config', component: () => import('../views/LlmConfig.vue') },
         { path: 'lecture-split', name: 'lecture-split', component: () => import('../views/LectureSplit.vue') },
         { path: 'exam-type-stats', name: 'exam-type-stats', component: () => import('../views/ExamTypeStats.vue') },
+        { path: 'textbook-word-stats', name: 'textbook-word-stats', component: () => import('../views/TextbookWordStats.vue') },
         { path: 'long-sentences', name: 'long-sentences', component: () => import('../views/LongSentences.vue') },
         { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },
         { path: 'regions', name: 'regions', component: () => import('../views/RegionAdmin.vue') },

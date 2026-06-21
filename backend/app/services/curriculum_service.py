@@ -73,6 +73,54 @@ async def persist_unit_passages(db: AsyncSession, *, unit_id: uuid.UUID, passage
     return n
 
 
+async def textbook_word_stats(db: AsyncSession, *, textbook: str | None = None,
+                              grade: str | None = None, top: int = 200) -> dict:
+    """教材高频词统计:某教材版+年级下,每个词出现在多少个单元(出现单元数=教材内词频)。
+
+    返回 {totals:{词数,高频词数(≥2单元),最高出现单元数}, items:[{word,unit_count,gloss,star}], options}。
+    """
+    import sqlalchemy as _sa
+    from app.models.d5_learning import VocabularyWord
+    uq = _sa.select(CurriculumUnit.id)
+    if textbook:
+        uq = uq.where(CurriculumUnit.textbook_version == textbook)
+    if grade:
+        uq = uq.where(CurriculumUnit.grade == grade)
+    rows = (await db.execute(
+        _sa.select(CurriculumWord.word_id, _sa.func.count(_sa.distinct(CurriculumWord.unit_id)))
+        .where(CurriculumWord.unit_id.in_(uq))
+        .group_by(CurriculumWord.word_id))).all()
+    wc = {wid: int(c) for wid, c in rows}
+    # 选项:教材版/年级(取有词的)
+    opt_rows = (await db.execute(
+        _sa.select(CurriculumUnit.textbook_version, CurriculumUnit.grade).distinct()
+        .where(CurriculumUnit.id.in_(_sa.select(CurriculumWord.unit_id).distinct())))).all()
+    options = {
+        "textbooks": sorted({t for t, _g in opt_rows}),
+        "grades": sorted({g for _t, g in opt_rows}),
+    }
+    if not wc:
+        return {"totals": {"words": 0, "high_freq": 0, "max_units": 0}, "items": [], "options": options}
+    info = (await db.execute(_sa.select(
+        VocabularyWord.id, VocabularyWord.word, VocabularyWord.definitions, VocabularyWord.star)
+        .where(VocabularyWord.id.in_(list(wc))))).all()
+
+    def _gloss(defs) -> str:
+        if isinstance(defs, list) and defs:
+            d0 = defs[0]
+            if isinstance(d0, dict):
+                return f"{d0.get('pos', '')} {d0.get('meaning', '')}".strip()
+        return ""
+
+    items = [{"word": w, "unit_count": wc.get(wid, 0), "gloss": _gloss(defs), "star": int(star or 0)}
+             for wid, w, defs, star in info]
+    items.sort(key=lambda x: (-x["unit_count"], x["word"].lower()))
+    totals = {"words": len(items),
+              "high_freq": sum(1 for it in items if it["unit_count"] >= 2),
+              "max_units": max((it["unit_count"] for it in items), default=0)}
+    return {"totals": totals, "items": items[:top], "options": options}
+
+
 async def persist_unit(
     db: AsyncSession,
     *,
