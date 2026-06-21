@@ -387,6 +387,15 @@ export function moveKnowledgeNode(id: string, parentId: string | null): Promise<
   return unwrap(request.post(`/admin/knowledge-nodes/${id}/move`, { parent_id: parentId }))
 }
 
+// 详解拆分审核
+export interface LectureNode { id: string; name: string; code: string; content: string; child_count: number }
+export function listLectureNodes(params: { grp?: string; skip?: number; limit?: number }): Promise<{ items: LectureNode[]; total: number }> {
+  return unwrap(request.get('/admin/lecture-nodes', { params }))
+}
+export function splitLecture(nodeId: string): Promise<{ node_id: string; name: string; code: string; content: string; subs: string[]; existing: string[] }> {
+  return unwrap(request.post(`/admin/knowledge-nodes/${nodeId}/split-lecture`, {}, { timeout: 90000 }))
+}
+
 // 节点详情 / 维护(D2)
 export function getKnowledgeNode(id: string): Promise<KpNodeDetail> {
   return unwrap<KpNodeDetail>(request.get(`/admin/knowledge-nodes/${id}`))

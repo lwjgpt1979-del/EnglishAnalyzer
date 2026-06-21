@@ -363,6 +363,22 @@ async def create_knowledge_node_api(body: CreateNodeIn, db: DbDep, admin: AdminD
     return make_ok({"id": str(n.id), "code": n.code, "name": n.name})
 
 
+@router.get("/lecture-nodes", response_model=BaseResponse[dict])
+async def list_lecture_nodes_api(db: DbDep, admin: AdminDep,
+                                 grp: str | None = None, skip: int = 0, limit: int = 20):
+    """有详解的考点列表(供「详解拆分审核」页)。grp=词法/句法 可筛。"""
+    from app.services import kp_split_service as kss2
+    items, total = await kss2.list_lecture_nodes(db, grp=grp, skip=skip, limit=limit)
+    return make_ok({"items": [{**it, "id": str(it["id"])} for it in items], "total": total})
+
+
+@router.post("/knowledge-nodes/{node_id}/split-lecture", response_model=BaseResponse[dict])
+async def split_lecture_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """AI 把该考点的详解拆成若干子考点(只返回建议名,不建节点;人工确认后再建)。"""
+    from app.services import kp_split_service as kss2
+    return make_ok(await kss2.split_lecture(db, node_id))
+
+
 @router.post("/knowledge-nodes/{node_id}/move", response_model=BaseResponse[dict])
 async def move_knowledge_node_api(node_id: uuid.UUID, body: MoveNodeIn, db: DbDep, admin: AdminDep):
     """移动节点(改 parent;parent_id 省略=升为顶层)。禁跨轴/成环。"""

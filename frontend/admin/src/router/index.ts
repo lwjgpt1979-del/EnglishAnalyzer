@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'knowledge-graph', name: 'knowledge-graph', component: () => import('../views/KnowledgeGraph.vue') },
         { path: 'kp-prompts', name: 'kp-prompts', component: () => import('../views/KpPrompts.vue') },
         { path: 'llm-config', name: 'llm-config', component: () => import('../views/LlmConfig.vue') },
+        { path: 'lecture-split', name: 'lecture-split', component: () => import('../views/LectureSplit.vue') },
         { path: 'long-sentences', name: 'long-sentences', component: () => import('../views/LongSentences.vue') },
         { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },
         { path: 'regions', name: 'regions', component: () => import('../views/RegionAdmin.vue') },

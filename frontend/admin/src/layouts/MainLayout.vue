@@ -23,6 +23,7 @@ const navGroups: NavGroup[] = [
     { path: '/knowledge-graph', label: '🧠 知识图谱(节点总览)' },
     { path: '/kp-prompts', label: '习题匹配知识脑图提示词' },
     { path: '/node-resources', label: '知识点资源' },
+    { path: '/lecture-split', label: '详解拆分审核' },
     { path: '/long-sentences', label: '长难句管理' },
     { path: '/exam-papers', label: '真题试卷管理' },
     { path: '/essay-templates', label: '作文模板' },
