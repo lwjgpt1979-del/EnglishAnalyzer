@@ -106,6 +106,9 @@ const PASS_KINDS = ['听力', '阅读', '写作']
 const passGroups = computed(() =>
   PASS_KINDS.map(kind => ({ kind, items: passages.value.filter(p => p.kind === kind) }))
     .filter(g => g.items.length))
+function openUnitPdf(row: AdminCurriculumUnit) {
+  if (row.unit_pdf_url) window.open(row.unit_pdf_url, '_blank')
+}
 async function onViewPassages(row: AdminCurriculumUnit) {
   passTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
   passDlg.value = true
@@ -421,6 +424,7 @@ onMounted(load)
             🧩 对齐图谱
           </el-button>
           <el-button size="small" @click="onViewNodes(row)">查看节点</el-button>
+          <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)">📕 原版PDF</el-button>
           <el-button size="small" @click="onViewPassages(row)">📄 短文</el-button>
           <el-button size="small" type="warning" plain @click="goSupplement(row.unit_id)">📝 补全资料</el-button>
         </template>

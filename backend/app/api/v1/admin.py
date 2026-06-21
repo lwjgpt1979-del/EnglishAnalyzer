@@ -847,6 +847,7 @@ async def list_curriculum_units(db: DbDep, admin: AdminDep):
             "kp_count": s.kp_count,
             "content_count": s.content_count,
             "content_rate": s.content_rate,
+            "unit_pdf_url": s.unit_pdf_url,
         }
         for s in stats
     ])

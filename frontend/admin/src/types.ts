@@ -96,6 +96,7 @@ export interface AdminCurriculumUnit {
   kp_count: number
   content_count: number
   content_rate: number   // 0-1
+  unit_pdf_url?: string | null   // 拆出的单元独立 PDF(COS)
 }
 
 // V2 M28：真题试卷（内部管理，版权规避）

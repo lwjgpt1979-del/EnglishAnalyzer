@@ -510,6 +510,7 @@ class UnitContentStat:
     kp_count: int
     content_count: int
     content_rate: float   # content_count / (kp_count * 6)，0-1
+    unit_pdf_url: str | None = None   # 拆出的单元独立 PDF(COS)
 
 
 async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
@@ -569,5 +570,6 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
             kp_count=kc,
             content_count=cc,
             content_rate=min(rate, 1.0),
+            unit_pdf_url=u.unit_pdf_url,
         ))
     return result

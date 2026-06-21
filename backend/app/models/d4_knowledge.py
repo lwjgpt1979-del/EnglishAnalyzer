@@ -56,6 +56,7 @@ class CurriculumUnit(Base):
     unit_no = mapped_column(sa.Integer, nullable=False)
     unit_title = mapped_column(sa.String, nullable=False)
     source_text = mapped_column(sa.Text, nullable=True)   # PDF 生成时的单元原文(供重生成/析短文)
+    unit_pdf_url = mapped_column(sa.String, nullable=True)  # 拆出的单元独立 PDF(COS 直链)
 
     __table_args__ = (
         sa.UniqueConstraint(

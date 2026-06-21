@@ -82,6 +82,20 @@ async def _gen_one(seg: dict, *, file_id: str | None, textbook_version: str,
                         await s3.commit()
             except Exception as exc3:  # noqa: BLE001
                 _log.warning("extract_unit_passages failed (unit=%s): %s", uno, exc3)
+            # 拆单元独立 PDF → COS,供列表查看原版(文字版/扫描版都按原始页拆)
+            if file_id:
+                try:
+                    from app.models.d4_knowledge import CurriculumUnit
+                    pdf_bytes = pus.split_unit_pdf(file_id, seg["start_page"], seg["end_page"])
+                    url = await pus.upload_pdf_to_cos(pdf_bytes, f"curriculum/units/{cu_id}.pdf")
+                    if url:
+                        async with _async_session_factory() as s4:
+                            u = await s4.get(CurriculumUnit, cu_id)
+                            if u is not None:
+                                u.unit_pdf_url = url
+                            await s4.commit()
+                except Exception as exc4:  # noqa: BLE001
+                    _log.warning("split/upload unit pdf failed (unit=%s): %s", uno, exc4)
             return {"unit_no": uno, "unit_title": unit.unit_title,
                     "kp_count": len(unit.knowledge_points),
                     "word_count": len(unit.words), "status": "ok"}

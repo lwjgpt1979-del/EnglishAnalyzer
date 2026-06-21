@@ -295,6 +295,45 @@ async def ocr_pages_to_sidecar(file_id: str, *, resolution: int = 130,
     return n
 
 
+def split_unit_pdf(file_id: str, start_page: int, end_page: int) -> bytes:
+    """从原始 PDF 抽取 [start_page, end_page](1-based 含首尾)生成单元独立 PDF bytes。
+
+    文字版/扫描版都按原始页拆,得到的是"原版单元 PDF"。需 PyPDF2。
+    """
+    import io
+
+    from PyPDF2 import PdfReader, PdfWriter
+    path = UPLOAD_DIR / f"{file_id}.pdf"
+    if not path.exists():
+        raise FileNotFoundError(f"PDF not found: {file_id}")
+    reader = PdfReader(str(path))
+    writer = PdfWriter()
+    n = len(reader.pages)
+    for i in range(max(0, start_page - 1), min(n, end_page)):
+        writer.add_page(reader.pages[i])
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+
+async def upload_pdf_to_cos(pdf_bytes: bytes, key: str) -> str | None:
+    """上传 PDF bytes 到 COS(public-read),返回直链。COS 未配(dev)→ 返回 None。"""
+    import asyncio
+
+    from app.core.config import settings
+    if settings.cos_secret_key.startswith("placeholder"):
+        return None
+    from app.services.vocab_media_provider import _get_cos_client
+
+    def _put() -> None:
+        _get_cos_client().put_object(
+            Bucket=settings.cos_bucket, Key=key, Body=pdf_bytes,
+            ContentType="application/pdf", ACL="public-read")
+
+    await asyncio.to_thread(_put)
+    return f"{settings.cos_base_url}/{key}"
+
+
 def get_unit_text(file_id: str, start_page: int, end_page: int) -> str:
     """返回指定页范围（1-based 含首尾）的拼接文本，用于 AI 生成上下文。"""
     pages = extract_pages(file_id)
