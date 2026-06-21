@@ -35,7 +35,6 @@ const router = createRouter({
         { path: 'essay-templates', name: 'essay-templates', component: () => import('../views/EssayTemplates.vue') },
         { path: 'institutions', name: 'institutions', component: () => import('../views/Institutions.vue') },
         { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },
-        { path: 'exam-papers', name: 'exam-papers', component: () => import('../views/ExamPapers.vue') },
         { path: 'entitlements', name: 'entitlements', component: () => import('../views/Entitlements.vue') },
         { path: 'refunds', name: 'refunds', component: () => import('../views/Refunds.vue') },
         { path: 'payment-accounts', name: 'payment-accounts', component: () => import('../views/PaymentAccounts.vue') },

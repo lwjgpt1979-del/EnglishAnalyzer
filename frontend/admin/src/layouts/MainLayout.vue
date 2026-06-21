@@ -26,7 +26,6 @@ const navGroups: NavGroup[] = [
     { path: '/node-resources', label: '知识点资源' },
     { path: '/lecture-split', label: '详解拆分审核' },
     { path: '/long-sentences', label: '长难句管理' },
-    { path: '/exam-papers', label: '真题试卷管理' },
     { path: '/essay-templates', label: '作文模板' },
   ] },
   { key: 'g-vocab', title: '🔤 词汇 / 词力通', items: [
