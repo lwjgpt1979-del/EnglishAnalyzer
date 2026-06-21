@@ -90,8 +90,27 @@ def extract_docx_text(file_id: str) -> str:
 
 # ─── 文本提取 ─────────────────────────────────────────────────────────────────
 
+def _ocr_sidecar(file_id: str) -> Path:
+    return UPLOAD_DIR / f"{file_id}.ocr.json"
+
+
+def ocr_text_available(file_id: str) -> bool:
+    return _ocr_sidecar(file_id).exists()
+
+
 def extract_pages(file_id: str) -> list[str]:
-    """逐页提取文本，返回 list（index 0 = 第 1 页）。需要 pdfplumber。"""
+    """逐页提取文本,返回 list(index 0 = 第 1 页)。
+
+    若存在 OCR 旁路文件(扫描件已 OCR)→ 直接用 OCR 文字;否则 pdfplumber 抽文字层。
+    这样单元检测与生成(get_unit_text)对"扫描件已 OCR"完全透明。
+    """
+    import json
+    side = _ocr_sidecar(file_id)
+    if side.exists():
+        try:
+            return list(json.loads(side.read_text(encoding="utf-8")))
+        except Exception:  # noqa: BLE001
+            pass
     try:
         import pdfplumber
     except ImportError as exc:
@@ -230,6 +249,51 @@ def auto_detect_units(pages: list[str]) -> list[dict] | None:
 
 
 # ─── 文本拼接 ─────────────────────────────────────────────────────────────────
+
+async def ocr_pages_to_sidecar(file_id: str, *, resolution: int = 130,
+                               concurrency: int = 6, on_progress=None) -> int:
+    """扫描件 PDF → 逐页渲染图片 → 豆包视觉 OCR → 原样文字,存 {file_id}.ocr.json。
+
+    存好后 extract_pages 会自动改用 OCR 文字,单元检测/生成全链路透明。返回页数。
+    """
+    import asyncio
+    import base64
+    import io
+    import json
+
+    import pdfplumber
+    from app.services.doubao_vision_service import recognize_page_text
+
+    path = str(UPLOAD_DIR / f"{file_id}.pdf")
+
+    def _render_all() -> list[str]:
+        urls: list[str] = []
+        with pdfplumber.open(path) as pdf:
+            for pg in pdf.pages:
+                pil = pg.to_image(resolution=resolution).original.convert("RGB")
+                buf = io.BytesIO()
+                pil.save(buf, format="JPEG", quality=80)
+                urls.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
+        return urls
+
+    urls = await asyncio.to_thread(_render_all)
+    n = len(urls)
+    results = [""] * n
+    done = 0
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(i: int) -> None:
+        nonlocal done
+        async with sem:
+            results[i] = (await recognize_page_text(urls[i]) or "").strip()
+            done += 1
+            if on_progress:
+                on_progress(done, n)
+
+    await asyncio.gather(*(_one(i) for i in range(n)))
+    _ocr_sidecar(file_id).write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
+    return n
+
 
 def get_unit_text(file_id: str, start_page: int, end_page: int) -> str:
     """返回指定页范围（1-based 含首尾）的拼接文本，用于 AI 生成上下文。"""

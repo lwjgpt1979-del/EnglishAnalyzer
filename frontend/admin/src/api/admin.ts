@@ -555,6 +555,13 @@ export interface GenJob {
   results: UnitGenerateResult[]
 }
 
+export interface PdfOcrStatus { status: string; done: number; total: number; error?: string; segments: UnitSegment[] }
+export function startPdfOcr(fileId: string): Promise<{ status: string; done: number; total: number }> {
+  return unwrap(request.post(`/admin/curriculum/pdf/${fileId}/ocr`))
+}
+export function getPdfOcrStatus(fileId: string): Promise<PdfOcrStatus> {
+  return unwrap(request.get(`/admin/curriculum/pdf/${fileId}/ocr-status`))
+}
 export function uploadCurriculumPdf(file: File): Promise<PdfUploadOut> {
   const form = new FormData()
   form.append('file', file)

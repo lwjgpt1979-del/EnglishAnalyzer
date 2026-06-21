@@ -6,6 +6,7 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listCurriculumUnits, generateUnitContent,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
+  startPdfOcr, getPdfOcrStatus,
   reextractUnit, listUnitNodes, getUnitPassages,
   suggestPassageKp, attachPassageKp, detachPassageKp,
   type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage, type PassageKp,
@@ -175,6 +176,34 @@ const pdfTotalPages    = ref(0)
 const pdfAutoSuccess   = ref(false)
 const pdfPageOffset    = ref(0)        // 印刷页码 = PDF 页序 − offset
 const pdfUploadErr     = ref('')
+// 扫描件 OCR
+const pdfScanned       = ref(false)
+const ocrRunning       = ref(false)
+const ocrDone          = ref(0)
+const ocrTotal         = ref(0)
+let ocrTimer: ReturnType<typeof setTimeout> | null = null
+function stopOcrPoll() { if (ocrTimer) { clearTimeout(ocrTimer); ocrTimer = null } }
+async function startOcr() {
+  if (!pdfFileId.value) return
+  ocrRunning.value = true; ocrDone.value = 0; ocrTotal.value = pdfTotalPages.value
+  try { await startPdfOcr(pdfFileId.value) } catch (e: any) { ElMessage.error(e?.message || 'OCR 启动失败'); ocrRunning.value = false; return }
+  const poll = async () => {
+    try {
+      const st = await getPdfOcrStatus(pdfFileId.value)
+      ocrDone.value = st.done; ocrTotal.value = st.total || pdfTotalPages.value
+      if (st.status === 'done') {
+        ocrRunning.value = false; pdfScanned.value = false
+        pdfAutoSuccess.value = st.segments.length > 0
+        segments.value = st.segments.map(s => ({ ...s }))
+        ElMessage.success(`OCR 完成,识别到 ${st.segments.length} 个单元`)
+        return
+      }
+      if (st.status === 'error') { ocrRunning.value = false; ElMessage.error('OCR 失败:' + (st.error || '')); return }
+      ocrTimer = setTimeout(poll, 2500)
+    } catch { ocrTimer = setTimeout(poll, 3000) }
+  }
+  ocrTimer = setTimeout(poll, 2000)
+}
 
 function printedPage(pdfNo: number): string {
   return pdfPageOffset.value > 0 ? `印刷 P${pdfNo - pdfPageOffset.value}` : ''
@@ -208,12 +237,14 @@ async function pollJob(jobId: string) {
 }
 
 async function openPdfDialog() {
-  stopPoll()
+  stopPoll(); stopOcrPoll()
   pdfStep.value       = 0
   pdfFile.value       = null
   pdfFileId.value     = ''
   pdfTotalPages.value = 0
   pdfAutoSuccess.value= false
+  pdfScanned.value    = false
+  ocrRunning.value    = false
   pdfPageOffset.value = 0
   pdfUploadErr.value  = ''
   segments.value      = []
@@ -243,12 +274,13 @@ async function doUpload() {
   pdfUploadErr.value = ''
   try {
     const out = await uploadCurriculumPdf(pdfFile.value)
-    if (out.is_scanned) {       // 扫描件:无文字层,识别/生成都做不了,直接拦下
-      pdfUploadErr.value = '这是扫描件 PDF（无文字层），抽不出文字，无法识别单元或生成内容。请改用「文字版 PDF」(可复制选中文字的那种)。'
-      return
-    }
     pdfFileId.value     = out.file_id
     pdfTotalPages.value = out.total_pages
+    pdfScanned.value    = !!out.is_scanned
+    if (out.is_scanned) {       // 扫描件:无文字层 → 提示走 OCR(后台逐页识别)
+      pdfStep.value = 2
+      return
+    }
     pdfAutoSuccess.value= out.auto_split_success
     pdfPageOffset.value = out.page_offset ?? 0
     segments.value      = out.auto_split_success
@@ -508,6 +540,22 @@ onMounted(load)
       <div v-if="pdfStep === 2">
         <div class="meta-tag">{{ pdfTextbook }} · {{ pdfGrade }} · {{ pdfSemester }}学期 · 共 {{ pdfTotalPages }} 页</div>
 
+        <!-- 扫描件:无文字层,走 OCR -->
+        <template v-if="pdfScanned">
+          <el-alert type="warning" :closable="false" show-icon style="margin-bottom:12px"
+            title="这是扫描件 PDF(无文字层)"
+            description="无法直接抽取文字。可用 OCR 逐页识别(豆包视觉),约每页 1-2 秒、整本几分钟;完成后照常识别单元、生成内容。" />
+          <div v-if="!ocrRunning" style="margin-bottom:12px">
+            <el-button type="primary" @click="startOcr">🔍 开始 OCR 识别({{ pdfTotalPages }} 页)</el-button>
+            <span class="muted" style="margin-left:10px">或返回上一步改用文字版 PDF</span>
+          </div>
+          <div v-else style="margin-bottom:12px">
+            <el-progress :percentage="ocrTotal ? Math.round(ocrDone / ocrTotal * 100) : 0" :stroke-width="14" />
+            <div class="muted" style="margin-top:6px">OCR 识别中… {{ ocrDone }}/{{ ocrTotal }} 页(请勿关闭弹窗)</div>
+          </div>
+        </template>
+
+        <template v-else>
         <el-alert
           v-if="pdfAutoSuccess"
           :title="`✅ 自动识别到 ${segments.length} 个单元，可直接生成。也可手动调整下方分界。`"
@@ -554,10 +602,11 @@ onMounted(load)
         <el-button link type="primary" @click="addSegment" style="margin-bottom:12px">+ 添加单元</el-button>
 
         <el-alert v-if="segErr" :title="segErr" type="error" :closable="false" style="margin-bottom:12px" />
+        </template>
 
         <div style="display:flex;justify-content:space-between">
-          <el-button @click="pdfStep = 1">上一步</el-button>
-          <el-button type="primary" :disabled="!segments.length" @click="startPdfGenerate">
+          <el-button :disabled="ocrRunning" @click="pdfStep = 1">上一步</el-button>
+          <el-button type="primary" :disabled="!segments.length || ocrRunning" @click="startPdfGenerate">
             开始生成（{{ segments.length }} 个单元）
           </el-button>
         </div>

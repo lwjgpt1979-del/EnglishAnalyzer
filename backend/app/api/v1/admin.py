@@ -1837,6 +1837,29 @@ async def upload_curriculum_pdf(
     ))
 
 
+@router.post("/curriculum/pdf/{file_id}/ocr", response_model=BaseResponse[dict])
+async def start_pdf_ocr_api(file_id: str, admin: AdminDep):
+    """启动扫描件 PDF 的 OCR(后台逐页豆包视觉识别)。前端轮询 /ocr-status。"""
+    from app.services import pdf_ocr_job_service as ocr
+    job = ocr.start_ocr(file_id)
+    return make_ok({"status": job["status"], "done": job["done"], "total": job["total"]})
+
+
+@router.get("/curriculum/pdf/{file_id}/ocr-status", response_model=BaseResponse[dict])
+async def pdf_ocr_status_api(file_id: str, admin: AdminDep):
+    """查询 OCR 进度;done 时返回基于 OCR 文字检测到的单元 segments。"""
+    from app.services import pdf_ocr_job_service as ocr
+    from app.schemas.pdf_upload import UnitSegment as _Seg
+    job = ocr.get_status(file_id)
+    if job is None:
+        return make_ok({"status": "none", "done": 0, "total": 0, "segments": []})
+    return make_ok({
+        "status": job["status"], "done": job["done"], "total": job["total"],
+        "error": job.get("error", ""),
+        "segments": [_Seg(**s).model_dump() for s in (job.get("segments") or [])],
+    })
+
+
 @router.get("/curriculum/pdf/{file_id}/pages", response_model=BaseResponse[PdfPageListOut])
 async def get_pdf_pages(file_id: str, admin: AdminDep):
     """

@@ -82,6 +82,35 @@ _USER_PROMPT = """请分析这张英语试卷图片，把所有题目拆分为�
 # ── Provider 实现 ─────────────────────────────────────────────────────────────
 
 
+_TEXT_OCR_SYS = (
+    "你是教材 OCR 助手。请**原样输出**图片中的全部文字(英文/中文/数字/标点),"
+    "保留自然段落与换行;不要翻译、不要改写、不要加任何解释或标记。图片无文字则返回空字符串。"
+)
+
+
+async def recognize_page_text(image_url: str) -> str:
+    """教材页图片 → 原样页面文字(供扫描件 PDF 走 OCR;与抽题用的 recognize 区分)。"""
+    if _is_doubao_dev_mode():
+        return ""
+    client = AsyncOpenAI(api_key=settings.doubao_api_key, base_url=settings.doubao_base_url)
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.doubao_vision_model,
+            messages=[
+                {"role": "system", "content": _TEXT_OCR_SYS},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "原样输出这页教材的全部文字。"},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ]},
+            ],
+            max_tokens=4096,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("doubao page OCR failed: %s", exc)
+        return ""
+
+
 class DoubaoVisionProvider:
     """豆包 Vision 实现的 OcrProvider。
 
