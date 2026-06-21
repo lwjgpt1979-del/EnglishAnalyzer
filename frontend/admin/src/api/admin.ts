@@ -389,9 +389,13 @@ export function moveKnowledgeNode(id: string, parentId: string | null): Promise<
 
 // 考试类型统计
 export interface ExamStatRow { id: string; name: string; code: string; 普通: number; 中考: number; 高考: number; 合计: number }
-export interface ExamStats { totals: { 普通: number; 中考: number; 高考: number; 合计: number }; items: ExamStatRow[] }
-export function getKpExamStats(grp?: string): Promise<ExamStats> {
-  return unwrap(request.get('/admin/kp-exam-stats', { params: grp ? { grp } : {} }))
+export interface ExamStatOptions { textbooks: string[]; stages: string[]; grades: string[]; regions: { code: string; name: string }[] }
+export interface ExamStats { totals: { 普通: number; 中考: number; 高考: number; 合计: number }; items: ExamStatRow[]; options: ExamStatOptions }
+export interface ExamStatFilter { grp?: string; textbook?: string; stage?: string; grade?: string; region_code?: string; exam_type?: string }
+export function getKpExamStats(f: ExamStatFilter = {}): Promise<ExamStats> {
+  const params: Record<string, string> = {}
+  for (const [k, v] of Object.entries(f)) if (v) params[k] = v
+  return unwrap(request.get('/admin/kp-exam-stats', { params }))
 }
 
 // 详解拆分审核

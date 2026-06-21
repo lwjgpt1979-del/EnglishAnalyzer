@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getKpExamStats, type ExamStatRow } from '../api/admin'
+import { getKpExamStats, type ExamStatRow, type ExamStatOptions } from '../api/admin'
 
-const GRPS = [{ label: '全部', value: '' }, { label: '词法', value: '词法' }, { label: '句法', value: '句法' },
-  { label: '阅读', value: '阅读' }, { label: '听力', value: '听力' }, { label: '作文', value: '作文' }]
-const grp = ref('')
+const GRPS = ['', '词法', '句法', '阅读', '听力', '作文']
+const STAGE_LABEL: Record<string, string> = { 小: '小学', 初: '初中', 高: '高中' }
+const EXAM_TYPES = ['', '普通', '中考', '高考']
+const f = reactive({ grp: '', textbook: '', stage: '', grade: '', region_code: '', exam_type: '' })
+const opts = ref<ExamStatOptions>({ textbooks: [], stages: [], grades: [], regions: [] })
 const rows = ref<ExamStatRow[]>([])
 const totals = ref({ 普通: 0, 中考: 0, 高考: 0, 合计: 0 })
 const loading = ref(false)
@@ -13,12 +15,14 @@ const loading = ref(false)
 async function load() {
   loading.value = true
   try {
-    const d = await getKpExamStats(grp.value || undefined)
+    const d = await getKpExamStats({ ...f })
     rows.value = d.items
     totals.value = d.totals
+    opts.value = d.options
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function resetF() { f.grp = ''; f.textbook = ''; f.stage = ''; f.grade = ''; f.region_code = ''; f.exam_type = ''; load() }
 onMounted(load)
 </script>
 
@@ -26,11 +30,28 @@ onMounted(load)
   <div v-loading="loading">
     <div class="toolbar">
       <h3 style="margin:0">考试类型统计</h3>
-      <span style="margin-left:8px">分类</span>
-      <el-select v-model="grp" style="width:110px;margin-left:6px" @change="load">
-        <el-option v-for="g in GRPS" :key="g.value" :label="g.label" :value="g.value" />
+      <span class="hint">按考点统计已挂「真题」的考试类型分布;可按 教材/学段/年级/地区/考试类型 筛,点列头排序。</span>
+    </div>
+    <div class="filters">
+      <el-select v-model="f.grp" placeholder="知识分类" clearable style="width:120px" @change="load">
+        <el-option v-for="g in GRPS" :key="g" :label="g || '全部分类'" :value="g" />
       </el-select>
-      <span class="hint">按考点统计已挂「真题」的考试类型分布;点列头可排序。</span>
+      <el-select v-model="f.textbook" placeholder="教材版" clearable style="width:120px" @change="load">
+        <el-option v-for="t in opts.textbooks" :key="t" :label="t" :value="t" />
+      </el-select>
+      <el-select v-model="f.stage" placeholder="学段" clearable style="width:100px" @change="load">
+        <el-option v-for="s in opts.stages" :key="s" :label="STAGE_LABEL[s] || s" :value="s" />
+      </el-select>
+      <el-select v-model="f.grade" placeholder="年级" clearable style="width:110px" @change="load">
+        <el-option v-for="g in opts.grades" :key="g" :label="g" :value="g" />
+      </el-select>
+      <el-select v-model="f.region_code" placeholder="地区" clearable filterable style="width:160px" @change="load">
+        <el-option v-for="r in opts.regions" :key="r.code" :label="r.name" :value="r.code" />
+      </el-select>
+      <el-select v-model="f.exam_type" placeholder="考试类型" clearable style="width:110px" @change="load">
+        <el-option v-for="e in EXAM_TYPES.filter(x => x)" :key="e" :label="e" :value="e" />
+      </el-select>
+      <el-button @click="resetF">重置</el-button>
     </div>
 
     <div class="summary">
@@ -58,7 +79,8 @@ onMounted(load)
 </template>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.filters { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .hint { margin-left: 14px; color: #909399; font-size: 12px; }
 .summary { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .summary b { font-size: 15px; margin-left: 4px; }

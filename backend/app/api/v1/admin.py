@@ -364,9 +364,14 @@ async def create_knowledge_node_api(body: CreateNodeIn, db: DbDep, admin: AdminD
 
 
 @router.get("/kp-exam-stats", response_model=BaseResponse[dict])
-async def kp_exam_stats_api(db: DbDep, admin: AdminDep, grp: str | None = None):
-    """按考点统计已挂真题的考试类型分布(普通/中考/高考),供「考试类型统计」页。"""
-    return make_ok(await kp_candidate_service.exam_type_stats(db, grp=grp))
+async def kp_exam_stats_api(db: DbDep, admin: AdminDep, grp: str | None = None,
+                           textbook: str | None = None, stage: str | None = None,
+                           grade: str | None = None, region_code: str | None = None,
+                           exam_type: str | None = None):
+    """按考点统计已挂真题的考试类型分布;支持 教材版/学段/年级/地区/考试类型 多维筛选。"""
+    return make_ok(await kp_candidate_service.exam_type_stats(
+        db, grp=grp, textbook=textbook, stage=stage, grade=grade,
+        region_code=region_code, exam_type=exam_type))
 
 
 @router.get("/lecture-nodes", response_model=BaseResponse[dict])

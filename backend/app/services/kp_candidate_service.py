@@ -159,26 +159,62 @@ async def list_nodes_overview(
 _GRP_PREFIX = {"词法": "cf", "句法": "jf", "阅读": "rc", "听力": "lt", "作文": "wr"}
 
 
-async def exam_type_stats(db: AsyncSession, *, grp: str | None = None) -> dict:
+async def _exam_stats_options(db, q) -> dict:
+    """统计页筛选下拉的可选项(取真题里实际存在的值)。"""
+    async def _vals(col):
+        rows = (await db.execute(sa.select(col).where(q.type == "real", col.isnot(None), col != "")
+                                 .distinct().order_by(col))).scalars().all()
+        return list(rows)
+    regions = (await db.execute(
+        sa.select(q.region_code, q.region_name).where(
+            q.type == "real", q.region_code.isnot(None), q.region_code != "")
+        .distinct().order_by(q.region_name))).all()
+    return {
+        "textbooks": await _vals(q.textbook_version),
+        "stages": await _vals(q.stage),
+        "grades": await _vals(q.grade),
+        "regions": [{"code": c, "name": n} for c, n in regions],
+    }
+
+
+async def exam_type_stats(db: AsyncSession, *, grp: str | None = None,
+                          textbook: str | None = None, stage: str | None = None,
+                          grade: str | None = None, region_code: str | None = None,
+                          exam_type: str | None = None) -> dict:
     """按考点统计已挂**真题**的考试类型分布(普通/中考/高考)。
 
-    返回 {totals:{普通,中考,高考,合计}, items:[{id,name,code,普通,中考,高考,合计}]},按合计降序。
-    grp(词法/句法/阅读/听力/作文)按 code 前缀筛。
+    返回 {totals,items,options};items 按合计降序。grp 按 code 前缀筛;
+    textbook/stage/grade/region_code(前缀)/exam_type 按题元信息筛。
     """
     from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
-    et = sa.func.coalesce(sa.func.nullif(PlatformQuestion.exam_type, ""), "普通")
+    q = PlatformQuestion
+    conds = [q.type == "real"]
+    if textbook:
+        conds.append(q.textbook_version == textbook)
+    if stage:
+        conds.append(q.stage == stage)
+    if grade:
+        conds.append(q.grade == grade)
+    if region_code:
+        conds.append(q.region_code.like(f"{region_code}%"))
+    if exam_type == "普通":
+        conds.append(sa.or_(q.exam_type.is_(None), q.exam_type.in_(["", "普通"])))
+    elif exam_type:
+        conds.append(q.exam_type == exam_type)
+    et = sa.func.coalesce(sa.func.nullif(q.exam_type, ""), "普通")
     rows = (await db.execute(
         sa.select(PlatformQuestionKp.node_id, et.label("et"),
                   sa.func.count(sa.distinct(PlatformQuestionKp.question_id)))
-        .join(PlatformQuestion, PlatformQuestion.id == PlatformQuestionKp.question_id)
-        .where(PlatformQuestion.type == "real")
+        .join(q, q.id == PlatformQuestionKp.question_id)
+        .where(*conds)
         .group_by(PlatformQuestionKp.node_id, et))).all()
     agg: dict = {}
     for nid, etv, cnt in rows:
         d = agg.setdefault(nid, {"普通": 0, "中考": 0, "高考": 0})
         d[etv if etv in d else "普通"] += int(cnt)
+    options = await _exam_stats_options(db, q)
     if not agg:
-        return {"totals": {"普通": 0, "中考": 0, "高考": 0, "合计": 0}, "items": []}
+        return {"totals": {"普通": 0, "中考": 0, "高考": 0, "合计": 0}, "items": [], "options": options}
     info = (await db.execute(sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
                              .where(KnowledgeNode.id.in_(list(agg))))).all()
     pref = _GRP_PREFIX.get(grp or "")
@@ -192,7 +228,7 @@ async def exam_type_stats(db: AsyncSession, *, grp: str | None = None) -> dict:
     items.sort(key=lambda x: -x["合计"])
     totals = {k: sum(it[k] for it in items) for k in ("普通", "中考", "高考")}
     totals["合计"] = sum(totals.values())
-    return {"totals": totals, "items": items}
+    return {"totals": totals, "items": items, "options": options}
 
 
 async def node_tree(db: AsyncSession, *, axis: str | None = None,
