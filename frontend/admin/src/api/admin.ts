@@ -307,9 +307,19 @@ export function listUnitNodes(unitId: string): Promise<{ total: number; items: A
     request.get(`/admin/curriculum/units/${unitId}/nodes`)
   )
 }
-export interface UnitPassage { id: string; unit_id: string; kind: string; title: string | null; text: string; sort_order: number }
+export interface PassageKp { node_id: string; name: string; code: string }
+export interface UnitPassage { id: string; unit_id: string; kind: string; title: string | null; text: string; sort_order: number; kps: PassageKp[] }
 export function getUnitPassages(unitId: string): Promise<{ total: number; items: UnitPassage[] }> {
   return unwrap(request.get(`/admin/curriculum/units/${unitId}/passages`))
+}
+export function suggestPassageKp(passageId: string): Promise<{ items: PassageKp[] }> {
+  return unwrap(request.post(`/admin/unit-passages/${passageId}/suggest-kp`, {}, { timeout: 90000 }))
+}
+export function attachPassageKp(passageId: string, nodeId: string): Promise<{ ok: boolean }> {
+  return unwrap(request.post(`/admin/unit-passages/${passageId}/kp`, { node_id: nodeId }))
+}
+export function detachPassageKp(passageId: string, nodeId: string): Promise<{ ok: boolean }> {
+  return unwrap(request.delete(`/admin/unit-passages/${passageId}/kp/${nodeId}`))
 }
 
 // ── 通用词库（KP-First R5）──────────────────────────────────

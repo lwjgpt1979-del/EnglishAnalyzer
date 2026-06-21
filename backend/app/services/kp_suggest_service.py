@@ -242,6 +242,41 @@ async def suggest_kps_for_text(
     return out
 
 
+_PASSAGE_ROOT = {"听力": "lt", "阅读": "rc", "写作": "wr"}
+
+
+async def suggest_kps_for_passage(
+    db: AsyncSession, text: str, kind: str, *, max_kp: int = 2,
+) -> list[tuple[uuid.UUID, str, str]]:
+    """单元短文 → 关联考点。按 kind 限定考点子树:听力→lt-*/阅读→rc-*/写作→wr-*。"""
+    root_code = _PASSAGE_ROOT.get(kind)
+    if not (text or "").strip() or not root_code or is_llm_dev_mode():
+        return []
+    code2node, entries = await _load_catalog(db)
+    root_id = (await db.execute(sa.select(KnowledgeNode.id)
+                                .where(KnowledgeNode.code == root_code))).scalar_one_or_none()
+    allowed = await _descendant_node_ids(db, [root_id]) if root_id else None
+    system_msg = _system_for(entries, allowed, None)
+    user = (
+        f"下面是一篇{kind}短文/材料。请从目录里挑出它**最适合标注/训练**的 {kind}考点"
+        f"(至多 {max_kp} 个;若难判断给最贴切的 1 个)。\n\n【{kind}材料】\n{text[:3000]}\n\n"
+        '返回 JSON:{"codes":["编码",...]};只用目录里的编码。'
+    )
+    try:
+        resp = await chat_completion(system_prompt=system_msg, user_prompt=user,
+                                     max_tokens=1024, response_format={"type": "json_object"})
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001
+        return []
+    out, seen = [], set()
+    for code in (data.get("codes") or [])[:max_kp]:
+        ref = code2node.get(code)
+        if ref and ref[0] not in seen:
+            seen.add(ref[0])
+            out.append((ref[0], ref[1], code))
+    return out
+
+
 async def suggest_kps_for_paper(
     db: AsyncSession, paper_id: uuid.UUID, *,
     sections: list[str] | None = None, prompt_id: str | None = None,

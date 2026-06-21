@@ -88,6 +88,25 @@ class CurriculumUnitPassage(Base):
     __table_args__ = (sa.Index("ix_cu_passage_unit", "unit_id", "kind"),)
 
 
+class UnitPassageKp(Base):
+    """单元短文 ↔ 知识图谱考点(复合 PK)。听力短文→lt-*/阅读→rc-*/写作→wr-*。"""
+
+    __tablename__ = "unit_passage_kp"
+
+    passage_id = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("curriculum_unit_passages.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    node_id = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("knowledge_nodes.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                               server_default=sa.func.now())
+
+
 class UnitKnowledgePoint(Base):
     """课单元与知识点多对多（复合 PK）。"""
 

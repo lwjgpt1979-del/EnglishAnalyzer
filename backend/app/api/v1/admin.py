@@ -899,14 +899,60 @@ async def generate_unit_content(
 
 @router.get("/curriculum/units/{unit_id}/passages", response_model=BaseResponse[dict])
 async def list_unit_passages_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """该单元析出的短文(听力脚本/阅读短文/写作范文)。"""
+    """该单元析出的短文(听力脚本/阅读短文/写作范文)+ 每篇已关联的考点。"""
     import sqlalchemy as _sa
-    from app.models.d4_knowledge import CurriculumUnitPassage as _P
+    from app.models.d4_knowledge import CurriculumUnitPassage as _P, UnitPassageKp as _PK
+    from app.models.d15_knowledge_graph import KnowledgeNode as _N
     rows = (await db.execute(_sa.select(_P).where(_P.unit_id == unit_id)
                              .order_by(_P.kind, _P.sort_order))).scalars().all()
+    pids = [p.id for p in rows]
+    kps: dict = {}
+    if pids:
+        for pid, nid, nm, code in (await db.execute(
+            _sa.select(_PK.passage_id, _N.id, _N.name, _N.code)
+            .join(_N, _N.id == _PK.node_id).where(_PK.passage_id.in_(pids)))).all():
+            kps.setdefault(pid, []).append({"node_id": str(nid), "name": nm, "code": code})
     return make_ok({"total": len(rows), "items": [
         {"id": str(p.id), "unit_id": str(p.unit_id), "kind": p.kind,
-         "title": p.title, "text": p.text, "sort_order": p.sort_order} for p in rows]})
+         "title": p.title, "text": p.text, "sort_order": p.sort_order,
+         "kps": kps.get(p.id, [])} for p in rows]})
+
+
+@router.post("/unit-passages/{passage_id}/suggest-kp", response_model=BaseResponse[dict])
+async def suggest_passage_kp_api(passage_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """AI 给该短文匹配考点(听力→lt/阅读→rc/写作→wr),只返回建议不入库。"""
+    import sqlalchemy as _sa
+    from app.models.d4_knowledge import CurriculumUnitPassage as _P
+    from app.services import kp_suggest_service as kss
+    p = (await db.execute(_sa.select(_P).where(_P.id == passage_id))).scalar_one_or_none()
+    if p is None:
+        raise AppError(code=404, message="短文不存在")
+    refs = await kss.suggest_kps_for_passage(db, p.text, p.kind)
+    return make_ok({"items": [{"node_id": str(n), "name": nm, "code": c} for n, nm, c in refs]})
+
+
+@router.post("/unit-passages/{passage_id}/kp", response_model=BaseResponse[dict])
+async def attach_passage_kp_api(passage_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """把考点关联到该短文(人工确认 AI 建议或手动挂)。"""
+    import sqlalchemy as _sa
+    from app.models.d4_knowledge import UnitPassageKp as _PK
+    node_id = uuid.UUID(str(body.get("node_id")))
+    exists = (await db.execute(_sa.select(_PK).where(
+        _PK.passage_id == passage_id, _PK.node_id == node_id))).scalar_one_or_none()
+    if exists is None:
+        db.add(_PK(passage_id=passage_id, node_id=node_id))
+        await db.commit()
+    return make_ok({"ok": True})
+
+
+@router.delete("/unit-passages/{passage_id}/kp/{node_id}", response_model=BaseResponse[dict])
+async def detach_passage_kp_api(passage_id: uuid.UUID, node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """取消该短文的某考点关联。"""
+    import sqlalchemy as _sa
+    from app.models.d4_knowledge import UnitPassageKp as _PK
+    await db.execute(_sa.delete(_PK).where(_PK.passage_id == passage_id, _PK.node_id == node_id))
+    await db.commit()
+    return make_ok({"ok": True})
 
 
 @router.get("/curriculum/units/{unit_id}/nodes", response_model=BaseResponse[UnitNodeListOut])

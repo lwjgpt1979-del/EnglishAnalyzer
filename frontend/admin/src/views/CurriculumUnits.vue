@@ -7,7 +7,8 @@ import {
   listCurriculumUnits, generateUnitContent,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
   reextractUnit, listUnitNodes, getUnitPassages,
-  type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage,
+  suggestPassageKp, attachPassageKp, detachPassageKp,
+  type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage, type PassageKp,
 } from '../api/admin'
 import type { AdminCurriculumUnit, AdminUnitNodeItem } from '../types'
 
@@ -109,9 +110,41 @@ async function onViewPassages(row: AdminCurriculumUnit) {
   passDlg.value = true
   passLoading.value = true
   passages.value = []
+  passSuggest.value = {}
   try { passages.value = (await getUnitPassages(row.unit_id)).items }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { passLoading.value = false }
+}
+// 短文关联考点:AI 匹配 → 人工 ✓ 挂入
+const passSuggest = ref<Record<string, PassageKp[]>>({})   // 待确认建议
+const passBusy = ref<Record<string, boolean>>({})
+const KIND_ROOT: Record<string, string> = { 听力: '听力考点', 阅读: '阅读考点', 写作: '作文考点' }
+async function doSuggestPassage(p: UnitPassage) {
+  passBusy.value[p.id] = true
+  try {
+    const r = await suggestPassageKp(p.id)
+    const have = new Set(p.kps.map(k => k.node_id))
+    passSuggest.value[p.id] = r.items.filter(k => !have.has(k.node_id))
+    if (!passSuggest.value[p.id].length) ElMessage.info('AI 未匹配到新考点')
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 匹配失败') }
+  finally { passBusy.value[p.id] = false }
+}
+async function acceptPassageKp(p: UnitPassage, k: PassageKp) {
+  try {
+    await attachPassageKp(p.id, k.node_id)
+    p.kps.push(k)
+    passSuggest.value[p.id] = (passSuggest.value[p.id] || []).filter(x => x.node_id !== k.node_id)
+    ElMessage.success(`已关联「${k.name}」`)
+  } catch (e: any) { ElMessage.error(e?.message || '关联失败') }
+}
+function dismissPassageSug(p: UnitPassage, k: PassageKp) {
+  passSuggest.value[p.id] = (passSuggest.value[p.id] || []).filter(x => x.node_id !== k.node_id)
+}
+async function removePassageKp(p: UnitPassage, k: PassageKp) {
+  try {
+    await detachPassageKp(p.id, k.node_id)
+    p.kps = p.kps.filter(x => x.node_id !== k.node_id)
+  } catch (e: any) { ElMessage.error(e?.message || '取消失败') }
 }
 
 function rateColor(rate: number) {
@@ -384,6 +417,18 @@ onMounted(load)
             <div v-for="p in g.items" :key="p.id" class="pass-item">
               <div v-if="p.title" class="pass-title">{{ p.title }}</div>
               <pre class="pass-text">{{ p.text }}</pre>
+              <div class="pass-kp">
+                <span class="kp-label">{{ KIND_ROOT[p.kind] || '考点' }}：</span>
+                <el-tag v-for="k in p.kps" :key="k.node_id" size="small" type="success" effect="plain" closable
+                  @close="removePassageKp(p, k)" style="margin:2px">{{ k.name }}</el-tag>
+                <el-tag v-for="k in (passSuggest[p.id] || [])" :key="'s' + k.node_id" size="small" type="primary" effect="plain"
+                  style="border-style:dashed;margin:2px">
+                  AI:{{ k.name }}
+                  <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptPassageKp(p, k)">✓</span>
+                  <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissPassageSug(p, k)">✕</span>
+                </el-tag>
+                <el-button size="small" link type="primary" :loading="passBusy[p.id]" @click="doSuggestPassage(p)">🤖 AI 匹配考点</el-button>
+              </div>
             </div>
           </div>
         </template>
@@ -648,4 +693,6 @@ onMounted(load)
 .pass-text { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6;
   color: #303133; background: #fafafa; border: 1px solid #ebeef5; border-radius: 6px;
   padding: 8px 10px; margin: 0; max-height: 280px; overflow: auto; }
+.pass-kp { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin-top: 5px; }
+.kp-label { font-size: 12px; color: #909399; }
 </style>
