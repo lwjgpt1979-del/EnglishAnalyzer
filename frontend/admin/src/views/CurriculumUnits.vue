@@ -4,11 +4,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
   listCurriculumUnits,
-  uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs, generateSemester,
+  uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
   getUnitPassages,
   suggestPassageKp, attachPassageKp, detachPassageKp,
-  type UnitSegment, type UnitGenerateResult, type GenJob, type UnitPassage, type PassageKp,
+  type UnitSegment, type GenJob, type UnitPassage, type PassageKp,
 } from '../api/admin'
 import type { AdminCurriculumUnit } from '../types'
 
@@ -322,44 +322,6 @@ async function startPdfGenerate() {
 
 // ── 一键生成学期 Dialog ───────────────────────────────────────────────────────
 
-const semDialogVisible = ref(false)
-const semTextbook      = ref('译林版')
-const semGrade         = ref('七年级')
-const semSemester      = ref('上')
-const semUnitCount     = ref(6)
-const semGenerating    = ref(false)
-const semResults       = ref<UnitGenerateResult[]>([])
-
-function openSemDialog() {
-  semResults.value    = []
-  semGenerating.value = false
-  semDialogVisible.value = true
-}
-
-async function doGenerateSem() {
-  await ElMessageBox.confirm(
-    `将用 DeepSeek AI 重新生成「${semTextbook.value} ${semGrade.value} ${semSemester.value}学期」全部 ${semUnitCount.value} 个单元内容，并覆盖已有数据。确认继续？`,
-    '确认生成', { type: 'warning', confirmButtonText: '开始生成', cancelButtonText: '取消' },
-  )
-  semGenerating.value = true
-  semResults.value    = []
-  try {
-    const rows = await generateSemester({
-      textbook_version: semTextbook.value,
-      grade: semGrade.value,
-      semester: semSemester.value,
-      unit_count: semUnitCount.value,
-    })
-    semResults.value = rows as UnitGenerateResult[]
-    const ok = rows.filter(r => r.status === 'ok').length
-    ElMessage.success(`生成完成，成功 ${ok}/${rows.length} 个单元`)
-    await load()
-  } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
-  } finally {
-    semGenerating.value = false
-  }
-}
 
 onMounted(load)
 </script>
@@ -383,7 +345,6 @@ onMounted(load)
         已完成 {{ filteredRows.filter(r => r.content_rate >= 1).length }} 个
       </span>
       <div style="flex:1" />
-      <el-button type="success" @click="openSemDialog">🤖 一键 AI 生成学期</el-button>
       <el-button type="primary" @click="openPdfDialog">📄 上传教材 PDF</el-button>
     </div>
 
@@ -651,60 +612,6 @@ onMounted(load)
           </div>
         </div>
       </div>
-    </el-dialog>
-
-    <!-- ── 一键 AI 生成学期 Dialog ── -->
-    <el-dialog v-model="semDialogVisible" title="一键 AI 生成学期内容" width="500px" :close-on-click-modal="false">
-      <el-form label-width="90px" style="margin-bottom:8px">
-        <el-form-item label="教材版本">
-          <el-select v-model="semTextbook" style="width:200px">
-            <el-option v-for="v in VERSIONS" :key="v" :label="v" :value="v" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="年级">
-          <el-select v-model="semGrade" style="width:200px">
-            <el-option v-for="g in GRADES" :key="g" :label="g" :value="g" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="学期">
-          <el-select v-model="semSemester" style="width:200px">
-            <el-option v-for="s in SEMS" :key="s" :label="s+'学期'" :value="s" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="单元数">
-          <el-input-number v-model="semUnitCount" :min="1" :max="12" />
-        </el-form-item>
-      </el-form>
-
-      <el-alert
-        title="⚠️ 将覆盖该学期已有课程内容，直接调用 DeepSeek AI 生成，约 60–120 秒。"
-        type="warning" :closable="false" style="margin-bottom:16px"
-      />
-
-      <!-- 生成结果列表 -->
-      <el-table v-if="semResults.length" :data="semResults" border size="small" style="margin-bottom:16px">
-        <el-table-column label="状态" width="60" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 'ok' ? 'success' : 'danger'" size="small">
-              {{ row.status === 'ok' ? '✅' : '❌' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="单元" width="70" align="center">
-          <template #default="{ row }">Unit {{ row.unit_no }}</template>
-        </el-table-column>
-        <el-table-column prop="unit_title" label="标题" min-width="120" show-overflow-tooltip />
-        <el-table-column label="KP/词" width="80" align="center">
-          <template #default="{ row }">{{ row.kp_count }}/{{ row.word_count }}</template>
-        </el-table-column>
-      </el-table>
-
-      <template #footer>
-        <el-button @click="semDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="semGenerating" :disabled="semGenerating" @click="doGenerateSem">
-          {{ semGenerating ? `生成中（预计 ${semUnitCount * 20}s）…` : '开始生成' }}
-        </el-button>
-      </template>
     </el-dialog>
   </div>
 </template>
