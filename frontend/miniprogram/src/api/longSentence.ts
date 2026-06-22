@@ -1,4 +1,4 @@
-import { request } from '@/utils/request'
+import { request, BASE_URL } from '@/utils/request'
 
 export interface LSSegment { idx: number; type: string; text: string; color?: string; tint?: string }
 export interface LSStructure { idx: number; parent: number | null }
@@ -31,4 +31,23 @@ export function listLongSentences(limit = 20): Promise<LSListOut> {
 
 export function getLongSentence(id: string): Promise<LSDetail> {
   return request<LSDetail>(`/api/v1/long-sentences/${id}`, { method: 'GET' })
+}
+
+/** 听原句:TTS 流式音频直链(公开接口,可直接作为 audio src 播放)。 */
+export function ttsSpeakUrl(text: string, stage = 'junior'): string {
+  return `${BASE_URL}/api/v1/tts/speak?text=${encodeURIComponent(text)}&stage=${stage}`
+}
+
+export interface LSShadowWord { word: string; score: number }
+export interface LSShadowResult {
+  overall: number; level: string; tip?: string
+  words?: LSShadowWord[]
+  accuracy?: number | null; fluency?: number | null; completion?: number | null
+}
+
+/** 跟读评分:整句录音(base64)→ SOE 发音评测。 */
+export function shadowScoreLs(reference_text: string, audio: string, audio_format = 'mp3'): Promise<LSShadowResult> {
+  return request<LSShadowResult>('/api/v1/long-sentences/shadow-score', {
+    method: 'POST', data: { reference_text, audio, audio_format },
+  })
 }

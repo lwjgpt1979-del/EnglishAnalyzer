@@ -15,7 +15,9 @@ from app.schemas.kp import (
     LongSentenceItem, LongSentenceListOut, LongSentenceDetailOut, LongSentenceNodeRef,
     VerifyTypesOut, VerifyQuestionOut, VerifySubmitIn, VerifySubmitOut,
 )
+from app.schemas.vocabulary import ShadowScoreIn
 from app.services import long_sentence_service as lss
+from app.services import pronunciation_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/long-sentences", tags=["long-sentences"])
@@ -35,6 +37,23 @@ async def list_long_sentences(
         syntax_points=(r.analysis_json or {}).get("syntax_points", []),
     ) for r in rows]
     return make_ok(LongSentenceListOut(total=len(items), items=items))
+
+
+@router.post("/shadow-score", response_model=BaseResponse[dict])
+async def shadow_score(body: ShadowScoreIn, db: DbDep, current_user: UserDep):
+    """长难句跟读发音评测:整句录音(base64)→ SOE 评分,返回 {overall, level, words, tip…}。
+    dev-mock 或无音频时返回 mock 评分。"""
+    import base64 as _b64
+    audio_bytes = b""
+    if body.audio:
+        try:
+            audio_bytes = _b64.b64decode(body.audio)
+        except Exception:  # noqa: BLE001
+            audio_bytes = b""
+    result = await pronunciation_service.assess(
+        reference_text=body.reference_text, audio_bytes=audio_bytes or None,
+        mode="sentence", audio_format=body.audio_format or "mp3")
+    return make_ok(result)
 
 
 @router.get("/{ls_id}", response_model=BaseResponse[LongSentenceDetailOut])
