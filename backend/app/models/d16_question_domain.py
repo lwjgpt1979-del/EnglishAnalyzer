@@ -34,6 +34,7 @@ class PlatformQuestion(Base):
         UUID(as_uuid=True), sa.ForeignKey("platform_question.id"), nullable=True
     )  # sim 派生自哪道真题；real 为 null
     is_fallback = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    sim_version = mapped_column(sa.SmallInteger, nullable=True)         # 仿真题按"题位(母题/短文组)"累加的版本号 v1/v2…
     deprecated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     paper_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("platform_paper.id"), nullable=True

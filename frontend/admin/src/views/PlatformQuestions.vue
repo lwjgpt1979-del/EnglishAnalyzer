@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import {
-  listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk,
+  listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
   createKnowledgeNode,
   type QuestionKpRef, type KpPrompt, type KpProposal,
@@ -175,9 +175,10 @@ async function onSuggestKp() {
   if (!curPaper.value) return
   suggesting.value = true
   try {
-    const r = await suggestPaperKp(curPaper.value.id)
+    // 整卷:跳过已挂考点的题,只补未挂的(避免重复匹配);单题型「一键挂」不传此项,可重跑
+    const r = await suggestPaperKp(curPaper.value.id, { skip_attached: true })
     const n = mergeSuggestions(r.items, false)
-    ElMessage.success(n ? `整卷匹配:AI 为 ${n} 道题给出建议,点 ✓ 采纳` : 'AI 未给出新建议')
+    ElMessage.success(n ? `整卷匹配:AI 为 ${n} 道未挂考点的题给出建议,点 ✓ 采纳` : '未挂考点的题都已建议(或无新建议)')
   } catch (e: any) { ElMessage.error(e?.message || '整卷匹配失败') }
   finally { suggesting.value = false }
 }
@@ -247,9 +248,12 @@ function dismissSuggest(q: PaperQuestion, s: QuestionKpRef) {
 }
 // 缺口建议:✓ 确认 = 在归属分类下新建该考点 + 挂到本题;✕ = 忽略
 async function acceptProposal(q: PaperQuestion, p: KpProposal) {
-  if (!p.parent_node_id) { ElMessage.warning('该建议未给归属分类,请用「+ 知识点」手动挂'); return }
+  if (!p.parent_node_id) { openProposalPicker(q, p); return }   // 未定分类 → 人工选归属分类
+  await createKpUnderAndAttach(q, p, p.parent_node_id)
+}
+async function createKpUnderAndAttach(q: PaperQuestion, p: KpProposal, parentId: string) {
   try {
-    const node = await createKnowledgeNode({ name: p.name, parent_id: p.parent_node_id })
+    const node = await createKnowledgeNode({ name: p.name, parent_id: parentId })
     q.kps = await attachQuestionKp(q.id, node.id)
     kpProposals.value[q.id] = (kpProposals.value[q.id] || []).filter(x => x !== p)
     ElMessage.success(`已新建考点「${p.name}」并挂到本题`)
@@ -258,6 +262,22 @@ async function acceptProposal(q: PaperQuestion, p: KpProposal) {
 function dismissProposal(q: PaperQuestion, p: KpProposal) {
   kpProposals.value[q.id] = (kpProposals.value[q.id] || []).filter(x => x !== p)
 }
+
+// 未定分类的缺口建议:弹分类树,人工选归属分类后再新建+挂载
+const propPickerDlg = ref(false)
+const propTarget = ref<{ q: PaperQuestion; p: KpProposal } | null>(null)
+const propFilter = ref('')
+const propTreeRef = ref<any>(null)
+function openProposalPicker(q: PaperQuestion, p: KpProposal) {
+  propTarget.value = { q, p }; propFilter.value = ''; propPickerDlg.value = true
+}
+async function onPickProposalParent(node: any) {
+  if (!propTarget.value) return
+  const { q, p } = propTarget.value
+  await createKpUnderAndAttach(q, p, node.id)
+  propPickerDlg.value = false; propTarget.value = null
+}
+watch(propFilter, v => propTreeRef.value?.filter(v))
 
 watch(kpFilter, v => kpTreeRef.value?.filter(v))
 
@@ -275,12 +295,49 @@ async function onPublishPaper() {
 
 async function onGenSimChecked() {
   if (!checkedIds.value.length) { ElMessage.warning('请先勾选要派生仿真的题'); return }
-  const { value } = await ElMessageBox.prompt(`为勾选的 ${checkedIds.value.length} 道题各派生几道仿真?`, '派生仿真', {
-    inputValue: '3', inputPattern: /^[1-9]\d*$/, inputErrorMessage: '请输入正整数',
-  })
-  const r = await genSimBulk(checkedIds.value, Number(value))
-  ElMessage.success(`已生成 ${r.generated} 道仿真`)
+  await runGenSim(checkedIds.value, `勾选的 ${checkedIds.value.length} 道题`)
   checkedIds.value = []
+}
+// 题型级勾选:勾整个题型 = 把该 section 全部题加入 checkedIds(可多选题型后统一派生仿真)
+function sectionQuestionIds(sec: { groups: { rows: { id: string }[] }[] }): string[] {
+  return sec.groups.flatMap(g => g.rows).map(q => q.id)
+}
+function secAllChecked(sec: any): boolean {
+  const ids = sectionQuestionIds(sec)
+  return ids.length > 0 && ids.every(id => checkedIds.value.includes(id))
+}
+function secSomeChecked(sec: any): boolean {
+  const ids = sectionQuestionIds(sec)
+  const n = ids.filter(id => checkedIds.value.includes(id)).length
+  return n > 0 && n < ids.length
+}
+function onToggleSec(sec: any, checked: boolean) {
+  const ids = sectionQuestionIds(sec)
+  if (checked) checkedIds.value = [...new Set([...checkedIds.value, ...ids])]
+  else checkedIds.value = checkedIds.value.filter(id => !ids.includes(id))
+}
+const simGen = ref<{ running: boolean; done: number; total: number; generated: number }>({ running: false, done: 0, total: 0, generated: 0 })
+async function runGenSim(ids: string[], label: string) {
+  const { value } = await ElMessageBox.prompt(`为${label}各派生几套仿真?(后台生成,可继续操作)`, '派生仿真', {
+    inputValue: '2', inputPattern: /^[1-9]\d*$/, inputErrorMessage: '请输入正整数',
+  })
+  const { job_id } = await genSimBulk(ids, Number(value))
+  simGen.value = { running: true, done: 0, total: 0, generated: 0 }
+  ElMessage.info('已在后台派生仿真,生成中…(可继续操作,完成后去「仿真题审核」查看)')
+  // 轮询进度
+  const poll = async () => {
+    try {
+      const j = await getSimGenJob(job_id)
+      simGen.value = { running: j.status === 'pending' || j.status === 'running', done: j.done, total: j.total, generated: j.generated }
+      if (j.status === 'done') {
+        ElMessage.success(`派生完成:共生成 ${j.generated} 道仿真${j.failed ? `(${j.failed} 个题位失败)` : ''},去「仿真题审核」查看`)
+        return
+      }
+      if (j.status === 'error') { ElMessage.error('派生失败:' + (j.error || '未知错误')); return }
+      setTimeout(poll, 2000)
+    } catch { simGen.value.running = false }  // 任务丢失(后端重启)→ 停止轮询
+  }
+  setTimeout(poll, 1500)
 }
 
 // ── 上传抽题向导 ──
@@ -559,6 +616,7 @@ onMounted(load)
           <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
           <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
+          <span v-if="simGen.running" style="font-size:12px;color:#409eff">⏳ 后台派生中 {{ simGen.done }}/{{ simGen.total || '…' }} 题位，已生成 {{ simGen.generated }} 道</span>
         </div>
         <div style="max-height:520px;overflow:auto">
           <!-- font-size:14px 复位:el-checkbox-group 默认 font-size:0 会让组内纯文本不可见 -->
@@ -568,6 +626,12 @@ onMounted(load)
                 <span>{{ sec.name }}</span>
                 <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openSectionSuggest(sec.name)">一键挂知识点(AI)</el-button>
                 <el-button size="small" text style="height:22px;padding:0 6px;color:#909399" @click="openSectionKpPicker(sec.name)">手动挂</el-button>
+                <el-button size="small" :type="secAllChecked(sec) ? 'primary' : 'default'" plain
+                  style="height:22px;padding:0 8px;margin-left:6px"
+                  title="选中整个题型(可多选题型累加),再点上方「勾选题派生仿真」"
+                  @click="onToggleSec(sec, !secAllChecked(sec))">
+                  {{ secAllChecked(sec) ? '☑' : (secSomeChecked(sec) ? '◪' : '☐') }} 全选本题型
+                </el-button>
               </div>
               <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
                 <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto">📄 {{ g.passage }}</div>
@@ -585,8 +649,8 @@ onMounted(load)
                         <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissSuggest(q, s)">✕</span>
                       </el-tag>
                       <el-tag v-for="(p, pi) in (kpProposals[q.id] || [])" :key="'p' + pi" size="small" type="danger" effect="plain" style="border-style:dashed"
-                        :title="'目录无对应考点 → 新建并归到「' + (p.parent_name || '?') + '」,点 ✓ 确认'">
-                        🆕新建:{{ p.name }}<span style="color:#909399"> → {{ p.parent_name || '未定分类' }}</span>
+                        :title="p.parent_node_id ? ('目录无对应考点 → 新建并归到「' + (p.parent_name || '?') + '」,点 ✓ 确认') : '未定分类:点 ✓ 人工选归属分类后再新建'">
+                        🆕新建:{{ p.name }}<span style="color:#909399"> → {{ p.parent_name || '未定分类(点✓选)' }}</span>
                         <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptProposal(q, p)">✓</span>
                         <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissProposal(q, p)">✕</span>
                       </el-tag>
@@ -613,6 +677,21 @@ onMounted(load)
         style="max-height:420px;overflow:auto">
         <template #default="{ data }">
           <span @click="onPickKp(data)" style="cursor:pointer">{{ data.name }}</span>
+        </template>
+      </el-tree>
+    </el-dialog>
+
+    <!-- 缺口建议·未定分类:人工选归属分类,在其下新建该考点并挂到本题 -->
+    <el-dialog v-model="propPickerDlg" title="选归属分类(新建考点)" width="460px" append-to-body>
+      <div style="font-size:12px;color:#909399;margin-bottom:8px">
+        将新建考点「<b>{{ propTarget?.p.name }}</b>」并归到所选分类下,挂到「{{ propTarget?.q.question_no }}」题。点击下方某个分类即归到其下。
+      </div>
+      <el-input v-model="propFilter" placeholder="搜索分类名" clearable style="margin-bottom:8px" />
+      <el-tree ref="propTreeRef" :data="kpTree" :props="kpTreeProps" node-key="id"
+        :filter-node-method="filterKpNode" :expand-on-click-node="false"
+        style="max-height:420px;overflow:auto">
+        <template #default="{ data }">
+          <span @click="onPickProposalParent(data)" style="cursor:pointer">{{ data.name }}</span>
         </template>
       </el-tree>
     </el-dialog>

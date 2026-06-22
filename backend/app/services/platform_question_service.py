@@ -355,14 +355,24 @@ async def add_sim(
 
 async def list_platform_questions(
     db: AsyncSession, *, type: str | None = None, status: str | None = None,
-    node_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
+    node_id: uuid.UUID | None = None, source_paper_id: uuid.UUID | None = None,
+    skip: int = 0, limit: int = 20,
 ) -> tuple[list[PlatformQuestion], int]:
-    """平台题分页查询(运营审核/查看)。可按 type/status/node 过滤。"""
+    """平台题分页查询(运营审核/查看)。可按 type/status/node/来源卷 过滤。
+
+    source_paper_id:仿真题按"母题所属真题卷"过滤(经 parent_real_id→母题→paper),
+    并按题型(question_type)+版本排序——供「仿真题审核」按卷展示整卷。
+    """
+    from sqlalchemy.orm import aliased
     base = sa.select(PlatformQuestion)
     if node_id is not None:
         base = base.join(PlatformQuestionKp,
                          PlatformQuestionKp.question_id == PlatformQuestion.id
                          ).where(PlatformQuestionKp.node_id == node_id)
+    if source_paper_id is not None:
+        _real = aliased(PlatformQuestion)
+        base = base.join(_real, _real.id == PlatformQuestion.parent_real_id
+                         ).where(_real.paper_id == source_paper_id)
     if type is not None:
         base = base.where(PlatformQuestion.type == type)
     if status is not None:
@@ -370,10 +380,28 @@ async def list_platform_questions(
     total = (await db.execute(
         sa.select(sa.func.count()).select_from(base.subquery())
     )).scalar_one()
+    order = ([PlatformQuestion.question_type, PlatformQuestion.sim_version, PlatformQuestion.created_at]
+             if source_paper_id is not None else [PlatformQuestion.created_at])
     rows = (await db.execute(
-        base.order_by(PlatformQuestion.created_at).offset(skip).limit(limit)
+        base.order_by(*order).offset(skip).limit(limit)
     )).scalars().all()
     return list(rows), total
+
+
+async def list_sim_papers(db: AsyncSession, *, status: str | None = None) -> list[dict]:
+    """仿真题按来源真题卷聚合:返回有仿真的试卷 + 仿真数(供「仿真题审核」按卷列)。"""
+    from sqlalchemy.orm import aliased
+    _real = aliased(PlatformQuestion)
+    q = (sa.select(PlatformPaper.id, PlatformPaper.name, sa.func.count(PlatformQuestion.id))
+         .select_from(PlatformQuestion)
+         .join(_real, _real.id == PlatformQuestion.parent_real_id)
+         .join(PlatformPaper, PlatformPaper.id == _real.paper_id)
+         .where(PlatformQuestion.type == "sim"))
+    if status is not None:
+        q = q.where(PlatformQuestion.status == status)
+    q = q.group_by(PlatformPaper.id, PlatformPaper.name).order_by(PlatformPaper.name)
+    return [{"paper_id": str(r[0]), "paper_name": r[1], "sim_count": int(r[2])}
+            for r in (await db.execute(q)).all()]
 
 
 async def review_platform_question(
@@ -390,20 +418,70 @@ async def review_platform_question(
     return q
 
 
-async def _rewrite_variants(real: PlatformQuestion, count: int) -> list[dict]:
-    """真题 → count 道仿真变式。dev mock 确定性;生产走 LLM 改写(保持题型/难度/考点)。"""
+async def review_platform_questions_bulk(
+    db: AsyncSession, *, question_ids: list[uuid.UUID], approve: bool
+) -> int:
+    """批量审核仿真题:approve→published / reject→retired。返回更新条数。"""
+    if not question_ids:
+        return 0
+    new_status = "published" if approve else "retired"
+    r = await db.execute(
+        sa.update(PlatformQuestion)
+        .where(PlatformQuestion.id.in_(question_ids), PlatformQuestion.type == "sim")
+        .values(status=new_status))
+    await db.flush()
+    return r.rowcount
+
+
+def _fine_type(q: PlatformQuestion) -> str:
+    """母题真实题型:question_type 偏粗(句子翻译/短文填空/听力 常被存成"单选"),
+    按 section 细分,让仿真如实继承母题题型、不混成单选。"""
+    sec = q.section or ""
+    if "听力" in sec:
+        return "听力"
+    if "短文填空" in sec:
+        return "短文填空"
+    if "单词检测" in sec or "词汇检测" in sec:
+        return "单词检测"
+    if "句子翻译" in sec or "翻译" in sec:
+        return "句子翻译"
+    if "完形" in sec or "完型" in sec:
+        return "完型"
+    return q.question_type or "单选"
+
+
+async def _kp_names(db: AsyncSession, node_ids: list[uuid.UUID]) -> list[str]:
+    if not node_ids:
+        return []
+    return list((await db.execute(
+        sa.select(KnowledgeNode.name).where(KnowledgeNode.id.in_(node_ids)))).scalars().all())
+
+
+async def _next_sim_version(db: AsyncSession, parent_real_ids: list[uuid.UUID]) -> int:
+    """该"题位"(母题/短文组的全部母题)已有仿真的最高版本 + 1(按题位累加版本)。"""
+    if not parent_real_ids:
+        return 1
+    mx = (await db.execute(
+        sa.select(sa.func.max(PlatformQuestion.sim_version))
+        .where(PlatformQuestion.parent_real_id.in_(parent_real_ids)))).scalar()
+    return int(mx or 0) + 1
+
+
+async def _rewrite_variants(real: PlatformQuestion, count: int, kp_names: list[str]) -> list[dict]:
+    """单题真题 → count 道仿真变式。考点作为约束传入,**不跑偏母题考点**。dev mock 确定性。"""
     if is_llm_dev_mode():
         return [{
             "stem": f"{real.stem}(变式{i + 1})",
             "options": real.options, "answer": real.answer,
             "explanation": real.explanation,
         } for i in range(count)]
+    kp_line = ("本题考点:" + "、".join(kp_names) + "(必须保持,不得更换考点)。\n") if kp_names else ""
     system = (
-        "你是英语命题专家。基于给定母题改写出同考点、同题型、同难度的新题,"
+        "你是英语命题专家。基于给定母题改写出**同考点、同题型、同难度**的新题,"
         "保持考查点不变、情境/数据不同。严格输出 JSON。"
     )
     user = (
-        f"母题题干:{real.stem}\n题型:{real.question_type}\n选项:{json.dumps(real.options, ensure_ascii=False)}\n"
+        f"{kp_line}母题题干:{real.stem}\n题型:{real.question_type}\n选项:{json.dumps(real.options, ensure_ascii=False)}\n"
         f"答案:{real.answer}\n\n生成 {count} 道仿真题,返回 "
         '{"items":[{"stem":..,"options":..,"answer":..,"explanation":..}, ...]}'
     )
@@ -420,30 +498,152 @@ async def _rewrite_variants(real: PlatformQuestion, count: int) -> list[dict]:
 async def generate_sim_from_real(
     db: AsyncSession, *, real_id: uuid.UUID, count: int = 3, status: str = "draft"
 ) -> list[uuid.UUID]:
-    """由真题派生 count 道仿真(parent_real_id=real_id),**继承母题 KP**(决策④-C 甲)。"""
+    """单题真题派生 count 道仿真(parent_real_id=real_id),继承母题 KP,版本按题位累加。
+
+    短文题组(有 block_id)请走 generate_sim_for_block(整组改写,共享新短文)。
+    """
     real = (await db.execute(
         sa.select(PlatformQuestion).where(PlatformQuestion.id == real_id)
     )).scalar_one_or_none()
     if real is None or real.type != "real":
         raise AppError(code=404, message="母题真题不存在")
     parent_nodes = await _node_ids_of(db, real_id)
+    base = await _next_sim_version(db, [real_id])
 
     out: list[uuid.UUID] = []
-    for v in await _rewrite_variants(real, count):
+    for i, v in enumerate(await _rewrite_variants(real, count, await _kp_names(db, parent_nodes))):
         if not v.get("stem"):
             continue
         sim = await add_sim(
             db, stem=v["stem"], parent_real_id=real_id, is_fallback=False,
             answer=v.get("answer"), options=v.get("options"),
-            question_type=real.question_type, explanation=v.get("explanation"),
+            question_type=_fine_type(real), explanation=v.get("explanation"),
             difficulty=real.difficulty, status=status,
         )
+        sim.sim_version = base + i                                  # 题位累加版本 v1/v2…
         for c in (*_EXAM_COLS, "region_code", "meta", "section"):   # 继承母题可筛选字段
             setattr(sim, c, getattr(real, c))
-        for nid in parent_nodes:   # 继承母题 KP
+        for nid in parent_nodes:   # 继承母题 KP(不跑偏)
             await attach_node(db, sim.id, nid)
         out.append(sim.id)
     return out
+
+
+async def _rewrite_block_variant(passage_text: str, qs: list, kpname_map: dict) -> dict | None:
+    """短文题组 → 一个新版本:重写短文 + 与原小题一一对应的新小题(保持各题考点)。"""
+    if is_llm_dev_mode():
+        return {"passage": f"{passage_text}(仿写)",
+                "items": [{"stem": f"{q.stem}(变式)", "options": q.options,
+                           "answer": q.answer, "explanation": q.explanation} for q in qs]}
+    qlines = []
+    for i, q in enumerate(qs):
+        kps = "、".join(kpname_map.get(q.id) or []) or "无"
+        qlines.append(f"{i+1}. [题型 {q.question_type}|考点 {kps}] {q.stem}"
+                      f" 选项:{json.dumps(q.options, ensure_ascii=False)} 答案:{q.answer}")
+    system = (
+        "你是英语命题专家。基于给定阅读/完形短文及其小题,改写出**一篇新短文 + 配套小题**:\n"
+        "1) 新短文话题/情节不同,但体裁、长度、难度相当;\n"
+        "2) 每道小题与原题**一一对应**(数量、顺序一致),保持**原考点、原题型不变**,只随新短文改写;\n"
+        "3) 不得增删题、不得更换考点。严格输出 JSON。"
+    )
+    user = (
+        f"原短文:\n{passage_text[:4000]}\n\n原小题(共 {len(qs)} 道,按序):\n" + "\n".join(qlines) +
+        f'\n\n返回 JSON:{{"passage":"新短文全文","items":[{{"stem":..,"options":..,"answer":..,"explanation":..}}, ...]}};'
+        f'items 必须正好 {len(qs)} 条、与原小题顺序一一对应。'
+    )
+    try:
+        resp = await chat_completion(system_prompt=system, user_prompt=user,
+                                     max_tokens=4096, response_format={"type": "json_object"})
+        return json.loads(resp.choices[0].message.content or "{}")
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("block sim rewrite failed (block=%s): %s", getattr(qs[0], "block_id", "?"), exc)
+        return None
+
+
+async def generate_sim_for_block(
+    db: AsyncSession, *, block_id: uuid.UUID, count: int = 3, status: str = "draft"
+) -> list[uuid.UUID]:
+    """短文题组整组派生:每个版本重写短文(新 Passage)+ 该组全部小题,各题继承母题考点。
+
+    版本按"题组题位"累加(组内所有小题共享同一版本号)。
+    """
+    qs = list((await db.execute(
+        sa.select(PlatformQuestion)
+        .where(PlatformQuestion.block_id == block_id, PlatformQuestion.type == "real")
+        .order_by(PlatformQuestion.question_no))).scalars().all())
+    if not qs:
+        return []
+    passage_text = (await db.execute(
+        sa.select(Passage.text).where(Passage.id == block_id))).scalar() or ""
+    kp_map = {q.id: await _node_ids_of(db, q.id) for q in qs}
+    kpname_map = {q.id: await _kp_names(db, kp_map[q.id]) for q in qs}
+    base = await _next_sim_version(db, [q.id for q in qs])
+
+    out: list[uuid.UUID] = []
+    made = 0
+    attempts = 0
+    max_attempts = count * 2 + 2          # 每个版本可重试(短文组重写偶发小题数对不上)
+    while made < count and attempts < max_attempts:
+        attempts += 1
+        variant = await _rewrite_block_variant(passage_text, qs, kpname_map)
+        items = (variant or {}).get("items") or []
+        if len(items) < len(qs):          # 数量对不上 → 重试该版本(不计版本、不错位)
+            continue
+        new_passage_id = await create_passage(
+            db, text=(variant.get("passage") or passage_text), kind="reading_text")
+        ver = base + made
+        made += 1
+        for qi, it in zip(qs, items):
+            if not it.get("stem"):
+                continue
+            sim = await add_sim(
+                db, stem=it["stem"], parent_real_id=qi.id, is_fallback=False,
+                answer=it.get("answer"), options=it.get("options"),
+                question_type=_fine_type(qi), explanation=it.get("explanation"),
+                difficulty=qi.difficulty, status=status)
+            sim.block_id = new_passage_id          # 同版本小题共享新短文
+            sim.sim_version = ver
+            for c in (*_EXAM_COLS, "region_code", "meta", "section"):
+                setattr(sim, c, getattr(qi, c))
+            for nid in kp_map[qi.id]:              # 继承各自母题考点(不跑偏)
+                await attach_node(db, sim.id, nid)
+            out.append(sim.id)
+    return out
+
+
+async def generate_sim_bulk(
+    db: AsyncSession, *, question_ids: list[uuid.UUID], count: int = 3, status: str = "draft"
+) -> int:
+    """题组感知的批量派生:选中的题里凡属短文题组(block_id)→ 整组改写;单题 → 逐题改写。
+
+    选中题组里任一题即重写**整组**。每个题组/单题失败互不影响(嵌套事务隔离)。
+    """
+    qs = list((await db.execute(
+        sa.select(PlatformQuestion)
+        .where(PlatformQuestion.id.in_(question_ids), PlatformQuestion.type == "real"))).scalars().all())
+    blocks: list[uuid.UUID] = []
+    standalone: list[uuid.UUID] = []
+    seen: set = set()
+    for q in qs:
+        if q.block_id:
+            if q.block_id not in seen:
+                seen.add(q.block_id); blocks.append(q.block_id)
+        else:
+            standalone.append(q.id)
+    total = 0
+    for bid in blocks:
+        try:
+            async with db.begin_nested():
+                total += len(await generate_sim_for_block(db, block_id=bid, count=count, status=status))
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("gen_sim block %s failed: %s", bid, exc)
+    for qid in standalone:
+        try:
+            async with db.begin_nested():
+                total += len(await generate_sim_from_real(db, real_id=qid, count=count, status=status))
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("gen_sim real %s failed: %s", qid, exc)
+    return total
 
 
 async def has_real_for_node(db: AsyncSession, node_id: uuid.UUID) -> bool:
