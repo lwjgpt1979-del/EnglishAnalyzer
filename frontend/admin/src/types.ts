@@ -93,9 +93,10 @@ export interface AdminCurriculumUnit {
   semester: string
   unit_no: number
   unit_title: string
-  kp_count: number
-  content_count: number
-  content_rate: number   // 0-1
+  kp_count: number       // 单元考点数 = 各短文已关联考点去重汇总
+  content_count: number  // 已关联考点的短文数
+  passage_count: number  // 短文总数
+  content_rate: number   // 已关联短文 / 短文总数，0-1
   unit_pdf_url?: string | null   // 拆出的单元独立 PDF(COS)
 }
 

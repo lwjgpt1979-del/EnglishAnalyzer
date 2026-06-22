@@ -203,7 +203,7 @@ export function getKpPrompts(): Promise<{ prompts: KpPrompt[] }> {
 export function saveKpPrompts(prompts: KpPrompt[]): Promise<{ prompts: KpPrompt[] }> {
   return unwrap(request.put('/admin/kp-prompts', { prompts }))
 }
-export function suggestKpText(text: string, sourceType = '教材'): Promise<QuestionKpRef[]> {
+export function suggestKpText(text: string, sourceType = '教材·其他'): Promise<QuestionKpRef[]> {
   // AI 调用慢,放宽超时(默认 20s 不够)
   return unwrap(request.post('/admin/kp-suggest-text', { text, source_type: sourceType }, { timeout: 90000 }))
 }
@@ -480,6 +480,14 @@ export function rollbackVersion(resourceId: string, versionId: string): Promise<
 // ── 长难句管理（KP-First L7）──────────────────────────────
 export function extractLongSentences(params: { source?: string; limit?: number }) {
   return unwrap<LSExtractResult>(request.post('/admin/long-sentences/extract', null, { params }))
+}
+// 重新解析已有长难句(后台异步):刷新为新结构,可选顺带发布
+export function reanalyzeLongSentences(params: { status?: string; limit?: number; publish?: boolean }) {
+  return unwrap<{ job_id: string }>(request.post('/admin/long-sentences/reanalyze', null, { params }))
+}
+export interface LsReanalyzeJob { job_id: string; total: number; done: number; failed: number; status: string; error?: string }
+export function getLsReanalyzeJob(jobId: string) {
+  return unwrap<LsReanalyzeJob>(request.get(`/admin/long-sentences/reanalyze-jobs/${jobId}`))
 }
 
 export function listLongSentences(params: {
@@ -1135,9 +1143,13 @@ export interface PlatformQuestion {
   is_fallback: boolean
   question_type?: string | null
   stem?: string | null
+  options?: string[] | Record<string, string> | string | null
   answer?: string | null
+  explanation?: string | null
   difficulty?: number | null
   status: string
+  sim_version?: number | null   // 仿真题按题位累加的版本号
+  kp_names?: string[]           // 关联考点名(继承母题)
   block_id?: string | null      // 题组(短文)外键;同篇阅读/完形小问共享
   passage?: string | null       // 题组短文正文
 }
@@ -1198,8 +1210,13 @@ export function publishPlatformPaper(paperId: string): Promise<PlatformPaper> {
 export function deletePlatformPapers(paperIds: string[]): Promise<{ deleted: number }> {
   return unwrap(request.post('/admin/platform-papers/delete', { paper_ids: paperIds }))
 }
-export function genSimBulk(questionIds: string[], count = 3): Promise<{ generated: number; per_question: number }> {
+// 派生仿真(后台异步):秒回 job_id,再轮询 getSimGenJob 看进度
+export function genSimBulk(questionIds: string[], count = 3): Promise<{ job_id: string; per_question: number }> {
   return unwrap(request.post('/admin/platform-questions/gen-sim-bulk', { question_ids: questionIds, count }))
+}
+export interface SimGenJob { job_id: string; total: number; done: number; generated: number; failed: number; status: string; error?: string }
+export function getSimGenJob(jobId: string): Promise<SimGenJob> {
+  return unwrap(request.get(`/admin/platform-questions/gen-sim-jobs/${jobId}`))
 }
 export function attachQuestionKp(questionId: string, nodeId: string): Promise<QuestionKpRef[]> {
   return unwrap(request.post(`/admin/platform-questions/${questionId}/kp`, { node_id: nodeId }))
@@ -1215,7 +1232,7 @@ export function attachKpBulk(pairs: { question_id: string; node_id: string }[]):
 }
 export interface KpProposal { name: string; parent_node_id?: string | null; parent_name?: string | null }
 export interface SuggestKpItem { question_id: string; suggestions: QuestionKpRef[]; proposals?: KpProposal[] }
-export function suggestPaperKp(paperId: string, opts?: { sections?: string[]; prompt_id?: string }): Promise<{ items: SuggestKpItem[] }> {
+export function suggestPaperKp(paperId: string, opts?: { sections?: string[]; prompt_id?: string; skip_attached?: boolean }): Promise<{ items: SuggestKpItem[] }> {
   // 整卷匹配并行调多组大模型,放宽超时到 3 分钟(默认 20s 远不够)
   return unwrap(request.post(`/admin/platform-papers/${paperId}/suggest-kp`, opts || {}, { timeout: 180000 }))
 }
@@ -1228,9 +1245,18 @@ export interface RealExtractJob {
 }
 
 export function listPlatformQuestions(params: {
-  type?: string; status?: string; node_id?: string; skip?: number; limit?: number
+  type?: string; status?: string; node_id?: string; source_paper_id?: string; skip?: number; limit?: number
 }): Promise<{ total: number; items: PlatformQuestion[] }> {
   return unwrap(request.get('/admin/platform-questions', { params }))
+}
+// 批量审核仿真题(整卷/选中):approve→published / reject→retired
+export function reviewPlatformBulk(questionIds: string[], approve: boolean): Promise<{ updated: number; status: string }> {
+  return unwrap(request.post('/admin/platform-questions/review-bulk', { question_ids: questionIds, approve }))
+}
+export interface SimPaper { paper_id: string; paper_name: string; sim_count: number }
+// 仿真题按来源真题卷聚合(仿真题审核:先按卷列)
+export function listSimPapers(status?: string): Promise<SimPaper[]> {
+  return unwrap(request.get('/admin/sim-papers', { params: { status } }))
 }
 
 export function extractRealQuestions(opts: { file?: File; imageUrls?: string[] }): Promise<{ job_id: string }> {

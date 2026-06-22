@@ -101,14 +101,18 @@ async def _seed_words(s, n: int) -> list[uuid.UUID]:
 
 
 @pytest.mark.asyncio
-async def test_record_checkin_blocked_when_incomplete(db_session):
-    """今日未学新词 → all_done False，record_checkin 不写行、返回 (None, progress)。"""
+async def test_record_checkin_records_without_quota_gate(db_session):
+    """record_checkin 不再按 quota 卡门槛（日历=学习日志）：今日未学满也照记当日。
+
+    progress 仍反映「未完成」(all_done False)，但 record_checkin 现在恒写当日行。
+    """
     sid = await _student(db_session)
-    await _seed_words(db_session, 10)  # 词库有未学新词、本人未学
+    await _seed_words(db_session, 10)  # 词库有未学新词、本人今日未学
     row, progress = await checkin_service.record_checkin(db_session, student_id=sid)
-    assert row is None
-    assert progress["all_done"] is False
-    assert await checkin_service._row_for(db_session, sid, _today()) is None
+    assert progress["all_done"] is False           # 今日确未学满
+    assert row is not None                          # 但仍记当日（无门槛闸）
+    assert row.new_words_count == 0
+    assert await checkin_service._row_for(db_session, sid, _today()) is not None
 
 
 @pytest.mark.asyncio

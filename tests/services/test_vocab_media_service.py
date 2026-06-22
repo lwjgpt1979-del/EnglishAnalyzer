@@ -32,7 +32,8 @@ async def test_generate_writes_all_media_draft(db_session):
     w = await vocab_media_service.generate_for_word(db_session, word_id=wid)
     assert w.image_urls and len(w.image_urls) >= 1
     assert w.en_description
-    assert w.word_audio_url and w.en_desc_audio_url
+    # 音频在 mock 模式不写假URL（397df9b：generate_tts→"" / _tts_cos COS-dev→""，
+    # 生产走火山TTS→COS）；故此处不强求 word_audio_url / en_desc_audio_url
     assert w.media_status == "draft"
 
 

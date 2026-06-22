@@ -86,6 +86,7 @@ from app.schemas.kp import (
     KpPromptsOut,
     SuggestTextIn,
     GenSimBulkIn,
+    ReviewBulkIn,
     GenSimBulkOut,
     RealExtractCreatedOut,
     RealExtractJobOut,
@@ -846,6 +847,7 @@ async def list_curriculum_units(db: DbDep, admin: AdminDep):
             "unit_title": s.unit_title,
             "kp_count": s.kp_count,
             "content_count": s.content_count,
+            "passage_count": s.passage_count,
             "content_rate": s.content_rate,
             "unit_pdf_url": s.unit_pdf_url,
         }
@@ -989,28 +991,49 @@ async def reextract_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
 
 # ─── 平台题管理（R2 真题/仿真接入）──────────────────────────────────────────────
 
-def _to_pq_item(q, passage: str | None = None) -> PlatformQuestionItem:
+def _to_pq_item(q, passage: str | None = None, kp_names: list | None = None) -> PlatformQuestionItem:
     return PlatformQuestionItem(
         id=q.id, type=q.type, parent_real_id=q.parent_real_id, is_fallback=q.is_fallback,
-        question_type=q.question_type, stem=q.stem, answer=q.answer,
-        difficulty=q.difficulty, status=q.status,
+        question_type=q.question_type, stem=q.stem, options=q.options, answer=q.answer,
+        explanation=q.explanation, difficulty=q.difficulty, status=q.status,
+        sim_version=q.sim_version, kp_names=kp_names or [],
         block_id=q.block_id, passage=passage,
     )
+
+
+@router.get("/sim-papers", response_model=BaseResponse[list[dict]])
+async def list_sim_papers_api(db: DbDep, admin: AdminDep, status: str | None = None):
+    """仿真题按来源真题卷聚合(供「仿真题审核」先按卷列,再点开看整卷)。"""
+    from app.services import platform_question_service as pqs
+    return make_ok(await pqs.list_sim_papers(db, status=status))
 
 
 @router.get("/platform-questions", response_model=BaseResponse[PlatformQuestionListOut])
 async def list_platform_questions_api(
     db: DbDep, admin: AdminDep,
     type: str | None = None, status: str | None = None,
-    node_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
+    node_id: uuid.UUID | None = None, source_paper_id: uuid.UUID | None = None,
+    skip: int = 0, limit: int = 20,
 ):
-    """平台题分页查询(真题/仿真,可按 type/status/node 过滤)。"""
+    """平台题分页查询(真题/仿真,可按 type/status/node/来源卷 过滤)。"""
     from app.services import platform_question_service as pqs
     rows, total = await pqs.list_platform_questions(
-        db, type=type, status=status, node_id=node_id, skip=skip, limit=limit)
+        db, type=type, status=status, node_id=node_id,
+        source_paper_id=source_paper_id, skip=skip, limit=limit)
     pmap = await pqs.passages_for(db, [r.block_id for r in rows if r.block_id])
+    # 各题关联考点名(继承母题)
+    import sqlalchemy as _sa
+    from app.models.d16_question_domain import PlatformQuestionKp as _PQK
+    from app.models.d15_knowledge_graph import KnowledgeNode as _KN
+    kpmap: dict = {}
+    if rows:
+        for qid, nm in (await db.execute(
+            _sa.select(_PQK.question_id, _KN.name)
+            .join(_KN, _KN.id == _PQK.node_id)
+            .where(_PQK.question_id.in_([r.id for r in rows])))).all():
+            kpmap.setdefault(qid, []).append(nm)
     return make_ok(PlatformQuestionListOut(
-        total=total, items=[_to_pq_item(r, pmap.get(r.block_id)) for r in rows]))
+        total=total, items=[_to_pq_item(r, pmap.get(r.block_id), kpmap.get(r.id)) for r in rows]))
 
 
 @router.post("/platform-questions", response_model=BaseResponse[RealImportItemOut])
@@ -1077,20 +1100,25 @@ async def gen_sim_from_real_api(real_id: uuid.UUID, db: DbDep, admin: AdminDep, 
     return make_ok(GenSimOut(generated=len(sim_ids), sim_ids=sim_ids))
 
 
-@router.post("/platform-questions/gen-sim-bulk", response_model=BaseResponse[GenSimBulkOut])
+@router.post("/platform-questions/gen-sim-bulk", response_model=BaseResponse[dict])
 async def gen_sim_bulk_api(body: GenSimBulkIn, db: DbDep, admin: AdminDep):
-    """整卷弹框里勾选若干真题,批量各派生 count 道仿真。"""
-    from app.services import platform_question_service as pqs
-    total = 0
-    for qid in body.question_ids:
-        try:
-            async with db.begin_nested():
-                sim_ids = await pqs.generate_sim_from_real(db, real_id=qid, count=body.count)
-            total += len(sim_ids)
-        except Exception:  # noqa: BLE001
-            pass
-    await db.commit()
-    return make_ok(GenSimBulkOut(generated=total, per_question=body.count))
+    """派生仿真(后台异步):秒回 job_id,前端轮询 gen-sim-jobs/{job_id} 看进度。
+
+    短文题组整组改写、单题逐题,版本按题位累加。大量 LLM 改写在后台跑,不阻塞请求。
+    """
+    from app.services import sim_gen_job_service as sgj
+    job_id = sgj.start(body.question_ids, body.count)
+    return make_ok({"job_id": job_id, "per_question": body.count})
+
+
+@router.get("/platform-questions/gen-sim-jobs/{job_id}", response_model=BaseResponse[dict])
+async def gen_sim_job_status_api(job_id: str, db: DbDep, admin: AdminDep):
+    """派生仿真后台任务进度。"""
+    from app.services import sim_gen_job_service as sgj
+    st = sgj.get_status(job_id)
+    if st is None:
+        raise AppError(code=404, message="任务不存在(可能已重启)")
+    return make_ok({"job_id": job_id, **st})
 
 
 # ─── 平台试卷(整卷聚合 / 发布 / 选题仿真)────────────────────────────────────────
@@ -1185,7 +1213,8 @@ async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep,
     matches, proposals = await kss.suggest_kps_for_paper(
         db, paper_id,
         sections=(body.sections if body else None),
-        prompt_id=(body.prompt_id if body else None))
+        prompt_id=(body.prompt_id if body else None),
+        skip_attached=(body.skip_attached if body else False))
     items = []
     for qid in set(matches) | set(proposals):
         refs = matches.get(qid) or []
@@ -1267,6 +1296,16 @@ async def review_platform_question_api(
     q = await pqs.review_platform_question(db, question_id=question_id, approve=body.approve)
     await db.commit()
     return make_ok(_to_pq_item(q))
+
+
+@router.post("/platform-questions/review-bulk", response_model=BaseResponse[dict])
+async def review_platform_questions_bulk_api(body: ReviewBulkIn, db: DbDep, admin: AdminDep):
+    """批量审核仿真题(整卷/选中):approve→published,reject→retired。"""
+    from app.services import platform_question_service as pqs
+    n = await pqs.review_platform_questions_bulk(
+        db, question_ids=body.question_ids, approve=body.approve)
+    await db.commit()
+    return make_ok({"updated": n, "status": "published" if body.approve else "retired"})
 
 
 # ─── 真题抽题(TK2:上传 PDF/图片 → 异步 OCR/拆题 → 待校对)──────────────────────────
@@ -1521,6 +1560,29 @@ async def extract_long_sentences_api(
     st = await lss.run_extract(db, sources=sources, limit=limit)
     return make_ok(LSExtractOut(created=st.created, long_kept=st.long_kept, edges=st.edges,
                                 candidates=st.candidates, skipped_done=st.skipped_done))
+
+
+@router.post("/long-sentences/reanalyze", response_model=BaseResponse[dict])
+async def reanalyze_long_sentences_api(
+    db: DbDep, admin: AdminDep, status: str | None = None, limit: int = 200, publish: bool = False,
+):
+    """重新解析已有长难句(后台异步,刷新为新结构;可选顺带发布)。秒回 job_id,轮询进度。
+
+    status:只重解析某状态(空=全部);publish=true 同时把这些发布(便于造测试数据)。
+    """
+    from app.services import ls_reanalyze_job_service as lrj
+    job_id = lrj.start(only_status=status, limit=limit, publish=publish)
+    return make_ok({"job_id": job_id})
+
+
+@router.get("/long-sentences/reanalyze-jobs/{job_id}", response_model=BaseResponse[dict])
+async def reanalyze_ls_job_status_api(job_id: str, db: DbDep, admin: AdminDep):
+    """重新解析后台任务进度。"""
+    from app.services import ls_reanalyze_job_service as lrj
+    st = lrj.get_status(job_id)
+    if st is None:
+        raise AppError(code=404, message="任务不存在(可能已重启)")
+    return make_ok({"job_id": job_id, **st})
 
 
 @router.get("/long-sentences", response_model=BaseResponse[LSAdminListOut])

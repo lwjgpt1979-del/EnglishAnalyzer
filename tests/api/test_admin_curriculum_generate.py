@@ -122,9 +122,9 @@ async def test_generate_unit_content_success(
 ):
     """有效 unit_id → 200 + 统计字段齐全。
 
-    KP-First:内容已切 node_resource,content_count 数经 unit_node 的 lecture;
-    冷启动下新 KP 未命中 node → 落候选、无 lecture(受控匹配代价),故此处只断言生成成功 +
-    统计可计算(content_count≥0)。lecture 写入的严格证明见
+    统计已切「短文关联考点」口径:kp_count=单元各短文已关联考点去重数、content_count=已关联短文数、
+    content_rate=已关联短文/短文总数。generate 走的是 unit_node 六维路径、不建短文关联,故该口径下
+    三者可为 0——此处只断言生成成功 + 统计字段齐全可计算。生成本身(unit_node/lecture)的严格证明见
     tests/api/test_curriculum.py::test_persist_unit_writes_node_resource_lectures_draft。
     """
     r = await admin_client.post(
@@ -133,7 +133,7 @@ async def test_generate_unit_content_success(
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["unit_id"] == seeded_unit_id
-    assert data["kp_count"] > 0
+    assert data["kp_count"] >= 0
     assert data["content_count"] >= 0
     assert 0.0 <= data["content_rate"] <= 1.0
 
@@ -175,7 +175,8 @@ async def test_generate_from_pdf_async_job_isolates_failed_unit(admin_client: As
     tb = f"asyncjob版{uuid.uuid4().hex[:6]}"
     grade, sem = "测试年级", "上"
 
-    async def _fake_gen(*, textbook_version, grade, semester, unit_no, unit_text, detected_title=None):
+    async def _fake_gen(*, textbook_version, grade, semester, unit_no, unit_text,
+                        detected_title=None, with_contents=True):
         if unit_no == 2:
             raise RuntimeError("LLM boom (unit 2)")   # 仅 Unit 2 失败(重试 3 次都失败)
         return _make_mock_unit(textbook_version, grade, semester, unit_no)
