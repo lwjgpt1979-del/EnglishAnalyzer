@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  extractLongSentences, listLongSentences, reviewLongSentence, getLSConfig, setLSConfig,
+  extractLongSentences, reanalyzeLongSentences, getLsReanalyzeJob, listLongSentences, reviewLongSentence, getLSConfig, setLSConfig,
 } from '../api/admin'
 import type { LSAdminItem, LSConfig } from '../types'
 
@@ -29,6 +29,34 @@ async function onExtract() {
   finally { extracting.value = false }
 }
 
+// ── 重新解析(刷新为新结构:分段/结构/成分/词汇/语法点,供小程序展示)──
+const reanalyzing = ref(false)
+const reJob = ref<{ done: number; total: number } | null>(null)
+async function onReanalyze(publish: boolean) {
+  try {
+    await ElMessageBox.confirm(
+      `重新解析「${status.value}」状态的长难句,刷新为新结构${publish ? ',并发布' : ''}?(后台跑,可继续操作)`,
+      '重新解析', { type: 'warning' })
+  } catch { return }
+  reanalyzing.value = true; reJob.value = { done: 0, total: 0 }
+  try {
+    const { job_id } = await reanalyzeLongSentences({ status: status.value, limit: 500, publish })
+    const poll = async () => {
+      try {
+        const j = await getLsReanalyzeJob(job_id)
+        reJob.value = { done: j.done, total: j.total }
+        if (j.status === 'done') {
+          ElMessage.success(`重新解析完成:${j.done} 条${j.failed ? `(${j.failed} 失败)` : ''}`)
+          reanalyzing.value = false; reJob.value = null; await load(); return
+        }
+        if (j.status === 'error') { ElMessage.error('重新解析失败:' + (j.error || '')); reanalyzing.value = false; return }
+        setTimeout(poll, 2000)
+      } catch { reanalyzing.value = false }
+    }
+    setTimeout(poll, 1500)
+  } catch (e: any) { ElMessage.error(e?.message || '启动失败'); reanalyzing.value = false }
+}
+
 // ── 审核队列 ──
 const status = ref('draft')
 const nodeId = ref('')
@@ -36,6 +64,7 @@ const rows = ref<LSAdminItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const statusOptions = ['draft', 'published', 'retired']
+const stLabel = (s: string) => (({ draft: '草稿', published: '已发布', retired: '已下架' } as Record<string, string>)[s] || s)
 
 async function load() {
   loading.value = true
@@ -110,12 +139,16 @@ onMounted(() => { load(); loadCfg() })
       <div class="toolbar">
         <span>状态：</span>
         <el-select v-model="status" style="width: 130px" @change="load">
-          <el-option v-for="s in statusOptions" :key="s" :label="s" :value="s" />
+          <el-option v-for="s in statusOptions" :key="s" :label="stLabel(s)" :value="s" />
         </el-select>
         <span style="margin-left: 16px">句法 node_id：</span>
         <el-input v-model="nodeId" placeholder="可选,knowledge_nodes.id" style="width: 280px" />
         <el-button style="margin-left: 12px" @click="load">查询</el-button>
         <span class="hint">共 {{ total }} 条</span>
+        <div style="flex:1" />
+        <el-button :loading="reanalyzing" @click="onReanalyze(false)">🔄 重新解析(刷新结构)</el-button>
+        <el-button type="success" :loading="reanalyzing" @click="onReanalyze(true)">重解析并发布</el-button>
+        <span v-if="reJob" class="hint">⏳ {{ reJob.done }}/{{ reJob.total || '…' }}</span>
       </div>
       <el-table v-loading="loading" :data="rows" border style="width: 100%">
         <el-table-column prop="text" label="句子" min-width="320" show-overflow-tooltip />

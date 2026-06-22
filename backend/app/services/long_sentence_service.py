@@ -112,6 +112,18 @@ async def review(db: AsyncSession, *, ls_id: uuid.UUID, approve: bool) -> LongSe
     return ls
 
 
+async def reanalyze_one(db: AsyncSession, *, ls_id: uuid.UUID, publish: bool = False) -> bool:
+    """重新解析一条长难句:刷新 analysis_json 为新结构(分段/结构/成分/词汇/语法点);可选发布。"""
+    ls = (await db.execute(sa.select(LongSentence).where(LongSentence.id == ls_id))).scalar_one_or_none()
+    if ls is None:
+        return False
+    ls.analysis_json = await analyze_sentence(ls.text)
+    if publish:
+        ls.status = "published"
+    await db.flush()
+    return True
+
+
 def split_sentences(text: str) -> list[str]:
     if not text:
         return []
@@ -135,33 +147,157 @@ def is_long_sentence(sentence: str, min_words: int = DEFAULT_MIN_WORDS) -> bool:
     return bool(detect_syntax_points(sentence))
 
 
+# 句子成分类型 → 固定配色(美学调色板)。设计:8 大语法族各占一个「色相」(状语=橙、定语=绿、
+# 主干=蓝、名词性从句=紫、非谓语=青、并列=品红、介词=天蓝、其他=灰);族内按语义小类沿
+# 「明度阶梯」细分,每个小类各占一档,保证同类成分全句/跨句颜色统一、又能区分子类。
+# 底色 tint 由主色自动调浅(向白混合 88%)生成,各档底色明度一致、清淡不抢字。
+def _tint(hex_color: str, white: float = 0.88) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    mix = lambda c: round(c * (1 - white) + 255 * white)
+    return "#%02x%02x%02x" % (mix(r), mix(g), mix(b))
+
+
+# 规则按「具体 → 泛化」排序,命中第一条即返回(顺序敏感)。每条:(关键词元组, 主色)。
+_COLOR_RULES: list[tuple[tuple[str, ...], str]] = [
+    # ── 名词性从句族:紫(主/宾/表/同位语各一档) ──
+    (("主语从句",),               "#6a3fd0"),
+    (("宾语从句",),               "#8a5cf0"),
+    (("表语从句",),               "#a07ff3"),
+    (("同位语",),                 "#b29bf2"),
+    (("名词性",),                 "#8a5cf0"),
+    # ── 状语族:橙(语义小类沿明度阶梯,深→浅) ──
+    (("让步",),                   "#b8601a"),
+    (("条件",),                   "#c96a1c"),
+    (("原因", "因果"),            "#d1731f"),
+    (("时间",),                   "#e08a2f"),
+    (("地点",),                   "#e89c4a"),
+    (("目的",),                   "#efb15f"),
+    (("结果",),                   "#f3c47e"),
+    (("方式", "比较", "伴随", "程度"), "#f6d39b"),
+    (("状语",),                   "#e08a2f"),   # 其它状语兜底
+    # ── 定语族:绿(限制性/非限制性/从句/短语) ──
+    (("非限制性定语", "非限定性定语"), "#3bb583"),
+    (("限制性定语", "限定性定语"),     "#15805a"),
+    (("定语从句", "关系"),         "#1f9d6b"),
+    (("定语",),                   "#59c79a"),   # 定语短语/分词作定语
+    # ── 非谓语族:青(不定式/现在分词/过去分词/动名词) ──
+    (("不定式",),                 "#0a7d88"),
+    (("过去分词",),               "#2bb3bf"),
+    (("动名词",),                 "#5cc7d0"),
+    (("现在分词", "分词", "非谓语"), "#0e9aa7"),
+    # ── 介词短语族:天蓝 ──
+    (("介词",),                   "#2f9fc4"),
+    # ── 并列族:品红(连词/分句/成分) ──
+    (("并列连词", "并列关联"),     "#e0529c"),
+    (("并列分句", "并列句"),       "#c93d85"),
+    (("并列",),                   "#e974ad"),
+    # ── 主干族:蓝(主/谓/宾/表各一档) ──
+    (("主语",),                   "#1e4fc8"),
+    (("谓语",),                   "#3b6fe0"),
+    (("宾语",),                   "#5f87e8"),
+    (("表语",),                   "#84a4ee"),
+    (("主干", "主句", "核心"),     "#3b6fe0"),
+    # ── 其他:灰 ──
+    (("插入", "独立"),            "#5a6478"),
+]
+_OTHER_COLOR_HEX = "#6b7688"
+_OTHER_COLOR = (_OTHER_COLOR_HEX, _tint(_OTHER_COLOR_HEX))
+
+
+def component_color(type_str: str | None) -> tuple[str, str]:
+    """成分类型名 → (文字色, 底色)。按 _COLOR_RULES 顺序匹配语义小类,同族同色相、子类沿明度细分。"""
+    t = type_str or ""
+    for keywords, color in _COLOR_RULES:
+        if any(k in t for k in keywords):
+            return color, _tint(color)
+    return _OTHER_COLOR
+
+
+def _enrich_analysis(data: dict, sentence: str, syntax: list[str]) -> dict:
+    """补 syntax_points(给考点匹配用)+ 每段配色(按成分类型固定)+ 兼容旧字段。"""
+    gp = data.get("grammar_points") or []
+    data.setdefault("syntax_points", [g.get("name") for g in gp if g.get("name")] or syntax)
+    segs = data.get("segments") or []
+    # 给每段按成分类型附固定颜色(前端直接用,跨句统一)
+    for s in segs:
+        color, tint = component_color(s.get("type"))
+        s["color"] = color
+        s["tint"] = tint
+    comp = data.get("components") or {}
+    # 旧字段兼容(若 LLM 没给)
+    data.setdefault("main_clause",
+                    " ".join(x for x in [comp.get("subject"), comp.get("predicate"), comp.get("object")] if x))
+    data.setdefault("layers", [{"type": s.get("type"), "text": s.get("text")} for s in segs])
+    data.setdefault("difficulty_points", [g.get("name") for g in gp if g.get("name")] or syntax)
+    return data
+
+
 async def analyze_sentence(sentence: str) -> dict:
-    """AI 结构拆解 → analysis_json。dev 确定性 mock;生产走 LLM。"""
+    """AI 多维结构拆解 → analysis_json(适配小程序「长难句学习」UI)。dev 确定性 mock;生产走 LLM。
+
+    产出结构:
+      sentence_type  整句类型(主从复合句/并列句/简单句)
+      translation    中文翻译;  summary  整体说明
+      segments       [{idx,type,text}]  按原文顺序的成分分段(彩色编号显示)
+      structure      [{idx,parent}]     成分层级关系(结构树/思维导图)
+      components     {subject,predicate,object,...}  句子成分(主干)
+      key_words      [{word,pos,meaning}]            重点词汇
+      grammar_points [{name,explanation}]            语法点(name 喂考点匹配)
+      explanations   [{idx,text}]                    逐条结构解析
+    """
     syntax = detect_syntax_points(sentence)
     if is_llm_dev_mode():
         words = sentence.split()
-        return {
-            "main_clause": " ".join(words[:8]) + ("…" if len(words) > 8 else ""),
-            "layers": [{"type": p, "text": sentence} for p in syntax],
+        segs = [{"idx": i + 1, "type": p, "text": sentence} for i, p in enumerate(syntax or ["主句"])]
+        return _enrich_analysis({
+            "sentence_type": "主从复合句" if syntax else "简单句",
             "translation": f"[译] {sentence[:30]}…",
-            "difficulty_points": syntax or ["长句修饰"],
-            "syntax_points": syntax,
-        }
-    system = ("你是英语语法专家。把给定长难句拆解为:主干(SVO)、各修饰/从句成分及类型、"
-              "中文翻译、难点、涉及句法点名。严格输出 JSON。")
-    user = (f"句子:{sentence}\n返回 JSON:"
-            '{"main_clause":..,"layers":[{"type":..,"text":..}],"translation":..,'
-            '"difficulty_points":[..],"syntax_points":[..]}')
-    try:
-        resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=1024,
-                                     response_format={"type": "json_object"})
-        data = json.loads(resp.choices[0].message.content or "{}")
-        data.setdefault("syntax_points", syntax)
-        return data
-    except Exception as exc:  # noqa: BLE001
-        _log.warning("analyze_sentence LLM failed: %s", exc)
-        return {"main_clause": "", "layers": [], "translation": "",
-                "difficulty_points": [], "syntax_points": syntax}
+            "summary": "mock 结构解析",
+            "segments": segs,
+            "structure": [{"idx": s["idx"], "parent": None} for s in segs],
+            "components": {"subject": " ".join(words[:2]), "predicate": " ".join(words[2:4]), "object": ""},
+            "key_words": [{"word": w, "pos": "", "meaning": "mock 释义"} for w in words[:3]],
+            "grammar_points": [{"name": p, "explanation": "mock 讲解"} for p in (syntax or ["长句修饰"])],
+            "explanations": [{"idx": s["idx"], "text": f"{s['type']} mock 解析"} for s in segs],
+        }, sentence, syntax)
+    system = (
+        "你是英语语法专家。把给定长难句做**多维结构化拆解**,供学习 App 展示。严格输出 JSON,所有 type/name/解析用中文。\n"
+        "字段要求:\n"
+        "1) sentence_type:整句类型(如 主从复合句/并列句/简单句);\n"
+        "2) segments:按**原文顺序**把句子切成成分片段,**切得细一些**——每段尽量是一个**最小的短语/从句单位**"
+        "(如把'and the wind was howling around'与'the old house'分开、主句主语与谓语分开、目的状语单列),一般 5-10 段;"
+        "每段 {idx(从1递增)、type(成分类型,如 让步状语从句/主句主语/主句谓语/非限制性定语从句/限制性定语从句/"
+        "介词短语/目的状语/并列谓语/并列连词)、text(该片段原文连续片段,各段拼起来≈原句)};\n"
+        "3) structure:成分层级,每项 {idx(对应 segments)、parent(其修饰/隶属的成分 idx;主干成分 parent=null)};\n"
+        "4) components:主干成分 {subject、predicate、object}(没有的留空串);\n"
+        "5) key_words:重点词汇 3-6 个 [{word、pos、meaning}];\n"
+        "6) grammar_points:涉及语法点 [{name(规范名,如 定语从句/状语从句/非谓语动词)、explanation(一句话)}];\n"
+        "7) explanations:逐条结构解析 [{idx(对应 segments)、text}];\n"
+        "8) translation:中文翻译;summary:一句话整体说明。"
+    )
+    user = (
+        f"句子:{sentence}\n返回 JSON:"
+        '{"sentence_type":..,"translation":..,"summary":..,'
+        '"segments":[{"idx":1,"type":..,"text":..}],"structure":[{"idx":1,"parent":null}],'
+        '"components":{"subject":..,"predicate":..,"object":..},'
+        '"key_words":[{"word":..,"pos":..,"meaning":..}],'
+        '"grammar_points":[{"name":..,"explanation":..}],"explanations":[{"idx":1,"text":..}]}'
+    )
+    # 重试:推理模型偶发把 token 预算耗在推理上、返回空内容(finish_reason=length)→ 再试一次
+    for _attempt in range(2):
+        try:
+            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=8192,
+                                         response_format={"type": "json_object"})
+            data = json.loads(resp.choices[0].message.content or "{}")
+            if data.get("segments"):          # 拿到有效结构 → 用之
+                return _enrich_analysis(data, sentence, syntax)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("analyze_sentence attempt %d failed: %s", _attempt + 1, exc)
+    return _enrich_analysis({"sentence_type": "", "translation": "", "summary": "",
+                             "segments": [], "structure": [], "components": {},
+                             "key_words": [], "grammar_points": [], "explanations": []},
+                            sentence, syntax)
 
 
 async def list_published(

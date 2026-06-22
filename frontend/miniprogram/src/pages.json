@@ -13,6 +13,10 @@
       "style": { "navigationBarTitleText": "上传错题" }
     },
     {
+      "path": "pages/long-sentence/index",
+      "style": { "navigationBarTitleText": "长难句学习" }
+    },
+    {
       "path": "pages/listening/index",
       "style": { "navigationBarTitleText": "听力练习" }
     },
