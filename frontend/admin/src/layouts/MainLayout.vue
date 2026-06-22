@@ -11,23 +11,33 @@ const auth = useAuthStore()
 const active = computed(() => route.path)
 
 // 导航分组：所有页面按业务归类，默认全部展开、可折叠，侧栏可滚动。
+// 项多的分组(如内容生产)可再分二级子类(subs);否则直接 items。
 interface NavItem { path: string; label: string }
-interface NavGroup { key: string; title: string; items: NavItem[] }
+interface NavSub { title: string; items: NavItem[] }
+interface NavGroup { key: string; title: string; items?: NavItem[]; subs?: NavSub[] }
 
 const navGroups: NavGroup[] = [
-  { key: 'g-content', title: '📚 内容生产', items: [
-    { path: '/curriculum-units', label: '课程内容生成' },
-    { path: '/curriculum-gen-jobs', label: '课程生成任务' },
-    { path: '/platform-questions', label: '平台真题(上传真题)' },
-    { path: '/questions', label: '仿真题审核' },
-    { path: '/kp-candidates', label: '候选知识点审核' },
-    { path: '/knowledge-graph', label: '🧠 知识图谱(节点总览)' },
-    { path: '/exam-type-stats', label: '考试类型统计' },
-    { path: '/kp-prompts', label: '习题匹配知识脑图提示词' },
-    { path: '/node-resources', label: '知识点资源' },
-    { path: '/lecture-split', label: '详解拆分审核' },
-    { path: '/long-sentences', label: '长难句管理' },
-    { path: '/essay-templates', label: '作文模板' },
+  { key: 'g-content', title: '📚 内容生产', subs: [
+    { title: '课程 / 教材', items: [
+      { path: '/curriculum-units', label: '课程内容生成' },
+      { path: '/curriculum-gen-jobs', label: '课程生成任务' },
+    ] },
+    { title: '真题 / 仿真', items: [
+      { path: '/platform-questions', label: '平台真题(上传真题)' },
+      { path: '/questions', label: '仿真题审核' },
+    ] },
+    { title: '知识图谱 / 考点', items: [
+      { path: '/kp-candidates', label: '候选知识点审核' },
+      { path: '/knowledge-graph', label: '🧠 知识图谱(节点总览)' },
+      { path: '/exam-type-stats', label: '考试类型统计' },
+      { path: '/kp-prompts', label: '习题匹配知识脑图提示词' },
+      { path: '/node-resources', label: '知识点资源' },
+      { path: '/lecture-split', label: '详解拆分审核' },
+    ] },
+    { title: '句子 / 写作', items: [
+      { path: '/long-sentences', label: '长难句管理' },
+      { path: '/essay-templates', label: '作文模板' },
+    ] },
   ] },
   { key: 'g-vocab', title: '🔤 词汇 / 词力通', items: [
     { path: '/vocab-lists', label: '通用词库' },
@@ -78,8 +88,9 @@ const navGroups: NavGroup[] = [
   ] },
 ]
 
-// 默认展开全部分组：保证所有页面可见、不被折叠或裁切
-const defaultOpeneds = navGroups.map(g => g.key)
+// 默认展开全部分组（含二级子类）：保证所有页面可见、不被折叠或裁切
+const defaultOpeneds = navGroups.flatMap(g =>
+  [g.key, ...(g.subs ? g.subs.map((_, i) => `${g.key}-${i}`) : [])])
 
 function onLogout() {
   auth.logout()
@@ -103,9 +114,21 @@ function onLogout() {
         <el-menu-item index="/overview">📊 数据大盘</el-menu-item>
         <el-sub-menu v-for="g in navGroups" :key="g.key" :index="g.key">
           <template #title>{{ g.title }}</template>
-          <el-menu-item v-for="it in g.items" :key="it.path" :index="it.path">
-            {{ it.label }}
-          </el-menu-item>
+          <!-- 有二级子类:再嵌一层子菜单 -->
+          <template v-if="g.subs">
+            <el-sub-menu v-for="(s, si) in g.subs" :key="`${g.key}-${si}`" :index="`${g.key}-${si}`">
+              <template #title>{{ s.title }}</template>
+              <el-menu-item v-for="it in s.items" :key="it.path" :index="it.path">
+                {{ it.label }}
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
+          <!-- 普通分组:直接列项 -->
+          <template v-else>
+            <el-menu-item v-for="it in g.items" :key="it.path" :index="it.path">
+              {{ it.label }}
+            </el-menu-item>
+          </template>
         </el-sub-menu>
       </el-menu>
     </el-aside>
