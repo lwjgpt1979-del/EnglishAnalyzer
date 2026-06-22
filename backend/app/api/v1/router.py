@@ -16,6 +16,7 @@ from app.api.v1.wrong_questions import router as wrong_questions_router
 from app.api.v1.wrong_center import router as wrong_center_router
 from app.api.v1.student_graph import router as student_graph_router
 from app.api.v1.long_sentence import router as long_sentence_router
+from app.api.v1.checkin import router as checkin_router
 from app.api.v1.regions import router as regions_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.relative import router as relative_router
@@ -49,6 +50,7 @@ v1_router.include_router(wrong_questions_router)
 v1_router.include_router(wrong_center_router)
 v1_router.include_router(student_graph_router)
 v1_router.include_router(long_sentence_router)
+v1_router.include_router(checkin_router)
 v1_router.include_router(regions_router)
 v1_router.include_router(memberships_router)
 v1_router.include_router(orders_router)

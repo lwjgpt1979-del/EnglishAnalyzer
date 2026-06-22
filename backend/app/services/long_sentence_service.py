@@ -329,6 +329,40 @@ async def get_detail(db: AsyncSession, *, ls_id: uuid.UUID) -> tuple[LongSentenc
     return ls, [{"node_id": nid, "name": nm, "node_kind": nk} for nid, nm, nk in nodes]
 
 
+# ── 收藏 ───────────────────────────────────────────────────────────────────────
+async def is_favorited(db: AsyncSession, *, user_id: uuid.UUID, ls_id: uuid.UUID) -> bool:
+    from app.models.d20_long_sentence import LongSentenceFavorite
+    row = (await db.execute(sa.select(LongSentenceFavorite.long_sentence_id).where(
+        LongSentenceFavorite.user_id == user_id,
+        LongSentenceFavorite.long_sentence_id == ls_id))).first()
+    return row is not None
+
+
+async def set_favorite(db: AsyncSession, *, user_id: uuid.UUID, ls_id: uuid.UUID, on: bool) -> bool:
+    """收藏/取消收藏,返回最终是否已收藏(幂等)。"""
+    from app.models.d20_long_sentence import LongSentenceFavorite
+    exists = await is_favorited(db, user_id=user_id, ls_id=ls_id)
+    if on and not exists:
+        db.add(LongSentenceFavorite(user_id=user_id, long_sentence_id=ls_id))
+        await db.commit()
+    elif not on and exists:
+        await db.execute(sa.delete(LongSentenceFavorite).where(
+            LongSentenceFavorite.user_id == user_id,
+            LongSentenceFavorite.long_sentence_id == ls_id))
+        await db.commit()
+    return on
+
+
+async def favorited_ids(db: AsyncSession, *, user_id: uuid.UUID, ls_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    from app.models.d20_long_sentence import LongSentenceFavorite
+    if not ls_ids:
+        return set()
+    rows = (await db.execute(sa.select(LongSentenceFavorite.long_sentence_id).where(
+        LongSentenceFavorite.user_id == user_id,
+        LongSentenceFavorite.long_sentence_id.in_(ls_ids)))).scalars().all()
+    return set(rows)
+
+
 # ── 验证题型(L3 客观自动判分 / L4 主观 AI·发音评测)────────────────────────────
 _OBJECTIVE_TYPES = {"cloze", "struct_type", "main_clause"}
 _SUBJECTIVE_TYPES = {"translate", "rewrite", "span_label", "read_aloud"}  # L4:AI 评分 / 发音评测

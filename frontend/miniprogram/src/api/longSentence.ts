@@ -16,13 +16,14 @@ export interface LSAnalysis {
   grammar_points?: LSGrammarPoint[]
   explanations?: LSExplanation[]
 }
-export interface LSItem { id: string; text: string; source_kind: string; syntax_points: string[] }
+export interface LSItem { id: string; text: string; source_kind: string; syntax_points: string[]; favorited?: boolean }
 export interface LSListOut { total: number; items: LSItem[] }
 export interface LSNodeRef { node_id: string; name: string; node_kind: string | null }
 export interface LSDetail {
   id: string; text: string; source_kind: string
   analysis: LSAnalysis | null
   audio_url?: string | null
+  favorited?: boolean
   nodes: LSNodeRef[]
 }
 
@@ -42,4 +43,9 @@ export function ttsSpeakUrl(text: string, stage = 'junior'): string {
 /** 听原句:取/生成句子音频 COS 直链(首次合成→存 COS→回填库;再次直接返回库里链接)。 */
 export function getLsAudioUrl(id: string): Promise<{ url: string }> {
   return request<{ url: string }>(`/api/v1/long-sentences/${id}/audio`, { method: 'POST' })
+}
+
+/** 收藏 / 取消收藏长难句,返回最终是否已收藏。 */
+export function favoriteLs(id: string, on: boolean): Promise<{ favorited: boolean }> {
+  return request<{ favorited: boolean }>(`/api/v1/long-sentences/${id}/favorite`, { method: on ? 'POST' : 'DELETE' })
 }

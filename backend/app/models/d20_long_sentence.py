@@ -56,3 +56,17 @@ class LongSentenceNode(Base):
     )
 
     __table_args__ = (sa.Index("ix_long_sentence_node_node", "node_id"),)
+
+
+class LongSentenceFavorite(Base):
+    """学生 ↔ 长难句 收藏。"""
+
+    __tablename__ = "long_sentence_favorite"
+
+    user_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    long_sentence_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("long_sentence.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_ls_favorite_user", "user_id"),)

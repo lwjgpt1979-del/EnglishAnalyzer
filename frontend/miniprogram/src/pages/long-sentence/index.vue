@@ -11,7 +11,7 @@
           <text class="prog-label">今日学习 <text class="prog-num">{{ index + 1 }}</text>/{{ items.length }} 句</text>
           <view class="prog-bar"><view class="prog-fill" :style="{ width: pct + '%' }" /></view>
         </view>
-        <view class="checkin" @tap="soon('打卡日历')"><text>📅 打卡日历</text></view>
+        <view class="checkin" @tap="openCalendar"><text>📅 打卡日历{{ checkinStatus ? ' · 连续' + checkinStatus.current_streak + '天' : '' }}</text></view>
       </view>
 
       <!-- 句子卡 -->
@@ -19,7 +19,7 @@
         <view class="sent-head">
           <view class="hl">
             <text class="sent-tag">句子 {{ index + 1 }}</text>
-            <text class="fav" @tap="soon('收藏')">⭐ 收藏</text>
+            <text class="fav" :class="{ on: favorited }" @tap="toggleFav">{{ favorited ? '★ 已收藏' : '☆ 收藏' }}</text>
           </view>
           <view class="pager">
             <text class="pg" :class="{ dis: index === 0 }" @tap="prev">‹ 上一句</text>
@@ -101,7 +101,7 @@
       <view class="card" v-if="analysis?.sentence_type || (analysis?.explanations || []).length || analysis?.summary">
         <view class="sec-row">
           <text class="sec-title">结构解析</text>
-          <text class="link" @tap="soon('语法点详解')">查看语法点详解 ›</text>
+          <text class="link" @tap="openKpDetail">查看语法点详解 ›</text>
         </view>
         <text v-if="analysis?.sentence_type" class="stype">这是一个{{ analysis.sentence_type.replace(/。$/, '') }}。</text>
         <view v-for="e in (analysis?.explanations || [])" :key="e.idx" class="exp-row">
@@ -116,9 +116,35 @@
 
     <!-- 底部固定栏 -->
     <view v-if="!loading && items.length" class="footer">
-      <view class="foot-side" @tap="soon('生词本')"><text class="fs-ic">🔖</text><text class="fs-tx">生词本</text></view>
+      <view class="foot-side" @tap="go('/pages/vocabulary/index')"><text class="fs-ic">🔖</text><text class="fs-tx">生词本</text></view>
       <view class="foot-main" @tap="next">再学一句</view>
-      <view class="foot-side" @tap="soon('错题本')"><text class="fs-ic">❓</text><text class="fs-tx">错题本</text></view>
+      <view class="foot-side" @tap="go('/pages/wrong-questions/list')"><text class="fs-ic">❓</text><text class="fs-tx">错题本</text></view>
+    </view>
+
+    <!-- 打卡日历弹层 -->
+    <view v-if="calOpen" class="cal-mask" @tap="calOpen = false">
+      <view class="cal-card" @tap.stop>
+        <view class="cal-head">
+          <text class="cal-title">📅 学习打卡</text>
+          <text class="cal-close" @tap="calOpen = false">✕</text>
+        </view>
+        <view class="cal-stats">
+          <view class="cal-stat"><text class="cs-num">{{ cal?.current_streak ?? 0 }}</text><text class="cs-lb">连续天数</text></view>
+          <view class="cal-stat"><text class="cs-num">{{ cal?.longest_streak ?? 0 }}</text><text class="cs-lb">历史最高</text></view>
+          <view class="cal-stat"><text class="cs-num">{{ cal?.checked_count ?? 0 }}</text><text class="cs-lb">本月打卡</text></view>
+        </view>
+        <view class="cal-grid">
+          <text v-for="w in ['日','一','二','三','四','五','六']" :key="w" class="cal-wd">{{ w }}</text>
+          <view v-for="(c, i) in calCells" :key="i" class="cal-cell" :class="{ checked: c.checked, today: c.today, blank: !c.day }">
+            <text v-if="c.day">{{ c.day }}</text>
+          </view>
+        </view>
+        <view class="cal-foot">
+          <text class="cal-btn" :class="{ done: checkinStatus?.checked_in_today }" @tap="doCheckin">
+            {{ checkinStatus?.checked_in_today ? '今日已打卡 ✓' : '立即打卡' }}
+          </text>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -126,7 +152,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { listLongSentences, getLongSentence, getLsAudioUrl, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
+import { listLongSentences, getLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
+import { checkin, getCheckinStatus, getCheckinCalendar, type CheckinStatus, type CheckinCalendar } from '@/api/checkin'
 import LsTreeNode from './LsTreeNode.vue'
 
 interface TNode { idx: number; type: string; text: string; children: TNode[] }
@@ -227,6 +254,64 @@ const compRows = computed(() => {
 })
 
 function soon(name: string) { uni.showToast({ title: name + '·敬请期待', icon: 'none' }) }
+function go(url: string) { uni.navigateTo({ url }) }
+
+/* ── 收藏 ── */
+const favorited = ref(false)
+async function toggleFav() {
+  const id = items.value[index.value]?.id
+  if (!id) return
+  const target = !favorited.value
+  favorited.value = target  // 乐观更新
+  try {
+    const r = await favoriteLs(id, target)
+    favorited.value = r.favorited
+    const it = items.value[index.value]; if (it) it.favorited = r.favorited
+  } catch {
+    favorited.value = !target
+    uni.showToast({ title: '操作失败', icon: 'none' })
+  }
+}
+
+/* ── 语法点详解:跳关联考点内容页 ── */
+function openKpDetail() {
+  const node = detail.value?.nodes?.[0]
+  if (!node) { uni.showToast({ title: '本句暂无关联语法点', icon: 'none' }); return }
+  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${node.node_id}` })
+}
+
+/* ── 打卡日历 ── */
+const checkinStatus = ref<CheckinStatus | null>(null)
+const cal = ref<CheckinCalendar | null>(null)
+const calOpen = ref(false)
+const calCells = computed(() => {
+  const c = cal.value
+  if (!c) return [] as { day: number; checked?: boolean; today?: boolean }[]
+  const checked = new Set((c.days || []).map(d => d.date))
+  const first = new Date(c.year, c.month - 1, 1).getDay()  // 0=周日
+  const dim = new Date(c.year, c.month, 0).getDate()
+  const now = new Date()
+  const curMonth = now.getFullYear() === c.year && now.getMonth() + 1 === c.month
+  const cells: { day: number; checked?: boolean; today?: boolean }[] = []
+  for (let i = 0; i < first; i++) cells.push({ day: 0 })
+  for (let d = 1; d <= dim; d++) {
+    const ds = `${c.year}-${String(c.month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    cells.push({ day: d, checked: checked.has(ds), today: curMonth && now.getDate() === d })
+  }
+  return cells
+})
+async function openCalendar() {
+  calOpen.value = true
+  try { cal.value = await getCheckinCalendar() } catch { /* ignore */ }
+  try { checkinStatus.value = await getCheckinStatus() } catch { /* ignore */ }
+}
+async function doCheckin() {
+  if (checkinStatus.value?.checked_in_today) return
+  try {
+    checkinStatus.value = await checkin()
+    cal.value = await getCheckinCalendar()
+  } catch { uni.showToast({ title: '打卡失败', icon: 'none' }) }
+}
 
 /* ── 听原句:首次合成存 COS+回填库,再次直接播库里链接;COS 未配置回退流式 ── */
 let audioCtx: UniApp.InnerAudioContext | null = null
@@ -271,6 +356,7 @@ async function loadDetail() {
   if (playing.value && audioCtx) audioCtx.stop()
   audioUrl.value = ''
   try { detail.value = await getLongSentence(it.id) } catch { /* ignore */ }
+  favorited.value = !!(detail.value?.favorited ?? it.favorited)
   tab.value = 'struct'; showTranslate.value = false; showStruct.value = true
 }
 function prev() { if (index.value > 0) { index.value--; loadDetail() } }
@@ -282,6 +368,7 @@ onLoad(async () => {
     items.value = r.items || []
     if (items.value.length) await loadDetail()
   } finally { loading.value = false }
+  try { checkinStatus.value = await getCheckinStatus() } catch { /* ignore */ }
 })
 </script>
 
@@ -306,6 +393,7 @@ onLoad(async () => {
 .hl { display: flex; align-items: center; gap: 16rpx; }
 .sent-tag { background: var(--c-primary-faint); color: var(--c-primary); font-size: 24rpx; padding: 6rpx 18rpx; border-radius: 24rpx; }
 .fav { font-size: 24rpx; color: #999; }
+.fav.on { color: #f5a623; font-weight: 700; }
 .pager { display: flex; gap: 12rpx; }
 .pg { font-size: 24rpx; color: #555; background: #fff; border: 1rpx solid #e3e7ee; border-radius: 24rpx; padding: 6rpx 18rpx; }
 .pg.primary { background: var(--c-primary); color: var(--c-on-primary); border-color: var(--c-primary); }
@@ -368,6 +456,27 @@ onLoad(async () => {
 .exp-text { flex: 1; font-size: 27rpx; color: #555; line-height: 1.6; }
 .summary { display: block; margin-top: 14rpx; font-size: 27rpx; color: #777; line-height: 1.7; }
 .footer-space { height: 140rpx; }
+
+/* 打卡日历弹层 */
+.cal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 99; }
+.cal-card { width: 600rpx; background: #fff; border-radius: 24rpx; padding: 30rpx; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; }
+.cal-title { font-size: 32rpx; font-weight: 800; }
+.cal-close { font-size: 32rpx; color: #999; padding: 0 10rpx; }
+.cal-stats { display: flex; justify-content: space-around; margin-bottom: 24rpx; }
+.cal-stat { display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
+.cs-num { font-size: 44rpx; font-weight: 800; color: var(--c-primary); }
+.cs-lb { font-size: 22rpx; color: #888; }
+.cal-grid { display: flex; flex-wrap: wrap; }
+.cal-wd { width: 14.28%; text-align: center; font-size: 22rpx; color: #aaa; padding: 8rpx 0; }
+.cal-cell { width: 14.28%; height: 64rpx; display: flex; align-items: center; justify-content: center; font-size: 24rpx; color: #555; }
+.cal-cell.blank { visibility: hidden; }
+.cal-cell.checked { color: #fff; }
+.cal-cell.checked text { background: var(--c-primary); width: 48rpx; height: 48rpx; line-height: 48rpx; text-align: center; border-radius: 50%; }
+.cal-cell.today text { box-shadow: 0 0 0 2rpx var(--c-gold); border-radius: 50%; }
+.cal-foot { margin-top: 24rpx; }
+.cal-btn { display: block; text-align: center; background: var(--g-primary); color: #fff; font-size: 30rpx; font-weight: 700; padding: 22rpx 0; border-radius: 44rpx; box-shadow: var(--shadow-primary); }
+.cal-btn.done { background: #e8eef6; color: #9aa6b6; box-shadow: none; }
 
 /* 底部固定 */
 .footer { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 20rpx; padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -2rpx 14rpx rgba(0,0,0,.05); }

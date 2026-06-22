@@ -31,9 +31,11 @@ async def list_long_sentences(
 ):
     """已发布长难句(平台共享+个人);可按句法 node 过滤。"""
     rows = await lss.list_published(db, node_id=node_id, owner_id=current_user.id, limit=limit)
+    fav = await lss.favorited_ids(db, user_id=current_user.id, ls_ids=[r.id for r in rows])
     items = [LongSentenceItem(
         id=r.id, text=r.text, source_kind=r.source_kind,
         syntax_points=(r.analysis_json or {}).get("syntax_points", []),
+        favorited=r.id in fav,
     ) for r in rows]
     return make_ok(LongSentenceListOut(total=len(items), items=items))
 
@@ -44,11 +46,26 @@ async def get_long_sentence(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
     ls, nodes = await lss.get_detail(db, ls_id=ls_id)
     if ls is None or ls.status != "published":
         raise AppError(code=404, message="长难句不存在或未发布")
+    favorited = await lss.is_favorited(db, user_id=current_user.id, ls_id=ls_id)
     return make_ok(LongSentenceDetailOut(
         id=ls.id, text=ls.text, source_kind=ls.source_kind, analysis=ls.analysis_json,
-        audio_url=ls.audio_url,
+        audio_url=ls.audio_url, favorited=favorited,
         nodes=[LongSentenceNodeRef(**n) for n in nodes],
     ))
+
+
+@router.post("/{ls_id}/favorite", response_model=BaseResponse[dict])
+async def favorite(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """收藏长难句。"""
+    on = await lss.set_favorite(db, user_id=current_user.id, ls_id=ls_id, on=True)
+    return make_ok({"favorited": on})
+
+
+@router.delete("/{ls_id}/favorite", response_model=BaseResponse[dict])
+async def unfavorite(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """取消收藏长难句。"""
+    on = await lss.set_favorite(db, user_id=current_user.id, ls_id=ls_id, on=False)
+    return make_ok({"favorited": on})
 
 
 @router.post("/{ls_id}/audio", response_model=BaseResponse[dict])
