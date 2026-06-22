@@ -50,28 +50,9 @@
         <!-- 操作 pill 行 -->
         <view class="acts">
           <view class="act" :class="{ on: playing }" @tap="listen"><text class="act-ic">🔊</text><text class="act-tx">{{ playing ? '停止' : (loadingAudio ? '生成中…' : '听原句') }}</text></view>
-          <view class="act" :class="{ rec: recording }" @tap="shadow"><text class="act-ic">{{ recording ? '⏺' : '🎤' }}</text><text class="act-tx">{{ recording ? '停止录音' : (scoring ? '评分中…' : '跟读') }}</text></view>
           <view class="act" @tap="showStruct = !showStruct"><text class="act-ic">👁</text><text class="act-tx">{{ showStruct ? '隐藏结构' : '显示结构' }}</text></view>
           <view class="act" @tap="showTranslate = !showTranslate"><text class="act-ic">📝</text><text class="act-tx">翻译</text></view>
           <view class="act" @tap="soon('更多')"><text class="act-ic">···</text><text class="act-tx">更多</text></view>
-        </view>
-
-        <!-- 跟读评分结果 -->
-        <view v-if="scoring || shadowResult" class="shadow-box">
-          <view v-if="scoring" class="sh-loading">🎯 正在评测发音…</view>
-          <template v-else-if="shadowResult">
-            <view class="sh-head">
-              <text class="sh-score" :style="{ color: scoreColor(shadowResult.overall) }">{{ shadowResult.overall }}</text>
-              <text class="sh-unit">分</text>
-              <text class="sh-level" :style="{ background: scoreColor(shadowResult.overall) }">{{ shadowResult.level }}</text>
-              <view v-if="shadowResult.accuracy != null" class="sh-subs">
-                <text>准确 {{ shadowResult.accuracy }}</text>
-                <text>流利 {{ shadowResult.fluency }}</text>
-                <text>完整 {{ shadowResult.completion }}</text>
-              </view>
-            </view>
-            <text v-if="shadowResult.tip" class="sh-tip">💡 {{ shadowResult.tip }}</text>
-          </template>
         </view>
       </view>
 
@@ -145,7 +126,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { listLongSentences, getLongSentence, getLsAudioUrl, ttsSpeakUrl, shadowScoreLs, type LSItem, type LSDetail, type LSAnalysis, type LSShadowResult } from '@/api/longSentence'
+import { listLongSentences, getLongSentence, getLsAudioUrl, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
 import LsTreeNode from './LsTreeNode.vue'
 
 interface TNode { idx: number; type: string; text: string; children: TNode[] }
@@ -283,58 +264,11 @@ async function listen() {
   ctx.play()
 }
 
-/* ── 跟读:录音 → 发音评测 ── */
-const recorder = (uni.getRecorderManager ? uni.getRecorderManager() : null)
-const recording = ref(false)
-const scoring = ref(false)
-const shadowResult = ref<LSShadowResult | null>(null)
-let recorderBound = false
-function fileToBase64(path: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fsm = (uni as any).getFileSystemManager?.()
-    const fallback = () => {
-      fetch(path).then(r => r.blob()).then(b => {
-        const fr = new FileReader()
-        fr.onload = () => resolve(String(fr.result).split(',')[1] || '')
-        fr.onerror = () => reject(new Error('读取失败'))
-        fr.readAsDataURL(b)
-      }).catch(reject)
-    }
-    if (fsm) fsm.readFile({ filePath: path, encoding: 'base64', success: (r: any) => resolve(r.data as string), fail: fallback })
-    else fallback()
-  })
-}
-function bindRecorder() {
-  if (!recorder || recorderBound) return
-  recorderBound = true
-  recorder.onStop(async (res: any) => {
-    recording.value = false
-    scoring.value = true
-    try {
-      const b64 = res.tempFilePath ? await fileToBase64(res.tempFilePath) : ''
-      shadowResult.value = await shadowScoreLs(detail.value?.text || '', b64, 'mp3')
-    } catch { uni.showToast({ title: '评分失败', icon: 'none' }) }
-    finally { scoring.value = false }
-  })
-  recorder.onError(() => { recording.value = false; uni.showToast({ title: '录音失败', icon: 'none' }) })
-}
-function shadow() {
-  if (!recorder) { uni.showToast({ title: '当前环境不支持录音', icon: 'none' }); return }
-  bindRecorder()
-  if (recording.value) { recorder.stop(); return }
-  shadowResult.value = null
-  recording.value = true
-  recorder.start({ format: 'mp3', duration: 60000 })
-}
-const scoreColor = (n: number) => n >= 85 ? '#2fc58a' : n >= 70 ? '#f5a623' : '#ff7a59'
-
 async function loadDetail() {
   const it = items.value[index.value]
   if (!it) return
   detail.value = null
   if (playing.value && audioCtx) audioCtx.stop()
-  if (recording.value && recorder) recorder.stop()
-  shadowResult.value = null
   audioUrl.value = ''
   try { detail.value = await getLongSentence(it.id) } catch { /* ignore */ }
   tab.value = 'struct'; showTranslate.value = false; showStruct.value = true
@@ -401,18 +335,6 @@ onLoad(async () => {
 .act-tx { font-size: 22rpx; color: #666; }
 .act.on { background: var(--c-primary-faint); }
 .act.on .act-tx { color: var(--c-primary); }
-.act.rec { background: #fdecea; }
-.act.rec .act-tx { color: #ff7a59; }
-
-/* 跟读评分 */
-.shadow-box { margin-top: 18rpx; padding: 20rpx; background: #f7f9fc; border-radius: 14rpx; }
-.sh-loading { font-size: 26rpx; color: #888; text-align: center; }
-.sh-head { display: flex; align-items: baseline; gap: 10rpx; flex-wrap: wrap; }
-.sh-score { font-size: 56rpx; font-weight: 800; }
-.sh-unit { font-size: 24rpx; color: #999; }
-.sh-level { color: #fff; font-size: 22rpx; padding: 4rpx 16rpx; border-radius: 20rpx; margin-left: 6rpx; }
-.sh-subs { display: flex; gap: 18rpx; margin-left: auto; font-size: 22rpx; color: #777; }
-.sh-tip { display: block; margin-top: 12rpx; font-size: 25rpx; color: #555; line-height: 1.6; }
 
 /* Tabs */
 .tabs { display: flex; border-bottom: 1rpx solid #eee; margin-bottom: 20rpx; }

@@ -43,17 +43,3 @@ export function ttsSpeakUrl(text: string, stage = 'junior'): string {
 export function getLsAudioUrl(id: string): Promise<{ url: string }> {
   return request<{ url: string }>(`/api/v1/long-sentences/${id}/audio`, { method: 'POST' })
 }
-
-export interface LSShadowWord { word: string; score: number }
-export interface LSShadowResult {
-  overall: number; level: string; tip?: string
-  words?: LSShadowWord[]
-  accuracy?: number | null; fluency?: number | null; completion?: number | null
-}
-
-/** 跟读评分:整句录音(base64)→ SOE 发音评测。 */
-export function shadowScoreLs(reference_text: string, audio: string, audio_format = 'mp3'): Promise<LSShadowResult> {
-  return request<LSShadowResult>('/api/v1/long-sentences/shadow-score', {
-    method: 'POST', data: { reference_text, audio, audio_format },
-  })
-}
