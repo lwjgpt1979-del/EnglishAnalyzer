@@ -101,8 +101,8 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status" style="width:100%">
-            <el-option label="published" value="published" />
-            <el-option label="draft" value="draft" />
+            <el-option label="已发布" value="published" />
+            <el-option label="草稿" value="draft" />
           </el-select>
         </el-form-item>
       </el-form>

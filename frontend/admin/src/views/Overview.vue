@@ -210,10 +210,10 @@ onMounted(load)
         <el-card shadow="never">
           <template #header>仿真题各状态</template>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="draft">{{ data?.questions_by_status.draft ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="reviewing">{{ data?.questions_by_status.reviewing ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="published">{{ data?.questions_by_status.published ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="retired">{{ data?.questions_by_status.retired ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="草稿">{{ data?.questions_by_status.draft ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="审核中">{{ data?.questions_by_status.reviewing ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="已发布">{{ data?.questions_by_status.published ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="已下架">{{ data?.questions_by_status.retired ?? 0 }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
       </el-col>
@@ -221,10 +221,10 @@ onMounted(load)
         <el-card shadow="never">
           <template #header>知识点内容各状态</template>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="draft">{{ data?.contents_by_status.draft ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="reviewing">{{ data?.contents_by_status.reviewing ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="published">{{ data?.contents_by_status.published ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="retired">{{ data?.contents_by_status.retired ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="草稿">{{ data?.contents_by_status.draft ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="审核中">{{ data?.contents_by_status.reviewing ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="已发布">{{ data?.contents_by_status.published ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="已下架">{{ data?.contents_by_status.retired ?? 0 }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
       </el-col>

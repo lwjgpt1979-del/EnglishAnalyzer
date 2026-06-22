@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models.d15_knowledge_graph import KnowledgeNode
-from app.models.d16_question_domain import PlatformPaper, PlatformQuestion, Passage
+from app.models.d16_question_domain import PlatformPaper, PlatformQuestion, PlatformQuestionKp, Passage
 from app.services import kp_prompt_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
@@ -169,7 +169,8 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
         f"{(q.stem or '').replace(chr(10), ' ')[:160]}"
         for q in group)
 
-    cnt = (f"每题挑 {min_kp}-{max_kp} 个" if min_kp else f"每题挑至多 {max_kp} 个") + "最贴切考点(无明确考点给 [])。"
+    cnt = ((f"每题挑 {min_kp}-{max_kp} 个" if min_kp else f"每题挑至多 {max_kp} 个")
+           + "最贴切考点;**不要硬凑**,无贴切考点就给 [](随后可用 propose 建议新建)。")
     nq = len(group)
     # 缺口建议:目录里没有合适考点但该题确有明确考点时,提议新建考点并归到某分类
     gap = ("\n\n【可挂分类(catCode<TAB>名称)——仅当目录无现成考点、但本题确有明确考点时,"
@@ -188,7 +189,7 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
     try:
         resp = await chat_completion(
             system_prompt=system_msg, user_prompt=user, max_tokens=4096,
-            response_format={"type": "json_object"})
+            response_format={"type": "json_object"}, temperature=0.0)
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception:  # noqa: BLE001
         return out, proposals
@@ -212,7 +213,7 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
 
 
 async def suggest_kps_for_text(
-    db: AsyncSession, text: str, *, source_type: str = "教材", stage: str | None = None,
+    db: AsyncSession, text: str, *, source_type: str = "教材·其他", stage: str | None = None,
 ) -> list[tuple[uuid.UUID, str, str]]:
     """一段正文(教材等)→ 受控考点建议。用该来源类型的提示词 + 关注分类 + 学段过滤目录。"""
     if not (text or "").strip() or is_llm_dev_mode():
@@ -244,44 +245,102 @@ async def suggest_kps_for_text(
 
 _PASSAGE_ROOT = {"听力": "lt", "阅读": "rc", "写作": "wr"}
 
+# 短文本身只标「内容类」考点(主题/主旨/关键信息/场景人物/篇章结构);
+# 「答题技能类」考点(同义转换/推断/筛选/运算/词义猜测/情景反应)需配题目才能考查,
+# 对原始短文是过度匹配 → 从板块候选里排除。仅用于短文匹配,真题题目不受影响。
+_PASSAGE_SKILL_EXCLUDE = {
+    "lt-4",      # 听力·信息处理与计算(数字运算/比较筛选/同义转换)
+    "lt-5",      # 听力·情景反应
+    "rc-3",      # 阅读·推理判断
+    "rc-4",      # 阅读·词义猜测
+    "rc-1-2",    # 阅读·同义转换(原文改写匹配)
+}
+
 
 async def suggest_kps_for_passage(
-    db: AsyncSession, text: str, kind: str, *, max_kp: int = 2,
+    db: AsyncSession, text: str, kind: str, *, max_kp: int | None = None,
 ) -> list[tuple[uuid.UUID, str, str]]:
-    """单元短文 → 关联考点。按 kind 限定考点子树:听力→lt-*/阅读→rc-*/写作→wr-*。"""
+    """单元短文 → 关联考点。**两段式**(各自目录干净,比混在一起单次调用更稳):
+
+    1) 板块考点:按 kind 限定子树(听力→lt-*/阅读→rc-*/写作→wr-*),用「教材·{kind}」板块提示词。
+    2) 额外类别:若「关注分类」配了板块之外的分类(如给短文加词法/句法),再聚焦挑一次该短文
+       **实际体现**的语言点考点。
+
+    实测:混在一个 434 项的大目录里单次问,AI 经常对阅读/写作返回空;拆成两次聚焦后都稳定。
+    """
     root_code = _PASSAGE_ROOT.get(kind)
     if not (text or "").strip() or not root_code or is_llm_dev_mode():
         return []
     code2node, entries = await _load_catalog(db)
+    prompts = await kp_prompt_service.get_prompts(db)
+    item = kp_prompt_service.default_item_for(prompts, f"教材·{kind}")
+    cap = max_kp if max_kp is not None else int(item.get("max_kp", 3))
+    snippet = text[:3000]
+
+    out: list[tuple[uuid.UUID, str, str]] = []
+    seen: set = set()
+
+    async def _collect(allowed: set | None, user_prompt: str) -> None:
+        if not allowed:
+            return
+        system_msg = _system_for(entries, allowed, None)
+        try:
+            # temperature=0:让短文→考点匹配尽量确定,避免同短文 run-to-run 飘(时有时无)
+            resp = await chat_completion(system_prompt=system_msg, user_prompt=user_prompt,
+                                         max_tokens=1024, response_format={"type": "json_object"},
+                                         temperature=0.0)
+            data = json.loads(resp.choices[0].message.content or "{}")
+        except Exception:  # noqa: BLE001
+            return
+        for code in (data.get("codes") or []):
+            ref = code2node.get(code)
+            if ref and ref[0] not in seen:
+                seen.add(ref[0])
+                out.append((ref[0], ref[1], code))
+
+    # ① 板块本身考点(lt/rc/wr)
     root_id = (await db.execute(sa.select(KnowledgeNode.id)
                                 .where(KnowledgeNode.code == root_code))).scalar_one_or_none()
-    allowed = await _descendant_node_ids(db, [root_id]) if root_id else None
-    system_msg = _system_for(entries, allowed, None)
-    user = (
-        f"下面是一篇{kind}短文/材料。请从目录里挑出它**最适合标注/训练**的 {kind}考点"
-        f"(至多 {max_kp} 个;若难判断给最贴切的 1 个)。\n\n【{kind}材料】\n{text[:3000]}\n\n"
-        '返回 JSON:{"codes":["编码",...]};只用目录里的编码。'
-    )
-    try:
-        resp = await chat_completion(system_prompt=system_msg, user_prompt=user,
-                                     max_tokens=1024, response_format={"type": "json_object"})
-        data = json.loads(resp.choices[0].message.content or "{}")
-    except Exception:  # noqa: BLE001
-        return []
-    out, seen = [], set()
-    for code in (data.get("codes") or [])[:max_kp]:
-        ref = code2node.get(code)
-        if ref and ref[0] not in seen:
-            seen.add(ref[0])
-            out.append((ref[0], ref[1], code))
-    return out
+    board_allowed = await _descendant_node_ids(db, [root_id]) if root_id else None
+    # 收紧:短文只挂内容类考点,排除答题技能类子树
+    if board_allowed:
+        excl_ids = [r[0] for r in (await db.execute(
+            sa.select(KnowledgeNode.id).where(KnowledgeNode.code.in_(_PASSAGE_SKILL_EXCLUDE))
+        )).all()]
+        if excl_ids:
+            board_allowed = board_allowed - (await _descendant_node_ids(db, excl_ids) or set())
+    await _collect(board_allowed,
+        f"{item['text']}\n挑最贴切的{kind}考点(至多 {cap} 个);**不要硬凑**,无贴切考点就给空数组。\n\n"
+        f"【{kind}材料】\n{snippet}\n\n"
+        '返回 JSON:{"codes":["编码",...]};只用目录里的编码。')
+
+    # ② 关注分类里超出本板块根的额外类别(如 词法/句法),聚焦再挑一次
+    focus_ids = item.get("focus_node_ids") or []
+    extra = [(r[0], r[1]) for r in (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name)
+        .where(KnowledgeNode.id.in_(focus_ids), KnowledgeNode.code != root_code)
+    )).all()] if focus_ids else []
+    extra_allowed = await _descendant_node_ids(db, [e[0] for e in extra]) if extra else None
+    if extra_allowed:
+        names = "、".join(e[1] for e in extra)
+        await _collect(extra_allowed,
+            f"下面是一篇英语{kind}材料。目录里都是「{names}」方面的语言点考点。"
+            f"请挑出材料中**确实体现**的语言点考点(至多 {cap} 个;确实没有就给空数组,不要硬凑)。\n\n"
+            f"【材料】\n{snippet}\n\n"
+            '返回 JSON:{"codes":["编码",...]};只用目录里的编码。')
+
+    return out[:cap]
 
 
 async def suggest_kps_for_paper(
     db: AsyncSession, paper_id: uuid.UUID, *,
     sections: list[str] | None = None, prompt_id: str | None = None,
+    skip_attached: bool = False,
 ) -> tuple[dict[uuid.UUID, list[tuple]], dict[uuid.UUID, list[tuple]]]:
     """按题型分组建议考点;每题型用其(默认/指定)提示词 + 关注分类过滤目录。
+
+    skip_attached=True(整卷匹配用):跳过**已挂考点的题**,只补未挂的,避免重复匹配;
+    单题型「一键挂」传 False,可对该题型全部重跑。
 
     返回 (matches, proposals):matches[qid]=[(node_id,name,code)];
     proposals[qid]=[(新考点名, 归属分类node_id, 归属分类名)]——目录无对应时 AI 的"新建考点"建议。
@@ -291,6 +350,12 @@ async def suggest_kps_for_paper(
     if sections:
         stmt = stmt.where(PlatformQuestion.section.in_(sections))
     qs = list((await db.execute(stmt)).scalars().all())
+    if skip_attached and qs:
+        attached = set((await db.execute(
+            sa.select(PlatformQuestionKp.question_id)
+            .where(PlatformQuestionKp.question_id.in_([q.id for q in qs]))
+        )).scalars().all())
+        qs = [q for q in qs if q.id not in attached]
     if not qs or is_llm_dev_mode():
         return {q.id: [] for q in qs}, {}
 
@@ -305,27 +370,75 @@ async def suggest_kps_for_paper(
     if not stage:
         stage = next((q.stage for q in qs if getattr(q, "stage", None)), None)
 
-    def _etype(q: PlatformQuestion) -> str:        # 听力题(section 含"听力")单列题型
-        if "听力" in (q.section or ""):
+    def _etype(q: PlatformQuestion) -> str:
+        # 题型优先按 section 关键字细分(短文填空/单词检测/句子翻译/听力 各自独立配提示词),
+        # 否则回退 question_type。
+        sec = q.section or ""
+        if "听力" in sec:
             return "听力"
-        return q.question_type or "单选"
+        if "短文填空" in sec:
+            return "短文填空"
+        if "单词检测" in sec or "词汇检测" in sec:
+            return "单词检测"
+        if "句子翻译" in sec or "翻译" in sec:
+            return "句子翻译"
+        qt = q.question_type or ""
+        # 命中已配置题型则用之,否则归到「其他」兜底配置(避免未适配题型乱挂到单选)
+        return qt if qt in kp_prompt_service.QUESTION_TYPES else "其他"
 
     groups: dict[str, list[PlatformQuestion]] = {}
     for q in qs:
         groups.setdefault(_etype(q), []).append(q)
 
-    # 各题型关注分类 → 其**子树节点集**(按 parent_id 展开;空=全部考点)
-    # 串行预算:并行期各组共用同一 db session,不能并发查询,故先算好再并行调模型
+    # 两段式触发条件(按「至多」考点数):
+    #   · 至多 = 1     → 一段式:关注分类取并集,一次问挑最贴切的 1 个(避免段数把上限翻倍)。
+    #   · 至多 > 1 且关注分类 ≥ 2 → 两段式:按配置顺序(主→次)每个分类各聚焦匹配一段,合并后按至多截断。
+    # 拆段的原因:多分类混在一个大目录里单次问,AI 易漏/飘;各自干净目录分别匹配再合并更稳。
+    # 串行预算:并行期各组共用同一 db session,不能并发查询,故先把子树都算好再并行调模型。
     items = {qt: (override or kp_prompt_service.default_item_for(prompts, qt)) for qt in groups}
-    focus_allowed: dict[str, set | None] = {}
+    focus_split: dict[str, list[set | None]] = {}
     for qt, it in items.items():
-        focus_allowed[qt] = await _descendant_node_ids(db, it.get("focus_node_ids") or [])
+        fids = it.get("focus_node_ids") or []
+        if int(it.get("max_kp", 2)) <= 1 or len(fids) <= 1:
+            focus_split[qt] = [await _descendant_node_ids(db, fids)]      # 一段式:0→[None](全部)/ 多分类→[并集]
+        else:
+            focus_split[qt] = [await _descendant_node_ids(db, [fid]) for fid in fids]  # 两段式:每分类一段(主→次)
 
     async def _run_group(qtype: str, group: list[PlatformQuestion], it: dict) -> tuple[dict, dict]:
-        system_msg = _system_for(entries, focus_allowed[qtype], stage)   # 题型+学段稳定前缀(同→命中缓存)
-        return await _suggest_group(group, code2node, system_msg, it["text"], passages,
-                                    int(it.get("min_kp", 0)), int(it.get("max_kp", 2)),
-                                    cat_lines, cat_code2node)
+        splits = focus_split[qtype]
+        mn, mx = int(it.get("min_kp", 0)), int(it.get("max_kp", 2))
+        if len(splits) == 1:                                  # 单段(0/1 个关注分类):原逻辑
+            system_msg = _system_for(entries, splits[0], stage)
+            return await _suggest_group(group, code2node, system_msg, it["text"], passages,
+                                        mn, mx, cat_lines, cat_code2node)
+        # 两段式:每个关注分类各聚焦匹配一次,合并 per-qid 考点(去重),让词法/句法等都不漏
+        merged: dict = {q.id: [] for q in group}
+        seen: dict = {q.id: set() for q in group}
+        props_acc: dict = {q.id: [] for q in group}
+        for sub in splits:
+            system_msg = _system_for(entries, sub, stage)
+            m, p = await _suggest_group(group, code2node, system_msg, it["text"], passages,
+                                        mn, mx, cat_lines, cat_code2node)
+            for qid, lst in m.items():
+                for ref in lst:
+                    if ref[0] not in seen[qid]:
+                        seen[qid].add(ref[0]); merged[qid].append(ref)
+            for qid, lst in p.items():
+                props_acc[qid].extend(lst)
+        # max_kp 是**每题总上限**:多段合并后按 mx 截断,避免段数把上限翻倍
+        for qid in merged:
+            merged[qid] = merged[qid][:mx]
+        # 缺口建议:仅当某题在所有段都没匹配到考点时保留(按建议名去重)
+        props: dict = {}
+        for qid, plist in props_acc.items():
+            if merged[qid] or not plist:
+                continue
+            dedup, seen_name = [], set()
+            for pr in plist:
+                if pr[0] not in seen_name:
+                    seen_name.add(pr[0]); dedup.append(pr)
+            props[qid] = dedup
+        return merged, props
 
     # 各题型分组**并行**调用大模型:墙钟时间 = 最慢一组,而非求和(整卷不再超时)
     out: dict[uuid.UUID, list[tuple]] = {q.id: [] for q in qs}

@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ─── AI 生成输出结构（curriculum_ai_service → curriculum_service.persist_unit）─
@@ -20,14 +20,35 @@ class AIWordItem(BaseModel):
     is_core: bool = True
 
 
+_KP_CATEGORIES = {"grammar", "vocabulary", "reading", "writing", "listening"}
+# DeepSeek 偶尔返回白名单外的分类(如 speaking / translation),归一化避免单个分类值
+# 让整单元校验失败(category 在 KP-First 流程里不参与落库，仅作标签)。
+_KP_CATEGORY_ALIASES = {
+    "speaking": "listening", "speak": "listening", "口语": "listening", "听说": "listening",
+    "translation": "writing", "翻译": "writing", "语法": "grammar", "词汇": "vocabulary",
+    "阅读": "reading", "写作": "writing", "听力": "listening",
+}
+
+
 class AIKnowledgePointItem(BaseModel):
     code: str = Field(..., description="全局唯一编码，例如 'yl-g5s1-u1-kp1'")
     name: str
     category: Literal["grammar", "vocabulary", "reading", "writing", "listening"]
     description: str
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _coerce_category(cls, v: object) -> str:
+        if not isinstance(v, str):
+            return "vocabulary"
+        s = v.strip().lower()
+        if s in _KP_CATEGORIES:
+            return s
+        return _KP_CATEGORY_ALIASES.get(s, "vocabulary")
     contents: dict[str, str] = Field(
-        ...,
-        description="key ∈ {listening, vocabulary, grammar, reading, translation, writing}, value 为 markdown",
+        default_factory=dict,
+        description="key ∈ {listening, vocabulary, grammar, reading, translation, writing}, value 为 markdown。"
+                    "骨架生成(上传阶段)留空，六维讲解按需延后生成。",
     )
 
 

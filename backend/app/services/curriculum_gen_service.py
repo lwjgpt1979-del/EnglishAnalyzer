@@ -55,9 +55,12 @@ async def _gen_one(seg: dict, *, file_id: str | None, textbook_version: str,
     for _attempt in range(_MAX_ATTEMPTS):
         try:
             unit_text = pus.get_unit_text(file_id, seg["start_page"], seg["end_page"]) if file_id else ""
+            # 骨架版:只出 考点名 + 词，不生成六维讲解(大幅提速)。
+            # 六维讲解延后/按需，由「生成内容」(generate_unit_content) 用已存的 source_text 单独补。
             unit = await ai.generate_unit_from_text(
                 textbook_version=textbook_version, grade=grade, semester=semester,
-                unit_no=uno, unit_text=unit_text, detected_title=seg.get("detected_title"))
+                unit_no=uno, unit_text=unit_text, detected_title=seg.get("detected_title"),
+                with_contents=False)
             # 核心落库:独立 session,成功即 commit
             async with _async_session_factory() as s:
                 cu = await cs.persist_unit(s, ai_unit=unit, content_status=content_status)

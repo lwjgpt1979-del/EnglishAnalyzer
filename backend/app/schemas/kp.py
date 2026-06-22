@@ -187,9 +187,13 @@ class PlatformQuestionItem(BaseModel):
     is_fallback: bool
     question_type: str | None = None
     stem: str | None = None
+    options: list | dict | str | None = None  # 选项(JSONB:list / {A:..} / 整段字符串)
     answer: str | None = None
+    explanation: str | None = None
     difficulty: int | None = None
     status: str
+    sim_version: int | None = None          # 仿真题按题位累加的版本号
+    kp_names: list[str] = []                # 关联考点名(继承自母题)
     block_id: uuid.UUID | None = None       # 题组(短文)外键;同篇阅读/完形小问共享
     passage: str | None = None              # 题组短文正文(同 block_id 的题相同)
 
@@ -322,6 +326,7 @@ class SuggestKpOut(BaseModel):
 class SuggestKpIn(BaseModel):
     sections: list[str] | None = None      # 仅对这些大题(供「一键挂某大题」)
     prompt_id: str | None = None           # 指定提示词;空=按题型默认
+    skip_attached: bool = False            # True=跳过已挂考点的题(整卷匹配用,避免重复)
 
 
 # ── 知识点 AI 提示词配置(按题型,多套选默认)──
@@ -342,7 +347,7 @@ class KpPromptsIn(BaseModel):
 
 class SuggestTextIn(BaseModel):
     text: str
-    source_type: str = "教材"
+    source_type: str = "教材·其他"
     stage: str | None = None        # 小|初|高;限定候选考点学段(空=不限)
 
 
@@ -362,6 +367,11 @@ class PaperDeleteIn(BaseModel):
 class GenSimBulkIn(BaseModel):
     question_ids: list[uuid.UUID] = Field(..., min_length=1)
     count: int = 3
+
+
+class ReviewBulkIn(BaseModel):
+    question_ids: list[uuid.UUID] = Field(..., min_length=1)
+    approve: bool                          # True→published / False→retired
 
 
 class GenSimBulkOut(BaseModel):

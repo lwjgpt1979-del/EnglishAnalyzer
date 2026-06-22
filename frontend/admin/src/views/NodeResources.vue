@@ -19,6 +19,7 @@ const total = ref(0)
 const loading = ref(false)
 
 const statusOptions = ['', 'draft', 'reviewing', 'published', 'retired']
+const reviewStLabel = (s: string) => s ? (({ draft: '草稿', reviewing: '审核中', published: '已发布', retired: '已下架' } as Record<string, string>)[s] || s) : '全部'
 const types = [
   { label: '全部类型', value: '' },
   { label: '讲解', value: 'lecture' },
@@ -281,7 +282,7 @@ watch(() => route.query.unit_id, async () => {
     <div class="toolbar">
       <span>状态：</span>
       <el-select v-model="status" style="width: 120px" @change="load">
-        <el-option v-for="s in statusOptions" :key="s" :label="s || '全部'" :value="s" />
+        <el-option v-for="s in statusOptions" :key="s" :label="reviewStLabel(s)" :value="s" />
       </el-select>
       <span style="margin-left: 12px">类型：</span>
       <el-select v-model="typeFilter" style="width: 120px" @change="load">

@@ -34,6 +34,7 @@ async def chat_completion(
     user_prompt: str,
     max_tokens: int,
     response_format: dict | None = None,
+    temperature: float | None = None,
 ) -> ChatCompletion:
     """统一的单轮 chat 调用：system + user 两条消息，返回原始 ChatCompletion。
 
@@ -58,4 +59,6 @@ async def chat_completion(
     }
     if response_format is not None:
         kwargs["response_format"] = response_format
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     return await client.chat.completions.create(**kwargs)

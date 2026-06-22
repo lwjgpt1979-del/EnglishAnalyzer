@@ -13,10 +13,14 @@ from app.schemas.curriculum import AIGeneratedUnit, AIUnitPassage
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
 
 _PASSAGE_SYS = (
-    "你是初中英语教材分析专家。从给定单元原文里**原样抽取**(不改写、不翻译、保留英文原文)以下三类内容:\n"
-    "1) 听力:听力部分的对话/独白脚本(Listening/Tapescript);\n"
-    "2) 阅读:阅读短文(Reading,可能有多篇,逐篇分开);\n"
-    "3) 写作:写作部分的题目要求与范文(Writing,要求中文/英文照原文,范文若有则附上)。\n"
+    "你是译林版初中英语教材分析专家。从给定单元原文里**原样抽取**(不改写、不翻译、保留英文原文)"
+    "听力、阅读、写作三类材料,**逐篇分开、尽量抽全本单元所有材料,不要遗漏、不要截断**。\n"
+    "判别依据(按译林版编排):\n"
+    "1) 听力(kind=听力):一切对话/独白脚本——包括「Welcome to the unit」「Greetings」里的问候对话、"
+    "带说话人轮次的对话(如 Millie: … / Sandy: …)、Listening / Tapescript、Integrated skills 里的听力材料。"
+    "这些都算听力,逐段抽出。\n"
+    "2) 阅读(kind=阅读):「Reading」板块的短文,**整篇完整抽取不要截断**;若有多篇则分多条。\n"
+    "3) 写作(kind=写作):「Writing」「Task」板块的题目要求与范文(要求/范文照原文)。\n"
     "找不到的类别就不返回。严格输出 JSON,不要解释。"
 )
 
@@ -26,13 +30,14 @@ async def extract_unit_passages(unit_text: str) -> list[AIUnitPassage]:
     if not (unit_text or "").strip() or is_llm_dev_mode():
         return []
     user = (
-        f"【单元原文】\n{unit_text[:9000]}\n\n"
+        f"【单元原文】\n{unit_text[:16000]}\n\n"
         '请抽取。返回 JSON:{"passages":[{"kind":"听力|阅读|写作","title":"小标题(可空)","text":"原文"}]}。'
-        "text 必须是原文片段;阅读多篇就给多条。"
+        "text 必须是原文片段、保持完整;同一类有多段就拆成多条(如多组对话、多篇阅读)。"
+        "务必把单元里出现的所有对话(听力)都抽出来,别只抽阅读。"
     )
     try:
         resp = await chat_completion(system_prompt=_PASSAGE_SYS, user_prompt=user,
-                                     max_tokens=4096, response_format={"type": "json_object"})
+                                     max_tokens=8192, response_format={"type": "json_object"})
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception:  # noqa: BLE001
         return []
@@ -303,6 +308,58 @@ _PDF_PROMPT_TEMPLATE = """\
 }}"""
 
 
+# 轻量「骨架」版:只提取 考点名 + 词，**不生成六维讲解正文**。
+# 上传批量阶段用它（输出 token 量约为完整版的 1/5，大幅提速）；
+# 六维讲解延后/按需，由 generate_unit_content endpoint 用 source_text 单独补全。
+_PDF_SKELETON_PROMPT_TEMPLATE = """\
+请分析以下教材单元的 PDF 原文，提取本单元的**知识点骨架与核心词汇**（**不要生成任何讲解正文**）。
+
+教材：{textbook_version}
+年级：{grade}
+学期：{semester}
+单元号：{unit_no}
+单元标题（如能识别）：{detected_title}
+
+== 单元原文（pdfplumber 提取，可能含噪声）==
+{unit_text}
+== 原文结束 ==
+
+要求：
+1. 根据原文推断/确认 unit_title
+2. 提取 5-8 个核心知识点（grammar/vocabulary/reading/writing/listening 任意类别）；
+   知识点 name 与 description **必须用中文**（即使原文英文也用中文概括，专有术语可括号附英文），不得用纯英文；
+   description 用一句话概括即可，**不要写六维讲解，不要 contents 字段**
+3. 提取 10-15 个原文出现的核心词汇
+4. code 格式：yl-g{grade_short}s{sem_short}-u{unit_no}-kpN（N 从 1 开始）
+
+返回纯 JSON（不要 markdown）：
+{{
+  "textbook_version": "{textbook_version}",
+  "grade": "{grade}",
+  "semester": "{semester}",
+  "unit_no": {unit_no},
+  "unit_title": "...",
+  "knowledge_points": [
+    {{
+      "code": "yl-g{grade_short}s{sem_short}-u{unit_no}-kp1",
+      "name": "一般现在时描述日常活动",
+      "category": "grammar",
+      "description": "一句话概括"
+    }}
+  ],
+  "words": [
+    {{
+      "word": "example",
+      "phonetic": "/ɪɡˈzɑːmpəl/",
+      "definitions": [{{"pos": "n.", "meaning": "例子"}}],
+      "examples": ["This is an example."],
+      "difficulty": 2,
+      "is_core": true
+    }}
+  ]
+}}"""
+
+
 def _strip_and_fix_json(raw: str) -> dict:
     """去掉 markdown fence 并修复非法转义，返回解析后的 dict。"""
     import re as _re
@@ -325,8 +382,14 @@ async def generate_unit_from_text(
     unit_no: int,
     unit_text: str,
     detected_title: str | None = None,
+    with_contents: bool = True,
 ) -> AIGeneratedUnit:
-    """从 PDF 提取的单元原文生成结构化课程内容（M3）。"""
+    """从 PDF 提取的单元原文生成结构化课程内容（M3）。
+
+    with_contents=True ：完整版，每个考点带六维讲解（按需/单元级生成用）。
+    with_contents=False：骨架版，只出考点名 + 词，**不生成六维讲解**——
+        上传批量阶段用，输出 token 量约 1/5，大幅提速；六维讲解延后按需补。
+    """
     if is_llm_dev_mode():
         return _make_mock_unit(textbook_version, grade, semester, unit_no)
 
@@ -336,7 +399,8 @@ async def generate_unit_from_text(
     # 限制原文长度，避免超 token（约保留前 6000 字符）
     text_truncated = unit_text[:6000] if len(unit_text) > 6000 else unit_text
 
-    prompt = _PDF_PROMPT_TEMPLATE.format(
+    template = _PDF_PROMPT_TEMPLATE if with_contents else _PDF_SKELETON_PROMPT_TEMPLATE
+    prompt = template.format(
         textbook_version=textbook_version,
         grade=grade,
         semester=semester,
@@ -351,7 +415,7 @@ async def generate_unit_from_text(
         response = await chat_completion(
             system_prompt=_PDF_SYSTEM_PROMPT,
             user_prompt=prompt,
-            max_tokens=8192,
+            max_tokens=8192 if with_contents else 3000,
             response_format={"type": "json_object"},
         )
     except Exception as exc:

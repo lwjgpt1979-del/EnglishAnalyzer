@@ -8,9 +8,12 @@
 """
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "pdfs"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -306,11 +309,22 @@ def split_unit_pdf(file_id: str, start_page: int, end_page: int) -> bytes:
     path = UPLOAD_DIR / f"{file_id}.pdf"
     if not path.exists():
         raise FileNotFoundError(f"PDF not found: {file_id}")
-    reader = PdfReader(str(path))
+    reader = PdfReader(str(path), strict=False)
     writer = PdfWriter()
     n = len(reader.pages)
+    dropped: list[int] = []
     for i in range(max(0, start_page - 1), min(n, end_page)):
-        writer.add_page(reader.pages[i])
+        try:
+            writer.add_page(reader.pages[i])
+        except Exception as exc:  # noqa: BLE001
+            # 个别页有悬空对象引用（源 PDF 损坏 + PyPDF2 clone 的已知 bug，
+            # 抛 AssertionError），跳过坏页保住整份单元 PDF，而非整份失败。
+            dropped.append(i + 1)
+            _log.warning("split_unit_pdf %s 第 %d 页无法克隆，已跳过：%s", file_id, i + 1, exc)
+    if dropped:
+        _log.warning("split_unit_pdf %s 跳过 %d 页：%s", file_id, len(dropped), dropped)
+    if len(writer.pages) == 0:
+        raise RuntimeError(f"split_unit_pdf 无可用页（{start_page}-{end_page}）")
     buf = io.BytesIO()
     writer.write(buf)
     return buf.getvalue()

@@ -293,9 +293,19 @@ async def create_node(
     db: AsyncSession, *, name: str, parent_id: uuid.UUID | None = None, axis: str | None = None,
     node_kind: str | None = None, applicable_stages: list[str] | None = None,
 ) -> KnowledgeNode:
-    """在树上手建节点:有 parent 则继承其轴;否则需显式 axis。"""
+    """在树上手建节点:有 parent 则继承其轴;否则需显式 axis。
+
+    归一化同名考点已存在 → **复用**(返回已有节点),避免别名唯一约束冲突(原会 500)与重复建点:
+    缺口建议「新建」若该考点其实已存在,等价于直接挂已有考点。
+    """
     if not name.strip():
         raise AppError(code=400, message="名称不能为空")
+    norm = normalize_kp_name(name)
+    existing = (await db.execute(
+        sa.select(KnowledgeNode).join(NodeAlias, NodeAlias.node_id == KnowledgeNode.id)
+        .where(NodeAlias.alias_norm == norm).limit(1))).scalar_one_or_none()
+    if existing is not None:
+        return existing
     if parent_id is not None:
         parent = await db.get(KnowledgeNode, parent_id)
         if parent is None:

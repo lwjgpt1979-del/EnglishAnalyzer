@@ -357,13 +357,14 @@ onMounted(load)
       </el-table-column>
       <el-table-column prop="unit_no"    label="Unit"  width="60" align="center" />
       <el-table-column prop="unit_title" label="单元标题" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="kp_count"   label="KP数"  width="70" align="center" />
-      <el-table-column label="内容完成度" width="200">
+      <el-table-column prop="kp_count"   label="单元考点"  width="80" align="center" />
+      <el-table-column label="短文挂考点" width="210">
         <template #default="{ row }">
-          <div style="display:flex;align-items:center;gap:8px">
+          <div v-if="row.passage_count" style="display:flex;align-items:center;gap:8px">
             <el-progress :percentage="Math.round(row.content_rate * 100)" :color="rateColor(row.content_rate)" :stroke-width="8" style="flex:1" />
-            <span style="font-size:12px;white-space:nowrap;color:#606266">{{ row.content_count }}/{{ row.kp_count * 6 }}</span>
+            <span style="font-size:12px;white-space:nowrap;color:#606266">{{ row.content_count }}/{{ row.passage_count }} 短文</span>
           </div>
+          <span v-else style="font-size:12px;color:#c0c4cc">无短文</span>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="280" fixed="right">

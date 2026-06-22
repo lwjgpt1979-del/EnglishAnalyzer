@@ -197,6 +197,8 @@ async def persist_unit(
         )
         w = w_q.scalar_one_or_none()
         if w is None:
+            # 教材原文提取的新词:写进词力通全局词表，但标 source="textbook"，
+            # 与人工维护的词区分（词力通页面可据此筛选/隔离教材词）。
             w = VocabularyWord(
                 id=uuid.uuid4(),
                 word=w_in.word,
@@ -204,6 +206,7 @@ async def persist_unit(
                 definitions=w_in.definitions,
                 examples=w_in.examples,
                 difficulty=w_in.difficulty,
+                source="textbook",
             )
             db.add(w)
             await db.flush()
@@ -500,16 +503,17 @@ async def search_kps(
 
 @dataclass
 class UnitContentStat:
-    """单个课程单元的内容完成度统计。"""
+    """单个课程单元的「短文关联考点」进度统计。"""
     unit_id: uuid.UUID
     textbook_version: str
     grade: str
     semester: str
     unit_no: int
     unit_title: str
-    kp_count: int
-    content_count: int
-    content_rate: float   # content_count / (kp_count * 6)，0-1
+    kp_count: int          # 单元考点数 = 各短文已关联考点去重汇总
+    content_count: int     # 已关联考点的短文数
+    content_rate: float    # 已关联短文 / 短文总数，0-1
+    passage_count: int = 0  # 短文总数
     unit_pdf_url: str | None = None   # 拆出的单元独立 PDF(COS)
 
 
@@ -529,37 +533,38 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
 
     unit_ids = [u.id for u in units]
 
-    # 每个单元的 KP 数(R8.4:unit_node 边)
-    from app.models.d17_curriculum_kg import UnitNode as _UN
-    kp_counts: dict[uuid.UUID, int] = dict(
-        (await db.execute(
-            select(_UN.unit_id, func.count())
-            .where(_UN.unit_id.in_(unit_ids))
-            .group_by(_UN.unit_id)
-        )).all()
-    )
+    # 「短文关联考点」进度(替代旧的单元级六维填充率):
+    #   短文总数 / 已关联考点的短文数 / 单元考点数(各短文关联考点去重汇总)。
+    from app.models.d4_knowledge import CurriculumUnitPassage, UnitPassageKp
 
-    # 每个单元的讲解内容数:KP-First 经 unit_node → node 的 node_resource lecture(左连接,无则 0)
-    from app.models.d17_curriculum_kg import UnitNode
-    from app.models.d19_node_resource import NodeResource
-    content_rows = (await db.execute(
-        select(UnitNode.unit_id, func.count(NodeResource.id))
-        .join(
-            NodeResource,
-            (NodeResource.node_id == UnitNode.node_id)
-            & (NodeResource.resource_type == "lecture"),
-            isouter=True,
-        )
-        .where(UnitNode.unit_id.in_(unit_ids))
-        .group_by(UnitNode.unit_id)
-    )).all()
-    content_counts: dict[uuid.UUID, int] = dict(content_rows)
+    passage_total: dict[uuid.UUID, int] = dict((await db.execute(
+        select(CurriculumUnitPassage.unit_id, func.count())
+        .where(CurriculumUnitPassage.unit_id.in_(unit_ids))
+        .group_by(CurriculumUnitPassage.unit_id)
+    )).all())
+
+    linked_passages: dict[uuid.UUID, int] = dict((await db.execute(
+        select(CurriculumUnitPassage.unit_id,
+               func.count(func.distinct(CurriculumUnitPassage.id)))
+        .join(UnitPassageKp, UnitPassageKp.passage_id == CurriculumUnitPassage.id)
+        .where(CurriculumUnitPassage.unit_id.in_(unit_ids))
+        .group_by(CurriculumUnitPassage.unit_id)
+    )).all())
+
+    kp_rollup: dict[uuid.UUID, int] = dict((await db.execute(
+        select(CurriculumUnitPassage.unit_id,
+               func.count(func.distinct(UnitPassageKp.node_id)))
+        .join(UnitPassageKp, UnitPassageKp.passage_id == CurriculumUnitPassage.id)
+        .where(CurriculumUnitPassage.unit_id.in_(unit_ids))
+        .group_by(CurriculumUnitPassage.unit_id)
+    )).all())
 
     result: list[UnitContentStat] = []
     for u in units:
-        kc = kp_counts.get(u.id, 0)
-        cc = content_counts.get(u.id, 0)
-        rate = round(cc / (kc * 6), 4) if kc > 0 else 0.0
+        ptot = passage_total.get(u.id, 0)
+        plinked = linked_passages.get(u.id, 0)
+        kc = kp_rollup.get(u.id, 0)
+        rate = round(plinked / ptot, 4) if ptot > 0 else 0.0
         result.append(UnitContentStat(
             unit_id=u.id,
             textbook_version=u.textbook_version,
@@ -568,7 +573,8 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
             unit_no=u.unit_no,
             unit_title=u.unit_title or "",
             kp_count=kc,
-            content_count=cc,
+            content_count=plinked,
+            passage_count=ptot,
             content_rate=min(rate, 1.0),
             unit_pdf_url=u.unit_pdf_url,
         ))
