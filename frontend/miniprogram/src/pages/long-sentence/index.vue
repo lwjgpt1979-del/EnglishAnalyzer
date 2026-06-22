@@ -257,9 +257,9 @@ onLoad(async () => {
 .header { display: flex; align-items: center; gap: 18rpx; margin-bottom: 18rpx; }
 .prog { flex: 1; }
 .prog-label { font-size: 26rpx; color: #555; }
-.prog-num { color: #10b981; font-weight: 700; }
+.prog-num { color: var(--c-primary); font-weight: 700; }
 .prog-bar { height: 12rpx; background: #e5e9f0; border-radius: 8rpx; margin-top: 10rpx; overflow: hidden; }
-.prog-fill { height: 100%; background: #10b981; border-radius: 8rpx; }
+.prog-fill { height: 100%; background: var(--c-primary); border-radius: 8rpx; }
 .checkin { background: #fff; border-radius: 28rpx; padding: 10rpx 22rpx; font-size: 24rpx; color: #444; box-shadow: 0 2rpx 8rpx rgba(0,0,0,.04); }
 
 .card { background: #fff; border-radius: 20rpx; padding: 26rpx; margin-bottom: 20rpx; box-shadow: 0 2rpx 14rpx rgba(0,0,0,.04); }
@@ -267,11 +267,11 @@ onLoad(async () => {
 /* 句子卡头 */
 .sent-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24rpx; }
 .hl { display: flex; align-items: center; gap: 16rpx; }
-.sent-tag { background: #e7f7ef; color: #10b981; font-size: 24rpx; padding: 6rpx 18rpx; border-radius: 24rpx; }
+.sent-tag { background: var(--c-primary-faint); color: var(--c-primary); font-size: 24rpx; padding: 6rpx 18rpx; border-radius: 24rpx; }
 .fav { font-size: 24rpx; color: #999; }
 .pager { display: flex; gap: 12rpx; }
 .pg { font-size: 24rpx; color: #555; background: #fff; border: 1rpx solid #e3e7ee; border-radius: 24rpx; padding: 6rpx 18rpx; }
-.pg.primary { background: #10b981; color: #fff; border-color: #10b981; }
+.pg.primary { background: var(--c-primary); color: var(--c-on-primary); border-color: var(--c-primary); }
 .pg.dis { opacity: .4; }
 
 /* 原句:连续流式段落(行内文本自然排满换行);序号锚在每段首词下方 */
@@ -300,7 +300,7 @@ onLoad(async () => {
 /* Tabs */
 .tabs { display: flex; border-bottom: 1rpx solid #eee; margin-bottom: 20rpx; }
 .tab { flex: 1; text-align: center; font-size: 28rpx; color: #888; padding: 16rpx 0; }
-.tab.on { color: #10b981; font-weight: 700; border-bottom: 4rpx solid #10b981; }
+.tab.on { color: var(--c-primary); font-weight: 700; border-bottom: 4rpx solid var(--c-primary); }
 .tab-body { min-height: 80rpx; }
 
 /* 思维导图(横向滚动画布)*/
@@ -315,14 +315,14 @@ onLoad(async () => {
 .word-pos { font-size: 24rpx; color: #aaa; }
 .word-mean { font-size: 28rpx; color: #555; }
 .gp-row { padding: 14rpx 0; border-bottom: 1rpx dashed #f0f0f0; }
-.gp-name { font-size: 28rpx; font-weight: 600; color: #3b82f6; }
+.gp-name { font-size: 28rpx; font-weight: 600; color: var(--c-primary); }
 .gp-exp { display: block; font-size: 26rpx; color: #666; margin-top: 6rpx; }
 .empty { color: #bbb; font-size: 26rpx; }
 
 /* 结构解析 */
 .sec-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
-.sec-title { font-size: 30rpx; font-weight: 700; border-left: 6rpx solid #10b981; padding-left: 14rpx; }
-.link { font-size: 24rpx; color: #10b981; background: #e7f7ef; padding: 8rpx 18rpx; border-radius: 24rpx; }
+.sec-title { font-size: 30rpx; font-weight: 700; border-left: 6rpx solid var(--c-primary); padding-left: 14rpx; }
+.link { font-size: 24rpx; color: var(--c-primary); background: var(--c-primary-faint); padding: 8rpx 18rpx; border-radius: 24rpx; }
 .stype { display: block; font-size: 28rpx; margin-bottom: 12rpx; }
 .exp-row { display: flex; gap: 12rpx; padding: 8rpx 0; align-items: flex-start; }
 .sno { width: 34rpx; height: 34rpx; line-height: 34rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 20rpx; flex-shrink: 0; }
@@ -335,5 +335,5 @@ onLoad(async () => {
 .foot-side { display: flex; flex-direction: column; align-items: center; gap: 4rpx; }
 .fs-ic { font-size: 32rpx; }
 .fs-tx { font-size: 22rpx; color: #666; }
-.foot-main { flex: 1; background: #10b981; color: #fff; text-align: center; font-size: 32rpx; font-weight: 700; padding: 22rpx 0; border-radius: 44rpx; }
+.foot-main { flex: 1; background: var(--g-primary); color: var(--c-on-primary); text-align: center; font-size: 32rpx; font-weight: 700; padding: 22rpx 0; border-radius: 44rpx; box-shadow: var(--shadow-primary); }
 </style>
