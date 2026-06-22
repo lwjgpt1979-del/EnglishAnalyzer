@@ -29,6 +29,7 @@ class LongSentence(Base):
     source_passage_id = mapped_column(UUID(as_uuid=True), nullable=True)
     text = mapped_column(sa.Text, nullable=False)                         # 句子原文
     analysis_json = mapped_column(JSONB, nullable=True)                   # 主干/分层/译文/难点/句法点
+    audio_url = mapped_column(sa.Text, nullable=True)                     # 听原句:TTS 合成后存 COS 的直链(首次回填,再次直接播)
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'draft'"))  # draft|published|retired
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at = mapped_column(

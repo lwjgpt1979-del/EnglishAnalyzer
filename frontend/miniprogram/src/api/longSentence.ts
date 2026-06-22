@@ -22,6 +22,7 @@ export interface LSNodeRef { node_id: string; name: string; node_kind: string | 
 export interface LSDetail {
   id: string; text: string; source_kind: string
   analysis: LSAnalysis | null
+  audio_url?: string | null
   nodes: LSNodeRef[]
 }
 
@@ -36,6 +37,11 @@ export function getLongSentence(id: string): Promise<LSDetail> {
 /** 听原句:TTS 流式音频直链(公开接口,可直接作为 audio src 播放)。 */
 export function ttsSpeakUrl(text: string, stage = 'junior'): string {
   return `${BASE_URL}/api/v1/tts/speak?text=${encodeURIComponent(text)}&stage=${stage}`
+}
+
+/** 听原句:取/生成句子音频 COS 直链(首次合成→存 COS→回填库;再次直接返回库里链接)。 */
+export function getLsAudioUrl(id: string): Promise<{ url: string }> {
+  return request<{ url: string }>(`/api/v1/long-sentences/${id}/audio`, { method: 'POST' })
 }
 
 export interface LSShadowWord { word: string; score: number }

@@ -18,6 +18,7 @@ from app.schemas.kp import (
 from app.schemas.vocabulary import ShadowScoreIn
 from app.services import long_sentence_service as lss
 from app.services import pronunciation_service
+from app.services import tts_service
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/long-sentences", tags=["long-sentences"])
@@ -64,8 +65,26 @@ async def get_long_sentence(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
         raise AppError(code=404, message="长难句不存在或未发布")
     return make_ok(LongSentenceDetailOut(
         id=ls.id, text=ls.text, source_kind=ls.source_kind, analysis=ls.analysis_json,
+        audio_url=ls.audio_url,
         nodes=[LongSentenceNodeRef(**n) for n in nodes],
     ))
+
+
+@router.post("/{ls_id}/audio", response_model=BaseResponse[dict])
+async def get_audio(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """听原句:返回句子音频直链。库里已有 audio_url 直接返回;否则首次合成→存 COS→回填库。
+    COS 未配置(dev)时返回空 url,前端回退 /tts/speak 流式播放。"""
+    ls, _ = await lss.get_detail(db, ls_id=ls_id)
+    if ls is None or ls.status != "published":
+        raise AppError(code=404, message="长难句不存在或未发布")
+    if ls.audio_url:
+        return make_ok({"url": ls.audio_url})
+    speed = await tts_service.speed_for_stage_db(db, "junior")
+    url = await tts_service.get_or_create_audio_url(ls.text, speed=speed)
+    if url:
+        ls.audio_url = url
+        await db.commit()
+    return make_ok({"url": url or ""})
 
 
 @router.get("/{ls_id}/verify-types", response_model=BaseResponse[VerifyTypesOut])

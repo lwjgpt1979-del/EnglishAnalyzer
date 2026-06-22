@@ -661,6 +661,7 @@ class LongSentenceDetailOut(BaseModel):
     text: str
     source_kind: str
     analysis: dict | None = None      # main_clause/layers/translation/difficulty_points/syntax_points
+    audio_url: str | None = None      # 听原句直链(已合成则有,前端直接播;无则调 /audio 生成)
     nodes: list[LongSentenceNodeRef] = []   # 句法点 → 跳 /curriculum/nodes/{node_id}/resources
 
 

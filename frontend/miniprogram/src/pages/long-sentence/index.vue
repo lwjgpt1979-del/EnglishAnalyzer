@@ -49,7 +49,7 @@
 
         <!-- 操作 pill 行 -->
         <view class="acts">
-          <view class="act" :class="{ on: playing }" @tap="listen"><text class="act-ic">🔊</text><text class="act-tx">{{ playing ? '停止' : '听原句' }}</text></view>
+          <view class="act" :class="{ on: playing }" @tap="listen"><text class="act-ic">🔊</text><text class="act-tx">{{ playing ? '停止' : (loadingAudio ? '生成中…' : '听原句') }}</text></view>
           <view class="act" :class="{ rec: recording }" @tap="shadow"><text class="act-ic">{{ recording ? '⏺' : '🎤' }}</text><text class="act-tx">{{ recording ? '停止录音' : (scoring ? '评分中…' : '跟读') }}</text></view>
           <view class="act" @tap="showStruct = !showStruct"><text class="act-ic">👁</text><text class="act-tx">{{ showStruct ? '隐藏结构' : '显示结构' }}</text></view>
           <view class="act" @tap="showTranslate = !showTranslate"><text class="act-ic">📝</text><text class="act-tx">翻译</text></view>
@@ -145,7 +145,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { listLongSentences, getLongSentence, ttsSpeakUrl, shadowScoreLs, type LSItem, type LSDetail, type LSAnalysis, type LSShadowResult } from '@/api/longSentence'
+import { listLongSentences, getLongSentence, getLsAudioUrl, ttsSpeakUrl, shadowScoreLs, type LSItem, type LSDetail, type LSAnalysis, type LSShadowResult } from '@/api/longSentence'
 import LsTreeNode from './LsTreeNode.vue'
 
 interface TNode { idx: number; type: string; text: string; children: TNode[] }
@@ -247,9 +247,11 @@ const compRows = computed(() => {
 
 function soon(name: string) { uni.showToast({ title: name + '·敬请期待', icon: 'none' }) }
 
-/* ── 听原句:TTS 流式音频 ── */
+/* ── 听原句:首次合成存 COS+回填库,再次直接播库里链接;COS 未配置回退流式 ── */
 let audioCtx: UniApp.InnerAudioContext | null = null
 const playing = ref(false)
+const loadingAudio = ref(false)
+const audioUrl = ref<string>('')   // 本句已拿到的直链(库里或刚生成),避免重复请求
 function ensureAudio() {
   if (audioCtx) return audioCtx
   audioCtx = uni.createInnerAudioContext()
@@ -259,12 +261,25 @@ function ensureAudio() {
   audioCtx.onError(() => { playing.value = false; uni.showToast({ title: '暂无音频', icon: 'none' }) })
   return audioCtx
 }
-function listen() {
+async function listen() {
   const text = detail.value?.text
   if (!text) return
   const ctx = ensureAudio()
   if (playing.value) { ctx.stop(); return }
-  ctx.src = ttsSpeakUrl(text)
+  // 1) 已有直链(库里或本次已生成)→ 直接播
+  let src = audioUrl.value || detail.value?.audio_url || ''
+  // 2) 没有 → 调生成端点(合成→COS→回填库),返回直链
+  if (!src) {
+    loadingAudio.value = true
+    try {
+      const r = await getLsAudioUrl(items.value[index.value].id)
+      src = r.url || ''
+    } catch { /* ignore,走回退 */ }
+    finally { loadingAudio.value = false }
+  }
+  // 3) 仍无直链(COS dev 未配置)→ 回退流式合成接口
+  if (src) audioUrl.value = src
+  ctx.src = src || ttsSpeakUrl(text)
   ctx.play()
 }
 
@@ -320,6 +335,7 @@ async function loadDetail() {
   if (playing.value && audioCtx) audioCtx.stop()
   if (recording.value && recorder) recorder.stop()
   shadowResult.value = null
+  audioUrl.value = ''
   try { detail.value = await getLongSentence(it.id) } catch { /* ignore */ }
   tab.value = 'struct'; showTranslate.value = false; showStruct.value = true
 }
