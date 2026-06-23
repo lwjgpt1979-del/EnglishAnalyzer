@@ -478,29 +478,29 @@ onLoad(async () => {
 
 /* 句子结构:主干 → 从句 紧凑树 */
 .st { display: flex; flex-direction: column; align-items: center; padding: 6rpx 0 4rpx; }
-.st-trunk { background: var(--c-primary-faint); color: var(--c-primary); font-size: 27rpx; font-weight: 600; padding: 16rpx 24rpx; border-radius: 14rpx; max-width: 100%; box-sizing: border-box; text-align: center; }
+.st-trunk { background: var(--c-primary-faint); color: var(--c-primary); font-size: 25rpx; font-weight: 600; padding: 14rpx 22rpx; border-radius: 14rpx; max-width: 100%; box-sizing: border-box; text-align: center; line-height: 1.5; }
 .st-arrow { color: #c2c8d2; font-size: 30rpx; line-height: 1; margin: 10rpx 0; }
 .st-children { display: flex; flex-wrap: wrap; justify-content: center; gap: 16rpx; width: 100%; }
 .st-clause { flex: 1 1 44%; min-width: 240rpx; border: 1rpx solid; border-radius: 14rpx; padding: 14rpx 16rpx; box-sizing: border-box; }
 .st-chead { display: flex; align-items: center; gap: 10rpx; margin-bottom: 6rpx; }
-.st-cno { width: 30rpx; height: 30rpx; line-height: 30rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 20rpx; flex-shrink: 0; }
-.st-ctype { font-size: 24rpx; font-weight: 700; }
-.st-ctext { font-size: 24rpx; color: #555; line-height: 1.45; }
+.st-cno { width: 28rpx; height: 28rpx; line-height: 28rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 18rpx; flex-shrink: 0; }
+.st-ctype { font-size: 23rpx; font-weight: 700; }
+.st-ctext { font-size: 23rpx; color: #6b7178; line-height: 1.5; }
 
 /* 句子成分:标签 chip + 值 */
-.comp-row { display: flex; align-items: flex-start; gap: 14rpx; padding: 14rpx 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
-.comp-label { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); background: var(--c-primary-faint); border-radius: 8rpx; padding: 5rpx 14rpx; }
-.comp-val { flex: 1; font-size: 27rpx; color: #444; line-height: 1.5; font-family: Georgia, 'Times New Roman', serif; }
+.comp-row { display: flex; align-items: flex-start; gap: 12rpx; padding: 14rpx 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
+.comp-label { flex-shrink: 0; font-size: 21rpx; color: var(--c-primary); background: var(--c-primary-faint); border-radius: 8rpx; padding: 5rpx 14rpx; }
+.comp-val { flex: 1; font-size: 24rpx; color: #4a5057; line-height: 1.55; font-family: Georgia, 'Times New Roman', serif; }
 /* 重点词汇:卡片 */
-.word-row { padding: 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
+.word-row { padding: 14rpx 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
 .word-head { display: flex; align-items: baseline; gap: 12rpx; }
-.word { font-size: 30rpx; font-weight: 700; color: #333; font-family: Georgia, 'Times New Roman', serif; }
-.word-pos { font-size: 21rpx; color: #8a93a3; background: #e9edf3; border-radius: 6rpx; padding: 2rpx 10rpx; }
-.word-mean { display: block; font-size: 26rpx; color: #666; margin-top: 6rpx; line-height: 1.5; }
+.word { font-size: 27rpx; font-weight: 700; color: #333; font-family: Georgia, 'Times New Roman', serif; }
+.word-pos { font-size: 20rpx; color: #8a93a3; background: #e9edf3; border-radius: 6rpx; padding: 2rpx 10rpx; }
+.word-mean { display: block; font-size: 23rpx; color: #6b7178; margin-top: 6rpx; line-height: 1.55; }
 /* 语法点:按语法族上色的浅底卡 + 同色标题 */
-.gp-row { padding: 18rpx 20rpx; border-radius: 16rpx; margin-bottom: 12rpx; }
-.gp-name { display: block; font-size: 28rpx; font-weight: 700; }
-.gp-exp { display: block; font-size: 25rpx; color: #5a5f6a; margin-top: 8rpx; line-height: 1.65; }
+.gp-row { padding: 16rpx 18rpx; border-radius: 14rpx; margin-bottom: 10rpx; }
+.gp-name { display: block; font-size: 25rpx; font-weight: 700; }
+.gp-exp { display: block; font-size: 23rpx; color: #6b7178; margin-top: 6rpx; line-height: 1.6; }
 .empty { color: #bbb; font-size: 26rpx; }
 
 /* 结构解析 */
