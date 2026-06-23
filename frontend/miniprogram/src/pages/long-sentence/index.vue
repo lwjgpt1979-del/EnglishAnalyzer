@@ -61,7 +61,7 @@
         <view class="acts">
           <view class="act" @tap="showStruct = !showStruct"><text class="act-ic">👁</text><text class="act-tx">{{ showStruct ? '隐藏结构' : '显示结构' }}</text></view>
           <view class="act" :class="{ on: showTranslate }" @tap="showTranslate = !showTranslate"><text class="act-ic">📝</text><text class="act-tx">翻译</text></view>
-          <view class="act" @tap="soon('更多')"><text class="act-ic">···</text><text class="act-tx">更多</text></view>
+          <view class="act" @tap="onMore"><text class="act-ic">···</text><text class="act-tx">更多</text></view>
         </view>
       </view>
 
@@ -297,6 +297,26 @@ async function toggleFav() {
     favorited.value = !target
     uni.showToast({ title: '操作失败', icon: 'none' })
   }
+}
+
+/* ── 更多:操作菜单(复制原句 / 难度说明 / 语法点详解)── */
+function onMore() {
+  uni.showActionSheet({
+    itemList: ['复制原句', '难度说明', '查看语法点详解'],
+    success: ({ tapIndex }) => {
+      if (tapIndex === 0) {
+        uni.setClipboardData({ data: detail.value?.text || '', success: () => uni.showToast({ title: '已复制', icon: 'success' }) })
+      } else if (tapIndex === 1) {
+        const c = analysis.value?.complexity
+        const content = c
+          ? `难度 ${difficulty.value ?? '—'} · ${diffLevel.value.label}\n从句 ${c.clause_count ?? '—'} · 树深 ${c.tree_depth ?? '—'} · 依存距离 ${c.mdd ?? '—'} · 词数 ${c.word_count ?? '—'}`
+          : `难度 ${difficulty.value ?? '暂无'}`
+        uni.showModal({ title: '难度说明', content, showCancel: false })
+      } else if (tapIndex === 2) {
+        openKpDetail()
+      }
+    },
+  })
 }
 
 /* ── 语法点详解:跳关联考点内容页 ── */

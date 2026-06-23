@@ -16,6 +16,7 @@ export interface LSAnalysis {
   grammar_points?: LSGrammarPoint[]
   explanations?: LSExplanation[]
   difficulty?: number
+  complexity?: { word_count?: number; clause_count?: number; tree_depth?: number; mdd?: number; method?: string }
 }
 export interface LSItem { id: string; text: string; source_kind: string; syntax_points: string[]; favorited?: boolean }
 export interface LSListOut { total: number; items: LSItem[] }
