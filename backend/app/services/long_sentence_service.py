@@ -621,6 +621,9 @@ def _stage_from_grade(grade: str | None) -> str | None:
     return None
 
 
+_CAND_MIN_WORDS = 8   # 难度筛选模式下的防碎片下限(不要求 ≥min_words 的「长难句」硬门槛)
+
+
 async def _persist_long_sentences(
     db: AsyncSession, st: ExtractStats, *, text: str, scope: str, source_kind: str,
     min_words: int, dry_run: bool, owner_id: uuid.UUID | None = None,
@@ -628,16 +631,19 @@ async def _persist_long_sentences(
     source_passage_id: uuid.UUID | None = None, locate: dict | None = None,
     select_min: int | None = None, select_top_n: int | None = None,
 ) -> None:
-    """切句 → 长句判定 → (按难度筛选)→ AI 拆解 → 建 long_sentence(带定位)→ match_kp。
-    locate: {textbook_version,...}。难度筛选(教材用):
-      select_min 不为空 → 只留难度 > select_min 的全部;否则 select_top_n → 取最难的 N 句。"""
+    """切句 → 候选 → (按难度筛选)→ AI 拆解 → 建 long_sentence(带定位)→ match_kp。
+    教材(用难度筛选时):候选不强卡「≥min_words 的长难句」,改为按难度在全部句子里挑——
+      select_min 不为空 → 难度 > 阈值的全部;否则 select_top_n → 该篇最难的 N 句。
+    平台真题(无难度筛选):仍用 is_long 长难句门槛,全留。"""
     loc = locate or {}
-    # 一遍:切句 + 廉价算难度(spaCy,不耗 LLM),收集候选长句
+    by_difficulty = select_min is not None or select_top_n is not None
+    # 一遍:切句 + 廉价算难度(spaCy,不耗 LLM),收集候选
     cands = []
     for sent in split_sentences(text or ""):
         st.sentences += 1
         comp = syntactic_complexity(sent, min_words)
-        if _is_long(comp, sent, min_words):
+        # 难度筛选模式:只要不是碎片(词数达轻量下限)即入候选;否则用 is_long 硬门槛
+        if (comp["word_count"] >= _CAND_MIN_WORDS) if by_difficulty else _is_long(comp, sent, min_words):
             cands.append((sent, comp))
     st.long_kept += len(cands)
     # 选取:阈值优先,否则取最难 N 句;都没配则全留
