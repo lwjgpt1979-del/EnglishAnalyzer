@@ -507,18 +507,18 @@ onLoad(async () => {
 .sec-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
 .sec-title { font-size: 30rpx; font-weight: 700; border-left: 6rpx solid var(--c-primary); padding-left: 14rpx; }
 .link { font-size: 24rpx; color: var(--c-primary); background: var(--c-primary-faint); padding: 8rpx 18rpx; border-radius: 24rpx; }
-.stype { display: flex; align-items: center; gap: 10rpx; background: var(--c-primary-faint); border-radius: 14rpx; padding: 14rpx 18rpx; margin-bottom: 20rpx; }
-.stype-ic { font-size: 28rpx; }
-.stype-tx { font-size: 27rpx; font-weight: 600; color: var(--c-primary); }
+.stype { display: flex; align-items: center; gap: 8rpx; background: var(--c-primary-faint); border-radius: 12rpx; padding: 12rpx 16rpx; margin-bottom: 18rpx; }
+.stype-ic { font-size: 24rpx; }
+.stype-tx { font-size: 25rpx; font-weight: 600; color: var(--c-primary); }
 /* 逐条解析:时间线 */
 .tl { padding: 2rpx 0; }
-.tl-row { display: flex; gap: 16rpx; position: relative; padding-bottom: 22rpx; }
-.tl-rail { position: relative; flex-shrink: 0; width: 40rpx; display: flex; justify-content: center; }
-.tl-dot { width: 38rpx; height: 38rpx; line-height: 38rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 21rpx; z-index: 1; }
-.tl-row:not(:last-child) .tl-rail::before { content: ''; position: absolute; top: 40rpx; bottom: -16rpx; left: 50%; transform: translateX(-50%); width: 2rpx; background: #e6e9ef; }
-.tl-text { flex: 1; font-size: 27rpx; color: #555; line-height: 1.6; padding-top: 4rpx; }
-.summary { display: block; margin-top: 6rpx; padding: 16rpx 18rpx; background: #f7f9fc; border-radius: 14rpx; font-size: 26rpx; color: #666; line-height: 1.7; }
-.summary-lb { font-size: 21rpx; color: #fff; background: #a7b0c0; border-radius: 8rpx; padding: 3rpx 12rpx; margin-right: 10rpx; }
+.tl-row { display: flex; gap: 14rpx; position: relative; padding-bottom: 20rpx; }
+.tl-rail { position: relative; flex-shrink: 0; width: 32rpx; display: flex; justify-content: center; }
+.tl-dot { width: 30rpx; height: 30rpx; line-height: 30rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 18rpx; }
+.tl-row:not(:last-child) .tl-rail::before { content: ''; position: absolute; top: 32rpx; bottom: -14rpx; left: 50%; transform: translateX(-50%); width: 2rpx; background: #e9ecf2; }
+.tl-text { flex: 1; font-size: 24rpx; color: #6b7178; line-height: 1.65; padding-top: 3rpx; }
+.summary { display: block; margin-top: 6rpx; padding: 14rpx 16rpx; background: #f7f9fc; border-radius: 12rpx; font-size: 24rpx; color: #6b7178; line-height: 1.7; }
+.summary-lb { font-size: 20rpx; color: #fff; background: #a7b0c0; border-radius: 8rpx; padding: 3rpx 12rpx; margin-right: 10rpx; }
 .footer-space { height: 140rpx; }
 
 /* 打卡日历弹层 */
@@ -543,7 +543,7 @@ onLoad(async () => {
 .cal-btn.done { background: #e8eef6; color: #9aa6b6; box-shadow: none; }
 
 /* 底部固定 */
-.footer { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 20rpx; padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -2rpx 14rpx rgba(0,0,0,.05); }
+.footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; align-items: center; gap: 20rpx; padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -2rpx 14rpx rgba(0,0,0,.05); }
 .foot-side { display: flex; flex-direction: column; align-items: center; gap: 4rpx; }
 .fs-ic { font-size: 32rpx; }
 .fs-tx { font-size: 22rpx; color: #666; }
