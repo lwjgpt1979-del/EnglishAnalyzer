@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listFaq, createFaq, updateFaq, deleteFaq, type FaqItem } from '../api/admin'
+import { QuestionFilled } from '@element-plus/icons-vue'
 
 const rows = ref<FaqItem[]>([])
 const total = ref(0)
@@ -58,7 +59,7 @@ onMounted(load)
 <template>
   <div class="faq">
     <div class="toolbar">
-      <h2>❓ FAQ 自助管理</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><QuestionFilled /></el-icon>FAQ 自助管理</h2>
       <div class="filters">
         <el-radio-group v-model="audience" @change="load">
           <el-radio-button label="all">全部</el-radio-button>

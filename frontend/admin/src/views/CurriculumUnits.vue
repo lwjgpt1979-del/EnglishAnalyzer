@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled, Refresh, Document, Notebook, Search, Cpu, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import {
   listCurriculumUnits,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
@@ -339,13 +339,13 @@ onMounted(load)
       <el-select v-model="filterSemester" placeholder="学期" clearable style="width:100px">
         <el-option v-for="s in semesterOptions" :key="s" :label="s+'学期'" :value="s" />
       </el-select>
-      <el-button @click="load" :loading="loading">🔄 刷新</el-button>
+      <el-button @click="load" :loading="loading"><el-icon style="margin-right:4px"><Refresh /></el-icon>刷新</el-button>
       <span class="stat-txt">
         共 {{ filteredRows.length }} 个单元 ·
         已完成 {{ filteredRows.filter(r => r.content_rate >= 1).length }} 个
       </span>
       <div style="flex:1" />
-      <el-button type="primary" @click="openPdfDialog">📄 上传教材 PDF</el-button>
+      <el-button type="primary" @click="openPdfDialog"><el-icon style="margin-right:4px"><Document /></el-icon>上传教材 PDF</el-button>
     </div>
 
     <!-- 单元表格 -->
@@ -370,8 +370,8 @@ onMounted(load)
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <div class="act-row">
-            <el-button size="small" type="primary" @click="onViewPassages(row)">📄 短文</el-button>
-            <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)">📕 原版PDF</el-button>
+            <el-button size="small" type="primary" @click="onViewPassages(row)"><el-icon style="margin-right:4px"><Document /></el-icon>短文</el-button>
+            <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)"><el-icon style="margin-right:4px"><Notebook /></el-icon>原版PDF</el-button>
             <el-button size="small" @click="onViewNodes(row)">单元考点</el-button>
           </div>
         </template>
@@ -380,14 +380,14 @@ onMounted(load)
 
     <!-- ── 单元知识图谱节点 Dialog ── -->
     <el-dialog v-model="nodesDlg" :title="`单元考点 · ${nodesUnitTitle}`" width="560px">
-      <div class="hint" style="margin-bottom:10px">单元考点 = 各短文已关联考点的汇总。要增删请到「📄 短文」里给对应短文关联考点。</div>
+      <div class="hint" style="margin-bottom:10px">单元考点 = 各短文已关联考点的汇总。要增删请到「短文」里给对应短文关联考点。</div>
       <el-table v-loading="nodesLoading" :data="unitKps" border style="width:100%">
         <el-table-column prop="name" label="考点" min-width="200" show-overflow-tooltip />
         <el-table-column label="来自短文" width="180">
           <template #default="{ row }">{{ row.kinds.join(' / ') }}</template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!nodesLoading && !unitKps.length" description="该单元暂无考点,去「📄 短文」给短文关联考点" :image-size="50" />
+      <el-empty v-if="!nodesLoading && !unitKps.length" description="该单元暂无考点,去「短文」给短文关联考点" :image-size="50" />
       <template #footer>
         <el-button @click="nodesDlg = false">关闭</el-button>
       </template>
@@ -413,7 +413,7 @@ onMounted(load)
                   <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptPassageKp(p, k)">✓</span>
                   <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissPassageSug(p, k)">✕</span>
                 </el-tag>
-                <el-button size="small" link type="primary" :loading="passBusy[p.id]" @click="doSuggestPassage(p)">🤖 AI 匹配考点</el-button>
+                <el-button size="small" link type="primary" :loading="passBusy[p.id]" @click="doSuggestPassage(p)"><el-icon style="margin-right:4px"><Cpu /></el-icon>AI 匹配考点</el-button>
               </div>
             </div>
           </div>
@@ -496,7 +496,7 @@ onMounted(load)
             title="这是扫描件 PDF(无文字层)"
             description="无法直接抽取文字。可用 OCR 逐页识别(豆包视觉),约每页 1-2 秒、整本几分钟;完成后照常识别单元、生成内容。" />
           <div v-if="!ocrRunning" style="margin-bottom:12px">
-            <el-button type="primary" @click="startOcr">🔍 开始 OCR 识别({{ pdfTotalPages }} 页)</el-button>
+            <el-button type="primary" @click="startOcr"><el-icon style="margin-right:4px"><Search /></el-icon>开始 OCR 识别({{ pdfTotalPages }} 页)</el-button>
             <span class="muted" style="margin-left:10px">或返回上一步改用文字版 PDF</span>
           </div>
           <div v-else style="margin-bottom:12px">
@@ -508,7 +508,7 @@ onMounted(load)
         <template v-else>
         <el-alert
           v-if="pdfAutoSuccess"
-          :title="`✅ 自动识别到 ${segments.length} 个单元，可直接生成。也可手动调整下方分界。`"
+          :title="`自动识别到 ${segments.length} 个单元，可直接生成。也可手动调整下方分界。`"
           type="success" :closable="false" style="margin-bottom:12px"
         />
         <el-alert
@@ -580,16 +580,16 @@ onMounted(load)
 
         <div v-else-if="pdfJob">
           <div class="result-summary">
-            <el-tag type="success" size="large">✅ 成功 {{ pdfJob.done }} 个单元</el-tag>
+            <el-tag type="success" size="large"><el-icon style="vertical-align:-2px;margin-right:4px"><CircleCheck /></el-icon>成功 {{ pdfJob.done }} 个单元</el-tag>
             <el-tag v-if="pdfJob.failed" type="danger" size="large" style="margin-left:8px">
-              ❌ 失败 {{ pdfJob.failed }} 个单元
+              <el-icon style="vertical-align:-2px;margin-right:4px"><CircleClose /></el-icon>失败 {{ pdfJob.failed }} 个单元
             </el-tag>
           </div>
           <el-table :data="pdfJob.results" border size="small" style="margin-top:16px">
             <el-table-column label="状态" width="60" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.status === 'ok' ? 'success' : 'danger'" size="small">
-                  {{ row.status === 'ok' ? '✅' : '❌' }}
+                  <el-icon><CircleCheck v-if="row.status === 'ok'" /><CircleClose v-else /></el-icon>
                 </el-tag>
               </template>
             </el-table-column>
@@ -606,7 +606,7 @@ onMounted(load)
           </el-table>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
             <el-button v-if="pdfJob.failed" type="warning" @click="retryFailedUnits">
-              🔄 重试失败的 {{ pdfJob.failed }} 个单元
+              <el-icon style="margin-right:4px"><Refresh /></el-icon>重试失败的 {{ pdfJob.failed }} 个单元
             </el-button>
             <span v-else></span>
             <el-button @click="pdfDialogVisible = false">关闭</el-button>

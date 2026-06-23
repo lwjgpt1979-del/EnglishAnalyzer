@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listBanAppeals, reviewBanAppeal, type BanAppealItem } from '../api/admin'
+import { Warning } from '@element-plus/icons-vue'
 
 const rows = ref<BanAppealItem[]>([])
 const total = ref(0)
@@ -41,7 +42,7 @@ onMounted(load)
 <template>
   <div class="ba">
     <div class="toolbar">
-      <h2>🛡️ 封禁申诉</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>封禁申诉</h2>
       <div class="filters">
         <el-radio-group v-model="status" @change="load">
           <el-radio-button label="pending">待审</el-radio-button>

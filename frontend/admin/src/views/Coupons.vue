@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listCoupons, createCoupon, setCouponActive, grantCoupon, type CouponItem } from '../api/admin'
+import { Tickets } from '@element-plus/icons-vue'
 
 const rows = ref<CouponItem[]>([])
 const total = ref(0)
@@ -76,7 +77,7 @@ onMounted(load)
 <template>
   <div class="cp">
     <div class="toolbar">
-      <h2>🎟️ 优惠券 / 兑换码</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Tickets /></el-icon>优惠券 / 兑换码</h2>
       <div class="filters">
         <el-button type="primary" @click="openCreate">建券</el-button>
         <el-button @click="load">刷新</el-button>

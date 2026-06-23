@@ -5,6 +5,7 @@ import {
   listAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
   type AnnouncementItem,
 } from '../api/admin'
+import { Bell } from '@element-plus/icons-vue'
 
 const rows = ref<AnnouncementItem[]>([])
 const total = ref(0)
@@ -63,7 +64,7 @@ onMounted(load)
 <template>
   <div class="ann">
     <div class="toolbar">
-      <h2>📢 公告管理</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Bell /></el-icon>公告管理</h2>
       <div class="filters">
         <el-button type="primary" @click="openCreate">发布公告</el-button>
         <el-button @click="load">刷新</el-button>

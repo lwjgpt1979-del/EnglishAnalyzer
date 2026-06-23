@@ -5,6 +5,7 @@ import {
   getEntitlements, setEntitlementOverride, clearEntitlementOverride, setEntitlementAddon,
   type EntitlementsConfig, type FeatureItem, type FeatureRule,
 } from '../api/admin'
+import { Lock } from '@element-plus/icons-vue'
 
 const cfg = ref<EntitlementsConfig | null>(null)
 const loading = ref(false)
@@ -97,7 +98,7 @@ onMounted(load)
 
 <template>
   <div class="ent-page">
-    <h2>🔐 会员权益配置</h2>
+    <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Lock /></el-icon>会员权益配置</h2>
     <p class="hint">每个功能(能力键)在各档位的开放规则。点单元格可覆盖默认值（<b>加粗=已覆盖</b>），立即全端生效。</p>
 
     <el-table :data="cfg?.features || []" v-loading="loading" border stripe size="small">

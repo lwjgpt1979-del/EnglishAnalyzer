@@ -99,7 +99,7 @@ onMounted(load)
     <el-collapse class="tips-box">
       <el-collapse-item name="how">
         <template #title>
-          <span class="tips-title">🧩 提示词怎么组装 / 匹配逻辑(固定 + 可改,点开查看)</span>
+          <span class="tips-title">提示词怎么组装 / 匹配逻辑(固定 + 可改,点开查看)</span>
         </template>
         <div class="tips-body">
           <p><b>发给 AI 的内容 = 系统消息 + 用户消息</b>,其中只有标【可改】的在本页配置,其余是代码里固定的脚手架:</p>

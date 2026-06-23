@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { reactive } from 'vue'
 import { listTeachersForAdmin, reviewTeacherCert, claimTeacherCert, getCertQuality, setTeacherLimitOverride, type CertQuality } from '../api/admin'
 import type { AdminTeacherItem } from '../types'
+import { Refresh, Pointer, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 
 // 个体额度覆盖（§5.6）
 const limitDialog = ref(false)
@@ -154,7 +155,7 @@ onMounted(() => { load(); loadQuality() })
         <el-option label="已拒绝" value="rejected" />
         <el-option label="未提交" value="uncertified" />
       </el-select>
-      <el-button @click="load" :loading="loading">🔄 刷新</el-button>
+      <el-button @click="load" :loading="loading"><el-icon style="vertical-align:-2px;margin-right:4px"><Refresh /></el-icon>刷新</el-button>
       <span style="color: #909399; font-size: 13px;">
         共 {{ total }} 名老师
       </span>
@@ -196,20 +197,20 @@ onMounted(() => { load(); loadQuality() })
             size="small"
             plain
             @click="onClaim(row)"
-          >🙋 认领</el-button>
+          ><el-icon style="vertical-align:-2px;margin-right:4px"><Pointer /></el-icon>认领</el-button>
           <el-button
             size="small"
             type="success"
             :disabled="row.cert_status === 'certified'"
             @click="onApprove(row)"
-          >✅ 通过</el-button>
+          ><el-icon style="vertical-align:-2px;margin-right:4px"><CircleCheck /></el-icon>通过</el-button>
           <el-button
             size="small"
             type="danger"
             plain
             :disabled="row.cert_status === 'rejected'"
             @click="onReject(row)"
-          >❌ 拒绝</el-button>
+          ><el-icon style="vertical-align:-2px;margin-right:4px"><CircleClose /></el-icon>拒绝</el-button>
           <el-button size="small" link @click="openLimit(row)">额度</el-button>
         </template>
       </el-table-column>

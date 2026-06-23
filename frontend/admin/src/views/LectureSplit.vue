@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listLectureNodes, splitLecture, createKnowledgeNode, type LectureNode } from '../api/admin'
+import { Check, Close } from '@element-plus/icons-vue'
 
 const GRPS = [{ label: '全部', value: '' }, { label: '词法', value: '词法' }, { label: '句法', value: '句法' }]
 const grp = ref('')
@@ -92,12 +93,12 @@ onMounted(load)
           <span class="subs-label">AI 建议子考点:</span>
           <el-tag v-for="s in split[n.id].subs" :key="s" size="small" type="primary" effect="plain" style="border-style:dashed;margin:2px">
             {{ s }}
-            <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:4px" @click="accept(n, s)">✓</span>
-            <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismiss(n, s)">✕</span>
+            <el-icon style="cursor:pointer;color:#67c23a;margin-left:4px;vertical-align:-2px" @click="accept(n, s)"><Check /></el-icon>
+            <el-icon style="cursor:pointer;color:#c0c4cc;margin-left:2px;vertical-align:-2px" @click="dismiss(n, s)"><Close /></el-icon>
           </el-tag>
           <el-button size="small" type="success" plain style="margin-left:6px" @click="acceptAll(n)">全部采纳</el-button>
         </template>
-        <span v-for="a in (split[n.id].accepted || [])" :key="'a' + a" class="accepted">✓ {{ a }} 已挂</span>
+        <span v-for="a in (split[n.id].accepted || [])" :key="'a' + a" class="accepted"><el-icon style="vertical-align:-2px;margin-right:2px"><Check /></el-icon>{{ a }} 已挂</span>
         <span v-if="!split[n.id].busy && !split[n.id].subs.length && !split[n.id].accepted.length" class="muted">无可拆子考点</span>
       </div>
     </el-card>

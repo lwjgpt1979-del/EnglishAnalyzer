@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Warning } from '@element-plus/icons-vue'
 import {
   listSensitiveWords, addSensitiveWord, batchAddSensitiveWords,
   updateSensitiveWord, deleteSensitiveWord, type SensitiveWordItem,
@@ -68,7 +69,7 @@ onMounted(load)
 <template>
   <div class="sw">
     <div class="toolbar">
-      <h2>🛡️ 敏感词库</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>敏感词库</h2>
       <div class="filters">
         <el-select v-model="category" style="width: 130px" @change="load">
           <el-option label="全部分类" value="all" />

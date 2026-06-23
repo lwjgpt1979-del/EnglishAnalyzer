@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listThemes, setActiveTheme, setBranding, type ThemePreset } from '../api/admin'
 import { branding, loadBranding } from '../branding'
+import { PriceTag, Brush, CircleCheck } from '@element-plus/icons-vue'
 
 const themes = ref<ThemePreset[]>([])
 const activeKey = ref('')
@@ -60,7 +61,7 @@ onMounted(async () => {
 <template>
   <div class="theme-center">
     <div class="brand-box">
-      <h2>🏷️ 项目名称</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><PriceTag /></el-icon>项目名称</h2>
       <p class="sub">全系统唯一项目名，各前端（小程序/后台）启动统一读取。改后下次启动生效。</p>
       <div class="brand-row">
         <el-input v-model="appNameInput" placeholder="如 engGramer" style="max-width:320px" />
@@ -70,7 +71,7 @@ onMounted(async () => {
     </div>
 
     <div class="head">
-      <h2>🎨 主题中心</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Brush /></el-icon>主题中心</h2>
       <p class="sub">挑选小程序的上线视觉风格。选中后写入配置，小程序下次启动自动应用。</p>
     </div>
 
@@ -123,7 +124,7 @@ onMounted(async () => {
           :disabled="t.key === activeKey"
           @click="choose(t)"
         >
-          {{ t.key === activeKey ? '✓ 当前上线' : '设为上线' }}
+          <el-icon v-if="t.key === activeKey" style="vertical-align:-2px;margin-right:4px"><CircleCheck /></el-icon>{{ t.key === activeKey ? '当前上线' : '设为上线' }}
         </el-button>
       </div>
     </div>

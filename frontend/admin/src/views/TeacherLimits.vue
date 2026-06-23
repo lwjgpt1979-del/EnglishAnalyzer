@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getTeacherLimits, updateTeacherLimits } from '../api/admin'
+import { User } from '@element-plus/icons-vue'
 
 const form = reactive({ max_students: 50, monthly_paper_quota: 10, monthly_grading_quota: 20, warn_threshold_pct: 20, reset_day: 1 })
 const loading = ref(false)
@@ -25,7 +26,7 @@ onMounted(load)
 
 <template>
   <el-card v-loading="loading" style="max-width: 560px">
-    <template #header>👨‍🏫 老师月度限额（全局默认）· §5.6</template>
+    <template #header><el-icon style="vertical-align:-2px;margin-right:4px"><User /></el-icon>老师月度限额（全局默认）· §5.6</template>
     <el-form label-width="180px">
       <el-form-item label="同时绑定学生上限">
         <el-input-number v-model="form.max_students" :min="0" /> 名

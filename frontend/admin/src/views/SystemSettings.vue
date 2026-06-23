@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getInfoChangeLimit, setInfoChangeLimit } from '../api/admin'
+import { Setting } from '@element-plus/icons-vue'
 
 const infoChangeLimit = ref(3)
 const loading = ref(false)
@@ -25,7 +26,7 @@ onMounted(load)
 
 <template>
   <div class="ss">
-    <h2>⚙️ 系统参数</h2>
+    <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Setting /></el-icon>系统参数</h2>
     <el-card v-loading="loading" style="max-width: 560px">
       <template #header>学习信息变更月度上限（§5.6）</template>
       <el-form label-width="200px">

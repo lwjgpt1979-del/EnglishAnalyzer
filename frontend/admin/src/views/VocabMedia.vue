@@ -3,6 +3,7 @@ import { onMounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia } from '../api/admin'
 import type { AdminVocabMediaItem } from '../types'
+import { Refresh, Cpu, CircleCheck, CircleClose, EditPen } from '@element-plus/icons-vue'
 
 const rows = ref<AdminVocabMediaItem[]>([])
 const total = ref(0)
@@ -135,7 +136,7 @@ onMounted(load)
         clearable
         style="width: 160px"
       />
-      <el-button @click="load" :loading="loading">🔄 刷新</el-button>
+      <el-button @click="load" :loading="loading"><el-icon style="vertical-align:-2px;margin-right:4px"><Refresh /></el-icon>刷新</el-button>
       <span style="color: #909399; font-size: 13px;">
         共 {{ total }} 个词 · 当前显示 {{ filteredRows.length }} 个
       </span>
@@ -167,10 +168,10 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" :loading="generating[row.word_id]" @click="onGenerate(row)">🤖 生成</el-button>
-          <el-button size="small" type="success" @click="onApprove(row)" :disabled="row.media_status === 'published'">✅</el-button>
-          <el-button size="small" type="danger" plain @click="onReject(row)" :disabled="row.media_status === 'retired'">❌</el-button>
-          <el-button size="small" @click="openEdit(row)">✏️</el-button>
+          <el-button size="small" :loading="generating[row.word_id]" @click="onGenerate(row)"><el-icon style="vertical-align:-2px;margin-right:4px"><Cpu /></el-icon>生成</el-button>
+          <el-button size="small" type="success" @click="onApprove(row)" :disabled="row.media_status === 'published'"><el-icon><CircleCheck /></el-icon></el-button>
+          <el-button size="small" type="danger" plain @click="onReject(row)" :disabled="row.media_status === 'retired'"><el-icon><CircleClose /></el-icon></el-button>
+          <el-button size="small" @click="openEdit(row)"><el-icon><EditPen /></el-icon></el-button>
         </template>
       </el-table-column>
     </el-table>

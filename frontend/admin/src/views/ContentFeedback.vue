@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listContentFeedback, handleContentFeedback, type ContentFeedbackItem } from '../api/admin'
+import { EditPen } from '@element-plus/icons-vue'
 
 const rows = ref<ContentFeedbackItem[]>([])
 const total = ref(0)
@@ -36,7 +37,7 @@ onMounted(load)
 <template>
   <div class="cf">
     <div class="toolbar">
-      <h2>📝 内容质量反馈</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><EditPen /></el-icon>内容质量反馈</h2>
       <div class="filters">
         <el-radio-group v-model="ttype" @change="load">
           <el-radio-button label="all">全部类型</el-radio-button>

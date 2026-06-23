@@ -6,6 +6,7 @@ import {
   listInstitutions, setInstitutionPackage, getInstitutionPackageUsage,
   type PackageConfig, type AdminInstitution, type PackageUsage,
 } from '../api/admin'
+import { OfficeBuilding } from '@element-plus/icons-vue'
 
 // ── 档位配置 ──
 const cfg = ref<PackageConfig>({ tiers: [], warn_threshold_pct: 20, reset_day: 1 })
@@ -68,7 +69,7 @@ onMounted(() => { loadCfg(); loadInsts() })
 
 <template>
   <div class="pk">
-    <h2>🏢 机构套餐配置</h2>
+    <h2><el-icon style="vertical-align:-2px;margin-right:4px"><OfficeBuilding /></el-icon>机构套餐配置</h2>
 
     <el-card v-loading="loading" style="margin-bottom: 16px">
       <template #header>套餐档位与配额（增删档位即时生效，不发版）</template>

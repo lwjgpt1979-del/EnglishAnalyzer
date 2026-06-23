@@ -5,10 +5,17 @@ import {
   getSpeakingConfig, updateSpeakingConfig, getSpeakingSemesters,
   type SpeakingConfig, type SemScopeUnit,
 } from '../api/admin'
+import { Aim, Document, Notebook, OfficeBuilding, Brush, User, Position, ShoppingCart } from '@element-plus/icons-vue'
+import type { Component } from 'vue'
 
+// 通用场景:图标 + 标题(图标用 Element Plus 线性图标)
 const PRESET_TITLES: Record<string, string> = {
-  self_intro: '🙋 自我介绍', restaurant: '🍔 餐厅点餐', directions: '🗺️ 问路指路',
-  shopping: '🛍️ 购物砍价', hobbies: '🎨 聊聊爱好', school: '🏫 校园生活',
+  self_intro: '自我介绍', restaurant: '餐厅点餐', directions: '问路指路',
+  shopping: '购物砍价', hobbies: '聊聊爱好', school: '校园生活',
+}
+const PRESET_ICONS: Record<string, Component> = {
+  self_intro: User, restaurant: ShoppingCart, directions: Position,
+  shopping: ShoppingCart, hobbies: Brush, school: OfficeBuilding,
 }
 
 const cfg = ref<SpeakingConfig | null>(null)
@@ -93,7 +100,7 @@ onMounted(load)
         <template #header>特殊场景（按学生学情，逻辑固定）</template>
         <div v-for="(item, key) in { '错题薄弱点': cfg.special.wrong, '词力通在练词': cfg.special.vocab }" :key="key" class="row">
           <div class="row-head">
-            <span class="row-name">{{ key === '错题薄弱点' ? '🎯 错题薄弱点' : '🔤 词力通在练词' }}</span>
+            <span class="row-name"><el-icon style="vertical-align:-2px;margin-right:4px"><Aim v-if="key === '错题薄弱点'" /><Document v-else /></el-icon>{{ key === '错题薄弱点' ? '错题薄弱点' : '词力通在练词' }}</span>
             <el-switch v-model="item.enabled" active-text="启用" inactive-text="停用" />
           </div>
           <el-input v-model="item.prompt" type="textarea" :rows="2" placeholder="AI 提示词（角色/风格）" />
@@ -105,7 +112,7 @@ onMounted(load)
         <template #header>通用场景（预设）</template>
         <div v-for="k in presetKeys" :key="k" class="row">
           <div class="row-head">
-            <span class="row-name">{{ PRESET_TITLES[k] || k }}</span>
+            <span class="row-name"><el-icon v-if="PRESET_ICONS[k]" style="vertical-align:-2px;margin-right:4px"><component :is="PRESET_ICONS[k]" /></el-icon>{{ PRESET_TITLES[k] || k }}</span>
             <el-switch v-model="cfg.preset[k].enabled" active-text="启用" inactive-text="停用" />
           </div>
           <el-input v-model="cfg.preset[k].prompt" type="textarea" :rows="2" placeholder="AI 提示词（角色/风格）" />
@@ -117,7 +124,7 @@ onMounted(load)
         <template #header>学期场景（每单元，分级提示词）</template>
         <div class="row">
           <div class="row-head">
-            <span class="row-name">📖 学期场景总开关</span>
+            <span class="row-name"><el-icon style="vertical-align:-2px;margin-right:4px"><Notebook /></el-icon>学期场景总开关</span>
             <el-switch v-model="cfg.semester.enabled" active-text="启用" inactive-text="停用" />
           </div>
         </div>

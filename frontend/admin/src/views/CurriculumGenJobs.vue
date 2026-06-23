@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listGenJobs, retryGenJob, getGenJob, type GenJob } from '../api/admin'
+import { Refresh, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 
 const jobs = ref<GenJob[]>([])
 const loading = ref(false)
@@ -61,8 +62,9 @@ onMounted(load)
           <div style="display:flex;align-items:center;gap:8px">
             <el-progress :percentage="row.total ? Math.round((row.done + row.failed) / row.total * 100) : 0"
               :status="row.failed ? 'exception' : (row.status === 'done' ? 'success' : undefined)" :stroke-width="10" style="flex:1" />
-            <span style="font-size:12px;white-space:nowrap;color:#606266">
-              ✅{{ row.done }} <span v-if="row.failed" style="color:#F56C6C">❌{{ row.failed }}</span> /{{ row.total }}
+            <span style="font-size:12px;white-space:nowrap;color:#606266;display:inline-flex;align-items:center;gap:2px">
+              <el-icon color="#67C23A"><CircleCheck /></el-icon>{{ row.done }}
+              <span v-if="row.failed" style="color:#F56C6C;display:inline-flex;align-items:center;gap:2px"><el-icon><CircleClose /></el-icon>{{ row.failed }}</span> /{{ row.total }}
             </span>
           </div>
         </template>
@@ -74,7 +76,7 @@ onMounted(load)
         <template #default="{ row }">
           <el-button size="small" @click="viewResults(row)">查看结果</el-button>
           <el-button v-if="row.failed && row.status !== 'running'" size="small" type="warning"
-            :loading="retrying[row.job_id]" @click="onRetry(row)">🔄 重试</el-button>
+            :loading="retrying[row.job_id]" @click="onRetry(row)"><el-icon style="margin-right:4px"><Refresh /></el-icon>重试</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -83,7 +85,7 @@ onMounted(load)
     <el-dialog v-model="dlg" :title="cur ? `生成结果 · ${cur.textbook_version} ${cur.grade} ${cur.semester}学期` : '生成结果'" width="640px">
       <el-table v-if="cur" :data="cur.results" border size="small" style="width:100%">
         <el-table-column label="状态" width="60" align="center">
-          <template #default="{ row }"><el-tag :type="row.status === 'ok' ? 'success' : 'danger'" size="small">{{ row.status === 'ok' ? '✅' : '❌' }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="row.status === 'ok' ? 'success' : 'danger'" size="small"><el-icon><CircleCheck v-if="row.status === 'ok'" /><CircleClose v-else /></el-icon></el-tag></template>
         </el-table-column>
         <el-table-column label="单元" width="70" align="center"><template #default="{ row }">Unit {{ row.unit_no }}</template></el-table-column>
         <el-table-column prop="unit_title" label="标题" min-width="140" show-overflow-tooltip />
@@ -95,7 +97,7 @@ onMounted(load)
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button v-if="cur && cur.failed && cur.status !== 'running'" type="warning" :loading="retrying[cur.job_id]" @click="onRetry(cur)">🔄 重试失败单元</el-button>
+        <el-button v-if="cur && cur.failed && cur.status !== 'running'" type="warning" :loading="retrying[cur.job_id]" @click="onRetry(cur)"><el-icon style="margin-right:4px"><Refresh /></el-icon>重试失败单元</el-button>
         <el-button @click="dlg = false">关闭</el-button>
       </template>
     </el-dialog>

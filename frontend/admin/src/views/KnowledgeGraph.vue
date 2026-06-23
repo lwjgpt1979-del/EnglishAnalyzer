@@ -9,6 +9,7 @@ import {
   type NodeHub,
 } from '../api/admin'
 import type { KpNodeOverviewItem, KpNodeDetail, NodeTreeItem } from '../types'
+import { EditPen } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const DIMS = ['listening', 'vocabulary', 'grammar', 'reading', 'translation', 'writing']
@@ -162,7 +163,7 @@ onMounted(loadTree)
   <div>
     <div class="toolbar">
       <el-radio-group v-model="viewMode" @change="switchView($event as any)">
-        <el-radio-button value="tree">🌳 树视图</el-radio-button>
+        <el-radio-button value="tree">树视图</el-radio-button>
         <el-radio-button value="list">列表</el-radio-button>
       </el-radio-group>
       <span class="hint" style="margin-left:12px">受控知识树:后台定结构,教材/真题生成只能映射到树上既有节点。</span>
@@ -185,7 +186,7 @@ onMounted(loadTree)
         <template #default="{ data }">
           <span class="tnode">
             <el-link type="primary" @click.stop="openDetail(data.id)">{{ data.name }}</el-link>
-            <span v-if="data.source === 'manual'" class="cnt cnt-m" title="人工新建的考点">✍ 人工</span>
+            <span v-if="data.source === 'manual'" class="cnt cnt-m" title="人工新建的考点"><el-icon style="vertical-align:-2px"><EditPen /></el-icon> 人工</span>
             <span class="tmeta" v-if="data.node_kind">{{ data.node_kind }}</span>
             <span v-if="data.applicable_stages && data.applicable_stages.length" class="cnt cnt-s"
               title="适用学段">{{ data.applicable_stages.join('/') }}</span>
@@ -221,7 +222,7 @@ onMounted(loadTree)
       <el-table-column prop="name" label="知识点" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <el-link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-link>
-          <span v-if="row.source === 'manual'" class="manual-tag" title="人工新建的考点">✍ 人工</span>
+          <span v-if="row.source === 'manual'" class="manual-tag" title="人工新建的考点"><el-icon style="vertical-align:-2px"><EditPen /></el-icon> 人工</span>
         </template>
       </el-table-column>
       <el-table-column prop="node_kind" label="子类型" width="100">
@@ -288,7 +289,7 @@ onMounted(loadTree)
             <span v-for="d in DIMS" :key="d" :class="['cell', dimClass(detail.dims[d])]">
               {{ DIM_LABEL[d] }}：{{ detail.dims[d] ? (detail.dims[d]!.status === 'published' ? '已发布' : '草稿') : '缺' }}
             </span>
-            <el-button size="small" type="warning" plain style="margin-left:8px" @click="goSupplement">📝 去补全</el-button>
+            <el-button size="small" type="warning" plain style="margin-left:8px" @click="goSupplement"><el-icon style="vertical-align:-2px;margin-right:4px"><EditPen /></el-icon>去补全</el-button>
           </div>
 
           <el-divider content-position="left">学生掌握分布</el-divider>

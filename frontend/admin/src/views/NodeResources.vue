@@ -9,6 +9,7 @@ import {
 } from '../api/admin'
 import type { NodeResourceItem2, AdminCurriculumUnit, UnitContentNode, VersionDiffOut, VersionItem } from '../types'
 import { lineDiff, type DiffLine } from '../utils/linediff'
+import { Tickets, Promotion, Bell, CircleCheck } from '@element-plus/icons-vue'
 
 const route = useRoute()
 
@@ -313,15 +314,15 @@ watch(() => route.query.unit_id, async () => {
     <!-- 单元补全总览:每个知识点六维完整度,红=缺(点击补全) 黄=草稿 绿=已发布 -->
     <el-card v-if="fUnitId" class="overview" shadow="never" v-loading="overviewLoading">
       <div class="ov-head">
-        <b>📋 {{ currentUnitTitle }} · 补全总览</b>
+        <b><el-icon style="vertical-align:-2px;margin-right:4px"><Tickets /></el-icon>{{ currentUnitTitle }} · 补全总览</b>
         <span class="ov-sum">知识点 {{ overview.length }} · 缺失维度
           <b :class="missingCount ? 'warn' : 'ok'">{{ missingCount }}</b>
-          <template v-if="!missingCount"> ✓ 全部就绪</template>
+          <template v-if="!missingCount"> <el-icon style="vertical-align:-2px"><CircleCheck /></el-icon> 全部就绪</template>
           <template v-if="draftCount"> · 待发布草稿 <b class="warn">{{ draftCount }}</b></template>
         </span>
         <el-button v-if="overview.length" size="small" type="success" :loading="publishing"
-          :disabled="!draftCount" @click="onPublishUnit">🚀 一键发布本单元</el-button>
-        <span class="ov-legend"><i class="dot cell-missing" />缺<i class="dot cell-draft" />草稿<i class="dot cell-pub" />已发布<em style="margin-left:10px">🆕 待审新版(点击对比)</em></span>
+          :disabled="!draftCount" @click="onPublishUnit"><el-icon style="vertical-align:-2px;margin-right:4px"><Promotion /></el-icon>一键发布本单元</el-button>
+        <span class="ov-legend"><i class="dot cell-missing" />缺<i class="dot cell-draft" />草稿<i class="dot cell-pub" />已发布<em style="margin-left:10px"><el-icon style="vertical-align:-2px"><Bell /></el-icon> 待审新版(点击对比)</em></span>
       </div>
       <el-empty v-if="!overviewLoading && !overview.length" description="该单元暂无对齐的知识图谱节点(先在单元页「对齐图谱」)" />
       <table v-else class="ov-table">
@@ -337,7 +338,7 @@ watch(() => route.query.unit_id, async () => {
                 :title="node.dims[d]!.pending_version_id ? '有待审新版,点击对比' : ''"
                 @click="node.dims[d]!.pending_version_id && openDiff(node, d)">
                 {{ node.dims[d]!.status === 'published' ? '已发布' : '草稿' }}
-                <em v-if="node.dims[d]!.pending_version_id" class="newbadge">🆕</em>
+                <em v-if="node.dims[d]!.pending_version_id" class="newbadge"><el-icon style="vertical-align:-2px"><Bell /></el-icon></em>
               </span>
               <span v-else class="cell cell-missing clickable" @click="fillMissing(node, d)">补全</span>
             </td>

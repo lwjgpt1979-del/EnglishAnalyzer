@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listCampaigns, createCampaign, setCampaignActive, type CampaignItem } from '../api/admin'
+import { Present } from '@element-plus/icons-vue'
 
 const rows = ref<CampaignItem[]>([])
 const total = ref(0)
@@ -62,7 +63,7 @@ onMounted(load)
 <template>
   <div class="cp">
     <div class="toolbar">
-      <h2>🎉 限时活动价</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Present /></el-icon>限时活动价</h2>
       <div class="filters">
         <el-button type="primary" @click="openCreate">新建活动</el-button>
         <el-button @click="load">刷新</el-button>

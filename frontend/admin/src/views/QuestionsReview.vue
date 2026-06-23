@@ -2,6 +2,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listSimPapers, listPlatformQuestions, reviewPlatformQuestion, reviewPlatformBulk, type PlatformQuestion, type SimPaper } from '../api/admin'
+import { Document } from '@element-plus/icons-vue'
 
 const status = ref('draft')
 const statusOptions = ['draft', 'published', 'retired']
@@ -201,7 +202,7 @@ onMounted(loadPapers)
       <div v-for="(sec, si) in sections" :key="sec.type" class="section">
         <div class="sec-head">{{ ['一','二','三','四','五','六','七','八','九','十'][si] || (si+1) }}、{{ sec.type }}（{{ sec.count }} 题）</div>
         <div v-for="(g, gi) in sec.groups" :key="gi" class="group">
-          <div v-if="g.passage" class="passage">📄 {{ g.passage }}</div>
+          <div v-if="g.passage" class="passage"><el-icon style="vertical-align:-2px;margin-right:4px"><Document /></el-icon>{{ g.passage }}</div>
           <div v-for="q in g.rows" :key="q.id" class="q">
             <el-checkbox :model-value="checkedIds.includes(q.id)" @change="(v: any) => toggleOne(q.id, !!v)" class="q-check" />
             <div class="q-main">

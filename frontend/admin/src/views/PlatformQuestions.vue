@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled, Warning, Document, Notebook } from '@element-plus/icons-vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
@@ -609,14 +609,14 @@ onMounted(load)
           <el-tag :type="curPaper?.status === 'published' ? 'success' : 'info'" size="small">{{ curPaper?.status === 'published' ? '已发布' : '草稿' }}</el-tag>
           <span style="color:#606266">共 {{ curPaper?.question_count }} 题,已发布 {{ curPaper?.published_count }}</span>
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
-          <el-tag v-if="unmappedCount" type="warning" size="small">⚠️ {{ unmappedCount }} 题未挂知识点</el-tag>
+          <el-tag v-if="unmappedCount" type="warning" size="small"><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>{{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
           <el-button :loading="suggesting" @click="onSuggestKp"
             title="整卷按每个大题/题型分别调用其匹配提示词,候选考点按本卷学段(高⊇初⊇小)过滤">AI 整卷匹配知识点</el-button>
           <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
           <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
-          <span v-if="simGen.running" style="font-size:12px;color:#409eff">⏳ 后台派生中 {{ simGen.done }}/{{ simGen.total || '…' }} 题位，已生成 {{ simGen.generated }} 道</span>
+          <span v-if="simGen.running" style="font-size:12px;color:#409eff">后台派生中 {{ simGen.done }}/{{ simGen.total || '…' }} 题位，已生成 {{ simGen.generated }} 道</span>
         </div>
         <div style="max-height:520px;overflow:auto">
           <!-- font-size:14px 复位:el-checkbox-group 默认 font-size:0 会让组内纯文本不可见 -->
@@ -634,7 +634,7 @@ onMounted(load)
                 </el-button>
               </div>
               <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
-                <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto">📄 {{ g.passage }}</div>
+                <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto"><el-icon style="vertical-align:-2px;margin-right:4px"><Document /></el-icon>{{ g.passage }}</div>
                 <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dashed #f0f0f0;font-size:13px">
                   <el-checkbox :value="q.id" style="margin-top:2px" />
                   <span style="color:#909399;width:30px;flex-shrink:0">{{ q.question_no }}</span>
@@ -650,7 +650,7 @@ onMounted(load)
                       </el-tag>
                       <el-tag v-for="(p, pi) in (kpProposals[q.id] || [])" :key="'p' + pi" size="small" type="danger" effect="plain" style="border-style:dashed"
                         :title="p.parent_node_id ? ('目录无对应考点 → 新建并归到「' + (p.parent_name || '?') + '」,点 ✓ 确认') : '未定分类:点 ✓ 人工选归属分类后再新建'">
-                        🆕新建:{{ p.name }}<span style="color:#909399"> → {{ p.parent_name || '未定分类(点✓选)' }}</span>
+                        新建:{{ p.name }}<span style="color:#909399"> → {{ p.parent_name || '未定分类(点✓选)' }}</span>
                         <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptProposal(q, p)">✓</span>
                         <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissProposal(q, p)">✕</span>
                       </el-tag>
@@ -787,7 +787,7 @@ onMounted(load)
           <div v-for="(g, gi) in editGroups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:10px;background:#fafcff' : 'margin-bottom:10px'">
             <div v-if="g.section" style="font-size:12px;color:#67c23a;font-weight:600;margin-bottom:4px">【{{ g.section }}】</div>
             <div v-if="g.key" style="margin-bottom:6px">
-              <span style="font-size:12px;color:#409eff;font-weight:600">📖 短文题组 · {{ g.rows.length }} 小问共享</span>
+              <span style="font-size:12px;color:#409eff;font-weight:600"><el-icon style="vertical-align:-2px;margin-right:4px"><Notebook /></el-icon>短文题组 · {{ g.rows.length }} 小问共享</span>
               <el-input v-model="passages[g.key]" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" placeholder="短文/材料正文(本组小问共用)" style="margin-top:4px" />
             </div>
             <el-table :data="g.rows" border size="small">

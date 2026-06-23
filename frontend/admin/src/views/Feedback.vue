@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listSuggestions, handleSuggestion, type FeedbackItem } from '../api/admin'
+import { Opportunity } from '@element-plus/icons-vue'
 
 const rows = ref<FeedbackItem[]>([])
 const total = ref(0)
@@ -36,7 +37,7 @@ onMounted(load)
 <template>
   <div class="fb">
     <div class="toolbar">
-      <h2>💡 意见反馈 / BUG</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Opportunity /></el-icon>意见反馈 / BUG</h2>
       <div class="filters">
         <el-radio-group v-model="kind" @change="load">
           <el-radio-button label="all">全部</el-radio-button>

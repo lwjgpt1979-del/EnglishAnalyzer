@@ -5,6 +5,7 @@ import {
   getFinanceSummary, getSettlements, computeSettlement, exportFinance,
   listBranches, type FinanceSummary, type FinanceSettlement, type BranchCompanyItem,
 } from '../api/admin'
+import { Coin, OfficeBuilding } from '@element-plus/icons-vue'
 
 const month = ref(new Date().toISOString().slice(0, 7))   // YYYY-MM
 const groupBy = ref<'account' | 'branch'>('account')
@@ -50,7 +51,7 @@ onMounted(() => { load(); loadSettlements() })
 <template>
   <div class="finance">
     <div class="toolbar">
-      <h2>💰 财务管理</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Coin /></el-icon>财务管理</h2>
       <div class="filters">
         <el-date-picker v-model="month" type="month" value-format="YYYY-MM" placeholder="月份" @change="load" />
         <el-radio-group v-model="groupBy" @change="load">
@@ -80,7 +81,7 @@ onMounted(() => { load(); loadSettlements() })
     </el-table>
 
     <h3 style="margin-top:28px">分公司分成结算</h3>
-    <p class="hint">净收入 × 分成率 = 分公司应得（分成率在「🏢 分公司管理」配置）。</p>
+    <p class="hint">净收入 × 分成率 = 分公司应得（分成率在「<el-icon style="vertical-align:-2px"><OfficeBuilding /></el-icon> 分公司管理」配置）。</p>
     <div class="settle-form">
       <el-select v-model="setBranch" placeholder="选择分公司" style="width:220px">
         <el-option v-for="b in branches" :key="b.id" :label="b.name" :value="b.id" />

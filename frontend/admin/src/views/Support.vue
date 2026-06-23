@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Headset } from '@element-plus/icons-vue'
 import {
   listTickets, getTicketThread, replyTicket, closeTicket,
   type SupportTicketItem, type SupportMessageItem,
@@ -64,7 +65,7 @@ onMounted(load)
 <template>
   <div class="sup">
     <div class="toolbar">
-      <h2>🎧 客服工单</h2>
+      <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Headset /></el-icon>客服工单</h2>
       <div class="filters">
         <el-radio-group v-model="status" @change="load">
           <el-radio-button label="pending">待处理</el-radio-button>

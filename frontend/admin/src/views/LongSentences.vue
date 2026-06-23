@@ -5,6 +5,7 @@ import {
   extractLongSentences, reanalyzeLongSentences, getLsReanalyzeJob, listLongSentences, reviewLongSentence, getLSConfig, setLSConfig,
 } from '../api/admin'
 import type { LSAdminItem, LSConfig } from '../types'
+import { Refresh, Loading } from '@element-plus/icons-vue'
 
 // ── 抽取触发 ──
 const sourceOptions = [
@@ -157,9 +158,9 @@ onMounted(() => { load(); loadCfg() })
         <el-button style="margin-left: 12px" @click="load">查询</el-button>
         <span class="hint">共 {{ total }} 条</span>
         <div style="flex:1" />
-        <el-button :loading="reanalyzing" @click="onReanalyze(false)">🔄 重新解析(刷新结构)</el-button>
+        <el-button :loading="reanalyzing" @click="onReanalyze(false)"><el-icon style="vertical-align:-2px;margin-right:4px"><Refresh /></el-icon>重新解析(刷新结构)</el-button>
         <el-button type="success" :loading="reanalyzing" @click="onReanalyze(true)">重解析并发布</el-button>
-        <span v-if="reJob" class="hint">⏳ {{ reJob.done }}/{{ reJob.total || '…' }}</span>
+        <span v-if="reJob" class="hint"><el-icon style="vertical-align:-2px;margin-right:4px"><Loading /></el-icon>{{ reJob.done }}/{{ reJob.total || '…' }}</span>
       </div>
       <el-table v-loading="loading" :data="rows" border style="width: 100%" @sort-change="onSortChange">
         <el-table-column prop="text" label="句子" min-width="320" show-overflow-tooltip />
