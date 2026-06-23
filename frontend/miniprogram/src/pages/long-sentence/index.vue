@@ -71,13 +71,21 @@
           <text v-for="t in TABS" :key="t.key" class="seg-tab" :class="{ on: tab === t.key }" @tap="tab = t.key">{{ t.label }}</text>
         </view>
 
-        <!-- 句子结构:思维导图(盒子 + 连线,横向可滚动)-->
+        <!-- 句子结构:主干 → 从句/修饰(紧凑树)-->
         <view v-if="tab === 'struct'">
-          <scroll-view scroll-x class="mm-scroll" v-if="tree.length">
-            <view class="mm-canvas">
-              <LsTreeNode v-for="r in tree" :key="r.idx" :node="r" :color-of="colorOf" :tint-of="tintOf" />
+          <view v-if="trunkText || clauseSegs.length" class="st">
+            <view v-if="trunkText" class="st-trunk">主干:{{ trunkText }}</view>
+            <text v-if="clauseSegs.length" class="st-arrow">⌄</text>
+            <view v-if="clauseSegs.length" class="st-children">
+              <view v-for="s in clauseSegs" :key="s.idx" class="st-clause" :style="{ background: tintOf(s.idx), borderColor: colorOf(s.idx) }">
+                <view class="st-chead">
+                  <text class="st-cno" :style="{ background: colorOf(s.idx) }">{{ s.idx }}</text>
+                  <text class="st-ctype" :style="{ color: colorOf(s.idx) }">{{ s.type }}</text>
+                </view>
+                <text class="st-ctext">{{ s.text }}</text>
+              </view>
             </view>
-          </scroll-view>
+          </view>
           <text v-else class="empty">暂无结构数据</text>
         </view>
 
@@ -163,9 +171,6 @@ import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { listLongSentences, getLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
 import { checkin, getCheckinStatus, getCheckinCalendar, type CheckinStatus, type CheckinCalendar } from '@/api/checkin'
-import LsTreeNode from './LsTreeNode.vue'
-
-interface TNode { idx: number; type: string; text: string; children: TNode[] }
 
 // 颜色由后端按「成分类型」固定下发(segment.color/tint),前端按 idx 映射;缺省回退到调色板
 const PALETTE = ['#8b5cf6', '#10b981', '#14b8a6', '#f59e0b', '#ef4444', '#3b82f6', '#6366f1', '#ec4899', '#0ea5e9']
@@ -236,42 +241,17 @@ const legend = computed(() => {
   return out
 })
 
-const structRows = computed(() => {
+// 句子结构:主干(主谓宾)+ 从句/修饰成分(其余段),供「主干→从句」紧凑树
+const TRUNK_RE = /主干|主句|主语|谓语|宾语|表语/
+const trunkText = computed(() => {
   const a = analysis.value
-  if (!a?.structure?.length) return []
-  const segMap: Record<number, { type: string; text: string }> = {}
-  for (const s of (a.segments || [])) segMap[s.idx] = { type: s.type, text: s.text }
-  const parentOf: Record<number, number | null> = {}
-  for (const st of a.structure) parentOf[st.idx] = st.parent ?? null
-  const depth = (idx: number, guard = 0): number => {
-    const p = parentOf[idx]
-    if (p == null || guard > 10) return 0
-    return 1 + depth(p, guard + 1)
-  }
-  return a.structure
-    .map(st => ({ idx: st.idx, depth: Math.min(depth(st.idx), 3), type: segMap[st.idx]?.type || '', text: segMap[st.idx]?.text || '' }))
-    .sort((x, y) => x.idx - y.idx)
+  if (a?.main_clause) return a.main_clause
+  const t = segments.value.filter(s => TRUNK_RE.test(s.type || '')).map(s => s.text).join(' ')
+  if (t) return t
+  const c = a?.components || {}
+  return [c.subject, c.predicate, c.object].filter(Boolean).join(' ')
 })
-
-// 句子结构 → 树(供思维导图)
-const tree = computed<TNode[]>(() => {
-  const a = analysis.value
-  if (!a?.structure?.length) return []
-  const segMap: Record<number, { type: string; text: string }> = {}
-  for (const s of (a.segments || [])) segMap[s.idx] = { type: s.type, text: s.text }
-  const nodes: Record<number, TNode> = {}
-  for (const st of a.structure) nodes[st.idx] = { idx: st.idx, type: segMap[st.idx]?.type || '', text: segMap[st.idx]?.text || '', children: [] }
-  const roots: TNode[] = []
-  for (const st of a.structure) {
-    const n = nodes[st.idx]
-    const p = st.parent
-    if (p != null && nodes[p] && p !== st.idx) nodes[p].children.push(n)
-    else roots.push(n)
-  }
-  const sortRec = (ns: TNode[]) => { ns.sort((x, y) => x.idx - y.idx); ns.forEach(c => sortRec(c.children)) }
-  sortRec(roots)
-  return roots
-})
+const clauseSegs = computed(() => segments.value.filter(s => !TRUNK_RE.test(s.type || '')))
 
 const compRows = computed(() => {
   const c = analysis.value?.components || {}
@@ -487,9 +467,16 @@ onLoad(async () => {
 .seg-tab.on { background: #fff; color: var(--c-primary); font-weight: 700; }
 .tab-body { min-height: 80rpx; }
 
-/* 思维导图(横向滚动画布)*/
-.mm-scroll { width: 100%; white-space: nowrap; }
-.mm-canvas { display: inline-flex; justify-content: center; align-items: flex-start; padding: 10rpx 20rpx 20rpx; min-width: 100%; box-sizing: border-box; }
+/* 句子结构:主干 → 从句 紧凑树 */
+.st { display: flex; flex-direction: column; align-items: center; padding: 6rpx 0 4rpx; }
+.st-trunk { background: var(--c-primary-faint); color: var(--c-primary); font-size: 27rpx; font-weight: 600; padding: 16rpx 24rpx; border-radius: 14rpx; max-width: 100%; box-sizing: border-box; text-align: center; }
+.st-arrow { color: #c2c8d2; font-size: 30rpx; line-height: 1; margin: 10rpx 0; }
+.st-children { display: flex; flex-wrap: wrap; justify-content: center; gap: 16rpx; width: 100%; }
+.st-clause { flex: 1 1 44%; min-width: 240rpx; border: 1rpx solid; border-radius: 14rpx; padding: 14rpx 16rpx; box-sizing: border-box; }
+.st-chead { display: flex; align-items: center; gap: 10rpx; margin-bottom: 6rpx; }
+.st-cno { width: 30rpx; height: 30rpx; line-height: 30rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 20rpx; flex-shrink: 0; }
+.st-ctype { font-size: 24rpx; font-weight: 700; }
+.st-ctext { font-size: 24rpx; color: #555; line-height: 1.45; }
 
 .comp-row { display: flex; padding: 14rpx 0; border-bottom: 1rpx dashed #f0f0f0; }
 .comp-label { width: 120rpx; color: #888; font-size: 28rpx; }

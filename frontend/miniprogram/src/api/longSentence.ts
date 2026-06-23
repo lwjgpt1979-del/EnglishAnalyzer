@@ -12,6 +12,7 @@ export interface LSAnalysis {
   segments?: LSSegment[]
   structure?: LSStructure[]
   components?: Record<string, string>
+  main_clause?: string
   key_words?: LSKeyWord[]
   grammar_points?: LSGrammarPoint[]
   explanations?: LSExplanation[]
