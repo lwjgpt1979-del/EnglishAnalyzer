@@ -8,36 +8,29 @@
       <!-- 顶部:今日学习进度 + 打卡 -->
       <view class="header">
         <view class="prog">
-          <text class="prog-label">今日学习 <text class="prog-num">{{ index + 1 }}</text>/{{ items.length }} 句</text>
+          <text class="prog-label">今日学习 <text class="prog-num">{{ index + 1 }}</text> / {{ items.length }} 句</text>
           <view class="prog-bar"><view class="prog-fill" :style="{ width: pct + '%' }" /></view>
         </view>
-        <view class="checkin" @tap="openCalendar"><text>📅 打卡日历{{ checkinStatus ? ' · 连续' + checkinStatus.current_streak + '天' : '' }}</text></view>
+        <view class="streak" @tap="openCalendar"><text class="streak-ic">🔥</text>{{ checkinStatus ? '连续 ' + checkinStatus.current_streak + ' 天' : '打卡' }}</view>
       </view>
 
       <!-- 句子卡 -->
-      <view class="card">
-        <view class="sent-head">
-          <view class="chips">
-            <text class="sent-tag">句子 {{ index + 1 }}/{{ items.length }}</text>
-            <text v-if="srcLabel" class="src-tag">{{ srcLabel }}</text>
-            <text v-if="difficulty != null" class="diff-pill" :class="diffLevel.cls">难度 {{ difficulty }}·{{ diffLevel.label }}</text>
-            <text class="fav" :class="{ on: favorited }" @tap="toggleFav">{{ favorited ? '★ 已收藏' : '☆ 收藏' }}</text>
+      <view class="card sent-card">
+        <view class="sc-top">
+          <view class="nav">
+            <text class="nav-btn" :class="{ dis: index === 0 }" @tap="prev">‹</text>
+            <text class="nav-cur">句子 {{ index + 1 }}/{{ items.length }}</text>
+            <text class="nav-btn" :class="{ dis: index >= items.length - 1 }" @tap="next">›</text>
           </view>
-          <view class="pager">
-            <text class="pg" :class="{ dis: index === 0 }" @tap="prev">‹ 上一句</text>
-            <text class="pg primary" :class="{ dis: index >= items.length - 1 }" @tap="next">下一句 ›</text>
+          <text v-if="srcLabel" class="src-tag">{{ srcLabel }}</text>
+          <view class="sc-spacer" />
+          <view v-if="difficulty != null" class="diff-ring" :class="diffLevel.cls">
+            <text class="dr-num">{{ difficulty }}</text>
+            <text class="dr-lb">难度·{{ diffLevel.label }}</text>
           </view>
         </view>
 
-        <!-- 阅读控制:听原句 / 字号 / 护眼 -->
-        <view class="rc">
-          <text class="rc-btn" :class="{ on: playing }" @tap="listen">🔊 {{ playing ? '停止' : (loadingAudio ? '生成中' : '听原句') }}</text>
-          <text class="rc-btn" @tap="decFont">A−</text>
-          <text class="rc-btn" @tap="incFont">A+</text>
-          <text class="rc-btn" :class="{ on: eyeMode }" @tap="eyeMode = !eyeMode">🌿 护眼</text>
-        </view>
-
-        <!-- 原句:连续流式段落,每段彩色虚线下划线,序号锚在该段首词下(保持原设计) -->
+        <!-- 原句:连续流式段落,每段彩色虚线下划线,序号锚在该段首词下(保持原设计,勿改) -->
         <view v-if="showStruct && segments.length" class="sentence" :class="{ eye: eyeMode }" :style="{ fontSize: fontPx + 'rpx' }">
           <text v-for="s in segments" :key="s.idx" class="seg" :style="{ color: colorOf(s.idx), borderBottomColor: colorOf(s.idx) }"><text class="fw">{{ s.first }}<text class="badge" :style="{ background: colorOf(s.idx) }">{{ s.idx }}</text></text>{{ (s.rest ? ' ' + s.rest : '') + ' ' }}</text>
         </view>
@@ -45,23 +38,22 @@
 
         <view v-if="showTranslate && analysis?.translation" class="trans">{{ analysis.translation }}</view>
 
-        <!-- 颜色说明(图例):取本句实际出现的颜色,色块 → 成分类型 -->
-        <view v-if="showStruct && legend.length" class="legend-wrap">
-          <text class="legend-toggle" @tap="showLegend = !showLegend">💡 颜色说明 {{ showLegend ? '▾' : '▸' }}</text>
-          <view v-if="showLegend" class="legend">
-            <view v-for="l in legend" :key="l.color" class="lg-item">
-              <text class="lg-dot" :style="{ background: l.color }" />
-              <text class="lg-tx">{{ l.label }}</text>
-            </view>
-            <text class="legend-note">同色系 = 同一类成分(橙=状语·绿=定语·蓝=主干·紫=名词性从句…),深浅区分小类。</text>
+        <!-- 图例:本句实际出现的颜色 → 成分类型(内联) -->
+        <view v-if="showStruct && legend.length" class="legend">
+          <view v-for="l in legend" :key="l.color" class="lg-item">
+            <text class="lg-dot" :style="{ background: l.color }" /><text class="lg-tx">{{ l.label }}</text>
           </view>
         </view>
 
-        <!-- 操作 pill 行 -->
-        <view class="acts">
-          <view class="act" @tap="showStruct = !showStruct"><text class="act-ic">👁</text><text class="act-tx">{{ showStruct ? '隐藏结构' : '显示结构' }}</text></view>
-          <view class="act" :class="{ on: showTranslate }" @tap="showTranslate = !showTranslate"><text class="act-ic">📝</text><text class="act-tx">翻译</text></view>
-          <view class="act" @tap="onMore"><text class="act-ic">···</text><text class="act-tx">更多</text></view>
+        <!-- 工具栏:听 / 字号 / 护眼 / 翻译 / 收藏 / 更多 -->
+        <view class="toolbar">
+          <view class="tb" :class="{ on: playing }" @tap="listen"><text class="tb-ic">🔊</text><text class="tb-tx">{{ playing ? '停止' : (loadingAudio ? '…' : '听') }}</text></view>
+          <view class="tb" @tap="decFont"><text class="tb-ic">A−</text><text class="tb-tx">缩小</text></view>
+          <view class="tb" @tap="incFont"><text class="tb-ic">A+</text><text class="tb-tx">放大</text></view>
+          <view class="tb" :class="{ on: eyeMode }" @tap="eyeMode = !eyeMode"><text class="tb-ic">🌿</text><text class="tb-tx">护眼</text></view>
+          <view class="tb" :class="{ on: showTranslate }" @tap="showTranslate = !showTranslate"><text class="tb-ic">📝</text><text class="tb-tx">翻译</text></view>
+          <view class="tb" :class="{ on: favorited }" @tap="toggleFav"><text class="tb-ic">{{ favorited ? '★' : '☆' }}</text><text class="tb-tx">收藏</text></view>
+          <view class="tb" @tap="onMore"><text class="tb-ic">⋯</text><text class="tb-tx">更多</text></view>
         </view>
       </view>
 
@@ -201,7 +193,6 @@ const detail = ref<LSDetail | null>(null)
 const tab = ref('struct')
 const showTranslate = ref(false)
 const showStruct = ref(true)
-const showLegend = ref(false)
 const fontPx = ref(32)        // 原句字号(rpx),可调
 const eyeMode = ref(false)    // 护眼模式
 function incFont() { fontPx.value = Math.min(46, fontPx.value + 4) }
@@ -281,18 +272,21 @@ async function toggleFav() {
 
 /* ── 更多:操作菜单(复制原句 / 难度说明 / 语法点详解)── */
 function onMore() {
+  const items = [showStruct.value ? '隐藏原句结构' : '显示原句结构', '复制原句', '难度说明', '查看语法点详解']
   uni.showActionSheet({
-    itemList: ['复制原句', '难度说明', '查看语法点详解'],
+    itemList: items,
     success: ({ tapIndex }) => {
       if (tapIndex === 0) {
-        uni.setClipboardData({ data: detail.value?.text || '', success: () => uni.showToast({ title: '已复制', icon: 'success' }) })
+        showStruct.value = !showStruct.value
       } else if (tapIndex === 1) {
+        uni.setClipboardData({ data: detail.value?.text || '', success: () => uni.showToast({ title: '已复制', icon: 'success' }) })
+      } else if (tapIndex === 2) {
         const c = analysis.value?.complexity
         const content = c
           ? `难度 ${difficulty.value ?? '—'} · ${diffLevel.value.label}\n从句 ${c.clause_count ?? '—'} · 树深 ${c.tree_depth ?? '—'} · 依存距离 ${c.mdd ?? '—'} · 词数 ${c.word_count ?? '—'}`
           : `难度 ${difficulty.value ?? '暂无'}`
         uni.showModal({ title: '难度说明', content, showCancel: false })
-      } else if (tapIndex === 2) {
+      } else if (tapIndex === 3) {
         openKpDetail()
       }
     },
@@ -404,67 +398,59 @@ onLoad(async () => {
 .scroll { padding: 20rpx 20rpx 0; }
 
 /* 顶部进度 */
-.header { display: flex; align-items: center; gap: 18rpx; margin-bottom: 18rpx; }
+.header { display: flex; align-items: center; gap: 18rpx; margin-bottom: 20rpx; }
 .prog { flex: 1; }
-.prog-label { font-size: 26rpx; color: #555; }
+.prog-label { font-size: 26rpx; color: #666; }
 .prog-num { color: var(--c-primary); font-weight: 700; }
-.prog-bar { height: 12rpx; background: #e5e9f0; border-radius: 8rpx; margin-top: 10rpx; overflow: hidden; }
-.prog-fill { height: 100%; background: var(--c-primary); border-radius: 8rpx; }
-.checkin { background: #fff; border-radius: 28rpx; padding: 10rpx 22rpx; font-size: 24rpx; color: #444; box-shadow: 0 2rpx 8rpx rgba(0,0,0,.04); }
+.prog-bar { height: 10rpx; background: #e5e9f0; border-radius: 8rpx; margin-top: 12rpx; overflow: hidden; }
+.prog-fill { height: 100%; background: var(--c-primary); border-radius: 8rpx; transition: width .3s; }
+.streak { display: flex; align-items: center; gap: 6rpx; background: #fff; border: 1rpx solid #e8ebf1; border-radius: 28rpx; padding: 8rpx 20rpx; font-size: 23rpx; color: #666; }
+.streak-ic { font-size: 26rpx; }
 
-.card { background: #fff; border-radius: 20rpx; padding: 26rpx; margin-bottom: 20rpx; box-shadow: 0 2rpx 14rpx rgba(0,0,0,.04); }
+.card { background: #fff; border-radius: 24rpx; padding: 28rpx; margin-bottom: 20rpx; box-shadow: 0 2rpx 16rpx rgba(0,0,0,.05); }
 
-/* 句子卡头 */
-.sent-head { margin-bottom: 18rpx; }
-.chips { display: flex; align-items: center; flex-wrap: wrap; gap: 10rpx; }
-.sent-tag { background: var(--c-primary-faint); color: var(--c-primary); font-size: 22rpx; padding: 5rpx 16rpx; border-radius: 24rpx; }
-.src-tag { background: #f0f2f6; color: #777; font-size: 22rpx; padding: 5rpx 14rpx; border-radius: 24rpx; }
-.diff-pill { font-size: 22rpx; padding: 5rpx 14rpx; border-radius: 24rpx; }
-.diff-pill.hard { background: #fdecea; color: #e2504a; }
-.diff-pill.mid { background: #fdf2e3; color: #d08713; }
-.diff-pill.easy { background: #e9f7ef; color: #1f9d6b; }
-.fav { margin-left: auto; font-size: 24rpx; color: #999; }
-.fav.on { color: #f5a623; font-weight: 700; }
-.pager { display: flex; justify-content: flex-end; gap: 12rpx; margin-top: 16rpx; }
-.pg { font-size: 24rpx; color: #555; background: #fff; border: 1rpx solid #e3e7ee; border-radius: 24rpx; padding: 6rpx 18rpx; }
-.pg.primary { background: var(--c-primary); color: var(--c-on-primary); border-color: var(--c-primary); }
-.pg.dis { opacity: .4; }
+/* 句子卡头:翻页 + 来源 + 难度环 */
+.sc-top { display: flex; align-items: center; gap: 14rpx; margin-bottom: 20rpx; }
+.nav { display: flex; align-items: center; gap: 6rpx; }
+.nav-btn { width: 44rpx; height: 44rpx; line-height: 40rpx; text-align: center; border: 1rpx solid #e3e7ee; border-radius: 50%; color: #555; font-size: 32rpx; }
+.nav-btn.dis { opacity: .35; }
+.nav-cur { font-size: 24rpx; color: #444; min-width: 110rpx; text-align: center; }
+.src-tag { background: #f0f2f6; color: #777; font-size: 22rpx; padding: 5rpx 16rpx; border-radius: 24rpx; }
+.sc-spacer { flex: 1; }
+.diff-ring { display: flex; flex-direction: column; align-items: center; gap: 2rpx; }
+.dr-num { width: 78rpx; height: 78rpx; line-height: 72rpx; text-align: center; border-radius: 50%; border: 5rpx solid; font-size: 34rpx; font-weight: 700; }
+.dr-lb { font-size: 20rpx; color: #999; }
+.diff-ring.hard .dr-num { border-color: #e2504a; color: #e2504a; }
+.diff-ring.mid .dr-num { border-color: #e89a1f; color: #d0860f; }
+.diff-ring.easy .dr-num { border-color: #1f9d6b; color: #1f9d6b; }
 
-/* 阅读控制行 */
-.rc { display: flex; gap: 10rpx; margin-bottom: 12rpx; }
-.rc-btn { font-size: 22rpx; color: #666; background: #f5f7fa; border-radius: 22rpx; padding: 8rpx 18rpx; }
-.rc-btn.on { background: var(--c-primary-faint); color: var(--c-primary); }
-
-/* 原句:连续流式段落(行内文本自然排满换行);序号锚在每段首词下方 */
+/* 原句:连续流式段落(行内文本自然排满换行);序号锚在每段首词下方(保持原设计) */
 .sentence { font-family: Georgia, 'Times New Roman', 'Songti SC', serif; font-size: 32rpx; line-height: 3; transition: background .2s; }
 .sentence.eye { background: #f3f0e3; border-radius: 14rpx; padding: 16rpx 20rpx; }
 .seg { border-bottom: 2rpx dashed; padding-bottom: 6rpx; }
 .fw { position: relative; }
 .badge { position: absolute; left: 50%; top: 130%; transform: translateX(-50%); width: 32rpx; height: 32rpx; line-height: 32rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 18rpx; }
 .plain { font-size: 32rpx; line-height: 1.9; }
-.trans { margin: 8rpx 0 0; padding: 16rpx; background: #f7f9fc; border-radius: 12rpx; font-size: 28rpx; color: #555; }
+.trans { margin: 16rpx 0 0; padding: 18rpx; background: #f7f9fc; border-radius: 14rpx; font-size: 28rpx; color: #555; line-height: 1.7; }
 
-/* 颜色图例 */
-.legend-wrap { margin-top: 16rpx; }
-.legend-toggle { font-size: 24rpx; color: #888; }
-.legend { margin-top: 12rpx; padding: 16rpx; background: #f7f9fc; border-radius: 14rpx; display: flex; flex-wrap: wrap; gap: 12rpx 18rpx; }
+/* 颜色图例(内联) */
+.legend { margin-top: 18rpx; padding-top: 16rpx; border-top: 1rpx solid #f0f2f5; display: flex; flex-wrap: wrap; gap: 12rpx 22rpx; }
 .lg-item { display: flex; align-items: center; gap: 8rpx; }
-.lg-dot { width: 22rpx; height: 22rpx; border-radius: 6rpx; flex-shrink: 0; }
-.lg-tx { font-size: 24rpx; color: #555; }
-.legend-note { width: 100%; font-size: 22rpx; color: #999; line-height: 1.6; margin-top: 4rpx; }
+.lg-dot { width: 18rpx; height: 18rpx; border-radius: 5rpx; flex-shrink: 0; }
+.lg-tx { font-size: 23rpx; color: #777; }
 
-/* 操作行 */
-.acts { display: flex; justify-content: space-between; margin-top: 20rpx; gap: 10rpx; }
-.act { flex: 1; background: #f5f7fa; border-radius: 14rpx; padding: 14rpx 0; display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
-.act-ic { font-size: 30rpx; }
-.act-tx { font-size: 22rpx; color: #666; }
-.act.on { background: var(--c-primary-faint); }
-.act.on .act-tx { color: var(--c-primary); }
+/* 工具栏:一排图标按钮 */
+.toolbar { display: flex; gap: 8rpx; margin-top: 20rpx; }
+.tb { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6rpx; padding: 14rpx 0; background: #f5f7fa; border-radius: 16rpx; }
+.tb-ic { font-size: 30rpx; color: #555; }
+.tb-tx { font-size: 20rpx; color: #888; }
+.tb.on { background: var(--c-primary-faint); }
+.tb.on .tb-ic, .tb.on .tb-tx { color: var(--c-primary); }
 
 /* Tabs:分段控件 */
-.seg-tabs { display: flex; gap: 6rpx; background: #eef1f6; border-radius: 16rpx; padding: 6rpx; margin-bottom: 20rpx; }
-.seg-tab { flex: 1; text-align: center; font-size: 26rpx; color: #888; padding: 14rpx 0; border-radius: 12rpx; }
-.seg-tab.on { background: #fff; color: var(--c-primary); font-weight: 700; }
+.seg-tabs { display: flex; gap: 6rpx; background: #eef1f6; border-radius: 16rpx; padding: 6rpx; margin-bottom: 24rpx; }
+.seg-tab { flex: 1; text-align: center; font-size: 26rpx; color: #888; padding: 16rpx 0; border-radius: 12rpx; }
+.seg-tab.on { background: #fff; color: var(--c-primary); font-weight: 700; box-shadow: 0 1rpx 6rpx rgba(0,0,0,.06); }
 .tab-body { min-height: 80rpx; }
 
 /* 句子结构:主干 → 从句 紧凑树 */
