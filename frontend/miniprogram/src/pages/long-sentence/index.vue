@@ -100,11 +100,11 @@
 
         <!-- 语法点 -->
         <view v-else class="tab-body">
-          <view v-for="(g, i) in (analysis?.grammar_points || [])" :key="i" class="gp-row">
-            <view class="gp-head"><text class="gp-dot" /><text class="gp-name">{{ g.name }}</text></view>
+          <view v-for="(g, i) in gpList" :key="i" class="gp-row" :style="{ background: g.tint }">
+            <text class="gp-name" :style="{ color: g.color }">{{ g.name }}</text>
             <text v-if="g.explanation" class="gp-exp">{{ g.explanation }}</text>
           </view>
-          <text v-if="!(analysis?.grammar_points || []).length" class="empty">暂无语法点</text>
+          <text v-if="!gpList.length" class="empty">暂无语法点</text>
         </view>
       </view>
 
@@ -256,6 +256,22 @@ const compRows = computed(() => {
   const labelMap: Record<string, string> = { subject: '主语', predicate: '谓语', object: '宾语', complement: '补语', attributive: '定语', adverbial: '状语' }
   return Object.entries(c).filter(([, v]) => v).map(([k, v]) => ({ label: labelMap[k] || k, val: v as string }))
 })
+
+// 语法点按「语法族」上色(与句子成分配色呼应)
+const _FAM: [RegExp, string, string][] = [
+  [/并列/, '#e0529c', '#fce9f3'],
+  [/名词性|宾语从句|主语从句|表语从句|同位语/, '#8a5cf0', '#f0ebfe'],
+  [/定语/, '#1f9d6b', '#e6f6ef'],
+  [/状语/, '#e08a2f', '#fcf0e2'],
+  [/非谓语|不定式|分词|动名词/, '#0e9aa7', '#e3f5f6'],
+  [/介词/, '#2f9fc4', '#e5f3f9'],
+  [/主语|谓语|宾语|表语|主干|主句/, '#3b6fe0', '#eaf0fd'],
+]
+function famColor(name?: string): { color: string; tint: string } {
+  for (const [re, color, tint] of _FAM) if (re.test(name || '')) return { color, tint }
+  return { color: '#6b7688', tint: '#eef0f4' }
+}
+const gpList = computed(() => (analysis.value?.grammar_points || []).map(g => ({ ...g, ...famColor(g.name) })))
 
 function soon(name: string) { uni.showToast({ title: name + '·敬请期待', icon: 'none' }) }
 function go(url: string) { uni.navigateTo({ url }) }
@@ -481,12 +497,10 @@ onLoad(async () => {
 .word { font-size: 30rpx; font-weight: 700; color: #333; font-family: Georgia, 'Times New Roman', serif; }
 .word-pos { font-size: 21rpx; color: #8a93a3; background: #e9edf3; border-radius: 6rpx; padding: 2rpx 10rpx; }
 .word-mean { display: block; font-size: 26rpx; color: #666; margin-top: 6rpx; line-height: 1.5; }
-/* 语法点:卡片 + 圆点 */
-.gp-row { padding: 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
-.gp-head { display: flex; align-items: center; gap: 10rpx; }
-.gp-dot { width: 14rpx; height: 14rpx; border-radius: 50%; background: var(--c-primary); flex-shrink: 0; }
-.gp-name { font-size: 27rpx; font-weight: 600; color: var(--c-primary); }
-.gp-exp { display: block; font-size: 25rpx; color: #666; margin-top: 8rpx; line-height: 1.6; padding-left: 24rpx; }
+/* 语法点:按语法族上色的浅底卡 + 同色标题 */
+.gp-row { padding: 18rpx 20rpx; border-radius: 16rpx; margin-bottom: 12rpx; }
+.gp-name { display: block; font-size: 28rpx; font-weight: 700; }
+.gp-exp { display: block; font-size: 25rpx; color: #5a5f6a; margin-top: 8rpx; line-height: 1.65; }
 .empty { color: #bbb; font-size: 26rpx; }
 
 /* 结构解析 */
