@@ -58,7 +58,8 @@ onLaunch((options) => {
   <layout />
 </template>
 
-<style>
+<style lang="scss">
+@import './styles/icons.scss';
 /* ====================================================================
    engGramer 全局 Design Tokens —— 黄油相机风 v0.2（决策 D-071）
    定义在 page 选择器上，微信小程序支持 CSS 自定义变量，全页面可用 var()。
