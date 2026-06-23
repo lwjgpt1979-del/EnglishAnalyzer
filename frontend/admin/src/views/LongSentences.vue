@@ -68,12 +68,33 @@ const order = ref('asc')           // asc | desc
 const statusOptions = ['draft', 'published', 'retired']
 const stLabel = (s: string) => (({ draft: '草稿', published: '已发布', retired: '已下架' } as Record<string, string>)[s] || s)
 
+// 筛选维度
+const fSource = ref('')      // platform_real | textbook
+const fStage = ref('')       // 小|初|高
+const fSemester = ref('')    // 上|下
+const fExam = ref('')        // 普通|中考|高考
+const fGrade = ref('')       // 年级(文本)
+const fTextbook = ref('')    // 教材版(文本)
+const srcLabel = (s: string) => (({ platform_real: '真题', textbook: '教材', uploaded: '上传' } as Record<string, string>)[s] || s)
+
+function resetFilters() {
+  fSource.value = ''; fStage.value = ''; fSemester.value = ''; fExam.value = ''
+  fGrade.value = ''; fTextbook.value = ''; nodeId.value = ''
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
     const data = await listLongSentences({
       status: status.value || undefined,
       node_id: nodeId.value.trim() || undefined,
+      source_kind: fSource.value || undefined,
+      stage: fStage.value || undefined,
+      semester: fSemester.value || undefined,
+      exam_type: fExam.value || undefined,
+      grade: fGrade.value.trim() || undefined,
+      textbook_version: fTextbook.value.trim() || undefined,
       limit: 50,
       sort_by: sortBy.value,
       order: order.value,
@@ -130,7 +151,7 @@ onMounted(() => { load(); loadCfg() })
   <div>
     <!-- 抽取触发 -->
     <el-card shadow="never" class="sec">
-      <template #header><b>抽取触发</b>(独立后台任务,幂等;来源指针:真题/教材语料 Passage/学生上传题)</template>
+      <template #header><b>抽取触发</b>(平台库,幂等;来源:平台真题 / 教材单元短文。学生上传的长难句在上传作业时自动抽取、存独立表)</template>
       <div class="toolbar">
         <span>来源：</span>
         <el-select v-model="extractSource" style="width: 160px">
@@ -147,14 +168,36 @@ onMounted(() => { load(); loadCfg() })
     <!-- 审核队列 -->
     <el-card shadow="never" class="sec">
       <template #header><b>审核队列</b></template>
-      <div class="toolbar">
+      <div class="toolbar" style="flex-wrap:wrap; gap:8px 0;">
         <span>状态：</span>
-        <el-select v-model="status" style="width: 130px" @change="load">
+        <el-select v-model="status" style="width: 110px" @change="load">
           <el-option v-for="s in statusOptions" :key="s" :label="stLabel(s)" :value="s" />
         </el-select>
-        <span style="margin-left: 16px">句法 node_id：</span>
-        <el-input v-model="nodeId" placeholder="可选,knowledge_nodes.id" style="width: 280px" />
-        <el-button style="margin-left: 12px" @click="load">查询</el-button>
+        <span style="margin-left:16px">来源：</span>
+        <el-select v-model="fSource" clearable placeholder="全部" style="width:120px" @change="load">
+          <el-option label="平台真题" value="platform_real" />
+          <el-option label="教材" value="textbook" />
+        </el-select>
+        <span style="margin-left:16px">学段：</span>
+        <el-select v-model="fStage" clearable placeholder="全部" style="width:90px" @change="load">
+          <el-option label="小" value="小" /><el-option label="初" value="初" /><el-option label="高" value="高" />
+        </el-select>
+        <span style="margin-left:16px">学期：</span>
+        <el-select v-model="fSemester" clearable placeholder="全部" style="width:90px" @change="load">
+          <el-option label="上" value="上" /><el-option label="下" value="下" />
+        </el-select>
+        <span style="margin-left:16px">考试类型：</span>
+        <el-select v-model="fExam" clearable placeholder="全部" style="width:100px" @change="load">
+          <el-option label="普通" value="普通" /><el-option label="中考" value="中考" /><el-option label="高考" value="高考" />
+        </el-select>
+        <span style="margin-left:16px">年级：</span>
+        <el-input v-model="fGrade" clearable placeholder="如 七年级" style="width:120px" @keyup.enter="load" />
+        <span style="margin-left:16px">教材版：</span>
+        <el-input v-model="fTextbook" clearable placeholder="如 译林版" style="width:120px" @keyup.enter="load" />
+        <span style="margin-left:16px">句法 node：</span>
+        <el-input v-model="nodeId" clearable placeholder="可选,node id" style="width:180px" @keyup.enter="load" />
+        <el-button style="margin-left:12px" type="primary" @click="load">查询</el-button>
+        <el-button @click="resetFilters">重置</el-button>
         <span class="hint">共 {{ total }} 条</span>
         <div style="flex:1" />
         <el-button :loading="reanalyzing" @click="onReanalyze(false)"><el-icon style="vertical-align:-2px;margin-right:4px"><Refresh /></el-icon>重新解析(刷新结构)</el-button>
@@ -162,9 +205,22 @@ onMounted(() => { load(); loadCfg() })
         <span v-if="reJob" class="hint"><el-icon style="vertical-align:-2px;margin-right:4px"><Loading /></el-icon>{{ reJob.done }}/{{ reJob.total || '…' }}</span>
       </div>
       <el-table v-loading="loading" :data="rows" border style="width: 100%" @sort-change="onSortChange">
-        <el-table-column prop="text" label="句子" min-width="320" show-overflow-tooltip />
-        <el-table-column prop="source_kind" label="来源" width="120" />
-        <el-table-column label="句法点" min-width="160">
+        <el-table-column prop="text" label="句子" min-width="280" show-overflow-tooltip />
+        <el-table-column label="来源" width="80">
+          <template #default="{ row }">{{ srcLabel(row.source_kind) }}</template>
+        </el-table-column>
+        <el-table-column label="定位" min-width="180">
+          <template #default="{ row }">
+            <template v-if="row.source_kind === 'textbook'">
+              <span>{{ [row.textbook_version, row.grade, row.semester].filter(Boolean).join(' · ') || '—' }}</span>
+            </template>
+            <template v-else>
+              <el-tag v-if="row.exam_type && row.exam_type !== '普通'" size="small" type="danger" effect="plain" style="margin-right:4px">{{ row.exam_type }}</el-tag>
+              <span>{{ (row.exam_type && row.exam_type !== '普通' ? [row.stage] : [row.grade, row.semester]).filter(Boolean).join(' · ') || '—' }}</span>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column label="句法点" min-width="150">
           <template #default="{ row }">
             <el-tag v-for="p in row.syntax_points" :key="p" size="small" style="margin-right:4px">{{ p }}</el-tag>
           </template>

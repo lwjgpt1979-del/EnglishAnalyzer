@@ -298,6 +298,11 @@ export interface LSAdminItem {
   status: string
   syntax_points: string[]
   difficulty: number | null
+  textbook_version: string | null
+  stage: string | null
+  grade: string | null
+  semester: string | null
+  exam_type: string | null
 }
 
 export interface LSExtractResult {

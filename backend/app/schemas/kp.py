@@ -696,6 +696,11 @@ class LSAdminItem(BaseModel):
     status: str
     syntax_points: list[str] = []
     difficulty: int | None = None
+    textbook_version: str | None = None
+    stage: str | None = None
+    grade: str | None = None
+    semester: str | None = None
+    exam_type: str | None = None
 
 
 class LSAdminListOut(BaseModel):

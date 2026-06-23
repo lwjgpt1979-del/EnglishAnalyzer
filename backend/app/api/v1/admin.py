@@ -1541,7 +1541,8 @@ def _to_ls_admin_item(ls) -> LSAdminItem:
     return LSAdminItem(
         id=ls.id, text=ls.text, source_kind=ls.source_kind, status=ls.status,
         syntax_points=(ls.analysis_json or {}).get("syntax_points", []),
-        difficulty=ls.difficulty)
+        difficulty=ls.difficulty, textbook_version=ls.textbook_version, stage=ls.stage,
+        grade=ls.grade, semester=ls.semester, exam_type=ls.exam_type)
 
 
 @router.post("/long-sentences/extract", response_model=BaseResponse[LSExtractOut])
@@ -1592,10 +1593,15 @@ async def list_long_sentences_api(
     db: DbDep, admin: AdminDep, status: str = "draft",
     node_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
     sort_by: str = "created_at", order: str = "asc",
+    source_kind: str | None = None, textbook_version: str | None = None,
+    stage: str | None = None, grade: str | None = None, semester: str | None = None,
+    exam_type: str | None = None,
 ):
     from app.services import long_sentence_service as lss
     rows, total = await lss.list_for_review(
-        db, status=status, node_id=node_id, skip=skip, limit=limit, sort_by=sort_by, order=order)
+        db, status=status, node_id=node_id, skip=skip, limit=limit, sort_by=sort_by, order=order,
+        source_kind=source_kind, textbook_version=textbook_version, stage=stage,
+        grade=grade, semester=semester, exam_type=exam_type)
     return make_ok(LSAdminListOut(total=total, items=[_to_ls_admin_item(r) for r in rows]))
 
 

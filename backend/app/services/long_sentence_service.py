@@ -91,11 +91,26 @@ async def set_config(db: AsyncSession, *, updated_by: uuid.UUID, sources=None, v
 async def list_for_review(
     db: AsyncSession, *, status: str = "draft", node_id: uuid.UUID | None = None,
     skip: int = 0, limit: int = 20, sort_by: str = "created_at", order: str = "asc",
+    source_kind: str | None = None, textbook_version: str | None = None,
+    stage: str | None = None, grade: str | None = None, semester: str | None = None,
+    exam_type: str | None = None,
 ) -> tuple[list[LongSentence], int]:
     base = sa.select(LongSentence).where(LongSentence.status == status)
     if node_id is not None:
         base = base.join(LongSentenceNode, LongSentenceNode.long_sentence_id == LongSentence.id).where(
             LongSentenceNode.node_id == node_id)
+    if source_kind:
+        base = base.where(LongSentence.source_kind == source_kind)
+    if textbook_version:
+        base = base.where(LongSentence.textbook_version == textbook_version)
+    if stage:
+        base = base.where(LongSentence.stage == stage)
+    if grade:
+        base = base.where(LongSentence.grade == grade)
+    if semester:
+        base = base.where(LongSentence.semester == semester)
+    if exam_type:
+        base = base.where(LongSentence.exam_type == exam_type)
     total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
     col = LongSentence.difficulty if sort_by == "difficulty" else LongSentence.created_at
     direction = col.desc() if order == "desc" else col.asc()

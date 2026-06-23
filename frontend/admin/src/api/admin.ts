@@ -493,6 +493,8 @@ export function getLsReanalyzeJob(jobId: string) {
 export function listLongSentences(params: {
   status?: string; node_id?: string; skip?: number; limit?: number
   sort_by?: string; order?: string
+  source_kind?: string; textbook_version?: string; stage?: string
+  grade?: string; semester?: string; exam_type?: string
 }) {
   return unwrap<{ total: number; items: LSAdminItem[] }>(
     request.get('/admin/long-sentences', { params }))
