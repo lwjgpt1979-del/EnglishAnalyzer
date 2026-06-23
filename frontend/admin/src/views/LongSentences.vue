@@ -157,7 +157,7 @@ async function onReview(row: LSAdminItem, approve: boolean) {
 
 // ── 配置 ──
 const cfg = ref<LSConfig>({ sources: [], verify_types: [], min_words: 20, required_pass: 3, textbook_difficulty_min: null, textbook_top_n: 3 })
-const allSources = ['platform_real', 'textbook', 'uploaded']
+const allSources = ['platform_real', 'textbook']
 const allVerifyTypes = ['cloze', 'struct_type', 'main_clause', 'translate',
   'span_label', 'reorder', 'rewrite', 'read_aloud']
 const savingCfg = ref(false)

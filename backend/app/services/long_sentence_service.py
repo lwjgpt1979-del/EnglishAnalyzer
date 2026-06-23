@@ -621,9 +621,6 @@ def _stage_from_grade(grade: str | None) -> str | None:
     return None
 
 
-_CAND_MIN_WORDS = 8   # 难度筛选模式下的防碎片下限(不要求 ≥min_words 的「长难句」硬门槛)
-
-
 async def _persist_long_sentences(
     db: AsyncSession, st: ExtractStats, *, text: str, scope: str, source_kind: str,
     min_words: int, dry_run: bool, owner_id: uuid.UUID | None = None,
@@ -632,9 +629,9 @@ async def _persist_long_sentences(
     select_min: int | None = None, select_top_n: int | None = None,
 ) -> None:
     """切句 → 候选 → (按难度筛选)→ AI 拆解 → 建 long_sentence(带定位)→ match_kp。
-    教材(用难度筛选时):候选不强卡「≥min_words 的长难句」,改为按难度在全部句子里挑——
-      select_min 不为空 → 难度 > 阈值的全部;否则 select_top_n → 该篇最难的 N 句。
-    平台真题(无难度筛选):仍用 is_long 长难句门槛,全留。"""
+    教材(用难度筛选时):候选放宽为「词数 ≥ 配置 min_words(长句最小词数)」、不要求含从句,
+      再按难度挑——select_min 不为空 → 难度 > 阈值的全部;否则 select_top_n → 该篇最难的 N 句。
+    平台真题(无难度筛选):仍用 is_long 长难句门槛(≥min_words 且含从句),全留。"""
     loc = locate or {}
     by_difficulty = select_min is not None or select_top_n is not None
     # 一遍:切句 + 廉价算难度(spaCy,不耗 LLM),收集候选
@@ -642,8 +639,8 @@ async def _persist_long_sentences(
     for sent in split_sentences(text or ""):
         st.sentences += 1
         comp = syntactic_complexity(sent, min_words)
-        # 难度筛选模式:只要不是碎片(词数达轻量下限)即入候选;否则用 is_long 硬门槛
-        if (comp["word_count"] >= _CAND_MIN_WORDS) if by_difficulty else _is_long(comp, sent, min_words):
+        # 难度筛选模式:词数达配置下限即入候选(不强求从句);否则用 is_long 硬门槛
+        if (comp["word_count"] >= min_words) if by_difficulty else _is_long(comp, sent, min_words):
             cands.append((sent, comp))
     st.long_kept += len(cands)
     # 选取:阈值优先,否则取最难 N 句;都没配则全留
@@ -870,13 +867,11 @@ async def run_extract(
     min_words: int | None = None, dry_run: bool = False, filters: dict | None = None,
 ) -> ExtractStats:
     """按来源批量抽取。filters 按维度挑范围(各源取相关子集);sources 缺省读配置。"""
+    cfg = await get_config(db)
     if sources is None:
-        cfg = await get_config(db)
         sources = cfg.get("sources") or ["platform_real"]
-        if min_words is None:
-            min_words = int(cfg.get("min_words") or DEFAULT_MIN_WORDS)
-    if min_words is None:
-        min_words = DEFAULT_MIN_WORDS
+    if min_words is None:   # 缺省总是读配置(长句最小词数),无论是否显式指定来源
+        min_words = int(cfg.get("min_words") or DEFAULT_MIN_WORDS)
     merged = ExtractStats()
     for src in sources:
         fn = _SOURCE_KIND_TO_FN.get(src)
