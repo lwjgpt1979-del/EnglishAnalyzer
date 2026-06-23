@@ -318,4 +318,6 @@ export interface LSConfig {
   verify_types: string[]
   min_words: number
   required_pass: number
+  textbook_difficulty_min: number | null
+  textbook_top_n: number
 }

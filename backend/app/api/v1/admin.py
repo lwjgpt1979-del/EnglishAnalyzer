@@ -1623,7 +1623,9 @@ async def get_ls_config_api(db: DbDep, admin: AdminDep):
 async def set_ls_config_api(body: LSConfigIn, db: DbDep, admin: AdminDep):
     from app.services import long_sentence_service as lss
     cfg = await lss.set_config(db, updated_by=admin.id, sources=body.sources, verify_types=body.verify_types,
-                               min_words=body.min_words, required_pass=body.required_pass)
+                               min_words=body.min_words, required_pass=body.required_pass,
+                               textbook_difficulty_min=body.textbook_difficulty_min,
+                               textbook_top_n=body.textbook_top_n)
     await db.commit()
     return make_ok(LSConfigOut(**cfg))
 

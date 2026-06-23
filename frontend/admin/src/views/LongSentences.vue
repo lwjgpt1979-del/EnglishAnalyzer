@@ -120,7 +120,7 @@ async function onReview(row: LSAdminItem, approve: boolean) {
 }
 
 // ── 配置 ──
-const cfg = ref<LSConfig>({ sources: [], verify_types: [], min_words: 20, required_pass: 3 })
+const cfg = ref<LSConfig>({ sources: [], verify_types: [], min_words: 20, required_pass: 3, textbook_difficulty_min: null, textbook_top_n: 3 })
 const allSources = ['platform_real', 'textbook', 'uploaded']
 const allVerifyTypes = ['cloze', 'struct_type', 'main_clause', 'translate',
   'span_label', 'reorder', 'rewrite', 'read_aloud']
@@ -138,6 +138,8 @@ async function saveCfg() {
       verify_types: cfg.value.verify_types,
       min_words: cfg.value.min_words,
       required_pass: cfg.value.required_pass,
+      textbook_difficulty_min: cfg.value.textbook_difficulty_min,
+      textbook_top_n: cfg.value.textbook_top_n,
     })
     ElMessage.success('配置已保存')
   } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
@@ -266,6 +268,14 @@ onMounted(() => { load(); loadCfg() })
         </el-form-item>
         <el-form-item label="判掌握净做对数">
           <el-input-number v-model="cfg.required_pass" :min="1" :max="10" />
+        </el-form-item>
+        <el-form-item label="教材难度阈值">
+          <el-input-number v-model="cfg.textbook_difficulty_min" :min="0" :max="100" :step="5" clearable controls-position="right" style="width:160px" placeholder="留空=不按阈值" />
+          <span class="hint">教材阅读:难度 > 此值的句子全抽;留空(或0)则改用下方「最难 N 句」</span>
+        </el-form-item>
+        <el-form-item label="教材每篇最难 N 句">
+          <el-input-number v-model="cfg.textbook_top_n" :min="1" :max="20" />
+          <span class="hint">仅在未设阈值时生效:每篇阅读取难度最高的 N 句</span>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="savingCfg" @click="saveCfg">保存配置</el-button>

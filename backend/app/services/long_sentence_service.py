@@ -59,6 +59,8 @@ def _cfg_defaults() -> dict:
         "long_sentence.verify_types": _ALL_VERIFY_TYPES,
         "long_sentence.min_words": DEFAULT_MIN_WORDS,
         "long_sentence.required_pass": DEFAULT_REQUIRED_PASS,
+        "long_sentence.textbook_difficulty_min": None,  # 教材:难度超过此值的全抽(空=不按阈值)
+        "long_sentence.textbook_top_n": 3,              # 教材:无阈值时,每篇阅读取最难 N 句
     }
 
 
@@ -73,13 +75,18 @@ async def get_config(db: AsyncSession) -> dict:
 
 
 async def set_config(db: AsyncSession, *, updated_by: uuid.UUID, sources=None, verify_types=None,
-                     min_words=None, required_pass=None) -> dict:
+                     min_words=None, required_pass=None, textbook_difficulty_min=...,
+                     textbook_top_n=None) -> dict:
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.models.d9_system import SystemConfig
     updates = {"long_sentence.sources": sources, "long_sentence.verify_types": verify_types,
-               "long_sentence.min_words": min_words, "long_sentence.required_pass": required_pass}
+               "long_sentence.min_words": min_words, "long_sentence.required_pass": required_pass,
+               "long_sentence.textbook_top_n": textbook_top_n}
+    # 阈值用 ... 哨兵区分「不改」与「显式清空(None)」
+    if textbook_difficulty_min is not ...:
+        updates["long_sentence.textbook_difficulty_min"] = textbook_difficulty_min
     for key, val in updates.items():
-        if val is None:
+        if val is None and key != "long_sentence.textbook_difficulty_min":
             continue
         await db.execute(
             pg_insert(SystemConfig).values(id=uuid.uuid4(), key=key, value=val, updated_by=updated_by)
@@ -619,16 +626,29 @@ async def _persist_long_sentences(
     min_words: int, dry_run: bool, owner_id: uuid.UUID | None = None,
     source_q_scope: str | None = None, source_question_id: uuid.UUID | None = None,
     source_passage_id: uuid.UUID | None = None, locate: dict | None = None,
+    select_min: int | None = None, select_top_n: int | None = None,
 ) -> None:
-    """切句 → 长句判定 → AI 拆解 → 建 long_sentence(带定位)→ match_kp 挂句法 node / 落候选。
-    locate: {textbook_version, stage, grade, semester, unit_id, exam_type} 按来源填。"""
+    """切句 → 长句判定 → (按难度筛选)→ AI 拆解 → 建 long_sentence(带定位)→ match_kp。
+    locate: {textbook_version,...}。难度筛选(教材用):
+      select_min 不为空 → 只留难度 > select_min 的全部;否则 select_top_n → 取最难的 N 句。"""
     loc = locate or {}
+    # 一遍:切句 + 廉价算难度(spaCy,不耗 LLM),收集候选长句
+    cands = []
     for sent in split_sentences(text or ""):
         st.sentences += 1
         comp = syntactic_complexity(sent, min_words)
-        if not _is_long(comp, sent, min_words):
-            continue
-        st.long_kept += 1
+        if _is_long(comp, sent, min_words):
+            cands.append((sent, comp))
+    st.long_kept += len(cands)
+    # 选取:阈值优先,否则取最难 N 句;都没配则全留
+    if select_min is not None:
+        chosen = [c for c in cands if c[1]["difficulty"] > select_min]
+    elif select_top_n is not None:
+        chosen = sorted(cands, key=lambda c: c[1]["difficulty"], reverse=True)[:max(0, select_top_n)]
+    else:
+        chosen = cands
+    # 二遍:仅对选中的句子做 AI 拆解 + 落库
+    for sent, comp in chosen:
         analysis = await analyze_sentence(sent)
         analysis["difficulty"] = comp["difficulty"]
         analysis["complexity"] = comp
@@ -694,13 +714,19 @@ async def extract_from_textbook(
     db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
     dry_run: bool = False, only_passage_ids: set | None = None,
 ) -> ExtractStats:
-    """② 扫课程单元短文(curriculum_unit_passages)未抽过的 → 平台长难句。幂等按 source_passage_id。
-    定位:从所属单元(curriculum_units)取 教材版/年级/学期/单元 id,学段从年级推。"""
+    """② 扫课程单元**阅读**短文(curriculum_unit_passages, kind=阅读)未抽过的 → 平台长难句。
+    幂等按 source_passage_id。定位:从所属单元取 教材版/年级/学期/单元,学段从年级推。
+    难度筛选(配置 long_sentence.textbook_difficulty_min / textbook_top_n):
+      配了阈值 → 抽难度超过阈值的全部;否则 → 抽该篇最难的 N 句。"""
     from app.models.d4_knowledge import CurriculumUnit, CurriculumUnitPassage
+    cfg = await get_config(db)
+    sel_min = cfg.get("textbook_difficulty_min")
+    sel_min = int(sel_min) if sel_min not in (None, "", 0, "0") else None
+    sel_top = None if sel_min is not None else int(cfg.get("textbook_top_n") or 3)
     st = ExtractStats()
     q = (sa.select(CurriculumUnitPassage, CurriculumUnit)
          .join(CurriculumUnit, CurriculumUnit.id == CurriculumUnitPassage.unit_id)
-         .where(CurriculumUnitPassage.text.isnot(None)))
+         .where(CurriculumUnitPassage.text.isnot(None), CurriculumUnitPassage.kind == "阅读"))
     if only_passage_ids is not None:
         q = q.where(CurriculumUnitPassage.id.in_(only_passage_ids))
     if limit is not None:
@@ -717,7 +743,8 @@ async def extract_from_textbook(
         }
         await _persist_long_sentences(
             db, st, text=up.text or "", scope="platform", source_kind="textbook",
-            source_passage_id=up.id, locate=locate, min_words=min_words, dry_run=dry_run)
+            source_passage_id=up.id, locate=locate, min_words=min_words, dry_run=dry_run,
+            select_min=sel_min, select_top_n=sel_top)
         if not dry_run:
             await db.flush()
     await (db.rollback() if dry_run else db.commit())

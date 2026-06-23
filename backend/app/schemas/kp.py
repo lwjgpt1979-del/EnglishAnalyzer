@@ -721,6 +721,8 @@ class LSConfigOut(BaseModel):
     verify_types: list[str]
     min_words: int
     required_pass: int
+    textbook_difficulty_min: int | None = None
+    textbook_top_n: int = 3
 
 
 class LSConfigIn(BaseModel):
@@ -728,3 +730,5 @@ class LSConfigIn(BaseModel):
     verify_types: list[str] | None = None
     min_words: int | None = None
     required_pass: int | None = None
+    textbook_difficulty_min: int | None = None
+    textbook_top_n: int | None = None
