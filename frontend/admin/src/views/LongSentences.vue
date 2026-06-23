@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  extractLongSentences, reanalyzeLongSentences, getLsReanalyzeJob, listLongSentences, reviewLongSentence, getLSConfig, setLSConfig,
+  extractLongSentences, reanalyzeLongSentences, getLsReanalyzeJob, listLongSentences, reviewLongSentence,
+  getLSConfig, setLSConfig, getLsTextbookUnits, getLsRealDimensions,
+  type LSTextbookUnit, type LSRealDimensions,
 } from '../api/admin'
 import type { LSAdminItem, LSConfig } from '../types'
 import { Refresh, Loading } from '@element-plus/icons-vue'
@@ -18,10 +20,44 @@ const extractSource = ref('config')
 const extractLimit = ref(200)
 const extracting = ref(false)
 
+// 选项数据 + 已选维度
+const tbUnits = ref<LSTextbookUnit[]>([])
+const realDims = ref<LSRealDimensions>({ textbook_version: [], stage: [], grade: [], semester: [], exam_type: [], region: [] })
+const uniq = (a: (string | undefined | null)[]) => [...new Set(a.filter(Boolean) as string[])]
+// 教材已选
+const tbVer = ref<string[]>([]); const tbGrade = ref<string[]>([]); const tbSem = ref<string[]>([]); const tbUnitIds = ref<string[]>([])
+// 真题已选
+const rqVer = ref<string[]>([]); const rqStage = ref<string[]>([]); const rqGrade = ref<string[]>([])
+const rqSem = ref<string[]>([]); const rqExam = ref<string[]>([]); const rqRegion = ref<string[]>([])
+
+// 教材级联:版本→年级→册→单元(下游随上游收窄)
+const tbVerOpts = computed(() => uniq(tbUnits.value.map(u => u.textbook_version)))
+const tbGradeOpts = computed(() => uniq(tbUnits.value.filter(u => !tbVer.value.length || tbVer.value.includes(u.textbook_version)).map(u => u.grade)))
+const tbSemOpts = computed(() => uniq(tbUnits.value.filter(u => (!tbVer.value.length || tbVer.value.includes(u.textbook_version)) && (!tbGrade.value.length || tbGrade.value.includes(u.grade))).map(u => u.semester)))
+const tbUnitOpts = computed(() => tbUnits.value.filter(u =>
+  (!tbVer.value.length || tbVer.value.includes(u.textbook_version))
+  && (!tbGrade.value.length || tbGrade.value.includes(u.grade))
+  && (!tbSem.value.length || tbSem.value.includes(u.semester))))
+
+async function loadExtractOptions() {
+  try { tbUnits.value = await getLsTextbookUnits() } catch { /* ignore */ }
+  try { realDims.value = await getLsRealDimensions() } catch { /* ignore */ }
+}
+
+function buildFilters() {
+  if (extractSource.value === 'textbook') {
+    return { textbook_version: tbVer.value, grade: tbGrade.value, semester: tbSem.value, unit_ids: tbUnitIds.value }
+  }
+  if (extractSource.value === 'platform_real') {
+    return { textbook_version: rqVer.value, stage: rqStage.value, grade: rqGrade.value, semester: rqSem.value, exam_type: rqExam.value, region: rqRegion.value }
+  }
+  return undefined
+}
+
 async function onExtract() {
   extracting.value = true
   try {
-    const r = await extractLongSentences({ source: extractSource.value, limit: extractLimit.value })
+    const r = await extractLongSentences({ source: extractSource.value, limit: extractLimit.value, filters: buildFilters() })
     ElMessage.success(`抽取完成:新建 ${r.created} / 长句 ${r.long_kept} / 挂边 ${r.edges} / `
       + `候选 ${r.candidates} / 跳过 ${r.skipped_done}`)
     await load()
@@ -146,7 +182,7 @@ async function saveCfg() {
   finally { savingCfg.value = false }
 }
 
-onMounted(() => { load(); loadCfg() })
+onMounted(() => { load(); loadCfg(); loadExtractOptions() })
 </script>
 
 <template>
@@ -154,16 +190,60 @@ onMounted(() => { load(); loadCfg() })
     <!-- 抽取触发 -->
     <el-card shadow="never" class="sec">
       <template #header><b>抽取触发</b>(平台库,幂等;来源:平台真题 / 教材单元短文。学生上传的长难句在上传作业时自动抽取、存独立表)</template>
-      <div class="toolbar">
+      <div class="toolbar" style="flex-wrap:wrap; gap:8px 0;">
         <span>来源：</span>
         <el-select v-model="extractSource" style="width: 160px">
           <el-option v-for="s in sourceOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
         <span style="margin-left: 16px">limit：</span>
-        <el-input-number v-model="extractLimit" :min="1" :max="2000" style="width: 130px" />
-        <el-button style="margin-left: 12px" type="primary" :loading="extracting" @click="onExtract">
-          开始抽取
-        </el-button>
+        <el-input-number v-model="extractLimit" :min="1" :max="2000" style="width: 120px" />
+        <el-button style="margin-left: 12px" type="primary" :loading="extracting" @click="onExtract">开始抽取</el-button>
+      </div>
+      <!-- 教材:级联多选 版本/年级/册/单元 -->
+      <div v-if="extractSource === 'textbook'" class="toolbar" style="flex-wrap:wrap; gap:8px 12px; margin-top:8px">
+        <span>版本：</span>
+        <el-select v-model="tbVer" multiple collapse-tags clearable placeholder="全部" style="width:180px">
+          <el-option v-for="v in tbVerOpts" :key="v" :label="v" :value="v" />
+        </el-select>
+        <span>年级：</span>
+        <el-select v-model="tbGrade" multiple collapse-tags clearable placeholder="全部" style="width:160px">
+          <el-option v-for="g in tbGradeOpts" :key="g" :label="g" :value="g" />
+        </el-select>
+        <span>册：</span>
+        <el-select v-model="tbSem" multiple collapse-tags clearable placeholder="全部" style="width:120px">
+          <el-option v-for="s in tbSemOpts" :key="s" :label="s" :value="s" />
+        </el-select>
+        <span>单元：</span>
+        <el-select v-model="tbUnitIds" multiple collapse-tags clearable filterable placeholder="不选=该范围全部" style="width:280px">
+          <el-option v-for="u in tbUnitOpts" :key="u.unit_id" :label="`${u.grade}·${u.semester}·U${u.unit_no} ${u.unit_title}`" :value="u.unit_id" />
+        </el-select>
+      </div>
+      <!-- 真题:多选 版本/学段/年级/册/考试类型/地区 -->
+      <div v-if="extractSource === 'platform_real'" class="toolbar" style="flex-wrap:wrap; gap:8px 12px; margin-top:8px">
+        <span>版本：</span>
+        <el-select v-model="rqVer" multiple collapse-tags clearable placeholder="全部" style="width:160px">
+          <el-option v-for="v in realDims.textbook_version" :key="v" :label="v" :value="v" />
+        </el-select>
+        <span>学段：</span>
+        <el-select v-model="rqStage" multiple collapse-tags clearable placeholder="全部" style="width:110px">
+          <el-option v-for="s in realDims.stage" :key="s" :label="s" :value="s" />
+        </el-select>
+        <span>年级：</span>
+        <el-select v-model="rqGrade" multiple collapse-tags clearable placeholder="全部" style="width:150px">
+          <el-option v-for="g in realDims.grade" :key="g" :label="g" :value="g" />
+        </el-select>
+        <span>册：</span>
+        <el-select v-model="rqSem" multiple collapse-tags clearable placeholder="全部" style="width:110px">
+          <el-option v-for="s in realDims.semester" :key="s" :label="s" :value="s" />
+        </el-select>
+        <span>考试类型：</span>
+        <el-select v-model="rqExam" multiple collapse-tags clearable placeholder="全部" style="width:140px">
+          <el-option v-for="e in realDims.exam_type" :key="e" :label="e" :value="e" />
+        </el-select>
+        <span>地区：</span>
+        <el-select v-model="rqRegion" multiple collapse-tags clearable filterable placeholder="全部" style="width:180px">
+          <el-option v-for="r in realDims.region" :key="r.code" :label="r.name" :value="r.code" />
+        </el-select>
       </div>
     </el-card>
 

@@ -478,8 +478,26 @@ export function rollbackVersion(resourceId: string, versionId: string): Promise<
 }
 
 // ── 长难句管理（KP-First L7）──────────────────────────────
-export function extractLongSentences(params: { source?: string; limit?: number }) {
-  return unwrap<LSExtractResult>(request.post('/admin/long-sentences/extract', null, { params }))
+export interface LSExtractFilters {
+  textbook_version?: string[]; stage?: string[]; grade?: string[]
+  semester?: string[]; exam_type?: string[]; region?: string[]; unit_ids?: string[]
+}
+export function extractLongSentences(body: { source?: string; limit?: number; filters?: LSExtractFilters }) {
+  return unwrap<LSExtractResult>(request.post('/admin/long-sentences/extract', body))
+}
+export interface LSTextbookUnit {
+  unit_id: string; textbook_version: string; grade: string; semester: string
+  unit_no: number; unit_title: string; stage: string
+}
+export function getLsTextbookUnits() {
+  return unwrap<LSTextbookUnit[]>(request.get('/admin/long-sentences/textbook-units'))
+}
+export interface LSRealDimensions {
+  textbook_version: string[]; stage: string[]; grade: string[]; semester: string[]
+  exam_type: string[]; region: { code: string; name: string }[]
+}
+export function getLsRealDimensions() {
+  return unwrap<LSRealDimensions>(request.get('/admin/long-sentences/real-dimensions'))
 }
 // 重新解析已有长难句(后台异步):刷新为新结构,可选顺带发布
 export function reanalyzeLongSentences(params: { status?: string; limit?: number; publish?: boolean }) {

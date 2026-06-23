@@ -708,6 +708,12 @@ class LSAdminListOut(BaseModel):
     items: list[LSAdminItem]
 
 
+class LSExtractIn(BaseModel):
+    source: str = "config"
+    limit: int = 200
+    filters: dict | None = None   # 教材:textbook_version/grade/semester/unit_ids;真题:+stage/exam_type/region(多值列表)
+
+
 class LSExtractOut(BaseModel):
     created: int
     long_kept: int

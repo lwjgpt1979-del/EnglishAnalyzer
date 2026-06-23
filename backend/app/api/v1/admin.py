@@ -112,6 +112,7 @@ from app.schemas.kp import (
     UpdateResourceIn,
     LSAdminItem,
     LSAdminListOut,
+    LSExtractIn,
     LSExtractOut,
     LSConfigOut,
     LSConfigIn,
@@ -1545,13 +1546,27 @@ def _to_ls_admin_item(ls) -> LSAdminItem:
         grade=ls.grade, semester=ls.semester, exam_type=ls.exam_type)
 
 
-@router.post("/long-sentences/extract", response_model=BaseResponse[LSExtractOut])
-async def extract_long_sentences_api(
-    db: DbDep, admin: AdminDep, limit: int = 200, source: str = "config",
-):
-    """手动触发平台长难句抽取(幂等)。source: config(读 sources 配置)|all(真题+教材)|platform_real|textbook。
-    学生上传的长难句走独立表、上传作业时自动抽取,不在此触发。"""
+@router.get("/long-sentences/textbook-units", response_model=BaseResponse[list])
+async def ls_textbook_units_api(db: DbDep, admin: AdminDep):
+    """教材抽取可选单元(有阅读短文的),供级联多选 版本/年级/册/单元。"""
     from app.services import long_sentence_service as lss
+    return make_ok(await lss.textbook_extract_units(db))
+
+
+@router.get("/long-sentences/real-dimensions", response_model=BaseResponse[dict])
+async def ls_real_dimensions_api(db: DbDep, admin: AdminDep):
+    """平台真题可选维度去重值,供多选 版本/学段/年级/册/考试类型/地区。"""
+    from app.services import long_sentence_service as lss
+    return make_ok(await lss.real_extract_dimensions(db))
+
+
+@router.post("/long-sentences/extract", response_model=BaseResponse[LSExtractOut])
+async def extract_long_sentences_api(body: LSExtractIn, db: DbDep, admin: AdminDep):
+    """手动触发平台长难句抽取(幂等)。source: config|all|platform_real|textbook;
+    filters 按维度精确挑范围(教材:textbook_version/grade/semester/unit_ids;
+    真题:textbook_version/stage/grade/semester/exam_type/region,均为多值列表)。"""
+    from app.services import long_sentence_service as lss
+    source = body.source or "config"
     if source == "config":
         sources = None
     elif source == "all":
@@ -1560,7 +1575,7 @@ async def extract_long_sentences_api(
         sources = [source]
     else:
         raise AppError(code=400, message="不支持的抽取来源")
-    st = await lss.run_extract(db, sources=sources, limit=limit)
+    st = await lss.run_extract(db, sources=sources, limit=body.limit, filters=body.filters or None)
     return make_ok(LSExtractOut(created=st.created, long_kept=st.long_kept, edges=st.edges,
                                 candidates=st.candidates, skipped_done=st.skipped_done))
 

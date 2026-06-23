@@ -679,12 +679,26 @@ async def _persist_long_sentences(
 
 async def extract_from_platform(
     db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
-    dry_run: bool = False, only_question_ids: set | None = None,
+    dry_run: bool = False, only_question_ids: set | None = None, filters: dict | None = None,
 ) -> ExtractStats:
     """① 扫平台真题(type='real')未抽过的 → 平台长难句。幂等按 source_question_id。
+    filters 可按 textbook_version/stage/grade/semester/exam_type/region(均为多值列表)挑范围。
     定位:普通真题用 年级+上下;中考/高考真题用 学段(exam_type 区分)。"""
+    f = filters or {}
     st = ExtractStats()
     q = sa.select(PlatformQuestion).where(PlatformQuestion.type == "real")
+    if f.get("textbook_version"):
+        q = q.where(PlatformQuestion.textbook_version.in_(f["textbook_version"]))
+    if f.get("stage"):
+        q = q.where(PlatformQuestion.stage.in_(f["stage"]))
+    if f.get("grade"):
+        q = q.where(PlatformQuestion.grade.in_(f["grade"]))
+    if f.get("semester"):
+        q = q.where(PlatformQuestion.semester.in_(f["semester"]))
+    if f.get("exam_type"):
+        q = q.where(PlatformQuestion.exam_type.in_(f["exam_type"]))
+    if f.get("region"):
+        q = q.where(PlatformQuestion.region_code.in_(f["region"]))
     if only_question_ids is not None:
         q = q.where(PlatformQuestion.id.in_(only_question_ids))
     if limit is not None:
@@ -712,7 +726,7 @@ async def extract_from_platform(
 
 async def extract_from_textbook(
     db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
-    dry_run: bool = False, only_passage_ids: set | None = None,
+    dry_run: bool = False, only_passage_ids: set | None = None, filters: dict | None = None,
 ) -> ExtractStats:
     """② 扫课程单元**阅读**短文(curriculum_unit_passages, kind=阅读)未抽过的 → 平台长难句。
     幂等按 source_passage_id。定位:从所属单元取 教材版/年级/学期/单元,学段从年级推。
@@ -724,9 +738,18 @@ async def extract_from_textbook(
     sel_min = int(sel_min) if sel_min not in (None, "", 0, "0") else None
     sel_top = None if sel_min is not None else int(cfg.get("textbook_top_n") or 3)
     st = ExtractStats()
+    f = filters or {}
     q = (sa.select(CurriculumUnitPassage, CurriculumUnit)
          .join(CurriculumUnit, CurriculumUnit.id == CurriculumUnitPassage.unit_id)
          .where(CurriculumUnitPassage.text.isnot(None), CurriculumUnitPassage.kind == "阅读"))
+    if f.get("textbook_version"):
+        q = q.where(CurriculumUnit.textbook_version.in_(f["textbook_version"]))
+    if f.get("grade"):
+        q = q.where(CurriculumUnit.grade.in_(f["grade"]))
+    if f.get("semester"):
+        q = q.where(CurriculumUnit.semester.in_(f["semester"]))
+    if f.get("unit_ids"):
+        q = q.where(CurriculumUnit.id.in_(f["unit_ids"]))
     if only_passage_ids is not None:
         q = q.where(CurriculumUnitPassage.id.in_(only_passage_ids))
     if limit is not None:
@@ -798,11 +821,49 @@ async def list_student_published(
         .order_by(StudentLongSentence.created_at.desc()).limit(limit))).scalars().all())
 
 
+# ── 抽取选项(供后台精确挑范围)────────────────────────────────────────────────
+async def textbook_extract_units(db: AsyncSession) -> list[dict]:
+    """可抽取的教材单元(有阅读短文的),供级联多选:版本/年级/册/单元。"""
+    from app.models.d4_knowledge import CurriculumUnit, CurriculumUnitPassage
+    sub = sa.select(CurriculumUnitPassage.unit_id).where(CurriculumUnitPassage.kind == "阅读")
+    rows = (await db.execute(
+        sa.select(CurriculumUnit.id, CurriculumUnit.textbook_version, CurriculumUnit.grade,
+                  CurriculumUnit.semester, CurriculumUnit.unit_no, CurriculumUnit.unit_title)
+        .where(CurriculumUnit.id.in_(sub))
+        .order_by(CurriculumUnit.textbook_version, CurriculumUnit.grade,
+                  CurriculumUnit.semester, CurriculumUnit.unit_no))).all()
+    return [{
+        "unit_id": str(r[0]), "textbook_version": r[1], "grade": r[2], "semester": r[3],
+        "unit_no": r[4], "unit_title": r[5], "stage": _stage_from_grade(r[2]),
+    } for r in rows]
+
+
+async def real_extract_dimensions(db: AsyncSession) -> dict:
+    """平台真题(type=real)可选维度的去重值,供多选。"""
+    pq = PlatformQuestion
+    base = pq.type == "real"
+
+    async def _distinct(col):
+        return sorted(v for v in (await db.execute(
+            sa.select(col).where(base, col.isnot(None)).distinct())).scalars().all() if v)
+
+    regions = (await db.execute(
+        sa.select(pq.region_code, pq.region_name).where(base, pq.region_code.isnot(None)).distinct())).all()
+    return {
+        "textbook_version": await _distinct(pq.textbook_version),
+        "stage": await _distinct(pq.stage),
+        "grade": await _distinct(pq.grade),
+        "semester": await _distinct(pq.semester),
+        "exam_type": await _distinct(pq.exam_type),
+        "region": [{"code": c, "name": n} for c, n in sorted(set(regions), key=lambda x: x[0])],
+    }
+
+
 async def run_extract(
     db: AsyncSession, *, sources: list[str] | None = None, limit: int | None = None,
-    min_words: int | None = None, dry_run: bool = False,
+    min_words: int | None = None, dry_run: bool = False, filters: dict | None = None,
 ) -> ExtractStats:
-    """按来源配置批量抽取(sources 缺省读 long_sentence.sources)。合并各源 ExtractStats。"""
+    """按来源批量抽取。filters 按维度挑范围(各源取相关子集);sources 缺省读配置。"""
     if sources is None:
         cfg = await get_config(db)
         sources = cfg.get("sources") or ["platform_real"]
@@ -815,7 +876,7 @@ async def run_extract(
         fn = _SOURCE_KIND_TO_FN.get(src)
         if fn is None:
             continue
-        st = await fn(db, limit=limit, min_words=min_words, dry_run=dry_run)
+        st = await fn(db, limit=limit, min_words=min_words, dry_run=dry_run, filters=filters)
         merged.scanned += st.scanned
         merged.sentences += st.sentences
         merged.long_kept += st.long_kept
