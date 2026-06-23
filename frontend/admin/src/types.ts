@@ -297,6 +297,7 @@ export interface LSAdminItem {
   source_kind: string
   status: string
   syntax_points: string[]
+  difficulty: number | null
 }
 
 export interface LSExtractResult {

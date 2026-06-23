@@ -695,6 +695,7 @@ class LSAdminItem(BaseModel):
     source_kind: str
     status: str
     syntax_points: list[str] = []
+    difficulty: int | None = None
 
 
 class LSAdminListOut(BaseModel):

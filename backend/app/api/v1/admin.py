@@ -1540,7 +1540,8 @@ async def update_node_resource_api(resource_id: uuid.UUID, body: UpdateResourceI
 def _to_ls_admin_item(ls) -> LSAdminItem:
     return LSAdminItem(
         id=ls.id, text=ls.text, source_kind=ls.source_kind, status=ls.status,
-        syntax_points=(ls.analysis_json or {}).get("syntax_points", []))
+        syntax_points=(ls.analysis_json or {}).get("syntax_points", []),
+        difficulty=ls.difficulty)
 
 
 @router.post("/long-sentences/extract", response_model=BaseResponse[LSExtractOut])
@@ -1589,9 +1590,11 @@ async def reanalyze_ls_job_status_api(job_id: str, db: DbDep, admin: AdminDep):
 async def list_long_sentences_api(
     db: DbDep, admin: AdminDep, status: str = "draft",
     node_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
+    sort_by: str = "created_at", order: str = "asc",
 ):
     from app.services import long_sentence_service as lss
-    rows, total = await lss.list_for_review(db, status=status, node_id=node_id, skip=skip, limit=limit)
+    rows, total = await lss.list_for_review(
+        db, status=status, node_id=node_id, skip=skip, limit=limit, sort_by=sort_by, order=order)
     return make_ok(LSAdminListOut(total=total, items=[_to_ls_admin_item(r) for r in rows]))
 
 

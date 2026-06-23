@@ -63,6 +63,8 @@ const nodeId = ref('')
 const rows = ref<LSAdminItem[]>([])
 const total = ref(0)
 const loading = ref(false)
+const sortBy = ref('created_at')   // created_at | difficulty
+const order = ref('asc')           // asc | desc
 const statusOptions = ['draft', 'published', 'retired']
 const stLabel = (s: string) => (({ draft: '草稿', published: '已发布', retired: '已下架' } as Record<string, string>)[s] || s)
 
@@ -73,11 +75,20 @@ async function load() {
       status: status.value || undefined,
       node_id: nodeId.value.trim() || undefined,
       limit: 50,
+      sort_by: sortBy.value,
+      order: order.value,
     })
     rows.value = data.items
     total.value = data.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
+}
+
+// el-table 列表头排序:难度 升/降;取消则回到按时间升序
+function onSortChange({ prop, order: ord }: { prop: string; order: string | null }) {
+  if (!ord) { sortBy.value = 'created_at'; order.value = 'asc' }
+  else { sortBy.value = prop; order.value = ord === 'ascending' ? 'asc' : 'desc' }
+  load()
 }
 
 async function onReview(row: LSAdminItem, approve: boolean) {
@@ -150,12 +161,21 @@ onMounted(() => { load(); loadCfg() })
         <el-button type="success" :loading="reanalyzing" @click="onReanalyze(true)">重解析并发布</el-button>
         <span v-if="reJob" class="hint">⏳ {{ reJob.done }}/{{ reJob.total || '…' }}</span>
       </div>
-      <el-table v-loading="loading" :data="rows" border style="width: 100%">
+      <el-table v-loading="loading" :data="rows" border style="width: 100%" @sort-change="onSortChange">
         <el-table-column prop="text" label="句子" min-width="320" show-overflow-tooltip />
         <el-table-column prop="source_kind" label="来源" width="120" />
         <el-table-column label="句法点" min-width="160">
           <template #default="{ row }">
             <el-tag v-for="p in row.syntax_points" :key="p" size="small" style="margin-right:4px">{{ p }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="difficulty" label="难度" width="110" sortable="custom"
+                         :sort-orders="['descending', 'ascending']">
+          <template #default="{ row }">
+            <el-tag v-if="row.difficulty != null" size="small"
+                    :type="row.difficulty >= 80 ? 'danger' : row.difficulty >= 60 ? 'warning' : 'success'"
+                    effect="light">{{ row.difficulty }}</el-tag>
+            <span v-else style="color:#bbb">—</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="90" />

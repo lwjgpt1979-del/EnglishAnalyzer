@@ -3,3 +3,8 @@ tencentcloud-sdk-python-aiart>=3.1.82
 
 # 错误监控（可选；未配 SENTRY_DSN 时不加载）
 sentry-sdk[fastapi]>=2.0.0
+
+# 长难句句法复杂度分析（依存树:从句数/树深/MDD/难度分）
+# 需另装英文模型: python -m spacy download en_core_web_sm
+# spaCy 不可用时服务自动降级到信号词规则,不影响启动
+spacy>=3.8.0

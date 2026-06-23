@@ -90,15 +90,17 @@ async def set_config(db: AsyncSession, *, updated_by: uuid.UUID, sources=None, v
 
 async def list_for_review(
     db: AsyncSession, *, status: str = "draft", node_id: uuid.UUID | None = None,
-    skip: int = 0, limit: int = 20,
+    skip: int = 0, limit: int = 20, sort_by: str = "created_at", order: str = "asc",
 ) -> tuple[list[LongSentence], int]:
     base = sa.select(LongSentence).where(LongSentence.status == status)
     if node_id is not None:
         base = base.join(LongSentenceNode, LongSentenceNode.long_sentence_id == LongSentence.id).where(
             LongSentenceNode.node_id == node_id)
     total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
+    col = LongSentence.difficulty if sort_by == "difficulty" else LongSentence.created_at
+    direction = col.desc() if order == "desc" else col.asc()
     rows = (await db.execute(
-        base.order_by(LongSentence.created_at).offset(skip).limit(limit))).scalars().all()
+        base.order_by(direction.nulls_last()).offset(skip).limit(limit))).scalars().all()
     return list(rows), total
 
 
@@ -117,7 +119,12 @@ async def reanalyze_one(db: AsyncSession, *, ls_id: uuid.UUID, publish: bool = F
     ls = (await db.execute(sa.select(LongSentence).where(LongSentence.id == ls_id))).scalar_one_or_none()
     if ls is None:
         return False
-    ls.analysis_json = await analyze_sentence(ls.text)
+    analysis = await analyze_sentence(ls.text)
+    comp = syntactic_complexity(ls.text)
+    analysis["difficulty"] = comp["difficulty"]
+    analysis["complexity"] = comp
+    ls.analysis_json = analysis
+    ls.difficulty = comp["difficulty"]
     if publish:
         ls.status = "published"
     await db.flush()
@@ -139,12 +146,76 @@ def detect_syntax_points(sentence: str) -> list[str]:
     return pts
 
 
-def is_long_sentence(sentence: str, min_words: int = DEFAULT_MIN_WORDS) -> bool:
-    """长难句 = 词数达阈值 且 含结构信号(从句/非谓语)。"""
-    words = re.findall(r"[A-Za-z'\-]+", sentence)
-    if len(words) < min_words:
+# ── 句法复杂度(spaCy 依存)──────────────────────────────────────────────────
+_NLP = None
+_NLP_TRIED = False
+# 从句性依存:关系从句/状语从句/补语从句/开放补语/主语从句/分词-不定式作定语/介词补语
+_CLAUSAL_DEPS = {"relcl", "advcl", "ccomp", "xcomp", "csubj", "csubjpass", "acl", "pcomp"}
+_DEPTH_TH = 5     # 句法树深度阈值(达到即判"难")
+_MDD_TH = 2.5     # 平均依存距离阈值(长距离修饰 → 难)
+
+
+def _get_nlp():
+    """惰性加载 spaCy 英文模型;不可用时返回 None(降级到信号词规则)。"""
+    global _NLP, _NLP_TRIED
+    if _NLP_TRIED:
+        return _NLP
+    _NLP_TRIED = True
+    try:
+        import spacy
+        _NLP = spacy.load("en_core_web_sm", disable=["ner", "lemmatizer"])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[长难句] spaCy 不可用,降级到规则判定: %s", e)
+        _NLP = None
+    return _NLP
+
+
+def _tree_depth(token, guard: int = 0) -> int:
+    if guard > 60:
+        return guard
+    children = list(token.children)
+    return 1 + max((_tree_depth(c, guard + 1) for c in children), default=0)
+
+
+def syntactic_complexity(sentence: str, min_words: int = DEFAULT_MIN_WORDS) -> dict:
+    """句法复杂度:词数 / 从句数 / 句法树深度 / 平均依存距离(MDD)+ 0–100 难度分。
+
+    spaCy 可用 → 依存分析;否则用信号词规则近似(仍给出值)。难度分:
+      score = 6*从句数 + 3.5*树深 + 4*MDD + 0.4*词数,截断到 [0,100]。
+    """
+    words = re.findall(r"[A-Za-z'\-]+", sentence or "")
+    wc = len(words)
+    nlp = _get_nlp()
+    if nlp is not None and sentence:
+        doc = nlp(sentence)
+        sents = list(doc.sents)
+        span = max(sents, key=lambda s: len(s)) if sents else doc[:]
+        toks = list(span)
+        clause = sum(1 for t in toks if t.dep_ in _CLAUSAL_DEPS)
+        roots = [t for t in toks if t.head == t or t.dep_ == "ROOT"]
+        depth = max((_tree_depth(r) for r in roots), default=1)
+        dists = [abs(t.i - t.head.i) for t in toks if t.head != t]
+        mdd = round(sum(dists) / len(dists), 2) if dists else 0.0
+        method = "spacy"
+    else:
+        clause = len(detect_syntax_points(sentence))   # 近似:命中的从句信号种类数
+        depth, mdd, method = 0, 0.0, "rule"
+    score = 6 * clause + 3.5 * depth + 4 * mdd + 0.4 * wc
+    return {"word_count": wc, "clause_count": clause, "tree_depth": depth,
+            "mdd": mdd, "difficulty": max(0, min(100, round(score))), "method": method}
+
+
+def _is_long(comp: dict, sentence: str, min_words: int) -> bool:
+    if comp["word_count"] < min_words:
         return False
+    if comp["method"] == "spacy":
+        return comp["clause_count"] >= 1 or comp["tree_depth"] >= _DEPTH_TH or comp["mdd"] >= _MDD_TH
     return bool(detect_syntax_points(sentence))
+
+
+def is_long_sentence(sentence: str, min_words: int = DEFAULT_MIN_WORDS) -> bool:
+    """长难句 = 词数达阈值 且 句法上"难"(从句 / 嵌套深 / 长依存;无 spaCy 时回退信号词)。"""
+    return _is_long(syntactic_complexity(sentence, min_words), sentence, min_words)
 
 
 # 句子成分类型 → 固定配色(美学调色板)。设计:8 大语法族各占一个「色相」(状语=橙、定语=绿、
@@ -525,10 +596,13 @@ async def _persist_long_sentences(
     """三源共用:切句 → 长句判定 → AI 拆解 → 建 long_sentence → match_kp 挂句法 node / 落候选。"""
     for sent in split_sentences(text or ""):
         st.sentences += 1
-        if not is_long_sentence(sent, min_words):
+        comp = syntactic_complexity(sent, min_words)
+        if not _is_long(comp, sent, min_words):
             continue
         st.long_kept += 1
         analysis = await analyze_sentence(sent)
+        analysis["difficulty"] = comp["difficulty"]
+        analysis["complexity"] = comp
         st.syntax_points.update(analysis.get("syntax_points") or [])
         if dry_run:
             st.created += 1
@@ -537,7 +611,7 @@ async def _persist_long_sentences(
             id=uuid.uuid4(), scope=scope, owner_id=owner_id, source_kind=source_kind,
             source_q_scope=source_q_scope, source_question_id=source_question_id,
             source_passage_id=source_passage_id,
-            text=sent, analysis_json=analysis, status="draft",
+            text=sent, analysis_json=analysis, difficulty=comp["difficulty"], status="draft",
         )
         db.add(ls)
         await db.flush()
