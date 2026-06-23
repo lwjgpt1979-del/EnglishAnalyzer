@@ -15,6 +15,7 @@ export interface LSAnalysis {
   key_words?: LSKeyWord[]
   grammar_points?: LSGrammarPoint[]
   explanations?: LSExplanation[]
+  difficulty?: number
 }
 export interface LSItem { id: string; text: string; source_kind: string; syntax_points: string[]; favorited?: boolean }
 export interface LSListOut { total: number; items: LSItem[] }

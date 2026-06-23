@@ -17,8 +17,10 @@
       <!-- 句子卡 -->
       <view class="card">
         <view class="sent-head">
-          <view class="hl">
-            <text class="sent-tag">句子 {{ index + 1 }}</text>
+          <view class="chips">
+            <text class="sent-tag">句子 {{ index + 1 }}/{{ items.length }}</text>
+            <text v-if="srcLabel" class="src-tag">{{ srcLabel }}</text>
+            <text v-if="difficulty != null" class="diff-pill" :class="diffLevel.cls">难度 {{ difficulty }}·{{ diffLevel.label }}</text>
             <text class="fav" :class="{ on: favorited }" @tap="toggleFav">{{ favorited ? '★ 已收藏' : '☆ 收藏' }}</text>
           </view>
           <view class="pager">
@@ -27,8 +29,16 @@
           </view>
         </view>
 
-        <!-- 原句:连续流式段落,每段彩色虚线下划线,序号锚在该段首词下 -->
-        <view v-if="showStruct && segments.length" class="sentence">
+        <!-- 阅读控制:听原句 / 字号 / 护眼 -->
+        <view class="rc">
+          <text class="rc-btn" :class="{ on: playing }" @tap="listen">🔊 {{ playing ? '停止' : (loadingAudio ? '生成中' : '听原句') }}</text>
+          <text class="rc-btn" @tap="decFont">A−</text>
+          <text class="rc-btn" @tap="incFont">A+</text>
+          <text class="rc-btn" :class="{ on: eyeMode }" @tap="eyeMode = !eyeMode">🌿 护眼</text>
+        </view>
+
+        <!-- 原句:连续流式段落,每段彩色虚线下划线,序号锚在该段首词下(保持原设计) -->
+        <view v-if="showStruct && segments.length" class="sentence" :class="{ eye: eyeMode }" :style="{ fontSize: fontPx + 'rpx' }">
           <text v-for="s in segments" :key="s.idx" class="seg" :style="{ color: colorOf(s.idx), borderBottomColor: colorOf(s.idx) }"><text class="fw">{{ s.first }}<text class="badge" :style="{ background: colorOf(s.idx) }">{{ s.idx }}</text></text>{{ (s.rest ? ' ' + s.rest : '') + ' ' }}</text>
         </view>
         <text v-else class="plain">{{ detail?.text }}</text>
@@ -49,17 +59,16 @@
 
         <!-- 操作 pill 行 -->
         <view class="acts">
-          <view class="act" :class="{ on: playing }" @tap="listen"><text class="act-ic">🔊</text><text class="act-tx">{{ playing ? '停止' : (loadingAudio ? '生成中…' : '听原句') }}</text></view>
           <view class="act" @tap="showStruct = !showStruct"><text class="act-ic">👁</text><text class="act-tx">{{ showStruct ? '隐藏结构' : '显示结构' }}</text></view>
-          <view class="act" @tap="showTranslate = !showTranslate"><text class="act-ic">📝</text><text class="act-tx">翻译</text></view>
+          <view class="act" :class="{ on: showTranslate }" @tap="showTranslate = !showTranslate"><text class="act-ic">📝</text><text class="act-tx">翻译</text></view>
           <view class="act" @tap="soon('更多')"><text class="act-ic">···</text><text class="act-tx">更多</text></view>
         </view>
       </view>
 
       <!-- Tab 卡 -->
       <view class="card">
-        <view class="tabs">
-          <text v-for="t in TABS" :key="t.key" class="tab" :class="{ on: tab === t.key }" @tap="tab = t.key">{{ t.label }}</text>
+        <view class="seg-tabs">
+          <text v-for="t in TABS" :key="t.key" class="seg-tab" :class="{ on: tab === t.key }" @tap="tab = t.key">{{ t.label }}</text>
         </view>
 
         <!-- 句子结构:思维导图(盒子 + 连线,横向可滚动)-->
@@ -188,6 +197,23 @@ const tab = ref('struct')
 const showTranslate = ref(false)
 const showStruct = ref(true)
 const showLegend = ref(false)
+const fontPx = ref(32)        // 原句字号(rpx),可调
+const eyeMode = ref(false)    // 护眼模式
+function incFont() { fontPx.value = Math.min(46, fontPx.value + 4) }
+function decFont() { fontPx.value = Math.max(26, fontPx.value - 4) }
+
+const SRC_LABEL: Record<string, string> = { platform_real: '真题', textbook: '教材', uploaded: '上传' }
+const srcLabel = computed(() => SRC_LABEL[detail.value?.source_kind || ''] || '')
+const difficulty = computed<number | null>(() => {
+  const d = analysis.value?.difficulty
+  return typeof d === 'number' ? d : null
+})
+const diffLevel = computed(() => {
+  const d = difficulty.value ?? 0
+  if (d >= 80) return { label: '高', cls: 'hard' }
+  if (d >= 60) return { label: '中', cls: 'mid' }
+  return { label: '低', cls: 'easy' }
+})
 
 const analysis = computed<LSAnalysis | null>(() => detail.value?.analysis || null)
 const pct = computed(() => items.value.length ? Math.round((index.value + 1) / items.value.length * 100) : 0)
@@ -389,18 +415,29 @@ onLoad(async () => {
 .card { background: #fff; border-radius: 20rpx; padding: 26rpx; margin-bottom: 20rpx; box-shadow: 0 2rpx 14rpx rgba(0,0,0,.04); }
 
 /* 句子卡头 */
-.sent-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24rpx; }
-.hl { display: flex; align-items: center; gap: 16rpx; }
-.sent-tag { background: var(--c-primary-faint); color: var(--c-primary); font-size: 24rpx; padding: 6rpx 18rpx; border-radius: 24rpx; }
-.fav { font-size: 24rpx; color: #999; }
+.sent-head { margin-bottom: 18rpx; }
+.chips { display: flex; align-items: center; flex-wrap: wrap; gap: 10rpx; }
+.sent-tag { background: var(--c-primary-faint); color: var(--c-primary); font-size: 22rpx; padding: 5rpx 16rpx; border-radius: 24rpx; }
+.src-tag { background: #f0f2f6; color: #777; font-size: 22rpx; padding: 5rpx 14rpx; border-radius: 24rpx; }
+.diff-pill { font-size: 22rpx; padding: 5rpx 14rpx; border-radius: 24rpx; }
+.diff-pill.hard { background: #fdecea; color: #e2504a; }
+.diff-pill.mid { background: #fdf2e3; color: #d08713; }
+.diff-pill.easy { background: #e9f7ef; color: #1f9d6b; }
+.fav { margin-left: auto; font-size: 24rpx; color: #999; }
 .fav.on { color: #f5a623; font-weight: 700; }
-.pager { display: flex; gap: 12rpx; }
+.pager { display: flex; justify-content: flex-end; gap: 12rpx; margin-top: 16rpx; }
 .pg { font-size: 24rpx; color: #555; background: #fff; border: 1rpx solid #e3e7ee; border-radius: 24rpx; padding: 6rpx 18rpx; }
 .pg.primary { background: var(--c-primary); color: var(--c-on-primary); border-color: var(--c-primary); }
 .pg.dis { opacity: .4; }
 
+/* 阅读控制行 */
+.rc { display: flex; gap: 10rpx; margin-bottom: 12rpx; }
+.rc-btn { font-size: 22rpx; color: #666; background: #f5f7fa; border-radius: 22rpx; padding: 8rpx 18rpx; }
+.rc-btn.on { background: var(--c-primary-faint); color: var(--c-primary); }
+
 /* 原句:连续流式段落(行内文本自然排满换行);序号锚在每段首词下方 */
-.sentence { font-family: Georgia, 'Times New Roman', 'Songti SC', serif; font-size: 32rpx; line-height: 3; }
+.sentence { font-family: Georgia, 'Times New Roman', 'Songti SC', serif; font-size: 32rpx; line-height: 3; transition: background .2s; }
+.sentence.eye { background: #f3f0e3; border-radius: 14rpx; padding: 16rpx 20rpx; }
 .seg { border-bottom: 2rpx dashed; padding-bottom: 6rpx; }
 .fw { position: relative; }
 .badge { position: absolute; left: 50%; top: 130%; transform: translateX(-50%); width: 32rpx; height: 32rpx; line-height: 32rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 18rpx; }
@@ -424,10 +461,10 @@ onLoad(async () => {
 .act.on { background: var(--c-primary-faint); }
 .act.on .act-tx { color: var(--c-primary); }
 
-/* Tabs */
-.tabs { display: flex; border-bottom: 1rpx solid #eee; margin-bottom: 20rpx; }
-.tab { flex: 1; text-align: center; font-size: 28rpx; color: #888; padding: 16rpx 0; }
-.tab.on { color: var(--c-primary); font-weight: 700; border-bottom: 4rpx solid var(--c-primary); }
+/* Tabs:分段控件 */
+.seg-tabs { display: flex; gap: 6rpx; background: #eef1f6; border-radius: 16rpx; padding: 6rpx; margin-bottom: 20rpx; }
+.seg-tab { flex: 1; text-align: center; font-size: 26rpx; color: #888; padding: 14rpx 0; border-radius: 12rpx; }
+.seg-tab.on { background: #fff; color: var(--c-primary); font-weight: 700; }
 .tab-body { min-height: 80rpx; }
 
 /* 思维导图(横向滚动画布)*/
