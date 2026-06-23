@@ -2,11 +2,11 @@
 <template>
   <view v-if="open" class="shadow-modal" @tap.self="close">
     <view class="shadow-card">
-      <view class="shadow-title">🎤 跟读练习</view>
+      <view class="shadow-title" style="display:flex;align-items:center;gap:10rpx"><view class="ic ic-mic" style="width:34rpx;height:34rpx" /><text>跟读练习</text></view>
       <text class="shadow-sentence">{{ text }}</text>
 
       <view class="shadow-tools">
-        <text class="shadow-demo" @tap="playDemo">🔊 示范</text>
+        <view class="shadow-demo" @tap="playDemo" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>示范</text></view>
       </view>
 
       <view v-if="!result" class="shadow-rec-area">
@@ -32,9 +32,9 @@
             {{ w.word }} <text class="sw-score">{{ w.score }}</text>
           </text>
         </view>
-        <view v-if="result.tip" class="shadow-tip">💡 {{ result.tip }}</view>
+        <view v-if="result.tip" class="shadow-tip" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-idea" style="width:30rpx;height:30rpx;flex:none" /><text>{{ result.tip }}</text></view>
         <view class="shadow-actions">
-          <button class="btn-primary half" @tap="retry">🔁 重跟</button>
+          <button class="btn-primary half" @tap="retry" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-refresh" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>重跟</text></button>
         </view>
       </view>
 

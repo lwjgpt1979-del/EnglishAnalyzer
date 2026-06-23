@@ -9,7 +9,7 @@
 
       <!-- M47 班级弱项推荐 -->
       <view v-if="weakKps.length" class="rec-section">
-        <view class="rec-title">🎯 班级弱项推荐</view>
+        <view class="rec-title"><view class="ic ic-target" style="width:28rpx;height:28rpx"/><text>班级弱项推荐</text></view>
         <view class="rec-chips">
           <view
             v-for="kp in weakKps"
@@ -29,7 +29,7 @@
       <!-- 原有：按学生 ID 智能选题 -->
       <view class="suggest-row">
         <input v-model="suggestSid" class="ipt suggest-ipt" placeholder="目标学生ID（智能选题）" />
-        <text class="suggest-btn" @tap="onSuggest">🎯 智能选题</text>
+        <view class="suggest-btn" @tap="onSuggest"><view class="ic ic-target" style="width:28rpx;height:28rpx"/><text>智能选题</text></view>
       </view>
 
       <view v-for="(q, i) in questions" :key="i" class="q-block">
@@ -192,7 +192,7 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/assignment
 
 /* M47 班级弱项推荐 */
 .rec-section { margin-bottom: 16rpx; padding: 16rpx; background: #eef5ff; border-radius: 12rpx; border: 1rpx solid #ffe58f; }
-.rec-title { font-size: 24rpx; font-weight: 600; color: #b8860b; margin-bottom: 12rpx; }
+.rec-title { font-size: 24rpx; font-weight: 600; color: #b8860b; margin-bottom: 12rpx; display: flex; align-items: center; gap: 6rpx; }
 .rec-chips { display: flex; flex-wrap: wrap; gap: 12rpx; }
 .kp-chip {
   display: flex; flex-direction: column; align-items: center;
@@ -212,7 +212,7 @@ function goDetail(id: string) { uni.navigateTo({ url: `/pages/teacher/assignment
 
 .suggest-row { display: flex; gap: 12rpx; align-items: center; margin-bottom: 12rpx; }
 .suggest-ipt { flex: 1; margin-bottom: 0; }
-.suggest-btn { font-size: 26rpx; color: var(--c-primary); font-weight: 700; white-space: nowrap; }
+.suggest-btn { font-size: 26rpx; color: var(--c-primary); font-weight: 700; white-space: nowrap; display: flex; align-items: center; gap: 6rpx; }
 .q-block { border-top: 1rpx solid var(--c-border); padding-top: 12rpx; margin-bottom: 12rpx; }
 .q-head { font-size: 26rpx; color: var(--c-text-second); margin-bottom: 8rpx; }
 .q-del { color: #e54d42; margin-left: 12rpx; }

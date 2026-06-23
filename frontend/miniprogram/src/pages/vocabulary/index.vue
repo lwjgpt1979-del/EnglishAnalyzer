@@ -22,7 +22,7 @@
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
       <view class="center-tip">🎉 暂时没有待学/待复习的单词
-        <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text><text class="gear-inline" @tap="openAddWord">＋ 添加生词</text></view>
+        <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <view class="gear-inline" @tap="openSettings" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view><view class="gear-inline" @tap="openAddWord" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view></view>
       </view>
     </view>
 
@@ -31,10 +31,10 @@
       <view class="study-hd">
         <text class="progress-hint">{{ isReview ? '复习词' : '学新词' }} {{ cardIdx + 1 }} / {{ cardList.length }}<text v-if="repsPerGroup > 1" class="rep-tag"> · 第{{ currentRep }}/{{ repsPerGroup }}遍</text></text>
         <view class="hd-right">
-          <text class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq">
-            {{ readSeq ? '🔉 连读' : '🔈 连读' }}
-          </text>
-          <text class="gear" @tap="openSettings">⚙️</text>
+          <view class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq" style="display:flex;align-items:center;gap:6rpx">
+            <view class="ic ic-volume" style="width:28rpx;height:28rpx" /><text>连读</text>
+          </view>
+          <view class="gear" @tap="openSettings" style="display:flex;align-items:center"><view class="ic ic-settings" style="width:32rpx;height:32rpx" /></view>
         </view>
       </view>
 
@@ -68,8 +68,8 @@
 
       <!-- 单词发音 + 跟读：同一行 -->
       <view class="wc-btns">
-        <text class="wc-btn" @tap="playCard(curStudy)">🔊 单词发音</text>
-        <text class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)">🎤 跟读{{ ent.can('vocab.shadow') ? '' : ' 🔒' }}</text>
+        <view class="wc-btn" @tap="playCard(curStudy)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>单词发音</text></view>
+        <view class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-mic" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>跟读</text><view v-if="!ent.can('vocab.shadow')" class="ic ic-lock" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
       </view>
 
       <button class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
@@ -81,7 +81,7 @@
       <view class="quiz-type">{{ quizTypeLabel }}</view>
       <view class="quiz-prompt">
         <text>{{ curQuiz.prompt }}</text>
-        <text v-if="curQuiz.mode !== 'm2w'" class="qp-play" @tap="playWordAudio(curQuiz.prompt)">🔊</text>
+        <view v-if="curQuiz.mode !== 'm2w'" class="qp-play" @tap="playWordAudio(curQuiz.prompt)"><view class="ic ic-volume" style="width:36rpx;height:36rpx" /></view>
       </view>
 
       <!-- 看图选词：4 张图选 1 -->
@@ -106,18 +106,18 @@
         @tap="choose(i)"
       >
         <text class="opt-text">{{ opt }}</text>
-        <text v-if="curQuiz.mode === 'm2w'" class="opt-play" @tap.stop="playWordAudio(opt)">🔊</text>
+        <view v-if="curQuiz.mode === 'm2w'" class="opt-play" @tap.stop="playWordAudio(opt)"><view class="ic ic-volume" style="width:32rpx;height:32rpx" /></view>
       </view>
 
       <!-- 答题反馈：对错 + 正确单词(音标/释义/发音) -->
       <view v-if="answered" class="quiz-fb" :class="lastCorrect ? 'ok' : 'no'">
-        <text v-if="lastCorrect" class="qfb-ok">🎉 答对了！</text>
+        <view v-if="lastCorrect" class="qfb-ok" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-sparkle" style="width:32rpx;height:32rpx" /><text>答对了！</text></view>
         <view v-else class="qfb-wrong">
           <text class="qfb-label">正确答案</text>
           <text class="qfb-word">{{ quizCard?.word }}</text>
           <text v-if="quizCard?.phonetic" class="qfb-phon">/{{ cleanPhon(quizCard?.phonetic) }}/</text>
           <text class="qfb-mean">{{ quizCard ? primaryMeaning(quizCard) : '' }}</text>
-          <text class="qfb-play" @tap="playWordAudio(quizCard?.word)">🔊</text>
+          <view class="qfb-play" @tap="playWordAudio(quizCard?.word)"><view class="ic ic-volume" style="width:34rpx;height:34rpx" /></view>
         </view>
       </view>
 
@@ -126,7 +126,7 @@
 
     <!-- 完成 -->
     <view v-else-if="phase === 'done'" class="card done">
-      <view class="done-emoji">✅</view>
+      <view class="done-emoji" style="display:flex;justify-content:center"><view class="ic ic-check-circle" style="width:80rpx;height:80rpx" /></view>
       <view class="done-title">今日完成！</view>
       <view class="done-stat">新学 {{ newCards.length }} 词 · 复习 {{ reviewCards.length }} 词</view>
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
@@ -135,7 +135,7 @@
       <!-- 跟读发音报告（本次有跟读评测才显示）-->
       <view v-if="shadowReport" class="vrep">
         <view class="vrep-hd">
-          <text class="vrep-t">🎤 发音报告</text>
+          <view class="vrep-t" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-mic" style="width:32rpx;height:32rpx" /><text>发音报告</text></view>
           <text class="vrep-trend" :class="shadowReport.trend">{{ trendText(shadowReport.trend) }}</text>
         </view>
         <view class="vrep-top">
@@ -174,23 +174,23 @@
         </view>
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
-      <view v-if="carryWords.length" class="carry-tip">🔁 本组错的 {{ carryWords.length }} 个词将带入下一组继续考察</view>
-      <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <text class="gear-inline" @tap="openSettings">⚙️ 设置</text><text class="gear-inline" @tap="openAddWord">＋ 添加生词</text></view>
+      <view v-if="carryWords.length" class="carry-tip" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-refresh" style="width:28rpx;height:28rpx" /><text>本组错的 {{ carryWords.length }} 个词将带入下一组继续考察</text></view>
+      <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <view class="gear-inline" @tap="openSettings" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view><view class="gear-inline" @tap="openAddWord" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view></view>
       <button class="btn-primary" @tap="reload">再来一组</button>
       <view class="done-links">
-        <text class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/report' })">📊 学情报表</text>
-        <text class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })">📕 错词本</text>
+        <view class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/report' })" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-chart" style="width:30rpx;height:30rpx" /><text>学情报表</text></view>
+        <view class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-book" style="width:30rpx;height:30rpx" /><text>错词本</text></view>
       </view>
     </view>
 
     <!-- 跟读评分弹窗 -->
     <view v-if="shadow.open" class="shadow-modal" @tap.self="closeShadow">
       <view class="shadow-card">
-        <view class="shadow-title">🎤 跟读练习</view>
+        <view class="shadow-title" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-mic" style="width:32rpx;height:32rpx" /><text>跟读练习</text></view>
         <text class="shadow-sentence">{{ shadow.text }}</text>
 
         <view class="shadow-tools">
-          <text class="shadow-demo" @tap="playShadowDemo">🔊 示范</text>
+          <view class="shadow-demo" @tap="playShadowDemo" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-volume" style="width:28rpx;height:28rpx" /><text>示范</text></view>
         </view>
 
         <!-- 录音 / 评分态 -->
@@ -223,10 +223,10 @@
               class="sw-chip" :class="{ weak: w.score < 80 }"
             >{{ w.word }} <text class="sw-score">{{ w.score }}</text></text>
           </view>
-          <view class="shadow-tip">💡 {{ shadow.result.tip }}</view>
+          <view class="shadow-tip" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-idea" style="width:30rpx;height:30rpx;flex-shrink:0" /><text>{{ shadow.result.tip }}</text></view>
           <view class="shadow-actions">
             <button v-if="shadow.recordPath" class="btn-ghost half" @tap="playMyRecord">▶ 我的录音</button>
-            <button class="btn-primary half" @tap="retryShadow">🔁 重跟</button>
+            <button class="btn-primary half" @tap="retryShadow" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-refresh" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>重跟</text></button>
           </view>
         </view>
 
@@ -237,7 +237,7 @@
     <!-- 学习设置弹窗 -->
     <view v-if="showSettings" class="shadow-modal" @tap.self="showSettings = false">
       <view class="set-card">
-        <text class="set-title">⚙️ 学习设置</text>
+        <view class="set-title" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-settings" style="width:32rpx;height:32rpx" /><text>学习设置</text></view>
         <view class="set-row">
           <text class="set-label">每组词数</text>
           <view class="stepper">
@@ -271,7 +271,7 @@
     <!-- 添加生词弹窗 -->
     <view v-if="showAddWord" class="shadow-modal" @tap.self="showAddWord = false">
       <view class="set-card">
-        <text class="set-title">＋ 添加生词</text>
+        <view class="set-title" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-plus" style="width:30rpx;height:30rpx" /><text>添加生词</text></view>
         <input class="addword-input" v-model="addWordInput" type="text" placeholder="输入英文单词"
           confirm-type="done" @confirm="submitAddWord" />
         <text class="set-hint">仅支持词典已收录的词；加入后会进入你的词单，之后学习会学到。</text>

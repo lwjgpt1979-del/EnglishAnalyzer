@@ -29,7 +29,7 @@
 
       <!-- 口语练习维度 -->
       <view v-if="speakStats && speakStats.total_sessions > 0" class="card speak-card" @tap="() => uni.navigateTo({ url: '/pages/speaking/index' })">
-        <view class="card-title">🗣️ 口语练习</view>
+        <view class="card-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-speak" style="width:32rpx;height:32rpx" /><text>口语练习</text></view>
         <view class="stat-row">
           <view class="stat-item">
             <text class="stat-num">{{ speakStats.total_sessions }}</text>
@@ -53,7 +53,7 @@
       <!-- 退步预警（M13）-->
       <view v-if="report.regression_alerts && report.regression_alerts.length > 0" class="card alert-card">
         <view class="alert-head">
-          <text class="alert-title">📉 退步预警</text>
+          <view class="alert-title"><view class="ic ic-trend-down alert-title-ic" /><text>退步预警</text></view>
           <text class="alert-sub">{{ report.regression_alerts.length }} 个知识点正确率下滑</text>
         </view>
         <view
@@ -266,7 +266,7 @@
             <text class="ledger-sub">对 {{ item.correct_count }} · 错 {{ item.wrong_count }}（共 {{ item.total }}）</text>
             <text class="ledger-badge" :class="`badge-${item.level}`">{{ levelLabel(item.level) }}</text>
           </view>
-          <text class="ledger-suggestion">💡 {{ item.suggestion }}</text>
+          <view class="ledger-suggestion"><view class="ic ic-idea ledger-sug-ic" /><text>{{ item.suggestion }}</text></view>
         </view>
         <view
           v-if="report.mastery_ledger.length > LEDGER_PREVIEW"
@@ -356,7 +356,8 @@
         <view class="card-title">导出报告</view>
         <text class="practice-desc">将学情诊断报告导出为 PDF，可保存或分享给老师。</text>
         <button class="btn-export" :disabled="exporting" @tap="exportPdf">
-          {{ exporting ? '生成中…' : '📄 导出 PDF' }}
+          <view v-if="!exporting" class="ic ic-file btn-export-ic" />
+          <text>{{ exporting ? '生成中…' : '导出 PDF' }}</text>
         </button>
       </view>
 
@@ -563,7 +564,8 @@ function activityClass(count: number): string {
 /* 退步预警（M13）*/
 .alert-card { border: 2rpx solid #ffd7d2; }
 .alert-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16rpx; }
-.alert-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-danger); }
+.alert-title { display: flex; align-items: center; gap: 8rpx; font-size: var(--fs-h2); font-weight: 800; color: var(--c-danger); }
+.alert-title-ic { width: 32rpx; height: 32rpx; }
 .alert-sub { font-size: 22rpx; color: var(--c-text-hint); }
 .alert-item { padding: 16rpx; border-radius: var(--r-md); background: var(--c-danger-bg); margin-bottom: 12rpx; border-left: 6rpx solid var(--c-danger); }
 .alert-item.sev-mid { border-left-color: var(--c-orange); background: #fff4ec; }
@@ -629,7 +631,8 @@ function activityClass(count: number): string {
 .badge-weak { background: var(--c-danger); color: #fff; }
 .badge-medium { background: var(--c-gold); color: #fff; }
 .badge-good { background: #2ecc71; color: #fff; }
-.ledger-suggestion { display: block; font-size: 22rpx; color: var(--c-text-second); margin-top: 10rpx; line-height: 1.5; }
+.ledger-suggestion { display: flex; align-items: flex-start; gap: 6rpx; font-size: 22rpx; color: var(--c-text-second); margin-top: 10rpx; line-height: 1.5; }
+.ledger-sug-ic { width: 26rpx; height: 26rpx; flex-shrink: 0; margin-top: 2rpx; }
 .ledger-toggle { text-align: center; font-size: 24rpx; color: var(--c-primary, #1677ff); padding: 12rpx; }
 
 /* 我的班级排名 */
@@ -711,6 +714,7 @@ function activityClass(count: number): string {
 .practice-desc { font-size: 24rpx; color: var(--c-text-second); display: block; margin-bottom: 12rpx; line-height: 1.5; }
 .btn-practice { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 700; text-align: center; }
 .export-entry { margin-top: 24rpx; }
-.btn-export { background: #f0f0f0; color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; border: 2rpx solid var(--c-border); }
+.btn-export { display: flex; align-items: center; justify-content: center; gap: 8rpx; background: #f0f0f0; color: var(--c-ink); border-radius: var(--r-btn); padding: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; border: 2rpx solid var(--c-border); }
+.btn-export-ic { width: 30rpx; height: 30rpx; }
 .btn-export[disabled] { opacity: 0.5; }
 </style>

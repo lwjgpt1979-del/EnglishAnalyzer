@@ -3,7 +3,7 @@
   <view class="home-page">
     <view class="topbar">
       <view class="bell-wrap" @tap="goMessages">
-        <text class="bell">🔔</text>
+        <view class="ic ic-bell bell" />
         <text v-if="unreadCount > 0" class="badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</text>
       </view>
     </view>
@@ -135,24 +135,25 @@
         class="cert-banner"
         @tap="() => uni.navigateTo({ url: '/pages/teacher/cert' })"
       >
-        <text>⚠️ 教师资质未认证，点击去认证以解锁全部功能</text>
+        <view class="ic ic-warning cert-banner-ic" />
+        <text>教师资质未认证，点击去认证以解锁全部功能</text>
       </view>
 
       <view class="quick-grid">
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/classes' })">
-          <text class="quick-icon">🏫</text>
+          <view class="ic ic-school quick-icon" />
           <text class="quick-label">班级管理</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/students' })">
-          <text class="quick-icon">👥</text>
+          <view class="ic ic-user quick-icon" />
           <text class="quick-label">我的学生</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/classes' })">
-          <text class="quick-icon">📋</text>
+          <view class="ic ic-clipboard quick-icon" />
           <text class="quick-label">出卷 / 作业</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/cert' })">
-          <text class="quick-icon">📜</text>
+          <view class="ic ic-file quick-icon" />
           <text class="quick-label">资质认证</text>
         </view>
       </view>
@@ -163,7 +164,7 @@
     <template v-else-if="activeRole === 'relative'">
       <view class="child-section">
         <view v-if="children.length === 0" class="child-empty">
-          <text class="child-empty-icon">👨‍👩‍👧</text>
+          <view class="ic ic-user child-empty-icon" />
           <text class="child-empty-text">还没有绑定孩子</text>
         </view>
         <view
@@ -462,7 +463,7 @@ onMounted(() => {
   transition: transform .15s, box-shadow .15s;
 }
 .quick-card:active { transform: translateY(2rpx) scale(0.98); box-shadow: var(--shadow-md); }
-.quick-icon { font-size: 58rpx; display: block; margin-bottom: 16rpx; }
+.quick-icon { width: 58rpx; height: 58rpx; display: block; margin: 0 auto 16rpx; }
 .quick-label { font-size: var(--fs-body); color: var(--c-text-body); font-weight: 500; }
 
 /* 功能图标徽章（统一线性图标）*/
@@ -488,13 +489,15 @@ onMounted(() => {
 .cert-banner {
   background: #fff7e6; border: 1rpx solid #ffe58f; color: #b8860b;
   border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 24rpx; font-size: var(--fs-body);
+  display: flex; align-items: center; gap: 12rpx;
 }
+.cert-banner-ic { width: 36rpx; height: 36rpx; flex-shrink: 0; }
 .role-hint { display: block; font-size: 24rpx; color: var(--c-text-hint); line-height: 1.6; padding: 0 8rpx; }
 
 /* 家长身份 */
 .child-section { margin-bottom: 24rpx; }
 .child-empty { text-align: center; padding: 60rpx 0; }
-.child-empty-icon { font-size: 80rpx; display: block; margin-bottom: 16rpx; }
+.child-empty-icon { width: 80rpx; height: 80rpx; display: block; margin: 0 auto 16rpx; }
 .child-empty-text { font-size: var(--fs-body); color: var(--c-text-hint); }
 .child-card {
   background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx 32rpx;
@@ -526,6 +529,6 @@ onMounted(() => {
 .btn-login { background: var(--g-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-size: var(--fs-h2); font-weight: 700; box-shadow: var(--shadow-primary); }
 .topbar { display: flex; justify-content: flex-end; padding: 8rpx 0 16rpx; }
 .bell-wrap { position: relative; padding: 8rpx; }
-.bell { font-size: 40rpx; }
+.bell { width: 40rpx; height: 40rpx; }
 .badge { position: absolute; top: 0; right: 0; background: var(--c-danger); color: #fff; font-size: 20rpx; min-width: 28rpx; height: 28rpx; line-height: 28rpx; padding: 0 6rpx; border-radius: 999rpx; text-align: center; font-weight: 700; }
 </style>

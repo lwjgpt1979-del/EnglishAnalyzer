@@ -54,7 +54,7 @@
           <view class="q-head">
             <text class="q-no">{{ q.question_no ? `第 ${q.question_no} 题` : `第 ${idx + 1} 题` }}</text>
             <text class="q-type">{{ q.question_type || '题目' }}</text>
-            <text v-if="q.is_wrong" class="q-flag">✗ 错</text>
+            <view v-if="q.is_wrong" class="q-flag"><view class="ic ic-x-circle" style="width:26rpx;height:26rpx" /><text>错</text></view>
           </view>
           <text class="q-stem">{{ q.stem || '（题干识别为空）' }}</text>
           <view class="q-ans">
@@ -205,7 +205,7 @@ function goUpload() {
 .q-head { display: flex; align-items: center; gap: 16rpx; margin-bottom: 12rpx; }
 .q-no { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
 .q-type { font-size: 22rpx; color: var(--c-text-hint); }
-.q-flag { margin-left: auto; font-size: 24rpx; font-weight: 700; color: var(--c-danger); }
+.q-flag { margin-left: auto; font-size: 24rpx; font-weight: 700; color: var(--c-danger); display: flex; align-items: center; gap: 4rpx; }
 .q-stem { display: block; font-size: 28rpx; color: var(--c-text-body); line-height: 1.6; margin-bottom: 16rpx; white-space: pre-wrap; }
 .q-ans { display: flex; flex-direction: column; gap: 6rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; }
 .ans-line { font-size: 24rpx; color: var(--c-text-body); }

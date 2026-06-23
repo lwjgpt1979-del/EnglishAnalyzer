@@ -5,13 +5,13 @@
     <view v-else>
       <!-- 头部 -->
       <view class="hero">
-        <text class="hero-title">📝 自助出卷</text>
+        <view class="hero-title"><view class="ic ic-edit" style="width:40rpx;height:40rpx" /><text>自助出卷</text></view>
         <text class="hero-sub">ProMax 专属 · 按你的薄弱点智能组卷、限时作答</text>
       </view>
 
       <!-- 非 ProMax -->
       <view v-if="!quota.is_promax" class="card lock-card">
-        <text class="lock-icon">🔒</text>
+        <view class="ic ic-lock lock-icon" />
         <text class="lock-title">ProMax 会员专属功能</text>
         <text class="lock-desc">升级 ProMax 后，可按薄弱点自助生成模拟卷、限时实战。</text>
       </view>
@@ -173,12 +173,12 @@ onMounted(load)
 .se-page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .center-tip { text-align: center; padding: 160rpx 0; color: var(--c-text-hint); }
 .hero { padding: 8rpx 4rpx 20rpx; }
-.hero-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); display: block; }
+.hero-title { display: flex; align-items: center; gap: 10rpx; font-size: 40rpx; font-weight: 800; color: var(--c-ink); }
 .hero-sub { font-size: 24rpx; color: var(--c-text-hint); margin-top: 6rpx; display: block; }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
 .lock-card { display: flex; flex-direction: column; align-items: center; gap: 12rpx; padding: 56rpx 40rpx; text-align: center; }
-.lock-icon { font-size: 72rpx; }
+.lock-icon { width: 72rpx; height: 72rpx; }
 .lock-title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); }
 .lock-desc { font-size: 26rpx; color: var(--c-text-second); line-height: 1.6; }
 .quota-card { display: flex; flex-direction: column; gap: 16rpx; }

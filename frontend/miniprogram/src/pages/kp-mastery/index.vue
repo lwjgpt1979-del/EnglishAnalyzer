@@ -9,7 +9,7 @@
 
     <!-- 空态 -->
     <view v-else-if="items.length === 0" class="empty-wrap">
-      <text class="empty-icon">📚</text>
+      <view class="ic ic-books empty-icon" />
       <text class="empty-title">还没有知识点记录</text>
       <text class="empty-hint">完成练习、上传试卷、做作业后，知识点掌握情况会自动汇总到这里</text>
     </view>
@@ -81,8 +81,8 @@
 
         <!-- 统计行 -->
         <view class="kp-stats">
-          <text class="stat-ok">✓ {{ item.correct_count }} 对</text>
-          <text class="stat-wrong">✗ {{ item.wrong_count }} 错</text>
+          <view class="stat-ok"><view class="ic ic-check stat-mark" /><text>{{ item.correct_count }} 对</text></view>
+          <view class="stat-wrong"><view class="ic ic-x-circle stat-mark" /><text>{{ item.wrong_count }} 错</text></view>
           <text class="stat-total">共 {{ item.correct_count + item.wrong_count }} 题</text>
         </view>
 
@@ -213,7 +213,7 @@ function goTrend(kpKey: string) {
   margin-top: 120rpx;
   padding: 0 60rpx;
 
-  .empty-icon { font-size: 80rpx; }
+  .empty-icon { width: 80rpx; height: 80rpx; }
   .empty-title {
     margin-top: 24rpx;
     font-size: 32rpx;
@@ -342,9 +342,10 @@ function goTrend(kpKey: string) {
   font-size: 24rpx;
   margin-bottom: 12rpx;
 
-  .stat-ok    { color: #52c41a; }
-  .stat-wrong { color: #ff4d4f; }
+  .stat-ok    { color: #52c41a; display: flex; align-items: center; gap: 6rpx; }
+  .stat-wrong { color: #ff4d4f; display: flex; align-items: center; gap: 6rpx; }
   .stat-total { color: #999; }
+  .stat-mark  { width: 26rpx; height: 26rpx; flex-shrink: 0; }
 }
 
 /* ── 来源标签 ── */

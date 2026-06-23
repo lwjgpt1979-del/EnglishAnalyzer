@@ -4,13 +4,13 @@
     <!-- 快捷入口 -->
     <view class="entries">
       <view class="entry" @tap="goTickets">
-        <text class="entry-ic">🎧</text><text class="entry-t">联系客服</text>
+        <view class="ic ic-headphone entry-ic" /><text class="entry-t">联系客服</text>
       </view>
       <view class="entry" @tap="goFeedback">
-        <text class="entry-ic">💡</text><text class="entry-t">意见反馈</text>
+        <view class="ic ic-idea entry-ic" /><text class="entry-t">意见反馈</text>
       </view>
       <view class="entry" @tap="goCoupons">
-        <text class="entry-ic">🎟️</text><text class="entry-t">我的优惠券</text>
+        <view class="ic ic-tag entry-ic" /><text class="entry-t">我的优惠券</text>
       </view>
     </view>
 
@@ -57,7 +57,7 @@ onMounted(async () => {
 .help-page { padding: 24rpx; background: #f5f6f8; min-height: 100vh; }
 .entries { display: flex; gap: 16rpx; margin-bottom: 24rpx; }
 .entry { flex: 1; background: #fff; border-radius: 16rpx; padding: 28rpx 0; display: flex; flex-direction: column; align-items: center; gap: 10rpx; }
-.entry-ic { font-size: 44rpx; }
+.entry-ic { width: 44rpx; height: 44rpx; }
 .entry-t { font-size: 26rpx; color: #333; }
 .card { background: #fff; border-radius: 16rpx; padding: 28rpx; margin-bottom: 24rpx; }
 .card-title { font-size: 30rpx; font-weight: 600; color: #222; display: block; margin-bottom: 16rpx; }

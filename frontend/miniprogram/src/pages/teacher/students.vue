@@ -3,11 +3,12 @@
   <view class="teacher-page">
 
     <view v-if="isTeacher && certStatus !== 'certified'" class="cert-banner" @tap="goCert">
-      <text>⚠️ 教师未认证（{{ certStatusLabel }}）—— 点击去认证</text>
+      <view class="ic ic-warning" style="width:30rpx;height:30rpx"/>
+      <text>教师未认证（{{ certStatusLabel }}）—— 点击去认证</text>
     </view>
     <view v-if="isTeacher" class="quick-row">
-      <text class="quick-btn" @tap="goCert">📋 认证</text>
-      <text class="quick-btn" @tap="goClasses">🏫 班级管理</text>
+      <view class="quick-btn" @tap="goCert"><view class="ic ic-clipboard" style="width:30rpx;height:30rpx"/><text>认证</text></view>
+      <view class="quick-btn" @tap="goClasses"><view class="ic ic-school" style="width:30rpx;height:30rpx"/><text>班级管理</text></view>
     </view>
 
     <!-- 月度额度（§5.6）-->
@@ -29,15 +30,15 @@
     <view class="card">
       <view class="card-title">教师身份</view>
       <view v-if="isTeacher" class="teacher-badge">
-        <text class="badge-text">✅ 教师账号</text>
+        <view class="badge-text"><view class="ic ic-check-circle" style="width:30rpx;height:30rpx"/><text>教师账号</text></view>
         <text v-if="profile" class="subject-text">科目：{{ profile.subject || '未设置' }}</text>
       </view>
       <view v-else>
         <view class="become-intro">
           <text class="become-intro-title">开通教师身份后，你可以：</text>
-          <text class="become-feat">🏫 创建班级、邀请学生加入</text>
-          <text class="become-feat">📋 布置作业、按薄弱知识点一键出卷</text>
-          <text class="become-feat">📊 查看每位学生的知识点掌握台账</text>
+          <view class="become-feat"><view class="ic ic-school" style="width:32rpx;height:32rpx"/><text>创建班级、邀请学生加入</text></view>
+          <view class="become-feat"><view class="ic ic-clipboard" style="width:32rpx;height:32rpx"/><text>布置作业、按薄弱知识点一键出卷</text></view>
+          <view class="become-feat"><view class="ic ic-chart" style="width:32rpx;height:32rpx"/><text>查看每位学生的知识点掌握台账</text></view>
         </view>
         <input
           v-model="subjectInput"
@@ -354,7 +355,7 @@ onLoad((options) => {
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
 .teacher-badge { display: flex; flex-direction: column; gap: 8rpx; }
-.badge-text { font-size: 28rpx; color: var(--c-success); }
+.badge-text { font-size: 28rpx; color: var(--c-success); display: flex; align-items: center; gap: 8rpx; }
 .subject-text { font-size: 24rpx; color: var(--c-text-hint); }
 .input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; margin-bottom: 16rpx; width: 100%; box-sizing: border-box; }
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-size: 28rpx; font-weight: 700; text-align: center; margin-top: 8rpx; }
@@ -374,9 +375,9 @@ onLoad((options) => {
 .student-id { flex: 1; font-size: 28rpx; color: var(--c-text-body); }
 .student-bind-date { font-size: 24rpx; color: var(--c-text-hint); margin-right: 8rpx; }
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }
-.cert-banner { background: var(--c-orange); color: #fff; font-size: 24rpx; font-weight: 700; padding: 16rpx 24rpx; border-radius: var(--r-md); margin-bottom: 12rpx; text-align: center; }
+.cert-banner { background: var(--c-orange); color: #fff; font-size: 24rpx; font-weight: 700; padding: 16rpx 24rpx; border-radius: var(--r-md); margin-bottom: 12rpx; display: flex; align-items: center; justify-content: center; gap: 8rpx; }
 .quick-row { display: flex; gap: 12rpx; margin-bottom: 12rpx; }
-.quick-btn { flex: 1; text-align: center; background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 16rpx; font-size: 26rpx; font-weight: 600; }
+.quick-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8rpx; background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 16rpx; font-size: 26rpx; font-weight: 600; }
 .invite-actions { display: flex; gap: 12rpx; }
 .half { flex: 1; margin-top: 0; }
 .modal { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 999; }
@@ -388,7 +389,7 @@ onLoad((options) => {
 .dev-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 .become-intro { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx; margin-bottom: 16rpx; display: flex; flex-direction: column; gap: 10rpx; }
 .become-intro-title { font-size: 26rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 4rpx; }
-.become-feat { font-size: 25rpx; color: var(--c-text-body); line-height: 1.5; }
+.become-feat { font-size: 25rpx; color: var(--c-text-body); line-height: 1.5; display: flex; align-items: center; gap: 8rpx; }
 .become-divider-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 16rpx; line-height: 1.5; }
 .quota-row { display: flex; align-items: center; gap: 12rpx; margin: 12rpx 0; }
 .quota-label { width: 180rpx; font-size: 24rpx; color: var(--c-text-body); }

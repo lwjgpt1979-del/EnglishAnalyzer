@@ -21,7 +21,7 @@
       <!-- 连续打卡 -->
       <view class="card streak-card">
         <view class="streak-main">
-          <text class="streak-flame">🔥</text>
+          <view class="ic ic-flame streak-flame" />
           <view class="streak-text">
             <text class="streak-num">{{ s.current_streak }}</text>
             <text class="streak-label">天连续打卡</text>
@@ -29,9 +29,10 @@
         </view>
         <view class="streak-sub">
           <text>历史最高 {{ s.longest_streak }} 天</text>
-          <text :class="s.checked_in_today ? 'today-ok' : 'today-no'">
-            {{ s.checked_in_today ? '今日已打卡 ✓' : '今日未打卡' }}
-          </text>
+          <view class="today-status" :class="s.checked_in_today ? 'today-ok' : 'today-no'">
+            <text>{{ s.checked_in_today ? '今日已打卡' : '今日未打卡' }}</text>
+            <view v-if="s.checked_in_today" class="ic ic-check today-check" />
+          </view>
         </view>
         <!-- 打卡勋章 -->
         <view class="badge-row">
@@ -50,7 +51,10 @@
       <!-- 成就墙 -->
       <view class="card">
         <view class="card-head">
-          <text class="card-title">🏅 成就墙</text>
+          <view class="card-title-wrap">
+            <view class="ic ic-trophy card-title-ic" />
+            <text class="card-title">成就墙</text>
+          </view>
           <text class="card-sub">{{ s.stats.unlocked_achievements }}/{{ s.stats.total_achievements }} 已解锁</text>
         </view>
         <view class="ach-grid">
@@ -118,11 +122,13 @@ onShow(load)
 
 /* 连续打卡 */
 .streak-main { display: flex; align-items: center; gap: 16rpx; }
-.streak-flame { font-size: 64rpx; }
+.streak-flame { width: 64rpx; height: 64rpx; flex-shrink: 0; }
 .streak-text { display: flex; align-items: baseline; gap: 8rpx; }
 .streak-num { font-size: 64rpx; font-weight: 800; color: #ff7a00; }
 .streak-label { font-size: 26rpx; color: var(--c-text-body); }
 .streak-sub { display: flex; justify-content: space-between; font-size: 24rpx; color: var(--c-text-hint); margin: 12rpx 0 16rpx; }
+.today-status { display: inline-flex; align-items: center; gap: 6rpx; }
+.today-check { width: 26rpx; height: 26rpx; flex-shrink: 0; }
 .today-ok { color: #2ecc71; font-weight: 700; }
 .today-no { color: var(--c-text-hint); }
 .badge-row { display: flex; gap: 12rpx; }
@@ -136,6 +142,8 @@ onShow(load)
 
 /* 成就墙 */
 .card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20rpx; }
+.card-title-wrap { display: flex; align-items: center; gap: 10rpx; }
+.card-title-ic { width: 34rpx; height: 34rpx; flex-shrink: 0; }
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); }
 .card-sub { font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
 .ach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; }

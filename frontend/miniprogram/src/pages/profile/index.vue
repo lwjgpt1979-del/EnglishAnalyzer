@@ -4,7 +4,8 @@
 
     <!-- 待注销横幅 -->
     <view v-if="cancelInfo" class="cancel-banner" @tap="goCancelPage">
-      <text class="cb-text">⏳ 账号将于 {{ cancelInfo.days }} 天后注销</text>
+      <view class="ic ic-clock cb-ic" />
+      <text class="cb-text">账号将于 {{ cancelInfo.days }} 天后注销</text>
       <text class="cb-action">撤销 ›</text>
     </view>
 
@@ -17,7 +18,7 @@
           :src="auth.user.avatar_url"
           mode="aspectFill"
         />
-        <view v-else class="avatar-placeholder">👤</view>
+        <view v-else class="avatar-placeholder"><view class="ic ic-user avatar-ic" /></view>
         <text class="nickname">{{ auth.user.nickname || '英语学习者' }}</text>
       </view>
       <view v-else>
@@ -168,7 +169,7 @@
     <!-- M10 学习激励中心入口 -->
     <view class="card kp-entry-card" @tap="goIncentive">
       <view class="kp-entry-row">
-        <view class="kp-entry-icon">🏆</view>
+        <view class="ic ic-trophy kp-entry-icon" />
         <view class="kp-entry-text">
           <view class="card-title" style="margin-bottom:4rpx">学习成就</view>
           <text class="menu-desc">等级经验值 · 连续打卡 · 成就勋章墙</text>
@@ -180,7 +181,7 @@
     <!-- M42 知识点图谱入口 -->
     <view class="card kp-entry-card" @tap="goKpMastery">
       <view class="kp-entry-row">
-        <view class="kp-entry-icon">🧠</view>
+        <view class="ic ic-brain kp-entry-icon" />
         <view class="kp-entry-text">
           <view class="card-title" style="margin-bottom:4rpx">知识点图谱</view>
           <text class="menu-desc">查看各知识点掌握进度，精准定位薄弱项</text>
@@ -576,9 +577,9 @@ function goBuySemester() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 48rpx;
   margin-right: 24rpx;
 }
+.avatar-ic { width: 56rpx; height: 56rpx; }
 .nickname { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
 .btn-login { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-weight: 700; }
 .member-tier {
@@ -640,12 +641,13 @@ function goBuySemester() {
 .menu-desc { font-size: 24rpx; color: var(--c-text-second); margin-bottom: 12rpx; display: block; }
 .kp-entry-card { padding: 24rpx; }
 .kp-entry-row { display: flex; align-items: center; gap: 20rpx; }
-.kp-entry-icon { font-size: 52rpx; flex-shrink: 0; }
+.kp-entry-icon { width: 52rpx; height: 52rpx; flex-shrink: 0; }
 .kp-entry-text { flex: 1; }
 .kp-entry-arrow { font-size: 40rpx; color: #bbb; flex-shrink: 0; }
 .btn-menu { background: var(--c-primary-faint); color: var(--c-ink); border: 2rpx solid var(--c-gold); border-radius: var(--r-md); padding: 16rpx; font-size: 28rpx; font-weight: 600; text-align: center; }
 .cancel-banner { background: var(--c-orange); color: #fff; border-radius: var(--r-md); padding: 16rpx 24rpx; margin-bottom: 16rpx; display: flex; align-items: center; }
 .cb-text { flex: 1; font-size: 26rpx; font-weight: 700; }
+.cb-ic { width: 30rpx; height: 30rpx; flex-shrink: 0; margin-right: 10rpx; filter: brightness(0) invert(1); }
 .cb-action { font-size: 26rpx; }
 .sem-list { display: flex; flex-direction: column; gap: 12rpx; }
 .sem-item { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; display: flex; justify-content: space-between; align-items: center; }

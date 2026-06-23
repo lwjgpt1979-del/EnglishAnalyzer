@@ -48,7 +48,7 @@
 
     <!-- 监护人同意（14-17 岁首次购买必选；成年人可不勾，后端按年龄判定）-->
     <view class="consent-row" @tap="agreeMinor = !agreeMinor">
-      <view class="cbox" :class="{ on: agreeMinor }">{{ agreeMinor ? '✓' : '' }}</view>
+      <view class="cbox" :class="{ on: agreeMinor }"><view v-if="agreeMinor" class="ic ic-check" style="width:26rpx;height:26rpx;filter:brightness(0) invert(1)" /></view>
       <text class="consent-text">我已告知监护人并获得同意（14-17 岁用户首次购买必选）</text>
     </view>
 

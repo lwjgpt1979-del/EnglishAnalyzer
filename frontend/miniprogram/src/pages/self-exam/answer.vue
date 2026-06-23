@@ -16,18 +16,18 @@
       <view class="exam-head">
         <view class="eh-top">
           <text class="exam-title">自助模拟卷</text>
-          <text class="timer" :class="{ urgent: remain <= 60 }">⏱ {{ mmss }}</text>
+          <view class="timer" :class="{ urgent: remain <= 60 }"><view class="ic ic-clock timer-ic" /><text>{{ mmss }}</text></view>
         </view>
         <text class="exam-sub">薄弱点：{{ (exam.weak_kps || []).join(' · ') || '综合' }}</text>
       </view>
 
       <view v-for="sec in sections" :key="sec.key" class="section">
         <view class="sec-head">
-          <text class="sec-title">{{ sec.icon }} {{ sec.label }}</text>
+          <view class="sec-title"><view class="ic sec-ic" :class="sec.icon" /><text>{{ sec.label }}</text></view>
           <view
             v-if="sec.key === 'listening' && sec.audioText"
             class="play-btn" :class="{ playing }" @tap="playListening(sec.audioText)"
-          >{{ playing ? '⏸ 暂停' : '▶ 播放听力' }}</view>
+          >{{ playing ? '暂停' : '播放听力' }}</view>
         </view>
 
         <view v-for="(q, idx) in sec.items" :key="q.id" class="card">
@@ -74,9 +74,11 @@
       >
         <view class="res-head">
           <text class="res-idx">{{ secLabel(it.section) }}</text>
-          <text class="res-flag" :class="{ ok: it.correct === true, neutral: it.correct === null }">
-            {{ it.correct === null ? '参考' : (it.correct ? '✓ 正确' : '✗ 错误') }}
-          </text>
+          <view class="res-flag" :class="{ ok: it.correct === true, neutral: it.correct === null }">
+            <view v-if="it.correct === true" class="ic ic-check-circle res-flag-ic" />
+            <view v-else-if="it.correct === false" class="ic ic-x-circle res-flag-ic" />
+            <text>{{ it.correct === null ? '参考' : (it.correct ? '正确' : '错误') }}</text>
+          </view>
         </view>
         <text class="res-stem">{{ it.stem }}</text>
         <text class="res-line">你的答案：{{ it.user_answer || '（未作答）' }}</text>
@@ -88,7 +90,7 @@
         <text v-if="it.explanation" class="res-exp">{{ it.explanation }}</text>
       </view>
       <view class="practice-bar fixed result-bar">
-        <button v-if="hasWrong" class="btn-secondary" @tap="goWrongBook">📕 错题回看</button>
+        <button v-if="hasWrong" class="btn-secondary" @tap="goWrongBook"><view class="ic ic-book btn-ic" /><text>错题回看</text></button>
         <button class="btn-primary" @tap="goBack">返回</button>
       </view>
     </scroll-view>
@@ -120,9 +122,9 @@ const answers = reactive<Record<string, string>>({})
 const result = ref<SelfExamResult | null>(null)
 
 const SEC_META: Record<string, { label: string; icon: string }> = {
-  listening: { label: '听力理解', icon: '🎧' },
-  objective: { label: '客观题', icon: '✏️' },
-  writing: { label: '书面表达', icon: '📝' },
+  listening: { label: '听力理解', icon: 'ic-headphone' },
+  objective: { label: '客观题', icon: 'ic-pen' },
+  writing: { label: '书面表达', icon: 'ic-edit' },
 }
 function secLabel(s: string) { return SEC_META[s]?.label || s }
 
@@ -239,12 +241,14 @@ function goEssay(id?: string | null) {
 .exam-head { padding: 8rpx 0 12rpx; }
 .eh-top { display: flex; align-items: center; justify-content: space-between; }
 .exam-title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); }
-.timer { font-size: 30rpx; font-weight: 800; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 18rpx; border-radius: var(--r-pill); }
+.timer { display: inline-flex; align-items: center; gap: 6rpx; font-size: 30rpx; font-weight: 800; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 18rpx; border-radius: var(--r-pill); }
+.timer-ic { width: 30rpx; height: 30rpx; }
 .timer.urgent { color: #fff; background: var(--c-danger); }
 .exam-sub { font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; display: block; }
 .section { margin-top: 8rpx; }
 .sec-head { display: flex; align-items: center; justify-content: space-between; margin: 18rpx 4rpx 10rpx; }
-.sec-title { font-size: 28rpx; font-weight: 800; color: var(--c-ink); }
+.sec-title { display: flex; align-items: center; gap: 8rpx; font-size: 28rpx; font-weight: 800; color: var(--c-ink); }
+.sec-ic { width: 32rpx; height: 32rpx; }
 .play-btn { font-size: 24rpx; font-weight: 700; color: var(--c-on-primary); background: var(--c-primary); padding: 8rpx 22rpx; border-radius: var(--r-pill); }
 .play-btn.playing { background: var(--c-primary-deep); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 16rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
@@ -266,7 +270,8 @@ function goEssay(id?: string | null) {
 .result-card.neutral { border-left-color: var(--c-gold); }
 .res-head { display: flex; justify-content: space-between; margin-bottom: 6rpx; }
 .res-idx { font-size: 22rpx; color: var(--c-text-hint); }
-.res-flag { font-size: 24rpx; font-weight: 700; color: var(--c-danger); }
+.res-flag { display: inline-flex; align-items: center; gap: 4rpx; font-size: 24rpx; font-weight: 700; color: var(--c-danger); }
+.res-flag-ic { width: 28rpx; height: 28rpx; }
 .res-flag.ok { color: #18a058; }
 .res-flag.neutral { color: var(--c-gold); }
 .res-stem { display: block; font-size: 26rpx; color: var(--c-ink); font-weight: 600; line-height: 1.5; margin-bottom: 8rpx; }
@@ -281,5 +286,6 @@ function goEssay(id?: string | null) {
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; flex: 1; }
 .btn-primary[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
 .result-bar { display: flex; gap: 16rpx; }
-.btn-secondary { flex: 1; background: var(--c-primary-faint); color: var(--c-primary-deep); border: 2rpx solid var(--c-primary-soft); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; }
+.btn-secondary { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border: 2rpx solid var(--c-primary-soft); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; }
+.btn-ic { width: 32rpx; height: 32rpx; }
 </style>

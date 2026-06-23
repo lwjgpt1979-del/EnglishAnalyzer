@@ -4,8 +4,8 @@
     <!-- 选题 -->
     <view v-if="phase === 'pick'">
       <view class="et-head">
-        <text class="et-title">✍️ 写作能力训练</text>
-        <text class="et-link" @tap="goErrorBook">📕 错因本</text>
+        <view class="et-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-pen" style="width:34rpx;height:34rpx"/><text>写作能力训练</text></view>
+        <view class="et-link" style="display:flex;align-items:center;gap:6rpx" @tap="goErrorBook"><view class="ic ic-book" style="width:28rpx;height:28rpx"/><text>错因本</text></view>
       </view>
       <view class="genre-chips">
         <text class="gchip" :class="{ on: !genre }" @tap="setGenre('')">全部</text>
@@ -18,7 +18,7 @@
         <text class="p-sc">{{ p.scenario }}</text>
       </view>
       <view class="p-card custom" @tap="pickCustom">
-        <text class="p-title">＋ 自定义题目</text>
+        <view class="p-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-plus" style="width:30rpx;height:30rpx"/><text>自定义题目</text></view>
         <text class="p-sc">粘贴一道作文题/情景，AI 帮你审题</text>
       </view>
     </view>
@@ -44,7 +44,7 @@
         </view>
       </view>
       <view class="a-card">
-        <text class="a-pt-title">📌 必答要点（漏一点扣一片分）</text>
+        <view class="a-pt-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-pin" style="width:30rpx;height:30rpx"/><text>必答要点（漏一点扣一片分）</text></view>
         <view v-for="(pt, i) in analysis.required_points" :key="i" class="a-pt"><text class="a-pt-n">{{ i + 1 }}</text><text class="a-pt-x">{{ pt }}</text></view>
       </view>
       <button class="btn-primary" @tap="startWrite">开始写作 →</button>
@@ -53,23 +53,24 @@
     <view v-else-if="phase === 'write'">
       <view class="et-head">
         <text class="et-back" @tap="phase = 'analyze'">← 审题</text>
-        <text class="w-timer">⏱ {{ timerText }}</text>
+        <view class="w-timer" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-clock" style="width:30rpx;height:30rpx"/><text>{{ timerText }}</text></view>
         <text class="w-count">{{ wordCount }} 词</text>
       </view>
       <view class="w-points" @tap="showPoints = !showPoints">
-        <text class="wp-h">📌 要点{{ showPoints ? ' ▲' : ' ▼' }}</text>
+        <view class="wp-h" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-pin" style="width:26rpx;height:26rpx"/><text>要点{{ showPoints ? ' ▲' : ' ▼' }}</text></view>
         <view v-if="showPoints">
           <text v-for="(pt, i) in (analysis?.required_points || [])" :key="i" class="wp-x">· {{ pt }}</text>
         </view>
       </view>
       <textarea v-model="draft" class="ta ta-write" placeholder="在这里限时写作…" />
-      <button class="btn-primary" :disabled="!draft.trim() || diagnosing" @tap="submitDiagnose">
-        {{ diagnosing ? 'AI 诊断中…' : (ent.can('essay.diagnose') ? '提交诊断' + quotaHint : '提交诊断 🔒') }}
+      <button class="btn-primary" :disabled="!draft.trim() || diagnosing" @tap="submitDiagnose" style="display:flex;align-items:center;justify-content:center;gap:8rpx">
+        <text>{{ diagnosing ? 'AI 诊断中…' : (ent.can('essay.diagnose') ? '提交诊断' + quotaHint : '提交诊断') }}</text>
+        <view v-if="!diagnosing && !ent.can('essay.diagnose')" class="ic ic-lock" style="width:30rpx;height:30rpx"/>
       </button>
     </view>
 
     <view v-else-if="phase === 'result' && diag">
-      <view class="et-head"><text class="et-title">📊 诊断结果</text><text class="et-link" @tap="goErrorBook">📕 错因本</text></view>
+      <view class="et-head"><view class="et-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-chart" style="width:34rpx;height:34rpx"/><text>诊断结果</text></view><view class="et-link" style="display:flex;align-items:center;gap:6rpx" @tap="goErrorBook"><view class="ic ic-book" style="width:28rpx;height:28rpx"/><text>错因本</text></view></view>
       <view class="r-score">
         <view class="r-total"><text class="r-num">{{ diag.total }}</text><text class="r-full">/{{ diag.total_full }}</text></view>
         <text class="r-band" :class="bandClass(diag.overall_band)">{{ diag.overall_band }}</text>
@@ -83,23 +84,23 @@
       </view>
 
       <view class="r-card">
-        <text class="r-h">✅ 要点核对（{{ coveredCount }}/{{ diag.missing_points.length }}）</text>
+        <view class="r-h" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-check-circle" style="width:30rpx;height:30rpx"/><text>要点核对（{{ coveredCount }}/{{ diag.missing_points.length }}）</text></view>
         <view v-for="(m, i) in diag.missing_points" :key="i" class="mp-row" :class="{ miss: !m.covered }">
-          <text class="mp-ic">{{ m.covered ? '✓' : '✗' }}</text><text class="mp-x">{{ m.point }}</text>
+          <view class="ic mp-ic" :class="m.covered ? 'ic-check-circle' : 'ic-x-circle'" style="width:28rpx;height:28rpx"/><text class="mp-x">{{ m.point }}</text>
         </view>
       </view>
 
       <view v-if="diag.upgrade_tips.length" class="r-card up">
-        <text class="r-h">⬆️ 升档建议</text>
+        <view class="r-h" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-trend-up" style="width:30rpx;height:30rpx"/><text>升档建议</text></view>
         <view v-for="(u, i) in diag.upgrade_tips" :key="i" class="up-row"><text class="up-d">{{ u.dimension }}</text><text class="up-t">{{ u.tip }}</text></view>
       </view>
 
       <view v-if="diag.issues.length" class="r-card">
-        <text class="r-h">✍️ 逐处纠错（已记入错因本）</text>
+        <view class="r-h" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-pen" style="width:30rpx;height:30rpx"/><text>逐处纠错（已记入错因本）</text></view>
         <view v-for="(it, i) in diag.issues" :key="i" class="iss">
           <view class="iss-top"><text class="iss-type">{{ it.type }}</text></view>
-          <text class="iss-o">✗ {{ it.original }}</text>
-          <text class="iss-s">✓ {{ it.suggestion }}</text>
+          <view class="iss-o" style="display:flex;align-items:flex-start;gap:8rpx"><view class="ic ic-x-circle" style="width:26rpx;height:26rpx;flex-shrink:0;margin-top:4rpx"/><text>{{ it.original }}</text></view>
+          <view class="iss-s" style="display:flex;align-items:flex-start;gap:8rpx"><view class="ic ic-check-circle" style="width:26rpx;height:26rpx;flex-shrink:0;margin-top:4rpx"/><text>{{ it.suggestion }}</text></view>
           <text v-if="it.explanation" class="iss-e">{{ it.explanation }}</text>
         </view>
       </view>

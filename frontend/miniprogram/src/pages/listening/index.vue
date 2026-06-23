@@ -5,7 +5,7 @@
     <!-- 素材列表 -->
     <view v-else-if="phase === 'list'">
       <view class="list-head">
-        <text class="lh-title">🎧 听力练习</text>
+        <view class="lh-title" style="display:flex;align-items:center;gap:10rpx"><view class="ic ic-headphone" style="width:40rpx;height:40rpx"/><text>听力练习</text></view>
         <text class="lh-sub">先看题 → 听音作答 → 对答案 → 回听原文</text>
       </view>
 
@@ -13,13 +13,13 @@
       <view class="mode-row">
         <view class="mode-tabs">
           <text class="mode-tab" :class="{ on: mode === 'intensive' }" @tap="mode = 'intensive'">精听</text>
-          <text class="mode-tab" :class="{ on: mode === 'extensive' }" @tap="pickExtensive">
-            泛听{{ ent.can('listening.extensive') ? '' : ' 🔒' }}
-          </text>
+          <view class="mode-tab" :class="{ on: mode === 'extensive' }" @tap="pickExtensive" style="display:flex;align-items:center;gap:6rpx">
+            <text>泛听</text><view v-if="!ent.can('listening.extensive')" class="ic ic-lock" style="width:26rpx;height:26rpx"/>
+          </view>
         </view>
         <view class="head-links">
-          <text v-if="ent.can('listening.shadow')" class="wrong-entry" @tap="toggleWeak">🔁 薄弱句{{ weakList.length ? `(${weakList.length})` : '' }}</text>
-          <text class="wrong-entry" @tap="goWrong">📕 错题库</text>
+          <view v-if="ent.can('listening.shadow')" class="wrong-entry" @tap="toggleWeak" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-refresh" style="width:28rpx;height:28rpx"/><text>薄弱句{{ weakList.length ? `(${weakList.length})` : '' }}</text></view>
+          <view class="wrong-entry" @tap="goWrong" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-book" style="width:28rpx;height:28rpx"/><text>错题库</text></view>
         </view>
       </view>
       <text class="mode-hint">{{ mode === 'intensive' ? '精听：听后逐句解析 + 跟读' : '泛听：只听不看原文，训练整体理解（ProMax）' }}</text>
@@ -31,7 +31,7 @@
           <text class="weak-text">{{ w.sentence }}</text>
           <view class="weak-right">
             <text class="weak-score">{{ w.best_score }}分</text>
-            <text class="weak-shadow" @tap="openShadow(w.sentence)">🎤 复练</text>
+            <view class="weak-shadow" @tap="openShadow(w.sentence)" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-mic" style="width:26rpx;height:26rpx"/><text>复练</text></view>
           </view>
         </view>
       </view>
@@ -76,9 +76,9 @@
           <text class="qo-text">{{ opt }}</text>
         </view>
         <view v-if="phase === 'result'" class="q-exp">
-          <text class="qe-tag" :class="answers[qi] === q.answer_index ? 'ok' : 'no'">
-            {{ answers[qi] === q.answer_index ? '✓ 答对' : '✗ 答错' }}
-          </text>
+          <view class="qe-tag" :class="answers[qi] === q.answer_index ? 'ok' : 'no'" style="display:flex;align-items:center;gap:6rpx">
+            <view class="ic" :class="answers[qi] === q.answer_index ? 'ic-check-circle' : 'ic-x-circle'" style="width:26rpx;height:26rpx"/><text>{{ answers[qi] === q.answer_index ? '答对' : '答错' }}</text>
+          </view>
           <!-- 泛听不提供逐句解析（§6.2）-->
           <text v-if="mode === 'intensive'" class="qe-text">{{ q.explanation }}</text>
         </view>
@@ -100,13 +100,13 @@
         </view>
         <!-- 精听：逐句原文 + 跟读；泛听不展示原文（§6.2）-->
         <view v-if="mode === 'intensive'" class="card transcript-card">
-          <text class="tc-title">📄 听力原文（点句可跟读）</text>
+          <view class="tc-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-file" style="width:28rpx;height:28rpx"/><text>听力原文（点句可跟读）</text></view>
           <view v-for="(s, i) in sentences" :key="i" class="tc-sentence">
             <text class="tcs-text">{{ s }}</text>
-            <text class="tcs-shadow" @tap="openShadow(s)">🎤 跟读{{ ent.can('listening.shadow') ? '' : ' 🔒' }}</text>
+            <view class="tcs-shadow" @tap="openShadow(s)" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-mic" style="width:26rpx;height:26rpx"/><text>跟读</text><view v-if="!ent.can('listening.shadow')" class="ic ic-lock" style="width:24rpx;height:24rpx"/></view>
           </view>
         </view>
-        <button class="btn-secondary" @tap="retry">🔁 再做一次</button>
+        <button class="btn-secondary" @tap="retry" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-refresh" style="width:30rpx;height:30rpx"/><text>再做一次</text></button>
         <button class="btn-ghost" @tap="backToList">返回列表</button>
       </view>
     </view>

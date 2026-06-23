@@ -7,7 +7,7 @@
 
     <!-- 全部复习完 / 无待复习 -->
     <view v-else-if="!current && !finished" class="done-card">
-      <text class="done-emoji">✅</text>
+      <view class="ic ic-check-circle done-emoji" />
       <text class="done-title">今日复习已完成</text>
       <text class="done-sub">共 {{ stats.due_today }} 道，明天继续保持！</text>
       <view class="done-stats">
@@ -25,7 +25,7 @@
 
     <!-- 复习完成结算页 -->
     <view v-else-if="finished" class="done-card">
-      <text class="done-emoji">🎉</text>
+      <view class="ic ic-sparkle done-emoji" />
       <text class="done-title">本轮复习完成！</text>
       <text class="done-sub">
         {{ reviewedCount }} 道题，
@@ -185,7 +185,7 @@ function goBack() {
 
 /* 完成页 */
 .done-card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 60rpx 40rpx; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
-.done-emoji { font-size: 96rpx; }
+.done-emoji { width: 96rpx; height: 96rpx; }
 .done-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-ink); }
 .done-sub { font-size: 28rpx; color: var(--c-text-second); }
 .done-stats { display: flex; gap: 48rpx; margin: 8rpx 0; }

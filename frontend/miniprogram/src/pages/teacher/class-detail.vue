@@ -7,8 +7,8 @@
       <text class="tab" :class="{ active: tab === 'vocab' }" @tap="switchVocab">词力通</text>
     </view>
 
-    <button class="btn-assign" @tap="goAssignments">📋 出卷 / 作业</button>
-    <button class="btn-assign btn-papers" @tap="goPapers">📝 仿真题组卷</button>
+    <button class="btn-assign" @tap="goAssignments"><view class="ic ic-clipboard" style="width:30rpx;height:30rpx;margin-right:8rpx"/>出卷 / 作业</button>
+    <button class="btn-assign btn-papers" @tap="goPapers"><view class="ic ic-edit" style="width:30rpx;height:30rpx;margin-right:8rpx"/>仿真题组卷</button>
 
     <!-- ── 学生 tab ── -->
     <view v-if="tab === 'students'">
@@ -86,7 +86,7 @@
 
         <!-- 班级最薄弱 KP -->
         <view v-if="kpStats.top_weak_kps.length" class="card">
-          <view class="card-title">📉 班级最薄弱知识点</view>
+          <view class="card-title"><view class="ic ic-trend-down" style="width:32rpx;height:32rpx"/><text>班级最薄弱知识点</text></view>
           <view class="card-hint">点击任一知识点即可一键布置该项专项作业</view>
           <view class="kp-header-row">
             <text class="kp-col-name">知识点</text>
@@ -123,7 +123,7 @@
 
         <!-- 需关注学生 -->
         <view v-if="kpStats.students_attention.length" class="card">
-          <view class="card-title">⚠️ 需重点关注的学生</view>
+          <view class="card-title"><view class="ic ic-warning" style="width:32rpx;height:32rpx"/><text>需重点关注的学生</text></view>
           <view class="card-hint">整体平均正确率最低，建议优先强化练习</view>
           <view
             v-for="(s, i) in kpStats.students_attention"
@@ -174,7 +174,7 @@
         </view>
 
         <view v-if="vocabStats.class_weak_words.length" class="card">
-          <view class="card-title">📉 班级薄弱词</view>
+          <view class="card-title"><view class="ic ic-trend-down" style="width:32rpx;height:32rpx"/><text>班级薄弱词</text></view>
           <view class="weak-wrap">
             <text v-for="(w, i) in vocabStats.class_weak_words" :key="i" class="weak-chip">{{ w }}</text>
           </view>
@@ -322,7 +322,7 @@ function accClass(acc: number) {
 .tab { padding: 12rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
 .tab.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 16rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
-.card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 12rpx; }
+.card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 12rpx; display: flex; align-items: center; gap: 8rpx; }
 .card-hint { font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 16rpx; }
 .tip { text-align: center; padding: 80rpx 0; color: var(--c-text-hint); }
 .s-item { display: flex; justify-content: space-between; align-items: center; }

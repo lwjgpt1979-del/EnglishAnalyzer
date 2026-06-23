@@ -5,7 +5,7 @@
 
     <!-- 无薄弱数据 -->
     <view v-else-if="!questions.length" class="empty-card card">
-      <text class="empty-icon">📝</text>
+      <view class="ic ic-edit empty-icon" />
       <text class="empty-title">暂无推荐题目</text>
       <text class="empty-hint">先完成一些练习或上传错题，AI 就能为你精准出题了</text>
       <button class="btn-primary" @tap="goBack">返回</button>
@@ -97,7 +97,7 @@
 
         <!-- 反馈 -->
         <view v-if="feedback" class="feedback" :class="{ ok: feedback.correct }">
-          <text class="fb-title">{{ feedback.correct ? '✓ 答对了' : '✗ 答错了' }}</text>
+          <view class="fb-title"><view class="ic fb-ic" :class="feedback.correct ? 'ic-check-circle' : 'ic-x-circle'" /><text>{{ feedback.correct ? '答对了' : '答错了' }}</text></view>
           <text class="fb-ans">正确答案：{{ feedback.correct_answer }}</text>
           <text class="fb-exp">{{ feedback.explanation }}</text>
         </view>
@@ -114,7 +114,7 @@
 
     <!-- 完成 -->
     <view v-else class="finish-card card">
-      <text class="finish-icon">🎉</text>
+      <view class="ic ic-sparkle finish-icon" />
       <text class="finish-title">智能练习完成</text>
       <text class="finish-meta">共 {{ questions.length }} 题，答对 {{ correctCount }} 道</text>
       <text class="finish-rate">正确率 {{ Math.round(correctCount / questions.length * 100) }}%</text>
@@ -366,7 +366,8 @@ function goDiagnosis() {
 
 .feedback { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; margin-bottom: 16rpx; display: flex; flex-direction: column; gap: 8rpx; }
 .feedback.ok { background: #eafaf1; }
-.fb-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.fb-title { display: flex; align-items: center; gap: 8rpx; font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.fb-ic { width: 32rpx; height: 32rpx; }
 .fb-ans { font-size: 24rpx; color: var(--c-text-body); }
 .fb-exp { font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; }
 
@@ -374,12 +375,12 @@ function goDiagnosis() {
 .btn-primary[disabled] { background: #d4e3ef; color: #9bb4c8; }
 
 .empty-card { display: flex; flex-direction: column; align-items: center; gap: 16rpx; padding: 60rpx 40rpx; text-align: center; }
-.empty-icon { font-size: 80rpx; }
+.empty-icon { width: 80rpx; height: 80rpx; }
 .empty-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-ink); }
 .empty-hint { font-size: 26rpx; color: var(--c-text-second); line-height: 1.6; }
 
 .finish-card { display: flex; flex-direction: column; gap: 16rpx; align-items: center; text-align: center; padding: 48rpx; }
-.finish-icon { font-size: 80rpx; }
+.finish-icon { width: 80rpx; height: 80rpx; }
 .finish-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-ink); }
 .finish-meta { font-size: 28rpx; color: var(--c-text-second); }
 .finish-rate { font-size: 40rpx; font-weight: 800; color: var(--c-gold); }

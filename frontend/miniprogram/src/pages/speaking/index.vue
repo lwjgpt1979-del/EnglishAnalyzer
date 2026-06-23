@@ -3,13 +3,13 @@
     <!-- 场景选择 -->
     <view v-if="phase === 'pick'">
       <view class="head">
-        <text class="h-title">🗣️ AI 口语对话</text>
+        <view class="h-title" style="display:flex;align-items:center;gap:10rpx"><view class="ic ic-speak" style="width:40rpx;height:40rpx" /><text>AI 口语对话</text></view>
         <text class="h-sub">选个场景，开口说英语 · AI 实时回应并纠错</text>
       </view>
 
       <!-- 为你定制（因材施教）-->
       <view v-if="custom.length" class="sec-head">
-        <text class="sec-name">✨ 为你定制</text>
+        <view class="sec-name" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-sparkle" style="width:32rpx;height:32rpx" /><text>为你定制</text></view>
         <text class="sec-desc">按你的学期内容 / 在练单词 / 错题薄弱点生成</text>
       </view>
       <view v-if="custom.length" class="grid">
@@ -27,7 +27,7 @@
       </view>
 
       <!-- 通用场景 -->
-      <view class="sec-head"><text class="sec-name">🌐 通用场景</text></view>
+      <view class="sec-head"><view class="sec-name" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-layout" style="width:32rpx;height:32rpx" /><text>通用场景</text></view></view>
       <view class="grid">
         <view
           v-for="s in preset" :key="s.key"
@@ -45,12 +45,12 @@
       <view class="chat-top">
         <text class="ct-leave" @tap="leave">← 换场景</text>
         <view class="ct-right">
-          <text v-if="vocabMode" class="ct-auto" :class="{ on: readSentences }" @tap="readSentences = !readSentences">
-            {{ readSentences ? '🔉 读例句/短语' : '🔈 读例句/短语' }}
-          </text>
-          <text v-if="vocabMode" class="ct-auto" :class="{ on: momMode }" @tap="toggleCoach">
-            {{ momMode ? '👩‍🏫 陪练' : '🙂 陪练' }}{{ ent.can('speaking.coach') ? '' : ' 🔒' }}
-          </text>
+          <view v-if="vocabMode" class="ct-auto" :class="{ on: readSentences }" @tap="readSentences = !readSentences" style="display:flex;align-items:center;gap:6rpx">
+            <view class="ic ic-volume" style="width:28rpx;height:28rpx" /><text>读例句/短语</text>
+          </view>
+          <view v-if="vocabMode" class="ct-auto" :class="{ on: momMode }" @tap="toggleCoach" style="display:flex;align-items:center;gap:6rpx">
+            <view class="ic ic-user" style="width:28rpx;height:28rpx" /><text>陪练</text><view v-if="!ent.can('speaking.coach')" class="ic ic-lock" style="width:26rpx;height:26rpx" />
+          </view>
           <text class="ct-end" @tap="endAndRate">结束并评价</text>
         </view>
       </view>
@@ -89,8 +89,8 @@
                   </view>
                 </view>
                 <view class="wcard-btns">
-                  <text class="wcard-btn" @tap="playWord(m.card)">🔊 发音</text>
-                  <text class="wcard-btn primary" @tap="openPron(m.card.word)">🎤 测发音</text>
+                  <view class="wcard-btn" @tap="playWord(m.card)" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-volume" style="width:28rpx;height:28rpx" /><text>发音</text></view>
+                  <view class="wcard-btn primary" @tap="openPron(m.card.word)" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-mic" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /><text>测发音</text></view>
                 </view>
               </view>
               <view v-if="m.text" class="b-tools">
@@ -101,13 +101,13 @@
               </view>
               <text v-if="m.showTr && m.translation" class="b-tr">{{ m.translation }}</text>
               <view v-if="m.correction" class="b-fix">
-                <text class="b-fix-tag">✍️ 纠错</text>
+                <view class="b-fix-tag" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-pen" style="width:26rpx;height:26rpx" /><text>纠错</text></view>
                 <text class="b-fix-text">{{ m.correction }}</text>
               </view>
               <!-- 妈妈陪练：发音测评 + 互动点评 -->
               <view v-if="m.coach" class="coach">
                 <view class="coach-hd">
-                  <text class="coach-ico">👩‍🏫</text>
+                  <view class="coach-ico" style="display:flex;align-items:center"><view class="ic ic-user" style="width:30rpx;height:30rpx" /></view>
                   <text class="coach-title">陪练</text>
                   <text v-if="m.audio" class="coach-play" @tap="playAudio(m)">{{ m.playing ? '⏸' : '🔊' }} 重听</text>
                   <text v-if="m.pron && m.pron.overall != null" class="coach-score"
@@ -119,8 +119,8 @@
                   <text class="coach-meter">完整 {{ m.pron.completion }}</text>
                 </view>
                 <view v-if="m.coach.encourage" class="coach-row"><text class="coach-emo">💗</text><text class="coach-tx">{{ m.coach.encourage }}</text></view>
-                <view v-if="m.coach.pron_tip" class="coach-row"><text class="coach-emo">🗣️</text><text class="coach-tx">{{ m.coach.pron_tip }}</text></view>
-                <view v-if="m.coach.express_tip" class="coach-row"><text class="coach-emo">✨</text><text class="coach-tx">{{ m.coach.express_tip }}</text></view>
+                <view v-if="m.coach.pron_tip" class="coach-row"><view class="coach-emo" style="display:flex;align-items:center"><view class="ic ic-speak" style="width:26rpx;height:26rpx" /></view><text class="coach-tx">{{ m.coach.pron_tip }}</text></view>
+                <view v-if="m.coach.express_tip" class="coach-row"><view class="coach-emo" style="display:flex;align-items:center"><view class="ic ic-sparkle" style="width:26rpx;height:26rpx" /></view><text class="coach-tx">{{ m.coach.express_tip }}</text></view>
                 <view v-if="m.coach.better" class="coach-better">
                   <text class="coach-better-tag">跟读范本</text>
                   <text class="coach-better-en">{{ m.coach.better }}</text>
@@ -188,7 +188,7 @@
     <!-- 测发音弹窗（SOE 真实评测） -->
     <view v-if="pron.open" class="mask" @tap.self="closePron">
       <view class="pron-card" @tap.stop>
-        <text class="pron-title">🎤 测发音</text>
+        <view class="pron-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-mic" style="width:30rpx;height:30rpx" /><text>测发音</text></view>
         <text class="pron-word">{{ pron.word }}</text>
         <view v-if="!pron.result">
           <button
@@ -206,8 +206,8 @@
             <text class="pd">流利 {{ pron.result.fluency }}</text>
             <text class="pd">完整 {{ pron.result.completion }}</text>
           </view>
-          <text class="pron-tip">💡 {{ pron.result.tip }}</text>
-          <button class="pron-rec" @tap="openPron(pron.word)">🔁 再测</button>
+          <view class="pron-tip" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-idea" style="width:28rpx;height:28rpx;flex-shrink:0" /><text>{{ pron.result.tip }}</text></view>
+          <button class="pron-rec" @tap="openPron(pron.word)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-refresh" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /><text>再测</text></button>
         </view>
         <text class="pron-close" @tap="closePron">关闭</text>
       </view>
@@ -216,7 +216,7 @@
     <!-- 结束评价 -->
     <view v-if="summary" class="mask" @tap="summary = null">
       <view class="sheet" @tap.stop>
-        <text class="sh-title">🎉 本次口语评价</text>
+        <view class="sh-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-sparkle" style="width:34rpx;height:34rpx" /><text>本次口语评价</text></view>
         <view class="score-ring">
           <text class="sr-num">{{ summary.overall }}</text>
           <text class="sr-unit">分</text>
@@ -230,30 +230,31 @@
           <view class="dim"><text class="dim-l">词汇</text><text class="dim-v">{{ summary.vocabulary }}</text></view>
         </view>
         <view class="sec">
-          <text class="sec-t">✨ 亮点</text>
+          <view class="sec-t" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-sparkle" style="width:30rpx;height:30rpx" /><text>亮点</text></view>
           <text v-for="(h, i) in summary.highlights" :key="i" class="sec-li">· {{ h }}</text>
         </view>
         <view class="sec">
-          <text class="sec-t">📈 可提升</text>
+          <view class="sec-t" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-trend-up" style="width:30rpx;height:30rpx" /><text>可提升</text></view>
           <text v-for="(im, i) in summary.improvements" :key="i" class="sec-li">· {{ im }}</text>
         </view>
         <!-- 本次专项（因材施教）-->
         <view v-if="summary.focus_review" class="focus-box">
-          <text class="focus-t">🎯 本次专项 · {{ summary.focus_source }}</text>
+          <view class="focus-t" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-target" style="width:30rpx;height:30rpx" /><text>本次专项 · {{ summary.focus_source }}</text></view>
           <text class="focus-review">{{ summary.focus_review }}</text>
           <view v-if="(summary.focus_used && summary.focus_used.length) || (summary.focus_missed && summary.focus_missed.length)" class="chips">
-            <text v-for="(w, i) in summary.focus_used" :key="'u'+i" class="chip used">✓ {{ w }}</text>
+            <view v-for="(w, i) in summary.focus_used" :key="'u'+i" class="chip used" style="display:inline-flex;align-items:center;gap:6rpx"><view class="ic ic-check" style="width:24rpx;height:24rpx" /><text>{{ w }}</text></view>
             <text v-for="(w, i) in summary.focus_missed" :key="'m'+i" class="chip miss">{{ w }}</text>
           </view>
           <button
             v-if="summary.focus_missed && summary.focus_missed.length"
             class="repractice" @tap="repracticeMissed"
-          >🔁 再练这 {{ summary.focus_missed.length }} 个没用到的词</button>
+            style="display:flex;align-items:center;justify-content:center;gap:8rpx"
+          ><view class="ic ic-refresh" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /><text>再练这 {{ summary.focus_missed.length }} 个没用到的词</text></button>
         </view>
         <!-- 词力通陪练发音综合报告 -->
         <view v-if="summary.vocab_report" class="vrep">
           <view class="vrep-hd">
-            <text class="vrep-t">🎤 发音报告</text>
+            <view class="vrep-t" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-mic" style="width:32rpx;height:32rpx" /><text>发音报告</text></view>
             <text class="vrep-trend" :class="summary.vocab_report.trend">{{ trendLabel(summary.vocab_report.trend) }}</text>
           </view>
           <view class="vrep-top">

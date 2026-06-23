@@ -24,7 +24,7 @@
       >
         <swiper-item v-for="f in features" :key="f.title">
           <view class="feat-card">
-            <text class="feat-emoji">{{ f.emoji }}</text>
+            <view class="ic feat-emoji" :class="f.icon" />
             <text class="feat-title">{{ f.title }}</text>
             <text class="feat-desc">{{ f.desc }}</text>
           </view>
@@ -91,7 +91,7 @@
 
     <!-- ── Step 3：完成 ── -->
     <view v-else-if="step === 3" class="ob-page ob-done">
-      <text class="done-emoji">🎉</text>
+      <view class="ic ic-sparkle done-emoji" />
       <text class="done-title">设置完成！</text>
       <text class="done-sub">
         已为你选好
@@ -121,27 +121,27 @@ const saving = ref(false)
 // ── 功能介绍数据 ──────────────────────────────────────────────────────────────
 const features = [
   {
-    emoji: '📖',
+    icon: 'ic-book',
     title: '系统化知识学习',
     desc: '按教材 → 单元 → 知识点浏览，六大维度（听力/词汇/语法/阅读/翻译/写作）全覆盖',
   },
   {
-    emoji: '🤖',
+    icon: 'ic-robot',
     title: 'AI 智能出题',
     desc: '根据你的薄弱知识点，AI 自动生成个性化练习题，精准强化短板',
   },
   {
-    emoji: '📄',
+    icon: 'ic-file',
     title: '整卷上传分析',
     desc: '上传做过的试卷，AI 识别并标记错题，自动归入错题本',
   },
   {
-    emoji: '📊',
+    icon: 'ic-chart',
     title: '学情诊断报告',
     desc: '实时追踪知识点掌握度，展示题型分布和难度分析',
   },
   {
-    emoji: '🔤',
+    icon: 'ic-abc',
     title: '词力通单词打卡',
     desc: 'SM-2 记忆曲线算法，科学复习词汇，连续打卡激励坚持学习',
   },
@@ -276,7 +276,8 @@ function _markDone() {
   box-sizing: border-box;
 }
 .feat-emoji {
-  font-size: 96rpx;
+  width: 96rpx;
+  height: 96rpx;
   display: block;
   margin-bottom: 32rpx;
 }
@@ -337,9 +338,10 @@ function _markDone() {
   text-align: center;
 }
 .done-emoji {
-  font-size: 120rpx;
+  width: 120rpx;
+  height: 120rpx;
   display: block;
-  margin-bottom: 40rpx;
+  margin: 0 auto 40rpx;
 }
 .done-title {
   font-size: 52rpx;

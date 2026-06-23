@@ -3,7 +3,7 @@
   <view class="list-page">
     <!-- 顶部上传入口 -->
     <view class="upload-entry" @tap="goUpload">
-      <text class="ue-icon">＋</text>
+      <view class="ue-icon"><view class="ic ic-plus" style="width:40rpx;height:40rpx" /></view>
       <view class="ue-text">
         <text class="ue-title">拍整张试卷</text>
         <text class="ue-sub">1~9 张图片，自动识别并拆题</text>
@@ -110,10 +110,9 @@ function goDetail(id: string) {
 .ue-icon {
   width: 72rpx;
   height: 72rpx;
-  line-height: 72rpx;
-  text-align: center;
-  font-size: 48rpx;
-  color: var(--c-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--c-primary-soft);
   border-radius: var(--r-md);
 }

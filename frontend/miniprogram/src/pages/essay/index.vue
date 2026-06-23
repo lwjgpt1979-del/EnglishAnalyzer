@@ -1,7 +1,7 @@
 <template>
   <view class="page">
     <view class="card train-entry" @tap="goTrain">
-      <view class="te-l"><text class="te-t">✍️ 写作能力训练</text><text class="te-s">审题 · 限时写 · 分档诊断 · 漏点检测</text></view>
+      <view class="te-l"><view class="te-t" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-pen" style="width:32rpx;height:32rpx;filter:brightness(0) invert(1)"/><text>写作能力训练</text></view><text class="te-s">审题 · 限时写 · 分档诊断 · 漏点检测</text></view>
       <text class="te-arrow">›</text>
     </view>
     <view v-if="progress && progress.total_essays > 0" class="card">
@@ -19,8 +19,9 @@
       <view class="card-title">作文 AI 精修</view>
       <textarea v-model="text" class="essay-input" placeholder="粘贴或输入你的英文作文…" :maxlength="-1" />
       <input v-model="essayType" class="type-input" placeholder="作文题型（选填，如 话题作文）" />
-      <button class="btn-primary" :disabled="loading || !text.trim()" @tap="onSubmit">
-        {{ loading ? 'AI 批改中…' : (ent.can('essay.polish') ? 'AI 精修' : 'AI 精修 🔒') }}
+      <button class="btn-primary" :disabled="loading || !text.trim()" @tap="onSubmit" style="display:flex;align-items:center;justify-content:center;gap:8rpx">
+        <text>{{ loading ? 'AI 批改中…' : 'AI 精修' }}</text>
+        <view v-if="!loading && !ent.can('essay.polish')" class="ic ic-lock" style="width:30rpx;height:30rpx"/>
       </button>
     </view>
 

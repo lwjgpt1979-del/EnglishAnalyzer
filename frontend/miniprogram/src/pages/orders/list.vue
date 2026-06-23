@@ -18,7 +18,7 @@
         <!-- 退款/申诉处理信息 -->
         <view v-if="refundLine(o)" class="o-refund">{{ refundLine(o) }}</view>
         <!-- 发票状态 -->
-        <view v-if="invLine(o)" class="o-invoice">{{ invLine(o) }}</view>
+        <view v-if="invLine(o)" class="o-invoice"><view class="ic ic-file" style="width:30rpx;height:30rpx;flex:none" /><text>{{ invLine(o) }}</text></view>
 
         <!-- 操作区 -->
         <view class="o-acts">
@@ -153,7 +153,7 @@ function invFor(o: OrderOut) { return invoices.value.find(v => v.order_id === o.
 function invLine(o: OrderOut) {
   const v = invFor(o)
   if (!v) return ''
-  return `🧾 ${INV_TXT[v.status] || v.status}` + (v.status === 'issued' && v.invoice_no ? `（${v.invoice_no}）` : '')
+  return `${INV_TXT[v.status] || v.status}` + (v.status === 'issued' && v.invoice_no ? `（${v.invoice_no}）` : '')
 }
 // 已支付、未退款、且无进行中/已开票申请 → 可申请开票（驳回后可重申）
 function canInvoice(o: OrderOut) {
@@ -291,7 +291,7 @@ onMounted(load)
 .o-k { color: var(--c-text-hint); }
 .o-v { color: var(--c-text-body); }
 .o-refund { margin-top: 12rpx; font-size: 24rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); border-radius: var(--r-md); padding: 12rpx 16rpx; }
-.o-invoice { margin-top: 8rpx; font-size: 24rpx; color: var(--c-text-second); background: var(--c-bg-soft); border-radius: var(--r-md); padding: 12rpx 16rpx; }
+.o-invoice { margin-top: 8rpx; font-size: 24rpx; color: var(--c-text-second); background: var(--c-bg-soft); border-radius: var(--r-md); padding: 12rpx 16rpx; display: flex; align-items: center; gap: 8rpx; }
 .act-invoice { color: var(--c-primary-deep); border: 2rpx solid var(--c-primary-soft); }
 .inv-types { display: flex; gap: 16rpx; margin-bottom: 8rpx; }
 .inv-type { flex: 1; text-align: center; padding: 16rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }

@@ -10,7 +10,7 @@
 
     <view v-else>
       <view class="wb-head">
-        <text class="wb-title">📕 听力错题库</text>
+        <view class="wb-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-book" style="width:34rpx;height:34rpx"/><text>听力错题库</text></view>
         <text class="wb-sub">共 {{ items.length }} 题 · 按易错优先排序</text>
       </view>
       <view v-for="w in items" :key="w.id" class="card">
@@ -20,11 +20,11 @@
         </view>
         <text class="w-prompt">{{ w.prompt }}</text>
         <view class="w-opts">
-          <text v-for="(o, i) in w.options" :key="i" class="w-opt" :class="{ correct: i === w.correct_index }">
-            {{ letter(i) }}. {{ o }}{{ i === w.correct_index ? ' ✓' : '' }}
-          </text>
+          <view v-for="(o, i) in w.options" :key="i" class="w-opt" :class="{ correct: i === w.correct_index }" style="display:flex;align-items:center;gap:8rpx">
+            <text>{{ letter(i) }}. {{ o }}</text><view v-if="i === w.correct_index" class="ic ic-check-circle" style="width:26rpx;height:26rpx;flex-shrink:0"/>
+          </view>
         </view>
-        <text v-if="w.explanation" class="w-exp">💡 {{ w.explanation }}</text>
+        <view v-if="w.explanation" class="w-exp" style="display:flex;align-items:flex-start;gap:8rpx"><view class="ic ic-idea" style="width:26rpx;height:26rpx;flex-shrink:0;margin-top:4rpx"/><text>{{ w.explanation }}</text></view>
         <button class="w-redo" @tap="redo(w.exercise_id)">重练此篇</button>
       </view>
     </view>

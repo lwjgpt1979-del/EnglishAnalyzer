@@ -2,7 +2,7 @@
 <template>
   <view class="ban-page">
     <view class="ban-card">
-      <text class="ban-emoji">🚫</text>
+      <view class="ban-emoji ic ic-x-circle" />
       <text class="ban-title">账号已被{{ status?.ban_type === 'permanent' ? '永久' : '临时' }}封禁</text>
       <text class="ban-reason">原因：{{ status?.reason || '违反平台规则' }}</text>
       <text v-if="status?.banned_until" class="ban-until">解封时间：{{ fmt(status.banned_until) }}</text>
@@ -82,7 +82,7 @@ onMounted(load)
 <style scoped>
 .ban-page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .ban-card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 40rpx 28rpx; display: flex; flex-direction: column; align-items: center; gap: 12rpx; margin-bottom: 20rpx; }
-.ban-emoji { font-size: 80rpx; }
+.ban-emoji { width: 88rpx; height: 88rpx; }
 .ban-title { font-size: 34rpx; font-weight: 800; color: var(--c-danger); }
 .ban-reason { font-size: 28rpx; color: var(--c-text-body); text-align: center; }
 .ban-until { font-size: 26rpx; color: var(--c-text-second); }

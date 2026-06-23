@@ -34,7 +34,7 @@
 
       <!-- 智能推题入口 -->
       <view class="adaptive-bar">
-        <button class="btn-adaptive" @tap="goAdaptive">🧠 智能推题（针对本单元弱项）</button>
+        <button class="btn-adaptive" @tap="goAdaptive"><view class="ic ic-brain btn-adaptive-ic" /><text>智能推题（针对本单元弱项）</text></button>
       </view>
 
       <view class="card">
@@ -149,5 +149,7 @@ function definitionText(defs: WordOut['definitions']): string {
   border-radius: var(--r-btn); padding: 22rpx; font-weight: 700;
   font-size: 28rpx; text-align: center;
   box-shadow: 0 4rpx 16rpx rgba(245,197,24,.3);
+  display: flex; align-items: center; justify-content: center; gap: 10rpx;
 }
+.btn-adaptive-ic { width: 32rpx; height: 32rpx; flex-shrink: 0; }
 </style>

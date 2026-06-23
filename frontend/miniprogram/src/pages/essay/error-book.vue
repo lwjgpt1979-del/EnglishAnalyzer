@@ -9,8 +9,8 @@
       </view>
       <view v-for="(it, i) in data.items" :key="i" class="eb-item">
         <text class="eb-type">{{ it.type }}</text>
-        <text class="eb-o">✗ {{ it.original }}</text>
-        <text class="eb-s">✓ {{ it.suggestion }}</text>
+        <view class="eb-o" style="display:flex;align-items:flex-start;gap:8rpx"><view class="ic ic-x-circle" style="width:26rpx;height:26rpx;flex-shrink:0;margin-top:4rpx"/><text>{{ it.original }}</text></view>
+        <view class="eb-s" style="display:flex;align-items:flex-start;gap:8rpx"><view class="ic ic-check-circle" style="width:26rpx;height:26rpx;flex-shrink:0;margin-top:4rpx"/><text>{{ it.suggestion }}</text></view>
       </view>
     </view>
   </view>

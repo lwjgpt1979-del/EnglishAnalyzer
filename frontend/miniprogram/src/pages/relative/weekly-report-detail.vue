@@ -45,7 +45,7 @@
 
     <!-- 做题来源分布 -->
     <view class="card" v-if="report.practice_count + report.wrong_paper_count > 0">
-      <view class="card-title">📝 做题来源</view>
+      <view class="card-title"><view class="ic ic-edit" style="width:32rpx;height:32rpx"/><text>做题来源</text></view>
       <view class="source-row">
         <view class="source-item">
           <text class="source-count">{{ report.practice_count }}</text>
@@ -60,7 +60,7 @@
 
     <!-- 薄弱知识点 -->
     <view class="card" v-if="report.weak_kp_names && report.weak_kp_names.length">
-      <view class="card-title">⚠️ 本周薄弱点</view>
+      <view class="card-title"><view class="ic ic-warning" style="width:32rpx;height:32rpx"/><text>本周薄弱点</text></view>
       <view class="kp-list">
         <view
           v-for="(kp, i) in report.weak_kp_names"
@@ -301,6 +301,9 @@ function goStudentDiag() {
   font-weight: 700;
   color: #1a1a1a;
   margin-bottom: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
 }
 
 /* ── 做题来源 ── */

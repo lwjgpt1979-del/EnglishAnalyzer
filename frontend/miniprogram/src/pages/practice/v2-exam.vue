@@ -76,7 +76,7 @@
       >
         <view class="res-head">
           <text class="res-idx">第 {{ idx + 1 }} 题</text>
-          <text class="res-flag" :class="{ ok: it.correct }">{{ it.correct ? '✓ 正确' : '✗ 错误' }}</text>
+          <view class="res-flag" :class="{ ok: it.correct }"><view class="ic res-flag-ic" :class="it.correct ? 'ic-check-circle' : 'ic-x-circle'" /><text>{{ it.correct ? '正确' : '错误' }}</text></view>
         </view>
         <text class="res-line">你的答案：{{ it.user_answer || '（未作答）' }}</text>
         <text class="res-line">正确答案：{{ it.correct_answer }}</text>
@@ -184,7 +184,8 @@ function goBack() {
 .result-card.ok { border-left-color: #2ecc71; }
 .res-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12rpx; }
 .res-idx { font-size: 24rpx; color: var(--c-text-hint); }
-.res-flag { font-size: 26rpx; font-weight: 700; color: var(--c-danger); }
+.res-flag { display: inline-flex; align-items: center; gap: 4rpx; font-size: 26rpx; font-weight: 700; color: var(--c-danger); }
+.res-flag-ic { width: 28rpx; height: 28rpx; }
 .res-flag.ok { color: #2ecc71; }
 .res-line { display: block; font-size: 26rpx; color: var(--c-text-body); margin-bottom: 6rpx; }
 .res-exp { display: block; font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; margin-top: 6rpx; }

@@ -2,7 +2,7 @@
 <template>
   <view v-if="open" class="pw-mask" @tap.self="$emit('close')">
     <view class="pw-card">
-      <text class="pw-emoji">{{ emoji }}{{ isAddon ? '⚡' : '🔒' }}</text>
+      <view class="pw-emoji" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><text>{{ emoji }}</text><view class="ic" :class="isAddon ? 'ic-flame' : 'ic-lock'" style="width:64rpx;height:64rpx" /></view>
       <text class="pw-title">{{ isAddon ? '本周期次数已用完' : (title || feature?.title || '会员专享功能') }}</text>
       <text class="pw-desc">{{ desc }}</text>
       <button v-if="isAddon" class="pw-btn" :loading="paying" @tap="buyAddon">

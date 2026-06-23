@@ -2,7 +2,7 @@
   <view class="page">
     <!-- 平台公告入口（§5.6）-->
     <view class="ann-entry" @tap="goAnnouncements">
-      <text class="ann-ic">📢</text>
+      <view class="ic ic-bell ann-ic" />
       <text class="ann-label">平台公告</text>
       <text class="ann-arrow">›</text>
     </view>
@@ -10,13 +10,13 @@
     <!-- 频道筛选 -->
     <scroll-view scroll-x class="channels-wrap">
       <view class="channels">
-        <text
+        <view
           v-for="c in channels"
           :key="c.key"
           class="ch"
           :class="{ active: activeChannel === c.key }"
           @tap="switchChannel(c.key)"
-        >{{ c.label }}<text v-if="chUnread(c.key)" class="ch-badge">{{ chUnread(c.key) }}</text></text>
+        ><view v-if="c.icon" class="ic ch-ic" :class="c.icon" /><text class="ch-label">{{ c.label }}</text><text v-if="chUnread(c.key)" class="ch-badge">{{ chUnread(c.key) }}</text></view>
       </view>
     </scroll-view>
 
@@ -55,12 +55,12 @@ import { listNotifications, markRead, markAllRead, deleteRead, getUnreadByChanne
 import type { NotificationOut } from '@/types/api'
 
 const channels = [
-  { key: '', label: '全部' },
-  { key: 'study', label: '📚 学习' },
-  { key: 'membership', label: '💳 会员' },
-  { key: 'system', label: '🔔 系统' },
-  { key: 'teacher', label: '👩‍🏫 老师' },
-  { key: 'relative', label: '👨‍👩‍👧 亲人' },
+  { key: '', label: '全部', icon: '' },
+  { key: 'study', label: '学习', icon: 'ic-books' },
+  { key: 'membership', label: '会员', icon: 'ic-coin' },
+  { key: 'system', label: '系统', icon: 'ic-bell' },
+  { key: 'teacher', label: '老师', icon: 'ic-user' },
+  { key: 'relative', label: '亲人', icon: 'ic-user' },
 ]
 const activeChannel = ref('')
 const items = ref<NotificationOut[]>([])
@@ -130,13 +130,15 @@ onMounted(load)
 <style scoped>
 .page { padding: 16rpx; background: var(--c-bg-page); min-height: 100vh; }
 .ann-entry { display: flex; align-items: center; gap: 12rpx; background: #fff; border-radius: 12rpx; padding: 24rpx; margin-bottom: 16rpx; }
-.ann-ic { font-size: 36rpx; }
+.ann-ic { width: 36rpx; height: 36rpx; flex-shrink: 0; }
 .ann-label { flex: 1; font-size: 28rpx; color: #333; font-weight: 600; }
 .ann-arrow { font-size: 32rpx; color: #c0c4cc; }
 .channels-wrap { white-space: nowrap; }
 .channels { display: inline-flex; gap: 8rpx; padding: 8rpx 4rpx 16rpx; }
-.ch { padding: 8rpx 18rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 24rpx; color: var(--c-text-second); white-space: nowrap; }
+.ch { display: inline-flex; align-items: center; gap: 6rpx; padding: 8rpx 18rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 24rpx; color: var(--c-text-second); white-space: nowrap; }
 .ch.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
+.ch-ic { width: 28rpx; height: 28rpx; flex-shrink: 0; }
+.ch.active .ch-ic { filter: brightness(0) invert(1); }
 .ch-badge { margin-left: 6rpx; background: var(--c-danger); color: #fff; font-size: 18rpx; border-radius: 16rpx; padding: 0 8rpx; min-width: 16rpx; }
 .actions { display: flex; gap: 16rpx; padding: 8rpx 8rpx 16rpx; }
 .action-btn { font-size: 24rpx; color: var(--c-gold); font-weight: 600; padding: 4rpx 12rpx; }

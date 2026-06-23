@@ -4,7 +4,7 @@
     <!-- 今日错题复习（M12 遗忘曲线）-->
     <view v-if="reviewDue > 0" class="review-banner" @tap="goReview">
       <view class="rb-left">
-        <text class="rb-icon">🧠</text>
+        <view class="ic ic-brain rb-icon" />
         <view class="rb-text">
           <text class="rb-title">今日错题复习</text>
           <text class="rb-sub">{{ reviewDue }} 道到期 · 遗忘曲线智能安排</text>
@@ -35,7 +35,8 @@
     <!-- 一键自动打标按钮 -->
     <view v-if="source !== 'paper'" class="auto-tag-row">
       <button class="btn-auto-tag" :disabled="autoTagging" @tap="doAutoTag">
-        {{ autoTagging ? '打标中…' : '✨ 一键自动打标' }}
+        <view v-if="!autoTagging" class="ic ic-sparkle" style="width:26rpx;height:26rpx" />
+        <text>{{ autoTagging ? '打标中…' : '一键自动打标' }}</text>
       </button>
     </view>
 
@@ -70,7 +71,7 @@
           lazy-load
         />
         <view v-else class="wq-icon">
-          <text class="wq-icon-emoji">{{ wq.source_label === '整卷' ? '📄' : fromAssignment(wq) ? '📋' : '📝' }}</text>
+          <view class="ic wq-icon-emoji" :class="wq.source_label === '整卷' ? 'ic-file' : fromAssignment(wq) ? 'ic-clipboard' : 'ic-edit'" />
         </view>
         <view class="wq-info">
           <!-- 题干（无图错题的主内容，占据宽区，最多两行）-->
@@ -256,7 +257,7 @@ function goDetail(id: string) {
   margin-bottom: 24rpx; box-shadow: var(--shadow-primary);
 }
 .rb-left { display: flex; align-items: center; gap: 20rpx; }
-.rb-icon { font-size: 52rpx; }
+.rb-icon { width: 52rpx; height: 52rpx; }
 .rb-text { display: flex; flex-direction: column; gap: 4rpx; }
 .rb-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-on-primary); }
 .rb-sub { font-size: 22rpx; color: var(--c-on-primary); opacity: 0.9; }
@@ -281,7 +282,7 @@ function goDetail(id: string) {
 .wq-img { width: 180rpx; height: 140rpx; flex-shrink: 0; }
 /* 无图错题左侧图标框：宽度固定、高度撑满整卡（与右侧等高，不留白）*/
 .wq-icon { width: 180rpx; flex-shrink: 0; align-self: stretch; min-height: 140rpx; display: flex; align-items: center; justify-content: center; background: var(--c-bg-soft); }
-.wq-icon-emoji { font-size: 52rpx; }
+.wq-icon-emoji { width: 52rpx; height: 52rpx; }
 .wq-info {
   flex: 1;
   padding: 20rpx;
@@ -326,7 +327,7 @@ function goDetail(id: string) {
 
 /* 一键打标按钮 */
 .auto-tag-row { margin-bottom: 20rpx; display: flex; justify-content: flex-end; }
-.btn-auto-tag { font-size: 22rpx; padding: 10rpx 20rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border: 2rpx solid var(--c-primary); border-radius: 999rpx; line-height: 1.4; }
+.btn-auto-tag { display: inline-flex; align-items: center; justify-content: center; gap: 6rpx; font-size: 22rpx; padding: 10rpx 20rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border: 2rpx solid var(--c-primary); border-radius: 999rpx; line-height: 1.4; }
 .btn-auto-tag[disabled] { opacity: 0.5; }
 
 /* 知识点 chips on card */

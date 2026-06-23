@@ -54,7 +54,7 @@
         <view v-if="selectedIds.size === 0" class="tip">尚未选题，点击右侧「从题库选题」</view>
         <view v-for="q in selectedQuestions" :key="q.id" class="q-chip">
           <text class="q-stem-short">{{ q.stem.slice(0, 40) }}{{ q.stem.length > 40 ? '…' : '' }}</text>
-          <text class="q-remove" @tap="removeQuestion(q.id)">✕</text>
+          <view class="q-remove ic ic-close" @tap="removeQuestion(q.id)" />
         </view>
       </view>
 
@@ -72,7 +72,7 @@
       <view class="browser-panel">
         <view class="browser-header">
           <text class="browser-title">选题库（仿真题）</text>
-          <text class="browser-close" @tap="showBrowser = false">✕</text>
+          <view class="browser-close ic ic-close" @tap="showBrowser = false" />
         </view>
         <view class="browser-filters">
           <picker mode="selector" :range="difficultyOptions" @change="(e: any) => { filterDiff = e.detail.value === 0 ? undefined : e.detail.value; loadBrowser() }">
@@ -226,7 +226,7 @@ onMounted(() => {
 .tip { text-align: center; color: #aaa; padding: 32rpx 0; font-size: 26rpx; }
 .q-chip { display: flex; align-items: center; background: #f0f7ff; border-radius: 8rpx; padding: 16rpx; margin-bottom: 12rpx; }
 .q-stem-short { flex: 1; font-size: 26rpx; color: #333; }
-.q-remove { color: #f56c6c; font-size: 28rpx; margin-left: 16rpx; padding: 4rpx 8rpx; }
+.q-remove { width: 32rpx; height: 32rpx; margin-left: 16rpx; flex-shrink: 0; }
 .btn-submit { width: 100%; background: #4f9bff; color: #fff; font-size: 30rpx; height: 88rpx; line-height: 88rpx; border-radius: 12rpx; border: none; }
 .btn-submit[disabled] { background: #aaa; }
 
@@ -249,7 +249,7 @@ onMounted(() => {
 .browser-panel { background: #fff; border-radius: 24rpx 24rpx 0 0; width: 100%; max-height: 80vh; display: flex; flex-direction: column; }
 .browser-header { display: flex; align-items: center; padding: 28rpx 32rpx 16rpx; border-bottom: 1px solid #eee; }
 .browser-title { flex: 1; font-size: 32rpx; font-weight: 700; color: #333; }
-.browser-close { font-size: 32rpx; color: #999; padding: 8rpx; }
+.browser-close { width: 36rpx; height: 36rpx; flex-shrink: 0; }
 .browser-filters { display: flex; gap: 16rpx; padding: 16rpx 32rpx; }
 .filter-chip { background: #f0f0f0; border-radius: 20rpx; padding: 8rpx 24rpx; font-size: 24rpx; color: #555; }
 .browser-list { flex: 1; padding: 0 16rpx; overflow: hidden; }

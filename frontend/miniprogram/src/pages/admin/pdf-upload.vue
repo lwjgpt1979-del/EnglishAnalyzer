@@ -15,8 +15,8 @@
 
       <!-- 模式选择 -->
       <view class="mode-row">
-        <view class="mode-btn" :class="mode === 'pdf' ? 'mode-active' : ''" @tap="mode = 'pdf'">📄 上传 PDF</view>
-        <view class="mode-btn" :class="mode === 'direct' ? 'mode-active' : ''" @tap="mode = 'direct'">🤖 直接 AI 生成</view>
+        <view class="mode-btn" :class="mode === 'pdf' ? 'mode-active' : ''" @tap="mode = 'pdf'"><view class="ic ic-file mode-ic" /><text>上传 PDF</text></view>
+        <view class="mode-btn" :class="mode === 'direct' ? 'mode-active' : ''" @tap="mode = 'direct'"><view class="ic ic-robot mode-ic" /><text>直接 AI 生成</text></view>
       </view>
 
       <view class="form-item">
@@ -45,10 +45,10 @@
       </view>
 
       <view class="note" v-if="mode === 'pdf'">
-        📌 上传后将自动识别单元分界；若无法自动识别，可手动指定页码范围。
+        <view class="ic ic-pin note-ic" /><text>上传后将自动识别单元分界；若无法自动识别，可手动指定页码范围。</text>
       </view>
       <view class="note" v-else>
-        📌 直接用 DeepSeek AI 生成，无需上传课本，约 60-90 秒完成。
+        <view class="ic ic-pin note-ic" /><text>直接用 DeepSeek AI 生成，无需上传课本，约 60-90 秒完成。</text>
       </view>
 
       <view class="btn-primary" @tap="step = 1">下一步</view>
@@ -62,7 +62,7 @@
         <view class="meta-summary">{{ VERSIONS[vIdx] }} · {{ GRADES[gIdx] }} · {{ SEMS[sIdx] }}学期</view>
 
         <view v-if="!fileId" class="upload-area" @tap="chooseFile">
-          <text class="upload-icon">📂</text>
+          <view class="ic ic-upload upload-icon" />
           <text class="upload-hint">点击选择 PDF 文件</text>
           <text class="upload-sub">支持从微信文件、云端等来源选取</text>
         </view>
@@ -72,7 +72,7 @@
         </view>
 
         <view v-if="fileId" class="upload-done">
-          <text class="done-icon">✅</text>
+          <view class="ic ic-check-circle done-icon" />
           <view class="done-info">
             <text class="done-name">{{ uploadedFilename }}</text>
             <text class="done-pages">共 {{ totalPages }} 页</text>
@@ -80,7 +80,7 @@
           <text class="done-reselect" @tap="resetUpload">重选</text>
         </view>
 
-        <view v-if="uploadErr" class="err-msg">⚠️ {{ uploadErr }}</view>
+        <view v-if="uploadErr" class="err-msg err-msg-row"><view class="ic ic-warning err-ic" /><text>{{ uploadErr }}</text></view>
 
         <view class="btn-row">
           <view class="btn-ghost" @tap="step = 0">上一步</view>
@@ -95,7 +95,7 @@
         <view class="confirm-row"><text class="confirm-k">年级</text><text class="confirm-v">{{ GRADES[gIdx] }}</text></view>
         <view class="confirm-row"><text class="confirm-k">学期</text><text class="confirm-v">{{ SEMS[sIdx] }}学期</text></view>
         <view class="confirm-row"><text class="confirm-k">单元数</text><text class="confirm-v">{{ UNIT_COUNTS[ucIdx] }} 个</text></view>
-        <view class="note warn-note">⚠️ 生成将覆盖同教材已有内容，约 60-90 秒完成。</view>
+        <view class="note warn-note"><view class="ic ic-warning note-ic" /><text>生成将覆盖同教材已有内容，约 60-90 秒完成。</text></view>
         <view class="btn-row">
           <view class="btn-ghost" @tap="step = 0">上一步</view>
           <view class="btn-primary" @tap="step = 3; startDirectGenerate()">开始生成</view>
@@ -108,11 +108,11 @@
       <view class="card-title">确认单元划分</view>
       <view class="meta-summary">{{ VERSIONS[vIdx] }} · {{ GRADES[gIdx] }} · {{ SEMS[sIdx] }}学期 · {{ totalPages }} 页</view>
 
-      <view v-if="autoSplitSuccess" class="auto-ok-tip">
-        ✅ 自动识别到 {{ segments.length }} 个单元，可直接生成。也可手动调整下方分界。
+      <view v-if="autoSplitSuccess" class="auto-ok-tip tip-row">
+        <view class="ic ic-check-circle tip-ic" /><text>自动识别到 {{ segments.length }} 个单元，可直接生成。也可手动调整下方分界。</text>
       </view>
-      <view v-else class="auto-fail-tip">
-        ℹ️ 未能自动识别单元分界，请手动填写各单元的起止页码（共 {{ totalPages }} 页）。
+      <view v-else class="auto-fail-tip tip-row">
+        <view class="ic ic-help tip-ic" /><text>未能自动识别单元分界，请手动填写各单元的起止页码（共 {{ totalPages }} 页）。</text>
       </view>
 
       <!-- 手动添加单元 -->
@@ -145,7 +145,7 @@
           </view>
         </view>
         <view v-if="seg.detected_title" class="seg-title-hint">{{ seg.detected_title }}</view>
-        <text class="seg-del" @tap="segments.splice(i, 1)">✕</text>
+        <view class="ic ic-close seg-del" @tap="segments.splice(i, 1)" />
       </view>
 
       <!-- 添加单元按钮 -->
@@ -171,17 +171,17 @@
 
       <view v-else class="gen-summary">
         <view class="summary-row ok-row">
-          <text class="summary-icon">✅</text>
+          <view class="ic ic-check-circle summary-icon" />
           <text class="summary-txt">成功 {{ genOut.success_count }} 个单元</text>
         </view>
         <view v-if="genOut.error_count" class="summary-row err-row">
-          <text class="summary-icon">❌</text>
+          <view class="ic ic-x-circle summary-icon" />
           <text class="summary-txt">失败 {{ genOut.error_count }} 个单元</text>
         </view>
 
         <view class="result-list">
           <view v-for="r in genOut.results" :key="r.unit_no" class="result-row">
-            <text class="result-status">{{ r.status === 'ok' ? '✅' : '❌' }}</text>
+            <view class="ic result-status" :class="r.status === 'ok' ? 'ic-check-circle' : 'ic-x-circle'" />
             <view class="result-info">
               <text class="result-title">Unit {{ r.unit_no }} · {{ r.unit_title }}</text>
               <text v-if="r.status === 'ok'" class="result-sub">{{ r.kp_count }} KP · {{ r.word_count }} 词</text>
@@ -423,7 +423,9 @@ function backToList() {
 .mode-btn {
   flex: 1; text-align: center; padding: 18rpx 0; border-radius: var(--r-btn);
   font-size: 26rpx; border: 2rpx solid var(--c-border); color: var(--c-text-body);
+  display: flex; align-items: center; justify-content: center; gap: 8rpx;
 }
+.mode-ic { width: 32rpx; height: 32rpx; }
 .mode-active { border-color: var(--c-primary); background: #eef5ff; font-weight: 700; }
 
 /* ── 表单 ── */
@@ -432,9 +434,12 @@ function backToList() {
 .picker-val { font-size: 28rpx; color: var(--c-primary); font-weight: 600; }
 
 /* ── 提示 ── */
-.note { font-size: 22rpx; color: var(--c-text-hint); background: var(--c-bg-page); border-radius: 8rpx; padding: 16rpx; margin: 20rpx 0; line-height: 1.6; }
+.note { font-size: 22rpx; color: var(--c-text-hint); background: var(--c-bg-page); border-radius: 8rpx; padding: 16rpx; margin: 20rpx 0; line-height: 1.6; display: flex; align-items: flex-start; gap: 8rpx; }
+.note-ic { width: 28rpx; height: 28rpx; flex-shrink: 0; margin-top: 2rpx; }
 .warn-note { color: #b8860b; background: #eef5ff; }
 .err-msg   { font-size: 24rpx; color: #ff4d4f; margin-top: 12rpx; }
+.err-msg-row { display: flex; align-items: center; gap: 8rpx; }
+.err-ic { width: 28rpx; height: 28rpx; flex-shrink: 0; }
 
 /* ── 上传区 ── */
 .upload-area {
@@ -442,7 +447,7 @@ function backToList() {
   border: 2rpx dashed var(--c-border); border-radius: var(--r-lg);
   padding: 60rpx 0; margin: 24rpx 0; gap: 12rpx;
 }
-.upload-icon { font-size: 64rpx; }
+.upload-icon { width: 64rpx; height: 64rpx; }
 .upload-hint { font-size: 28rpx; font-weight: 600; color: var(--c-ink); }
 .upload-sub  { font-size: 22rpx; color: var(--c-text-hint); }
 .uploading-row { text-align: center; padding: 20rpx; color: var(--c-text-hint); font-size: 26rpx; }
@@ -450,7 +455,7 @@ function backToList() {
   display: flex; align-items: center; gap: 16rpx;
   background: var(--c-bg-page); border-radius: var(--r-lg); padding: 20rpx; margin: 16rpx 0;
 }
-.done-icon { font-size: 40rpx; }
+.done-icon { width: 40rpx; height: 40rpx; flex-shrink: 0; }
 .done-info { flex: 1; }
 .done-name  { font-size: 26rpx; font-weight: 600; color: var(--c-ink); display: block; }
 .done-pages { font-size: 22rpx; color: var(--c-text-hint); }
@@ -465,6 +470,8 @@ function backToList() {
 /* ── 分段编辑 ── */
 .auto-ok-tip  { font-size: 24rpx; color: #389e0d; background: #f6ffed; border-radius: 8rpx; padding: 12rpx 16rpx; margin-bottom: 16rpx; }
 .auto-fail-tip{ font-size: 24rpx; color: #b8860b; background: #eef5ff; border-radius: 8rpx; padding: 12rpx 16rpx; margin-bottom: 16rpx; }
+.tip-row { display: flex; align-items: flex-start; gap: 8rpx; }
+.tip-ic { width: 30rpx; height: 30rpx; flex-shrink: 0; margin-top: 2rpx; }
 .add-seg-hint { text-align: center; color: var(--c-text-hint); font-size: 24rpx; padding: 24rpx 0; }
 .seg-row {
   display: flex; align-items: flex-start; gap: 12rpx;
@@ -480,7 +487,7 @@ function backToList() {
 }
 .seg-dash   { font-size: 24rpx; color: var(--c-text-hint); padding-top: 20rpx; }
 .seg-title-hint { font-size: 20rpx; color: var(--c-text-hint); width: 100%; padding-left: 92rpx; margin-top: -8rpx; }
-.seg-del    { font-size: 28rpx; color: var(--c-text-hint); padding: 8rpx 8rpx 0; }
+.seg-del    { width: 32rpx; height: 32rpx; margin: 8rpx 8rpx 0; flex-shrink: 0; }
 .btn-add-seg {
   text-align: center; padding: 20rpx; color: var(--c-primary);
   font-size: 26rpx; border: 1rpx dashed var(--c-primary); border-radius: var(--r-btn); margin-top: 16rpx;
@@ -502,11 +509,11 @@ function backToList() {
 .summary-row { display: flex; align-items: center; gap: 12rpx; padding: 16rpx; border-radius: 12rpx; }
 .ok-row  { background: #f6ffed; }
 .err-row { background: #fff2f0; }
-.summary-icon { font-size: 32rpx; }
+.summary-icon { width: 32rpx; height: 32rpx; flex-shrink: 0; }
 .summary-txt  { font-size: 28rpx; font-weight: 600; color: var(--c-ink); }
 .result-list  { display: flex; flex-direction: column; gap: 12rpx; margin-top: 8rpx; }
 .result-row   { display: flex; align-items: flex-start; gap: 16rpx; padding: 16rpx 0; border-bottom: 1rpx solid var(--c-border); }
-.result-status{ font-size: 28rpx; }
+.result-status{ width: 30rpx; height: 30rpx; flex-shrink: 0; margin-top: 2rpx; }
 .result-info  { flex: 1; }
 .result-title { font-size: 26rpx; font-weight: 600; color: var(--c-ink); display: block; }
 .result-sub   { font-size: 22rpx; color: var(--c-text-hint); }

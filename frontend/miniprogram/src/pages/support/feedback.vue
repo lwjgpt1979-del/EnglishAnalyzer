@@ -4,8 +4,8 @@
     <view class="card">
       <text class="label">反馈类型</text>
       <view class="kinds">
-        <view class="kind" :class="{ on: kind === 'suggestion' }" @tap="kind = 'suggestion'">💡 功能建议</view>
-        <view class="kind" :class="{ on: kind === 'bug' }" @tap="kind = 'bug'">🐞 BUG报告</view>
+        <view class="kind" :class="{ on: kind === 'suggestion' }" @tap="kind = 'suggestion'"><view class="ic ic-idea kind-ic" /><text>功能建议</text></view>
+        <view class="kind" :class="{ on: kind === 'bug' }" @tap="kind = 'bug'"><view class="ic ic-warning kind-ic" /><text>BUG报告</text></view>
       </view>
       <text class="label">详细描述</text>
       <textarea v-model="content" class="ta" placeholder="请描述您的建议或遇到的问题…" maxlength="1000" />
@@ -82,8 +82,10 @@ onShow(load)
 .card-title { font-size: 30rpx; font-weight: 600; color: #222; display: block; margin-bottom: 16rpx; }
 .label { font-size: 26rpx; color: #666; display: block; margin: 20rpx 0 12rpx; }
 .kinds { display: flex; gap: 16rpx; }
-.kind { flex: 1; text-align: center; padding: 18rpx 0; border-radius: 12rpx; background: #f0f2f5; font-size: 28rpx; color: #555; }
+.kind { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8rpx; padding: 18rpx 0; border-radius: 12rpx; background: #f0f2f5; font-size: 28rpx; color: #555; }
+.kind-ic { width: 32rpx; height: 32rpx; flex-shrink: 0; }
 .kind.on { background: #409eff; color: #fff; }
+.kind.on .kind-ic { filter: brightness(0) invert(1); }
 .ta { background: #f7f8fa; border-radius: 12rpx; padding: 20rpx; font-size: 28rpx; height: 200rpx; width: 100%; box-sizing: border-box; }
 .ipt { background: #f7f8fa; border-radius: 12rpx; padding: 20rpx; font-size: 28rpx; }
 .imgs { display: flex; flex-wrap: wrap; gap: 16rpx; }

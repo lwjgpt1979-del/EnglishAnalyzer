@@ -12,12 +12,12 @@
         </view>
       </view>
 
-      <button class="btn-primary wb-coach" @tap="goCoach">🎤 去口语陪练纠音</button>
+      <button class="btn-primary wb-coach" @tap="goCoach"><view class="ic ic-mic" style="width:32rpx;height:32rpx;display:inline-block;vertical-align:-5rpx;margin-right:8rpx" />去口语陪练纠音</button>
 
       <view v-for="it in shown" :key="it.word_id" class="wb-item">
         <view class="wb-row">
           <image v-if="firstImg(it)" class="wb-img" :src="firstImg(it)!" mode="aspectFit" />
-          <view v-else class="wb-img wb-img-empty"><text>📕</text></view>
+          <view v-else class="wb-img wb-img-empty"><view class="ic ic-book" style="width:56rpx;height:56rpx" /></view>
           <view class="wb-info">
             <view class="wb-head">
               <text class="wb-word">{{ it.word }}</text>
@@ -30,7 +30,7 @@
         </view>
         <view v-if="firstEx(it)" class="wb-ex"><text class="wb-ex-en">{{ firstEx(it)!.en }}</text><text v-if="firstEx(it)!.zh" class="wb-ex-zh">{{ firstEx(it)!.zh }}</text></view>
         <view class="wb-btns">
-          <text class="wb-btn" @tap="playWord(it)">🔊 发音</text>
+          <view class="wb-btn" @tap="playWord(it)" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>发音</text></view>
         </view>
       </view>
     </view>

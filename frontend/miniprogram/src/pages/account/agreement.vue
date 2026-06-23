@@ -4,7 +4,7 @@
     <view class="section">
       <text class="h1">用户协议</text>
       <text class="updated">版本 v1.0　更新日期：2026 年 5 月 29 日</text>
-      <text class="notice">⚠️ 正式上线前须由法律专业人员审核并替换占位符。</text>
+      <view class="notice" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-warning" style="width:32rpx;height:32rpx;flex:none" /><text>正式上线前须由法律专业人员审核并替换占位符。</text></view>
     </view>
 
     <view class="section">

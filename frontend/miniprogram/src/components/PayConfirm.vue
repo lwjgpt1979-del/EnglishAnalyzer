@@ -18,13 +18,13 @@
 
       <!-- 勾选 1 -->
       <view class="pc-check" @tap="c1 = !c1">
-        <view class="pc-box" :class="{ on: c1 }">{{ c1 ? '✓' : '' }}</view>
+        <view class="pc-box" :class="{ on: c1 }"><view v-if="c1" class="ic ic-check" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
         <text class="pc-text">我已了解退款规则：购买后 7 天内未使用可全额退款；7 天内已使用按剩余天数比例退款（退款金额 = 实付金额 × 剩余天数 / 总购买天数）；超过 7 天不支持无理由退款。</text>
       </view>
 
       <!-- 勾选 2 -->
       <view class="pc-check" @tap="c2 = !c2">
-        <view class="pc-box" :class="{ on: c2 }">{{ c2 ? '✓' : '' }}</view>
+        <view class="pc-box" :class="{ on: c2 }"><view v-if="c2" class="ic ic-check" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
         <text class="pc-text">我已了解：本服务为虚拟数字会员服务，一经使用（首次 AI 分析）即视为开始享受服务。如遇平台故障、服务描述不符、误操作重复购买或未成年人未经授权购买，可通过「我的 → 订单记录 → 申诉」提交申诉。</text>
       </view>
 

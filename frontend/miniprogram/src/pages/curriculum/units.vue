@@ -22,7 +22,7 @@
           <text class="unit-meta">{{ u.kp_count }} 个知识点</text>
         </view>
         <view class="unit-status">
-          <text v-if="u.locked" class="lock-icon">🔒</text>
+          <view v-if="u.locked" class="ic ic-lock lock-icon" />
           <text v-else class="open-icon">›</text>
         </view>
       </view>
@@ -102,5 +102,5 @@ function onTapUnit(u: UnitOut) {
 .unit-title { font-size: 30rpx; font-weight: 600; color: var(--c-ink); }
 .unit-meta { font-size: 24rpx; color: var(--c-text-second); }
 .unit-status { font-size: 32rpx; color: var(--c-text-hint); }
-.lock-icon { font-size: 36rpx; }
+.lock-icon { width: 36rpx; height: 36rpx; }
 </style>

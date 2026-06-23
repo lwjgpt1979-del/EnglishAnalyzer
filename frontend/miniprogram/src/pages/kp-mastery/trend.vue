@@ -5,7 +5,7 @@
     <view v-if="loading" class="tip">加载中…</view>
 
     <view v-else-if="points.length === 0" class="empty-wrap">
-      <text class="empty-icon">📈</text>
+      <view class="ic ic-chart empty-icon" />
       <text class="empty-title">暂无趋势数据</text>
       <text class="empty-hint">完成更多练习、作业或上传试卷后，趋势图将自动生成</text>
     </view>
@@ -107,7 +107,7 @@
 
       <!-- 选中点详情 / 默认最新一条 -->
       <view class="card detail-card">
-        <view class="detail-date">📅 {{ displayPoints[selectedPoint]?.date ?? '' }}</view>
+        <view class="detail-date"><view class="ic ic-calendar detail-date-ic" /><text>{{ displayPoints[selectedPoint]?.date ?? '' }}</text></view>
         <view class="detail-row">
           <view class="detail-item">
             <text class="detail-num" :class="accClass(displayPoints[selectedPoint]?.accuracy ?? 0)">
@@ -227,7 +227,7 @@ function shortDate(dateStr: string, i: number): string {
 .empty-wrap {
   display: flex; flex-direction: column; align-items: center;
   margin-top: 120rpx; padding: 0 60rpx;
-  .empty-icon { font-size: 80rpx; }
+  .empty-icon { width: 80rpx; height: 80rpx; }
   .empty-title { margin-top: 24rpx; font-size: 32rpx; font-weight: 600; color: #333; }
   .empty-hint { margin-top: 16rpx; font-size: 26rpx; color: #999; text-align: center; line-height: 1.6; }
 }
@@ -302,7 +302,8 @@ function shortDate(dateStr: string, i: number): string {
 
 /* 详情卡 */
 .detail-card { }
-.detail-date { font-size: 24rpx; color: #999; margin-bottom: 16rpx; }
+.detail-date { font-size: 24rpx; color: #999; margin-bottom: 16rpx; display: flex; align-items: center; gap: 8rpx; }
+.detail-date-ic { width: 28rpx; height: 28rpx; flex-shrink: 0; }
 .detail-row { display: flex; justify-content: space-around; }
 .detail-item { display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
 .detail-num { font-size: 40rpx; font-weight: 700; }

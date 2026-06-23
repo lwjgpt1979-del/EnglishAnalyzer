@@ -54,7 +54,7 @@
     <!-- AI 智能推荐 -->
     <view class="card ai-card" @tap="goAdaptive">
       <view class="ai-left">
-        <text class="ai-icon">🤖</text>
+        <view class="ic ic-robot ai-icon" />
         <view>
           <text class="ai-title">AI 帮我选</text>
           <text class="ai-desc">基于薄弱点智能推荐题目</text>
@@ -149,7 +149,7 @@ onMounted(async () => {
 
 .ai-card { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
 .ai-left { display: flex; align-items: center; gap: 20rpx; }
-.ai-icon { font-size: 56rpx; }
+.ai-icon { width: 56rpx; height: 56rpx; }
 .ai-title { font-size: 30rpx; font-weight: 700; color: var(--c-ink); display: block; }
 .ai-desc { font-size: 24rpx; color: var(--c-text-second); display: block; margin-top: 4rpx; }
 .ai-arrow { font-size: 40rpx; color: var(--c-text-hint); }

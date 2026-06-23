@@ -14,7 +14,7 @@
 
       <!-- 口语练习 -->
       <view v-if="speakStats && speakStats.total_sessions > 0" class="card speak-card">
-        <view class="card-title">🗣️ 口语练习</view>
+        <view class="card-title"><view class="ic ic-speak" style="width:34rpx;height:34rpx"/><text>口语练习</text></view>
         <view class="stat-row">
           <view class="stat"><text class="num">{{ speakStats.total_sessions }}</text><text class="lbl">累计</text></view>
           <view class="stat"><text class="num">{{ speakStats.week_sessions }}</text><text class="lbl">本周</text></view>
@@ -25,7 +25,7 @@
 
       <!-- 词力通 -->
       <view v-if="vocab && vocab.learned_total > 0" class="card vocab-card">
-        <view class="card-title">📚 词力通</view>
+        <view class="card-title"><view class="ic ic-books" style="width:34rpx;height:34rpx"/><text>词力通</text></view>
         <view class="stat-row">
           <view class="stat"><text class="num">{{ vocab.mastered }}</text><text class="lbl">已掌握</text></view>
           <view class="stat"><text class="num">{{ vocab.due_total }}</text><text class="lbl">待复习</text></view>
@@ -33,13 +33,13 @@
           <view class="stat"><text class="num">{{ vocab.current_streak }}天</text><text class="lbl">连续</text></view>
         </view>
         <view v-if="vocab.pron" class="vocab-pron">
-          🎤 发音平均 {{ vocab.pron.avg ?? '-' }} 分（{{ vocab.pron.count }} 次）<text v-if="vocab.pron.weak_words.length" class="vocab-weak"> · 需加强：{{ vocab.pron.weak_words.slice(0, 4).join('、') }}</text>
+          <view class="ic ic-mic" style="width:28rpx;height:28rpx;margin-right:6rpx"/><text>发音平均 {{ vocab.pron.avg ?? '-' }} 分（{{ vocab.pron.count }} 次）</text><text v-if="vocab.pron.weak_words.length" class="vocab-weak"> · 需加强：{{ vocab.pron.weak_words.slice(0, 4).join('、') }}</text>
         </view>
       </view>
 
       <!-- M45 知识点台账入口 -->
       <view class="card entry-card" @tap="goKpMastery">
-        <text class="entry-text">🧠 知识点掌握图谱</text>
+        <view class="entry-text"><view class="ic ic-brain" style="width:32rpx;height:32rpx"/><text>知识点掌握图谱</text></view>
         <text class="entry-arrow">›</text>
       </view>
 
@@ -65,7 +65,8 @@
         </view>
         <view class="cal-grid">
           <view v-for="(c, i) in cells" :key="i" class="cal-cell" :class="{ checked: c.checked, blank: !c.day }">
-            <text v-if="c.day">{{ c.checked ? '🔥' : c.day }}</text>
+            <view v-if="c.day && c.checked" class="ic ic-flame" style="width:32rpx;height:32rpx"/>
+            <text v-else-if="c.day">{{ c.day }}</text>
           </view>
         </view>
       </view>
@@ -243,7 +244,7 @@ async function onPay() {
 .page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .tip { text-align: center; padding: 120rpx 0; color: var(--c-text-hint); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
-.card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
+.card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; display: flex; align-items: center; gap: 8rpx; }
 .stat-row { display: flex; justify-content: space-around; }
 .stat { text-align: center; }
 .speak-card { border-left: 6rpx solid var(--c-primary); }
@@ -280,6 +281,6 @@ async function onPay() {
 .cal-cell.blank { visibility: hidden; }
 /* M45 入口卡片 */
 .entry-card { display: flex; justify-content: space-between; align-items: center; }
-.entry-text { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.entry-text { font-size: 28rpx; font-weight: 700; color: var(--c-ink); display: flex; align-items: center; gap: 8rpx; }
 .entry-arrow { font-size: 32rpx; color: var(--c-text-hint); }
 </style>

@@ -5,7 +5,7 @@
     <view v-else>
       <!-- 题目：作业来源 / 真实图片 / 文字题干 -->
       <view v-if="fromAssignment" class="assign-banner">
-        <text class="assign-icon">📋</text>
+        <view class="ic ic-clipboard assign-icon" />
         <text class="assign-label">来自老师作业的错题</text>
       </view>
       <image
@@ -16,7 +16,7 @@
         @tap="previewImg"
       />
       <view v-else class="stem-card">
-        <text class="stem-label">📝 题目</text>
+        <view class="stem-label"><view class="ic ic-edit" style="width:26rpx;height:26rpx" /><text>题目</text></view>
         <text class="stem-text">{{ wq.question_text || '（无题干，本题为图片错题）' }}</text>
       </view>
 
@@ -24,7 +24,7 @@
       <view class="card" v-if="wq && isRealImage">
         <!-- 状态条 -->
         <view class="ocr-status-bar" :class="ocrStatusClass">
-          <text class="ocr-status-icon">{{ ocrStatusIcon }}</text>
+          <view class="ic ocr-status-icon" :class="ocrStatusIcon" />
           <text class="ocr-status-text">{{ ocrStatusText }}</text>
           <button
             v-if="wq.ocr_status === 'failed' || wq.ocr_status === null"
@@ -96,29 +96,29 @@
 
         <view v-if="latestAnalysis" class="analysis-result">
           <view class="ana-sec" v-if="latestAnalysis.error_types && latestAnalysis.error_types.length">
-            <text class="ana-label">🏷️ 错误类型</text>
+            <view class="ana-label"><view class="ic ic-tag" style="width:30rpx;height:30rpx" /><text>错误类型</text></view>
             <view class="tags">
               <text v-for="t in latestAnalysis.error_types" :key="t" class="tag-red">{{ t }}</text>
             </view>
           </view>
 
           <view class="ana-sec" v-if="latestAnalysis.knowledge_points && latestAnalysis.knowledge_points.length">
-            <text class="ana-label">⚠️ 薄弱知识点</text>
+            <view class="ana-label"><view class="ic ic-warning" style="width:30rpx;height:30rpx" /><text>薄弱知识点</text></view>
             <view class="tags">
               <text v-for="k in latestAnalysis.knowledge_points" :key="k" class="tag-orange">{{ k }}</text>
             </view>
           </view>
 
           <view class="ana-sec" v-if="latestAnalysis.diagnosis">
-            <text class="ana-label">🔍 诊断</text>
+            <view class="ana-label"><view class="ic ic-search" style="width:30rpx;height:30rpx" /><text>诊断</text></view>
             <text class="ana-box">{{ latestAnalysis.diagnosis }}</text>
           </view>
 
           <view class="ana-sec" v-if="latestAnalysis.suggestions">
-            <text class="ana-label">💡 建议</text>
+            <view class="ana-label"><view class="ic ic-idea" style="width:30rpx;height:30rpx" /><text>建议</text></view>
             <text class="ana-box ana-box-tip">{{ latestAnalysis.suggestions }}</text>
           </view>
-          <text class="report-err" @tap="onReportError">🚩 诊断有误？反馈</text>
+          <view class="report-err" @tap="onReportError"><view class="ic ic-warning" style="width:26rpx;height:26rpx" /><text>诊断有误？反馈</text></view>
         </view>
       </view>
 
@@ -195,12 +195,12 @@ const ocrStatusClass = computed(() => {
 
 const ocrStatusIcon = computed(() => {
   const map: Record<string, string> = {
-    pending: '⏳',
-    processing: '🔄',
-    completed: '✅',
-    failed: '❌',
+    pending: 'ic-clock',
+    processing: 'ic-refresh',
+    completed: 'ic-check-circle',
+    failed: 'ic-x-circle',
   }
-  return map[wq.value?.ocr_status ?? ''] ?? '❓'
+  return map[wq.value?.ocr_status ?? ''] ?? 'ic-help'
 })
 
 const ocrStatusText = computed(() => {
@@ -350,9 +350,9 @@ function onReportError() {
 .assign-banner { display: flex; align-items: center; gap: 12rpx; background: var(--c-primary-faint); border-radius: var(--r-lg); padding: 24rpx; margin-bottom: 20rpx; }
 /* 文字题干卡（无真实图片时）*/
 .stem-card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx; margin-bottom: 20rpx; box-shadow: var(--shadow-sm); }
-.stem-label { font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 14rpx; border-radius: var(--r-pill); }
+.stem-label { display: inline-flex; align-items: center; gap: 6rpx; font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 14rpx; border-radius: var(--r-pill); }
 .stem-text { display: block; margin-top: 16rpx; font-size: 32rpx; color: var(--c-ink); font-weight: 600; line-height: 1.6; }
-.assign-icon { font-size: 40rpx; }
+.assign-icon { width: 40rpx; height: 40rpx; }
 .assign-label { font-size: 28rpx; font-weight: 700; color: var(--c-primary); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }
 .card-title { font-size: var(--fs-h2); font-weight: 700; margin-bottom: 20rpx; color: var(--c-ink); }
@@ -396,10 +396,10 @@ function onReportError() {
 .analysis-result { margin-top: 24rpx; }
 .ana-sec { margin-top: 24rpx; }
 .ana-sec:first-child { margin-top: 0; }
-.ana-label { display: block; font-size: 27rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 12rpx; }
+.ana-label { display: flex; align-items: center; gap: 8rpx; font-size: 27rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 12rpx; }
 .ana-box { display: block; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx 24rpx; font-size: 27rpx; color: var(--c-text-body); line-height: 1.7; }
 .ana-box-tip { background: var(--c-primary-faint); border-left: 6rpx solid var(--c-primary); }
-.report-err { display: inline-block; margin-top: 16rpx; font-size: 24rpx; color: var(--c-text-hint); }
+.report-err { display: inline-flex; align-items: center; gap: 6rpx; margin-top: 16rpx; font-size: 24rpx; color: var(--c-text-hint); }
 .tags { display: flex; flex-wrap: wrap; gap: 10rpx; }
 .tag-red {
   background: var(--c-danger-bg);
@@ -431,7 +431,7 @@ function onReportError() {
 .ocr-processing { background: var(--c-primary-faint); }
 .ocr-completed { background: var(--c-success-bg); }
 .ocr-failed { background: var(--c-danger-bg); }
-.ocr-status-icon { font-size: 32rpx; }
+.ocr-status-icon { width: 32rpx; height: 32rpx; }
 .ocr-status-text { flex: 1; font-size: 26rpx; color: var(--c-text-second); }
 .btn-ocr-retry {
   font-size: 24rpx; height: 56rpx; line-height: 56rpx;

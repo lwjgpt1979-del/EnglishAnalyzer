@@ -16,7 +16,7 @@
 
       <!-- 口语练习 -->
       <view v-if="speakStats && speakStats.total_sessions > 0" class="card speak-card">
-        <view class="card-title">🗣️ 口语练习</view>
+        <view class="card-title"><view class="ic ic-speak" style="width:34rpx;height:34rpx"/><text>口语练习</text></view>
         <view class="stat-row">
           <view class="stat"><text class="num">{{ speakStats.total_sessions }}</text><text class="lbl">累计</text></view>
           <view class="stat"><text class="num">{{ speakStats.week_sessions }}</text><text class="lbl">本周</text></view>
@@ -142,7 +142,7 @@ function difficultyBarClass(key: string): string {
 .page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
 .tip { text-align: center; padding: 120rpx 0; color: var(--c-text-hint); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
-.card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
+.card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; display: flex; align-items: center; gap: 8rpx; }
 .stat-row { display: flex; justify-content: space-around; }
 .stat { text-align: center; }
 .speak-card { border-left: 6rpx solid var(--c-primary); }

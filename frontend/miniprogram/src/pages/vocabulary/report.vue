@@ -5,7 +5,7 @@
     <view v-else-if="ov" class="rp-body">
       <!-- 词数分布 -->
       <view class="rp-card">
-        <text class="rp-title">📚 单词进度</text>
+        <view class="rp-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-books" style="width:34rpx;height:34rpx" /><text>单词进度</text></view>
         <view class="stat-grid">
           <view class="stat"><text class="stat-n mastered">{{ ov.mastered }}</text><text class="stat-l">已掌握</text></view>
           <view class="stat"><text class="stat-n learning">{{ ov.learning + ov.new_learned }}</text><text class="stat-l">在学</text></view>
@@ -23,12 +23,12 @@
       <!-- 坚持 + 错词 -->
       <view class="rp-row">
         <view class="rp-card half">
-          <text class="rp-title">🔥 坚持</text>
+          <view class="rp-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-flame" style="width:34rpx;height:34rpx" /><text>坚持</text></view>
           <text class="big">{{ ov.current_streak }}<text class="big-u"> 天</text></text>
           <text class="rp-sub">最高连续 {{ ov.longest_streak }} 天</text>
         </view>
         <view class="rp-card half" @tap="goWrongBook">
-          <text class="rp-title">📕 错词本</text>
+          <view class="rp-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-book" style="width:34rpx;height:34rpx" /><text>错词本</text></view>
           <text class="big wrong">{{ ov.wrong_total }}<text class="big-u"> 词</text></text>
           <text class="rp-sub link">查看错词本 ›</text>
         </view>
@@ -37,7 +37,7 @@
       <!-- 发音报告 -->
       <view v-if="ov.pron" class="rp-card">
         <view class="vrep-hd">
-          <text class="rp-title">🎤 发音报告</text>
+          <view class="rp-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-mic" style="width:34rpx;height:34rpx" /><text>发音报告</text></view>
           <text class="vrep-trend" :class="ov.pron.trend">{{ trendText(ov.pron.trend) }}</text>
         </view>
         <view class="vrep-top">
@@ -60,7 +60,7 @@
         </view>
       </view>
       <view v-else class="rp-card">
-        <text class="rp-title">🎤 发音报告</text>
+        <view class="rp-title" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-mic" style="width:34rpx;height:34rpx" /><text>发音报告</text></view>
         <text class="rp-sub">还没有跟读记录，去词力通点 🎤 跟读试试吧（会员功能）。</text>
       </view>
 

@@ -21,12 +21,12 @@
           <view class="thumb-ops">
             <text class="op" :class="{ disabled: idx === 0 }" @tap="move(idx, -1)">↑</text>
             <text class="op" :class="{ disabled: idx === items.length - 1 }" @tap="move(idx, 1)">↓</text>
-            <text class="op del" @tap="remove(idx)">✕</text>
+            <view class="op del" @tap="remove(idx)"><view class="ic ic-x-circle" style="width:30rpx;height:30rpx" /></view>
           </view>
         </view>
 
         <view v-if="items.length < MAX" class="thumb add" @tap="addImages">
-          <text class="add-icon">＋</text>
+          <view class="add-icon ic ic-plus" />
           <text class="add-text">{{ adding ? '上传中…' : '加图片' }}</text>
         </view>
       </view>
@@ -165,11 +165,11 @@ function goList() {
 .thumb-img { width: 100%; height: 100%; }
 .order-tag { position: absolute; top: 8rpx; left: 8rpx; min-width: 36rpx; height: 36rpx; line-height: 36rpx; text-align: center; background: rgba(0,0,0,.6); color: #fff; font-size: 22rpx; border-radius: 18rpx; padding: 0 8rpx; }
 .thumb-ops { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-around; background: rgba(0,0,0,.5); }
-.op { color: #fff; font-size: 28rpx; padding: 6rpx 0; flex: 1; text-align: center; }
+.op { color: #fff; font-size: 28rpx; padding: 6rpx 0; flex: 1; text-align: center; display: flex; align-items: center; justify-content: center; }
 .op.disabled { color: rgba(255,255,255,.35); }
 .op.del { color: #ff8a8a; }
 .add { display: flex; flex-direction: column; align-items: center; justify-content: center; border: 2rpx dashed var(--c-border); }
-.add-icon { font-size: 56rpx; color: var(--c-text-hint); line-height: 1; }
+.add-icon { width: 56rpx; height: 56rpx; }
 .add-text { font-size: 24rpx; color: var(--c-text-hint); margin-top: 8rpx; }
 .btn-submit { margin-top: 40rpx; background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); font-size: 32rpx; font-weight: 700; height: 96rpx; line-height: 96rpx; }
 .btn-submit[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }

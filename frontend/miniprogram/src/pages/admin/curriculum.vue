@@ -48,7 +48,7 @@
         </view>
         <view class="unit-title">Unit {{ u.unit_no }}  {{ u.unit_title }}</view>
         <view class="unit-stats">
-          <text class="stat-item">🧠 {{ u.kp_count }} 知识点</text>
+          <view class="ic ic-brain stat-ic" /><text class="stat-item">{{ u.kp_count }} 知识点</text>
           <view class="rate-bar-wrap">
             <view class="rate-bar" :style="{ width: rateWidth(u.content_rate) }"></view>
           </view>
@@ -59,8 +59,8 @@
 
     <!-- 底部操作区 -->
     <view class="fab-area">
-      <view class="fab-btn fab-secondary" @tap="goGenerateSemester">🤖 AI 生成学期</view>
-      <view class="fab-btn fab-primary" @tap="goUploadPdf">📄 上传教材 PDF</view>
+      <view class="fab-btn fab-secondary" @tap="goGenerateSemester"><view class="ic ic-robot fab-ic" /><text>AI 生成学期</text></view>
+      <view class="fab-btn fab-primary" @tap="goUploadPdf"><view class="ic ic-file fab-ic" /><text>上传教材 PDF</text></view>
     </view>
   </view>
 </template>
@@ -152,6 +152,7 @@ onShow(load)
 .unit-title { font-size: 30rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 14rpx; }
 .unit-stats { display: flex; align-items: center; gap: 12rpx; }
 .stat-item  { font-size: 22rpx; color: var(--c-text-second); white-space: nowrap; }
+.stat-ic { width: 28rpx; height: 28rpx; flex-shrink: 0; }
 .rate-bar-wrap { flex: 1; height: 8rpx; background: var(--c-border); border-radius: 4rpx; overflow: hidden; }
 .rate-bar  { height: 100%; background: var(--c-primary); border-radius: 4rpx; transition: width 0.3s; }
 .rate-txt  { font-size: 22rpx; color: var(--c-text-second); white-space: nowrap; }
@@ -165,7 +166,9 @@ onShow(load)
   display: flex; gap: 20rpx; padding: 20rpx 32rpx 40rpx;
   background: var(--c-bg-card); border-top: 1rpx solid var(--c-border);
 }
-.fab-btn { flex: 1; text-align: center; padding: 20rpx 0; border-radius: var(--r-btn); font-size: 28rpx; font-weight: 700; }
+.fab-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8rpx; padding: 20rpx 0; border-radius: var(--r-btn); font-size: 28rpx; font-weight: 700; }
+.fab-ic { width: 32rpx; height: 32rpx; }
 .fab-primary   { background: var(--c-primary); color: var(--c-on-primary); }
+.fab-primary .fab-ic { filter: brightness(0) invert(1); }
 .fab-secondary { background: var(--c-bg-page); color: var(--c-ink); border: 1rpx solid var(--c-border); }
 </style>

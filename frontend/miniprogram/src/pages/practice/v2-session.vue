@@ -48,7 +48,7 @@
         </view>
 
         <view v-if="feedback" class="feedback" :class="{ ok: feedback.correct }">
-          <text class="fb-title">{{ feedback.correct ? '✓ 答对了' : '✗ 答错了' }}</text>
+          <view class="fb-title"><view class="ic fb-ic" :class="feedback.correct ? 'ic-check-circle' : 'ic-x-circle'" /><text>{{ feedback.correct ? '答对了' : '答错了' }}</text></view>
           <text class="fb-ans">正确答案：{{ feedback.correct_answer }}</text>
           <text class="fb-exp">{{ feedback.explanation }}</text>
         </view>
@@ -156,7 +156,8 @@ function goBack() {
 .fill-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); height: 72rpx; line-height: 72rpx; padding: 0 20rpx; font-size: 28rpx; margin-bottom: 24rpx; box-sizing: border-box; width: 100%; }
 .feedback { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; margin-bottom: 16rpx; display: flex; flex-direction: column; gap: 8rpx; }
 .feedback.ok { background: #eafaf1; }
-.fb-title { font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.fb-title { display: flex; align-items: center; gap: 8rpx; font-size: 28rpx; font-weight: 700; color: var(--c-ink); }
+.fb-ic { width: 32rpx; height: 32rpx; }
 .fb-ans { font-size: 24rpx; color: var(--c-text-body); }
 .fb-exp { font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; }
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; }

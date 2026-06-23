@@ -5,7 +5,7 @@
     <view v-if="loading" class="tip">加载中…</view>
 
     <view v-else-if="items.length === 0" class="empty-wrap">
-      <text class="empty-icon">📚</text>
+      <view class="empty-icon ic ic-books" />
       <text class="empty-title">暂无知识点记录</text>
       <text class="empty-hint">孩子完成练习、提交作业或上传试卷后，数据将自动汇总到这里</text>
     </view>
@@ -67,8 +67,8 @@
         </view>
 
         <view class="kp-stats">
-          <text class="stat-ok">✓ {{ item.correct_count }} 对</text>
-          <text class="stat-wrong">✗ {{ item.wrong_count }} 错</text>
+          <view class="stat-ok"><view class="ic ic-check" style="width:26rpx;height:26rpx"/><text>{{ item.correct_count }} 对</text></view>
+          <view class="stat-wrong"><view class="ic ic-x-circle" style="width:26rpx;height:26rpx"/><text>{{ item.wrong_count }} 错</text></view>
           <text class="stat-total">共 {{ item.correct_count + item.wrong_count }} 题</text>
         </view>
 
@@ -91,7 +91,7 @@
         <!-- 复习建议（M7c，家长可执行指引） -->
         <view v-if="item.suggestion" class="kp-suggestion" :class="`sug-${item.level}`">
           <text class="sug-badge" :class="`badge-${item.level}`">{{ levelLabel(item.level) }}</text>
-          <text class="sug-text">💡 {{ item.suggestion }}</text>
+          <view class="sug-text"><view class="ic ic-idea" style="width:28rpx;height:28rpx;margin-right:6rpx;flex-shrink:0"/><text>{{ item.suggestion }}</text></view>
         </view>
 
       </view>
@@ -188,7 +188,7 @@ function formatDate(iso: string) {
 .empty-wrap {
   display: flex; flex-direction: column; align-items: center;
   margin-top: 120rpx; padding: 0 60rpx;
-  .empty-icon { font-size: 80rpx; }
+  .empty-icon { width: 88rpx; height: 88rpx; }
   .empty-title { margin-top: 24rpx; font-size: 32rpx; font-weight: 600; color: #333; }
   .empty-hint { margin-top: 16rpx; font-size: 26rpx; color: #999; text-align: center; line-height: 1.6; }
 }
@@ -226,8 +226,8 @@ function formatDate(iso: string) {
 .bar-fill { height: 100%; border-radius: 7rpx; }
 
 .kp-stats { display: flex; gap: 24rpx; font-size: 24rpx; margin-bottom: 12rpx; }
-.stat-ok    { color: #52c41a; }
-.stat-wrong { color: #ff4d4f; }
+.stat-ok    { color: #52c41a; display: flex; align-items: center; gap: 6rpx; }
+.stat-wrong { color: #ff4d4f; display: flex; align-items: center; gap: 6rpx; }
 .stat-total { color: #999; }
 
 .kp-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10rpx; margin-bottom: 8rpx; }

@@ -1,7 +1,7 @@
 <template>
   <view class="page">
     <view class="card join-card" @tap="() => uni.navigateTo({ url: '/pages/teacher/join-institution' })">
-      <text class="join-text">🏫 加入机构</text>
+      <view class="join-text"><view class="ic ic-school" style="width:34rpx;height:34rpx"/><text>加入机构</text></view>
       <text class="arrow">›</text>
     </view>
     <view class="card">
@@ -79,7 +79,7 @@ onMounted(load)
 .class-cnt { font-size: 24rpx; color: var(--c-text-hint); }
 .arrow { font-size: 32rpx; color: var(--c-text-hint); }
 .join-card { display: flex; align-items: center; justify-content: space-between; }
-.join-text { font-weight: 700; font-size: 30rpx; }
+.join-text { font-weight: 700; font-size: 30rpx; display: flex; align-items: center; gap: 8rpx; }
 .row-actions { display: flex; align-items: center; gap: 16rpx; }
 .btn-del { background: var(--c-danger, #e53935); color: #fff; border-radius: 8rpx; font-size: 22rpx; padding: 0 16rpx; height: 52rpx; line-height: 52rpx; }
 .btn-del[disabled] { opacity: 0.5; }
