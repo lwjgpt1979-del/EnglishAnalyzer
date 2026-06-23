@@ -92,7 +92,8 @@
         <!-- 重点词汇 -->
         <view v-else-if="tab === 'words'" class="tab-body">
           <view v-for="(w, i) in (analysis?.key_words || [])" :key="i" class="word-row">
-            <text class="word">{{ w.word }}</text><text class="word-pos" v-if="w.pos">{{ w.pos }}</text><text class="word-mean">{{ w.meaning }}</text>
+            <view class="word-head"><text class="word">{{ w.word }}</text><text v-if="w.pos" class="word-pos">{{ w.pos }}</text></view>
+            <text v-if="w.meaning" class="word-mean">{{ w.meaning }}</text>
           </view>
           <text v-if="!(analysis?.key_words || []).length" class="empty">暂无重点词汇</text>
         </view>
@@ -100,7 +101,8 @@
         <!-- 语法点 -->
         <view v-else class="tab-body">
           <view v-for="(g, i) in (analysis?.grammar_points || [])" :key="i" class="gp-row">
-            <text class="gp-name">{{ g.name }}</text><text class="gp-exp" v-if="g.explanation">{{ g.explanation }}</text>
+            <view class="gp-head"><text class="gp-dot" /><text class="gp-name">{{ g.name }}</text></view>
+            <text v-if="g.explanation" class="gp-exp">{{ g.explanation }}</text>
           </view>
           <text v-if="!(analysis?.grammar_points || []).length" class="empty">暂无语法点</text>
         </view>
@@ -469,16 +471,22 @@ onLoad(async () => {
 .st-ctype { font-size: 24rpx; font-weight: 700; }
 .st-ctext { font-size: 24rpx; color: #555; line-height: 1.45; }
 
-.comp-row { display: flex; padding: 14rpx 0; border-bottom: 1rpx dashed #f0f0f0; }
-.comp-label { width: 120rpx; color: #888; font-size: 28rpx; }
-.comp-val { flex: 1; font-size: 28rpx; }
-.word-row { display: flex; align-items: baseline; gap: 14rpx; padding: 14rpx 0; border-bottom: 1rpx dashed #f0f0f0; }
-.word { font-size: 30rpx; font-weight: 600; }
-.word-pos { font-size: 24rpx; color: #aaa; }
-.word-mean { font-size: 28rpx; color: #555; }
-.gp-row { padding: 14rpx 0; border-bottom: 1rpx dashed #f0f0f0; }
-.gp-name { font-size: 28rpx; font-weight: 600; color: var(--c-primary); }
-.gp-exp { display: block; font-size: 26rpx; color: #666; margin-top: 6rpx; }
+/* 句子成分:标签 chip + 值 */
+.comp-row { display: flex; align-items: flex-start; gap: 14rpx; padding: 14rpx 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
+.comp-label { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); background: var(--c-primary-faint); border-radius: 8rpx; padding: 5rpx 14rpx; }
+.comp-val { flex: 1; font-size: 27rpx; color: #444; line-height: 1.5; font-family: Georgia, 'Times New Roman', serif; }
+/* 重点词汇:卡片 */
+.word-row { padding: 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
+.word-head { display: flex; align-items: baseline; gap: 12rpx; }
+.word { font-size: 30rpx; font-weight: 700; color: #333; font-family: Georgia, 'Times New Roman', serif; }
+.word-pos { font-size: 21rpx; color: #8a93a3; background: #e9edf3; border-radius: 6rpx; padding: 2rpx 10rpx; }
+.word-mean { display: block; font-size: 26rpx; color: #666; margin-top: 6rpx; line-height: 1.5; }
+/* 语法点:卡片 + 圆点 */
+.gp-row { padding: 16rpx; background: #f7f9fc; border-radius: 12rpx; margin-bottom: 10rpx; }
+.gp-head { display: flex; align-items: center; gap: 10rpx; }
+.gp-dot { width: 14rpx; height: 14rpx; border-radius: 50%; background: var(--c-primary); flex-shrink: 0; }
+.gp-name { font-size: 27rpx; font-weight: 600; color: var(--c-primary); }
+.gp-exp { display: block; font-size: 25rpx; color: #666; margin-top: 8rpx; line-height: 1.6; padding-left: 24rpx; }
 .empty { color: #bbb; font-size: 26rpx; }
 
 /* 结构解析 */
