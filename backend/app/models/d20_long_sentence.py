@@ -31,6 +31,13 @@ class LongSentence(Base):
     analysis_json = mapped_column(JSONB, nullable=True)                   # 主干/分层/译文/难点/句法点
     audio_url = mapped_column(sa.Text, nullable=True)                     # 听原句:TTS 合成后存 COS 的直链(首次回填,再次直接播)
     difficulty = mapped_column(sa.Integer, nullable=True)                 # 句法复杂度难度分 0–100(spaCy 依存:从句数/树深/MDD/词数)
+    # —— 定位元数据(平台库必带;按来源不同维度有效)——
+    textbook_version = mapped_column(sa.String(64), nullable=True)        # 教材版本
+    stage = mapped_column(sa.String(8), nullable=True)                    # 学段:小|初|高(中考/高考真题主定位维度)
+    grade = mapped_column(sa.String(32), nullable=True)                   # 年级
+    semester = mapped_column(sa.String(8), nullable=True)                 # 学期:上|下
+    unit_id = mapped_column(UUID(as_uuid=True), nullable=True)           # 教材来源:定位到课程单元(curriculum_units.id)
+    exam_type = mapped_column(sa.String(12), nullable=True)               # 真题来源:普通|中考|高考
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'draft'"))  # draft|published|retired
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at = mapped_column(
@@ -57,6 +64,29 @@ class LongSentenceNode(Base):
     )
 
     __table_args__ = (sa.Index("ix_long_sentence_node_node", "node_id"),)
+
+
+class StudentLongSentence(Base):
+    """学生个人长难句(独立表):学生上传作业时抽取,只对本人可见。
+
+    与平台 long_sentence 彻底分开(学生量大、重效率);无教材定位维度,直接发布。
+    """
+
+    __tablename__ = "student_long_sentence"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id = mapped_column(UUID(as_uuid=True), nullable=False)           # 学生
+    source_question_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 来源:上传题(uploaded_question.id)
+    text = mapped_column(sa.Text, nullable=False)
+    analysis_json = mapped_column(JSONB, nullable=True)
+    difficulty = mapped_column(sa.Integer, nullable=True)
+    status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'published'"))  # 默认本人可见
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_student_long_sentence_owner", "owner_id", "status"),
+        sa.Index("ix_student_long_sentence_srcq", "source_question_id"),
+    )
 
 
 class LongSentenceFavorite(Base):

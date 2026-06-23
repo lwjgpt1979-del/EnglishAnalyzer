@@ -78,6 +78,15 @@ async def ingest_parsed(
         if it.is_wrong and owner_scope == "student":
             res.wrong_record_id = await wrong_center_service.record_wrong(
                 db, student_id=owner_id, q_scope="uploaded", question_id=uq.id, node_id=node_id)
+
+        # 学生上传作业时抽长难句 → 个人独立表(本人可见);best-effort,失败不影响入库
+        if owner_scope == "student" and it.stem:
+            try:
+                from app.services import long_sentence_service as lss
+                await lss.extract_student_for_question(
+                    db, owner_id=owner_id, question_id=uq.id, text=it.stem)
+            except Exception:  # noqa: BLE001
+                pass
         out.append(res)
     await db.flush()
     return out

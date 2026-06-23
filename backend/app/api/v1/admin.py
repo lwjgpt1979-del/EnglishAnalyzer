@@ -1548,7 +1548,8 @@ def _to_ls_admin_item(ls) -> LSAdminItem:
 async def extract_long_sentences_api(
     db: DbDep, admin: AdminDep, limit: int = 200, source: str = "config",
 ):
-    """手动触发长难句抽取(幂等)。source: config(默认读 sources 配置)|all|platform_real|textbook|uploaded。"""
+    """手动触发平台长难句抽取(幂等)。source: config(读 sources 配置)|all(真题+教材)|platform_real|textbook。
+    学生上传的长难句走独立表、上传作业时自动抽取,不在此触发。"""
     from app.services import long_sentence_service as lss
     if source == "config":
         sources = None

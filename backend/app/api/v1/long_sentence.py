@@ -29,7 +29,7 @@ UserDep = Annotated[User, Depends(get_current_user)]
 async def list_long_sentences(
     db: DbDep, current_user: UserDep, node_id: uuid.UUID | None = None, limit: int = 50,
 ):
-    """已发布长难句(平台共享+个人);可按句法 node 过滤。"""
+    """已发布长难句:平台共享(可按句法 node 过滤)+ 本人个人长难句(student_long_sentence)。"""
     rows = await lss.list_published(db, node_id=node_id, owner_id=current_user.id, limit=limit)
     fav = await lss.favorited_ids(db, user_id=current_user.id, ls_ids=[r.id for r in rows])
     items = [LongSentenceItem(
@@ -37,26 +37,46 @@ async def list_long_sentences(
         syntax_points=(r.analysis_json or {}).get("syntax_points", []),
         favorited=r.id in fav,
     ) for r in rows]
+    if node_id is None:   # 个人长难句不挂句法 node,不参与 node 过滤
+        for s in await lss.list_student_published(db, owner_id=current_user.id, limit=limit):
+            items.append(LongSentenceItem(
+                id=s.id, text=s.text, source_kind="uploaded",
+                syntax_points=(s.analysis_json or {}).get("syntax_points", []), favorited=False))
     return make_ok(LongSentenceListOut(total=len(items), items=items))
+
+
+async def _student_one(db, ls_id, owner_id):
+    from app.models.d20_long_sentence import StudentLongSentence
+    s = await db.get(StudentLongSentence, ls_id)
+    if s is not None and s.status == "published" and s.owner_id == owner_id:
+        return s
+    return None
 
 
 @router.get("/{ls_id}", response_model=BaseResponse[LongSentenceDetailOut])
 async def get_long_sentence(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
-    """长难句解析详情:主干/分层/译文/难点 + 句法点(跳 /curriculum/nodes/{node_id}/resources 看讲解)。"""
+    """长难句解析详情。平台库优先;否则查本人个人长难句。"""
     ls, nodes = await lss.get_detail(db, ls_id=ls_id)
-    if ls is None or ls.status != "published":
-        raise AppError(code=404, message="长难句不存在或未发布")
-    favorited = await lss.is_favorited(db, user_id=current_user.id, ls_id=ls_id)
-    return make_ok(LongSentenceDetailOut(
-        id=ls.id, text=ls.text, source_kind=ls.source_kind, analysis=ls.analysis_json,
-        audio_url=ls.audio_url, favorited=favorited,
-        nodes=[LongSentenceNodeRef(**n) for n in nodes],
-    ))
+    if ls is not None and ls.status == "published":
+        favorited = await lss.is_favorited(db, user_id=current_user.id, ls_id=ls_id)
+        return make_ok(LongSentenceDetailOut(
+            id=ls.id, text=ls.text, source_kind=ls.source_kind, analysis=ls.analysis_json,
+            audio_url=ls.audio_url, favorited=favorited,
+            nodes=[LongSentenceNodeRef(**n) for n in nodes]))
+    s = await _student_one(db, ls_id, current_user.id)
+    if s is not None:
+        return make_ok(LongSentenceDetailOut(
+            id=s.id, text=s.text, source_kind="uploaded", analysis=s.analysis_json,
+            audio_url=None, favorited=False, nodes=[]))
+    raise AppError(code=404, message="长难句不存在或未发布")
 
 
 @router.post("/{ls_id}/favorite", response_model=BaseResponse[dict])
 async def favorite(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
-    """收藏长难句。"""
+    """收藏长难句(仅平台库支持收藏)。"""
+    ls, _ = await lss.get_detail(db, ls_id=ls_id)
+    if ls is None:
+        return make_ok({"favorited": False})
     on = await lss.set_favorite(db, user_id=current_user.id, ls_id=ls_id, on=True)
     return make_ok({"favorited": on})
 
@@ -70,19 +90,22 @@ async def unfavorite(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
 
 @router.post("/{ls_id}/audio", response_model=BaseResponse[dict])
 async def get_audio(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
-    """听原句:返回句子音频直链。库里已有 audio_url 直接返回;否则首次合成→存 COS→回填库。
-    COS 未配置(dev)时返回空 url,前端回退 /tts/speak 流式播放。"""
+    """听原句:返回句子音频直链。平台句库里有 audio_url 直接返回,否则合成→存 COS→回填;
+    个人长难句不回填库,直接返回空 url 让前端走 /tts/speak 流式。"""
     ls, _ = await lss.get_detail(db, ls_id=ls_id)
-    if ls is None or ls.status != "published":
-        raise AppError(code=404, message="长难句不存在或未发布")
-    if ls.audio_url:
-        return make_ok({"url": ls.audio_url})
-    speed = await tts_service.speed_for_stage_db(db, "junior")
-    url = await tts_service.get_or_create_audio_url(ls.text, speed=speed)
-    if url:
-        ls.audio_url = url
-        await db.commit()
-    return make_ok({"url": url or ""})
+    if ls is not None and ls.status == "published":
+        if ls.audio_url:
+            return make_ok({"url": ls.audio_url})
+        speed = await tts_service.speed_for_stage_db(db, "junior")
+        url = await tts_service.get_or_create_audio_url(ls.text, speed=speed)
+        if url:
+            ls.audio_url = url
+            await db.commit()
+        return make_ok({"url": url or ""})
+    s = await _student_one(db, ls_id, current_user.id)
+    if s is not None:
+        return make_ok({"url": ""})   # 前端回退流式
+    raise AppError(code=404, message="长难句不存在或未发布")
 
 
 @router.get("/{ls_id}/verify-types", response_model=BaseResponse[VerifyTypesOut])

@@ -10,10 +10,9 @@ import { Refresh, Loading } from '@element-plus/icons-vue'
 // ── 抽取触发 ──
 const sourceOptions = [
   { label: '按配置(sources)', value: 'config' },
-  { label: '全部三源', value: 'all' },
+  { label: '全部(真题+教材)', value: 'all' },
   { label: '① 平台真题', value: 'platform_real' },
-  { label: '② 教材语料', value: 'textbook' },
-  { label: '③ 学生上传', value: 'uploaded' },
+  { label: '② 教材单元短文', value: 'textbook' },
 ]
 const extractSource = ref('config')
 const extractLimit = ref(200)

@@ -587,13 +587,27 @@ async def _already_extracted_passage(db: AsyncSession, passage_id: uuid.UUID) ->
     )).first() is not None
 
 
+def _stage_from_grade(grade: str | None) -> str | None:
+    """从年级推学段:小|初|高。"""
+    g = grade or ""
+    if any(k in g for k in ["小学", "小", "一年级", "二年级", "三年级", "四年级", "五年级", "六年级"]):
+        return "小"
+    if any(k in g for k in ["初", "七年级", "八年级", "九年级"]):
+        return "初"
+    if any(k in g for k in ["高", "高一", "高二", "高三"]):
+        return "高"
+    return None
+
+
 async def _persist_long_sentences(
     db: AsyncSession, st: ExtractStats, *, text: str, scope: str, source_kind: str,
     min_words: int, dry_run: bool, owner_id: uuid.UUID | None = None,
     source_q_scope: str | None = None, source_question_id: uuid.UUID | None = None,
-    source_passage_id: uuid.UUID | None = None,
+    source_passage_id: uuid.UUID | None = None, locate: dict | None = None,
 ) -> None:
-    """三源共用:切句 → 长句判定 → AI 拆解 → 建 long_sentence → match_kp 挂句法 node / 落候选。"""
+    """切句 → 长句判定 → AI 拆解 → 建 long_sentence(带定位)→ match_kp 挂句法 node / 落候选。
+    locate: {textbook_version, stage, grade, semester, unit_id, exam_type} 按来源填。"""
+    loc = locate or {}
     for sent in split_sentences(text or ""):
         st.sentences += 1
         comp = syntactic_complexity(sent, min_words)
@@ -612,6 +626,9 @@ async def _persist_long_sentences(
             source_q_scope=source_q_scope, source_question_id=source_question_id,
             source_passage_id=source_passage_id,
             text=sent, analysis_json=analysis, difficulty=comp["difficulty"], status="draft",
+            textbook_version=loc.get("textbook_version"), stage=loc.get("stage"),
+            grade=loc.get("grade"), semester=loc.get("semester"),
+            unit_id=loc.get("unit_id"), exam_type=loc.get("exam_type"),
         )
         db.add(ls)
         await db.flush()
@@ -629,7 +646,8 @@ async def extract_from_platform(
     db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
     dry_run: bool = False, only_question_ids: set | None = None,
 ) -> ExtractStats:
-    """① 扫平台真题(type='real')未抽过的 → 长难句。幂等按 source_question_id;only_* 供测试限定。"""
+    """① 扫平台真题(type='real')未抽过的 → 平台长难句。幂等按 source_question_id。
+    定位:普通真题用 年级+上下;中考/高考真题用 学段(exam_type 区分)。"""
     st = ExtractStats()
     q = sa.select(PlatformQuestion).where(PlatformQuestion.type == "real")
     if only_question_ids is not None:
@@ -641,10 +659,16 @@ async def extract_from_platform(
         if await _already_extracted(db, pq.id):
             st.skipped_done += 1
             continue
+        locate = {
+            "textbook_version": pq.textbook_version,
+            "stage": pq.stage or _stage_from_grade(pq.grade),
+            "grade": pq.grade, "semester": pq.semester,
+            "exam_type": pq.exam_type or "普通",
+        }
         await _persist_long_sentences(
             db, st, text=pq.stem or "", scope="platform", source_kind="platform_real",
             source_q_scope="platform", source_question_id=pq.id,
-            min_words=min_words, dry_run=dry_run)
+            locate=locate, min_words=min_words, dry_run=dry_run)
         if not dry_run:
             await db.flush()
     await (db.rollback() if dry_run else db.commit())
@@ -655,68 +679,81 @@ async def extract_from_textbook(
     db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
     dry_run: bool = False, only_passage_ids: set | None = None,
 ) -> ExtractStats:
-    """② 扫平台语料 Passage(reading_text/dialogue)未抽过的 → 长难句(平台域)。幂等按 source_passage_id。"""
-    from app.models.d16_question_domain import Passage
+    """② 扫课程单元短文(curriculum_unit_passages)未抽过的 → 平台长难句。幂等按 source_passage_id。
+    定位:从所属单元(curriculum_units)取 教材版/年级/学期/单元 id,学段从年级推。"""
+    from app.models.d4_knowledge import CurriculumUnit, CurriculumUnitPassage
     st = ExtractStats()
-    q = sa.select(Passage).where(
-        Passage.scope == "platform", Passage.kind.in_(["reading_text", "dialogue"]),
-        Passage.text.isnot(None))
+    q = (sa.select(CurriculumUnitPassage, CurriculumUnit)
+         .join(CurriculumUnit, CurriculumUnit.id == CurriculumUnitPassage.unit_id)
+         .where(CurriculumUnitPassage.text.isnot(None)))
     if only_passage_ids is not None:
-        q = q.where(Passage.id.in_(only_passage_ids))
+        q = q.where(CurriculumUnitPassage.id.in_(only_passage_ids))
     if limit is not None:
         q = q.limit(limit)
-    for pg in (await db.execute(q)).scalars().all():
+    for up, unit in (await db.execute(q)).all():
         st.scanned += 1
-        if await _already_extracted_passage(db, pg.id):
+        if await _already_extracted_passage(db, up.id):
             st.skipped_done += 1
             continue
+        locate = {
+            "textbook_version": unit.textbook_version, "grade": unit.grade,
+            "semester": unit.semester, "unit_id": unit.id,
+            "stage": _stage_from_grade(unit.grade),
+        }
         await _persist_long_sentences(
-            db, st, text=pg.text or "", scope="platform", source_kind="textbook",
-            source_passage_id=pg.id, min_words=min_words, dry_run=dry_run)
+            db, st, text=up.text or "", scope="platform", source_kind="textbook",
+            source_passage_id=up.id, locate=locate, min_words=min_words, dry_run=dry_run)
         if not dry_run:
             await db.flush()
     await (db.rollback() if dry_run else db.commit())
     return st
 
 
-async def extract_from_uploaded(
-    db: AsyncSession, *, owner_id: uuid.UUID | None = None, limit: int | None = None,
-    min_words: int = DEFAULT_MIN_WORDS, dry_run: bool = False, only_question_ids: set | None = None,
-) -> ExtractStats:
-    """③ 扫学生上传题(owner_scope='student')未抽过的 → 长难句(个人域,owner_id=该生)。
-
-    幂等按 source_question_id;owner_id 限定单生,only_* 供测试限定。
-    """
-    from app.models.d16_question_domain import UploadedQuestion
-    st = ExtractStats()
-    q = sa.select(UploadedQuestion).where(
-        UploadedQuestion.owner_scope == "student", UploadedQuestion.stem.isnot(None))
-    if owner_id is not None:
-        q = q.where(UploadedQuestion.owner_id == owner_id)
-    if only_question_ids is not None:
-        q = q.where(UploadedQuestion.id.in_(only_question_ids))
-    if limit is not None:
-        q = q.limit(limit)
-    for uq in (await db.execute(q)).scalars().all():
-        st.scanned += 1
-        if await _already_extracted(db, uq.id):
-            st.skipped_done += 1
-            continue
-        await _persist_long_sentences(
-            db, st, text=uq.stem or "", scope="student", owner_id=uq.owner_id,
-            source_kind="uploaded", source_q_scope="uploaded", source_question_id=uq.id,
-            min_words=min_words, dry_run=dry_run)
-        if not dry_run:
-            await db.flush()
-    await (db.rollback() if dry_run else db.commit())
-    return st
-
-
+# 平台抽取来源:仅 真题 + 教材(学生上传走独立表,见 extract_student_for_question)
 _SOURCE_KIND_TO_FN = {
     "platform_real": extract_from_platform,
     "textbook": extract_from_textbook,
-    "uploaded": extract_from_uploaded,
 }
+
+
+async def _student_already_extracted(db: AsyncSession, question_id: uuid.UUID) -> bool:
+    from app.models.d20_long_sentence import StudentLongSentence
+    return (await db.execute(sa.select(StudentLongSentence.id).where(
+        StudentLongSentence.source_question_id == question_id).limit(1))).first() is not None
+
+
+async def extract_student_for_question(
+    db: AsyncSession, *, owner_id: uuid.UUID, question_id: uuid.UUID, text: str,
+    min_words: int = DEFAULT_MIN_WORDS,
+) -> int:
+    """学生上传作业时调用:把该题文本里的长难句抽到 student_long_sentence(本人可见,直接发布)。
+    幂等按 source_question_id。返回新增条数。best-effort,调用方自行 commit。"""
+    from app.models.d20_long_sentence import StudentLongSentence
+    if not text or await _student_already_extracted(db, question_id):
+        return 0
+    n = 0
+    for sent in split_sentences(text):
+        comp = syntactic_complexity(sent, min_words)
+        if not _is_long(comp, sent, min_words):
+            continue
+        analysis = await analyze_sentence(sent)
+        analysis["difficulty"] = comp["difficulty"]
+        analysis["complexity"] = comp
+        db.add(StudentLongSentence(
+            id=uuid.uuid4(), owner_id=owner_id, source_question_id=question_id,
+            text=sent, analysis_json=analysis, difficulty=comp["difficulty"], status="published"))
+        n += 1
+    return n
+
+
+async def list_student_published(
+    db: AsyncSession, *, owner_id: uuid.UUID, limit: int = 50,
+) -> list:
+    from app.models.d20_long_sentence import StudentLongSentence
+    return list((await db.execute(
+        sa.select(StudentLongSentence).where(
+            StudentLongSentence.owner_id == owner_id, StudentLongSentence.status == "published")
+        .order_by(StudentLongSentence.created_at.desc()).limit(limit))).scalars().all())
 
 
 async def run_extract(
