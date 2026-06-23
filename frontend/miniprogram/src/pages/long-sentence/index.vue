@@ -112,12 +112,17 @@
           <text class="sec-title">结构解析</text>
           <text class="link" @tap="openKpDetail">查看语法点详解 ›</text>
         </view>
-        <text v-if="analysis?.sentence_type" class="stype">这是一个{{ analysis.sentence_type.replace(/。$/, '') }}。</text>
-        <view v-for="e in (analysis?.explanations || [])" :key="e.idx" class="exp-row">
-          <text class="sno" :style="{ background: colorOf(e.idx) }">{{ e.idx }}</text>
-          <text class="exp-text">{{ e.text }}</text>
+        <view v-if="analysis?.sentence_type" class="stype">
+          <text class="stype-ic">📐</text>
+          <text class="stype-tx">{{ analysis.sentence_type.replace(/。$/, '') }}</text>
         </view>
-        <text v-if="analysis?.summary" class="summary">{{ analysis.summary }}</text>
+        <view class="tl">
+          <view v-for="e in (analysis?.explanations || [])" :key="e.idx" class="tl-row">
+            <view class="tl-rail"><text class="tl-dot" :style="{ background: colorOf(e.idx) }">{{ e.idx }}</text></view>
+            <text class="tl-text">{{ e.text }}</text>
+          </view>
+        </view>
+        <view v-if="analysis?.summary" class="summary"><text class="summary-lb">小结</text>{{ analysis.summary }}</view>
       </view>
 
       <view class="footer-space" />
@@ -480,11 +485,18 @@ onLoad(async () => {
 .sec-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
 .sec-title { font-size: 30rpx; font-weight: 700; border-left: 6rpx solid var(--c-primary); padding-left: 14rpx; }
 .link { font-size: 24rpx; color: var(--c-primary); background: var(--c-primary-faint); padding: 8rpx 18rpx; border-radius: 24rpx; }
-.stype { display: block; font-size: 28rpx; margin-bottom: 12rpx; }
-.exp-row { display: flex; gap: 12rpx; padding: 8rpx 0; align-items: flex-start; }
-.sno { width: 34rpx; height: 34rpx; line-height: 34rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 20rpx; flex-shrink: 0; }
-.exp-text { flex: 1; font-size: 27rpx; color: #555; line-height: 1.6; }
-.summary { display: block; margin-top: 14rpx; font-size: 27rpx; color: #777; line-height: 1.7; }
+.stype { display: flex; align-items: center; gap: 10rpx; background: var(--c-primary-faint); border-radius: 14rpx; padding: 14rpx 18rpx; margin-bottom: 20rpx; }
+.stype-ic { font-size: 28rpx; }
+.stype-tx { font-size: 27rpx; font-weight: 600; color: var(--c-primary); }
+/* 逐条解析:时间线 */
+.tl { padding: 2rpx 0; }
+.tl-row { display: flex; gap: 16rpx; position: relative; padding-bottom: 22rpx; }
+.tl-rail { position: relative; flex-shrink: 0; width: 40rpx; display: flex; justify-content: center; }
+.tl-dot { width: 38rpx; height: 38rpx; line-height: 38rpx; text-align: center; border-radius: 50%; color: #fff; font-size: 21rpx; z-index: 1; }
+.tl-row:not(:last-child) .tl-rail::before { content: ''; position: absolute; top: 40rpx; bottom: -16rpx; left: 50%; transform: translateX(-50%); width: 2rpx; background: #e6e9ef; }
+.tl-text { flex: 1; font-size: 27rpx; color: #555; line-height: 1.6; padding-top: 4rpx; }
+.summary { display: block; margin-top: 6rpx; padding: 16rpx 18rpx; background: #f7f9fc; border-radius: 14rpx; font-size: 26rpx; color: #666; line-height: 1.7; }
+.summary-lb { font-size: 21rpx; color: #fff; background: #a7b0c0; border-radius: 8rpx; padding: 3rpx 12rpx; margin-right: 10rpx; }
 .footer-space { height: 140rpx; }
 
 /* 打卡日历弹层 */
