@@ -137,6 +137,18 @@
       <view class="foot-side" @tap="go('/pages/wrong-questions/list')"><text class="fs-ic">❓</text><text class="fs-tx">错题本</text></view>
     </view>
 
+    <!-- 更多:底部弹层 -->
+    <view v-if="moreOpen" class="more-mask" @tap="moreOpen = false">
+      <view class="more-sheet" @tap.stop>
+        <view class="more-grab" />
+        <view class="more-item" @tap="moreToggleStruct"><text class="mi-ic">👁</text><text class="mi-tx">{{ showStruct ? '隐藏原句结构' : '显示原句结构' }}</text><text class="mi-arrow">›</text></view>
+        <view class="more-item" @tap="moreCopy"><text class="mi-ic">📋</text><text class="mi-tx">复制原句</text><text class="mi-arrow">›</text></view>
+        <view class="more-item" @tap="moreDiff"><text class="mi-ic">📊</text><text class="mi-tx">难度说明</text><text class="mi-arrow">›</text></view>
+        <view class="more-item" @tap="moreKp"><text class="mi-ic">📖</text><text class="mi-tx">查看语法点详解</text><text class="mi-arrow">›</text></view>
+        <view class="more-cancel" @tap="moreOpen = false">取消</view>
+      </view>
+    </view>
+
     <!-- 打卡日历弹层 -->
     <view v-if="calOpen" class="cal-mask" @tap="calOpen = false">
       <view class="cal-card" @tap.stop>
@@ -293,28 +305,23 @@ async function toggleFav() {
   }
 }
 
-/* ── 更多:操作菜单(复制原句 / 难度说明 / 语法点详解)── */
-function onMore() {
-  const items = [showStruct.value ? '隐藏原句结构' : '显示原句结构', '复制原句', '难度说明', '查看语法点详解']
-  uni.showActionSheet({
-    itemList: items,
-    success: ({ tapIndex }) => {
-      if (tapIndex === 0) {
-        showStruct.value = !showStruct.value
-      } else if (tapIndex === 1) {
-        uni.setClipboardData({ data: detail.value?.text || '', success: () => uni.showToast({ title: '已复制', icon: 'success' }) })
-      } else if (tapIndex === 2) {
-        const c = analysis.value?.complexity
-        const content = c
-          ? `难度 ${difficulty.value ?? '—'} · ${diffLevel.value.label}\n从句 ${c.clause_count ?? '—'} · 树深 ${c.tree_depth ?? '—'} · 依存距离 ${c.mdd ?? '—'} · 词数 ${c.word_count ?? '—'}`
-          : `难度 ${difficulty.value ?? '暂无'}`
-        uni.showModal({ title: '难度说明', content, showCancel: false })
-      } else if (tapIndex === 3) {
-        openKpDetail()
-      }
-    },
-  })
+/* ── 更多:自定义底部弹层 ── */
+const moreOpen = ref(false)
+function onMore() { moreOpen.value = true }
+function moreToggleStruct() { showStruct.value = !showStruct.value; moreOpen.value = false }
+function moreCopy() {
+  moreOpen.value = false
+  uni.setClipboardData({ data: detail.value?.text || '', success: () => uni.showToast({ title: '已复制', icon: 'success' }) })
 }
+function moreDiff() {
+  moreOpen.value = false
+  const c = analysis.value?.complexity
+  const content = c
+    ? `难度 ${difficulty.value ?? '—'} · ${diffLevel.value.label}\n从句 ${c.clause_count ?? '—'} · 树深 ${c.tree_depth ?? '—'} · 依存距离 ${c.mdd ?? '—'} · 词数 ${c.word_count ?? '—'}`
+    : `难度 ${difficulty.value ?? '暂无'}`
+  uni.showModal({ title: '难度说明', content, showCancel: false })
+}
+function moreKp() { moreOpen.value = false; openKpDetail() }
 
 /* ── 语法点详解:跳关联考点内容页 ── */
 function openKpDetail() {
@@ -520,6 +527,18 @@ onLoad(async () => {
 .summary { display: block; margin-top: 6rpx; padding: 14rpx 16rpx; background: #f7f9fc; border-radius: 12rpx; font-size: 24rpx; color: #6b7178; line-height: 1.7; }
 .summary-lb { font-size: 20rpx; color: #fff; background: #a7b0c0; border-radius: 8rpx; padding: 3rpx 12rpx; margin-right: 10rpx; }
 .footer-space { height: 140rpx; }
+
+/* 更多:底部弹层 */
+.more-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 99; display: flex; align-items: flex-end; }
+.more-sheet { width: 100%; background: #fff; border-radius: 28rpx 28rpx 0 0; padding: 12rpx 0 calc(12rpx + env(safe-area-inset-bottom)); }
+.more-grab { width: 64rpx; height: 8rpx; background: #e2e6ee; border-radius: 8rpx; margin: 8rpx auto 14rpx; }
+.more-item { display: flex; align-items: center; gap: 18rpx; padding: 26rpx 36rpx; }
+.more-item:active { background: #f5f7fa; }
+.mi-ic { font-size: 32rpx; width: 40rpx; text-align: center; }
+.mi-tx { flex: 1; font-size: 28rpx; color: #2a3138; }
+.mi-arrow { color: #c2c8d2; font-size: 30rpx; }
+.more-cancel { margin-top: 10rpx; border-top: 12rpx solid #f4f6fa; padding: 28rpx 0; text-align: center; font-size: 28rpx; color: #888; }
+.more-cancel:active { background: #f5f7fa; }
 
 /* 打卡日历弹层 */
 .cal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 99; }
