@@ -11,7 +11,7 @@
           <text class="prog-label">今日学习 <text class="prog-num">{{ index + 1 }}</text> / {{ items.length }} 句</text>
           <view class="prog-bar"><view class="prog-fill" :style="{ width: pct + '%' }" /></view>
         </view>
-        <view class="streak" @tap="openCalendar"><text class="streak-ic">🔥</text>{{ checkinStatus ? '连续 ' + checkinStatus.current_streak + ' 天' : '打卡' }}</view>
+        <view class="streak" @tap="openCalendar"><view class="ic ic-flame streak-ic" />{{ checkinStatus ? '连续 ' + checkinStatus.current_streak + ' 天' : '打卡' }}</view>
       </view>
 
       <!-- 句子卡 -->
@@ -47,13 +47,13 @@
 
         <!-- 工具栏:听 / 字号 / 护眼 / 翻译 / 收藏 / 更多 -->
         <view class="toolbar">
-          <view class="tb" :class="{ on: playing }" @tap="listen"><text class="tb-ic">🔊</text><text class="tb-tx">{{ playing ? '停止' : (loadingAudio ? '…' : '听') }}</text></view>
-          <view class="tb" @tap="decFont"><text class="tb-ic">A−</text><text class="tb-tx">缩小</text></view>
-          <view class="tb" @tap="incFont"><text class="tb-ic">A+</text><text class="tb-tx">放大</text></view>
-          <view class="tb" :class="{ on: eyeMode }" @tap="eyeMode = !eyeMode"><text class="tb-ic">🌿</text><text class="tb-tx">护眼</text></view>
-          <view class="tb" :class="{ on: showTranslate }" @tap="showTranslate = !showTranslate"><text class="tb-ic">📝</text><text class="tb-tx">翻译</text></view>
-          <view class="tb" :class="{ on: favorited }" @tap="toggleFav"><text class="tb-ic">{{ favorited ? '★' : '☆' }}</text><text class="tb-tx">收藏</text></view>
-          <view class="tb" @tap="onMore"><text class="tb-ic">⋯</text><text class="tb-tx">更多</text></view>
+          <view class="tb" :class="{ on: playing }" @tap="listen"><view class="ic ic-volume tb-ic" /><text class="tb-tx">{{ playing ? '停止' : (loadingAudio ? '…' : '听') }}</text></view>
+          <view class="tb" @tap="decFont"><text class="tb-ic tb-az">A−</text><text class="tb-tx">缩小</text></view>
+          <view class="tb" @tap="incFont"><text class="tb-ic tb-az">A+</text><text class="tb-tx">放大</text></view>
+          <view class="tb" :class="{ on: eyeMode }" @tap="eyeMode = !eyeMode"><view class="ic ic-eye tb-ic" /><text class="tb-tx">护眼</text></view>
+          <view class="tb" :class="{ on: showTranslate }" @tap="showTranslate = !showTranslate"><view class="ic ic-translate tb-ic" /><text class="tb-tx">翻译</text></view>
+          <view class="tb" :class="{ on: favorited }" @tap="toggleFav"><view class="ic tb-ic" :class="favorited ? 'ic-star-on' : 'ic-star'" /><text class="tb-tx">收藏</text></view>
+          <view class="tb" @tap="onMore"><view class="ic ic-more tb-ic" /><text class="tb-tx">更多</text></view>
         </view>
       </view>
 
@@ -115,7 +115,7 @@
           <text class="link" @tap="openKpDetail">查看语法点详解 ›</text>
         </view>
         <view v-if="analysis?.sentence_type" class="stype">
-          <text class="stype-ic">📐</text>
+          <view class="ic ic-layout stype-ic" />
           <text class="stype-tx">{{ analysis.sentence_type.replace(/。$/, '') }}</text>
         </view>
         <view class="tl">
@@ -132,19 +132,19 @@
 
     <!-- 底部固定栏 -->
     <view v-if="!loading && items.length" class="footer">
-      <view class="foot-side" @tap="go('/pages/vocabulary/index')"><text class="fs-ic">🔖</text><text class="fs-tx">生词本</text></view>
+      <view class="foot-side" @tap="go('/pages/vocabulary/index')"><view class="ic ic-book fs-ic" /><text class="fs-tx">生词本</text></view>
       <view class="foot-main" @tap="next">再学一句</view>
-      <view class="foot-side" @tap="go('/pages/wrong-questions/list')"><text class="fs-ic">❓</text><text class="fs-tx">错题本</text></view>
+      <view class="foot-side" @tap="go('/pages/wrong-questions/list')"><view class="ic ic-help fs-ic" /><text class="fs-tx">错题本</text></view>
     </view>
 
     <!-- 更多:底部弹层 -->
     <view v-if="moreOpen" class="more-mask" @tap="moreOpen = false">
       <view class="more-sheet" @tap.stop>
         <view class="more-grab" />
-        <view class="more-item" @tap="moreToggleStruct"><text class="mi-ic">👁</text><text class="mi-tx">{{ showStruct ? '隐藏原句结构' : '显示原句结构' }}</text><text class="mi-arrow">›</text></view>
-        <view class="more-item" @tap="moreCopy"><text class="mi-ic">📋</text><text class="mi-tx">复制原句</text><text class="mi-arrow">›</text></view>
-        <view class="more-item" @tap="moreDiff"><text class="mi-ic">📊</text><text class="mi-tx">难度说明</text><text class="mi-arrow">›</text></view>
-        <view class="more-item" @tap="moreKp"><text class="mi-ic">📖</text><text class="mi-tx">查看语法点详解</text><text class="mi-arrow">›</text></view>
+        <view class="more-item" @tap="moreToggleStruct"><view class="ic ic-eye mi-ic" /><text class="mi-tx">{{ showStruct ? '隐藏原句结构' : '显示原句结构' }}</text><text class="mi-arrow">›</text></view>
+        <view class="more-item" @tap="moreCopy"><view class="ic ic-clipboard mi-ic" /><text class="mi-tx">复制原句</text><text class="mi-arrow">›</text></view>
+        <view class="more-item" @tap="moreDiff"><view class="ic ic-chart mi-ic" /><text class="mi-tx">难度说明</text><text class="mi-arrow">›</text></view>
+        <view class="more-item" @tap="moreKp"><view class="ic ic-book mi-ic" /><text class="mi-tx">查看语法点详解</text><text class="mi-arrow">›</text></view>
         <view class="more-cancel" @tap="moreOpen = false">取消</view>
       </view>
     </view>
@@ -153,7 +153,7 @@
     <view v-if="calOpen" class="cal-mask" @tap="calOpen = false">
       <view class="cal-card" @tap.stop>
         <view class="cal-head">
-          <text class="cal-title">📅 学习打卡</text>
+          <view class="cal-title"><view class="ic ic-calendar cal-title-ic" /><text>学习打卡</text></view>
           <text class="cal-close" @tap="calOpen = false">✕</text>
         </view>
         <view class="cal-stats">
@@ -435,7 +435,7 @@ onLoad(async () => {
 .prog-bar { height: 10rpx; background: #e5e9f0; border-radius: 8rpx; margin-top: 12rpx; overflow: hidden; }
 .prog-fill { height: 100%; background: var(--c-primary); border-radius: 8rpx; transition: width .3s; }
 .streak { display: flex; align-items: center; gap: 6rpx; background: #fff; border: 1rpx solid #e8ebf1; border-radius: 28rpx; padding: 8rpx 20rpx; font-size: 23rpx; color: #666; }
-.streak-ic { font-size: 26rpx; }
+.streak-ic.ic { width: 28rpx; height: 28rpx; margin-right: 4rpx; }
 
 .card { background: #fff; border-radius: 24rpx; padding: 28rpx; margin-bottom: 20rpx; box-shadow: 0 2rpx 16rpx rgba(0,0,0,.05); }
 
@@ -469,13 +469,31 @@ onLoad(async () => {
 .lg-dot { width: 18rpx; height: 18rpx; border-radius: 5rpx; flex-shrink: 0; }
 .lg-tx { font-size: 23rpx; color: #777; }
 
+/* —— 线性图标(与首页一致:SVG stroke 描边、主色蓝)—— */
+.ic { display: inline-block; background-repeat: no-repeat; background-position: center; background-size: contain; width: 36rpx; height: 36rpx; vertical-align: middle; }
+.ic-volume { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4z'/%3E%3Cpath d='M15.5 8.5a5 5 0 0 1 0 7'/%3E%3Cpath d='M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E"); }
+.ic-eye { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E"); }
+.ic-translate { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 8 6 6'/%3E%3Cpath d='m4 14 6-6 2-3'/%3E%3Cpath d='M2 5h12'/%3E%3Cpath d='M7 2h1'/%3E%3Cpath d='m22 22-5-10-5 10'/%3E%3Cpath d='M14 18h6'/%3E%3C/svg%3E"); }
+.ic-star { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2l3 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.9 21l1.2-6.8-5-4.9 6.9-1z'/%3E%3C/svg%3E"); }
+.ic-star-on { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffb020' stroke='%23ffb020' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M12 2l3 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.9 21l1.2-6.8-5-4.9 6.9-1z'/%3E%3C/svg%3E"); }
+.ic-more { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233d8bf5'%3E%3Ccircle cx='5' cy='12' r='1.8'/%3E%3Ccircle cx='12' cy='12' r='1.8'/%3E%3Ccircle cx='19' cy='12' r='1.8'/%3E%3C/svg%3E"); }
+.ic-flame { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff8a3d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z'/%3E%3C/svg%3E"); }
+.ic-book { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
+.ic-help { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E"); }
+.ic-clipboard { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/%3E%3Crect x='8' y='2' width='8' height='4' rx='1'/%3E%3C/svg%3E"); }
+.ic-chart { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' y1='20' x2='6' y2='15'/%3E%3Cline x1='12' y1='20' x2='12' y2='9'/%3E%3Cline x1='18' y1='20' x2='18' y2='4'/%3E%3C/svg%3E"); }
+.ic-calendar { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E"); }
+.ic-layout { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M3 9h18'/%3E%3Cpath d='M9 21V9'/%3E%3C/svg%3E"); }
+.stype-ic.ic { width: 30rpx; height: 30rpx; }
+
 /* 工具栏:一排图标按钮 */
 .toolbar { display: flex; gap: 8rpx; margin-top: 20rpx; }
-.tb { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6rpx; padding: 14rpx 0; background: #f5f7fa; border-radius: 16rpx; }
-.tb-ic { font-size: 30rpx; color: #555; }
+.tb { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8rpx; padding: 14rpx 0; background: #f5f7fa; border-radius: 16rpx; }
+.tb-ic.ic { width: 38rpx; height: 38rpx; }
+.tb-az { font-size: 30rpx; font-weight: 600; color: var(--c-primary); line-height: 38rpx; }
 .tb-tx { font-size: 20rpx; color: #888; }
 .tb.on { background: var(--c-primary-faint); }
-.tb.on .tb-ic, .tb.on .tb-tx { color: var(--c-primary); }
+.tb.on .tb-tx { color: var(--c-primary); }
 
 /* Tabs:分段控件 */
 .seg-tabs { display: flex; gap: 6rpx; background: #eef1f6; border-radius: 16rpx; padding: 6rpx; margin-bottom: 24rpx; }
@@ -534,7 +552,7 @@ onLoad(async () => {
 .more-grab { width: 64rpx; height: 8rpx; background: #e2e6ee; border-radius: 8rpx; margin: 8rpx auto 14rpx; }
 .more-item { display: flex; align-items: center; gap: 18rpx; padding: 26rpx 36rpx; }
 .more-item:active { background: #f5f7fa; }
-.mi-ic { font-size: 32rpx; width: 40rpx; text-align: center; }
+.mi-ic.ic { width: 38rpx; height: 38rpx; }
 .mi-tx { flex: 1; font-size: 28rpx; color: #2a3138; }
 .mi-arrow { color: #c2c8d2; font-size: 30rpx; }
 .more-cancel { margin-top: 10rpx; border-top: 12rpx solid #f4f6fa; padding: 28rpx 0; text-align: center; font-size: 28rpx; color: #888; }
@@ -544,7 +562,8 @@ onLoad(async () => {
 .cal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 99; }
 .cal-card { width: 600rpx; background: #fff; border-radius: 24rpx; padding: 30rpx; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; }
-.cal-title { font-size: 32rpx; font-weight: 800; }
+.cal-title { font-size: 32rpx; font-weight: 800; display: flex; align-items: center; }
+.cal-title-ic.ic { width: 32rpx; height: 32rpx; margin-right: 8rpx; }
 .cal-close { font-size: 32rpx; color: #999; padding: 0 10rpx; }
 .cal-stats { display: flex; justify-content: space-around; margin-bottom: 24rpx; }
 .cal-stat { display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
@@ -564,7 +583,7 @@ onLoad(async () => {
 /* 底部固定 */
 .footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; align-items: center; gap: 20rpx; padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -2rpx 14rpx rgba(0,0,0,.05); }
 .foot-side { display: flex; flex-direction: column; align-items: center; gap: 4rpx; }
-.fs-ic { font-size: 32rpx; }
+.fs-ic.ic { width: 42rpx; height: 42rpx; }
 .fs-tx { font-size: 22rpx; color: #666; }
 .foot-main { flex: 1; background: var(--g-primary); color: var(--c-on-primary); text-align: center; font-size: 32rpx; font-weight: 700; padding: 22rpx 0; border-radius: 44rpx; box-shadow: var(--shadow-primary); }
 </style>
