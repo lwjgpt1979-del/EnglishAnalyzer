@@ -96,6 +96,20 @@ export function submitWordProduce(wordId: string, sentence: string): Promise<Wor
   return request<WordProduceResult>(`/api/v1/vocabulary/${wordId}/produce`, { method: 'POST', data: { sentence } })
 }
 
+// R9.3 迁移项(同词新语境)
+export interface WordTransferOut { context: { text: string; source: string } | null; probe: WordProbe | null }
+export interface WordTransferResult { correct: boolean; verdict: 'transferred' | 'memorized'; correct_answer: string; misconception?: string | null; recep: number; prod: number; transfer_ok: boolean; mastered: boolean }
+
+/** 取迁移题:同词新语境的语境填空(exclude=原句,避免雷同)。 */
+export function getWordTransfer(wordId: string, exclude = ''): Promise<WordTransferOut> {
+  return request<WordTransferOut>(`/api/v1/vocabulary/${wordId}/transfer`, { method: 'GET', data: { exclude } })
+}
+
+/** 提交迁移题:transferred(真懂)/ memorized(疑似记住原题)。 */
+export function submitWordTransfer(wordId: string, answer: string): Promise<WordTransferResult> {
+  return request<WordTransferResult>(`/api/v1/vocabulary/${wordId}/transfer-submit`, { method: 'POST', data: { answer } })
+}
+
 export function getWrongWords(): Promise<VocabWrongList> {
   return request<VocabWrongList>('/api/v1/vocabulary/wrong-words', { method: 'GET' })
 }

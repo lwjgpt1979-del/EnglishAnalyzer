@@ -119,6 +119,29 @@
               </view>
             </view>
 
+            <!-- 迁移挑战(换个句子认得出吗,区分"记住题 vs 会这个词")-->
+            <view class="tf-box">
+              <view v-if="!tfStarted" class="tf-cta" @tap="startTransfer">
+                <view class="ic ic-refresh" style="width:28rpx;height:28rpx" /><text>换个句子 · 真的会这个词吗</text>
+              </view>
+              <view v-else-if="tfLoading" class="probe-tip">加载中…</view>
+              <view v-else-if="!tfProbe" class="probe-tip">暂无新语境句</view>
+              <view v-else>
+                <text class="probe-q">{{ tfProbe.prompt }}</text>
+                <view class="probe-opts">
+                  <text v-for="(o, i) in tfProbe.options" :key="i" class="probe-opt"
+                    :class="{ on: tfPick === o,
+                              ok: tfResult && o === tfResult.correct_answer,
+                              no: tfResult && tfPick === o && o !== tfResult.correct_answer }"
+                    @tap="!tfResult && (tfPick = o)">{{ o }}</text>
+                </view>
+                <view v-if="!tfResult" class="probe-submit" :class="{ dis: !tfPick }" @tap="submitTransfer">提交</view>
+                <view v-else class="tf-verdict" :class="tfResult.verdict">
+                  {{ tfResult.verdict === 'transferred' ? '✓ 迁移成功 · 真的会这个词(不是记住那句)' : ('✗ 像是记住了原句 · 换句没认出' + (tfResult.misconception ? '|' + tfResult.misconception : '')) }}
+                </view>
+              </view>
+            </view>
+
             <view class="probe-recep">
               <text>接收 {{ Math.round(recep * 100) }}% · 产出 {{ Math.round(prod * 100) }}%</text>
               <text v-if="mastered" class="probe-mastered">已掌握 ✓</text>
@@ -343,8 +366,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce } from '@/api/vocabulary'
-import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult } from '@/api/vocabulary'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer } from '@/api/vocabulary'
+import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
@@ -448,10 +471,18 @@ const produceTask = ref<WordProduceTask | null>(null)
 const produceInput = ref('')
 const produceResult = ref<WordProduceResult | null>(null)
 const produceSubmitting = ref(false)
+// 迁移挑战(同词新语境)
+const tfStarted = ref(false)
+const tfLoading = ref(false)
+const tfCtx = ref<{ text: string; source: string } | null>(null)
+const tfProbe = ref<WordProbe | null>(null)
+const tfPick = ref('')
+const tfResult = ref<WordTransferResult | null>(null)
 function resetProbe() {
   probeOpen.value = false; probeLoading.value = false; probeCtx.value = null
   probes.value = []; probePick.value = {}; probeResults.value = {}; recep.value = 0; prod.value = 0; mastered.value = false
   produceTask.value = null; produceInput.value = ''; produceResult.value = null; produceSubmitting.value = false
+  tfStarted.value = false; tfLoading.value = false; tfCtx.value = null; tfProbe.value = null; tfPick.value = ''; tfResult.value = null
 }
 watch(() => curStudy.value.word_id, resetProbe)   // 换词即重置检测
 async function openProbe() {
@@ -494,6 +525,26 @@ async function submitProduce() {
   finally { produceSubmitting.value = false }
 }
 function redoProduce() { produceResult.value = null }
+async function startTransfer() {
+  const id = curStudy.value.word_id
+  if (!id) return
+  tfStarted.value = true; tfLoading.value = true; tfResult.value = null; tfPick.value = ''
+  try {
+    const r = await getWordTransfer(id, probeCtx.value?.text || '')
+    tfCtx.value = r.context; tfProbe.value = r.probe
+    if (!r.probe) uni.showToast({ title: '暂无同结构新句', icon: 'none' })
+  } catch { uni.showToast({ title: '加载迁移题失败', icon: 'none' }) }
+  finally { tfLoading.value = false }
+}
+async function submitTransfer() {
+  const id = curStudy.value.word_id
+  if (!id || !tfPick.value || tfResult.value) return
+  try {
+    const r = await submitWordTransfer(id, tfPick.value)
+    tfResult.value = r; recep.value = r.recep; prod.value = r.prod; mastered.value = r.mastered
+    uni.showToast({ title: r.verdict === 'transferred' ? '真懂这个词 ✓' : '换句卡住了', icon: 'none' })
+  } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
+}
 const studyBtnLabel = computed(() => {
   if (isReview.value) {
     return reviewIndex.value >= reviewCards.value.length - 1 ? '开始测试 →' : '记住了，下一个'
@@ -1170,6 +1221,13 @@ onMounted(load)
 .pr-dot.on { background: #1f9d6b; }
 .pr-dim-note { flex-basis: 100%; font-size: 21rpx; color: #8a93a3; line-height: 1.5; }
 .pr-fb { display: block; margin-top: 8rpx; font-size: 22rpx; color: #6b7178; line-height: 1.6; }
+/* 迁移挑战 */
+.tf-box { margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx dashed #e6e9ef; }
+.tf-cta { display: flex; align-items: center; justify-content: center; gap: 8rpx; background: #eef0fe; color: #5a5cf0; border-radius: var(--r-pill); padding: 14rpx 0; font-size: 25rpx; font-weight: 700; }
+.tf-cta:active { opacity: .85; }
+.tf-verdict { margin-top: 10rpx; padding: 12rpx 14rpx; border-radius: 12rpx; font-size: 23rpx; line-height: 1.6; }
+.tf-verdict.transferred { background: #e9f7ef; color: #1f9d6b; }
+.tf-verdict.memorized { background: #fdf2e3; color: #d0860f; }
 .done { text-align: center; }
 .done-emoji { font-size: 80rpx; }
 .done-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); margin: 16rpx 0; }
