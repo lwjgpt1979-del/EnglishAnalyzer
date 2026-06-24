@@ -343,7 +343,7 @@ async def analyze_sentence(sentence: str) -> dict:
     if is_llm_dev_mode():
         words = sentence.split()
         segs = [{"idx": i + 1, "type": p, "text": sentence} for i, p in enumerate(syntax or ["主句"])]
-        return _enrich_analysis({
+        res = _enrich_analysis({
             "sentence_type": "主从复合句" if syntax else "简单句",
             "translation": f"[译] {sentence[:30]}…",
             "summary": "mock 结构解析",
@@ -354,6 +354,8 @@ async def analyze_sentence(sentence: str) -> dict:
             "grammar_points": [{"name": p, "explanation": "mock 讲解"} for p in (syntax or ["长句修饰"])],
             "explanations": [{"idx": s["idx"], "text": f"{s['type']} mock 解析"} for s in segs],
         }, sentence, syntax)
+        res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
+        return res
     system = (
         "你是英语语法专家。把给定长难句做**多维结构化拆解**,供学习 App 展示。严格输出 JSON,所有 type/name/解析用中文。\n"
         "字段要求:\n"
@@ -384,13 +386,89 @@ async def analyze_sentence(sentence: str) -> dict:
                                          response_format={"type": "json_object"})
             data = json.loads(resp.choices[0].message.content or "{}")
             if data.get("segments"):          # 拿到有效结构 → 用之
-                return _enrich_analysis(data, sentence, syntax)
+                res = _enrich_analysis(data, sentence, syntax)
+                res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
+                return res
         except Exception as exc:  # noqa: BLE001
             _log.warning("analyze_sentence attempt %d failed: %s", _attempt + 1, exc)
     return _enrich_analysis({"sentence_type": "", "translation": "", "summary": "",
                              "segments": [], "structure": [], "components": {},
                              "key_words": [], "grammar_points": [], "explanations": []},
                             sentence, syntax)
+
+
+_PARA_PROMPT = "下面哪句最准确地表达了原句的意思?"
+
+
+async def generate_paraphrase(sentence: str, translation: str | None = None) -> dict | None:
+    """生成「释义单选」探针:1 个准确转述 + 3 个诊断性干扰项(各对应一种典型理解失败),
+    用于检验学生是否真正读懂句意(而非认词)。dev 确定性 mock;生产走 LLM。无法生成→None。
+    返回 {prompt, options[乱序], answer, misconceptions:{干扰项: 错因}}。"""
+    base = (translation or "").replace("[译]", "").strip(" .。…")
+    if is_llm_dev_mode():
+        if not base:
+            return None
+        d1 = f"(否定/范围反转)并非「{base}」"
+        d2 = f"(主宾对调)把「{base}」里的施动者与承受者弄反"
+        d3 = "(逻辑关系改变)把句中的因果/转折/条件关系理解反了"
+        return {"prompt": _PARA_PROMPT, "options": [base, d1, d2, d3], "answer": base,
+                "misconceptions": {d1: "原句并无否定,或范围被改变了",
+                                   d2: "主语与宾语的施受关系弄反了",
+                                   d3: "句中的逻辑关系(因果/转折/条件)理解反了"}}
+    system = (
+        "你是英语阅读命题专家。给定英语长难句及其参考中文翻译,出一道**释义单选题**,"
+        "检验学生是否真正读懂句子意思(而非只认识单词)。\n要求:\n"
+        "1) 1 个正确选项:用简洁中文准确转述原句命题(谁对谁做了什么 + 逻辑关系),不要照抄翻译措辞;\n"
+        "2) 3 个干扰项:每个对应一种**典型理解错误**,意思看似接近但关键处错,类型从"
+        "【否定或范围反转、主宾/施受对调、逻辑关系改变(因果↔转折↔条件)、修饰成分挂错对象、以偏概全】"
+        "中各取不同的;要像「读得半懂的人会选的」,不得无关或荒谬;\n"
+        "3) misconceptions:每个干扰项 → 一句话点明错在哪(中文)。\n"
+        "严格输出 JSON:{\"prompt\":..,\"options\":[4个乱序],\"answer\":..(须等于其中一个 option),"
+        "\"misconceptions\":{\"干扰项原文\":\"错因\"}}。"
+    )
+    user = f"句子:{sentence}\n参考翻译:{translation or '(无)'}\n返回 JSON:"
+    # 重试:推理模型偶发把 token 预算耗在推理上、返回空内容(finish_reason=length)→ 再试一次
+    for _attempt in range(2):
+        try:
+            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=4096,
+                                         response_format={"type": "json_object"})
+            d = json.loads(resp.choices[0].message.content or "{}")
+            opts = [str(o) for o in (d.get("options") or []) if str(o).strip()]
+            ans = str(d.get("answer") or "")
+            if len(opts) >= 3 and ans:
+                if ans not in opts:   # answer 与某 option 仅细微差异时归一化匹配
+                    norm = lambda s: re.sub(r"\s+", "", s).strip("。.!?！?")
+                    hit = next((o for o in opts if norm(o) == norm(ans)), None)
+                    if hit is None:
+                        continue
+                    ans = hit
+                return {"prompt": _PARA_PROMPT, "options": opts, "answer": ans,
+                        "misconceptions": {str(k): str(v) for k, v in (d.get("misconceptions") or {}).items()}}
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("generate_paraphrase attempt %d failed: %s", _attempt + 1, exc)
+    return None
+
+
+async def backfill_paraphrase(db: AsyncSession, *, limit: int | None = None,
+                              only_missing: bool = True) -> dict:
+    """给存量长难句补「释义探针」:对 analysis_json 缺 paraphrase 的句子生成并写回。
+    返回 {scanned, filled}。"""
+    rows = (await db.execute(sa.select(LongSentence))).scalars().all()
+    scanned = filled = 0
+    for ls in rows:
+        a = ls.analysis_json or {}
+        if only_missing and a.get("paraphrase"):
+            continue
+        scanned += 1
+        p = await generate_paraphrase(ls.text, a.get("translation"))
+        if not p:
+            continue
+        ls.analysis_json = {**a, "paraphrase": p}   # 新 dict → ORM 感知 JSONB 变更
+        filled += 1
+        if limit and filled >= limit:
+            break
+    await db.commit()
+    return {"scanned": scanned, "filled": filled}
 
 
 async def list_published(
@@ -457,12 +535,12 @@ async def favorited_ids(db: AsyncSession, *, user_id: uuid.UUID, ls_ids: list[uu
 
 
 # ── 验证题型(L3 客观自动判分 / L4 主观 AI·发音评测)────────────────────────────
-_OBJECTIVE_TYPES = {"cloze", "struct_type", "main_clause"}
+_OBJECTIVE_TYPES = {"cloze", "struct_type", "main_clause", "paraphrase"}
 _SUBJECTIVE_TYPES = {"translate", "rewrite", "span_label", "read_aloud"}  # L4:AI 评分 / 发音评测
 _IMPLEMENTED_TYPES = _OBJECTIVE_TYPES | _SUBJECTIVE_TYPES
 _READ_ALOUD_PASS = 60          # 朗读发音通过分阈值
 _SUBJ_SIM_PASS = 0.5           # dev 主观判分相似度阈值(生产走 LLM)
-_ALL_VERIFY_TYPES = ["cloze", "struct_type", "main_clause", "translate",
+_ALL_VERIFY_TYPES = ["cloze", "struct_type", "main_clause", "paraphrase", "translate",
                      "span_label", "reorder", "rewrite", "read_aloud"]
 _SYNTAX_POOL = ["定语从句", "状语从句", "名词性从句", "非谓语动词", "倒装句", "强调句", "同位语从句"]
 _REL_WORDS = ["which", "that", "who", "whom", "whose", "because", "although", "when", "while", "if"]
@@ -482,6 +560,133 @@ async def enabled_verify_types(db: AsyncSession) -> list[str]:
     return [t for t in configured if t in _IMPLEMENTED_TYPES]
 
 
+def _diag_main_clause(ls: LongSentence) -> dict | None:
+    """点主干题:从 segments/components 构造「诊断性」干扰项——每个错项对应一种理解失败。
+    返回 {options, answer, misconceptions:{option: 错因}}。无主干→None。"""
+    a = ls.analysis_json or {}
+    mc = (a.get("main_clause") or "").strip()
+    if not mc:
+        return None
+    segs = a.get("segments") or []
+    comp = a.get("components") or {}
+    distract: list[str] = []
+    miscon: dict[str, str] = {}
+
+    def add(txt: str | None, reason: str):
+        if not txt:
+            return
+        t = txt.strip().strip(",.;:")
+        if t and t.lower() != mc.lower() and t not in distract:
+            distract.append(t)
+            miscon[t] = reason
+
+    # 错项①:把某个从句整体误当主干(认错主干层)
+    for s in segs:
+        if "从句" in (s.get("type") or ""):
+            add(s.get("text"), "这是从句,不是主干——主句才是句子骨架")
+            break
+    # 错项②:只取主语,丢了主句谓语(主干不完整)
+    add((comp.get("subject") or ""), "只抓了主语,缺主句谓语——主干要「主语+谓语」")
+    # 错项③:整句当主干(没有剥离修饰的意识)
+    full = (ls.text or "").strip()
+    add((full[:38] + "…") if len(full) > 40 else full, "整句不是主干——长难句要剥掉修饰/从句后剩下主谓")
+    # 兜底补足到 3 个干扰项
+    for extra, why in (("(无主干)", "该句有明确主干"), ("全句即主干", "长难句的主干通常只占整句一小部分")):
+        if len(distract) >= 3:
+            break
+        add(extra, why)
+    return {"options": [mc] + distract[:3], "answer": mc, "misconceptions": miscon}
+
+
+def comprehension_probes(ls: LongSentence) -> list[dict]:
+    """Phase1 理解检测「双探针」:①点主干(测句法结构)②释义/连接词(测意义)。
+    探针2 优先释义(需缓存),退连接词 cloze,再退句法点 struct_type。每题带 key。"""
+    out: list[dict] = []
+    mc = build_verify(ls, "main_clause")
+    if mc:
+        out.append({"key": "main_clause", **mc})
+    for t in ("paraphrase", "cloze", "struct_type"):
+        q = build_verify(ls, t)
+        if q:
+            out.append({"key": t, **q})
+            break
+    return out
+
+
+# 短翻译产出项·维度 rubric(每维 0-2)
+_TRANS_DIMS = [("proposition", "命题准确"), ("logic", "逻辑关系"),
+               ("modifier", "修饰归属"), ("trunk", "主干完整")]
+_TRANS_DIM_MAX = 2
+_TRANS_PASS_TOTAL = 6        # 总分 ≥6/8 且命题≥1 视为产出达标
+_PRODUCTIVE_BONUS = 2.0      # 产出达标 → θ 小幅上调(实测的强证据)
+
+
+async def grade_translation(sentence: str, ref_translation: str | None, answer: str) -> dict:
+    """短翻译产出项·维度化评分(命题/逻辑/修饰/主干 各 0-2)。
+    返回 {dimensions:[{key,label,score,max,note}], total, max, passed, feedback}。dev mock 用相似度近似。"""
+    answer = (answer or "").strip()
+    total_max = _TRANS_DIM_MAX * len(_TRANS_DIMS)
+    ref = (ref_translation or "").replace("[译]", "").strip()
+    if not answer:
+        dims = [{"key": k, "label": l, "score": 0, "max": _TRANS_DIM_MAX, "note": ""} for k, l in _TRANS_DIMS]
+        return {"dimensions": dims, "total": 0, "max": total_max, "passed": False, "feedback": "还没写翻译"}
+    if is_llm_dev_mode():
+        sim = difflib.SequenceMatcher(None, answer, ref).ratio() if ref else 0.5
+        base = 2 if sim >= 0.7 else (1 if sim >= 0.35 else 0)
+        dims = [{"key": k, "label": l, "score": base, "max": _TRANS_DIM_MAX, "note": ""} for k, l in _TRANS_DIMS]
+        tot = base * len(_TRANS_DIMS)
+        return {"dimensions": dims, "total": tot, "max": total_max,
+                "passed": tot >= _TRANS_PASS_TOTAL, "feedback": f"(dev)与参考相似度 {sim:.0%}"}
+    system = (
+        "你是英语翻译评分老师。按 4 个维度给学生的中文翻译打分,每维 0/1/2(0 错/缺、1 部分对、2 准确):\n"
+        "- proposition 命题准确:谁对谁做了什么(主体/动作/对象)译对;\n"
+        "- logic 逻辑关系:让步/因果/转折/条件/目的等关系译对;\n"
+        "- modifier 修饰归属:定语/状语等修饰挂到了正确的中心词;\n"
+        "- trunk 主干完整:主句的主语+谓语没丢、没错。\n"
+        "每维给一句简短中文点评(note,指出对或错在哪),再给一句总评(feedback,点出最该改进的一处)。\n"
+        "严格输出 JSON:{\"proposition\":{\"score\":0-2,\"note\":..},\"logic\":{..},\"modifier\":{..},\"trunk\":{..},\"feedback\":..}"
+    )
+    user = f"原句:{sentence}\n参考翻译:{ref or '(无)'}\n学生翻译:{answer}\n返回 JSON:"
+    for _attempt in range(2):
+        try:
+            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=2048,
+                                         response_format={"type": "json_object"})
+            d = json.loads(resp.choices[0].message.content or "{}")
+            dims = []
+            for k, l in _TRANS_DIMS:
+                cell = d.get(k) or {}
+                try:
+                    sc = max(0, min(_TRANS_DIM_MAX, int(cell.get("score", 0))))
+                except (ValueError, TypeError):
+                    sc = 0
+                dims.append({"key": k, "label": l, "score": sc, "max": _TRANS_DIM_MAX, "note": str(cell.get("note") or "")})
+            if any(x["note"] or x["score"] for x in dims):
+                tot = sum(x["score"] for x in dims)
+                prop = next((x["score"] for x in dims if x["key"] == "proposition"), 0)
+                return {"dimensions": dims, "total": tot, "max": total_max,
+                        "passed": tot >= _TRANS_PASS_TOTAL and prop >= 1, "feedback": str(d.get("feedback") or "")}
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("grade_translation attempt %d failed: %s", _attempt + 1, exc)
+    dims = [{"key": k, "label": l, "score": 0, "max": _TRANS_DIM_MAX, "note": ""} for k, l in _TRANS_DIMS]
+    return {"dimensions": dims, "total": 0, "max": total_max, "passed": False, "feedback": "评分服务暂不可用,请稍后再试"}
+
+
+async def apply_productive(db: AsyncSession, user, *, passed: bool) -> float:
+    """短翻译产出达标 → θ 小幅上调(产出是理解的强证据);未达标不扣分。返回新 θ。"""
+    if not passed:
+        return await get_theta(db, user)
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d20_long_sentence import StudentLsState
+    cur = await get_theta(db, user)
+    new = max(12.0, min(95.0, cur + _PRODUCTIVE_BONUS))
+    await db.execute(
+        pg_insert(StudentLsState).values(user_id=user.id, theta=new, seen_count=1)
+        .on_conflict_do_update(index_elements=["user_id"],
+                               set_={"theta": new, "seen_count": StudentLsState.seen_count + 1}))
+    await db.commit()
+    return new
+
+
 def build_verify(ls: LongSentence, verify_type: str) -> dict | None:
     """从长难句解析生成一道客观题:{type, prompt, options, answer}。无法生成→None。"""
     a = ls.analysis_json or {}
@@ -494,20 +699,30 @@ def build_verify(ls: LongSentence, verify_type: str) -> dict | None:
         return {"type": verify_type, "prompt": "该句主要涉及的句法点是?",
                 "options": [ans] + distract, "answer": ans}
     if verify_type == "main_clause":
-        mc = a.get("main_clause")
-        if not mc:
+        d = _diag_main_clause(ls)
+        if d is None:
             return None
-        return {"type": verify_type, "prompt": "该句的主干(主谓宾核心)是?",
-                "options": [mc, "(无主干)", mc.split()[0] if mc.split() else "X", "全句即主干"],
-                "answer": mc}
+        return {"type": verify_type, "prompt": "剥掉修饰和从句,这句的主干(主谓核心)是?",
+                "options": d["options"], "answer": d["answer"],
+                "misconceptions": d["misconceptions"]}
+    if verify_type == "paraphrase":
+        # 释义单选:抽取时 LLM 预生成并缓存进 analysis_json.paraphrase(干扰项=典型误解)
+        p = a.get("paraphrase") or {}
+        opts = p.get("options") or []
+        ans = p.get("answer")
+        if len(opts) < 2 or not ans:
+            return None
+        return {"type": verify_type, "prompt": _PARA_PROMPT,   # 固定问法(原句已在页面上方展示)
+                "options": opts, "answer": ans, "misconceptions": p.get("misconceptions") or {}}
     if verify_type == "cloze":
         # 挖掉句中第一个出现的关系/连接词
         for w in _REL_WORDS:
             if re.search(rf"\b{w}\b", ls.text, re.I):
                 blanked = re.sub(rf"\b{w}\b", "____", ls.text, count=1, flags=re.I)
                 distract = [x for x in _REL_WORDS if x.lower() != w.lower()][:3]
+                miscon = {x: "连接词决定逻辑关系(因果/转折/时间…),这里的关系判断有误" for x in distract}
                 return {"type": verify_type, "prompt": f"填入恰当的连接词:{blanked}",
-                        "options": [w] + distract, "answer": w}
+                        "options": [w] + distract, "answer": w, "misconceptions": miscon}
         return None
     # 主观题(无选项,自由作答/音频;answer 为参考)
     if verify_type == "translate":
@@ -872,6 +1087,35 @@ async def apply_feedback(db: AsyncSession, user, *, rating: str) -> float:
     return new
 
 
+# θ 实测校准:理解检测为主(±4),自评为辅(±1)。
+_MEASURED_PASS = 4.0       # 双探针全过:略高于当前水平,上调
+_MEASURED_PARTIAL = -1.0   # 主干对但意义偏:结构会、理解未到位,略降
+_MEASURED_FAIL = -4.0      # 主干就错:明显超出当前水平,下调
+_SELF_DELTA = {"easy": 1.0, "ok": 0.0, "hard": -1.0}
+
+
+async def apply_comprehension(db: AsyncSession, user, *, main_ok: bool, p2_ok: bool,
+                              self_rating: str | None = None) -> float:
+    """按理解检测结果校准 θ(实测为主、自评为辅),夹在 [12,95]。返回新 θ。"""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d20_long_sentence import StudentLsState
+    cur = await get_theta(db, user)
+    if main_ok and p2_ok:
+        delta = _MEASURED_PASS
+    elif main_ok:
+        delta = _MEASURED_PARTIAL
+    else:
+        delta = _MEASURED_FAIL
+    delta += _SELF_DELTA.get(self_rating or "", 0.0)
+    new = max(12.0, min(95.0, cur + delta))
+    await db.execute(
+        pg_insert(StudentLsState).values(user_id=user.id, theta=new, seen_count=1)
+        .on_conflict_do_update(index_elements=["user_id"],
+                               set_={"theta": new, "seen_count": StudentLsState.seen_count + 1}))
+    await db.commit()
+    return new
+
+
 # 间隔重现:Leitner 盒 → 下次间隔(分钟)。盒越高间隔越长,超过最高盒则毕业。
 _REVIEW_MIN = {1: 20, 2: 1440, 3: 4320, 4: 10080}   # 20分钟 / 1天 / 3天 / 7天
 _REVIEW_MAXBOX = 4
@@ -902,6 +1146,129 @@ async def record_review(db: AsyncSession, user, *, ls_id, is_student: bool, rati
                              .where(StudentLsReview.user_id == user.id, StudentLsReview.ls_id == ls_id)
                              .values(box=nb, due_at=_review_due(nb)))
     await db.commit()
+
+
+async def submit_comprehension(db: AsyncSession, *, user, ls_id: uuid.UUID, answers: dict,
+                               self_rating: str | None = None) -> dict:
+    """Phase1 理解检测:双探针逐题判分(复用 submit_verify → 回写 node mastery/错题)→ 合成单句
+    理解分 → θ 实测校准 → 间隔重现(过=巩固升盒 / 不过=入盒1 很快再推)。
+    answers: {probe_key: 学生答案}。返回 {passed, probes[], theta, target, tier}。"""
+    from app.core.exceptions import AppError
+    ls, _nodes = await get_detail(db, ls_id=ls_id)
+    if ls is None or ls.status != "published":
+        raise AppError(code=404, message="长难句不存在或未发布")
+
+    results: list[dict] = []
+    flags: dict[str, bool] = {}
+    for key, ans in (answers or {}).items():
+        q = build_verify(ls, key)
+        if q is None:
+            continue
+        res = await submit_verify(db, student_id=user.id, ls_id=ls_id, verify_type=key, answer=str(ans))
+        miscon = None
+        if not res["correct"]:
+            miscon = (q.get("misconceptions") or {}).get(str(ans).strip())
+        results.append({"key": key, "correct": bool(res["correct"]),
+                        "correct_answer": str(res["correct_answer"]), "misconception": miscon})
+        flags[key] = bool(res["correct"])
+
+    main_ok = flags.get("main_clause", False)
+    p2_keys = [k for k in flags if k != "main_clause"]
+    p2_ok = flags.get(p2_keys[0], False) if p2_keys else False
+    passed = bool(main_ok and p2_ok)
+
+    theta = await apply_comprehension(db, user, main_ok=main_ok, p2_ok=p2_ok, self_rating=self_rating)
+    # 间隔重现:过了→巩固(easy 升盒/毕业);没过→入盒1 很快再推
+    try:
+        await record_review(db, user, ls_id=ls_id, is_student=False,
+                            rating="easy" if passed else "hard")
+    except Exception:  # noqa: BLE001
+        pass
+    await db.commit()
+    return {"passed": passed, "probes": results, "theta": theta,
+            "target": min(95.0, theta + 5), "tier": ls_tier(theta)}
+
+
+async def submit_translation(db: AsyncSession, *, user, ls_id: uuid.UUID, answer: str) -> dict:
+    """短翻译产出项:维度 rubric 评分 + 达标则 θ 小幅上调。返回 rubric + {theta, target, tier}。"""
+    from app.core.exceptions import AppError
+    ls, _ = await get_detail(db, ls_id=ls_id)
+    if ls is None or ls.status != "published":
+        raise AppError(code=404, message="长难句不存在或未发布")
+    ref = (ls.analysis_json or {}).get("translation")
+    res = await grade_translation(ls.text, ref, answer)
+    theta = await apply_productive(db, user, passed=res["passed"])
+    return {**res, "theta": theta, "target": min(95.0, theta + 5), "tier": ls_tier(theta)}
+
+
+# 迁移项:句法结构相似度权重——从句/非谓语等"硬结构"重于介词短语/并列等通用结构
+def _syntax_weight(s: str) -> float:
+    if re.search(r"从句|非谓语|不定式|分词|动名词|倒装|强调|虚拟|同位语|省略", s):
+        return 3.0
+    if "并列" in s:
+        return 1.5
+    return 1.0
+
+
+async def find_transfer_sentence(db: AsyncSession, *, origin: LongSentence, user,
+                                 exclude_ids=None) -> tuple[LongSentence, list[str]] | None:
+    """按句法结构检索一句「同结构、新内容」的迁移句:syntax_points 加权重叠最高者(从句等硬结构优先),
+    难度接近、有共享 node 额外加分。返回 (迁移句, 共享结构名列表);找不到→None。"""
+    ex = set(exclude_ids or [])
+    ex.add(origin.id)
+    o_syntax = set((origin.analysis_json or {}).get("syntax_points") or [])
+    if not o_syntax:
+        return None
+    rows = (await db.execute(sa.select(LongSentence).where(
+        LongSentence.status == "published"))).scalars().all()
+    # node 链接(有则共享 node 额外加权;当前多数句无 node,主信号是 syntax_points)
+    nm: dict = {}
+    for lsid, nid in (await db.execute(sa.select(
+            LongSentenceNode.long_sentence_id, LongSentenceNode.node_id))).all():
+        nm.setdefault(lsid, set()).add(nid)
+    o_nodes = nm.get(origin.id, set())
+    o_diff = float(origin.difficulty or 50)
+    best = None
+    best_score = 0.0
+    best_shared: list[str] = []
+    for c in rows:
+        if c.id in ex:
+            continue
+        c_syntax = set((c.analysis_json or {}).get("syntax_points") or [])
+        shared = o_syntax & c_syntax
+        if not shared:
+            continue
+        score = sum(_syntax_weight(s) for s in shared)
+        score += 2.0 * len(o_nodes & nm.get(c.id, set()))      # 共享句法 node 额外加权
+        score -= 0.01 * abs(float(c.difficulty or 50) - o_diff)  # 难度接近优先
+        if score > best_score:
+            best_score = score
+            best = c
+            best_shared = sorted(shared, key=_syntax_weight, reverse=True)
+    if best is None:
+        return None
+    return best, best_shared
+
+
+async def submit_transfer(db: AsyncSession, *, user, origin_id: uuid.UUID,
+                          transfer_id: uuid.UUID, answers: dict) -> dict:
+    """迁移项判分:对「同结构新句」做理解检测(复用 submit_comprehension:θ/node mastery/复习全走通),
+    再给出迁移结论——过=真掌握该句法(transferred);不过=疑似记住原题(memorized),原句回炉巩固。
+    返回 submit_comprehension 结果 + {verdict, shared}。"""
+    res = await submit_comprehension(db, user=user, ls_id=transfer_id, answers=answers)
+    origin, _ = await get_detail(db, ls_id=origin_id)
+    transfer, _ = await get_detail(db, ls_id=transfer_id)
+    o = set((origin.analysis_json or {}).get("syntax_points") or []) if origin else set()
+    t = set((transfer.analysis_json or {}).get("syntax_points") or []) if transfer else set()
+    shared = sorted(o & t, key=_syntax_weight, reverse=True)
+    verdict = "transferred" if res["passed"] else "memorized"
+    if not res["passed"]:   # 没迁移成功 → 原句也回炉,巩固这个句法点
+        try:
+            await record_review(db, user, ls_id=origin_id, is_student=False, rating="hard")
+        except Exception:  # noqa: BLE001
+            pass
+        await db.commit()
+    return {**res, "verdict": verdict, "shared": shared}
 
 
 async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:

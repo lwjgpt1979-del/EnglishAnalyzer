@@ -14,6 +14,10 @@ from app.schemas.base import BaseResponse, make_ok
 from app.schemas.kp import (
     LongSentenceItem, LongSentenceListOut, LongSentenceDetailOut, LongSentenceNodeRef,
     VerifyTypesOut, VerifyQuestionOut, VerifySubmitIn, VerifySubmitOut,
+    ComprehensionProbe, ComprehensionOut, ComprehensionSubmitIn,
+    ComprehensionProbeResult, ComprehensionResultOut,
+    TranslateCheckIn, TranslateCheckOut, TranslateDim,
+    TransferItem, TransferOut, TransferSubmitIn, TransferResultOut,
 )
 from app.services import long_sentence_service as lss
 from app.services import tts_service
@@ -89,6 +93,80 @@ async def submit_feedback(db: DbDep, current_user: UserDep, rating: str = Body(.
         except ValueError:
             pass
     return make_ok({"theta": round(theta), "target": round(min(95.0, theta + 5)), "tier": lss.ls_tier(theta)})
+
+
+@router.get("/{ls_id}/comprehension", response_model=BaseResponse[ComprehensionOut])
+async def get_comprehension(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """理解检测题面(双探针:点主干 + 释义/意义),不含答案。读完即做,过关才算学会这句。"""
+    ls, _ = await lss.get_detail(db, ls_id=ls_id)
+    if ls is None or ls.status != "published":
+        raise AppError(code=404, message="长难句不存在或未发布")
+    probes = lss.comprehension_probes(ls)
+    return make_ok(ComprehensionOut(probes=[
+        ComprehensionProbe(key=p["key"], type=p["type"], prompt=p["prompt"], options=p["options"])
+        for p in probes]))
+
+
+@router.post("/{ls_id}/comprehension", response_model=BaseResponse[ComprehensionResultOut])
+async def submit_comprehension(ls_id: uuid.UUID, body: ComprehensionSubmitIn,
+                               db: DbDep, current_user: UserDep):
+    """提交理解检测:双探针判分→单句理解分→θ 实测校准→回写句法掌握+间隔重现。
+    passed=True 才算「学会这句」;否则进复习盒,稍后再推。"""
+    res = await lss.submit_comprehension(db, user=current_user, ls_id=ls_id,
+                                         answers=body.answers, self_rating=body.self_rating)
+    return make_ok(ComprehensionResultOut(
+        passed=res["passed"],
+        probes=[ComprehensionProbeResult(**p) for p in res["probes"]],
+        theta=round(res["theta"], 1), target=round(res["target"], 1), tier=res["tier"]))
+
+
+@router.post("/{ls_id}/translate-check", response_model=BaseResponse[TranslateCheckOut])
+async def submit_translate_check(ls_id: uuid.UUID, body: TranslateCheckIn,
+                                 db: DbDep, current_user: UserDep):
+    """短翻译产出项(进阶·检验输出):维度 rubric 评分(命题/逻辑/修饰/主干 各 0-2)+ 达标 θ 上调。"""
+    res = await lss.submit_translation(db, user=current_user, ls_id=ls_id, answer=body.answer)
+    return make_ok(TranslateCheckOut(
+        dimensions=[TranslateDim(**d) for d in res["dimensions"]],
+        total=res["total"], max=res["max"], passed=res["passed"], feedback=res.get("feedback"),
+        theta=round(res["theta"], 1), target=round(res["target"], 1), tier=res["tier"]))
+
+
+@router.get("/{ls_id}/transfer", response_model=BaseResponse[TransferOut])
+async def get_transfer(ls_id: uuid.UUID, db: DbDep, current_user: UserDep, exclude: str = ""):
+    """迁移挑战:按句法结构检索一句「同结构、新内容」的句子 + 其理解检测题。
+    exclude=逗号分隔已学 id。找不到→item 为空。"""
+    origin, _ = await lss.get_detail(db, ls_id=ls_id)
+    if origin is None or origin.status != "published":
+        raise AppError(code=404, message="长难句不存在或未发布")
+    ex = []
+    for x in (exclude or "").split(","):
+        x = x.strip()
+        if x:
+            try:
+                ex.append(uuid.UUID(x))
+            except ValueError:
+                pass
+    found = await lss.find_transfer_sentence(db, origin=origin, user=current_user, exclude_ids=ex)
+    if found is None:
+        return make_ok(TransferOut(item=None, shared=[], probes=[]))
+    t, shared = found
+    probes = lss.comprehension_probes(t)
+    return make_ok(TransferOut(
+        item=TransferItem(id=t.id, text=t.text, difficulty=t.difficulty),
+        shared=shared,
+        probes=[ComprehensionProbe(key=p["key"], type=p["type"], prompt=p["prompt"], options=p["options"])
+                for p in probes]))
+
+
+@router.post("/{ls_id}/transfer-submit", response_model=BaseResponse[TransferResultOut])
+async def submit_transfer_api(ls_id: uuid.UUID, body: TransferSubmitIn, db: DbDep, current_user: UserDep):
+    """提交迁移句的理解检测:判分→结论(真掌握/疑似记住原题)。原句=ls_id,迁移句=body.transfer_id。"""
+    res = await lss.submit_transfer(db, user=current_user, origin_id=ls_id,
+                                    transfer_id=body.transfer_id, answers=body.answers)
+    return make_ok(TransferResultOut(
+        passed=res["passed"], verdict=res["verdict"], shared=res["shared"],
+        probes=[ComprehensionProbeResult(**p) for p in res["probes"]],
+        theta=round(res["theta"], 1), target=round(res["target"], 1), tier=res["tier"]))
 
 
 async def _student_one(db, ls_id, owner_id):

@@ -1603,6 +1603,15 @@ async def reanalyze_ls_job_status_api(job_id: str, db: DbDep, admin: AdminDep):
     return make_ok({"job_id": job_id, **st})
 
 
+@router.post("/long-sentences/paraphrase-backfill", response_model=BaseResponse[dict])
+async def backfill_paraphrase_api(db: DbDep, admin: AdminDep, limit: int = 50, only_missing: bool = True):
+    """给存量长难句补「释义检测」探针(Phase2):LLM 生成释义单选+诊断干扰项,写回 analysis_json.paraphrase。
+    only_missing=true 只补缺失的;limit 控制单次条数(LLM 调用)。返回 {scanned, filled}。"""
+    from app.services import long_sentence_service as lss
+    r = await lss.backfill_paraphrase(db, limit=limit, only_missing=only_missing)
+    return make_ok(r)
+
+
 @router.get("/long-sentences", response_model=BaseResponse[LSAdminListOut])
 async def list_long_sentences_api(
     db: DbDep, admin: AdminDep, status: str = "draft",

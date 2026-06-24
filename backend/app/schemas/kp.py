@@ -689,6 +689,90 @@ class VerifySubmitOut(BaseModel):
     mastered_nodes: list[str] = []    # 本次达标判掌握的句法点
 
 
+# ── 理解检测(Phase1 双探针:过关才算学;θ 实测为主)──────────────
+class ComprehensionProbe(BaseModel):
+    key: str                          # main_clause / paraphrase / cloze / struct_type
+    type: str
+    prompt: str
+    options: list[str]                # 不含答案
+
+
+class ComprehensionOut(BaseModel):
+    probes: list[ComprehensionProbe]  # 通常 2 个:点主干 + 释义/意义
+
+
+class ComprehensionSubmitIn(BaseModel):
+    answers: dict[str, str]           # {probe_key: 学生答案}
+    self_rating: str | None = None    # 可选自评(easy|ok|hard),小权重修正 θ
+
+
+class ComprehensionProbeResult(BaseModel):
+    key: str
+    correct: bool
+    correct_answer: str
+    misconception: str | None = None  # 选错时:该错项对应的理解失败诊断
+
+
+class ComprehensionResultOut(BaseModel):
+    passed: bool                      # 双探针全过 = 这句算「学会了」
+    probes: list[ComprehensionProbeResult]
+    theta: float
+    target: float
+    tier: str
+
+
+# ── 短翻译产出项(Phase3:维度 rubric 评分,检验「会输出」)────────
+class TranslateCheckIn(BaseModel):
+    answer: str = Field(..., min_length=1)   # 学生中文翻译
+
+
+class TranslateDim(BaseModel):
+    key: str                          # proposition/logic/modifier/trunk
+    label: str                        # 命题准确/逻辑关系/修饰归属/主干完整
+    score: int
+    max: int
+    note: str | None = None           # 该维一句点评
+
+
+class TranslateCheckOut(BaseModel):
+    dimensions: list[TranslateDim]
+    total: int
+    max: int
+    passed: bool                      # 总分达标且命题≥1 = 输出达标
+    feedback: str | None = None       # 总评:最该改进的一处
+    theta: float
+    target: float
+    tier: str
+
+
+# ── 迁移项(Phase3b:同结构新句,区分「记住题」vs「会技能」)──────────
+class TransferItem(BaseModel):
+    id: uuid.UUID
+    text: str
+    difficulty: int | None = None
+
+
+class TransferOut(BaseModel):
+    item: TransferItem | None = None         # 找不到同结构新句→None
+    shared: list[str] = []                    # 与原句共享的句法结构名
+    probes: list[ComprehensionProbe] = []     # 迁移句的理解检测题(双探针)
+
+
+class TransferSubmitIn(BaseModel):
+    transfer_id: uuid.UUID
+    answers: dict[str, str]
+
+
+class TransferResultOut(BaseModel):
+    passed: bool
+    verdict: str                              # transferred=真掌握 / memorized=疑似记住原题
+    shared: list[str]
+    probes: list[ComprehensionProbeResult]
+    theta: float
+    target: float
+    tier: str
+
+
 # ── 长难句(后台 L5) ──────────────────────────────────────────
 class LSAdminItem(BaseModel):
     id: uuid.UUID
