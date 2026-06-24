@@ -159,13 +159,44 @@ async def get_word_probes(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
         VocabularyLearning.student_id == current_user.id, VocabularyLearning.word_id == word_id))).scalar_one_or_none()
     recep = float(lr.mastery_recep) if (lr and lr.mastery_recep is not None) else 0.0
     prod = float(lr.mastery_prod) if (lr and lr.mastery_prod is not None) else 0.0
+    transfer_ok = bool(lr.transfer_ok) if lr else False
     return make_ok({
         "context": out["context"],
         "probes": [{"key": p["key"], "kind": p["kind"], "prompt": p["prompt"], "options": p["options"]} for p in out["probes"]],
         "produce": out.get("produce"),
-        "recep": round(recep, 4), "prod": round(prod, 4),
-        "mastered": recep >= vocab_probe_service.RECEP_MASTERED and prod >= vocab_probe_service.PROD_MASTERED,
+        "recep": round(recep, 4), "prod": round(prod, 4), "transfer_ok": transfer_ok,
+        "mastered": recep >= vocab_probe_service.RECEP_MASTERED and prod >= vocab_probe_service.PROD_MASTERED and transfer_ok,
     })
+
+
+@router.get("/{word_id}/transfer", response_model=BaseResponse[dict])
+async def get_word_transfer(word_id: uuid.UUID, db: DbDep, current_user: UserDep, exclude: str = ""):
+    """R9.3 迁移题:同词新语境的语境填空(与 exclude 原句不同)。无新语境→probe 为空。"""
+    from app.core.exceptions import AppError
+    from app.models.d5_learning import VocabularyWord
+    import sqlalchemy as sa
+    await get_rls_db(db, str(current_user.id))
+    word = (await db.execute(sa.select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if word is None:
+        raise AppError(code=404, message="单词不存在")
+    out = await vocab_probe_service.transfer_probe(db, student_id=current_user.id, word=word, exclude_text=exclude or None)
+    await db.commit()
+    if not out:
+        return make_ok({"context": None, "probe": None})
+    return make_ok({"context": out["context"],
+                    "probe": {"key": out["probe"]["key"], "kind": out["probe"]["kind"],
+                              "prompt": out["probe"]["prompt"], "options": out["probe"]["options"]}})
+
+
+@router.post("/{word_id}/transfer-submit", response_model=BaseResponse[dict])
+async def submit_word_transfer(word_id: uuid.UUID, db: DbDep, current_user: UserDep,
+                               answer: str = Body(..., embed=True)):
+    """R9.3 提交迁移题:判分 → 接收 BKT + 置 transfer_ok;verdict=transferred/memorized。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await vocab_probe_service.submit_transfer(
+        db, student_id=current_user.id, word_id=word_id, answer=answer)
+    await db.commit()
+    return make_ok(res)
 
 
 @router.post("/{word_id}/probe", response_model=BaseResponse[dict])

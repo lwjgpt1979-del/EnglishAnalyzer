@@ -166,7 +166,7 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, word:
         if blanked:
             opts = _shuffle([word.word] + (p.get("distractors") or [])[:3], word.word)
             probes.append({"key": "cloze", "kind": "cloze", "prompt": f"选词填空:{blanked}", "options": opts})
-    for i, s in enumerate((p.get("sense") or [])[:1]):
+    for i, s in enumerate((p.get("sense") or [])[:2]):   # 多义深度:逐义辨析
         probes.append({"key": f"sense:{i}", "kind": "sense",
                        "prompt": f"句中 {word.word} 的意思是?\n{s['sentence']}", "options": s["options"]})
     # 产出·搭配(客观)
@@ -178,6 +178,12 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, word:
 
 
 # ── 判分 + 接收掌握度(BKT)────────────────────────────────────────────
+def _mastered(lr: VocabularyLearning) -> bool:
+    """真正掌握 = 接收达标 且 产出达标 且 通过同词新语境迁移。"""
+    return (float(lr.mastery_recep or 0) >= RECEP_MASTERED
+            and float(lr.mastery_prod or 0) >= PROD_MASTERED and bool(lr.transfer_ok))
+
+
 async def _get_or_create_learning(db, student_id, word_id) -> VocabularyLearning:
     lr = (await db.execute(sa.select(VocabularyLearning).where(
         VocabularyLearning.student_id == student_id, VocabularyLearning.word_id == word_id))).scalar_one_or_none()
@@ -245,7 +251,7 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid
     return {"correct": correct, "correct_answer": correct_answer, "misconception": misconception,
             "axis": axis, "recep": round(recep, 4), "prod": round(prod, 4),
             "recep_mastered": recep >= RECEP_MASTERED, "prod_mastered": prod >= PROD_MASTERED,
-            "mastered": recep >= RECEP_MASTERED and prod >= PROD_MASTERED}
+            "transfer_ok": bool(lr.transfer_ok), "mastered": _mastered(lr)}
 
 
 # ── 产出·造句(主观 rubric → prod 轴)──────────────────────────────────
@@ -316,8 +322,94 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, word_id: uu
     recep = float(lr.mastery_recep or 0)
     prod = float(lr.mastery_prod or 0)
     return {**res, "recep": round(recep, 4), "prod": round(prod, 4),
-            "prod_mastered": prod >= PROD_MASTERED,
-            "mastered": recep >= RECEP_MASTERED and prod >= PROD_MASTERED}
+            "prod_mastered": prod >= PROD_MASTERED, "transfer_ok": bool(lr.transfer_ok),
+            "mastered": _mastered(lr)}
+
+
+# ── 迁移项(同词新语境,区分「记住这道题」vs「会这个词」)──────────────
+def _norm(s: str | None) -> str:
+    return re.sub(r"\W+", "", (s or "")).lower()
+
+
+async def find_transfer_context(db: AsyncSession, *, student_id: uuid.UUID, word: VocabularyWord,
+                                exclude_text: str | None) -> dict | None:
+    """找一条与原语境不同、含该词的新句子(同词新语境)。来源:缓存例句/词典例句/学生其它真实语境。"""
+    p = await ensure_probes(db, word)
+    ex = _norm(exclude_text)
+    cands: list[tuple[str | None, str]] = []
+    for c in (p.get("cloze_fallback") or []):
+        cands.append((c.get("sentence"), "新例句"))
+    for e in (word.examples or []):
+        cands.append((e.get("en") if isinstance(e, dict) else str(e), "词典例句"))
+    # 学生其它真实语境(作业/真题),也可作迁移新句
+    other = await pick_context(db, student_id=student_id, word=word)
+    if other:
+        cands.insert(0, (other["text"], other["source"]))
+    for text, src in cands:
+        s = _sentence_with(text, word.word)
+        if s and _norm(s) != ex and _blank(s, word.word):
+            return {"text": s, "source": src}
+    # 兜底:现生成一句"同词新内容"的句子(迁移项正需新语境),并入缓存供复用
+    if is_llm_dev_mode():
+        gen = f"They will {word.word} it again next week."
+    else:
+        d = await complete_json(
+            system_prompt="你是英语例句作者。给定单词,造一句**全新内容**的地道英文短句(8-16词,含该词原形或常见变形,适合初中生),严格输出 JSON {\"sentence\":..}。",
+            user_prompt=f"单词:{word.word}\n避免与这句雷同:{exclude_text or '(无)'}\n返回 JSON:",
+            max_tokens=400, model=fast_model(), feature="vocab_probe",
+            validate=lambda x: bool(x.get("sentence")))
+        gen = (d or {}).get("sentence") if d else None
+    s = _sentence_with(gen, word.word) if gen else None
+    if s and _norm(s) != ex and _blank(s, word.word):
+        fb = list(p.get("cloze_fallback") or [])
+        fb.append({"sentence": s, "answer": word.word})
+        word.probes_json = {**(word.probes_json or {}), "cloze_fallback": fb[:4]}
+        await db.flush()
+        return {"text": s, "source": "AI 新句"}
+    return None
+
+
+async def transfer_probe(db: AsyncSession, *, student_id: uuid.UUID, word: VocabularyWord,
+                         exclude_text: str | None) -> dict | None:
+    """组装迁移题:同词新语境的语境 cloze(新句挖空 + 缓存干扰项)。无新语境→None。"""
+    ctx = await find_transfer_context(db, student_id=student_id, word=word, exclude_text=exclude_text)
+    if not ctx:
+        return None
+    p = word.probes_json or {}
+    blanked = _blank(ctx["text"], word.word)
+    opts = _shuffle([word.word] + (p.get("distractors") or [])[:3], word.word + "t")
+    return {"context": ctx, "probe": {"key": "transfer", "kind": "cloze",
+                                      "prompt": f"换个句子 · 选词填空:{blanked}", "options": opts}}
+
+
+async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID, answer: str) -> dict:
+    """提交迁移题:判分 → 接收 BKT + 通过则置 transfer_ok=True。
+    verdict=transferred(真懂这个词)/ memorized(疑似记住原题)。"""
+    from app.core.exceptions import AppError
+    word = (await db.execute(sa.select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if word is None:
+        raise AppError(code=404, message="单词不存在")
+    p = await ensure_probes(db, word)
+    ans = (answer or "").strip()
+    correct = ans.lower() == word.word.lower()
+    misconception = None if correct else (p.get("misconceptions") or {}).get(ans)
+    lr = await _get_or_create_learning(db, student_id, word_id)
+    lr.mastery_recep = mastery_judge_service.bkt_update(
+        None if lr.mastery_recep is None else float(lr.mastery_recep), correct)
+    if correct:
+        lr.transfer_ok = True
+    else:
+        lr.is_wrong = True
+        lr.wrong_count = (lr.wrong_count or 0) + 1
+    qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-transfer:{word_id}")
+    await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
+                                           question_id=qid, node_id=None, is_correct=correct,
+                                           feature="vocab_probe")
+    await db.flush()
+    return {"correct": correct, "verdict": "transferred" if correct else "memorized",
+            "correct_answer": word.word, "misconception": misconception,
+            "recep": round(float(lr.mastery_recep or 0), 4), "prod": round(float(lr.mastery_prod or 0), 4),
+            "transfer_ok": bool(lr.transfer_ok), "mastered": _mastered(lr)}
 
 
 # ── 批量回填探针(带预算熔断)──────────────────────────────────────────
