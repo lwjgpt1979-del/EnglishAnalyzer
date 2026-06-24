@@ -99,7 +99,7 @@ export function getPricing() {
   return unwrap<SemesterPricing>(request.get('/admin/pricing'))
 }
 
-export interface LlmModelConfig { model: string; presets: string[]; base_url: string; dev_mock: boolean }
+export interface LlmModelConfig { model: string; presets: string[]; available?: string[]; base_url: string; dev_mock: boolean }
 export function getLlmConfig() {
   return unwrap<LlmModelConfig>(request.get('/admin/llm-config'))
 }

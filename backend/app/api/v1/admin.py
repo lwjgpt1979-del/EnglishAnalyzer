@@ -544,33 +544,38 @@ async def update_tts_speed(body: TtsSpeedConfig, db: DbDep, admin: AdminDep):
 class LlmModelConfig(BaseModel):
     model: str                              # 生效模型名
     presets: list[str] = []                 # 常见模型建议(下拉)
+    available: list[str] = []               # 厂商当前真实可用模型(GET /models;空=无法确定)
     base_url: str = ""                      # 当前 endpoint(只读,改 .env)
     dev_mock: bool = False                  # 是否 dev-mock(api_key 为 placeholder)
 
 
 @router.get("/llm-config", response_model=BaseResponse[LlmModelConfig])
 async def get_llm_config(db: DbDep, admin: AdminDep):
-    """读 LLM 生效模型配置(模型名可改;base_url / api_key 仍走 .env)。"""
+    """读 LLM 生效模型配置 + 厂商当前可用模型列表(模型名可改;base_url / api_key 仍走 .env)。"""
     from app.core.config import settings
     from app.services import llm_config_service
-    from app.services.llm_provider import is_llm_dev_mode
+    from app.services.llm_provider import is_llm_dev_mode, list_models
     return make_ok(LlmModelConfig(
         model=await llm_config_service.get_model(db),
         presets=llm_config_service.PRESET_MODELS,
+        available=await list_models(),
         base_url=settings.llm_base_url, dev_mock=is_llm_dev_mode()))
 
 
 @router.put("/llm-config", response_model=BaseResponse[LlmModelConfig])
 async def update_llm_config(body: LlmModelConfig, db: DbDep, admin: AdminDep):
-    """改 LLM 生效模型(立即生效,无需重启;OpenAI 兼容模型名均可)。"""
+    """改 LLM 生效模型。保存前用 /models 校验:模型不在厂商当前可用列表则拒绝(防用到已下线/拼错的模型)。"""
     from app.core.config import settings
     from app.services import llm_config_service
-    from app.services.llm_provider import is_llm_dev_mode
+    from app.services.llm_provider import is_llm_dev_mode, list_models
+    avail = await list_models()
+    if avail and body.model not in avail:   # 仅当成功取到列表才校验,取不到不锁死
+        raise AppError(code=400, message=f"模型「{body.model}」不在厂商当前可用列表,请选用:{', '.join(avail)}")
     model = await llm_config_service.set_model(db, model=body.model, updated_by=admin.id)
     await db.commit()
     return make_ok(LlmModelConfig(
         model=model, presets=llm_config_service.PRESET_MODELS,
-        base_url=settings.llm_base_url, dev_mock=is_llm_dev_mode()))
+        available=avail, base_url=settings.llm_base_url, dev_mock=is_llm_dev_mode()))
 
 
 @router.get("/llm-usage", response_model=BaseResponse[dict])

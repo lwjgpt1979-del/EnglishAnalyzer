@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getLlmConfig, updateLlmConfig, getLlmUsage, getLlmBalance, type LlmModelConfig, type LlmUsage, type LlmBalance } from '../api/admin'
 
@@ -7,6 +7,9 @@ const cfg = ref<LlmModelConfig | null>(null)
 const model = ref('')          // 编辑中的模型名
 const saved = ref('')          // 已保存的生效模型
 const presets = ref<string[]>([])
+const available = ref<string[]>([])    // 厂商当前真实可用模型(/models)
+// 下拉优先用真实可用列表;取不到(dev/网络)回退预设
+const modelOptions = computed(() => available.value.length ? available.value : presets.value)
 const loading = ref(false)
 const saving = ref(false)
 
@@ -41,6 +44,7 @@ async function load() {
     model.value = c.model
     saved.value = c.model
     presets.value = c.presets || []
+    available.value = c.available || []
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
@@ -52,8 +56,9 @@ async function onSave() {
   try {
     const c = await updateLlmConfig(m)
     cfg.value = c; model.value = c.model; saved.value = c.model
+    if (c.available?.length) available.value = c.available
     ElMessage.success(`已切换到 ${c.model},立即生效(无需重启)`)
-  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败(模型可能不在厂商可用列表)') }
   finally { saving.value = false }
 }
 
@@ -76,7 +81,7 @@ onMounted(() => { load(); loadUsage(); loadBalance() })
           <div style="display:flex;gap:10px;flex:1;align-items:center">
             <el-select v-model="model" filterable allow-create default-first-option
               placeholder="选择或自填模型名" style="flex:1">
-              <el-option v-for="p in presets" :key="p" :label="p" :value="p" />
+              <el-option v-for="p in modelOptions" :key="p" :label="p" :value="p" />
             </el-select>
             <el-tag v-if="model.trim() === saved" type="success" effect="plain">当前生效</el-tag>
             <el-tag v-else type="warning" effect="plain">未保存</el-tag>
@@ -94,7 +99,7 @@ onMounted(() => { load(); loadUsage(); loadBalance() })
     </el-card>
 
     <div class="note">
-      <p>· 模型名可从下拉选常见 DeepSeek 模型,也可<b>自填</b>任意 OpenAI 兼容模型名(回车确认)。</p>
+      <p>· 下拉为厂商<b>实时可用</b>模型(取自 /models{{ available.length ? `:${available.join('、')}` : ',当前取不到→回退预设' }});保存时会校验,<b>不在可用列表的模型会被拒绝</b>,杜绝用到已下线/拼错的模型。</p>
       <p>· <b>默认</b> deepseek-v4-pro。API key / Endpoint 仍走 .env(密钥不入库)。</p>
     </div>
 

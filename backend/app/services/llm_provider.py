@@ -39,6 +39,18 @@ def fast_model() -> str:
     return settings.llm_model_fast or settings.llm_model
 
 
+async def list_models() -> list[str]:
+    """厂商当前可用模型 id 列表(GET /models)。dev-mock 或查询失败→返回 [](调用方按"无法确定"处理)。"""
+    if is_llm_dev_mode():
+        return []
+    try:
+        resp = await get_llm_client().models.list()
+        return [m.id for m in resp.data]
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("list_models failed: %s", exc)
+        return []
+
+
 async def chat_completion(
     *,
     system_prompt: str,
