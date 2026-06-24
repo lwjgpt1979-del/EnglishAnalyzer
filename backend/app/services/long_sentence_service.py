@@ -797,15 +797,18 @@ async def submit_verify(
         await mastery_judge_service.log_answer(
             db, student_id=student_id, q_scope="platform", question_id=qid,
             node_id=nid, is_correct=correct, feature="long_sentence_verify")
-        if correct:
-            sk = (await db.execute(
-                sa.select(StudentKp).where(StudentKp.student_id == student_id, StudentKp.node_id == nid)
-            )).scalar_one_or_none()
-            if sk is not None and (sk.practice_count - sk.wrong_count) >= required_pass \
-                    and (sk.mastery is None or float(sk.mastery) < 1.0):
-                sk.mastery = 1.0
-                mastered.append(n["name"])
-        else:
+        # BKT:用先验掌握度 + 本次对错做贝叶斯更新(替代旧「过阈值→1.0」硬规则,抗运气过关)
+        sk = (await db.execute(
+            sa.select(StudentKp).where(StudentKp.student_id == student_id, StudentKp.node_id == nid)
+        )).scalar_one_or_none()
+        prior = None if (sk is None or sk.mastery is None) else float(sk.mastery)
+        new_p = mastery_judge_service.bkt_update(prior, correct)
+        if sk is not None:
+            sk.mastery = new_p
+        if correct and new_p >= mastery_judge_service.BKT_MASTERED \
+                and (prior is None or prior < mastery_judge_service.BKT_MASTERED):
+            mastered.append(n["name"])           # 掌握度刚跨过判掌握线
+        if not correct:
             await wrong_center_service.record_wrong(
                 db, student_id=student_id, q_scope="platform", question_id=qid, node_id=nid)
     await db.flush()

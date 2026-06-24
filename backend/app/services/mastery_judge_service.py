@@ -19,6 +19,27 @@ from app.models.d16_question_domain import (
 
 DEFAULT_REQUIRED_SIMS = 3   # 原题 + N 仿真;N 可配(后台/settings 覆盖)
 
+# ── BKT(贝叶斯知识追踪):掌握度=概率,随每次作答升降,建模蒙对/手滑 ──────────
+BKT_L0 = 0.25        # 初始掌握先验 P(L0)
+BKT_T = 0.18         # 学得率 P(T):每次作答机会转化为掌握的概率
+BKT_G = 0.20         # 蒙对率 P(G):未掌握却答对
+BKT_S = 0.10         # 手滑率 P(S):已掌握却答错
+BKT_MASTERED = 0.95  # 判掌握阈值(需连续答对才能跨过,抗运气过关)
+
+
+def bkt_update(prior: float | None, correct: bool) -> float:
+    """一次作答后的 BKT 掌握度更新:先按证据求后验,再叠加学得转移。返回新的 P(掌握)∈[0,1]。
+    prior=None 用初始先验 L0。连续答对快速逼近 1;答错按手滑率回拉。"""
+    p = BKT_L0 if prior is None else min(max(float(prior), 0.0), 1.0)
+    if correct:
+        num = p * (1 - BKT_S)
+        den = num + (1 - p) * BKT_G
+    else:
+        num = p * BKT_S
+        den = num + (1 - p) * (1 - BKT_G)
+    post = (num / den) if den > 0 else p
+    return round(post + (1 - post) * BKT_T, 4)   # 习得转移
+
 
 async def log_answer(
     db: AsyncSession, *, student_id: uuid.UUID, q_scope: str, question_id: uuid.UUID,
