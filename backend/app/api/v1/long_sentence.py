@@ -45,6 +45,34 @@ async def list_long_sentences(
     return make_ok(LongSentenceListOut(total=len(items), items=items))
 
 
+@router.get("/next", response_model=BaseResponse[dict])
+async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
+    """自适应推荐下一句:按学生水平 θ(年级估)选难度贴近的、优先薄弱句法点 + 课程对齐 + 个人材料。
+    exclude: 逗号分隔的已学 id,避免重复。返回 {item, theta, target, weak_hit}。"""
+    ex = []
+    for x in (exclude or "").split(","):
+        x = x.strip()
+        if x:
+            try:
+                ex.append(uuid.UUID(x))
+            except ValueError:
+                pass
+    r = await lss.recommend_next(db, user=current_user, exclude_ids=ex)
+    best = r["best"]
+    if best is None:
+        return make_ok({"item": None, "theta": r["theta"], "target": r["target"], "weak_hit": False})
+    kind, row = best
+    item = LongSentenceItem(
+        id=row.id, text=row.text,
+        source_kind=row.source_kind if kind == "platform" else "uploaded",
+        syntax_points=(row.analysis_json or {}).get("syntax_points", []),
+        favorited=(row.id in await lss.favorited_ids(db, user_id=current_user.id, ls_ids=[row.id])) if kind == "platform" else False,
+        difficulty=row.difficulty,
+    )
+    return make_ok({"item": item.model_dump(mode="json"), "theta": r["theta"],
+                    "target": r["target"], "weak_hit": r["weak_hit"]})
+
+
 async def _student_one(db, ls_id, owner_id):
     from app.models.d20_long_sentence import StudentLongSentence
     s = await db.get(StudentLongSentence, ls_id)

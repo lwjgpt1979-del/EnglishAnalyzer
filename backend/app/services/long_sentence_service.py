@@ -824,6 +824,83 @@ async def list_student_published(
         .order_by(StudentLongSentence.created_at.desc()).limit(limit))).scalars().all())
 
 
+# ── 自适应推荐(按学生水平选下一句)──────────────────────────────────────────
+def _theta_from_grade(grade: str | None, stage: str | None = None) -> int:
+    """从年级估「长难句水平」θ(与 difficulty 同尺,0–100)。"""
+    g = grade or ""
+    for k, v in [("高三", 82), ("高3", 82), ("高二", 74), ("高2", 74), ("高一", 66), ("高1", 66),
+                 ("九年级", 56), ("初三", 56), ("八年级", 46), ("初二", 46), ("七年级", 36), ("初一", 36)]:
+        if k in g:
+            return v
+    if any(k in g for k in ["六年级", "五年级", "四年级", "三年级", "二年级", "一年级", "小"]):
+        return 26
+    return {"高": 70, "初": 45, "小": 25}.get(stage or _stage_from_grade(grade) or "", 50)
+
+
+async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:
+    """按学生水平选下一句:难度贴近 θ+5(i+1)+ 薄弱句法点 + 课程对齐 + 个人材料,带抖动。
+    返回 {best: (kind, row) | None, theta, target, weak_hit}。"""
+    import random
+    from app.models.d16_question_domain import StudentKp
+    from app.models.d20_long_sentence import StudentLongSentence
+    ex = set(exclude_ids or [])
+    grade = getattr(user, "preferred_grade", None)
+    tv = getattr(user, "preferred_textbook_version", None)
+    ps = getattr(user, "preferred_semester", None)
+    theta = _theta_from_grade(grade)
+    target = min(95, theta + 5)
+
+    plat = (await db.execute(sa.select(LongSentence).where(LongSentence.status == "published"))).scalars().all()
+    stu = (await db.execute(sa.select(StudentLongSentence).where(
+        StudentLongSentence.owner_id == user.id, StudentLongSentence.status == "published"))).scalars().all()
+    # 句法 node 边(平台句)
+    node_map: dict = {}
+    pids = [p.id for p in plat]
+    if pids:
+        for lsid, nid in (await db.execute(sa.select(
+                LongSentenceNode.long_sentence_id, LongSentenceNode.node_id)
+                .where(LongSentenceNode.long_sentence_id.in_(pids)))).all():
+            node_map.setdefault(lsid, set()).add(nid)
+    # 薄弱句法点(掌握度 < 0.6 或未掌握)
+    weak = set((await db.execute(sa.select(StudentKp.node_id).where(
+        StudentKp.student_id == user.id,
+        sa.or_(StudentKp.mastery.is_(None), StudentKp.mastery < 0.6)))).scalars().all())
+
+    def score(diff, nodes, is_stu, tbv, gr, sm):
+        d = diff if diff is not None else target
+        s = -abs(d - target)                 # 难度贴近 target(i+1)
+        hit = bool(weak & nodes)
+        if hit:
+            s += 22                           # 薄弱句法点优先
+        if tbv and tbv == tv:
+            s += 14                           # 课程对齐:教材版
+        if gr and gr == grade:
+            s += 9                            # 年级
+        if sm and sm == ps:
+            s += 5                            # 学期
+        if is_stu:
+            s += 8                            # 个人真实材料(自己作业)
+        s += random.uniform(0, 6)             # 抖动,避免每次都同一句
+        return s, hit
+
+    best = None
+    best_sc = -1e18
+    best_hit = False
+    for p in plat:
+        if p.id in ex:
+            continue
+        sc, hit = score(p.difficulty, node_map.get(p.id, set()), False, p.textbook_version, p.grade, p.semester)
+        if sc > best_sc:
+            best_sc, best, best_hit = sc, ("platform", p), hit
+    for s in stu:
+        if s.id in ex:
+            continue
+        sc, hit = score(s.difficulty, set(), True, None, None, None)
+        if sc > best_sc:
+            best_sc, best, best_hit = sc, ("student", s), hit
+    return {"best": best, "theta": theta, "target": target, "weak_hit": best_hit}
+
+
 # ── 抽取选项(供后台精确挑范围)────────────────────────────────────────────────
 async def textbook_extract_units(db: AsyncSession) -> list[dict]:
     """可抽取的教材单元(有阅读短文的),供级联多选:版本/年级/册/单元。"""

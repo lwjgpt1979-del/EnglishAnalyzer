@@ -8,7 +8,7 @@
       <!-- 顶部:今日学习进度 + 打卡 -->
       <view class="header">
         <view class="prog">
-          <text class="prog-label">今日学习 <text class="prog-num">{{ index + 1 }}</text> / {{ items.length }} 句</text>
+          <text class="prog-label">今日已学 <text class="prog-num">{{ index + 1 }}</text> 句<text v-if="recTarget" class="prog-hint"> · 为你匹配难度 ~{{ recTarget }}</text></text>
           <view class="prog-bar"><view class="prog-fill" :style="{ width: pct + '%' }" /></view>
         </view>
         <view class="streak" @tap="openCalendar"><view class="ic ic-flame streak-ic" />{{ checkinStatus ? '连续 ' + checkinStatus.current_streak + ' 天' : '打卡' }}</view>
@@ -19,8 +19,8 @@
         <view class="sc-top">
           <view class="nav">
             <text class="nav-btn" :class="{ dis: index === 0 }" @tap="prev">‹</text>
-            <text class="nav-cur">句子 {{ index + 1 }}/{{ items.length }}</text>
-            <text class="nav-btn" :class="{ dis: index >= items.length - 1 }" @tap="next">›</text>
+            <text class="nav-cur">第 {{ index + 1 }} 句</text>
+            <text class="nav-btn" :class="{ dis: recing }" @tap="next">›</text>
           </view>
           <text v-if="srcLabel" class="src-tag">{{ srcLabel }}</text>
           <view class="sc-spacer" />
@@ -180,7 +180,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { listLongSentences, getLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
+import { getLongSentence, nextLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
 import { checkin, getCheckinStatus, getCheckinCalendar, type CheckinStatus, type CheckinCalendar } from '@/api/checkin'
 
 // 颜色由后端按「成分类型」固定下发(segment.color/tint),前端按 idx 映射;缺省回退到调色板
@@ -231,7 +231,9 @@ const diffLevel = computed(() => {
 })
 
 const analysis = computed<LSAnalysis | null>(() => detail.value?.analysis || null)
-const pct = computed(() => items.value.length ? Math.round((index.value + 1) / items.value.length * 100) : 0)
+const pct = computed(() => Math.min(100, (index.value + 1) * 10))   // 今日进度(目标≈10句/天)
+const recTarget = ref(0)        // 推荐匹配的难度档(θ+5)
+const recing = ref(false)       // 正在取推荐
 const segments = computed(() => (analysis.value?.segments || []).slice().sort((a, b) => a.idx - b.idx).map(s => {
   const toks = (s.text || '').trim().split(/\s+/)
   return { ...s, first: toks[0] || '', rest: toks.slice(1).join(' ') }
@@ -410,13 +412,28 @@ async function loadDetail() {
   tab.value = 'struct'; showTranslate.value = false; showStruct.value = true
 }
 function prev() { if (index.value > 0) { index.value--; loadDetail() } }
-function next() { if (index.value < items.value.length - 1) { index.value++; loadDetail() } }
+
+// 自适应:历史里还有就前进;到末尾就按学生水平拉新推荐
+async function next() {
+  if (index.value < items.value.length - 1) { index.value++; loadDetail(); return }
+  if (recing.value) return
+  recing.value = true
+  try {
+    const r = await nextLongSentence(items.value.map(i => i.id))
+    if (r.item) {
+      items.value.push(r.item); index.value = items.value.length - 1
+      recTarget.value = r.target; loadDetail()
+    } else {
+      uni.showToast({ title: '今日推荐已学完,休息一下~', icon: 'none' })
+    }
+  } catch { uni.showToast({ title: '推荐失败', icon: 'none' }) }
+  finally { recing.value = false }
+}
 
 onLoad(async () => {
   try {
-    const r = await listLongSentences(50)
-    items.value = r.items || []
-    if (items.value.length) await loadDetail()
+    const r = await nextLongSentence([])
+    if (r.item) { items.value = [r.item]; index.value = 0; recTarget.value = r.target; await loadDetail() }
   } finally { loading.value = false }
   try { checkinStatus.value = await getCheckinStatus() } catch { /* ignore */ }
 })
@@ -431,6 +448,7 @@ onLoad(async () => {
 .header { display: flex; align-items: center; gap: 18rpx; margin-bottom: 20rpx; }
 .prog { flex: 1; }
 .prog-label { font-size: 26rpx; color: #666; }
+.prog-hint { font-size: 22rpx; color: var(--c-primary); }
 .prog-num { color: var(--c-primary); font-weight: 700; }
 .prog-bar { height: 10rpx; background: #e5e9f0; border-radius: 8rpx; margin-top: 12rpx; overflow: hidden; }
 .prog-fill { height: 100%; background: var(--c-primary); border-radius: 8rpx; transition: width .3s; }

@@ -650,6 +650,7 @@ class LongSentenceItem(BaseModel):
     source_kind: str
     syntax_points: list[str] = []
     favorited: bool = False
+    difficulty: int | None = None
 
 
 class LongSentenceListOut(BaseModel):
