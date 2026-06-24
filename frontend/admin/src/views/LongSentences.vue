@@ -71,6 +71,10 @@ const bfBudget = ref(200000)
 const bfOnlyMissing = ref(true)
 const bfRunning = ref(false)
 const bfResult = ref<ParaphraseBackfillResult | null>(null)
+// 给操作人员"钱感":token→元 粗略换算(快档混合单价≈¥3/百万token,仅估算)
+const TOK_PRICE_PER_M = 3
+const yuan = (tok: number) => (tok / 1_000_000 * TOK_PRICE_PER_M)
+const bfBudgetYuan = computed(() => yuan(bfBudget.value))
 async function onBackfill() {
   bfRunning.value = true; bfResult.value = null
   try {
@@ -266,22 +270,34 @@ onMounted(() => { load(); loadCfg(); loadExtractOptions() })
 
     <!-- 释义回填(给存量句补理解检测的释义探针;带 token 预算熔断) -->
     <el-card shadow="never" class="sec">
-      <template #header><b>释义回填</b>(给存量长难句补「理解检测·释义题」;LLM 生成,带 token 预算熔断防成本失控)</template>
+      <template #header><b>释义回填</b>(给存量长难句补「理解检测·释义题」)</template>
+
+      <!-- 说明:让操作人员看懂"预算熔断是什么/为什么/规则/在哪看" -->
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px" title="什么是「预算熔断」?为什么需要?">
+        <div class="bf-help">
+          · <b>做什么</b>:给还没有「释义题」的长难句补上;每补 1 句要调一次 AI(按 token 计费=花钱)。<br/>
+          · <b>为什么要熔断</b>:几百句一起补可能花不少钱,设个上限,防手滑/异常一次把账户余额烧光。<br/>
+          · <b>规则</b>:本次累计消耗的 token 一旦达到「Token 预算」,<b>立即停止</b>,已补全的<b>保留</b>;想继续把预算调高再点一次即可。<br/>
+          · <b>在哪看</b>:就在下方结果条——顺利绿色、<b style="color:#e6a23c">触发熔断橙色</b>,都会显示扫描/补全句数与已花 token(¥)。
+        </div>
+      </el-alert>
+
       <div class="toolbar" style="flex-wrap:wrap; gap:8px 12px;">
-        <span class="hint">本次上限</span>
+        <span class="hint">本次最多补</span>
         <el-input-number v-model="bfLimit" :min="1" :max="2000" style="width:120px" />
-        <span class="hint">条</span>
-        <span class="hint" style="margin-left:8px">Token 预算</span>
+        <span class="hint">句</span>
+        <span class="hint" style="margin-left:8px">花费上限(Token 预算)</span>
         <el-input-number v-model="bfBudget" :min="1000" :max="5000000" :step="50000" style="width:160px" />
+        <el-tag type="info" effect="plain">≈ ¥{{ bfBudgetYuan.toFixed(2) }}(粗略)</el-tag>
         <el-checkbox v-model="bfOnlyMissing" style="margin-left:8px">只补缺失的</el-checkbox>
         <el-button type="primary" :loading="bfRunning" style="margin-left:12px" @click="onBackfill">开始回填</el-button>
       </div>
       <div v-if="bfResult" style="margin-top:10px">
         <el-alert v-if="bfResult.stopped" type="warning" :closable="false" show-icon
-          :title="`已达预算上限,已停止 —— 扫描 ${bfResult.scanned} 句 / 补全 ${bfResult.filled} 句 / 已花 ${bfResult.spent_tokens} tokens`"
-          description="可调高「Token 预算」后再次点击继续回填。" />
+          :title="`已达花费上限,已自动停止 —— 扫描 ${bfResult.scanned} 句 / 补全 ${bfResult.filled} 句 / 已花 ${bfResult.spent_tokens} tokens(≈¥${yuan(bfResult.spent_tokens).toFixed(3)})`"
+          description="这是预算熔断:为防超支已停下,已补全的句子已保存。想继续:把「花费上限」调高后再点「开始回填」。" />
         <el-alert v-else type="success" :closable="false" show-icon
-          :title="`回填完成 —— 扫描 ${bfResult.scanned} 句 / 补全 ${bfResult.filled} 句 / 已花 ${bfResult.spent_tokens} tokens(未触发预算熔断)`" />
+          :title="`回填完成 —— 扫描 ${bfResult.scanned} 句 / 补全 ${bfResult.filled} 句 / 已花 ${bfResult.spent_tokens} tokens(≈¥${yuan(bfResult.spent_tokens).toFixed(3)});未触发预算熔断`" />
       </div>
     </el-card>
 
@@ -407,4 +423,5 @@ onMounted(() => { load(); loadCfg(); loadExtractOptions() })
 .sec { margin-bottom: 16px; }
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; }
 .hint { margin-left: 16px; color: #909399; font-size: 12px; }
+.bf-help { font-size: 12px; line-height: 1.9; color: #5c6066; }
 </style>
