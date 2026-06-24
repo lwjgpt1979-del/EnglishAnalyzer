@@ -184,6 +184,24 @@ def _mastered(lr: VocabularyLearning) -> bool:
             and float(lr.mastery_prod or 0) >= PROD_MASTERED and bool(lr.transfer_ok))
 
 
+def _schedule(lr: VocabularyLearning) -> None:
+    """R9.4 双维调度:按两维里**较弱**的一维定复习间隔(越弱越快再推);真正掌握→拉长间隔并移出错词本。"""
+    weak = min(float(lr.mastery_recep or 0), float(lr.mastery_prod or 0))
+    if _mastered(lr):
+        days = 7
+        lr.is_wrong = False           # 三维达标 → 移出错词本
+    elif weak < 0.4:
+        days = 1
+    elif weak < 0.7:
+        days = 2
+    else:
+        days = 4
+    now = datetime.now(timezone.utc)
+    lr.interval_days = days
+    lr.next_review_at = now + timedelta(days=days)
+    lr.last_reviewed_at = now
+
+
 async def _get_or_create_learning(db, student_id, word_id) -> VocabularyLearning:
     lr = (await db.execute(sa.select(VocabularyLearning).where(
         VocabularyLearning.student_id == student_id, VocabularyLearning.word_id == word_id))).scalar_one_or_none()
@@ -241,6 +259,7 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid
     if not correct:
         lr.is_wrong = True
         lr.wrong_count = (lr.wrong_count or 0) + 1
+    _schedule(lr)
     qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-probe:{word_id}:{key}")
     await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
                                            question_id=qid, node_id=None, is_correct=correct,
@@ -314,6 +333,7 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, word_id: uu
     if not res["passed"]:
         lr.is_wrong = True
         lr.wrong_count = (lr.wrong_count or 0) + 1
+    _schedule(lr)
     qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-produce:{word_id}")
     await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
                                            question_id=qid, node_id=None, is_correct=res["passed"],
@@ -401,6 +421,7 @@ async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, word_id: u
     else:
         lr.is_wrong = True
         lr.wrong_count = (lr.wrong_count or 0) + 1
+    _schedule(lr)
     qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-transfer:{word_id}")
     await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
                                            question_id=qid, node_id=None, is_correct=correct,
@@ -410,6 +431,28 @@ async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, word_id: u
             "correct_answer": word.word, "misconception": misconception,
             "recep": round(float(lr.mastery_recep or 0), 4), "prod": round(float(lr.mastery_prod or 0), 4),
             "transfer_ok": bool(lr.transfer_ok), "mastered": _mastered(lr)}
+
+
+# ── 跨模块真实复现(在长难句/真题文本里命中词单未掌握词)────────────────
+async def incidental_hits(db: AsyncSession, *, student_id: uuid.UUID, text: str, limit: int = 5) -> list[dict]:
+    """文本里命中该生词单中**未掌握**的词 → 可在阅读语境里顺势轻测复现。返回 [{word_id, word, recep, prod}]。"""
+    if not text:
+        return []
+    rows = (await db.execute(
+        sa.select(VocabularyWord.id, VocabularyWord.word, VocabularyLearning)
+        .join(VocabularyLearning, VocabularyLearning.word_id == VocabularyWord.id)
+        .where(VocabularyLearning.student_id == student_id))).all()
+    hits = []
+    for wid, w, lr in rows:
+        if _mastered(lr):
+            continue
+        if re.search(rf"\b{re.escape(w)}\b", text, re.I):
+            hits.append({"word_id": str(wid), "word": w,
+                         "recep": round(float(lr.mastery_recep or 0), 2),
+                         "prod": round(float(lr.mastery_prod or 0), 2)})
+            if len(hits) >= limit:
+                break
+    return hits
 
 
 # ── 批量回填探针(带预算熔断)──────────────────────────────────────────

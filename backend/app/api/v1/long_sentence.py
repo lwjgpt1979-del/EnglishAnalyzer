@@ -169,6 +169,19 @@ async def submit_transfer_api(ls_id: uuid.UUID, body: TransferSubmitIn, db: DbDe
         theta=round(res["theta"], 1), target=round(res["target"], 1), tier=res["tier"]))
 
 
+@router.get("/{ls_id}/vocab-hits", response_model=BaseResponse[dict])
+async def get_vocab_hits(ls_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """R9.4 生词复现:本句里命中该生词单中「未掌握」的词,供顺势轻测。"""
+    from app.services import vocab_probe_service as vps
+    ls, _ = await lss.get_detail(db, ls_id=ls_id)
+    text = ls.text if ls else None
+    if not text:
+        s = await _student_one(db, ls_id, current_user.id)
+        text = s.text if s else None
+    hits = await vps.incidental_hits(db, student_id=current_user.id, text=text or "") if text else []
+    return make_ok({"hits": hits})
+
+
 async def _student_one(db, ls_id, owner_id):
     from app.models.d20_long_sentence import StudentLongSentence
     s = await db.get(StudentLongSentence, ls_id)
