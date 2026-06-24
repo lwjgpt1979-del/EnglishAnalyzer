@@ -69,19 +69,31 @@ export function submitVocabAnswer(
   })
 }
 
-// R9.1 可输入性理解·接收探针
+// R9 可输入性理解·探针(接收 + 产出)
 export interface WordProbe { key: string; kind: string; prompt: string; options: string[] }
-export interface WordProbesOut { context: { text: string; source: string } | null; probes: WordProbe[]; recep: number }
-export interface WordProbeResult { correct: boolean; correct_answer: string; misconception?: string | null; recep: number; recep_mastered: boolean }
+export interface WordProduceTask { key: string; prompt: string }
+export interface WordProbesOut {
+  context: { text: string; source: string } | null
+  probes: WordProbe[]; produce: WordProduceTask | null
+  recep: number; prod: number; mastered: boolean
+}
+export interface WordProbeResult { correct: boolean; correct_answer: string; misconception?: string | null; axis?: string; recep: number; prod: number; recep_mastered: boolean; prod_mastered: boolean; mastered: boolean }
+export interface ProduceDim { key: string; label: string; score: number; max: number; note?: string | null }
+export interface WordProduceResult { dimensions: ProduceDim[]; total: number; max: number; passed: boolean; feedback?: string | null; recep: number; prod: number; prod_mastered: boolean; mastered: boolean }
 
-/** 取该词接收探针(语境句 + 语境填空/多义辨析),不含答案。 */
+/** 取该词探针(语境句 + 接收 cloze/多义 + 产出 搭配/造句),不含答案。 */
 export function getWordProbes(wordId: string): Promise<WordProbesOut> {
   return request<WordProbesOut>(`/api/v1/vocabulary/${wordId}/probes`, { method: 'GET' })
 }
 
-/** 提交一道接收探针,返回判分 + 诊断 + 接收掌握度。 */
+/** 提交一道客观探针(cloze/多义/搭配),返回判分 + 诊断 + 接收/产出掌握度。 */
 export function submitWordProbe(wordId: string, key: string, answer: string): Promise<WordProbeResult> {
   return request<WordProbeResult>(`/api/v1/vocabulary/${wordId}/probe`, { method: 'POST', data: { key, answer } })
+}
+
+/** 提交造句(产出),LLM 维度 rubric 评分 → 产出掌握度。 */
+export function submitWordProduce(wordId: string, sentence: string): Promise<WordProduceResult> {
+  return request<WordProduceResult>(`/api/v1/vocabulary/${wordId}/produce`, { method: 'POST', data: { sentence } })
 }
 
 export function getWrongWords(): Promise<VocabWrongList> {

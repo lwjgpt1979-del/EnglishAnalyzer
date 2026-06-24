@@ -96,7 +96,33 @@
                 <text v-if="probeResults[p.key].misconception" class="probe-mis">{{ probeResults[p.key].misconception }}</text>
               </view>
             </view>
-            <text class="probe-recep">接收掌握度 {{ Math.round(recep * 100) }}%</text>
+            <!-- 产出·造句(检验「会输出」)-->
+            <view v-if="produceTask" class="produce-box">
+              <text class="produce-q">✍️ {{ produceTask.prompt }}</text>
+              <template v-if="!produceResult">
+                <textarea v-model="produceInput" class="produce-input" :maxlength="120"
+                  placeholder="用这个词写一句英文" auto-height />
+                <view class="probe-submit" :class="{ dis: !produceInput.trim() || produceSubmitting }" @tap="submitProduce">{{ produceSubmitting ? '评分中…' : '提交造句' }}</view>
+              </template>
+              <view v-else class="produce-result" :class="produceResult.passed ? 'ok' : 'no'">
+                <view class="pr-head">
+                  <text class="pr-score" :class="{ ok: produceResult.passed }">{{ produceResult.total }}/{{ produceResult.max }}</text>
+                  <text class="pr-verdict" :class="{ ok: produceResult.passed }">{{ produceResult.passed ? '输出达标 ✓' : '再打磨' }}</text>
+                  <text class="pr-redo" @tap="redoProduce">重写</text>
+                </view>
+                <view v-for="d in produceResult.dimensions" :key="d.key" class="pr-dim">
+                  <text class="pr-dim-label">{{ d.label }}</text>
+                  <view class="pr-dots"><text v-for="n in d.max" :key="n" class="pr-dot" :class="{ on: n <= d.score }" /></view>
+                  <text v-if="d.note" class="pr-dim-note">{{ d.note }}</text>
+                </view>
+                <text v-if="produceResult.feedback" class="pr-fb">{{ produceResult.feedback }}</text>
+              </view>
+            </view>
+
+            <view class="probe-recep">
+              <text>接收 {{ Math.round(recep * 100) }}% · 产出 {{ Math.round(prod * 100) }}%</text>
+              <text v-if="mastered" class="probe-mastered">已掌握 ✓</text>
+            </view>
           </view>
         </view>
       </view>
@@ -317,8 +343,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe } from '@/api/vocabulary'
-import type { ShadowScoreResult, WordProbe, WordProbeResult } from '@/api/vocabulary'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce } from '@/api/vocabulary'
+import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
@@ -415,9 +441,17 @@ const probes = ref<WordProbe[]>([])
 const probePick = ref<Record<string, string>>({})
 const probeResults = ref<Record<string, WordProbeResult>>({})
 const recep = ref(0)
+const prod = ref(0)
+const mastered = ref(false)
+// 产出·造句
+const produceTask = ref<WordProduceTask | null>(null)
+const produceInput = ref('')
+const produceResult = ref<WordProduceResult | null>(null)
+const produceSubmitting = ref(false)
 function resetProbe() {
   probeOpen.value = false; probeLoading.value = false; probeCtx.value = null
-  probes.value = []; probePick.value = {}; probeResults.value = {}; recep.value = 0
+  probes.value = []; probePick.value = {}; probeResults.value = {}; recep.value = 0; prod.value = 0; mastered.value = false
+  produceTask.value = null; produceInput.value = ''; produceResult.value = null; produceSubmitting.value = false
 }
 watch(() => curStudy.value.word_id, resetProbe)   // 换词即重置检测
 async function openProbe() {
@@ -427,7 +461,8 @@ async function openProbe() {
   try {
     const r = await getWordProbes(id)
     probeCtx.value = r.context; probes.value = r.probes; recep.value = r.recep
-    if (!r.probes.length) uni.showToast({ title: '该词暂无语境检测', icon: 'none' })
+    prod.value = r.prod; mastered.value = r.mastered; produceTask.value = r.produce
+    if (!r.probes.length && !r.produce) uni.showToast({ title: '该词暂无语境检测', icon: 'none' })
   } catch { uni.showToast({ title: '加载检测失败', icon: 'none' }) }
   finally { probeLoading.value = false }
 }
@@ -442,10 +477,23 @@ async function submitProbe(key: string) {
   try {
     const r = await submitWordProbe(id, key, ans)
     probeResults.value = { ...probeResults.value, [key]: r }
-    recep.value = r.recep
+    recep.value = r.recep; prod.value = r.prod; mastered.value = r.mastered
     uni.showToast({ title: r.correct ? '答对了！' : '再看看语境', icon: 'none' })
   } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
 }
+async function submitProduce() {
+  const id = curStudy.value.word_id
+  const s = produceInput.value.trim()
+  if (!id || !s || produceSubmitting.value) return
+  produceSubmitting.value = true
+  try {
+    const r = await submitWordProduce(id, s)
+    produceResult.value = r; prod.value = r.prod; mastered.value = r.mastered
+    uni.showToast({ title: r.passed ? '输出达标 ✓' : '再打磨一下', icon: 'none' })
+  } catch { uni.showToast({ title: '评分失败', icon: 'none' }) }
+  finally { produceSubmitting.value = false }
+}
+function redoProduce() { produceResult.value = null }
 const studyBtnLabel = computed(() => {
   if (isReview.value) {
     return reviewIndex.value >= reviewCards.value.length - 1 ? '开始测试 →' : '记住了，下一个'
@@ -1102,7 +1150,26 @@ onMounted(load)
 .probe-fb.ok { color: #1f9d6b; }
 .probe-fb.no { color: #e2504a; }
 .probe-mis { color: #c0792a; font-size: 22rpx; line-height: 1.5; }
-.probe-recep { display: block; text-align: right; font-size: 22rpx; color: #8a93a3; margin-top: 6rpx; }
+.probe-recep { display: flex; align-items: center; justify-content: flex-end; gap: 12rpx; font-size: 22rpx; color: #8a93a3; margin-top: 10rpx; }
+.probe-mastered { color: #1f9d6b; font-weight: 700; }
+/* 产出·造句 */
+.produce-box { margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx dashed #e6e9ef; }
+.produce-q { display: block; font-size: 25rpx; color: #2a3138; font-weight: 600; line-height: 1.6; margin-bottom: 10rpx; }
+.produce-input { width: 100%; box-sizing: border-box; min-height: 96rpx; background: #f5f7fa; border-radius: 14rpx; padding: 14rpx 16rpx; font-size: 26rpx; line-height: 1.6; font-family: Georgia, 'Times New Roman', serif; }
+.produce-result { background: #f7f9fc; border-radius: 14rpx; padding: 14rpx; margin-top: 6rpx; }
+.pr-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 8rpx; }
+.pr-score { font-size: 30rpx; font-weight: 800; color: #d0860f; }
+.pr-score.ok { color: #1f9d6b; }
+.pr-verdict { font-size: 24rpx; font-weight: 700; color: #d0860f; }
+.pr-verdict.ok { color: #1f9d6b; }
+.pr-redo { margin-left: auto; font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); border-radius: var(--r-pill); padding: 4rpx 18rpx; }
+.pr-dim { display: flex; align-items: center; gap: 10rpx; flex-wrap: wrap; padding: 5rpx 0; }
+.pr-dim-label { font-size: 23rpx; color: #3a414a; font-weight: 600; }
+.pr-dots { display: flex; gap: 6rpx; }
+.pr-dot { width: 16rpx; height: 16rpx; border-radius: 50%; background: #e2e6ee; }
+.pr-dot.on { background: #1f9d6b; }
+.pr-dim-note { flex-basis: 100%; font-size: 21rpx; color: #8a93a3; line-height: 1.5; }
+.pr-fb { display: block; margin-top: 8rpx; font-size: 22rpx; color: #6b7178; line-height: 1.6; }
 .done { text-align: center; }
 .done-emoji { font-size: 80rpx; }
 .done-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); margin: 16rpx 0; }
