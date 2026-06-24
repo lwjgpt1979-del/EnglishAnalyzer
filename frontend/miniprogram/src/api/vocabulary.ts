@@ -79,7 +79,7 @@ export interface WordProbesOut {
 }
 export interface WordProbeResult { correct: boolean; correct_answer: string; misconception?: string | null; axis?: string; recep: number; prod: number; recep_mastered: boolean; prod_mastered: boolean; mastered: boolean }
 export interface ProduceDim { key: string; label: string; score: number; max: number; note?: string | null }
-export interface WordProduceResult { dimensions: ProduceDim[]; total: number; max: number; passed: boolean; feedback?: string | null; recep: number; prod: number; prod_mastered: boolean; mastered: boolean }
+export interface WordProduceResult { dimensions: ProduceDim[]; total: number; max: number; passed: boolean; graded?: boolean; feedback?: string | null; recep: number; prod: number; prod_mastered: boolean; mastered: boolean }
 
 /** 取该词探针(语境句 + 接收 cloze/多义 + 产出 搭配/造句),不含答案。 */
 export function getWordProbes(wordId: string): Promise<WordProbesOut> {

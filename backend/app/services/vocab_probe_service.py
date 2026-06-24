@@ -301,9 +301,10 @@ async def grade_produce(word: str, sentence: str) -> dict:
     d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=700,
                             model=fast_model(), feature="vocab_produce",
                             validate=lambda x: any(x.get(k) for k, _ in _PROD_DIMS))
-    if not d:
+    if not d:   # 评分服务瞬时失败:不计分、不扣掌握度(graded=False)
         return {"dimensions": [{"key": k, "label": l, "score": 0, "max": 2, "note": ""} for k, l in _PROD_DIMS],
-                "total": 0, "max": total_max, "passed": False, "feedback": "评分服务暂不可用,请稍后再试"}
+                "total": 0, "max": total_max, "passed": False, "graded": False,
+                "feedback": "评分服务暂忙,请重试(本次不计分)"}
     dims = []
     for k, l in _PROD_DIMS:
         cell = d.get(k) or {}
@@ -328,16 +329,17 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, word_id: uu
         raise AppError(code=404, message="单词不存在")
     res = await grade_produce(word.word, sentence)
     lr = await _get_or_create_learning(db, student_id, word_id)
-    lr.mastery_prod = mastery_judge_service.bkt_update(
-        None if lr.mastery_prod is None else float(lr.mastery_prod), res["passed"])
-    if not res["passed"]:
-        lr.is_wrong = True
-        lr.wrong_count = (lr.wrong_count or 0) + 1
-    _schedule(lr)
-    qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-produce:{word_id}")
-    await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
-                                           question_id=qid, node_id=None, is_correct=res["passed"],
-                                           feature="vocab_produce")
+    if res.get("graded", True):    # 评分服务失败(graded=False)→ 不动掌握度、不计错、不排期
+        lr.mastery_prod = mastery_judge_service.bkt_update(
+            None if lr.mastery_prod is None else float(lr.mastery_prod), res["passed"])
+        if not res["passed"]:
+            lr.is_wrong = True
+            lr.wrong_count = (lr.wrong_count or 0) + 1
+        _schedule(lr)
+        qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-produce:{word_id}")
+        await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
+                                               question_id=qid, node_id=None, is_correct=res["passed"],
+                                               feature="vocab_produce")
     await db.flush()
     recep = float(lr.mastery_recep or 0)
     prod = float(lr.mastery_prod or 0)
