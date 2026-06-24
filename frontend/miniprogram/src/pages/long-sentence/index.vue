@@ -30,6 +30,13 @@
           </view>
         </view>
 
+        <!-- 脚手架:按学生水平给该做什么 -->
+        <view class="scaffold" :class="tier">
+          <view class="ic sc-ic" :class="scaffold.ic" />
+          <view class="sc-body"><text class="sc-label">{{ scaffold.label }}</text><text class="sc-tip">{{ scaffold.tip }}</text></view>
+          <text v-if="!showStruct" class="sc-act" @tap="showStruct = true">显示结构</text>
+        </view>
+
         <!-- 原句:连续流式段落,每段彩色虚线下划线,序号锚在该段首词下(保持原设计,勿改) -->
         <view v-if="showStruct && segments.length" class="sentence" :class="{ eye: eyeMode }" :style="{ fontSize: fontPx + 'rpx' }">
           <text v-for="s in segments" :key="s.idx" class="seg" :style="{ color: colorOf(s.idx), borderBottomColor: colorOf(s.idx) }"><text class="fw">{{ s.first }}<text class="badge" :style="{ background: colorOf(s.idx) }">{{ s.idx }}</text></text>{{ (s.rest ? ' ' + s.rest : '') + ' ' }}</text>
@@ -188,7 +195,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { getLongSentence, nextLongSentence, feedbackLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
+import { getLongSentence, nextLongSentence, feedbackLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis, type LSTier } from '@/api/longSentence'
 import { checkin, getCheckinStatus, getCheckinCalendar, type CheckinStatus, type CheckinCalendar } from '@/api/checkin'
 
 // 颜色由后端按「成分类型」固定下发(segment.color/tint),前端按 idx 映射;缺省回退到调色板
@@ -242,6 +249,13 @@ const analysis = computed<LSAnalysis | null>(() => detail.value?.analysis || nul
 const pct = computed(() => Math.min(100, (index.value + 1) * 10))   // 今日进度(目标≈10句/天)
 const recTarget = ref(0)        // 推荐匹配的难度档(θ+5)
 const recing = ref(false)       // 正在取推荐
+const tier = ref<LSTier>('intro')   // 脚手架档:看懂/划结构/输出
+const SCAFFOLD: Record<LSTier, { struct: boolean; translate: boolean; ic: string; label: string; tip: string }> = {
+  intro:     { struct: true,  translate: true,  ic: 'ic-eye',    label: '入门·看懂',   tip: '已给出结构与译文,听读理解这句' },
+  build:     { struct: false, translate: false, ic: 'ic-edit',   label: '进阶·划结构', tip: '先自己划主干和从句,再点「显示结构」核对' },
+  challenge: { struct: false, translate: false, ic: 'ic-target', label: '挑战·输出',   tip: '试着翻译/复述这句,再展开结构与解析' },
+}
+const scaffold = computed(() => SCAFFOLD[tier.value])
 const segments = computed(() => (analysis.value?.segments || []).slice().sort((a, b) => a.idx - b.idx).map(s => {
   const toks = (s.text || '').trim().split(/\s+/)
   return { ...s, first: toks[0] || '', rest: toks.slice(1).join(' ') }
@@ -417,11 +431,14 @@ async function loadDetail() {
   audioUrl.value = ''
   try { detail.value = await getLongSentence(it.id) } catch { /* ignore */ }
   favorited.value = !!(detail.value?.favorited ?? it.favorited)
-  tab.value = 'struct'; showTranslate.value = false; showStruct.value = true
+  // 按脚手架档设默认呈现:看懂=给结构+译文;划结构/输出=先藏起来,学生自己来
+  tab.value = 'struct'
+  showStruct.value = scaffold.value.struct
+  showTranslate.value = scaffold.value.translate
 }
 // 难度反馈 → 校准 θ → 自动学下一句
 async function rate(r: 'easy' | 'ok' | 'hard') {
-  try { recTarget.value = (await feedbackLongSentence(r)).target } catch { /* ignore */ }
+  try { const res = await feedbackLongSentence(r); recTarget.value = res.target; tier.value = res.tier } catch { /* ignore */ }
   uni.showToast({ title: '已记录,为你调整难度', icon: 'none' })
   next()
 }
@@ -437,7 +454,7 @@ async function next() {
     const r = await nextLongSentence(items.value.map(i => i.id))
     if (r.item) {
       items.value.push(r.item); index.value = items.value.length - 1
-      recTarget.value = r.target; loadDetail()
+      recTarget.value = r.target; tier.value = r.tier; loadDetail()
     } else {
       uni.showToast({ title: '今日推荐已学完,休息一下~', icon: 'none' })
     }
@@ -448,7 +465,7 @@ async function next() {
 onLoad(async () => {
   try {
     const r = await nextLongSentence([])
-    if (r.item) { items.value = [r.item]; index.value = 0; recTarget.value = r.target; await loadDetail() }
+    if (r.item) { items.value = [r.item]; index.value = 0; recTarget.value = r.target; tier.value = r.tier; await loadDetail() }
   } finally { loading.value = false }
   try { checkinStatus.value = await getCheckinStatus() } catch { /* ignore */ }
 })
@@ -464,6 +481,20 @@ onLoad(async () => {
 .prog { flex: 1; }
 .prog-label { font-size: 26rpx; color: #666; }
 .prog-hint { font-size: 22rpx; color: var(--c-primary); }
+
+/* 脚手架引导条 */
+.scaffold { display: flex; align-items: center; gap: 12rpx; padding: 14rpx 16rpx; border-radius: 14rpx; margin-bottom: 16rpx; }
+.scaffold.intro { background: #e9f7ef; }
+.scaffold.build { background: var(--c-primary-faint); }
+.scaffold.challenge { background: #fdf2e3; }
+.sc-ic { width: 32rpx; height: 32rpx; flex-shrink: 0; }
+.sc-body { flex: 1; display: flex; flex-direction: column; }
+.sc-label { font-size: 24rpx; font-weight: 700; }
+.scaffold.intro .sc-label { color: #1f9d6b; }
+.scaffold.build .sc-label { color: var(--c-primary); }
+.scaffold.challenge .sc-label { color: #d0860f; }
+.sc-tip { font-size: 22rpx; color: #6b7178; margin-top: 2rpx; }
+.sc-act { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); background: #fff; border-radius: 18rpx; padding: 6rpx 16rpx; }
 
 /* 难度反馈 */
 .rate { display: flex; align-items: center; gap: 12rpx; margin-top: 18rpx; padding-top: 16rpx; border-top: 1rpx solid #f0f2f5; }

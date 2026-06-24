@@ -837,6 +837,15 @@ def _theta_from_grade(grade: str | None, stage: str | None = None) -> int:
     return {"高": 70, "初": 45, "小": 25}.get(stage or _stage_from_grade(grade) or "", 50)
 
 
+def ls_tier(theta: float) -> str:
+    """按水平分脚手架档:intro(看懂)< 45 ≤ build(划结构)< 70 ≤ challenge(输出)。"""
+    if theta < 45:
+        return "intro"
+    if theta < 70:
+        return "build"
+    return "challenge"
+
+
 async def get_theta(db: AsyncSession, user) -> float:
     """学生当前长难句水平 θ:有持久值用之,否则从年级冷启动估。"""
     from app.models.d20_long_sentence import StudentLsState

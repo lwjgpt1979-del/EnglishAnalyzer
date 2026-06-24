@@ -59,8 +59,10 @@ async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
                 pass
     r = await lss.recommend_next(db, user=current_user, exclude_ids=ex)
     best = r["best"]
+    tier = lss.ls_tier(r["theta"])
     if best is None:
-        return make_ok({"item": None, "theta": r["theta"], "target": r["target"], "weak_hit": False})
+        return make_ok({"item": None, "theta": round(r["theta"]), "target": round(r["target"]),
+                        "weak_hit": False, "tier": tier})
     kind, row = best
     item = LongSentenceItem(
         id=row.id, text=row.text,
@@ -70,7 +72,7 @@ async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
         difficulty=row.difficulty,
     )
     return make_ok({"item": item.model_dump(mode="json"), "theta": round(r["theta"]),
-                    "target": round(r["target"]), "weak_hit": r["weak_hit"]})
+                    "target": round(r["target"]), "weak_hit": r["weak_hit"], "tier": tier})
 
 
 @router.post("/feedback", response_model=BaseResponse[dict])
@@ -79,7 +81,7 @@ async def submit_feedback(db: DbDep, current_user: UserDep, rating: str = Body("
     if rating not in ("easy", "ok", "hard"):
         raise AppError(code=400, message="rating 须为 easy|ok|hard")
     theta = await lss.apply_feedback(db, current_user, rating=rating)
-    return make_ok({"theta": round(theta), "target": round(min(95.0, theta + 5))})
+    return make_ok({"theta": round(theta), "target": round(min(95.0, theta + 5)), "tier": lss.ls_tier(theta)})
 
 
 async def _student_one(db, ls_id, owner_id):
