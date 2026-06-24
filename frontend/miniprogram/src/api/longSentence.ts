@@ -39,15 +39,15 @@ export function getLongSentence(id: string): Promise<LSDetail> {
 }
 
 export type LSTier = 'intro' | 'build' | 'challenge'
-export interface LSNextOut { item: (LSItem & { difficulty?: number }) | null; theta: number; target: number; weak_hit: boolean; tier: LSTier }
+export interface LSNextOut { item: (LSItem & { difficulty?: number }) | null; theta: number; target: number; weak_hit: boolean; tier: LSTier; review: boolean }
 /** 自适应推荐下一句(按学生水平选;exclude=已学 id 逗号串)。 */
 export function nextLongSentence(exclude: string[] = []): Promise<LSNextOut> {
   return request<LSNextOut>('/api/v1/long-sentences/next', { method: 'GET', data: { exclude: exclude.join(',') } })
 }
 
 /** 难度反馈,校准水平 θ。rating: easy|ok|hard。返回新 {theta,target}。 */
-export function feedbackLongSentence(rating: 'easy' | 'ok' | 'hard'): Promise<{ theta: number; target: number; tier: LSTier }> {
-  return request<{ theta: number; target: number; tier: LSTier }>('/api/v1/long-sentences/feedback', { method: 'POST', data: { rating } })
+export function feedbackLongSentence(rating: 'easy' | 'ok' | 'hard', lsId?: string, isStudent = false): Promise<{ theta: number; target: number; tier: LSTier }> {
+  return request<{ theta: number; target: number; tier: LSTier }>('/api/v1/long-sentences/feedback', { method: 'POST', data: { rating, ls_id: lsId, is_student: isStudent } })
 }
 
 /** 听原句:TTS 流式音频直链(公开接口,可直接作为 audio src 播放)。 */

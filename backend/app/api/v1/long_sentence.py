@@ -72,15 +72,22 @@ async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
         difficulty=row.difficulty,
     )
     return make_ok({"item": item.model_dump(mode="json"), "theta": round(r["theta"]),
-                    "target": round(r["target"]), "weak_hit": r["weak_hit"], "tier": tier})
+                    "target": round(r["target"]), "weak_hit": r["weak_hit"], "tier": tier,
+                    "review": r.get("review", False)})
 
 
 @router.post("/feedback", response_model=BaseResponse[dict])
-async def submit_feedback(db: DbDep, current_user: UserDep, rating: str = Body("", embed=True)):
-    """难度反馈校准水平 θ(rating 从请求体取)。rating: easy(太简单)|ok(刚好)|hard(有点难)。"""
+async def submit_feedback(db: DbDep, current_user: UserDep, rating: str = Body(...),
+                          ls_id: str | None = Body(None), is_student: bool = Body(False)):
+    """难度反馈:校准 θ + 维护间隔重现。rating: easy|ok|hard;ls_id=刚评价的句子(用于复习排期)。"""
     if rating not in ("easy", "ok", "hard"):
         raise AppError(code=400, message="rating 须为 easy|ok|hard")
     theta = await lss.apply_feedback(db, current_user, rating=rating)
+    if ls_id:
+        try:
+            await lss.record_review(db, current_user, ls_id=uuid.UUID(ls_id), is_student=bool(is_student), rating=rating)
+        except ValueError:
+            pass
     return make_ok({"theta": round(theta), "target": round(min(95.0, theta + 5)), "tier": lss.ls_tier(theta)})
 
 

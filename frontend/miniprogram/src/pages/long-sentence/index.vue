@@ -22,6 +22,7 @@
             <text class="nav-cur">第 {{ index + 1 }} 句</text>
             <text class="nav-btn" :class="{ dis: recing }" @tap="next">›</text>
           </view>
+          <text v-if="isReview" class="review-tag">复习</text>
           <text v-if="srcLabel" class="src-tag">{{ srcLabel }}</text>
           <view class="sc-spacer" />
           <view v-if="difficulty != null" class="diff-ring" :class="diffLevel.cls">
@@ -250,6 +251,7 @@ const pct = computed(() => Math.min(100, (index.value + 1) * 10))   // 今日进
 const recTarget = ref(0)        // 推荐匹配的难度档(θ+5)
 const recing = ref(false)       // 正在取推荐
 const tier = ref<LSTier>('intro')   // 脚手架档:看懂/划结构/输出
+const isReview = ref(false)         // 当前是否为「间隔重现」复习句
 const SCAFFOLD: Record<LSTier, { struct: boolean; translate: boolean; ic: string; label: string; tip: string }> = {
   intro:     { struct: true,  translate: true,  ic: 'ic-eye',    label: '入门·看懂',   tip: '已给出结构与译文,听读理解这句' },
   build:     { struct: false, translate: false, ic: 'ic-edit',   label: '进阶·划结构', tip: '先自己划主干和从句,再点「显示结构」核对' },
@@ -438,8 +440,12 @@ async function loadDetail() {
 }
 // 难度反馈 → 校准 θ → 自动学下一句
 async function rate(r: 'easy' | 'ok' | 'hard') {
-  try { const res = await feedbackLongSentence(r); recTarget.value = res.target; tier.value = res.tier } catch { /* ignore */ }
-  uni.showToast({ title: '已记录,为你调整难度', icon: 'none' })
+  const cur = items.value[index.value]
+  try {
+    const res = await feedbackLongSentence(r, cur?.id, cur?.source_kind === 'uploaded')
+    recTarget.value = res.target; tier.value = res.tier
+  } catch { /* ignore */ }
+  uni.showToast({ title: r === 'hard' ? '已记下,过段时间帮你复习' : '已记录,为你调整难度', icon: 'none' })
   next()
 }
 
@@ -454,7 +460,7 @@ async function next() {
     const r = await nextLongSentence(items.value.map(i => i.id))
     if (r.item) {
       items.value.push(r.item); index.value = items.value.length - 1
-      recTarget.value = r.target; tier.value = r.tier; loadDetail()
+      recTarget.value = r.target; tier.value = r.tier; isReview.value = r.review; loadDetail()
     } else {
       uni.showToast({ title: '今日推荐已学完,休息一下~', icon: 'none' })
     }
@@ -465,7 +471,7 @@ async function next() {
 onLoad(async () => {
   try {
     const r = await nextLongSentence([])
-    if (r.item) { items.value = [r.item]; index.value = 0; recTarget.value = r.target; tier.value = r.tier; await loadDetail() }
+    if (r.item) { items.value = [r.item]; index.value = 0; recTarget.value = r.target; tier.value = r.tier; isReview.value = r.review; await loadDetail() }
   } finally { loading.value = false }
   try { checkinStatus.value = await getCheckinStatus() } catch { /* ignore */ }
 })
@@ -519,6 +525,7 @@ onLoad(async () => {
 .nav-btn.dis { opacity: .35; }
 .nav-cur { font-size: 24rpx; color: #444; min-width: 110rpx; text-align: center; }
 .src-tag { background: #f0f2f6; color: #777; font-size: 22rpx; padding: 5rpx 16rpx; border-radius: 24rpx; }
+.review-tag { background: #fdf2e3; color: #d0860f; font-size: 22rpx; padding: 5rpx 16rpx; border-radius: 24rpx; }
 .sc-spacer { flex: 1; }
 .diff-ring { display: flex; flex-direction: column; align-items: center; gap: 2rpx; }
 .dr-num { width: 78rpx; height: 78rpx; line-height: 72rpx; text-align: center; border-radius: 50%; border: 5rpx solid; font-size: 34rpx; font-weight: 700; }

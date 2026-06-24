@@ -102,6 +102,23 @@ class StudentLsState(Base):
         server_default=sa.func.now(), onupdate=sa.func.now())
 
 
+class StudentLsReview(Base):
+    """间隔重现:学生标记「难」的长难句进复习盒,到期再推;盒越高间隔越长,满盒毕业。"""
+
+    __tablename__ = "student_ls_review"
+
+    user_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    ls_id = mapped_column(UUID(as_uuid=True), primary_key=True)            # 平台/个人长难句 id
+    is_student = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))  # 来源:个人库?
+    box = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))             # Leitner 盒 1..N
+    due_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)    # 到期可重推时间
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False,
+        server_default=sa.func.now(), onupdate=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_student_ls_review_due", "user_id", "due_at"),)
+
+
 class LongSentenceFavorite(Base):
     """学生 ↔ 长难句 收藏。"""
 

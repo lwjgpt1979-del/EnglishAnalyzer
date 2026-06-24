@@ -872,6 +872,38 @@ async def apply_feedback(db: AsyncSession, user, *, rating: str) -> float:
     return new
 
 
+# 间隔重现:Leitner 盒 → 下次间隔(分钟)。盒越高间隔越长,超过最高盒则毕业。
+_REVIEW_MIN = {1: 20, 2: 1440, 3: 4320, 4: 10080}   # 20分钟 / 1天 / 3天 / 7天
+_REVIEW_MAXBOX = 4
+
+
+def _review_due(box: int):
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone.utc) + timedelta(minutes=_REVIEW_MIN.get(box, 10080))
+
+
+async def record_review(db: AsyncSession, user, *, ls_id, is_student: bool, rating: str) -> None:
+    """按反馈维护间隔重现:难→进/重置盒1(很快再推);刚好→升盒拉长间隔;太简单→毕业。"""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d20_long_sentence import StudentLsReview
+    cur = await db.get(StudentLsReview, (user.id, ls_id))
+    if rating == "hard":
+        await db.execute(pg_insert(StudentLsReview)
+                         .values(user_id=user.id, ls_id=ls_id, is_student=is_student, box=1, due_at=_review_due(1))
+                         .on_conflict_do_update(index_elements=["user_id", "ls_id"],
+                                                set_={"box": 1, "due_at": _review_due(1), "is_student": is_student}))
+    elif cur is not None:
+        if rating == "easy" or cur.box + 1 > _REVIEW_MAXBOX:
+            await db.execute(sa.delete(StudentLsReview).where(
+                StudentLsReview.user_id == user.id, StudentLsReview.ls_id == ls_id))   # 毕业
+        else:
+            nb = cur.box + 1
+            await db.execute(sa.update(StudentLsReview)
+                             .where(StudentLsReview.user_id == user.id, StudentLsReview.ls_id == ls_id)
+                             .values(box=nb, due_at=_review_due(nb)))
+    await db.commit()
+
+
 async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:
     """按学生水平选下一句:难度贴近 θ+5(i+1)+ 薄弱句法点 + 课程对齐 + 个人材料,带抖动。
     返回 {best: (kind, row) | None, theta, target, weak_hit}。"""
@@ -884,6 +916,23 @@ async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:
     ps = getattr(user, "preferred_semester", None)
     theta = await get_theta(db, user)             # 持久 θ(随反馈校准),冷启动回落年级估
     target = min(95.0, theta + 5)
+
+    # 间隔重现:有到期复习句则优先推(巩固做错的)
+    from app.models.d20_long_sentence import StudentLsReview, StudentLongSentence as _SLS
+    due = (await db.execute(sa.select(StudentLsReview).where(
+        StudentLsReview.user_id == user.id, StudentLsReview.due_at <= sa.func.now())
+        .order_by(StudentLsReview.due_at))).scalars().all()
+    for rv in due:
+        if rv.ls_id in ex:
+            continue
+        if rv.is_student:
+            row = await db.get(_SLS, rv.ls_id)
+            if row is not None and row.status == "published" and row.owner_id == user.id:
+                return {"best": ("student", row), "theta": theta, "target": target, "weak_hit": False, "review": True}
+        else:
+            row = await db.get(LongSentence, rv.ls_id)
+            if row is not None and row.status == "published":
+                return {"best": ("platform", row), "theta": theta, "target": target, "weak_hit": False, "review": True}
 
     plat = (await db.execute(sa.select(LongSentence).where(LongSentence.status == "published"))).scalars().all()
     stu = (await db.execute(sa.select(StudentLongSentence).where(
@@ -933,7 +982,7 @@ async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:
         sc, hit = score(s.difficulty, set(), True, None, None, None)
         if sc > best_sc:
             best_sc, best, best_hit = sc, ("student", s), hit
-    return {"best": best, "theta": theta, "target": target, "weak_hit": best_hit}
+    return {"best": best, "theta": theta, "target": target, "weak_hit": best_hit, "review": False}
 
 
 # ── 抽取选项(供后台精确挑范围)────────────────────────────────────────────────
