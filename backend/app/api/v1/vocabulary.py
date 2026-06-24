@@ -145,7 +145,7 @@ async def answer(body: VocabAnswerIn, db: DbDep, current_user: UserDep):
 
 @router.get("/{word_id}/probes", response_model=BaseResponse[dict])
 async def get_word_probes(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
-    """R9.1 理解探针(接收):语境句 + 接收探针(语境 cloze + 多义辨析),不含答案。"""
+    """R9 理解探针:语境句 + 接收(cloze/多义)+ 产出(搭配 colloc / 造句 produce),不含答案。"""
     from app.core.exceptions import AppError
     from app.models.d5_learning import VocabularyWord, VocabularyLearning
     import sqlalchemy as sa
@@ -158,20 +158,34 @@ async def get_word_probes(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
     lr = (await db.execute(sa.select(VocabularyLearning).where(
         VocabularyLearning.student_id == current_user.id, VocabularyLearning.word_id == word_id))).scalar_one_or_none()
     recep = float(lr.mastery_recep) if (lr and lr.mastery_recep is not None) else 0.0
+    prod = float(lr.mastery_prod) if (lr and lr.mastery_prod is not None) else 0.0
     return make_ok({
         "context": out["context"],
         "probes": [{"key": p["key"], "kind": p["kind"], "prompt": p["prompt"], "options": p["options"]} for p in out["probes"]],
-        "recep": round(recep, 4),
+        "produce": out.get("produce"),
+        "recep": round(recep, 4), "prod": round(prod, 4),
+        "mastered": recep >= vocab_probe_service.RECEP_MASTERED and prod >= vocab_probe_service.PROD_MASTERED,
     })
 
 
 @router.post("/{word_id}/probe", response_model=BaseResponse[dict])
 async def submit_word_probe(word_id: uuid.UUID, db: DbDep, current_user: UserDep,
                             key: str = Body(...), answer: str = Body(...)):
-    """R9.1 提交一道接收探针:判分 → 接收掌握度 BKT → 错词本。"""
+    """R9 提交客观探针(cloze/多义/搭配):判分 → 接收或产出掌握度 BKT → 错词本。"""
     await get_rls_db(db, str(current_user.id))
     res = await vocab_probe_service.submit_probe(
         db, student_id=current_user.id, word_id=word_id, key=key, answer=answer)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/{word_id}/produce", response_model=BaseResponse[dict])
+async def submit_word_produce(word_id: uuid.UUID, db: DbDep, current_user: UserDep,
+                              sentence: str = Body(..., embed=True)):
+    """R9.2 提交造句(产出):LLM 维度 rubric 评分 → 产出掌握度 prod BKT。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await vocab_probe_service.submit_produce(
+        db, student_id=current_user.id, word_id=word_id, sentence=sentence)
     await db.commit()
     return make_ok(res)
 

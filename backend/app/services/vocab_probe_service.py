@@ -26,6 +26,10 @@ from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
 _log = logging.getLogger(__name__)
 
 RECEP_MASTERED = 0.85   # 接收掌握度阈值 = 「可输入性理解」达成
+PROD_MASTERED = 0.85    # 产出掌握度阈值
+# 产出造句 rubric 维度(每维 0-2):用对义 / 搭配用法 / 词性句法
+_PROD_DIMS = [("sense", "用对意思"), ("collocation", "搭配用法"), ("grammar", "词性句法")]
+_PROD_PASS = 4          # 总分 ≥4/6 且「用对意思」≥1 视为产出达标
 
 
 # ── 文本工具 ──────────────────────────────────────────────────────────
@@ -52,7 +56,7 @@ def _sentence_with(text: str | None, word: str) -> str | None:
 async def ensure_probes(db: AsyncSession, word: VocabularyWord) -> dict:
     """取该词探针库;无缓存则 LLM 生成(走 fast 档)并写回 probes_json。"""
     p = word.probes_json or {}
-    if p.get("distractors"):
+    if p.get("distractors") and "produce_hint" in p:   # R9.2:需含产出字段;R9.1 旧缓存会补齐一次
         return p
     w = word.word
     if is_llm_dev_mode():
@@ -61,29 +65,36 @@ async def ensure_probes(db: AsyncSession, word: VocabularyWord) -> dict:
             "misconceptions": {w + "s": "(dev)形近", w + "ed": "(dev)形近", w + "ing": "(dev)形近"},
             "cloze_fallback": [{"sentence": f"This is a sentence using {w} clearly.", "answer": w}],
             "sense": [],
+            "collocation": [],
+            "produce_hint": f"用 {w} 造一个句子(用对意思和搭配)",
         }
     else:
         defs = word.definitions if isinstance(word.definitions, (list, dict)) else str(word.definitions)
         exs = word.examples or []
         system = (
-            "你是英语词汇命题专家。给定单词 + 释义,生成「理解检测」题料,严格输出 JSON:\n"
-            "{\"distractors\":[3个干扰项(英文单词:形近词/近义词/该词他义对应词,要像读半懂的人会选的,不得等于正确词)],\n"
+            "你是英语词汇命题专家。给定单词 + 释义,生成「理解 + 产出检测」题料,严格输出 JSON:\n"
+            "{\"distractors\":[3个干扰项(英文单词:形近词/近义词/该词他义对应词,像读半懂的人会选的,不得等于正确词)],\n"
             " \"misconceptions\":{\"干扰项\":\"一句中文错因\"},\n"
             " \"cloze_fallback\":[{\"sentence\":\"一句含该词的地道英文例句(把词写出,不要挖空)\",\"answer\":\"该词\"}](1-2条),\n"
-            " \"sense\":[ 若该词多义,每义一题 {\"sentence\":\"体现该义的英文句\",\"answer\":\"中文义\",\"options\":[\"2-4个中文义\"]} ;无多义则空数组]}"
+            " \"sense\":[ 若该词多义,每义一题 {\"sentence\":\"体现该义的英文句\",\"answer\":\"中文义\",\"options\":[\"2-4个中文义\"]} ;无多义空数组],\n"
+            " \"collocation\":[1-2题 {\"q\":\"中文问法(如:「对…感兴趣」用哪个搭配?)\",\"options\":[\"3个英文搭配\"],\"answer\":\"正确搭配\"}],\n"
+            " \"produce_hint\":\"一句中文,引导学生用该词造句(点明要表达的意思/搭配)\"}"
         )
         user = f"单词:{w}\n释义:{defs}\n参考例句:{exs}\n返回 JSON:"
-        d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=900,
+        d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=1100,
                                 model=fast_model(), feature="vocab_probe",
                                 validate=lambda x: bool(x.get("distractors")))
         if not d:
-            p = {"distractors": [], "misconceptions": {}, "cloze_fallback": [], "sense": []}
+            p = {"distractors": [], "misconceptions": {}, "cloze_fallback": [], "sense": [],
+                 "collocation": [], "produce_hint": f"用 {w} 造一个句子"}
         else:
             p = {
                 "distractors": [str(x) for x in (d.get("distractors") or []) if str(x).strip() and str(x).strip().lower() != w.lower()][:3],
                 "misconceptions": {str(k): str(v) for k, v in (d.get("misconceptions") or {}).items()},
                 "cloze_fallback": [c for c in (d.get("cloze_fallback") or []) if c.get("sentence")][:2],
                 "sense": [s for s in (d.get("sense") or []) if s.get("sentence") and s.get("answer") and s.get("options")][:3],
+                "collocation": [c for c in (d.get("collocation") or []) if c.get("q") and c.get("options") and c.get("answer")][:2],
+                "produce_hint": str(d.get("produce_hint") or f"用 {w} 造一个句子"),
             }
     word.probes_json = p
     await db.flush()
@@ -141,14 +152,15 @@ def _shuffle(seq, seed_word: str):
 
 
 async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, word: VocabularyWord) -> dict:
-    """组装该词接收探针:语境 cloze(学生句挖空 + 缓存干扰项)+ 多义 sense。
-    返回 {context:{text,source}|None, probes:[{key,kind,prompt,options}]}。"""
+    """组装该词探针:接收(语境 cloze + 多义 sense)+ 产出(搭配 colloc + 造句 produce)。
+    返回 {context, probes:[{key,kind,prompt,options}], produce:{key,prompt}|None}。"""
     p = await ensure_probes(db, word)
     ctx = await pick_context(db, student_id=student_id, word=word)
     if ctx is None and p.get("cloze_fallback"):
         fb = p["cloze_fallback"][0]
         ctx = {"text": fb["sentence"], "source": "词典/AI 例句"}
     probes: list[dict] = []
+    # 接收
     if ctx:
         blanked = _blank(ctx["text"], word.word)
         if blanked:
@@ -157,7 +169,12 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, word:
     for i, s in enumerate((p.get("sense") or [])[:1]):
         probes.append({"key": f"sense:{i}", "kind": "sense",
                        "prompt": f"句中 {word.word} 的意思是?\n{s['sentence']}", "options": s["options"]})
-    return {"context": ctx, "probes": probes}
+    # 产出·搭配(客观)
+    for i, c in enumerate((p.get("collocation") or [])[:1]):
+        probes.append({"key": f"colloc:{i}", "kind": "colloc", "prompt": c["q"], "options": c["options"]})
+    # 产出·造句(主观,单独走 produce 端点)
+    produce = {"key": "produce", "prompt": p.get("produce_hint") or f"用 {word.word} 造一个句子"}
+    return {"context": ctx, "probes": probes, "produce": produce}
 
 
 # ── 判分 + 接收掌握度(BKT)────────────────────────────────────────────
@@ -184,6 +201,7 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid
     p = await ensure_probes(db, word)
     ans = (answer or "").strip()
     misconception = None
+    axis = "recep"
     if key == "cloze":
         correct_answer = word.word
         correct = ans.lower() == word.word.lower()
@@ -196,12 +214,24 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid
             raise AppError(code=400, message="探针不存在")
         correct_answer = str(sense[idx]["answer"])
         correct = ans == correct_answer.strip()
+    elif key.startswith("colloc:"):     # 产出·搭配(客观)→ prod 轴
+        axis = "prod"
+        idx = int(key.split(":")[1]) if key.split(":")[1].isdigit() else 0
+        coll = (p.get("collocation") or [])
+        if idx >= len(coll):
+            raise AppError(code=400, message="探针不存在")
+        correct_answer = str(coll[idx]["answer"])
+        correct = ans == correct_answer.strip()
     else:
         raise AppError(code=400, message="未知探针类型")
 
     lr = await _get_or_create_learning(db, student_id, word_id)
-    prior = None if lr.mastery_recep is None else float(lr.mastery_recep)
-    lr.mastery_recep = mastery_judge_service.bkt_update(prior, correct)
+    if axis == "recep":
+        lr.mastery_recep = mastery_judge_service.bkt_update(
+            None if lr.mastery_recep is None else float(lr.mastery_recep), correct)
+    else:
+        lr.mastery_prod = mastery_judge_service.bkt_update(
+            None if lr.mastery_prod is None else float(lr.mastery_prod), correct)
     if not correct:
         lr.is_wrong = True
         lr.wrong_count = (lr.wrong_count or 0) + 1
@@ -210,9 +240,84 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid
                                            question_id=qid, node_id=None, is_correct=correct,
                                            feature="vocab_probe")
     await db.flush()
-    recep = float(lr.mastery_recep)
+    recep = float(lr.mastery_recep or 0)
+    prod = float(lr.mastery_prod or 0)
     return {"correct": correct, "correct_answer": correct_answer, "misconception": misconception,
-            "recep": round(recep, 4), "recep_mastered": recep >= RECEP_MASTERED}
+            "axis": axis, "recep": round(recep, 4), "prod": round(prod, 4),
+            "recep_mastered": recep >= RECEP_MASTERED, "prod_mastered": prod >= PROD_MASTERED,
+            "mastered": recep >= RECEP_MASTERED and prod >= PROD_MASTERED}
+
+
+# ── 产出·造句(主观 rubric → prod 轴)──────────────────────────────────
+async def grade_produce(word: str, sentence: str) -> dict:
+    """给学生用该词造的句子按维度打分(用对义/搭配/语法 各 0-2)。
+    返回 {dimensions, total, max, passed, feedback}。dev mock 用规则近似。"""
+    sentence = (sentence or "").strip()
+    total_max = 2 * len(_PROD_DIMS)
+    if not sentence:
+        return {"dimensions": [{"key": k, "label": l, "score": 0, "max": 2, "note": ""} for k, l in _PROD_DIMS],
+                "total": 0, "max": total_max, "passed": False, "feedback": "还没写句子"}
+    has_word = re.search(rf"\b{re.escape(word)}", sentence, re.I) is not None
+    if is_llm_dev_mode():
+        base = 2 if (has_word and len(sentence.split()) >= 4) else (1 if has_word else 0)
+        dims = [{"key": k, "label": l, "score": base, "max": 2, "note": ""} for k, l in _PROD_DIMS]
+        tot = base * len(_PROD_DIMS)
+        return {"dimensions": dims, "total": tot, "max": total_max,
+                "passed": tot >= _PROD_PASS and base >= 1, "feedback": "(dev)规则近似评分"}
+    system = (
+        "你是英语写作评分老师。学生用指定单词造了一句英文,按 3 维打分,每维 0/1/2(0 错/缺、1 部分、2 准确):\n"
+        "- sense 用对意思:该词在句中用的是它的正确义;\n"
+        "- collocation 搭配用法:与该词搭配/介词/句型地道;\n"
+        "- grammar 词性句法:词形、时态、句子语法正确。\n"
+        "若句子根本没用到该词,三维均 0。每维给一句简短中文点评(note),再给一句总评(feedback,指出最该改进处)。\n"
+        "严格输出 JSON:{\"sense\":{\"score\":0-2,\"note\":..},\"collocation\":{..},\"grammar\":{..},\"feedback\":..}"
+    )
+    user = f"单词:{word}\n学生造句:{sentence}\n返回 JSON:"
+    d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=700,
+                            model=fast_model(), feature="vocab_produce",
+                            validate=lambda x: any(x.get(k) for k, _ in _PROD_DIMS))
+    if not d:
+        return {"dimensions": [{"key": k, "label": l, "score": 0, "max": 2, "note": ""} for k, l in _PROD_DIMS],
+                "total": 0, "max": total_max, "passed": False, "feedback": "评分服务暂不可用,请稍后再试"}
+    dims = []
+    for k, l in _PROD_DIMS:
+        cell = d.get(k) or {}
+        try:
+            sc = max(0, min(2, int(cell.get("score", 0))))
+        except (ValueError, TypeError):
+            sc = 0
+        dims.append({"key": k, "label": l, "score": sc, "max": 2, "note": str(cell.get("note") or "")})
+    if not has_word:   # 没用到该词,直接判 0(防 LLM 宽松)
+        dims = [{**x, "score": 0} for x in dims]
+    tot = sum(x["score"] for x in dims)
+    sense_sc = next((x["score"] for x in dims if x["key"] == "sense"), 0)
+    return {"dimensions": dims, "total": tot, "max": total_max,
+            "passed": tot >= _PROD_PASS and sense_sc >= 1, "feedback": str(d.get("feedback") or "")}
+
+
+async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID, sentence: str) -> dict:
+    """提交造句:rubric 评分 → 产出掌握度 prod BKT(达标=正确)。返回 rubric + {prod, prod_mastered, mastered, recep}。"""
+    from app.core.exceptions import AppError
+    word = (await db.execute(sa.select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if word is None:
+        raise AppError(code=404, message="单词不存在")
+    res = await grade_produce(word.word, sentence)
+    lr = await _get_or_create_learning(db, student_id, word_id)
+    lr.mastery_prod = mastery_judge_service.bkt_update(
+        None if lr.mastery_prod is None else float(lr.mastery_prod), res["passed"])
+    if not res["passed"]:
+        lr.is_wrong = True
+        lr.wrong_count = (lr.wrong_count or 0) + 1
+    qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-produce:{word_id}")
+    await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
+                                           question_id=qid, node_id=None, is_correct=res["passed"],
+                                           feature="vocab_produce")
+    await db.flush()
+    recep = float(lr.mastery_recep or 0)
+    prod = float(lr.mastery_prod or 0)
+    return {**res, "recep": round(recep, 4), "prod": round(prod, 4),
+            "prod_mastered": prod >= PROD_MASTERED,
+            "mastered": recep >= RECEP_MASTERED and prod >= PROD_MASTERED}
 
 
 # ── 批量回填探针(带预算熔断)──────────────────────────────────────────
