@@ -450,6 +450,7 @@ async def backfill_paraphrase(db: AsyncSession, *, limit: int | None = None,
     rows = (await db.execute(sa.select(LongSentence))).scalars().all()
     scanned = filled = 0
     stopped = False
+    spent_tokens = 0
     with usage_log_service.budget(max_tokens_budget):
         for ls in rows:
             if usage_log_service.over_budget():
@@ -467,8 +468,9 @@ async def backfill_paraphrase(db: AsyncSession, *, limit: int | None = None,
             filled += 1
             if limit and filled >= limit:
                 break
+        spent_tokens = usage_log_service.spent()   # 预算域退出前抓已花量
     await db.commit()
-    return {"scanned": scanned, "filled": filled, "stopped": stopped}
+    return {"scanned": scanned, "filled": filled, "stopped": stopped, "spent_tokens": spent_tokens}
 
 
 async def list_published(

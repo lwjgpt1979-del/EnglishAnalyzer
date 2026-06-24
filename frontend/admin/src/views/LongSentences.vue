@@ -3,8 +3,8 @@ import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   extractLongSentences, reanalyzeLongSentences, getLsReanalyzeJob, listLongSentences, reviewLongSentence,
-  getLSConfig, setLSConfig, getLsTextbookUnits, getLsRealDimensions,
-  type LSTextbookUnit, type LSRealDimensions,
+  getLSConfig, setLSConfig, getLsTextbookUnits, getLsRealDimensions, backfillParaphrase,
+  type LSTextbookUnit, type LSRealDimensions, type ParaphraseBackfillResult,
 } from '../api/admin'
 import type { LSAdminItem, LSConfig } from '../types'
 import { Refresh, Loading } from '@element-plus/icons-vue'
@@ -63,6 +63,23 @@ async function onExtract() {
     await load()
   } catch (e: any) { ElMessage.error(e?.message || '抽取失败') }
   finally { extracting.value = false }
+}
+
+// ── 释义回填(带 token 预算熔断)──
+const bfLimit = ref(50)
+const bfBudget = ref(200000)
+const bfOnlyMissing = ref(true)
+const bfRunning = ref(false)
+const bfResult = ref<ParaphraseBackfillResult | null>(null)
+async function onBackfill() {
+  bfRunning.value = true; bfResult.value = null
+  try {
+    bfResult.value = await backfillParaphrase({
+      limit: bfLimit.value, only_missing: bfOnlyMissing.value, max_tokens_budget: bfBudget.value })
+    if (bfResult.value.stopped) ElMessage.warning('已达预算上限,回填中途停止')
+    else ElMessage.success(`回填完成:补全 ${bfResult.value.filled} 句`)
+  } catch (e: any) { ElMessage.error(e?.message || '回填失败') }
+  finally { bfRunning.value = false }
 }
 
 // ── 重新解析(刷新为新结构:分段/结构/成分/词汇/语法点,供小程序展示)──
@@ -244,6 +261,27 @@ onMounted(() => { load(); loadCfg(); loadExtractOptions() })
         <el-select v-model="rqRegion" multiple collapse-tags clearable filterable placeholder="全部" style="width:180px">
           <el-option v-for="r in realDims.region" :key="r.code" :label="r.name" :value="r.code" />
         </el-select>
+      </div>
+    </el-card>
+
+    <!-- 释义回填(给存量句补理解检测的释义探针;带 token 预算熔断) -->
+    <el-card shadow="never" class="sec">
+      <template #header><b>释义回填</b>(给存量长难句补「理解检测·释义题」;LLM 生成,带 token 预算熔断防成本失控)</template>
+      <div class="toolbar" style="flex-wrap:wrap; gap:8px 12px;">
+        <span class="hint">本次上限</span>
+        <el-input-number v-model="bfLimit" :min="1" :max="2000" style="width:120px" />
+        <span class="hint">条</span>
+        <span class="hint" style="margin-left:8px">Token 预算</span>
+        <el-input-number v-model="bfBudget" :min="1000" :max="5000000" :step="50000" style="width:160px" />
+        <el-checkbox v-model="bfOnlyMissing" style="margin-left:8px">只补缺失的</el-checkbox>
+        <el-button type="primary" :loading="bfRunning" style="margin-left:12px" @click="onBackfill">开始回填</el-button>
+      </div>
+      <div v-if="bfResult" style="margin-top:10px">
+        <el-alert v-if="bfResult.stopped" type="warning" :closable="false" show-icon
+          :title="`已达预算上限,已停止 —— 扫描 ${bfResult.scanned} 句 / 补全 ${bfResult.filled} 句 / 已花 ${bfResult.spent_tokens} tokens`"
+          description="可调高「Token 预算」后再次点击继续回填。" />
+        <el-alert v-else type="success" :closable="false" show-icon
+          :title="`回填完成 —— 扫描 ${bfResult.scanned} 句 / 补全 ${bfResult.filled} 句 / 已花 ${bfResult.spent_tokens} tokens(未触发预算熔断)`" />
       </div>
     </el-card>
 

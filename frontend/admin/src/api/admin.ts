@@ -121,6 +121,11 @@ export function getLlmUsage(days = 30) {
   return unwrap<LlmUsage>(request.get('/admin/llm-usage', { params: { days } }))
 }
 
+export interface ParaphraseBackfillResult { scanned: number; filled: number; stopped: boolean; spent_tokens: number }
+export function backfillParaphrase(params: { limit?: number; only_missing?: boolean; max_tokens_budget?: number }) {
+  return unwrap<ParaphraseBackfillResult>(request.post('/admin/long-sentences/paraphrase-backfill', null, { params }))
+}
+
 export interface TtsSpeed { primary: number; junior: number; senior: number }
 export function getTtsSpeed() {
   return unwrap<TtsSpeed>(request.get('/admin/tts-speed'))
