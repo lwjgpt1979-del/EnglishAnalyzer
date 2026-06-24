@@ -325,3 +325,23 @@ class RateLimit(Base):
     __table_args__ = (
         sa.UniqueConstraint("bucket_key", "window_start", name="uix_rate_limits"),
     )
+
+
+class LlmUsageLog(Base):
+    """LLM 调用用量台账:每次真实调用记一行(token/模型/用途/finish_reason),
+    供后台看用量与成本估算。dev-mock 不调真实模型→不记。"""
+
+    __tablename__ = "llm_usage_log"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    model = mapped_column(sa.String(64), nullable=False)
+    feature = mapped_column(sa.String(32), nullable=False, server_default=sa.text("'other'"))   # 用途标签
+    prompt_tokens = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    completion_tokens = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    finish_reason = mapped_column(sa.String(16), nullable=True)
+
+    __table_args__ = (
+        sa.Index("ix_llm_usage_created", "created_at"),
+        sa.Index("ix_llm_usage_feature", "feature"),
+    )

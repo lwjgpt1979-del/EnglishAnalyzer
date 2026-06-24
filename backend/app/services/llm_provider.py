@@ -47,6 +47,7 @@ async def chat_completion(
     response_format: dict | None = None,
     temperature: float | None = None,
     model: str | None = None,
+    feature: str = "other",
 ) -> ChatCompletion:
     """统一的单轮 chat 调用：system + user 两条消息，返回原始 ChatCompletion。
 
@@ -73,7 +74,18 @@ async def chat_completion(
         kwargs["response_format"] = response_format
     if temperature is not None:
         kwargs["temperature"] = temperature
-    return await client.chat.completions.create(**kwargs)
+    resp = await client.chat.completions.create(**kwargs)
+    try:    # 记用量台账 + 累加预算(失败不影响主调用)
+        from app.services import usage_log_service
+        u = resp.usage
+        await usage_log_service.note(
+            model=kwargs["model"], feature=feature,
+            prompt_tokens=getattr(u, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(u, "completion_tokens", 0) or 0,
+            finish_reason=resp.choices[0].finish_reason if resp.choices else None)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("usage note skipped: %s", exc)
+    return resp
 
 
 async def complete_json(
@@ -86,6 +98,7 @@ async def complete_json(
     max_attempts: int = 2,
     escalate_ceiling: int | None = None,
     validate: Callable[[dict], bool] | None = None,
+    feature: str = "other",
 ) -> dict | None:
     """带 finish_reason 感知的 JSON 调用,取代各处"盲目重试":
     - finish_reason=length(预算耗尽):盲重试必再失败。给了 escalate_ceiling 才把 max_tokens
@@ -98,7 +111,8 @@ async def complete_json(
         try:
             resp = await chat_completion(
                 system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=cur,
-                response_format={"type": "json_object"}, temperature=temperature, model=model)
+                response_format={"type": "json_object"}, temperature=temperature, model=model,
+                feature=feature)
             choice = resp.choices[0]
             if choice.finish_reason == "length":
                 if escalate_ceiling and cur < escalate_ceiling:

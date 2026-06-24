@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getLlmConfig, updateLlmConfig, type LlmModelConfig } from '../api/admin'
+import { getLlmConfig, updateLlmConfig, getLlmUsage, type LlmModelConfig, type LlmUsage } from '../api/admin'
 
 const cfg = ref<LlmModelConfig | null>(null)
 const model = ref('')          // 编辑中的模型名
@@ -9,6 +9,23 @@ const saved = ref('')          // 已保存的生效模型
 const presets = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
+
+// LLM 用量
+const usage = ref<LlmUsage | null>(null)
+const usageDays = ref(30)
+const usageLoading = ref(false)
+const FEATURE_LABEL: Record<string, string> = {
+  ls_analyze: '长难句·结构解析', ls_paraphrase: '长难句·释义生成',
+  ls_translate: '长难句·短翻译评分', ls_verify_subj: '长难句·主观判分', other: '其它',
+}
+const featLabel = (f: string) => FEATURE_LABEL[f] || f
+const fmtTok = (n: number) => n >= 10000 ? (n / 10000).toFixed(1) + '万' : String(n)
+async function loadUsage() {
+  usageLoading.value = true
+  try { usage.value = await getLlmUsage(usageDays.value) }
+  catch (e: any) { ElMessage.error(e?.message || '用量加载失败') }
+  finally { usageLoading.value = false }
+}
 
 async function load() {
   loading.value = true
@@ -34,11 +51,11 @@ async function onSave() {
   finally { saving.value = false }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadUsage() })
 </script>
 
 <template>
-  <div v-loading="loading" style="max-width:640px">
+  <div v-loading="loading" style="max-width:980px">
     <div class="toolbar">
       <h3 style="margin:0">模型配置</h3>
       <span class="hint">设置调用大模型用哪个模型名(OpenAI 兼容)。保存后所有 AI 功能(整卷匹配、教材生成、作文批改等)即刻改用新模型,无需重启。</span>
@@ -74,6 +91,57 @@ onMounted(load)
       <p>· 模型名可从下拉选常见 DeepSeek 模型,也可<b>自填</b>任意 OpenAI 兼容模型名(回车确认)。</p>
       <p>· <b>默认</b> deepseek-v4-pro。API key / Endpoint 仍走 .env(密钥不入库)。</p>
     </div>
+
+    <!-- LLM 用量与成本 -->
+    <div class="toolbar" style="margin-top:28px">
+      <h3 style="margin:0">LLM 用量 & 成本</h3>
+      <span class="hint">每次真实调用记一行台账;成本为<b>估算</b>(按价目表,可在后端 usage_log_service 调整)。</span>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <el-select v-model="usageDays" size="small" style="width:120px" @change="loadUsage">
+          <el-option :value="7" label="近 7 天" /><el-option :value="30" label="近 30 天" /><el-option :value="90" label="近 90 天" />
+        </el-select>
+        <el-button size="small" :loading="usageLoading" @click="loadUsage">刷新</el-button>
+      </div>
+    </div>
+
+    <div v-loading="usageLoading">
+      <div class="stat-row">
+        <el-card shadow="never" class="stat"><div class="sv">{{ usage?.total_calls ?? 0 }}</div><div class="sl">调用次数</div></el-card>
+        <el-card shadow="never" class="stat"><div class="sv">{{ fmtTok(usage?.total_prompt_tokens ?? 0) }}</div><div class="sl">输入 token</div></el-card>
+        <el-card shadow="never" class="stat"><div class="sv">{{ fmtTok(usage?.total_completion_tokens ?? 0) }}</div><div class="sl">输出 token</div></el-card>
+        <el-card shadow="never" class="stat hl"><div class="sv">¥{{ (usage?.est_cost ?? 0).toFixed(4) }}</div><div class="sl">估算成本</div></el-card>
+      </div>
+
+      <div class="grid2">
+        <el-card shadow="never" header="按用途">
+          <el-table :data="usage?.by_feature || []" size="small" :show-header="true">
+            <el-table-column label="用途"><template #default="{ row }">{{ featLabel(row.feature) }}</template></el-table-column>
+            <el-table-column prop="calls" label="次数" width="70" align="right" />
+            <el-table-column label="输入" width="80" align="right"><template #default="{ row }">{{ fmtTok(row.prompt_tokens) }}</template></el-table-column>
+            <el-table-column label="输出" width="80" align="right"><template #default="{ row }">{{ fmtTok(row.completion_tokens) }}</template></el-table-column>
+          </el-table>
+        </el-card>
+        <el-card shadow="never" header="按模型(含成本估算)">
+          <el-table :data="usage?.by_model || []" size="small">
+            <el-table-column prop="model" label="模型" />
+            <el-table-column prop="calls" label="次数" width="70" align="right" />
+            <el-table-column label="输入" width="80" align="right"><template #default="{ row }">{{ fmtTok(row.prompt_tokens) }}</template></el-table-column>
+            <el-table-column label="输出" width="80" align="right"><template #default="{ row }">{{ fmtTok(row.completion_tokens) }}</template></el-table-column>
+            <el-table-column label="¥估算" width="90" align="right"><template #default="{ row }">¥{{ row.cost.toFixed(4) }}</template></el-table-column>
+          </el-table>
+        </el-card>
+      </div>
+
+      <el-card shadow="never" header="按天" style="margin-top:14px">
+        <el-table :data="usage?.by_day || []" size="small" max-height="240">
+          <el-table-column prop="day" label="日期" />
+          <el-table-column prop="calls" label="次数" width="80" align="right" />
+          <el-table-column label="输入 token" width="120" align="right"><template #default="{ row }">{{ fmtTok(row.prompt_tokens) }}</template></el-table-column>
+          <el-table-column label="输出 token" width="120" align="right"><template #default="{ row }">{{ fmtTok(row.completion_tokens) }}</template></el-table-column>
+        </el-table>
+        <el-empty v-if="!(usage?.by_day || []).length" description="所选区间暂无调用" :image-size="60" />
+      </el-card>
+    </div>
   </div>
 </template>
 
@@ -84,4 +152,11 @@ onMounted(load)
 .ro { font-family:monospace; color:#606266; }
 .note { margin-top:14px; color:#909399; font-size:12px; line-height:1.8; }
 .note p { margin:0; }
+.stat-row { display:flex; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.stat { flex:1; min-width:140px; text-align:center; }
+.stat .sv { font-size:24px; font-weight:700; color:#303133; }
+.stat .sl { font-size:12px; color:#909399; margin-top:4px; }
+.stat.hl .sv { color:#e6a23c; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+@media (max-width:760px) { .grid2 { grid-template-columns:1fr; } }
 </style>

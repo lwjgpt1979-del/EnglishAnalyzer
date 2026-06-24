@@ -381,7 +381,7 @@ async def analyze_sentence(sentence: str) -> dict:
     )
     # finish_reason 感知:length 截断才升档(2000→≤4000)一次,否则瞬时抖动重试一次;全失败→模板兜底
     data = await complete_json(system_prompt=system, user_prompt=user, max_tokens=2000,
-                               model=fast_model(), escalate_ceiling=4000,
+                               model=fast_model(), escalate_ceiling=4000, feature="ls_analyze",
                                validate=lambda d: bool(d.get("segments")))
     if data:
         res = _enrich_analysis(data, sentence, syntax)
@@ -425,7 +425,7 @@ async def generate_paraphrase(sentence: str, translation: str | None = None) -> 
     user = f"句子:{sentence}\n参考翻译:{translation or '(无)'}\n返回 JSON:"
     # finish_reason 感知重试;输出小、length 罕见,truncate 直接放弃→调用方退连接词题
     d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=1000,
-                            model=fast_model(),
+                            model=fast_model(), feature="ls_paraphrase",
                             validate=lambda x: len([o for o in (x.get("options") or []) if str(o).strip()]) >= 3
                             and bool(x.get("answer")))
     if not d:
@@ -443,25 +443,32 @@ async def generate_paraphrase(sentence: str, translation: str | None = None) -> 
 
 
 async def backfill_paraphrase(db: AsyncSession, *, limit: int | None = None,
-                              only_missing: bool = True) -> dict:
+                              only_missing: bool = True, max_tokens_budget: int | None = 200_000) -> dict:
     """给存量长难句补「释义探针」:对 analysis_json 缺 paraphrase 的句子生成并写回。
-    返回 {scanned, filled}。"""
+    max_tokens_budget:本次批量的 LLM token 预算,累计超了就停(防成本失控)。返回 {scanned, filled, stopped}。"""
+    from app.services import usage_log_service
     rows = (await db.execute(sa.select(LongSentence))).scalars().all()
     scanned = filled = 0
-    for ls in rows:
-        a = ls.analysis_json or {}
-        if only_missing and a.get("paraphrase"):
-            continue
-        scanned += 1
-        p = await generate_paraphrase(ls.text, a.get("translation"))
-        if not p:
-            continue
-        ls.analysis_json = {**a, "paraphrase": p}   # 新 dict → ORM 感知 JSONB 变更
-        filled += 1
-        if limit and filled >= limit:
-            break
+    stopped = False
+    with usage_log_service.budget(max_tokens_budget):
+        for ls in rows:
+            if usage_log_service.over_budget():
+                stopped = True
+                _log.warning("backfill_paraphrase 触发预算熔断:已花 %d tokens", usage_log_service.spent())
+                break
+            a = ls.analysis_json or {}
+            if only_missing and a.get("paraphrase"):
+                continue
+            scanned += 1
+            p = await generate_paraphrase(ls.text, a.get("translation"))
+            if not p:
+                continue
+            ls.analysis_json = {**a, "paraphrase": p}   # 新 dict → ORM 感知 JSONB 变更
+            filled += 1
+            if limit and filled >= limit:
+                break
     await db.commit()
-    return {"scanned": scanned, "filled": filled}
+    return {"scanned": scanned, "filled": filled, "stopped": stopped}
 
 
 async def list_published(
@@ -642,7 +649,7 @@ async def grade_translation(sentence: str, ref_translation: str | None, answer: 
     user = f"原句:{sentence}\n参考翻译:{ref or '(无)'}\n学生翻译:{answer}\n返回 JSON:"
     # finish_reason 感知重试;至少有一维有内容才算有效,否则瞬时抖动重试一次
     d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=800,
-                            model=fast_model(),
+                            model=fast_model(), feature="ls_translate",
                             validate=lambda x: any(x.get(k) for k, _ in _TRANS_DIMS))
     if d:
         dims = []
@@ -750,7 +757,8 @@ async def _grade_subjective(verify_type: str, ls: LongSentence, q: dict, answer:
     user = f"题型:{verify_type}\n句子:{ls.text}\n参考:{ref}\n学生答案:{answer}"
     try:
         resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=64,
-                                     response_format={"type": "json_object"}, model=fast_model())
+                                     response_format={"type": "json_object"}, model=fast_model(),
+                                     feature="ls_verify_subj")
         return bool(json.loads(resp.choices[0].message.content or "{}").get("pass"))
     except Exception as exc:  # noqa: BLE001
         _log.warning("subjective grade LLM failed: %s", exc)

@@ -107,6 +107,20 @@ export function updateLlmConfig(model: string) {
   return unwrap<LlmModelConfig>(request.put('/admin/llm-config', { model }))
 }
 
+export interface LlmUsage {
+  days: number
+  total_calls: number
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  est_cost: number
+  by_model: { model: string; calls: number; prompt_tokens: number; completion_tokens: number; cost: number }[]
+  by_feature: { feature: string; calls: number; prompt_tokens: number; completion_tokens: number }[]
+  by_day: { day: string; calls: number; prompt_tokens: number; completion_tokens: number }[]
+}
+export function getLlmUsage(days = 30) {
+  return unwrap<LlmUsage>(request.get('/admin/llm-usage', { params: { days } }))
+}
+
 export interface TtsSpeed { primary: number; junior: number; senior: number }
 export function getTtsSpeed() {
   return unwrap<TtsSpeed>(request.get('/admin/tts-speed'))

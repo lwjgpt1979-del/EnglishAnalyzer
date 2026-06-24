@@ -573,6 +573,13 @@ async def update_llm_config(body: LlmModelConfig, db: DbDep, admin: AdminDep):
         base_url=settings.llm_base_url, dev_mock=is_llm_dev_mode()))
 
 
+@router.get("/llm-usage", response_model=BaseResponse[dict])
+async def get_llm_usage(db: DbDep, admin: AdminDep, days: int = 30):
+    """LLM 用量与成本估算:近 days 天总量 + 按用途/模型/天。成本为估算(按价目表)。"""
+    from app.services import usage_log_service
+    return make_ok(await usage_log_service.summary(db, days=max(1, min(days, 365))))
+
+
 class TtsVoicesConfig(BaseModel):
     male: list[str]
     female: list[str]
