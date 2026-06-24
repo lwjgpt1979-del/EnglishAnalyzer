@@ -15,9 +15,41 @@ from contextvars import ContextVar
 
 import sqlalchemy as sa
 
+from app.core.config import settings
 from app.core.database import async_session_factory
 
 _log = logging.getLogger(__name__)
+
+LOW_BALANCE_THRESHOLD = 10.0   # 余额低于此值(元)后台告警
+
+
+async def fetch_balance() -> dict:
+    """查 DeepSeek 账户余额(GET /user/balance,只读不计费)。
+    返回 {ok, available, currency, total, granted, topped_up, low} 或 {ok:False, reason}。"""
+    from app.services.llm_provider import is_llm_dev_mode
+    if is_llm_dev_mode():
+        return {"ok": False, "reason": "dev-mock(占位 key),无真实余额"}
+    base = settings.llm_base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    url = base + "/user/balance"
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(url, headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
+            r.raise_for_status()
+            d = r.json()
+        info = (d.get("balance_infos") or [{}])[0]
+        total = float(info.get("total_balance") or 0)
+        return {"ok": True, "available": bool(d.get("is_available")),
+                "currency": info.get("currency") or "CNY", "total": total,
+                "granted": float(info.get("granted_balance") or 0),
+                "topped_up": float(info.get("topped_up_balance") or 0),
+                "low": (not d.get("is_available")) or total < LOW_BALANCE_THRESHOLD,
+                "threshold": LOW_BALANCE_THRESHOLD}
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("fetch_balance failed: %s", exc)
+        return {"ok": False, "reason": "查询失败(余额接口仅 DeepSeek 支持,或网络/密钥问题)"}
 
 # 每百万 token 估算单价(元);deepseek-v4-pro 为推理档、deepseek-chat 为非推理档。
 # 注:为估算值,请按 DeepSeek 账单实际单价调整。(input, output)

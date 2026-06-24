@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getLlmConfig, updateLlmConfig, getLlmUsage, type LlmModelConfig, type LlmUsage } from '../api/admin'
+import { getLlmConfig, updateLlmConfig, getLlmUsage, getLlmBalance, type LlmModelConfig, type LlmUsage, type LlmBalance } from '../api/admin'
 
 const cfg = ref<LlmModelConfig | null>(null)
 const model = ref('')          // 编辑中的模型名
@@ -25,6 +25,12 @@ async function loadUsage() {
   try { usage.value = await getLlmUsage(usageDays.value) }
   catch (e: any) { ElMessage.error(e?.message || '用量加载失败') }
   finally { usageLoading.value = false }
+}
+
+// DeepSeek 账户余额
+const balance = ref<LlmBalance | null>(null)
+async function loadBalance() {
+  try { balance.value = await getLlmBalance() } catch { balance.value = null }
 }
 
 async function load() {
@@ -51,7 +57,7 @@ async function onSave() {
   finally { saving.value = false }
 }
 
-onMounted(() => { load(); loadUsage() })
+onMounted(() => { load(); loadUsage(); loadBalance() })
 </script>
 
 <template>
@@ -104,8 +110,18 @@ onMounted(() => { load(); loadUsage() })
       </div>
     </div>
 
+    <el-alert v-if="balance?.ok && balance.low" type="error" :closable="false" show-icon style="margin-bottom:12px"
+      :title="`DeepSeek 账户余额不足:¥${(balance.total ?? 0).toFixed(2)}${balance.available === false ? '(账户已不可用)' : `(低于 ¥${balance.threshold})`},请尽快充值`" />
+
     <div v-loading="usageLoading">
       <div class="stat-row">
+        <el-card shadow="never" class="stat" :class="balance?.ok ? (balance.low ? 'danger' : 'ok') : ''">
+          <div class="sv">
+            <template v-if="balance?.ok">¥{{ (balance.total ?? 0).toFixed(2) }}</template>
+            <template v-else>—</template>
+          </div>
+          <div class="sl">账户余额{{ balance && !balance.ok ? '(' + (balance.reason || '不可用') + ')' : '(DeepSeek 实时)' }}</div>
+        </el-card>
         <el-card shadow="never" class="stat"><div class="sv">{{ usage?.total_calls ?? 0 }}</div><div class="sl">调用次数</div></el-card>
         <el-card shadow="never" class="stat"><div class="sv">{{ fmtTok(usage?.total_prompt_tokens ?? 0) }}</div><div class="sl">输入 token</div></el-card>
         <el-card shadow="never" class="stat"><div class="sv">{{ fmtTok(usage?.total_completion_tokens ?? 0) }}</div><div class="sl">输出 token</div></el-card>
@@ -157,6 +173,8 @@ onMounted(() => { load(); loadUsage() })
 .stat .sv { font-size:24px; font-weight:700; color:#303133; }
 .stat .sl { font-size:12px; color:#909399; margin-top:4px; }
 .stat.hl .sv { color:#e6a23c; }
+.stat.ok .sv { color:#67c23a; }
+.stat.danger .sv { color:#f56c6c; }
 .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 @media (max-width:760px) { .grid2 { grid-template-columns:1fr; } }
 </style>

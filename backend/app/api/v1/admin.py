@@ -580,6 +580,13 @@ async def get_llm_usage(db: DbDep, admin: AdminDep, days: int = 30):
     return make_ok(await usage_log_service.summary(db, days=max(1, min(days, 365))))
 
 
+@router.get("/llm-balance", response_model=BaseResponse[dict])
+async def get_llm_balance(admin: AdminDep):
+    """DeepSeek 账户真实余额(只读)。dev-mock / 非 DeepSeek 厂商返回 ok=false。"""
+    from app.services import usage_log_service
+    return make_ok(await usage_log_service.fetch_balance())
+
+
 class TtsVoicesConfig(BaseModel):
     male: list[str]
     female: list[str]

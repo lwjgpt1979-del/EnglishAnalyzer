@@ -121,6 +121,15 @@ export function getLlmUsage(days = 30) {
   return unwrap<LlmUsage>(request.get('/admin/llm-usage', { params: { days } }))
 }
 
+export interface LlmBalance {
+  ok: boolean; reason?: string
+  available?: boolean; currency?: string; total?: number; granted?: number; topped_up?: number
+  low?: boolean; threshold?: number
+}
+export function getLlmBalance() {
+  return unwrap<LlmBalance>(request.get('/admin/llm-balance'))
+}
+
 export interface ParaphraseBackfillResult { scanned: number; filled: number; stopped: boolean; spent_tokens: number }
 export function backfillParaphrase(params: { limit?: number; only_missing?: boolean; max_tokens_budget?: number }) {
   return unwrap<ParaphraseBackfillResult>(request.post('/admin/long-sentences/paraphrase-backfill', null, { params }))
