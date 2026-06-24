@@ -20,7 +20,7 @@ from app.models.d12_v2_exams import ExamPaper  # noqa: F401 (确保枚举注册)
 from app.models.d16_question_domain import PlatformQuestion
 from app.models.d20_long_sentence import LongSentence, LongSentenceNode
 from app.services.kp_match_service import match_kp
-from app.services.llm_provider import chat_completion, fast_model, is_llm_dev_mode
+from app.services.llm_provider import chat_completion, complete_json, fast_model, is_llm_dev_mode
 
 _log = logging.getLogger(__name__)
 
@@ -379,18 +379,14 @@ async def analyze_sentence(sentence: str) -> dict:
         '"key_words":[{"word":..,"pos":..,"meaning":..}],'
         '"grammar_points":[{"name":..,"explanation":..}],"explanations":[{"idx":1,"text":..}]}'
     )
-    # 重试:推理模型偶发把 token 预算耗在推理上、返回空内容(finish_reason=length)→ 再试一次
-    for _attempt in range(2):
-        try:
-            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=2000,
-                                         response_format={"type": "json_object"}, model=fast_model())
-            data = json.loads(resp.choices[0].message.content or "{}")
-            if data.get("segments"):          # 拿到有效结构 → 用之
-                res = _enrich_analysis(data, sentence, syntax)
-                res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
-                return res
-        except Exception as exc:  # noqa: BLE001
-            _log.warning("analyze_sentence attempt %d failed: %s", _attempt + 1, exc)
+    # finish_reason 感知:length 截断才升档(2000→≤4000)一次,否则瞬时抖动重试一次;全失败→模板兜底
+    data = await complete_json(system_prompt=system, user_prompt=user, max_tokens=2000,
+                               model=fast_model(), escalate_ceiling=4000,
+                               validate=lambda d: bool(d.get("segments")))
+    if data:
+        res = _enrich_analysis(data, sentence, syntax)
+        res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
+        return res
     return _enrich_analysis({"sentence_type": "", "translation": "", "summary": "",
                              "segments": [], "structure": [], "components": {},
                              "key_words": [], "grammar_points": [], "explanations": []},
@@ -427,26 +423,23 @@ async def generate_paraphrase(sentence: str, translation: str | None = None) -> 
         "\"misconceptions\":{\"干扰项原文\":\"错因\"}}。"
     )
     user = f"句子:{sentence}\n参考翻译:{translation or '(无)'}\n返回 JSON:"
-    # 重试:推理模型偶发把 token 预算耗在推理上、返回空内容(finish_reason=length)→ 再试一次
-    for _attempt in range(2):
-        try:
-            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=1000,
-                                         response_format={"type": "json_object"}, model=fast_model())
-            d = json.loads(resp.choices[0].message.content or "{}")
-            opts = [str(o) for o in (d.get("options") or []) if str(o).strip()]
-            ans = str(d.get("answer") or "")
-            if len(opts) >= 3 and ans:
-                if ans not in opts:   # answer 与某 option 仅细微差异时归一化匹配
-                    norm = lambda s: re.sub(r"\s+", "", s).strip("。.!?！?")
-                    hit = next((o for o in opts if norm(o) == norm(ans)), None)
-                    if hit is None:
-                        continue
-                    ans = hit
-                return {"prompt": _PARA_PROMPT, "options": opts, "answer": ans,
-                        "misconceptions": {str(k): str(v) for k, v in (d.get("misconceptions") or {}).items()}}
-        except Exception as exc:  # noqa: BLE001
-            _log.warning("generate_paraphrase attempt %d failed: %s", _attempt + 1, exc)
-    return None
+    # finish_reason 感知重试;输出小、length 罕见,truncate 直接放弃→调用方退连接词题
+    d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=1000,
+                            model=fast_model(),
+                            validate=lambda x: len([o for o in (x.get("options") or []) if str(o).strip()]) >= 3
+                            and bool(x.get("answer")))
+    if not d:
+        return None
+    opts = [str(o) for o in (d.get("options") or []) if str(o).strip()]
+    ans = str(d.get("answer") or "")
+    if ans not in opts:   # answer 与某 option 仅细微差异时归一化匹配
+        norm = lambda s: re.sub(r"\s+", "", s).strip("。.!?！?")
+        hit = next((o for o in opts if norm(o) == norm(ans)), None)
+        if hit is None:
+            return None
+        ans = hit
+    return {"prompt": _PARA_PROMPT, "options": opts, "answer": ans,
+            "misconceptions": {str(k): str(v) for k, v in (d.get("misconceptions") or {}).items()}}
 
 
 async def backfill_paraphrase(db: AsyncSession, *, limit: int | None = None,
@@ -647,26 +640,23 @@ async def grade_translation(sentence: str, ref_translation: str | None, answer: 
         "严格输出 JSON:{\"proposition\":{\"score\":0-2,\"note\":..},\"logic\":{..},\"modifier\":{..},\"trunk\":{..},\"feedback\":..}"
     )
     user = f"原句:{sentence}\n参考翻译:{ref or '(无)'}\n学生翻译:{answer}\n返回 JSON:"
-    for _attempt in range(2):
-        try:
-            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=800,
-                                         response_format={"type": "json_object"}, model=fast_model())
-            d = json.loads(resp.choices[0].message.content or "{}")
-            dims = []
-            for k, l in _TRANS_DIMS:
-                cell = d.get(k) or {}
-                try:
-                    sc = max(0, min(_TRANS_DIM_MAX, int(cell.get("score", 0))))
-                except (ValueError, TypeError):
-                    sc = 0
-                dims.append({"key": k, "label": l, "score": sc, "max": _TRANS_DIM_MAX, "note": str(cell.get("note") or "")})
-            if any(x["note"] or x["score"] for x in dims):
-                tot = sum(x["score"] for x in dims)
-                prop = next((x["score"] for x in dims if x["key"] == "proposition"), 0)
-                return {"dimensions": dims, "total": tot, "max": total_max,
-                        "passed": tot >= _TRANS_PASS_TOTAL and prop >= 1, "feedback": str(d.get("feedback") or "")}
-        except Exception as exc:  # noqa: BLE001
-            _log.warning("grade_translation attempt %d failed: %s", _attempt + 1, exc)
+    # finish_reason 感知重试;至少有一维有内容才算有效,否则瞬时抖动重试一次
+    d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=800,
+                            model=fast_model(),
+                            validate=lambda x: any(x.get(k) for k, _ in _TRANS_DIMS))
+    if d:
+        dims = []
+        for k, l in _TRANS_DIMS:
+            cell = d.get(k) or {}
+            try:
+                sc = max(0, min(_TRANS_DIM_MAX, int(cell.get("score", 0))))
+            except (ValueError, TypeError):
+                sc = 0
+            dims.append({"key": k, "label": l, "score": sc, "max": _TRANS_DIM_MAX, "note": str(cell.get("note") or "")})
+        tot = sum(x["score"] for x in dims)
+        prop = next((x["score"] for x in dims if x["key"] == "proposition"), 0)
+        return {"dimensions": dims, "total": tot, "max": total_max,
+                "passed": tot >= _TRANS_PASS_TOTAL and prop >= 1, "feedback": str(d.get("feedback") or "")}
     dims = [{"key": k, "label": l, "score": 0, "max": _TRANS_DIM_MAX, "note": ""} for k, l in _TRANS_DIMS]
     return {"dimensions": dims, "total": 0, "max": total_max, "passed": False, "feedback": "评分服务暂不可用,请稍后再试"}
 

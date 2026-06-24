@@ -9,10 +9,16 @@ dev-mock：api_key 以 'sk-placeholder' 开头时，is_llm_dev_mode() 返回 Tru
 """
 from __future__ import annotations
 
+import json
+import logging
+from typing import Callable
+
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
 from app.core.config import settings
+
+_log = logging.getLogger(__name__)
 
 
 def is_llm_dev_mode() -> bool:
@@ -68,3 +74,43 @@ async def chat_completion(
     if temperature is not None:
         kwargs["temperature"] = temperature
     return await client.chat.completions.create(**kwargs)
+
+
+async def complete_json(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_attempts: int = 2,
+    escalate_ceiling: int | None = None,
+    validate: Callable[[dict], bool] | None = None,
+) -> dict | None:
+    """带 finish_reason 感知的 JSON 调用,取代各处"盲目重试":
+    - finish_reason=length(预算耗尽):盲重试必再失败。给了 escalate_ceiling 才把 max_tokens
+      翻倍升一档(≤ceiling)重试一次;否则直接放弃(返回 None,调用方走模板兜底)。
+    - stop 但 JSON 解析失败 / validate 不过:视为瞬时抖动,同参数重试一次。
+    - 调用异常(网络/5xx):重试一次。
+    全失败返回 None。"""
+    cur = max_tokens
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = await chat_completion(
+                system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=cur,
+                response_format={"type": "json_object"}, temperature=temperature, model=model)
+            choice = resp.choices[0]
+            if choice.finish_reason == "length":
+                if escalate_ceiling and cur < escalate_ceiling:
+                    cur = min(cur * 2, escalate_ceiling)
+                    _log.warning("complete_json 截断(length),升档 max_tokens→%d 重试", cur)
+                    continue
+                _log.warning("complete_json 截断(length)且已达上限,放弃→走兜底")
+                return None
+            data = json.loads(choice.message.content or "{}")
+            if validate is None or validate(data):
+                return data
+            _log.warning("complete_json 校验未过(finish=%s,第%d次),重试", choice.finish_reason, attempt)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("complete_json 第%d次调用异常: %s", attempt, exc)
+    return None
