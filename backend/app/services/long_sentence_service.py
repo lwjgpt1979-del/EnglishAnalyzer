@@ -20,7 +20,7 @@ from app.models.d12_v2_exams import ExamPaper  # noqa: F401 (确保枚举注册)
 from app.models.d16_question_domain import PlatformQuestion
 from app.models.d20_long_sentence import LongSentence, LongSentenceNode
 from app.services.kp_match_service import match_kp
-from app.services.llm_provider import chat_completion, is_llm_dev_mode
+from app.services.llm_provider import chat_completion, fast_model, is_llm_dev_mode
 
 _log = logging.getLogger(__name__)
 
@@ -382,8 +382,8 @@ async def analyze_sentence(sentence: str) -> dict:
     # 重试:推理模型偶发把 token 预算耗在推理上、返回空内容(finish_reason=length)→ 再试一次
     for _attempt in range(2):
         try:
-            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=8192,
-                                         response_format={"type": "json_object"})
+            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=2000,
+                                         response_format={"type": "json_object"}, model=fast_model())
             data = json.loads(resp.choices[0].message.content or "{}")
             if data.get("segments"):          # 拿到有效结构 → 用之
                 res = _enrich_analysis(data, sentence, syntax)
@@ -430,8 +430,8 @@ async def generate_paraphrase(sentence: str, translation: str | None = None) -> 
     # 重试:推理模型偶发把 token 预算耗在推理上、返回空内容(finish_reason=length)→ 再试一次
     for _attempt in range(2):
         try:
-            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=4096,
-                                         response_format={"type": "json_object"})
+            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=1000,
+                                         response_format={"type": "json_object"}, model=fast_model())
             d = json.loads(resp.choices[0].message.content or "{}")
             opts = [str(o) for o in (d.get("options") or []) if str(o).strip()]
             ans = str(d.get("answer") or "")
@@ -649,8 +649,8 @@ async def grade_translation(sentence: str, ref_translation: str | None, answer: 
     user = f"原句:{sentence}\n参考翻译:{ref or '(无)'}\n学生翻译:{answer}\n返回 JSON:"
     for _attempt in range(2):
         try:
-            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=2048,
-                                         response_format={"type": "json_object"})
+            resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=800,
+                                         response_format={"type": "json_object"}, model=fast_model())
             d = json.loads(resp.choices[0].message.content or "{}")
             dims = []
             for k, l in _TRANS_DIMS:
@@ -759,8 +759,8 @@ async def _grade_subjective(verify_type: str, ls: LongSentence, q: dict, answer:
               "只输出 JSON {\"pass\": true/false}。")
     user = f"题型:{verify_type}\n句子:{ls.text}\n参考:{ref}\n学生答案:{answer}"
     try:
-        resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=32,
-                                     response_format={"type": "json_object"})
+        resp = await chat_completion(system_prompt=system, user_prompt=user, max_tokens=64,
+                                     response_format={"type": "json_object"}, model=fast_model())
         return bool(json.loads(resp.choices[0].message.content or "{}").get("pass"))
     except Exception as exc:  # noqa: BLE001
         _log.warning("subjective grade LLM failed: %s", exc)

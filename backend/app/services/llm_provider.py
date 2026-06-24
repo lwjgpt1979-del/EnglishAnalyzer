@@ -28,6 +28,11 @@ def get_llm_client() -> AsyncOpenAI:
     )
 
 
+def fast_model() -> str:
+    """非推理「快/省」档模型名:抽取/打分等规格明确、无需重推理的任务用之。"""
+    return settings.llm_model_fast or settings.llm_model
+
+
 async def chat_completion(
     *,
     system_prompt: str,
@@ -35,6 +40,7 @@ async def chat_completion(
     max_tokens: int,
     response_format: dict | None = None,
     temperature: float | None = None,
+    model: str | None = None,
 ) -> ChatCompletion:
     """统一的单轮 chat 调用：system + user 两条消息，返回原始 ChatCompletion。
 
@@ -50,7 +56,7 @@ async def chat_completion(
     from app.services import llm_config_service
     client = get_llm_client()
     kwargs: dict = {
-        "model": llm_config_service.active_model(),   # 后台「模型配置」页可改;缓存优先
+        "model": model or llm_config_service.active_model(),   # 显式 model 优先;否则后台配置主模型
         "max_tokens": max_tokens,
         "messages": [
             {"role": "system", "content": system_prompt},
