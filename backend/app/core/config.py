@@ -42,9 +42,9 @@ class Settings(BaseSettings):
     deepseek_api_key: str = "sk-placeholder-for-dev"  # LLM api key（dev 以 sk-placeholder 开头触发 mock）
     llm_base_url: str = "https://api.deepseek.com"     # OpenAI 兼容 endpoint
     llm_model: str = "deepseek-v4-pro"                 # 主模型(推理档;后台「模型配置」页可覆盖)
-    # 抽取/打分等"规格明确、无需重推理"的任务走便宜的非推理档:输出≈纯结果、单价更低、
-    # max_tokens 行为可预测(不会被推理吃光→空返回)。换厂商时按你账号实际可用的非推理模型名改。
-    llm_model_fast: str = "deepseek-chat"
+    # 抽取/打分等"规格明确、无需重推理"的任务走便宜的快档(deepseek-v4-flash):输出≈纯结果、
+    # 单价更低、max_tokens 行为可预测(不会被推理吃光→空返回)。须是 DeepSeek /models 当前可用模型。
+    llm_model_fast: str = "deepseek-v4-flash"
 
     # 微信支付 v3
     wechat_pay_mch_id: str = "placeholder_mch_id"

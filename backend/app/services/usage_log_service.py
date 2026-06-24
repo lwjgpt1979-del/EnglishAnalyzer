@@ -55,7 +55,7 @@ async def fetch_balance() -> dict:
 # 注:为估算值,请按 DeepSeek 账单实际单价调整。(input, output)
 _PRICES: dict[str, tuple[float, float]] = {
     "deepseek-v4-pro": (2.0, 8.0),
-    "deepseek-chat": (1.0, 4.0),
+    "deepseek-v4-flash": (1.0, 4.0),
 }
 _PRICE_DEFAULT = (2.0, 8.0)
 
