@@ -69,6 +69,21 @@ export function submitVocabAnswer(
   })
 }
 
+// R9.1 可输入性理解·接收探针
+export interface WordProbe { key: string; kind: string; prompt: string; options: string[] }
+export interface WordProbesOut { context: { text: string; source: string } | null; probes: WordProbe[]; recep: number }
+export interface WordProbeResult { correct: boolean; correct_answer: string; misconception?: string | null; recep: number; recep_mastered: boolean }
+
+/** 取该词接收探针(语境句 + 语境填空/多义辨析),不含答案。 */
+export function getWordProbes(wordId: string): Promise<WordProbesOut> {
+  return request<WordProbesOut>(`/api/v1/vocabulary/${wordId}/probes`, { method: 'GET' })
+}
+
+/** 提交一道接收探针,返回判分 + 诊断 + 接收掌握度。 */
+export function submitWordProbe(wordId: string, key: string, answer: string): Promise<WordProbeResult> {
+  return request<WordProbeResult>(`/api/v1/vocabulary/${wordId}/probe`, { method: 'POST', data: { key, answer } })
+}
+
 export function getWrongWords(): Promise<VocabWrongList> {
   return request<VocabWrongList>('/api/v1/vocabulary/wrong-words', { method: 'GET' })
 }

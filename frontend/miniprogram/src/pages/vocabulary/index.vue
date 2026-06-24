@@ -72,6 +72,35 @@
         <view class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-mic" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>跟读</text><view v-if="!ent.can('vocab.shadow')" class="ic ic-lock" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
       </view>
 
+      <!-- R9.1 理解检测·语境填空(接收:语境里认得出吗)-->
+      <view class="probe-box">
+        <view v-if="!probeOpen" class="probe-cta" @tap="openProbe">
+          <view class="ic ic-brain" style="width:30rpx;height:30rpx" /><text>检测理解 · 语境里认得出吗</text>
+        </view>
+        <view v-else>
+          <view v-if="probeLoading" class="probe-tip">加载中…</view>
+          <view v-else-if="!probes.length" class="probe-tip">该词暂无语境检测</view>
+          <view v-else>
+            <view v-for="p in probes" :key="p.key" class="probe-item">
+              <text class="probe-q">{{ p.prompt }}</text>
+              <view class="probe-opts">
+                <text v-for="(o, i) in p.options" :key="i" class="probe-opt"
+                  :class="{ on: probePick[p.key] === o,
+                            ok: probeResults[p.key] && o === probeResults[p.key].correct_answer,
+                            no: probeResults[p.key] && probePick[p.key] === o && o !== probeResults[p.key].correct_answer }"
+                  @tap="pickProbe(p.key, o)">{{ o }}</text>
+              </view>
+              <view v-if="!probeResults[p.key]" class="probe-submit" :class="{ dis: !probePick[p.key] }" @tap="submitProbe(p.key)">提交</view>
+              <view v-else class="probe-fb" :class="probeResults[p.key].correct ? 'ok' : 'no'">
+                <text>{{ probeResults[p.key].correct ? '✓ 理解正确' : ('✗ 正确:' + probeResults[p.key].correct_answer) }}</text>
+                <text v-if="probeResults[p.key].misconception" class="probe-mis">{{ probeResults[p.key].misconception }}</text>
+              </view>
+            </view>
+            <text class="probe-recep">接收掌握度 {{ Math.round(recep * 100) }}%</text>
+          </view>
+        </view>
+      </view>
+
       <button class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
     </view>
 
@@ -287,9 +316,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord } from '@/api/vocabulary'
-import type { ShadowScoreResult } from '@/api/vocabulary'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe } from '@/api/vocabulary'
+import type { ShadowScoreResult, WordProbe, WordProbeResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
@@ -377,6 +406,46 @@ const isReview = computed(() => phase.value === 'review')
 const cardList = computed(() => (isReview.value ? reviewCards.value : newCards.value))
 const cardIdx = computed(() => (isReview.value ? reviewIndex.value : studyIndex.value))
 const curStudy = computed(() => cardList.value[cardIdx.value] || ({} as VocabWordCard))
+
+// R9.1 理解检测·语境填空(接收探针)
+const probeOpen = ref(false)
+const probeLoading = ref(false)
+const probeCtx = ref<{ text: string; source: string } | null>(null)
+const probes = ref<WordProbe[]>([])
+const probePick = ref<Record<string, string>>({})
+const probeResults = ref<Record<string, WordProbeResult>>({})
+const recep = ref(0)
+function resetProbe() {
+  probeOpen.value = false; probeLoading.value = false; probeCtx.value = null
+  probes.value = []; probePick.value = {}; probeResults.value = {}; recep.value = 0
+}
+watch(() => curStudy.value.word_id, resetProbe)   // 换词即重置检测
+async function openProbe() {
+  const id = curStudy.value.word_id
+  if (!id) return
+  probeOpen.value = true; probes.value = []; probePick.value = {}; probeResults.value = {}; probeLoading.value = true
+  try {
+    const r = await getWordProbes(id)
+    probeCtx.value = r.context; probes.value = r.probes; recep.value = r.recep
+    if (!r.probes.length) uni.showToast({ title: '该词暂无语境检测', icon: 'none' })
+  } catch { uni.showToast({ title: '加载检测失败', icon: 'none' }) }
+  finally { probeLoading.value = false }
+}
+function pickProbe(key: string, opt: string) {
+  if (probeResults.value[key]) return
+  probePick.value = { ...probePick.value, [key]: opt }
+}
+async function submitProbe(key: string) {
+  const id = curStudy.value.word_id
+  const ans = probePick.value[key]
+  if (!id || !ans) return
+  try {
+    const r = await submitWordProbe(id, key, ans)
+    probeResults.value = { ...probeResults.value, [key]: r }
+    recep.value = r.recep
+    uni.showToast({ title: r.correct ? '答对了！' : '再看看语境', icon: 'none' })
+  } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
+}
 const studyBtnLabel = computed(() => {
   if (isReview.value) {
     return reviewIndex.value >= reviewCards.value.length - 1 ? '开始测试 →' : '记住了，下一个'
@@ -1015,6 +1084,25 @@ onMounted(load)
 .pic-option.opt-wrong { border-color: var(--c-danger); }
 .pic-option-img { width: 100%; height: 100%; }
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; margin-top: 24rpx; }
+/* R9.1 理解检测·语境填空 */
+.probe-box { margin-top: 22rpx; padding-top: 18rpx; border-top: 1rpx solid #f0f2f5; }
+.probe-cta { display: flex; align-items: center; justify-content: center; gap: 10rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-pill); padding: 16rpx 0; font-size: 26rpx; font-weight: 700; }
+.probe-cta:active { opacity: .85; }
+.probe-tip { text-align: center; color: #9aa3b0; font-size: 24rpx; padding: 14rpx 0; }
+.probe-item { margin-bottom: 14rpx; }
+.probe-q { display: block; font-size: 26rpx; color: #2a3138; font-weight: 600; line-height: 1.6; margin-bottom: 12rpx; }
+.probe-opts { display: flex; flex-direction: column; gap: 10rpx; }
+.probe-opt { font-size: 26rpx; color: #4a5057; background: #f5f7fa; border: 2rpx solid transparent; border-radius: 14rpx; padding: 14rpx 18rpx; font-family: Georgia, 'Times New Roman', serif; }
+.probe-opt.on { background: var(--c-primary-faint); border-color: var(--c-primary); color: var(--c-primary-deep); }
+.probe-opt.ok { background: #e9f7ef; border-color: #1f9d6b; color: #1f9d6b; }
+.probe-opt.no { background: #fdecea; border-color: #e2504a; color: #e2504a; }
+.probe-submit { margin-top: 12rpx; text-align: center; background: var(--c-primary); color: var(--c-on-primary); font-size: 26rpx; font-weight: 700; padding: 14rpx 0; border-radius: var(--r-pill); }
+.probe-submit.dis { background: #d7dde6; }
+.probe-fb { margin-top: 10rpx; font-size: 24rpx; display: flex; flex-direction: column; gap: 4rpx; }
+.probe-fb.ok { color: #1f9d6b; }
+.probe-fb.no { color: #e2504a; }
+.probe-mis { color: #c0792a; font-size: 22rpx; line-height: 1.5; }
+.probe-recep { display: block; text-align: right; font-size: 22rpx; color: #8a93a3; margin-top: 6rpx; }
 .done { text-align: center; }
 .done-emoji { font-size: 80rpx; }
 .done-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); margin: 16rpx 0; }
