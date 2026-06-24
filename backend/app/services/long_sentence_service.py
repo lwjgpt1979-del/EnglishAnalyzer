@@ -837,6 +837,32 @@ def _theta_from_grade(grade: str | None, stage: str | None = None) -> int:
     return {"高": 70, "初": 45, "小": 25}.get(stage or _stage_from_grade(grade) or "", 50)
 
 
+async def get_theta(db: AsyncSession, user) -> float:
+    """学生当前长难句水平 θ:有持久值用之,否则从年级冷启动估。"""
+    from app.models.d20_long_sentence import StudentLsState
+    s = await db.get(StudentLsState, user.id)
+    if s is not None and s.theta is not None:
+        return float(s.theta)
+    return float(_theta_from_grade(getattr(user, "preferred_grade", None)))
+
+
+_FEEDBACK_DELTA = {"easy": 5.0, "ok": 1.0, "hard": -4.0}
+
+
+async def apply_feedback(db: AsyncSession, user, *, rating: str) -> float:
+    """按反馈校准 θ:太简单↑5 / 刚好↑1 / 有点难↓4,夹在 [12,95]。返回新 θ。"""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d20_long_sentence import StudentLsState
+    cur = await get_theta(db, user)
+    new = max(12.0, min(95.0, cur + _FEEDBACK_DELTA.get(rating, 0.0)))
+    await db.execute(
+        pg_insert(StudentLsState).values(user_id=user.id, theta=new, seen_count=1)
+        .on_conflict_do_update(index_elements=["user_id"],
+                               set_={"theta": new, "seen_count": StudentLsState.seen_count + 1}))
+    await db.commit()
+    return new
+
+
 async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:
     """按学生水平选下一句:难度贴近 θ+5(i+1)+ 薄弱句法点 + 课程对齐 + 个人材料,带抖动。
     返回 {best: (kind, row) | None, theta, target, weak_hit}。"""
@@ -847,8 +873,8 @@ async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:
     grade = getattr(user, "preferred_grade", None)
     tv = getattr(user, "preferred_textbook_version", None)
     ps = getattr(user, "preferred_semester", None)
-    theta = _theta_from_grade(grade)
-    target = min(95, theta + 5)
+    theta = await get_theta(db, user)             # 持久 θ(随反馈校准),冷启动回落年级估
+    target = min(95.0, theta + 5)
 
     plat = (await db.execute(sa.select(LongSentence).where(LongSentence.status == "published"))).scalars().all()
     stu = (await db.execute(sa.select(StudentLongSentence).where(

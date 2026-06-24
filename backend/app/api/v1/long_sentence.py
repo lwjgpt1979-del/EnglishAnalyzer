@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 
 from app.core.database import get_db
 from app.core.exceptions import AppError
@@ -69,8 +69,17 @@ async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
         favorited=(row.id in await lss.favorited_ids(db, user_id=current_user.id, ls_ids=[row.id])) if kind == "platform" else False,
         difficulty=row.difficulty,
     )
-    return make_ok({"item": item.model_dump(mode="json"), "theta": r["theta"],
-                    "target": r["target"], "weak_hit": r["weak_hit"]})
+    return make_ok({"item": item.model_dump(mode="json"), "theta": round(r["theta"]),
+                    "target": round(r["target"]), "weak_hit": r["weak_hit"]})
+
+
+@router.post("/feedback", response_model=BaseResponse[dict])
+async def submit_feedback(db: DbDep, current_user: UserDep, rating: str = Body("", embed=True)):
+    """难度反馈校准水平 θ(rating 从请求体取)。rating: easy(太简单)|ok(刚好)|hard(有点难)。"""
+    if rating not in ("easy", "ok", "hard"):
+        raise AppError(code=400, message="rating 须为 easy|ok|hard")
+    theta = await lss.apply_feedback(db, current_user, rating=rating)
+    return make_ok({"theta": round(theta), "target": round(min(95.0, theta + 5))})
 
 
 async def _student_one(db, ls_id, owner_id):

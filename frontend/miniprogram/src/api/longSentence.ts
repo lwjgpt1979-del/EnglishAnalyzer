@@ -44,6 +44,11 @@ export function nextLongSentence(exclude: string[] = []): Promise<LSNextOut> {
   return request<LSNextOut>('/api/v1/long-sentences/next', { method: 'GET', data: { exclude: exclude.join(',') } })
 }
 
+/** 难度反馈,校准水平 θ。rating: easy|ok|hard。返回新 {theta,target}。 */
+export function feedbackLongSentence(rating: 'easy' | 'ok' | 'hard'): Promise<{ theta: number; target: number }> {
+  return request<{ theta: number; target: number }>('/api/v1/long-sentences/feedback', { method: 'POST', data: { rating } })
+}
+
 /** 听原句:TTS 流式音频直链(公开接口,可直接作为 audio src 播放)。 */
 export function ttsSpeakUrl(text: string, stage = 'junior'): string {
   return `${BASE_URL}/api/v1/tts/speak?text=${encodeURIComponent(text)}&stage=${stage}`

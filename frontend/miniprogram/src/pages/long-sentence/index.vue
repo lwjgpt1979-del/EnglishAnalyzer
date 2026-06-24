@@ -55,6 +55,14 @@
           <view class="tb" :class="{ on: favorited }" @tap="toggleFav"><view class="ic tb-ic" :class="favorited ? 'ic-star-on' : 'ic-star'" /><text class="tb-tx">收藏</text></view>
           <view class="tb" @tap="onMore"><view class="ic ic-more tb-ic" /><text class="tb-tx">更多</text></view>
         </view>
+
+        <!-- 难度反馈:校准你的水平,自动推下一句 -->
+        <view class="rate">
+          <text class="rate-q">这句对你:</text>
+          <text class="rate-btn easy" @tap="rate('easy')">太简单</text>
+          <text class="rate-btn ok" @tap="rate('ok')">刚好</text>
+          <text class="rate-btn hard" @tap="rate('hard')">有点难</text>
+        </view>
       </view>
 
       <!-- Tab 卡 -->
@@ -180,7 +188,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { getLongSentence, nextLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
+import { getLongSentence, nextLongSentence, feedbackLongSentence, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis } from '@/api/longSentence'
 import { checkin, getCheckinStatus, getCheckinCalendar, type CheckinStatus, type CheckinCalendar } from '@/api/checkin'
 
 // 颜色由后端按「成分类型」固定下发(segment.color/tint),前端按 idx 映射;缺省回退到调色板
@@ -411,6 +419,13 @@ async function loadDetail() {
   favorited.value = !!(detail.value?.favorited ?? it.favorited)
   tab.value = 'struct'; showTranslate.value = false; showStruct.value = true
 }
+// 难度反馈 → 校准 θ → 自动学下一句
+async function rate(r: 'easy' | 'ok' | 'hard') {
+  try { recTarget.value = (await feedbackLongSentence(r)).target } catch { /* ignore */ }
+  uni.showToast({ title: '已记录,为你调整难度', icon: 'none' })
+  next()
+}
+
 function prev() { if (index.value > 0) { index.value--; loadDetail() } }
 
 // 自适应:历史里还有就前进;到末尾就按学生水平拉新推荐
@@ -449,6 +464,15 @@ onLoad(async () => {
 .prog { flex: 1; }
 .prog-label { font-size: 26rpx; color: #666; }
 .prog-hint { font-size: 22rpx; color: var(--c-primary); }
+
+/* 难度反馈 */
+.rate { display: flex; align-items: center; gap: 12rpx; margin-top: 18rpx; padding-top: 16rpx; border-top: 1rpx solid #f0f2f5; }
+.rate-q { font-size: 23rpx; color: #888; }
+.rate-btn { font-size: 24rpx; padding: 8rpx 22rpx; border-radius: 22rpx; }
+.rate-btn.easy { color: #1f9d6b; background: #e9f7ef; }
+.rate-btn.ok { color: var(--c-primary); background: var(--c-primary-faint); }
+.rate-btn.hard { color: #e2504a; background: #fdecea; }
+.rate-btn:active { opacity: .7; }
 .prog-num { color: var(--c-primary); font-weight: 700; }
 .prog-bar { height: 10rpx; background: #e5e9f0; border-radius: 8rpx; margin-top: 12rpx; overflow: hidden; }
 .prog-fill { height: 100%; background: var(--c-primary); border-radius: 8rpx; transition: width .3s; }

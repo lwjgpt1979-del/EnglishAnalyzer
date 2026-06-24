@@ -89,6 +89,19 @@ class StudentLongSentence(Base):
     )
 
 
+class StudentLsState(Base):
+    """学生长难句自适应水平 θ(0–100,与 difficulty 同尺);随做题/反馈持续校准。"""
+
+    __tablename__ = "student_ls_state"
+
+    user_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    theta = mapped_column(sa.Numeric(5, 2), nullable=False)               # 当前水平估计
+    seen_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    updated_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False,
+        server_default=sa.func.now(), onupdate=sa.func.now())
+
+
 class LongSentenceFavorite(Base):
     """学生 ↔ 长难句 收藏。"""
 
