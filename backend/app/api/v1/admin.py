@@ -592,6 +592,17 @@ async def get_llm_balance(admin: AdminDep):
     return make_ok(await usage_log_service.fetch_balance())
 
 
+@router.post("/vocab/probe-backfill", response_model=BaseResponse[dict])
+async def backfill_vocab_probes_api(db: DbDep, admin: AdminDep, limit: int = 50,
+                                    only_missing: bool = True, max_tokens_budget: int = 200000):
+    """R9.1 批量给词典词生成「理解探针库」(probes_json),带 token 预算熔断。
+    返回 {scanned, filled, stopped, spent_tokens}。"""
+    from app.services import vocab_probe_service as vps
+    r = await vps.backfill_probes(db, limit=limit, only_missing=only_missing,
+                                  max_tokens_budget=max_tokens_budget)
+    return make_ok(r)
+
+
 class TtsVoicesConfig(BaseModel):
     male: list[str]
     female: list[str]

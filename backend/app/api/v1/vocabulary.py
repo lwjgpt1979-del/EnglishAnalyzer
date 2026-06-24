@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
@@ -28,6 +28,7 @@ from app.schemas.vocabulary import (
 )
 from app.services import (
     checkin_service, pronunciation_service, speech_score_service, vocabulary_service,
+    vocab_probe_service,
 )
 
 from pydantic import BaseModel, Field
@@ -140,6 +141,39 @@ async def answer(body: VocabAnswerIn, db: DbDep, current_user: UserDep):
     )
     await db.commit()
     return make_ok(result)
+
+
+@router.get("/{word_id}/probes", response_model=BaseResponse[dict])
+async def get_word_probes(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """R9.1 理解探针(接收):语境句 + 接收探针(语境 cloze + 多义辨析),不含答案。"""
+    from app.core.exceptions import AppError
+    from app.models.d5_learning import VocabularyWord, VocabularyLearning
+    import sqlalchemy as sa
+    await get_rls_db(db, str(current_user.id))
+    word = (await db.execute(sa.select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if word is None:
+        raise AppError(code=404, message="单词不存在")
+    out = await vocab_probe_service.comprehension_probes(db, student_id=current_user.id, word=word)
+    await db.commit()   # ensure_probes 可能写了 probes_json 缓存
+    lr = (await db.execute(sa.select(VocabularyLearning).where(
+        VocabularyLearning.student_id == current_user.id, VocabularyLearning.word_id == word_id))).scalar_one_or_none()
+    recep = float(lr.mastery_recep) if (lr and lr.mastery_recep is not None) else 0.0
+    return make_ok({
+        "context": out["context"],
+        "probes": [{"key": p["key"], "kind": p["kind"], "prompt": p["prompt"], "options": p["options"]} for p in out["probes"]],
+        "recep": round(recep, 4),
+    })
+
+
+@router.post("/{word_id}/probe", response_model=BaseResponse[dict])
+async def submit_word_probe(word_id: uuid.UUID, db: DbDep, current_user: UserDep,
+                            key: str = Body(...), answer: str = Body(...)):
+    """R9.1 提交一道接收探针:判分 → 接收掌握度 BKT → 错词本。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await vocab_probe_service.submit_probe(
+        db, student_id=current_user.id, word_id=word_id, key=key, answer=answer)
+    await db.commit()
+    return make_ok(res)
 
 
 @router.get("/wrong-words", response_model=BaseResponse[WrongWordListOut])

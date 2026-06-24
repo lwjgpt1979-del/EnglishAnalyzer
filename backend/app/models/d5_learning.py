@@ -52,6 +52,8 @@ class VocabularyWord(Base):
     word_audio_url = mapped_column(sa.String, nullable=True)
     en_desc_audio_url = mapped_column(sa.String, nullable=True)
     media_status = mapped_column(sa.String, nullable=False, server_default=sa.text("'draft'"))
+    # R9.1 理解探针库(词级公共复用):{distractors, misconceptions, cloze_fallback, sense}
+    probes_json = mapped_column(JSONB, nullable=True)
 
 
 class VocabularyLearning(Base):
@@ -85,6 +87,10 @@ class VocabularyLearning(Base):
     # —— 错词本联动（P1 词力通深化 / D-103）——
     is_wrong = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
     wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    # R9 词汇可输入性理解:接收/产出双维掌握度(BKT,0-1)+ 同词新语境迁移
+    mastery_recep = mapped_column(sa.Numeric(5, 4), nullable=True)
+    mastery_prod = mapped_column(sa.Numeric(5, 4), nullable=True)
+    transfer_ok = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
     # G14: 补充 created_at
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
