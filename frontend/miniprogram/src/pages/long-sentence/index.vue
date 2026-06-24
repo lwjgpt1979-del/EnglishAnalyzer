@@ -53,6 +53,12 @@
           </view>
         </view>
 
+        <!-- R9.4 生词复现:本句里你在学的未掌握词,点一下顺势快测 -->
+        <view v-if="vocabHits.length" class="vhits">
+          <text class="vhits-lb">这句里你在学的词</text>
+          <text v-for="h in vocabHits" :key="h.word_id" class="vhit-chip" @tap="openHit(h)">{{ h.word }}</text>
+        </view>
+
         <!-- 工具栏:听 / 字号 / 护眼 / 翻译 / 收藏 / 更多 -->
         <view class="toolbar">
           <view class="tb" :class="{ on: playing }" @tap="listen"><view class="ic ic-volume tb-ic" /><text class="tb-tx">{{ playing ? '停止' : (loadingAudio ? '…' : '听') }}</text></view>
@@ -255,6 +261,26 @@
     </view>
 
     <!-- 更多:底部弹层 -->
+    <!-- R9.4 生词快测弹层 -->
+    <view v-if="hitWord" class="more-mask" @tap="closeHit">
+      <view class="hit-sheet" @tap.stop>
+        <view class="hit-head"><text class="hit-word">{{ hitWord.word }}</text><text class="hit-close" @tap="closeHit">✕</text></view>
+        <view v-if="!hitProbe" class="hit-tip">加载中…</view>
+        <view v-else>
+          <text class="probe-q">{{ hitProbe.prompt }}</text>
+          <view class="probe-opts">
+            <text v-for="(o, i) in hitProbe.options" :key="i" class="probe-opt"
+              :class="{ on: hitPick === o, ok: hitResult && o === hitResult.correct_answer, no: hitResult && hitPick === o && o !== hitResult.correct_answer }"
+              @tap="!hitResult && (hitPick = o)">{{ o }}</text>
+          </view>
+          <view v-if="!hitResult" class="check-submit" :class="{ dis: !hitPick }" @tap="submitHit">提交</view>
+          <view v-else class="hit-fb" :class="hitResult.correct ? 'ok' : 'no'">
+            {{ hitResult.correct ? '✓ 在语境里认得出' : ('✗ 正确:' + hitResult.correct_answer + (hitResult.misconception ? '|' + hitResult.misconception : '')) }}
+          </view>
+        </view>
+      </view>
+    </view>
+
     <view v-if="moreOpen" class="more-mask" @tap="moreOpen = false">
       <view class="more-sheet" @tap.stop>
         <view class="more-grab" />
@@ -297,7 +323,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { getLongSentence, nextLongSentence, getComprehension, submitComprehension, submitTranslateCheck, getTransfer, submitTransfer, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis, type LSTier, type ComprehensionProbe, type ComprehensionResult, type TranslateCheckResult, type TransferItem, type TransferResult } from '@/api/longSentence'
+import { getLongSentence, nextLongSentence, getComprehension, submitComprehension, submitTranslateCheck, getTransfer, submitTransfer, getVocabHits, getLsAudioUrl, favoriteLs, ttsSpeakUrl, type LSItem, type LSDetail, type LSAnalysis, type LSTier, type ComprehensionProbe, type ComprehensionResult, type TranslateCheckResult, type TransferItem, type TransferResult, type VocabHit } from '@/api/longSentence'
+import { getWordProbes, submitWordProbe } from '@/api/vocabulary'
 import { checkin, getCheckinStatus, getCheckinCalendar, type CheckinStatus, type CheckinCalendar } from '@/api/checkin'
 
 // 颜色由后端按「成分类型」固定下发(segment.color/tint),前端按 idx 映射;缺省回退到调色板
@@ -569,7 +596,39 @@ async function loadDetail() {
   checking.value = false; probes.value = []; probeAnswers.value = {}; selfRating.value = ''; result.value = null; submitting.value = false
   transOpen.value = false; transAnswer.value = ''; transResult.value = null; transSubmitting.value = false
   tfStarted.value = false; tfItem.value = null; tfShared.value = []; tfProbes.value = []; tfAnswers.value = {}; tfResult.value = null; tfLoading.value = false; tfSubmitting.value = false
+  // R9.4 生词复现:重置 + 拉本句命中词
+  vocabHits.value = []; hitWord.value = null; hitProbe.value = null; hitPick.value = ''; hitResult.value = null
+  loadVocabHits()
 }
+
+/* ── R9.4 生词复现:本句里你在学的未掌握词,顺势轻测 ── */
+const vocabHits = ref<VocabHit[]>([])
+const hitWord = ref<VocabHit | null>(null)
+const hitProbe = ref<ComprehensionProbe | null>(null)
+const hitPick = ref('')
+const hitResult = ref<{ correct: boolean; correct_answer: string; misconception?: string | null } | null>(null)
+async function loadVocabHits() {
+  const id = items.value[index.value]?.id
+  if (!id) return
+  try { vocabHits.value = (await getVocabHits(id)).hits } catch { vocabHits.value = [] }
+}
+async function openHit(h: VocabHit) {
+  hitWord.value = h; hitProbe.value = null; hitPick.value = ''; hitResult.value = null
+  try {
+    const r = await getWordProbes(h.word_id)
+    hitProbe.value = (r.probes || []).find(p => p.kind === 'cloze') || (r.probes || [])[0] || null
+    if (!hitProbe.value) uni.showToast({ title: '该词暂无快测', icon: 'none' })
+  } catch { uni.showToast({ title: '加载失败', icon: 'none' }) }
+}
+async function submitHit() {
+  if (!hitWord.value || !hitProbe.value || !hitPick.value || hitResult.value) return
+  try {
+    const r = await submitWordProbe(hitWord.value.word_id, hitProbe.value.key, hitPick.value)
+    hitResult.value = { correct: r.correct, correct_answer: r.correct_answer, misconception: r.misconception }
+    uni.showToast({ title: r.correct ? '认得出 ✓' : '再记记', icon: 'none' })
+  } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
+}
+function closeHit() { hitWord.value = null; hitProbe.value = null; hitPick.value = ''; hitResult.value = null }
 
 /* ── 理解检测:过关才算学;θ 实测为主、自评为辅 ── */
 async function startCheck() {
@@ -888,6 +947,19 @@ onLoad(async () => {
 .footer-space { height: 140rpx; }
 
 /* 更多:底部弹层 */
+/* R9.4 生词复现 chip + 快测弹层 */
+.vhits { display: flex; align-items: center; flex-wrap: wrap; gap: 10rpx; margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx solid #f0f2f5; }
+.vhits-lb { font-size: 22rpx; color: #9aa3b0; }
+.vhit-chip { font-size: 24rpx; color: #5a5cf0; background: #eef0fe; border-radius: 20rpx; padding: 6rpx 18rpx; font-family: Georgia, 'Times New Roman', serif; }
+.vhit-chip:active { opacity: .8; }
+.hit-sheet { width: 100%; background: #fff; border-radius: 28rpx 28rpx 0 0; padding: 24rpx 28rpx calc(24rpx + env(safe-area-inset-bottom)); }
+.hit-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14rpx; }
+.hit-word { font-size: 36rpx; font-weight: 800; font-family: Georgia, 'Times New Roman', serif; }
+.hit-close { font-size: 32rpx; color: #999; padding: 0 10rpx; }
+.hit-tip { color: #9aa3b0; font-size: 24rpx; padding: 14rpx 0; }
+.hit-fb { margin-top: 12rpx; font-size: 24rpx; line-height: 1.6; }
+.hit-fb.ok { color: #1f9d6b; }
+.hit-fb.no { color: #e2504a; }
 .more-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 99; display: flex; align-items: flex-end; }
 .more-sheet { width: 100%; background: #fff; border-radius: 28rpx 28rpx 0 0; padding: 12rpx 0 calc(12rpx + env(safe-area-inset-bottom)); }
 .more-grab { width: 64rpx; height: 8rpx; background: #e2e6ee; border-radius: 8rpx; margin: 8rpx auto 14rpx; }

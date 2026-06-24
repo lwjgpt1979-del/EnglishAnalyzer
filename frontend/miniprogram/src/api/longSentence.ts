@@ -91,6 +91,12 @@ export function submitTransfer(originId: string, transferId: string, answers: Re
   return request<TransferResult>(`/api/v1/long-sentences/${originId}/transfer-submit`, { method: 'POST', data: { transfer_id: transferId, answers } })
 }
 
+// R9.4 生词复现:本句命中该生词单未掌握词
+export interface VocabHit { word_id: string; word: string; recep: number; prod: number }
+export function getVocabHits(lsId: string): Promise<{ hits: VocabHit[] }> {
+  return request<{ hits: VocabHit[] }>(`/api/v1/long-sentences/${lsId}/vocab-hits`, { method: 'GET' })
+}
+
 /** 听原句:TTS 流式音频直链(公开接口,可直接作为 audio src 播放)。 */
 export function ttsSpeakUrl(text: string, stage = 'junior'): string {
   return `${BASE_URL}/api/v1/tts/speak?text=${encodeURIComponent(text)}&stage=${stage}`
