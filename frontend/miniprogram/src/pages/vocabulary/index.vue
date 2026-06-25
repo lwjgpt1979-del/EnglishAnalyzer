@@ -101,8 +101,23 @@
             <view v-if="produceTask" class="produce-box">
               <text class="produce-q">✍️ {{ produceTask.prompt }}</text>
               <template v-if="!produceResult">
+                <!-- #ifdef MP-WEIXIN -->
+                <view class="pv-row">
+                  <view class="pv-toggle" @tap="togglePvMode">
+                    <view class="ic" :class="pvMode === 'voice' ? 'ic-keyboard' : 'ic-mic'" style="width:34rpx;height:34rpx" />
+                  </view>
+                  <view v-if="pvMode === 'voice'" class="pv-hold" :class="{ holding: pvRecording }"
+                    @touchstart="pvStart" @touchmove="pvMove" @touchend="pvEnd" @touchcancel="pvEnd">
+                    {{ pvRecording ? '松开 完成' : '按住 说英文' }}
+                  </view>
+                  <textarea v-else v-model="produceInput" class="produce-input pv-grow" :maxlength="120"
+                    placeholder="用这个词写一句英文" auto-height />
+                </view>
+                <!-- #endif -->
+                <!-- #ifndef MP-WEIXIN -->
                 <textarea v-model="produceInput" class="produce-input" :maxlength="120"
                   placeholder="用这个词写一句英文" auto-height />
+                <!-- #endif -->
                 <view class="probe-submit" :class="{ dis: !produceInput.trim() || produceSubmitting }" @tap="submitProduce">{{ produceSubmitting ? '评分中…' : '提交造句' }}</view>
               </template>
               <view v-else-if="produceResult && produceResult.graded === false" class="produce-result">
@@ -442,6 +457,21 @@
       </view>
     </view>
 
+    <!-- #ifdef MP-WEIXIN -->
+    <!-- 造句·微信式「按住说话」录音浮层 -->
+    <view v-if="pvRecording" class="rec-mask">
+      <view class="rec-panel" :class="{ cancel: pvCancelZone }">
+        <view v-if="!pvCancelZone" class="rec-wave">
+          <view v-for="i in 5" :key="i" class="wbar" :style="{ animationDelay: (i * 0.12) + 's' }" />
+        </view>
+        <text v-else class="rec-cancel-ico">✕</text>
+      </view>
+      <text class="rec-tip" :class="{ cancel: pvCancelZone }">
+        {{ pvCancelZone ? '松开手指，取消' : '正在聆听… 上滑取消' }}
+      </text>
+    </view>
+    <!-- #endif -->
+
     <!-- 跟读会员引导（统一会员墙）-->
     <Paywall :open="showPaywall" :feature="ent.feature('vocab.shadow')" emoji="🎤"
       title="跟读评测是会员专享" @close="showPaywall = false" />
@@ -610,6 +640,78 @@ async function submitProduce() {
   finally { produceSubmitting.value = false }
 }
 function redoProduce() { produceResult.value = null }
+
+// ── 造句·语音输入(微信同声传译插件,仅微信端;默认语音,可切键盘)──────────────
+const pvMode = ref<'voice' | 'text'>('text')
+const pvRecording = ref(false)
+const pvCancelZone = ref(false)
+// #ifdef MP-WEIXIN
+pvMode.value = 'voice'   // 微信端默认语音
+function togglePvMode() { pvMode.value = pvMode.value === 'voice' ? 'text' : 'voice' }
+let _pvMgr: any = null
+let _pvStartAt = 0
+let _pvStartY = 0
+let _pvBusy = false       // 上一句识别处理中
+let _pvCanceled = false   // 本次上滑取消
+const PV_CANCEL_DY = 80   // 上滑超过此距离(px)进入取消区
+function getPvMgr() {
+  if (_pvMgr) return _pvMgr
+  try {
+    const plugin: any = requirePlugin('WechatSI')
+    _pvMgr = plugin.getRecordRecognitionManager()
+    _pvMgr.onRecognize = () => { /* 中间结果忽略 */ }
+    _pvMgr.onStop = (res: any) => {
+      pvRecording.value = false; _pvBusy = false
+      if (_pvCanceled) { _pvCanceled = false; return }   // 上滑取消:丢弃
+      const text = ((res && res.result) || '').trim()
+      if (!text) { uni.showToast({ title: '没听清,再说一次或打字', icon: 'none' }); return }
+      // 输入法式:把识别文本填进造句框(不自动提交),用户可改可提交
+      produceInput.value = produceInput.value ? `${produceInput.value} ${text}` : text
+    }
+    _pvMgr.onError = (res: any) => {
+      pvRecording.value = false; _pvBusy = false
+      if (_pvCanceled) { _pvCanceled = false; return }
+      const raw = (res && (res.msg || res.errMsg)) || ''
+      uni.showToast({ title: /finish|忙|wait/i.test(raw) ? '识别还在处理,请稍候' : '语音识别失败,请打字', icon: 'none', duration: 2000 })
+    }
+    return _pvMgr
+  } catch (e) { console.warn('[WechatSI requirePlugin 失败]', e); return null }
+}
+function pvStart(e: any) {
+  if (_pvBusy) { uni.showToast({ title: '上一句还在识别,请稍候', icon: 'none' }); return }
+  const mgr = getPvMgr()
+  if (!mgr) { uni.showToast({ title: '未启用语音插件,请打字', icon: 'none' }); return }
+  _pvStartY = e?.touches?.[0]?.clientY ?? e?.changedTouches?.[0]?.clientY ?? 0
+  pvCancelZone.value = false; _pvCanceled = false
+  pvRecording.value = true; _pvStartAt = Date.now()
+  try { mgr.start({ lang: 'en_US', duration: 30000 }) }
+  catch (e2) { pvRecording.value = false; console.warn('[WechatSI start 失败]', e2); uni.showToast({ title: '无法开始录音,请打字', icon: 'none' }) }
+}
+function pvMove(e: any) {
+  if (!pvRecording.value) return
+  const y = e?.touches?.[0]?.clientY ?? 0
+  pvCancelZone.value = (_pvStartY - y) > PV_CANCEL_DY
+}
+function pvEnd() {
+  if (!pvRecording.value) return
+  pvRecording.value = false
+  const wasCancel = pvCancelZone.value
+  pvCancelZone.value = false
+  if (Date.now() - _pvStartAt < 400) {
+    _pvCanceled = true
+    try { getPvMgr()?.stop() } catch { /* ignore */ }
+    uni.showToast({ title: '按住说话时间太短', icon: 'none' }); return
+  }
+  if (wasCancel) {
+    _pvCanceled = true
+    try { getPvMgr()?.stop() } catch { /* ignore */ }
+    uni.showToast({ title: '已取消', icon: 'none' }); return
+  }
+  _pvBusy = true
+  const mgr = getPvMgr()
+  if (mgr) mgr.stop()
+}
+// #endif
 async function startTransfer() {
   const id = curStudy.value.word_id
   if (!id) return
@@ -1445,6 +1547,21 @@ onMounted(load)
 .produce-box { margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx dashed #e6e9ef; }
 .produce-q { display: block; font-size: 25rpx; color: #2a3138; font-weight: 600; line-height: 1.6; margin-bottom: 10rpx; }
 .produce-input { width: 100%; box-sizing: border-box; min-height: 96rpx; background: #f5f7fa; border-radius: 14rpx; padding: 14rpx 16rpx; font-size: 26rpx; line-height: 1.6; font-family: Georgia, 'Times New Roman', serif; }
+/* 造句·语音输入(微信端) */
+.pv-row { display: flex; align-items: flex-start; gap: 12rpx; }
+.pv-toggle { flex-shrink: 0; width: 72rpx; height: 72rpx; border-radius: 50%; background: var(--c-bg-soft); display: flex; align-items: center; justify-content: center; }
+.pv-hold { flex: 1; height: 88rpx; line-height: 88rpx; text-align: center; border-radius: var(--r-pill); background: #fff; border: 2rpx solid var(--c-border); font-size: 28rpx; font-weight: 700; color: var(--c-text-body); }
+.pv-hold.holding { background: var(--c-primary-faint); border-color: var(--c-primary); color: var(--c-primary-deep); }
+.pv-grow { flex: 1; min-height: 88rpx; margin-top: 0; }
+.rec-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28rpx; z-index: 60; }
+.rec-panel { width: 240rpx; height: 240rpx; border-radius: 36rpx; background: rgba(40,44,52,.92); display: flex; align-items: center; justify-content: center; box-shadow: 0 12rpx 48rpx rgba(0,0,0,.3); }
+.rec-panel.cancel { background: rgba(214,69,69,.95); }
+.rec-wave { display: flex; align-items: center; gap: 10rpx; height: 90rpx; }
+.wbar { width: 12rpx; height: 28rpx; border-radius: 6rpx; background: #7ee0a8; animation: wave .8s ease-in-out infinite; }
+@keyframes wave { 0%,100% { height: 24rpx; opacity:.6 } 50% { height: 84rpx; opacity:1 } }
+.rec-cancel-ico { color: #fff; font-size: 96rpx; font-weight: 800; }
+.rec-tip { font-size: 26rpx; color: #fff; background: rgba(0,0,0,.4); padding: 10rpx 28rpx; border-radius: var(--r-pill); }
+.rec-tip.cancel { background: rgba(214,69,69,.9); }
 .produce-result { background: #f7f9fc; border-radius: 14rpx; padding: 14rpx; margin-top: 6rpx; }
 .pr-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 8rpx; }
 .pr-score { font-size: 30rpx; font-weight: 800; color: #d0860f; }
