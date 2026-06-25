@@ -114,8 +114,23 @@
               <view class="ic ic-pen prod-cta-ic" /><text class="prod-cta-tx">进阶 · 试译这句,检验输出</text>
             </view>
             <view v-else-if="!transResult" class="prod-panel">
+              <!-- #ifdef MP-WEIXIN -->
+              <view class="pv-row">
+                <view class="pv-toggle" @tap="togglePvMode">
+                  <view class="ic" :class="pvMode === 'voice' ? 'ic-keyboard' : 'ic-mic'" style="width:34rpx;height:34rpx" />
+                </view>
+                <view v-if="pvMode === 'voice'" class="pv-hold" :class="{ holding: pvRecording }"
+                  @touchstart="pvStart" @touchmove="pvMove" @touchend="pvEnd" @touchcancel="pvEnd">
+                  {{ pvRecording ? '松开 完成' : '按住 说中文' }}
+                </view>
+                <textarea v-else v-model="transAnswer" class="prod-input pv-grow" :maxlength="200"
+                          placeholder="用中文写出这句的意思(尽量把主干、逻辑关系、修饰都译到位)" />
+              </view>
+              <!-- #endif -->
+              <!-- #ifndef MP-WEIXIN -->
               <textarea v-model="transAnswer" class="prod-input" :maxlength="200"
                         placeholder="用中文写出这句的意思(尽量把主干、逻辑关系、修饰都译到位)" />
+              <!-- #endif -->
               <view class="prod-submit" :class="{ dis: !transAnswer.trim() || transSubmitting }" @tap="submitTrans">{{ transSubmitting ? '评分中…' : '提交翻译' }}</view>
             </view>
             <view v-else class="prod-result">
@@ -317,6 +332,21 @@
         </view>
       </view>
     </view>
+
+    <!-- #ifdef MP-WEIXIN -->
+    <!-- 试译·微信式「按住说话」录音浮层 -->
+    <view v-if="pvRecording" class="rec-mask">
+      <view class="rec-panel" :class="{ cancel: pvCancelZone }">
+        <view v-if="!pvCancelZone" class="rec-wave">
+          <view v-for="i in 5" :key="i" class="wbar" :style="{ animationDelay: (i * 0.12) + 's' }" />
+        </view>
+        <text v-else class="rec-cancel-ico">✕</text>
+      </view>
+      <text class="rec-tip" :class="{ cancel: pvCancelZone }">
+        {{ pvCancelZone ? '松开手指，取消' : '正在聆听… 上滑取消' }}
+      </text>
+    </view>
+    <!-- #endif -->
   </view>
 </template>
 
@@ -678,6 +708,77 @@ async function submitTrans() {
   finally { transSubmitting.value = false }
 }
 
+// ── 试译·语音输入(微信同声传译插件,仅微信端;默认语音,可切键盘,识别中文)────────
+const pvMode = ref<'voice' | 'text'>('text')
+const pvRecording = ref(false)
+const pvCancelZone = ref(false)
+// #ifdef MP-WEIXIN
+pvMode.value = 'voice'   // 微信端默认语音
+function togglePvMode() { pvMode.value = pvMode.value === 'voice' ? 'text' : 'voice' }
+let _pvMgr: any = null
+let _pvStartAt = 0
+let _pvStartY = 0
+let _pvBusy = false
+let _pvCanceled = false
+const PV_CANCEL_DY = 80
+function getPvMgr() {
+  if (_pvMgr) return _pvMgr
+  try {
+    const plugin: any = requirePlugin('WechatSI')
+    _pvMgr = plugin.getRecordRecognitionManager()
+    _pvMgr.onRecognize = () => { /* 中间结果忽略 */ }
+    _pvMgr.onStop = (res: any) => {
+      pvRecording.value = false; _pvBusy = false
+      if (_pvCanceled) { _pvCanceled = false; return }
+      const text = ((res && res.result) || '').trim()
+      if (!text) { uni.showToast({ title: '没听清,再说一次或打字', icon: 'none' }); return }
+      transAnswer.value = transAnswer.value ? `${transAnswer.value}${text}` : text
+    }
+    _pvMgr.onError = (res: any) => {
+      pvRecording.value = false; _pvBusy = false
+      if (_pvCanceled) { _pvCanceled = false; return }
+      const raw = (res && (res.msg || res.errMsg)) || ''
+      uni.showToast({ title: /finish|忙|wait/i.test(raw) ? '识别还在处理,请稍候' : '语音识别失败,请打字', icon: 'none', duration: 2000 })
+    }
+    return _pvMgr
+  } catch (e) { console.warn('[WechatSI requirePlugin 失败]', e); return null }
+}
+function pvStart(e: any) {
+  if (_pvBusy) { uni.showToast({ title: '上一句还在识别,请稍候', icon: 'none' }); return }
+  const mgr = getPvMgr()
+  if (!mgr) { uni.showToast({ title: '未启用语音插件,请打字', icon: 'none' }); return }
+  _pvStartY = e?.touches?.[0]?.clientY ?? e?.changedTouches?.[0]?.clientY ?? 0
+  pvCancelZone.value = false; _pvCanceled = false
+  pvRecording.value = true; _pvStartAt = Date.now()
+  try { mgr.start({ lang: 'zh_CN', duration: 30000 }) }
+  catch (e2) { pvRecording.value = false; console.warn('[WechatSI start 失败]', e2); uni.showToast({ title: '无法开始录音,请打字', icon: 'none' }) }
+}
+function pvMove(e: any) {
+  if (!pvRecording.value) return
+  const y = e?.touches?.[0]?.clientY ?? 0
+  pvCancelZone.value = (_pvStartY - y) > PV_CANCEL_DY
+}
+function pvEnd() {
+  if (!pvRecording.value) return
+  pvRecording.value = false
+  const wasCancel = pvCancelZone.value
+  pvCancelZone.value = false
+  if (Date.now() - _pvStartAt < 400) {
+    _pvCanceled = true
+    try { getPvMgr()?.stop() } catch { /* ignore */ }
+    uni.showToast({ title: '按住说话时间太短', icon: 'none' }); return
+  }
+  if (wasCancel) {
+    _pvCanceled = true
+    try { getPvMgr()?.stop() } catch { /* ignore */ }
+    uni.showToast({ title: '已取消', icon: 'none' }); return
+  }
+  _pvBusy = true
+  const mgr = getPvMgr()
+  if (mgr) mgr.stop()
+}
+// #endif
+
 /* ── 迁移挑战:同结构新句,区分「记住题 vs 会技能」 ── */
 async function startTransfer() {
   const id = items.value[index.value]?.id
@@ -806,6 +907,21 @@ onLoad(async () => {
 .prod-cta:active { opacity: .8; }
 .prod-cta-ic.ic { width: 30rpx; height: 30rpx; }
 .prod-input { width: 100%; box-sizing: border-box; min-height: 120rpx; background: #f7f9fc; border-radius: 12rpx; padding: 16rpx; font-size: 25rpx; color: #2a3138; line-height: 1.6; }
+/* 试译·语音输入(微信端) */
+.pv-row { display: flex; align-items: flex-start; gap: 12rpx; }
+.pv-toggle { flex-shrink: 0; width: 72rpx; height: 72rpx; border-radius: 50%; background: var(--c-bg-soft, #eef2f7); display: flex; align-items: center; justify-content: center; }
+.pv-hold { flex: 1; height: 96rpx; line-height: 96rpx; text-align: center; border-radius: 48rpx; background: #fff; border: 2rpx solid var(--c-border, #dfe5ee); font-size: 28rpx; font-weight: 700; color: #2a3138; }
+.pv-hold.holding { background: var(--c-primary-faint, #e8f1ff); border-color: var(--c-primary, #3d8bf5); color: var(--c-primary-deep, #2f6fd6); }
+.pv-grow { flex: 1; min-height: 96rpx; }
+.rec-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28rpx; z-index: 60; }
+.rec-panel { width: 240rpx; height: 240rpx; border-radius: 36rpx; background: rgba(40,44,52,.92); display: flex; align-items: center; justify-content: center; box-shadow: 0 12rpx 48rpx rgba(0,0,0,.3); }
+.rec-panel.cancel { background: rgba(214,69,69,.95); }
+.rec-wave { display: flex; align-items: center; gap: 10rpx; height: 90rpx; }
+.wbar { width: 12rpx; height: 28rpx; border-radius: 6rpx; background: #7ee0a8; animation: wave .8s ease-in-out infinite; }
+@keyframes wave { 0%,100% { height: 24rpx; opacity:.6 } 50% { height: 84rpx; opacity:1 } }
+.rec-cancel-ico { color: #fff; font-size: 96rpx; font-weight: 800; }
+.rec-tip { font-size: 26rpx; color: #fff; background: rgba(0,0,0,.4); padding: 10rpx 28rpx; border-radius: 30rpx; }
+.rec-tip.cancel { background: rgba(214,69,69,.9); }
 .prod-submit { margin-top: 12rpx; text-align: center; background: var(--g-primary); color: var(--c-on-primary); font-size: 26rpx; font-weight: 700; padding: 16rpx 0; border-radius: 30rpx; box-shadow: var(--shadow-primary); }
 .prod-submit.dis { background: #d7dde6; color: #fff; box-shadow: none; }
 .prod-result { background: #f7f9fc; border-radius: 14rpx; padding: 16rpx; }
