@@ -28,7 +28,7 @@ from app.schemas.vocabulary import (
 )
 from app.services import (
     checkin_service, pronunciation_service, speech_score_service, vocabulary_service,
-    vocab_probe_service,
+    vocab_probe_service, vocab_pin_service,
 )
 
 from pydantic import BaseModel, Field
@@ -237,6 +237,59 @@ async def group_recep_submit(db: DbDep, current_user: UserDep, answers: dict[str
     res = await vocab_probe_service.submit_group_recep(db, student_id=current_user.id, answers=answers)
     await db.commit()
     return make_ok(res)
+
+
+# ── R9.6 优先学清单 + 拍照加词 ──
+@router.get("/pins", response_model=BaseResponse[dict])
+async def list_pins(db: DbDep, current_user: UserDep):
+    """优先学清单(学生主动 pin 的词,级别高的在前)。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok({"pins": await vocab_pin_service.list_pins(db, student_id=current_user.id)})
+
+
+@router.get("/pinnable", response_model=BaseResponse[dict])
+async def pinnable(db: DbDep, current_user: UserDep):
+    """可挑选加入优先学的词:本人候选(作业/试卷/错题)+ 当前学期教材词,标注是否已 pin。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok({"words": await vocab_pin_service.pinnable_words(db, student_id=current_user.id)})
+
+
+@router.post("/pins", response_model=BaseResponse[dict])
+async def add_pins(db: DbDep, current_user: UserDep,
+                   word_ids: list[uuid.UUID] = Body(..., embed=True), priority: int = Body(1)):
+    """从来源库挑选加入优先学(可设级别)。"""
+    await get_rls_db(db, str(current_user.id))
+    r = await vocab_pin_service.pin_words(db, student_id=current_user.id, word_ids=word_ids, priority=priority)
+    await db.commit()
+    return make_ok(r)
+
+
+@router.put("/pins/{word_id}", response_model=BaseResponse[dict])
+async def update_pin(word_id: uuid.UUID, db: DbDep, current_user: UserDep, priority: int = Body(..., embed=True)):
+    """调整某词优先级别(≤0 即移出优先学)。"""
+    await get_rls_db(db, str(current_user.id))
+    await vocab_pin_service.set_priority(db, student_id=current_user.id, word_id=word_id, priority=priority)
+    await db.commit()
+    return make_ok({"ok": True})
+
+
+@router.delete("/pins/{word_id}", response_model=BaseResponse[dict])
+async def remove_pin(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """移出优先学(保留为普通候选)。"""
+    await get_rls_db(db, str(current_user.id))
+    await vocab_pin_service.unpin(db, student_id=current_user.id, word_id=word_id)
+    await db.commit()
+    return make_ok({"ok": True})
+
+
+@router.post("/pins/from-photo", response_model=BaseResponse[dict])
+async def pin_from_photo(db: DbDep, current_user: UserDep,
+                         image_url: str = Body(..., embed=True), priority: int = Body(1)):
+    """拍照加词:图片 OCR 抽英文词 → 词典命中者加入优先学。返回 {recognized, pinned, not_found}。"""
+    await get_rls_db(db, str(current_user.id))
+    r = await vocab_pin_service.pin_from_photo(db, student_id=current_user.id, image_url=image_url, priority=priority)
+    await db.commit()
+    return make_ok(r)
 
 
 @router.get("/wrong-words", response_model=BaseResponse[WrongWordListOut])

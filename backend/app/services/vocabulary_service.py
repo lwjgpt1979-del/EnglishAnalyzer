@@ -84,6 +84,12 @@ async def _ordered_new_words(
                 CurriculumUnit.semester == pref[2],
             )
         )
+    # P(-1) 优先学(R9.6):学生主动 pin 的词排在所有来源最前,priority 级别越高越靠前
+    parts.append(
+        select(StudentVocabCandidate.word_id.label("wid"),
+               (literal(-1) - StudentVocabCandidate.priority).label("p"))
+        .where(StudentVocabCandidate.student_id == student.id, StudentVocabCandidate.priority > 0)
+    )
     # P2 其他来源候选词
     parts.append(
         select(StudentVocabCandidate.word_id.label("wid"), literal(2).label("p"))
