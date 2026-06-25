@@ -270,3 +270,26 @@ class StudentGrammarMastery(Base):
     __table_args__ = (
         sa.UniqueConstraint("student_id", "kp_id", name="uq_sgm_student_kp"),
     )
+
+
+class GrammarPlacementSession(Base):
+    """R10.6 语法分级测验(CAT 冷启动)会话:二分定位 + 知识空间推断 + BKT 暖启动。"""
+
+    __tablename__ = "grammar_placement_session"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+                       server_default=sa.text("gen_random_uuid()"))
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    textbook = mapped_column(sa.String, nullable=True)
+    grade = mapped_column(sa.String, nullable=True)
+    pool_kp_ids = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    asked = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    lo = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    hi = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    status = mapped_column(sa.String(16), nullable=False, server_default=sa.text("'active'"))
+    result_priors = mapped_column(JSONB, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.text("now()"))
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.text("now()"))

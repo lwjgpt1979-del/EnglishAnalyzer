@@ -11,7 +11,7 @@ from app.core.database import get_db, get_rls_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
-from app.services import grammar_probe_service
+from app.services import grammar_probe_service, grammar_placement_service
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.d4_knowledge import KnowledgePoint
@@ -148,4 +148,45 @@ async def get_kp_status(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """该语法点对该生的诚实掌握标签 + 各维度 + 证据。"""
     await get_rls_db(db, str(current_user.id))
     res = await grammar_probe_service.kp_status(db, student_id=current_user.id, kp_id=kp_id)
+    return make_ok(res)
+
+
+# ── 分级测验(CAT 冷启动,R10.6)───────────────────────────────────────────
+class PlacementStartIn(BaseModel):
+    textbook: str | None = Field(None, description="教材版本,如 译林版")
+    grade: str | None = Field(None, description="目标年级,如 八年级")
+    kp_ids: list[str] | None = Field(None, description="可选:显式题库(按难度顺序),覆盖自动圈定")
+
+
+class PlacementAnswerIn(BaseModel):
+    session_id: uuid.UUID
+    kp_id: str = Field(..., description="当前题的知识点 id")
+    chosen: str = Field(..., description="所选选项")
+
+
+@router.post("/placement/start", response_model=BaseResponse[dict])
+async def placement_start(body: PlacementStartIn, db: DbDep, current_user: UserDep):
+    """开始语法分级测验:圈题库 → 返回首题(自适应)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_placement_service.start(
+        db, student_id=current_user.id, textbook=body.textbook, grade=body.grade, kp_ids=body.kp_ids)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/placement/answer", response_model=BaseResponse[dict])
+async def placement_answer(body: PlacementAnswerIn, db: DbDep, current_user: UserDep):
+    """提交一题 → 自适应路由,返回下一题或结束(含热力图)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_placement_service.answer(
+        db, student_id=current_user.id, session_id=body.session_id, kp_id=body.kp_id, chosen=body.chosen)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.get("/placement/result", response_model=BaseResponse[dict])
+async def placement_result(session_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """取分级测验结果:掌握热力图 + 学习起点线。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_placement_service.result(db, student_id=current_user.id, session_id=session_id)
     return make_ok(res)
