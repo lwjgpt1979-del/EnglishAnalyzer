@@ -105,11 +105,11 @@
                   placeholder="用这个词写一句英文" auto-height />
                 <view class="probe-submit" :class="{ dis: !produceInput.trim() || produceSubmitting }" @tap="submitProduce">{{ produceSubmitting ? '评分中…' : '提交造句' }}</view>
               </template>
-              <view v-else-if="produceResult.graded === false" class="produce-result">
+              <view v-else-if="produceResult && produceResult.graded === false" class="produce-result">
                 <text class="pr-fb">{{ produceResult.feedback || '评分服务暂忙,请重试(本次不计分)' }}</text>
                 <view class="probe-submit" @tap="redoProduce">重试</view>
               </view>
-              <view v-else class="produce-result" :class="produceResult.passed ? 'ok' : 'no'">
+              <view v-else-if="produceResult" class="produce-result" :class="produceResult.passed ? 'ok' : 'no'">
                 <view class="pr-head">
                   <text class="pr-score" :class="{ ok: produceResult.passed }">{{ produceResult.total }}/{{ produceResult.max }}</text>
                   <text class="pr-verdict" :class="{ ok: produceResult.passed }">{{ produceResult.passed ? '输出达标 ✓' : '再打磨' }}</text>
