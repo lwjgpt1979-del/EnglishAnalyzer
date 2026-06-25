@@ -19,8 +19,16 @@ interface UploadOptions {
   difficulty?: number
 }
 
-/** 读取本地图片为纯 ArrayBuffer（跨 realm 安全） */
+/** 读取本地图片为纯 ArrayBuffer（跨 realm 安全）。H5 无 wx 文件 API，走 fetch 读 blob。 */
 function readFileAsArrayBuffer(tempFilePath: string): Promise<ArrayBuffer> {
+  // #ifdef H5
+  // H5：chooseImage 返回 blob: URL，fetch 即可拿到二进制
+  return fetch(tempFilePath).then((r) => {
+    if (!r.ok) throw new Error(`读取文件失败：HTTP ${r.status}`)
+    return r.arrayBuffer()
+  })
+  // #endif
+  // #ifndef H5
   return new Promise<ArrayBuffer>((resolve, reject) => {
     wx.getFileSystemManager().readFile({
       filePath: tempFilePath,
@@ -43,6 +51,7 @@ function readFileAsArrayBuffer(tempFilePath: string): Promise<ArrayBuffer> {
       fail: (err) => reject(new Error(err.errMsg || '读取文件失败')),
     })
   })
+  // #endif
 }
 
 /**
@@ -62,6 +71,18 @@ export async function uploadOneImage(tempFilePath: string): Promise<string> {
 
   // dev 模式（is_mock=true）跳过实际 PUT：后端直接给了可访问的占位图 URL
   if (!presign.is_mock) {
+    // #ifdef H5
+    // H5：用 fetch 直传 COS 预签名 PUT（需 COS 桶为该 Origin 配置 CORS 允许 PUT）
+    const resp = await fetch(presign.presign_url, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: arrayBuffer,
+    })
+    if (resp.status !== 200 && resp.status !== 204) {
+      throw new Error(`COS 上传失败：HTTP ${resp.status}`)
+    }
+    // #endif
+    // #ifndef H5
     await new Promise<void>((resolve, reject) => {
       wx.request({
         url: presign.presign_url,
@@ -79,6 +100,7 @@ export async function uploadOneImage(tempFilePath: string): Promise<string> {
         fail: (err) => reject(new Error(err.errMsg || 'COS 上传失败')),
       })
     })
+    // #endif
   } else {
     console.warn('[uploadOneImage] dev mock 模式：跳过 COS PUT，直接用占位图 URL', presign.file_url)
   }
@@ -115,75 +137,14 @@ export function useUpload() {
         })
       })
 
-      // Step 2: 检测图片类型
-      const lower = tempFilePath.toLowerCase()
-      const contentType: MimeType = lower.endsWith('.png')
-        ? 'image/png'
-        : lower.endsWith('.webp')
-          ? 'image/webp'
-          : 'image/jpeg'
-
-      // Step 3: 获取预签名 URL
-      progress.value = 'presigning'
-      const presign = await getPresignUrl(contentType)
-
-      // Step 4: 读取图片为 ArrayBuffer，直传 COS presigned PUT URL
-      // 注意：不同微信 SDK 版本 / 模拟器返回的 binary 类型不一致
-      // （可能是 ArrayBuffer / Uint8Array / Node Buffer），统一规整为 ArrayBuffer
+      // Step 2-4: presign → 读取 → 直传 COS（跨端，统一走 uploadOneImage）
       progress.value = 'uploading'
-      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-        wx.getFileSystemManager().readFile({
-          filePath: tempFilePath,
-          success: (res) => {
-            const d = res.data as unknown
-            // 小程序 service / page 跨 realm 时 instanceof ArrayBuffer 会失败，
-            // 改用 Object.prototype.toString 做跨 realm 安全检测
-            const tag = Object.prototype.toString.call(d)
-            if (tag === '[object ArrayBuffer]') {
-              resolve(d as ArrayBuffer)
-            } else if (
-              tag === '[object Uint8Array]' ||
-              (d && typeof d === 'object' && 'byteLength' in d && 'buffer' in d)
-            ) {
-              // Uint8Array / Node Buffer — 切片得到纯 ArrayBuffer
-              const u8 = d as Uint8Array
-              const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
-              resolve(ab)
-            } else {
-              reject(new Error(`文件读取返回未知类型 ${tag}，请反馈给开发者`))
-            }
-          },
-          fail: (err) => reject(new Error(err.errMsg || '读取文件失败')),
-        })
-      })
-
-      // dev 模式（is_mock=true）跳过实际 PUT：后端直接给了可访问的占位图 URL
-      if (!presign.is_mock) {
-        await new Promise<void>((resolve, reject) => {
-          wx.request({
-            url: presign.presign_url,
-            method: 'PUT',
-            data: arrayBuffer,
-            header: { 'Content-Type': contentType },
-            responseType: 'arraybuffer',
-            success: (res) => {
-              if (res.statusCode === 200 || res.statusCode === 204) {
-                resolve()
-              } else {
-                reject(new Error(`COS 上传失败：HTTP ${res.statusCode}`))
-              }
-            },
-            fail: (err) => reject(new Error(err.errMsg || 'COS 上传失败')),
-          })
-        })
-      } else {
-        console.warn('[useUpload] dev mock 模式：跳过 COS PUT，直接用占位图 URL', presign.file_url)
-      }
+      const fileUrl = await uploadOneImage(tempFilePath)
 
       // Step 5: 创建错题记录
       progress.value = 'creating'
       const wq = await createWrongQuestion({
-        source_image_url: presign.file_url,
+        source_image_url: fileUrl,
         question_type: options.questionType,
         difficulty: options.difficulty,
       })
