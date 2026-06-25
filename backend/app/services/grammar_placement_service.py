@@ -67,7 +67,8 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
     # 1) curriculum 映射(textbook × 前置年级),按 年级→单元 排序
     if textbook and grades:
         rows = (await db.execute(
-            sa.select(KnowledgePoint.id, KnowledgePoint.name, CurriculumUnit.grade, CurriculumUnit.unit_no)
+            sa.select(KnowledgePoint.id, KnowledgePoint.name, CurriculumUnit.grade,
+                      CurriculumUnit.unit_no, KnowledgePoint.sort_order)
             .select_from(UnitKnowledgePoint)
             .join(CurriculumUnit, CurriculumUnit.id == UnitKnowledgePoint.unit_id)
             .join(KnowledgePoint, KnowledgePoint.id == UnitKnowledgePoint.knowledge_point_id)
@@ -77,7 +78,7 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
         if rows:
             def _grank(g):
                 return _GRADE_LADDER.index(g) if g in _GRADE_LADDER else 99
-            rows = sorted(rows, key=lambda r: (_grank(r[2]), r[3] or 0))
+            rows = sorted(rows, key=lambda r: (_grank(r[2]), r[3] or 0, r[4] or 0))
             seen, out = set(), []
             for r in rows:
                 if r[0] not in seen:
@@ -137,6 +138,11 @@ async def start(db: AsyncSession, *, student_id: uuid.UUID, textbook: str | None
     if use_paper_priors:   # R10.7:先把纸质错题折成先验(错题找洞),融进结果热力图
         from app.services import paper_prior_service
         await paper_prior_service.apply_paper_priors(db, student_id=student_id)
+    if not kp_ids and not (textbook and grade):   # 未指定 → 用学生教材偏好圈题库
+        from app.models.d1_users import User
+        u = (await db.execute(sa.select(User).where(User.id == student_id))).scalars().first()
+        textbook = textbook or (u.preferred_textbook_version if u else None)
+        grade = grade or (u.preferred_grade if u else None)
     pool = await build_pool(db, textbook=textbook, grade=grade, kp_ids=kp_ids)
     if len(pool) < 2:
         raise AppError(code=400, message="题库不足,无法分级测验(请检查教材/年级或传入 kp_ids)")

@@ -18,6 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d4_knowledge import StudentGrammarMastery
+from app.models.d1_users import User
+
+
+async def _student_scope(db: AsyncSession, student_id: uuid.UUID,
+                         textbook: str | None, grade: str | None) -> tuple[str | None, str | None]:
+    """未显式指定时,用学生教材偏好圈题库(译林初二语法点)。"""
+    if textbook and grade:
+        return textbook, grade
+    u = (await db.execute(sa.select(User).where(User.id == student_id))).scalars().first()
+    return (textbook or (u.preferred_textbook_version if u else None),
+            grade or (u.preferred_grade if u else None))
 from app.services import grammar_probe_service as gp
 from app.services import grammar_placement_service as pl
 from app.services import grammar_config_service as _cfg
@@ -62,6 +73,7 @@ async def _scored_pool(db: AsyncSession, *, student_id: uuid.UUID, textbook: str
 async def daily_batch(db: AsyncSession, *, student_id: uuid.UUID,
                       textbook: str | None = None, grade: str | None = None) -> dict:
     """组装推进环每日批次:间隔维持 + 新点推进 + 综合运用(按配比)。"""
+    textbook, grade = await _student_scope(db, student_id, textbook, grade)
     c = await _cfg.get_config(db)
     size = int(c.get("daily_batch_size", 12))
     r_new = float(c.get("stream_new", 0.70))
