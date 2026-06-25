@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import random
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +30,9 @@ PRODUCE_MASTERED = 0.85     # 产出维掌握阈
 # 产出造句 rubric 维度(每维 0-2):用对结构 / 句子正确 / 表意通顺
 _PROD_DIMS = [("structure", "用对结构"), ("accuracy", "句子正确"), ("meaning", "表意通顺")]
 _PROD_PASS = 4              # 总分 ≥4/6 且「用对结构」≥1 视为产出达标
+# 间隔复测阶梯(天):四维门槛达成后,隔期用新题复测,通过则间隔拉长(SM2 思路)
+_RETAIN_LADDER = [3, 7, 15, 30, 60]
+RETAIN_MIN_DAYS = 3        # 至少隔 3 天才复测(破"刷同一套题过拟合")
 
 
 # ── 探针库(KP 级公共缓存)────────────────────────────────────────────
@@ -112,6 +115,8 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: K
         "has_transfer": bool(p.get("transfer_seed")),
         "recognize": recog, "detect": detect, "produce_score": produce, "transfer_ok": transfer_ok,
         "mastered": _axes_mastered(recog, detect, produce, transfer_ok),
+        "confirmed_mastered": confirmed_mastered(m),
+        "status": _status_label(m),
     }
 
 
@@ -161,6 +166,7 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.U
     m.last_seen_at = datetime.now(timezone.utc)
     m.prior_source = "learn"
 
+    _maybe_schedule_retention(m)
     qid = uuid.uuid5(uuid.NAMESPACE_OID, f"grammar-probe:{kp_id}:{key}")
     await mastery_judge_service.log_answer(
         db, student_id=student_id, q_scope="platform", question_id=qid,
@@ -237,6 +243,7 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid
             m.wrong_count = (m.wrong_count or 0) + 1
         m.last_seen_at = datetime.now(timezone.utc)
         m.prior_source = "learn"
+        _maybe_schedule_retention(m)
         qid = uuid.uuid5(uuid.NAMESPACE_OID, f"grammar-produce:{kp_id}")
         await mastery_judge_service.log_answer(
             db, student_id=student_id, q_scope="platform", question_id=qid,
@@ -315,6 +322,7 @@ async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uui
         m.wrong_count = (m.wrong_count or 0) + 1
     m.last_seen_at = datetime.now(timezone.utc)
     m.prior_source = "learn"
+    _maybe_schedule_retention(m)
     qid = uuid.uuid5(uuid.NAMESPACE_OID, f"grammar-transfer:{kp_id}:{key}")
     await mastery_judge_service.log_answer(
         db, student_id=student_id, q_scope="platform", question_id=qid,
@@ -399,6 +407,150 @@ async def submit_group_mixed(db: AsyncSession, *, student_id: uuid.UUID, answers
         })
     await db.flush()
     return {"results": results}
+
+
+# ── 间隔复测(保持,R10.5)────────────────────────────────────────────────
+def _maybe_schedule_retention(m: StudentGrammarMastery) -> None:
+    """四维门槛首次达成 → 排首次复测(≥3 天后用新题考)。"""
+    recog = float(m.mastery_recognize or 0)
+    detect = float(m.mastery_detect or 0)
+    produce = float(m.mastery_produce or 0)
+    if _axes_mastered(recog, detect, produce, bool(m.transfer_ok)) and m.mastered_at is None:
+        now = datetime.now(timezone.utc)
+        m.mastered_at = now
+        m.retain_interval_days = _RETAIN_LADDER[0]
+        m.next_retain_at = now + timedelta(days=_RETAIN_LADDER[0])
+
+
+def confirmed_mastered(m: StudentGrammarMastery | None) -> bool:
+    """最终「基本学会」= 四维门槛达成 且 ≥1 次隔期复测通过。"""
+    if m is None:
+        return False
+    return _axes_mastered(
+        float(m.mastery_recognize or 0), float(m.mastery_detect or 0),
+        float(m.mastery_produce or 0), bool(m.transfer_ok)) and (m.retain_count or 0) >= 1
+
+
+async def due_retentions(db: AsyncSession, *, student_id: uuid.UUID, limit: int = 50) -> list[dict]:
+    """到期待复测的语法点(四维已达、next_retain_at 到期)。"""
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(
+        sa.select(StudentGrammarMastery, KnowledgePoint.name)
+        .join(KnowledgePoint, KnowledgePoint.id == StudentGrammarMastery.kp_id)
+        .where(StudentGrammarMastery.student_id == student_id,
+               StudentGrammarMastery.mastered_at.isnot(None),
+               StudentGrammarMastery.next_retain_at <= now)
+        .order_by(StudentGrammarMastery.next_retain_at).limit(limit))).all()
+    return [{"kp_id": str(m.kp_id), "kp_name": name, "retain_count": m.retain_count,
+             "due_at": m.next_retain_at.isoformat() if m.next_retain_at else None} for m, name in rows]
+
+
+async def retention_probe(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgePoint) -> dict | None:
+    """取一道复测题:同点新语境单选(在迁移题池里按已复测次数轮换)。无题→None。"""
+    seeds = await _ensure_transfer_seed(db, kp)
+    if not seeds:
+        return None
+    m = await _get_mastery(db, student_id, kp.id)
+    idx = (m.retain_count if m else 0) % len(seeds)
+    s = seeds[idx]
+    return {"probe": {"key": f"transfer:{idx}", "kind": "retention",
+                      "prompt": f"隔期复测 · 换个新句子:{s['stem']}", "options": list(s["options"])},
+            "interval_days": (m.retain_interval_days if m else _RETAIN_LADDER[0])}
+
+
+async def submit_retention(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID,
+                           key: str, answer: str) -> dict:
+    """提交复测:通过→间隔拉长(SM2 阶梯)+ retain_count++;失败→保持回落、重新进入学习。
+    verdict=retained(仍记得)/ forgotten(遗忘,需重学)。"""
+    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    if kp is None:
+        raise AppError(code=404, message="知识点不存在")
+    seeds = await _ensure_transfer_seed(db, kp)
+    try:
+        idx = int(key.split(":", 1)[1])
+    except (ValueError, IndexError, AttributeError):
+        idx = 0
+    if idx >= len(seeds):
+        raise AppError(code=400, message="复测题不存在")
+    correct_answer = str(seeds[idx]["answer"]).strip()
+    correct = (answer or "").strip() == correct_answer
+
+    m = await _get_or_create_mastery(db, student_id, kp_id)
+    now = datetime.now(timezone.utc)
+    m.mastery_recognize = mastery_judge_service.bkt_update(
+        None if m.mastery_recognize is None else float(m.mastery_recognize), correct)
+    if correct:
+        m.retain_count = (m.retain_count or 0) + 1
+        m.last_retain_at = now
+        step = _RETAIN_LADDER[min(m.retain_count, len(_RETAIN_LADDER) - 1)]
+        m.retain_interval_days = step
+        m.next_retain_at = now + timedelta(days=step)
+    else:
+        # 遗忘:保持回落,迁移作废、清排期 → 重新进入学习环
+        m.transfer_ok = False
+        m.mastered_at = None
+        m.next_retain_at = None
+        m.retain_interval_days = 0
+        m.wrong_count = (m.wrong_count or 0) + 1
+    m.last_seen_at = now
+    qid = uuid.uuid5(uuid.NAMESPACE_OID, f"grammar-retain:{kp_id}:{key}")
+    await mastery_judge_service.log_answer(
+        db, student_id=student_id, q_scope="platform", question_id=qid,
+        node_id=None, is_correct=correct, feature="grammar_retention")
+    await db.flush()
+    return {
+        "correct": correct, "correct_answer": correct_answer,
+        "verdict": "retained" if correct else "forgotten",
+        "retain_count": m.retain_count,
+        "next_retain_at": m.next_retain_at.isoformat() if m.next_retain_at else None,
+        "confirmed_mastered": confirmed_mastered(m),
+        "status": _status_label(m),
+    }
+
+
+def _status_label(m: StudentGrammarMastery | None) -> dict:
+    """诚实的可解释掌握标签 + 证据(给学生看)。"""
+    if m is None:
+        return {"status": "new", "label": "未开始", "evidence": []}
+    recog = float(m.mastery_recognize or 0)
+    detect = float(m.mastery_detect or 0)
+    produce = float(m.mastery_produce or 0)
+    tok = bool(m.transfer_ok)
+    axes = _axes_mastered(recog, detect, produce, tok)
+    if not axes:
+        done, todo = [], []
+        (done if detect >= DETECT_MASTERED else todo).append("纠错")
+        (done if produce >= PRODUCE_MASTERED else todo).append("产出")
+        (done if tok else todo).append("迁移")
+        ev = []
+        if done:
+            ev.append("已过:" + "、".join(done))
+        if todo:
+            ev.append("还差:" + "、".join(todo))
+        return {"status": "learning", "label": "学习中", "evidence": ev}
+    if (m.retain_count or 0) >= 1:
+        return {"status": "mastered", "label": "已掌握",
+                "evidence": ["四维(纠错/产出/迁移)均通过", f"隔期复测 {m.retain_count} 次仍对"]}
+    now = datetime.now(timezone.utc)
+    if m.next_retain_at and m.next_retain_at <= now:
+        return {"status": "due_retain", "label": "待复测",
+                "evidence": ["四维已通过", "到期复测一次即可确认掌握"]}
+    return {"status": "retaining", "label": "待巩固",
+            "evidence": ["四维已通过", f"约 {m.retain_interval_days} 天后复测确认"]}
+
+
+async def kp_status(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID) -> dict:
+    """该语法点对该生的诚实掌握标签 + 各维度。"""
+    m = await _get_mastery(db, student_id, kp_id)
+    return {
+        "kp_id": str(kp_id),
+        "recognize": float(m.mastery_recognize or 0) if m else 0.0,
+        "detect": float(m.mastery_detect or 0) if m else 0.0,
+        "produce_score": float(m.mastery_produce or 0) if m else 0.0,
+        "transfer_ok": bool(m.transfer_ok) if m else False,
+        "confirmed_mastered": confirmed_mastered(m),
+        **_status_label(m),
+    }
 
 
 # ── 内部 ────────────────────────────────────────────────────────────────

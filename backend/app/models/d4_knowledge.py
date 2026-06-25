@@ -257,6 +257,11 @@ class StudentGrammarMastery(Base):
     wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     last_seen_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     last_retain_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    # R10.5 间隔复测排期
+    mastered_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)         # 四维门槛首达
+    next_retain_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)      # 下次复测到期
+    retain_interval_days = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    retain_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
                               server_default=sa.text("now()"))
     updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,

@@ -111,3 +111,41 @@ async def group_mixed_submit(body: GroupSubmitIn, db: DbDep, current_user: UserD
         db, student_id=current_user.id, answers=body.answers)
     await db.commit()
     return make_ok(res)
+
+
+@router.get("/retentions/due", response_model=BaseResponse[dict])
+async def get_due_retentions(db: DbDep, current_user: UserDep):
+    """到期待复测的语法点列表(四维已达、隔期到期)。"""
+    await get_rls_db(db, str(current_user.id))
+    rows = await grammar_probe_service.due_retentions(db, student_id=current_user.id)
+    return make_ok({"items": rows})
+
+
+@router.get("/kp/{kp_id}/retention", response_model=BaseResponse[dict])
+async def get_kp_retention(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """取该点复测题(同点新语境,隔期用)。无题→probe=null。"""
+    await get_rls_db(db, str(current_user.id))
+    kp = (await db.execute(select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    if kp is None:
+        return make_ok({"probe": None})
+    out = await grammar_probe_service.retention_probe(db, student_id=current_user.id, kp=kp)
+    await db.commit()
+    return make_ok(out or {"probe": None})
+
+
+@router.post("/kp/{kp_id}/retention-submit", response_model=BaseResponse[dict])
+async def submit_kp_retention(kp_id: uuid.UUID, body: ProbeSubmitIn, db: DbDep, current_user: UserDep):
+    """提交复测:retained(仍记得,间隔拉长)/ forgotten(遗忘,重新进入学习)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_probe_service.submit_retention(
+        db, student_id=current_user.id, kp_id=kp_id, key=body.key, answer=body.answer)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.get("/kp/{kp_id}/status", response_model=BaseResponse[dict])
+async def get_kp_status(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """该语法点对该生的诚实掌握标签 + 各维度 + 证据。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_probe_service.kp_status(db, student_id=current_user.id, kp_id=kp_id)
+    return make_ok(res)
