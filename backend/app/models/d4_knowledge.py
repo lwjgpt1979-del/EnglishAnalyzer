@@ -9,7 +9,7 @@
 
 import uuid
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import mapped_column
 
 from .base import Base
@@ -44,6 +44,8 @@ class KnowledgePoint(Base):
         nullable=True,
     )
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    # R10.1 语法理解探针库(词级公共复用:四维题面 + 误区,LLM 生成缓存)
+    grammar_probes_json = mapped_column(JSONB, nullable=True)
 
 
 class CurriculumUnit(Base):
@@ -229,4 +231,37 @@ class KpMasterySnapshot(Base):
     __table_args__ = (
         sa.UniqueConstraint("student_id", "kp_key", "snapshot_date",
                             name="uq_kp_snapshot_student_kp_date"),
+    )
+
+
+class StudentGrammarMastery(Base):
+    """R10.1 学生 × 语法知识点 的可解释掌握(四维 BKT)。镜像 R9 VocabularyLearning。
+
+    recognize(识别)/ detect(纠错)/ produce(产出)各一条 BKT;transfer_ok(迁移)。
+    R10.1 落 recognize/detect;produce/transfer 留 R10.2/3。
+    """
+
+    __tablename__ = "student_grammar_mastery"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+                       server_default=sa.text("gen_random_uuid()"))
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kp_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id", ondelete="CASCADE"), nullable=False)
+    mastery_recognize = mapped_column(sa.Numeric(5, 4), nullable=True)
+    mastery_detect = mapped_column(sa.Numeric(5, 4), nullable=True)
+    mastery_produce = mapped_column(sa.Numeric(5, 4), nullable=True)
+    transfer_ok = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    prior_source = mapped_column(sa.String(16), nullable=False, server_default=sa.text("'default'"))
+    wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    last_seen_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    last_retain_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.text("now()"))
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.text("now()"))
+
+    __table_args__ = (
+        sa.UniqueConstraint("student_id", "kp_id", name="uq_sgm_student_kp"),
     )

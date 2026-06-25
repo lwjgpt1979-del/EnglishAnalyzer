@@ -41,6 +41,7 @@ from app.api.v1.entitlements import router as entitlements_router
 from app.api.v1.entitlements import admin_router as entitlements_admin_router
 from app.api.v1.support import router as support_router
 from app.api.v1.coupons import router as coupons_router
+from app.api.v1.grammar import router as grammar_router
 
 v1_router = APIRouter()
 
@@ -50,6 +51,7 @@ v1_router.include_router(wrong_questions_router)
 v1_router.include_router(wrong_center_router)
 v1_router.include_router(student_graph_router)
 v1_router.include_router(long_sentence_router)
+v1_router.include_router(grammar_router)
 v1_router.include_router(checkin_router)
 v1_router.include_router(regions_router)
 v1_router.include_router(memberships_router)
