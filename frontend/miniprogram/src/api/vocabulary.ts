@@ -110,6 +110,18 @@ export function submitWordTransfer(wordId: string, answer: string): Promise<Word
   return request<WordTransferResult>(`/api/v1/vocabulary/${wordId}/transfer-submit`, { method: 'POST', data: { answer } })
 }
 
+// R9.5 成组混合接收检测(防经验主义)
+export interface GroupRecepItem { word_id: string; sentence: string }
+export interface GroupRecepResult { word_id: string; word: string; correct: boolean; recep: number; mastered: boolean }
+/** 取一组词的混合填空题面(N 句 + 共享词库,答案逐句不同)。 */
+export function groupRecepProbes(wordIds: string[]): Promise<{ options: string[]; items: GroupRecepItem[] }> {
+  return request<{ options: string[]; items: GroupRecepItem[] }>('/api/v1/vocabulary/group-recep/probes', { method: 'POST', data: { word_ids: wordIds } })
+}
+/** 提交成组检测:answers={word_id: 所选词}。 */
+export function submitGroupRecep(answers: Record<string, string>): Promise<{ results: GroupRecepResult[] }> {
+  return request<{ results: GroupRecepResult[] }>('/api/v1/vocabulary/group-recep/submit', { method: 'POST', data: { answers } })
+}
+
 export function getWrongWords(): Promise<VocabWrongList> {
   return request<VocabWrongList>('/api/v1/vocabulary/wrong-words', { method: 'GET' })
 }

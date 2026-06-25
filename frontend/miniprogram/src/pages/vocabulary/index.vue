@@ -157,6 +157,30 @@
       <button class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
     </view>
 
+    <!-- 成组混合检测(R9.5 防经验主义)：N 句挖空 + 共享词库，答案逐句不同 -->
+    <view v-else-if="phase === 'grecep'" class="card">
+      <view class="progress-hint">成组检测 · 把词填进句子</view>
+      <view v-if="grecepLoading" class="grecep-tip">出题中…</view>
+      <template v-else>
+        <view class="grecep-bank">
+          <text class="grecep-bank-lb">词库</text>
+          <text v-for="o in grecepOptions" :key="o" class="grecep-bankword">{{ o }}</text>
+        </view>
+        <view v-for="(it, idx) in grecepItems" :key="it.word_id" class="grecep-item">
+          <text class="grecep-sent">{{ idx + 1 }}. {{ it.sentence }}</text>
+          <view class="grecep-opts">
+            <text v-for="o in grecepOptions" :key="o" class="grecep-opt"
+              :class="{ on: grecepPick[it.word_id] === o,
+                        ok: grecepResults && grecepCorrectWord(it.word_id) && o === grecepCorrectWord(it.word_id).word,
+                        no: grecepResults && grecepPick[it.word_id] === o && !grecepCorrectWord(it.word_id)?.correct && o !== grecepCorrectWord(it.word_id)?.word }"
+              @tap="!grecepResults && (grecepPick = { ...grecepPick, [it.word_id]: o })">{{ o }}</text>
+          </view>
+        </view>
+        <button v-if="!grecepResults" class="btn-primary" :disabled="!grecepAllPicked" @tap="submitGrecep">提交检测</button>
+        <button v-else class="btn-primary" @tap="startQuiz">继续 →</button>
+      </template>
+    </view>
+
     <!-- 测试阶段：4 选 1 -->
     <view v-else-if="phase === 'quiz'" class="card">
       <view class="progress-hint">测试 {{ quizIndex + 1 }} / {{ quizQueue.length }} · 正确 {{ correctCount }}</view>
@@ -370,8 +394,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer } from '@/api/vocabulary'
-import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult } from '@/api/vocabulary'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep } from '@/api/vocabulary'
+import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult } from '@/api/vocabulary'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
@@ -389,7 +413,7 @@ interface Quiz {
 
 const auth = useAuthStore()
 const loading = ref(true)
-const phase = ref<'empty' | 'study' | 'review' | 'quiz' | 'done'>('study')
+const phase = ref<'empty' | 'study' | 'review' | 'grecep' | 'quiz' | 'done'>('study')
 const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
 const ent = useEntitlementsStore()
 const showPaywall = ref(false)    // 跟读会员引导弹窗
@@ -664,6 +688,37 @@ function buildQuiz(card: VocabWordCard, mode: 'w2m' | 'm2w' | 'pic'): Quiz {
   return { word_id: card.word_id, mode: 'm2w', prompt: primaryMeaning(card), options: opts, answerIndex: opts.indexOf(correct) }
 }
 
+/* ── R9.5 成组混合接收检测(防经验主义,先于测试)── */
+const grecepLoading = ref(false)
+const grecepItems = ref<GroupRecepItem[]>([])
+const grecepOptions = ref<string[]>([])
+const grecepPick = ref<Record<string, string>>({})
+const grecepResults = ref<GroupRecepResult[] | null>(null)
+const grecepAllPicked = computed(() => grecepItems.value.length > 0 && grecepItems.value.every(it => !!grecepPick.value[it.word_id]))
+async function startGrecep() {
+  const ids = [...new Set([...newCards.value, ...reviewCards.value].map(c => c.word_id))]
+  if (!ids.length) { startQuiz(); return }
+  grecepLoading.value = true; grecepItems.value = []; grecepOptions.value = []; grecepPick.value = {}; grecepResults.value = null
+  phase.value = 'grecep'
+  try {
+    const r = await groupRecepProbes(ids)
+    grecepItems.value = r.items; grecepOptions.value = r.options
+    // 少于 2 题时词库会退化成"单词+其变形"→仍可被无脑选,直接跳过进测试(只有≥2 不同答案才防作弊)
+    if (r.items.length < 2) { startQuiz() }
+  } catch { startQuiz() }
+  finally { grecepLoading.value = false }
+}
+async function submitGrecep() {
+  if (!grecepAllPicked.value) return
+  try {
+    const r = await submitGroupRecep(grecepPick.value)
+    grecepResults.value = r.results
+    const ok = r.results.filter(x => x.correct).length
+    uni.showToast({ title: `配对正确 ${ok}/${r.results.length}`, icon: 'none' })
+  } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
+}
+function grecepCorrectWord(wid: string) { return grecepResults.value?.find(x => x.word_id === wid) }
+
 function startQuiz() {
   const all = [...newCards.value, ...reviewCards.value]
   const modes: Array<'w2m' | 'm2w' | 'pic'> = ['w2m', 'm2w', 'pic']
@@ -722,7 +777,7 @@ function nextStudy() {
       reviewIndex.value++
       nextTick(() => playCard(curStudy.value))
     } else {
-      startQuiz()
+      startGrecep()
     }
     return
   }
@@ -733,7 +788,7 @@ function nextStudy() {
   } else if (reviewCards.value.length > 0) {
     enterReview()                              // 新词学完 → 复习词词卡
   } else {
-    startQuiz()
+    startGrecep()
   }
 }
 
@@ -1187,6 +1242,18 @@ onMounted(load)
 .pic-option.opt-wrong { border-color: var(--c-danger); }
 .pic-option-img { width: 100%; height: 100%; }
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; margin-top: 24rpx; }
+/* R9.5 成组混合检测 */
+.grecep-tip { text-align: center; color: #9aa3b0; font-size: 26rpx; padding: 30rpx 0; }
+.grecep-bank { display: flex; align-items: center; flex-wrap: wrap; gap: 10rpx; padding: 14rpx; background: var(--c-primary-faint); border-radius: 14rpx; margin: 8rpx 0 18rpx; }
+.grecep-bank-lb { font-size: 22rpx; color: #8a93a3; }
+.grecep-bankword { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); font-family: Georgia, 'Times New Roman', serif; }
+.grecep-item { margin-bottom: 18rpx; }
+.grecep-sent { display: block; font-size: 27rpx; color: #2a3138; line-height: 1.6; margin-bottom: 10rpx; font-family: Georgia, 'Times New Roman', serif; }
+.grecep-opts { display: flex; flex-wrap: wrap; gap: 10rpx; }
+.grecep-opt { font-size: 25rpx; color: #4a5057; background: #f5f7fa; border: 2rpx solid transparent; border-radius: 12rpx; padding: 10rpx 22rpx; font-family: Georgia, 'Times New Roman', serif; }
+.grecep-opt.on { background: var(--c-primary-faint); border-color: var(--c-primary); color: var(--c-primary-deep); }
+.grecep-opt.ok { background: #e9f7ef; border-color: #1f9d6b; color: #1f9d6b; }
+.grecep-opt.no { background: #fdecea; border-color: #e2504a; color: #e2504a; }
 /* R9.1 理解检测·语境填空 */
 .probe-box { margin-top: 22rpx; padding-top: 18rpx; border-top: 1rpx solid #f0f2f5; }
 .probe-cta { display: flex; align-items: center; justify-content: center; gap: 10rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-pill); padding: 16rpx 0; font-size: 26rpx; font-weight: 700; }
