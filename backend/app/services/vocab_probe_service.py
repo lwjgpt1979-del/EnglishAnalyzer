@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -160,12 +161,8 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, word:
         fb = p["cloze_fallback"][0]
         ctx = {"text": fb["sentence"], "source": "词典/AI 例句"}
     probes: list[dict] = []
-    # 接收
-    if ctx:
-        blanked = _blank(ctx["text"], word.word)
-        if blanked:
-            opts = _shuffle([word.word] + (p.get("distractors") or [])[:3], word.word)
-            probes.append({"key": "cloze", "kind": "cloze", "prompt": f"选词填空:{blanked}", "options": opts})
+    # 接收:单卡只保留「多义辨析」(答案是中文义、需读句,不易被"无脑选当前词"作弊);
+    # 单词级语境填空已移到「成组混合检测」(防经验主义,见 group_recep_quiz)。
     for i, s in enumerate((p.get("sense") or [])[:2]):   # 多义深度:逐义辨析
         probes.append({"key": f"sense:{i}", "kind": "sense",
                        "prompt": f"句中 {word.word} 的意思是?\n{s['sentence']}", "options": s["options"]})
@@ -433,6 +430,71 @@ async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, word_id: u
             "correct_answer": word.word, "misconception": misconception,
             "recep": round(float(lr.mastery_recep or 0), 4), "prod": round(float(lr.mastery_prod or 0), 4),
             "transfer_ok": bool(lr.transfer_ok), "mastered": _mastered(lr)}
+
+
+# ── 成组混合接收检测(R9.5 防经验主义)──────────────────────────────────
+async def group_recep_quiz(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list) -> dict:
+    """一组词的混合语境填空:每词一句挖空,**共享词库**(组词打乱 + 干扰词)。
+    每句答案是不同的词 → 学生不能"无脑选当前词",必须读句配对。返回 {options, items:[{word_id, sentence}]}。"""
+    items: list[dict] = []
+    bank: list[str] = []
+    words = []
+    for wid in word_ids:
+        try:
+            w = await db.get(VocabularyWord, wid if isinstance(wid, uuid.UUID) else uuid.UUID(str(wid)))
+        except (ValueError, TypeError):
+            w = None
+        if w:
+            words.append(w)
+    for w in words:
+        await ensure_probes(db, w)
+        ctx = await pick_context(db, student_id=student_id, word=w)
+        if ctx is None:
+            fb = (w.probes_json or {}).get("cloze_fallback") or []
+            ctx = {"text": fb[0]["sentence"]} if fb else None
+        blanked = _blank(ctx["text"], w.word) if ctx else None
+        if not blanked:
+            continue
+        items.append({"word_id": str(w.id), "sentence": blanked})   # 不回传 word(答案)
+        if w.word not in bank:
+            bank.append(w.word)
+    # 干扰词:各词缓存干扰项里挑不在 bank 的真词,加 2 个防纯排除法
+    extra = []
+    for w in words:
+        for d in (w.probes_json or {}).get("distractors") or []:
+            if d not in bank and d not in extra:
+                extra.append(d)
+    options = bank + extra[:2]
+    random.shuffle(options)
+    return {"options": options, "items": items}
+
+
+async def submit_group_recep(db: AsyncSession, *, student_id: uuid.UUID, answers: dict) -> dict:
+    """提交成组检测:逐词判分(chosen==该词)→ 接收掌握度 BKT + 错词本 + 排期。返回 {results}。"""
+    results = []
+    for wid, chosen in (answers or {}).items():
+        try:
+            w = await db.get(VocabularyWord, uuid.UUID(str(wid)))
+        except (ValueError, TypeError):
+            w = None
+        if w is None:
+            continue
+        correct = (chosen or "").strip().lower() == w.word.lower()
+        lr = await _get_or_create_learning(db, student_id, w.id)
+        lr.mastery_recep = mastery_judge_service.bkt_update(
+            None if lr.mastery_recep is None else float(lr.mastery_recep), correct)
+        if not correct:
+            lr.is_wrong = True
+            lr.wrong_count = (lr.wrong_count or 0) + 1
+        _schedule(lr)
+        qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-grecep:{w.id}")
+        await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
+                                               question_id=qid, node_id=None, is_correct=correct,
+                                               feature="vocab_group_recep")
+        results.append({"word_id": str(w.id), "word": w.word, "correct": correct,
+                        "recep": round(float(lr.mastery_recep or 0), 4), "mastered": _mastered(lr)})
+    await db.flush()
+    return {"results": results}
 
 
 # ── 跨模块真实复现(在长难句/真题文本里命中词单未掌握词)────────────────

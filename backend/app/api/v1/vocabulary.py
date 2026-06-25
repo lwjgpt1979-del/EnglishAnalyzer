@@ -221,6 +221,24 @@ async def submit_word_produce(word_id: uuid.UUID, db: DbDep, current_user: UserD
     return make_ok(res)
 
 
+@router.post("/group-recep/probes", response_model=BaseResponse[dict])
+async def group_recep_probes(db: DbDep, current_user: UserDep, word_ids: list[uuid.UUID] = Body(..., embed=True)):
+    """R9.5 成组混合接收检测题面:N 句挖空 + 共享词库(防经验主义,答案逐句不同)。"""
+    await get_rls_db(db, str(current_user.id))
+    out = await vocab_probe_service.group_recep_quiz(db, student_id=current_user.id, word_ids=word_ids)
+    await db.commit()
+    return make_ok(out)
+
+
+@router.post("/group-recep/submit", response_model=BaseResponse[dict])
+async def group_recep_submit(db: DbDep, current_user: UserDep, answers: dict[str, str] = Body(..., embed=True)):
+    """R9.5 提交成组检测:逐词判分 → 接收掌握度 BKT。answers={word_id: 所选词}。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await vocab_probe_service.submit_group_recep(db, student_id=current_user.id, answers=answers)
+    await db.commit()
+    return make_ok(res)
+
+
 @router.get("/wrong-words", response_model=BaseResponse[WrongWordListOut])
 async def wrong_words(db: DbDep, current_user: UserDep, skip: int = 0, limit: int = 50):
     """错词本：列出该生答错且未掌握的词（错得多的在前）。"""
