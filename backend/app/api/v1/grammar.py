@@ -31,6 +31,14 @@ class ProduceSubmitIn(BaseModel):
     sentence: str = Field(..., description="学生用该语法点造的英文句子")
 
 
+class GroupQuizIn(BaseModel):
+    kp_ids: list[str] = Field(..., description="参与混合检测的语法点 id 列表")
+
+
+class GroupSubmitIn(BaseModel):
+    answers: dict[str, str] = Field(..., description="{kp_id: 所选选项}")
+
+
 @router.get("/kp/{kp_id}/probes", response_model=BaseResponse[dict])
 async def get_kp_probes(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """取该语法点的识别 + 纠错探针题面(不含答案)+ 当前各维掌握度。"""
@@ -81,5 +89,25 @@ async def submit_kp_transfer(kp_id: uuid.UUID, body: ProbeSubmitIn, db: DbDep, c
     await get_rls_db(db, str(current_user.id))
     res = await grammar_probe_service.submit_transfer(
         db, student_id=current_user.id, kp_id=kp_id, key=body.key, answer=body.answer)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/group-mixed/probes", response_model=BaseResponse[dict])
+async def group_mixed_probes(body: GroupQuizIn, db: DbDep, current_user: UserDep):
+    """成组混合检测题面(多点混考、不标规则,反经验主义)。<2 题返回 degraded。"""
+    await get_rls_db(db, str(current_user.id))
+    out = await grammar_probe_service.group_mixed_quiz(
+        db, student_id=current_user.id, kp_ids=body.kp_ids)
+    await db.commit()
+    return make_ok(out)
+
+
+@router.post("/group-mixed/submit", response_model=BaseResponse[dict])
+async def group_mixed_submit(body: GroupSubmitIn, db: DbDep, current_user: UserDep):
+    """提交成组检测:逐点判分 → 识别掌握度(BKT)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_probe_service.submit_group_mixed(
+        db, student_id=current_user.id, answers=body.answers)
     await db.commit()
     return make_ok(res)

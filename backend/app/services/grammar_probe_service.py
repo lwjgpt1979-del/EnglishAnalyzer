@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import uuid
 from datetime import datetime, timezone
 
@@ -328,6 +329,76 @@ async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uui
         "recognize": recog, "detect": detect, "produce_score": produce, "transfer_ok": bool(m.transfer_ok),
         "mastered": _axes_mastered(recog, detect, produce, bool(m.transfer_ok)),
     }
+
+
+# ── 成组混合检测(反经验主义,R10.4)──────────────────────────────────────
+async def group_mixed_quiz(db: AsyncSession, *, student_id: uuid.UUID, kp_ids: list) -> dict:
+    """一组语法点的混合识别检测:每点取一题、打乱顺序、**不标注考的是哪条规则**。
+
+    破"单点练习时无脑套规则"——题目混着来,学生必须逐句分析判断该用什么形式。
+    每题保留各自 4 选项。<2 题时降级(返回 degraded,前端跳过直接走单点)。
+    """
+    items: list[dict] = []
+    for kid in kp_ids:
+        try:
+            kid = kid if isinstance(kid, uuid.UUID) else uuid.UUID(str(kid))
+        except (ValueError, TypeError):
+            continue
+        kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kid))).scalar_one_or_none()
+        if kp is None:
+            continue
+        p = await ensure_probes(db, kp)
+        recog = p.get("recognize") or []
+        if not recog:
+            continue
+        item = recog[0]
+        opts = list(item["options"])
+        random.shuffle(opts)
+        items.append({"kp_id": str(kp.id), "key": "recognize:0",
+                      "stem": item["stem"], "options": opts})   # 不回传 answer / 不标规则名
+    random.shuffle(items)
+    if len(items) < 2:
+        return {"items": [], "count": len(items), "degraded": True}
+    return {"items": items, "count": len(items), "degraded": False}
+
+
+async def submit_group_mixed(db: AsyncSession, *, student_id: uuid.UUID, answers: dict) -> dict:
+    """提交成组检测:逐点判分(chosen==该点识别题答案)→ 识别 BKT。answers={kp_id: 所选}。"""
+    results = []
+    for kid, chosen in (answers or {}).items():
+        try:
+            kp_id = uuid.UUID(str(kid))
+        except (ValueError, TypeError):
+            continue
+        kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+        if kp is None:
+            continue
+        recog = (kp.grammar_probes_json or {}).get("recognize") or []
+        if not recog:
+            continue
+        correct_answer = str(recog[0]["answer"]).strip()
+        correct = (chosen or "").strip() == correct_answer
+        m = await _get_or_create_mastery(db, student_id, kp_id)
+        m.mastery_recognize = mastery_judge_service.bkt_update(
+            None if m.mastery_recognize is None else float(m.mastery_recognize), correct)
+        if not correct:
+            m.wrong_count = (m.wrong_count or 0) + 1
+        m.last_seen_at = datetime.now(timezone.utc)
+        m.prior_source = "learn"
+        qid = uuid.uuid5(uuid.NAMESPACE_OID, f"grammar-grouped:{kp_id}")
+        await mastery_judge_service.log_answer(
+            db, student_id=student_id, q_scope="platform", question_id=qid,
+            node_id=None, is_correct=correct, feature="grammar_group")
+        results.append({
+            "kp_id": str(kp_id), "kp_name": kp.name, "correct": correct,
+            "correct_answer": correct_answer,
+            "recognize": round(float(m.mastery_recognize or 0), 4),
+            "mastered": _axes_mastered(
+                float(m.mastery_recognize or 0), float(m.mastery_detect or 0),
+                float(m.mastery_produce or 0), bool(m.transfer_ok)),
+        })
+    await db.flush()
+    return {"results": results}
 
 
 # ── 内部 ────────────────────────────────────────────────────────────────
