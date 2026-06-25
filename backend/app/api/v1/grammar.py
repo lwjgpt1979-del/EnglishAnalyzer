@@ -27,6 +27,10 @@ class ProbeSubmitIn(BaseModel):
     answer: str = Field(..., description="所选选项")
 
 
+class ProduceSubmitIn(BaseModel):
+    sentence: str = Field(..., description="学生用该语法点造的英文句子")
+
+
 @router.get("/kp/{kp_id}/probes", response_model=BaseResponse[dict])
 async def get_kp_probes(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """取该语法点的识别 + 纠错探针题面(不含答案)+ 当前各维掌握度。"""
@@ -45,5 +49,15 @@ async def submit_kp_probe(kp_id: uuid.UUID, body: ProbeSubmitIn, db: DbDep, curr
     await get_rls_db(db, str(current_user.id))
     res = await grammar_probe_service.submit_probe(
         db, student_id=current_user.id, kp_id=kp_id, key=body.key, answer=body.answer)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/kp/{kp_id}/produce", response_model=BaseResponse[dict])
+async def submit_kp_produce(kp_id: uuid.UUID, body: ProduceSubmitIn, db: DbDep, current_user: UserDep):
+    """提交造句(产出维):LLM 维度 rubric 评分 → 产出掌握度(BKT)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_probe_service.submit_produce(
+        db, student_id=current_user.id, kp_id=kp_id, sentence=body.sentence)
     await db.commit()
     return make_ok(res)

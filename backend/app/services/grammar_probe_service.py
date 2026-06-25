@@ -25,6 +25,10 @@ _log = logging.getLogger(__name__)
 
 RECOGNIZE_MASTERED = 0.85   # 识别维掌握阈
 DETECT_MASTERED = 0.85      # 纠错维掌握阈
+PRODUCE_MASTERED = 0.85     # 产出维掌握阈
+# 产出造句 rubric 维度(每维 0-2):用对结构 / 句子正确 / 表意通顺
+_PROD_DIMS = [("structure", "用对结构"), ("accuracy", "句子正确"), ("meaning", "表意通顺")]
+_PROD_PASS = 4              # 总分 ≥4/6 且「用对结构」≥1 视为产出达标
 
 
 # ── 探针库(KP 级公共缓存)────────────────────────────────────────────
@@ -99,10 +103,12 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: K
     m = await _get_mastery(db, student_id, kp.id)
     recog = float(m.mastery_recognize) if m and m.mastery_recognize is not None else 0.0
     detect = float(m.mastery_detect) if m and m.mastery_detect is not None else 0.0
+    produce = float(m.mastery_produce) if m and m.mastery_produce is not None else 0.0
     return {
         "kp_id": str(kp.id), "kp_name": kp.name, "probes": probes,
-        "recognize": recog, "detect": detect,
-        "mastered": _axes_mastered(recog, detect),
+        "produce": {"key": "produce", "prompt": str(p.get("produce_hint") or f"用「{kp.name}」造一个句子")},
+        "recognize": recog, "detect": detect, "produce_score": produce,
+        "mastered": _axes_mastered(recog, detect, produce),
     }
 
 
@@ -160,17 +166,91 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.U
 
     recog = float(m.mastery_recognize) if m.mastery_recognize is not None else 0.0
     detect = float(m.mastery_detect) if m.mastery_detect is not None else 0.0
+    produce = float(m.mastery_produce) if m.mastery_produce is not None else 0.0
     return {
         "correct": correct, "correct_answer": correct_answer, "misconception": misconception,
-        "axis": axis, "recognize": recog, "detect": detect,
-        "mastered": _axes_mastered(recog, detect),
+        "axis": axis, "recognize": recog, "detect": detect, "produce_score": produce,
+        "mastered": _axes_mastered(recog, detect, produce),
     }
 
 
+# ── 产出维(造句,R10.2)──────────────────────────────────────────────────
+async def grade_produce(kp_name: str, kp_desc: str, sentence: str) -> dict:
+    """给学生用该语法点造的句子按维度打分(用对结构/句子正确/表意通顺 各 0-2)。
+    返回 {dimensions, total, max, passed, feedback}。LLM 瞬时失败 → graded=False(不计分)。"""
+    sentence = (sentence or "").strip()
+    total_max = 2 * len(_PROD_DIMS)
+    if not sentence:
+        return {"dimensions": [{"key": k, "label": l, "score": 0, "max": 2, "note": ""} for k, l in _PROD_DIMS],
+                "total": 0, "max": total_max, "passed": False, "feedback": "还没写句子"}
+    if is_llm_dev_mode():
+        base = 2 if len(sentence.split()) >= 4 else 1
+        dims = [{"key": k, "label": l, "score": base, "max": 2, "note": ""} for k, l in _PROD_DIMS]
+        tot = base * len(_PROD_DIMS)
+        return {"dimensions": dims, "total": tot, "max": total_max,
+                "passed": tot >= _PROD_PASS and base >= 1, "feedback": "(dev)规则近似评分"}
+    system = (
+        "你是初中英语写作评分老师。学生用指定语法知识点造了一句英文,按 3 维打分,每维 0/1/2(0 错/缺、1 部分、2 准确):\n"
+        "- structure 用对结构:句子确实运用了该语法点,且结构正确;\n"
+        "- accuracy 句子正确:无其他语法/拼写错误;\n"
+        "- meaning 表意通顺:句子表意清楚、自然。\n"
+        "若句子根本没用到该语法点,structure=0。每维给一句简短中文点评(note),再给一句总评(feedback,指出最该改进处)。\n"
+        "严格输出 JSON:{\"structure\":{\"score\":0-2,\"note\":..},\"accuracy\":{..},\"meaning\":{..},\"feedback\":..}"
+    )
+    user = f"语法知识点:{kp_name}\n说明:{kp_desc}\n学生造句:{sentence}\n返回 JSON:"
+    d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=700,
+                            model=fast_model(), feature="grammar_produce",
+                            validate=lambda x: any(x.get(k) for k, _ in _PROD_DIMS))
+    if not d:
+        return {"dimensions": [{"key": k, "label": l, "score": 0, "max": 2, "note": ""} for k, l in _PROD_DIMS],
+                "total": 0, "max": total_max, "passed": False, "graded": False,
+                "feedback": "评分服务暂忙,请重试(本次不计分)"}
+    dims = []
+    for k, l in _PROD_DIMS:
+        cell = d.get(k) or {}
+        try:
+            sc = max(0, min(2, int(cell.get("score", 0))))
+        except (ValueError, TypeError):
+            sc = 0
+        dims.append({"key": k, "label": l, "score": sc, "max": 2, "note": str(cell.get("note") or "")})
+    tot = sum(x["score"] for x in dims)
+    struct_sc = next((x["score"] for x in dims if x["key"] == "structure"), 0)
+    return {"dimensions": dims, "total": tot, "max": total_max,
+            "passed": tot >= _PROD_PASS and struct_sc >= 1, "feedback": str(d.get("feedback") or "")}
+
+
+async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID, sentence: str) -> dict:
+    """提交造句:rubric 评分 → 产出掌握度 produce BKT(达标=正确)。LLM 失败则不计分。"""
+    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    if kp is None:
+        raise AppError(code=404, message="知识点不存在")
+    res = await grade_produce(kp.name, kp.description or "", sentence)
+    m = await _get_or_create_mastery(db, student_id, kp_id)
+    if res.get("graded", True):   # graded=False(评分服务失败)→ 不动掌握度、不计错
+        m.mastery_produce = mastery_judge_service.bkt_update(
+            None if m.mastery_produce is None else float(m.mastery_produce), res["passed"])
+        if not res["passed"]:
+            m.wrong_count = (m.wrong_count or 0) + 1
+        m.last_seen_at = datetime.now(timezone.utc)
+        m.prior_source = "learn"
+        qid = uuid.uuid5(uuid.NAMESPACE_OID, f"grammar-produce:{kp_id}")
+        await mastery_judge_service.log_answer(
+            db, student_id=student_id, q_scope="platform", question_id=qid,
+            node_id=None, is_correct=res["passed"], feature="grammar_produce")
+    await db.flush()
+    recog = float(m.mastery_recognize) if m.mastery_recognize is not None else 0.0
+    detect = float(m.mastery_detect) if m.mastery_detect is not None else 0.0
+    produce = float(m.mastery_produce) if m.mastery_produce is not None else 0.0
+    res.update({"recognize": recog, "detect": detect, "produce_score": produce,
+                "mastered": _axes_mastered(recog, detect, produce)})
+    return res
+
+
 # ── 内部 ────────────────────────────────────────────────────────────────
-def _axes_mastered(recog: float, detect: float) -> bool:
-    """R10.1 阶段性掌握 = 识别 + 纠错均达阈(产出/迁移/间隔留后续步骤补全门槛)。"""
-    return recog >= RECOGNIZE_MASTERED and detect >= DETECT_MASTERED
+def _axes_mastered(recog: float, detect: float, produce: float = 0.0) -> bool:
+    """阶段性掌握门槛(随步骤逐步收紧)。
+    R10.2:纠错 + 产出均达阈(识别为入门、不单独计;迁移/间隔留 R10.3/R10.5 补全门槛)。"""
+    return detect >= DETECT_MASTERED and produce >= PRODUCE_MASTERED
 
 
 async def _get_mastery(db: AsyncSession, student_id: uuid.UUID, kp_id: uuid.UUID):
