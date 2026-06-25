@@ -544,3 +544,65 @@ async def backfill_probes(db: AsyncSession, *, limit: int | None = None,
         spent = usage_log_service.spent()
     await db.commit()
     return {"scanned": scanned, "filled": filled, "stopped": stopped, "spent_tokens": spent}
+
+
+# ── 增量预生成(后台异步,缺失才生成)────────────────────────────────────
+_GEN_INFLIGHT: set = set()   # 去重:正在后台生成中的 word_id
+
+
+async def _bg_generate(word_ids: list, *, budget_tokens: int = 60_000) -> None:
+    """后台逐词生成探针:独立 session、缺失才生成、带 token 预算上限。"""
+    from app.core.database import _async_session_factory
+    try:
+        with usage_log_service.budget(budget_tokens):
+            for wid in word_ids:
+                if usage_log_service.over_budget():
+                    _log.warning("[probe-bg] 预算用尽,停止预生成")
+                    break
+                try:
+                    async with _async_session_factory() as db:
+                        w = (await db.execute(
+                            sa.select(VocabularyWord).where(VocabularyWord.id == wid)
+                        )).scalar_one_or_none()
+                        if w is None or (w.probes_json or {}).get("distractors"):
+                            continue   # 词不存在或已缓存 → 跳过
+                        await ensure_probes(db, w)
+                        await db.commit()
+                except Exception:  # noqa: BLE001
+                    _log.exception("[probe-bg] 生成失败 word_id=%s", wid)
+                finally:
+                    _GEN_INFLIGHT.discard(wid)
+    finally:
+        for wid in word_ids:
+            _GEN_INFLIGHT.discard(wid)
+
+
+def enqueue_probe_gen(word_ids, *, cap: int = 80) -> int:
+    """登记若干 word_id 在后台异步预生成探针(立即返回,不阻塞请求)。
+
+    词级公共缓存:同一词全网只生成一次;去重在途词;单次最多入队 cap 个防滥用。
+    无运行中的事件循环(同步脚本上下文)时跳过。返回真正入队数。
+    """
+    import asyncio
+    fresh: list = []
+    for wid in (word_ids or []):
+        try:
+            wid = wid if isinstance(wid, uuid.UUID) else uuid.UUID(str(wid))
+        except (ValueError, TypeError):
+            continue
+        if wid in _GEN_INFLIGHT:
+            continue
+        _GEN_INFLIGHT.add(wid)
+        fresh.append(wid)
+        if len(fresh) >= cap:
+            break
+    if not fresh:
+        return 0
+    try:
+        asyncio.get_running_loop()
+        asyncio.create_task(_bg_generate(fresh))
+    except RuntimeError:   # 无事件循环 → 回滚去重标记,交给 cron 兜底
+        for wid in fresh:
+            _GEN_INFLIGHT.discard(wid)
+        return 0
+    return len(fresh)

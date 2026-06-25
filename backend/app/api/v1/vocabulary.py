@@ -59,6 +59,9 @@ async def add_word(body: AddWordIn, db: DbDep, current_user: UserDep):
         db, student_id=current_user.id, word=body.word)
     if res.get("added"):
         await db.commit()
+        # 增量钩子:学生主动加的词大概率马上会学到,后台预生成理解探针
+        if res.get("word_id"):
+            vocab_probe_service.enqueue_probe_gen([res["word_id"]])
     return make_ok(res)
 
 

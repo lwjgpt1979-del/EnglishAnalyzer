@@ -402,7 +402,8 @@ async def add_manual_word(
         id=uuid.uuid4(), student_id=student_id, word_id=row[0], source="manual",
     ).on_conflict_do_nothing(index_elements=["student_id", "word_id"])
     res = await db.execute(stmt)
-    return {"added": True, "found": True, "word": row[1], "already": (res.rowcount or 0) == 0}
+    return {"added": True, "found": True, "word": row[1], "word_id": str(row[0]),
+            "already": (res.rowcount or 0) == 0}
 
 
 def _level_for(repetitions: int) -> str:

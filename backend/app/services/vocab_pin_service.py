@@ -49,6 +49,7 @@ async def pin_words(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list,
                     priority: int = _DEFAULT_PRIORITY) -> dict:
     """从来源库挑选加入优先学。返回 {pinned}。"""
     n = 0
+    pinned_ids: list = []
     for wid in word_ids:
         try:
             wid = wid if isinstance(wid, uuid.UUID) else uuid.UUID(str(wid))
@@ -57,8 +58,12 @@ async def pin_words(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list,
         if (await db.execute(sa.select(VocabularyWord.id).where(VocabularyWord.id == wid))).scalar_one_or_none() is None:
             continue
         await _upsert_pin(db, student_id=student_id, word_id=wid, source="pick", priority=max(1, priority))
+        pinned_ids.append(wid)
         n += 1
     await db.flush()
+    # 增量钩子:优先学的词最先学到,后台预生成理解探针
+    from app.services import vocab_probe_service
+    vocab_probe_service.enqueue_probe_gen(pinned_ids)
     return {"pinned": n}
 
 
@@ -135,4 +140,7 @@ async def pin_from_photo(db: AsyncSession, *, student_id: uuid.UUID, image_url: 
         else:
             not_found.append(w)
     await db.flush()
+    # 增量钩子:拍照加入的词最先学到,后台预生成理解探针
+    from app.services import vocab_probe_service
+    vocab_probe_service.enqueue_probe_gen([hit[w] for w in pinned])
     return {"recognized": len(words), "pinned": pinned, "not_found": not_found}
