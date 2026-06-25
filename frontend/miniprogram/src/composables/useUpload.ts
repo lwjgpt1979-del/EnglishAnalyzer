@@ -1,9 +1,42 @@
 import { ref } from 'vue'
 import { getPresignUrl } from '@/api/upload'
 import { createWrongQuestion } from '@/api/wrongQuestions'
+import { BASE_URL } from '@/utils/request'
 import type { WrongQuestionOut } from '@/types/api'
 
 type MimeType = 'image/jpeg' | 'image/png' | 'image/webp'
+
+// #ifdef H5
+/**
+ * H5 中转上传：浏览器无法直传 COS（桶未配 CORS），改用 uni.uploadFile 传到后端，
+ * 由后端代传 COS 后返回 file_url。小程序端不走此路（见 uploadOneImage 的 #ifndef H5 分支）。
+ */
+function uploadViaProxy(tempFilePath: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    uni.uploadFile({
+      url: `${BASE_URL}/api/v1/upload/proxy`,
+      filePath: tempFilePath,
+      name: 'file',
+      header: { Authorization: `Bearer ${uni.getStorageSync('access_token') || ''}` },
+      success: (res) => {
+        try {
+          const body = JSON.parse(res.data) as {
+            code?: number; message?: string; data?: { file_url?: string }
+          }
+          if (res.statusCode === 200 && body.code === 200 && body.data?.file_url) {
+            resolve(body.data.file_url)
+          } else {
+            reject(new Error(body.message || `上传失败：HTTP ${res.statusCode}`))
+          }
+        } catch {
+          reject(new Error('上传响应解析失败'))
+        }
+      },
+      fail: (err) => reject(new Error(err.errMsg || '上传失败')),
+    })
+  })
+}
+// #endif
 
 type UploadProgress =
   | 'idle'
@@ -59,6 +92,12 @@ function readFileAsArrayBuffer(tempFilePath: string): Promise<ArrayBuffer> {
  * 供整卷多图上传等场景复用。不创建任何业务记录。
  */
 export async function uploadOneImage(tempFilePath: string): Promise<string> {
+  // #ifdef H5
+  // H5 浏览器无法直传 COS（桶未配 CORS），走后端中转上传
+  return uploadViaProxy(tempFilePath)
+  // #endif
+
+  // #ifndef H5
   const lower = tempFilePath.toLowerCase()
   const contentType: MimeType = lower.endsWith('.png')
     ? 'image/png'
@@ -71,18 +110,6 @@ export async function uploadOneImage(tempFilePath: string): Promise<string> {
 
   // dev 模式（is_mock=true）跳过实际 PUT：后端直接给了可访问的占位图 URL
   if (!presign.is_mock) {
-    // #ifdef H5
-    // H5：用 fetch 直传 COS 预签名 PUT（需 COS 桶为该 Origin 配置 CORS 允许 PUT）
-    const resp = await fetch(presign.presign_url, {
-      method: 'PUT',
-      headers: { 'Content-Type': contentType },
-      body: arrayBuffer,
-    })
-    if (resp.status !== 200 && resp.status !== 204) {
-      throw new Error(`COS 上传失败：HTTP ${resp.status}`)
-    }
-    // #endif
-    // #ifndef H5
     await new Promise<void>((resolve, reject) => {
       wx.request({
         url: presign.presign_url,
@@ -100,12 +127,12 @@ export async function uploadOneImage(tempFilePath: string): Promise<string> {
         fail: (err) => reject(new Error(err.errMsg || 'COS 上传失败')),
       })
     })
-    // #endif
   } else {
     console.warn('[uploadOneImage] dev mock 模式：跳过 COS PUT，直接用占位图 URL', presign.file_url)
   }
 
   return presign.file_url
+  // #endif
 }
 
 export function useUpload() {

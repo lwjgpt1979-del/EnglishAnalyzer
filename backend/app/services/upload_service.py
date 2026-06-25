@@ -96,3 +96,71 @@ def generate_presign(
         "expires_in": PRESIGN_EXPIRES,
         "is_mock": False,
     }
+
+
+def make_fetch_url(file_url: str) -> str:
+    """把(可能私有的)COS file_url 转成第三方(豆包视觉)可拉取的临时 URL。
+
+    桶对象默认私有(公开 GET 返 403),需用预签名 GET。
+    - dev 模式:原样返回(占位图本就公开)。
+    - 非本桶 URL / 已带查询签名的 URL:原样返回。
+    """
+    if _is_cos_dev_mode():
+        return file_url
+    base = settings.cos_base_url.rstrip("/") + "/"
+    if not file_url.startswith(base):
+        return file_url
+    rest = file_url[len(base):]
+    if "?" in rest:  # 已带签名/查询参数
+        return file_url
+    client = _make_cos_client()
+    return client.get_presigned_url(
+        Method="GET",
+        Bucket=settings.cos_bucket,
+        Key=rest,
+        Expired=PRESIGN_EXPIRES,
+    )
+
+
+def upload_image_bytes(
+    *,
+    user_id: uuid.UUID,
+    content_type: str,
+    data: bytes,
+) -> dict[str, str | bool]:
+    """服务端中转上传：直接把图片字节传到 COS，返回最终访问 URL。
+
+    用于 H5 等浏览器端——浏览器直传 COS 受跨域(CORS)限制,改由后端代传。
+    小程序端仍走 generate_presign 直传(wx.request 不受浏览器 CORS 约束)。
+
+    参数：
+        user_id: 当前登录用户 ID（用于 key 路径隔离）
+        content_type: 已通过白名单校验的 MIME 类型
+        data: 图片二进制
+    返回：
+        {file_url, key, is_mock}
+    """
+    ext = ALLOWED_CONTENT_TYPES[content_type]
+    key = _build_key(user_id, ext)
+
+    if _is_cos_dev_mode():
+        # dev 模式：同 presign，用占位图（无法读到真实 COS）
+        seed = key.replace("/", "-").rsplit(".", 1)[0]
+        return {
+            "file_url": f"https://picsum.photos/seed/{seed}/600/800.jpg",
+            "key": key,
+            "is_mock": True,
+        }
+
+    client = _make_cos_client()
+    client.put_object(
+        Bucket=settings.cos_bucket,
+        Body=data,
+        Key=key,
+        ContentType=content_type,
+    )
+    return {
+        "file_url": f"{settings.cos_base_url}/{key}",
+        "key": key,
+        "is_mock": False,
+    }

@@ -179,4 +179,6 @@ async def run_ocr(image_url: str) -> OcrResult:
     保持稳定的公开接口：调用方（user_paper_service / ocr.py 等）只依赖此函数，
     底层厂商切换对它们完全透明。
     """
-    return await get_ocr_provider().recognize(image_url)
+    from app.services import upload_service
+    # 桶对象私有 → 转预签名 GET,第三方 OCR 才拉得到图（外部/dev URL 原样放行）
+    return await get_ocr_provider().recognize(upload_service.make_fetch_url(image_url))

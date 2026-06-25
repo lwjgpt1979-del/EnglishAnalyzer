@@ -119,7 +119,9 @@ async def pin_from_photo(db: AsyncSession, *, student_id: uuid.UUID, image_url: 
     """拍照加词:豆包视觉 OCR 图片 → 抽英文词 → 词典命中者加入优先学。
     返回 {recognized, pinned:[词], not_found:[词]}。"""
     from app.services import doubao_vision_service as dv
-    text = await dv.recognize_page_text(image_url)
+    from app.services import upload_service
+    # 桶对象私有 → 转预签名 GET,豆包才拉得到图
+    text = await dv.recognize_page_text(upload_service.make_fetch_url(image_url))
     words = _words_from_text(text)
     if not words:
         return {"recognized": 0, "pinned": [], "not_found": []}
