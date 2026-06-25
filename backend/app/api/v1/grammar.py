@@ -11,7 +11,9 @@ from app.core.database import get_db, get_rls_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
-from app.services import grammar_probe_service, grammar_placement_service, paper_prior_service
+from app.services import (
+    grammar_probe_service, grammar_placement_service, paper_prior_service, grammar_path_service,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.d4_knowledge import KnowledgePoint
@@ -208,4 +210,28 @@ async def placement_result(session_id: uuid.UUID, db: DbDep, current_user: UserD
     """取分级测验结果:掌握热力图 + 学习起点线。"""
     await get_rls_db(db, str(current_user.id))
     res = await grammar_placement_service.result(db, student_id=current_user.id, session_id=session_id)
+    return make_ok(res)
+
+
+# ── 推进环 / 路径引擎(§13)────────────────────────────────────────────────
+@router.get("/path/daily", response_model=BaseResponse[dict])
+async def path_daily(db: DbDep, current_user: UserDep, textbook: str | None = None, grade: str | None = None):
+    """推进环每日批次:间隔维持 + 新点推进 + 综合运用(按配比),含优先级。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_path_service.daily_batch(
+        db, student_id=current_user.id, textbook=textbook, grade=grade)
+    await db.commit()
+    return make_ok(res)
+
+
+class SkipAheadIn(BaseModel):
+    kp_ids: list[str] = Field(..., description="即将学的前向知识点(按难度顺序)")
+
+
+@router.post("/path/skip-ahead", response_model=BaseResponse[dict])
+async def path_skip_ahead(body: SkipAheadIn, db: DbDep, current_user: UserDep):
+    """跳测加速:对前向点先迷你 placement,已会的跳过(拿高先验)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_path_service.skip_ahead(db, student_id=current_user.id, kp_ids=body.kp_ids)
+    await db.commit()
     return make_ok(res)

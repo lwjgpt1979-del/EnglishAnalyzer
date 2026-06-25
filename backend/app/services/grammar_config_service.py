@@ -31,6 +31,11 @@ DEFAULTS: dict = {
     # 纸质先验
     "paper_half_life_days": 90,
     "paper_mastered_discount": 0.30,
+    # §13 推进环:每日量 + 三股流配比(新点 / 间隔维持 / 综合运用)
+    "daily_batch_size": 12,
+    "stream_new": 0.70,
+    "stream_maintain": 0.20,
+    "stream_apply": 0.10,
 }
 
 _CACHE: dict = dict(DEFAULTS)
