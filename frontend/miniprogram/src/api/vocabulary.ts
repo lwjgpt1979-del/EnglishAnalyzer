@@ -122,6 +122,28 @@ export function submitGroupRecep(answers: Record<string, string>): Promise<{ res
   return request<{ results: GroupRecepResult[] }>('/api/v1/vocabulary/group-recep/submit', { method: 'POST', data: { answers } })
 }
 
+// R9.6 优先学清单 + 拍照加词
+export interface VocabPin { word_id: string; word: string; phonetic?: string | null; priority: number; source: string }
+export interface PinnableWord { word_id: string; word: string; origin: string; pinned: boolean }
+export function getPins(): Promise<{ pins: VocabPin[] }> {
+  return request<{ pins: VocabPin[] }>('/api/v1/vocabulary/pins', { method: 'GET' })
+}
+export function getPinnable(): Promise<{ words: PinnableWord[] }> {
+  return request<{ words: PinnableWord[] }>('/api/v1/vocabulary/pinnable', { method: 'GET' })
+}
+export function addPins(wordIds: string[], priority = 1): Promise<{ pinned: number }> {
+  return request<{ pinned: number }>('/api/v1/vocabulary/pins', { method: 'POST', data: { word_ids: wordIds, priority } })
+}
+export function setPinPriority(wordId: string, priority: number): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/v1/vocabulary/pins/${wordId}`, { method: 'PUT', data: { priority } })
+}
+export function removePin(wordId: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/v1/vocabulary/pins/${wordId}`, { method: 'DELETE' })
+}
+export function pinFromPhoto(imageUrl: string, priority = 1): Promise<{ recognized: number; pinned: string[]; not_found: string[] }> {
+  return request<{ recognized: number; pinned: string[]; not_found: string[] }>('/api/v1/vocabulary/pins/from-photo', { method: 'POST', data: { image_url: imageUrl, priority } })
+}
+
 export function getWrongWords(): Promise<VocabWrongList> {
   return request<VocabWrongList>('/api/v1/vocabulary/wrong-words', { method: 'GET' })
 }

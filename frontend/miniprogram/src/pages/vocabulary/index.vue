@@ -22,7 +22,7 @@
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
       <view class="center-tip">🎉 暂时没有待学/待复习的单词
-        <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <view class="gear-inline" @tap="openSettings" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view><view class="gear-inline" @tap="openAddWord" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view></view>
+        <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <view class="gear-inline" @tap="openSettings" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view><view class="gear-inline" @tap="openAddWord" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view><view class="gear-inline" @tap="openPins" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-pin" style="width:26rpx;height:26rpx" /><text>优先学</text></view></view>
       </view>
     </view>
 
@@ -34,6 +34,7 @@
           <view class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq" style="display:flex;align-items:center;gap:6rpx">
             <view class="ic ic-volume" style="width:28rpx;height:28rpx" /><text>连读</text>
           </view>
+          <view class="gear" @tap="openPins" style="display:flex;align-items:center"><view class="ic ic-pin" style="width:30rpx;height:30rpx" /></view>
           <view class="gear" @tap="openSettings" style="display:flex;align-items:center"><view class="ic ic-settings" style="width:32rpx;height:32rpx" /></view>
         </view>
       </view>
@@ -281,7 +282,7 @@
         <view class="cp-hint">点亮灰色日期可补签</view>
       </view>
       <view v-if="carryWords.length" class="carry-tip" style="display:flex;align-items:center;gap:8rpx"><view class="ic ic-refresh" style="width:28rpx;height:28rpx" /><text>本组错的 {{ carryWords.length }} 个词将带入下一组继续考察</text></view>
-      <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <view class="gear-inline" @tap="openSettings" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view><view class="gear-inline" @tap="openAddWord" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view></view>
+      <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <view class="gear-inline" @tap="openSettings" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view><view class="gear-inline" @tap="openAddWord" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view><view class="gear-inline" @tap="openPins" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-pin" style="width:26rpx;height:26rpx" /><text>优先学</text></view></view>
       <button class="btn-primary" @tap="reload">再来一组</button>
       <view class="done-links">
         <view class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/report' })" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-chart" style="width:30rpx;height:30rpx" /><text>学情报表</text></view>
@@ -386,6 +387,61 @@
       </view>
     </view>
 
+    <!-- R9.6 优先学清单 + 拍照加词 -->
+    <view v-if="pinPanel.open" class="shadow-modal" @tap.self="pinPanel.open = false">
+      <view class="pin-card">
+        <view class="set-title" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-pin" style="width:30rpx;height:30rpx" /><text>优先学</text></view>
+        <view class="pin-tabs">
+          <text class="pin-tab" :class="{ on: pinPanel.tab === 'list' }" @tap="switchPinTab('list')">我的优先学</text>
+          <text class="pin-tab" :class="{ on: pinPanel.tab === 'pick' }" @tap="switchPinTab('pick')">从词库挑选</text>
+        </view>
+
+        <!-- 我的优先学 -->
+        <scroll-view v-if="pinPanel.tab === 'list'" scroll-y class="pin-scroll">
+          <view v-if="pinPanel.loading" class="pin-empty">加载中…</view>
+          <view v-else-if="!pins.length" class="pin-empty">还没有优先学的词。挑选或拍照加入后，会排在最前面学。</view>
+          <view v-for="p in pins" :key="p.word_id" class="pin-row">
+            <view class="pin-info">
+              <text class="pin-word">{{ p.word }}</text>
+              <text v-if="p.phonetic" class="pin-ph">/{{ p.phonetic }}/</text>
+              <text class="pin-src">{{ p.source === 'photo' ? '拍照' : '挑选' }}</text>
+            </view>
+            <view class="pin-ops">
+              <text class="pin-lv">L{{ p.priority }}</text>
+              <view class="pin-step" @tap="bumpPin(p, 1)"><view class="ic ic-plus" style="width:24rpx;height:24rpx" /></view>
+              <view class="pin-step" @tap="bumpPin(p, -1)"><view class="ic ic-minus" style="width:24rpx;height:24rpx" /></view>
+              <view class="pin-step pin-del" @tap="removePinUI(p)"><view class="ic ic-trash" style="width:24rpx;height:24rpx" /></view>
+            </view>
+          </view>
+        </scroll-view>
+
+        <!-- 从词库挑选 -->
+        <scroll-view v-else scroll-y class="pin-scroll">
+          <view v-if="pinPanel.loading" class="pin-empty">加载中…</view>
+          <view v-else-if="!pinnable.length" class="pin-empty">暂无可挑选的词（作业/试卷/错题与当前学期教材词）。</view>
+          <view v-for="w in pinnable" :key="w.word_id" class="pin-row pick"
+                :class="{ sel: pickSel.has(w.word_id), done: w.pinned }"
+                @tap="!w.pinned && togglePick(w.word_id)">
+            <view class="pin-info">
+              <text class="pin-word">{{ w.word }}</text>
+              <text class="pin-src">{{ ({ paper: '试卷', homework: '作业', wrong: '错题', textbook: '教材' } as Record<string,string>)[w.origin] || w.origin }}</text>
+            </view>
+            <text v-if="w.pinned" class="pin-flag">已加入</text>
+            <view v-else class="pin-check" :class="{ on: pickSel.has(w.word_id) }" />
+          </view>
+        </scroll-view>
+
+        <view class="pin-actions">
+          <button v-if="pinPanel.tab === 'pick'" class="btn-primary" :disabled="!pickSel.size" @tap="confirmPick">加入 {{ pickSel.size || '' }} 词</button>
+          <button class="btn-ghost" :disabled="pinPanel.uploading" @tap="doPinFromPhoto">
+            <view class="ic ic-camera" style="width:30rpx;height:30rpx;margin-right:6rpx" />拍照加词
+          </button>
+        </view>
+        <text class="set-hint">优先学的词会排在所有来源之前优先学到；级别(L1–L5)越高越靠前。</text>
+        <text class="paywall-close" @tap="pinPanel.open = false">关闭</text>
+      </view>
+    </view>
+
     <!-- 跟读会员引导（统一会员墙）-->
     <Paywall :open="showPaywall" :feature="ent.feature('vocab.shadow')" emoji="🎤"
       title="跟读评测是会员专享" @close="showPaywall = false" />
@@ -394,8 +450,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep } from '@/api/vocabulary'
-import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult } from '@/api/vocabulary'
+import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto } from '@/api/vocabulary'
+import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
+import { uploadOneImage } from '@/composables/useUpload'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
@@ -1036,6 +1093,116 @@ async function submitAddWord() {
   }
 }
 
+// ── R9.6 优先学清单 + 拍照加词 ───────────────────────────────────────────
+const pinPanel = reactive({
+  open: false,
+  tab: 'list' as 'list' | 'pick',   // 我的优先学 / 从词库挑选
+  loading: false,
+  uploading: false,
+})
+const pins = ref<VocabPin[]>([])
+const pinnable = ref<PinnableWord[]>([])
+const pickSel = ref<Set<string>>(new Set())
+
+async function openPins() {
+  pinPanel.open = true
+  pinPanel.tab = 'list'
+  await loadPins()
+}
+async function loadPins() {
+  pinPanel.loading = true
+  try {
+    const r = await getPins()
+    pins.value = r.pins || []
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '加载失败', icon: 'none' })
+  } finally {
+    pinPanel.loading = false
+  }
+}
+async function loadPinnable() {
+  pinPanel.loading = true
+  try {
+    const r = await getPinnable()
+    pinnable.value = r.words || []
+    pickSel.value = new Set()
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '加载失败', icon: 'none' })
+  } finally {
+    pinPanel.loading = false
+  }
+}
+function switchPinTab(t: 'list' | 'pick') {
+  pinPanel.tab = t
+  if (t === 'pick' && !pinnable.value.length) loadPinnable()
+}
+function togglePick(wid: string) {
+  const s = new Set(pickSel.value)
+  s.has(wid) ? s.delete(wid) : s.add(wid)
+  pickSel.value = s
+}
+async function confirmPick() {
+  const ids = [...pickSel.value]
+  if (!ids.length) { uni.showToast({ title: '请先选词', icon: 'none' }); return }
+  try {
+    const r = await addPins(ids)
+    uni.showToast({ title: `已加入 ${r.pinned} 个`, icon: 'success' })
+    await loadPins()
+    await loadPinnable()
+    pinPanel.tab = 'list'
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '加入失败', icon: 'none' })
+  }
+}
+async function bumpPin(p: VocabPin, delta: number) {
+  const next = Math.max(1, Math.min(5, p.priority + delta))
+  if (next === p.priority) return
+  try {
+    await setPinPriority(p.word_id, next)
+    p.priority = next
+    pins.value = [...pins.value].sort((a, b) => b.priority - a.priority)
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '调整失败', icon: 'none' })
+  }
+}
+async function removePinUI(p: VocabPin) {
+  try {
+    await removePin(p.word_id)
+    pins.value = pins.value.filter(x => x.word_id !== p.word_id)
+    uni.showToast({ title: `已移出「${p.word}」`, icon: 'none' })
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message || '移除失败', icon: 'none' })
+  }
+}
+function doPinFromPhoto() {
+  uni.chooseImage({
+    count: 1,
+    success: async (res: any) => {
+      const path = res.tempFilePaths?.[0]
+      if (!path) return
+      pinPanel.uploading = true
+      uni.showLoading({ title: '识别中…', mask: true })
+      try {
+        const url = await uploadOneImage(path)
+        const r = await pinFromPhoto(url)
+        uni.hideLoading()
+        if (!r.pinned.length) {
+          uni.showToast({ title: r.recognized ? '未匹配到词典词' : '未识别到英文', icon: 'none' })
+        } else {
+          uni.showToast({ title: `加入 ${r.pinned.length} 个，${r.not_found.length} 个未收录`, icon: 'none' })
+          await loadPins()
+          pinPanel.tab = 'list'
+        }
+      } catch (e) {
+        uni.hideLoading()
+        uni.showToast({ title: (e as Error).message || '拍照加词失败', icon: 'none' })
+      } finally {
+        pinPanel.uploading = false
+      }
+    },
+  })
+}
+
 // ── 跟读评分（听力跟读·嵌入例句）──────────────────────────────────────────
 const shadow = reactive({
   open: false,
@@ -1344,6 +1511,31 @@ onMounted(load)
 .done-set { font-size: 24rpx; color: var(--c-text-hint); margin-top: 14rpx; }
 .gear-inline { color: var(--c-primary-deep); font-weight: 700; margin-left: 12rpx; }
 .addword-input { width: 100%; box-sizing: border-box; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 22rpx 24rpx; font-size: 32rpx; color: var(--c-ink); }
+/* R9.6 优先学 */
+.pin-card { width: 620rpx; max-height: 80vh; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 32rpx 28rpx; display: flex; flex-direction: column; gap: 20rpx; }
+.pin-tabs { display: flex; background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 6rpx; }
+.pin-tab { flex: 1; text-align: center; font-size: 27rpx; font-weight: 700; color: var(--c-text-hint); padding: 14rpx 0; border-radius: var(--r-pill); }
+.pin-tab.on { background: var(--c-bg-card); color: var(--c-primary-deep); box-shadow: 0 2rpx 8rpx rgba(61,139,245,.12); }
+.pin-scroll { max-height: 46vh; }
+.pin-empty { font-size: 26rpx; color: var(--c-text-hint); text-align: center; padding: 60rpx 20rpx; line-height: 1.7; }
+.pin-row { display: flex; align-items: center; justify-content: space-between; padding: 18rpx 8rpx; border-bottom: 2rpx solid var(--c-bg-soft); }
+.pin-info { display: flex; align-items: center; gap: 12rpx; flex: 1; min-width: 0; }
+.pin-word { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
+.pin-ph { font-size: 24rpx; color: var(--c-text-hint); }
+.pin-src { font-size: 21rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 12rpx; border-radius: var(--r-pill); }
+.pin-ops { display: flex; align-items: center; gap: 12rpx; }
+.pin-lv { font-size: 24rpx; font-weight: 800; color: var(--c-primary-deep); min-width: 44rpx; text-align: center; }
+.pin-step { width: 48rpx; height: 48rpx; display: flex; align-items: center; justify-content: center; background: var(--c-bg-soft); border-radius: var(--r-md); }
+.pin-step.pin-del .ic { filter: none; }
+.pin-row.pick { transition: background .15s; }
+.pin-row.pick.sel { background: var(--c-primary-faint); border-radius: var(--r-md); }
+.pin-row.pick.done { opacity: .55; }
+.pin-flag { font-size: 22rpx; color: var(--c-text-hint); }
+.pin-check { width: 36rpx; height: 36rpx; border: 3rpx solid var(--c-border); border-radius: 50%; }
+.pin-check.on { background: var(--c-primary); border-color: var(--c-primary); }
+.pin-actions { display: flex; flex-direction: column; gap: 0; }
+.pin-actions .btn-primary { margin-top: 8rpx; }
+.pin-actions .btn-ghost { display: flex; align-items: center; justify-content: center; }
 .done-links { display: flex; justify-content: center; gap: 40rpx; margin-top: 16rpx; }
 .done-link { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); }
 .shadow-card { background: var(--c-bg-card); border-radius: var(--r-xl); padding: 40rpx 36rpx; width: 84%; max-width: 640rpx; display: flex; flex-direction: column; align-items: center; }
