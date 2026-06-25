@@ -117,6 +117,10 @@
           <view class="qi qi-pen" />
           <text class="quick-label">长难句</text>
         </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/grammar/index' })">
+          <view class="qi qi-book" />
+          <text class="quick-label">语法精进</text>
+        </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/self-exam/index' })">
           <view class="qi qi-exam" />
           <text class="quick-label">自助出卷</text>

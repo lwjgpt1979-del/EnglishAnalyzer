@@ -65,6 +65,7 @@
       "style": { "navigationBarTitleText": "AI 练习" }
     },
     { "path": "pages/speaking/index", "style": { "navigationBarTitleText": "AI 口语对话" } },
+    { "path": "pages/grammar/index", "style": { "navigationBarTitleText": "语法精进" } },
     { "path": "pages/vocabulary/index", "style": { "navigationBarTitleText": "词力通" } },
     { "path": "pages/vocabulary/wrong-book", "style": { "navigationBarTitleText": "错词本" } },
     { "path": "pages/vocabulary/report", "style": { "navigationBarTitleText": "词力通学情" } },
