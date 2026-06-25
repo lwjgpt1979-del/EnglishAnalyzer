@@ -25,9 +25,10 @@ PRICE_TABLE: dict[str, dict[int, int]] = {
     "promax": {1: 9900,  3: 28800, 12: 98800},
 }
 
-# 会员按「份」售卖：每份 6 个月，买 x 份 = 6x 个月。
-# 单价（分/份）= 原 12 月价 ÷ 2（买 2 份=12 月，总价等于原 12 月价）。
+# 会员按「份」售卖：每份 6 个月 = 1 学期，买 x 份 = 6x 个月。
 UNIT_MONTHS = 6
+# 注意：实际单价已改为读后台「学期会员定价」(semester_pricing)，见 get_unit_price。
+# 下表数值仅作历史兜底/档位白名单(keys)，不再决定实扣金额。
 UNIT_PRICE_FEN: dict[str, int] = {
     "basic":  14400,
     "pro":    24900,
@@ -51,13 +52,19 @@ def get_price(tier: str, duration_months: int) -> int:
     return PRICE_TABLE[tier][duration_months]
 
 
-def get_unit_price(tier: str, quantity: int) -> int:
-    """按份计价（分）：每份 6 个月。quantity 份 → 价格 = 单价×份数。"""
+async def get_unit_price(db: AsyncSession, tier: str, quantity: int) -> int:
+    """按份计价（分）：每份 6 个月 = 1 学期。单价取后台「学期会员定价」semester_pricing。
+
+    与 /orders/tier-pricing 显示同源，保证显示价=实扣价；运营改价即时生效。
+    """
     if tier not in UNIT_PRICE_FEN:
         raise AppError(code=400, message=f"无效档位：{tier}，可选：basic/pro/promax")
     if quantity < 1 or quantity > 24:
         raise AppError(code=400, message="份数需在 1-24 之间")
-    return UNIT_PRICE_FEN[tier] * quantity
+    from app.services.pricing_service import get_semester_pricing
+    p = await get_semester_pricing(db)
+    unit_yuan = {"basic": p.basic, "pro": p.pro, "promax": p.promax}[tier]
+    return unit_yuan * 100 * quantity
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -133,7 +140,7 @@ async def create_order(
     elif quantity is not None:
         # 按份：每份 6 个月，x 份 = 6x 月
         months = UNIT_MONTHS * quantity
-        amount_fen = get_unit_price(tier, quantity)
+        amount_fen = await get_unit_price(db, tier, quantity)
         order = Order(
             id=uuid.uuid4(),
             order_no=order_no,

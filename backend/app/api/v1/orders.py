@@ -42,14 +42,27 @@ async def semester_pricing(db: DbDep, current_user: UserDep):
 
 
 @router.get("/tier-pricing", response_model=BaseResponse[dict])
-async def tier_pricing(current_user: UserDep):
-    """档位会员按份计价（每份 6 个月）。前端购买页据此显示，不写死价格。"""
+async def tier_pricing(db: DbDep, current_user: UserDep):
+    """档位会员按份计价（每份 6 个月 = 1 学期）。
+
+    单价取后台「学期会员定价」(system_configs.semester_pricing)，运营改了即时生效，
+    与下单实扣金额(order_service.get_unit_price)同源，保证显示价=实扣价。
+    """
+    from app.services.pricing_service import get_semester_pricing
+    p = await get_semester_pricing(db)
+
+    def _tier(key: str, name: str, yuan: int, list_yuan: int) -> dict:
+        d = {"key": key, "name": name, "unit_price_fen": yuan * 100}
+        if list_yuan and list_yuan > yuan:          # 划线价为 0 或 ≤实售则不展示
+            d["list_price_fen"] = list_yuan * 100
+        return d
+
     return make_ok({
         "unit_months": order_service.UNIT_MONTHS,
         "tiers": [
-            {"key": "basic", "name": "基础", "unit_price_fen": order_service.UNIT_PRICE_FEN["basic"]},
-            {"key": "pro", "name": "Pro", "unit_price_fen": order_service.UNIT_PRICE_FEN["pro"]},
-            {"key": "promax", "name": "ProMax", "unit_price_fen": order_service.UNIT_PRICE_FEN["promax"]},
+            _tier("basic", "基础", p.basic, p.list_basic),
+            _tier("pro", "Pro", p.pro, p.list_pro),
+            _tier("promax", "ProMax", p.promax, p.list_promax),
         ],
     })
 
