@@ -11,7 +11,7 @@ from app.core.database import get_db, get_rls_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
-from app.services import grammar_probe_service, grammar_placement_service
+from app.services import grammar_probe_service, grammar_placement_service, paper_prior_service
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.d4_knowledge import KnowledgePoint
@@ -156,6 +156,7 @@ class PlacementStartIn(BaseModel):
     textbook: str | None = Field(None, description="教材版本,如 译林版")
     grade: str | None = Field(None, description="目标年级,如 八年级")
     kp_ids: list[str] | None = Field(None, description="可选:显式题库(按难度顺序),覆盖自动圈定")
+    use_paper_priors: bool = Field(True, description="是否先融合纸质错题先验")
 
 
 class PlacementAnswerIn(BaseModel):
@@ -169,7 +170,25 @@ async def placement_start(body: PlacementStartIn, db: DbDep, current_user: UserD
     """开始语法分级测验:圈题库 → 返回首题(自适应)。"""
     await get_rls_db(db, str(current_user.id))
     res = await grammar_placement_service.start(
-        db, student_id=current_user.id, textbook=body.textbook, grade=body.grade, kp_ids=body.kp_ids)
+        db, student_id=current_user.id, textbook=body.textbook, grade=body.grade,
+        kp_ids=body.kp_ids, use_paper_priors=body.use_paper_priors)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.get("/paper-priors", response_model=BaseResponse[dict])
+async def get_paper_priors(db: DbDep, current_user: UserDep):
+    """预览纸质错题折算的语法薄弱点(找洞,不写库)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await paper_prior_service.compute_paper_priors(db, student_id=current_user.id)
+    return make_ok(res)
+
+
+@router.post("/paper-priors/apply", response_model=BaseResponse[dict])
+async def apply_paper_priors(db: DbDep, current_user: UserDep):
+    """把纸质错题先验写入掌握台账(prior_source=paper,不覆盖实练掌握)。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await paper_prior_service.apply_paper_priors(db, student_id=current_user.id)
     await db.commit()
     return make_ok(res)
 

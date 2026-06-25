@@ -126,7 +126,11 @@ def _progress(session: GrammarPlacementSession) -> dict:
 
 # ── 开始 ────────────────────────────────────────────────────────────────
 async def start(db: AsyncSession, *, student_id: uuid.UUID, textbook: str | None = None,
-                grade: str | None = None, kp_ids: list | None = None) -> dict:
+                grade: str | None = None, kp_ids: list | None = None,
+                use_paper_priors: bool = True) -> dict:
+    if use_paper_priors:   # R10.7:先把纸质错题折成先验(错题找洞),融进结果热力图
+        from app.services import paper_prior_service
+        await paper_prior_service.apply_paper_priors(db, student_id=student_id)
     pool = await build_pool(db, textbook=textbook, grade=grade, kp_ids=kp_ids)
     if len(pool) < 2:
         raise AppError(code=400, message="题库不足,无法分级测验(请检查教材/年级或传入 kp_ids)")
@@ -208,20 +212,22 @@ async def _finish(db: AsyncSession, session: GrammarPlacementSession) -> dict:
             prior = _PRIOR_INFER_OK
         else:
             prior = _PRIOR_INFER_NO
+        # 暖启动 + 融合纸质错题先验(洞更可信,取更低)
+        kid = uuid.UUID(d["kp_id"])
+        m = (await db.execute(sa.select(StudentGrammarMastery).where(
+            StudentGrammarMastery.student_id == session.student_id,
+            StudentGrammarMastery.kp_id == kid))).scalar_one_or_none()
+        if m is not None and m.prior_source == "paper" and m.mastery_recognize is not None:
+            prior = min(prior, float(m.mastery_recognize))   # R10.7:错题洞优先
         priors[d["kp_id"]] = prior
         bucket = _bucket(prior)
         heatmap.append({"kp_id": d["kp_id"], "name": d["name"], "prior": prior, "bucket": bucket})
         if start_line is None and prior < 0.5:
             start_line = {"kp_id": d["kp_id"], "name": d["name"], "index": i}
-        # 暖启动:写入 mastery_recognize 先验(低置信)
-        kid = uuid.UUID(d["kp_id"])
-        m = (await db.execute(sa.select(StudentGrammarMastery).where(
-            StudentGrammarMastery.student_id == session.student_id,
-            StudentGrammarMastery.kp_id == kid))).scalar_one_or_none()
         if m is None:
             m = StudentGrammarMastery(id=uuid.uuid4(), student_id=session.student_id, kp_id=kid)
             db.add(m)
-        if m.prior_source in (None, "default", "placement"):   # 不覆盖学生已实练出的掌握
+        if m.prior_source in (None, "default", "placement"):   # 不覆盖 paper / learn
             m.mastery_recognize = prior
             m.prior_source = "placement"
             m.last_seen_at = now
