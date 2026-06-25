@@ -104,11 +104,13 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: K
     recog = float(m.mastery_recognize) if m and m.mastery_recognize is not None else 0.0
     detect = float(m.mastery_detect) if m and m.mastery_detect is not None else 0.0
     produce = float(m.mastery_produce) if m and m.mastery_produce is not None else 0.0
+    transfer_ok = bool(m.transfer_ok) if m else False
     return {
         "kp_id": str(kp.id), "kp_name": kp.name, "probes": probes,
         "produce": {"key": "produce", "prompt": str(p.get("produce_hint") or f"用「{kp.name}」造一个句子")},
-        "recognize": recog, "detect": detect, "produce_score": produce,
-        "mastered": _axes_mastered(recog, detect, produce),
+        "has_transfer": bool(p.get("transfer_seed")),
+        "recognize": recog, "detect": detect, "produce_score": produce, "transfer_ok": transfer_ok,
+        "mastered": _axes_mastered(recog, detect, produce, transfer_ok),
     }
 
 
@@ -170,7 +172,8 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.U
     return {
         "correct": correct, "correct_answer": correct_answer, "misconception": misconception,
         "axis": axis, "recognize": recog, "detect": detect, "produce_score": produce,
-        "mastered": _axes_mastered(recog, detect, produce),
+        "transfer_ok": bool(m.transfer_ok),
+        "mastered": _axes_mastered(recog, detect, produce, bool(m.transfer_ok)),
     }
 
 
@@ -242,15 +245,96 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid
     detect = float(m.mastery_detect) if m.mastery_detect is not None else 0.0
     produce = float(m.mastery_produce) if m.mastery_produce is not None else 0.0
     res.update({"recognize": recog, "detect": detect, "produce_score": produce,
-                "mastered": _axes_mastered(recog, detect, produce)})
+                "transfer_ok": bool(m.transfer_ok),
+                "mastered": _axes_mastered(recog, detect, produce, bool(m.transfer_ok))})
     return res
 
 
+# ── 迁移维(同点新语境,R10.3)────────────────────────────────────────────
+async def _ensure_transfer_seed(db: AsyncSession, kp: KnowledgePoint) -> list:
+    """取该点迁移题种子(新语境单选);缓存缺失则 LLM 现生成一题并写回缓存。"""
+    p = kp.grammar_probes_json or {}
+    seeds = p.get("transfer_seed") or []
+    if seeds:
+        return seeds
+    if is_llm_dev_mode():
+        seeds = [{"stem": f"(dev transfer) ___ about {kp.name}.", "options": ["A", "B", "C", "D"], "answer": "A"}]
+    else:
+        system = (
+            "你是初中英语语法命题专家。给定一个语法知识点,生成 1 道「全新语境」的单选题,"
+            "用于检验学生能否把规则迁移到没见过的句子(不要与常见例句雷同)。严格输出 JSON:"
+            "{\"stem\":\"一句带 ___ 的英文(留一空)\",\"options\":[\"4个英文选项\"],\"answer\":\"正确选项(须在 options 内)\"}"
+        )
+        user = f"语法知识点:{kp.name}\n说明:{kp.description or ''}\n返回 JSON:"
+        d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=400,
+                                model=fast_model(), feature="grammar_probe",
+                                validate=lambda x: bool(x.get("stem") and x.get("options") and x.get("answer")))
+        seeds = [d] if d and d.get("stem") and d.get("options") and d.get("answer") else []
+    if seeds:
+        p = dict(p)
+        p["transfer_seed"] = seeds
+        kp.grammar_probes_json = p
+        await db.flush()
+    return seeds
+
+
+async def transfer_probe(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgePoint) -> dict | None:
+    """组装迁移题:同点新语境单选。无可用题→None。"""
+    seeds = await _ensure_transfer_seed(db, kp)
+    if not seeds:
+        return None
+    s = seeds[0]
+    return {"probe": {"key": "transfer:0", "kind": "transfer",
+                      "prompt": f"换个新句子:{s['stem']}", "options": list(s["options"])}}
+
+
+async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID,
+                          key: str, answer: str) -> dict:
+    """提交迁移题:判分 → 识别 BKT + 通过则置 transfer_ok=True。
+    verdict=transferred(真懂、能迁移)/ memorized(疑似只记住练过的题)。"""
+    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    if kp is None:
+        raise AppError(code=404, message="知识点不存在")
+    seeds = await _ensure_transfer_seed(db, kp)
+    try:
+        idx = int(key.split(":", 1)[1])
+    except (ValueError, IndexError, AttributeError):
+        idx = 0
+    if idx >= len(seeds):
+        raise AppError(code=400, message="迁移题不存在")
+    correct_answer = str(seeds[idx]["answer"]).strip()
+    correct = (answer or "").strip() == correct_answer
+
+    m = await _get_or_create_mastery(db, student_id, kp_id)
+    m.mastery_recognize = mastery_judge_service.bkt_update(
+        None if m.mastery_recognize is None else float(m.mastery_recognize), correct)
+    if correct:
+        m.transfer_ok = True
+    else:
+        m.wrong_count = (m.wrong_count or 0) + 1
+    m.last_seen_at = datetime.now(timezone.utc)
+    m.prior_source = "learn"
+    qid = uuid.uuid5(uuid.NAMESPACE_OID, f"grammar-transfer:{kp_id}:{key}")
+    await mastery_judge_service.log_answer(
+        db, student_id=student_id, q_scope="platform", question_id=qid,
+        node_id=None, is_correct=correct, feature="grammar_probe")
+    await db.flush()
+    recog = float(m.mastery_recognize) if m.mastery_recognize is not None else 0.0
+    detect = float(m.mastery_detect) if m.mastery_detect is not None else 0.0
+    produce = float(m.mastery_produce) if m.mastery_produce is not None else 0.0
+    return {
+        "correct": correct, "correct_answer": correct_answer,
+        "verdict": "transferred" if correct else "memorized",
+        "recognize": recog, "detect": detect, "produce_score": produce, "transfer_ok": bool(m.transfer_ok),
+        "mastered": _axes_mastered(recog, detect, produce, bool(m.transfer_ok)),
+    }
+
+
 # ── 内部 ────────────────────────────────────────────────────────────────
-def _axes_mastered(recog: float, detect: float, produce: float = 0.0) -> bool:
+def _axes_mastered(recog: float, detect: float, produce: float = 0.0, transfer_ok: bool = False) -> bool:
     """阶段性掌握门槛(随步骤逐步收紧)。
-    R10.2:纠错 + 产出均达阈(识别为入门、不单独计;迁移/间隔留 R10.3/R10.5 补全门槛)。"""
-    return detect >= DETECT_MASTERED and produce >= PRODUCE_MASTERED
+    R10.3:纠错 + 产出达阈 且 迁移通过(识别为入门、不单独计;间隔复测留 R10.5 补全门槛)。"""
+    return detect >= DETECT_MASTERED and produce >= PRODUCE_MASTERED and transfer_ok
 
 
 async def _get_mastery(db: AsyncSession, student_id: uuid.UUID, kp_id: uuid.UUID):

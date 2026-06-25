@@ -61,3 +61,25 @@ async def submit_kp_produce(kp_id: uuid.UUID, body: ProduceSubmitIn, db: DbDep, 
         db, student_id=current_user.id, kp_id=kp_id, sentence=body.sentence)
     await db.commit()
     return make_ok(res)
+
+
+@router.get("/kp/{kp_id}/transfer", response_model=BaseResponse[dict])
+async def get_kp_transfer(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """取迁移题:同语法点的全新语境单选(检验真懂、非背题)。无题→probe=null。"""
+    await get_rls_db(db, str(current_user.id))
+    kp = (await db.execute(select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    if kp is None:
+        return make_ok({"probe": None})
+    out = await grammar_probe_service.transfer_probe(db, student_id=current_user.id, kp=kp)
+    await db.commit()
+    return make_ok(out or {"probe": None})
+
+
+@router.post("/kp/{kp_id}/transfer-submit", response_model=BaseResponse[dict])
+async def submit_kp_transfer(kp_id: uuid.UUID, body: ProbeSubmitIn, db: DbDep, current_user: UserDep):
+    """提交迁移题:transferred(真懂)/ memorized(疑似背题);通过置 transfer_ok。"""
+    await get_rls_db(db, str(current_user.id))
+    res = await grammar_probe_service.submit_transfer(
+        db, student_id=current_user.id, kp_id=kp_id, key=body.key, answer=body.answer)
+    await db.commit()
+    return make_ok(res)
