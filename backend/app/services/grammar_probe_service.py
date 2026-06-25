@@ -19,7 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d4_knowledge import KnowledgePoint, StudentGrammarMastery
-from app.services import mastery_judge_service
+from app.services import mastery_judge_service, usage_log_service
+from app.services import grammar_config_service as _cfg
 from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
 
 _log = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ async def ensure_probes(db: AsyncSession, kp: KnowledgePoint) -> dict:
 # ── 探针组装(不含答案,发给前端)──────────────────────────────────────
 async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgePoint) -> dict:
     """组装该语法点 R10.1 题面:识别(选择)+ 纠错(改错)。返回题面 + 当前各维掌握度。"""
+    await _cfg.get_config(db)   # 预热运营配置(阈值等)
     p = await ensure_probes(db, kp)
     probes = []
     for i, r in enumerate(p.get("recognize") or []):
@@ -124,6 +126,7 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: K
 async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID,
                        key: str, answer: str) -> dict:
     """提交一道探针(recognize/detect):判分 → 对应维 BKT → 错题计数。"""
+    await _cfg.get_config(db)   # 预热运营配置(阈值等)
     kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
     if kp is None:
         raise AppError(code=404, message="知识点不存在")
@@ -417,9 +420,10 @@ def _maybe_schedule_retention(m: StudentGrammarMastery) -> None:
     produce = float(m.mastery_produce or 0)
     if _axes_mastered(recog, detect, produce, bool(m.transfer_ok)) and m.mastered_at is None:
         now = datetime.now(timezone.utc)
+        ladder = _cfg.cached()["retain_ladder"] or _RETAIN_LADDER
         m.mastered_at = now
-        m.retain_interval_days = _RETAIN_LADDER[0]
-        m.next_retain_at = now + timedelta(days=_RETAIN_LADDER[0])
+        m.retain_interval_days = ladder[0]
+        m.next_retain_at = now + timedelta(days=ladder[0])
 
 
 def confirmed_mastered(m: StudentGrammarMastery | None) -> bool:
@@ -480,9 +484,10 @@ async def submit_retention(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uu
     m.mastery_recognize = mastery_judge_service.bkt_update(
         None if m.mastery_recognize is None else float(m.mastery_recognize), correct)
     if correct:
+        ladder = _cfg.cached()["retain_ladder"] or _RETAIN_LADDER
         m.retain_count = (m.retain_count or 0) + 1
         m.last_retain_at = now
-        step = _RETAIN_LADDER[min(m.retain_count, len(_RETAIN_LADDER) - 1)]
+        step = ladder[min(m.retain_count, len(ladder) - 1)]
         m.retain_interval_days = step
         m.next_retain_at = now + timedelta(days=step)
     else:
@@ -518,9 +523,10 @@ def _status_label(m: StudentGrammarMastery | None) -> dict:
     tok = bool(m.transfer_ok)
     axes = _axes_mastered(recog, detect, produce, tok)
     if not axes:
+        c = _cfg.cached()
         done, todo = [], []
-        (done if detect >= DETECT_MASTERED else todo).append("纠错")
-        (done if produce >= PRODUCE_MASTERED else todo).append("产出")
+        (done if detect >= c["detect_mastered"] else todo).append("纠错")
+        (done if produce >= c["produce_mastered"] else todo).append("产出")
         (done if tok else todo).append("迁移")
         ev = []
         if done:
@@ -555,9 +561,9 @@ async def kp_status(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID
 
 # ── 内部 ────────────────────────────────────────────────────────────────
 def _axes_mastered(recog: float, detect: float, produce: float = 0.0, transfer_ok: bool = False) -> bool:
-    """阶段性掌握门槛(随步骤逐步收紧)。
-    R10.3:纠错 + 产出达阈 且 迁移通过(识别为入门、不单独计;间隔复测留 R10.5 补全门槛)。"""
-    return detect >= DETECT_MASTERED and produce >= PRODUCE_MASTERED and transfer_ok
+    """阶段性掌握门槛:纠错 + 产出达阈 且 迁移通过(阈值走后台 grammar_config,常量仅兜底)。"""
+    c = _cfg.cached()
+    return detect >= c["detect_mastered"] and produce >= c["produce_mastered"] and transfer_ok
 
 
 async def _get_mastery(db: AsyncSession, student_id: uuid.UUID, kp_id: uuid.UUID):
@@ -574,3 +580,92 @@ async def _get_or_create_mastery(db: AsyncSession, student_id: uuid.UUID, kp_id:
         db.add(m)
         await db.flush()
     return m
+
+
+# ── 离线预生成(后台异步 + 批量,R10.8;镜像 vocab)────────────────────────
+_GEN_INFLIGHT: set = set()   # 去重:正在后台生成中的 kp_id
+
+
+async def _bg_generate(kp_ids: list, *, budget_tokens: int = 80_000) -> None:
+    """后台逐点生成语法探针:独立 session、缺失才生成、带 token 预算上限。"""
+    from app.core.database import _async_session_factory
+    try:
+        with usage_log_service.budget(budget_tokens):
+            for kid in kp_ids:
+                if usage_log_service.over_budget():
+                    _log.warning("[grammar-probe-bg] 预算用尽,停止预生成")
+                    break
+                try:
+                    async with _async_session_factory() as db:
+                        kp = (await db.execute(
+                            sa.select(KnowledgePoint).where(KnowledgePoint.id == kid))).scalar_one_or_none()
+                        if kp is None or ((kp.grammar_probes_json or {}).get("recognize")
+                                          and (kp.grammar_probes_json or {}).get("detect")):
+                            continue   # 不存在或已缓存 → 跳过
+                        await ensure_probes(db, kp)
+                        await db.commit()
+                except Exception:  # noqa: BLE001
+                    _log.exception("[grammar-probe-bg] 生成失败 kp_id=%s", kid)
+                finally:
+                    _GEN_INFLIGHT.discard(kid)
+    finally:
+        for kid in kp_ids:
+            _GEN_INFLIGHT.discard(kid)
+
+
+def enqueue_probe_gen(kp_ids, *, cap: int = 80) -> int:
+    """登记若干语法点在后台异步预生成探针(立即返回,不阻塞请求)。
+
+    KP 级公共缓存:同点全网只生成一次;去重在途;单次入队 cap 上限。
+    无事件循环(同步脚本)时跳过,交给 cron 兜底。返回真正入队数。
+    """
+    import asyncio
+    fresh: list = []
+    for kid in (kp_ids or []):
+        try:
+            kid = kid if isinstance(kid, uuid.UUID) else uuid.UUID(str(kid))
+        except (ValueError, TypeError):
+            continue
+        if kid in _GEN_INFLIGHT:
+            continue
+        _GEN_INFLIGHT.add(kid)
+        fresh.append(kid)
+        if len(fresh) >= cap:
+            break
+    if not fresh:
+        return 0
+    try:
+        asyncio.get_running_loop()
+        asyncio.create_task(_bg_generate(fresh))
+    except RuntimeError:
+        for kid in fresh:
+            _GEN_INFLIGHT.discard(kid)
+        return 0
+    return len(fresh)
+
+
+async def backfill_probes(db: AsyncSession, *, limit: int | None = None,
+                          only_missing: bool = True, max_tokens_budget: int | None = 200_000) -> dict:
+    """批量给语法点生成探针库。累计 token 超预算即停。返回 {scanned, filled, stopped, spent_tokens}。"""
+    rows = (await db.execute(
+        sa.select(KnowledgePoint).where(KnowledgePoint.category == "grammar"))).scalars().all()
+    scanned = filled = 0
+    stopped = False
+    with usage_log_service.budget(max_tokens_budget):
+        for kp in rows:
+            if usage_log_service.over_budget():
+                stopped = True
+                break
+            if only_missing and (kp.grammar_probes_json or {}).get("recognize") \
+                    and (kp.grammar_probes_json or {}).get("detect"):
+                continue
+            scanned += 1
+            before = usage_log_service.spent()
+            p = await ensure_probes(db, kp)
+            if (p or {}).get("recognize") and usage_log_service.spent() > before:
+                filled += 1
+            if limit and filled >= limit:
+                break
+        spent = usage_log_service.spent()
+    await db.commit()
+    return {"scanned": scanned, "filled": filled, "stopped": stopped, "spent_tokens": spent}

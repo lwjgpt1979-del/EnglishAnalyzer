@@ -42,6 +42,8 @@ from app.schemas.institution import (
     AdminInstitutionOut,
     ApproveInstitutionRequest,
     ApproveInstitutionResult,
+    InstitutionCodePricing,
+    InstitutionCodePricingUpdate,
 )
 from app.schemas.kp import (
     ApproveCandidateRequest,
@@ -514,6 +516,34 @@ async def update_pricing(body: SemesterPricingUpdate, db: DbDep, admin: AdminDep
     return make_ok(updated)
 
 
+# ─── 机构激活码定价配置（分 / 月）─────────────────────────────────────────────
+
+@router.get("/institution-code-pricing", response_model=BaseResponse[InstitutionCodePricing])
+async def get_institution_code_pricing(db: DbDep, admin: AdminDep):
+    """读机构激活码档位定价（basic/pro/promax 分 / 月）。"""
+    return make_ok(await pricing_service.get_institution_code_pricing(db))
+
+
+@router.put("/institution-code-pricing", response_model=BaseResponse[InstitutionCodePricing])
+async def update_institution_code_pricing(
+    body: InstitutionCodePricingUpdate, db: DbDep, admin: AdminDep
+):
+    """运营改机构激活码定价（三档单价，正整数，分 / 月）。"""
+    updated = await pricing_service.update_institution_code_pricing(
+        db, pricing=InstitutionCodePricing(
+            basic=body.basic, pro=body.pro, promax=body.promax),
+        updated_by=admin.id,
+    )
+    await db.commit()
+    return make_ok(updated)
+
+
+@router.get("/institution-code-pricing/history", response_model=BaseResponse[list[dict]])
+async def institution_code_pricing_history(db: DbDep, admin: AdminDep, limit: int = 50):
+    """机构激活码定价变更历史（倒序）。"""
+    return make_ok(await pricing_service.institution_code_pricing_history(db, limit=limit))
+
+
 # ─── 听力语速三档（小学/初中/高中，speed_ratio）────────────────────────────
 class TtsSpeedConfig(BaseModel):
     primary: float
@@ -583,6 +613,34 @@ async def get_llm_usage(db: DbDep, admin: AdminDep, days: int = 30):
     """LLM 用量与成本估算:近 days 天总量 + 按用途/模型/天。成本为估算(按价目表)。"""
     from app.services import usage_log_service
     return make_ok(await usage_log_service.summary(db, days=max(1, min(days, 365))))
+
+
+# ─── R10 语法掌握/定级:参数配置 + 探针离线预生成 ──────────────────────────
+@router.get("/grammar-config", response_model=BaseResponse[dict])
+async def get_grammar_config(db: DbDep, admin: AdminDep):
+    """读语法掌握/定级运营参数(阈值/复测/分级/纸质权重),含默认值供参照。"""
+    from app.services import grammar_config_service
+    return make_ok({"config": await grammar_config_service.get_config(db),
+                    "defaults": grammar_config_service.DEFAULTS})
+
+
+@router.put("/grammar-config", response_model=BaseResponse[dict])
+async def update_grammar_config(body: dict, db: DbDep, admin: AdminDep):
+    """改语法掌握/定级运营参数(只接受已知键),即时生效。"""
+    from app.services import grammar_config_service
+    cfg = await grammar_config_service.update_config(db, patch=body or {}, updated_by=admin.id)
+    await db.commit()
+    return make_ok({"config": cfg})
+
+
+@router.post("/grammar/probe-backfill", response_model=BaseResponse[dict])
+async def backfill_grammar_probes_api(db: DbDep, admin: AdminDep, limit: int = 50,
+                                      only_missing: bool = True, max_tokens_budget: int = 200000):
+    """R10.8 批量给语法点生成「理解探针库」(grammar_probes_json),带 token 预算熔断。"""
+    from app.services import grammar_probe_service as gps
+    r = await gps.backfill_probes(db, limit=limit, only_missing=only_missing,
+                                  max_tokens_budget=max_tokens_budget)
+    return make_ok(r)
 
 
 @router.get("/llm-balance", response_model=BaseResponse[dict])

@@ -19,11 +19,12 @@ from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d4_knowledge import (
     KnowledgePoint, WrongQuestionKnowledgePoint, StudentGrammarMastery,
 )
+from app.services import grammar_config_service as _cfg
 
 _log = logging.getLogger(__name__)
 
-HALF_LIFE_DAYS = 90        # 新近度半衰期(走后台可配,这里默认)
-_MASTERED_DISCOUNT = 0.3   # 已复盘掌握的错题:信号打三折
+HALF_LIFE_DAYS = 90        # 兜底:新近度半衰期(实际见 grammar_config.paper_half_life_days)
+_MASTERED_DISCOUNT = 0.3   # 兜底:已掌握错题信号折扣(实际见 grammar_config.paper_mastered_discount)
 _WEAK_PRIOR_FLOOR = 0.10   # 强新鲜错题 → 先验下探到 0.10(洞)
 _WEAK_PRIOR_CEIL = 0.40    # 旧/已掌握错题 → 至多到 0.40(临界)
 
@@ -41,6 +42,9 @@ def _recency(now: datetime, created_at: datetime, half_life: float) -> float:
 async def compute_paper_priors(db: AsyncSession, *, student_id: uuid.UUID,
                                half_life_days: int = HALF_LIFE_DAYS) -> dict:
     """从纸质错题算每个语法点的"洞"先验。返回 {priors:{kp_id:{...}}, weak_kps:[...]}。"""
+    cfg = await _cfg.get_config(db)
+    half_life_days = int(cfg.get("paper_half_life_days", half_life_days))
+    discount = float(cfg.get("paper_mastered_discount", _MASTERED_DISCOUNT))
     rows = (await db.execute(
         sa.select(WrongQuestion.created_at, WrongQuestion.is_mastered,
                   KnowledgePoint.id, KnowledgePoint.name)
@@ -53,7 +57,7 @@ async def compute_paper_priors(db: AsyncSession, *, student_id: uuid.UUID,
     for created_at, is_mastered, kid, name in rows:
         w = _recency(now, created_at, half_life_days)
         if is_mastered:
-            w *= _MASTERED_DISCOUNT
+            w *= discount
         a = agg.setdefault(str(kid), {"name": name, "signal": 0.0, "errors": 0})
         a["signal"] = max(a["signal"], w)    # 取最强(最新/未掌握)错题信号
         a["errors"] += 1

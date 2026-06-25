@@ -22,10 +22,11 @@ from app.models.d4_knowledge import (
     StudentGrammarMastery, GrammarPlacementSession,
 )
 from app.services import grammar_probe_service as gp
+from app.services import grammar_config_service as _cfg
 
 _log = logging.getLogger(__name__)
 
-MAX_ITEMS = 25                          # 单次测验最多题数(控时)
+MAX_ITEMS = 25                          # 兜底:单次测验最多题数(实际见 grammar_config.placement_max_items)
 # 暖启动先验:测对/测错/推定会/推定不会
 _PRIOR_ASKED_OK = 0.70
 _PRIOR_ASKED_NO = 0.10
@@ -119,8 +120,12 @@ async def _servable_item(db: AsyncSession, pool: list, lo: int, hi: int, asked_i
     return None
 
 
+def _max_items() -> int:
+    return int(_cfg.cached().get("placement_max_items", MAX_ITEMS))
+
+
 def _progress(session: GrammarPlacementSession) -> dict:
-    return {"asked": len(session.asked or []), "max": MAX_ITEMS,
+    return {"asked": len(session.asked or []), "max": _max_items(),
             "pool": len(session.pool_kp_ids or [])}
 
 
@@ -128,12 +133,14 @@ def _progress(session: GrammarPlacementSession) -> dict:
 async def start(db: AsyncSession, *, student_id: uuid.UUID, textbook: str | None = None,
                 grade: str | None = None, kp_ids: list | None = None,
                 use_paper_priors: bool = True) -> dict:
+    await _cfg.get_config(db)   # 预热运营配置
     if use_paper_priors:   # R10.7:先把纸质错题折成先验(错题找洞),融进结果热力图
         from app.services import paper_prior_service
         await paper_prior_service.apply_paper_priors(db, student_id=student_id)
     pool = await build_pool(db, textbook=textbook, grade=grade, kp_ids=kp_ids)
     if len(pool) < 2:
         raise AppError(code=400, message="题库不足,无法分级测验(请检查教材/年级或传入 kp_ids)")
+    gp.enqueue_probe_gen([d["kp_id"] for d in pool])   # R10.8:后台预生成题库探针(加速后续出题)
     session = GrammarPlacementSession(
         id=uuid.uuid4(), student_id=student_id, textbook=textbook, grade=grade,
         pool_kp_ids=pool, asked=[], lo=0, hi=len(pool) - 1, status="active")
@@ -178,7 +185,7 @@ async def answer(db: AsyncSession, *, student_id: uuid.UUID, session_id: uuid.UU
     session.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
-    if len(asked) >= MAX_ITEMS or session.lo > session.hi:
+    if len(asked) >= _max_items() or session.lo > session.hi:
         return await _finish(db, session)
     asked_idx = {a["idx"] for a in asked}
     served = await _servable_item(db, pool, session.lo, session.hi, asked_idx)
@@ -205,13 +212,16 @@ async def _finish(db: AsyncSession, session: GrammarPlacementSession) -> dict:
     heatmap, priors = [], {}
     start_line = None
     now = datetime.now(timezone.utc)
+    c = _cfg.cached()
+    p_ok, p_no = c.get("prior_asked_ok", _PRIOR_ASKED_OK), c.get("prior_asked_no", _PRIOR_ASKED_NO)
+    i_ok, i_no = c.get("prior_infer_ok", _PRIOR_INFER_OK), c.get("prior_infer_no", _PRIOR_INFER_NO)
     for i, d in enumerate(pool):
         if i in asked:
-            prior = _PRIOR_ASKED_OK if asked[i] else _PRIOR_ASKED_NO
+            prior = p_ok if asked[i] else p_no
         elif i < lo:
-            prior = _PRIOR_INFER_OK
+            prior = i_ok
         else:
-            prior = _PRIOR_INFER_NO
+            prior = i_no
         # 暖启动 + 融合纸质错题先验(洞更可信,取更低)
         kid = uuid.UUID(d["kp_id"])
         m = (await db.execute(sa.select(StudentGrammarMastery).where(
