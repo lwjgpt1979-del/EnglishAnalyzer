@@ -63,6 +63,14 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
         out.sort(key=lambda d: order.get(uuid.UUID(d["kp_id"]), 1e9))
         return out
 
+    # 粗点(有子点的)排除,只学叶子细点 —— 掌握落到细则,粗点做 rollup
+    parent_ids = set((await db.execute(
+        sa.select(KnowledgePoint.parent_id).where(
+            KnowledgePoint.category == "grammar", KnowledgePoint.parent_id.isnot(None)))).scalars().all())
+
+    def _leaves(items: list) -> list:
+        return [d for d in items if uuid.UUID(d["kp_id"]) not in parent_ids]
+
     grades = _grade_scope(grade)
     # 1) curriculum 映射(textbook × 前置年级),按 年级→单元 排序
     if textbook and grades:
@@ -85,7 +93,7 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
                 if r[0] not in seen:
                     seen.add(r[0])
                     out.append({"kp_id": str(r[0]), "name": r[1]})
-            return out
+            return _leaves(out)
 
     # 2) applicable_grades / applicable_textbooks 兜底
     cond = [KnowledgePoint.category == "grammar"]
@@ -95,7 +103,7 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
     rows = (await db.execute(
         sa.select(KnowledgePoint.id, KnowledgePoint.name)
         .where(*cond).order_by(KnowledgePoint.sort_order, KnowledgePoint.name).limit(60))).all()
-    return [{"kp_id": str(r[0]), "name": r[1]} for r in rows]
+    return _leaves([{"kp_id": str(r[0]), "name": r[1]} for r in rows])
 
 
 # ── 取题(在 [lo,hi] 内靠中位、可出题的点)────────────────────────────────

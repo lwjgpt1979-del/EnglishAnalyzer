@@ -545,6 +545,23 @@ def _status_label(m: StudentGrammarMastery | None) -> dict:
             "evidence": ["四维已通过", f"约 {m.retain_interval_days} 天后复测确认"]}
 
 
+async def coarse_rollup(db: AsyncSession, *, student_id: uuid.UUID, parent_kp_id: uuid.UUID) -> dict:
+    """粗语法点的 rollup:掌握 = 其下所有子细点都 confirmed_mastered。无子点则退化为该点自身。"""
+    children = (await db.execute(
+        sa.select(KnowledgePoint.id, KnowledgePoint.name).where(
+            KnowledgePoint.parent_id == parent_kp_id, KnowledgePoint.category == "grammar"))).all()
+    if not children:
+        m = await _get_mastery(db, student_id, parent_kp_id)
+        return {"total": 0, "mastered": 0, "all_mastered": confirmed_mastered(m), "children": []}
+    items, done = [], 0
+    for cid, cname in children:
+        ok = confirmed_mastered(await _get_mastery(db, student_id, cid))
+        done += ok
+        items.append({"kp_id": str(cid), "name": cname, "mastered": ok})
+    return {"total": len(children), "mastered": done,
+            "all_mastered": done == len(children), "children": items}
+
+
 async def kp_status(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID) -> dict:
     """该语法点对该生的诚实掌握标签 + 各维度。"""
     m = await _get_mastery(db, student_id, kp_id)
