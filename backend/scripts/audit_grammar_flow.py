@@ -198,6 +198,13 @@ async def phase_path(db):
         bug(f"新点未按优先级降序: {scores}")
     else:
         ok(f"新点按优先级降序({len(b['new'])} 个)")
+    # 不变量:同一点不得同时出现在「新点」与「维持」
+    new_ids = {n["kp_id"] for n in b["new"]}
+    dup = [x["kp_name"] for x in b["maintain"] if x["kp_id"] in new_ids]
+    if dup:
+        bug(f"以下点同时出现在新点与维持: {dup}")
+    else:
+        ok("新点与维持无重叠")
     print(f"  stats={b['stats']}")
 
 

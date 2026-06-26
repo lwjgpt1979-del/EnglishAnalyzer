@@ -54,6 +54,7 @@ async def _scored_pool(db: AsyncSession, *, student_id: uuid.UUID, textbook: str
     for i, d in enumerate(pool):
         m = by_kp.get(d["kp_id"])
         done = gp.confirmed_mastered(m)
+        pending_retain = bool(m and m.mastered_at is not None)   # 四维已达、待复测(归维持,不当新点)
         recog = float(m.mastery_recognize) if m and m.mastery_recognize is not None else 0.0
         # 课程临近:越靠前(地基/i+1)越优先 → (n-i)/n
         proximity = (n - i) / n
@@ -63,8 +64,8 @@ async def _scored_pool(db: AsyncSession, *, student_id: uuid.UUID, textbook: str
         gap = 1.0 - recog
         score = round(unlocked * proximity * gap, 4)
         out.append({"kp_id": d["kp_id"], "name": d["name"], "index": i,
-                    "confirmed_mastered": done, "recognize": round(recog, 4),
-                    "unlocked": round(unlocked, 3), "score": score})
+                    "confirmed_mastered": done, "pending_retain": pending_retain,
+                    "recognize": round(recog, 4), "unlocked": round(unlocked, 3), "score": score})
         if done:
             prev_mastered += 1
     return out
@@ -87,7 +88,8 @@ async def daily_batch(db: AsyncSession, *, student_id: uuid.UUID,
 
     # ① 新点推进:未掌握、按优先级
     scored = await _scored_pool(db, student_id=student_id, textbook=textbook, grade=grade)
-    candidates = [s for s in scored if not s["confirmed_mastered"]]
+    # 新点候选:未确认掌握 且 四维未达成(已达/待复测的点归"间隔维持",不再当新点)
+    candidates = [s for s in scored if not s["confirmed_mastered"] and not s["pending_retain"]]
     # 已确认掌握点数:统计学生全部 grammar 掌握(不限当前题库),供"综合运用"判断
     all_m = (await db.execute(sa.select(StudentGrammarMastery).where(
         StudentGrammarMastery.student_id == student_id))).scalars().all()
