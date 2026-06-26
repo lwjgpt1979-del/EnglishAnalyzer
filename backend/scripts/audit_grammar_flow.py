@@ -13,9 +13,8 @@ from datetime import datetime, timezone, timedelta
 import sqlalchemy as sa
 
 from app.core.database import _async_session_factory
-from app.models.d4_knowledge import (
-    KnowledgePoint, StudentGrammarMastery, GrammarPlacementSession,
-)
+from app.models.d4_knowledge import StudentGrammarMastery, GrammarPlacementSession
+from app.models.d15_knowledge_graph import KnowledgeNode
 from app.services import (
     grammar_placement_service as pl, grammar_probe_service as gp,
     grammar_path_service as path, grammar_config_service as gc,
@@ -42,7 +41,7 @@ def chk_bkt(v, where):
 
 
 async def correct_answer(db, kp_id, key="recognize:0"):
-    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == uuid.UUID(kp_id)))).scalars().first()
+    kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == uuid.UUID(kp_id)))).scalars().first()
     p = kp.grammar_probes_json or {}
     kind, idx = key.split(":"); idx = int(idx)
     if kind == "recognize":
@@ -105,7 +104,7 @@ async def phase_four_axis(db, kp_id, name):
         StudentGrammarMastery.student_id == SID, StudentGrammarMastery.kp_id == uuid.UUID(kp_id)))
     await db.commit()
     out = await gp.comprehension_probes(db, student_id=SID,
-                                        kp=(await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == uuid.UUID(kp_id)))).scalars().first())
+                                        kp=(await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == uuid.UUID(kp_id)))).scalars().first())
     await db.commit()
     # 识别 + 纠错 探针随机作答
     for p in out["probes"]:
@@ -128,7 +127,7 @@ async def phase_four_axis(db, kp_id, name):
         ok("产出评分服务失败 → graded=False 未计分(符合预期)")
     # 迁移随机作答
     tprobe = await gp.transfer_probe(db, student_id=SID,
-                                     kp=(await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == uuid.UUID(kp_id)))).scalars().first())
+                                     kp=(await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == uuid.UUID(kp_id)))).scalars().first())
     await db.commit()
     if tprobe and tprobe.get("probe"):
         tk = tprobe["probe"]["key"]
@@ -170,7 +169,7 @@ async def phase_retention(db, kp_id, name):
     else:
         ok("到期 → 进入待复测列表")
     # 复测答错 → 应遗忘回落
-    seeds = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == uuid.UUID(kp_id)))).scalars().first().grammar_probes_json.get("transfer_seed") or []
+    seeds = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == uuid.UUID(kp_id)))).scalars().first().grammar_probes_json.get("transfer_seed") or []
     if seeds:
         rr = await gp.submit_retention(db, student_id=SID, kp_id=uuid.UUID(kp_id), key="transfer:0", answer="__wrong__")
         await db.commit()

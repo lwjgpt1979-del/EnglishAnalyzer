@@ -1,7 +1,7 @@
 """R10.1 语法「可解释掌握」· 识别 + 纠错探针 + 四维掌握度(BKT)。
 
 设计见 docs/R10-技术方案-语法掌握判定与分级测验.md。方法论沿用 R9(vocab_probe_service):
-- 探针库(KP 级公共复用):ensure_probes 生成并缓存到 KnowledgePoint.grammar_probes_json。
+- 探针库(KP 级公共复用):ensure_probes 生成并缓存到 KnowledgeNode.grammar_probes_json。
 - 四维证据:识别(选择)/ 纠错(改错)/ 产出(造句,R10.2)/ 迁移(新语境,R10.3)。
 - 判分 → 各维掌握度走 BKT(复用 mastery_judge_service.bkt_update,天然分离蒙对/手滑)。
 - R10.1 落 识别 + 纠错 两维;产出/迁移题料一并生成缓存,留 R10.2/3 暴露。
@@ -18,7 +18,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d4_knowledge import KnowledgePoint, StudentGrammarMastery
+from app.models.d4_knowledge import StudentGrammarMastery
+from app.models.d15_knowledge_graph import KnowledgeNode
 from app.services import mastery_judge_service, usage_log_service
 from app.services import grammar_config_service as _cfg
 from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
@@ -37,7 +38,7 @@ RETAIN_MIN_DAYS = 3        # 至少隔 3 天才复测(破"刷同一套题过拟�
 
 
 # ── 探针库(KP 级公共缓存)────────────────────────────────────────────
-async def ensure_probes(db: AsyncSession, kp: KnowledgePoint) -> dict:
+async def ensure_probes(db: AsyncSession, kp: KnowledgeNode) -> dict:
     """取该语法点探针库;无缓存则 LLM 生成(走 fast 档)并写回 grammar_probes_json。"""
     p = kp.grammar_probes_json or {}
     if p.get("recognize") and p.get("detect"):
@@ -95,7 +96,7 @@ async def ensure_probes(db: AsyncSession, kp: KnowledgePoint) -> dict:
 
 
 # ── 探针组装(不含答案,发给前端)──────────────────────────────────────
-async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgePoint) -> dict:
+async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgeNode) -> dict:
     """组装该语法点 R10.1 题面:识别(选择)+ 纠错(改错)。返回题面 + 当前各维掌握度。"""
     await _cfg.get_config(db)   # 预热运营配置(阈值等)
     p = await ensure_probes(db, kp)
@@ -127,7 +128,7 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.U
                        key: str, answer: str) -> dict:
     """提交一道探针(recognize/detect):判分 → 对应维 BKT → 错题计数。"""
     await _cfg.get_config(db)   # 预热运营配置(阈值等)
-    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
     if kp is None:
         raise AppError(code=404, message="知识点不存在")
     p = await ensure_probes(db, kp)
@@ -234,7 +235,7 @@ async def grade_produce(kp_name: str, kp_desc: str, sentence: str) -> dict:
 
 async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.UUID, sentence: str) -> dict:
     """提交造句:rubric 评分 → 产出掌握度 produce BKT(达标=正确)。LLM 失败则不计分。"""
-    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
     if kp is None:
         raise AppError(code=404, message="知识点不存在")
     res = await grade_produce(kp.name, kp.description or "", sentence)
@@ -266,7 +267,7 @@ def _valid_seed(d) -> bool:
     return bool(isinstance(d, dict) and d.get("stem") and d.get("options") and d.get("answer"))
 
 
-async def _ensure_transfer_seed(db: AsyncSession, kp: KnowledgePoint, *, retries: int = 2) -> list:
+async def _ensure_transfer_seed(db: AsyncSession, kp: KnowledgeNode, *, retries: int = 2) -> list:
     """取该点迁移题种子(新语境单选)。健壮性:缓存→LLM 重试→回退复用 recognize 题,
     保证永远能出迁移题(否则 LLM 一次抽风会把该点锁死在"学习中")。"""
     p = kp.grammar_probes_json or {}
@@ -304,7 +305,7 @@ async def _ensure_transfer_seed(db: AsyncSession, kp: KnowledgePoint, *, retries
     return seeds
 
 
-async def transfer_probe(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgePoint) -> dict | None:
+async def transfer_probe(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgeNode) -> dict | None:
     """组装迁移题:同点新语境单选。无可用题→None。"""
     seeds = await _ensure_transfer_seed(db, kp)
     if not seeds:
@@ -318,7 +319,7 @@ async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uui
                           key: str, answer: str) -> dict:
     """提交迁移题:判分 → 识别 BKT + 通过则置 transfer_ok=True。
     verdict=transferred(真懂、能迁移)/ memorized(疑似只记住练过的题)。"""
-    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
     if kp is None:
         raise AppError(code=404, message="知识点不存在")
     seeds = await _ensure_transfer_seed(db, kp)
@@ -370,7 +371,7 @@ async def group_mixed_quiz(db: AsyncSession, *, student_id: uuid.UUID, kp_ids: l
             kid = kid if isinstance(kid, uuid.UUID) else uuid.UUID(str(kid))
         except (ValueError, TypeError):
             continue
-        kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kid))).scalar_one_or_none()
+        kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kid))).scalar_one_or_none()
         if kp is None:
             continue
         p = await ensure_probes(db, kp)
@@ -396,7 +397,7 @@ async def submit_group_mixed(db: AsyncSession, *, student_id: uuid.UUID, answers
             kp_id = uuid.UUID(str(kid))
         except (ValueError, TypeError):
             continue
-        kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+        kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
         if kp is None:
             continue
         recog = (kp.grammar_probes_json or {}).get("recognize") or []
@@ -454,8 +455,8 @@ async def due_retentions(db: AsyncSession, *, student_id: uuid.UUID, limit: int 
     """到期待复测的语法点(四维已达、next_retain_at 到期)。"""
     now = datetime.now(timezone.utc)
     rows = (await db.execute(
-        sa.select(StudentGrammarMastery, KnowledgePoint.name)
-        .join(KnowledgePoint, KnowledgePoint.id == StudentGrammarMastery.kp_id)
+        sa.select(StudentGrammarMastery, KnowledgeNode.name)
+        .join(KnowledgeNode, KnowledgeNode.id == StudentGrammarMastery.kp_id)
         .where(StudentGrammarMastery.student_id == student_id,
                StudentGrammarMastery.mastered_at.isnot(None),
                StudentGrammarMastery.next_retain_at <= now)
@@ -464,7 +465,7 @@ async def due_retentions(db: AsyncSession, *, student_id: uuid.UUID, limit: int 
              "due_at": m.next_retain_at.isoformat() if m.next_retain_at else None} for m, name in rows]
 
 
-async def retention_probe(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgePoint) -> dict | None:
+async def retention_probe(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgeNode) -> dict | None:
     """取一道复测题:同点新语境单选(在迁移题池里按已复测次数轮换)。无题→None。"""
     seeds = await _ensure_transfer_seed(db, kp)
     if not seeds:
@@ -481,7 +482,7 @@ async def submit_retention(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uu
                            key: str, answer: str) -> dict:
     """提交复测:通过→间隔拉长(SM2 阶梯)+ retain_count++;失败→保持回落、重新进入学习。
     verdict=retained(仍记得)/ forgotten(遗忘,需重学)。"""
-    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
     if kp is None:
         raise AppError(code=404, message="知识点不存在")
     seeds = await _ensure_transfer_seed(db, kp)
@@ -563,8 +564,8 @@ def _status_label(m: StudentGrammarMastery | None) -> dict:
 async def coarse_rollup(db: AsyncSession, *, student_id: uuid.UUID, parent_kp_id: uuid.UUID) -> dict:
     """粗语法点的 rollup:掌握 = 其下所有子细点都 confirmed_mastered。无子点则退化为该点自身。"""
     children = (await db.execute(
-        sa.select(KnowledgePoint.id, KnowledgePoint.name).where(
-            KnowledgePoint.parent_id == parent_kp_id, KnowledgePoint.category == "grammar"))).all()
+        sa.select(KnowledgeNode.id, KnowledgeNode.name).where(
+            KnowledgeNode.parent_id == parent_kp_id, KnowledgeNode.status == "active"))).all()
     if not children:
         m = await _get_mastery(db, student_id, parent_kp_id)
         return {"total": 0, "mastered": 0, "all_mastered": confirmed_mastered(m), "children": []}
@@ -630,7 +631,7 @@ async def _bg_generate(kp_ids: list, *, budget_tokens: int = 80_000) -> None:
                 try:
                     async with _async_session_factory() as db:
                         kp = (await db.execute(
-                            sa.select(KnowledgePoint).where(KnowledgePoint.id == kid))).scalar_one_or_none()
+                            sa.select(KnowledgeNode).where(KnowledgeNode.id == kid))).scalar_one_or_none()
                         if kp is None or ((kp.grammar_probes_json or {}).get("recognize")
                                           and (kp.grammar_probes_json or {}).get("detect")):
                             continue   # 不存在或已缓存 → 跳过
@@ -678,9 +679,11 @@ def enqueue_probe_gen(kp_ids, *, cap: int = 80) -> int:
 
 async def backfill_probes(db: AsyncSession, *, limit: int | None = None,
                           only_missing: bool = True, max_tokens_budget: int | None = 200_000) -> dict:
-    """批量给语法点生成探针库。累计 token 超预算即停。返回 {scanned, filled, stopped, spent_tokens}。"""
+    """批量给语法叶子点生成探针库。累计 token 超预算即停。返回 {scanned, filled, stopped, spent_tokens}。"""
+    from app.services import grammar_node_service as gn
+    leaf_ids = [uuid.UUID(d["kp_id"]) for d in await gn.grammar_leaf_nodes(db, stage=None)]
     rows = (await db.execute(
-        sa.select(KnowledgePoint).where(KnowledgePoint.category == "grammar"))).scalars().all()
+        sa.select(KnowledgeNode).where(KnowledgeNode.id.in_(leaf_ids)))).scalars().all() if leaf_ids else []
     scanned = filled = 0
     stopped = False
     with usage_log_service.budget(max_tokens_budget):

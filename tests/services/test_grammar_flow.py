@@ -13,7 +13,8 @@ import sqlalchemy as sa
 
 from app.core.database import _async_session_factory
 from app.models.d1_users import User
-from app.models.d4_knowledge import KnowledgePoint, StudentGrammarMastery
+from app.models.d4_knowledge import StudentGrammarMastery
+from app.models.d15_knowledge_graph import KnowledgeNode
 from app.services import (
     grammar_probe_service as gp, grammar_placement_service as pl,
     grammar_path_service as path,
@@ -35,14 +36,22 @@ async def _student(s) -> uuid.UUID:
 
 
 async def _make_kps(s, n: int) -> list[str]:
+    """建语法叶子 node(挂到「词法」根下、学段含初),不依赖种子数据。"""
+    root = (await s.execute(sa.select(KnowledgeNode).where(
+        KnowledgeNode.parent_id.is_(None), KnowledgeNode.name == "词法"))).scalars().first()
+    if root is None:
+        root = KnowledgeNode(id=uuid.uuid4(), axis="knowledge", name="词法",
+                             code=f"grtest-root-{uuid.uuid4().hex[:8]}", applicable_stages=["初"])
+        s.add(root)
+        await s.flush()
     ids = []
     for i in range(n):
-        kp = KnowledgePoint(
-            id=uuid.uuid4(), code=f"grtest-{uuid.uuid4().hex[:10]}", name=f"测试语法点{i}",
-            category="grammar", description="用于测试的语法点",
-            applicable_grades=["八年级"], applicable_textbooks=["译林版"], sort_order=i)
-        s.add(kp)
-        ids.append(str(kp.id))
+        node = KnowledgeNode(
+            id=uuid.uuid4(), axis="knowledge", name=f"测试语法点{uuid.uuid4().hex[:6]}",
+            code=f"grtest-{uuid.uuid4().hex[:10]}", description="用于测试的语法点",
+            applicable_stages=["初"], parent_id=root.id, sort_order=i, status="active")
+        s.add(node)
+        ids.append(str(node.id))
     await s.flush()
     return ids
 
@@ -76,7 +85,7 @@ async def test_placement_converges_and_warm_starts(db_session):
 async def test_four_axis_gating_and_bkt_bounds(db_session):
     sid = await _student(db_session)
     kid = (await _make_kps(db_session, 1))[0]
-    kp = await db_session.get(KnowledgePoint, uuid.UUID(kid))
+    kp = await db_session.get(KnowledgeNode, uuid.UUID(kid))
     out = await gp.comprehension_probes(db_session, student_id=sid, kp=kp)
     # 只答识别/纠错(不碰产出/迁移)→ 永远不能 mastered
     for p in out["probes"]:
@@ -108,7 +117,7 @@ async def test_confirmed_requires_retention(db_session):
 async def test_retention_decay_on_fail(db_session):
     sid = await _student(db_session)
     kid = (await _make_kps(db_session, 1))[0]
-    kp = await db_session.get(KnowledgePoint, uuid.UUID(kid))
+    kp = await db_session.get(KnowledgeNode, uuid.UUID(kid))
     await gp.ensure_probes(db_session, kp)
     await gp._ensure_transfer_seed(db_session, kp)
     m = await gp._get_or_create_mastery(db_session, sid, uuid.UUID(kid))

@@ -17,12 +17,11 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d4_knowledge import (
-    KnowledgePoint, CurriculumUnit, UnitKnowledgePoint,
-    StudentGrammarMastery, GrammarPlacementSession,
-)
+from app.models.d15_knowledge_graph import KnowledgeNode
+from app.models.d4_knowledge import StudentGrammarMastery, GrammarPlacementSession
 from app.services import grammar_probe_service as gp
 from app.services import grammar_config_service as _cfg
+from app.services import grammar_node_service as gn
 
 _log = logging.getLogger(__name__)
 
@@ -32,22 +31,28 @@ _PRIOR_ASKED_OK = 0.70
 _PRIOR_ASKED_NO = 0.10
 _PRIOR_INFER_OK = 0.55
 _PRIOR_INFER_NO = 0.15
-# 年级难度阶梯(由浅到深;target 及之前的都纳入前置)
-_GRADE_LADDER = ["小学3年级", "小学4年级", "小学5年级", "小学6年级",
-                 "七年级", "八年级", "九年级", "初一", "初二", "初三"]
 
 
-def _grade_scope(grade: str | None) -> list[str]:
-    """目标年级 + 其之前的年级(找地基洞)。未知年级→仅该年级。"""
-    if not grade or grade not in _GRADE_LADDER:
-        return [grade] if grade else []
-    return _GRADE_LADDER[: _GRADE_LADDER.index(grade) + 1]
+def _stage_of(grade: str | None) -> str | None:
+    """年级 → 学段(受控树用 小/初/高)。"""
+    if not grade:
+        return None
+    if "小学" in grade:
+        return "小"
+    if grade in ("七年级", "八年级", "九年级", "初一", "初二", "初三"):
+        return "初"
+    if grade in ("高一", "高二", "高三"):
+        return "高"
+    return None
 
 
 # ── 题库圈定(级联兜底)──────────────────────────────────────────────────
 async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | None,
                      kp_ids: list | None = None) -> list[dict]:
-    """返回按难度排序的题库 [{kp_id, name}]。显式 kp_ids > curriculum > applicable 兜底 > 全量。"""
+    """题库 = 规范受控树「词法/句法」子树的语法叶子细点(按学段过滤)。
+
+    显式 kp_ids 覆盖(从 knowledge_nodes 取名,保序);否则按 grade→学段 取语法叶子。
+    """
     if kp_ids:
         ids = []
         for k in kp_ids:
@@ -56,54 +61,13 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
             except (ValueError, TypeError):
                 continue
         rows = (await db.execute(
-            sa.select(KnowledgePoint.id, KnowledgePoint.name)
-            .where(KnowledgePoint.id.in_(ids)))).all()
+            sa.select(KnowledgeNode.id, KnowledgeNode.name).where(KnowledgeNode.id.in_(ids)))).all()
         order = {x: i for i, x in enumerate(ids)}
         out = [{"kp_id": str(r[0]), "name": r[1]} for r in rows]
         out.sort(key=lambda d: order.get(uuid.UUID(d["kp_id"]), 1e9))
         return out
 
-    # 粗点(有子点的)排除,只学叶子细点 —— 掌握落到细则,粗点做 rollup
-    parent_ids = set((await db.execute(
-        sa.select(KnowledgePoint.parent_id).where(
-            KnowledgePoint.category == "grammar", KnowledgePoint.parent_id.isnot(None)))).scalars().all())
-
-    def _leaves(items: list) -> list:
-        return [d for d in items if uuid.UUID(d["kp_id"]) not in parent_ids]
-
-    grades = _grade_scope(grade)
-    # 1) curriculum 映射(textbook × 前置年级),按 年级→单元 排序
-    if textbook and grades:
-        rows = (await db.execute(
-            sa.select(KnowledgePoint.id, KnowledgePoint.name, CurriculumUnit.grade,
-                      CurriculumUnit.unit_no, KnowledgePoint.sort_order, CurriculumUnit.semester)
-            .select_from(UnitKnowledgePoint)
-            .join(CurriculumUnit, CurriculumUnit.id == UnitKnowledgePoint.unit_id)
-            .join(KnowledgePoint, KnowledgePoint.id == UnitKnowledgePoint.knowledge_point_id)
-            .where(CurriculumUnit.textbook_version == textbook,
-                   CurriculumUnit.grade.in_(grades),
-                   KnowledgePoint.category == "grammar"))).all()
-        if rows:
-            def _grank(g):
-                return _GRADE_LADDER.index(g) if g in _GRADE_LADDER else 99
-            # 难度阶梯:年级 → 学期(上<下)→ 单元 → KP 序
-            rows = sorted(rows, key=lambda r: (_grank(r[2]), 0 if r[5] == "上" else 1, r[3] or 0, r[4] or 0))
-            seen, out = set(), []
-            for r in rows:
-                if r[0] not in seen:
-                    seen.add(r[0])
-                    out.append({"kp_id": str(r[0]), "name": r[1]})
-            return _leaves(out)
-
-    # 2) applicable_grades / applicable_textbooks 兜底
-    cond = [KnowledgePoint.category == "grammar"]
-    if grades:
-        cond.append(sa.or_(KnowledgePoint.applicable_grades.op("&&")(sa.cast(grades, sa.ARRAY(sa.String))),
-                           KnowledgePoint.applicable_grades == sa.cast([], sa.ARRAY(sa.String))))
-    rows = (await db.execute(
-        sa.select(KnowledgePoint.id, KnowledgePoint.name)
-        .where(*cond).order_by(KnowledgePoint.sort_order, KnowledgePoint.name).limit(60))).all()
-    return _leaves([{"kp_id": str(r[0]), "name": r[1]} for r in rows])
+    return await gn.grammar_leaf_nodes(db, stage=_stage_of(grade))
 
 
 # ── 取题(在 [lo,hi] 内靠中位、可出题的点)────────────────────────────────
@@ -117,7 +81,7 @@ async def _servable_item(db: AsyncSession, pool: list, lo: int, hi: int, asked_i
         if i in asked_idx:
             continue
         kid = uuid.UUID(pool[i]["kp_id"])
-        kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == kid))).scalar_one_or_none()
+        kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kid))).scalar_one_or_none()
         if kp is None:
             continue
         p = await gp.ensure_probes(db, kp)
@@ -183,7 +147,7 @@ async def answer(db: AsyncSession, *, student_id: uuid.UUID, session_id: uuid.UU
     idx = next((i for i, d in enumerate(pool) if d["kp_id"] == kp_id), None)
     if idx is None:
         raise AppError(code=400, message="该题不在本次题库")
-    kp = (await db.execute(sa.select(KnowledgePoint).where(KnowledgePoint.id == uuid.UUID(kp_id)))).scalar_one_or_none()
+    kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == uuid.UUID(kp_id)))).scalar_one_or_none()
     recog = (kp.grammar_probes_json or {}).get("recognize") if kp else None
     if not recog:
         raise AppError(code=400, message="题目缺失")

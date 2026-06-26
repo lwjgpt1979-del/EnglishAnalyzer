@@ -16,7 +16,7 @@ from app.services import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models.d4_knowledge import KnowledgePoint
+from app.models.d15_knowledge_graph import KnowledgeNode
 
 router = APIRouter(prefix="/grammar", tags=["grammar"])
 
@@ -45,7 +45,7 @@ class GroupSubmitIn(BaseModel):
 async def get_kp_probes(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """取该语法点的识别 + 纠错探针题面(不含答案)+ 当前各维掌握度。"""
     await get_rls_db(db, str(current_user.id))
-    kp = (await db.execute(select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    kp = (await db.execute(select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
     if kp is None:
         return make_ok({"kp_id": str(kp_id), "probes": [], "recognize": 0, "detect": 0, "mastered": False})
     out = await grammar_probe_service.comprehension_probes(db, student_id=current_user.id, kp=kp)
@@ -77,7 +77,7 @@ async def submit_kp_produce(kp_id: uuid.UUID, body: ProduceSubmitIn, db: DbDep, 
 async def get_kp_transfer(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """取迁移题:同语法点的全新语境单选(检验真懂、非背题)。无题→probe=null。"""
     await get_rls_db(db, str(current_user.id))
-    kp = (await db.execute(select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    kp = (await db.execute(select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
     if kp is None:
         return make_ok({"probe": None})
     out = await grammar_probe_service.transfer_probe(db, student_id=current_user.id, kp=kp)
@@ -127,7 +127,7 @@ async def get_due_retentions(db: DbDep, current_user: UserDep):
 async def get_kp_retention(kp_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """取该点复测题(同点新语境,隔期用)。无题→probe=null。"""
     await get_rls_db(db, str(current_user.id))
-    kp = (await db.execute(select(KnowledgePoint).where(KnowledgePoint.id == kp_id))).scalar_one_or_none()
+    kp = (await db.execute(select(KnowledgeNode).where(KnowledgeNode.id == kp_id))).scalar_one_or_none()
     if kp is None:
         return make_ok({"probe": None})
     out = await grammar_probe_service.retention_probe(db, student_id=current_user.id, kp=kp)

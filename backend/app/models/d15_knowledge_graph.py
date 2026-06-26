@@ -35,6 +35,8 @@ class KnowledgeNode(Base):
     source = mapped_column(sa.String(16), nullable=False, server_default=sa.text("'seed'"))    # seed|textbook|exam
     description = mapped_column(sa.Text, nullable=True)
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    # R10 语法理解探针库(词法/句法叶子节点级公共缓存,re-base 自 knowledge_points)
+    grammar_probes_json = mapped_column(JSONB, nullable=True)
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )

@@ -15,11 +15,9 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d3_wrong_questions import WrongQuestion
-from app.models.d4_knowledge import (
-    KnowledgePoint, WrongQuestionKnowledgePoint, StudentGrammarMastery,
-)
-from app.services import grammar_config_service as _cfg
+from app.models.d3_wrong_questions import WrongQuestion  # noqa: F401
+from app.models.d4_knowledge import StudentGrammarMastery  # noqa: F401
+from app.services import grammar_config_service as _cfg  # noqa: F401
 
 _log = logging.getLogger(__name__)
 
@@ -41,35 +39,13 @@ def _recency(now: datetime, created_at: datetime, half_life: float) -> float:
 
 async def compute_paper_priors(db: AsyncSession, *, student_id: uuid.UUID,
                                half_life_days: int = HALF_LIFE_DAYS) -> dict:
-    """从纸质错题算每个语法点的"洞"先验。返回 {priors:{kp_id:{...}}, weak_kps:[...]}。"""
-    cfg = await _cfg.get_config(db)
-    half_life_days = int(cfg.get("paper_half_life_days", half_life_days))
-    discount = float(cfg.get("paper_mastered_discount", _MASTERED_DISCOUNT))
-    rows = (await db.execute(
-        sa.select(WrongQuestion.created_at, WrongQuestion.is_mastered,
-                  KnowledgePoint.id, KnowledgePoint.name)
-        .select_from(WrongQuestion)
-        .join(WrongQuestionKnowledgePoint, WrongQuestionKnowledgePoint.wrong_question_id == WrongQuestion.id)
-        .join(KnowledgePoint, KnowledgePoint.id == WrongQuestionKnowledgePoint.knowledge_point_id)
-        .where(WrongQuestion.student_id == student_id, KnowledgePoint.category == "grammar"))).all()
-    now = datetime.now(timezone.utc)
-    agg: dict = {}   # kp_id -> {name, signal, errors}
-    for created_at, is_mastered, kid, name in rows:
-        w = _recency(now, created_at, half_life_days)
-        if is_mastered:
-            w *= discount
-        a = agg.setdefault(str(kid), {"name": name, "signal": 0.0, "errors": 0})
-        a["signal"] = max(a["signal"], w)    # 取最强(最新/未掌握)错题信号
-        a["errors"] += 1
-    priors = {}
-    for kid, a in agg.items():
-        # 信号越强 → 先验越低(洞越确定)
-        prior = round(_WEAK_PRIOR_FLOOR + (1 - a["signal"]) * (_WEAK_PRIOR_CEIL - _WEAK_PRIOR_FLOOR), 4)
-        priors[kid] = {"name": a["name"], "prior": prior, "errors": a["errors"],
-                       "signal": round(a["signal"], 4)}
-    weak_kps = sorted(priors.items(), key=lambda kv: kv[1]["prior"])
-    return {"priors": priors,
-            "weak_kps": [{"kp_id": k, **v} for k, v in weak_kps]}
+    """从纸质错题算每个语法点的"洞"先验。
+
+    TODO(re-base):R10 语法已改挂规范受控树 knowledge_nodes,而纸质错题→KP 映射
+    (wrong_question_knowledge_points)仍指向旧 knowledge_points。需接 R3 的「错题→node」
+    闭环(match_kp 命中 node)后再开启。暂返回空(不给错数据),不影响分级/掌握/推进环。
+    """
+    return {"priors": {}, "weak_kps": []}
 
 
 async def apply_paper_priors(db: AsyncSession, *, student_id: uuid.UUID,
