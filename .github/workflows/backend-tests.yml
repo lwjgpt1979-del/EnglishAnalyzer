@@ -46,12 +46,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: DB schema (create_all)
+      - name: DB migrate
         working-directory: backend
-        # 用模型元数据直接建表(测试库标准做法),绕开历史迁移链在全新库上的遗留问题
-        # (如 m51 self_exam_status 枚举重复创建)。生产仍走 alembic。
-        run: |
-          python -c "import os; from sqlalchemy import create_engine; import app.models; from app.models.base import Base; Base.metadata.create_all(create_engine(os.environ['DATABASE_URL']))"
+        # m51 枚举重复已修,迁移链可从全新库一路到 head。
+        run: alembic upgrade head
 
       - name: Run grammar-flow audit tests
         working-directory: backend

@@ -15,13 +15,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    status = sa.Enum("answering", "done", name="self_exam_status")
-    status.create(op.get_bind(), checkfirst=True)
+    # 枚举内联进列、由 create_table 建一次(原先显式 .create + 列复用同对象 → 全新库 CREATE TYPE 两次 DuplicateObject)
     op.create_table(
         "self_exams",
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
         sa.Column("student_id", sa.UUID(), nullable=False),
-        sa.Column("status", status, server_default=sa.text("'answering'"), nullable=False),
+        sa.Column("status", sa.Enum("answering", "done", name="self_exam_status"),
+                  server_default=sa.text("'answering'"), nullable=False),
         sa.Column("question_ids", JSONB(), nullable=False),
         sa.Column("snapshot", JSONB(), nullable=False),
         sa.Column("weak_kps", JSONB(), nullable=True),
