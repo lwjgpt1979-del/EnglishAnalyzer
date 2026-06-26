@@ -68,7 +68,7 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
     if textbook and grades:
         rows = (await db.execute(
             sa.select(KnowledgePoint.id, KnowledgePoint.name, CurriculumUnit.grade,
-                      CurriculumUnit.unit_no, KnowledgePoint.sort_order)
+                      CurriculumUnit.unit_no, KnowledgePoint.sort_order, CurriculumUnit.semester)
             .select_from(UnitKnowledgePoint)
             .join(CurriculumUnit, CurriculumUnit.id == UnitKnowledgePoint.unit_id)
             .join(KnowledgePoint, KnowledgePoint.id == UnitKnowledgePoint.knowledge_point_id)
@@ -78,7 +78,8 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
         if rows:
             def _grank(g):
                 return _GRADE_LADDER.index(g) if g in _GRADE_LADDER else 99
-            rows = sorted(rows, key=lambda r: (_grank(r[2]), r[3] or 0, r[4] or 0))
+            # 难度阶梯:年级 → 学期(上<下)→ 单元 → KP 序
+            rows = sorted(rows, key=lambda r: (_grank(r[2]), 0 if r[5] == "上" else 1, r[3] or 0, r[4] or 0))
             seen, out = set(), []
             for r in rows:
                 if r[0] not in seen:
