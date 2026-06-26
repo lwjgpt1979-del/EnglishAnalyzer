@@ -262,8 +262,13 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid
 
 
 # ── 迁移维(同点新语境,R10.3)────────────────────────────────────────────
-async def _ensure_transfer_seed(db: AsyncSession, kp: KnowledgePoint) -> list:
-    """取该点迁移题种子(新语境单选);缓存缺失则 LLM 现生成一题并写回缓存。"""
+def _valid_seed(d) -> bool:
+    return bool(isinstance(d, dict) and d.get("stem") and d.get("options") and d.get("answer"))
+
+
+async def _ensure_transfer_seed(db: AsyncSession, kp: KnowledgePoint, *, retries: int = 2) -> list:
+    """取该点迁移题种子(新语境单选)。健壮性:缓存→LLM 重试→回退复用 recognize 题,
+    保证永远能出迁移题(否则 LLM 一次抽风会把该点锁死在"学习中")。"""
     p = kp.grammar_probes_json or {}
     seeds = p.get("transfer_seed") or []
     if seeds:
@@ -277,10 +282,20 @@ async def _ensure_transfer_seed(db: AsyncSession, kp: KnowledgePoint) -> list:
             "{\"stem\":\"一句带 ___ 的英文(留一空)\",\"options\":[\"4个英文选项\"],\"answer\":\"正确选项(须在 options 内)\"}"
         )
         user = f"语法知识点:{kp.name}\n说明:{kp.description or ''}\n返回 JSON:"
-        d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=400,
-                                model=fast_model(), feature="grammar_probe",
-                                validate=lambda x: bool(x.get("stem") and x.get("options") and x.get("answer")))
-        seeds = [d] if d and d.get("stem") and d.get("options") and d.get("answer") else []
+        for _ in range(max(1, retries)):   # ① LLM 抖动重试
+            d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=400,
+                                    model=fast_model(), feature="grammar_probe", validate=_valid_seed)
+            if _valid_seed(d):
+                seeds = [d]
+                break
+        # ② 回退:复用已有 recognize 识别题当迁移题(保证永不锁死;标记 fallback)
+        if not seeds:
+            recog = p.get("recognize") or []
+            if recog:
+                r = recog[-1]   # 取最后一道,尽量与学习时(用 recognize[0])错开
+                seeds = [{"stem": r["stem"], "options": list(r["options"]),
+                          "answer": str(r["answer"]), "fallback": True}]
+                _log.warning("[transfer] %s LLM 生成失败,回退复用 recognize 题", kp.name)
     if seeds:
         p = dict(p)
         p["transfer_seed"] = seeds
