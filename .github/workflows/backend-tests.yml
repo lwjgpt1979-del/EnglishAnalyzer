@@ -40,9 +40,11 @@ jobs:
 
       - name: Install deps
         working-directory: backend
+        # 核心依赖在 pyproject [project.dependencies];pytest 在 [dev]。
+        # requirements.txt 只是 spacy/sentry 等额外包,语法审计(dev-mock)用不到,跳过以提速。
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -e ".[dev]"
 
       - name: DB schema (create_all)
         working-directory: backend
