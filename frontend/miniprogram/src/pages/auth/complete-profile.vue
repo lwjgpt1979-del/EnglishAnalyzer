@@ -4,7 +4,9 @@
       <view class="title">完善资料</view>
       <view class="row col">
         <text class="label">出生年份</text>
-        <input v-model="birthYear" type="number" class="input" placeholder="如 2012" />
+        <picker :range="birthYearOptions" @change="onBirthYearChange">
+          <view class="picker-val">{{ birthYear || '请选择' }}</view>
+        </picker>
       </view>
       <view v-if="needGuardian" class="row col">
         <text class="label">监护人手机号</text>
@@ -83,6 +85,10 @@ const semesterOptions = ['上', '下']
 const textbook = ref('')
 const grade = ref('')
 const semester = ref<'上' | '下' | ''>('')
+
+// 出生年份用选择器(避开 mp-weixin 上 number 输入框收不到输入的问题);覆盖小学到初中学龄
+const birthYearOptions = Array.from({ length: 18 }, (_, i) => String(currentYear - 3 - i))
+function onBirthYearChange(e: any) { birthYear.value = birthYearOptions[e.detail.value] }
 
 function onTextbookChange(e: any) { textbook.value = textbookOptions[e.detail.value] }
 function onGradeChange(e: any) { grade.value = gradeOptions[e.detail.value] }
