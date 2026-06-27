@@ -48,7 +48,7 @@ async def log_answer(
     """记一次作答:answer_log 事件 + student_kp(node 投影)计数。"""
     db.add(AnswerLog(
         id=uuid.uuid4(), student_id=student_id, q_scope=q_scope,
-        question_id=question_id, is_correct=is_correct, feature=feature,
+        question_id=question_id, is_correct=is_correct, feature=feature, node_id=node_id,
     ))
     if node_id is not None:
         await db.execute(

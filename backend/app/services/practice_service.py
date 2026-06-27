@@ -325,6 +325,21 @@ async def submit_answer(
             source="practice",
             kp_description=kp_desc,
         )
+        # R10 第2步:把刷题对错挂到规范 node,落 answer_log(对题真值分母)+ student_kp 投影。
+        # 用别名表直查命中 node(零 LLM、零副作用——不在刷题热路径上累加候选);未命中则不记,不影响判分。
+        try:
+            from app.models.d15_knowledge_graph import NodeAlias
+            from app.services import mastery_judge_service
+            from app.services.kp_match_service import normalize_kp_name
+            nn = normalize_kp_name(kp_name)
+            node_id = (await db.execute(
+                select(NodeAlias.node_id).where(NodeAlias.alias_norm == nn))).scalar_one_or_none() if nn else None
+            if node_id is not None:
+                await mastery_judge_service.log_answer(
+                    db, student_id=student_id, q_scope="ai", question_id=question_id,
+                    node_id=node_id, is_correct=is_correct, feature="practice")
+        except Exception:  # noqa: BLE001 — 真值记录是旁路,绝不阻断刷题
+            pass
 
     return record
 

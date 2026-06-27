@@ -195,12 +195,15 @@ class AnswerLog(Base):
     question_id = mapped_column(UUID(as_uuid=True), nullable=False)
     is_correct = mapped_column(sa.Boolean, nullable=False)
     feature = mapped_column(sa.String(24), nullable=True)
+    # m119:事件行直接挂 node(platform/uploaded/ai 统一可聚合;完整性由上游保证,故不加 FK)
+    node_id = mapped_column(UUID(as_uuid=True), nullable=True)
     answered_at = mapped_column(
         sa.TIMESTAMP(timezone=True), primary_key=True, nullable=False, server_default=sa.func.now()
     )
 
     __table_args__ = (
         sa.Index("ix_answer_log_student_time", "student_id", "answered_at"),
+        sa.Index("ix_answer_log_node_time", "node_id", "answered_at"),
     )
 
 

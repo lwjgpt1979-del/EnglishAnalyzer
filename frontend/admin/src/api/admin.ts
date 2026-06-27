@@ -1387,16 +1387,18 @@ export function deleteRegion(code: string): Promise<{ deleted: string }> {
   return unwrap(request.delete(`/admin/regions/${code}`))
 }
 
-// ── R10 语法掌握判定校准(用真实错题反查「已掌握」判得准不准)────────────
+// ── R10 语法掌握判定校准(用真实作答反查「已掌握」判得准不准)────────────
 export interface GrammarCalibWorstNode {
-  node_id: string; name: string; hits: number; confirmed: boolean
-  days_since_mastered: number | null; last_wrong_at: string | null
+  node_id: string; name: string; answers: number
+  accuracy: number | null; false_mastery_rate: number | null
+  paper_hits: number; confirmed: boolean; days_since_mastered: number | null
 }
 export interface GrammarCalibration {
   source: string; note: string
   mastered_points: number; confirmed_points: number
-  false_mastery_hits: number; affected_points: number
-  false_mastery_point_rate: number | null
+  post_mastery: { answers: number; correct: number; accuracy: number | null; false_mastery_rate: number | null }
+  pre_or_unmastered: { answers: number; accuracy: number | null; hint: string }
+  paper_wrong_after_mastery: { hits: number; affected_points: number }
   worst_nodes: GrammarCalibWorstNode[]
 }
 export function getGrammarCalibration(studentId?: string): Promise<GrammarCalibration> {
