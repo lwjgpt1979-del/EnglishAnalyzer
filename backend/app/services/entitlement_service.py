@@ -251,9 +251,24 @@ def pg_insert_usage(user_id, key, bucket):
 
 # ── 校验 ───────────────────────────────────────────────────────────────────────
 async def _tier_of(db: AsyncSession, user_id) -> str:
+    """学生当前有效档位 = max(活跃 Membership-V1, 未过期 PurchasedSemester-V2)。
+
+    V2「学期购买」只建 PurchasedSemester(自带 tier、有有效期),不建 Membership;
+    早期只读 Membership 会把 V2 买家误判为 free,导致跟读评测等按档功能付费后仍被锁。
+    """
     from app.services import membership_service
+    from app.models.d14_v2_semesters import PurchasedSemester
+
+    tiers = ["free"]
     m = await membership_service.get_active_membership(db, user_id=user_id)
-    return str(m.tier) if m else "free"
+    if m:
+        tiers.append(str(m.tier))
+    now = datetime.now(timezone.utc)
+    sem_tiers = (await db.execute(select(PurchasedSemester.tier).where(
+        PurchasedSemester.user_id == user_id,
+        PurchasedSemester.expires_at > now))).scalars().all()
+    tiers.extend(str(t) for t in sem_tiers)
+    return max(tiers, key=lambda t: _TIER_RANK.get(t, 0))
 
 
 async def check(db: AsyncSession, *, user_id, key: str, tier: str | None = None,
