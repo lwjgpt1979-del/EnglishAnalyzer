@@ -63,16 +63,51 @@
       </view>
 
       <view v-else-if="pl.done" class="card">
-        <text class="result-t">📊 你的语法掌握热力图</text>
-        <view class="heat">
-          <view v-for="h in (pl.heatmap || [])" :key="h.kp_id" class="heat-cell" :class="bucketCls(h.bucket)">
-            <text class="heat-name">{{ h.name }}</text>
-            <text class="heat-b">{{ h.bucket }}</text>
+        <view class="result-hd"><view class="ic ic-chart" /><text class="result-t2">你的语法掌握定位</text></view>
+
+        <!-- 摘要条:实测两档高亮,推定两档置灰 -->
+        <view class="heat-sum">
+          <view class="sum-cell ok"><text class="sum-n">{{ heatStats.已会 }}</text><text class="sum-l">已会</text></view>
+          <view class="sum-cell low"><text class="sum-n">{{ heatStats.重点补 }}</text><text class="sum-l">重点补</text></view>
+          <view class="sum-cell none"><text class="sum-n">{{ heatStats.推定已会 }}</text><text class="sum-l">推定已会</text></view>
+          <view class="sum-cell none"><text class="sum-n">{{ heatStats.未学 }}</text><text class="sum-l">未学</text></view>
+        </view>
+
+        <!-- 建议起点:最该立刻看的一条 -->
+        <view v-if="pl.start_line" class="start-card">
+          <text class="start-cap">建议从这里开始</text>
+          <text class="start-name">{{ pl.start_line.name }}</text>
+        </view>
+        <text class="result-note">定级只是估个起点:「推定已会」是推断的、没实测;真正掌握靠之后逐点「四维过关 + 隔期复测」夯实。</text>
+
+        <!-- 实测结果(有据):重点补在前、已会在后,高亮 -->
+        <view v-if="heatTested.length" class="heat-list">
+          <text class="heat-sec">实测结果 · {{ heatTested.length }}</text>
+          <view v-for="h in heatTested" :key="h.kp_id" class="heat-row" :class="heatCls(h.status)">
+            <text class="hr-name">{{ h.name }}</text><text class="hr-b">{{ h.status }}</text>
           </view>
         </view>
-        <view v-if="pl.start_line" class="start-line">
-          <text>建议从这里开始学:</text><text class="sl-name">{{ pl.start_line.name }}</text>
+
+        <!-- 推定已会:未实测,置灰可折叠 -->
+        <view v-if="heatInfer.length" class="heat-more" @tap="showInfer = !showInfer">
+          {{ showInfer ? '收起推定已会' : ('展开推定已会 · ' + heatInfer.length + '(未实测)') }}
         </view>
+        <view v-if="showInfer" class="heat-list">
+          <view v-for="h in heatInfer" :key="h.kp_id" class="heat-row none">
+            <text class="hr-name">{{ h.name }}</text><text class="hr-b">推定已会</text>
+          </view>
+        </view>
+
+        <!-- 未学:置灰可折叠 -->
+        <view v-if="heatUnlearned.length" class="heat-more" @tap="showUnlearned = !showUnlearned">
+          {{ showUnlearned ? '收起未学点' : ('展开未学点 · ' + heatUnlearned.length) }}
+        </view>
+        <view v-if="showUnlearned" class="heat-list">
+          <view v-for="h in heatUnlearned" :key="h.kp_id" class="heat-row none">
+            <text class="hr-name">{{ h.name }}</text><text class="hr-b">未学</text>
+          </view>
+        </view>
+
         <view class="btn-primary" @tap="afterPlacement">开始按计划学 →</view>
       </view>
     </view>
@@ -160,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import {
   getDailyPath, getKpProbes, submitKpProbe, submitKpProduce, getKpTransfer, submitKpTransfer,
@@ -184,9 +219,21 @@ const producing = ref(false)
 const tf = reactive({ started: false, probe: null as GrammarProbe | null, pick: '', result: null as any })
 const rt = reactive({ kpId: '', name: '', probe: null as GrammarProbe | null, pick: '', result: null as any })
 const pl = reactive<PlacementState>({ done: false })
+const showInfer = ref(false)
+const showUnlearned = ref(false)
+const heatStats = computed(() => {
+  const s: Record<string, number> = { 已会: 0, 重点补: 0, 推定已会: 0, 未学: 0 }
+  for (const h of (pl.heatmap || [])) s[h.status] = (s[h.status] || 0) + 1
+  return s
+})
+// 实测/有据(高亮):重点补优先列在前,再已会
+const heatTested = computed(() => (pl.heatmap || []).filter(h => h.tested)
+  .sort((a, b) => (a.status === '重点补' ? 0 : 1) - (b.status === '重点补' ? 0 : 1)))
+const heatInfer = computed(() => (pl.heatmap || []).filter(h => h.status === '推定已会'))
+const heatUnlearned = computed(() => (pl.heatmap || []).filter(h => h.status === '未学'))
 
 function pct(v: number) { return Math.round((v || 0) * 100) + '%' }
-function bucketCls(b: string) { return ({ 已会: 'ok', 临界: 'mid', 薄弱: 'low', 未学: 'none' } as Record<string, string>)[b] || 'none' }
+function heatCls(s: string) { return ({ 已会: 'ok', 重点补: 'low', 推定已会: 'none', 未学: 'none' } as Record<string, string>)[s] || 'none' }
 function statusCls(s: string) { return ({ mastered: 'ok', due_retain: 'warn', retaining: 'mid', learning: 'mid', new: 'none' } as Record<string, string>)[s] || 'none' }
 
 async function loadHome() {
@@ -257,6 +304,8 @@ async function submitRetention() {
 // ── 分级测验 ──
 async function openPlacement() {
   Object.assign(pl, { done: false, item: undefined, heatmap: undefined, start_line: undefined })
+  showInfer.value = false
+  showUnlearned.value = false
   phase.value = 'placement'
   try {
     const r = await placementStart({})
@@ -316,14 +365,31 @@ onShow(() => { if (phase.value === 'home') loadHome() })
 .opt.on { border-color: var(--c-primary); background: var(--c-primary-faint); color: var(--c-primary-deep); font-weight: 700; }
 .opt.ok { border-color: #18a058; background: #e6f8ee; color: #18a058; font-weight: 700; }
 .opt.no { border-color: #e64f4f; background: #fdecec; color: #e64f4f; }
-.result-t { display: block; font-size: 34rpx; font-weight: 900; color: var(--c-ink); text-align: center; margin-bottom: 20rpx; }
-.heat { display: flex; flex-wrap: wrap; gap: 14rpx; }
-.heat-cell { flex: 0 0 calc(50% - 7rpx); box-sizing: border-box; border-radius: 16rpx; padding: 18rpx; display: flex; flex-direction: column; gap: 6rpx; }
-.heat-cell.ok { background: #e6f8ee; } .heat-cell.mid { background: #fff6e6; } .heat-cell.low { background: #fdecec; } .heat-cell.none { background: #f1f4f9; }
-.heat-name { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
-.heat-b { font-size: 22rpx; color: var(--c-text-hint); }
-.start-line { margin-top: 22rpx; font-size: 28rpx; color: var(--c-text-body); }
-.sl-name { font-weight: 800; color: var(--c-primary-deep); margin-left: 8rpx; }
+.result-hd { display: flex; align-items: center; justify-content: center; gap: 12rpx; margin-bottom: 22rpx; }
+.result-hd .ic { width: 38rpx; height: 38rpx; }
+.result-t2 { font-size: 34rpx; font-weight: 900; color: var(--c-ink); }
+/* 摘要条 */
+.heat-sum { display: flex; gap: 12rpx; margin-bottom: 24rpx; }
+.sum-cell { flex: 1; border-radius: 18rpx; padding: 18rpx 0; display: flex; flex-direction: column; align-items: center; gap: 4rpx; }
+.sum-cell.ok { background: #e6f8ee; } .sum-cell.mid { background: #fff6e6; } .sum-cell.low { background: #fdecec; } .sum-cell.none { background: #f1f4f9; }
+.sum-n { font-size: 40rpx; font-weight: 900; color: var(--c-ink); }
+.sum-l { font-size: 22rpx; color: var(--c-text-hint); }
+/* 建议起点 */
+.start-card { background: linear-gradient(135deg, var(--c-primary, #3d8bf5), #5fa3ff); border-radius: 20rpx; padding: 26rpx; margin-bottom: 22rpx; display: flex; flex-direction: column; gap: 8rpx; }
+.start-cap { font-size: 24rpx; color: rgba(255,255,255,.85); }
+.start-name { font-size: 36rpx; font-weight: 900; color: #fff; }
+.result-note { display: block; font-size: 22rpx; color: var(--c-text-hint); line-height: 1.6; margin: 0 0 18rpx; }
+/* 条目列表 */
+.heat-sec { display: block; font-size: 24rpx; color: var(--c-text-hint); font-weight: 700; margin: 6rpx 0 12rpx; }
+.heat-list { display: flex; flex-direction: column; gap: 12rpx; }
+.heat-row { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; border-radius: 14rpx; padding: 18rpx 20rpx; border-left: 8rpx solid #c7d0dc; background: #f7f9fc; }
+.heat-row.ok { border-left-color: #18a058; background: #f0faf4; }
+.heat-row.mid { border-left-color: #ff8a3d; background: #fff8ef; }
+.heat-row.low { border-left-color: #e64f4f; background: #fdf2f2; }
+.heat-row.none { border-left-color: #c7d0dc; background: #f7f9fc; }
+.hr-name { flex: 1; font-size: 28rpx; font-weight: 600; color: var(--c-ink); }
+.hr-b { font-size: 22rpx; color: var(--c-text-hint); flex: none; }
+.heat-more { text-align: center; font-size: 26rpx; color: var(--c-primary-deep); padding: 18rpx; }
 .status-badge { font-size: 24rpx; font-weight: 700; padding: 6rpx 18rpx; border-radius: 20rpx; }
 .status-badge.ok { color: #18a058; background: #e6f8ee; } .status-badge.warn { color: #ff8a3d; background: #fff1e6; } .status-badge.mid { color: var(--c-primary-deep); background: var(--c-primary-faint); } .status-badge.none { color: var(--c-text-hint); background: #f1f4f9; }
 .evidence { display: flex; flex-wrap: wrap; gap: 10rpx; margin-bottom: 16rpx; }

@@ -71,26 +71,49 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
 
 
 # ── 取题(在 [lo,hi] 内靠中位、可出题的点)────────────────────────────────
+def _build_recog_item(i: int, kp_id: str, name: str, probes: dict | None) -> dict | None:
+    """从已有探针 json 取识别题第 0 题,组装出题项;无识别题返回 None。"""
+    recog = (probes or {}).get("recognize") or []
+    if not recog:
+        return None
+    return {"idx": i, "kp_id": kp_id, "kp_name": name,
+            "item": {"key": "recognize:0", "stem": recog[0]["stem"], "options": list(recog[0]["options"])}}
+
+
 async def _servable_item(db: AsyncSession, pool: list, lo: int, hi: int, asked_idx: set) -> dict | None:
-    """在 [lo,hi] 内、优先中位、未问过且能出识别题的点,返回 {idx, kp_id, item}。"""
+    """在 [lo,hi] 内、由近及远(靠中位)选未问过且能出识别题的点。
+
+    冷启动加固(R10):**优先用已缓存探针的点**(零 LLM、毫秒级返回),只有当整段窗口
+    都没缓存时才回退到现场 LLM 生成——避免定级 answer 因撞到冷点同步等 ~12s 而前端「提交失败」。
+    """
     if lo > hi:
         return None
     mid = (lo + hi) // 2
-    order = sorted(range(lo, hi + 1), key=lambda i: abs(i - mid))   # 由近及远找可出题点
+    order = [i for i in sorted(range(lo, hi + 1), key=lambda i: abs(i - mid)) if i not in asked_idx]
+    if not order:
+        return None
+
+    # Pass 1:批量查候选探针缓存,优先选最靠中位的「已缓存」点(不调 LLM)
+    ids = [uuid.UUID(pool[i]["kp_id"]) for i in order]
+    cached: dict = {}
+    for r in (await db.execute(sa.select(
+            KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.grammar_probes_json
+            ).where(KnowledgeNode.id.in_(ids)))).all():
+        cached[str(r[0])] = (r[1], r[2])
     for i in order:
-        if i in asked_idx:
-            continue
-        kid = uuid.UUID(pool[i]["kp_id"])
-        kp = (await db.execute(sa.select(KnowledgeNode).where(KnowledgeNode.id == kid))).scalar_one_or_none()
+        name, probes = cached.get(pool[i]["kp_id"], (None, None))
+        built = _build_recog_item(i, pool[i]["kp_id"], name, probes)
+        if built:
+            return built
+
+    # Pass 2:整段都没缓存 → 回退现场生成(最多生成到第一个能出题的点)
+    for i in order:
+        kp = await db.get(KnowledgeNode, uuid.UUID(pool[i]["kp_id"]))
         if kp is None:
             continue
-        p = await gp.ensure_probes(db, kp)
-        recog = p.get("recognize") or []
-        if not recog:
-            continue
-        opts = list(recog[0]["options"])
-        return {"idx": i, "kp_id": pool[i]["kp_id"], "kp_name": kp.name,
-                "item": {"key": "recognize:0", "stem": recog[0]["stem"], "options": opts}}
+        built = _build_recog_item(i, pool[i]["kp_id"], kp.name, await gp.ensure_probes(db, kp))
+        if built:
+            return built
     return None
 
 
@@ -174,14 +197,23 @@ async def answer(db: AsyncSession, *, student_id: uuid.UUID, session_id: uuid.UU
 
 
 # ── 收尾:暖启动先验 + 热力图 ────────────────────────────────────────────
-def _bucket(prior: float) -> str:
+def _derive_status(prior: float) -> tuple[str, bool]:
+    """由最终 prior 反推「展示档位 + 是否有实据」,把推定和实测分清楚。
+
+    prior 是定级收尾写的哨兵值:实测答对 0.70 / 实测答错 0.10 / 推定会 0.55 /
+    推定不会 0.15;纸质错题洞融合后落到 0.10–0.40。返回 (status, evidenced)。
+    - 已会 / 重点补 = 有实据(实测或纸质错题),前端高亮;
+    - 推定已会 / 未学 = 仅二分推定,未实测,前端置灰可折叠。
+    """
     if prior >= 0.6:
-        return "已会"
-    if prior >= 0.4:
-        return "临界"
+        return "已会", True            # 仅实测答对(0.70);推定会只有 0.55,够不到
+    if prior >= 0.5:
+        return "推定已会", False        # 0.55:二分推定会,未实测
     if prior >= 0.2:
-        return "薄弱"
-    return "未学"
+        return "重点补", True           # 纸质错题洞(0.20–0.40):有实据的薄弱点
+    if prior > 0.12:
+        return "未学", False            # 0.15:二分推定不会,未实测
+    return "重点补", True               # 0.10:实测答错 → 重点补
 
 
 async def _finish(db: AsyncSession, session: GrammarPlacementSession) -> dict:
@@ -194,6 +226,11 @@ async def _finish(db: AsyncSession, session: GrammarPlacementSession) -> dict:
     c = _cfg.cached()
     p_ok, p_no = c.get("prior_asked_ok", _PRIOR_ASKED_OK), c.get("prior_asked_no", _PRIOR_ASKED_NO)
     i_ok, i_no = c.get("prior_infer_ok", _PRIOR_INFER_OK), c.get("prior_infer_no", _PRIOR_INFER_NO)
+    # 批量取该学生在整池上的已有掌握行(避免逐点单查 → N 次往返,大池会拖到十几秒)
+    pool_ids = [uuid.UUID(d["kp_id"]) for d in pool]
+    by_kp = {m.kp_id: m for m in (await db.execute(sa.select(StudentGrammarMastery).where(
+        StudentGrammarMastery.student_id == session.student_id,
+        StudentGrammarMastery.kp_id.in_(pool_ids)))).scalars().all()}
     for i, d in enumerate(pool):
         if i in asked:
             prior = p_ok if asked[i] else p_no
@@ -203,14 +240,13 @@ async def _finish(db: AsyncSession, session: GrammarPlacementSession) -> dict:
             prior = i_no
         # 暖启动 + 融合纸质错题先验(洞更可信,取更低)
         kid = uuid.UUID(d["kp_id"])
-        m = (await db.execute(sa.select(StudentGrammarMastery).where(
-            StudentGrammarMastery.student_id == session.student_id,
-            StudentGrammarMastery.kp_id == kid))).scalar_one_or_none()
+        m = by_kp.get(kid)
         if m is not None and m.prior_source == "paper" and m.mastery_recognize is not None:
             prior = min(prior, float(m.mastery_recognize))   # R10.7:错题洞优先
         priors[d["kp_id"]] = prior
-        bucket = _bucket(prior)
-        heatmap.append({"kp_id": d["kp_id"], "name": d["name"], "prior": prior, "bucket": bucket})
+        status, tested = _derive_status(prior)
+        heatmap.append({"kp_id": d["kp_id"], "name": d["name"], "prior": prior,
+                        "status": status, "tested": tested})
         if start_line is None and prior < 0.5:
             start_line = {"kp_id": d["kp_id"], "name": d["name"], "index": i}
         if m is None:
@@ -239,9 +275,12 @@ async def result(db: AsyncSession, *, student_id: uuid.UUID, session_id: uuid.UU
         return {"session_id": str(session_id), "done": False, "heatmap": [], "start_line": None}
     priors = session.result_priors or {}
     pool = session.pool_kp_ids or []
-    heatmap = [{"kp_id": d["kp_id"], "name": d["name"],
-                "prior": priors.get(d["kp_id"], _PRIOR_INFER_NO),
-                "bucket": _bucket(priors.get(d["kp_id"], _PRIOR_INFER_NO))} for d in pool]
+    heatmap = []
+    for d in pool:
+        p = priors.get(d["kp_id"], _PRIOR_INFER_NO)
+        status, tested = _derive_status(p)
+        heatmap.append({"kp_id": d["kp_id"], "name": d["name"], "prior": p,
+                        "status": status, "tested": tested})
     sl = next((h for h in heatmap if h["prior"] < 0.5), None)
     return {"session_id": str(session_id), "done": True, "heatmap": heatmap,
             "start_line": sl, "asked": len(session.asked or [])}

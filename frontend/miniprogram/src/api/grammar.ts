@@ -74,7 +74,7 @@ export function getDailyPath(textbook?: string, grade?: string): Promise<DailyBa
 
 // ── 分级测验(CAT)──────────────────────────────────────────────────────
 export interface PlacementItem { idx: number; kp_id: string; kp_name: string; item: { key: string; stem: string; options: string[] } }
-export interface HeatCell { kp_id: string; name: string; prior: number; bucket: string }
+export interface HeatCell { kp_id: string; name: string; prior: number; status: string; tested: boolean }
 export interface PlacementState {
   session_id?: string; done: boolean
   item?: PlacementItem
