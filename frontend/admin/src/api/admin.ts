@@ -4,6 +4,7 @@ import type {
   AdminQuestionItem,
   AdminOverview,
   SemesterPricing,
+  InstitutionCodePricing,
   ReviewStatus,
   AdminCurriculumUnit,
   AdminVocabMediaItem,
@@ -1090,6 +1091,17 @@ export function getPricingHistory(limit = 50): Promise<PriceHistoryItem[]> {
   return unwrap(request.get('/admin/pricing/history', { params: { limit } }))
 }
 
+// ══ 机构激活码定价（分 / 月）════════════════════════════════════════
+export function getInstitutionCodePricing() {
+  return unwrap<InstitutionCodePricing>(request.get('/admin/institution-code-pricing'))
+}
+export function updateInstitutionCodePricing(body: InstitutionCodePricing) {
+  return unwrap<InstitutionCodePricing>(request.put('/admin/institution-code-pricing', body))
+}
+export function getInstitutionCodePricingHistory(limit = 50): Promise<PriceHistoryItem[]> {
+  return unwrap(request.get('/admin/institution-code-pricing/history', { params: { limit } }))
+}
+
 // ══ §5.8 老师认证增强 ════════════════════════════════════════════
 export function claimTeacherCert(teacherId: string) {
   return unwrap(request.post(`/admin/teachers/${teacherId}/claim`))
@@ -1373,4 +1385,20 @@ export function updateRegion(code: string, name: string): Promise<RegionNode> {
 }
 export function deleteRegion(code: string): Promise<{ deleted: string }> {
   return unwrap(request.delete(`/admin/regions/${code}`))
+}
+
+// ── R10 语法掌握判定校准(用真实错题反查「已掌握」判得准不准)────────────
+export interface GrammarCalibWorstNode {
+  node_id: string; name: string; hits: number; confirmed: boolean
+  days_since_mastered: number | null; last_wrong_at: string | null
+}
+export interface GrammarCalibration {
+  source: string; note: string
+  mastered_points: number; confirmed_points: number
+  false_mastery_hits: number; affected_points: number
+  false_mastery_point_rate: number | null
+  worst_nodes: GrammarCalibWorstNode[]
+}
+export function getGrammarCalibration(studentId?: string): Promise<GrammarCalibration> {
+  return unwrap(request.get('/admin/grammar/calibration', { params: studentId ? { student_id: studentId } : {} }))
 }

@@ -643,6 +643,20 @@ async def backfill_grammar_probes_api(db: DbDep, admin: AdminDep, limit: int = 5
     return make_ok(r)
 
 
+@router.get("/grammar/calibration", response_model=BaseResponse[dict])
+async def grammar_calibration(db: DbDep, admin: AdminDep, student_id: str | None = None):
+    """R10 验证闭环:用真实作答核对「已掌握」判定准不准(false_mastery_rate 高=虚高)。"""
+    from app.services import grammar_eval_service
+    sid = None
+    if student_id:
+        import uuid as _uuid
+        try:
+            sid = _uuid.UUID(student_id)
+        except (ValueError, TypeError):
+            raise AppError(code=400, message="student_id 非法")
+    return make_ok(await grammar_eval_service.calibration_report(db, student_id=sid))
+
+
 @router.get("/llm-balance", response_model=BaseResponse[dict])
 async def get_llm_balance(admin: AdminDep):
     """DeepSeek 账户真实余额(只读)。dev-mock / 非 DeepSeek 厂商返回 ok=false。"""
