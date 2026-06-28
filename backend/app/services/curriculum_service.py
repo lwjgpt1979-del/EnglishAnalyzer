@@ -227,6 +227,45 @@ async def persist_unit(
     return cu
 
 
+async def upsert_unit_shell(
+    db: AsyncSession,
+    *,
+    textbook_version: str,
+    grade: str,
+    semester: str,
+    unit_no: int,
+    unit_title: str,
+    source_text: str | None = None,
+) -> CurriculumUnit:
+    """只 upsert curriculum_units 主表（按 textbook+grade+semester+unit_no 唯一），
+    不生成知识点/词/讲解/短文。供「只拆 PDF」批量流使用；AI 内容由单元「生成内容」按需补。
+    """
+    cu = (await db.execute(
+        select(CurriculumUnit).where(
+            CurriculumUnit.textbook_version == textbook_version,
+            CurriculumUnit.grade == grade,
+            CurriculumUnit.semester == semester,
+            CurriculumUnit.unit_no == unit_no,
+        )
+    )).scalar_one_or_none()
+    if cu is None:
+        cu = CurriculumUnit(
+            id=uuid.uuid4(),
+            textbook_version=textbook_version,
+            grade=grade,
+            semester=semester,  # type: ignore[arg-type]
+            unit_no=unit_no,
+            unit_title=unit_title,
+        )
+        db.add(cu)
+    else:
+        cu.unit_title = unit_title
+    if source_text is not None:
+        cu.source_text = source_text   # 存原文,供单元「生成内容」按需重生成
+    await db.flush()
+    return cu
+
+
 # ─── Admin：批量生成 ────────────────────────────────────────────────────────
 
 async def reset_semester(

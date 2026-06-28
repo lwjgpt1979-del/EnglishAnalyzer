@@ -45,68 +45,39 @@ def schedule(job_id: uuid.UUID) -> None:
 
 async def _gen_one(seg: dict, *, file_id: str | None, textbook_version: str,
                    grade: str, semester: str, content_status: str) -> dict:
-    """生成单个单元:LLM → persist(独立 commit)→ 对齐(独立 best-effort)。带重试。"""
-    from app.services import (
-        pdf_upload_service as pus, curriculum_ai_service as ai,
-        curriculum_service as cs, curriculum_kp_service as kp,
-    )
+    """只拆单元 PDF + 建单元行(挂 unit_pdf_url),**不做 AI 内容生成**。带重试。
+
+    知识点/词/短文/六维讲解一律延后:由列表里单个单元的「生成内容」按需补
+    (用本步存下的 source_text)。这样批量上传只负责"拆单元、挂 PDF"。
+    """
+    from app.services import pdf_upload_service as pus, curriculum_service as cs
     uno = seg["unit_no"]
+    title = (seg.get("detected_title") or "").strip() or f"Unit {uno}"
     last_err = ""
     for _attempt in range(_MAX_ATTEMPTS):
         try:
             unit_text = pus.get_unit_text(file_id, seg["start_page"], seg["end_page"]) if file_id else ""
-            # 骨架版:只出 考点名 + 词，不生成六维讲解(大幅提速)。
-            # 六维讲解延后/按需，由「生成内容」(generate_unit_content) 用已存的 source_text 单独补。
-            unit = await ai.generate_unit_from_text(
-                textbook_version=textbook_version, grade=grade, semester=semester,
-                unit_no=uno, unit_text=unit_text, detected_title=seg.get("detected_title"),
-                with_contents=False)
-            # 核心落库:独立 session,成功即 commit
-            async with _async_session_factory() as s:
-                cu = await cs.persist_unit(s, ai_unit=unit, content_status=content_status)
-                if unit_text:
-                    cu.source_text = unit_text   # 存原文,供单个"生成内容"重生成 + 重新析短文
-                await s.flush()
-                cu_id = cu.id
-                await s.commit()
-            # 图谱对齐(派生 vocab_node)best-effort,独立 session,失败不影响本单元
-            try:
-                async with _async_session_factory() as s2:
-                    await kp.extract_for_ai_unit(s2, unit_id=cu_id, ai_unit=unit, source="upload_extract")
-                    await s2.commit()
-            except Exception as exc2:  # noqa: BLE001
-                _log.warning("extract_for_ai_unit failed (unit=%s): %s", uno, exc2)
-            # 析出单元短文(听力脚本/阅读短文/写作范文)best-effort 落库
-            try:
-                passages = await ai.extract_unit_passages(unit_text)
-                if passages:
-                    async with _async_session_factory() as s3:
-                        await cs.persist_unit_passages(s3, unit_id=cu_id, passages=passages)
-                        await s3.commit()
-            except Exception as exc3:  # noqa: BLE001
-                _log.warning("extract_unit_passages failed (unit=%s): %s", uno, exc3)
-            # 拆单元独立 PDF → COS,供列表查看原版(文字版/扫描版都按原始页拆)
+            # 1) 先拆 PDF + 传 COS(都在建库前,失败则本单元整体重试/失败,不留半个单元)。
+            #    upload 返回 None(如本地未配 COS)不算失败:单元照建,只是 pdf=False。
+            pdf_url: str | None = None
             if file_id:
-                try:
-                    from app.models.d4_knowledge import CurriculumUnit
-                    pdf_bytes = pus.split_unit_pdf(file_id, seg["start_page"], seg["end_page"])
-                    url = await pus.upload_pdf_to_cos(pdf_bytes, f"curriculum/units/{cu_id}.pdf")
-                    if url:
-                        async with _async_session_factory() as s4:
-                            u = await s4.get(CurriculumUnit, cu_id)
-                            if u is not None:
-                                u.unit_pdf_url = url
-                            await s4.commit()
-                except Exception as exc4:  # noqa: BLE001
-                    _log.warning("split/upload unit pdf failed (unit=%s): %s", uno, exc4)
-            return {"unit_no": uno, "unit_title": unit.unit_title,
-                    "kp_count": len(unit.knowledge_points),
-                    "word_count": len(unit.words), "status": "ok"}
+                pdf_bytes = pus.split_unit_pdf(file_id, seg["start_page"], seg["end_page"])
+                pdf_url = await pus.upload_pdf_to_cos(pdf_bytes, f"curriculum/units/{uno}-{uuid.uuid4().hex[:8]}.pdf")
+            # 2) 建/更新单元主表(独立 commit),挂 PDF + 存原文供日后「生成内容」
+            async with _async_session_factory() as s:
+                cu = await cs.upsert_unit_shell(
+                    s, textbook_version=textbook_version, grade=grade, semester=semester,
+                    unit_no=uno, unit_title=title, source_text=unit_text or None)
+                if pdf_url:
+                    cu.unit_pdf_url = pdf_url
+                await s.commit()
+            return {"unit_no": uno, "unit_title": title, "kp_count": 0,
+                    "word_count": 0, "pdf": bool(pdf_url), "status": "ok"}
         except Exception as exc:  # noqa: BLE001
             last_err = str(exc)
-            _log.warning("gen unit %s attempt failed: %s", uno, exc)
-    return {"unit_no": uno, "unit_title": seg.get("detected_title") or f"Unit {uno}",
-            "kp_count": 0, "word_count": 0, "status": "error", "error": last_err}
+            _log.warning("split unit %s attempt failed: %s", uno, exc)
+    return {"unit_no": uno, "unit_title": title, "kp_count": 0, "word_count": 0,
+            "pdf": False, "status": "error", "error": last_err}
 
 
 async def _save_result(job_id: uuid.UUID, result: dict) -> None:

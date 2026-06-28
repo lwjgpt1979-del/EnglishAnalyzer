@@ -164,30 +164,31 @@ async def test_generate_unit_is_idempotent(
 
 @pytest.mark.asyncio
 async def test_generate_from_pdf_async_job_isolates_failed_unit(admin_client: AsyncClient):
-    """异步任务(方案A):POST 秒回 job_id;后台逐单元生成,失败单元(重试后仍失败)不连累其余,
-    成功单元独立 commit 落库;轮询任务进度可见 done/failed。"""
+    """异步任务(方案A,仅拆 PDF):POST 秒回 job_id;后台逐单元只拆 PDF + 挂 url,
+    失败单元(重试后仍失败)不连累其余、不留半个单元行;轮询进度可见 done/failed + pdf 标记。"""
     import asyncio as _aio
     from unittest.mock import patch
-    from app.services import curriculum_ai_service
-    from app.services.curriculum_ai_service import _make_mock_unit
     from sqlalchemy import text as _t
 
     tb = f"asyncjob版{uuid.uuid4().hex[:6]}"
     grade, sem = "测试年级", "上"
 
-    async def _fake_gen(*, textbook_version, grade, semester, unit_no, unit_text,
-                        detected_title=None, with_contents=True):
-        if unit_no == 2:
-            raise RuntimeError("LLM boom (unit 2)")   # 仅 Unit 2 失败(重试 3 次都失败)
-        return _make_mock_unit(textbook_version, grade, semester, unit_no)
+    def _fake_split(fid, start, end):
+        if start == 2:
+            raise RuntimeError("split boom (unit 2)")   # 仅 Unit 2 拆分失败(重试 3 次都失败)
+        return b"%PDF-1.4 fake"
+
+    async def _fake_upload(pdf_bytes, key):
+        return f"https://cos.example/{key}"             # 模拟 COS 上传成功
 
     segs = [{"unit_no": n, "start_page": n, "end_page": n} for n in (1, 2, 3)]
     body = {"textbook_version": tb, "grade": grade, "semester": sem,
             "segments": segs, "content_status": "draft"}
     try:
-        with patch.object(curriculum_ai_service, "generate_unit_from_text", _fake_gen), \
-             patch("app.services.pdf_upload_service.extract_pages", lambda fid: ["p"] * 5), \
-             patch("app.services.pdf_upload_service.get_unit_text", lambda fid, s, e: "unit text"):
+        with patch("app.services.pdf_upload_service.extract_pages", lambda fid: ["p"] * 5), \
+             patch("app.services.pdf_upload_service.get_unit_text", lambda fid, s, e: "unit text"), \
+             patch("app.services.pdf_upload_service.split_unit_pdf", _fake_split), \
+             patch("app.services.pdf_upload_service.upload_pdf_to_cos", _fake_upload):
             r = await admin_client.post("/api/v1/admin/curriculum/pdf/anyfile/generate", json=body)
             assert r.status_code == 200, r.text
             job_id = r.json()["data"]["job_id"]
@@ -203,25 +204,22 @@ async def test_generate_from_pdf_async_job_isolates_failed_unit(admin_client: As
                 await _aio.sleep(0.2)
         assert data["status"] == "done"           # 有成功单元 → done(非全败)
         assert data["done"] == 2 and data["failed"] == 1
-        statuses = {x["unit_no"]: x["status"] for x in data["results"]}
-        assert statuses == {1: "ok", 2: "error", 3: "ok"}
+        results = {x["unit_no"]: x for x in data["results"]}
+        assert results[1]["status"] == "ok" and results[1]["pdf"] is True
+        assert results[3]["status"] == "ok" and results[3]["pdf"] is True
+        assert results[2]["status"] == "error"
+        # 仅拆 PDF:不产生考点/词
+        assert results[1]["kp_count"] == 0 and results[1]["word_count"] == 0
 
-        # 成功单元已独立 commit 落库,失败单元不在库
+        # 成功单元已独立 commit 落库(挂上 unit_pdf_url),失败单元不在库
         async with _async_session_factory() as s:
-            unos = (await s.execute(_t(
-                "SELECT unit_no FROM curriculum_units WHERE textbook_version=:tb ORDER BY unit_no"),
-                {"tb": tb})).scalars().all()
-        assert list(unos) == [1, 3]
+            rows = (await s.execute(_t(
+                "SELECT unit_no, unit_pdf_url FROM curriculum_units "
+                "WHERE textbook_version=:tb ORDER BY unit_no"), {"tb": tb})).all()
+        assert [r[0] for r in rows] == [1, 3]
+        assert all(r[1] for r in rows)            # 两个落库单元都挂了 PDF url
     finally:
-        # E2:生成只映射到受控树既有节点(共享),本测试不再自建 node。
-        # 故仅清本测试自身产物:单元边/词/暂存内容/单元/任务,不动 knowledge_nodes。
         async with _async_session_factory() as s:
-            ids = (await s.execute(_t("SELECT id FROM curriculum_units WHERE textbook_version=:tb"),
-                                   {"tb": tb})).scalars().all()
-            for uid in ids:
-                await s.execute(_t("DELETE FROM unit_node WHERE unit_id=:u"), {"u": str(uid)})
-                await s.execute(_t("DELETE FROM curriculum_words WHERE unit_id=:u"), {"u": str(uid)})
-                await s.execute(_t("DELETE FROM pending_kp_content WHERE source_unit_id=:u"), {"u": str(uid)})
             await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
             await s.execute(_t("DELETE FROM curriculum_gen_job WHERE textbook_version=:tb"), {"tb": tb})
             await s.commit()

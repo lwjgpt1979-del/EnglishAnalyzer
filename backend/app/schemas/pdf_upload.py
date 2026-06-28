@@ -46,6 +46,7 @@ class UnitGenerateResult(BaseModel):
     unit_title: str
     kp_count: int
     word_count: int
+    pdf: bool = False        # 单元 PDF 是否已拆分并挂上（unit_pdf_url）
     status: str  # "ok" | "error"
     error: str | None = None
 

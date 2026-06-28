@@ -239,7 +239,7 @@ async function pollJob(jobId: string) {
       pdfPollTimer = setTimeout(() => pollJob(jobId), 2500)   // 每 2.5s 轮询
     } else {
       pdfGenerating.value = false
-      if (pdfJob.value.done > 0) { ElMessage.success(`生成完成:成功 ${pdfJob.value.done} 个单元`); await load() }
+      if (pdfJob.value.done > 0) { ElMessage.success(`拆分完成:${pdfJob.value.done} 个单元已挂 PDF`); await load() }
       if (pdfJob.value.failed > 0) ElMessage.warning(`${pdfJob.value.failed} 个单元失败,可点「重试失败单元」`)
     }
   } catch (e: any) {
@@ -469,7 +469,7 @@ onMounted(load)
     <!-- ── PDF 上传 Dialog ── -->
     <el-dialog
       v-model="pdfDialogVisible"
-      title="上传教材 PDF 生成课程内容"
+      title="上传教材 PDF · 拆分单元(挂 PDF)"
       width="680px"
       @close="stopPoll"
       :close-on-click-modal="false"
@@ -478,7 +478,7 @@ onMounted(load)
         <el-step title="教材信息" />
         <el-step title="上传文件" />
         <el-step title="单元划分" />
-        <el-step title="生成内容" />
+        <el-step title="拆分挂PDF" />
       </el-steps>
 
       <!-- Step 0：教材信息 -->
@@ -601,7 +601,7 @@ onMounted(load)
         <div style="display:flex;justify-content:space-between">
           <el-button :disabled="ocrRunning" @click="pdfStep = 1">上一步</el-button>
           <el-button type="primary" :disabled="!segments.length || ocrRunning" @click="startPdfGenerate">
-            开始生成（{{ segments.length }} 个单元）
+            开始拆分（{{ segments.length }} 个单元）
           </el-button>
         </div>
       </div>
@@ -609,10 +609,10 @@ onMounted(load)
       <!-- Step 3：生成中 / 结果 -->
       <div v-if="pdfStep === 3">
         <div v-if="pdfGenerating" class="gen-loading">
-          <div style="font-size:15px;font-weight:600">AI 后台生成中…</div>
+          <div style="font-size:15px;font-weight:600">拆分单元 PDF 中…</div>
           <div style="font-size:13px;color:#909399;margin-top:6px">
             已完成 {{ pdfJob?.done ?? 0 }} / {{ pdfJob?.total ?? segments.length }} 个单元<span v-if="pdfJob?.failed">（失败 {{ pdfJob.failed }}）</span>
-            ——可关闭窗口,后台继续生成,重开本弹窗会自动恢复进度
+            ——可关闭窗口,后台继续,重开本弹窗会自动恢复进度
           </div>
           <el-progress
             :percentage="pdfJob && pdfJob.total ? Math.round((pdfJob.done + pdfJob.failed) / pdfJob.total * 100) : 0"
@@ -641,9 +641,11 @@ onMounted(load)
               <template #default="{ row }">Unit {{ row.unit_no }}</template>
             </el-table-column>
             <el-table-column prop="unit_title" label="标题" min-width="140" show-overflow-tooltip />
-            <el-table-column label="KP / 词" width="90" align="center">
+            <el-table-column label="PDF" width="90" align="center">
               <template #default="{ row }">
-                <span v-if="row.status === 'ok'">{{ row.kp_count }} / {{ row.word_count }}</span>
+                <span v-if="row.status === 'ok'" :style="{ color: row.pdf ? '#67C23A' : '#E6A23C' }">
+                  {{ row.pdf ? '已挂' : '无 PDF' }}
+                </span>
                 <span v-else style="color:#F56C6C;font-size:12px">{{ row.error }}</span>
               </template>
             </el-table-column>

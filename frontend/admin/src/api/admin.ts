@@ -593,6 +593,7 @@ export interface UnitGenerateResult {
   unit_title: string
   kp_count: number
   word_count: number
+  pdf?: boolean
   status: 'ok' | 'error'
   error?: string | null
 }
