@@ -146,6 +146,64 @@ async def test_persist_unit_creates_all_6_tables(db_session):
 
 
 @pytest.mark.asyncio
+async def test_delete_units_cascades_associations_keeps_shared(db_session):
+    """删除单元:连带删 知识图谱边(unit_node)+ 单词通词表(curriculum_words)+ 短文,
+    但共享的 knowledge_nodes / vocabulary_words 主表保留。"""
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.models.d4_knowledge import CurriculumUnitPassage, UnitPassageKp
+
+    ai = _make_unique_unit()
+    node_ids = await _seed_kp_nodes(db_session, [kp.name for kp in ai.knowledge_points])
+    cu = await curriculum_service.persist_unit(db_session, ai_unit=ai)
+    await db_session.flush()
+
+    # 造一篇短文 + 短文↔考点边，验证级联删除短文链
+    node_id_list = list(node_ids.values())
+    passage = CurriculumUnitPassage(
+        id=uuid.uuid4(), unit_id=cu.id, kind="阅读", title="T", text="body", sort_order=0)
+    db_session.add(passage)
+    await db_session.flush()
+    db_session.add(UnitPassageKp(passage_id=passage.id, node_id=node_id_list[0]))
+    await db_session.flush()
+
+    # 记录被关联的 vocabulary_words id（应保留）
+    word_ids = [w.word_id for w in (await db_session.execute(
+        select(CurriculumWord).where(CurriculumWord.unit_id == cu.id))).scalars().all()]
+    assert word_ids
+
+    n = await curriculum_service.delete_units(db_session, unit_ids=[cu.id])
+    await db_session.flush()
+    assert n == 1
+
+    # 单元 + 所有关联均已删
+    assert (await db_session.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == cu.id))).scalar_one_or_none() is None
+    assert (await db_session.execute(
+        select(UnitNode).where(UnitNode.unit_id == cu.id))).scalars().all() == []
+    assert (await db_session.execute(
+        select(CurriculumWord).where(CurriculumWord.unit_id == cu.id))).scalars().all() == []
+    assert (await db_session.execute(
+        select(CurriculumUnitPassage).where(
+            CurriculumUnitPassage.unit_id == cu.id))).scalars().all() == []
+    assert (await db_session.execute(  # 短文删了 → 其考点边 DB 级联删
+        select(UnitPassageKp).where(UnitPassageKp.passage_id == passage.id))).scalars().all() == []
+
+    # 共享主表保留:知识节点 + 词汇
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    assert (await db_session.execute(select(KnowledgeNode).where(
+        KnowledgeNode.id.in_(node_id_list)))).scalars().all()
+    assert (await db_session.execute(select(VocabularyWord).where(
+        VocabularyWord.id.in_(word_ids)))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_delete_units_ignores_unknown_ids(db_session):
+    """传入不存在的 id：返回 0，不报错。"""
+    n = await curriculum_service.delete_units(db_session, unit_ids=[uuid.uuid4()])
+    assert n == 0
+
+
+@pytest.mark.asyncio
 async def test_persist_unit_unmatched_parks_pending(db_session):
     """E2:树上无匹配节点时,persist_unit 不自建节点——落候选 + 六维内容暂存,无 unit_node 边。"""
     from app.models.d11_v2_curriculum import PendingKpContent

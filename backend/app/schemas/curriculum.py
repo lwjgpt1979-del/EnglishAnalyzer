@@ -149,3 +149,8 @@ class KPSearchItem(BaseModel):
     name: str
     category: str
     description: str | None = None
+
+
+class UnitDeleteIn(BaseModel):
+    """批量删除单元（连带知识图谱边 / 单词通词表 / 短文及考点边）。"""
+    unit_ids: list[uuid.UUID] = Field(..., min_length=1)

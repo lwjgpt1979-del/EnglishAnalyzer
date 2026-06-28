@@ -25,6 +25,7 @@ from app.schemas.questions import (
     QuestionReviewRequest,
 )
 from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
+from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.teacher import (
     AdminTeacherItem,
     AdminTeacherListOut,
@@ -956,6 +957,15 @@ async def list_curriculum_units(db: DbDep, admin: AdminDep):
         }
         for s in stats
     ])
+
+
+@router.post("/curriculum/units/delete", response_model=BaseResponse[dict])
+async def delete_curriculum_units_api(body: UnitDeleteIn, db: DbDep, admin: AdminDep):
+    """批量删除单元(连带知识图谱边 unit_node/unit_knowledge_points、短文及其考点边、
+    单词通词表 curriculum_words;AI 练习题解联保留)。仅删关联,不动共享的节点/词汇主表。"""
+    n = await curriculum_service.delete_units(db, unit_ids=body.unit_ids)
+    await db.commit()
+    return make_ok({"deleted": n})
 
 
 @router.post("/curriculum/units/{unit_id}/generate")

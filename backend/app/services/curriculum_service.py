@@ -240,39 +240,55 @@ async def reset_semester(
 
     返回删除的单元数。用于重新生成前清场。
     """
-    import sqlalchemy as _sa
-    from app.models.d4_knowledge import CurriculumWord
-
-    # 先查出目标单元 ID
-    rows = list((await db.execute(
-        select(CurriculumUnit).where(
+    # 先查出目标单元 ID，复用 delete_units 做连带删除（单一来源,避免级联顺序分叉）
+    unit_ids = list((await db.execute(
+        select(CurriculumUnit.id).where(
             CurriculumUnit.textbook_version == textbook_version,
             CurriculumUnit.grade == grade,
             CurriculumUnit.semester == semester,
         )
     )).scalars().all())
-    if not rows:
+    return await delete_units(db, unit_ids=unit_ids)
+
+
+async def delete_units(db: AsyncSession, *, unit_ids: list[uuid.UUID]) -> int:
+    """批量删除单元 + 连带其所有关联(知识图谱边 / 单词通词表 / 短文及其考点边)。
+
+    删的是「单元↔X」的关联,不动 X 本身(知识节点/旧知识点/词汇主表均为全局共享,保留)。
+    顺序:先删无 DB 级联的子表(否则 FK violation),最后删主表;主表删除时
+    DB 会自动级联 curriculum_unit_passages(ondelete=CASCADE)→ unit_passage_kp。
+    返回实际删除的单元数。
+    """
+    import sqlalchemy as _sa
+    from app.models.d4_knowledge import CurriculumWord, UnitKnowledgePoint
+    from app.models.d6_ai_questions import AiQuestion
+    from app.models.d17_curriculum_kg import UnitNode
+
+    if not unit_ids:
         return 0
 
-    unit_ids = [cu.id for cu in rows]
+    # 实际存在的单元(过滤无效 id,返回真实删除数)
+    existing = list((await db.execute(
+        select(CurriculumUnit.id).where(CurriculumUnit.id.in_(unit_ids))
+    )).scalars().all())
+    if not existing:
+        return 0
 
-    # 按 FK 顺序删子表，再删主表（避免 FK violation）
-    from app.models.d4_knowledge import UnitKnowledgePoint
-    from app.models.d17_curriculum_kg import UnitNode
+    # AI 练习题引用单元(FK 无级联,且属生成内容)→ 解联保留题目,而非删题
     await db.execute(
-        _sa.delete(UnitNode).where(UnitNode.unit_id.in_(unit_ids))   # R8.4:单元↔node 边
+        _sa.update(AiQuestion).where(AiQuestion.unit_id.in_(existing))
+        .values(unit_id=None)
     )
+    # 知识图谱关联:新边(unit_node)+ 旧桥(unit_knowledge_points)——只删边,留节点
+    await db.execute(_sa.delete(UnitNode).where(UnitNode.unit_id.in_(existing)))
     await db.execute(
-        _sa.delete(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id.in_(unit_ids))  # 旧桥(兼容)
-    )
-    await db.execute(
-        _sa.delete(CurriculumWord).where(CurriculumWord.unit_id.in_(unit_ids))
-    )
-    await db.execute(
-        _sa.delete(CurriculumUnit).where(CurriculumUnit.id.in_(unit_ids))
-    )
+        _sa.delete(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id.in_(existing)))
+    # 单词通关联:单元词表(curriculum_words)——只删关联,留 vocabulary_words 主表
+    await db.execute(_sa.delete(CurriculumWord).where(CurriculumWord.unit_id.in_(existing)))
+    # 主表(级联删短文 curriculum_unit_passages → unit_passage_kp)
+    await db.execute(_sa.delete(CurriculumUnit).where(CurriculumUnit.id.in_(existing)))
     await db.flush()
-    return len(rows)
+    return len(existing)
 
 
 async def generate_semester(

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled, Refresh, Document, Notebook, Search, Cpu, CircleCheck, CircleClose } from '@element-plus/icons-vue'
+import { UploadFilled, Refresh, Document, Notebook, Search, Cpu, CircleCheck, CircleClose, Delete } from '@element-plus/icons-vue'
 import {
-  listCurriculumUnits,
+  listCurriculumUnits, deleteCurriculumUnits,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
   getUnitPassages,
@@ -36,6 +36,42 @@ async function load() {
   try { rows.value = await listCurriculumUnits() }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
+}
+
+// ── 选择删除 ──────────────────────────────────────────────────────────────────
+const tableRef = ref<{ clearSelection: () => void } | null>(null)
+const selected = ref<AdminCurriculumUnit[]>([])
+const deleting = ref(false)
+function onSelectionChange(rows: AdminCurriculumUnit[]) { selected.value = rows }
+
+function unitLabel(r: AdminCurriculumUnit) {
+  return `${r.textbook_version} ${r.grade} ${r.semester}学期 U${r.unit_no}`
+}
+
+async function deleteUnits(targets: AdminCurriculumUnit[]) {
+  if (!targets.length) return
+  const names = targets.slice(0, 8).map(unitLabel).join('、')
+  const more = targets.length > 8 ? ` 等 ${targets.length} 个单元` : ''
+  try {
+    await ElMessageBox.confirm(
+      `将删除 ${names}${more}，并连带删除：该单元与<b>知识图谱</b>的关联(单元考点边)、与<b>单词通</b>的关联(单元词表)、以及单元短文及其考点边。<br/><br/>` +
+      `<span style="color:#909399">注：共享的知识节点、词汇主表本身不会被删除；该单元生成的练习题会解除单元关联后保留。此操作不可恢复。</span>`,
+      `确认删除 ${targets.length} 个单元？`,
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger', cancelButtonText: '取消', dangerouslyUseHTMLString: true },
+    )
+  } catch { return }   // 用户取消
+  deleting.value = true
+  try {
+    const { deleted } = await deleteCurriculumUnits(targets.map(r => r.unit_id))
+    ElMessage.success(`已删除 ${deleted} 个单元及其关联`)
+    tableRef.value?.clearSelection()
+    selected.value = []
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '删除失败')
+  } finally {
+    deleting.value = false
+  }
 }
 
 const nodesDlg = ref(false)
@@ -345,11 +381,18 @@ onMounted(load)
         已完成 {{ filteredRows.filter(r => r.content_rate >= 1).length }} 个
       </span>
       <div style="flex:1" />
+      <el-button
+        type="danger" plain
+        :disabled="!selected.length" :loading="deleting"
+        @click="deleteUnits(selected)"
+      ><el-icon style="margin-right:4px"><Delete /></el-icon>删除选中{{ selected.length ? `（${selected.length}）` : '' }}</el-button>
       <el-button type="primary" @click="openPdfDialog"><el-icon style="margin-right:4px"><Document /></el-icon>上传教材 PDF</el-button>
     </div>
 
     <!-- 单元表格 -->
-    <el-table v-loading="loading" :data="filteredRows" border style="width:100%">
+    <el-table ref="tableRef" v-loading="loading" :data="filteredRows" border style="width:100%"
+              row-key="unit_id" @selection-change="onSelectionChange">
+      <el-table-column type="selection" width="44" />
       <el-table-column prop="textbook_version" label="教材"   width="90" />
       <el-table-column prop="grade"            label="年级"   width="110" />
       <el-table-column prop="semester"         label="学期"   width="70">
@@ -367,12 +410,13 @@ onMounted(load)
           <span v-else style="font-size:12px;color:#c0c4cc">无短文</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="操作" width="340" fixed="right">
         <template #default="{ row }">
           <div class="act-row">
             <el-button size="small" type="primary" @click="onViewPassages(row)"><el-icon style="margin-right:4px"><Document /></el-icon>短文</el-button>
             <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)"><el-icon style="margin-right:4px"><Notebook /></el-icon>原版PDF</el-button>
             <el-button size="small" @click="onViewNodes(row)">单元考点</el-button>
+            <el-button size="small" type="danger" plain :loading="deleting" @click="deleteUnits([row])"><el-icon><Delete /></el-icon></el-button>
           </div>
         </template>
       </el-table-column>

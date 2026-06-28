@@ -311,6 +311,11 @@ export function listCurriculumUnits(): Promise<AdminCurriculumUnit[]> {
   return unwrap<AdminCurriculumUnit[]>(request.get('/admin/curriculum/units'))
 }
 
+// 批量删除单元(连带知识图谱边 / 单词通词表 / 短文及考点边;返回删除数)
+export function deleteCurriculumUnits(unitIds: string[]): Promise<{ deleted: number }> {
+  return unwrap(request.post('/admin/curriculum/units/delete', { unit_ids: unitIds }))
+}
+
 export interface GenerateUnitResult {
   unit_id: string
   kp_count: number
