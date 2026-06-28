@@ -2,20 +2,27 @@
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  createPurchase, listPurchases, getPurchaseCodes,
-  type PurchaseListItem, type ActivationCode,
+  createPurchase, listPurchases, getPurchaseCodes, getCodePricing,
+  type PurchaseListItem, type ActivationCode, type CodePricing,
 } from '../api/institution'
 
-const TIER_FEN: Record<string, number> = { basic: 1500, pro: 3000, promax: 5000 }
+// 单价读后台配置（分 / 月），与计费同源；接口未到位时不估价（不写死遮蔽）。
+const pricing = ref<CodePricing | null>(null)
 const form = reactive({ tier: 'pro', duration_months: 6, quantity: 1 })
 const purchases = ref<PurchaseListItem[]>([])
 const codes = ref<ActivationCode[]>([])
 const codesTitle = ref('')
 
-const estimate = computed(() =>
-  ((TIER_FEN[form.tier] || 0) * form.duration_months * form.quantity / 100).toFixed(2))
+const estimate = computed(() => {
+  const fen = pricing.value?.[form.tier as keyof CodePricing]
+  if (fen == null) return '—'
+  return (fen * form.duration_months * form.quantity / 100).toFixed(2)
+})
 
-async function load() { purchases.value = await listPurchases() }
+async function load() {
+  pricing.value = await getCodePricing()
+  purchases.value = await listPurchases()
+}
 
 async function submit() {
   const d = await createPurchase({ ...form })
@@ -52,7 +59,7 @@ onMounted(load)
           <el-input-number v-model="form.quantity" :min="1" />
         </el-form-item>
         <el-form-item label="预估金额">
-          <span>¥ {{ estimate }}</span>
+          <span>{{ estimate === '—' ? '—' : '¥ ' + estimate }}</span>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="submit">采购（dev-mock 即付）</el-button>

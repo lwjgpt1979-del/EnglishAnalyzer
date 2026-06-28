@@ -24,7 +24,7 @@ admin / institution 端(Vue + Element Plus):优先用 Element Plus 自带的线�
 - **配套后台入口**:新增一个可变值时,要么接到已有配置 key,要么同时加后台配置入口(admin 接口 + 页面);不要留「只能改代码」的价格/额度。
 - **前端不写死**:小程序/admin 展示的价格、额度等一律走接口,不在前端写死(初始占位值也应尽量避免误导;接口失败要有明确兜底/提示)。
 
-已知待办(发现于本规则确立时,未修复):机构激活码定价 `institution_purchase_service.py` 的 `_TIER_MONTHLY_FEN` 写死且无后台入口——需要配置化。
+~~已知待办:机构激活码定价 `institution_purchase_service.py` 的 `_TIER_MONTHLY_FEN` 写死且无后台入口~~ —— 已配置化:计费读 `pricing_service.get_institution_code_pricing()`(`system_configs.institution_code_pricing`,分/月),后台入口 admin `/admin/institution-code-pricing` GET/PUT(定价配置页);机构采购页估价走 `/institution/code-pricing`,与计费同源。常量仅兜底/白名单。
 
 ## 其它
 

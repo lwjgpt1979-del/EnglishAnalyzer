@@ -41,6 +41,13 @@ export interface SemesterPricing {
   list_promax?: number
 }
 
+// 机构激活码定价（分 / 月）
+export interface InstitutionCodePricing {
+  basic: number
+  pro: number
+  promax: number
+}
+
 export type ReviewStatus = 'draft' | 'reviewing' | 'published' | 'retired'
 
 // 数据大盘概览

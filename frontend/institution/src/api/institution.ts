@@ -85,6 +85,12 @@ export function getPurchaseCodes(purchaseId: string): Promise<ActivationCode[]> 
   return unwrap<ActivationCode[]>(request.get(`/institution/purchases/${purchaseId}/codes`))
 }
 
+// 激活码档位定价（分 / 月），供采购页估价——与后端计费同源（显示价=实扣价）。
+export interface CodePricing { basic: number; pro: number; promax: number }
+export function getCodePricing(): Promise<CodePricing> {
+  return unwrap<CodePricing>(request.get('/institution/code-pricing'))
+}
+
 export interface RenewableStudent {
   student_id: string; nickname: string | null; tier: string; expires_at: string
 }

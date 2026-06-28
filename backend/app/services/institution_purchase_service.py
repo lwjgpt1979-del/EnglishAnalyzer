@@ -12,6 +12,7 @@ from app.core.exceptions import AppError
 from app.models.d2_payments import ActivationCode, InstitutionPurchase
 
 _CODE_CHARS = string.ascii_uppercase + string.digits
+# 仅作档位 key 白名单 / 配置缺失兜底；实际单价见 pricing_service.get_institution_code_pricing()。
 _TIER_MONTHLY_FEN = {"basic": 1500, "pro": 3000, "promax": 5000}
 
 
@@ -33,7 +34,11 @@ async def create_purchase(
     if duration_months < 1 or quantity < 1:
         raise AppError(code=400, message="时长/数量必须 ≥ 1")
 
-    amount_fen = _TIER_MONTHLY_FEN[tier] * duration_months * quantity
+    # 单价读后台配置（分 / 月），运营改了即时生效；显示价 == 实扣价（同源）。
+    from app.services.pricing_service import get_institution_code_pricing
+    pricing = await get_institution_code_pricing(db)
+    monthly_fen = {"basic": pricing.basic, "pro": pricing.pro, "promax": pricing.promax}[tier]
+    amount_fen = monthly_fen * duration_months * quantity
     purchase = InstitutionPurchase(
         id=uuid.uuid4(), institution_id=institution_id, tier=tier,  # type: ignore[arg-type]
         duration_months=duration_months, quantity=quantity,

@@ -27,6 +27,7 @@ from app.schemas.institution import (
     InstitutionApplyRequest,
     InstitutionApplyResult,
     InstitutionOverviewOut,
+    InstitutionCodePricing,
     InstitutionProfileOut,
     InstitutionProfileUpdate,
     InstitutionTeacherOut,
@@ -45,6 +46,7 @@ from app.services import (
     institution_purchase_service,
     institution_renew_service,
     institution_service,
+    pricing_service,
 )
 
 router = APIRouter(prefix="/institution", tags=["institution"])
@@ -206,6 +208,13 @@ async def set_teacher_quota_api(
 
 
 # ─── 学生采购（D-122）──────────────────────────────────────────────────────
+
+@router.get("/code-pricing", response_model=BaseResponse[InstitutionCodePricing])
+async def get_code_pricing(db: DbDep, admin: InstAdminDep):
+    """读机构激活码档位定价（分 / 月），供采购页估价——与计费同源（显示价=实扣价）。"""
+    _require_inst(admin)
+    return make_ok(await pricing_service.get_institution_code_pricing(db))
+
 
 @router.post("/purchases", response_model=BaseResponse[PurchaseOut])
 async def create_purchase(body: PurchaseCreateRequest, db: DbDep, admin: InstAdminDep):

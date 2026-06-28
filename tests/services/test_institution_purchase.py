@@ -52,6 +52,23 @@ async def test_get_purchase_codes_cross_institution_404(db_session):
 
 
 @pytest.mark.asyncio
+async def test_create_purchase_reads_backend_pricing(db_session):
+    """计费读后台配置：改 institution_code_pricing 后金额随之变化（显示价=实扣价）。"""
+    from app.schemas.institution import InstitutionCodePricing
+    from app.services import pricing_service
+
+    inst_id, admin = await _inst_admin(db_session)
+    # 运营把 pro 改成 8888 分/月
+    await pricing_service.update_institution_code_pricing(
+        db_session, pricing=InstitutionCodePricing(basic=1000, pro=8888, promax=9999),
+        updated_by=admin)
+    purchase, _ = await svc.create_purchase(
+        db_session, institution_id=inst_id, created_by=admin,
+        tier="pro", duration_months=2, quantity=4)
+    assert purchase.amount_fen == 8888 * 2 * 4
+
+
+@pytest.mark.asyncio
 async def test_list_purchases(db_session):
     inst_id, admin = await _inst_admin(db_session)
     await svc.create_purchase(db_session, institution_id=inst_id, created_by=admin,

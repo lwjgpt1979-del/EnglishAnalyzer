@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InstitutionProfileOut(BaseModel):
@@ -96,6 +96,20 @@ class PurchaseListItem(BaseModel):
 
 class ActivateCodeRequest(BaseModel):
     code: str
+
+
+class InstitutionCodePricing(BaseModel):
+    """机构激活码档位定价（分 / 月）。运营后台可改，计费与展示同源。"""
+    basic: int    # 分/月
+    pro: int
+    promax: int
+
+
+class InstitutionCodePricingUpdate(BaseModel):
+    """运营改机构激活码定价：三档单价必须为正整数（分 / 月）。"""
+    basic: int = Field(..., ge=1, description="basic 档单价（分 / 月）")
+    pro: int = Field(..., ge=1, description="pro 档单价（分 / 月）")
+    promax: int = Field(..., ge=1, description="promax 档单价（分 / 月）")
 
 
 class AdminInstitutionCreate(BaseModel):
