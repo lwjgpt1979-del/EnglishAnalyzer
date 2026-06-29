@@ -366,7 +366,7 @@ export function fetchUnitPdfBlob(unitId: string): Promise<Blob> {
 
 // ── 单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)──
 export interface UnitSentence { id: string; text: string; difficulty: number | null; syntax_points: string[] }
-export interface UnitSectionItem { id: string; point_name: string | null; node_id: string | null; node_code: string | null; sentences: UnitSentence[] }
+export interface UnitSectionItem { id: string; point_name: string | null; node_id: string | null; node_code: string | null; node_name?: string | null; sentences: UnitSentence[] }
 export interface UnitStructured {
   grammar: UnitSectionItem[]
   listening: UnitSectionItem[]

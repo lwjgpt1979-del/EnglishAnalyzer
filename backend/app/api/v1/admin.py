@@ -1140,6 +1140,7 @@ async def _unit_structured_out(db, unit_id: uuid.UUID) -> dict:
     """读单元结构化解析,组装成 {grammar:[], listening:[], writing:{}}。"""
     import sqlalchemy as _sa
     from app.models.d22_unit_structured import UnitSection as _S, UnitSectionSentence as _SS
+    from app.models.d15_knowledge_graph import KnowledgeNode as _KN
     secs = (await db.execute(_sa.select(_S).where(_S.unit_id == unit_id)
                              .order_by(_S.kind, _S.sort_order))).scalars().all()
     sids = [s.id for s in secs]
@@ -1150,6 +1151,12 @@ async def _unit_structured_out(db, unit_id: uuid.UUID) -> dict:
             sent_map.setdefault(r.section_id, []).append(
                 {"id": str(r.id), "text": r.text, "difficulty": r.difficulty,
                  "syntax_points": r.syntax_points or []})
+    # 已关联节点 → 取中文名
+    node_ids = [s.node_id for s in secs if s.node_id]
+    name_map: dict = {}
+    if node_ids:
+        name_map = dict((await db.execute(
+            _sa.select(_KN.id, _KN.name).where(_KN.id.in_(node_ids)))).all())
     out: dict = {"grammar": [], "listening": [], "writing": None}
     for s in secs:
         if s.kind == "writing":
@@ -1158,6 +1165,7 @@ async def _unit_structured_out(db, unit_id: uuid.UUID) -> dict:
         out.setdefault(s.kind, []).append({
             "id": str(s.id), "point_name": s.point_name,
             "node_id": str(s.node_id) if s.node_id else None, "node_code": s.node_code,
+            "node_name": name_map.get(s.node_id) if s.node_id else None,
             "sentences": sent_map.get(s.id, [])})
     return out
 

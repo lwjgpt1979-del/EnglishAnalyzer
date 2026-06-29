@@ -209,7 +209,6 @@ async function onLinkKg() {
 // 人工挂靠/新建节点:知识图谱树(取 cf/jf 给语法、lt 给听力)
 const kgTree = ref<NodeTreeItem[]>([])
 const kgLoading = ref(false)
-const kgTreeProps = { label: 'name', children: 'children', value: 'id' }
 const pickNode = ref<Record<string, string>>({})   // section_id → 选中的目录节点 id
 async function ensureKgTree() {
   if (kgTree.value.length) return
@@ -221,26 +220,33 @@ async function ensureKgTree() {
 function subtreeByCodes(prefixes: string[]): NodeTreeItem[] {
   return kgTree.value.filter(n => prefixes.some(p => (n.code || '').startsWith(p)))
 }
-// 树下拉模糊搜索:按「名称 + code」大小写无关包含匹配
-function filterKgNode(value: string, data: any): boolean {
-  if (!value) return true
-  const q = value.trim().toLowerCase()
-  return ((data?.name || '').toLowerCase().includes(q)) || ((data?.code || '').toLowerCase().includes(q))
+// 把目录子树拍平成可搜索的扁平列表(避免 el-tree-select 多实例共享 :data 的 No-data 坑)
+interface FlatNode { value: string; name: string; code: string; depth: number }
+function flatten(nodes: NodeTreeItem[], depth = 0, out: FlatNode[] = []): FlatNode[] {
+  for (const n of nodes || []) {
+    out.push({ value: n.id, name: n.name, code: n.code || '', depth })
+    if (n.children?.length) flatten(n.children, depth + 1, out)
+  }
+  return out
 }
-// 语法点→词法/句法子树;听力→听力子树
-const grammarTree = computed(() => subtreeByCodes(['cf', 'jf']))
-const listenTree = computed(() => subtreeByCodes(['lt']))
+// 语法点→词法/句法子树(扁平);听力→听力子树(扁平)
+const grammarFlat = computed(() => flatten(subtreeByCodes(['cf', 'jf'])))
+const listenFlat = computed(() => flatten(subtreeByCodes(['lt'])))
 
-async function onManualLink(kind: string, sec: { id: string; node_code: string | null }) {
+const relinkOpen = ref<Record<string, boolean>>({})   // section_id → 是否处于「改挂」编辑态
+async function onManualLink(kind: string, sec: { id: string; node_code: string | null; node_name?: string | null }) {
   const nid = pickNode.value[sec.id]
   if (!nid) { ElMessage.warning('请先在目录里选一个节点'); return }
   try {
     const r = await linkSectionNode(sec.id, nid)
-    sec.node_code = r.node_code   // 就地更新标签
+    sec.node_code = r.node_code   // 就地覆盖标签
+    sec.node_name = r.name
+    pickNode.value[sec.id] = ''
+    relinkOpen.value[sec.id] = false
     ElMessage.success(`已挂靠到「${r.name}」(${r.node_code})`)
   } catch (e: any) { ElMessage.error(e?.message || '挂靠失败') }
 }
-async function onNewNode(kind: string, sec: { id: string; point_name: string | null; node_code: string | null }) {
+async function onNewNode(kind: string, sec: { id: string; point_name: string | null; node_code: string | null; node_name?: string | null }) {
   const parent = pickNode.value[sec.id]
   if (!parent) { ElMessage.warning('请先选一个父分类(在其下新建)'); return }
   try {
@@ -249,9 +255,21 @@ async function onNewNode(kind: string, sec: { id: string; point_name: string | n
       { inputValue: sec.point_name || '', confirmButtonText: '新建并挂靠', cancelButtonText: '取消' })
     const r = await newNodeForSection(sec.id, parent, (value || '').trim())
     sec.node_code = r.node_code
+    sec.node_name = r.name
+    pickNode.value[sec.id] = ''
+    relinkOpen.value[sec.id] = false
     kgTree.value = []   // 树有新节点,清缓存下次重拉
     ElMessage.success(`已新建并挂靠「${r.name}」(${r.node_code})`)
   } catch { /* 取消 */ }
+}
+// 改挂:保留原关联标签,展开选择器并预选中原节点;重选后「挂靠」覆盖
+function onRelink(sec: { id: string; node_id: string | null }) {
+  pickNode.value[sec.id] = sec.node_id || ''
+  relinkOpen.value[sec.id] = true
+}
+function cancelRelink(sec: { id: string }) {
+  relinkOpen.value[sec.id] = false
+  pickNode.value[sec.id] = ''
 }
 
 // 句子难度色(0–100)
@@ -588,17 +606,22 @@ onMounted(load)
               <div v-for="g in structured.grammar" :key="g.id" class="sec-point">
                 <div class="point-name">
                   {{ g.point_name }}
-                  <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">已关联 {{ g.node_code }}</el-tag>
+                  <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">
+                    已关联 {{ g.node_name || g.node_code }} <span class="muted">{{ g.node_code }}</span>
+                  </el-tag>
+                  <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="primary" style="margin-left:2px" @click="onRelink(g)">改挂</el-button>
                   <span class="muted" style="margin-left:6px">{{ g.sentences.length }} 句</span>
                 </div>
-                <div v-if="!g.node_code" class="link-row">
-                  <el-tree-select :key="(kgTree.length ? 'r' : '0') + g.id" v-model="pickNode[g.id]"
-                    :data="grammarTree" :props="kgTreeProps"
-                    node-key="id" check-strictly filterable :filter-node-method="filterKgNode"
-                    :loading="kgLoading" size="small" style="width:280px"
-                    placeholder="选词法/句法目录节点(可输入名称/编码搜索)" />
-                  <el-button size="small" @click="onManualLink('grammar', g)">挂靠</el-button>
+                <div v-if="!g.node_code || relinkOpen[g.id]" class="link-row">
+                  <el-select v-model="pickNode[g.id]" filterable clearable :loading="kgLoading" size="small"
+                    style="width:280px" placeholder="选词法/句法目录节点(可输入名称/编码搜索)">
+                    <el-option v-for="o in grammarFlat" :key="o.value" :value="o.value" :label="`${o.name} ${o.code}`">
+                      <span :style="{ paddingLeft: o.depth * 12 + 'px' }">{{ o.name }} <span class="muted">{{ o.code }}</span></span>
+                    </el-option>
+                  </el-select>
+                  <el-button size="small" @click="onManualLink('grammar', g)">{{ relinkOpen[g.id] ? '覆盖挂靠' : '挂靠' }}</el-button>
                   <el-button size="small" type="primary" plain @click="onNewNode('grammar', g)">目录没有→新建</el-button>
+                  <el-button v-if="relinkOpen[g.id]" size="small" link @click="cancelRelink(g)">取消</el-button>
                 </div>
                 <div v-for="s in g.sentences" :key="s.id" class="sent-row">
                   <span class="diff-badge" :style="{ background: diffColor(s.difficulty) }">{{ s.difficulty ?? '—' }}</span>
@@ -612,17 +635,22 @@ onMounted(load)
               <div v-for="g in structured.listening" :key="g.id" class="sec-point">
                 <div class="point-name">
                   {{ g.point_name }}
-                  <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">已关联 {{ g.node_code }}</el-tag>
+                  <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">
+                    已关联 {{ g.node_name || g.node_code }} <span class="muted">{{ g.node_code }}</span>
+                  </el-tag>
+                  <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="primary" style="margin-left:2px" @click="onRelink(g)">改挂</el-button>
                   <span class="muted" style="margin-left:6px">{{ g.sentences.length }} 句</span>
                 </div>
-                <div v-if="!g.node_code" class="link-row">
-                  <el-tree-select :key="(kgTree.length ? 'r' : '0') + g.id" v-model="pickNode[g.id]"
-                    :data="listenTree" :props="kgTreeProps"
-                    node-key="id" check-strictly filterable :filter-node-method="filterKgNode"
-                    :loading="kgLoading" size="small" style="width:280px"
-                    placeholder="选听力(lt)目录节点(可输入名称/编码搜索)" />
-                  <el-button size="small" @click="onManualLink('listening', g)">挂靠</el-button>
+                <div v-if="!g.node_code || relinkOpen[g.id]" class="link-row">
+                  <el-select v-model="pickNode[g.id]" filterable clearable :loading="kgLoading" size="small"
+                    style="width:280px" placeholder="选听力(lt)目录节点(可输入名称/编码搜索)">
+                    <el-option v-for="o in listenFlat" :key="o.value" :value="o.value" :label="`${o.name} ${o.code}`">
+                      <span :style="{ paddingLeft: o.depth * 12 + 'px' }">{{ o.name }} <span class="muted">{{ o.code }}</span></span>
+                    </el-option>
+                  </el-select>
+                  <el-button size="small" @click="onManualLink('listening', g)">{{ relinkOpen[g.id] ? '覆盖挂靠' : '挂靠' }}</el-button>
                   <el-button size="small" type="primary" plain @click="onNewNode('listening', g)">目录没有→新建</el-button>
+                  <el-button v-if="relinkOpen[g.id]" size="small" link @click="cancelRelink(g)">取消</el-button>
                 </div>
                 <div v-for="s in g.sentences" :key="s.id" class="sent-row">
                   <span class="diff-badge" :style="{ background: diffColor(s.difficulty) }">{{ s.difficulty ?? '—' }}</span>
