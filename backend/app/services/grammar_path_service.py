@@ -55,6 +55,8 @@ async def _scored_pool(db: AsyncSession, *, student_id: uuid.UUID, textbook: str
         m = by_kp.get(d["kp_id"])
         done = gp.confirmed_mastered(m)
         pending_retain = bool(m and m.mastered_at is not None)   # 四维已达、待复测(归维持,不当新点)
+        # 「学习中」:动过四维(纠错/产出/迁移其一)但还没达成——区别于纯定级暖启动(只有 recognize)
+        started = bool(m and (m.mastery_detect is not None or m.mastery_produce is not None or m.transfer_ok))
         recog = float(m.mastery_recognize) if m and m.mastery_recognize is not None else 0.0
         # 课程临近:越靠前(地基/i+1)越优先 → (n-i)/n
         proximity = (n - i) / n
@@ -64,8 +66,14 @@ async def _scored_pool(db: AsyncSession, *, student_id: uuid.UUID, textbook: str
         gap = 1.0 - recog
         score = round(unlocked * proximity * gap, 4)
         out.append({"kp_id": d["kp_id"], "name": d["name"], "index": i,
-                    "confirmed_mastered": done, "pending_retain": pending_retain,
-                    "recognize": round(recog, 4), "unlocked": round(unlocked, 3), "score": score})
+                    "confirmed_mastered": done, "pending_retain": pending_retain, "started": started,
+                    "recognize": round(recog, 4),
+                    "detect": round(float(m.mastery_detect), 2) if m and m.mastery_detect is not None else 0.0,
+                    "produce": round(float(m.mastery_produce), 2) if m and m.mastery_produce is not None else 0.0,
+                    "transfer_ok": bool(m and m.transfer_ok),
+                    "status": gp._status_label(m)["status"] if m else "new",
+                    "last_seen": m.last_seen_at.isoformat() if m and m.last_seen_at else None,
+                    "unlocked": round(unlocked, 3), "score": score})
         if done:
             prev_mastered += 1
     return out
@@ -88,8 +96,16 @@ async def daily_batch(db: AsyncSession, *, student_id: uuid.UUID,
 
     # ① 新点推进:未掌握、按优先级
     scored = await _scored_pool(db, student_id=student_id, textbook=textbook, grade=grade)
-    # 新点候选:未确认掌握 且 四维未达成(已达/待复测的点归"间隔维持",不再当新点)
-    candidates = [s for s in scored if not s["confirmed_mastered"] and not s["pending_retain"]]
+    due_ids = {d["kp_id"] for d in due}
+    # 「学习中/进行中」:动过但还没坐实 —— 学习中(四维未达)或 已学待复测(未到期)。
+    # 之前这类点既不在已掌握、又不在待复测、又被算进待学,导致「学完没统计、找不回」。
+    in_progress = [s for s in scored
+                   if not s["confirmed_mastered"] and s["kp_id"] not in due_ids
+                   and (s["started"] or s["pending_retain"])]
+    in_progress.sort(key=lambda s: (s["last_seen"] or ""), reverse=True)   # 最近学的排前,便于找回
+    # 新点候选:未确认、四维未达成、且**还没动过**(动过的归"学习中",从待学里剔除)
+    candidates = [s for s in scored if not s["confirmed_mastered"]
+                  and not s["pending_retain"] and not s["started"]]
     # 已确认掌握点数:统计学生全部 grammar 掌握(不限当前题库),供"综合运用"判断
     all_m = (await db.execute(sa.select(StudentGrammarMastery).where(
         StudentGrammarMastery.student_id == student_id))).scalars().all()
@@ -110,10 +126,11 @@ async def daily_batch(db: AsyncSession, *, student_id: uuid.UUID,
         "batch_size": size,
         "ratios": {"new": r_new, "maintain": r_maintain, "apply": r_apply},
         "maintain": maintain,                 # 到期复测(走 /grammar/kp/{id}/retention)
+        "in_progress": in_progress,           # 学习中/进行中(继续学,走 /grammar/kp/{id}/probes)
         "new": new_items,                     # 新学点(走 /grammar/kp/{id}/probes)
         "apply": apply,                       # 综合运用指引
-        "stats": {"pool": len(scored), "mastered": mastered_cnt,
-                  "due": len(due), "remaining_new": len(candidates)},
+        "stats": {"pool": len(scored), "mastered": mastered_cnt, "due": len(due),
+                  "learning": len(in_progress), "remaining_new": len(candidates)},
     }
 
 

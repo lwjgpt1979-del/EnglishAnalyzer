@@ -56,14 +56,16 @@ export function getKpStatus(kpId: string): Promise<GrammarStatus & { recognize: 
 
 // ── 推进环 ─────────────────────────────────────────────────────────────
 export interface PathNewItem { kp_id: string; name: string; index: number; confirmed_mastered: boolean; recognize: number; unlocked: number; score: number }
+export interface PathInProgressItem { kp_id: string; name: string; status: string; detect: number; produce: number; transfer_ok: boolean; recognize: number; last_seen: string | null }
 export interface PathMaintainItem { kp_id: string; kp_name: string; retain_count: number; due_at: string | null }
 export interface DailyBatch {
   batch_size: number
   ratios: { new: number; maintain: number; apply: number }
   maintain: PathMaintainItem[]
+  in_progress: PathInProgressItem[]
   new: PathNewItem[]
   apply: { type: string; mastered_kp_count: number; suggest_count: number; hint: string; targets: string[] } | null
-  stats: { pool: number; mastered: number; due: number; remaining_new: number }
+  stats: { pool: number; mastered: number; due: number; learning: number; remaining_new: number }
 }
 export function getDailyPath(textbook?: string, grade?: string): Promise<DailyBatch> {
   const data: Record<string, string> = {}
