@@ -441,6 +441,20 @@ async def retire_knowledge_node_api(node_id: uuid.UUID, db: DbDep, admin: AdminD
     return make_ok({"id": str(n.id), "status": n.status})
 
 
+@router.get("/knowledge-nodes/{node_id}/children", response_model=BaseResponse[list[dict]])
+async def list_node_children_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """某节点的直接子节点列表(供「编辑子考点」弹框:改名/删除)。"""
+    return make_ok(await kp_candidate_service.list_children(db, node_id=node_id))
+
+
+@router.delete("/knowledge-nodes/{node_id}", response_model=BaseResponse[dict])
+async def delete_knowledge_node_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """硬删除节点(连带其挂边)。有子节点则拒绝;不动共享词汇/题目主表。不可恢复,慎用。"""
+    r = await kp_candidate_service.delete_node(db, node_id=node_id)
+    await db.commit()
+    return make_ok(r)
+
+
 @router.post("/knowledge-nodes/{node_id}/restore", response_model=BaseResponse[dict])
 async def restore_knowledge_node_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """恢复节点(status=active)。"""
@@ -1046,16 +1060,185 @@ async def list_unit_passages_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep)
          "kps": kps.get(p.id, [])} for p in rows]})
 
 
+@router.get("/curriculum/units/{unit_id}/pdf")
+async def get_unit_pdf_proxy(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """同源代理单元 PDF:服务端从 COS 取字节回传(inline)。
+
+    前端用 authed XHR 取回再转 blob: URL 内嵌预览——绕开「跨域 PDF 在 iframe 里不渲染、
+    但新标签能开」的 Chrome 行为。返回原始 PDF 字节,非 JSON 信封。
+    """
+    from fastapi import Response
+    from app.models.d4_knowledge import CurriculumUnit
+    import httpx
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
+    if unit is None or not (unit.unit_pdf_url or "").strip():
+        raise AppError(code=404, message="该单元无 PDF")
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(unit.unit_pdf_url)
+            r.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        raise AppError(code=502, message=f"取单元 PDF 失败:{exc}")
+    return Response(content=r.content, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=unit.pdf",
+                             "Cache-Control": "private, max-age=300"})
+
+
+@router.post("/curriculum/units/{unit_id}/passages/generate", response_model=BaseResponse[dict])
+async def generate_unit_passages_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """从单元原文(source_text,来自上传 PDF)AI 析出 听力/阅读/写作 短文,整体覆盖旧短文。
+
+    标题与原文按教材**原样抽取**(不改写/不翻译),与 PDF 保持一致。无原文则报错提示先拆 PDF。
+    """
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.services import curriculum_ai_service
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+    src = (unit.source_text or "").strip()
+    if not src:
+        # 无原文 → 回退:用该单元已挂的 PDF(unit_pdf_url)抽文字;扫描件(无文字层)自动走 OCR
+        if not (unit.unit_pdf_url or "").strip():
+            raise AppError(code=400, message="该单元无原文也无 PDF,无法析出短文(请先在批量上传里拆出该单元 PDF)")
+        try:
+            src = (await pdf_upload_service.fetch_pdf_text(
+                unit.unit_pdf_url, ocr_fallback=True)).strip()
+        except Exception as exc:  # noqa: BLE001
+            raise AppError(code=400, message=f"从该单元 PDF 回取文字失败:{exc}")
+        if not src:
+            raise AppError(code=400, message="该单元 PDF 无文字层、OCR 也未识别到文字(或 OCR 未配置),无法析出短文")
+        unit.source_text = src   # 回存(含 OCR 结果),下次直接用,免再下载/识别
+    passages = await curriculum_ai_service.extract_unit_passages(src)
+    n = await curriculum_service.persist_unit_passages(db, unit_id=unit_id, passages=passages)
+    await db.commit()
+    # 复用 list 查询返回最新短文(含每篇 kps),前端直接刷新
+    out = await list_unit_passages_api(unit_id, db, admin)
+    out.data["generated"] = n
+    return out
+
+
+async def _resolve_unit_source_text(db, unit) -> str:
+    """取单元原文:优先 source_text;无则回退该单元 PDF 抽文字(扫描件走 OCR),并回存。"""
+    src = (unit.source_text or "").strip()
+    if src:
+        return src
+    if not (unit.unit_pdf_url or "").strip():
+        raise AppError(code=400, message="该单元无原文也无 PDF(请先在批量上传里拆出该单元 PDF)")
+    try:
+        src = (await pdf_upload_service.fetch_pdf_text(unit.unit_pdf_url, ocr_fallback=True)).strip()
+    except Exception as exc:  # noqa: BLE001
+        raise AppError(code=400, message=f"从该单元 PDF 回取文字失败:{exc}")
+    if not src:
+        raise AppError(code=400, message="该单元 PDF 无文字层、OCR 也未识别到文字(或 OCR 未配置)")
+    unit.source_text = src
+    return src
+
+
+async def _unit_structured_out(db, unit_id: uuid.UUID) -> dict:
+    """读单元结构化解析,组装成 {grammar:[], listening:[], writing:{}}。"""
+    import sqlalchemy as _sa
+    from app.models.d22_unit_structured import UnitSection as _S, UnitSectionSentence as _SS
+    secs = (await db.execute(_sa.select(_S).where(_S.unit_id == unit_id)
+                             .order_by(_S.kind, _S.sort_order))).scalars().all()
+    sids = [s.id for s in secs]
+    sent_map: dict = {}
+    if sids:
+        for r in (await db.execute(_sa.select(_SS).where(_SS.section_id.in_(sids))
+                                   .order_by(_SS.sort_order))).scalars().all():
+            sent_map.setdefault(r.section_id, []).append(
+                {"id": str(r.id), "text": r.text, "difficulty": r.difficulty,
+                 "syntax_points": r.syntax_points or []})
+    out: dict = {"grammar": [], "listening": [], "writing": None}
+    for s in secs:
+        if s.kind == "writing":
+            out["writing"] = {"id": str(s.id), "requirement": s.requirement, "body_text": s.body_text}
+            continue
+        out.setdefault(s.kind, []).append({
+            "id": str(s.id), "point_name": s.point_name,
+            "node_id": str(s.node_id) if s.node_id else None, "node_code": s.node_code,
+            "sentences": sent_map.get(s.id, [])})
+    return out
+
+
+@router.get("/curriculum/units/{unit_id}/structured", response_model=BaseResponse[dict])
+async def get_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """单元结构化解析:语法点+分级句 / 听力考点+句组 / 作文要求+正文。"""
+    return make_ok(await _unit_structured_out(db, unit_id))
+
+
+@router.post("/curriculum/units/{unit_id}/structured/generate", response_model=BaseResponse[dict])
+async def generate_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """从单元原文 LLM 解析出结构化(语法点+分级句/听力考点+句组/作文要求+正文),整体覆盖。
+
+    句子均为原文逐字、每句算 0–100 难度。语法点/听力考点 node_id 第二步「关联知识图谱」再填。
+    """
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.services import curriculum_ai_service
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+    src = await _resolve_unit_source_text(db, unit)
+    parsed = await curriculum_ai_service.parse_unit_structured(src)
+    counts = await curriculum_service.persist_unit_structured(db, unit_id=unit_id, parsed=parsed)
+    await db.commit()
+    out = await _unit_structured_out(db, unit_id)
+    out["counts"] = counts
+    return make_ok(out)
+
+
+@router.post("/curriculum/units/{unit_id}/structured/link", response_model=BaseResponse[dict])
+async def link_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep,
+                                   only_unlinked: bool = True):
+    """第二步:把单元结构化的 语法点→词法/句法、听力考点→听力 关联到知识图谱。
+
+    命中回填 node;未命中落候选(走「候选审核」,审核通过挂到树上后再点一次即可关联)。
+    """
+    counts = await curriculum_service.link_unit_sections(
+        db, unit_id=unit_id, only_unlinked=only_unlinked)
+    await db.commit()
+    out = await _unit_structured_out(db, unit_id)
+    out["link_counts"] = counts
+    return make_ok(out)
+
+
+@router.post("/curriculum-unit-sections/{section_id}/link-node", response_model=BaseResponse[dict])
+async def manual_link_section_api(section_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """人工挂靠:把某语法点/听力考点关联到图谱里已存在的节点(限 语法→cf/jf、听力→lt)。"""
+    node_id = uuid.UUID(str(body.get("node_id")))
+    r = await curriculum_service.manual_link_section(db, section_id=section_id, node_id=node_id)
+    await db.commit()
+    return make_ok(r)
+
+
+@router.post("/curriculum-unit-sections/{section_id}/new-node", response_model=BaseResponse[dict])
+async def new_node_for_section_api(section_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """目录没有→在所选父分类下新建图谱节点(手工标签)并挂靠。body: {parent_id, name}。"""
+    parent_id = uuid.UUID(str(body.get("parent_id")))
+    r = await curriculum_service.new_node_for_section(
+        db, section_id=section_id, parent_id=parent_id,
+        name=str(body.get("name") or ""), created_by=admin.id)
+    await db.commit()
+    return make_ok(r)
+
+
 @router.post("/unit-passages/{passage_id}/suggest-kp", response_model=BaseResponse[dict])
 async def suggest_passage_kp_api(passage_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """AI 给该短文匹配考点(听力→lt/阅读→rc/写作→wr),只返回建议不入库。"""
     import sqlalchemy as _sa
-    from app.models.d4_knowledge import CurriculumUnitPassage as _P
+    from app.models.d4_knowledge import CurriculumUnitPassage as _P, CurriculumUnit as _U
     from app.services import kp_suggest_service as kss
+    from app.services import kp_prompt_service as kps
     p = (await db.execute(_sa.select(_P).where(_P.id == passage_id))).scalar_one_or_none()
     if p is None:
         raise AppError(code=404, message="短文不存在")
-    refs = await kss.suggest_kps_for_passage(db, p.text, p.kind)
+    # 该短文所属单元的「教材+年级+学期」→ 用对应学期定制提示词(无定制回退全局)
+    u = (await db.execute(_sa.select(
+        _U.textbook_version, _U.grade, _U.semester).where(_U.id == p.unit_id))).first()
+    scope = kps.make_scope(u.textbook_version, u.grade, u.semester) if u else None
+    refs = await kss.suggest_kps_for_passage(db, p.text, p.kind, scope=scope)
     return make_ok({"items": [{"node_id": str(n), "name": nm, "code": c} for n, nm, c in refs]})
 
 
@@ -1343,21 +1526,42 @@ async def suggest_paper_kp_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep,
 
 
 @router.get("/kp-prompts", response_model=BaseResponse[KpPromptsOut])
-async def get_kp_prompts_api(db: DbDep, admin: AdminDep):
-    """知识点 AI 提示词(按题型,缺省返回内置默认)。"""
+async def get_kp_prompts_api(db: DbDep, admin: AdminDep, scope: str | None = None):
+    """知识点 AI 提示词(按题型)。scope=「教材版本|年级|学期」则取该学期定制(无则回退全局)。"""
     from app.services import kp_prompt_service as kps
-    prompts = await kps.get_prompts(db)
-    return make_ok(KpPromptsOut(prompts=[KpPromptItem(**p) for p in prompts]))
+    prompts = await kps.get_prompts(db, scope)
+    return make_ok(KpPromptsOut(
+        prompts=[KpPromptItem(**p) for p in prompts],
+        passage_include_skill=await kps.get_passage_include_skill(db, scope)))
 
 
 @router.put("/kp-prompts", response_model=BaseResponse[KpPromptsOut])
 async def save_kp_prompts_api(body: KpPromptsIn, db: DbDep, admin: AdminDep):
-    """保存知识点 AI 提示词(整体覆盖,每题型至多一个默认)。"""
+    """保存知识点 AI 提示词(整体覆盖,每题型至多一个默认)。body.scope 非空则存该学期定制。"""
     from app.services import kp_prompt_service as kps
     saved = await kps.save_prompts(
-        db, prompts=[p.model_dump() for p in body.prompts], updated_by=admin.id)
+        db, prompts=[p.model_dump() for p in body.prompts], updated_by=admin.id, scope=body.scope,
+        passage_include_skill=body.passage_include_skill)
     await db.commit()
-    return make_ok(KpPromptsOut(prompts=[KpPromptItem(**p) for p in saved]))
+    return make_ok(KpPromptsOut(
+        prompts=[KpPromptItem(**p) for p in saved],
+        passage_include_skill=await kps.get_passage_include_skill(db, body.scope)))
+
+
+@router.get("/kp-prompts/scopes", response_model=BaseResponse[list[str]])
+async def list_kp_prompt_scopes_api(db: DbDep, admin: AdminDep):
+    """已定制(有独立提示词)的学期 scope 串列表,如 ["译林版|七年级|上", ...]。"""
+    from app.services import kp_prompt_service as kps
+    return make_ok(await kps.list_scopes(db))
+
+
+@router.delete("/kp-prompts/scope", response_model=BaseResponse[dict])
+async def delete_kp_prompt_scope_api(db: DbDep, admin: AdminDep, scope: str):
+    """删除某学期的提示词定制,恢复为继承全局默认。"""
+    from app.services import kp_prompt_service as kps
+    ok = await kps.delete_scope(db, scope)
+    await db.commit()
+    return make_ok({"deleted": ok})
 
 
 @router.post("/kp-suggest-text", response_model=BaseResponse[list[QuestionKpRef]])

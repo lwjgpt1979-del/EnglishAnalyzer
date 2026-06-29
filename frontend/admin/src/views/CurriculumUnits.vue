@@ -6,11 +6,12 @@ import {
   listCurriculumUnits, deleteCurriculumUnits,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
-  getUnitPassages,
-  suggestPassageKp, attachPassageKp, detachPassageKp,
-  type UnitSegment, type GenJob, type UnitPassage, type PassageKp,
+  fetchUnitPdfBlob, getUnitStructured, generateUnitStructured, linkUnitStructured,
+  linkSectionNode, newNodeForSection, getNodeTree, getUnitPassages,
+  type UnitSegment, type GenJob, type UnitStructured,
 } from '../api/admin'
-import type { AdminCurriculumUnit } from '../types'
+import type { AdminCurriculumUnit, NodeTreeItem } from '../types'
+import KpPromptEditor from '../components/KpPromptEditor.vue'
 
 // ── 单元列表 ──────────────────────────────────────────────────────────────────
 const rows = ref<AdminCurriculumUnit[]>([])
@@ -74,6 +75,18 @@ async function deleteUnits(targets: AdminCurriculumUnit[]) {
   }
 }
 
+// 本学期考点提示词配置弹窗(预填当前筛选的 教材/年级/学期;无筛选给默认)
+const kpDlg = ref(false)
+const kpInit = ref({ textbook: '译林版', grade: '七年级', semester: '上' })
+function openKpDialog() {
+  kpInit.value = {
+    textbook: filterTextbook.value || rows.value[0]?.textbook_version || '译林版',
+    grade: filterGrade.value || rows.value[0]?.grade || '七年级',
+    semester: filterSemester.value || rows.value[0]?.semester || '上',
+  }
+  kpDlg.value = true
+}
+
 const nodesDlg = ref(false)
 const nodesLoading = ref(false)
 // 单元考点 = 各短文已关联考点的并集(从短文级 unit_passage_kp 汇总;单一来源)
@@ -110,54 +123,143 @@ async function onViewNodes(row: AdminCurriculumUnit) {
 const passDlg = ref(false)
 const passLoading = ref(false)
 const passTitle = ref('')
-const passages = ref<UnitPassage[]>([])
-const PASS_KINDS = ['听力', '阅读', '写作']
-const passGroups = computed(() =>
-  PASS_KINDS.map(kind => ({ kind, items: passages.value.filter(p => p.kind === kind) }))
-    .filter(g => g.items.length))
+const passUnit = ref<AdminCurriculumUnit | null>(null)   // 当前单元(取 unit_id / unit_pdf_url)
+const passGenerating = ref(false)
+// 跨域 PDF 在 iframe 里 Chrome 不渲染(新标签却能开)。改走「后端同源代理→取 blob→blob: URL」内嵌。
+const pdfSrc = ref('')
+const pdfLoading = ref(false)
+let pdfObjUrl = ''
+function revokePdf() { if (pdfObjUrl) { URL.revokeObjectURL(pdfObjUrl); pdfObjUrl = '' } }
+async function loadUnitPdf() {
+  if (!passUnit.value?.unit_pdf_url) return
+  pdfLoading.value = true
+  try {
+    const blob = await fetchUnitPdfBlob(passUnit.value.unit_id)
+    revokePdf()
+    pdfObjUrl = URL.createObjectURL(blob)
+    pdfSrc.value = pdfObjUrl
+  } catch (e: any) {
+    ElMessage.error(e?.message || 'PDF 加载失败,可点「新标签打开」查看')
+  } finally {
+    pdfLoading.value = false
+  }
+}
+// 结构化解析结果(语法点+分级句 / 听力考点+句组 / 作文要求+正文)
+const structured = ref<UnitStructured>({ grammar: [], listening: [], writing: null })
+const hasStructured = computed(() => !!(structured.value.grammar.length
+  || structured.value.listening.length || structured.value.writing))
 function openUnitPdf(row: AdminCurriculumUnit) {
   if (row.unit_pdf_url) window.open(row.unit_pdf_url, '_blank')
 }
 async function onViewPassages(row: AdminCurriculumUnit) {
   passTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
+  passUnit.value = row
+  pdfSrc.value = ''                 // 等 @opened 再设,避免动画期 iframe 白屏
   passDlg.value = true
   passLoading.value = true
-  passages.value = []
-  passSuggest.value = {}
-  try { passages.value = (await getUnitPassages(row.unit_id)).items }
+  structured.value = { grammar: [], listening: [], writing: null }
+  pickNode.value = {}
+  ensureKgTree()   // 先并行拉知识图谱树(~700 节点,给足时间,免得点开下拉时还没到→No data)
+  try { structured.value = await getUnitStructured(row.unit_id) }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { passLoading.value = false }
 }
-// 短文关联考点:AI 匹配 → 人工 ✓ 挂入
-const passSuggest = ref<Record<string, PassageKp[]>>({})   // 待确认建议
-const passBusy = ref<Record<string, boolean>>({})
-const KIND_ROOT: Record<string, string> = { 听力: '听力考点', 阅读: '阅读考点', 写作: '作文考点' }
-async function doSuggestPassage(p: UnitPassage) {
-  passBusy.value[p.id] = true
+
+async function onRegenerate() {
+  if (!passUnit.value) return
+  if (hasStructured.value) {
+    try {
+      await ElMessageBox.confirm(
+        '将用单元原文(PDF)重新 LLM 解析,覆盖当前的「语法点 / 听力 / 作文」结构。是否继续？',
+        '重新生成', { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' })
+    } catch { return }
+  }
+  passGenerating.value = true
   try {
-    const r = await suggestPassageKp(p.id)
-    const have = new Set(p.kps.map(k => k.node_id))
-    passSuggest.value[p.id] = r.items.filter(k => !have.has(k.node_id))
-    if (!passSuggest.value[p.id].length) ElMessage.info('AI 未匹配到新考点')
-  } catch (e: any) { ElMessage.error(e?.message || 'AI 匹配失败') }
-  finally { passBusy.value[p.id] = false }
+    const r = await generateUnitStructured(passUnit.value.unit_id)
+    structured.value = r
+    const c = r.counts
+    if (c && (c.grammar + c.listening + c.writing) > 0)
+      ElMessage.success(`已解析:语法 ${c.grammar} 点 / 听力 ${c.listening} 点 / 作文 ${c.writing} · 共 ${c.sentences} 句`)
+    else ElMessage.info('未解析出结构(可能原文为空或为 dev 模式)')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '生成失败')
+  } finally {
+    passGenerating.value = false
+  }
 }
-async function acceptPassageKp(p: UnitPassage, k: PassageKp) {
+
+// 第二步:关联知识图谱(语法点→词法/句法、听力考点→听力)
+const passLinking = ref(false)
+async function onLinkKg() {
+  if (!passUnit.value || !hasStructured.value) return
+  passLinking.value = true
   try {
-    await attachPassageKp(p.id, k.node_id)
-    p.kps.push(k)
-    passSuggest.value[p.id] = (passSuggest.value[p.id] || []).filter(x => x.node_id !== k.node_id)
-    ElMessage.success(`已关联「${k.name}」`)
-  } catch (e: any) { ElMessage.error(e?.message || '关联失败') }
+    const r = await linkUnitStructured(passUnit.value.unit_id)
+    structured.value = r
+    const c = r.link_counts
+    if (c) ElMessage.success(`已关联 ${c.linked} 个;${c.candidate} 个目录暂无→已落候选(去「候选审核」通过后再关联)`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '关联失败')
+  } finally {
+    passLinking.value = false
+  }
 }
-function dismissPassageSug(p: UnitPassage, k: PassageKp) {
-  passSuggest.value[p.id] = (passSuggest.value[p.id] || []).filter(x => x.node_id !== k.node_id)
+
+// 人工挂靠/新建节点:知识图谱树(取 cf/jf 给语法、lt 给听力)
+const kgTree = ref<NodeTreeItem[]>([])
+const kgLoading = ref(false)
+const kgTreeProps = { label: 'name', children: 'children', value: 'id' }
+const pickNode = ref<Record<string, string>>({})   // section_id → 选中的目录节点 id
+async function ensureKgTree() {
+  if (kgTree.value.length) return
+  kgLoading.value = true
+  try { kgTree.value = (await getNodeTree('knowledge')).items }
+  catch (e: any) { ElMessage.error(e?.message || '加载知识图谱失败') }
+  finally { kgLoading.value = false }
 }
-async function removePassageKp(p: UnitPassage, k: PassageKp) {
+function subtreeByCodes(prefixes: string[]): NodeTreeItem[] {
+  return kgTree.value.filter(n => prefixes.some(p => (n.code || '').startsWith(p)))
+}
+// 树下拉模糊搜索:按「名称 + code」大小写无关包含匹配
+function filterKgNode(value: string, data: any): boolean {
+  if (!value) return true
+  const q = value.trim().toLowerCase()
+  return ((data?.name || '').toLowerCase().includes(q)) || ((data?.code || '').toLowerCase().includes(q))
+}
+// 语法点→词法/句法子树;听力→听力子树
+const grammarTree = computed(() => subtreeByCodes(['cf', 'jf']))
+const listenTree = computed(() => subtreeByCodes(['lt']))
+
+async function onManualLink(kind: string, sec: { id: string; node_code: string | null }) {
+  const nid = pickNode.value[sec.id]
+  if (!nid) { ElMessage.warning('请先在目录里选一个节点'); return }
   try {
-    await detachPassageKp(p.id, k.node_id)
-    p.kps = p.kps.filter(x => x.node_id !== k.node_id)
-  } catch (e: any) { ElMessage.error(e?.message || '取消失败') }
+    const r = await linkSectionNode(sec.id, nid)
+    sec.node_code = r.node_code   // 就地更新标签
+    ElMessage.success(`已挂靠到「${r.name}」(${r.node_code})`)
+  } catch (e: any) { ElMessage.error(e?.message || '挂靠失败') }
+}
+async function onNewNode(kind: string, sec: { id: string; point_name: string | null; node_code: string | null }) {
+  const parent = pickNode.value[sec.id]
+  if (!parent) { ElMessage.warning('请先选一个父分类(在其下新建)'); return }
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '在所选父分类下新建知识图谱节点(手工标签),节点名:', '新建节点',
+      { inputValue: sec.point_name || '', confirmButtonText: '新建并挂靠', cancelButtonText: '取消' })
+    const r = await newNodeForSection(sec.id, parent, (value || '').trim())
+    sec.node_code = r.node_code
+    kgTree.value = []   // 树有新节点,清缓存下次重拉
+    ElMessage.success(`已新建并挂靠「${r.name}」(${r.node_code})`)
+  } catch { /* 取消 */ }
+}
+
+// 句子难度色(0–100)
+function diffColor(d: number | null): string {
+  if (d == null) return '#c0c4cc'
+  if (d >= 60) return '#F56C6C'
+  if (d >= 35) return '#E6A23C'
+  return '#67C23A'
 }
 
 function rateColor(rate: number) {
@@ -381,6 +483,7 @@ onMounted(load)
         已完成 {{ filteredRows.filter(r => r.content_rate >= 1).length }} 个
       </span>
       <div style="flex:1" />
+      <el-button @click="openKpDialog"><el-icon style="margin-right:4px"><Cpu /></el-icon>本学期考点提示词</el-button>
       <el-button
         type="danger" plain
         :disabled="!selected.length" :loading="deleting"
@@ -388,6 +491,14 @@ onMounted(load)
       ><el-icon style="margin-right:4px"><Delete /></el-icon>删除选中{{ selected.length ? `（${selected.length}）` : '' }}</el-button>
       <el-button type="primary" @click="openPdfDialog"><el-icon style="margin-right:4px"><Document /></el-icon>上传教材 PDF</el-button>
     </div>
+
+    <!-- ── 本学期考点提示词配置 Dialog（按学期定制知识脑图匹配提示词)── -->
+    <el-dialog v-model="kpDlg" title="考点提示词配置（按学期定制)" width="1100px" top="4vh"
+               :destroy-on-close="true">
+      <KpPromptEditor v-if="kpDlg" :init-scope-on="true"
+        :init-textbook="kpInit.textbook" :init-grade="kpInit.grade" :init-semester="kpInit.semester" />
+      <template #footer><el-button @click="kpDlg = false">关闭</el-button></template>
+    </el-dialog>
 
     <!-- 单元表格 -->
     <el-table ref="tableRef" v-loading="loading" :data="filteredRows" border style="width:100%"
@@ -438,30 +549,99 @@ onMounted(load)
     </el-dialog>
 
     <!-- ── 单元短文(听力/阅读/写作)Dialog ── -->
-    <el-dialog v-model="passDlg" :title="`单元短文 · ${passTitle}`" width="720px">
-      <div v-loading="passLoading">
-        <el-empty v-if="!passLoading && !passages.length" description="该单元暂无析出短文(生成时未拆到,或该单元未重新生成)" />
-        <template v-else>
-          <div v-for="g in passGroups" :key="g.kind" class="pass-group">
-            <div class="pass-kind">{{ g.kind }}<span class="muted">（{{ g.items.length }} 篇）</span></div>
-            <div v-for="p in g.items" :key="p.id" class="pass-item">
-              <div v-if="p.title" class="pass-title">{{ p.title }}</div>
-              <pre class="pass-text">{{ p.text }}</pre>
-              <div class="pass-kp">
-                <span class="kp-label">{{ KIND_ROOT[p.kind] || '考点' }}：</span>
-                <el-tag v-for="k in p.kps" :key="k.node_id" size="small" type="success" effect="plain" closable
-                  @close="removePassageKp(p, k)" style="margin:2px">{{ k.name }}</el-tag>
-                <el-tag v-for="k in (passSuggest[p.id] || [])" :key="'s' + k.node_id" size="small" type="primary" effect="plain"
-                  style="border-style:dashed;margin:2px">
-                  AI:{{ k.name }}
-                  <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptPassageKp(p, k)">✓</span>
-                  <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissPassageSug(p, k)">✕</span>
-                </el-tag>
-                <el-button size="small" link type="primary" :loading="passBusy[p.id]" @click="doSuggestPassage(p)"><el-icon style="margin-right:4px"><Cpu /></el-icon>AI 匹配考点</el-button>
-              </div>
+    <el-dialog v-model="passDlg" :title="`单元短文 · ${passTitle}`" width="1120px" top="5vh"
+               @opened="loadUnitPdf" @closed="revokePdf(); pdfSrc = ''">
+      <div class="pass-wrap">
+        <!-- 左:单元 PDF 预览(同源 blob,对照原文) -->
+        <div class="pass-pdf" v-loading="pdfLoading" element-loading-text="加载 PDF…">
+          <div class="pane-head">
+            <span>单元 PDF</span>
+            <el-link v-if="passUnit?.unit_pdf_url" type="primary" :href="passUnit.unit_pdf_url"
+              target="_blank" :underline="false" style="font-size:13px">新标签打开 ↗</el-link>
+          </div>
+          <iframe v-if="passUnit?.unit_pdf_url" :src="pdfSrc" class="pdf-frame" />
+          <el-empty v-else description="该单元暂无 PDF（请先在批量上传里拆出该单元 PDF）" :image-size="60" />
+        </div>
+
+        <!-- 右:结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)-->
+        <div class="pass-list" v-loading="passLoading">
+          <div class="pane-head">
+            <span>单元解析<span class="muted" v-if="hasStructured">（语法 {{ structured.grammar.length }} · 听力 {{ structured.listening.length }} · 作文 {{ structured.writing ? 1 : 0 }}）</span></span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <el-button v-if="hasStructured" size="small" type="success" plain
+                :loading="passLinking" @click="onLinkKg">
+                <el-icon style="margin-right:4px"><Cpu /></el-icon>关联知识图谱
+              </el-button>
+              <el-button size="small" type="primary" :loading="passGenerating"
+                :disabled="!passUnit?.unit_pdf_url && !hasStructured" @click="onRegenerate">
+                <el-icon style="margin-right:4px"><Cpu /></el-icon>{{ hasStructured ? '重新生成' : 'LLM 解析单元' }}
+              </el-button>
             </div>
           </div>
-        </template>
+
+          <el-empty v-if="!passLoading && !hasStructured" :image-size="60"
+            description="该单元暂无解析结果,点右上「LLM 解析单元」从 PDF 原文解析" />
+          <template v-else>
+            <!-- 语法部分 -->
+            <div v-if="structured.grammar.length" class="sec-group">
+              <div class="sec-head sec-grammar">语法部分<span class="muted">（{{ structured.grammar.length }} 个语法点）</span></div>
+              <div v-for="g in structured.grammar" :key="g.id" class="sec-point">
+                <div class="point-name">
+                  {{ g.point_name }}
+                  <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">已关联 {{ g.node_code }}</el-tag>
+                  <span class="muted" style="margin-left:6px">{{ g.sentences.length }} 句</span>
+                </div>
+                <div v-if="!g.node_code" class="link-row">
+                  <el-tree-select :key="(kgTree.length ? 'r' : '0') + g.id" v-model="pickNode[g.id]"
+                    :data="grammarTree" :props="kgTreeProps"
+                    node-key="id" check-strictly filterable :filter-node-method="filterKgNode"
+                    :loading="kgLoading" size="small" style="width:280px"
+                    placeholder="选词法/句法目录节点(可输入名称/编码搜索)" />
+                  <el-button size="small" @click="onManualLink('grammar', g)">挂靠</el-button>
+                  <el-button size="small" type="primary" plain @click="onNewNode('grammar', g)">目录没有→新建</el-button>
+                </div>
+                <div v-for="s in g.sentences" :key="s.id" class="sent-row">
+                  <span class="diff-badge" :style="{ background: diffColor(s.difficulty) }">{{ s.difficulty ?? '—' }}</span>
+                  <span class="sent-text">{{ s.text }}</span>
+                </div>
+              </div>
+            </div>
+            <!-- 听力部分 -->
+            <div v-if="structured.listening.length" class="sec-group">
+              <div class="sec-head sec-listen">听力部分<span class="muted">（{{ structured.listening.length }} 个听力考点）</span></div>
+              <div v-for="g in structured.listening" :key="g.id" class="sec-point">
+                <div class="point-name">
+                  {{ g.point_name }}
+                  <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">已关联 {{ g.node_code }}</el-tag>
+                  <span class="muted" style="margin-left:6px">{{ g.sentences.length }} 句</span>
+                </div>
+                <div v-if="!g.node_code" class="link-row">
+                  <el-tree-select :key="(kgTree.length ? 'r' : '0') + g.id" v-model="pickNode[g.id]"
+                    :data="listenTree" :props="kgTreeProps"
+                    node-key="id" check-strictly filterable :filter-node-method="filterKgNode"
+                    :loading="kgLoading" size="small" style="width:280px"
+                    placeholder="选听力(lt)目录节点(可输入名称/编码搜索)" />
+                  <el-button size="small" @click="onManualLink('listening', g)">挂靠</el-button>
+                  <el-button size="small" type="primary" plain @click="onNewNode('listening', g)">目录没有→新建</el-button>
+                </div>
+                <div v-for="s in g.sentences" :key="s.id" class="sent-row">
+                  <span class="diff-badge" :style="{ background: diffColor(s.difficulty) }">{{ s.difficulty ?? '—' }}</span>
+                  <span class="sent-text">{{ s.text }}</span>
+                </div>
+              </div>
+            </div>
+            <!-- 作文部分 -->
+            <div v-if="structured.writing" class="sec-group">
+              <div class="sec-head sec-write">作文部分</div>
+              <div class="sec-point">
+                <div v-if="structured.writing.requirement" class="point-name">作文要求</div>
+                <pre v-if="structured.writing.requirement" class="pass-text">{{ structured.writing.requirement }}</pre>
+                <div class="point-name" style="margin-top:8px">正文(书本原文)</div>
+                <pre class="pass-text">{{ structured.writing.body_text }}</pre>
+              </div>
+            </div>
+          </template>
+        </div>
       </div>
       <template #footer><el-button @click="passDlg = false">关闭</el-button></template>
     </el-dialog>
@@ -683,6 +863,34 @@ onMounted(load)
 .offset-tip { color: #b45309; background: #fffbeb; font-size: 12px;
   padding: 6px 10px; border-radius: 4px; margin-bottom: 10px; }
 .printed-hint { color: #2563eb; font-size: 11px; margin-top: 2px; }
+/* 单元短文弹窗:左 PDF / 右短文,等高对照 */
+.pass-wrap { display: flex; gap: 16px; height: 76vh; }
+.pass-pdf { flex: 1; min-width: 0; display: flex; flex-direction: column;
+  border: 1px solid #ebeef5; border-radius: 8px; overflow: hidden; }
+.sec-group { margin-bottom: 16px; }
+.sec-head { font-weight: 700; font-size: 15px; color: #303133; padding: 6px 0 6px 10px;
+  border-left: 4px solid #409eff; margin-bottom: 8px; }
+.sec-head .muted { font-weight: 400; }
+.sec-grammar { border-left-color: #409eff; }
+.sec-listen { border-left-color: #67c23a; }
+.sec-write { border-left-color: #e6a23c; }
+.sec-point { margin: 0 0 12px 6px; padding: 8px 10px; background: #fafcff;
+  border: 1px solid #eef2f8; border-radius: 6px; }
+.point-name { font-weight: 600; font-size: 13px; color: #303133; margin-bottom: 6px; }
+.link-row { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; flex-wrap: wrap; }
+.sent-row { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; }
+.diff-badge { flex-shrink: 0; min-width: 26px; text-align: center; color: #fff;
+  font-size: 11px; line-height: 18px; border-radius: 9px; padding: 0 6px; margin-top: 1px; }
+.sent-text { font-size: 13px; line-height: 1.6; color: #303133; word-break: break-word; }
+.pass-list { flex: 1; min-width: 0; display: flex; flex-direction: column;
+  border: 1px solid #ebeef5; border-radius: 8px; padding: 0 12px 12px; overflow: auto; }
+.pane-head { position: sticky; top: 0; z-index: 1; background: #fff;
+  display: flex; align-items: center; justify-content: space-between;
+  font-weight: 600; font-size: 14px; color: #303133;
+  padding: 10px 0; border-bottom: 1px solid #f0f2f5; margin-bottom: 10px; }
+.pass-pdf .pane-head { padding: 10px 12px; margin-bottom: 0; }
+.pane-head .muted { color: #909399; font-weight: 400; font-size: 12px; }
+.pdf-frame { flex: 1; width: 100%; border: 0; }
 .pass-group { margin-bottom: 14px; }
 .pass-kind { font-weight: 600; font-size: 14px; color: #303133; margin-bottom: 6px;
   border-left: 3px solid #409eff; padding-left: 8px; }

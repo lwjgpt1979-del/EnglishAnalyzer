@@ -65,21 +65,36 @@ _RANGE: dict[str, tuple[int, int]] = {
 def _builtin_list() -> list[dict]:
     return [{"id": f"builtin-{t}", "name": "内置默认", "text": _BUILTIN[t],
              "question_type": t, "is_default": True, "focus_node_ids": [],
-             "min_kp": _RANGE.get(t, (0, 2))[0], "max_kp": _RANGE.get(t, (0, 2))[1]}
+             "min_kp": _RANGE.get(t, (0, 2))[0], "max_kp": _RANGE.get(t, (0, 2))[1],
+             "focus_ranges": {}}
             for t in ALL_TYPES]
 
 
-async def get_prompts(db: AsyncSession) -> list[dict]:
-    """读全部提示词;缺失返回内置默认(每题型一条)。"""
-    cfg = (await db.execute(select(SystemConfig).where(SystemConfig.key == _KEY))).scalar_one_or_none()
-    if cfg is None or not isinstance(cfg.value, dict) or not cfg.value.get("prompts"):
-        return _builtin_list()
-    stored = cfg.value["prompts"]
-    # 旧配置里的单一「教材」→ 归到新的「教材·其他」板块(向后兼容)
+def range_for(item: dict, node_id) -> tuple[int, int]:
+    """某「关注分类」的考点数范围(至少, 至多)。该分类没单独配 → 回退提示词级 min_kp/max_kp。"""
+    r = (item.get("focus_ranges") or {}).get(str(node_id))
+    if isinstance(r, (list, tuple)) and len(r) == 2:
+        return int(r[0]), int(r[1])
+    return int(item.get("min_kp") or 0), int(item.get("max_kp") or 2)
+
+
+def make_scope(textbook: str | None, grade: str | None, semester: str | None) -> str | None:
+    """学期 scope 串(教材版本|年级|学期);任一缺失 → None(用全局默认)。"""
+    if textbook and grade and semester:
+        return f"{textbook}|{grade}|{semester}"
+    return None
+
+
+def _scoped_key(scope: str | None) -> str:
+    return _KEY if not scope else f"{_KEY}::{scope}"
+
+
+def _normalize(stored: list[dict]) -> list[dict]:
+    """补全:旧「教材」→教材·其他、缺 focus_ranges 字段、缺题型/板块补内置默认。"""
     for p in stored:
         if p.get("question_type") == "教材":
             p["question_type"] = "教材·其他"
-    # 缺失的板块补内置默认,保证 4 个教材板块都有(及题型)。
+        p.setdefault("focus_ranges", {})
     have = {p.get("question_type") for p in stored}
     for t in ALL_TYPES:
         if t not in have:
@@ -87,8 +102,47 @@ async def get_prompts(db: AsyncSession) -> list[dict]:
     return stored
 
 
-async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uuid.UUID) -> list[dict]:
-    """保存提示词(整体覆盖)。每题型至多一个 is_default;补 id。"""
+async def _load(db: AsyncSession, key: str) -> list[dict] | None:
+    cfg = (await db.execute(select(SystemConfig).where(SystemConfig.key == key))).scalar_one_or_none()
+    if cfg is None or not isinstance(cfg.value, dict) or not cfg.value.get("prompts"):
+        return None
+    return _normalize(cfg.value["prompts"])
+
+
+async def get_prompts(db: AsyncSession, scope: str | None = None) -> list[dict]:
+    """读提示词。scope=学期串则优先用该学期定制;无定制 → 回退全局;全局也无 → 内置默认。"""
+    if scope:
+        scoped = await _load(db, _scoped_key(scope))
+        if scoped is not None:
+            return scoped
+    return (await _load(db, _KEY)) or _builtin_list()
+
+
+async def _raw_value(db: AsyncSession, key: str) -> dict | None:
+    cfg = (await db.execute(select(SystemConfig).where(SystemConfig.key == key))).scalar_one_or_none()
+    return cfg.value if (cfg is not None and isinstance(cfg.value, dict)) else None
+
+
+async def get_passage_include_skill(db: AsyncSession, scope: str | None = None) -> bool:
+    """短文板块是否**也匹配「答题技能类」考点**(推理判断/情景反应/信息计算/词义猜测/同义转换)。
+
+    默认 False=排除(短文只挂内容类,当前收紧行为)。按 scope→全局回退;都没配=默认。
+    """
+    keys = ([_scoped_key(scope)] if scope else []) + [_KEY]
+    for key in keys:
+        v = await _raw_value(db, key)
+        if v is not None and "passage_include_skill" in v:
+            return bool(v["passage_include_skill"])
+    return False
+
+
+async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uuid.UUID,
+                       scope: str | None = None,
+                       passage_include_skill: bool | None = None) -> list[dict]:
+    """保存提示词(整体覆盖)。每题型至多一个 is_default;补 id。scope=学期串则存该学期定制。
+
+    passage_include_skill 非空则一并存「短文是否匹配答题技能类考点」开关;为 None 保留原值。
+    """
     cleaned: list[dict] = []
     seen_default: set[str] = set()
     for p in prompts:
@@ -98,32 +152,70 @@ async def save_prompts(db: AsyncSession, *, prompts: list[dict], updated_by: uui
         is_def = bool(p.get("is_default")) and qt not in seen_default
         if is_def:
             seen_default.add(qt)
-        mn = max(0, min(10, int(p.get("min_kp") or 0)))
-        mx = max(1, min(10, int(p.get("max_kp") or 2)))
+        mn = max(0, min(99, int(p.get("min_kp") or 0)))
+        mx = max(1, min(99, int(p.get("max_kp") or 2)))
         if mn > mx:
             mn = mx
+        fids = [str(x) for x in (p.get("focus_node_ids") or [])]
+        # 每个关注分类各自的考点数范围;只保留当前选中分类的、并各自校验夹紧
+        fr_in = p.get("focus_ranges") or {}
+        focus_ranges: dict[str, list[int]] = {}
+        for nid in fids:
+            r = fr_in.get(nid)
+            if isinstance(r, (list, tuple)) and len(r) == 2:
+                cmn = max(0, min(99, int(r[0] or 0)))
+                cmx = max(1, min(99, int(r[1] or 1)))
+                if cmn > cmx:
+                    cmn = cmx
+                focus_ranges[nid] = [cmn, cmx]
         cleaned.append({
             "id": p.get("id") or f"p-{uuid.uuid4().hex[:8]}",
             "name": (p.get("name") or "未命名").strip(),
             "text": p["text"].strip(), "question_type": qt, "is_default": is_def,
-            "focus_node_ids": [str(x) for x in (p.get("focus_node_ids") or [])],
-            "min_kp": mn, "max_kp": mx,
+            "focus_node_ids": fids,
+            "min_kp": mn, "max_kp": mx, "focus_ranges": focus_ranges,
         })
     # 每题型若无默认,把该型第一个置默认
     for t in ALL_TYPES:
         group = [p for p in cleaned if p["question_type"] == t]
         if group and not any(p["is_default"] for p in group):
             group[0]["is_default"] = True
+    key = _scoped_key(scope)
+    desc = "知识点 AI 建议提示词(按题型)" + (f" · 学期定制 {scope}" if scope else " · 全局默认")
+    cfg = (await db.execute(select(SystemConfig).where(SystemConfig.key == key))).scalar_one_or_none()
     value = {"prompts": cleaned}
-    cfg = (await db.execute(select(SystemConfig).where(SystemConfig.key == _KEY))).scalar_one_or_none()
+    # 短文技能类开关:显式传则存,否则保留原值
+    if passage_include_skill is not None:
+        value["passage_include_skill"] = bool(passage_include_skill)
+    elif cfg is not None and isinstance(cfg.value, dict) and "passage_include_skill" in cfg.value:
+        value["passage_include_skill"] = cfg.value["passage_include_skill"]
     if cfg is None:
-        db.add(SystemConfig(id=uuid.uuid4(), key=_KEY, value=value,
-                            description="知识点 AI 建议提示词(按题型)", updated_by=updated_by))
+        db.add(SystemConfig(id=uuid.uuid4(), key=key, value=value,
+                            description=desc, updated_by=updated_by))
     else:
         cfg.value = value
         cfg.updated_by = updated_by
     await db.flush()
     return cleaned
+
+
+async def list_scopes(db: AsyncSession) -> list[str]:
+    """已定制(有独立提示词覆盖)的学期 scope 串列表。"""
+    rows = (await db.execute(
+        select(SystemConfig.key).where(SystemConfig.key.like(f"{_KEY}::%")))).scalars().all()
+    pre = f"{_KEY}::"
+    return sorted(k[len(pre):] for k in rows)
+
+
+async def delete_scope(db: AsyncSession, scope: str) -> bool:
+    """删除某学期的提示词定制,恢复为继承全局默认。返回是否删到。"""
+    cfg = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _scoped_key(scope)))).scalar_one_or_none()
+    if cfg is None:
+        return False
+    await db.delete(cfg)
+    await db.flush()
+    return True
 
 
 def default_item_for(prompts: list[dict], qtype: str | None) -> dict:
@@ -137,7 +229,7 @@ def default_item_for(prompts: list[dict], qtype: str | None) -> dict:
             return p
     rng = _RANGE.get(qt, (0, 2))
     return {"text": _BUILTIN.get(qt, _BUILTIN["单选"]), "focus_node_ids": [],
-            "min_kp": rng[0], "max_kp": rng[1]}
+            "min_kp": rng[0], "max_kp": rng[1], "focus_ranges": {}}
 
 
 def item_by_id(prompts: list[dict], prompt_id: str | None) -> dict | None:

@@ -147,6 +147,161 @@ async def test_generate_unit_invalid_id(admin_client: AsyncClient):
     assert r.status_code == 404
 
 
+# ── 单元短文按需生成(从原文/PDF析出)─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_generate_passages_unknown_unit_404(admin_client: AsyncClient):
+    r = await admin_client.post(
+        f"/api/v1/admin/curriculum/units/{uuid.uuid4()}/passages/generate")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_generate_passages_without_source_text_400(admin_client: AsyncClient):
+    """单元无原文(source_text 空)→ 400 提示先拆 PDF。"""
+    from sqlalchemy import text as _t
+    tb = f"短文版{uuid.uuid4().hex[:6]}"
+    uid = uuid.uuid4()
+    async with _async_session_factory() as s:
+        s.add(CurriculumUnit(id=uid, textbook_version=tb, grade="七年级",
+                             semester="上", unit_no=1, unit_title="U1"))
+        await s.commit()
+    try:
+        r = await admin_client.post(f"/api/v1/admin/curriculum/units/{uid}/passages/generate")
+        assert r.status_code == 400
+    finally:
+        async with _async_session_factory() as s:
+            await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
+            await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_generate_passages_falls_back_to_pdf_text(admin_client: AsyncClient):
+    """无原文但有 unit_pdf_url → 自动下载该 PDF 抽文字、回存 source_text,再析出短文。"""
+    from unittest.mock import patch
+    from sqlalchemy import text as _t
+    from app.schemas.curriculum import AIUnitPassage
+    tb = f"短文版{uuid.uuid4().hex[:6]}"
+    uid = uuid.uuid4()
+    async with _async_session_factory() as s:
+        s.add(CurriculumUnit(id=uid, textbook_version=tb, grade="七年级", semester="上",
+                             unit_no=1, unit_title="U1", source_text=None,
+                             unit_pdf_url="https://cos.example/u1.pdf"))
+        await s.commit()
+
+    async def _fake_fetch(url, *, ocr_fallback=False):
+        assert url == "https://cos.example/u1.pdf"
+        return "Reading: A trip to the zoo."     # 模拟从 PDF 回取的文字
+
+    async def _fake_extract(unit_text):
+        assert "trip to the zoo" in unit_text     # 用的是回取的文字
+        return [AIUnitPassage(kind="阅读", title="Reading", text="A trip to the zoo.")]
+    try:
+        with patch("app.services.pdf_upload_service.fetch_pdf_text", _fake_fetch), \
+             patch("app.services.curriculum_ai_service.extract_unit_passages", _fake_extract):
+            r = await admin_client.post(f"/api/v1/admin/curriculum/units/{uid}/passages/generate")
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["generated"] == 1
+        # 回取的原文已回存 source_text(下次免再下载)
+        async with _async_session_factory() as s:
+            src = (await s.execute(_t(
+                "SELECT source_text FROM curriculum_units WHERE id=:u"), {"u": str(uid)})).scalar_one()
+        assert src and "trip to the zoo" in src
+    finally:
+        async with _async_session_factory() as s:
+            await s.execute(_t("DELETE FROM curriculum_unit_passages WHERE unit_id=:u"), {"u": str(uid)})
+            await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
+            await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_generate_passages_scanned_pdf_uses_ocr(admin_client: AsyncClient):
+    """无原文 + 单元 PDF 是扫描件(无文字层)→ 自动跑 OCR 回取文字,再析出短文。"""
+    from unittest.mock import patch
+    from sqlalchemy import text as _t
+    from app.schemas.curriculum import AIUnitPassage
+    from app.services import pdf_upload_service as pus
+    tb = f"短文版{uuid.uuid4().hex[:6]}"
+    uid = uuid.uuid4()
+    async with _async_session_factory() as s:
+        s.add(CurriculumUnit(id=uid, textbook_version=tb, grade="七年级", semester="上",
+                             unit_no=1, unit_title="U1", source_text=None,
+                             unit_pdf_url="https://cos.example/scan.pdf"))
+        await s.commit()
+
+    class _Resp:
+        content = b"%PDF-1.4 scanned"
+        def raise_for_status(self): pass
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url): return _Resp()
+
+    async def _fake_ocr(pdf_bytes, **k):
+        return "Reading: OCR recovered text about a zoo."   # 模拟 OCR 回取
+
+    async def _fake_extract(unit_text):
+        assert "OCR recovered" in unit_text                 # 用的是 OCR 文字
+        return [AIUnitPassage(kind="阅读", title="Reading", text="A zoo story.")]
+    try:
+        with patch("httpx.AsyncClient", _Client), \
+             patch.object(pus, "extract_text_from_pdf_bytes", lambda b: ""), \
+             patch.object(pus, "ocr_pdf_bytes", _fake_ocr), \
+             patch("app.services.curriculum_ai_service.extract_unit_passages", _fake_extract):
+            r = await admin_client.post(f"/api/v1/admin/curriculum/units/{uid}/passages/generate")
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["generated"] == 1
+        async with _async_session_factory() as s:
+            src = (await s.execute(_t(
+                "SELECT source_text FROM curriculum_units WHERE id=:u"), {"u": str(uid)})).scalar_one()
+        assert src and "OCR recovered" in src               # OCR 文字已回存
+    finally:
+        async with _async_session_factory() as s:
+            await s.execute(_t("DELETE FROM curriculum_unit_passages WHERE unit_id=:u"), {"u": str(uid)})
+            await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
+            await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_generate_passages_persists_and_returns(admin_client: AsyncClient):
+    """有原文 + AI 析出 → 落库(覆盖)并返回最新短文,generated 计数正确。"""
+    from unittest.mock import patch
+    from sqlalchemy import text as _t
+    from app.schemas.curriculum import AIUnitPassage
+    tb = f"短文版{uuid.uuid4().hex[:6]}"
+    uid = uuid.uuid4()
+    async with _async_session_factory() as s:
+        s.add(CurriculumUnit(id=uid, textbook_version=tb, grade="七年级", semester="上",
+                             unit_no=1, unit_title="U1", source_text="Reading: A trip ..."))
+        await s.commit()
+
+    async def _fake_extract(unit_text):
+        return [AIUnitPassage(kind="阅读", title="Reading", text="A trip to Beijing."),
+                AIUnitPassage(kind="听力", title="Welcome to the unit", text="Millie: Hi!")]
+    try:
+        with patch("app.services.curriculum_ai_service.extract_unit_passages", _fake_extract):
+            r = await admin_client.post(f"/api/v1/admin/curriculum/units/{uid}/passages/generate")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["generated"] == 2 and data["total"] == 2
+        kinds = {p["kind"] for p in data["items"]}
+        assert kinds == {"阅读", "听力"}
+        # 再次生成应整体覆盖(不累加)
+        async def _fake_extract_one(unit_text):
+            return [AIUnitPassage(kind="阅读", title="Reading", text="Only one now.")]
+        with patch("app.services.curriculum_ai_service.extract_unit_passages", _fake_extract_one):
+            r2 = await admin_client.post(f"/api/v1/admin/curriculum/units/{uid}/passages/generate")
+        assert r2.json()["data"]["total"] == 1
+    finally:
+        async with _async_session_factory() as s:
+            await s.execute(_t(
+                "DELETE FROM curriculum_unit_passages WHERE unit_id=:u"), {"u": str(uid)})
+            await s.execute(_t("DELETE FROM curriculum_units WHERE textbook_version=:tb"), {"tb": tb})
+            await s.commit()
+
+
 @pytest.mark.asyncio
 async def test_generate_unit_is_idempotent(
     admin_client: AsyncClient, seeded_unit_id: str

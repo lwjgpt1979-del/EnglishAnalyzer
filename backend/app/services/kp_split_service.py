@@ -13,13 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d19_node_resource import NodeResource
-from app.services.llm_provider import chat_completion, is_llm_dev_mode
+from app.services.llm_provider import chat_completion, is_llm_dev_mode, fast_model
 
 _SYS = (
     "你是初中英语教研专家。下面给出一个【考点】及其【详解】。请把详解里实际讲到的知识,"
-    "拆成若干个更细、可独立作为知识图谱叶子的【子考点】。要求:每个子考点名称简洁(≤20字)、"
-    "互不重叠、紧扣详解内容;只拆详解真正涵盖的点,不臆造;返回 3-8 个。"
-    "严格输出 JSON,不要解释。"
+    "拆成若干个更细、可独立作为知识图谱叶子的【子考点】。\n"
+    "每个子考点的名称格式为 **「中文考点名:英文举例」**——先中文(简洁概括该点),"
+    "再一个英文例子(短句即可;优先取详解里的原文例句,没有就造一个),用英文冒号「:」分隔。\n"
+    "**整条名称总长度务必 ≤56 个字符**(要能完整放进输入框、不被截断);若一句放不下,就把英文例子缩短到能放下,但**不要写半句被截断**。\n"
+    "例如:反身代词作宾语:I study by myself. / 方位介词 on:The book is on the desk.\n"
+    "要求:互不重叠、紧扣详解内容;只拆详解真正涵盖的点,不臆造点;返回 3-8 个。严格输出 JSON,不要解释。"
 )
 
 
@@ -46,17 +49,19 @@ async def split_lecture(db: AsyncSession, node_id: uuid.UUID) -> dict:
         return {**base, "subs": []}
     user = (f"【考点】{node.name}\n【详解】\n{content[:3500]}\n\n"
             f"{('【该考点已有子考点,勿重复】' + '、'.join(existing)) if existing else ''}\n"
-            '请拆成 3-8 个子考点。返回 JSON:{"subs":["子考点名", ...]}。')
+            '请拆成 3-8 个子考点,每个写成「中文考点名:英文举例」(先中文,再一个英文短句例子,'
+            '英文冒号分隔,**整条 ≤56 字符、别被截断**)。返回 JSON:{"subs":["中文考点名:英文举例", ...]}。')
     try:
-        resp = await chat_completion(system_prompt=_SYS, user_prompt=user,
-                                     max_tokens=1024, response_format={"type": "json_object"})
+        # 用 fast 模型(非重推理):主模型重推理会把 token 预算耗光、content 返空→subs 为空
+        resp = await chat_completion(system_prompt=_SYS, user_prompt=user, model=fast_model(),
+                                     max_tokens=16384, response_format={"type": "json_object"})
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception:  # noqa: BLE001
         return {**base, "subs": []}
     seen = {e.strip() for e in existing}
     subs: list[str] = []
     for s in (data.get("subs") or []):
-        nm = str(s).strip()[:40]
+        nm = str(s).strip()[:60]
         if nm and nm not in seen:
             seen.add(nm)
             subs.append(nm)

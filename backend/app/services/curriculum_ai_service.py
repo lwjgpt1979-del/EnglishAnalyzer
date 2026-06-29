@@ -7,6 +7,7 @@ dev 模式（DEEPSEEK_API_KEY 以 sk-placeholder 开头）返回 mock 数据，
 from __future__ import annotations
 
 import json
+import re
 
 from app.core.exceptions import AppError
 from app.schemas.curriculum import AIGeneratedUnit, AIUnitPassage
@@ -32,7 +33,9 @@ async def extract_unit_passages(unit_text: str) -> list[AIUnitPassage]:
     user = (
         f"【单元原文】\n{unit_text[:16000]}\n\n"
         '请抽取。返回 JSON:{"passages":[{"kind":"听力|阅读|写作","title":"小标题(可空)","text":"原文"}]}。'
-        "text 必须是原文片段、保持完整;同一类有多段就拆成多条(如多组对话、多篇阅读)。"
+        "title 用教材里该材料的**原板块标题**(如 Welcome to the unit / Reading / Integrated skills / "
+        "Task / Writing),与 PDF 一致;没有就留空。"
+        "text 必须是原文片段、**逐字保留**、保持完整;同一类有多段就拆成多条(如多组对话、多篇阅读)。"
         "务必把单元里出现的所有对话(听力)都抽出来,别只抽阅读。"
     )
     try:
@@ -50,6 +53,96 @@ async def extract_unit_passages(unit_text: str) -> list[AIUnitPassage]:
         if ap.text.strip():
             out.append(ap)
     return out
+
+
+_STRUCTURED_SYS = (
+    "你是译林版初中英语教材分析专家。给你一份**按句编号的单元原文**,请解析成三块:\n"
+    "1) grammar(语法部分):拆出本单元涉及的**所有不同语法点**(尽量全、宁多勿漏),"
+    "**但同一语法点不要按词形/单词再细分**——be 动词算 **1 个点**(不要 am/is/are 拆三个)、"
+    "人称代词 **1 个点**(不要 I/you/he 各一个)、物主代词 1 个、指示代词 1 个;"
+    "时态、一般疑问句、特殊疑问句、祈使句、冠词、名词单复数、形容词作表语/定语、介词、"
+    "固定搭配(be good at 类可合为「be+形容词+介词 固定搭配」1 个点)、情态动词、并列连词 等**各算 1 个点**;"
+    "**功能句型按交际功能分点**(打招呼、自我介绍、介绍他人、询问爱好、询问班级…)。通常 **12–20 个点**。\n"
+    "  每个语法点给**一句例句(字段 sent)**:**优先用原文原句**(逐字);原文没有合适原句的,"
+    "就**按课本该点语境自造一句简洁地道、贴合本单元主题的例句**。\n"
+    "2) listening(听力部分):若材料含对话/听力脚本,**务必**按听力考点(如 问候与介绍、询问个人信息、"
+    "谈论爱好 等)归出几条,各列**对话原文句子编号(sents)**;听力句也可同时作语法例句。\n"
+    "3) writing(作文部分):写作板块的**要求**(题目指令,直接给原文文本)+ **正文原文句子编号(sents)**。\n"
+    "语法点名用中文(可附英文)。找不到的块就给空。严格输出 JSON,不要解释。"
+)
+
+
+async def parse_unit_structured(unit_text: str) -> dict:
+    """单元原文 → 结构化:{grammar:[{point,sentences[]}], listening:[{point,sentences[]}],
+    writing:{requirement,text}}。
+
+    **句子按编号引用**(LLM 只回编号、服务端映射回原文):输出体积小→快、不撞 token 上限、
+    且句子必为原文(不可能改写/编造)。dev-mock 返回空结构。
+    """
+    empty = {"grammar": [], "listening": [], "writing": None}
+    if not (unit_text or "").strip() or is_llm_dev_mode():
+        return empty
+    from app.services.long_sentence_service import split_sentences
+    from app.services.llm_provider import fast_model
+    raw = [s.strip() for s in split_sentences(unit_text[:16000]) if s and s.strip()]
+    # 保留有意义的句子(英文词 ≥ 2,含听力短对话句),最多 120 句:够听力/作文引用编号,又不至于太长
+    sents = [s for s in raw if len(re.findall(r"[A-Za-z]+", s)) >= 2][:120]
+    if not sents:
+        return empty
+    numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(sents))
+    user = (
+        '请解析。返回 JSON:'
+        '{"grammar":[{"point":"语法点名","sent":"一句例句(原文原句优先;没有就按课本语境自造一句)"}],'
+        '"listening":[{"point":"听力考点名","sents":[原文句号,...]}],'
+        '"writing":{"requirement":"作文要求(原文指令文本)","sents":[正文原文句号,...]}}。\n'
+        "**grammar 尽量多拆语法点(不设上限);每个点只给 1 句例句(sent 为句子文本)**。"
+        "listening / writing 的 sents 只填下面列表里的**句子编号(整数)**、不要抄原文。"
+        "某块没有就给空数组 / writing 给 null。\n\n【按句编号的单元原文】\n" + numbered
+    )
+    try:
+        # 用 fast 模型:本任务输出小,fast 更快;主模型重推理易把 token 预算耗光返空
+        resp = await chat_completion(system_prompt=_STRUCTURED_SYS, user_prompt=user,
+                                     model=fast_model(), max_tokens=16384,
+                                     response_format={"type": "json_object"})
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001
+        return empty
+    if not isinstance(data, dict):
+        return empty
+
+    def _pick(idxs) -> list[str]:
+        return [sents[i - 1] for i in (idxs or [])
+                if isinstance(i, int) and 1 <= i <= len(sents)]
+
+    # grammar:每点 1 句例句(文本,原句或自造)
+    grammar = []
+    for b in (data.get("grammar") or []):
+        if not isinstance(b, dict):
+            continue
+        point = (b.get("point") or "").strip()
+        sent = (b.get("sent") or "").strip()
+        if point and sent:
+            grammar.append({"point": point, "sentences": [sent]})
+
+    # listening:按编号取原句
+    listening = []
+    for b in (data.get("listening") or []):
+        if not isinstance(b, dict):
+            continue
+        point = (b.get("point") or "").strip()
+        ss = _pick(b.get("sents"))
+        if point and ss:
+            listening.append({"point": point, "sentences": ss})
+
+    writing = None
+    w = data.get("writing")
+    if isinstance(w, dict):
+        req = (w.get("requirement") or "").strip()
+        body = " ".join(_pick(w.get("sents")))
+        if req or body:
+            writing = {"requirement": req or None, "text": body or None}
+    return {"grammar": grammar, "listening": listening, "writing": writing}
+
 
 _SYSTEM_PROMPT = (
     "你是资深英语教材编辑，擅长按教材大纲为每个单元拆解知识点并生成教学解读。"

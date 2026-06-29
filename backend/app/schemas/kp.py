@@ -339,10 +339,17 @@ class KpPromptItem(BaseModel):
     focus_node_ids: list[uuid.UUID] = []   # 关注的知识脑图分类(空=全部考点)
     min_kp: int = 0                        # 每题至少挑几个考点(提示给 AI)
     max_kp: int = 2                        # 每题至多挑几个考点(解析封顶)
+    # 每个关注分类各自的考点数范围 {分类id: [至少, 至多]};未配的分类回退 min_kp/max_kp
+    # 用宽松 list(非 list[int]):前端 input 可能传 null/float,交由 save_prompts 清洗夹紧,避免 422
+    focus_ranges: dict[str, list] = {}
 
 
 class KpPromptsIn(BaseModel):
     prompts: list[KpPromptItem]
+    # 学期 scope（教材版本|年级|学期）;空=全局默认。该 scope 的提示词整体覆盖
+    scope: str | None = None
+    # 短文是否也匹配「答题技能类」考点(推理判断/情景反应等);默认 False=排除(收紧)
+    passage_include_skill: bool = False
 
 
 class SuggestTextIn(BaseModel):
@@ -353,6 +360,7 @@ class SuggestTextIn(BaseModel):
 
 class KpPromptsOut(BaseModel):
     prompts: list[KpPromptItem]
+    passage_include_skill: bool = False
 
 
 class PaperDetailOut(BaseModel):

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listKnowledgeNodes, getKnowledgeNode, getNodeHub, updateKnowledgeNode,
-  retireKnowledgeNode, restoreKnowledgeNode,
+  retireKnowledgeNode, restoreKnowledgeNode, deleteKnowledgeNode,
   getNodeTree, createKnowledgeNode, moveKnowledgeNode,
   type NodeHub,
 } from '../api/admin'
@@ -81,6 +81,18 @@ async function retireTreeNode(node: NodeTreeItem) {
   await ElMessageBox.confirm(`停用「${node.name}」?(子节点不受影响,可恢复)`, '停用', { type: 'warning' })
   try { await retireKnowledgeNode(node.id); ElMessage.success('已停用'); await loadTree() }
   catch (e: any) { ElMessage.error(e?.message || '停用失败') }
+}
+async function deleteTreeNode(node: NodeTreeItem) {
+  try {
+    await ElMessageBox.confirm(
+      `永久删除「${node.name}」?将连带删除它的所有挂边(教材单元/真题/上传题/词汇/长难句/学生掌握 的关联、别名、关系)。` +
+      `<br/><span style="color:#909399">不影响共享的词汇/题目主表;若它下面还有子节点会被拒绝(需先删子节点)。此操作不可恢复。</span>`,
+      `删除节点`,
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger',
+        cancelButtonText: '取消', dangerouslyUseHTMLString: true })
+  } catch { return }
+  try { await deleteKnowledgeNode(node.id); ElMessage.success('已删除'); await loadTree() }
+  catch (e: any) { ElMessage.error(e?.message || '删除失败') }
 }
 // 拖拽移动:drop 到节点内部=成为其子;前后=成为其兄弟(同父)
 function allowDrop(_drag: any, drop: any, type: string) {
@@ -194,7 +206,8 @@ onMounted(loadTree)
             <span v-if="data.question_refs" class="cnt cnt-q" title="真题挂载数(含子节点)">真 {{ data.question_refs }}</span>
             <span class="tops">
               <el-button link size="small" type="primary" @click.stop="addChild(data)">+ 子节点</el-button>
-              <el-button link size="small" type="danger" @click.stop="retireTreeNode(data)">停用</el-button>
+              <el-button link size="small" type="warning" @click.stop="retireTreeNode(data)">停用</el-button>
+              <el-button link size="small" type="danger" @click.stop="deleteTreeNode(data)">删除</el-button>
             </span>
           </span>
         </template>

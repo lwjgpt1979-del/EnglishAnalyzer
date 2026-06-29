@@ -494,6 +494,60 @@ async def set_node_status(db: AsyncSession, *, node_id: uuid.UUID, status: str) 
     return node
 
 
+async def delete_node(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
+    """硬删除一个知识节点(连带其各种挂边)。**有子节点则拒绝**(防误删整棵子树,需先删/移子节点)。
+
+    清理无 DB 级联的引用边(别名/关系/单元边/词汇边/长难句边/真题·上传题·学生 KP 边);
+    node_resource、unit_passage_kp 由 DB 级联删;unit_section.node_id 由 DB 置空;
+    answer_log.node_id 无 FK 约束(留存事件,不动)。删的是节点本身,不影响共享词汇/题目主表。
+    """
+    from app.models.d15_knowledge_graph import NodeAlias, NodeRelation
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.models.d18_vocab_kg import VocabNode
+    from app.models.d20_long_sentence import LongSentenceNode
+    from app.models.d16_question_domain import PlatformQuestionKp, UploadedQuestionKp, StudentKp
+
+    node = await db.get(KnowledgeNode, node_id)
+    if node is None:
+        raise AppError(code=404, message="节点不存在")
+    kids = (await db.execute(sa.select(sa.func.count()).select_from(KnowledgeNode)
+                             .where(KnowledgeNode.parent_id == node_id))).scalar_one()
+    if kids:
+        raise AppError(code=400, message=f"该节点下还有 {kids} 个子节点,请先删除或移走子节点再删本节点")
+
+    await db.execute(sa.delete(NodeAlias).where(NodeAlias.node_id == node_id))
+    await db.execute(sa.delete(NodeRelation).where(
+        (NodeRelation.from_node_id == node_id) | (NodeRelation.to_node_id == node_id)))
+    await db.execute(sa.delete(UnitNode).where(UnitNode.node_id == node_id))
+    await db.execute(sa.delete(VocabNode).where(VocabNode.node_id == node_id))
+    await db.execute(sa.delete(LongSentenceNode).where(LongSentenceNode.node_id == node_id))
+    await db.execute(sa.delete(PlatformQuestionKp).where(PlatformQuestionKp.node_id == node_id))
+    await db.execute(sa.delete(UploadedQuestionKp).where(UploadedQuestionKp.node_id == node_id))
+    await db.execute(sa.delete(StudentKp).where(StudentKp.node_id == node_id))
+    await db.delete(node)
+    await db.flush()
+    return {"deleted": str(node_id)}
+
+
+async def list_children(db: AsyncSession, *, node_id: uuid.UUID) -> list[dict]:
+    """某节点的直接子节点(供「编辑子考点」弹框):id/name/code/status/source/child_count。"""
+    rows = (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
+                  KnowledgeNode.status, KnowledgeNode.source)
+        .where(KnowledgeNode.parent_id == node_id)
+        .order_by(KnowledgeNode.sort_order, KnowledgeNode.name))).all()
+    ids = [r.id for r in rows]
+    counts: dict = {}
+    if ids:
+        cc = (await db.execute(
+            sa.select(KnowledgeNode.parent_id, sa.func.count())
+            .where(KnowledgeNode.parent_id.in_(ids))
+            .group_by(KnowledgeNode.parent_id))).all()
+        counts = {pid: n for pid, n in cc}
+    return [{"id": str(r.id), "name": r.name, "code": r.code, "status": r.status,
+             "source": r.source, "child_count": int(counts.get(r.id, 0))} for r in rows]
+
+
 async def list_nodes(
     db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
     q: str | None = None, limit: int = 20,

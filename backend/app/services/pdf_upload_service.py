@@ -131,6 +131,83 @@ def extract_pages(file_id: str) -> list[str]:
     return pages
 
 
+def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    """从 PDF bytes 逐页抽文字层并拼接。用于从已拆出的单元 PDF(unit_pdf_url)回取原文。
+
+    扫描件(无文字层)会返回空串——调用方据此提示走 OCR 或重传文字版。需 pdfplumber。
+    """
+    import io
+    try:
+        import pdfplumber
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("pdfplumber 未安装，请 pip install pdfplumber") from exc
+    parts: list[str] = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            text = (page.extract_text() or "").strip()
+            if text:
+                parts.append(text)
+    return "\n\n---\n\n".join(parts)
+
+
+async def ocr_pdf_bytes(pdf_bytes: bytes, *, resolution: int = 130,
+                        concurrency: int = 6, on_progress=None) -> str:
+    """扫描件 PDF bytes(无文字层)→ 逐页渲染图 → 豆包视觉 OCR → 拼接原样文字。
+
+    与 ocr_pages_to_sidecar 同机制,但作用于 bytes 且直接返回文字(不落 sidecar),
+    供「单元 PDF(unit_pdf_url)是扫描件」时按需回取原文。doubao dev 模式返回空。
+    """
+    import asyncio
+    import base64
+    import io
+
+    import pdfplumber
+    from app.services.doubao_vision_service import recognize_page_text
+
+    def _render_all() -> list[str]:
+        urls: list[str] = []
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for pg in pdf.pages:
+                pil = pg.to_image(resolution=resolution).original.convert("RGB")
+                buf = io.BytesIO()
+                pil.save(buf, format="JPEG", quality=80)
+                urls.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
+        return urls
+
+    urls = await asyncio.to_thread(_render_all)
+    n = len(urls)
+    results = [""] * n
+    done = 0
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(i: int) -> None:
+        nonlocal done
+        async with sem:
+            results[i] = (await recognize_page_text(urls[i]) or "").strip()
+            done += 1
+            if on_progress:
+                on_progress(done, n)
+
+    await asyncio.gather(*(_one(i) for i in range(n)))
+    return "\n\n---\n\n".join(r for r in results if r)
+
+
+async def fetch_pdf_text(url: str, *, ocr_fallback: bool = False) -> str:
+    """下载远程 PDF(如单元 unit_pdf_url 的 COS 直链)并抽文字层,失败抛异常。
+
+    ocr_fallback=True 且文字层为空(扫描件)→ 自动逐页渲染走豆包 OCR 回取文字。
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        pdf_bytes = resp.content
+    text = extract_text_from_pdf_bytes(pdf_bytes)
+    if not text and ocr_fallback:
+        text = await ocr_pdf_bytes(pdf_bytes)
+    return text
+
+
 # ─── 单元自动检测 ─────────────────────────────────────────────────────────────
 
 def _parse_unit_no(m: re.Match) -> int | None:

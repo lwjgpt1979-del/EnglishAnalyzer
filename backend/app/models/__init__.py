@@ -115,4 +115,7 @@ from .d20_long_sentence import LongSentence, LongSentenceNode  # noqa: F401
 # 域21: 行政区划地区表(唯一数据源)
 from .d21_region import Region  # noqa: F401
 
+# 域22: 单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)
+from .d22_unit_structured import UnitSection, UnitSectionSentence  # noqa: F401
+
 __all__ = ["Base"]

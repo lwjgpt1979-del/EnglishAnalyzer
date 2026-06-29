@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { computed, type Component } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { Close, RefreshRight } from '@element-plus/icons-vue'
 import {
   Collection, Document, Headset, User, UserFilled, Coin, Setting,
   Histogram, Connection, Cpu,
@@ -101,6 +102,57 @@ function onLogout() {
   auth.logout()
   router.push('/login')
 }
+
+// ── 浏览器式多标签页(tagsView)──────────────────────────────────────────────
+// path → 标题(取菜单 label;数据大盘单列)
+const HOME = '/overview'
+const pathTitle: Record<string, string> = { [HOME]: '数据大盘' }
+for (const g of navGroups) {
+  for (const it of g.items || []) pathTitle[it.path] = it.label
+  for (const s of g.subs || []) for (const it of s.items) pathTitle[it.path] = it.label
+}
+const titleOf = (p: string) => pathTitle[p] || p
+
+const tabs = ref<{ path: string; title: string }[]>([])
+function addTab(p: string) {
+  if (!p || p === '/login') return
+  if (!tabs.value.some(t => t.path === p)) tabs.value.push({ path: p, title: titleOf(p) })
+}
+watch(() => route.path, p => addTab(p), { immediate: true })
+
+function goTab(p: string) { if (p !== route.path) router.push(p) }
+function closeTab(p: string) {
+  const i = tabs.value.findIndex(t => t.path === p)
+  if (i < 0) return
+  tabs.value.splice(i, 1)
+  if (p === route.path) router.push((tabs.value[i] || tabs.value[i - 1])?.path || HOME)
+}
+function ensureCurrent() {
+  if (!tabs.value.some(t => t.path === route.path)) router.push(tabs.value[0]?.path || HOME)
+}
+
+// 内容刷新:切 router-view 的 v-if 重挂载当前页
+const viewAlive = ref(true)
+async function reloadView() { viewAlive.value = false; await nextTick(); viewAlive.value = true }
+
+// 右键菜单
+const ctx = ref({ visible: false, x: 0, y: 0, path: '' })
+function openCtx(e: MouseEvent, p: string) { e.preventDefault(); ctx.value = { visible: true, x: e.clientX, y: e.clientY, path: p } }
+function closeCtx() { ctx.value.visible = false }
+async function ctxDo(act: 'refresh' | 'close' | 'left' | 'right' | 'others' | 'all') {
+  const p = ctx.value.path
+  const i = tabs.value.findIndex(t => t.path === p)
+  closeCtx()
+  if (act === 'refresh') { if (p !== route.path) await router.push(p); await reloadView(); return }
+  if (act === 'close') { closeTab(p); return }
+  if (act === 'others') tabs.value = tabs.value.filter(t => t.path === p)
+  else if (act === 'left') tabs.value = tabs.value.filter((_, idx) => idx >= i)
+  else if (act === 'right') tabs.value = tabs.value.filter((_, idx) => idx <= i)
+  else if (act === 'all') tabs.value = []
+  ensureCurrent()
+}
+onMounted(() => window.addEventListener('click', closeCtx))
+onBeforeUnmount(() => window.removeEventListener('click', closeCtx))
 </script>
 
 <template>
@@ -150,10 +202,33 @@ function onLogout() {
         <span class="spacer" />
         <el-button text @click="onLogout">退出登录</el-button>
       </el-header>
+      <!-- 浏览器式多标签页 -->
+      <div class="tabs-bar">
+        <div
+          v-for="t in tabs" :key="t.path"
+          class="tab" :class="{ active: t.path === route.path }"
+          @click="goTab(t.path)" @contextmenu="openCtx($event, t.path)"
+        >
+          <span class="tab-title">{{ t.title }}</span>
+          <el-icon class="tab-close" @click.stop="closeTab(t.path)"><Close /></el-icon>
+        </div>
+      </div>
+
       <el-main>
-        <router-view />
+        <router-view v-if="viewAlive" />
       </el-main>
     </el-container>
+
+    <!-- 标签右键菜单 -->
+    <ul v-if="ctx.visible" class="tab-ctx" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }" @click.stop>
+      <li @click="ctxDo('refresh')"><el-icon><RefreshRight /></el-icon>刷新</li>
+      <li @click="ctxDo('close')"><el-icon><Close /></el-icon>关闭</li>
+      <li class="div" />
+      <li @click="ctxDo('left')">关闭左侧</li>
+      <li @click="ctxDo('right')">关闭右侧</li>
+      <li @click="ctxDo('others')">关闭其他</li>
+      <li @click="ctxDo('all')">全部关闭</li>
+    </ul>
   </el-container>
 </template>
 
@@ -167,4 +242,25 @@ function onLogout() {
 .side-menu { width: 100%; border-right: none; }
 .header { display: flex; align-items: center; background: #fff; border-bottom: 1px solid #eee; }
 .spacer { flex: 1; }
+/* 多标签页 */
+.tabs-bar { display: flex; align-items: center; gap: 4px; padding: 6px 10px;
+  background: #f5f7fa; border-bottom: 1px solid #e6e8eb; overflow-x: auto; flex-shrink: 0; }
+.tabs-bar::-webkit-scrollbar { height: 4px; }
+.tabs-bar::-webkit-scrollbar-thumb { background: #c8ccd2; border-radius: 2px; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 13px;
+  background: #fff; border: 1px solid #e0e3e8; border-radius: 4px; cursor: pointer;
+  color: #606266; white-space: nowrap; user-select: none; }
+.tab:hover { color: #409eff; }
+.tab.active { color: #fff; background: #409eff; border-color: #409eff; }
+.tab-title { line-height: 18px; }
+.tab-close { font-size: 12px; border-radius: 50%; }
+.tab-close:hover { background: rgba(0,0,0,0.12); }
+.tab.active .tab-close:hover { background: rgba(255,255,255,0.3); }
+.tab-ctx { position: fixed; z-index: 3000; min-width: 130px; margin: 0; padding: 4px 0;
+  list-style: none; background: #fff; border: 1px solid #e4e7ed; border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12); font-size: 13px; }
+.tab-ctx li { display: flex; align-items: center; gap: 6px; padding: 7px 14px; cursor: pointer; color: #303133; }
+.tab-ctx li:hover { background: #f0f7ff; color: #409eff; }
+.tab-ctx li.div { height: 1px; padding: 0; margin: 4px 0; background: #f0f2f5; cursor: default; }
+.tab-ctx li.div:hover { background: #f0f2f5; }
 </style>

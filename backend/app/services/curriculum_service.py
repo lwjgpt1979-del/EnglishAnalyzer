@@ -73,6 +73,238 @@ async def persist_unit_passages(db: AsyncSession, *, unit_id: uuid.UUID, passage
     return n
 
 
+async def persist_unit_structured(db: AsyncSession, *, unit_id: uuid.UUID, parsed: dict) -> dict:
+    """落库单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)。整体覆盖该单元(幂等)。
+
+    每句用 long_sentence_service.syntactic_complexity 算 0–100 难度。node_id 留空,第二步关联图谱再填。
+    返回各块计数。
+    """
+    from sqlalchemy import delete
+    from app.models.d22_unit_structured import UnitSection, UnitSectionSentence
+    from app.services.long_sentence_service import syntactic_complexity, detect_syntax_points
+
+    await db.execute(delete(UnitSection).where(UnitSection.unit_id == unit_id))  # 级联删句子
+
+    def _add_sentences(section_id: uuid.UUID, sents: list) -> int:
+        n = 0
+        for i, raw in enumerate(sents or []):
+            txt = (raw or "").strip() if isinstance(raw, str) else ""
+            if not txt:
+                continue
+            try:
+                comp = syntactic_complexity(txt)
+                diff, pts = comp.get("difficulty"), detect_syntax_points(txt)
+            except Exception:  # noqa: BLE001
+                diff, pts = None, None
+            db.add(UnitSectionSentence(
+                id=uuid.uuid4(), section_id=section_id, text=txt,
+                difficulty=diff, syntax_points=pts or None, sort_order=i))
+            n += 1
+        return n
+
+    counts = {"grammar": 0, "listening": 0, "writing": 0, "sentences": 0}
+    order = 0
+    for kind, key in (("grammar", "grammar"), ("listening", "listening")):
+        for blk in (parsed.get(key) or []):
+            name = (blk.get("point") or "").strip() if isinstance(blk, dict) else ""
+            if not name:
+                continue
+            sec = UnitSection(id=uuid.uuid4(), unit_id=unit_id, kind=kind,
+                              point_name=name[:200], sort_order=order)
+            db.add(sec)
+            await db.flush()
+            counts["sentences"] += _add_sentences(sec.id, blk.get("sentences"))
+            counts[kind] += 1
+            order += 1
+
+    w = parsed.get("writing")
+    if isinstance(w, dict) and ((w.get("requirement") or "").strip() or (w.get("text") or "").strip()):
+        db.add(UnitSection(
+            id=uuid.uuid4(), unit_id=unit_id, kind="writing",
+            requirement=(w.get("requirement") or None), body_text=(w.get("text") or None),
+            sort_order=order))
+        counts["writing"] = 1
+
+    await db.flush()
+    return counts
+
+
+# ── 分词打分匹配(关联知识图谱,不走 LLM)────────────────────────────────
+# 无中文分词器,用「字符 bigram + ASCII 词」做词元,Dice 系数打分,取最高分自动挂靠。
+import re as _re
+
+
+def kp_match_tokens(raw: str) -> set[str]:
+    """把考点名切成词元集合:ASCII 字母数字整词 + CJK 字符 bigram(单字时退化为单字)。"""
+    import unicodedata as _ud
+    s = _ud.normalize("NFKC", raw or "").lower()
+    toks: set[str] = set()
+    # ASCII 词(present perfect / be / v-ing 等)
+    for w in _re.findall(r"[a-z0-9]+", s):
+        toks.add(w)
+    # CJK 串 → bigram
+    for run in _re.findall(r"[一-鿿]+", s):
+        if len(run) == 1:
+            toks.add(run)
+        else:
+            for i in range(len(run) - 1):
+                toks.add(run[i:i + 2])
+    return toks
+
+
+def kp_match_score(a: set[str], b: set[str]) -> float:
+    """Dice 系数:2|A∩B| / (|A|+|B|)。两边都空→0。"""
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    return (2.0 * inter) / (len(a) + len(b))
+
+
+# 自动挂靠阈值:Dice ≥ 0.6 才回填(可区分「一般疑问句 vs 特殊疑问句」=0.5 不误挂)
+KP_AUTO_LINK_THRESHOLD = 0.6
+
+
+async def link_unit_sections(db: AsyncSession, *, unit_id: uuid.UUID,
+                             only_unlinked: bool = True) -> dict:
+    """第二步「关联知识图谱」:把单元结构化里的
+      - 语法点 → 词法(cf)/句法(jf)子树
+      - 听力考点 → 听力(lt)子树
+    受控匹配:别名精确命中或高相似度模糊命中 → 回填 node_id/node_code;
+    未命中 → 留待人工(手动挂靠 / 新建节点)。返回计数。
+
+    匹配方式:**纯分词打分,不走 LLM**。候选 = 允许子树内所有节点(名称 + 别名),
+    把考点名与候选名都切成「ASCII 词 + CJK bigram」词元,算 Dice 系数,取最高分;
+    ≥ KP_AUTO_LINK_THRESHOLD 即自动挂靠到分值最高的节点。
+    """
+    import sqlalchemy as _sa
+    from app.models.d22_unit_structured import UnitSection
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.services.kp_normalize import normalize_kp_name
+    from app.services.kp_suggest_service import _descendant_node_ids
+
+    async def _subtree(codes: list[str]) -> set:
+        ids = (await db.execute(
+            _sa.select(KnowledgeNode.id).where(KnowledgeNode.code.in_(codes)))).scalars().all()
+        return await _descendant_node_ids(db, list(ids)) or set()
+
+    allowed = {"grammar": await _subtree(["cf", "jf"]), "listening": await _subtree(["lt"])}
+
+    async def _candidates(ids: set) -> list[dict]:
+        """候选项 = 子树内每个节点的(名称 + 别名)各自一条:{node_id, code, norm, tokens}。"""
+        if not ids:
+            return []
+        cands: list[dict] = []
+        # 节点名本身
+        nodes = list((await db.execute(
+            _sa.select(KnowledgeNode.id, KnowledgeNode.code, KnowledgeNode.name)
+            .where(KnowledgeNode.id.in_(ids)))).all())
+        for n in nodes:
+            cands.append({"node_id": n.id, "code": n.code,
+                          "norm": normalize_kp_name(n.name or ""), "tokens": kp_match_tokens(n.name or "")})
+        # 别名(有 alias_norm,可还原一个可分词的串)
+        aliases = list((await db.execute(
+            _sa.select(NodeAlias.alias, NodeAlias.alias_norm, NodeAlias.node_id, KnowledgeNode.code)
+            .join(KnowledgeNode, KnowledgeNode.id == NodeAlias.node_id)
+            .where(NodeAlias.node_id.in_(ids)))).all())
+        for a in aliases:
+            base = a.alias or a.alias_norm or ""
+            cands.append({"node_id": a.node_id, "code": a.code,
+                          "norm": a.alias_norm or "", "tokens": kp_match_tokens(base)})
+        return cands
+
+    cand_map = {k: await _candidates(v) for k, v in allowed.items()}
+
+    secs = (await db.execute(_sa.select(UnitSection).where(
+        UnitSection.unit_id == unit_id,
+        UnitSection.kind.in_(["grammar", "listening"])))).scalars().all()
+
+    out = {"linked": 0, "unmatched": 0, "skipped": 0}
+    for s in secs:
+        if only_unlinked and s.node_id is not None:
+            out["skipped"] += 1
+            continue
+        name = s.point_name or ""
+        norm = normalize_kp_name(name)
+        cands = cand_map.get(s.kind, [])
+        if not norm or not cands:
+            out["unmatched"] += 1
+            continue
+        q_tokens = kp_match_tokens(name)
+        # 归一化完全相同 → 直接 1.0;否则按分词 Dice 取最高
+        best, best_score = None, 0.0
+        for c in cands:
+            score = 1.0 if (c["norm"] and c["norm"] == norm) else kp_match_score(q_tokens, c["tokens"])
+            if score > best_score:
+                best, best_score = c, score
+        if best is not None and best_score >= KP_AUTO_LINK_THRESHOLD:
+            s.node_id, s.node_code = best["node_id"], best["code"]
+            out["linked"] += 1
+        else:
+            out["unmatched"] += 1            # 未命中:留待人工(手动挂靠 / 新建节点)
+    await db.flush()
+    return out
+
+
+async def manual_link_section(db: AsyncSession, *, section_id: uuid.UUID,
+                              node_id: uuid.UUID) -> dict:
+    """人工把某板块挂靠到知识图谱里**已存在**的节点(限本类允许子树:语法→cf/jf、听力→lt)。"""
+    import sqlalchemy as _sa
+    from app.models.d22_unit_structured import UnitSection
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.services.kp_suggest_service import _descendant_node_ids
+
+    sec = (await db.execute(_sa.select(UnitSection).where(UnitSection.id == section_id))).scalar_one_or_none()
+    if sec is None:
+        raise AppError(code=404, message="板块不存在")
+    roots = ["cf", "jf"] if sec.kind == "grammar" else (["lt"] if sec.kind == "listening" else [])
+    root_ids = (await db.execute(_sa.select(KnowledgeNode.id).where(KnowledgeNode.code.in_(roots)))).scalars().all()
+    allowed = await _descendant_node_ids(db, list(root_ids)) or set()
+    node = (await db.execute(_sa.select(KnowledgeNode).where(KnowledgeNode.id == node_id))).scalar_one_or_none()
+    if node is None or node.id not in allowed:
+        raise AppError(code=400, message="所选节点不在该板块允许的目录范围(语法→词法/句法,听力→听力)")
+    sec.node_id, sec.node_code = node.id, node.code
+    await db.flush()
+    return {"node_id": str(node.id), "node_code": node.code, "name": node.name}
+
+
+async def new_node_for_section(db: AsyncSession, *, section_id: uuid.UUID,
+                               parent_id: uuid.UUID, name: str, created_by: uuid.UUID) -> dict:
+    """目录里没有对应考点时:在所选父分类下**新建知识图谱节点(手工标签)**并挂靠。
+
+    父分类须在本类允许子树内(语法→cf/jf、听力→lt)。新节点 source=manual、status=active,建别名。
+    """
+    import uuid as _uuid
+    import sqlalchemy as _sa
+    from app.models.d22_unit_structured import UnitSection
+    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
+    from app.services.kp_normalize import normalize_kp_name
+    from app.services.kp_suggest_service import _descendant_node_ids
+
+    nm = (name or "").strip()
+    if not nm:
+        raise AppError(code=400, message="节点名不能为空")
+    sec = (await db.execute(_sa.select(UnitSection).where(UnitSection.id == section_id))).scalar_one_or_none()
+    if sec is None:
+        raise AppError(code=404, message="板块不存在")
+    roots = ["cf", "jf"] if sec.kind == "grammar" else (["lt"] if sec.kind == "listening" else [])
+    root_ids = (await db.execute(_sa.select(KnowledgeNode.id).where(KnowledgeNode.code.in_(roots)))).scalars().all()
+    allowed = await _descendant_node_ids(db, list(root_ids)) or set()
+    parent = (await db.execute(_sa.select(KnowledgeNode).where(KnowledgeNode.id == parent_id))).scalar_one_or_none()
+    if parent is None or parent.id not in allowed:
+        raise AppError(code=400, message="父分类不在该板块允许的目录范围")
+    code = f"m-{_uuid.uuid4().hex[:10]}"
+    node = KnowledgeNode(
+        id=_uuid.uuid4(), axis="knowledge", parent_id=parent.id, name=nm[:120], code=code,
+        status="active", source="manual", applicable_stages=parent.applicable_stages)
+    db.add(node)
+    await db.flush()
+    db.add(NodeAlias(id=_uuid.uuid4(), node_id=node.id, alias=nm[:120],
+                     alias_norm=normalize_kp_name(nm), source="manual"))
+    sec.node_id, sec.node_code = node.id, node.code
+    await db.flush()
+    return {"node_id": str(node.id), "node_code": code, "name": nm}
+
+
 async def textbook_word_stats(db: AsyncSession, *, textbook: str | None = None,
                               grade: str | None = None, top: int = 200) -> dict:
     """教材高频词统计:某教材版+年级下,每个词出现在多少个单元(出现单元数=教材内词频)。

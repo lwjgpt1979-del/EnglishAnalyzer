@@ -12,7 +12,9 @@ LLM 用短「编码/序号」回映(避免 UUID 抄错),服务端映射回真实
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import json
+import os
 import uuid
 
 import sqlalchemy as sa
@@ -23,6 +25,22 @@ from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d16_question_domain import PlatformPaper, PlatformQuestion, PlatformQuestionKp, Passage
 from app.services import kp_prompt_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
+
+# ── 调试:把每次 LLM 请求/返回报文落 JSONL,供「为什么匹配少」分析 ──
+# 默认关;需分析时设环境变量 KP_SUGGEST_DEBUG=1(重启后端生效),文件可用 KP_SUGGEST_DEBUG_FILE 覆盖。
+_DEBUG = os.getenv("KP_SUGGEST_DEBUG", "0") == "1"
+_DEBUG_FILE = os.getenv("KP_SUGGEST_DEBUG_FILE", "/tmp/kp_suggest_debug.jsonl")
+
+
+def _dbg_dump(rec: dict) -> None:
+    if not _DEBUG:
+        return
+    try:
+        rec = {"ts": _dt.datetime.now().isoformat(timespec="seconds"), **rec}
+        with open(_DEBUG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 # 学段包含关系:高 ⊇ 初 ⊇ 小。匹配某学段卷时,该学段「及更低」的考点都算候选。
 _STAGE_RANK = {"小": 0, "初": 1, "高": 2}
@@ -50,28 +68,66 @@ _SYS_HEAD = (
 )
 
 
-async def _load_catalog(db: AsyncSession) -> tuple[dict, list[tuple]]:
+async def _load_catalog(db: AsyncSession, *, teaching_level: bool = False
+                        ) -> tuple[dict, list[tuple]]:
     """考点目录。返回 (code2node, entries[(node_id, code, 行文本, 适用学段)])。
 
     每行只含「编码<TAB>名称」——**不带 node_resource 详解内容**(避免请求臃肿/破坏缓存)。
-    考点口径 = 受控知识树里**有父且无子的叶子节点**(分类/中间节点不入目录)。
+
+    teaching_level=False(默认,真题/诊断用):口径=**叶子节点**(最细颗粒,如"物主代词的句法功能")。
+    teaching_level=True(教材单元用):口径=**「考点层」**=距知识轴根 depth==2 的节点(如"物主代词/系动词/
+      一般现在时"),不下钻到细叶子;更浅的叶子也纳入。教材教的是中层概念,叶子太细会匹配不上。
     """
-    child = aliased(KnowledgeNode)
-    is_leaf = ~sa.exists().where(child.parent_id == KnowledgeNode.id)
+    if not teaching_level:
+        child = aliased(KnowledgeNode)
+        is_leaf = ~sa.exists().where(child.parent_id == KnowledgeNode.id)
+        rows = (await db.execute(
+            sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
+                      KnowledgeNode.applicable_stages)
+            .where(KnowledgeNode.axis == "knowledge", KnowledgeNode.status == "active",
+                   KnowledgeNode.parent_id.isnot(None), is_leaf)
+            .order_by(KnowledgeNode.code)
+        )).all()
+        code2node: dict[str, tuple[uuid.UUID, str]] = {}
+        entries: list[tuple] = []
+        for nid, nm, code, stages in rows:
+            if code in code2node:
+                continue
+            code2node[code] = (nid, nm)
+            entries.append((nid, code, f"{code}\t{nm}", stages or []))
+        return code2node, entries
+
+    # 教材「考点层」口径:取 depth==2(或更浅的叶子)的节点
     rows = (await db.execute(
-        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
-                  KnowledgeNode.applicable_stages)
-        .where(KnowledgeNode.axis == "knowledge", KnowledgeNode.status == "active",
-               KnowledgeNode.parent_id.isnot(None), is_leaf)
-        .order_by(KnowledgeNode.code)
+        sa.select(KnowledgeNode.id, KnowledgeNode.parent_id, KnowledgeNode.name,
+                  KnowledgeNode.code, KnowledgeNode.applicable_stages)
+        .where(KnowledgeNode.axis == "knowledge", KnowledgeNode.status == "active")
     )).all()
-    code2node: dict[str, tuple[uuid.UUID, str]] = {}
-    entries: list[tuple] = []
-    for nid, nm, code, stages in rows:
-        if code in code2node:
+    by_id = {r.id: r for r in rows}
+    has_child: set = {r.parent_id for r in rows if r.parent_id is not None}
+    _depth: dict = {}
+
+    def _dep(nid) -> int:
+        if nid in _depth:
+            return _depth[nid]
+        p = by_id[nid].parent_id
+        d = 0 if (p is None or p not in by_id) else _dep(p) + 1
+        _depth[nid] = d
+        return d
+
+    keep = []
+    for r in rows:
+        d = _dep(r.id)
+        is_leaf_node = r.id not in has_child
+        if d == 2 or (is_leaf_node and r.parent_id is not None and d < 2):
+            keep.append(r)
+    code2node = {}
+    entries = []
+    for r in sorted(keep, key=lambda x: x.code or ""):
+        if r.code in code2node:
             continue
-        code2node[code] = (nid, nm)
-        entries.append((nid, code, f"{code}\t{nm}", stages or []))
+        code2node[r.code] = (r.id, r.name)
+        entries.append((r.id, r.code, f"{r.code}\t{r.name}", r.applicable_stages or []))
     return code2node, entries
 
 
@@ -214,12 +270,13 @@ async def _suggest_group(group: list[PlatformQuestion], code2node: dict, system_
 
 async def suggest_kps_for_text(
     db: AsyncSession, text: str, *, source_type: str = "教材·其他", stage: str | None = None,
+    scope: str | None = None,
 ) -> list[tuple[uuid.UUID, str, str]]:
     """一段正文(教材等)→ 受控考点建议。用该来源类型的提示词 + 关注分类 + 学段过滤目录。"""
     if not (text or "").strip() or is_llm_dev_mode():
         return []
     code2node, entries = await _load_catalog(db)
-    prompts = await kp_prompt_service.get_prompts(db)
+    prompts = await kp_prompt_service.get_prompts(db, scope)
     item = kp_prompt_service.default_item_for(prompts, source_type)
     allowed = await _descendant_node_ids(db, item.get("focus_node_ids") or [])
     system_msg = _system_for(entries, allowed, stage)
@@ -259,6 +316,7 @@ _PASSAGE_SKILL_EXCLUDE = {
 
 async def suggest_kps_for_passage(
     db: AsyncSession, text: str, kind: str, *, max_kp: int | None = None,
+    scope: str | None = None,
 ) -> list[tuple[uuid.UUID, str, str]]:
     """单元短文 → 关联考点。**两段式**(各自目录干净,比混在一起单次调用更稳):
 
@@ -271,8 +329,9 @@ async def suggest_kps_for_passage(
     root_code = _PASSAGE_ROOT.get(kind)
     if not (text or "").strip() or not root_code or is_llm_dev_mode():
         return []
-    code2node, entries = await _load_catalog(db)
-    prompts = await kp_prompt_service.get_prompts(db)
+    # 教材单元匹配用「考点层」目录(中层考点,如 物主代词/系动词/一般现在时),叶子太细会挂不上
+    code2node, entries = await _load_catalog(db, teaching_level=True)
+    prompts = await kp_prompt_service.get_prompts(db, scope)
     item = kp_prompt_service.default_item_for(prompts, f"教材·{kind}")
     cap = max_kp if max_kp is not None else int(item.get("max_kp", 3))
     snippet = text[:3000]
@@ -280,56 +339,102 @@ async def suggest_kps_for_passage(
     out: list[tuple[uuid.UUID, str, str]] = []
     seen: set = set()
 
-    async def _collect(allowed: set | None, user_prompt: str) -> None:
+    async def _collect(allowed: set | None, user_prompt: str, limit: int | None = None,
+                       label: str = "") -> None:
         if not allowed:
+            _dbg_dump({"fn": "passage", "scope": scope, "kind": kind, "stage": label,
+                       "candidate_count": 0, "skipped": "no_allowed_catalog"})
             return
         system_msg = _system_for(entries, allowed, None)
+        rec = {"fn": "passage", "scope": scope, "kind": kind, "stage": label,
+               "candidate_count": len(allowed), "limit": limit,
+               "request": {"system": system_msg, "user": user_prompt}}
         try:
             # temperature=0:让短文→考点匹配尽量确定,避免同短文 run-to-run 飘(时有时无)
             resp = await chat_completion(system_prompt=system_msg, user_prompt=user_prompt,
                                          max_tokens=1024, response_format={"type": "json_object"},
                                          temperature=0.0)
-            data = json.loads(resp.choices[0].message.content or "{}")
-        except Exception:  # noqa: BLE001
+            content = resp.choices[0].message.content or "{}"
+            rec["response"] = content
+            data = json.loads(content)
+        except Exception as exc:  # noqa: BLE001
+            rec["error"] = str(exc)
+            _dbg_dump(rec)
             return
-        for code in (data.get("codes") or []):
+        # 兼容两种返回:两步式 {"items":[{"point","code"}]} 或旧式 {"codes":[...]}
+        if isinstance(data.get("items"), list):
+            pairs = [((it or {}).get("point"), (it or {}).get("code")) for it in data["items"]]
+        else:
+            pairs = [(None, c) for c in (data.get("codes") or [])]
+        added: list[str] = []
+        dropped_unknown: list[str] = []
+        for point, code in pairs:
+            if limit is not None and len(added) >= limit:   # 本段(本分类)按其「至多」封顶
+                break
+            if not code:
+                continue
             ref = code2node.get(code)
-            if ref and ref[0] not in seen:
+            if ref is None:
+                dropped_unknown.append(f"{code}({point})" if point else code)  # 编码不在目录 → 丢弃
+                continue
+            if ref[0] not in seen:
                 seen.add(ref[0])
                 out.append((ref[0], ref[1], code))
+                added.append(code)
+        rec["ai_points"] = [p for p, _ in pairs if p]
+        rec["kept_codes"] = added
+        rec["dropped_not_in_catalog"] = dropped_unknown
+        _dbg_dump(rec)
 
     # ① 板块本身考点(lt/rc/wr)
+    focus_ids = item.get("focus_node_ids") or []
     root_id = (await db.execute(sa.select(KnowledgeNode.id)
                                 .where(KnowledgeNode.code == root_code))).scalar_one_or_none()
+    # 板块「至多」:若关注分类里配了本板块(听力/阅读/写作 = lt/rc/wr 根),用它的 per-category 至多;
+    # 否则用提示词级 max_kp。这样「听力 至多 3」这类按学期定制对短文也生效(板块根在第①段处理)。
+    board_cap = cap
+    if root_id is not None and str(root_id) in {str(x) for x in focus_ids}:
+        _bmn, board_cap = kp_prompt_service.range_for(item, str(root_id))
     board_allowed = await _descendant_node_ids(db, [root_id]) if root_id else None
-    # 收紧:短文只挂内容类考点,排除答题技能类子树
-    if board_allowed:
+    # 收紧:短文只挂内容类考点,排除答题技能类子树。可按学期开关放开(passage_include_skill=True 则不排除)
+    include_skill = await kp_prompt_service.get_passage_include_skill(db, scope)
+    if board_allowed and not include_skill:
         excl_ids = [r[0] for r in (await db.execute(
             sa.select(KnowledgeNode.id).where(KnowledgeNode.code.in_(_PASSAGE_SKILL_EXCLUDE))
         )).all()]
         if excl_ids:
             board_allowed = board_allowed - (await _descendant_node_ids(db, excl_ids) or set())
     await _collect(board_allowed,
-        f"{item['text']}\n挑最贴切的{kind}考点(至多 {cap} 个);**不要硬凑**,无贴切考点就给空数组。\n\n"
+        f"{item['text']}\n挑最贴切的{kind}考点(至多 {board_cap} 个);**不要硬凑**,无贴切考点就给空数组。\n\n"
         f"【{kind}材料】\n{snippet}\n\n"
-        '返回 JSON:{"codes":["编码",...]};只用目录里的编码。')
+        '返回 JSON:{"codes":["编码",...]};只用目录里的编码。', limit=board_cap,
+        label=f"板块根 {kind}(lt/rc/wr,{'含技能类' if include_skill else '排除技能类'})")
 
-    # ② 关注分类里超出本板块根的额外类别(如 词法/句法),聚焦再挑一次
-    focus_ids = item.get("focus_node_ids") or []
-    extra = [(r[0], r[1]) for r in (await db.execute(
+    # ② 关注分类里超出本板块根的额外类别(如 词法/句法):**每个分类各自聚焦一次**,
+    #    用该分类的「至多」封顶(关注每个分类各设考点数范围)。
+    extras = [(r[0], r[1]) for r in (await db.execute(
         sa.select(KnowledgeNode.id, KnowledgeNode.name)
         .where(KnowledgeNode.id.in_(focus_ids), KnowledgeNode.code != root_code)
     )).all()] if focus_ids else []
-    extra_allowed = await _descendant_node_ids(db, [e[0] for e in extra]) if extra else None
-    if extra_allowed:
-        names = "、".join(e[1] for e in extra)
-        await _collect(extra_allowed,
-            f"下面是一篇英语{kind}材料。目录里都是「{names}」方面的语言点考点。"
-            f"请挑出材料中**确实体现**的语言点考点(至多 {cap} 个;确实没有就给空数组,不要硬凑)。\n\n"
+    for cat_id, cat_name in extras:
+        _cmn, cmx = kp_prompt_service.range_for(item, str(cat_id))
+        cat_allowed = await _descendant_node_ids(db, [cat_id])
+        if not cat_allowed:
+            continue
+        await _collect(cat_allowed,
+            f"下面是一篇英语教材{kind}材料。请**两步**找出它教/练到的「{cat_name}」语言点:\n"
+            f"① 先列出材料里实际**用到/操练到**的具体语言点(如 be 动词、物主代词、一般现在时、"
+            f"指示代词、介绍句型 等);教材在用/练到就算,**不必是显式考题**。\n"
+            f"② 再为每个语言点从目录里选**最贴切的一个编码**(只用目录里的;目录没有对应的就跳过该点)。\n"
+            f"⚠️ 映射要**对准语言现象本身,别形似误判**:There be 句型≠倒装句;一般疑问句/特殊疑问句里 "
+            f"be 动词或助动词在主语前≠倒装;动词不定式表目的(to do)别硬算非谓语专项;能扣到更具体的"
+            f"基础点就别套到高阶句式上。\n"
+            f"至多 {cmx} 个;材料里确实没有「{cat_name}」语言点才返回空。\n\n"
             f"【材料】\n{snippet}\n\n"
-            '返回 JSON:{"codes":["编码",...]};只用目录里的编码。')
+            '返回 JSON:{"items":[{"point":"语言点名","code":"目录编码"}, ...]}。', limit=cmx,
+            label=f"关注分类「{cat_name}」两步(至多 {cmx})")
 
-    return out[:cap]
+    return out
 
 
 async def suggest_kps_for_paper(
@@ -362,11 +467,15 @@ async def suggest_kps_for_paper(
     code2node, entries = await _load_catalog(db)
     cat_code2node, cat_lines = await _load_categories(db)
     passages = await _passages_for(db, [q.block_id for q in qs])
-    prompts = await kp_prompt_service.get_prompts(db)
+    # 卷的学段 + 学期 scope(教材+年级+学期都全才用该学期定制提示词,否则全局默认)
+    paper = (await db.execute(sa.select(
+        PlatformPaper.stage, PlatformPaper.textbook_version, PlatformPaper.grade,
+        PlatformPaper.semester).where(PlatformPaper.id == paper_id))).first()
+    p_scope = kp_prompt_service.make_scope(
+        paper.textbook_version, paper.grade, paper.semester) if paper else None
+    prompts = await kp_prompt_service.get_prompts(db, p_scope)
     override = kp_prompt_service.item_by_id(prompts, prompt_id) if prompt_id else None
-    # 卷的学段(优先卷,回退小题)→ 候选考点按学段软过滤(未标学段=通用)
-    stage = (await db.execute(sa.select(PlatformPaper.stage)
-                              .where(PlatformPaper.id == paper_id))).scalar_one_or_none()
+    stage = paper.stage if paper else None
     if not stage:
         stage = next((q.stage for q in qs if getattr(q, "stage", None)), None)
 
@@ -396,27 +505,30 @@ async def suggest_kps_for_paper(
     # 拆段的原因:多分类混在一个大目录里单次问,AI 易漏/飘;各自干净目录分别匹配再合并更稳。
     # 串行预算:并行期各组共用同一 db session,不能并发查询,故先把子树都算好再并行调模型。
     items = {qt: (override or kp_prompt_service.default_item_for(prompts, qt)) for qt in groups}
-    focus_split: dict[str, list[set | None]] = {}
+    # 每段携带各自范围:(allowed_subtree, 至少, 至多)。单段用提示词级范围;两段式每分类用各自范围。
+    focus_split: dict[str, list[tuple]] = {}
     for qt, it in items.items():
         fids = it.get("focus_node_ids") or []
-        if int(it.get("max_kp", 2)) <= 1 or len(fids) <= 1:
-            focus_split[qt] = [await _descendant_node_ids(db, fids)]      # 一段式:0→[None](全部)/ 多分类→[并集]
+        p_mn, p_mx = int(it.get("min_kp", 0)), int(it.get("max_kp", 2))
+        if p_mx <= 1 or len(fids) <= 1:
+            focus_split[qt] = [(await _descendant_node_ids(db, fids), p_mn, p_mx)]   # 一段式
         else:
-            focus_split[qt] = [await _descendant_node_ids(db, [fid]) for fid in fids]  # 两段式:每分类一段(主→次)
+            focus_split[qt] = [(await _descendant_node_ids(db, [fid]),
+                                *kp_prompt_service.range_for(it, fid)) for fid in fids]  # 两段式:每分类各自范围
 
     async def _run_group(qtype: str, group: list[PlatformQuestion], it: dict) -> tuple[dict, dict]:
         splits = focus_split[qtype]
-        mn, mx = int(it.get("min_kp", 0)), int(it.get("max_kp", 2))
         if len(splits) == 1:                                  # 单段(0/1 个关注分类):原逻辑
-            system_msg = _system_for(entries, splits[0], stage)
+            allowed, mn, mx = splits[0]
+            system_msg = _system_for(entries, allowed, stage)
             return await _suggest_group(group, code2node, system_msg, it["text"], passages,
                                         mn, mx, cat_lines, cat_code2node)
-        # 两段式:每个关注分类各聚焦匹配一次,合并 per-qid 考点(去重),让词法/句法等都不漏
+        # 两段式:每个关注分类各聚焦匹配一次(用各自至少/至多),合并 per-qid 考点(去重)
         merged: dict = {q.id: [] for q in group}
         seen: dict = {q.id: set() for q in group}
         props_acc: dict = {q.id: [] for q in group}
-        for sub in splits:
-            system_msg = _system_for(entries, sub, stage)
+        for allowed, mn, mx in splits:
+            system_msg = _system_for(entries, allowed, stage)
             m, p = await _suggest_group(group, code2node, system_msg, it["text"], passages,
                                         mn, mx, cat_lines, cat_code2node)
             for qid, lst in m.items():
@@ -425,9 +537,10 @@ async def suggest_kps_for_paper(
                         seen[qid].add(ref[0]); merged[qid].append(ref)
             for qid, lst in p.items():
                 props_acc[qid].extend(lst)
-        # max_kp 是**每题总上限**:多段合并后按 mx 截断,避免段数把上限翻倍
+        # 每题总上限 = 各分类「至多」之和(每段已各自按其至多截断,不会被段数翻倍)
+        total_cap = sum(mx for _, _, mx in splits)
         for qid in merged:
-            merged[qid] = merged[qid][:mx]
+            merged[qid] = merged[qid][:total_cap]
         # 缺口建议:仅当某题在所有段都没匹配到考点时保留(按建议名去重)
         props: dict = {}
         for qid, plist in props_acc.items():

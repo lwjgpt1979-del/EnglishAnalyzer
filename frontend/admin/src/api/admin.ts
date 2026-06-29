@@ -225,12 +225,20 @@ export function updateEssayTemplates(payload: Record<string, { template: string;
 }
 
 // 知识点 AI 提示词(按题型,多套选默认)
-export interface KpPrompt { id?: string | null; name: string; text: string; question_type: string; is_default: boolean; focus_node_ids?: string[]; min_kp?: number; max_kp?: number }
-export function getKpPrompts(): Promise<{ prompts: KpPrompt[] }> {
-  return unwrap(request.get('/admin/kp-prompts'))
+export interface KpPrompt { id?: string | null; name: string; text: string; question_type: string; is_default: boolean; focus_node_ids?: string[]; min_kp?: number; max_kp?: number; focus_ranges?: Record<string, [number, number]> }
+export function getKpPrompts(scope?: string): Promise<{ prompts: KpPrompt[]; passage_include_skill: boolean }> {
+  return unwrap(request.get('/admin/kp-prompts', { params: scope ? { scope } : {} }))
 }
-export function saveKpPrompts(prompts: KpPrompt[]): Promise<{ prompts: KpPrompt[] }> {
-  return unwrap(request.put('/admin/kp-prompts', { prompts }))
+export function saveKpPrompts(prompts: KpPrompt[], scope?: string, passageIncludeSkill = false): Promise<{ prompts: KpPrompt[]; passage_include_skill: boolean }> {
+  return unwrap(request.put('/admin/kp-prompts', { prompts, scope: scope || null, passage_include_skill: passageIncludeSkill }))
+}
+// 已定制(有独立提示词)的学期 scope 串列表
+export function getKpPromptScopes(): Promise<string[]> {
+  return unwrap(request.get('/admin/kp-prompts/scopes'))
+}
+// 删除某学期定制,恢复继承全局默认
+export function deleteKpPromptScope(scope: string): Promise<{ deleted: boolean }> {
+  return unwrap(request.delete('/admin/kp-prompts/scope', { params: { scope } }))
 }
 export function suggestKpText(text: string, sourceType = '教材·其他'): Promise<QuestionKpRef[]> {
   // AI 调用慢,放宽超时(默认 20s 不够)
@@ -345,6 +353,43 @@ export interface PassageKp { node_id: string; name: string; code: string }
 export interface UnitPassage { id: string; unit_id: string; kind: string; title: string | null; text: string; sort_order: number; kps: PassageKp[] }
 export function getUnitPassages(unitId: string): Promise<{ total: number; items: UnitPassage[] }> {
   return unwrap(request.get(`/admin/curriculum/units/${unitId}/passages`))
+}
+// 从单元原文(PDF)AI 析出短文,整体覆盖旧短文;返回最新短文 + generated 条数
+export function generateUnitPassages(unitId: string): Promise<{ total: number; items: UnitPassage[]; generated: number }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/passages/generate`, {}, { timeout: 120000 }))
+}
+// 同源代理取单元 PDF 字节(authed);返回 Blob,前端转 blob: URL 内嵌预览(绕过跨域 iframe 不渲染)
+export function fetchUnitPdfBlob(unitId: string): Promise<Blob> {
+  return request.get(`/admin/curriculum/units/${unitId}/pdf`,
+    { responseType: 'blob', timeout: 120000 }).then(r => r.data as Blob)
+}
+
+// ── 单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)──
+export interface UnitSentence { id: string; text: string; difficulty: number | null; syntax_points: string[] }
+export interface UnitSectionItem { id: string; point_name: string | null; node_id: string | null; node_code: string | null; sentences: UnitSentence[] }
+export interface UnitStructured {
+  grammar: UnitSectionItem[]
+  listening: UnitSectionItem[]
+  writing: { id: string; requirement: string | null; body_text: string | null } | null
+  counts?: { grammar: number; listening: number; writing: number; sentences: number }
+}
+export function getUnitStructured(unitId: string): Promise<UnitStructured> {
+  return unwrap(request.get(`/admin/curriculum/units/${unitId}/structured`))
+}
+export function generateUnitStructured(unitId: string): Promise<UnitStructured> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/generate`, {}, { timeout: 180000 }))
+}
+// 第二步:语法点→词法/句法、听力考点→听力,一键关联(命中关联,未命中留待人工)
+export function linkUnitStructured(unitId: string): Promise<UnitStructured & { link_counts?: { linked: number; unmatched: number; skipped: number } }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/link`, {}, { timeout: 120000 }))
+}
+// 人工挂靠:把某板块关联到图谱里已存在的节点
+export function linkSectionNode(sectionId: string, nodeId: string): Promise<{ node_id: string; node_code: string; name: string }> {
+  return unwrap(request.post(`/admin/curriculum-unit-sections/${sectionId}/link-node`, { node_id: nodeId }))
+}
+// 目录没有→在所选父分类下新建图谱节点(手工标签)并挂靠
+export function newNodeForSection(sectionId: string, parentId: string, name: string): Promise<{ node_id: string; node_code: string; name: string }> {
+  return unwrap(request.post(`/admin/curriculum-unit-sections/${sectionId}/new-node`, { parent_id: parentId, name }))
 }
 export function suggestPassageKp(passageId: string): Promise<{ items: PassageKp[] }> {
   return unwrap(request.post(`/admin/unit-passages/${passageId}/suggest-kp`, {}, { timeout: 90000 }))
@@ -488,6 +533,14 @@ export function updateKnowledgeNode(id: string, body: {
 }
 export function retireKnowledgeNode(id: string): Promise<{ id: string; status: string }> {
   return unwrap(request.post(`/admin/knowledge-nodes/${id}/retire`))
+}
+// 硬删除节点(连带挂边;有子节点会被后端拒绝)
+export function deleteKnowledgeNode(id: string): Promise<{ deleted: string }> {
+  return unwrap(request.delete(`/admin/knowledge-nodes/${id}`))
+}
+export interface NodeChild { id: string; name: string; code: string; status: string; source: string | null; child_count: number }
+export function getNodeChildren(id: string): Promise<NodeChild[]> {
+  return unwrap(request.get(`/admin/knowledge-nodes/${id}/children`))
 }
 export function restoreKnowledgeNode(id: string): Promise<{ id: string; status: string }> {
   return unwrap(request.post(`/admin/knowledge-nodes/${id}/restore`))
