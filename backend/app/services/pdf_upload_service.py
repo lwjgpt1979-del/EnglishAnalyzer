@@ -50,6 +50,59 @@ def delete_upload(file_id: str) -> None:
     (UPLOAD_DIR / f"{file_id}.pdf").unlink(missing_ok=True)
 
 
+def read_upload_pdf(file_id: str) -> bytes:
+    """读回本地 PDF 原始 bytes（供扫描件走 OCR）。"""
+    return (UPLOAD_DIR / f"{file_id}.pdf").read_bytes()
+
+
+def save_upload_doc(file_bytes: bytes) -> str:
+    """保存上传的旧版 Word(.doc,二进制),返回 file_id。"""
+    file_id = uuid.uuid4().hex
+    (UPLOAD_DIR / f"{file_id}.doc").write_bytes(file_bytes)
+    return file_id
+
+
+def read_upload_doc(file_id: str) -> bytes:
+    return (UPLOAD_DIR / f"{file_id}.doc").read_bytes()
+
+
+def _find_soffice() -> str | None:
+    """定位 LibreOffice 的 soffice 可执行文件(转换 .doc→PDF 用);未装返回 None。"""
+    import shutil
+    from pathlib import Path as _P
+    for c in ("soffice", "libreoffice"):
+        p = shutil.which(c)
+        if p:
+            return p
+    mac = _P("/Applications/LibreOffice.app/Contents/MacOS/soffice")
+    return str(mac) if mac.exists() else None
+
+
+def doc_to_pdf(doc_bytes: bytes) -> bytes | None:
+    """旧版 .doc → PDF bytes(LibreOffice headless)。未装 LibreOffice / 转换失败 → None。"""
+    import os
+    import subprocess
+    import tempfile
+    soffice = _find_soffice()
+    if not soffice:
+        return None
+    with tempfile.TemporaryDirectory() as td:
+        src = os.path.join(td, "in.doc")
+        with open(src, "wb") as f:
+            f.write(doc_bytes)
+        try:
+            subprocess.run([soffice, "--headless", "--convert-to", "pdf", "--outdir", td, src],
+                           check=True, timeout=180, capture_output=True)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("soffice doc→pdf failed: %s", exc)
+            return None
+        out = os.path.join(td, "in.pdf")
+        if os.path.exists(out):
+            with open(out, "rb") as f:
+                return f.read()
+    return None
+
+
 def save_upload_docx(file_bytes: bytes) -> str:
     """保存上传的 Word(.docx)，返回 file_id（hex UUID，不含扩展名）。"""
     file_id = uuid.uuid4().hex
@@ -407,8 +460,8 @@ def split_unit_pdf(file_id: str, start_page: int, end_page: int) -> bytes:
     return buf.getvalue()
 
 
-async def upload_pdf_to_cos(pdf_bytes: bytes, key: str) -> str | None:
-    """上传 PDF bytes 到 COS(public-read),返回直链。COS 未配(dev)→ 返回 None。"""
+async def upload_bytes_to_cos(data: bytes, key: str, content_type: str) -> str | None:
+    """上传任意 bytes 到 COS(public-read),返回直链。COS 未配(dev)→ 返回 None。"""
     import asyncio
 
     from app.core.config import settings
@@ -418,11 +471,43 @@ async def upload_pdf_to_cos(pdf_bytes: bytes, key: str) -> str | None:
 
     def _put() -> None:
         _get_cos_client().put_object(
-            Bucket=settings.cos_bucket, Key=key, Body=pdf_bytes,
-            ContentType="application/pdf", ACL="public-read")
+            Bucket=settings.cos_bucket, Key=key, Body=data,
+            ContentType=content_type, ACL="public-read")
 
     await asyncio.to_thread(_put)
     return f"{settings.cos_base_url}/{key}"
+
+
+async def delete_cos_url(url: str | None) -> None:
+    """按直链删除 COS 对象(best-effort;未配 COS / 非本桶直链 → 跳过)。"""
+    import asyncio
+    from app.core.config import settings
+    if not url or settings.cos_secret_key.startswith("placeholder"):
+        return
+    base = settings.cos_base_url.rstrip("/") + "/"
+    if url.startswith(base):
+        key = url[len(base):]
+    elif "myqcloud.com/" in url:
+        key = url.split("myqcloud.com/", 1)[1]
+    else:
+        return
+    key = key.split("?", 1)[0].lstrip("/")
+    if not key:
+        return
+    from app.services.vocab_media_provider import _get_cos_client
+
+    def _del() -> None:
+        _get_cos_client().delete_object(Bucket=settings.cos_bucket, Key=key)
+
+    try:
+        await asyncio.to_thread(_del)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("cos delete failed (%s): %s", key, exc)
+
+
+async def upload_pdf_to_cos(pdf_bytes: bytes, key: str) -> str | None:
+    """上传 PDF bytes 到 COS(public-read),返回直链。COS 未配(dev)→ 返回 None。"""
+    return await upload_bytes_to_cos(pdf_bytes, key, "application/pdf")
 
 
 def get_unit_text(file_id: str, start_page: int, end_page: int) -> str:

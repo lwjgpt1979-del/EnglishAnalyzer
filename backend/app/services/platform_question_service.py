@@ -72,16 +72,54 @@ def _compose_paper_name(meta: dict | None) -> str:
     return name or "未命名试卷"
 
 
+def _year_from_name(name: str | None) -> int | None:
+    """从试卷名提取年份(1900–2099);取第一个四位年份。"""
+    m = re.search(r"(19|20)\d{2}", name or "")
+    return int(m.group(0)) if m else None
+
+
 async def create_paper(db: AsyncSession, *, name: str | None, meta: dict | None) -> uuid.UUID:
     """整卷上传时建一份试卷，聚合其下所有真题；返回 paper.id。"""
     m = meta or {}
+    pname = (name or "").strip() or _compose_paper_name(m)
     p = PlatformPaper(
-        id=uuid.uuid4(), name=(name or "").strip() or _compose_paper_name(m),
+        id=uuid.uuid4(), name=pname,
         textbook_version=m.get("textbook_version"), stage=m.get("stage"),
         grade=m.get("grade"), semester=m.get("semester"),
         region_code=m.get("city_code") or m.get("region_code"),
         region_name=m.get("region_name"), exam_type=m.get("exam_type"),
-        status="draft", meta=m or None,
+        status="draft", year=_year_from_name(pname), meta=m or None,
+    )
+    db.add(p)
+    await db.flush()
+    return p.id
+
+
+async def existing_paper_names(db: AsyncSession, names: list[str]) -> set[str]:
+    """返回 names 里**已存在**的试卷名集合(供上传查重去重)。"""
+    names = [n for n in {(x or "").strip() for x in names} if n]
+    if not names:
+        return set()
+    rows = (await db.execute(
+        sa.select(PlatformPaper.name).where(PlatformPaper.name.in_(names)))).scalars().all()
+    return set(rows)
+
+
+async def create_paper_placeholder(
+    db: AsyncSession, *, name: str | None, meta: dict | None,
+    source_file_url: str | None, source_filename: str | None,
+) -> uuid.UUID:
+    """批量上传:建一份**草稿占位试卷**(0 题,挂原卷 word/pdf 的 COS 直链),题目延后解析。"""
+    m = meta or {}
+    pname = (name or "").strip() or _compose_paper_name(m)
+    p = PlatformPaper(
+        id=uuid.uuid4(), name=pname,
+        textbook_version=m.get("textbook_version"), stage=m.get("stage"),
+        grade=m.get("grade"), semester=m.get("semester"),
+        region_code=m.get("city_code") or m.get("region_code"),
+        region_name=m.get("region_name"), exam_type=m.get("exam_type"),
+        status="draft", year=_year_from_name(pname), meta=m or None,
+        source_file_url=source_file_url, source_filename=source_filename,
     )
     db.add(p)
     await db.flush()
@@ -92,9 +130,10 @@ async def list_papers(
     db: AsyncSession, *, status: str | None = None,
     textbook_version: str | None = None, stage: str | None = None,
     grade: str | None = None, exam_type: str | None = None,
-    region_code: str | None = None, skip: int = 0, limit: int = 20
+    region_code: str | None = None, year: int | None = None,
+    skip: int = 0, limit: int = 20
 ) -> tuple[list[tuple[PlatformPaper, int, int]], int]:
-    """试卷分页:每项含 (paper, 题数, 已发布题数)。支持按教材/学段/年级/地区/考试筛选。"""
+    """试卷分页:每项含 (paper, 题数, 已发布题数)。支持按教材/学段/年级/地区/考试/年份筛选;按年份倒序。"""
     base = sa.select(PlatformPaper)
     if status is not None:
         base = base.where(PlatformPaper.status == status)
@@ -108,11 +147,14 @@ async def list_papers(
         base = base.where(PlatformPaper.exam_type == exam_type)
     if region_code:        # 前缀匹配:省码(2位)含其下所有市;市码(4位)精确
         base = base.where(PlatformPaper.region_code.like(f"{region_code}%"))
+    if year:
+        base = base.where(PlatformPaper.year == year)
     total = (await db.execute(
         sa.select(sa.func.count()).select_from(base.subquery())
     )).scalar_one()
     papers = (await db.execute(
-        base.order_by(PlatformPaper.created_at.desc()).offset(skip).limit(limit)
+        base.order_by(PlatformPaper.year.desc().nullslast(),
+                      PlatformPaper.created_at.desc()).offset(skip).limit(limit)
     )).scalars().all()
     out: list[tuple[PlatformPaper, int, int]] = []
     for p in papers:
@@ -173,9 +215,17 @@ async def paper_questions(
 
 
 async def delete_papers(db: AsyncSession, paper_ids: list[uuid.UUID]) -> int:
-    """批量删除试卷:连带删其真题、派生仿真、题组短文、KP 边、错题/作答引用。返回删除卷数。"""
+    """批量删除试卷:连带删其真题、派生仿真、题组短文、KP 边、错题/作答引用、**COS 原文件**。返回删除卷数。"""
     if not paper_ids:
         return 0
+    # 收集要删的 COS 原文件(原卷/转换后 PDF + 保留的原 .doc)
+    cos_urls: list[str] = []
+    for p in (await db.execute(sa.select(PlatformPaper).where(PlatformPaper.id.in_(paper_ids)))).scalars().all():
+        if p.source_file_url:
+            cos_urls.append(p.source_file_url)
+        du = (p.meta or {}).get("doc_file_url")
+        if du:
+            cos_urls.append(du)
     real_ids = list((await db.execute(
         sa.select(PlatformQuestion.id).where(PlatformQuestion.paper_id.in_(paper_ids)))).scalars().all())
     block_ids = list({b for b in (await db.execute(
@@ -202,7 +252,38 @@ async def delete_papers(db: AsyncSession, paper_ids: list[uuid.UUID]) -> int:
     if block_ids:
         await db.execute(sa.delete(Passage).where(Passage.id.in_(block_ids)))
     res = await db.execute(sa.delete(PlatformPaper).where(PlatformPaper.id.in_(paper_ids)))
+    # DB 删完后再删 COS 原文件(best-effort,失败不影响删卷)
+    from app.services import pdf_upload_service as pus
+    for u in cos_urls:
+        await pus.delete_cos_url(u)
     return res.rowcount or 0
+
+
+async def clear_paper_questions(db: AsyncSession, paper_id: uuid.UUID) -> int:
+    """清空某卷下的真题(及派生仿真、题组短文、KP 边),**保留试卷本身**。供「重新解析」幂等重跑。"""
+    real_ids = list((await db.execute(
+        sa.select(PlatformQuestion.id).where(PlatformQuestion.paper_id == paper_id))).scalars().all())
+    if not real_ids:
+        return 0
+    block_ids = list({b for b in (await db.execute(
+        sa.select(PlatformQuestion.block_id).where(
+            PlatformQuestion.paper_id == paper_id, PlatformQuestion.block_id.isnot(None)))).scalars().all() if b})
+    sim_ids = list((await db.execute(
+        sa.select(PlatformQuestion.id).where(PlatformQuestion.parent_real_id.in_(real_ids)))).scalars().all())
+    all_qids = real_ids + sim_ids
+    await db.execute(sa.delete(PlatformQuestionKp).where(PlatformQuestionKp.question_id.in_(all_qids)))
+    for tbl, col in (("wrong_record", "question_id"), ("answer_log", "question_id")):
+        try:
+            await db.execute(sa.text(f"DELETE FROM {tbl} WHERE {col} = ANY(:ids)"), {"ids": all_qids})
+        except Exception:  # noqa: BLE001
+            pass
+    if sim_ids:
+        await db.execute(sa.delete(PlatformQuestion).where(PlatformQuestion.id.in_(sim_ids)))
+    await db.execute(sa.delete(PlatformQuestion).where(PlatformQuestion.id.in_(real_ids)))
+    if block_ids:
+        await db.execute(sa.delete(Passage).where(Passage.id.in_(block_ids)))
+    await db.flush()
+    return len(real_ids)
 
 
 async def publish_paper(db: AsyncSession, paper_id: uuid.UUID) -> int:
@@ -331,6 +412,197 @@ async def import_real_question(
         elif m.candidate_id is not None:
             res.candidates.append(m.candidate_id)
     return res
+
+
+# ── .doc → PDF 异步转换(批量上传后台并发;失败/中断可重试)────────────────
+_convert_tasks: set = set()
+_convert_sem = None
+
+
+def _get_convert_sem():
+    global _convert_sem
+    import asyncio
+    if _convert_sem is None:
+        _convert_sem = asyncio.Semaphore(4)   # 最多 4 个并发转换
+    return _convert_sem
+
+
+async def _load_doc_bytes(db: AsyncSession, paper) -> tuple[str | None, bytes | None]:
+    """取该卷的 .doc 原始字节:优先本地 file_id,否则从 COS 原卷下载(并存本地)。返回 (file_id, bytes)。"""
+    from app.services import pdf_upload_service as pus
+    m = paper.meta or {}
+    fid = m.get("file_id")
+    if fid:
+        try:
+            return fid, pus.read_upload_doc(fid)
+        except Exception:  # noqa: BLE001
+            pass
+    if paper.source_file_url:
+        import httpx
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            resp = await client.get(paper.source_file_url)
+            resp.raise_for_status()
+            fid = pus.save_upload_doc(resp.content)
+            return fid, resp.content
+    return None, None
+
+
+async def convert_paper_doc(db: AsyncSession, *, paper_id: uuid.UUID) -> dict:
+    """把某卷的 .doc 用 LibreOffice 转成 PDF;成功后 meta.source→pdf、file_id→新 PDF。
+
+    自行提交:先落 convert_status=converting(可见「转换中」)→ 转换 → 落 converted/failed。
+    """
+    import asyncio
+    from app.services import pdf_upload_service as pus
+    paper = await db.get(PlatformPaper, paper_id)
+    if paper is None:
+        return {"convert_status": "failed", "error": "试卷不存在"}
+    m = dict(paper.meta or {})
+    if m.get("source") != "doc":
+        return {"convert_status": m.get("convert_status") or "converted"}   # 非 doc 无需转换
+
+    fid, doc_bytes = await _load_doc_bytes(db, paper)
+    if doc_bytes is None:
+        paper.meta = {**m, "convert_status": "failed", "convert_error": "无原始 .doc 文件"}
+        await db.commit()
+        return {"convert_status": "failed"}
+    paper.meta = {**m, "file_id": fid, "convert_status": "converting"}
+    await db.commit()
+
+    pdf = await asyncio.to_thread(pus.doc_to_pdf, doc_bytes)
+    m2 = dict(paper.meta or {})
+    if pdf:
+        m2.update(source="pdf", file_id=pus.save_upload(pdf), doc_file_id=fid, convert_status="converted")
+        m2.pop("convert_error", None)
+        # 落库即 PDF:把转好的 PDF 传 COS,原卷(source_file_url/filename)替换为 PDF
+        try:
+            pdf_url = await pus.upload_bytes_to_cos(pdf, f"papers/{uuid.uuid4().hex}.pdf", "application/pdf")
+        except Exception:  # noqa: BLE001
+            pdf_url = None
+        if pdf_url:
+            m2["doc_file_url"] = paper.source_file_url    # 留存原 .doc 直链备查
+            paper.source_file_url = pdf_url
+        if paper.source_filename and "." in paper.source_filename:
+            paper.source_filename = paper.source_filename.rsplit(".", 1)[0] + ".pdf"
+    else:
+        m2.update(convert_status="failed",
+                  convert_error="未装 LibreOffice(soffice)或转换失败,请装 LibreOffice 后重试")
+    paper.meta = m2
+    await db.commit()
+    return {"convert_status": m2["convert_status"]}
+
+
+def schedule_doc_conversions(paper_ids: list[uuid.UUID]) -> None:
+    """后台并发转换一批 .doc 卷(不阻塞上传响应)。"""
+    import asyncio
+
+    async def _one(pid: uuid.UUID) -> None:
+        from app.core.database import _async_session_factory
+        async with _get_convert_sem():
+            try:
+                async with _async_session_factory() as s:
+                    await convert_paper_doc(s, paper_id=pid)
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("doc convert bg failed (paper=%s): %s", pid, exc)
+
+    for pid in paper_ids:
+        t = asyncio.create_task(_one(pid))
+        _convert_tasks.add(t)
+        t.add_done_callback(_convert_tasks.discard)
+
+
+async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID) -> dict:
+    """批量上传后「解析原题目」:读该卷本地文件 → 取文字(扫描件 PDF 走 OCR)→ 拆题 →
+    自动入库为**草稿题**(挂 paper_id + 卷面 meta)。标注 paper.parse_status。返回 {imported, status}。
+    """
+    from app.services import pdf_upload_service as pus
+
+    paper = (await db.execute(sa.select(PlatformPaper).where(PlatformPaper.id == paper_id))).scalar_one_or_none()
+    if paper is None:
+        raise AppError(code=404, message="试卷不存在")
+    m = paper.meta or {}
+    file_id, source = m.get("file_id"), m.get("source")
+    # 修正历史脏数据:原始文件是 .doc 却被旧逻辑标成 docx/pdf → 作废,按 .doc 重新下载路由
+    if (paper.source_filename or "").lower().endswith(".doc") and source != "doc":
+        file_id, source = None, None
+    if not file_id or source not in ("pdf", "docx", "doc"):
+        # 回退:旧占位卷无本地文件 → 从 COS 原卷直链下载后解析
+        url = paper.source_file_url
+        fn = (paper.source_filename or "")
+        ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+        if not url or ext not in ("pdf", "doc", "docx"):
+            raise AppError(code=400, message="该试卷无可解析的原始文件(仅批量上传的 pdf/word 支持)")
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.content
+        except Exception as exc:  # noqa: BLE001
+            raise AppError(code=502, message=f"下载原卷失败:{exc}")
+        if ext == "docx":
+            file_id, source = pus.save_upload_docx(data), "docx"
+        elif ext == "doc":
+            file_id, source = pus.save_upload_doc(data), "doc"
+        else:
+            file_id, source = pus.save_upload(data), "pdf"
+        paper.meta = {**m, "file_id": file_id, "source": source}   # 回填,下次直接用本地
+
+    paper.parse_status = "parsing"
+    await db.flush()
+
+    try:
+        # 旧版 .doc:先用 LibreOffice 转 PDF,再走 PDF 解析(文字层 / 扫描件 OCR)
+        if source == "doc":
+            import asyncio
+            pdf = await asyncio.to_thread(pus.doc_to_pdf, pus.read_upload_doc(file_id))
+            if pdf is None:
+                raise RuntimeError("旧版 .doc 无法解析:服务器未装 LibreOffice(soffice),"
+                                   "请把文件另存为 .docx 或 PDF 后重新上传")
+            file_id, source = pus.save_upload(pdf), "pdf"
+            paper.meta = {**(paper.meta or {}), "file_id": file_id, "source": source}
+            await db.flush()
+        # 与单份「开始抽题」同一套抽题逻辑;扫描件 PDF 自动走视觉 OCR。**不做 KP 匹配。**
+        from app.services.real_extract_service import extract_questions
+        parsed = await extract_questions(source, file_id, None, scanned_ocr=True)
+        if not parsed:
+            raise RuntimeError("未拆出题目")
+
+        await clear_paper_questions(db, paper_id)   # 幂等:重新解析先清旧题,避免重复
+
+        # 题组短文:同 block_key 先建一份 passage
+        block_pid: dict[str, uuid.UUID] = {}
+        for r in parsed:
+            bk, pg = r.get("block_key"), r.get("passage")
+            if bk and bk not in block_pid and (pg or "").strip():
+                try:
+                    async with db.begin_nested():
+                        block_pid[bk] = await create_passage(db, text=pg.strip())
+                except Exception:  # noqa: BLE001
+                    pass
+        imported = 0
+        for r in parsed:
+            bk = r.get("block_key")
+            try:
+                async with db.begin_nested():
+                    await import_real_question(              # kp_names 不传 → 暂不出语法知识点
+                        db, stem=r["stem"], answer=r.get("answer"),
+                        question_type=r.get("question_type"), explanation=r.get("explanation"),
+                        meta=m, question_no=r.get("question_no"),
+                        status="draft", block_id=block_pid.get(bk) if bk else None,
+                        paper_id=paper.id, section=r.get("section"))
+                imported += 1
+            except Exception:  # noqa: BLE001
+                pass
+        paper.parse_status = "parsed"
+        paper.meta = {k: v for k, v in (paper.meta or {}).items() if k != "parse_error"}  # 清除旧错误
+        await db.flush()
+        return {"imported": imported, "status": "parsed"}
+    except Exception as exc:  # noqa: BLE001
+        paper.parse_status = "failed"
+        paper.meta = {**(paper.meta or {}), "parse_error": str(exc)[:300]}   # 存失败原因,供列表行内显示
+        await db.flush()
+        return {"imported": 0, "status": "failed", "error": str(exc)}
 
 
 async def add_sim(

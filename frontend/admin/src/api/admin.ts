@@ -391,6 +391,34 @@ export function linkSectionNode(sectionId: string, nodeId: string): Promise<{ no
 export function newNodeForSection(sectionId: string, parentId: string, name: string): Promise<{ node_id: string; node_code: string; name: string }> {
   return unwrap(request.post(`/admin/curriculum-unit-sections/${sectionId}/new-node`, { parent_id: parentId, name }))
 }
+// 单元考点 = 单元解析里语法点/听力已关联知识图谱的节点(去重)
+export interface UnitLinkedNode { node_id: string; node_code: string; node_name: string; kinds: string[]; points: string[] }
+export function getUnitLinkedNodes(unitId: string): Promise<{ items: UnitLinkedNode[] }> {
+  return unwrap(request.get(`/admin/curriculum/units/${unitId}/linked-nodes`))
+}
+
+// ── 单元重点单词 ↔ 词力通 ──
+export interface UnitWordItem {
+  word_id?: string; word: string; phonetic?: string | null; meaning?: string | null
+  pos?: string | null; type?: string; is_core?: boolean; sort_order?: number
+}
+export function getUnitWords(unitId: string): Promise<{ items: UnitWordItem[] }> {
+  return unwrap(request.get(`/admin/curriculum/units/${unitId}/words`))
+}
+export function saveUnitWords(unitId: string, items: UnitWordItem[], isCore = true):
+  Promise<{ items: UnitWordItem[]; counts: { linked: number; created: number; total: number } }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/words`, { items, is_core: isCore }))
+}
+export function deleteUnitWord(unitId: string, wordId: string): Promise<{ ok: boolean }> {
+  return unwrap(request.delete(`/admin/curriculum/units/${unitId}/words/${wordId}`))
+}
+export function ocrUnitWords(unitId: string, images: string[]): Promise<{ items: UnitWordItem[] }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/words/ocr`, { images }, { timeout: 180000 }))
+}
+export function parseUnitWordsText(unitId: string, text: string): Promise<{ items: UnitWordItem[] }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/words/parse-text`, { text }, { timeout: 120000 }))
+}
+
 export function suggestPassageKp(passageId: string): Promise<{ items: PassageKp[] }> {
   return unwrap(request.post(`/admin/unit-passages/${passageId}/suggest-kp`, {}, { timeout: 90000 }))
 }
@@ -593,6 +621,31 @@ export function reanalyzeLongSentences(params: { status?: string; limit?: number
 export interface LsReanalyzeJob { job_id: string; total: number; done: number; failed: number; status: string; error?: string }
 export function getLsReanalyzeJob(jobId: string) {
   return unwrap<LsReanalyzeJob>(request.get(`/admin/long-sentences/reanalyze-jobs/${jobId}`))
+}
+
+// ── 上传长难句:文字 → LLM 语法点 → 关联知识图谱 ──
+export interface UploadedLsItem {
+  id: string; point: string; text: string; difficulty: number | null
+  node_id: string | null; node_code: string | null; node_name: string | null
+}
+export function uploadParseLs(text: string, unitId?: string): Promise<{ items: UploadedLsItem[] }> {
+  return unwrap(request.post('/admin/long-sentences/upload-parse', { text, unit_id: unitId }, { timeout: 120000 }))
+}
+export function listUploadedLs(limit = 50, unitId?: string): Promise<{ items: UploadedLsItem[] }> {
+  return unwrap(request.get('/admin/long-sentences/uploaded', { params: { limit, unit_id: unitId } }))
+}
+export function linkUploadedLsNode(lsId: string, nodeId: string): Promise<{ node_id: string; node_code: string; name: string }> {
+  return unwrap(request.post(`/admin/long-sentences/uploaded/${lsId}/link-node`, { node_id: nodeId }))
+}
+export function newUploadedLsNode(lsId: string, parentId: string, name: string): Promise<{ node_id: string; node_code: string; name: string }> {
+  return unwrap(request.post(`/admin/long-sentences/uploaded/${lsId}/new-node`, { parent_id: parentId, name }))
+}
+export function deleteUploadedLs(lsId: string): Promise<{ ok: boolean }> {
+  return unwrap(request.delete(`/admin/long-sentences/uploaded/${lsId}`))
+}
+export function autoLinkUnitLs(unitId: string):
+  Promise<{ items: UploadedLsItem[]; counts: { linked: number; unmatched: number; skipped: number } }> {
+  return unwrap(request.post('/admin/long-sentences/uploaded/auto-link', { unit_id: unitId }, { timeout: 60000 }))
 }
 
 export function listLongSentences(params: {
@@ -1297,6 +1350,12 @@ export interface PlatformPaper {
   status: string
   question_count: number
   published_count: number
+  source_file_url?: string | null
+  source_filename?: string | null
+  parse_status?: string | null
+  parse_error?: string | null
+  convert_status?: string | null
+  year?: number | null
   created_at?: string | null
 }
 export interface QuestionKpRef { node_id: string; name: string; code?: string | null }
@@ -1317,7 +1376,7 @@ export interface PaperDetail { paper: PlatformPaper; questions: PaperQuestion[] 
 
 export function listPlatformPapers(params: {
   status?: string; textbook_version?: string; stage?: string; grade?: string
-  exam_type?: string; region_code?: string; skip?: number; limit?: number
+  exam_type?: string; region_code?: string; year?: number; skip?: number; limit?: number
 }): Promise<{ total: number; items: PlatformPaper[] }> {
   return unwrap(request.get('/admin/platform-papers', { params }))
 }
@@ -1386,6 +1445,25 @@ export function extractRealQuestions(opts: { file?: File; imageUrls?: string[] }
   return unwrap(request.post('/admin/platform-questions/extract', form, {
     headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000,
   }))
+}
+// 批量上传真题:多份 word/pdf → COS + 建草稿占位试卷
+export interface BatchUploadResult { filename: string; ok: boolean; paper_id?: string; file_url?: string | null; cos?: boolean; duplicate?: boolean; error?: string }
+export function batchUploadPapers(files: File[], meta: Record<string, unknown>):
+  Promise<{ results: BatchUploadResult[]; ok: number; total: number }> {
+  const form = new FormData()
+  for (const f of files) form.append('files', f)
+  form.append('meta', JSON.stringify(meta))
+  return unwrap(request.post('/admin/platform-questions/batch-upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000,
+  }))
+}
+// 解析某份(批量上传的)试卷 → 拆题自动入库为草稿
+export function parsePaper(paperId: string): Promise<{ imported: number; status: string; error?: string }> {
+  return unwrap(request.post(`/admin/platform-papers/${paperId}/parse`, {}, { timeout: 300000 }))
+}
+// 重试:.doc → PDF 转换
+export function convertPaperDoc(paperId: string): Promise<{ convert_status: string; error?: string }> {
+  return unwrap(request.post(`/admin/platform-papers/${paperId}/convert-doc`, {}, { timeout: 180000 }))
 }
 
 export function getExtractJob(jobId: string): Promise<RealExtractJob> {

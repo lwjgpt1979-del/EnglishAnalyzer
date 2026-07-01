@@ -88,6 +88,46 @@ _TEXT_OCR_SYS = (
 )
 
 
+_WORDLIST_SYS = (
+    "你是英语教材词汇表识别助手。图片通常是某单元的【单词表/词汇表】(含单词、音标、词性、中文释义),"
+    "也可能是带词组短语的页。请提取其中的英文单词与词组,严格输出 JSON。"
+)
+_WORDLIST_USER = (
+    "识别这张图里的所有英文单词与词组,输出 JSON:"
+    '{"items":[{"word":"英文(单词或词组原形)","phonetic":"音标(无则空串)",'
+    '"pos":"词性缩写如 n./v./adj.(无则空串)","meaning":"中文释义(无则空串)",'
+    '"type":"word 或 phrase(多词为 phrase)"}]}。'
+    "要求:只取词汇表里的词条,忽略例句/标题/页码;按出现顺序;识别不到返回 {\"items\":[]}。只返回纯 JSON。"
+)
+
+
+async def recognize_word_list(image_url: str) -> list[dict]:
+    """词汇表图片 → 结构化单词/词组列表 [{word, phonetic, pos, meaning, type}]。失败返回 []。"""
+    import json as _json
+    if _is_doubao_dev_mode():
+        return []
+    client = AsyncOpenAI(api_key=settings.doubao_api_key, base_url=settings.doubao_base_url)
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.doubao_vision_model,
+            messages=[
+                {"role": "system", "content": _WORDLIST_SYS},
+                {"role": "user", "content": [
+                    {"type": "text", "text": _WORDLIST_USER},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ]},
+            ],
+            max_tokens=4096,
+            response_format={"type": "json_object"},
+        )
+        data = _json.loads(resp.choices[0].message.content or "{}")
+        items = data.get("items") if isinstance(data, dict) else None
+        return [it for it in (items or []) if isinstance(it, dict) and (it.get("word") or "").strip()]
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("doubao word-list OCR failed: %s", exc)
+        return []
+
+
 async def recognize_page_text(image_url: str) -> str:
     """教材页图片 → 原样页面文字(供扫描件 PDF 走 OCR;与抽题用的 recognize 区分)。"""
     if _is_doubao_dev_mode():

@@ -7,9 +7,9 @@ import {
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
   createKnowledgeNode,
   type QuestionKpRef, type KpPrompt, type KpProposal,
-  extractRealQuestions, getExtractJob, bulkImportRealQuestions,
+  extractRealQuestions, getExtractJob, bulkImportRealQuestions, batchUploadPapers, parsePaper, convertPaperDoc,
   listRegions, uploadImageViaPresign,
-  type PlatformPaper, type PaperQuestion,
+  type PlatformPaper, type PaperQuestion, type BatchUploadResult,
 } from '../api/admin'
 import type { NodeTreeItem } from '../types'
 
@@ -19,7 +19,9 @@ const filTextbook = ref('')
 const filStage = ref('')
 const filGrade = ref('')
 const filExam = ref('')
+const filYear = ref<number | ''>('')
 const filRegionPath = ref<string[]>([])
+const YEAR_OPTS = Array.from({ length: (new Date().getFullYear() + 1) - 2005 }, (_, i) => new Date().getFullYear() + 1 - i)
 const papers = ref<PlatformPaper[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -45,7 +47,7 @@ async function onDeleteSelected() {
 function onStageFilterChange() { filGrade.value = ''; load() }
 function resetFilters() {
   statusFilter.value = ''; filTextbook.value = ''; filStage.value = ''
-  filGrade.value = ''; filExam.value = ''; filRegionPath.value = []
+  filGrade.value = ''; filExam.value = ''; filRegionPath.value = []; filYear.value = ''
   load()
 }
 
@@ -60,6 +62,7 @@ async function load() {
       grade: filGrade.value || undefined,
       exam_type: filExam.value || undefined,
       region_code: region.length ? region[region.length - 1] : undefined,  // 选到的最细级(省/市)
+      year: filYear.value || undefined,
       limit: 50,
     })
     papers.value = data.items
@@ -102,6 +105,28 @@ async function openPaper(p: PlatformPaper) {
     paperQuestions.value = d.questions
   } catch (e: any) { ElMessage.error(e?.message || '加载试卷失败') }
   finally { paperLoading.value = false }
+}
+
+// 重新解析:清掉旧题、按原卷重新拆题入库(幂等)
+const reparsing = ref(false)
+async function onReparse() {
+  if (!curPaper.value) return
+  try {
+    await ElMessageBox.confirm('将清空本卷现有题目,按原卷文件重新解析拆题(草稿)。是否继续?',
+      '重新解析', { type: 'warning', confirmButtonText: '重新解析' })
+  } catch { return }
+  reparsing.value = true
+  paperLoading.value = true
+  try {
+    const r = await parsePaper(curPaper.value.id)
+    if (r.status === 'parsed') ElMessage.success(`已重新解析:${r.imported} 题`)
+    else ElMessage.error(r.error || '解析失败')
+    const d = await getPlatformPaper(curPaper.value.id)   // 刷新弹框
+    curPaper.value = d.paper
+    paperQuestions.value = d.questions
+    await load()                                          // 刷新列表题数
+  } catch (e: any) { ElMessage.error(e?.message || '重新解析失败') }
+  finally { reparsing.value = false; paperLoading.value = false }
 }
 
 // ── 知识点选择器(受控知识分类树,单树)──
@@ -439,6 +464,95 @@ function batchMeta(): Record<string, unknown> {
   return m
 }
 
+// ── 批量上传真题(文件 → COS + 建草稿占位试卷,题目延后解析)──
+const batchDlg = ref(false)
+const batchFiles = ref<File[]>([])
+const batchUploading = ref(false)
+const batchResults = ref<BatchUploadResult[]>([])
+const batchAutofilled = ref(false)
+function openBatchDlg() {
+  regionPath.value = []; regionLabels.value = []
+  batchFiles.value = []; batchResults.value = []
+  batchAutofilled.value = false
+  batchDlg.value = true
+}
+function onBatchFiles(_f: any, fileList: any[]) {
+  batchFiles.value = (fileList || []).map(x => x.raw as File).filter(Boolean)
+  // 用第一个文件名自动命中 教材/学段/年级/上下册/考试/地区(只填一次,不覆盖后续手改)
+  if (!batchAutofilled.value && batchFiles.value.length) {
+    const fn = (batchFiles.value[0].name || '').replace(/\.(pdf|docx?)$/i, '').trim()
+    if (fn) { autoFillMetaFromName(fn); batchAutofilled.value = true }
+  }
+}
+async function submitBatch() {
+  if (!batchFiles.value.length) { ElMessage.warning('请先选择文件'); return }
+  batchUploading.value = true
+  batchResults.value = []
+  try {
+    const r = await batchUploadPapers(batchFiles.value, batchMeta())
+    batchResults.value = r.results
+    const dup = r.results.filter(x => x.duplicate).length
+    ElMessage.success(`上传完成:${r.ok} / ${r.total} 份成功` +
+      (dup ? `,${dup} 份试卷名重复已跳过` : '') + '(已建草稿,可到列表「批量解析原题目」)')
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '批量上传失败') }
+  finally { batchUploading.value = false }
+}
+
+// ── 批量解析原题目(选中的批量上传卷 → OCR/LLM 拆题入库,并发)──
+async function runPool<T>(items: T[], worker: (it: T) => Promise<void>, concurrency: number) {
+  let i = 0
+  const next = async (): Promise<void> => { while (i < items.length) { await worker(items[i++]) } }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, next))
+}
+const parsing = ref(false)
+const parseProg = ref({ done: 0, total: 0, failed: 0 })
+const parseLabel = (s?: string | null) =>
+  (({ parsing: '解析中', parsed: '已解析', failed: '解析失败' } as Record<string, string>)[s || ''] || '未解析')
+// .doc → pdf 转换状态
+const fileType = (fn?: string | null) => (fn && fn.includes('.') ? fn.split('.').pop()!.toUpperCase() : '')
+const convertLabel = (s?: string | null) =>
+  (({ pending: '待转换', converting: '转换中', converted: '已转PDF', failed: '转换失败' } as Record<string, string>)[s || ''] || '')
+const convertingIds = ref<Record<string, boolean>>({})
+async function onRetryConvert(p: PlatformPaper) {
+  convertingIds.value[p.id] = true
+  p.convert_status = 'converting'
+  try {
+    const r = await convertPaperDoc(p.id)
+    p.convert_status = r.convert_status
+    if (r.convert_status === 'converted') ElMessage.success(`${p.name}:已转 PDF,可「批量解析原题目」`)
+    else ElMessage.error(`${p.name}:转换失败(需服务器安装 LibreOffice)`)
+  } catch (e: any) { p.convert_status = 'failed'; ElMessage.error(e?.message || '转换失败') }
+  finally { convertingIds.value[p.id] = false; await load() }
+}
+async function onBatchParse() {
+  // 与「重新解析」一致:选中的都重跑(已解析的也会清旧题重解析,不再跳过)
+  const targets = selectedPapers.value.filter(p => p.source_filename)
+  if (!targets.length) { ElMessage.warning('请勾选批量上传的试卷(有原卷文件)'); return }
+  const reParsed = targets.filter(p => p.parse_status === 'parsed').length
+  try {
+    await ElMessageBox.confirm(
+      `解析选中的 ${targets.length} 份试卷(读原始文件 OCR/LLM 拆题,自动入库为草稿题),并发执行。` +
+      (reParsed ? `其中 ${reParsed} 份已解析过,将清空旧题重新解析。` : '') + '是否继续?',
+      '批量解析原题目', { type: 'warning', confirmButtonText: '开始解析' })
+  } catch { return }
+  parsing.value = true
+  parseProg.value = { done: 0, total: targets.length, failed: 0 }
+  await runPool(targets, async (p) => {
+    p.parse_status = 'parsing'
+    try {
+      const r = await parsePaper(p.id)
+      p.parse_status = r.status
+      if (r.status !== 'parsed') { parseProg.value.failed++; ElMessage.error(`${p.name}:${r.error || '解析失败'}`) }
+    } catch (e: any) { p.parse_status = 'failed'; parseProg.value.failed++; ElMessage.error(`${p.name}:${e?.message || ''}`) }
+    finally { parseProg.value.done++ }
+  }, 4)
+  parsing.value = false
+  const ok = parseProg.value.total - parseProg.value.failed
+  ElMessage.success(`解析完成:${ok} 成功${parseProg.value.failed ? `、${parseProg.value.failed} 失败` : ''}`)
+  await load()
+}
+
 function onFileChange(f: any) {
   pickedFile.value = f.raw as File
   // 试卷名缺省取上传文件名(去扩展名);已手填则不覆盖
@@ -463,8 +577,8 @@ function autoFillMetaFromName(name: string) {
   }
   if (/下学期|下册/.test(name)) metaSemester.value = '下'
   else if (/上学期|上册/.test(name)) metaSemester.value = '上'
-  if (name.includes('中考')) metaExamType.value = '中考'
-  else if (name.includes('高考')) metaExamType.value = '高考'
+  if (name.includes('中考')) { metaExamType.value = '中考'; if (!gradeHit) metaStage.value = '初' }
+  else if (name.includes('高考')) { metaExamType.value = '高考'; if (!gradeHit) metaStage.value = '高' }
   autoPickRegionFromName(name)
 }
 
@@ -567,11 +681,18 @@ onMounted(load)
       <el-select v-model="filExam" placeholder="考试" clearable style="width:96px" @change="load">
         <el-option v-for="e in EXAM_TYPES.filter(x => x.value)" :key="e.value" :label="e.label" :value="e.value" />
       </el-select>
+      <el-select v-model="filYear" placeholder="年份" clearable filterable style="width:96px" @change="load">
+        <el-option v-for="y in YEAR_OPTS" :key="y" :label="y + '年'" :value="y" />
+      </el-select>
       <el-select v-model="statusFilter" placeholder="状态" clearable style="width:96px" @change="load">
         <el-option v-for="s in statusOpts.filter(Boolean)" :key="s" :label="s === 'published' ? '已发布' : '草稿'" :value="s" />
       </el-select>
       <el-button @click="resetFilters">重置</el-button>
       <el-button type="primary" @click="openDlg">+ 上传真题</el-button>
+      <el-button type="success" plain @click="openBatchDlg"><el-icon style="margin-right:4px"><UploadFilled /></el-icon>批量上传真题</el-button>
+      <el-button type="warning" plain :disabled="!selectedPapers.length || parsing" :loading="parsing" @click="onBatchParse">
+        {{ parsing ? `解析中 ${parseProg.done}/${parseProg.total}` : '批量解析原题目' }}
+      </el-button>
       <el-button type="danger" plain :disabled="!selectedPapers.length" @click="onDeleteSelected">删除选中{{ selectedPapers.length ? ` (${selectedPapers.length})` : '' }}</el-button>
       <span class="hint">一份上传 = 一份试卷;点「查看/发布」弹整卷题。共 {{ total }} 份</span>
     </div>
@@ -580,19 +701,51 @@ onMounted(load)
       <el-table-column type="selection" width="44" />
       <el-table-column label="试卷" min-width="240">
         <template #default="{ row }">
-          <div style="font-weight:600">{{ row.name }}</div>
-          <div style="font-size:12px;color:#909399">
-            {{ [row.textbook_version, row.grade, row.semester ? row.semester + '册' : '', row.region_name, row.exam_type].filter(Boolean).join(' · ') }}
+          <div style="font-weight:600">
+            <el-tag v-if="row.year" size="small" type="primary" effect="plain" style="margin-right:6px">{{ row.year }}</el-tag>
+            {{ row.name }}
+            <el-link v-if="row.source_file_url" :href="row.source_file_url" target="_blank" type="primary" :underline="false" style="font-size:12px;margin-left:6px">原卷 ↗</el-link>
           </div>
+          <div style="font-size:12px;color:#909399">
+            {{ [row.year ? row.year + '年' : '', row.textbook_version, row.grade, row.semester ? row.semester + '册' : '', row.region_name, row.exam_type].filter(Boolean).join(' · ') }}
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="文件" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="fileType(row.source_filename)" size="small" effect="plain"
+            :type="fileType(row.source_filename) === 'PDF' ? 'success' : fileType(row.source_filename) === 'DOC' ? 'warning' : 'primary'">
+            {{ fileType(row.source_filename) }}
+          </el-tag>
+          <span v-else style="color:#c0c4cc">—</span>
         </template>
       </el-table-column>
       <el-table-column label="题数" width="80" align="center"><template #default="{ row }">{{ row.question_count }}</template></el-table-column>
       <el-table-column label="已发布" width="90" align="center">
         <template #default="{ row }">{{ row.published_count }}/{{ row.question_count }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="100" align="center">
+      <el-table-column label="状态" width="150" align="center">
         <template #default="{ row }">
           <el-tag :type="row.status === 'published' ? 'success' : 'info'" size="small">{{ row.status === 'published' ? '已发布' : '草稿' }}</el-tag>
+          <!-- .doc→pdf 转换状态(未转好时优先显示,可重试)-->
+          <template v-if="row.convert_status && row.convert_status !== 'converted'">
+            <el-tag size="small" style="margin-top:2px"
+              :type="row.convert_status === 'failed' ? 'danger' : 'warning'" effect="plain">
+              {{ convertLabel(row.convert_status) }}
+            </el-tag>
+            <el-button v-if="row.convert_status !== 'converting'" size="small" link type="primary"
+              :loading="convertingIds[row.id]" style="margin-top:2px" @click="onRetryConvert(row)">重试转PDF</el-button>
+          </template>
+          <!-- 解析状态 -->
+          <template v-else-if="row.source_filename">
+            <el-tooltip v-if="row.parse_status === 'failed' && row.parse_error"
+              :content="row.parse_error" placement="top" effect="dark">
+              <el-tag size="small" style="margin-top:2px" type="danger" effect="plain">解析失败 ⓘ</el-tag>
+            </el-tooltip>
+            <el-tag v-else size="small" style="margin-top:2px"
+              :type="row.parse_status === 'parsed' ? 'success' : row.parse_status === 'parsing' ? 'warning' : 'info'"
+              effect="plain">{{ parseLabel(row.parse_status) }}</el-tag>
+          </template>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
@@ -611,6 +764,8 @@ onMounted(load)
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
           <el-tag v-if="unmappedCount" type="warning" size="small"><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>{{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
+          <el-button v-if="curPaper?.source_filename" :loading="reparsing" @click="onReparse"
+            title="清空本卷题目,按原卷文件重新拆题(草稿)">重新解析</el-button>
           <el-button :loading="suggesting" @click="onSuggestKp"
             title="整卷按每个大题/题型分别调用其匹配提示词,候选考点按本卷学段(高⊇初⊇小)过滤">AI 整卷匹配知识点</el-button>
           <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
@@ -713,6 +868,64 @@ onMounted(load)
       <template #footer>
         <el-button @click="secSuggestDlg = false">取消</el-button>
         <el-button type="primary" :loading="secSuggesting" :disabled="!secPrompts.length" @click="runSectionSuggest">开始 AI 建议</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量上传真题:文件 → COS + 建草稿占位试卷(题目延后解析)-->
+    <el-dialog v-model="batchDlg" title="批量上传真题(文件 → COS,建草稿占位)" width="820px" :close-on-click-modal="false">
+      <el-form :inline="true" label-width="72px" style="margin-bottom:10px">
+        <el-form-item label="教材版本" required>
+          <el-select v-model="metaTextbook" style="width:140px">
+            <el-option v-for="v in VERSIONS" :key="v" :label="v" :value="v" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="学段" required>
+          <el-select v-model="metaStage" style="width:100px" @change="metaGrade = ''">
+            <el-option v-for="s in STAGES" :key="s" :label="STAGE_LABEL[s]" :value="s" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="年级">
+          <el-select v-model="metaGrade" clearable placeholder="选填" style="width:120px">
+            <el-option v-for="g in GRADES[metaStage]" :key="g" :label="g" :value="g" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="上下册">
+          <el-select v-model="metaSemester" clearable placeholder="选填" style="width:100px">
+            <el-option label="上册" value="上" /><el-option label="下册" value="下" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="考试类型">
+          <el-select v-model="metaExamType" style="width:120px">
+            <el-option v-for="e in EXAM_TYPES" :key="e.value" :label="e.label" :value="e.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="地区">
+          <el-cascader ref="regionCascader" v-model="regionPath" :props="regionProps"
+            clearable placeholder="选填:省→市" style="width:220px" @change="onRegionChange" />
+        </el-form-item>
+      </el-form>
+      <el-alert type="info" :closable="false" style="margin-bottom:12px"
+        title="上面的元信息应用于本次所有文件;试卷名默认取文件名。文件只传 COS + 建草稿占位试卷(0 题),题目之后再解析。支持 pdf / doc / docx,可多选。" />
+      <el-upload drag :auto-upload="false" multiple :on-change="onBatchFiles" :on-remove="onBatchFiles"
+        accept=".pdf,.doc,.docx">
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">拖入或点击选择 <b>多份真题文件</b>(pdf / word)</div>
+      </el-upload>
+      <el-table v-if="batchResults.length" :data="batchResults" border size="small" style="margin-top:12px" max-height="260">
+        <el-table-column prop="filename" label="文件" min-width="220" show-overflow-tooltip />
+        <el-table-column label="结果" width="200">
+          <template #default="{ row }">
+            <el-tag v-if="row.ok" size="small" type="success">已建草稿{{ row.cos ? ' · 已传COS' : ' · COS未配' }}</el-tag>
+            <el-tag v-else-if="row.duplicate" size="small" type="warning" effect="plain">试卷名已存在 · 已跳过</el-tag>
+            <span v-else style="color:#F56C6C;font-size:12px">{{ row.error }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="batchDlg = false">关闭</el-button>
+        <el-button type="primary" :loading="batchUploading" :disabled="!batchFiles.length" @click="submitBatch">
+          上传{{ batchFiles.length ? `（${batchFiles.length} 份）` : '' }}
+        </el-button>
       </template>
     </el-dialog>
 

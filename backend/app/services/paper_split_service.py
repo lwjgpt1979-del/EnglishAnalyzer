@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 
 from app.core.exceptions import AppError
-from app.services.llm_provider import chat_completion, is_llm_dev_mode
+from app.services.llm_provider import chat_completion, is_llm_dev_mode, fast_model
 from app.services.ocr_service import OcrResult
 
 # 与 ai_question_type_enum 对齐
@@ -54,18 +54,20 @@ _USER_PROMPT_TEMPLATE = """以下是从一整张英语试卷图片中识别到�
 【手写体识别（学生作答内容，通常是题号 + 答案）】
 {handwritten_text}
 
-请把整卷拆分为多道题目，返回纯 JSON 数组（不要任何 markdown 代码块或额外文字）。
-数组每一项格式：
+请把整卷拆分为多道题目。每一项格式：
 {{
+  "section": "该题所属大题名（如 听力理解/单项选择/完形填空/阅读理解/任务型阅读/词汇运用/首字母填空/短文填空/书面表达 等，忠实原卷大题标题；无法判断则 null）",
   "question_no": "题号（如 27），无法识别则 null",
   "question_type": "单选|填空|完型|阅读|写作|判断|连线",
   "stem": "该题完整题干（含选项，不含学生作答）",
+  "passage": "仅【阅读/完形/任务型 等“一篇短文+多小题”】填该短文正文；独立小题（单选等）为 null",
+  "block_key": "同一篇短文下的各小题给同一个 key（如 cloze1、readingA），标识题组；独立小题为 null",
   "student_answer": "该题学生手写答案（按题号从手写体匹配，无法识别则 null）",
   "correct_answer": "正确答案（可推断则填，否则 null）",
   "explanation": "简要解析（可推断则填，否则 null）"
 }}
 
-要求：按题号顺序输出；识别不到任何题目时返回空数组 []。"""
+要求：**务必按原卷大题给每题填 section**；同一大题下的题 section 相同；按题号顺序输出；识别不到任何题目时 questions 返回 []。"""
 
 
 def _normalize_type(raw: object) -> str:
@@ -80,7 +82,22 @@ def _normalize_type(raw: object) -> str:
 # 题号合成 → 答案一律留空（原卷无答案）。
 
 _SECTION_RE = re.compile(r"^[一二三四五六七八九十]+、")
+# 大题标题前缀:中文序号、第X部分/节、Part/Section、罗马数字(Ⅰ/I)
+_SECTION_PREFIX_RE = re.compile(
+    r"^\s*(?:[一二三四五六七八九十]+\s*[、.．]"
+    r"|第[一二三四五六七八九十]+\s*[部节]"
+    r"|(?:Part|PART|Section|SECTION)\b"
+    r"|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s*[.、．]?"
+    r"|[IVX]{1,4}\s*[.、．])")
+# 大题关键词(裸标题如「完形填空」「阅读理解 A」也算大题头)
+_SECTION_KW = ("听力", "单项选择", "单项填空", "完形填空", "完型填空", "阅读理解", "阅读表达",
+               "任务型阅读", "词汇运用", "词语运用", "首字母", "短文填空", "信息还原",
+               "补全对话", "连词成句", "书面表达", "完成句子", "选词填空")
 _QNUM_RE = re.compile(r"^\s*(\d{1,2})(?:[.、．)]|\s)")
+# 答案/听力材料/评分标准区标记:「试题及答案」文档在此之后会重复题号→需截断,避免题目翻倍
+_ANSWER_HDR_RE = re.compile(
+    r"^\s*(?:参考答案|答案与解析|答案解析|答案要点|答案[:：\s]|听力材料|听力原文|听力录音材料"
+    r"|评分标准|评分建议|评分说明|作文范文|参考范文|书面表达评分|【解析】|【答案】)")
 _BLANK_NUM_RE = re.compile(r"_{2,}\s*(\d{1,2})\s*_{2,}")
 _OPTION_RE = re.compile(r"^[A-GＡ-Ｇ]\s*[.、．)]")
 _CIRCLE_RE = re.compile(r"^[①②③④⑤⑥⑦⑧⑨⑩]")
@@ -102,6 +119,21 @@ def _is_option_like(s: str) -> bool:
         return True
     head = s.split("\t", 1)[0].strip() if "\t" in s else ""
     return bool(head and _OPTION_RE.match(head))
+
+
+def _is_section_header(s: str) -> bool:
+    """判定一行是否为「大题标题」:标准前缀(一、/Part/Ⅰ.)或短行含大题关键词。
+
+    排除题号行/选项行/超长说明句,避免把正文误判成大题头。
+    """
+    s = (s or "").strip()
+    if not s or len(s) > 40:
+        return False
+    if _QNUM_RE.match(s) or _is_option_like(s):
+        return False
+    if _SECTION_PREFIX_RE.match(s):
+        return True
+    return len(s) <= 20 and any(k in s for k in _SECTION_KW)
 
 
 def _classify_kw(blob: str) -> str | None:
@@ -126,7 +158,9 @@ def _section_name(header: str, lines: list[str]) -> str:
     标题去掉「序号、」和尾部的计分括注(如「（满分8分）」「(共20小题；满分20分)」)
     即为大题名；标题无名(如「八、（满分6分）」)时,取首个短中文标签行(如「阅读表达」)。
     """
-    name = re.sub(r"^[一二三四五六七八九十\d]+\s*[、.．]\s*", "", header)
+    name = re.sub(
+        r"^\s*(?:[一二三四五六七八九十\d]+|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+|[IVX]{1,4}|Part\s*\d*|Section\s*[A-D]?)"
+        r"\s*[、.．]?\s*", "", header, flags=re.IGNORECASE)
     # 去掉尾部含「满分/小题/分」的整段括注
     name = re.sub(r"\s*[（(][^（()]*?(?:满分|小题|分)[^（()]*?[)）]\s*$", "", name).strip()
     if name:
@@ -237,10 +271,25 @@ def _split_one_section(qtype: str, sname: str, lines: list[str], sec_text: str,
 def split_paper_text_structural(text: str) -> list[ParsedPaperQuestion]:
     """文字版试卷 → 确定性结构拆题。识别不到大题/题号时返回 []（由调用方决定兜底）。"""
     lines = (text or "").splitlines()
+    # 截断①:「参考答案/听力材料/评分标准/【解析】」区之前
+    for i, ln in enumerate(lines):
+        if i > len(lines) * 0.3 and _ANSWER_HDR_RE.match(ln.strip()):
+            lines = lines[:i]
+            break
+    # 截断②:「试题+解析版」双份文档——大题标题一旦重复出现,说明进入第二份(答案/解析),截断
+    _seen: set[str] = set()
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if _is_section_header(s):
+            key = re.sub(r"[\s（(].*$", "", _section_name(s, []))  # 大题名(去括注/空白)
+            if key and key in _seen:
+                lines = lines[:i]
+                break
+            _seen.add(key)
     sections: list[list[str]] = []
     cur: list[str] = []
     for ln in lines:
-        if _SECTION_RE.match(ln.strip()):
+        if _is_section_header(ln.strip()):
             if cur:
                 sections.append(cur)
             cur = [ln]
@@ -252,11 +301,15 @@ def split_paper_text_structural(text: str) -> list[ParsedPaperQuestion]:
     out: list[ParsedPaperQuestion] = []
     for sec in sections:
         header = sec[0].strip()
-        if not _SECTION_RE.match(header):
+        if not _is_section_header(header):
             continue  # 卷首标题段
         qtype = _section_type(header, sec[1:])
         sname = _section_name(header, sec[1:])
         _split_one_section(qtype, sname, sec[1:], "\n".join(sec), out)
+
+    # 兜底:一个大题头都没识别到,但有题号 → 整卷按题号切(section=其他),至少不走 LLM
+    if not out and any(_QNUM_RE.match(ln.strip()) for ln in lines):
+        _split_one_section("单选", "其他", lines, text, out)
 
     # 全局分配题组 block_key：连续同一短文的小问归一组，短文为空的题保持独立
     blk_seq, prev_passage, prev_key = 0, None, None
@@ -356,6 +409,9 @@ def _try_parse_doubao_json(text: str) -> list[ParsedPaperQuestion] | None:
                 student_answer=item.get("student_answer"),
                 correct_answer=item.get("correct_answer"),
                 explanation=item.get("explanation"),
+                section=(item.get("section") or "").strip() or None,
+                passage=(item.get("passage") or "").strip() or None,
+                block_key=(item.get("block_key") or "").strip() or None,
             )
         )
     return result if result else None
@@ -390,11 +446,14 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     )
 
     try:
-        # 整卷可能含多道题，需较大输出预算（与课程/生题 service 对齐为 8192）
+        # 用 fast 模型(非重推理):主模型重推理会把 token 预算耗光、content 返空→「格式异常」再被重试 3 次。
+        # 整卷题多,输出预算给足 16384。
         response = await chat_completion(
             system_prompt=_SYSTEM_PROMPT,
-            user_prompt=prompt,
-            max_tokens=8192,
+            user_prompt=prompt + '\n\n返回 JSON 对象:{"questions":[ ...上面格式的每道题... ]}。',
+            model=fast_model(),
+            max_tokens=16384,
+            response_format={"type": "json_object"},
         )
     except Exception as exc:
         raise AppError(code=502, message=f"整卷拆题服务暂时不可用（{exc}）") from exc
@@ -405,10 +464,14 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
         raw_text = raw_text.lstrip("json").strip()
 
     try:
-        data = json.loads(raw_text)
+        data = json.loads(raw_text or "{}")
     except json.JSONDecodeError as exc:
         raise AppError(code=500, message="整卷拆题返回格式异常") from exc
 
+    # 容错:接受裸数组,或 {questions:[...]} / {items:[...]} / 首个是 list 的值
+    if isinstance(data, dict):
+        data = (data.get("questions") or data.get("items")
+                or next((v for v in data.values() if isinstance(v, list)), None))
     if not isinstance(data, list):
         raise AppError(code=500, message="整卷拆题返回格式异常")
 
@@ -424,6 +487,9 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
                 student_answer=item.get("student_answer"),
                 correct_answer=item.get("correct_answer"),
                 explanation=item.get("explanation"),
+                section=(item.get("section") or "").strip() or None,
+                passage=(item.get("passage") or "").strip() or None,
+                block_key=(item.get("block_key") or "").strip() or None,
             )
         )
     return result

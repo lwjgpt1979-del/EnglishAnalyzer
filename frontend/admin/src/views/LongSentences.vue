@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   extractLongSentences, reanalyzeLongSentences, getLsReanalyzeJob, listLongSentences, reviewLongSentence,
   getLSConfig, setLSConfig, getLsTextbookUnits, getLsRealDimensions, backfillParaphrase,
-  type LSTextbookUnit, type LSRealDimensions, type ParaphraseBackfillResult,
+  uploadParseLs, listUploadedLs, linkUploadedLsNode, newUploadedLsNode, deleteUploadedLs,
+  getNodeTree,
+  type LSTextbookUnit, type LSRealDimensions, type ParaphraseBackfillResult, type UploadedLsItem,
 } from '../api/admin'
-import type { LSAdminItem, LSConfig } from '../types'
-import { Refresh, Loading } from '@element-plus/icons-vue'
+import type { LSAdminItem, LSConfig, NodeTreeItem } from '../types'
+import { Refresh, Loading, Upload, Plus, Delete } from '@element-plus/icons-vue'
 
 // ── 抽取触发 ──
 const sourceOptions = [
@@ -119,6 +122,8 @@ const status = ref('draft')
 const nodeId = ref('')
 const rows = ref<LSAdminItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const sortBy = ref('created_at')   // created_at | difficulty
 const order = ref('asc')           // asc | desc
@@ -137,7 +142,7 @@ const srcLabel = (s: string) => (({ platform_real: '真题', textbook: '教材',
 function resetFilters() {
   fSource.value = ''; fStage.value = ''; fSemester.value = ''; fExam.value = ''
   fGrade.value = ''; fTextbook.value = ''; nodeId.value = ''
-  load()
+  reload()
 }
 
 async function load() {
@@ -152,7 +157,8 @@ async function load() {
       exam_type: fExam.value || undefined,
       grade: fGrade.value.trim() || undefined,
       textbook_version: fTextbook.value.trim() || undefined,
-      limit: 50,
+      skip: (page.value - 1) * pageSize,
+      limit: pageSize,
       sort_by: sortBy.value,
       order: order.value,
     })
@@ -161,6 +167,8 @@ async function load() {
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+// 筛选/查询变更 → 回到第 1 页再查
+function reload() { page.value = 1; load() }
 
 // el-table 列表头排序:难度 升/降;取消则回到按时间升序
 function onSortChange({ prop, order: ord }: { prop: string; order: string | null }) {
@@ -203,11 +211,108 @@ async function saveCfg() {
   finally { savingCfg.value = false }
 }
 
-onMounted(() => { load(); loadCfg(); loadExtractOptions() })
+// ── 上传长难句:文字 → LLM 语法点 → 关联知识图谱 ──
+const uploadDlg = ref(false)
+const uploadText = ref('')
+const parsing = ref(false)
+const uploadItems = ref<UploadedLsItem[]>([])
+
+// 知识图谱树(词法 cf / 句法 jf 子树),懒加载 + 扁平可搜索
+const kgTree = ref<NodeTreeItem[]>([])
+const kgLoading = ref(false)
+const pickNode = ref<Record<string, string>>({})      // ls_id → 选中节点
+const relinkOpen = ref<Record<string, boolean>>({})
+async function ensureKgTree() {
+  if (kgTree.value.length || kgLoading.value) return
+  kgLoading.value = true
+  try { kgTree.value = (await getNodeTree('knowledge')).items }
+  catch (e: any) { ElMessage.error(e?.message || '加载知识图谱失败') }
+  finally { kgLoading.value = false }
+}
+function onKgDropdown(v: boolean) { if (v) ensureKgTree() }
+interface FlatNode { value: string; name: string; code: string; depth: number }
+function flatten(nodes: NodeTreeItem[], depth = 0, out: FlatNode[] = []): FlatNode[] {
+  for (const n of nodes || []) {
+    out.push({ value: n.id, name: n.name, code: n.code || '', depth })
+    if (n.children?.length) flatten(n.children, depth + 1, out)
+  }
+  return out
+}
+const grammarFlat = computed(() => flatten(kgTree.value.filter(n => ['cf', 'jf'].some(p => (n.code || '').startsWith(p)))))
+
+function openUploadDlg() {
+  uploadDlg.value = true
+  uploadText.value = ''
+  uploadItems.value = []
+  pickNode.value = {}
+  relinkOpen.value = {}
+  listUploadedLs().then(r => { uploadItems.value = r.items }).catch(() => {})
+}
+async function runParse() {
+  if (!uploadText.value.trim()) { ElMessage.warning('请输入文字'); return }
+  parsing.value = true
+  try {
+    const r = await uploadParseLs(uploadText.value)
+    uploadItems.value = [...r.items, ...uploadItems.value]
+    if (!r.items.length) ElMessage.info('未解析出语法点(可能文字过短或 dev 模式)')
+    else { ElMessage.success(`解析出 ${r.items.length} 个语法点`); uploadText.value = '' }
+  } catch (e: any) { ElMessage.error(e?.message || '解析失败') }
+  finally { parsing.value = false }
+}
+async function onLsLink(it: UploadedLsItem) {
+  const nid = pickNode.value[it.id]
+  if (!nid) { ElMessage.warning('请先选一个节点'); return }
+  try {
+    const r = await linkUploadedLsNode(it.id, nid)
+    it.node_code = r.node_code; it.node_name = r.name; it.node_id = r.node_id
+    pickNode.value[it.id] = ''; relinkOpen.value[it.id] = false
+    ElMessage.success(`已挂靠到「${r.name}」(${r.node_code})`)
+  } catch (e: any) { ElMessage.error(e?.message || '挂靠失败') }
+}
+async function onLsNewNode(it: UploadedLsItem) {
+  const parent = pickNode.value[it.id]
+  if (!parent) { ElMessage.warning('请先选一个父分类(在其下新建)'); return }
+  try {
+    const { value } = await ElMessageBox.prompt('在所选父分类下新建知识图谱节点,节点名:', '新建节点',
+      { inputValue: it.point || '', confirmButtonText: '新建并挂靠', cancelButtonText: '取消' })
+    const r = await newUploadedLsNode(it.id, parent, (value || '').trim())
+    it.node_code = r.node_code; it.node_name = r.name; it.node_id = r.node_id
+    pickNode.value[it.id] = ''; relinkOpen.value[it.id] = false
+    kgTree.value = []   // 新节点 → 下次重拉
+    ElMessage.success(`已新建并挂靠「${r.name}」(${r.node_code})`)
+  } catch { /* 取消 */ }
+}
+function onLsRelink(it: UploadedLsItem) { pickNode.value[it.id] = it.node_id || ''; relinkOpen.value[it.id] = true }
+function cancelLsRelink(it: UploadedLsItem) { relinkOpen.value[it.id] = false; pickNode.value[it.id] = '' }
+async function onLsDelete(it: UploadedLsItem) {
+  try { await ElMessageBox.confirm(`删除这条长难句「${it.text.slice(0, 30)}…」?`, '删除', { type: 'warning' }) }
+  catch { return }
+  try {
+    await deleteUploadedLs(it.id)
+    uploadItems.value = uploadItems.value.filter(x => x.id !== it.id)
+    ElMessage.success('已删除')
+  } catch (e: any) { ElMessage.error(e?.message || '删除失败') }
+}
+function lsDiffColor(d: number | null): string {
+  if (d == null) return '#c0c4cc'
+  if (d >= 60) return '#F56C6C'
+  if (d >= 35) return '#E6A23C'
+  return '#67C23A'
+}
+
+const route = useRoute()
+onMounted(() => {
+  load(); loadCfg(); loadExtractOptions()
+  if (route.query.upload) openUploadDlg()   // 从课程页「上传长难句」跳转过来自动开弹框
+})
 </script>
 
 <template>
   <div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <el-button type="primary" @click="openUploadDlg"><el-icon style="margin-right:4px"><Upload /></el-icon>上传长难句</el-button>
+    </div>
+
     <!-- 抽取触发 -->
     <el-card shadow="never" class="sec">
       <template #header><b>抽取触发</b>(平台库,幂等;来源:平台真题 / 教材单元短文。学生上传的长难句在上传作业时自动抽取、存独立表)</template>
@@ -306,33 +411,33 @@ onMounted(() => { load(); loadCfg(); loadExtractOptions() })
       <template #header><b>审核队列</b></template>
       <div class="toolbar" style="flex-wrap:wrap; gap:8px 0;">
         <span>状态：</span>
-        <el-select v-model="status" style="width: 110px" @change="load">
+        <el-select v-model="status" style="width: 110px" @change="reload">
           <el-option v-for="s in statusOptions" :key="s" :label="stLabel(s)" :value="s" />
         </el-select>
         <span style="margin-left:16px">来源：</span>
-        <el-select v-model="fSource" clearable placeholder="全部" style="width:120px" @change="load">
+        <el-select v-model="fSource" clearable placeholder="全部" style="width:120px" @change="reload">
           <el-option label="平台真题" value="platform_real" />
           <el-option label="教材" value="textbook" />
         </el-select>
         <span style="margin-left:16px">学段：</span>
-        <el-select v-model="fStage" clearable placeholder="全部" style="width:90px" @change="load">
+        <el-select v-model="fStage" clearable placeholder="全部" style="width:90px" @change="reload">
           <el-option label="小" value="小" /><el-option label="初" value="初" /><el-option label="高" value="高" />
         </el-select>
         <span style="margin-left:16px">学期：</span>
-        <el-select v-model="fSemester" clearable placeholder="全部" style="width:90px" @change="load">
+        <el-select v-model="fSemester" clearable placeholder="全部" style="width:90px" @change="reload">
           <el-option label="上" value="上" /><el-option label="下" value="下" />
         </el-select>
         <span style="margin-left:16px">考试类型：</span>
-        <el-select v-model="fExam" clearable placeholder="全部" style="width:100px" @change="load">
+        <el-select v-model="fExam" clearable placeholder="全部" style="width:100px" @change="reload">
           <el-option label="普通" value="普通" /><el-option label="中考" value="中考" /><el-option label="高考" value="高考" />
         </el-select>
         <span style="margin-left:16px">年级：</span>
-        <el-input v-model="fGrade" clearable placeholder="如 七年级" style="width:120px" @keyup.enter="load" />
+        <el-input v-model="fGrade" clearable placeholder="如 七年级" style="width:120px" @keyup.enter="reload" />
         <span style="margin-left:16px">教材版：</span>
-        <el-input v-model="fTextbook" clearable placeholder="如 译林版" style="width:120px" @keyup.enter="load" />
+        <el-input v-model="fTextbook" clearable placeholder="如 译林版" style="width:120px" @keyup.enter="reload" />
         <span style="margin-left:16px">句法 node：</span>
-        <el-input v-model="nodeId" clearable placeholder="可选,node id" style="width:180px" @keyup.enter="load" />
-        <el-button style="margin-left:12px" type="primary" @click="load">查询</el-button>
+        <el-input v-model="nodeId" clearable placeholder="可选,node id" style="width:180px" @keyup.enter="reload" />
+        <el-button style="margin-left:12px" type="primary" @click="reload">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
         <span class="hint">共 {{ total }} 条</span>
         <div style="flex:1" />
@@ -380,6 +485,10 @@ onMounted(() => { load(); loadCfg(); loadExtractOptions() })
           </template>
         </el-table-column>
       </el-table>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px">
+        <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+          :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+      </div>
     </el-card>
 
     <!-- 配置 -->
@@ -416,6 +525,44 @@ onMounted(() => { load(); loadCfg(); loadExtractOptions() })
         </el-form-item>
       </el-form>
     </el-card>
+
+    <!-- 上传长难句:文字 → LLM 语法点 → 关联知识图谱 -->
+    <el-dialog v-model="uploadDlg" title="上传长难句" width="920px" top="6vh">
+      <div class="ul-input">
+        <el-input v-model="uploadText" type="textarea" :rows="4" resize="vertical"
+          placeholder="粘贴一段英文(长难句/课文片段),点「LLM 解析语法点」抽出语法点,再逐点关联知识图谱" />
+        <el-button type="primary" :loading="parsing" :disabled="!uploadText.trim()" style="margin-top:8px" @click="runParse">
+          <el-icon style="margin-right:4px"><Loading v-if="parsing" /></el-icon>LLM 解析语法点
+        </el-button>
+        <span class="muted" style="margin-left:8px">解析出的语法点进下方列表,挂靠到知识图谱(词法/句法)</span>
+      </div>
+
+      <el-empty v-if="!uploadItems.length" description="还没有语法点;粘贴文字后点「LLM 解析语法点」" :image-size="50" />
+      <div v-for="it in uploadItems" :key="it.id" class="ul-row">
+        <div class="ul-head">
+          <span class="diff-badge" :style="{ background: lsDiffColor(it.difficulty) }">{{ it.difficulty ?? '—' }}</span>
+          <b class="ul-point">{{ it.point }}</b>
+          <el-tag v-if="it.node_code" size="small" type="success" effect="plain" style="margin-left:6px">
+            已关联 {{ it.node_name || it.node_code }} <span class="muted">{{ it.node_code }}</span>
+          </el-tag>
+          <el-button v-if="it.node_code && !relinkOpen[it.id]" size="small" link type="primary" @click="onLsRelink(it)">改挂</el-button>
+          <el-button size="small" link type="danger" style="margin-left:auto" @click="onLsDelete(it)"><el-icon><Delete /></el-icon></el-button>
+        </div>
+        <div class="ul-sent">{{ it.text }}</div>
+        <div v-if="!it.node_code || relinkOpen[it.id]" class="ul-link">
+          <el-select v-model="pickNode[it.id]" filterable clearable :loading="kgLoading" size="small"
+            style="width:300px" placeholder="选词法/句法目录节点(可输入名称/编码搜索)" @visible-change="onKgDropdown">
+            <el-option v-for="o in grammarFlat" :key="o.value" :value="o.value" :label="`${o.name} ${o.code}`">
+              <span :style="{ paddingLeft: o.depth * 12 + 'px' }">{{ o.name }} <span class="muted">{{ o.code }}</span></span>
+            </el-option>
+          </el-select>
+          <el-button size="small" @click="onLsLink(it)">{{ relinkOpen[it.id] ? '覆盖挂靠' : '挂靠' }}</el-button>
+          <el-button size="small" type="primary" plain @click="onLsNewNode(it)"><el-icon style="margin-right:2px"><Plus /></el-icon>目录没有→新建</el-button>
+          <el-button v-if="relinkOpen[it.id]" size="small" link @click="cancelLsRelink(it)">取消</el-button>
+        </div>
+      </div>
+      <template #footer><el-button @click="uploadDlg = false">关闭</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -424,4 +571,13 @@ onMounted(() => { load(); loadCfg(); loadExtractOptions() })
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; }
 .hint { margin-left: 16px; color: #909399; font-size: 12px; }
 .bf-help { font-size: 12px; line-height: 1.9; color: #5c6066; }
+.muted { color: #909399; font-size: 12px; }
+.ul-input { margin-bottom: 12px; }
+.ul-row { border: 1px solid #ebeef5; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: #fafbfc; }
+.ul-head { display: flex; align-items: center; gap: 6px; }
+.ul-point { font-size: 14px; color: #303133; }
+.ul-sent { margin: 6px 0 8px; font-size: 13px; color: #303133; line-height: 1.6; }
+.ul-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.diff-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 20px;
+  padding: 0 6px; border-radius: 10px; color: #fff; font-size: 12px; font-weight: 600; }
 </style>

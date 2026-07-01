@@ -58,10 +58,97 @@ async def _build_ocr(source: str, file_id: str | None, image_urls: list[str] | N
     return OcrResult(printed_text="\n".join(parts).strip(), handwritten_text="")
 
 
+# 分段拆题:整卷单次 LLM 输出会超 max_tokens 被截断 → 按大题切段、过大再按字数切,分段并发拆再合并
+_SEG_KEYWORDS = ("听力", "单项选择", "单项填空", "完形填空", "完型填空", "阅读理解", "任务型阅读",
+                 "词汇运用", "词语运用", "首字母", "短文填空", "补全对话", "书面表达", "连词成句", "看图")
+_MAX_SEG_CHARS = 6000       # 每段输入上限:控制单次 LLM 输出不超 max_tokens
+_SEG_CONCURRENCY = 4
+
+
+def _segment_paper_text(text: str) -> list[str]:
+    """按「大题标题行」切段;每段过大(>_MAX_SEG_CHARS)再按行累积切小。无标题则整卷按字数切。"""
+    lines = text.split("\n")
+    heads = [i for i, ln in enumerate(lines)
+             if len(ln.strip()) <= 40 and any(k in ln for k in _SEG_KEYWORDS)]
+    if heads:
+        bounds = sorted(set([0] + heads + [len(lines)]))
+        raw = ["\n".join(lines[a:b]).strip() for a, b in zip(bounds, bounds[1:])]
+        raw = [s for s in raw if s]
+    else:
+        raw = [text]
+    out: list[str] = []
+    for seg in raw:
+        if len(seg) <= _MAX_SEG_CHARS:
+            out.append(seg)
+            continue
+        buf: list[str] = []
+        cur = 0
+        for ln in seg.split("\n"):
+            if cur + len(ln) > _MAX_SEG_CHARS and buf:
+                out.append("\n".join(buf))
+                buf, cur = [], 0
+            buf.append(ln)
+            cur += len(ln) + 1
+        if buf:
+            out.append("\n".join(buf))
+    return out or [text]
+
+
+async def _llm_split_segmented(printed: str):
+    """分段并发调 LLM 拆题,按段序合并。段内失败只丢该段(不重试、不连累其余)。"""
+    from app.services.paper_split_service import split_paper_questions
+    from app.services.ocr_service import OcrResult
+    segs = _segment_paper_text(printed)
+    sem = asyncio.Semaphore(_SEG_CONCURRENCY)
+
+    async def _one(seg: str):
+        async with sem:
+            try:
+                return await split_paper_questions(OcrResult(printed_text=seg, handwritten_text=""))
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("segment split failed (%d chars): %s", len(seg), exc)
+                return []
+
+    results = await asyncio.gather(*[_one(s) for s in segs])
+    merged = []
+    for lst in results:
+        merged.extend(lst)
+    return merged
+
+
+async def extract_questions(
+    source: str, file_id: str | None, image_urls: list[str] | None,
+    *, scanned_ocr: bool = False,
+) -> list[dict]:
+    """抽题核心(单份「开始抽题」与批量「解析原题目」共用):取文字 → 拆题 → parsed dict 列表。
+
+    文字版 docx/PDF 走确定性结构拆题(忠实卷面、不臆造答案),拆不出兜底 **分段并发 LLM**;图片走 OCR+LLM。
+    scanned_ocr=True:PDF 无文字层(扫描件)时渲染成图走视觉 OCR(批量解析用);否则报错让改图片上传。
+    **失败不重试**(格式/截断类重试也没用),快速失败。**不做任何知识点(KP)匹配。**
+    """
+    from app.services.paper_split_service import split_paper_text_structural
+    ocr = await _build_ocr(source, file_id, image_urls)
+    printed = (ocr.printed_text or "").strip()
+    if not printed and scanned_ocr and source == "pdf" and file_id:
+        from app.services import pdf_upload_service as pus
+        printed = (await pus.ocr_pdf_bytes(pus.read_upload_pdf(file_id))).strip()
+    if not printed:
+        raise RuntimeError("未提取到文本(扫描版 PDF 请改用图片上传走 OCR)")
+    rows = []
+    if source in ("docx", "pdf"):
+        rows = split_paper_text_structural(printed)      # 确定性,秒级
+    if not rows:
+        rows = await _llm_split_segmented(printed)        # 分段并发 LLM 兜底
+    return [{
+        "question_no": r.question_no, "question_type": r.question_type,
+        "stem": r.stem, "answer": r.correct_answer, "explanation": r.explanation,
+        "passage": getattr(r, "passage", None),
+        "block_key": getattr(r, "block_key", None),
+        "section": getattr(r, "section", None),
+    } for r in rows if (r.stem or "").strip()]
+
+
 async def _run_extract(job_id: uuid.UUID) -> None:
-    from app.services.paper_split_service import (
-        split_paper_questions, split_paper_text_structural,
-    )
     try:
         async with _async_session_factory() as s:
             job = await s.get(RealExtractJob, job_id)
@@ -71,29 +158,10 @@ async def _run_extract(job_id: uuid.UUID) -> None:
 
         last_err = ""
         parsed: list[dict] | None = None
-        for _attempt in range(_MAX_ATTEMPTS):
-            try:
-                ocr = await _build_ocr(source, file_id, image_urls)
-                if not (ocr.printed_text or "").strip():
-                    raise RuntimeError("未提取到文本(扫描版 PDF 请改用图片上传走 OCR)")
-                # 文字版 docx/PDF:确定性结构拆题(忠实卷面、不臆造答案);
-                # 拆不出(非标准卷式)再兜底走 LLM。图片走 OCR + LLM 拆题。
-                rows = []
-                if source in ("docx", "pdf"):
-                    rows = split_paper_text_structural(ocr.printed_text or "")
-                if not rows:
-                    rows = await split_paper_questions(ocr)
-                parsed = [{
-                    "question_no": r.question_no, "question_type": r.question_type,
-                    "stem": r.stem, "answer": r.correct_answer, "explanation": r.explanation,
-                    "passage": getattr(r, "passage", None),
-                    "block_key": getattr(r, "block_key", None),
-                    "section": getattr(r, "section", None),
-                } for r in rows if (r.stem or "").strip()]
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_err = str(exc)
-                _log.warning("real extract attempt failed (job=%s): %s", job_id, exc)
+        try:
+            parsed = await extract_questions(source, file_id, image_urls)
+        except Exception as exc:  # noqa: BLE001
+            last_err = str(exc)
 
         async with _async_session_factory() as s:
             job = await s.get(RealExtractJob, job_id)

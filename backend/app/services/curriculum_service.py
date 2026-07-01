@@ -164,6 +164,28 @@ def kp_match_score(a: set[str], b: set[str]) -> float:
 KP_AUTO_LINK_THRESHOLD = 0.6
 
 
+async def record_node_alias(db: AsyncSession, *, node_id: uuid.UUID, raw_name: str,
+                            source: str = "auto") -> bool:
+    """把一次挂靠用到的来源名(point_name)沉淀为该节点的别称,便于后续同名直接命中。
+
+    alias_norm 全局唯一:已存在(无论指向哪个节点)则跳过——不抢占、不报错。返回是否新建。
+    """
+    import sqlalchemy as _sa
+    from app.models.d15_knowledge_graph import NodeAlias
+    from app.services.kp_normalize import normalize_kp_name
+    norm = normalize_kp_name(raw_name or "")
+    if not norm:
+        return False
+    exists = (await db.execute(
+        _sa.select(NodeAlias.id).where(NodeAlias.alias_norm == norm).limit(1))).scalar_one_or_none()
+    if exists is not None:
+        return False                          # 该写法已映射(同节点=已有;他节点=冲突,均不动)
+    db.add(NodeAlias(id=uuid.uuid4(), node_id=node_id, alias=(raw_name or "").strip()[:120],
+                     alias_norm=norm, source=source))
+    await db.flush()
+    return True
+
+
 async def link_unit_sections(db: AsyncSession, *, unit_id: uuid.UUID,
                              only_unlinked: bool = True) -> dict:
     """第二步「关联知识图谱」:把单元结构化里的
@@ -239,10 +261,38 @@ async def link_unit_sections(db: AsyncSession, *, unit_id: uuid.UUID,
         if best is not None and best_score >= KP_AUTO_LINK_THRESHOLD:
             s.node_id, s.node_code = best["node_id"], best["code"]
             out["linked"] += 1
+            # 沉淀别称:本次来源名 → 该节点,下次同名可精确命中(非完全相同才值得存)
+            if best_score < 1.0:
+                await record_node_alias(db, node_id=best["node_id"], raw_name=name, source="auto")
         else:
             out["unmatched"] += 1            # 未命中:留待人工(手动挂靠 / 新建节点)
     await db.flush()
     return out
+
+
+async def list_unit_linked_nodes(db: AsyncSession, *, unit_id: uuid.UUID) -> list[dict]:
+    """单元解析里已关联知识图谱的节点(按节点去重):[{node_id, node_code, node_name, kinds, points}]。"""
+    import sqlalchemy as _sa
+    from app.models.d22_unit_structured import UnitSection
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    rows = (await db.execute(
+        _sa.select(UnitSection.node_id, UnitSection.node_code, UnitSection.kind,
+                   UnitSection.point_name, KnowledgeNode.name)
+        .join(KnowledgeNode, KnowledgeNode.id == UnitSection.node_id)
+        .where(UnitSection.unit_id == unit_id, UnitSection.node_id.isnot(None))
+        .order_by(UnitSection.kind, UnitSection.sort_order))).all()
+    out: dict[str, dict] = {}
+    kind_zh = {"grammar": "语法", "listening": "听力"}
+    for r in rows:
+        nid = str(r.node_id)
+        e = out.setdefault(nid, {"node_id": nid, "node_code": r.node_code,
+                                 "node_name": r.name, "kinds": [], "points": []})
+        k = kind_zh.get(r.kind, r.kind)
+        if k not in e["kinds"]:
+            e["kinds"].append(k)
+        if r.point_name and r.point_name not in e["points"]:
+            e["points"].append(r.point_name)
+    return list(out.values())
 
 
 async def manual_link_section(db: AsyncSession, *, section_id: uuid.UUID,
@@ -264,6 +314,8 @@ async def manual_link_section(db: AsyncSession, *, section_id: uuid.UUID,
         raise AppError(code=400, message="所选节点不在该板块允许的目录范围(语法→词法/句法,听力→听力)")
     sec.node_id, sec.node_code = node.id, node.code
     await db.flush()
+    # 人工挂靠的来源名沉淀为别称,后续同名自动命中
+    await record_node_alias(db, node_id=node.id, raw_name=sec.point_name or "", source="manual")
     return {"node_id": str(node.id), "node_code": node.code, "name": node.name}
 
 
@@ -302,6 +354,8 @@ async def new_node_for_section(db: AsyncSession, *, section_id: uuid.UUID,
                      alias_norm=normalize_kp_name(nm), source="manual"))
     sec.node_id, sec.node_code = node.id, node.code
     await db.flush()
+    from app.services.kp_candidate_service import invalidate_node_tree_cache
+    invalidate_node_tree_cache()
     return {"node_id": str(node.id), "node_code": code, "name": nm}
 
 
@@ -797,10 +851,11 @@ class UnitContentStat:
     semester: str
     unit_no: int
     unit_title: str
-    kp_count: int          # 单元考点数 = 各短文已关联考点去重汇总
+    kp_count: int          # 单元考点数 = 单元解析里已关联知识图谱的节点(unit_section.node_id 去重)
     content_count: int     # 已关联考点的短文数
     content_rate: float    # 已关联短文 / 短文总数，0-1
     passage_count: int = 0  # 短文总数
+    word_count: int = 0     # 单元重点单词数(curriculum_words.is_core)
     unit_pdf_url: str | None = None   # 拆出的单元独立 PDF(COS)
 
 
@@ -838,12 +893,19 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
         .group_by(CurriculumUnitPassage.unit_id)
     )).all())
 
+    # 单元考点 = 单元解析(unit_section)里语法点/听力考点已关联到知识图谱的节点(去重)
+    from app.models.d22_unit_structured import UnitSection as _USsec
     kp_rollup: dict[uuid.UUID, int] = dict((await db.execute(
-        select(CurriculumUnitPassage.unit_id,
-               func.count(func.distinct(UnitPassageKp.node_id)))
-        .join(UnitPassageKp, UnitPassageKp.passage_id == CurriculumUnitPassage.id)
-        .where(CurriculumUnitPassage.unit_id.in_(unit_ids))
-        .group_by(CurriculumUnitPassage.unit_id)
+        select(_USsec.unit_id, func.count(func.distinct(_USsec.node_id)))
+        .where(_USsec.unit_id.in_(unit_ids), _USsec.node_id.isnot(None))
+        .group_by(_USsec.unit_id)
+    )).all())
+
+    from app.models.d4_knowledge import CurriculumWord as _CW
+    word_rollup: dict[uuid.UUID, int] = dict((await db.execute(
+        select(_CW.unit_id, func.count())
+        .where(_CW.unit_id.in_(unit_ids), _CW.is_core.is_(True))
+        .group_by(_CW.unit_id)
     )).all())
 
     result: list[UnitContentStat] = []
@@ -862,6 +924,7 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
             kp_count=kc,
             content_count=plinked,
             passage_count=ptot,
+            word_count=word_rollup.get(u.id, 0),
             content_rate=min(rate, 1.0),
             unit_pdf_url=u.unit_pdf_url,
         ))

@@ -91,6 +91,10 @@ class PlatformPaper(Base):
     region_name = mapped_column(sa.String(64), nullable=True)
     exam_type = mapped_column(sa.String(12), nullable=True)            # 中考/高考/普通
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'draft'"))
+    source_file_url = mapped_column(sa.String(512), nullable=True)     # 批量上传的原卷(word/pdf)COS 直链
+    source_filename = mapped_column(sa.String(256), nullable=True)     # 原始文件名
+    parse_status = mapped_column(sa.String(12), nullable=True)         # None/空=未解析 | parsing | parsed | failed
+    year = mapped_column(sa.SmallInteger, nullable=True)               # 从试卷名提取的年份
     meta = mapped_column(JSONB, nullable=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 

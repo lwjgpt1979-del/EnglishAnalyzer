@@ -966,6 +966,7 @@ async def list_curriculum_units(db: DbDep, admin: AdminDep):
             "kp_count": s.kp_count,
             "content_count": s.content_count,
             "passage_count": s.passage_count,
+            "word_count": s.word_count,
             "content_rate": s.content_rate,
             "unit_pdf_url": s.unit_pdf_url,
         }
@@ -1212,6 +1213,67 @@ async def link_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDe
     return make_ok(out)
 
 
+@router.get("/curriculum/units/{unit_id}/linked-nodes", response_model=BaseResponse[dict])
+async def list_unit_linked_nodes_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """单元考点 = 单元解析里语法点/听力考点已关联到知识图谱的节点(去重)。"""
+    items = await curriculum_service.list_unit_linked_nodes(db, unit_id=unit_id)
+    return make_ok({"items": items})
+
+
+# ── 单元重点单词 ↔ 词力通 ────────────────────────────────────────────────
+@router.get("/curriculum/units/{unit_id}/words", response_model=BaseResponse[dict])
+async def list_unit_words_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """单元已挂的重点单词/词组(连词力通释义/音标)。"""
+    from app.services import curriculum_vocab_service
+    items = await curriculum_vocab_service.list_unit_words(db, unit_id=unit_id)
+    return make_ok({"items": items})
+
+
+@router.post("/curriculum/units/{unit_id}/words", response_model=BaseResponse[dict])
+async def save_unit_words_api(unit_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """把一批单词/词组挂到单元(命中词力通则复用、缺失则新建)。body={items:[{word,phonetic?,meaning?,pos?,type?}], is_core?}。"""
+    from app.services import curriculum_vocab_service
+    items = body.get("items") or []
+    counts = await curriculum_vocab_service.link_unit_words(
+        db, unit_id=unit_id, items=items, is_core=bool(body.get("is_core", True)))
+    await db.commit()
+    out = await curriculum_vocab_service.list_unit_words(db, unit_id=unit_id)
+    return make_ok({"items": out, "counts": counts})
+
+
+@router.delete("/curriculum/units/{unit_id}/words/{word_id}", response_model=BaseResponse[dict])
+async def unlink_unit_word_api(unit_id: uuid.UUID, word_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """解除某词与单元的挂靠(词力通词条保留)。"""
+    from app.services import curriculum_vocab_service
+    await curriculum_vocab_service.unlink_unit_word(db, unit_id=unit_id, word_id=word_id)
+    await db.commit()
+    return make_ok({"ok": True})
+
+
+@router.post("/curriculum/units/{unit_id}/words/ocr", response_model=BaseResponse[dict])
+async def ocr_unit_words_api(unit_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """多图 OCR 解析单词/词组(仅解析返回供人工核对,不落库)。body={images:[dataURL...]}。"""
+    from app.services import curriculum_vocab_service
+    images = [u for u in (body.get("images") or []) if isinstance(u, str) and u.strip()]
+    if not images:
+        raise AppError(code=400, message="请至少上传一张图片")
+    if len(images) > 20:
+        raise AppError(code=400, message="单次最多 20 张图片")
+    items = await curriculum_vocab_service.ocr_words_from_images(images)
+    return make_ok({"items": items})
+
+
+@router.post("/curriculum/units/{unit_id}/words/parse-text", response_model=BaseResponse[dict])
+async def parse_unit_words_text_api(unit_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """LLM 解析粘贴的单词表文本(仅解析返回供人工核对,不落库)。body={text}。"""
+    from app.services import curriculum_vocab_service
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise AppError(code=400, message="请粘贴单词表文本")
+    items = await curriculum_vocab_service.parse_words_from_text(text)
+    return make_ok({"items": items})
+
+
 @router.post("/curriculum-unit-sections/{section_id}/link-node", response_model=BaseResponse[dict])
 async def manual_link_section_api(section_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
     """人工挂靠:把某语法点/听力考点关联到图谱里已存在的节点(限 语法→cf/jf、听力→lt)。"""
@@ -1433,6 +1495,12 @@ def _to_paper_item(p, cnt: int = 0, pub: int = 0) -> PaperListItem:
         grade=p.grade, semester=p.semester, region_name=p.region_name,
         exam_type=p.exam_type, status=p.status, question_count=cnt,
         published_count=pub, created_at=p.created_at,
+        source_file_url=getattr(p, "source_file_url", None),
+        source_filename=getattr(p, "source_filename", None),
+        parse_status=getattr(p, "parse_status", None),
+        parse_error=(p.meta or {}).get("parse_error") if getattr(p, "meta", None) else None,
+        convert_status=(p.meta or {}).get("convert_status") if getattr(p, "meta", None) else None,
+        year=getattr(p, "year", None),
     )
 
 
@@ -1441,13 +1509,15 @@ async def list_platform_papers_api(
     db: DbDep, admin: AdminDep, status: str | None = None,
     textbook_version: str | None = None, stage: str | None = None,
     grade: str | None = None, exam_type: str | None = None,
-    region_code: str | None = None, skip: int = 0, limit: int = 20,
+    region_code: str | None = None, year: int | None = None,
+    skip: int = 0, limit: int = 20,
 ):
-    """平台试卷分页(一卷一条,含题数/已发布数);可按教材/学段/年级/地区/考试筛选。"""
+    """平台试卷分页(一卷一条,含题数/已发布数);可按教材/学段/年级/地区/考试/年份筛选。"""
     from app.services import platform_question_service as pqs
     rows, total = await pqs.list_papers(
         db, status=status, textbook_version=textbook_version, stage=stage,
-        grade=grade, exam_type=exam_type, region_code=region_code, skip=skip, limit=limit)
+        grade=grade, exam_type=exam_type, region_code=region_code, year=year,
+        skip=skip, limit=limit)
     return make_ok(PaperListOut(
         total=total, items=[_to_paper_item(p, c, pub) for p, c, pub in rows]))
 
@@ -1666,6 +1736,101 @@ async def extract_real_questions_api(
     await db.commit()
     res.schedule(job.id)
     return make_ok(RealExtractCreatedOut(job_id=job.id))
+
+
+_PAPER_CT = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+}
+
+
+@router.post("/platform-questions/batch-upload", response_model=BaseResponse[dict])
+async def batch_upload_papers_api(
+    db: DbDep, admin: AdminDep,
+    files: list[UploadFile] = File(..., description="多份真题原卷(word/pdf)"),
+    meta: str | None = Form(None, description="共享元信息 JSON(教材/学段/年级/学期/地区/考试)"),
+):
+    """批量上传真题:每份文件传 COS + 建**草稿占位试卷**(0 题,挂原卷直链),题目延后解析。"""
+    import json as _json
+    import uuid as _uuid
+    from app.services import pdf_upload_service as pus, platform_question_service as pqs
+    if not files:
+        raise AppError(code=400, message="请至少选择一个文件")
+    if len(files) > 50:
+        raise AppError(code=400, message="单次最多 50 份")
+    m = {}
+    if meta:
+        try:
+            m = _json.loads(meta) or {}
+        except Exception:
+            raise AppError(code=400, message="meta 需为 JSON")
+    results: list[dict] = []
+    doc_paper_ids: list = []
+    # 唯一性判断:试卷名(=文件名去扩展名)与库里已有重复的跳过;同批次内重名也只留一份
+    stems = [(f.filename or "").rsplit(".", 1)[0] if "." in (f.filename or "") else (f.filename or "") for f in files]
+    dup_names = await pqs.existing_paper_names(db, stems)
+    seen_stems: set = set()
+    for f in files:
+        fname = f.filename or "未命名"
+        ext = ("." + fname.rsplit(".", 1)[-1].lower()) if "." in fname else ""
+        if ext not in _PAPER_CT:
+            results.append({"filename": fname, "ok": False, "error": "仅支持 pdf / doc / docx"})
+            continue
+        stem = fname.rsplit(".", 1)[0] if "." in fname else fname
+        if stem in dup_names or stem in seen_stems:
+            results.append({"filename": fname, "ok": False, "duplicate": True, "error": "试卷名已存在,已跳过"})
+            continue
+        seen_stems.add(stem)
+        try:
+            data = await f.read()
+            if len(data) > 300 * 1024 * 1024:
+                results.append({"filename": fname, "ok": False, "error": "文件过大(上限 300MB)"})
+                continue
+            key = f"papers/{_uuid.uuid4().hex}{ext}"
+            url = await pus.upload_bytes_to_cos(data, key, _PAPER_CT[ext])
+            # 也存一份本地(供之后「解析原题目」用):按后缀存对应格式
+            if ext == ".docx":
+                file_id, src = pus.save_upload_docx(data), "docx"
+            elif ext == ".doc":
+                file_id, src = pus.save_upload_doc(data), "doc"
+            else:
+                file_id, src = pus.save_upload(data), "pdf"
+            stem = fname.rsplit(".", 1)[0] if "." in fname else fname
+            pmeta = {**m, "file_id": file_id, "source": src}
+            if src == "doc":
+                pmeta["convert_status"] = "pending"      # .doc 待后台转 PDF
+            pid = await pqs.create_paper_placeholder(
+                db, name=stem, meta=pmeta,
+                source_file_url=url, source_filename=fname)
+            if src == "doc":
+                doc_paper_ids.append(pid)
+            results.append({"filename": fname, "ok": True, "paper_id": str(pid),
+                            "file_url": url, "cos": bool(url)})
+        except Exception as exc:  # noqa: BLE001
+            results.append({"filename": fname, "ok": False, "error": str(exc)})
+    await db.commit()
+    if doc_paper_ids:                                    # 后台并发把 .doc 转 PDF(不阻塞上传)
+        pqs.schedule_doc_conversions(doc_paper_ids)
+    ok = sum(1 for r in results if r["ok"])
+    return make_ok({"results": results, "ok": ok, "total": len(files)})
+
+
+@router.post("/platform-papers/{paper_id}/convert-doc", response_model=BaseResponse[dict])
+async def convert_paper_doc_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """重试:把该 .doc 试卷用 LibreOffice 转成 PDF(转换成功后即可「解析原题目」)。"""
+    from app.services import platform_question_service as pqs
+    r = await pqs.convert_paper_doc(db, paper_id=paper_id)
+    return make_ok(r)
+
+
+@router.post("/platform-papers/{paper_id}/parse", response_model=BaseResponse[dict])
+async def parse_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """解析某份(批量上传的)试卷的原始文件 → 拆题自动入库为草稿。标注 parse_status。"""
+    from app.services import platform_question_service as pqs
+    r = await pqs.parse_paper_questions(db, paper_id=paper_id)
+    await db.commit()
+    return make_ok(r)
 
 
 @router.post("/uploads/presign", response_model=BaseResponse[PresignOut])
@@ -1937,6 +2102,67 @@ async def backfill_paraphrase_api(db: DbDep, admin: AdminDep, limit: int = 50,
     r = await lss.backfill_paraphrase(db, limit=limit, only_missing=only_missing,
                                       max_tokens_budget=max_tokens_budget)
     return make_ok(r)
+
+
+# ── 上传长难句:文字 → LLM 语法点 → 关联知识图谱 ────────────────────────────
+@router.post("/long-sentences/upload-parse", response_model=BaseResponse[dict])
+async def upload_parse_ls_api(body: dict, db: DbDep, admin: AdminDep):
+    """粘贴文字 → LLM 抽语法点+例句,落 long_sentence 草稿(uploaded)。body={text, unit_id?}。"""
+    from app.services import long_sentence_upload_service as lsu
+    uid = body.get("unit_id")
+    items = await lsu.parse_and_persist(
+        db, text=(body.get("text") or ""), unit_id=uuid.UUID(str(uid)) if uid else None)
+    await db.commit()
+    return make_ok({"items": items})
+
+
+@router.get("/long-sentences/uploaded", response_model=BaseResponse[dict])
+async def list_uploaded_ls_api(db: DbDep, admin: AdminDep, limit: int = 50,
+                               unit_id: uuid.UUID | None = None):
+    """最近上传的长难句草稿(含已挂知识图谱节点)。unit_id 给定则只看该单元。"""
+    from app.services import long_sentence_upload_service as lsu
+    return make_ok({"items": await lsu.list_recent(db, limit=limit, unit_id=unit_id)})
+
+
+@router.post("/long-sentences/uploaded/auto-link", response_model=BaseResponse[dict])
+async def auto_link_uploaded_ls_api(body: dict, db: DbDep, admin: AdminDep):
+    """一键关联:用语法点名分词打分,把该单元未挂的长难句自动挂到 cf/jf 最高分节点。body={unit_id}。"""
+    from app.services import long_sentence_upload_service as lsu
+    uid = body.get("unit_id")
+    if not uid:
+        raise AppError(code=400, message="缺少 unit_id")
+    counts = await lsu.auto_link_unit(db, unit_id=uuid.UUID(str(uid)))
+    await db.commit()
+    items = await lsu.list_recent(db, limit=100, unit_id=uuid.UUID(str(uid)))
+    return make_ok({"items": items, "counts": counts})
+
+
+@router.post("/long-sentences/uploaded/{ls_id}/link-node", response_model=BaseResponse[dict])
+async def link_uploaded_ls_node_api(ls_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """把该长难句的语法点挂靠到图谱已存在节点(限词法/句法)。"""
+    from app.services import long_sentence_upload_service as lsu
+    r = await lsu.link_node(db, ls_id=ls_id, node_id=uuid.UUID(str(body.get("node_id"))))
+    await db.commit()
+    return make_ok(r)
+
+
+@router.post("/long-sentences/uploaded/{ls_id}/new-node", response_model=BaseResponse[dict])
+async def new_uploaded_ls_node_api(ls_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """目录没有→在所选父分类下新建知识图谱节点并挂靠。"""
+    from app.services import long_sentence_upload_service as lsu
+    r = await lsu.new_node(db, ls_id=ls_id, parent_id=uuid.UUID(str(body.get("parent_id"))),
+                           name=(body.get("name") or ""))
+    await db.commit()
+    return make_ok(r)
+
+
+@router.delete("/long-sentences/uploaded/{ls_id}", response_model=BaseResponse[dict])
+async def delete_uploaded_ls_api(ls_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """删除一条上传的长难句草稿(连带挂边)。"""
+    from app.services import long_sentence_upload_service as lsu
+    await lsu.delete_uploaded(db, ls_id=ls_id)
+    await db.commit()
+    return make_ok({"ok": True})
 
 
 @router.get("/long-sentences", response_model=BaseResponse[LSAdminListOut])
@@ -2248,8 +2474,8 @@ async def upload_curriculum_pdf(
         raise AppError(code=400, message="请上传 PDF 文件（.pdf 后缀）")
 
     raw = await file.read()
-    if len(raw) > 100 * 1024 * 1024:  # 100 MB 上限
-        raise AppError(code=400, message="PDF 文件过大（上限 100 MB）")
+    if len(raw) > 300 * 1024 * 1024:  # 300 MB 上限(整本教材 PDF)
+        raise AppError(code=400, message="PDF 文件过大（上限 300 MB）")
 
     file_id = pdf_upload_service.save_upload(raw)
 

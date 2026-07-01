@@ -89,9 +89,12 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="单元" width="70" align="center"><template #default="{ row }">Unit {{ row.unit_no }}</template></el-table-column>
         <el-table-column prop="unit_title" label="标题" min-width="140" show-overflow-tooltip />
-        <el-table-column label="KP / 词 / 短文 或 错误" min-width="160">
+        <el-table-column label="结果（拆单元 / 挂 PDF）" min-width="180">
           <template #default="{ row }">
-            <span v-if="row.status === 'ok'">{{ row.kp_count }} / {{ row.word_count }}<span v-if="row.passage_count"> / 短文{{ row.passage_count }}</span></span>
+            <template v-if="row.status === 'ok'">
+              <el-tag size="small" type="success" effect="plain">已拆单元</el-tag>
+              <el-tag size="small" :type="row.pdf ? 'success' : 'info'" effect="plain" style="margin-left:6px">{{ row.pdf ? '已挂 PDF' : '未挂 PDF' }}</el-tag>
+            </template>
             <span v-else style="color:#F56C6C;font-size:12px">{{ row.error }}</span>
           </template>
         </el-table-column>

@@ -231,15 +231,35 @@ async def exam_type_stats(db: AsyncSession, *, grp: str | None = None,
     return {"totals": totals, "items": items, "options": options}
 
 
+# ── 知识树内存缓存(滑动 5 分钟;节点有增删改时失效)────────────────────────
+import time as _time
+
+_TREE_CACHE: dict[tuple, tuple[float, list]] = {}   # (axis,with_counts,stage) -> (到期单调时刻, 数据)
+_TREE_TTL = 300.0                                    # 5 分钟
+
+
+def invalidate_node_tree_cache() -> None:
+    """知识图谱节点有增删改 → 清树缓存,下次重建。"""
+    _TREE_CACHE.clear()
+
+
 async def node_tree(db: AsyncSession, *, axis: str | None = None,
                     with_counts: bool = False, stage: str | None = None) -> list[dict]:
     """受控知识树(E1):按 parent_id 组装嵌套(排除已停用)。
 
+    内存缓存:滑动 5 分钟(每次命中续期);节点增删改调 invalidate_node_tree_cache() 失效。
     with_counts=True 时,每个节点附 unit_refs/question_refs(教材单元 / 真题挂载数),
     分类节点取其**整棵子树聚合**(自身+所有后代直接挂载之和),便于一眼看哪类挂得多。
     stage(小|初|高)过滤,包含式(高⊇初⊇小):保留「未标学段(通用脚手架/分类)
     或含该学段及更低学段」的节点(看初中卷=小+初考点,看高中=全部)。
     """
+    _ckey = (axis, with_counts, stage)
+    _now = _time.monotonic()
+    _hit = _TREE_CACHE.get(_ckey)
+    if _hit is not None and _hit[0] > _now:
+        _TREE_CACHE[_ckey] = (_now + _TREE_TTL, _hit[1])   # 滑动续期
+        return _hit[1]
+
     stmt = sa.select(KnowledgeNode).where(KnowledgeNode.status != "retired")
     if axis:
         stmt = stmt.where(KnowledgeNode.axis == axis)
@@ -286,6 +306,7 @@ async def node_tree(db: AsyncSession, *, axis: str | None = None,
             return u, q
         for r in roots:
             _rollup(r)
+    _TREE_CACHE[_ckey] = (_time.monotonic() + _TREE_TTL, roots)
     return roots
 
 
@@ -322,6 +343,7 @@ async def create_node(
     db.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=name.strip(),
                      alias_norm=normalize_kp_name(name), source="manual"))
     await db.flush()
+    invalidate_node_tree_cache()
     return node
 
 
@@ -345,6 +367,7 @@ async def set_parent(db: AsyncSession, *, node_id: uuid.UUID, parent_id: uuid.UU
             cur = await db.get(KnowledgeNode, cur.parent_id) if cur.parent_id else None
     node.parent_id = parent_id
     await db.flush()
+    invalidate_node_tree_cache()
     return node
 
 
@@ -480,6 +503,7 @@ async def update_node(
     if description is not None:
         node.description = description or None
     await db.flush()
+    invalidate_node_tree_cache()
     return node
 
 
@@ -491,6 +515,7 @@ async def set_node_status(db: AsyncSession, *, node_id: uuid.UUID, status: str) 
         raise AppError(code=404, message="节点不存在")
     node.status = status
     await db.flush()
+    invalidate_node_tree_cache()
     return node
 
 
@@ -526,6 +551,7 @@ async def delete_node(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
     await db.execute(sa.delete(StudentKp).where(StudentKp.node_id == node_id))
     await db.delete(node)
     await db.flush()
+    invalidate_node_tree_cache()
     return {"deleted": str(node_id)}
 
 
@@ -598,6 +624,7 @@ async def approve(
     await db.flush()
     await _backfill_unit_edges(db, node.id, cand.source_ref)   # R1:回填来源单元的边
     await _materialize_pending_content(db, node.id, norm)       # 生成内容物化为 lecture
+    invalidate_node_tree_cache()
     return node
 
 

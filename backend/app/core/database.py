@@ -44,7 +44,7 @@ def create_session_factory(engine: Engine) -> "sessionmaker[Session]":
 # ── Async engine（FastAPI 请求处理专用）────────────────────────────────────────
 
 
-_async_engine = create_async_engine(_settings.async_database_url, echo=_settings.debug)
+_async_engine = create_async_engine(_settings.async_database_url, echo=_settings.sql_echo)
 _async_session_factory = async_sessionmaker(_async_engine, expire_on_commit=False)
 
 # Public alias used by background tasks (e.g., OCR pipeline)

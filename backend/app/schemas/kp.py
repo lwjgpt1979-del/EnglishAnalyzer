@@ -260,6 +260,12 @@ class PaperListItem(BaseModel):
     status: str
     question_count: int = 0
     published_count: int = 0
+    source_file_url: str | None = None
+    source_filename: str | None = None
+    parse_status: str | None = None
+    parse_error: str | None = None
+    convert_status: str | None = None      # .doc→pdf 转换:pending|converting|converted|failed
+    year: int | None = None                # 从试卷名提取的年份
     created_at: datetime | None = None
 
 

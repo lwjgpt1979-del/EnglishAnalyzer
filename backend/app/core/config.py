@@ -129,6 +129,7 @@ class Settings(BaseSettings):
 
     # 应用
     debug: bool = False
+    sql_echo: bool = False          # SQL 回显与 debug 解耦:默认关(避免每条 SQL 刷日志拖慢)
     api_v1_prefix: str = "/api/v1"
     # CORS 允许来源（逗号分隔；dev 默认 "*"，生产应填 admin/机构前端域名）
     # 例：https://admin.goodgrammar.top,https://inst.goodgrammar.top

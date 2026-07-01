@@ -821,9 +821,11 @@ async def _already_extracted(db: AsyncSession, question_id: uuid.UUID) -> bool:
     )).first() is not None
 
 
-async def _already_extracted_passage(db: AsyncSession, passage_id: uuid.UUID) -> bool:
+async def _already_extracted_textbook_unit(db: AsyncSession, unit_id: uuid.UUID) -> bool:
+    """该单元是否已抽过教材长难句(幂等键:source_kind=textbook + unit_id)。"""
     return (await db.execute(
-        sa.select(LongSentence.id).where(LongSentence.source_passage_id == passage_id).limit(1)
+        sa.select(LongSentence.id).where(
+            LongSentence.source_kind == "textbook", LongSentence.unit_id == unit_id).limit(1)
     )).first() is not None
 
 
@@ -947,22 +949,23 @@ async def extract_from_platform(
 
 async def extract_from_textbook(
     db: AsyncSession, *, limit: int | None = None, min_words: int = DEFAULT_MIN_WORDS,
-    dry_run: bool = False, only_passage_ids: set | None = None, filters: dict | None = None,
+    dry_run: bool = False, filters: dict | None = None,
 ) -> ExtractStats:
-    """② 扫课程单元**阅读**短文(curriculum_unit_passages, kind=阅读)未抽过的 → 平台长难句。
-    幂等按 source_passage_id。定位:从所属单元取 教材版/年级/学期/单元,学段从年级推。
+    """② 扫**单元解析**的句子(unit_section_sentence:语法点例句 + 听力句 + 作文正文)未抽过的
+    → 平台长难句。幂等按单元(source_kind=textbook + unit_id)。定位取所属单元教材版/年级/学期/单元。
     难度筛选(配置 long_sentence.textbook_difficulty_min / textbook_top_n):
-      配了阈值 → 抽难度超过阈值的全部;否则 → 抽该篇最难的 N 句。"""
-    from app.models.d4_knowledge import CurriculumUnit, CurriculumUnitPassage
+      配了阈值 → 抽难度超过阈值的全部;否则 → 抽该单元最难的 N 句。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d22_unit_structured import UnitSection, UnitSectionSentence
     cfg = await get_config(db)
     sel_min = cfg.get("textbook_difficulty_min")
     sel_min = int(sel_min) if sel_min not in (None, "", 0, "0") else None
     sel_top = None if sel_min is not None else int(cfg.get("textbook_top_n") or 3)
     st = ExtractStats()
     f = filters or {}
-    q = (sa.select(CurriculumUnitPassage, CurriculumUnit)
-         .join(CurriculumUnit, CurriculumUnit.id == CurriculumUnitPassage.unit_id)
-         .where(CurriculumUnitPassage.text.isnot(None), CurriculumUnitPassage.kind == "阅读"))
+    # 有「单元解析」(任一板块)的单元
+    q = sa.select(CurriculumUnit).where(
+        CurriculumUnit.id.in_(sa.select(UnitSection.unit_id).distinct()))
     if f.get("textbook_version"):
         q = q.where(CurriculumUnit.textbook_version.in_(f["textbook_version"]))
     if f.get("grade"):
@@ -971,14 +974,24 @@ async def extract_from_textbook(
         q = q.where(CurriculumUnit.semester.in_(f["semester"]))
     if f.get("unit_ids"):
         q = q.where(CurriculumUnit.id.in_(f["unit_ids"]))
-    if only_passage_ids is not None:
-        q = q.where(CurriculumUnitPassage.id.in_(only_passage_ids))
     if limit is not None:
         q = q.limit(limit)
-    for up, unit in (await db.execute(q)).all():
+    for unit in (await db.execute(q)).scalars().all():
         st.scanned += 1
-        if await _already_extracted_passage(db, up.id):
+        if await _already_extracted_textbook_unit(db, unit.id):
             st.skipped_done += 1
+            continue
+        # 句子来源:语法/听力板块的例句 + 作文正文(body_text)
+        sents = (await db.execute(
+            sa.select(UnitSectionSentence.text)
+            .join(UnitSection, UnitSection.id == UnitSectionSentence.section_id)
+            .where(UnitSection.unit_id == unit.id)
+            .order_by(UnitSection.sort_order, UnitSectionSentence.sort_order))).scalars().all()
+        bodies = (await db.execute(
+            sa.select(UnitSection.body_text).where(
+                UnitSection.unit_id == unit.id, UnitSection.body_text.isnot(None)))).scalars().all()
+        text = "\n".join([s for s in sents if s] + [b for b in bodies if b])
+        if not text.strip():
             continue
         locate = {
             "textbook_version": unit.textbook_version, "grade": unit.grade,
@@ -986,8 +999,8 @@ async def extract_from_textbook(
             "stage": _stage_from_grade(unit.grade),
         }
         await _persist_long_sentences(
-            db, st, text=up.text or "", scope="platform", source_kind="textbook",
-            source_passage_id=up.id, locate=locate, min_words=min_words, dry_run=dry_run,
+            db, st, text=text, scope="platform", source_kind="textbook",
+            source_passage_id=None, locate=locate, min_words=min_words, dry_run=dry_run,
             select_min=sel_min, select_top_n=sel_top)
         if not dry_run:
             await db.flush()
@@ -1357,9 +1370,10 @@ async def recommend_next(db: AsyncSession, *, user, exclude_ids=None) -> dict:
 
 # ── 抽取选项(供后台精确挑范围)────────────────────────────────────────────────
 async def textbook_extract_units(db: AsyncSession) -> list[dict]:
-    """可抽取的教材单元(有阅读短文的),供级联多选:版本/年级/册/单元。"""
-    from app.models.d4_knowledge import CurriculumUnit, CurriculumUnitPassage
-    sub = sa.select(CurriculumUnitPassage.unit_id).where(CurriculumUnitPassage.kind == "阅读")
+    """可抽取的教材单元(有单元解析的),供级联多选:版本/年级/册/单元。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d22_unit_structured import UnitSection
+    sub = sa.select(UnitSection.unit_id).distinct()
     rows = (await db.execute(
         sa.select(CurriculumUnit.id, CurriculumUnit.textbook_version, CurriculumUnit.grade,
                   CurriculumUnit.semester, CurriculumUnit.unit_no, CurriculumUnit.unit_title)
