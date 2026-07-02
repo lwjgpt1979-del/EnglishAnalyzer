@@ -121,3 +121,37 @@ async def grade_platform_question(
 
     result["is_correct"] = is_correct
     return result
+
+
+async def list_practice_questions(
+    db: AsyncSession, *, limit: int = 10, node_id: uuid.UUID | None = None,
+) -> list[dict]:
+    """列可练的阅读表达题(自由作答:question_type=阅读 且无选项),**不下发参考答案**(防作弊)。
+
+    返回 [{id, stem, passage, full_score}]。可按 KP 节点过滤(练某考点的阅读表达)。
+    """
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, Passage
+
+    stmt = (
+        sa.select(PlatformQuestion.id, PlatformQuestion.stem, PlatformQuestion.block_id)
+        .where(PlatformQuestion.question_type == "阅读",
+               PlatformQuestion.options.is_(None),
+               PlatformQuestion.answer.isnot(None),
+               PlatformQuestion.status == "published",
+               PlatformQuestion.deprecated_at.is_(None))
+    )
+    if node_id is not None:
+        stmt = stmt.join(
+            PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id
+        ).where(PlatformQuestionKp.node_id == node_id)
+    rows = (await db.execute(
+        stmt.order_by(PlatformQuestion.created_at.desc()).limit(limit))).all()
+
+    block_ids = {r.block_id for r in rows if r.block_id}
+    passage_map: dict = {}
+    if block_ids:
+        passage_map = {pid: txt for pid, txt in (await db.execute(
+            sa.select(Passage.id, Passage.text).where(Passage.id.in_(block_ids)))).all()}
+    return [{"id": str(r.id), "stem": r.stem,
+             "passage": passage_map.get(r.block_id) if r.block_id else None,
+             "full_score": 4} for r in rows]

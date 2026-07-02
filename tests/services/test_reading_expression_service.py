@@ -82,6 +82,17 @@ async def test_grade_by_question_records_wrong_on_miss(db_session):
 
 
 @pytest.mark.asyncio
+async def test_list_practice_questions_never_leaks_answer(db_session):
+    """按题练列表:每项只含 id/stem/passage/full_score,绝不下发参考答案(防作弊)。"""
+    node = (await db_session.execute(
+        select(KnowledgeNode).where(KnowledgeNode.axis == "knowledge").limit(1))).scalar_one()
+    await _seed_re_question(db_session, node.id)
+    items = await res.list_practice_questions(db_session, limit=20)
+    assert all(set(it.keys()) == {"id", "stem", "passage", "full_score"} for it in items)
+    assert all("answer" not in it and "reference_answer" not in it for it in items)
+
+
+@pytest.mark.asyncio
 async def test_grade_by_question_pass_on_hit(db_session):
     """作答命中参考答案 → is_correct True、answer_log 记对。"""
     sid = await _student(db_session)

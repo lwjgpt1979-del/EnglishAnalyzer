@@ -1,6 +1,7 @@
 """阅读表达 AI 批改 API（P2a）。独立批改端点(不走练习判分流)。"""
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -30,6 +31,15 @@ async def grade_reading_expression_api(body: ReadingExpressionGradeIn, current_u
         full_score=body.full_score,
     )
     return make_ok(result)
+
+
+@router.get("/questions", response_model=BaseResponse[list])
+async def list_reading_expression_questions_api(
+    db: DbDep, current_user: UserDep, limit: int = 10, node_id: uuid.UUID | None = None,
+):
+    """列可练的阅读表达题(不含参考答案,防作弊);可按 KP 节点过滤。供「按题练」模式。"""
+    items = await res.list_practice_questions(db, limit=min(max(limit, 1), 50), node_id=node_id)
+    return make_ok(items)
 
 
 @router.post("/grade-question", response_model=BaseResponse[dict])
