@@ -29,6 +29,8 @@ DEFAULTS: dict = {
         "A": 80, "B": 60, "C": 40,
     },
     "sla_overdue_hours": 48,            # 跟进 SLA:next_follow_at 超时超过 N 小时 → 违约告警
+    "seat_only_admin_ids": [],          # 座席名单(id 字符串):名单内只看公海+自己私海;名单外看全部
+    "tag_catalog": ["高意向", "价格敏感", "已加微信", "决策人", "需回访", "同行"],  # 运营标签建议
 }
 
 STATUSES = ("new", "contacted", "interested", "negotiating", "won", "lost", "invalid")
@@ -92,6 +94,7 @@ async def create_lead(db: AsyncSession, *, data: dict) -> SalesLead:
         region_code=rc, region_name=rn,
         industry=data.get("industry"),
         biz_tags=data.get("biz_tags"),
+        tags=data.get("tags"),
         source=data.get("source") if data.get("source") in SOURCES else "manual",
         source_note=data.get("source_note"),
         status="new",
@@ -130,10 +133,16 @@ async def list_leads(
     db: AsyncSession, *, pool: str | None = None, status: str | None = None,
     source: str | None = None, region_code: str | None = None,
     owner_admin_id: uuid.UUID | None = None, dnc: bool | None = None,
-    due: bool = False, sla: bool = False, q: str | None = None,
+    due: bool = False, sla: bool = False, tag: str | None = None,
+    seat_admin_id: uuid.UUID | None = None, q: str | None = None,
     skip: int = 0, limit: int = 20,
 ) -> tuple[list[SalesLead], int]:
     base = sa.select(SalesLead)
+    if seat_admin_id is not None:   # 座席权限:只看公海 + 自己私海
+        base = base.where(sa.or_(SalesLead.pool == "public",
+                                 SalesLead.owner_admin_id == seat_admin_id))
+    if tag:
+        base = base.where(SalesLead.tags.contains([tag]))
     if pool:
         base = base.where(SalesLead.pool == pool)
     if status:
@@ -180,7 +189,7 @@ async def get_lead(db: AsyncSession, lead_id: uuid.UUID) -> SalesLead:
 
 
 _EDITABLE = {"name", "contact_name", "phone", "wechat_id", "address", "industry",
-             "biz_tags", "source_note", "consent", "dnc", "next_follow_at",
+             "biz_tags", "tags", "source_note", "consent", "dnc", "next_follow_at",
              "intent_score", "intent_grade"}
 
 
@@ -526,3 +535,73 @@ async def import_from_excel(db: AsyncSession, *, content: bytes, source: str = "
     if not items:
         return {"created": 0, "skipped": 0}
     return await import_leads(db, items=items, source=source)
+
+
+# ── 座席权限 / 话术库 / 导出 ──────────────────────────────────────────────────
+
+async def seat_scope_for(db: AsyncSession, admin_id: uuid.UUID) -> uuid.UUID | None:
+    """若该 admin 是「座席」(在 seat_only_admin_ids 名单)→ 返回其 id(用于限定范围);否则 None(看全部)。"""
+    cfg = await get_config(db)
+    ids = {str(x) for x in (cfg.get("seat_only_admin_ids") or [])}
+    return admin_id if str(admin_id) in ids else None
+
+
+_SCRIPTS_KEY = "sales_scripts"
+
+
+async def get_scripts(db: AsyncSession) -> list[dict]:
+    """话术库/SOP:[{title, content, stage}]。存 system_configs.sales_scripts。"""
+    row = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _SCRIPTS_KEY))).scalar_one_or_none()
+    if row is not None and isinstance(row.value, list):
+        return row.value
+    return []
+
+
+async def set_scripts(db: AsyncSession, *, scripts: list[dict], updated_by: uuid.UUID) -> list[dict]:
+    clean = [{"title": str(s.get("title", "")).strip(),
+              "content": str(s.get("content", "")).strip(),
+              "stage": s.get("stage") or None}
+             for s in (scripts or []) if str(s.get("title", "")).strip()]
+    row = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _SCRIPTS_KEY))).scalar_one_or_none()
+    if row is None:
+        db.add(SystemConfig(id=uuid.uuid4(), key=_SCRIPTS_KEY, value=clean,
+                            description="电销话术库 / 跟进 SOP", updated_by=updated_by))
+    else:
+        row.value = clean
+        row.updated_by = updated_by
+    await db.flush()
+    return clean
+
+
+_EXPORT_COLS = [
+    ("name", "商家"), ("contact_name", "联系人"), ("phone", "电话"),
+    ("region_name", "地区"), ("industry", "行业"), ("source", "来源"),
+    ("status", "状态"), ("intent_grade", "意向"), ("intent_score", "意向分"),
+    ("next_follow_at", "下次跟进"), ("source_note", "来源依据"),
+]
+
+
+async def export_leads_xlsx(db: AsyncSession, **filters) -> bytes:
+    """按筛选导出线索为 .xlsx(最多 5000 条,超出请缩小筛选)。"""
+    import io
+    from openpyxl import Workbook
+    filters.pop("skip", None)
+    filters.pop("limit", None)
+    rows, _total = await list_leads(db, skip=0, limit=5000, **filters)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "线索"
+    ws.append([label for _k, label in _EXPORT_COLS])
+    for r in rows:
+        line = []
+        for key, _label in _EXPORT_COLS:
+            v = getattr(r, key, None)
+            if key == "next_follow_at" and v is not None:
+                v = v.strftime("%Y-%m-%d %H:%M")
+            line.append("" if v is None else str(v))
+        ws.append(line)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

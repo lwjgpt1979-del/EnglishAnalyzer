@@ -18,6 +18,7 @@ class SalesLeadCreate(BaseModel):
     region_name: str | None = None
     industry: str | None = None
     biz_tags: list[str] | None = None
+    tags: list[str] | None = None
     source: str | None = None
     source_note: str | None = None
     consent: bool | None = None
@@ -34,6 +35,7 @@ class SalesLeadUpdate(BaseModel):
     region_name: str | None = None
     industry: str | None = None
     biz_tags: list[str] | None = None
+    tags: list[str] | None = None
     source_note: str | None = None
     status: str | None = None
     consent: bool | None = None
@@ -41,6 +43,23 @@ class SalesLeadUpdate(BaseModel):
     next_follow_at: datetime | None = None
     intent_score: int | None = None
     intent_grade: str | None = None
+
+
+class SalesConfigUpdate(BaseModel):
+    public_pool_recycle_days: int | None = None
+    sla_overdue_hours: int | None = None
+    seat_only_admin_ids: list[str] | None = None
+    tag_catalog: list[str] | None = None
+
+
+class ScriptItem(BaseModel):
+    title: str
+    content: str = ""
+    stage: str | None = None
+
+
+class ScriptsIn(BaseModel):
+    scripts: list[ScriptItem]
 
 
 class SalesLeadImport(BaseModel):
@@ -137,6 +156,7 @@ class SalesLeadOut(BaseModel):
     region_name: str | None
     industry: str | None
     biz_tags: Any | None
+    tags: Any | None
     source: str
     source_note: str | None
     status: str

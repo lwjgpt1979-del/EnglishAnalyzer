@@ -30,6 +30,7 @@ class SalesLead(Base):
     region_name = mapped_column(sa.String(64), nullable=True)     # 冗余展示名
     industry = mapped_column(sa.String(64), nullable=True)        # 行业标签
     biz_tags = mapped_column(JSONB, nullable=True)                # 经营特征(招聘/推广/资质…,借探迹维度)
+    tags = mapped_column(JSONB, nullable=True)                    # 运营标签(高意向/价格敏感/已加微信…)
 
     source = mapped_column(sa.String(20), nullable=False, server_default=sa.text("'manual'"))
     # source ∈ baidu_map|meituan|dianping|tungee|manual|import|other

@@ -29,6 +29,7 @@ from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.sales_crm import (
     SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, ActivityCreate,
     SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn, BatchAssignIn, MergeLeadsIn,
+    SalesConfigUpdate, ScriptsIn,
     WecomIngestIn, WecomConfigUpdate, WecomMsgOut,
 )
 from app.schemas.teacher import (
@@ -3456,14 +3457,16 @@ async def sales_list_leads(
     db: DbDep, admin: AdminDep,
     pool: str | None = None, status: str | None = None, source: str | None = None,
     region_code: str | None = None, mine: bool = False, dnc: bool | None = None,
-    due: bool = False, sla: bool = False, q: str | None = None, skip: int = 0, limit: int = 20,
+    due: bool = False, sla: bool = False, tag: str | None = None,
+    q: str | None = None, skip: int = 0, limit: int = 20,
 ):
-    """线索分页列表。mine=只看自己私海;due=到期待办;sla=SLA 违约(严重超时);region_code 前缀匹配。"""
+    """线索分页列表。mine=只看自己私海;due=到期待办;sla=SLA 违约;tag=标签;座席自动限权。"""
     from app.services import sales_crm_service as crm
+    seat = await crm.seat_scope_for(db, admin.id)   # 座席只看公海+自己私海
     rows, total = await crm.list_leads(
         db, pool=pool, status=status, source=source, region_code=region_code,
-        owner_admin_id=(admin.id if mine else None), dnc=dnc, due=due, sla=sla, q=q,
-        skip=skip, limit=limit)
+        owner_admin_id=(admin.id if mine else None), dnc=dnc, due=due, sla=sla, tag=tag,
+        seat_admin_id=seat, q=q, skip=skip, limit=limit)
     return make_ok({"total": total, "items": [_lead_json(r) for r in rows]})
 
 
@@ -3696,3 +3699,56 @@ async def sales_import_excel(
     res = await crm.import_from_excel(db, content=content, source=source)
     await db.commit()
     return make_ok(res)
+
+
+# ─── 电销 CRM · 打磨:配置 / 话术库 / 导出 ────────────────────────────────────
+
+@router.get("/sales/config", response_model=BaseResponse[dict])
+async def sales_get_config(db: DbDep, admin: AdminDep):
+    """电销 CRM 配置(回收天数/SLA 小时/座席名单/标签建议 等)。"""
+    from app.services import sales_crm_service as crm
+    return make_ok(await crm.get_config(db))
+
+
+@router.put("/sales/config", response_model=BaseResponse[dict])
+async def sales_update_config(body: SalesConfigUpdate, db: DbDep, admin: AdminDep):
+    from app.services import sales_crm_service as crm
+    cfg = await crm.update_config(db, patch=body.model_dump(exclude_unset=True), updated_by=admin.id)
+    await db.commit()
+    return make_ok(cfg)
+
+
+@router.get("/sales/scripts", response_model=BaseResponse[list])
+async def sales_get_scripts(db: DbDep, admin: AdminDep):
+    """话术库 / 跟进 SOP。"""
+    from app.services import sales_crm_service as crm
+    return make_ok(await crm.get_scripts(db))
+
+
+@router.put("/sales/scripts", response_model=BaseResponse[list])
+async def sales_set_scripts(body: ScriptsIn, db: DbDep, admin: AdminDep):
+    from app.services import sales_crm_service as crm
+    res = await crm.set_scripts(db, scripts=[s.model_dump() for s in body.scripts], updated_by=admin.id)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.get("/sales/leads/export")
+async def sales_export_leads(
+    db: DbDep, admin: AdminDep,
+    pool: str | None = None, status: str | None = None, source: str | None = None,
+    region_code: str | None = None, mine: bool = False, dnc: bool | None = None,
+    due: bool = False, sla: bool = False, tag: str | None = None, q: str | None = None,
+):
+    """按当前筛选导出线索为 .xlsx(座席自动限权,最多 5000 条)。"""
+    from fastapi.responses import Response
+    from app.services import sales_crm_service as crm
+    seat = await crm.seat_scope_for(db, admin.id)
+    data = await crm.export_leads_xlsx(
+        db, pool=pool, status=status, source=source, region_code=region_code,
+        owner_admin_id=(admin.id if mine else None), dnc=dnc, due=due, sla=sla, tag=tag,
+        seat_admin_id=seat, q=q)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=sales_leads.xlsx"})

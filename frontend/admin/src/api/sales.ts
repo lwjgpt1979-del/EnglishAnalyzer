@@ -47,7 +47,7 @@ export interface SalesActivity {
 
 export interface LeadListParams {
   pool?: string; status?: string; source?: string; region_code?: string
-  mine?: boolean; dnc?: boolean; due?: boolean; sla?: boolean; q?: string; skip?: number; limit?: number
+  mine?: boolean; dnc?: boolean; due?: boolean; sla?: boolean; tag?: string; q?: string; skip?: number; limit?: number
 }
 
 export function listLeads(params: LeadListParams): Promise<{ total: number; items: SalesLead[] }> {
@@ -116,6 +116,30 @@ export function importExcel(file: File, source = 'import'): Promise<{ created: n
   form.append('file', file)
   form.append('source', source)
   return unwrap(request.post('/admin/sales/leads/import-excel', form))
+}
+export async function exportLeads(params: LeadListParams): Promise<Blob> {
+  const r = await request.get('/admin/sales/leads/export', { params, responseType: 'blob' })
+  return r.data as Blob
+}
+
+export interface SalesConfig {
+  public_pool_recycle_days: number; sla_overdue_hours: number
+  seat_only_admin_ids: string[]; tag_catalog: string[]
+  recommend_weights?: Record<string, number>; intent_grade_thresholds?: Record<string, number>
+}
+export function getSalesConfig(): Promise<SalesConfig> {
+  return unwrap(request.get('/admin/sales/config'))
+}
+export function updateSalesConfig(patch: Partial<SalesConfig>): Promise<SalesConfig> {
+  return unwrap(request.put('/admin/sales/config', patch))
+}
+
+export interface Script { title: string; content: string; stage?: string | null }
+export function getScripts(): Promise<Script[]> {
+  return unwrap(request.get('/admin/sales/scripts'))
+}
+export function setScripts(scripts: Script[]): Promise<Script[]> {
+  return unwrap(request.put('/admin/sales/scripts', { scripts }))
 }
 export function recyclePublicPool(): Promise<{ recycled: number }> {
   return unwrap(request.post('/admin/sales/recycle-public-pool'))

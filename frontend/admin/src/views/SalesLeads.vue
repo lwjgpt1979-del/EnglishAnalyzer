@@ -8,9 +8,10 @@ import {
   listActivities, addActivity, recommendLeads, salesBoard, recyclePublicPool,
   analyzeText, leadWecomMessages, listSeats, batchAssign,
   sourceStats, findDuplicates, mergeLeads, importExcel,
+  exportLeads, getSalesConfig, updateSalesConfig, getScripts, setScripts,
   LEAD_STATUS, LEAD_SOURCE, type SalesLead, type SalesActivity, type LeadListParams,
   type IntentAnalysis, type WecomMsg, type SalesBoard, type Seat,
-  type SourceStat, type DupGroup,
+  type SourceStat, type DupGroup, type SalesConfig, type Script,
 } from '../api/sales'
 
 const STATUS_TAG: Record<string, string> = {
@@ -32,7 +33,10 @@ const loading = ref(false)
 
 const fStatus = ref('')
 const fSource = ref('')
+const fTag = ref('')
 const fQ = ref('')
+const cfg = ref<SalesConfig>({ public_pool_recycle_days: 7, sla_overdue_hours: 48, seat_only_admin_ids: [], tag_catalog: [] })
+async function loadCfg() { try { cfg.value = await getSalesConfig() } catch { /* ignore */ } }
 const board = ref<SalesBoard>({ total: 0, by_status: {}, by_pool: {}, today_new: 0, today_calls: 0, today_connected: 0, connect_rate: 0, my_due: 0 })
 
 // 地区级联(省→市),code 与 user.city_code 同源
@@ -59,6 +63,7 @@ async function load() {
     } else {
       const params: LeadListParams = {
         status: fStatus.value || undefined, source: fSource.value || undefined,
+        tag: fTag.value || undefined,
         region_code: regionCode(regionPath.value), q: fQ.value || undefined,
         skip, limit: pageSize,
       }
@@ -74,6 +79,59 @@ async function load() {
 }
 function reload() { page.value = 1; load() }
 async function loadBoard() { try { board.value = await salesBoard(); now.value = Date.now() } catch { /* ignore */ } }
+
+// 导出当前筛选
+async function onExport() {
+  try {
+    const params: LeadListParams = {
+      status: fStatus.value || undefined, source: fSource.value || undefined,
+      tag: fTag.value || undefined, region_code: regionCode(regionPath.value), q: fQ.value || undefined,
+    }
+    if (view.value === 'public') params.pool = 'public'
+    if (view.value === 'mine') params.mine = true
+    if (view.value === 'due') { params.mine = true; params.due = true }
+    if (view.value === 'sla') params.sla = true
+    const blob = await exportLeads(params)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'sales_leads.xlsx'; a.click()
+    URL.revokeObjectURL(url); ElMessage.success('已导出')
+  } catch (e: any) { ElMessage.error(e?.message || '导出失败') }
+}
+
+// 话术库 / SOP
+const scripts = ref<Script[]>([])
+const scriptMgrDlg = ref(false)
+async function loadScripts() { try { scripts.value = await getScripts() } catch { /* ignore */ } }
+function relevantScripts() {
+  const st = cur.value?.status
+  return scripts.value.filter(s => !s.stage || s.stage === st)
+}
+function useScript(s: Script) { actForm.content = s.content; ElMessage.success('已填入跟进内容') }
+async function saveScripts() {
+  try { scripts.value = await setScripts(scripts.value.filter(s => s.title.trim())); scriptMgrDlg.value = false; ElMessage.success('已保存话术库') }
+  catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+}
+function addScript() { scripts.value.push({ title: '', content: '', stage: null }) }
+function delScript(i: number) { scripts.value.splice(i, 1) }
+
+// 设置(座席权限 / 回收 / SLA)
+const cfgDlg = ref(false)
+const cfgSeats = ref<Seat[]>([])
+async function openCfg() {
+  await loadCfg()
+  if (!cfgSeats.value.length) { try { cfgSeats.value = await listSeats() } catch { /* ignore */ } }
+  cfgDlg.value = true
+}
+async function saveCfg() {
+  try {
+    cfg.value = await updateSalesConfig({
+      public_pool_recycle_days: cfg.value.public_pool_recycle_days,
+      sla_overdue_hours: cfg.value.sla_overdue_hours,
+      seat_only_admin_ids: cfg.value.seat_only_admin_ids,
+    })
+    cfgDlg.value = false; ElMessage.success('已保存设置'); load(); loadBoard()
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+}
 
 // 批量派单 / 认领
 const tableRef = ref()
@@ -208,17 +266,24 @@ const acts = ref<SalesActivity[]>([])
 const actsLoading = ref(false)
 const actForm = reactive({ channel: 'call', outcome: '', content: '', next_follow_at: '', status: '' })
 const wecomMsgs = ref<WecomMsg[]>([])
-// 合规编辑(consent / dnc / source_note)
+// 合规编辑(consent / dnc / source_note)+ 标签
 const curConsent = ref(false)
 const curDnc = ref(false)
 const curSourceNote = ref('')
+const curTags = ref<string[]>([])
 async function openDetail(r: SalesLead) {
   cur.value = r; drawer.value = true
   Object.assign(actForm, { channel: 'call', outcome: '', content: '', next_follow_at: '', status: '' })
   anaText.value = ''; anaResult.value = null
   curConsent.value = r.consent; curDnc.value = r.dnc; curSourceNote.value = r.source_note || ''
+  curTags.value = Array.isArray(r.tags) ? [...r.tags] : []
   await loadActs()
   try { wecomMsgs.value = (await leadWecomMessages(r.id, { limit: 50 })).items } catch { wecomMsgs.value = [] }
+}
+async function saveTags() {
+  if (!cur.value) return
+  try { const u = await updateLead(cur.value.id, { tags: curTags.value }); cur.value = u; load() }
+  catch (e: any) { ElMessage.error(e?.message || '更新失败') }
 }
 async function saveCompliance() {
   if (!cur.value) return
@@ -264,7 +329,7 @@ async function runAnalyze() {
   finally { anaLoading.value = false }
 }
 
-onMounted(() => { load(); loadBoard() })
+onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
 </script>
 
 <template>
@@ -284,9 +349,12 @@ onMounted(() => { load(); loadBoard() })
       </template>
       <el-button type="primary" :icon="Plus" @click="openAdd">新增</el-button>
       <el-button :icon="Upload" @click="openImport">批量导入</el-button>
+      <el-button @click="onExport">导出</el-button>
       <el-button @click="openSourceStats">来源统计</el-button>
       <el-button @click="openDup">查重</el-button>
+      <el-button @click="scriptMgrDlg = true">话术库</el-button>
       <el-button :icon="RefreshRight" @click="onRecycle">公海回收</el-button>
+      <el-button @click="openCfg">设置</el-button>
       <el-button :icon="Refresh" @click="() => { load(); loadBoard() }">刷新</el-button>
     </div>
 
@@ -316,9 +384,12 @@ onMounted(() => { load(); loadBoard() })
         <el-select v-model="fSource" placeholder="来源" clearable style="width:120px" @change="reload">
           <el-option v-for="(v, k) in LEAD_SOURCE" :key="k" :label="v" :value="k" />
         </el-select>
+        <el-select v-model="fTag" placeholder="标签" clearable style="width:120px" @change="reload">
+          <el-option v-for="t in cfg.tag_catalog" :key="t" :label="t" :value="t" />
+        </el-select>
         <el-cascader v-model="regionPath" :props="regionProps" placeholder="地区" clearable
-          style="width:200px" @change="reload" />
-        <el-input v-model="fQ" placeholder="搜商家/电话/联系人" clearable style="width:200px"
+          style="width:180px" @change="reload" />
+        <el-input v-model="fQ" placeholder="搜商家/电话/联系人" clearable style="width:180px"
           @keyup.enter="reload" @clear="reload" />
       </template>
       <span v-else class="hint">按「成交客户画像(行业/地区/经营特征)」给公海新线索打分排序,分越高越像你的赢单客户。</span>
@@ -327,10 +398,13 @@ onMounted(() => { load(); loadBoard() })
     <el-table ref="tableRef" :data="rows" v-loading="loading" stripe
       :row-class-name="({ row }) => row.dnc ? 'dnc-row' : ''" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="42" />
-      <el-table-column label="商家 / 联系人" min-width="180">
+      <el-table-column label="商家 / 联系人" min-width="200">
         <template #default="{ row }">
           <div>{{ row.name }}</div>
           <div class="muted">{{ row.contact_name || '' }}</div>
+          <div v-if="Array.isArray(row.tags) && row.tags.length" style="margin-top:2px">
+            <el-tag v-for="t in row.tags" :key="t" size="small" effect="plain" style="margin-right:4px">{{ t }}</el-tag>
+          </div>
         </template>
       </el-table-column>
       <el-table-column prop="phone" label="电话" width="130" />
@@ -446,6 +520,35 @@ onMounted(() => { load(); loadBoard() })
       </div>
     </el-dialog>
 
+    <!-- 设置(座席权限 / 回收 / SLA)-->
+    <el-dialog v-model="cfgDlg" title="电销 CRM 设置" width="520px">
+      <el-form label-width="140px">
+        <el-form-item label="公海回收天数"><el-input-number v-model="cfg.public_pool_recycle_days" :min="1" /> 天未跟进回收</el-form-item>
+        <el-form-item label="SLA 超时告警"><el-input-number v-model="cfg.sla_overdue_hours" :min="1" /> 小时</el-form-item>
+        <el-form-item label="座席(只看自己线索)">
+          <el-select v-model="cfg.seat_only_admin_ids" multiple filterable placeholder="选座席;名单内只看公海+自己私海,名单外看全部" style="width:100%">
+            <el-option v-for="s in cfgSeats" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer><el-button @click="cfgDlg = false">取消</el-button><el-button type="primary" @click="saveCfg">保存</el-button></template>
+    </el-dialog>
+
+    <!-- 话术库 / SOP -->
+    <el-dialog v-model="scriptMgrDlg" title="话术库 / 跟进 SOP" width="640px">
+      <p class="hint">按阶段配话术;跟进时在对应状态的线索里一键填入。stage 留空=通用。</p>
+      <div v-for="(s, i) in scripts" :key="i" class="script-row">
+        <el-input v-model="s.title" placeholder="标题" style="width:150px" />
+        <el-select v-model="s.stage" placeholder="阶段" clearable style="width:110px">
+          <el-option v-for="(v, k) in LEAD_STATUS" :key="k" :label="v" :value="k" />
+        </el-select>
+        <el-input v-model="s.content" placeholder="话术内容" style="flex:1" />
+        <el-button size="small" type="danger" plain @click="delScript(i)">删</el-button>
+      </div>
+      <el-button size="small" @click="addScript" style="margin-top:8px">+ 加一条</el-button>
+      <template #footer><el-button @click="scriptMgrDlg = false">取消</el-button><el-button type="primary" @click="saveScripts">保存</el-button></template>
+    </el-dialog>
+
     <!-- 批量派单 -->
     <el-dialog v-model="assignDlg" title="批量派单" width="420px">
       <p class="hint">把选中的 {{ selected.length }} 条线索分配给座席(进其私海)。</p>
@@ -476,6 +579,12 @@ onMounted(() => { load(); loadBoard() })
         <el-input v-model="curSourceNote" placeholder="来源与合法性依据(合规留痕)" size="small"
           style="margin-top:8px" @change="saveCompliance" />
 
+        <div class="sec-title">标签</div>
+        <el-select v-model="curTags" multiple filterable allow-create default-first-option
+          placeholder="选择或输入标签" style="width:100%" @change="saveTags">
+          <el-option v-for="t in cfg.tag_catalog" :key="t" :label="t" :value="t" />
+        </el-select>
+
         <div class="sec-title">状态</div>
         <el-radio-group :model-value="cur.status" @change="(v: any) => setStatus(v)">
           <el-radio-button v-for="(v, k) in LEAD_STATUS" :key="k" :label="k">{{ v }}</el-radio-button>
@@ -497,6 +606,10 @@ onMounted(() => { load(); loadBoard() })
               <el-option label="拒接" value="rejected" />
               <el-option label="约回访" value="callback" />
             </el-select>
+          </el-form-item>
+          <el-form-item v-if="relevantScripts().length" label="话术">
+            <el-tag v-for="s in relevantScripts()" :key="s.title" class="script-chip"
+              @click="useScript(s)">{{ s.title }}</el-tag>
           </el-form-item>
           <el-form-item label="内容"><el-input v-model="actForm.content" type="textarea" :rows="2" /></el-form-item>
           <el-form-item label="下次跟进"><el-date-picker v-model="actForm.next_follow_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width:220px" /></el-form-item>
@@ -560,6 +673,8 @@ onMounted(() => { load(); loadBoard() })
 .dup-group { border: 1px solid #ebeef5; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; }
 .dup-phone { font-weight: 600; margin-bottom: 6px; color: #303133; }
 .dup-lead { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.script-chip { cursor: pointer; margin: 0 6px 4px 0; }
+.script-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .tabs { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .hint { color: #909399; font-size: 13px; margin: 0; }
 .muted { color: #909399; font-size: 12px; }
