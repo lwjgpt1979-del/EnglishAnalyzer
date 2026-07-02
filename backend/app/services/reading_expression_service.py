@@ -7,6 +7,10 @@
 from __future__ import annotations
 
 import json
+import uuid
+
+import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
@@ -64,3 +68,56 @@ async def grade_reading_expression(
         return json.loads((resp.choices[0].message.content or "").strip())
     except json.JSONDecodeError as exc:
         raise AppError(code=500, message="AI阅读表达批改返回格式异常") from exc
+
+
+def _is_pass(result: dict) -> bool:
+    """内容要点全命中 → 判过(作为 KP 掌握信号;语言扣分不否决内容掌握)。"""
+    pts = result.get("points") or []
+    if pts:
+        return all(p.get("hit") for p in pts)
+    return int(result.get("total", 0)) >= int(result.get("full", 1))
+
+
+async def grade_platform_question(
+    db: AsyncSession, *, student_id: uuid.UUID, question_id: uuid.UUID,
+    student_answer: str, full_score: int = 4,
+) -> dict:
+    """按 question_id 批改平台阅读表达题并落 KP 错题闭环(P2a 后续)。
+
+    参考答案由服务端从库取(不下发前端 → 防作弊);批改后按内容命中判过/挂,
+    经 mastery_judge_service.log_answer 落 answer_log + student_kp(node 维度,miss 计错次)。
+    """
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, Passage
+    from app.services import mastery_judge_service
+
+    q = (await db.execute(
+        sa.select(PlatformQuestion).where(PlatformQuestion.id == question_id)
+    )).scalar_one_or_none()
+    if q is None:
+        raise AppError(code=404, message="题目不存在")
+    passage = None
+    if q.block_id is not None:
+        passage = (await db.execute(
+            sa.select(Passage.text).where(Passage.id == q.block_id))).scalar_one_or_none()
+
+    result = await grade_reading_expression(
+        question=q.stem or "", reference_answer=q.answer or "",
+        student_answer=student_answer, passage=passage, full_score=full_score,
+    )
+    is_correct = _is_pass(result)
+
+    node_ids = (await db.execute(
+        sa.select(PlatformQuestionKp.node_id)
+        .where(PlatformQuestionKp.question_id == question_id))).scalars().all()
+    if node_ids:
+        for nid in node_ids:
+            await mastery_judge_service.log_answer(
+                db, student_id=student_id, q_scope="platform", question_id=question_id,
+                node_id=nid, is_correct=is_correct, feature="reading_expression")
+    else:
+        await mastery_judge_service.log_answer(
+            db, student_id=student_id, q_scope="platform", question_id=question_id,
+            node_id=None, is_correct=is_correct, feature="reading_expression")
+
+    result["is_correct"] = is_correct
+    return result
