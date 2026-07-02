@@ -607,6 +607,7 @@ export interface SimQuestionOut {
   options: string[] | null
   difficulty: number
   kp_name: string | null
+  passage?: string | null   // 完型/阅读题组短文(逐空/逐问微题的上下文);无则 null（P1）
 }
 
 export interface AdaptiveSetOut {

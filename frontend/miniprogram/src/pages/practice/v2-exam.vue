@@ -12,6 +12,7 @@
 
       <view v-for="(q, idx) in questions" :key="q.id" class="card">
         <view class="qtype">第 {{ idx + 1 }} 题 · {{ q.question_type }} · 难度 {{ q.difficulty }}</view>
+        <view v-if="q.passage" class="passage"><text>{{ q.passage }}</text></view>
         <text class="stem">{{ q.stem }}</text>
 
         <!-- 单选 / 完型 / 阅读：A-D 选项 -->
@@ -167,6 +168,7 @@ function goBack() {
 .exam-sub { font-size: 24rpx; color: var(--c-text-second); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); margin-bottom: 20rpx; }
 .qtype { font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 12rpx; }
+.passage { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; margin-bottom: 16rpx; font-size: 26rpx; color: var(--c-text-body); line-height: 1.7; white-space: pre-wrap; }
 .stem { display: block; font-size: 30rpx; font-weight: 600; color: var(--c-ink); line-height: 1.6; margin-bottom: 24rpx; }
 .options, .judge { display: flex; flex-direction: column; gap: 12rpx; }
 .option { padding: 20rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }

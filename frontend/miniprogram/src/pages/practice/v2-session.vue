@@ -10,9 +10,10 @@
 
       <view class="card">
         <view class="qtype">{{ current.question_type }} · 难度 {{ current.difficulty }}</view>
+        <view v-if="current.passage" class="passage"><text>{{ current.passage }}</text></view>
         <text class="stem">{{ current.stem }}</text>
 
-        <view v-if="current.question_type === '单选' && current.options" class="options">
+        <view v-if="hasOptions(current)" class="options">
           <view
             v-for="(opt, i) in current.options" :key="i"
             class="option"
@@ -95,6 +96,11 @@ function letter(i: number): string {
   return ['A', 'B', 'C', 'D'][i] || ''
 }
 
+// 单选/完型/阅读 皆为 A-D 选项作答(物化后如实继承题型,不再只认单选)
+function hasOptions(q: SimQuestionOut): boolean {
+  return ['单选', '完型', '阅读'].includes(q.question_type) && !!q.options
+}
+
 onLoad(async (q: any) => {
   kpId.value = q.kp || ''
   dim.value = q.dim || ''
@@ -147,6 +153,7 @@ function goBack() {
 .progress { text-align: center; padding: 16rpx 0; font-size: 24rpx; color: var(--c-text-second); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
 .qtype { font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 12rpx; }
+.passage { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; margin-bottom: 16rpx; font-size: 26rpx; color: var(--c-text-body); line-height: 1.7; white-space: pre-wrap; max-height: 480rpx; overflow-y: auto; }
 .stem { display: block; font-size: 30rpx; font-weight: 600; color: var(--c-ink); line-height: 1.5; margin-bottom: 24rpx; }
 .options, .judge { display: flex; flex-direction: column; gap: 12rpx; margin-bottom: 24rpx; }
 .option { padding: 20rpx; border: 2rpx solid var(--c-border); border-radius: var(--r-md); font-size: 28rpx; color: var(--c-text-body); }
