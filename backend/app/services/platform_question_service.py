@@ -946,7 +946,8 @@ async def has_real_for_node(db: AsyncSession, node_id: uuid.UUID) -> bool:
 
 # dimension → 最终落库题型(question_type 是 varchar,可存独立题型;P0)
 _DIM_FINE_TYPE = {"verb_fill": "动词填空", "vocab_form": "词汇运用",
-                  "dictation": "填空", "grammar": "单选"}
+                  "dictation": "填空", "grammar": "单选",
+                  "reading": "阅读", "cloze": "完型"}
 
 
 async def generate_fallback_sim(

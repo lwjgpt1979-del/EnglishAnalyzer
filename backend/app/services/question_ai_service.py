@@ -136,6 +136,43 @@ _VOCAB_FORM_PROMPT = """请为以下考点生成 {count} 道"词汇运用（用�
   {{"question_type": "填空", "stem": "There are three ___ (knife) on the table.", "options": null, "answer": "knives", "explanation": "three 后接可数名词复数，knife 以 -fe 结尾变复数为 knives。", "difficulty": 2}}
 ]"""
 
+# ─── reading（阅读理解：按 rc-* 阅读微技能反向出「短文 + 该技能一问」）──────────────
+# P1:kp_name 即具体阅读技能(细节理解/推理判断/主旨大意/词义猜测/观点态度/篇章结构)。
+_READING_PROMPT = """请为以下"阅读理解"考点生成 {count} 道阅读微题（每题自带一小段短文）。
+
+考点名称（= 具体阅读技能）：{kp_name}
+描述：{kp_description}
+
+命题要求（务必扣住该阅读技能，题目只考这一种技能）：
+- 题型统一填 "阅读"
+- 每题 stem = 一小段英文短文（60-110 词，题材贴近中小学）+ 换行后一个针对【{kp_name}】的理解问题
+- 4 个选项标记 A-D，answer 是单个字母；干扰项要贴合该技能的典型陷阱
+  （细节题→原文近似词误配；主旨题→以偏概全/局部当整体；推理题→过度推断/原文未提）
+- 每题含 explanation（≥ 20 字，说明从短文哪一句、用该技能如何得出答案）和 difficulty（1-5）
+
+返回纯 JSON 数组（不要 markdown）：
+[
+  {{"question_type": "阅读", "stem": "Tom gets up at six every morning. He runs for half an hour and then has breakfast...\\n问题：When does Tom run?", "options": ["A. Before breakfast", "B. After school", "C. At noon", "D. Before sleep"], "answer": "A", "explanation": "短文说 runs ... and then has breakfast，即跑步在早餐前，据细节定位选 A。", "difficulty": 2}}
+]"""
+
+# ─── cloze（完形填空：按 词法/搭配/篇章衔接 反向出「单空语境题」）──────────────────
+_CLOZE_PROMPT = """请为以下考点生成 {count} 道"完形填空"微题（每题一个空，考一种能力）。
+
+考点名称：{kp_name}
+描述：{kp_description}
+
+命题要求：
+- 题型统一填 "完型"
+- 每题 stem = 一小段 1-3 句英文语境（< 60 词），其中留 1 个空白（用 ___ 标出），空白处考【{kp_name}】
+  （如实词词义辨析 / 固定搭配与介词 / 逻辑连接词 / 据上下文推断）
+- 4 个选项标记 A-D，answer 是单个字母；干扰项为该考点的典型混淆词
+- 每题含 explanation（≥ 20 字，说明依据语境为何选此项）和 difficulty（1-5）
+
+返回纯 JSON 数组（不要 markdown）：
+[
+  {{"question_type": "完型", "stem": "It was raining hard, ___ we stayed at home and watched TV.", "options": ["A. but", "B. so", "C. or", "D. though"], "answer": "B", "explanation": "前后是因果关系（下大雨→待在家），用 so 连接，故选 B。", "difficulty": 2}}
+]"""
+
 _PROMPT_BY_DIMENSION = {
     "grammar": _GRAMMAR_PROMPT,
     "listening": _LISTENING_PROMPT,
@@ -143,6 +180,8 @@ _PROMPT_BY_DIMENSION = {
     "writing": _WRITING_PROMPT,
     "verb_fill": _VERB_FILL_PROMPT,
     "vocab_form": _VOCAB_FORM_PROMPT,
+    "reading": _READING_PROMPT,
+    "cloze": _CLOZE_PROMPT,
 }
 
 
@@ -240,6 +279,32 @@ def _mock_vocab_form(kp_name: str) -> list[AIGeneratedQuestion]:
     ]
 
 
+def _mock_reading(kp_name: str) -> list[AIGeneratedQuestion]:
+    return [
+        AIGeneratedQuestion(question_type="阅读",
+            stem=f"阅读微题（{kp_name}）：Tom gets up at six every morning. He runs for half an hour and then has breakfast.\n问题：When does Tom run?",
+            options=["A. Before breakfast", "B. After school", "C. At noon", "D. Before sleep"], answer="A",
+            explanation="Mock 解析：runs ... and then has breakfast，跑步在早餐前，据细节选 A。", difficulty=2),
+        AIGeneratedQuestion(question_type="阅读",
+            stem=f"阅读微题（{kp_name}）：The library is quiet. Students read and study there every day.\n问题：What is the passage mainly about?",
+            options=["A. A park", "B. The library", "C. A shop", "D. A game"], answer="B",
+            explanation="Mock 解析：全篇围绕 library，主旨选 B。", difficulty=2),
+    ]
+
+
+def _mock_cloze(kp_name: str) -> list[AIGeneratedQuestion]:
+    return [
+        AIGeneratedQuestion(question_type="完型",
+            stem=f"完形微题（{kp_name}）：It was raining hard, ___ we stayed at home.",
+            options=["A. but", "B. so", "C. or", "D. though"], answer="B",
+            explanation="Mock 解析：因果关系用 so，故选 B。", difficulty=2),
+        AIGeneratedQuestion(question_type="完型",
+            stem=f"完形微题（{kp_name}）：She is good ___ playing the piano.",
+            options=["A. at", "B. in", "C. on", "D. of"], answer="A",
+            explanation="Mock 解析：固定搭配 be good at，选 A。", difficulty=2),
+    ]
+
+
 _MOCK_BY_DIMENSION = {
     "grammar": _mock_grammar,
     "listening": _mock_listening,
@@ -247,6 +312,8 @@ _MOCK_BY_DIMENSION = {
     "writing": _mock_writing,
     "verb_fill": _mock_verb_fill,
     "vocab_form": _mock_vocab_form,
+    "reading": _mock_reading,
+    "cloze": _mock_cloze,
 }
 
 
