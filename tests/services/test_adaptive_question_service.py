@@ -236,3 +236,15 @@ async def test_get_adaptive_set_respects_total_limit(
         db, student_id=student.id, total=3
     )
     assert len(result.questions) <= 3
+
+
+def test_to_enum_type_maps_fill_types():
+    """物化题型映射:客观填空类→enum「填空」;选择类如实继承;未知/主观→兜底单选。"""
+    from app.services.adaptive_question_service import _to_enum_type
+    assert _to_enum_type("动词填空") == "填空"
+    assert _to_enum_type("词汇运用") == "填空"
+    assert _to_enum_type("短文填空") == "填空"
+    assert _to_enum_type("完型") == "完型"
+    assert _to_enum_type("阅读") == "阅读"
+    assert _to_enum_type("单选") == "单选"
+    assert _to_enum_type(None) == "单选"

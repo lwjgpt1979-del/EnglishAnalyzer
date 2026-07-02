@@ -34,8 +34,18 @@ from app.services.question_ai_service import generate_questions
 _TOP_KPS = 3        # 最多取前3个薄弱知识点
 _PER_KP = 5         # 每个知识点最多取几道题
 _DEFAULT_TOTAL = 5  # 默认总题数
-# 物化时可继承的题型(须 ∈ ai_question_type_enum);其余(动词填空/词汇运用等)压成单选兜底
+# 物化时可继承的题型(须 ∈ ai_question_type_enum)
 _MATERIALIZE_ENUM_TYPES = {"单选", "填空", "完型", "阅读", "写作", "判断", "连线"}
+# 客观填空类(无选项但答案可字符串判分)——物化时映射成 enum「填空」进练习流。
+# 主观自由作答(阅读表达/写作)不在此列:走独立 LLM 批改,不进字符串判分练习。
+_FILL_TYPES = {"动词填空", "词汇运用", "填空", "短文填空", "单词检测", "选词填空"}
+
+
+def _to_enum_type(qt: str | None) -> str:
+    """平台题型 → SimulatedQuestion.question_type(ai_question_type_enum 合法值)。"""
+    if qt in _FILL_TYPES:
+        return "填空"
+    return qt if qt in _MATERIALIZE_ENUM_TYPES else "单选"
 
 
 @dataclass
@@ -135,7 +145,10 @@ async def _materialize_sims_from_platform(db: AsyncSession, *, kp) -> int:
                PlatformQuestion.status == "published",
                PlatformQuestion.deprecated_at.is_(None),
                PlatformQuestion.answer.isnot(None),
-               PlatformQuestion.options.isnot(None))
+               # 选择题(有选项)或客观填空类(动词填空/词汇运用等)都可进练习字符串判分;
+               # 主观自由作答(阅读表达无选项的「阅读」/写作)排除,走独立 LLM 批改。
+               sa.or_(PlatformQuestion.options.isnot(None),
+                      PlatformQuestion.question_type.in_(_FILL_TYPES)))
         .limit(_PER_KP)
     )).scalars().all()
     # 批量取题组短文(block_id→Passage.text),让完型/阅读微题物化后仍带上下文（P1）
@@ -156,8 +169,8 @@ async def _materialize_sims_from_platform(db: AsyncSession, *, kp) -> int:
         pg = passage_map.get(pq.block_id) if pq.block_id else None
         if pg:
             meta["passage"] = pg
-        # 如实继承题型(完型/阅读不再压成单选);已被 options 过滤保证 ∈ ai_question_type_enum
-        qt = pq.question_type if pq.question_type in _MATERIALIZE_ENUM_TYPES else "单选"
+        # 如实继承题型(完型/阅读不压成单选;动词填空/词汇运用等客观填空 → enum「填空」)
+        qt = _to_enum_type(pq.question_type)
         db.add(SimulatedQuestion(
             id=uuid.uuid4(), source_exam_question_id=None, knowledge_point_id=kp.id,
             question_type=qt, stem=pq.stem, options=pq.options, answer=pq.answer,
