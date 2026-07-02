@@ -9,6 +9,8 @@ import {
 
 const rows = ref<SupportTicketItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const status = ref('pending')
 const category = ref('all')
@@ -20,11 +22,12 @@ function fmt(s: string | null) { return s ? s.replace('T', ' ').slice(0, 16) : '
 async function load() {
   loading.value = true
   try {
-    const r = await listTickets({ status: status.value, category: category.value, limit: 100 })
+    const r = await listTickets({ status: status.value, category: category.value, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items; total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function reload() { page.value = 1; load() }
 
 // 工单详情抽屉
 const drawer = ref(false)
@@ -67,14 +70,14 @@ onMounted(load)
     <div class="toolbar">
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Headset /></el-icon>客服工单</h2>
       <div class="filters">
-        <el-radio-group v-model="status" @change="load">
+        <el-radio-group v-model="status" @change="reload">
           <el-radio-button label="pending">待处理</el-radio-button>
           <el-radio-button label="open">待回复</el-radio-button>
           <el-radio-button label="replied">已回复</el-radio-button>
           <el-radio-button label="closed">已结案</el-radio-button>
           <el-radio-button label="all">全部</el-radio-button>
         </el-radio-group>
-        <el-select v-model="category" style="width: 130px" @change="load">
+        <el-select v-model="category" style="width: 130px" @change="reload">
           <el-option label="全部类型" value="all" />
           <el-option v-for="(v, k) in CAT" :key="k" :label="v" :value="k" />
         </el-select>
@@ -104,7 +107,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-drawer v-model="drawer" :title="current?.subject || '工单'" size="540px">
       <div v-if="current" class="thread">

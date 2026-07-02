@@ -95,11 +95,54 @@ _WRITING_PROMPT = """请为以下知识点生成 {count} 道"写作"仿真题。
   {{"question_type": "写作", "stem": "请以 My favorite animal 为题写 30 字短文。", "options": null, "answer": "My favorite animal is the dog. Dogs are friendly and loyal...", "explanation": "范文应包含主题句 + 2-3 个支持细节。", "difficulty": 3}}
 ]"""
 
+# ─── verb_fill（动词填空：给动词原形填正确形式，反向由考点生成）──────────────────
+# 输出仍用 Literal 允许的「填空」外壳；最终题型由持久层按维度盖成「动词填空」（P0）。
+_VERB_FILL_PROMPT = """请为以下语法考点生成 {count} 道"动词填空"仿真题。
+
+考点名称：{kp_name}
+分类：{kp_category}
+描述：{kp_description}
+
+命题要求（这是中考核心题型，务必扣住该考点）：
+- 题型统一填 "填空"，options 为 null
+- 每题：一句（或含 1-2 句语境的）英文，句中给出动词原形放在括号里，挖空让考生填该考点要求的正确形式
+- 句子必须自带"判定线索"：时间状语 / 从句引导词 / 主语数 / 上下文，使正确形式唯一或有限可判
+- answer 是填入空格的动词形式；多个合法形式用 | 分隔（如 "has gone|has been to" 视考点而定）
+- stem 里用 ___ 标空，并在其后用括号给出原形，形如："By the time we arrived, the film ___ (begin) already."
+- 每题含 explanation（≥ 20 字，点明依据哪个线索、该考点用什么形式）和 difficulty（1-5）
+
+返回纯 JSON 数组（不要 markdown）：
+[
+  {{"question_type": "填空", "stem": "Look! The children ___ (play) football on the playground.", "options": null, "answer": "are playing", "explanation": "Look! 提示现在正在发生，用现在进行时 are playing。", "difficulty": 2}}
+]"""
+
+# ─── vocab_form（词汇运用：用所给词适当形式填空）─────────────────────────────
+_VOCAB_FORM_PROMPT = """请为以下考点生成 {count} 道"词汇运用（用所给词的适当形式填空）"仿真题。
+
+考点名称：{kp_name}
+分类：{kp_category}
+描述：{kp_description}
+
+命题要求：
+- 题型统一填 "填空"，options 为 null
+- 每题：一句英文语境，给出一个词的原形（名词/形容词/副词/数词/动词等），挖空让考生填该考点要求的正确"词形"
+  （如名词单复数/所有格、形容词副词比较级最高级、副词化、派生构词、动词非谓语等）
+- stem 用 ___ 标空并在其后括号给出所给词，形如："There are three ___ (knife) on the table."
+- answer 是正确词形；多个合法答案用 | 分隔
+- 每题含 explanation（≥ 20 字，说明为什么用该词形）和 difficulty（1-5）
+
+返回纯 JSON 数组（不要 markdown）：
+[
+  {{"question_type": "填空", "stem": "There are three ___ (knife) on the table.", "options": null, "answer": "knives", "explanation": "three 后接可数名词复数，knife 以 -fe 结尾变复数为 knives。", "difficulty": 2}}
+]"""
+
 _PROMPT_BY_DIMENSION = {
     "grammar": _GRAMMAR_PROMPT,
     "listening": _LISTENING_PROMPT,
     "dictation": _DICTATION_PROMPT,
     "writing": _WRITING_PROMPT,
+    "verb_fill": _VERB_FILL_PROMPT,
+    "vocab_form": _VOCAB_FORM_PROMPT,
 }
 
 
@@ -175,11 +218,35 @@ def _mock_writing(kp_name: str) -> list[AIGeneratedQuestion]:
     ]
 
 
+def _mock_verb_fill(kp_name: str) -> list[AIGeneratedQuestion]:
+    return [
+        AIGeneratedQuestion(question_type="填空", stem=f"动词填空（{kp_name}）：Look! The boy ___ (run) very fast.",
+            options=None, answer="is running", explanation="Mock 解析：Look! 提示现在进行，用 is running。", difficulty=2),
+        AIGeneratedQuestion(question_type="填空", stem=f"动词填空（{kp_name}）：He ___ (finish) his homework yesterday.",
+            options=None, answer="finished", explanation="Mock 解析：yesterday 提示一般过去时，用 finished。", difficulty=2),
+        AIGeneratedQuestion(question_type="填空", stem=f"动词填空（{kp_name}）：The window ___ (break) by Tom just now.",
+            options=None, answer="was broken", explanation="Mock 解析：by 提示被动，just now 提示过去，用 was broken。", difficulty=3),
+    ]
+
+
+def _mock_vocab_form(kp_name: str) -> list[AIGeneratedQuestion]:
+    return [
+        AIGeneratedQuestion(question_type="填空", stem=f"词汇运用（{kp_name}）：There are three ___ (knife) on the table.",
+            options=None, answer="knives", explanation="Mock 解析：three 后接复数，knife→knives。", difficulty=2),
+        AIGeneratedQuestion(question_type="填空", stem=f"词汇运用（{kp_name}）：This box is ___ (heavy) than that one.",
+            options=None, answer="heavier", explanation="Mock 解析：than 提示比较级，heavy→heavier。", difficulty=2),
+        AIGeneratedQuestion(question_type="填空", stem=f"词汇运用（{kp_name}）：She sang the song ___ (beautiful).",
+            options=None, answer="beautifully", explanation="Mock 解析：修饰动词 sang 用副词 beautifully。", difficulty=2),
+    ]
+
+
 _MOCK_BY_DIMENSION = {
     "grammar": _mock_grammar,
     "listening": _mock_listening,
     "dictation": _mock_dictation,
     "writing": _mock_writing,
+    "verb_fill": _mock_verb_fill,
+    "vocab_form": _mock_vocab_form,
 }
 
 

@@ -92,7 +92,13 @@ _SECTION_PREFIX_RE = re.compile(
 # 大题关键词(裸标题如「完形填空」「阅读理解 A」也算大题头)
 _SECTION_KW = ("听力", "单项选择", "单项填空", "完形填空", "完型填空", "阅读理解", "阅读表达",
                "任务型阅读", "词汇运用", "词语运用", "首字母", "短文填空", "信息还原",
-               "补全对话", "连词成句", "书面表达", "完成句子", "选词填空")
+               "补全对话", "连词成句", "书面表达", "完成句子", "选词填空", "综合填空")
+# 完整大题名(供从「标题+说明合并成一行」中提取干净名;按长度降序,先匹配长名如「单项填空」再「单项」)
+_SECTION_NAME_KW = tuple(sorted(
+    ("听力理解", "单项选择", "单项填空", "完形填空", "完型填空", "阅读理解", "阅读表达",
+     "任务型阅读", "词汇运用", "词语运用", "首字母填空", "短文填空", "信息还原", "阅读填空",
+     "补全对话", "连词成句", "书面表达", "完成句子", "选词填空", "缺词填空", "综合填空"),
+    key=len, reverse=True))
 _QNUM_RE = re.compile(r"^\s*(\d{1,2})(?:[.、．)]|\s)")
 # 答案/听力材料/评分标准区标记:「试题及答案」文档在此之后会重复题号→需截断,避免题目翻倍
 _ANSWER_HDR_RE = re.compile(
@@ -127,18 +133,44 @@ def _is_section_header(s: str) -> bool:
     排除题号行/选项行/超长说明句,避免把正文误判成大题头。
     """
     s = (s or "").strip()
-    if not s or len(s) > 40:
+    if not s:
         return False
     if _QNUM_RE.match(s) or _is_option_like(s):
         return False
-    if _SECTION_PREFIX_RE.match(s):
+    # 直接以完整大题名开头(如「单项选择 从下列…」「完形填空 阅读短文…」)→ 不论长短都算大题头
+    # (原卷常把标题与说明挤在一行且无「一、」序号)
+    if any(s.startswith(kw) for kw in _SECTION_NAME_KW):
         return True
+    # 「中文序号 + 大题关键词(在开头 16 字内)」→ 即使标题与说明挤成一长行(PDF 抽取常见)也算大题头
+    if re.match(r"^\s*(?:[一二三四五六七八九十]+|第\s*[一二三四五六七八九十]+\s*[部节])\s*[、.．]", s) \
+            and any(k in s[:16] for k in _SECTION_KW):
+        return True
+    if len(s) > 40:
+        return False
+    mp = _SECTION_PREFIX_RE.match(s)
+    if mp:
+        head = mp.group(0)
+        # 中文序号(一、/第X部/第X节)= 真大题;英文/罗马前缀(Part/Section/Ⅰ/IVX)易误伤阅读短文里的
+        # 「Part 1: Facts」「Ⅰ. Intro」等子标题 → 需另含大题关键词或计分括注(满分/小题/计N分)才算大题头。
+        if re.match(r"^\s*(?:[一二三四五六七八九十]|第)", head):
+            return True
+        return (any(k in s for k in _SECTION_KW)
+                or bool(re.search(r"满分|小题|计\s*\d+\s*分", s))
+                or bool(re.search(r"\b(?:Listening|Reading|Cloze|Writing|Vocabulary|Grammar|"
+                                  r"Comprehension|Dialogue|Composition)\b", s, re.IGNORECASE)))
     return len(s) <= 20 and any(k in s for k in _SECTION_KW)
 
 
 def _classify_kw(blob: str) -> str | None:
     if "完形" in blob or "完型" in blob:
         return "完型"
+    # 动词填空(用所给动词的适当形式)——须先于「词汇运用/单项」判定,否则被吞成单选。P0
+    if ("动词" in blob and "填空" in blob) or "所给动词" in blob:
+        return "动词填空"
+    # 词汇运用(用所给词适当形式/词形变化)——独立题型,勿再降级成单选。P0
+    if ("词汇运用" in blob or "词语运用" in blob or "词汇检测" in blob
+            or "适当形式" in blob or "词形" in blob):
+        return "词汇运用"
     if "单项" in blob or "听力" in blob:
         return "单选"
     if "完成句子" in blob:
@@ -163,6 +195,11 @@ def _section_name(header: str, lines: list[str]) -> str:
         r"\s*[、.．]?\s*", "", header, flags=re.IGNORECASE)
     # 去掉尾部含「满分/小题/分」的整段括注
     name = re.sub(r"\s*[（(][^（()]*?(?:满分|小题|分)[^（()]*?[)）]\s*$", "", name).strip()
+    # 标题与说明挤在一行(如「单项填空 （满分15分）请认真阅读…」)→ 取开头的完整大题名
+    if len(name) > 10:
+        for kw in _SECTION_NAME_KW:
+            if header.find(kw) != -1:
+                return kw
     if name:
         return name
     for ln in lines:
@@ -282,10 +319,12 @@ def split_paper_text_structural(text: str) -> list[ParsedPaperQuestion]:
         s = ln.strip()
         if _is_section_header(s):
             key = re.sub(r"[\s（(].*$", "", _section_name(s, []))  # 大题名(去括注/空白)
-            if key and key in _seen:
-                lines = lines[:i]
-                break
-            _seen.add(key)
+            # 只用「实打实的中文大题名」判重复(≥2 字且含中文),避免退化 key(如短文子标题的 ':')误截断
+            if len(key) >= 2 and re.search(r"[一-龥]", key):
+                if key in _seen:
+                    lines = lines[:i]
+                    break
+                _seen.add(key)
     sections: list[list[str]] = []
     cur: list[str] = []
     for ln in lines:

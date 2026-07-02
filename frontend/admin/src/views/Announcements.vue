@@ -9,6 +9,8 @@ import { Bell } from '@element-plus/icons-vue'
 
 const rows = ref<AnnouncementItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 
 const AUD: Record<string, string> = { all: '全平台', institution: '指定机构', grade: '指定年级' }
@@ -16,10 +18,11 @@ function fmt(s: string | null) { return s ? s.replace('T', ' ').slice(0, 16) : '
 
 async function load() {
   loading.value = true
-  try { const r = await listAnnouncements({ limit: 100 }); rows.value = r.items; total.value = r.total }
+  try { const r = await listAnnouncements({ skip: (page.value - 1) * pageSize, limit: pageSize }); rows.value = r.items; total.value = r.total }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function reload() { page.value = 1; load() }
 
 const dialog = ref(false)
 const form = reactive({
@@ -98,7 +101,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="dialog" title="发布公告" width="560px">
       <el-form label-width="90px">

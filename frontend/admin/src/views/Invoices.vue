@@ -6,17 +6,20 @@ import { Tickets } from '@element-plus/icons-vue'
 
 const rows = ref<AdminInvoiceItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const status = ref('pending')
 
 async function load() {
   loading.value = true
   try {
-    const r = await listInvoices({ status: status.value, limit: 100 })
+    const r = await listInvoices({ status: status.value, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items; total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function reload() { page.value = 1; load() }
 
 // 开具弹窗
 const issueOpen = ref(false)
@@ -52,7 +55,7 @@ onMounted(load)
     <div class="toolbar">
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Tickets /></el-icon>发票申请</h2>
       <div class="filters">
-        <el-radio-group v-model="status" @change="load">
+        <el-radio-group v-model="status" @change="reload">
           <el-radio-button label="pending">待开具</el-radio-button>
           <el-radio-button label="issued">已开具</el-radio-button>
           <el-radio-button label="rejected">已驳回</el-radio-button>
@@ -93,7 +96,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="issueOpen" title="开具发票" width="460px">
       <el-form label-width="90px">

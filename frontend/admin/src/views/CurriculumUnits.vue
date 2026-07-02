@@ -27,38 +27,38 @@ const filterTextbook = ref('')
 const filterGrade    = ref('')
 const filterSemester = ref('')
 
-const textbookOptions = computed(() => [...new Set(rows.value.map(r => r.textbook_version))])
-const gradeOptions    = computed(() => [...new Set(rows.value.map(r => r.grade))])
-const semesterOptions = computed(() => [...new Set(rows.value.map(r => r.semester))])
-
-// 年级/学期是中文字符串,直接字典序会乱(七<九<八)。按数值/上下正确排序。
-const _CN_NUM: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }
-function gradeRank(g: string): number {
-  const m = (g || '').match(/\d+/)
-  if (m) return Number(m[0])
-  for (const ch of (g || '')) if (_CN_NUM[ch]) return _CN_NUM[ch]
-  return 99
-}
-function semRank(s: string): number { return (s || '').includes('下') ? 1 : 0 }
-
-const filteredRows = computed(() => rows.value.filter(r => {
-  if (filterTextbook.value && r.textbook_version !== filterTextbook.value) return false
-  if (filterGrade.value    && r.grade            !== filterGrade.value)    return false
-  if (filterSemester.value && r.semester         !== filterSemester.value) return false
-  return true
-}).slice().sort((a, b) =>
-  a.textbook_version.localeCompare(b.textbook_version, 'zh')
-  || gradeRank(a.grade) - gradeRank(b.grade)
-  || semRank(a.semester) - semRank(b.semester)
-  || (a.unit_no - b.unit_no),
-))
+// 服务端分页 + 服务端筛选;下拉可选值由后端 options 全量去重给出(排序在后端做好)。
+const total    = ref(0)
+const page     = ref(1)
+const pageSize = 50
+const options  = ref<{ textbooks: string[]; grades: string[]; semesters: string[] }>({ textbooks: [], grades: [], semesters: [] })
+const textbookOptions = computed(() => options.value.textbooks)
+const gradeOptions    = computed(() => options.value.grades)
+const semesterOptions = computed(() => options.value.semesters)
 
 async function load() {
   loading.value = true
-  try { rows.value = await listCurriculumUnits() }
+  try {
+    const r = await listCurriculumUnits({
+      textbook_version: filterTextbook.value || undefined,
+      grade:            filterGrade.value    || undefined,
+      semester:         filterSemester.value || undefined,
+      skip: (page.value - 1) * pageSize, limit: pageSize,
+    })
+    rows.value = r.items
+    total.value = r.total
+    options.value = r.options
+    // 删到本页空了(如末页删光)→ 退到最后一页重取,避免停在空页
+    if (!rows.value.length && page.value > 1 && total.value > 0) {
+      page.value = Math.ceil(total.value / pageSize)
+      return await load()
+    }
+  }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+// 筛选变更:回到第一页再查
+function reload() { page.value = 1; load() }
 
 // ── 选择删除 ──────────────────────────────────────────────────────────────────
 const tableRef = ref<{ clearSelection: () => void } | null>(null)
@@ -695,19 +695,19 @@ onMounted(load)
   <div>
     <!-- 工具栏 -->
     <div class="toolbar">
-      <el-select v-model="filterTextbook" placeholder="教材版本" clearable style="width:140px">
+      <el-select v-model="filterTextbook" placeholder="教材版本" clearable style="width:140px" @change="reload">
         <el-option v-for="t in textbookOptions" :key="t" :label="t" :value="t" />
       </el-select>
-      <el-select v-model="filterGrade" placeholder="年级" clearable style="width:140px">
+      <el-select v-model="filterGrade" placeholder="年级" clearable style="width:140px" @change="reload">
         <el-option v-for="g in gradeOptions" :key="g" :label="g" :value="g" />
       </el-select>
-      <el-select v-model="filterSemester" placeholder="学期" clearable style="width:100px">
+      <el-select v-model="filterSemester" placeholder="学期" clearable style="width:100px" @change="reload">
         <el-option v-for="s in semesterOptions" :key="s" :label="s+'学期'" :value="s" />
       </el-select>
       <el-button @click="load" :loading="loading"><el-icon style="margin-right:4px"><Refresh /></el-icon>刷新</el-button>
       <span class="stat-txt">
-        共 {{ filteredRows.length }} 个单元 ·
-        已挂考点 {{ filteredRows.filter(r => r.kp_count > 0).length }} 个
+        共 {{ total }} 个单元 ·
+        本页已挂考点 {{ rows.filter(r => r.kp_count > 0).length }} 个
       </span>
       <div style="flex:1" />
       <el-button
@@ -725,7 +725,7 @@ onMounted(load)
     </div>
 
     <!-- 单元表格 -->
-    <el-table ref="tableRef" v-loading="loading" :data="filteredRows" border style="width:100%"
+    <el-table ref="tableRef" v-loading="loading" :data="rows" border style="width:100%"
               row-key="unit_id" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="44" />
       <el-table-column prop="textbook_version" label="教材"   width="90" />
@@ -755,6 +755,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
+    <div v-if="total > pageSize" style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <!-- ── 单元知识图谱节点 Dialog ── -->
     <el-dialog v-model="nodesDlg" :title="`单元考点 · ${nodesUnitTitle}`" width="640px">

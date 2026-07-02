@@ -511,9 +511,12 @@ def schedule_doc_conversions(paper_ids: list[uuid.UUID]) -> None:
         t.add_done_callback(_convert_tasks.discard)
 
 
-async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID) -> dict:
+async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID,
+                                force_llm: bool = False) -> dict:
     """批量上传后「解析原题目」:读该卷本地文件 → 取文字(扫描件 PDF 走 OCR)→ 拆题 →
     自动入库为**草稿题**(挂 paper_id + 卷面 meta)。标注 paper.parse_status。返回 {imported, status}。
+
+    force_llm=True:跳过确定性正则拆题,强制走 LLM 整卷解析(排版复杂/规则漏题时用)。
     """
     from app.services import pdf_upload_service as pus
 
@@ -564,7 +567,7 @@ async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID) -> dic
             await db.flush()
         # 与单份「开始抽题」同一套抽题逻辑;扫描件 PDF 自动走视觉 OCR。**不做 KP 匹配。**
         from app.services.real_extract_service import extract_questions
-        parsed = await extract_questions(source, file_id, None, scanned_ocr=True)
+        parsed = await extract_questions(source, file_id, None, scanned_ocr=True, force_llm=force_llm)
         if not parsed:
             raise RuntimeError("未拆出题目")
 
@@ -660,8 +663,10 @@ async def list_platform_questions(
     return list(rows), total
 
 
-async def list_sim_papers(db: AsyncSession, *, status: str | None = None) -> list[dict]:
-    """仿真题按来源真题卷聚合:返回有仿真的试卷 + 仿真数(供「仿真题审核」按卷列)。"""
+async def list_sim_papers(
+    db: AsyncSession, *, status: str | None = None, skip: int = 0, limit: int = 20,
+) -> tuple[list[dict], int]:
+    """仿真题按来源真题卷聚合:返回有仿真的试卷 + 仿真数(供「仿真题审核」按卷列)。分页。"""
     from sqlalchemy.orm import aliased
     _real = aliased(PlatformQuestion)
     q = (sa.select(PlatformPaper.id, PlatformPaper.name, sa.func.count(PlatformQuestion.id))
@@ -671,9 +676,13 @@ async def list_sim_papers(db: AsyncSession, *, status: str | None = None) -> lis
          .where(PlatformQuestion.type == "sim"))
     if status is not None:
         q = q.where(PlatformQuestion.status == status)
-    q = q.group_by(PlatformPaper.id, PlatformPaper.name).order_by(PlatformPaper.name)
-    return [{"paper_id": str(r[0]), "paper_name": r[1], "sim_count": int(r[2])}
-            for r in (await db.execute(q)).all()]
+    q = q.group_by(PlatformPaper.id, PlatformPaper.name)
+    total = (await db.execute(
+        sa.select(sa.func.count()).select_from(q.subquery()))).scalar_one()
+    q = q.order_by(PlatformPaper.name).offset(skip).limit(limit)
+    items = [{"paper_id": str(r[0]), "paper_name": r[1], "sim_count": int(r[2])}
+             for r in (await db.execute(q)).all()]
+    return items, total
 
 
 async def review_platform_question(
@@ -711,6 +720,12 @@ def _fine_type(q: PlatformQuestion) -> str:
     sec = q.section or ""
     if "听力" in sec:
         return "听力"
+    # 动词填空 / 词汇运用:按原卷大题名细分(P0),让存量真题(question_type 曾被存成单选)
+    # 与派生仿真都如实继承,而非混成单选。须先于「短文填空/单词检测」及通用回退判定。
+    if ("动词" in sec and "填空" in sec) or "所给动词" in sec:
+        return "动词填空"
+    if ("词汇运用" in sec or "词语运用" in sec or "适当形式" in sec or "词形" in sec):
+        return "词汇运用"
     if "短文填空" in sec:
         return "短文填空"
     if "单词检测" in sec or "词汇检测" in sec:
@@ -929,23 +944,46 @@ async def has_real_for_node(db: AsyncSession, node_id: uuid.UUID) -> bool:
     return row is not None
 
 
-async def generate_fallback_sim(
-    db: AsyncSession, *, node_id: uuid.UUID, count: int = 3, status: str = "draft"
-) -> list[uuid.UUID]:
-    """KP 直生备选(决策④):某 node 暂无真题母题 → 生成 is_fallback=true 备选,挂该 node。
+# dimension → 最终落库题型(question_type 是 varchar,可存独立题型;P0)
+_DIM_FINE_TYPE = {"verb_fill": "动词填空", "vocab_form": "词汇运用",
+                  "dictation": "填空", "grammar": "单选"}
 
-    若该 node 已有真题 → 不生成备选(应走真题派生),返回空。
+
+async def generate_fallback_sim(
+    db: AsyncSession, *, node_id: uuid.UUID, count: int = 3, status: str = "draft",
+    dimension: str = "verb_fill", force: bool = False,
+) -> list[uuid.UUID]:
+    """KP 反向生成(决策④ 升级):某 node 直接由考点生成 is_fallback=true 仿真,挂该 node。
+
+    P0:不再写 "[备选]…练习题N" 占位,而是按 dimension 调 question_ai_service 反向出题
+    (verb_fill=动词填空 / vocab_form=词汇运用 / dictation=拼写 / grammar=语法混合)。
+    dev-mock 无 key 时返回结构化 mock 题,离线可跑。
+    - 该 node 已有真题母题 → 默认不生成(应走真题派生 generate_sim_from_real),force=True 可强制。
     """
-    if await has_real_for_node(db, node_id):
+    if not force and await has_real_for_node(db, node_id):
         return []
-    node_name = (await db.execute(
-        sa.select(KnowledgeNode.name).where(KnowledgeNode.id == node_id)
+    node = (await db.execute(
+        sa.select(KnowledgeNode).where(KnowledgeNode.id == node_id)
     )).scalar_one_or_none()
+    if node is None:
+        raise AppError(code=404, message="知识点节点不存在")
+
+    from app.services import question_ai_service as qas
+    gen = await qas.generate_questions(
+        kp_name=node.name or "考点",
+        kp_category=node.node_kind or node.axis or "语法",
+        kp_description=node.description,
+        dimension=dimension,
+        count=count,
+    )
+    fine_type = _DIM_FINE_TYPE.get(dimension, "填空")
     out: list[uuid.UUID] = []
-    for i in range(count):
+    for g in gen:
+        opts = g.options if g.options else None
         sim = await add_sim(
-            db, stem=f"[备选] {node_name or 'KP'} 练习题{i + 1}", is_fallback=True,
-            question_type="单选", status=status,
+            db, stem=g.stem, is_fallback=True, answer=g.answer, options=opts,
+            question_type=fine_type, explanation=g.explanation,
+            difficulty=g.difficulty, status=status,
         )
         await attach_node(db, sim.id, node_id)
         out.append(sim.id)

@@ -9,6 +9,8 @@ import {
 
 const rows = ref<SensitiveWordItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const category = ref('all')
 const q = ref('')
@@ -19,11 +21,13 @@ const ACT: Record<string, string> = { block: '阻断', mask: '打码' }
 async function load() {
   loading.value = true
   try {
-    const r = await listSensitiveWords({ category: category.value, q: q.value || undefined, limit: 500 })
+    const r = await listSensitiveWords({ category: category.value, q: q.value || undefined, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items; total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+// 筛选/搜索变更:回到第一页再查
+function reload() { page.value = 1; load() }
 
 // 新增
 const dialog = ref(false)
@@ -71,11 +75,11 @@ onMounted(load)
     <div class="toolbar">
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>敏感词库</h2>
       <div class="filters">
-        <el-select v-model="category" style="width: 130px" @change="load">
+        <el-select v-model="category" style="width: 130px" @change="reload">
           <el-option label="全部分类" value="all" />
           <el-option v-for="(v, k) in CAT" :key="k" :label="v" :value="k" />
         </el-select>
-        <el-input v-model="q" placeholder="搜索词" style="width: 160px" clearable @keyup.enter="load" @clear="load" />
+        <el-input v-model="q" placeholder="搜索词" style="width: 160px" clearable @keyup.enter="reload" @clear="reload" />
         <el-button type="primary" @click="openAdd">新增</el-button>
         <el-button @click="openBatch">批量导入</el-button>
         <el-button @click="load">刷新</el-button>
@@ -102,7 +106,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="dialog" title="新增敏感词" width="420px">
       <el-form label-width="72px">

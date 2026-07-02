@@ -10,10 +10,19 @@ const form = reactive({ name: '', contact_phone: '', province_code: '', city_cod
 const filter = ref('')
 const sourceFilter = ref('')
 const rows = ref<AdminInstitution[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 
 async function load() {
-  rows.value = await listInstitutions(filter.value || undefined, sourceFilter.value || undefined)
+  const r = await listInstitutions({
+    status: filter.value || undefined, source: sourceFilter.value || undefined,
+    skip: (page.value - 1) * pageSize, limit: pageSize,
+  })
+  rows.value = r.items
+  total.value = r.total
 }
+function reload() { page.value = 1; load() }
 
 async function submit() {
   if (!form.name) { ElMessage.warning('请填机构名称'); return }
@@ -58,12 +67,12 @@ onMounted(load)
       </el-form>
     </el-card>
 
-    <el-select v-model="filter" placeholder="全部状态" clearable style="width: 160px; margin-bottom: 12px; margin-right: 12px" @change="load">
+    <el-select v-model="filter" placeholder="全部状态" clearable style="width: 160px; margin-bottom: 12px; margin-right: 12px" @change="reload">
       <el-option label="待审核" value="pending" />
       <el-option label="已通过" value="active" />
       <el-option label="已拒绝/冻结" value="suspended" />
     </el-select>
-    <el-select v-model="sourceFilter" placeholder="全部来源" clearable style="width: 160px; margin-bottom: 12px" @change="load">
+    <el-select v-model="sourceFilter" placeholder="全部来源" clearable style="width: 160px; margin-bottom: 12px" @change="reload">
       <el-option label="自助申请" value="self_apply" />
       <el-option label="手动录入" value="admin" />
     </el-select>
@@ -92,6 +101,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
   </div>
 </template>
 

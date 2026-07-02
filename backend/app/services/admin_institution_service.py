@@ -30,15 +30,18 @@ async def create_institution(
 
 
 async def list_institutions(
-    db: AsyncSession, *, status: str | None = None, source: str | None = None
-) -> list[Institution]:
+    db: AsyncSession, *, status: str | None = None, source: str | None = None,
+    skip: int = 0, limit: int = 50,
+) -> tuple[list[Institution], int]:
     q = select(Institution)
     if status:
         q = q.where(Institution.status == status)
     if source:
         q = q.where(Institution.source == source)
-    q = q.order_by(Institution.created_at.desc())
-    return list((await db.execute(q)).scalars().all())
+    from sqlalchemy import func as _func
+    total = (await db.execute(select(_func.count()).select_from(q.subquery()))).scalar_one()
+    q = q.order_by(Institution.created_at.desc()).offset(skip).limit(limit)
+    return list((await db.execute(q)).scalars().all()), total
 
 
 async def _get(db: AsyncSession, institution_id: uuid.UUID) -> Institution:

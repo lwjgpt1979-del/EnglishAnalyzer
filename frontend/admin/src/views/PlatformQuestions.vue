@@ -5,7 +5,7 @@ import { UploadFilled, Warning, Document, Notebook } from '@element-plus/icons-v
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
-  createKnowledgeNode,
+  createKnowledgeNode, genSimFromReal,
   type QuestionKpRef, type KpPrompt, type KpProposal,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions, batchUploadPapers, parsePaper, convertPaperDoc,
   listRegions, uploadImageViaPresign,
@@ -24,6 +24,8 @@ const filRegionPath = ref<string[]>([])
 const YEAR_OPTS = Array.from({ length: (new Date().getFullYear() + 1) - 2005 }, (_, i) => new Date().getFullYear() + 1 - i)
 const papers = ref<PlatformPaper[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const statusOpts = ['', 'draft', 'published']
 
@@ -44,11 +46,13 @@ async function onDeleteSelected() {
   } catch (e: any) { ElMessage.error(e?.message || '删除失败') }
 }
 
-function onStageFilterChange() { filGrade.value = ''; load() }
+function onStageFilterChange() { filGrade.value = ''; reload() }
+// 筛选/查询变更 → 回到第 1 页再查
+function reload() { page.value = 1; load() }
 function resetFilters() {
   statusFilter.value = ''; filTextbook.value = ''; filStage.value = ''
   filGrade.value = ''; filExam.value = ''; filRegionPath.value = []; filYear.value = ''
-  load()
+  reload()
 }
 
 async function load() {
@@ -63,7 +67,8 @@ async function load() {
       exam_type: filExam.value || undefined,
       region_code: region.length ? region[region.length - 1] : undefined,  // 选到的最细级(省/市)
       year: filYear.value || undefined,
-      limit: 50,
+      skip: (page.value - 1) * pageSize,
+      limit: pageSize,
     })
     papers.value = data.items
     total.value = data.total
@@ -107,19 +112,22 @@ async function openPaper(p: PlatformPaper) {
   finally { paperLoading.value = false }
 }
 
-// 重新解析:清掉旧题、按原卷重新拆题入库(幂等)
+// 重新解析:清掉旧题、按原卷重新拆题入库(幂等)。mode='llm' → 强制走 AI 整卷解析(排版复杂时用)
 const reparsing = ref(false)
-async function onReparse() {
+async function onReparse(mode?: 'llm') {
   if (!curPaper.value) return
+  const llm = mode === 'llm'
   try {
-    await ElMessageBox.confirm('将清空本卷现有题目,按原卷文件重新解析拆题(草稿)。是否继续?',
-      '重新解析', { type: 'warning', confirmButtonText: '重新解析' })
+    await ElMessageBox.confirm(
+      llm ? '将清空本卷现有题目,用 AI 整卷解析拆题(适合个性化排版/规则漏题;较慢,消耗少量 AI 额度)。是否继续?'
+          : '将清空本卷现有题目,按原卷文件重新解析拆题(草稿)。是否继续?',
+      llm ? 'AI 解析' : '重新解析', { type: 'warning', confirmButtonText: llm ? 'AI 解析' : '重新解析' })
   } catch { return }
   reparsing.value = true
   paperLoading.value = true
   try {
-    const r = await parsePaper(curPaper.value.id)
-    if (r.status === 'parsed') ElMessage.success(`已重新解析:${r.imported} 题`)
+    const r = await parsePaper(curPaper.value.id, llm ? 'llm' : undefined)
+    if (r.status === 'parsed') ElMessage.success(`已${llm ? 'AI ' : '重新'}解析:${r.imported} 题`)
     else ElMessage.error(r.error || '解析失败')
     const d = await getPlatformPaper(curPaper.value.id)   // 刷新弹框
     curPaper.value = d.paper
@@ -206,6 +214,20 @@ async function onSuggestKp() {
     ElMessage.success(n ? `整卷匹配:AI 为 ${n} 道未挂考点的题给出建议,点 ✓ 采纳` : '未挂考点的题都已建议(或无新建议)')
   } catch (e: any) { ElMessage.error(e?.message || '整卷匹配失败') }
   finally { suggesting.value = false }
+}
+
+// ── P0:从本题(真题母题)派生同考点仿真 ──
+// 走 generate_sim_from_real:继承母题 KP + 题型(经 _fine_type,动词填空/词汇运用如实继承),
+// 落 draft 待审。符合「有源铁律」——有母题就派生,不造 fallback。
+const genBusy = ref<string | null>(null)       // 正在派生的题 id
+const simDeriveCount = 3
+async function onDeriveSim(q: PaperQuestion) {
+  genBusy.value = q.id
+  try {
+    const r = await genSimFromReal(q.id, simDeriveCount)
+    ElMessage.success(`已从本题派生 ${r.generated} 道同考点仿真(草稿,可到仿真审核发布)`)
+  } catch (e: any) { ElMessage.error(e?.message || '派生仿真失败') }
+  finally { genBusy.value = null }
 }
 
 // ── 一键挂某大题:选该题型提示词 → AI 对该段每题建议 ──
@@ -378,7 +400,9 @@ const dlg = ref(false)
 const step = ref(0)                 // 0=选源, 1=抽题中, 2=校对
 // 批次元信息:教材+学段 必选;年级/学期/地区 选填
 const EXAM_TYPES = [{ label: '普通(无)', value: '' }, { label: '中考', value: '中考' }, { label: '高考', value: '高考' }]
-const QUESTION_TYPES = ['单选', '填空', '完型', '阅读', '写作', '判断', '连线']  // 与 ai_question_type_enum 对齐
+// platform_question.question_type 为 varchar,除 ai_question_type_enum 的 7 种外,
+// 另收「动词填空 / 词汇运用」独立题型(P0):真题切题按大题名归位,勿再降级成单选。
+const QUESTION_TYPES = ['单选', '填空', '完型', '阅读', '写作', '判断', '连线', '动词填空', '词汇运用']
 const metaTextbook = ref('译林版')
 const metaStage = ref('初')
 const metaGrade = ref('')
@@ -668,23 +692,23 @@ onMounted(load)
 <template>
   <div>
     <div class="toolbar">
-      <el-select v-model="filTextbook" placeholder="教材" clearable style="width:108px" @change="load">
+      <el-select v-model="filTextbook" placeholder="教材" clearable style="width:108px" @change="reload">
         <el-option v-for="v in VERSIONS" :key="v" :label="v" :value="v" />
       </el-select>
       <el-select v-model="filStage" placeholder="学段" clearable style="width:88px" @change="onStageFilterChange">
         <el-option v-for="s in STAGES" :key="s" :label="STAGE_LABEL[s]" :value="s" />
       </el-select>
-      <el-select v-model="filGrade" placeholder="年级" clearable :disabled="!filStage" style="width:98px" @change="load">
+      <el-select v-model="filGrade" placeholder="年级" clearable :disabled="!filStage" style="width:98px" @change="reload">
         <el-option v-for="g in (GRADES[filStage] || [])" :key="g" :label="g" :value="g" />
       </el-select>
-      <el-cascader v-model="filRegionPath" :props="regionProps" clearable placeholder="地区" style="width:160px" @change="load" />
-      <el-select v-model="filExam" placeholder="考试" clearable style="width:96px" @change="load">
+      <el-cascader v-model="filRegionPath" :props="regionProps" clearable placeholder="地区" style="width:160px" @change="reload" />
+      <el-select v-model="filExam" placeholder="考试" clearable style="width:96px" @change="reload">
         <el-option v-for="e in EXAM_TYPES.filter(x => x.value)" :key="e.value" :label="e.label" :value="e.value" />
       </el-select>
-      <el-select v-model="filYear" placeholder="年份" clearable filterable style="width:96px" @change="load">
+      <el-select v-model="filYear" placeholder="年份" clearable filterable style="width:96px" @change="reload">
         <el-option v-for="y in YEAR_OPTS" :key="y" :label="y + '年'" :value="y" />
       </el-select>
-      <el-select v-model="statusFilter" placeholder="状态" clearable style="width:96px" @change="load">
+      <el-select v-model="statusFilter" placeholder="状态" clearable style="width:96px" @change="reload">
         <el-option v-for="s in statusOpts.filter(Boolean)" :key="s" :label="s === 'published' ? '已发布' : '草稿'" :value="s" />
       </el-select>
       <el-button @click="resetFilters">重置</el-button>
@@ -754,6 +778,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <!-- 试卷详情:整卷题(按大题分节、阅读题组折叠)+ 整卷发布 + 勾选派生仿真 -->
     <el-dialog v-model="paperDlg" :title="curPaper ? curPaper.name : '试卷详情'" width="960px" :close-on-click-modal="false">
@@ -764,8 +792,10 @@ onMounted(load)
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
           <el-tag v-if="unmappedCount" type="warning" size="small"><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>{{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
-          <el-button v-if="curPaper?.source_filename" :loading="reparsing" @click="onReparse"
+          <el-button v-if="curPaper?.source_filename" :loading="reparsing" @click="onReparse()"
             title="清空本卷题目,按原卷文件重新拆题(草稿)">重新解析</el-button>
+          <el-button v-if="curPaper?.source_filename" :loading="reparsing" @click="onReparse('llm')"
+            title="排版复杂/规则漏题时用:清空后走 AI 整卷解析(较慢,消耗少量 AI 额度)">AI 解析</el-button>
           <el-button :loading="suggesting" @click="onSuggestKp"
             title="整卷按每个大题/题型分别调用其匹配提示词,候选考点按本卷学段(高⊇初⊇小)过滤">AI 整卷匹配知识点</el-button>
           <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
@@ -810,6 +840,10 @@ onMounted(load)
                         <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissProposal(q, p)">✕</span>
                       </el-tag>
                       <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openKpPicker(q)">+ 知识点</el-button>
+                      <el-button v-if="q.kps && q.kps.length" size="small" text type="success" style="height:22px;padding:0 6px"
+                        :loading="genBusy === q.id"
+                        :title="`从本题派生 ${simDeriveCount} 道同考点仿真(继承本题「${q.question_type}」题型与考点,落草稿待审)`"
+                        @click="onDeriveSim(q)">↻ 派生仿真</el-button>
                     </div>
                   </div>
                   <el-tag size="small" :type="q.status === 'published' ? 'success' : 'info'" style="flex-shrink:0">{{ q.status === 'published' ? '已发布' : '草稿' }}</el-tag>

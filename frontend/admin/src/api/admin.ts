@@ -257,12 +257,9 @@ export function createInstitution(data: {
 }): Promise<AdminInstitution> {
   return unwrap<AdminInstitution>(request.post('/admin/institutions', data))
 }
-export function listInstitutions(status?: string, source?: string): Promise<AdminInstitution[]> {
-  const params = new URLSearchParams()
-  if (status) params.set('status', status)
-  if (source) params.set('source', source)
-  const q = params.toString() ? `?${params.toString()}` : ''
-  return unwrap<AdminInstitution[]>(request.get(`/admin/institutions${q}`))
+export function listInstitutions(params?: { status?: string; source?: string; skip?: number; limit?: number }):
+  Promise<{ total: number; items: AdminInstitution[] }> {
+  return unwrap(request.get('/admin/institutions', { params }))
 }
 export function approveInstitution(id: string, adminUsername: string): Promise<{ institution_id: string; admin_username: string; password: string }> {
   return unwrap(request.post(`/admin/institutions/${id}/approve`, { admin_username: adminUsername }))
@@ -315,8 +312,15 @@ export function updateVocabMedia(
 }
 
 // ── 课程单元管理 ──────────────────────────────────────────────────────────────
-export function listCurriculumUnits(): Promise<AdminCurriculumUnit[]> {
-  return unwrap<AdminCurriculumUnit[]>(request.get('/admin/curriculum/units'))
+export interface CurriculumUnitsResp {
+  total: number
+  items: AdminCurriculumUnit[]
+  options: { textbooks: string[]; grades: string[]; semesters: string[] }
+}
+export function listCurriculumUnits(params?: {
+  textbook_version?: string; grade?: string; semester?: string; skip?: number; limit?: number
+}): Promise<CurriculumUnitsResp> {
+  return unwrap<CurriculumUnitsResp>(request.get('/admin/curriculum/units', { params }))
 }
 
 // 批量删除单元(连带知识图谱边 / 单词通词表 / 短文及考点边;返回删除数)
@@ -766,9 +770,9 @@ export function retryGenJob(jobId: string): Promise<GenJob> {
 }
 
 export function listGenJobs(params: {
-  status?: string; textbook_version?: string; grade?: string; semester?: string; limit?: number
-}): Promise<GenJob[]> {
-  return unwrap<GenJob[]>(request.get('/admin/curriculum/pdf-jobs', { params }))
+  status?: string; textbook_version?: string; grade?: string; semester?: string; skip?: number; limit?: number
+}): Promise<{ total: number; items: GenJob[] }> {
+  return unwrap(request.get('/admin/curriculum/pdf-jobs', { params }))
 }
 
 export interface GenerateSemesterResult {
@@ -1433,9 +1437,9 @@ export function reviewPlatformBulk(questionIds: string[], approve: boolean): Pro
   return unwrap(request.post('/admin/platform-questions/review-bulk', { question_ids: questionIds, approve }))
 }
 export interface SimPaper { paper_id: string; paper_name: string; sim_count: number }
-// 仿真题按来源真题卷聚合(仿真题审核:先按卷列)
-export function listSimPapers(status?: string): Promise<SimPaper[]> {
-  return unwrap(request.get('/admin/sim-papers', { params: { status } }))
+// 仿真题按来源真题卷聚合(仿真题审核:先按卷列),分页
+export function listSimPapers(params?: { status?: string; skip?: number; limit?: number }): Promise<{ total: number; items: SimPaper[] }> {
+  return unwrap(request.get('/admin/sim-papers', { params }))
 }
 
 export function extractRealQuestions(opts: { file?: File; imageUrls?: string[] }): Promise<{ job_id: string }> {
@@ -1458,8 +1462,9 @@ export function batchUploadPapers(files: File[], meta: Record<string, unknown>):
   }))
 }
 // 解析某份(批量上传的)试卷 → 拆题自动入库为草稿
-export function parsePaper(paperId: string): Promise<{ imported: number; status: string; error?: string }> {
-  return unwrap(request.post(`/admin/platform-papers/${paperId}/parse`, {}, { timeout: 300000 }))
+export function parsePaper(paperId: string, mode?: 'llm'): Promise<{ imported: number; status: string; error?: string }> {
+  return unwrap(request.post(`/admin/platform-papers/${paperId}/parse`, {},
+    { params: mode ? { mode } : {}, timeout: 300000 }))
 }
 // 重试:.doc → PDF 转换
 export function convertPaperDoc(paperId: string): Promise<{ convert_status: string; error?: string }> {
@@ -1499,6 +1504,16 @@ export function bulkImportRealQuestions(
 
 export function genSimFromReal(realId: string, count = 3): Promise<{ generated: number; sim_ids: string[] }> {
   return unwrap(request.post(`/admin/platform-questions/${realId}/gen-sim`, null, { params: { count } }))
+}
+
+// P0:按考点「反向生成」仿真(dimension: verb_fill 动词填空 / vocab_form 词汇运用 / dictation / grammar)
+export function genSimForNode(
+  nodeId: string,
+  opts?: { dimension?: string; count?: number; force?: boolean },
+): Promise<{ generated: number; sim_ids: string[] }> {
+  return unwrap(request.post(`/admin/kp-nodes/${nodeId}/gen-sim`, null, {
+    params: { dimension: opts?.dimension || 'verb_fill', count: opts?.count ?? 3, force: opts?.force ?? false },
+  }))
 }
 
 export function reviewPlatformQuestion(id: string, approve: boolean): Promise<PlatformQuestion> {

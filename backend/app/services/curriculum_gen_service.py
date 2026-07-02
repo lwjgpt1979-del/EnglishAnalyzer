@@ -144,8 +144,8 @@ async def retry_job(db: AsyncSession, job_id: uuid.UUID) -> bool:
 
 async def list_jobs(
     db: AsyncSession, *, status: str | None = None, textbook_version: str | None = None,
-    grade: str | None = None, semester: str | None = None, limit: int = 20,
-) -> list[CurriculumGenJob]:
+    grade: str | None = None, semester: str | None = None, skip: int = 0, limit: int = 20,
+) -> tuple[list[CurriculumGenJob], int]:
     stmt = select(CurriculumGenJob)
     if status:
         stmt = stmt.where(CurriculumGenJob.status == status)
@@ -155,8 +155,10 @@ async def list_jobs(
         stmt = stmt.where(CurriculumGenJob.grade == grade)
     if semester:
         stmt = stmt.where(CurriculumGenJob.semester == semester)
-    stmt = stmt.order_by(CurriculumGenJob.created_at.desc()).limit(limit)
-    return list((await db.execute(stmt)).scalars().all())
+    from sqlalchemy import func as _func
+    total = (await db.execute(select(_func.count()).select_from(stmt.subquery()))).scalar_one()
+    stmt = stmt.order_by(CurriculumGenJob.created_at.desc()).offset(skip).limit(limit)
+    return list((await db.execute(stmt)).scalars().all()), total
 
 
 async def resume_running_jobs() -> int:

@@ -116,9 +116,28 @@ async def _llm_split_segmented(printed: str):
     return merged
 
 
+def _structural_incomplete(printed: str, rows: list) -> bool:
+    """判断确定性拆题结果是否「明显不全」,需 LLM 兜底。
+
+    信号:卷面出现的最大题号(≤99)远大于拆出题数 —— 说明个性化排版让正则漏了大段。
+    仅在卷面确有较多题号(≥25)且拆出 < 70% 时触发,避免误伤本就短的卷。
+    """
+    if not rows:
+        return True
+    from app.services.paper_split_service import _QNUM_RE
+    maxno = 0
+    for ln in (printed or "").splitlines():
+        m = _QNUM_RE.match(ln.strip())
+        if m:
+            v = int(m.group(1))
+            if v <= 99:
+                maxno = max(maxno, v)
+    return maxno >= 25 and len(rows) < maxno * 0.7
+
+
 async def extract_questions(
     source: str, file_id: str | None, image_urls: list[str] | None,
-    *, scanned_ocr: bool = False,
+    *, scanned_ocr: bool = False, force_llm: bool = False,
 ) -> list[dict]:
     """抽题核心(单份「开始抽题」与批量「解析原题目」共用):取文字 → 拆题 → parsed dict 列表。
 
@@ -135,10 +154,13 @@ async def extract_questions(
     if not printed:
         raise RuntimeError("未提取到文本(扫描版 PDF 请改用图片上传走 OCR)")
     rows = []
-    if source in ("docx", "pdf"):
+    if source in ("docx", "pdf") and not force_llm:
         rows = split_paper_text_structural(printed)      # 确定性,秒级
-    if not rows:
-        rows = await _llm_split_segmented(printed)        # 分段并发 LLM 兜底
+    # 兜底 LLM:强制 / 结构化为空 / 结果明显偏少(个性化排版把正则打败)→ LLM 重拆,取更全的一份
+    if force_llm or _structural_incomplete(printed, rows):
+        llm_rows = await _llm_split_segmented(printed)
+        if len(llm_rows) > len(rows):
+            rows = llm_rows
     return [{
         "question_no": r.question_no, "question_type": r.question_type,
         "stem": r.stem, "answer": r.correct_answer, "explanation": r.explanation,

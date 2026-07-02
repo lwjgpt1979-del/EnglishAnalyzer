@@ -8,6 +8,34 @@ from app.core.exceptions import AppError
 from app.models.d21_region import Region
 
 
+def _bare(s: str) -> str:
+    import re
+    return re.sub(r"(省|市|自治区|特别行政区|壮族|回族|维吾尔|自治州|地区)", "", s or "")
+
+
+async def region_from_name(db: AsyncSession, name: str) -> tuple[str | None, str | None]:
+    """从文本(如试卷名)匹配 省→市,返回 (最细级 code, 省市拼接名)。匹配不到 → (None, None)。"""
+    if not name:
+        return None, None
+    provs = (await db.execute(select(Region).where(Region.parent_code.is_(None)))).scalars().all()
+    prov = next((p for p in provs
+                 if p.name in name or (len(_bare(p.name)) >= 2 and _bare(p.name) in name)), None)
+    if prov is not None:
+        cities = (await db.execute(select(Region).where(Region.parent_code == prov.code))).scalars().all()
+        city = next((c for c in cities
+                     if c.name in name or (len(_bare(c.name)) >= 2 and _bare(c.name) in name)), None)
+        return (city.code, prov.name + city.name) if city is not None else (prov.code, prov.name)
+    # 名字里没有省 → 直接按市级(level=2)全国匹配,再回推所属省名拼接
+    city = next((c for c in (await db.execute(
+        select(Region).where(Region.level == 2))).scalars().all()
+        if len(_bare(c.name)) >= 2 and _bare(c.name) in name), None)
+    if city is None:
+        return None, None
+    pname = (await db.execute(
+        select(Region.name).where(Region.code == city.parent_code))).scalar_one_or_none() or ""
+    return city.code, (pname + city.name)
+
+
 async def list_children(db: AsyncSession, parent_code: str | None) -> list[dict]:
     """懒加载:无 parent → 省;有 parent → 直接下级。附 leaf(是否还有下级)。"""
     stmt = select(Region).order_by(Region.code)

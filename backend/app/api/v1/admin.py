@@ -922,12 +922,14 @@ async def admin_create_institution(body: AdminInstitutionCreate, db: DbDep, admi
     return make_ok(AdminInstitutionOut.model_validate(inst))
 
 
-@router.get("/institutions", response_model=BaseResponse[list[AdminInstitutionOut]])
+@router.get("/institutions", response_model=BaseResponse[dict])
 async def admin_list_institutions(
     db: DbDep, admin: AdminDep, status: str | None = None, source: str | None = None,
+    skip: int = 0, limit: int = 50,
 ):
-    rows = await admin_institution_service.list_institutions(db, status=status, source=source)
-    return make_ok([AdminInstitutionOut.model_validate(i) for i in rows])
+    rows, total = await admin_institution_service.list_institutions(
+        db, status=status, source=source, skip=skip, limit=limit)
+    return make_ok({"total": total, "items": [AdminInstitutionOut.model_validate(i).model_dump() for i in rows]})
 
 
 @router.post("/institutions/{institution_id}/approve",
@@ -952,26 +954,40 @@ async def admin_reject_institution(institution_id: uuid.UUID, db: DbDep, admin: 
 # ── V2 课程单元管理 ────────────────────────────────────────────────────────────
 
 @router.get("/curriculum/units")
-async def list_curriculum_units(db: DbDep, admin: AdminDep):
-    """列出所有课程单元 + 内容完成度统计，供 Admin 内容生成触发。"""
-    stats = await curriculum_service.list_units_with_stats(db)
-    return make_ok([
-        {
-            "unit_id": str(s.unit_id),
-            "textbook_version": s.textbook_version,
-            "grade": s.grade,
-            "semester": s.semester,
-            "unit_no": s.unit_no,
-            "unit_title": s.unit_title,
-            "kp_count": s.kp_count,
-            "content_count": s.content_count,
-            "passage_count": s.passage_count,
-            "word_count": s.word_count,
-            "content_rate": s.content_rate,
-            "unit_pdf_url": s.unit_pdf_url,
-        }
-        for s in stats
-    ])
+async def list_curriculum_units(
+    db: DbDep, admin: AdminDep,
+    textbook_version: str | None = None, grade: str | None = None,
+    semester: str | None = None, skip: int = 0, limit: int = 50,
+):
+    """课程单元 + 内容完成度统计(服务端筛选 + 分页),供 Admin 内容生成触发。
+
+    返回 {total, items, options};options 为全量去重的教材/年级/学期下拉,供分页后前端仍能筛选。
+    """
+    stats, total = await curriculum_service.list_units_with_stats(
+        db, textbook_version=textbook_version, grade=grade,
+        semester=semester, skip=skip, limit=limit)
+    options = await curriculum_service.unit_filter_options(db)
+    return make_ok({
+        "total": total,
+        "options": options,
+        "items": [
+            {
+                "unit_id": str(s.unit_id),
+                "textbook_version": s.textbook_version,
+                "grade": s.grade,
+                "semester": s.semester,
+                "unit_no": s.unit_no,
+                "unit_title": s.unit_title,
+                "kp_count": s.kp_count,
+                "content_count": s.content_count,
+                "passage_count": s.passage_count,
+                "word_count": s.word_count,
+                "content_rate": s.content_rate,
+                "unit_pdf_url": s.unit_pdf_url,
+            }
+            for s in stats
+        ],
+    })
 
 
 @router.post("/curriculum/units/delete", response_model=BaseResponse[dict])
@@ -1027,8 +1043,10 @@ async def generate_unit_content(
             pass
     await db.commit()
 
-    # 返回更新后的统计
-    stats = await curriculum_service.list_units_with_stats(db)
+    # 返回更新后的统计(按本单元所在教材/年级/学期取,单学期单元数少)
+    stats, _ = await curriculum_service.list_units_with_stats(
+        db, textbook_version=unit.textbook_version, grade=str(unit.grade),
+        semester=str(unit.semester), limit=200)
     stat = next((s for s in stats if s.unit_id == unit_id), None)
     return make_ok({
         "unit_id": str(unit_id),
@@ -1367,11 +1385,15 @@ def _to_pq_item(q, passage: str | None = None, kp_names: list | None = None) -> 
     )
 
 
-@router.get("/sim-papers", response_model=BaseResponse[list[dict]])
-async def list_sim_papers_api(db: DbDep, admin: AdminDep, status: str | None = None):
-    """仿真题按来源真题卷聚合(供「仿真题审核」先按卷列,再点开看整卷)。"""
+@router.get("/sim-papers", response_model=BaseResponse[dict])
+async def list_sim_papers_api(
+    db: DbDep, admin: AdminDep, status: str | None = None,
+    skip: int = 0, limit: int = 20,
+):
+    """仿真题按来源真题卷聚合(供「仿真题审核」先按卷列,再点开看整卷)。分页。"""
     from app.services import platform_question_service as pqs
-    return make_ok(await pqs.list_sim_papers(db, status=status))
+    items, total = await pqs.list_sim_papers(db, status=status, skip=skip, limit=limit)
+    return make_ok({"total": total, "items": items})
 
 
 @router.get("/platform-questions", response_model=BaseResponse[PlatformQuestionListOut])
@@ -1485,6 +1507,21 @@ async def gen_sim_job_status_api(job_id: str, db: DbDep, admin: AdminDep):
     if st is None:
         raise AppError(code=404, message="任务不存在(可能已重启)")
     return make_ok({"job_id": job_id, **st})
+
+
+@router.post("/kp-nodes/{node_id}/gen-sim", response_model=BaseResponse[GenSimOut])
+async def gen_sim_for_node_api(
+    node_id: uuid.UUID, db: DbDep, admin: AdminDep,
+    dimension: str = "verb_fill", count: int = 3, force: bool = False,
+):
+    """按考点「反向生成」仿真(P0):dimension=verb_fill 动词填空 / vocab_form 词汇运用 /
+    dictation 拼写 / grammar 语法混合。生成 is_fallback 仿真并挂该节点,落 draft 待审。
+    node 已有真题母题时默认跳过(应走真题派生),force=true 可强制。"""
+    from app.services import platform_question_service as pqs
+    sim_ids = await pqs.generate_fallback_sim(
+        db, node_id=node_id, count=count, dimension=dimension, force=force, status="draft")
+    await db.commit()
+    return make_ok(GenSimOut(generated=len(sim_ids), sim_ids=sim_ids))
 
 
 # ─── 平台试卷(整卷聚合 / 发布 / 选题仿真)────────────────────────────────────────
@@ -1757,8 +1794,8 @@ async def batch_upload_papers_api(
     from app.services import pdf_upload_service as pus, platform_question_service as pqs
     if not files:
         raise AppError(code=400, message="请至少选择一个文件")
-    if len(files) > 50:
-        raise AppError(code=400, message="单次最多 50 份")
+    if len(files) > 500:
+        raise AppError(code=400, message="单次最多 500 份")
     m = {}
     if meta:
         try:
@@ -1798,6 +1835,13 @@ async def batch_upload_papers_api(
                 file_id, src = pus.save_upload(data), "pdf"
             stem = fname.rsplit(".", 1)[0] if "." in fname else fname
             pmeta = {**m, "file_id": file_id, "source": src}
+            # 按**该文件名**单独解析地区(整批可能是不同城市),命中则覆盖共享地区
+            from app.services import region_service
+            rc, rn = await region_service.region_from_name(db, stem)
+            if rc:
+                pmeta.update(region_code=rc, region_name=rn)
+                pmeta.pop("city_code", None)
+                pmeta.pop("province_code", None)
             if src == "doc":
                 pmeta["convert_status"] = "pending"      # .doc 待后台转 PDF
             pid = await pqs.create_paper_placeholder(
@@ -1825,10 +1869,13 @@ async def convert_paper_doc_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep)
 
 
 @router.post("/platform-papers/{paper_id}/parse", response_model=BaseResponse[dict])
-async def parse_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """解析某份(批量上传的)试卷的原始文件 → 拆题自动入库为草稿。标注 parse_status。"""
+async def parse_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep, mode: str | None = None):
+    """解析某份(批量上传的)试卷的原始文件 → 拆题自动入库为草稿。标注 parse_status。
+
+    mode=llm:排版复杂/结构化漏题时,强制走 LLM 整卷解析(不吃正则规则)。
+    """
     from app.services import platform_question_service as pqs
-    r = await pqs.parse_paper_questions(db, paper_id=paper_id)
+    r = await pqs.parse_paper_questions(db, paper_id=paper_id, force_llm=(mode == "llm"))
     await db.commit()
     return make_ok(r)
 
@@ -2605,17 +2652,17 @@ async def retry_gen_job(job_id: uuid.UUID, db: DbDep, admin: AdminDep):
     return make_ok(_to_gen_job_out(job))
 
 
-@router.get("/curriculum/pdf-jobs", response_model=BaseResponse[list[GenJobOut]])
+@router.get("/curriculum/pdf-jobs", response_model=BaseResponse[dict])
 async def list_gen_jobs(
     db: DbDep, admin: AdminDep, status: str | None = None,
     textbook_version: str | None = None, grade: str | None = None,
-    semester: str | None = None, limit: int = 20,
+    semester: str | None = None, skip: int = 0, limit: int = 20,
 ):
-    """列任务(供重开页面时重新挂上在跑的进度:status=running + 教材筛选)。"""
+    """列任务(供重开页面时重新挂上在跑的进度:status=running + 教材筛选)。分页返回。"""
     from app.services import curriculum_gen_service as gen
-    jobs = await gen.list_jobs(db, status=status, textbook_version=textbook_version,
-                               grade=grade, semester=semester, limit=limit)
-    return make_ok([_to_gen_job_out(j) for j in jobs])
+    jobs, total = await gen.list_jobs(db, status=status, textbook_version=textbook_version,
+                                      grade=grade, semester=semester, skip=skip, limit=limit)
+    return make_ok({"total": total, "items": [_to_gen_job_out(j).model_dump() for j in jobs]})
 
 
 # ── M11 主题中心 ──────────────────────────────────────────────────────────────

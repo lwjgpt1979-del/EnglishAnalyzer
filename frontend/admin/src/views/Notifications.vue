@@ -5,11 +5,15 @@ import { listNotifications, markRead, type AdminNotification } from '../api/noti
 
 const rows = ref<AdminNotification[]>([])
 const unread = ref(0)
+const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 
 async function load() {
-  const r = await listNotifications()
+  const r = await listNotifications({ skip: (page.value - 1) * pageSize, limit: pageSize })
   rows.value = r.items
   unread.value = r.unread_count
+  total.value = r.total
 }
 
 async function read(n: AdminNotification) {
@@ -38,6 +42,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
   </div>
 </template>
 

@@ -6,6 +6,8 @@ import { Present } from '@element-plus/icons-vue'
 
 const rows = ref<CampaignItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 20
 const loading = ref(false)
 
 const STATUS: Record<string, { label: string; type: string }> = {
@@ -18,7 +20,7 @@ function price(v: number | null) { return v && v > 0 ? `¥${v}` : '—' }
 
 async function load() {
   loading.value = true
-  try { const r = await listCampaigns({ limit: 100 }); rows.value = r.items; total.value = r.total }
+  try { const r = await listCampaigns({ skip: (page.value - 1) * pageSize, limit: pageSize }); rows.value = r.items; total.value = r.total }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
@@ -92,7 +94,10 @@ onMounted(load)
         <template #default="{ row }"><el-button size="small" link @click="toggle(row)">{{ row.is_active ? '停用' : '启用' }}</el-button></template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="dialog" title="新建限时活动" width="540px">
       <el-form label-width="100px">

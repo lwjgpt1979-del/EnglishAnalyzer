@@ -17,6 +17,8 @@ const status = ref('draft')
 const typeFilter = ref('')
 const rows = ref<NodeResourceItem2[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 
 const statusOptions = ['', 'draft', 'reviewing', 'published', 'retired']
@@ -55,8 +57,8 @@ const unitOptions = computed(() => allUnits.value.filter(u =>
 function onTextbookChange() { fGrade.value = ''; fSemester.value = ''; clearUnit() }
 function onGradeChange() { fSemester.value = ''; clearUnit() }
 function onSemesterChange() { clearUnit() }
-function clearUnit() { fUnitId.value = ''; overview.value = []; load() }
-function onUnitChange() { load(); loadOverview() }
+function clearUnit() { fUnitId.value = ''; overview.value = []; reload() }
+function onUnitChange() { reload(); loadOverview() }
 
 // ── 补全总览(发布前预览每个知识点六维完整度)──
 const overview = ref<UnitContentNode[]>([])
@@ -108,13 +110,16 @@ async function load() {
       status: status.value,                       // '' = 全部
       resource_type: typeFilter.value || undefined,
       unit_id: fUnitId.value || undefined,
-      limit: 100,
+      skip: (page.value - 1) * pageSize,
+      limit: pageSize,
     })
     rows.value = data.items
     total.value = data.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+
+function reload() { page.value = 1; load() }
 
 async function onReview(row: NodeResourceItem2, approve: boolean) {
   await ElMessageBox.confirm(`确认${approve ? '通过发布' : '驳回'}该资源？`, '确认', { type: 'warning' })
@@ -282,11 +287,11 @@ watch(() => route.query.unit_id, async () => {
   <div>
     <div class="toolbar">
       <span>状态：</span>
-      <el-select v-model="status" style="width: 120px" @change="load">
+      <el-select v-model="status" style="width: 120px" @change="reload">
         <el-option v-for="s in statusOptions" :key="s" :label="reviewStLabel(s)" :value="s" />
       </el-select>
       <span style="margin-left: 12px">类型：</span>
-      <el-select v-model="typeFilter" style="width: 120px" @change="load">
+      <el-select v-model="typeFilter" style="width: 120px" @change="reload">
         <el-option v-for="t in types" :key="t.value" :label="t.label" :value="t.value" />
       </el-select>
       <el-divider direction="vertical" />
@@ -370,6 +375,11 @@ watch(() => route.query.unit_id, async () => {
         </template>
       </el-table-column>
     </el-table>
+
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="addDlg" title="新增 / 补全知识节点资源" width="540px">
       <el-form label-width="90px">

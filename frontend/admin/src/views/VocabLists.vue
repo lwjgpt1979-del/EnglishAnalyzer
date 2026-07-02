@@ -8,6 +8,9 @@ const lists = ref<VocabListItem2[]>([])
 const loading = ref(false)
 const current = ref<VocabListItem2 | null>(null)
 const items = ref<VocabWordItem[]>([])
+const itemsTotal = ref(0)
+const itemsPage = ref(1)
+const itemsPageSize = 50
 const itemsLoading = ref(false)
 
 // 新建词库
@@ -28,8 +31,18 @@ async function load() {
 
 async function openItems(row: VocabListItem2) {
   current.value = row
+  itemsPage.value = 1
+  await loadItems()
+}
+
+async function loadItems() {
+  if (!current.value) return
   itemsLoading.value = true
-  try { items.value = (await listVocabItems(row.id, { limit: 500 })).items }
+  try {
+    const r = await listVocabItems(current.value.id, { skip: (itemsPage.value - 1) * itemsPageSize, limit: itemsPageSize })
+    items.value = r.items
+    itemsTotal.value = r.total
+  }
   finally { itemsLoading.value = false }
 }
 
@@ -55,7 +68,8 @@ async function confirmAdd() {
   ElMessage.success(`已加入 ${res.total} 个词条`)
   addDlg.value = false
   wordsText.value = ''
-  items.value = res.items
+  itemsPage.value = 1
+  await loadItems()
 }
 
 onMounted(load)
@@ -88,6 +102,10 @@ onMounted(load)
         <el-table-column prop="star" label="星级" width="80" />
         <el-table-column prop="verified" label="已核" width="70" />
       </el-table>
+      <div v-if="current && itemsTotal > itemsPageSize" style="display:flex;justify-content:flex-end;margin-top:12px">
+        <el-pagination layout="total, prev, pager, next, jumper" :total="itemsTotal"
+          :page-size="itemsPageSize" v-model:current-page="itemsPage" @current-change="loadItems" />
+      </div>
     </div>
 
     <!-- 新建词库 -->

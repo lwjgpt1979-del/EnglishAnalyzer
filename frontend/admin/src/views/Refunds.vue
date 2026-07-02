@@ -42,6 +42,8 @@ async function load() {
   } finally { loading.value = false }
 }
 
+function onPage(p: number) { skip.value = (p - 1) * PAGE_SIZE; load() }
+
 async function onApprove(row: AdminRefundItem) {
   // 按比例退款需确认金额；其余默认按记录金额
   let amount = row.amount_fen
@@ -171,7 +173,10 @@ onMounted(load)
       </el-table-column>
     </el-table>
 
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="PAGE_SIZE" :current-page="Math.floor(skip / PAGE_SIZE) + 1" @current-change="onPage" />
+    </div>
 
     <el-dialog v-model="evidenceOpen" title="纠纷举证包（§4.6.4）" width="720px">
       <pre class="evidence">{{ evidenceJson }}</pre>

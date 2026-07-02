@@ -6,6 +6,8 @@ import { Warning } from '@element-plus/icons-vue'
 
 const rows = ref<BanAppealItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const status = ref('pending')
 
@@ -15,11 +17,13 @@ function fmt(s: string | null) { return s ? s.replace('T', ' ').slice(0, 16) : '
 async function load() {
   loading.value = true
   try {
-    const r = await listBanAppeals({ status: status.value, limit: 100 })
+    const r = await listBanAppeals({ status: status.value, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items; total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+
+function reload() { page.value = 1; load() }
 
 async function onApprove(r: BanAppealItem) {
   try {
@@ -44,13 +48,13 @@ onMounted(load)
     <div class="toolbar">
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>封禁申诉</h2>
       <div class="filters">
-        <el-radio-group v-model="status" @change="load">
+        <el-radio-group v-model="status" @change="reload">
           <el-radio-button label="pending">待审</el-radio-button>
           <el-radio-button label="approved">已通过</el-radio-button>
           <el-radio-button label="rejected">已驳回</el-radio-button>
           <el-radio-button label="all">全部</el-radio-button>
         </el-radio-group>
-        <el-button @click="load">刷新</el-button>
+        <el-button @click="reload">刷新</el-button>
       </div>
     </div>
     <p class="hint">通过申诉将自动解封，并按封禁时长补偿等量会员时长（§5.3.1）。</p>
@@ -86,7 +90,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
   </div>
 </template>
 

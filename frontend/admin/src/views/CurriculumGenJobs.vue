@@ -5,6 +5,9 @@ import { listGenJobs, retryGenJob, getGenJob, type GenJob } from '../api/admin'
 import { Refresh, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 
 const jobs = ref<GenJob[]>([])
+const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const STATUS_TAG: Record<string, string> = { running: 'warning', done: 'success', failed: 'danger' }
 const STATUS_LABEL: Record<string, string> = { running: '生成中', done: '完成', failed: '有失败' }
@@ -16,7 +19,11 @@ const retrying = ref<Record<string, boolean>>({})
 
 async function load() {
   loading.value = true
-  try { jobs.value = await listGenJobs({ limit: 50 }) }
+  try {
+    const r = await listGenJobs({ skip: (page.value - 1) * pageSize, limit: pageSize })
+    jobs.value = r.items
+    total.value = r.total
+  }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
@@ -81,6 +88,10 @@ onMounted(load)
       </el-table-column>
     </el-table>
     <el-empty v-if="!loading && !jobs.length" description="暂无生成任务" />
+    <div v-if="total > pageSize" style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="dlg" :title="cur ? `生成结果 · ${cur.textbook_version} ${cur.grade} ${cur.semester}学期` : '生成结果'" width="640px">
       <el-table v-if="cur" :data="cur.results" border size="small" style="width:100%">

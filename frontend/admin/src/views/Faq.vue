@@ -6,6 +6,8 @@ import { QuestionFilled } from '@element-plus/icons-vue'
 
 const rows = ref<FaqItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const audience = ref('all')
 
@@ -14,11 +16,13 @@ const AUD: Record<string, string> = { c: 'C端(学生/亲人)', b: 'B端(机构)
 async function load() {
   loading.value = true
   try {
-    const r = await listFaq({ audience: audience.value, limit: 300 })
+    const r = await listFaq({ audience: audience.value, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items; total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+// 受众筛选变更:回到第一页
+function reload() { page.value = 1; load() }
 
 const dialog = ref(false)
 const editing = ref<FaqItem | null>(null)
@@ -61,7 +65,7 @@ onMounted(load)
     <div class="toolbar">
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><QuestionFilled /></el-icon>FAQ 自助管理</h2>
       <div class="filters">
-        <el-radio-group v-model="audience" @change="load">
+        <el-radio-group v-model="audience" @change="reload">
           <el-radio-button label="all">全部</el-radio-button>
           <el-radio-button label="c">C端</el-radio-button>
           <el-radio-button label="b">B端</el-radio-button>
@@ -93,7 +97,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="dialog" :title="editing ? '编辑 FAQ' : '新增 FAQ'" width="560px">
       <el-form label-width="72px">

@@ -5,6 +5,8 @@ import { listUsers, banUser, unbanUser, type AdminUserItem } from '../api/admin'
 
 const rows = ref<AdminUserItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const q = ref('')
 
@@ -13,12 +15,13 @@ const ROLE: Record<string, string> = { student: '学生', teacher: '教师', rel
 async function load() {
   loading.value = true
   try {
-    const r = await listUsers({ q: q.value || undefined, limit: 50 })
+    const r = await listUsers({ q: q.value || undefined, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items
     total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function reload() { page.value = 1; load() }
 
 // 封禁弹窗（时长 7/30/永久 + 原因）
 const banOpen = ref(false)
@@ -63,8 +66,8 @@ onMounted(load)
       <h2>用户管理</h2>
       <div class="search">
         <el-input v-model="q" placeholder="昵称 / 手机号 / 用户ID" style="width:280px" clearable
-          @keyup.enter="load" @clear="load" />
-        <el-button type="primary" @click="load">搜索</el-button>
+          @keyup.enter="reload" @clear="reload" />
+        <el-button type="primary" @click="reload">搜索</el-button>
       </div>
     </div>
 
@@ -100,7 +103,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 人</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="banOpen" :title="`封禁 ${banForm.label}`" width="460px">
       <el-form label-width="80px">

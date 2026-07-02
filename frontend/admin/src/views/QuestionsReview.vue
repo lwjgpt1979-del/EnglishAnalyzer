@@ -11,6 +11,9 @@ const stLabel = (s: string) => STATUS_LABEL[s] || s
 
 // 一级:按来源真题卷列
 const papers = ref<SimPaper[]>([])
+const papersTotal = ref(0)
+const papersPage = ref(1)
+const papersPageSize = 20
 const loadingPapers = ref(false)
 
 // 二级:某卷整卷仿真,渲染成「试卷形式」
@@ -106,7 +109,11 @@ const seqMap = computed<Record<string, number>>(() => {
 
 async function loadPapers() {
   loadingPapers.value = true
-  try { papers.value = await listSimPapers(status.value) }
+  try {
+    const r = await listSimPapers({ status: status.value, skip: (papersPage.value - 1) * papersPageSize, limit: papersPageSize })
+    papers.value = r.items
+    papersTotal.value = r.total
+  }
   finally { loadingPapers.value = false }
 }
 
@@ -142,7 +149,7 @@ async function onReview(row: PlatformQuestion, approve: boolean) {
 }
 
 function onStatusChange() {
-  if (curPaper.value) loadRows(); else loadPapers()
+  if (curPaper.value) loadRows(); else { papersPage.value = 1; loadPapers() }
 }
 
 onMounted(loadPapers)
@@ -195,6 +202,10 @@ onMounted(loadPapers)
       </el-table-column>
       <template #empty>该状态下暂无仿真题(去「平台真题」页勾选题/题型派生仿真)</template>
     </el-table>
+    <div v-if="!curPaper && papersTotal > papersPageSize" style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="papersTotal"
+        :page-size="papersPageSize" v-model:current-page="papersPage" @current-change="loadPapers" />
+    </div>
 
     <!-- 二级:试卷形式 -->
     <div v-else v-loading="loadingRows" class="paper">

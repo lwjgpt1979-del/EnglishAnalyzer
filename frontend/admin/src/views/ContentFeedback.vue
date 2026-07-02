@@ -6,6 +6,8 @@ import { EditPen } from '@element-plus/icons-vue'
 
 const rows = ref<ContentFeedbackItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const status = ref('pending')
 const ttype = ref('all')
@@ -17,11 +19,12 @@ function fmt(s: string | null) { return s ? s.replace('T', ' ').slice(0, 16) : '
 async function load() {
   loading.value = true
   try {
-    const r = await listContentFeedback({ status: status.value, target_type: ttype.value, limit: 100 })
+    const r = await listContentFeedback({ status: status.value, target_type: ttype.value, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items; total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function reload() { page.value = 1; load() }
 async function act(r: ContentFeedbackItem, action: 'handled' | 'dismissed') {
   try {
     const { value } = await ElMessageBox.prompt(action === 'handled' ? '处理备注（如已修正题目）' : '忽略原因', action === 'handled' ? '标记已处理' : '忽略', { inputPlaceholder: '可选' })
@@ -39,12 +42,12 @@ onMounted(load)
     <div class="toolbar">
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><EditPen /></el-icon>内容质量反馈</h2>
       <div class="filters">
-        <el-radio-group v-model="ttype" @change="load">
+        <el-radio-group v-model="ttype" @change="reload">
           <el-radio-button label="all">全部类型</el-radio-button>
           <el-radio-button label="diagnosis">诊断有误</el-radio-button>
           <el-radio-button label="question">题目有误</el-radio-button>
         </el-radio-group>
-        <el-radio-group v-model="status" @change="load">
+        <el-radio-group v-model="status" @change="reload">
           <el-radio-button label="pending">待处理</el-radio-button>
           <el-radio-button label="handled">已处理</el-radio-button>
           <el-radio-button label="dismissed">已忽略</el-radio-button>
@@ -78,7 +81,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
   </div>
 </template>
 

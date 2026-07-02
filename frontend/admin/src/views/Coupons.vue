@@ -6,16 +6,19 @@ import { Tickets } from '@element-plus/icons-vue'
 
 const rows = ref<CouponItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 
 const SCOPE: Record<string, string> = { all: '全部', semester: '学期会员', addon: '加量包', new: '新购', renew: '续费', upgrade: '升档' }
 
 async function load() {
   loading.value = true
-  try { const r = await listCoupons({ limit: 100 }); rows.value = r.items; total.value = r.total }
+  try { const r = await listCoupons({ skip: (page.value - 1) * pageSize, limit: pageSize }); rows.value = r.items; total.value = r.total }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function reload() { page.value = 1; load() }
 
 const dialog = ref(false)
 const form = reactive({
@@ -80,7 +83,7 @@ onMounted(load)
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Tickets /></el-icon>优惠券 / 兑换码</h2>
       <div class="filters">
         <el-button type="primary" @click="openCreate">建券</el-button>
-        <el-button @click="load">刷新</el-button>
+        <el-button @click="reload">刷新</el-button>
       </div>
     </div>
     <p class="hint">满减/折扣券，支持兑换码批量发放或直发指定用户；用户下单时抵扣（SP-4）。</p>
@@ -115,7 +118,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
 
     <el-dialog v-model="dialog" title="建券" width="560px">
       <el-form label-width="92px">

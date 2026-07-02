@@ -859,19 +859,73 @@ class UnitContentStat:
     unit_pdf_url: str | None = None   # 拆出的单元独立 PDF(COS)
 
 
-async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
-    """列出所有课程单元及内容完成度，供 Admin 课程管理页使用。"""
+# 年级中文数字→序(七<八<九),用于 SQL 排序 CASE 与 options 排序,避免字符串序(七<九<八)错乱。
+_CN_GRADE_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+                 "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+
+def _grade_rank_py(g: str) -> int:
+    import re
+    m = re.search(r"\d+", g or "")
+    if m:
+        return int(m.group())
+    for ch in (g or ""):
+        if ch in _CN_GRADE_NUM:
+            return _CN_GRADE_NUM[ch]
+    return 99
+
+
+def _grade_order_sql():
+    from sqlalchemy import case
+    # 数字年级优先按数字;中文年级按中文数字映射;其余排末尾。
+    whens = [(CurriculumUnit.grade.like(f"%{ch}%"), n) for ch, n in _CN_GRADE_NUM.items()]
+    return case(*whens, else_=99)
+
+
+def _sem_order_sql():
+    from sqlalchemy import case, cast, String
+    # semester 是自定义枚举类型,不能直接 LIKE,转 text 再判「下」。
+    return case((cast(CurriculumUnit.semester, String).like("%下%"), 1), else_=0)
+
+
+async def unit_filter_options(db: AsyncSession) -> dict:
+    """教材单元筛选下拉的可选值(全量去重),供服务端分页后前端仍能选筛选。"""
+    rows = (await db.execute(select(
+        CurriculumUnit.textbook_version, CurriculumUnit.grade, CurriculumUnit.semester
+    ).distinct())).all()
+    return {
+        "textbooks": sorted({t for t, _g, _s in rows}),
+        "grades": sorted({g for _t, g, _s in rows}, key=_grade_rank_py),
+        "semesters": sorted({s for _t, _g, s in rows}, key=lambda s: 1 if "下" in (s or "") else 0),
+    }
+
+
+async def list_units_with_stats(
+    db: AsyncSession, *, textbook_version: str | None = None, grade: str | None = None,
+    semester: str | None = None, skip: int = 0, limit: int = 50,
+) -> tuple[list[UnitContentStat], int]:
+    """列出课程单元及内容完成度(服务端筛选 + 分页),供 Admin 课程管理页使用。
+
+    返回 (当前页统计列表, 符合筛选的总数)。排序按 教材版→年级(七<八<九)→学期(上<下)→单元号。
+    """
+    base = select(CurriculumUnit)
+    if textbook_version:
+        base = base.where(CurriculumUnit.textbook_version == textbook_version)
+    if grade:
+        base = base.where(CurriculumUnit.grade == grade)
+    if semester:
+        base = base.where(CurriculumUnit.semester == semester)
+    total = (await db.execute(
+        select(func.count()).select_from(base.subquery()))).scalar_one()
     units = (await db.execute(
-        select(CurriculumUnit).order_by(
-            CurriculumUnit.textbook_version,
-            CurriculumUnit.grade,
-            CurriculumUnit.semester,
-            CurriculumUnit.unit_no,
-        )
+        base.order_by(
+            CurriculumUnit.textbook_version, _grade_order_sql(),
+            _sem_order_sql(), CurriculumUnit.unit_no,
+        ).offset(skip).limit(limit)
     )).scalars().all()
 
     if not units:
-        return []
+        return [], total
 
     unit_ids = [u.id for u in units]
 
@@ -928,4 +982,4 @@ async def list_units_with_stats(db: AsyncSession) -> list[UnitContentStat]:
             content_rate=min(rate, 1.0),
             unit_pdf_url=u.unit_pdf_url,
         ))
-    return result
+    return result, total

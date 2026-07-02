@@ -6,6 +6,8 @@ import { Opportunity } from '@element-plus/icons-vue'
 
 const rows = ref<FeedbackItem[]>([])
 const total = ref(0)
+const page = ref(1)
+const pageSize = 50
 const loading = ref(false)
 const status = ref('pending')
 const kind = ref('all')
@@ -17,11 +19,12 @@ function fmt(s: string | null) { return s ? s.replace('T', ' ').slice(0, 16) : '
 async function load() {
   loading.value = true
   try {
-    const r = await listSuggestions({ status: status.value, kind: kind.value, limit: 100 })
+    const r = await listSuggestions({ status: status.value, kind: kind.value, skip: (page.value - 1) * pageSize, limit: pageSize })
     rows.value = r.items; total.value = r.total
   } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
+function reload() { page.value = 1; load() }
 async function act(r: FeedbackItem, action: 'reviewing' | 'done' | 'dismissed') {
   try {
     const { value } = await ElMessageBox.prompt('处理备注', ST[action], { inputPlaceholder: '可选' })
@@ -39,12 +42,12 @@ onMounted(load)
     <div class="toolbar">
       <h2><el-icon style="vertical-align:-2px;margin-right:4px"><Opportunity /></el-icon>意见反馈 / BUG</h2>
       <div class="filters">
-        <el-radio-group v-model="kind" @change="load">
+        <el-radio-group v-model="kind" @change="reload">
           <el-radio-button label="all">全部</el-radio-button>
           <el-radio-button label="suggestion">功能建议</el-radio-button>
           <el-radio-button label="bug">BUG报告</el-radio-button>
         </el-radio-group>
-        <el-radio-group v-model="status" @change="load">
+        <el-radio-group v-model="status" @change="reload">
           <el-radio-button label="pending">待处理</el-radio-button>
           <el-radio-button label="reviewing">处理中</el-radio-button>
           <el-radio-button label="done">已处理</el-radio-button>
@@ -86,7 +89,10 @@ onMounted(load)
         </template>
       </el-table-column>
     </el-table>
-    <div class="muted total">共 {{ total }} 条</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <el-pagination layout="total, prev, pager, next, jumper" :total="total"
+        :page-size="pageSize" v-model:current-page="page" @current-change="load" />
+    </div>
   </div>
 </template>
 
