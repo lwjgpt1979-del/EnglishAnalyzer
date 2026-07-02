@@ -132,3 +132,27 @@ class WecomChatArchive(Base):
         sa.Index("ix_wecom_archive_lead", "lead_id"),
         sa.Index("ix_wecom_archive_seq", "seq"),
     )
+
+
+class SalesAuditLog(Base):
+    """电销 CRM 操作审计:谁在什么线索上做了什么(认领/派单/退回/合并/改状态/DNC…)。
+
+    action ∈ create|import|claim|release|assign|merge|status_change|dnc|update|auto_assign;
+    detail 存动作细节(before/after、目标座席、合并来源等)。只增不改,供追责/复盘。
+    """
+
+    __tablename__ = "sales_audit_log"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    lead_id = mapped_column(UUID(as_uuid=True), nullable=True)     # 不加 FK:线索删了审计仍留痕
+    action = mapped_column(sa.String(20), nullable=False)
+    detail = mapped_column(JSONB, nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_sales_audit_lead", "lead_id", "created_at"),
+        sa.Index("ix_sales_audit_admin", "admin_id", "created_at"),
+    )
