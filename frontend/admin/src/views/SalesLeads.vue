@@ -8,7 +8,7 @@ import {
   listActivities, addActivity, recommendLeads, salesBoard, recyclePublicPool,
   analyzeText, leadWecomMessages,
   LEAD_STATUS, LEAD_SOURCE, type SalesLead, type SalesActivity, type LeadListParams,
-  type IntentAnalysis, type WecomMsg,
+  type IntentAnalysis, type WecomMsg, type SalesBoard,
 } from '../api/sales'
 
 const STATUS_TAG: Record<string, string> = {
@@ -19,7 +19,9 @@ const GRADE_TAG: Record<string, string> = { A: 'danger', B: 'warning', C: '', D:
 function fmt(s?: string | null) { return s ? s.replace('T', ' ').slice(0, 16) : '—' }
 
 // ── 列表 ──────────────────────────────────────────────────────────────────────
-const view = ref<'public' | 'mine' | 'recommend'>('public')
+const view = ref<'public' | 'mine' | 'due' | 'recommend'>('public')
+const now = ref(Date.now())
+function isOverdue(s?: string | null) { return !!s && new Date(s).getTime() <= now.value }
 const rows = ref<SalesLead[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -29,7 +31,7 @@ const loading = ref(false)
 const fStatus = ref('')
 const fSource = ref('')
 const fQ = ref('')
-const board = ref<{ total: number; by_status: Record<string, number>; by_pool: Record<string, number> }>({ total: 0, by_status: {}, by_pool: {} })
+const board = ref<SalesBoard>({ total: 0, by_status: {}, by_pool: {}, today_new: 0, today_calls: 0, today_connected: 0, connect_rate: 0, my_due: 0 })
 
 // 地区级联(省→市),code 与 user.city_code 同源
 const regionPath = ref<string[]>([])
@@ -60,6 +62,7 @@ async function load() {
       }
       if (view.value === 'public') params.pool = 'public'
       if (view.value === 'mine') params.mine = true
+      if (view.value === 'due') { params.mine = true; params.due = true }
       const r = await listLeads(params)
       rows.value = r.items; total.value = r.total
     }
@@ -67,8 +70,8 @@ async function load() {
   finally { loading.value = false }
 }
 function reload() { page.value = 1; load() }
-async function loadBoard() { try { board.value = await salesBoard() } catch { /* ignore */ } }
-function switchView(v: 'public' | 'mine' | 'recommend') { view.value = v; reload() }
+async function loadBoard() { try { board.value = await salesBoard(); now.value = Date.now() } catch { /* ignore */ } }
+function switchView(v: 'public' | 'mine' | 'due' | 'recommend') { view.value = v; reload() }
 
 async function onClaim(r: SalesLead) {
   try { await claimLead(r.id); ElMessage.success('已认领进私海'); load() }
@@ -186,6 +189,8 @@ onMounted(() => { load(); loadBoard() })
       <div class="stat">
         共 {{ board.total }} · 公海 {{ board.by_pool.public || 0 }} / 私海 {{ board.by_pool.private || 0 }}
         · 成交 {{ board.by_status.won || 0 }} · 谈单 {{ board.by_status.negotiating || 0 }}
+        <span class="stat-sep">|</span>
+        今日新增 {{ board.today_new }} · 拨打 {{ board.today_calls }} · 接通率 {{ (board.connect_rate * 100).toFixed(0) }}%
       </div>
       <div style="flex:1" />
       <el-button type="primary" :icon="Plus" @click="openAdd">新增</el-button>
@@ -198,6 +203,9 @@ onMounted(() => { load(); loadBoard() })
       <el-radio-group :model-value="view" @change="(v: any) => switchView(v)">
         <el-radio-button label="public">公海</el-radio-button>
         <el-radio-button label="mine">我的私海</el-radio-button>
+        <el-radio-button label="due">
+          <el-badge :value="board.my_due" :hidden="!board.my_due" :max="99" type="danger">今日待办</el-badge>
+        </el-radio-button>
         <el-radio-button label="recommend">今日推荐(赢单反查)</el-radio-button>
       </el-radio-group>
       <template v-if="view !== 'recommend'">
@@ -240,7 +248,12 @@ onMounted(() => { load(); loadBoard() })
       <el-table-column v-if="view === 'recommend'" label="相似分" width="80">
         <template #default="{ row }">{{ row.similar_score != null ? row.similar_score.toFixed(1) : '—' }}</template>
       </el-table-column>
-      <el-table-column label="下次跟进" width="130"><template #default="{ row }">{{ fmt(row.next_follow_at) }}</template></el-table-column>
+      <el-table-column label="下次跟进" width="140">
+        <template #default="{ row }">
+          <span :class="{ overdue: isOverdue(row.next_follow_at) }">{{ fmt(row.next_follow_at) }}</span>
+          <el-tag v-if="isOverdue(row.next_follow_at)" type="danger" size="small" effect="dark" style="margin-left:4px">到期</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link type="primary" @click="openDetail(row)">详情</el-button>
@@ -378,6 +391,8 @@ onMounted(() => { load(); loadBoard() })
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .toolbar h2 { margin: 0; }
 .stat { color: #606266; font-size: 13px; }
+.stat-sep { margin: 0 6px; color: #dcdfe6; }
+.overdue { color: #f56c6c; font-weight: 600; }
 .tabs { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .hint { color: #909399; font-size: 13px; margin: 0; }
 .muted { color: #909399; font-size: 12px; }

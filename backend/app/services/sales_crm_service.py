@@ -129,7 +129,7 @@ async def list_leads(
     db: AsyncSession, *, pool: str | None = None, status: str | None = None,
     source: str | None = None, region_code: str | None = None,
     owner_admin_id: uuid.UUID | None = None, dnc: bool | None = None,
-    q: str | None = None, skip: int = 0, limit: int = 20,
+    due: bool = False, q: str | None = None, skip: int = 0, limit: int = 20,
 ) -> tuple[list[SalesLead], int]:
     base = sa.select(SalesLead)
     if pool:
@@ -144,6 +144,11 @@ async def list_leads(
         base = base.where(SalesLead.owner_admin_id == owner_admin_id)
     if dnc is not None:
         base = base.where(SalesLead.dnc.is_(dnc))
+    if due:                       # 今日待办:已到跟进时间、且未到终态
+        base = base.where(
+            SalesLead.next_follow_at.isnot(None),
+            SalesLead.next_follow_at <= datetime.now(timezone.utc),
+            SalesLead.status.notin_(("won", "lost", "invalid")))
     if q:
         like = f"%{q}%"
         base = base.where(sa.or_(SalesLead.name.ilike(like),
@@ -329,15 +334,48 @@ async def recommend(
 
 # ── 座席看板 ──────────────────────────────────────────────────────────────────
 
-async def board_stats(db: AsyncSession) -> dict:
-    """简单看板:各状态线索数 + 公海/私海数。"""
+_CN_TZ = timezone(timedelta(hours=8))    # 「今日」按东八区(业务在国内)
+
+
+def _today_start_utc() -> datetime:
+    now_cn = datetime.now(_CN_TZ)
+    return now_cn.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+async def board_stats(db: AsyncSession, *, admin_id: uuid.UUID | None = None) -> dict:
+    """座席看板:线索分布 + 今日拨打量/接通率/今日新增 + 我的待办数。"""
     by_status = dict((await db.execute(
         sa.select(SalesLead.status, sa.func.count()).group_by(SalesLead.status))).all())
     by_pool = dict((await db.execute(
         sa.select(SalesLead.pool, sa.func.count()).group_by(SalesLead.pool))).all())
     total = (await db.execute(sa.select(sa.func.count()).select_from(SalesLead))).scalar_one()
+
+    today = _today_start_utc()
+    now = datetime.now(timezone.utc)
+    today_new = (await db.execute(sa.select(sa.func.count()).where(
+        SalesLead.created_at >= today))).scalar_one()
+    today_calls = (await db.execute(sa.select(sa.func.count()).where(
+        SalesLeadActivity.channel == "call",
+        SalesLeadActivity.created_at >= today))).scalar_one()
+    today_connected = (await db.execute(sa.select(sa.func.count()).where(
+        SalesLeadActivity.channel == "call",
+        SalesLeadActivity.outcome == "connected",
+        SalesLeadActivity.created_at >= today))).scalar_one()
+    # 待办:已到跟进时间、未到终态(admin 指定则只算其私海)
+    due_q = sa.select(sa.func.count()).where(
+        SalesLead.next_follow_at.isnot(None), SalesLead.next_follow_at <= now,
+        SalesLead.status.notin_(("won", "lost", "invalid")))
+    if admin_id is not None:
+        due_q = due_q.where(SalesLead.owner_admin_id == admin_id)
+    my_due = (await db.execute(due_q)).scalar_one()
+
     return {
         "total": int(total),
         "by_status": {k: int(v) for k, v in by_status.items()},
         "by_pool": {k: int(v) for k, v in by_pool.items()},
+        "today_new": int(today_new),
+        "today_calls": int(today_calls),
+        "today_connected": int(today_connected),
+        "connect_rate": round(today_connected / today_calls, 3) if today_calls else 0.0,
+        "my_due": int(my_due),
     }

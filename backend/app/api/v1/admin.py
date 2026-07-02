@@ -3456,13 +3456,13 @@ async def sales_list_leads(
     db: DbDep, admin: AdminDep,
     pool: str | None = None, status: str | None = None, source: str | None = None,
     region_code: str | None = None, mine: bool = False, dnc: bool | None = None,
-    q: str | None = None, skip: int = 0, limit: int = 20,
+    due: bool = False, q: str | None = None, skip: int = 0, limit: int = 20,
 ):
-    """线索分页列表。mine=true 只看自己私海;region_code 前缀匹配(省含市)。"""
+    """线索分页列表。mine=true 只看自己私海;due=true 只看到期待办;region_code 前缀匹配(省含市)。"""
     from app.services import sales_crm_service as crm
     rows, total = await crm.list_leads(
         db, pool=pool, status=status, source=source, region_code=region_code,
-        owner_admin_id=(admin.id if mine else None), dnc=dnc, q=q, skip=skip, limit=limit)
+        owner_admin_id=(admin.id if mine else None), dnc=dnc, due=due, q=q, skip=skip, limit=limit)
     return make_ok({"total": total, "items": [_lead_json(r) for r in rows]})
 
 
@@ -3548,9 +3548,9 @@ async def sales_recommend(db: DbDep, admin: AdminDep, skip: int = 0, limit: int 
 
 @router.get("/sales/board", response_model=BaseResponse[dict])
 async def sales_board(db: DbDep, admin: AdminDep):
-    """座席看板:各状态/公海私海线索数。"""
+    """座席看板:线索分布 + 今日拨打量/接通率/今日新增 + 我的待办数。"""
     from app.services import sales_crm_service as crm
-    return make_ok(await crm.board_stats(db))
+    return make_ok(await crm.board_stats(db, admin_id=admin.id))
 
 
 @router.post("/sales/recycle-public-pool", response_model=BaseResponse[dict])

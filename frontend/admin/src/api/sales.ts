@@ -47,7 +47,7 @@ export interface SalesActivity {
 
 export interface LeadListParams {
   pool?: string; status?: string; source?: string; region_code?: string
-  mine?: boolean; dnc?: boolean; q?: string; skip?: number; limit?: number
+  mine?: boolean; dnc?: boolean; due?: boolean; q?: string; skip?: number; limit?: number
 }
 
 export function listLeads(params: LeadListParams): Promise<{ total: number; items: SalesLead[] }> {
@@ -77,7 +77,17 @@ export function addActivity(id: string, body: { channel: string; content?: strin
 export function recommendLeads(params?: { skip?: number; limit?: number }): Promise<{ total: number; items: SalesLead[] }> {
   return unwrap(request.get('/admin/sales/recommend', { params }))
 }
-export function salesBoard(): Promise<{ total: number; by_status: Record<string, number>; by_pool: Record<string, number> }> {
+export interface SalesBoard {
+  total: number
+  by_status: Record<string, number>
+  by_pool: Record<string, number>
+  today_new: number
+  today_calls: number
+  today_connected: number
+  connect_rate: number
+  my_due: number
+}
+export function salesBoard(): Promise<SalesBoard> {
   return unwrap(request.get('/admin/sales/board'))
 }
 export function recyclePublicPool(): Promise<{ recycled: number }> {
