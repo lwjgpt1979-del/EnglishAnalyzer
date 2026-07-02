@@ -28,6 +28,7 @@ DEFAULTS: dict = {
     "intent_grade_thresholds": {        # 意向分 → 分层(A/B/C,其余 D)
         "A": 80, "B": 60, "C": 40,
     },
+    "sla_overdue_hours": 48,            # 跟进 SLA:next_follow_at 超时超过 N 小时 → 违约告警
 }
 
 STATUSES = ("new", "contacted", "interested", "negotiating", "won", "lost", "invalid")
@@ -129,7 +130,8 @@ async def list_leads(
     db: AsyncSession, *, pool: str | None = None, status: str | None = None,
     source: str | None = None, region_code: str | None = None,
     owner_admin_id: uuid.UUID | None = None, dnc: bool | None = None,
-    due: bool = False, q: str | None = None, skip: int = 0, limit: int = 20,
+    due: bool = False, sla: bool = False, q: str | None = None,
+    skip: int = 0, limit: int = 20,
 ) -> tuple[list[SalesLead], int]:
     base = sa.select(SalesLead)
     if pool:
@@ -148,6 +150,13 @@ async def list_leads(
         base = base.where(
             SalesLead.next_follow_at.isnot(None),
             SalesLead.next_follow_at <= datetime.now(timezone.utc),
+            SalesLead.status.notin_(("won", "lost", "invalid")))
+    if sla:                       # SLA 违约:超时超过阈值
+        cfg = await get_config(db)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=int(cfg["sla_overdue_hours"]))
+        base = base.where(
+            SalesLead.next_follow_at.isnot(None),
+            SalesLead.next_follow_at < cutoff,
             SalesLead.status.notin_(("won", "lost", "invalid")))
     if q:
         like = f"%{q}%"
@@ -393,6 +402,12 @@ async def board_stats(db: AsyncSession, *, admin_id: uuid.UUID | None = None) ->
         due_q = due_q.where(SalesLead.owner_admin_id == admin_id)
     my_due = (await db.execute(due_q)).scalar_one()
 
+    cfg = await get_config(db)
+    sla_cutoff = now - timedelta(hours=int(cfg["sla_overdue_hours"]))
+    sla_breach = (await db.execute(sa.select(sa.func.count()).where(
+        SalesLead.next_follow_at.isnot(None), SalesLead.next_follow_at < sla_cutoff,
+        SalesLead.status.notin_(("won", "lost", "invalid"))))).scalar_one()
+
     return {
         "total": int(total),
         "by_status": {k: int(v) for k, v in by_status.items()},
@@ -402,4 +417,112 @@ async def board_stats(db: AsyncSession, *, admin_id: uuid.UUID | None = None) ->
         "today_connected": int(today_connected),
         "connect_rate": round(today_connected / today_calls, 3) if today_calls else 0.0,
         "my_due": int(my_due),
+        "sla_breach": int(sla_breach),
+        "sla_overdue_hours": int(cfg["sla_overdue_hours"]),
     }
+
+
+# ── 来源统计 / 查重合并 ────────────────────────────────────────────────────────
+
+async def source_stats(db: AsyncSession) -> list[dict]:
+    """按来源统计:线索数 + 成交数 + 转化率。供来源看板。"""
+    total_by = dict((await db.execute(
+        sa.select(SalesLead.source, sa.func.count()).group_by(SalesLead.source))).all())
+    won_by = dict((await db.execute(
+        sa.select(SalesLead.source, sa.func.count())
+        .where(SalesLead.status == "won").group_by(SalesLead.source))).all())
+    out = []
+    for src, cnt in sorted(total_by.items(), key=lambda x: -x[1]):
+        won = int(won_by.get(src, 0))
+        out.append({"source": src, "total": int(cnt), "won": won,
+                    "conversion": round(won / cnt, 3) if cnt else 0.0})
+    return out
+
+
+async def find_duplicate_groups(db: AsyncSession, *, limit: int = 100) -> list[dict]:
+    """按电话找重复线索组(同一非空 phone 有 ≥2 条)。返回 [{phone, leads:[...]}]。"""
+    dup_phones = (await db.execute(
+        sa.select(SalesLead.phone).where(SalesLead.phone.isnot(None), SalesLead.phone != "")
+        .group_by(SalesLead.phone).having(sa.func.count() > 1).limit(limit))).scalars().all()
+    if not dup_phones:
+        return []
+    rows = (await db.execute(sa.select(SalesLead).where(SalesLead.phone.in_(dup_phones))
+                             .order_by(SalesLead.phone, SalesLead.created_at))).scalars().all()
+    groups: dict[str, list] = {}
+    for r in rows:
+        groups.setdefault(r.phone, []).append(r)
+    return [{"phone": ph, "leads": [_lead_brief(x) for x in ls]} for ph, ls in groups.items()]
+
+
+def _lead_brief(l: SalesLead) -> dict:
+    return {"id": str(l.id), "name": l.name, "contact_name": l.contact_name,
+            "region_name": l.region_name, "status": l.status, "source": l.source,
+            "pool": l.pool, "created_at": l.created_at.isoformat() if l.created_at else None}
+
+
+async def merge_leads(db: AsyncSession, *, survivor_id: uuid.UUID,
+                      dup_ids: list[uuid.UUID]) -> dict:
+    """合并:把 dup 的跟进/企微记录改挂到 survivor,合并产品意见 + 补空字段,删 dup。"""
+    from app.models.d23_sales_crm import WecomChatArchive
+    dup_ids = [d for d in dup_ids if d != survivor_id]
+    if not dup_ids:
+        return {"merged": 0}
+    survivor = await get_lead(db, survivor_id)
+    dups = (await db.execute(
+        sa.select(SalesLead).where(SalesLead.id.in_(dup_ids)))).scalars().all()
+    moved_acts = (await db.execute(
+        sa.update(SalesLeadActivity).where(SalesLeadActivity.lead_id.in_(dup_ids))
+        .values(lead_id=survivor_id))).rowcount
+    moved_wecom = (await db.execute(
+        sa.update(WecomChatArchive).where(WecomChatArchive.lead_id.in_(dup_ids))
+        .values(lead_id=survivor_id))).rowcount
+    # 合并产品意见 + 补 survivor 的空字段
+    fb = list(survivor.product_feedback or [])
+    for d in dups:
+        for f in (d.product_feedback or []):
+            if f not in fb:
+                fb.append(f)
+        for attr in ("contact_name", "wechat_id", "address", "region_code",
+                     "region_name", "industry", "source_note"):
+            if not getattr(survivor, attr) and getattr(d, attr):
+                setattr(survivor, attr, getattr(d, attr))
+    if fb:
+        survivor.product_feedback = fb[:50]
+    await db.execute(sa.delete(SalesLead).where(SalesLead.id.in_(dup_ids)))
+    await db.flush()
+    return {"merged": len(dups), "moved_activities": moved_acts, "moved_wecom": moved_wecom}
+
+
+async def import_from_excel(db: AsyncSession, *, content: bytes, source: str = "import") -> dict:
+    """解析 .xlsx(首行表头:名称/电话/城市/行业/来源说明,列名容忍)→ 复用 import_leads。"""
+    import io
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return {"created": 0, "skipped": 0}
+    header = [str(c or "").strip() for c in rows[0]]
+
+    def _col(*names) -> int | None:
+        for i, h in enumerate(header):
+            if any(n in h for n in names):
+                return i
+        return None
+
+    ci = {"name": _col("名称", "商家", "机构", "name"), "phone": _col("电话", "手机", "phone"),
+          "city": _col("城市", "地区", "city"), "industry": _col("行业", "industry"),
+          "note": _col("来源", "依据", "备注")}
+    items: list[dict] = []
+    for row in rows[1:]:
+        def g(key):
+            i = ci[key]
+            return str(row[i]).strip() if i is not None and i < len(row) and row[i] is not None else None
+        name = g("name")
+        if not name:
+            continue
+        items.append({"name": name, "phone": g("phone"), "region_name": g("city"),
+                      "industry": g("industry"), "source_note": g("note")})
+    if not items:
+        return {"created": 0, "skipped": 0}
+    return await import_leads(db, items=items, source=source)

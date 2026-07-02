@@ -47,7 +47,7 @@ export interface SalesActivity {
 
 export interface LeadListParams {
   pool?: string; status?: string; source?: string; region_code?: string
-  mine?: boolean; dnc?: boolean; due?: boolean; q?: string; skip?: number; limit?: number
+  mine?: boolean; dnc?: boolean; due?: boolean; sla?: boolean; q?: string; skip?: number; limit?: number
 }
 
 export function listLeads(params: LeadListParams): Promise<{ total: number; items: SalesLead[] }> {
@@ -94,9 +94,28 @@ export interface SalesBoard {
   today_connected: number
   connect_rate: number
   my_due: number
+  sla_breach: number
+  sla_overdue_hours: number
 }
 export function salesBoard(): Promise<SalesBoard> {
   return unwrap(request.get('/admin/sales/board'))
+}
+export interface SourceStat { source: string; total: number; won: number; conversion: number }
+export function sourceStats(): Promise<SourceStat[]> {
+  return unwrap(request.get('/admin/sales/source-stats'))
+}
+export interface DupGroup { phone: string; leads: Array<{ id: string; name: string; contact_name: string | null; region_name: string | null; status: string; source: string; pool: string; created_at: string | null }> }
+export function findDuplicates(): Promise<DupGroup[]> {
+  return unwrap(request.get('/admin/sales/duplicates'))
+}
+export function mergeLeads(survivorId: string, dupIds: string[]): Promise<{ merged: number; moved_activities: number; moved_wecom: number }> {
+  return unwrap(request.post('/admin/sales/leads/merge', { survivor_id: survivorId, dup_ids: dupIds }))
+}
+export function importExcel(file: File, source = 'import'): Promise<{ created: number; skipped: number }> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('source', source)
+  return unwrap(request.post('/admin/sales/leads/import-excel', form))
 }
 export function recyclePublicPool(): Promise<{ recycled: number }> {
   return unwrap(request.post('/admin/sales/recycle-public-pool'))

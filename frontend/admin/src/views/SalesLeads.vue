@@ -7,8 +7,10 @@ import {
   listLeads, createLead, importLeads, updateLead, claimLead, releaseLead,
   listActivities, addActivity, recommendLeads, salesBoard, recyclePublicPool,
   analyzeText, leadWecomMessages, listSeats, batchAssign,
+  sourceStats, findDuplicates, mergeLeads, importExcel,
   LEAD_STATUS, LEAD_SOURCE, type SalesLead, type SalesActivity, type LeadListParams,
   type IntentAnalysis, type WecomMsg, type SalesBoard, type Seat,
+  type SourceStat, type DupGroup,
 } from '../api/sales'
 
 const STATUS_TAG: Record<string, string> = {
@@ -19,7 +21,7 @@ const GRADE_TAG: Record<string, string> = { A: 'danger', B: 'warning', C: '', D:
 function fmt(s?: string | null) { return s ? s.replace('T', ' ').slice(0, 16) : '—' }
 
 // ── 列表 ──────────────────────────────────────────────────────────────────────
-const view = ref<'public' | 'mine' | 'due' | 'recommend'>('public')
+const view = ref<'public' | 'mine' | 'due' | 'sla' | 'recommend'>('public')
 const now = ref(Date.now())
 function isOverdue(s?: string | null) { return !!s && new Date(s).getTime() <= now.value }
 const rows = ref<SalesLead[]>([])
@@ -63,6 +65,7 @@ async function load() {
       if (view.value === 'public') params.pool = 'public'
       if (view.value === 'mine') params.mine = true
       if (view.value === 'due') { params.mine = true; params.due = true }
+      if (view.value === 'sla') params.sla = true
       const r = await listLeads(params)
       rows.value = r.items; total.value = r.total
     }
@@ -100,7 +103,48 @@ async function batchClaim() {
     tableRef.value?.clearSelection(); load(); loadBoard()
   } catch (e: any) { ElMessage.error(e?.message || '认领失败') }
 }
-function switchView(v: 'public' | 'mine' | 'due' | 'recommend') { view.value = v; reload() }
+function switchView(v: 'public' | 'mine' | 'due' | 'sla' | 'recommend') { view.value = v; reload() }
+function viewSla() { view.value = 'sla'; reload() }
+
+// 来源统计
+const srcDlg = ref(false)
+const srcStats = ref<SourceStat[]>([])
+async function openSourceStats() {
+  try { srcStats.value = await sourceStats(); srcDlg.value = true }
+  catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+}
+
+// 查重合并
+const dupDlg = ref(false)
+const dupGroups = ref<DupGroup[]>([])
+const dupLoading = ref(false)
+async function openDup() {
+  dupDlg.value = true; dupLoading.value = true
+  try { dupGroups.value = await findDuplicates() }
+  catch (e: any) { ElMessage.error(e?.message || '查重失败') }
+  finally { dupLoading.value = false }
+}
+async function doMerge(g: DupGroup, survivorId: string) {
+  const dupIds = g.leads.map(l => l.id).filter(id => id !== survivorId)
+  try {
+    await ElMessageBox.confirm(`把其余 ${dupIds.length} 条合并到选中主线索?跟进/企微记录会迁移,重复线索删除。`, '合并', { type: 'warning' })
+    const r = await mergeLeads(survivorId, dupIds)
+    ElMessage.success(`已合并 ${r.merged} 条(迁移跟进 ${r.moved_activities}、企微 ${r.moved_wecom})`)
+    dupGroups.value = await findDuplicates(); load(); loadBoard()
+  } catch (e: any) { if (e !== 'cancel') ElMessage.error(e?.message || '合并失败') }
+}
+
+// Excel 导入
+const impFile = ref<File | null>(null)
+function onExcelPick(e: Event) { impFile.value = (e.target as HTMLInputElement).files?.[0] || null }
+async function saveExcel() {
+  if (!impFile.value) { ElMessage.warning('请选择 .xlsx 文件'); return }
+  try {
+    const r = await importExcel(impFile.value, impSource.value)
+    ElMessage.success(`导入完成:新增 ${r.created}、跳过重复 ${r.skipped}`)
+    impDlg.value = false; impFile.value = null; reload(); loadBoard()
+  } catch (e: any) { ElMessage.error(e?.message || '导入失败') }
+}
 
 async function onClaim(r: SalesLead) {
   try { await claimLead(r.id); ElMessage.success('已认领进私海'); load() }
@@ -240,9 +284,18 @@ onMounted(() => { load(); loadBoard() })
       </template>
       <el-button type="primary" :icon="Plus" @click="openAdd">新增</el-button>
       <el-button :icon="Upload" @click="openImport">批量导入</el-button>
+      <el-button @click="openSourceStats">来源统计</el-button>
+      <el-button @click="openDup">查重</el-button>
       <el-button :icon="RefreshRight" @click="onRecycle">公海回收</el-button>
       <el-button :icon="Refresh" @click="() => { load(); loadBoard() }">刷新</el-button>
     </div>
+
+    <el-alert v-if="board.sla_breach" type="error" show-icon :closable="false" style="margin-bottom:12px">
+      <template #title>
+        有 {{ board.sla_breach }} 条线索跟进已超时超过 {{ board.sla_overdue_hours }} 小时(SLA 违约)。
+        <el-button link type="primary" @click="viewSla">立即查看</el-button>
+      </template>
+    </el-alert>
 
     <div class="tabs">
       <el-radio-group :model-value="view" @change="(v: any) => switchView(v)">
@@ -250,6 +303,9 @@ onMounted(() => { load(); loadBoard() })
         <el-radio-button label="mine">我的私海</el-radio-button>
         <el-radio-button label="due">
           <el-badge :value="board.my_due" :hidden="!board.my_due" :max="99" type="danger">今日待办</el-badge>
+        </el-radio-button>
+        <el-radio-button label="sla">
+          <el-badge :value="board.sla_breach" :hidden="!board.sla_breach" :max="99" type="danger">SLA 违约</el-badge>
         </el-radio-button>
         <el-radio-button label="recommend">今日推荐(赢单反查)</el-radio-button>
       </el-radio-group>
@@ -349,12 +405,45 @@ onMounted(() => { load(); loadBoard() })
 
     <!-- 导入 -->
     <el-dialog v-model="impDlg" title="批量导入线索" width="560px">
-      <p class="hint">每行一条,逗号/Tab 分隔:<b>名称,电话,城市,行业</b>。城市走系统 region 匹配,按 phone 去重。</p>
-      <el-input v-model="impText" type="textarea" :rows="10" placeholder="示例:新东方常州校区,13800001111,常州市,教育培训" />
-      <el-form-item label="来源" style="margin-top:12px">
+      <el-tabs>
+        <el-tab-pane label="粘贴文本">
+          <p class="hint">每行一条,逗号/Tab 分隔:<b>名称,电话,城市,行业</b>。城市走 region 匹配,按 phone 去重。</p>
+          <el-input v-model="impText" type="textarea" :rows="9" placeholder="示例:新东方常州校区,13800001111,常州市,教育培训" />
+          <div style="margin-top:12px"><el-button type="primary" @click="saveImport">导入文本</el-button></div>
+        </el-tab-pane>
+        <el-tab-pane label="Excel 文件">
+          <p class="hint">上传 <b>.xlsx</b>,首行表头含 名称/电话/城市/行业/来源说明(列名可容忍),按 phone 去重。</p>
+          <input type="file" accept=".xlsx" @change="onExcelPick" />
+          <div style="margin-top:12px"><el-button type="primary" :disabled="!impFile" @click="saveExcel">导入 Excel</el-button></div>
+        </el-tab-pane>
+      </el-tabs>
+      <el-form-item label="来源" style="margin-top:8px">
         <el-select v-model="impSource" style="width:160px"><el-option v-for="(v, k) in LEAD_SOURCE" :key="k" :label="v" :value="k" /></el-select>
       </el-form-item>
-      <template #footer><el-button @click="impDlg = false">取消</el-button><el-button type="primary" @click="saveImport">导入</el-button></template>
+    </el-dialog>
+
+    <!-- 来源统计 -->
+    <el-dialog v-model="srcDlg" title="线索来源统计" width="480px">
+      <el-table :data="srcStats" border size="small">
+        <el-table-column label="来源"><template #default="{ row }">{{ LEAD_SOURCE[row.source] || row.source }}</template></el-table-column>
+        <el-table-column prop="total" label="线索数" width="90" align="center" />
+        <el-table-column prop="won" label="成交" width="80" align="center" />
+        <el-table-column label="转化率" width="100" align="center"><template #default="{ row }">{{ (row.conversion * 100).toFixed(1) }}%</template></el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- 查重合并 -->
+    <el-dialog v-model="dupDlg" title="重复线索查重合并(按电话)" width="640px">
+      <div v-loading="dupLoading">
+        <el-empty v-if="!dupGroups.length && !dupLoading" description="没有重复线索" :image-size="70" />
+        <div v-for="g in dupGroups" :key="g.phone" class="dup-group">
+          <div class="dup-phone">电话 {{ g.phone }} · {{ g.leads.length }} 条</div>
+          <div v-for="l in g.leads" :key="l.id" class="dup-lead">
+            <span>{{ l.name }} <span class="muted">{{ l.region_name || '' }} · {{ LEAD_STATUS[l.status] || l.status }} · {{ (l.created_at || '').slice(0,10) }}</span></span>
+            <el-button size="small" type="primary" plain @click="doMerge(g, l.id)">以此为主合并</el-button>
+          </div>
+        </div>
+      </div>
     </el-dialog>
 
     <!-- 批量派单 -->
@@ -468,6 +557,9 @@ onMounted(() => { load(); loadBoard() })
 .stat-sep { margin: 0 6px; color: #dcdfe6; }
 .overdue { color: #f56c6c; font-weight: 600; }
 .compliance { display: flex; align-items: center; gap: 6px; }
+.dup-group { border: 1px solid #ebeef5; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; }
+.dup-phone { font-weight: 600; margin-bottom: 6px; color: #303133; }
+.dup-lead { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; font-size: 13px; }
 .tabs { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .hint { color: #909399; font-size: 13px; margin: 0; }
 .muted { color: #909399; font-size: 12px; }

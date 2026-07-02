@@ -28,7 +28,7 @@ from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.sales_crm import (
     SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, ActivityCreate,
-    SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn, BatchAssignIn,
+    SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn, BatchAssignIn, MergeLeadsIn,
     WecomIngestIn, WecomConfigUpdate, WecomMsgOut,
 )
 from app.schemas.teacher import (
@@ -3456,13 +3456,14 @@ async def sales_list_leads(
     db: DbDep, admin: AdminDep,
     pool: str | None = None, status: str | None = None, source: str | None = None,
     region_code: str | None = None, mine: bool = False, dnc: bool | None = None,
-    due: bool = False, q: str | None = None, skip: int = 0, limit: int = 20,
+    due: bool = False, sla: bool = False, q: str | None = None, skip: int = 0, limit: int = 20,
 ):
-    """线索分页列表。mine=true 只看自己私海;due=true 只看到期待办;region_code 前缀匹配(省含市)。"""
+    """线索分页列表。mine=只看自己私海;due=到期待办;sla=SLA 违约(严重超时);region_code 前缀匹配。"""
     from app.services import sales_crm_service as crm
     rows, total = await crm.list_leads(
         db, pool=pool, status=status, source=source, region_code=region_code,
-        owner_admin_id=(admin.id if mine else None), dnc=dnc, due=due, q=q, skip=skip, limit=limit)
+        owner_admin_id=(admin.id if mine else None), dnc=dnc, due=due, sla=sla, q=q,
+        skip=skip, limit=limit)
     return make_ok({"total": total, "items": [_lead_json(r) for r in rows]})
 
 
@@ -3656,3 +3657,42 @@ async def sales_lead_wecom(lead_id: uuid.UUID, db: DbDep, admin: AdminDep,
     rows, total = await wa.list_lead_messages(db, lead_id=lead_id, skip=skip, limit=limit)
     return make_ok({"total": total,
                     "items": [WecomMsgOut.model_validate(r).model_dump(mode="json") for r in rows]})
+
+
+# ─── 电销 CRM · 打磨:来源统计 / 查重合并 / Excel 导入 ─────────────────────────
+
+@router.get("/sales/source-stats", response_model=BaseResponse[list])
+async def sales_source_stats(db: DbDep, admin: AdminDep):
+    """线索来源统计:各来源线索数 / 成交数 / 转化率。"""
+    from app.services import sales_crm_service as crm
+    return make_ok(await crm.source_stats(db))
+
+
+@router.get("/sales/duplicates", response_model=BaseResponse[list])
+async def sales_duplicates(db: DbDep, admin: AdminDep, limit: int = 100):
+    """按电话找重复线索组(供查重合并)。"""
+    from app.services import sales_crm_service as crm
+    return make_ok(await crm.find_duplicate_groups(db, limit=limit))
+
+
+@router.post("/sales/leads/merge", response_model=BaseResponse[dict])
+async def sales_merge_leads(body: MergeLeadsIn, db: DbDep, admin: AdminDep):
+    """合并重复线索:跟进/企微记录改挂到 survivor,补空字段 + 合并产品意见,删 dup。"""
+    from app.services import sales_crm_service as crm
+    res = await crm.merge_leads(db, survivor_id=body.survivor_id, dup_ids=body.dup_ids)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/sales/leads/import-excel", response_model=BaseResponse[dict])
+async def sales_import_excel(
+    db: DbDep, admin: AdminDep,
+    file: UploadFile = File(..., description="线索 Excel(.xlsx);表头含 名称/电话/城市/行业/来源说明"),
+    source: str = Form("import"),
+):
+    """Excel 文件导入线索(首行表头,列名容忍),按 phone 去重。"""
+    from app.services import sales_crm_service as crm
+    content = await file.read()
+    res = await crm.import_from_excel(db, content=content, source=source)
+    await db.commit()
+    return make_ok(res)
