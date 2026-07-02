@@ -13,27 +13,51 @@ def _bare(s: str) -> str:
     return re.sub(r"(省|市|自治区|特别行政区|壮族|回族|维吾尔|自治州|地区)", "", s or "")
 
 
-async def region_from_name(db: AsyncSession, name: str) -> tuple[str | None, str | None]:
-    """从文本(如试卷名)匹配 省→市,返回 (最细级 code, 省市拼接名)。匹配不到 → (None, None)。"""
+def _hit(r: Region, name: str) -> bool:
+    return r.name in name or (len(_bare(r.name)) >= 2 and _bare(r.name) in name)
+
+
+async def _match_child(db: AsyncSession, parent_code: str | None, name: str) -> Region | None:
+    """在 parent 的直接下级里找名字命中文本的那个(整体名或去后缀名出现在 name 中)。"""
+    q = (select(Region).where(Region.parent_code.is_(None)) if parent_code is None
+         else select(Region).where(Region.parent_code == parent_code))
+    children = (await db.execute(q)).scalars().all()
+    return next((c for c in children if _hit(c, name)), None)
+
+
+async def region_from_name(
+    db: AsyncSession, name: str, *, max_level: int = 2,
+) -> tuple[str | None, str | None]:
+    """从文本匹配行政区划,返回 (最细级 code, 逐级拼接名)。匹配不到 → (None, None)。
+
+    默认 max_level=2(省→市)保持历史行为(市级码与 user.city_code 同源)。
+    需要区县/乡镇时传 max_level=3/4:在**已定位的上级下**逐级下钻(限定子级内匹配,
+    避免乡镇重名的全国歧义)——只有上级链完整出现在文本里才会钻到更细级。
+    """
     if not name:
         return None, None
-    provs = (await db.execute(select(Region).where(Region.parent_code.is_(None)))).scalars().all()
-    prov = next((p for p in provs
-                 if p.name in name or (len(_bare(p.name)) >= 2 and _bare(p.name) in name)), None)
-    if prov is not None:
-        cities = (await db.execute(select(Region).where(Region.parent_code == prov.code))).scalars().all()
-        city = next((c for c in cities
-                     if c.name in name or (len(_bare(c.name)) >= 2 and _bare(c.name) in name)), None)
-        return (city.code, prov.name + city.name) if city is not None else (prov.code, prov.name)
-    # 名字里没有省 → 直接按市级(level=2)全国匹配,再回推所属省名拼接
-    city = next((c for c in (await db.execute(
-        select(Region).where(Region.level == 2))).scalars().all()
-        if len(_bare(c.name)) >= 2 and _bare(c.name) in name), None)
-    if city is None:
-        return None, None
-    pname = (await db.execute(
-        select(Region.name).where(Region.code == city.parent_code))).scalar_one_or_none() or ""
-    return city.code, (pname + city.name)
+    chain: list[Region] = []
+    node = await _match_child(db, None, name)          # 省
+    if node is None:
+        # 名字里没省 → 按市级(level=2)全国匹配,回推所属省,作为下钻起点
+        city = next((c for c in (await db.execute(
+            select(Region).where(Region.level == 2))).scalars().all()
+            if len(_bare(c.name)) >= 2 and _bare(c.name) in name), None)
+        if city is None:
+            return None, None
+        prov = (await db.execute(
+            select(Region).where(Region.code == city.parent_code))).scalar_one_or_none()
+        if prov is not None:
+            chain.append(prov)
+        node = city
+    chain.append(node)
+    while node.level < max_level:                       # 逐级下钻(市→区县→乡镇)
+        child = await _match_child(db, node.code, name)
+        if child is None:
+            break
+        chain.append(child)
+        node = child
+    return chain[-1].code, "".join(r.name for r in chain)
 
 
 async def list_children(db: AsyncSession, parent_code: str | None) -> list[dict]:
