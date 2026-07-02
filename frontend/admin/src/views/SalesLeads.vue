@@ -6,7 +6,9 @@ import { listRegions } from '../api/admin'
 import {
   listLeads, createLead, importLeads, updateLead, claimLead, releaseLead,
   listActivities, addActivity, recommendLeads, salesBoard, recyclePublicPool,
+  analyzeText,
   LEAD_STATUS, LEAD_SOURCE, type SalesLead, type SalesActivity, type LeadListParams,
+  type IntentAnalysis,
 } from '../api/sales'
 
 const STATUS_TAG: Record<string, string> = {
@@ -132,6 +134,7 @@ const actForm = reactive({ channel: 'call', outcome: '', content: '', next_follo
 async function openDetail(r: SalesLead) {
   cur.value = r; drawer.value = true
   Object.assign(actForm, { channel: 'call', outcome: '', content: '', next_follow_at: '', status: '' })
+  anaText.value = ''; anaResult.value = null
   await loadActs()
 }
 async function loadActs() {
@@ -157,6 +160,18 @@ async function setStatus(status: string) {
   if (!cur.value) return
   try { const u = await updateLead(cur.value.id, { status }); cur.value = u; ElMessage.success('状态已更新'); load(); loadBoard() }
   catch (e: any) { ElMessage.error(e?.message || '更新失败') }
+}
+
+// 意向分析(P1 试跑):粘贴通话/会话转写 → LLM 打分 + 抽产品意见
+const anaText = ref('')
+const anaResult = ref<IntentAnalysis | null>(null)
+const anaLoading = ref(false)
+async function runAnalyze() {
+  if (!anaText.value.trim()) { ElMessage.warning('请粘贴通话/会话转写'); return }
+  anaLoading.value = true
+  try { anaResult.value = await analyzeText(anaText.value) }
+  catch (e: any) { ElMessage.error(e?.message || '分析失败') }
+  finally { anaLoading.value = false }
 }
 
 onMounted(() => { load(); loadBoard() })
@@ -315,6 +330,24 @@ onMounted(() => { load(); loadBoard() })
           <el-button type="primary" @click="saveAct">保存跟进</el-button>
         </el-form>
 
+        <div class="sec-title">意向分析(试跑)</div>
+        <p class="hint">粘贴通话/微信会话转写,AI 判成交意向 + 抽产品意见(呼叫中心/ASR 接入后自动跑)。</p>
+        <el-input v-model="anaText" type="textarea" :rows="3" placeholder="例:你们这课多少钱?能支持中考冲刺吗?我们再考虑下…" />
+        <el-button type="primary" plain size="small" style="margin-top:8px" :loading="anaLoading" @click="runAnalyze">试跑分析</el-button>
+        <div v-if="anaResult" class="ana-box">
+          <div>意向分:<b>{{ anaResult.intent_score }}</b>
+            <el-tag size="small" style="margin-left:6px">{{ anaResult.summary }}</el-tag>
+          </div>
+          <div class="ana-sig">
+            <el-tag v-if="anaResult.signals.asked_price" size="small" type="success" effect="plain">问价</el-tag>
+            <el-tag v-if="anaResult.signals.asked_next_step" size="small" type="success" effect="plain">问合作</el-tag>
+            <el-tag v-for="o in anaResult.signals.objections" :key="o" size="small" type="warning" effect="plain">异议:{{ o }}</el-tag>
+            <el-tag v-for="r in anaResult.signals.red_flags" :key="r" size="small" type="danger" effect="plain">{{ r }}</el-tag>
+          </div>
+          <div v-if="anaResult.product_feedback.length" class="muted">产品意见:{{ anaResult.product_feedback.join(' / ') }}</div>
+          <div v-if="anaResult.next_action" class="muted">建议下一步:{{ anaResult.next_action }}</div>
+        </div>
+
         <div class="sec-title">跟进时间线</div>
         <el-timeline v-loading="actsLoading">
           <el-timeline-item v-for="a in acts" :key="a.id" :timestamp="fmt(a.created_at)" placement="top">
@@ -338,5 +371,7 @@ onMounted(() => { load(); loadBoard() })
 .hint { color: #909399; font-size: 13px; margin: 0; }
 .muted { color: #909399; font-size: 12px; }
 .sec-title { font-weight: 600; margin: 18px 0 10px; color: #303133; }
+.ana-box { margin-top: 10px; padding: 10px 12px; background: #f5f7fa; border-radius: 6px; font-size: 13px; line-height: 1.9; }
+.ana-sig { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
 :deep(.dnc-row) { background: #fef0f0 !important; }
 </style>

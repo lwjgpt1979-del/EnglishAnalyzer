@@ -84,6 +84,28 @@ export function recyclePublicPool(): Promise<{ recycled: number }> {
   return unwrap(request.post('/admin/sales/recycle-public-pool'))
 }
 
+export interface IntentAnalysis {
+  intent_score: number
+  intent_grade?: string
+  signals: { asked_price: boolean; asked_next_step: boolean; competitor_mentioned: string[]; objections: string[]; red_flags: string[] }
+  product_feedback: string[]
+  summary: string
+  next_action: string
+  compliance: { violations: string[] }
+}
+// 试跑:任意转写 → 意向分析(不落库)
+export function analyzeText(text: string, source = 'call'): Promise<IntentAnalysis> {
+  return unwrap(request.post('/admin/sales/analyze', { text, source }))
+}
+// 呼叫中心接入位:回传一通电话(录音/转写)→ 落 call 跟进 + 有转写则分析回填
+export function callRecord(id: string, body: { recording_url?: string; asr_text?: string; call_duration_sec?: number; outcome?: string; content?: string }): Promise<SalesActivity> {
+  return unwrap(request.post(`/admin/sales/leads/${id}/call-record`, body))
+}
+// 对已有转写的跟进(重新)跑分析
+export function analyzeActivity(activityId: string): Promise<SalesActivity> {
+  return unwrap(request.post(`/admin/sales/activities/${activityId}/analyze`))
+}
+
 export const LEAD_STATUS: Record<string, string> = {
   new: '新线索', contacted: '已联系', interested: '有意向',
   negotiating: '谈单中', won: '成交', lost: '流失', invalid: '无效',

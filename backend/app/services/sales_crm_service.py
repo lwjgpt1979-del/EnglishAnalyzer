@@ -25,6 +25,9 @@ DEFAULTS: dict = {
     "recommend_weights": {              # 赢单画像反查各维度权重
         "industry": 3.0, "province": 1.0, "city": 2.0, "tag": 1.0,
     },
+    "intent_grade_thresholds": {        # 意向分 → 分层(A/B/C,其余 D)
+        "A": 80, "B": 60, "C": 40,
+    },
 }
 
 STATUSES = ("new", "contacted", "interested", "negotiating", "won", "lost", "invalid")

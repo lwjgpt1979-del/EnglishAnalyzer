@@ -28,7 +28,7 @@ from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.sales_crm import (
     SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, ActivityCreate,
-    SalesLeadOut, ActivityOut,
+    SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn,
 )
 from app.schemas.teacher import (
     AdminTeacherItem,
@@ -3559,3 +3559,33 @@ async def sales_recycle_pool(db: DbDep, admin: AdminDep):
     n = await crm.recycle_public_pool(db)
     await db.commit()
     return make_ok({"recycled": n})
+
+
+# ─── 电销 CRM · P1 意向分析 / 呼叫接入位 ──────────────────────────────────────
+
+@router.post("/sales/leads/{lead_id}/call-record", response_model=BaseResponse[dict])
+async def sales_call_record(lead_id: uuid.UUID, body: CallRecordIn, db: DbDep, admin: AdminDep):
+    """呼叫中心接入位:回传一通电话(录音/转写/时长)→ 落 call 跟进,有转写则跑意向分析回填。"""
+    from app.services import sales_analysis_service as ana
+    act = await ana.ingest_call_record(
+        db, lead_id=lead_id, admin_id=admin.id, recording_url=body.recording_url,
+        asr_text=body.asr_text, call_duration_sec=body.call_duration_sec,
+        direction=body.direction, outcome=body.outcome, content=body.content)
+    await db.commit()
+    return make_ok(ActivityOut.model_validate(act).model_dump(mode="json"))
+
+
+@router.post("/sales/activities/{activity_id}/analyze", response_model=BaseResponse[dict])
+async def sales_analyze_activity(activity_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """对一条已有转写的跟进记录(重新)跑意向分析,回填 activity + 线索。"""
+    from app.services import sales_analysis_service as ana
+    act = await ana.analyze_activity(db, activity_id=activity_id)
+    await db.commit()
+    return make_ok(ActivityOut.model_validate(act).model_dump(mode="json"))
+
+
+@router.post("/sales/analyze", response_model=BaseResponse[dict])
+async def sales_analyze_text(body: AnalyzeTextIn, db: DbDep, admin: AdminDep):
+    """试跑:任意转写文本 → 意向分析 schema(不落库)。"""
+    from app.services import sales_analysis_service as ana
+    return make_ok(await ana.analyze_transcript(body.text, source=body.source))

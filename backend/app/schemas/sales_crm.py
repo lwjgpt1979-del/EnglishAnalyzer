@@ -57,6 +57,21 @@ class ActivityCreate(BaseModel):
     status: str | None = None         # 顺带推进线索状态
 
 
+class CallRecordIn(BaseModel):
+    """呼叫中心接入位:一通电话的录音/转写回传。"""
+    recording_url: str | None = None
+    asr_text: str | None = None
+    call_duration_sec: int | None = None
+    direction: str | None = "out"
+    outcome: str | None = None
+    content: str | None = None
+
+
+class AnalyzeTextIn(BaseModel):
+    text: str
+    source: str = "call"
+
+
 class SalesLeadOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
