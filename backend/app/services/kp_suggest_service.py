@@ -437,6 +437,67 @@ async def suggest_kps_for_passage(
     return out
 
 
+# ── 阅读逐问「问法 → rc-* 叶子技能」确定性归类(P1①）──────────────────────────
+# 按问法特征把阅读小问精准打到 rc-* 叶子(细节/主旨/推理/猜词/态度…),无需 LLM、离线亦生效。
+# 规则按特异性排序,取首个命中;无明显信号返回 None(交 LLM)。宁可 None 也不误标(重精确)。
+_RC_SKILL_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("rc-4-3", ("refers to", "refer to", "指代", "所指")),                       # 代词指代
+    ("rc-4-1", ("the word", "underlined word", "closest in meaning",
+                "划线词", "画线词", "词义", "意思是", "意思最接近")),              # 据上下文猜词义
+    ("rc-2-3", ("best title", "title for", "best headline", "标题")),            # 标题归纳
+    ("rc-2-2", ("main idea", "mainly about", "mainly tell", "the passage is about",
+                "what is the passage about", "主旨", "大意", "主要讲", "中心思想")),  # 全文主旨
+    ("rc-3-2", ("purpose of writing", "why does the author write", "the author write",
+                "写作目的", "写作意图")),                                        # 写作目的与作者意图
+    ("rc-3-3", ("most probably read", "where can you read", "which magazine",
+                "which newspaper", "出处", "读者对象")),                          # 文章出处与读者对象
+    ("rc-3-1", ("we can infer", "infer from", "we can learn", "we can know",
+                "imply", "推断", "推知", "可以得知", "可知")),                     # 事实推断
+    ("rc-5-1", ("author's attitude", "writer's attitude", "attitude toward",
+                "作者态度", "作者的态度")),                                       # 作者态度
+    ("rc-5-2", ("how does he feel", "how did he feel", "feeling", "感受", "情感", "心情")),  # 人物情感
+    ("rc-1-1", ("what time", "how many", "how much", "how long", "how often",
+                "according to the passage", "根据短文", "根据文章",
+                "which of the following is true", "细节")),                       # 直接信息查找
+]
+
+
+def classify_reading_skill(stem: str) -> str | None:
+    """阅读小问题干 → 精确 rc-* 叶子技能编码(按问法);无明显信号返回 None(交 LLM)。"""
+    s = (stem or "").lower()
+    if not s.strip():
+        return None
+    for code, pats in _RC_SKILL_RULES:
+        if any(p in s for p in pats):
+            return code
+    return None
+
+
+async def _rc_rule_matches(
+    db: AsyncSession, qs: list[PlatformQuestion]
+) -> dict[uuid.UUID, list[tuple]]:
+    """对阅读题(question_type=阅读)逐问按问法确定性归到 rc-* 叶子。返回 {qid:[(node_id,name,code)]}。"""
+    want: dict[uuid.UUID, str] = {}
+    for q in qs:
+        if (q.question_type or "") != "阅读":
+            continue
+        code = classify_reading_skill(q.stem or "")
+        if code:
+            want[q.id] = code
+    if not want:
+        return {}
+    rows = (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
+        .where(KnowledgeNode.code.in_(set(want.values()))))).all()
+    code_map = {c: (nid, nm, c) for nid, nm, c in rows}
+    out: dict[uuid.UUID, list[tuple]] = {}
+    for qid, code in want.items():
+        ref = code_map.get(code)
+        if ref:
+            out[qid] = [ref]
+    return out
+
+
 async def suggest_kps_for_paper(
     db: AsyncSession, paper_id: uuid.UUID, *,
     sections: list[str] | None = None, prompt_id: str | None = None,
@@ -461,8 +522,12 @@ async def suggest_kps_for_paper(
             .where(PlatformQuestionKp.question_id.in_([q.id for q in qs]))
         )).scalars().all())
         qs = [q for q in qs if q.id not in attached]
-    if not qs or is_llm_dev_mode():
-        return {q.id: [] for q in qs}, {}
+    # 确定性 rc 技能预标:阅读逐问按问法精确打 rc-* 叶子(无需 LLM,离线亦生效)。P1①
+    rc_pre = await _rc_rule_matches(db, qs)
+    if not qs:
+        return {}, {}
+    if is_llm_dev_mode():
+        return {q.id: rc_pre.get(q.id, []) for q in qs}, {}
 
     code2node, entries = await _load_catalog(db)
     cat_code2node, cat_lines = await _load_categories(db)
@@ -563,4 +628,8 @@ async def suggest_kps_for_paper(
         if isinstance(r, tuple):     # (matches, proposals);单组失败(异常)跳过,不拖垮整卷
             out.update(r[0])
             proposals.update({q: v for q, v in r[1].items() if v})
+    # 合并确定性 rc 预标(置前、去重):精确 rc 叶子优先于 LLM 的泛匹配。P1①
+    for qid, refs in rc_pre.items():
+        existing = {x[0] for x in out.get(qid, [])}
+        out[qid] = refs + [x for x in out.get(qid, []) if x[0] not in existing]
     return out, proposals
