@@ -26,6 +26,10 @@ from app.schemas.questions import (
 )
 from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.curriculum import UnitDeleteIn
+from app.schemas.sales_crm import (
+    SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, ActivityCreate,
+    SalesLeadOut, ActivityOut,
+)
 from app.schemas.teacher import (
     AdminTeacherItem,
     AdminTeacherListOut,
@@ -3438,3 +3442,120 @@ async def admin_set_institution_package(institution_id: uuid.UUID, body: dict, d
 async def admin_institution_package_usage(institution_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """某机构套餐 + 池用量（超管查看）。"""
     return make_ok(await _pkg_svc.usage_overview(db, institution_id=institution_id))
+
+
+# ─── 电销 CRM(域23 · 平台自用)──────────────────────────────────────────────
+
+def _lead_json(lead) -> dict:
+    return SalesLeadOut.model_validate(lead).model_dump(mode="json")
+
+
+@router.get("/sales/leads", response_model=BaseResponse[dict])
+async def sales_list_leads(
+    db: DbDep, admin: AdminDep,
+    pool: str | None = None, status: str | None = None, source: str | None = None,
+    region_code: str | None = None, mine: bool = False, dnc: bool | None = None,
+    q: str | None = None, skip: int = 0, limit: int = 20,
+):
+    """线索分页列表。mine=true 只看自己私海;region_code 前缀匹配(省含市)。"""
+    from app.services import sales_crm_service as crm
+    rows, total = await crm.list_leads(
+        db, pool=pool, status=status, source=source, region_code=region_code,
+        owner_admin_id=(admin.id if mine else None), dnc=dnc, q=q, skip=skip, limit=limit)
+    return make_ok({"total": total, "items": [_lead_json(r) for r in rows]})
+
+
+@router.post("/sales/leads", response_model=BaseResponse[dict])
+async def sales_create_lead(body: SalesLeadCreate, db: DbDep, admin: AdminDep):
+    """手动录入线索(地区走 region_service 反解)。"""
+    from app.services import sales_crm_service as crm
+    lead = await crm.create_lead(db, data=body.model_dump(exclude_none=True))
+    await db.commit()
+    return make_ok(_lead_json(lead))
+
+
+@router.post("/sales/leads/import", response_model=BaseResponse[dict])
+async def sales_import_leads(body: SalesLeadImport, db: DbDep, admin: AdminDep):
+    """批量导入线索(按 phone 去重)。"""
+    from app.services import sales_crm_service as crm
+    res = await crm.import_leads(
+        db, items=[it.model_dump(exclude_none=True) for it in body.items], source=body.source)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.patch("/sales/leads/{lead_id}", response_model=BaseResponse[dict])
+async def sales_update_lead(lead_id: uuid.UUID, body: SalesLeadUpdate, db: DbDep, admin: AdminDep):
+    """改线索(状态/DNC/consent/下次跟进/意向分/地区等)。"""
+    from app.services import sales_crm_service as crm
+    lead = await crm.update_lead(db, lead_id=lead_id, patch=body.model_dump(exclude_unset=True))
+    await db.commit()
+    return make_ok(_lead_json(lead))
+
+
+@router.post("/sales/leads/{lead_id}/claim", response_model=BaseResponse[dict])
+async def sales_claim_lead(lead_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """认领进私海(防撞单:已被他人认领则 409)。"""
+    from app.services import sales_crm_service as crm
+    lead = await crm.claim_lead(db, lead_id=lead_id, admin_id=admin.id)
+    await db.commit()
+    return make_ok(_lead_json(lead))
+
+
+@router.post("/sales/leads/{lead_id}/release", response_model=BaseResponse[dict])
+async def sales_release_lead(lead_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """退回公海。"""
+    from app.services import sales_crm_service as crm
+    lead = await crm.release_lead(db, lead_id=lead_id)
+    await db.commit()
+    return make_ok(_lead_json(lead))
+
+
+@router.get("/sales/leads/{lead_id}/activities", response_model=BaseResponse[dict])
+async def sales_list_activities(
+    lead_id: uuid.UUID, db: DbDep, admin: AdminDep, skip: int = 0, limit: int = 20,
+):
+    """线索跟进时间线(分页)。"""
+    from app.services import sales_crm_service as crm
+    rows, total = await crm.list_activities(db, lead_id=lead_id, skip=skip, limit=limit)
+    return make_ok({"total": total,
+                    "items": [ActivityOut.model_validate(r).model_dump(mode="json") for r in rows]})
+
+
+@router.post("/sales/leads/{lead_id}/activities", response_model=BaseResponse[dict])
+async def sales_add_activity(
+    lead_id: uuid.UUID, body: ActivityCreate, db: DbDep, admin: AdminDep,
+):
+    """加一条跟进记录(顺带更新最后触达/下次跟进/状态)。"""
+    from app.services import sales_crm_service as crm
+    act = await crm.add_activity(
+        db, lead_id=lead_id, admin_id=admin.id, channel=body.channel,
+        content=body.content, direction=body.direction, outcome=body.outcome,
+        next_follow_at=body.next_follow_at, status=body.status)
+    await db.commit()
+    return make_ok(ActivityOut.model_validate(act).model_dump(mode="json"))
+
+
+@router.get("/sales/recommend", response_model=BaseResponse[dict])
+async def sales_recommend(db: DbDep, admin: AdminDep, skip: int = 0, limit: int = 20):
+    """赢单画像反查推荐:用 won 线索画像给公海新线索打分排序(分页)。"""
+    from app.services import sales_crm_service as crm
+    rows, total = await crm.recommend(db, skip=skip, limit=limit)
+    await db.commit()   # 写回 similar_score
+    return make_ok({"total": total, "items": [_lead_json(r) for r in rows]})
+
+
+@router.get("/sales/board", response_model=BaseResponse[dict])
+async def sales_board(db: DbDep, admin: AdminDep):
+    """座席看板:各状态/公海私海线索数。"""
+    from app.services import sales_crm_service as crm
+    return make_ok(await crm.board_stats(db))
+
+
+@router.post("/sales/recycle-public-pool", response_model=BaseResponse[dict])
+async def sales_recycle_pool(db: DbDep, admin: AdminDep):
+    """手动触发公海回收(私海超 N 天未跟进 → 公海;N 读 system_configs)。"""
+    from app.services import sales_crm_service as crm
+    n = await crm.recycle_public_pool(db)
+    await db.commit()
+    return make_ok({"recycled": n})

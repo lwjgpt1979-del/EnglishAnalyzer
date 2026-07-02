@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Compon
 import { Close, RefreshRight } from '@element-plus/icons-vue'
 import {
   Collection, Document, Headset, User, UserFilled, Coin, Setting,
-  Histogram, Connection, Cpu,
+  Histogram, Connection, Cpu, Phone,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { branding } from '../branding'
@@ -70,6 +70,9 @@ const navGroups: NavGroup[] = [
     { path: '/campaigns', label: '限时活动价' },
     { path: '/announcements', label: '公告管理' },
     { path: '/notifications', label: '通知' },
+  ] },
+  { key: 'g-sales', title: '销售 / 电销 CRM', icon: Phone, items: [
+    { path: '/sales-leads', label: '电销线索' },
   ] },
   { key: 'g-finance', title: '营收 / 财务', icon: Coin, items: [
     { path: '/pricing', label: '定价配置' },
