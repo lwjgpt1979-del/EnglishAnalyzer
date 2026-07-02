@@ -97,3 +97,37 @@ class SalesLeadActivity(Base):
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (sa.Index("ix_sales_activity_lead", "lead_id", "created_at"),)
+
+
+class WecomChatArchive(Base):
+    """企业微信「会话内容存档」拉取到的消息(解密后落库)。P2。
+
+    真·拉取/解密走腾讯原生 SDK(接入位见 wecom_archive_service);本表存**明文**结果,
+    按 external_userid 关联线索,文本消息复用意向分析管道。
+    """
+
+    __tablename__ = "wecom_chat_archive"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    seq = mapped_column(sa.BigInteger, nullable=True)              # 存档游标(拉取分页用)
+    msg_id = mapped_column(sa.String(64), nullable=False)          # 企微 msgid(去重)
+    from_userid = mapped_column(sa.String(128), nullable=True)     # 发送方(员工或客户)
+    external_userid = mapped_column(sa.String(128), nullable=True)  # 外部联系人(客户),关联线索
+    roomid = mapped_column(sa.String(128), nullable=True)          # 群会话
+    msgtype = mapped_column(sa.String(16), nullable=False)         # text|voice|image|file|link…
+    content_text = mapped_column(sa.Text, nullable=True)           # 解密后文本(语音转写也落这)
+    media_url = mapped_column(sa.String(512), nullable=True)       # 语音/图片/文件转存 COS
+    msgtime = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    lead_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("sales_lead.id", ondelete="SET NULL"), nullable=True)
+    analyzed = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    analysis = mapped_column(JSONB, nullable=True)                 # 复用意向分析 schema
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint("msg_id", name="uq_wecom_archive_msgid"),
+        sa.Index("ix_wecom_archive_external", "external_userid"),
+        sa.Index("ix_wecom_archive_lead", "lead_id"),
+        sa.Index("ix_wecom_archive_seq", "seq"),
+    )

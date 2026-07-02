@@ -72,6 +72,49 @@ class AnalyzeTextIn(BaseModel):
     source: str = "call"
 
 
+class WecomMsgIn(BaseModel):
+    """已解密的一条企微会话消息(接入位:真·puller 或回调解密后喂入)。"""
+    msg_id: str
+    seq: int | None = None
+    from_userid: str | None = None
+    external_userid: str | None = None
+    roomid: str | None = None
+    msgtype: str = "text"
+    content_text: str | None = None
+    media_url: str | None = None
+    msgtime: int | str | None = None      # 毫秒时间戳 / ISO
+
+
+class WecomIngestIn(BaseModel):
+    items: list[WecomMsgIn]
+    run_analysis: bool = True
+
+
+class WecomConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    corp_id: str | None = None
+    last_seq: int | None = None
+    analyze_window: int | None = None
+
+
+class WecomMsgOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    seq: int | None
+    msg_id: str
+    from_userid: str | None
+    external_userid: str | None
+    roomid: str | None
+    msgtype: str
+    content_text: str | None
+    media_url: str | None
+    msgtime: datetime | None
+    lead_id: uuid.UUID | None
+    analyzed: bool
+    analysis: Any | None
+    created_at: datetime
+
+
 class SalesLeadOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

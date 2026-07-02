@@ -118,7 +118,7 @@ from .d21_region import Region  # noqa: F401
 # 域22: 单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)
 from .d22_unit_structured import UnitSection, UnitSectionSentence  # noqa: F401
 
-# 域23: 电销 CRM(线索池 + 跟进记录;平台自用,预留机构维度)
-from .d23_sales_crm import SalesLead, SalesLeadActivity  # noqa: F401
+# 域23: 电销 CRM(线索池 + 跟进记录 + 企微会话存档;平台自用,预留机构维度)
+from .d23_sales_crm import SalesLead, SalesLeadActivity, WecomChatArchive  # noqa: F401
 
 __all__ = ["Base"]

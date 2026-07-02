@@ -29,6 +29,7 @@ from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.sales_crm import (
     SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, ActivityCreate,
     SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn,
+    WecomIngestIn, WecomConfigUpdate, WecomMsgOut,
 )
 from app.schemas.teacher import (
     AdminTeacherItem,
@@ -3589,3 +3590,52 @@ async def sales_analyze_text(body: AnalyzeTextIn, db: DbDep, admin: AdminDep):
     """试跑:任意转写文本 → 意向分析 schema(不落库)。"""
     from app.services import sales_analysis_service as ana
     return make_ok(await ana.analyze_transcript(body.text, source=body.source))
+
+
+# ─── 电销 CRM · P2 企微会话存档 ───────────────────────────────────────────────
+
+@router.get("/sales/wecom/config", response_model=BaseResponse[dict])
+async def sales_wecom_config(db: DbDep, admin: AdminDep):
+    """企微会话存档接入配置(开关/corpid/游标;secret/私钥走 env,不在此)。"""
+    from app.services import wecom_archive_service as wa
+    return make_ok(await wa.get_config(db))
+
+
+@router.put("/sales/wecom/config", response_model=BaseResponse[dict])
+async def sales_wecom_config_update(body: WecomConfigUpdate, db: DbDep, admin: AdminDep):
+    from app.services import wecom_archive_service as wa
+    cfg = await wa.update_config(db, patch=body.model_dump(exclude_unset=True), updated_by=admin.id)
+    await db.commit()
+    return make_ok(cfg)
+
+
+@router.post("/sales/wecom/ingest", response_model=BaseResponse[dict])
+async def sales_wecom_ingest(body: WecomIngestIn, db: DbDep, admin: AdminDep):
+    """接入位:喂一批**已解密**企微消息 → 去重入库 + 按 external_userid 关联线索 + 文本触发意向分析。"""
+    from app.services import wecom_archive_service as wa
+    res = await wa.ingest_messages(
+        db, messages=[m.model_dump() for m in body.items], run_analysis=body.run_analysis)
+    await db.commit()
+    return make_ok(res)
+
+
+@router.post("/sales/wecom/pull", response_model=BaseResponse[dict])
+async def sales_wecom_pull(db: DbDep, admin: AdminDep):
+    """真·拉取(GetChatData→解密→入库)。未接入原生 SDK 时返回 501 说明。"""
+    from app.services import wecom_archive_service as wa
+    try:
+        res = await wa.pull_via_sdk(db)
+        await db.commit()
+        return make_ok(res)
+    except NotImplementedError as exc:
+        raise AppError(code=501, message=str(exc))
+
+
+@router.get("/sales/leads/{lead_id}/wecom", response_model=BaseResponse[dict])
+async def sales_lead_wecom(lead_id: uuid.UUID, db: DbDep, admin: AdminDep,
+                          skip: int = 0, limit: int = 50):
+    """某线索的企微会话记录(分页)。"""
+    from app.services import wecom_archive_service as wa
+    rows, total = await wa.list_lead_messages(db, lead_id=lead_id, skip=skip, limit=limit)
+    return make_ok({"total": total,
+                    "items": [WecomMsgOut.model_validate(r).model_dump(mode="json") for r in rows]})

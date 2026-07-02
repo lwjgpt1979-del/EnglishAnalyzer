@@ -6,9 +6,9 @@ import { listRegions } from '../api/admin'
 import {
   listLeads, createLead, importLeads, updateLead, claimLead, releaseLead,
   listActivities, addActivity, recommendLeads, salesBoard, recyclePublicPool,
-  analyzeText,
+  analyzeText, leadWecomMessages,
   LEAD_STATUS, LEAD_SOURCE, type SalesLead, type SalesActivity, type LeadListParams,
-  type IntentAnalysis,
+  type IntentAnalysis, type WecomMsg,
 } from '../api/sales'
 
 const STATUS_TAG: Record<string, string> = {
@@ -131,11 +131,13 @@ const cur = ref<SalesLead | null>(null)
 const acts = ref<SalesActivity[]>([])
 const actsLoading = ref(false)
 const actForm = reactive({ channel: 'call', outcome: '', content: '', next_follow_at: '', status: '' })
+const wecomMsgs = ref<WecomMsg[]>([])
 async function openDetail(r: SalesLead) {
   cur.value = r; drawer.value = true
   Object.assign(actForm, { channel: 'call', outcome: '', content: '', next_follow_at: '', status: '' })
   anaText.value = ''; anaResult.value = null
   await loadActs()
+  try { wecomMsgs.value = (await leadWecomMessages(r.id, { limit: 50 })).items } catch { wecomMsgs.value = [] }
 }
 async function loadActs() {
   if (!cur.value) return
@@ -357,6 +359,15 @@ onMounted(() => { load(); loadBoard() })
           </el-timeline-item>
           <el-empty v-if="!actsLoading && !acts.length" description="暂无跟进" :image-size="60" />
         </el-timeline>
+
+        <div class="sec-title">企微会话</div>
+        <div v-if="wecomMsgs.length" class="wecom-list">
+          <div v-for="m in wecomMsgs" :key="m.id" class="wecom-msg">
+            <span class="muted">{{ fmt(m.msgtime) }} · {{ m.from_userid === cur.wechat_id ? '客户' : '座席' }}</span>
+            <div>{{ m.content_text || `[${m.msgtype}]` }}</div>
+          </div>
+        </div>
+        <el-empty v-else description="暂无企微会话(接入会话存档后自动同步分析)" :image-size="60" />
       </template>
     </el-drawer>
   </div>
@@ -373,5 +384,7 @@ onMounted(() => { load(); loadBoard() })
 .sec-title { font-weight: 600; margin: 18px 0 10px; color: #303133; }
 .ana-box { margin-top: 10px; padding: 10px 12px; background: #f5f7fa; border-radius: 6px; font-size: 13px; line-height: 1.9; }
 .ana-sig { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.wecom-list { display: flex; flex-direction: column; gap: 8px; }
+.wecom-msg { font-size: 13px; padding: 6px 10px; background: #f5f7fa; border-radius: 6px; }
 :deep(.dnc-row) { background: #fef0f0 !important; }
 </style>

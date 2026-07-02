@@ -106,6 +106,24 @@ export function analyzeActivity(activityId: string): Promise<SalesActivity> {
   return unwrap(request.post(`/admin/sales/activities/${activityId}/analyze`))
 }
 
+export interface WecomMsg {
+  id: string
+  msg_id: string
+  from_userid: string | null
+  external_userid: string | null
+  msgtype: string
+  content_text: string | null
+  media_url: string | null
+  msgtime: string | null
+  analyzed: boolean
+  analysis: IntentAnalysis | null
+  created_at: string
+}
+// 某线索的企微会话记录(分页)
+export function leadWecomMessages(id: string, params?: { skip?: number; limit?: number }): Promise<{ total: number; items: WecomMsg[] }> {
+  return unwrap(request.get(`/admin/sales/leads/${id}/wecom`, { params }))
+}
+
 export const LEAD_STATUS: Record<string, string> = {
   new: '新线索', contacted: '已联系', interested: '有意向',
   negotiating: '谈单中', won: '成交', lost: '流失', invalid: '无效',
