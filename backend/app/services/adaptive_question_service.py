@@ -34,6 +34,8 @@ from app.services.question_ai_service import generate_questions
 _TOP_KPS = 3        # 最多取前3个薄弱知识点
 _PER_KP = 5         # 每个知识点最多取几道题
 _DEFAULT_TOTAL = 5  # 默认总题数
+# 物化时可继承的题型(须 ∈ ai_question_type_enum);其余(动词填空/词汇运用等)压成单选兜底
+_MATERIALIZE_ENUM_TYPES = {"单选", "填空", "完型", "阅读", "写作", "判断", "连线"}
 
 
 @dataclass
@@ -120,7 +122,7 @@ async def _materialize_sims_from_platform(db: AsyncSession, *, kp) -> int:
     按源 PQ id 去重(generation_metadata.source_platform_question_id)。返回新建数。无 node/无有源题→0。
     """
     from app.services.kp_match_service import match_kp
-    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
+    from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, Passage
 
     m = await match_kp(db, raw_name=kp.name, axis_hint="knowledge", source_type="exam", use_llm=False)
     if m.node_id is None:
@@ -136,6 +138,12 @@ async def _materialize_sims_from_platform(db: AsyncSession, *, kp) -> int:
                PlatformQuestion.options.isnot(None))
         .limit(_PER_KP)
     )).scalars().all()
+    # 批量取题组短文(block_id→Passage.text),让完型/阅读微题物化后仍带上下文（P1）
+    block_ids = {pq.block_id for pq in rows if pq.block_id}
+    passage_map: dict = {}
+    if block_ids:
+        passage_map = {pid: txt for pid, txt in (await db.execute(
+            select(Passage.id, Passage.text).where(Passage.id.in_(block_ids)))).all()}
     created = 0
     for pq in rows:
         exists = (await db.execute(
@@ -144,11 +152,17 @@ async def _materialize_sims_from_platform(db: AsyncSession, *, kp) -> int:
         )).scalar_one_or_none()
         if exists is not None:
             continue
+        meta = {"source_platform_question_id": str(pq.id)}
+        pg = passage_map.get(pq.block_id) if pq.block_id else None
+        if pg:
+            meta["passage"] = pg
+        # 如实继承题型(完型/阅读不再压成单选);已被 options 过滤保证 ∈ ai_question_type_enum
+        qt = pq.question_type if pq.question_type in _MATERIALIZE_ENUM_TYPES else "单选"
         db.add(SimulatedQuestion(
             id=uuid.uuid4(), source_exam_question_id=None, knowledge_point_id=kp.id,
-            question_type="单选", stem=pq.stem, options=pq.options, answer=pq.answer,
+            question_type=qt, stem=pq.stem, options=pq.options, answer=pq.answer,
             explanation=pq.explanation, difficulty=(pq.difficulty or 3), status="published",
-            generation_metadata={"source_platform_question_id": str(pq.id)}))
+            generation_metadata=meta))
         created += 1
     if created:
         await db.flush()

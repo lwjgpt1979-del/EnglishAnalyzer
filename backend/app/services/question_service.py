@@ -114,6 +114,7 @@ async def list_questions_by_kp(
         stem=r.stem,
         options=r.options,
         difficulty=r.difficulty,
+        passage=(r.generation_metadata or {}).get("passage"),
     ) for r in rows]
 
 

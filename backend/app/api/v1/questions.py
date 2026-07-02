@@ -120,6 +120,7 @@ async def get_adaptive_set(
             options=q.options,
             difficulty=q.difficulty,
             kp_name=kp_name_map.get(q.knowledge_point_id) if q.knowledge_point_id else None,
+            passage=(q.generation_metadata or {}).get("passage"),
         )
         for q in result.questions
     ]
