@@ -26,6 +26,7 @@ from app.api.v1.questions import router as questions_router
 from app.api.v1.user_papers import router as user_papers_router
 from app.api.v1.vocabulary import router as vocabulary_router
 from app.api.v1.essay import router as essay_router
+from app.api.v1.reading_expression import router as reading_expression_router
 from app.api.v1.assignments import router as assignments_router
 from app.api.v1.institution import router as institution_router
 from app.api.v1.student_papers import router as student_papers_router
@@ -71,6 +72,7 @@ v1_router.include_router(questions_router)
 v1_router.include_router(user_papers_router)
 v1_router.include_router(vocabulary_router)
 v1_router.include_router(essay_router)
+v1_router.include_router(reading_expression_router)
 v1_router.include_router(assignments_router)
 v1_router.include_router(institution_router)
 v1_router.include_router(student_papers_router)
