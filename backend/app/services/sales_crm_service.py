@@ -212,6 +212,30 @@ async def release_lead(db: AsyncSession, *, lead_id: uuid.UUID) -> SalesLead:
     return lead
 
 
+async def batch_assign(
+    db: AsyncSession, *, lead_ids: list[uuid.UUID], owner_admin_id: uuid.UUID,
+) -> int:
+    """批量派单/认领:把选中线索分配给某座席(→私海)。返回分配数。"""
+    if not lead_ids:
+        return 0
+    r = await db.execute(
+        sa.update(SalesLead).where(SalesLead.id.in_(lead_ids)).values(
+            pool="private", owner_admin_id=owner_admin_id,
+            claimed_at=datetime.now(timezone.utc)))
+    await db.flush()
+    return r.rowcount
+
+
+async def list_seats(db: AsyncSession) -> list[dict]:
+    """座席列表(平台管理员),供批量派单选人。"""
+    from app.models.d1_users import User
+    rows = (await db.execute(
+        sa.select(User.id, User.nickname, User.username, User.phone)
+        .where(User.role == "platform_admin").order_by(User.username))).all()
+    return [{"id": str(uid), "name": (nick or uname or (phone or "")[-4:] or "管理员")}
+            for uid, nick, uname, phone in rows]
+
+
 async def recycle_public_pool(db: AsyncSession) -> int:
     """私海超 N 天未跟进(last_contacted_at / claimed_at 取新者为基准)→ 回收公海。返回回收数。"""
     cfg = await get_config(db)

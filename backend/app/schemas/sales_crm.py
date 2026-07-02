@@ -72,6 +72,11 @@ class AnalyzeTextIn(BaseModel):
     source: str = "call"
 
 
+class BatchAssignIn(BaseModel):
+    lead_ids: list[uuid.UUID]
+    owner_admin_id: uuid.UUID | None = None    # None = 认领给自己
+
+
 class WecomMsgIn(BaseModel):
     """已解密的一条企微会话消息(接入位:真·puller 或回调解密后喂入)。"""
     msg_id: str

@@ -68,6 +68,14 @@ export function claimLead(id: string): Promise<SalesLead> {
 export function releaseLead(id: string): Promise<SalesLead> {
   return unwrap(request.post(`/admin/sales/leads/${id}/release`))
 }
+export interface Seat { id: string; name: string }
+export function listSeats(): Promise<Seat[]> {
+  return unwrap(request.get('/admin/sales/seats'))
+}
+// 批量派单/认领:owner_admin_id 缺省=认领给自己
+export function batchAssign(leadIds: string[], ownerAdminId?: string): Promise<{ assigned: number }> {
+  return unwrap(request.post('/admin/sales/leads/assign', { lead_ids: leadIds, owner_admin_id: ownerAdminId }))
+}
 export function listActivities(id: string, params?: { skip?: number; limit?: number }): Promise<{ total: number; items: SalesActivity[] }> {
   return unwrap(request.get(`/admin/sales/leads/${id}/activities`, { params }))
 }

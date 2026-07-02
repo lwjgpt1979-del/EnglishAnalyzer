@@ -6,9 +6,9 @@ import { listRegions } from '../api/admin'
 import {
   listLeads, createLead, importLeads, updateLead, claimLead, releaseLead,
   listActivities, addActivity, recommendLeads, salesBoard, recyclePublicPool,
-  analyzeText, leadWecomMessages,
+  analyzeText, leadWecomMessages, listSeats, batchAssign,
   LEAD_STATUS, LEAD_SOURCE, type SalesLead, type SalesActivity, type LeadListParams,
-  type IntentAnalysis, type WecomMsg, type SalesBoard,
+  type IntentAnalysis, type WecomMsg, type SalesBoard, type Seat,
 } from '../api/sales'
 
 const STATUS_TAG: Record<string, string> = {
@@ -71,6 +71,35 @@ async function load() {
 }
 function reload() { page.value = 1; load() }
 async function loadBoard() { try { board.value = await salesBoard(); now.value = Date.now() } catch { /* ignore */ } }
+
+// 批量派单 / 认领
+const tableRef = ref()
+const selected = ref<SalesLead[]>([])
+function onSelectionChange(rows: SalesLead[]) { selected.value = rows }
+const seats = ref<Seat[]>([])
+const assignDlg = ref(false)
+const assignSeat = ref('')
+async function openAssign() {
+  if (!selected.value.length) { ElMessage.warning('请先勾选线索'); return }
+  if (!seats.value.length) { try { seats.value = await listSeats() } catch { /* ignore */ } }
+  assignSeat.value = ''; assignDlg.value = true
+}
+async function doAssign() {
+  if (!assignSeat.value) { ElMessage.warning('请选择座席'); return }
+  try {
+    const r = await batchAssign(selected.value.map(l => l.id), assignSeat.value)
+    ElMessage.success(`已派单 ${r.assigned} 条`)
+    assignDlg.value = false; tableRef.value?.clearSelection(); load(); loadBoard()
+  } catch (e: any) { ElMessage.error(e?.message || '派单失败') }
+}
+async function batchClaim() {
+  if (!selected.value.length) { ElMessage.warning('请先勾选线索'); return }
+  try {
+    const r = await batchAssign(selected.value.map(l => l.id))
+    ElMessage.success(`已认领 ${r.assigned} 条到我的私海`)
+    tableRef.value?.clearSelection(); load(); loadBoard()
+  } catch (e: any) { ElMessage.error(e?.message || '认领失败') }
+}
 function switchView(v: 'public' | 'mine' | 'due' | 'recommend') { view.value = v; reload() }
 
 async function onClaim(r: SalesLead) {
@@ -135,12 +164,24 @@ const acts = ref<SalesActivity[]>([])
 const actsLoading = ref(false)
 const actForm = reactive({ channel: 'call', outcome: '', content: '', next_follow_at: '', status: '' })
 const wecomMsgs = ref<WecomMsg[]>([])
+// 合规编辑(consent / dnc / source_note)
+const curConsent = ref(false)
+const curDnc = ref(false)
+const curSourceNote = ref('')
 async function openDetail(r: SalesLead) {
   cur.value = r; drawer.value = true
   Object.assign(actForm, { channel: 'call', outcome: '', content: '', next_follow_at: '', status: '' })
   anaText.value = ''; anaResult.value = null
+  curConsent.value = r.consent; curDnc.value = r.dnc; curSourceNote.value = r.source_note || ''
   await loadActs()
   try { wecomMsgs.value = (await leadWecomMessages(r.id, { limit: 50 })).items } catch { wecomMsgs.value = [] }
+}
+async function saveCompliance() {
+  if (!cur.value) return
+  try {
+    const u = await updateLead(cur.value.id, { consent: curConsent.value, dnc: curDnc.value, source_note: curSourceNote.value })
+    cur.value = u; ElMessage.success('已更新合规信息'); load()
+  } catch (e: any) { ElMessage.error(e?.message || '更新失败') }
 }
 async function loadActs() {
   if (!cur.value) return
@@ -193,6 +234,10 @@ onMounted(() => { load(); loadBoard() })
         今日新增 {{ board.today_new }} · 拨打 {{ board.today_calls }} · 接通率 {{ (board.connect_rate * 100).toFixed(0) }}%
       </div>
       <div style="flex:1" />
+      <template v-if="selected.length">
+        <el-button type="warning" plain @click="openAssign">派单({{ selected.length }})</el-button>
+        <el-button type="success" plain @click="batchClaim">认领({{ selected.length }})</el-button>
+      </template>
       <el-button type="primary" :icon="Plus" @click="openAdd">新增</el-button>
       <el-button :icon="Upload" @click="openImport">批量导入</el-button>
       <el-button :icon="RefreshRight" @click="onRecycle">公海回收</el-button>
@@ -223,7 +268,9 @@ onMounted(() => { load(); loadBoard() })
       <span v-else class="hint">按「成交客户画像(行业/地区/经营特征)」给公海新线索打分排序,分越高越像你的赢单客户。</span>
     </div>
 
-    <el-table :data="rows" v-loading="loading" stripe :row-class-name="({ row }) => row.dnc ? 'dnc-row' : ''">
+    <el-table ref="tableRef" :data="rows" v-loading="loading" stripe
+      :row-class-name="({ row }) => row.dnc ? 'dnc-row' : ''" @selection-change="onSelectionChange">
+      <el-table-column type="selection" width="42" />
       <el-table-column label="商家 / 联系人" min-width="180">
         <template #default="{ row }">
           <div>{{ row.name }}</div>
@@ -234,7 +281,17 @@ onMounted(() => { load(); loadBoard() })
       <el-table-column label="地区" width="110"><template #default="{ row }">{{ row.region_name || '—' }}</template></el-table-column>
       <el-table-column prop="industry" label="行业" width="110" />
       <el-table-column label="来源" width="90">
-        <template #default="{ row }"><el-tag size="small" effect="plain">{{ LEAD_SOURCE[row.source] || row.source }}</el-tag></template>
+        <template #default="{ row }">
+          <el-tooltip :content="row.source_note || '无来源依据说明'" placement="top">
+            <el-tag size="small" effect="plain" :type="row.source_note ? 'success' : 'info'">{{ LEAD_SOURCE[row.source] || row.source }}</el-tag>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column label="合规" width="110">
+        <template #default="{ row }">
+          <el-tag :type="row.consent ? 'success' : 'info'" size="small" effect="plain">{{ row.consent ? '已同意' : '未同意' }}</el-tag>
+          <el-tag v-if="row.dnc" type="danger" size="small" effect="dark" style="margin-left:4px">禁呼</el-tag>
+        </template>
       </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="{ row }"><el-tag size="small" :type="(STATUS_TAG[row.status] as any)">{{ LEAD_STATUS[row.status] || row.status }}</el-tag></template>
@@ -300,6 +357,15 @@ onMounted(() => { load(); loadBoard() })
       <template #footer><el-button @click="impDlg = false">取消</el-button><el-button type="primary" @click="saveImport">导入</el-button></template>
     </el-dialog>
 
+    <!-- 批量派单 -->
+    <el-dialog v-model="assignDlg" title="批量派单" width="420px">
+      <p class="hint">把选中的 {{ selected.length }} 条线索分配给座席(进其私海)。</p>
+      <el-select v-model="assignSeat" placeholder="选择座席" filterable style="width:100%">
+        <el-option v-for="s in seats" :key="s.id" :label="s.name" :value="s.id" />
+      </el-select>
+      <template #footer><el-button @click="assignDlg = false">取消</el-button><el-button type="primary" @click="doAssign">派单</el-button></template>
+    </el-dialog>
+
     <!-- 详情 + 跟进 -->
     <el-drawer v-model="drawer" :title="cur?.name || '线索详情'" size="560px">
       <template v-if="cur">
@@ -310,8 +376,16 @@ onMounted(() => { load(); loadBoard() })
           <el-descriptions-item label="行业">{{ cur.industry || '—' }}</el-descriptions-item>
           <el-descriptions-item label="来源">{{ LEAD_SOURCE[cur.source] || cur.source }}</el-descriptions-item>
           <el-descriptions-item label="意向">{{ cur.intent_grade || '—' }} {{ cur.intent_score ?? '' }}</el-descriptions-item>
-          <el-descriptions-item label="来源说明" :span="2">{{ cur.source_note || '—' }}</el-descriptions-item>
         </el-descriptions>
+
+        <div class="sec-title">合规</div>
+        <div class="compliance">
+          <el-switch v-model="curConsent" @change="saveCompliance" />
+          <span class="muted">已同意营销联系</span>
+          <el-checkbox v-model="curDnc" @change="saveCompliance" style="margin-left:16px">拒接(禁呼)</el-checkbox>
+        </div>
+        <el-input v-model="curSourceNote" placeholder="来源与合法性依据(合规留痕)" size="small"
+          style="margin-top:8px" @change="saveCompliance" />
 
         <div class="sec-title">状态</div>
         <el-radio-group :model-value="cur.status" @change="(v: any) => setStatus(v)">
@@ -393,6 +467,7 @@ onMounted(() => { load(); loadBoard() })
 .stat { color: #606266; font-size: 13px; }
 .stat-sep { margin: 0 6px; color: #dcdfe6; }
 .overdue { color: #f56c6c; font-weight: 600; }
+.compliance { display: flex; align-items: center; gap: 6px; }
 .tabs { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .hint { color: #909399; font-size: 13px; margin: 0; }
 .muted { color: #909399; font-size: 12px; }

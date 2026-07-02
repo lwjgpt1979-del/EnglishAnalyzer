@@ -28,7 +28,7 @@ from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.sales_crm import (
     SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, ActivityCreate,
-    SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn,
+    SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn, BatchAssignIn,
     WecomIngestIn, WecomConfigUpdate, WecomMsgOut,
 )
 from app.schemas.teacher import (
@@ -3510,6 +3510,23 @@ async def sales_release_lead(lead_id: uuid.UUID, db: DbDep, admin: AdminDep):
     lead = await crm.release_lead(db, lead_id=lead_id)
     await db.commit()
     return make_ok(_lead_json(lead))
+
+
+@router.get("/sales/seats", response_model=BaseResponse[list])
+async def sales_seats(db: DbDep, admin: AdminDep):
+    """座席列表(平台管理员),供批量派单选人。"""
+    from app.services import sales_crm_service as crm
+    return make_ok(await crm.list_seats(db))
+
+
+@router.post("/sales/leads/assign", response_model=BaseResponse[dict])
+async def sales_batch_assign(body: BatchAssignIn, db: DbDep, admin: AdminDep):
+    """批量派单/认领:owner_admin_id 指定座席,缺省则认领给自己。"""
+    from app.services import sales_crm_service as crm
+    n = await crm.batch_assign(
+        db, lead_ids=body.lead_ids, owner_admin_id=body.owner_admin_id or admin.id)
+    await db.commit()
+    return make_ok({"assigned": n})
 
 
 @router.get("/sales/leads/{lead_id}/activities", response_model=BaseResponse[dict])
