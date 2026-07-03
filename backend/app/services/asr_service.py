@@ -64,14 +64,37 @@ def _tencent_transcribe_sync(recording_url: str, *, poll_max: int = 60, poll_sle
     raise TimeoutError("ASR 轮询超时")
 
 
+def _clean(raw: str) -> str:
+    """去掉腾讯返回的 [说话人:起,说话人:止,序号] 时间戳标记,按说话人分行标注客户/座席。
+
+    格式如 `[0:0.130,0:1.430,0]  文本`。首个出现的说话人当「客户」(通常被叫先说),另一个「座席」。
+    """
+    import re
+    lines, spk_label = [], {}
+    for ln in (raw or "").splitlines():
+        m = re.match(r"\s*\[(\d+):[^\]]*\]\s*(.*)", ln)
+        if m:
+            spk, txt = m.group(1), m.group(2).strip()
+            if spk not in spk_label:
+                spk_label[spk] = "客户" if len(spk_label) == 0 else "座席"
+            if txt:
+                lines.append(f"{spk_label[spk]}:{txt}")
+        else:
+            t = ln.strip()
+            if t:
+                lines.append(t)
+    return "\n".join(lines)
+
+
 async def transcribe(recording_url: str, *, source: str = "call") -> str:
-    """录音 URL → 转写文本。dev-mock 或失败 → 占位文本(不阻断意向分析链路)。"""
+    """录音 URL → 转写文本(去时间戳、按说话人标注)。dev-mock 或失败 → 占位文本(不阻断链路)。"""
     if not (recording_url or "").strip():
         return ""
     if is_dev_mock():
         return _mock_transcribe(recording_url)
     try:
-        return await asyncio.to_thread(_tencent_transcribe_sync, recording_url)
+        raw = await asyncio.to_thread(_tencent_transcribe_sync, recording_url)
+        return _clean(raw) or raw
     except Exception as exc:  # noqa: BLE001
         _log.warning("腾讯 ASR 失败,退回占位转写: %s", exc)
         return _mock_transcribe(recording_url)
