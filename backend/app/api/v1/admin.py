@@ -30,7 +30,7 @@ from app.schemas.sales_crm import (
     SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, SalesLeadIngest,
     BaiduAkIn, BaiduFetchIn, ActivityCreate,
     SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn, BatchAssignIn, MergeLeadsIn,
-    SalesConfigUpdate, ScriptsIn,
+    AutoAssignIn, SalesConfigUpdate, ScriptsIn,
     WecomIngestIn, WecomConfigUpdate, WecomMsgOut,
 )
 from app.schemas.teacher import (
@@ -3583,8 +3583,16 @@ async def sales_map_quota(body: _MapQuotaIn, db: DbDep, admin: AdminDep):
 @router.patch("/sales/leads/{lead_id}", response_model=BaseResponse[dict])
 async def sales_update_lead(lead_id: uuid.UUID, body: SalesLeadUpdate, db: DbDep, admin: AdminDep):
     """改线索(状态/DNC/consent/下次跟进/意向分/地区等)。"""
-    from app.services import sales_crm_service as crm
-    lead = await crm.update_lead(db, lead_id=lead_id, patch=body.model_dump(exclude_unset=True))
+    from app.services import sales_crm_service as crm, sales_audit_service as audit
+    patch = body.model_dump(exclude_unset=True)
+    old_status = (await crm.get_lead(db, lead_id)).status
+    lead = await crm.update_lead(db, lead_id=lead_id, patch=patch)
+    if patch.get("status") and lead.status != old_status:
+        await audit.record(db, admin_id=admin.id, action="status_change", lead_id=lead_id,
+                           detail={"before": old_status, "after": lead.status})
+    if "dnc" in patch:
+        await audit.record(db, admin_id=admin.id, action="dnc", lead_id=lead_id,
+                           detail={"dnc": lead.dnc})
     await db.commit()
     return make_ok(_lead_json(lead))
 
@@ -3592,8 +3600,9 @@ async def sales_update_lead(lead_id: uuid.UUID, body: SalesLeadUpdate, db: DbDep
 @router.post("/sales/leads/{lead_id}/claim", response_model=BaseResponse[dict])
 async def sales_claim_lead(lead_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """认领进私海(防撞单:已被他人认领则 409)。"""
-    from app.services import sales_crm_service as crm
+    from app.services import sales_crm_service as crm, sales_audit_service as audit
     lead = await crm.claim_lead(db, lead_id=lead_id, admin_id=admin.id)
+    await audit.record(db, admin_id=admin.id, action="claim", lead_id=lead_id)
     await db.commit()
     return make_ok(_lead_json(lead))
 
@@ -3601,8 +3610,9 @@ async def sales_claim_lead(lead_id: uuid.UUID, db: DbDep, admin: AdminDep):
 @router.post("/sales/leads/{lead_id}/release", response_model=BaseResponse[dict])
 async def sales_release_lead(lead_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """退回公海。"""
-    from app.services import sales_crm_service as crm
+    from app.services import sales_crm_service as crm, sales_audit_service as audit
     lead = await crm.release_lead(db, lead_id=lead_id)
+    await audit.record(db, admin_id=admin.id, action="release", lead_id=lead_id)
     await db.commit()
     return make_ok(_lead_json(lead))
 
@@ -3617,11 +3627,49 @@ async def sales_seats(db: DbDep, admin: AdminDep):
 @router.post("/sales/leads/assign", response_model=BaseResponse[dict])
 async def sales_batch_assign(body: BatchAssignIn, db: DbDep, admin: AdminDep):
     """批量派单/认领:owner_admin_id 指定座席,缺省则认领给自己。"""
-    from app.services import sales_crm_service as crm
-    n = await crm.batch_assign(
-        db, lead_ids=body.lead_ids, owner_admin_id=body.owner_admin_id or admin.id)
+    from app.services import sales_crm_service as crm, sales_audit_service as audit
+    owner = body.owner_admin_id or admin.id
+    n = await crm.batch_assign(db, lead_ids=body.lead_ids, owner_admin_id=owner)
+    for lid in body.lead_ids:
+        await audit.record(db, admin_id=admin.id, action="assign", lead_id=lid,
+                           detail={"owner_admin_id": str(owner)})
     await db.commit()
     return make_ok({"assigned": n})
+
+
+@router.post("/sales/leads/auto-assign", response_model=BaseResponse[dict])
+async def sales_auto_assign(body: AutoAssignIn, db: DbDep, admin: AdminDep):
+    """自动分配:把公海线索(排除 DNC,可按地区)轮询派给选定座席。"""
+    from app.services import sales_crm_service as crm, sales_audit_service as audit
+    res = await crm.auto_assign(db, seat_ids=body.seat_ids, count=body.count, region_code=body.region_code)
+    for lid in res.get("lead_ids", []):
+        await audit.record(db, admin_id=admin.id, action="auto_assign", lead_id=uuid.UUID(lid))
+    await db.commit()
+    return make_ok({"assigned": res["assigned"], "by_seat": res["by_seat"]})
+
+
+@router.get("/sales/leaderboard", response_model=BaseResponse[list])
+async def sales_leaderboard(db: DbDep, admin: AdminDep, days: int = 7):
+    """座席业绩排行:私海线索/期内拨打·接通/成交/转化率。"""
+    from app.services import sales_crm_service as crm
+    return make_ok(await crm.seat_leaderboard(db, days=days))
+
+
+@router.get("/sales/audit", response_model=BaseResponse[dict])
+async def sales_audit_list(
+    db: DbDep, admin: AdminDep, lead_id: uuid.UUID | None = None,
+    admin_id: uuid.UUID | None = None, action: str | None = None,
+    skip: int = 0, limit: int = 30,
+):
+    """操作审计日志(可按线索/座席/动作筛选,分页)。"""
+    from app.services import sales_audit_service as audit
+    rows, total = await audit.list_audit(
+        db, lead_id=lead_id, admin_id=admin_id, action=action, skip=skip, limit=limit)
+    return make_ok({"total": total, "items": [
+        {"id": str(r.id), "admin_id": str(r.admin_id) if r.admin_id else None,
+         "action": r.action, "lead_id": str(r.lead_id) if r.lead_id else None,
+         "detail": r.detail, "created_at": r.created_at.isoformat() if r.created_at else None}
+        for r in rows]})
 
 
 @router.get("/sales/leads/{lead_id}/activities", response_model=BaseResponse[dict])
@@ -3772,8 +3820,10 @@ async def sales_duplicates(db: DbDep, admin: AdminDep, limit: int = 100):
 @router.post("/sales/leads/merge", response_model=BaseResponse[dict])
 async def sales_merge_leads(body: MergeLeadsIn, db: DbDep, admin: AdminDep):
     """合并重复线索:跟进/企微记录改挂到 survivor,补空字段 + 合并产品意见,删 dup。"""
-    from app.services import sales_crm_service as crm
+    from app.services import sales_crm_service as crm, sales_audit_service as audit
     res = await crm.merge_leads(db, survivor_id=body.survivor_id, dup_ids=body.dup_ids)
+    await audit.record(db, admin_id=admin.id, action="merge", lead_id=body.survivor_id,
+                       detail={"dup_ids": [str(d) for d in body.dup_ids], "merged": res.get("merged")})
     await db.commit()
     return make_ok(res)
 

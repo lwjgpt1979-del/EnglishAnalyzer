@@ -130,6 +130,12 @@ class MergeLeadsIn(BaseModel):
     dup_ids: list[uuid.UUID]
 
 
+class AutoAssignIn(BaseModel):
+    seat_ids: list[uuid.UUID]
+    count: int = 100
+    region_code: str | None = None
+
+
 class WecomMsgIn(BaseModel):
     """已解密的一条企微会话消息(接入位:真·puller 或回调解密后喂入)。"""
     msg_id: str

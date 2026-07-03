@@ -730,3 +730,69 @@ async def export_leads_xlsx(db: AsyncSession, **filters) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ── 自动分配 / 座席业绩排行 ────────────────────────────────────────────────────
+
+async def auto_assign(db: AsyncSession, *, seat_ids: list[uuid.UUID],
+                      count: int = 100, region_code: str | None = None) -> dict:
+    """把公海线索轮询派给座席(排除 DNC,可按地区筛)。返回 {assigned, by_seat}。"""
+    seat_ids = [s for s in seat_ids if s]
+    if not seat_ids:
+        return {"assigned": 0, "by_seat": {}}
+    base = sa.select(SalesLead).where(SalesLead.pool == "public", SalesLead.dnc.is_(False))
+    if region_code:
+        base = base.where(SalesLead.region_code.like(f"{region_code}%"))
+    leads = (await db.execute(
+        base.order_by(SalesLead.next_follow_at.asc().nullslast(),
+                      SalesLead.created_at.desc()).limit(max(0, count)))).scalars().all()
+    now = datetime.now(timezone.utc)
+    by_seat: dict[str, int] = {}
+    for i, lead in enumerate(leads):
+        seat = seat_ids[i % len(seat_ids)]
+        lead.pool = "private"
+        lead.owner_admin_id = seat
+        lead.claimed_at = now
+        by_seat[str(seat)] = by_seat.get(str(seat), 0) + 1
+    await db.flush()
+    return {"assigned": len(leads), "by_seat": by_seat, "lead_ids": [str(l.id) for l in leads]}
+
+
+async def seat_leaderboard(db: AsyncSession, *, days: int = 7) -> list[dict]:
+    """座席业绩排行:私海线索数 / 期内拨打·接通 / 成交(won)/ 转化率。按成交降序。"""
+    from app.models.d1_users import User
+    since = datetime.now(timezone.utc) - timedelta(days=max(1, days))
+    lead_rows = (await db.execute(sa.select(
+        SalesLead.owner_admin_id, sa.func.count(),
+        sa.func.count().filter(SalesLead.status == "won"))
+        .where(SalesLead.owner_admin_id.isnot(None))
+        .group_by(SalesLead.owner_admin_id))).all()
+    call_rows = (await db.execute(sa.select(
+        SalesLeadActivity.admin_id,
+        sa.func.count().filter(SalesLeadActivity.channel == "call"),
+        sa.func.count().filter(sa.and_(SalesLeadActivity.channel == "call",
+                                        SalesLeadActivity.outcome == "connected")))
+        .where(SalesLeadActivity.created_at >= since,
+               SalesLeadActivity.admin_id.isnot(None))
+        .group_by(SalesLeadActivity.admin_id))).all()
+    leads = {uid: (int(c), int(w)) for uid, c, w in lead_rows}
+    calls = {uid: (int(c), int(cc)) for uid, c, cc in call_rows}
+    ids = [i for i in (set(leads) | set(calls)) if i]
+    names = {}
+    if ids:
+        names = dict((await db.execute(
+            sa.select(User.id, sa.func.coalesce(User.nickname, User.username))
+            .where(User.id.in_(ids)))).all())
+    out = []
+    for uid in ids:
+        n_lead, n_won = leads.get(uid, (0, 0))
+        n_call, n_conn = calls.get(uid, (0, 0))
+        out.append({
+            "admin_id": str(uid), "name": names.get(uid) or "座席",
+            "leads": n_lead, "won": n_won,
+            "conversion": round(n_won / n_lead, 3) if n_lead else 0.0,
+            "calls": n_call, "connected": n_conn,
+            "connect_rate": round(n_conn / n_call, 3) if n_call else 0.0,
+        })
+    out.sort(key=lambda x: (-x["won"], -x["leads"]))
+    return out
