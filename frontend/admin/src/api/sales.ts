@@ -47,7 +47,7 @@ export interface SalesActivity {
 
 export interface LeadListParams {
   pool?: string; status?: string; source?: string; region_code?: string
-  mine?: boolean; dnc?: boolean; due?: boolean; sla?: boolean; tag?: string; q?: string; skip?: number; limit?: number
+  mine?: boolean; dnc?: boolean; has_phone?: boolean; due?: boolean; sla?: boolean; tag?: string; q?: string; skip?: number; limit?: number
 }
 
 export function listLeads(params: LeadListParams): Promise<{ total: number; items: SalesLead[] }> {
@@ -75,6 +75,22 @@ export function listSeats(): Promise<Seat[]> {
 // 批量派单/认领:owner_admin_id 缺省=认领给自己
 export function batchAssign(leadIds: string[], ownerAdminId?: string): Promise<{ assigned: number }> {
   return unwrap(request.post('/admin/sales/leads/assign', { lead_ids: leadIds, owner_admin_id: ownerAdminId }))
+}
+// 自动分配:公海线索轮询派给座席(排除 DNC,可按地区)
+export function autoAssign(seatIds: string[], count = 100, regionCode?: string): Promise<{ assigned: number; by_seat: Record<string, number> }> {
+  return unwrap(request.post('/admin/sales/leads/auto-assign', { seat_ids: seatIds, count, region_code: regionCode }))
+}
+export interface SeatRank { admin_id: string; name: string; leads: number; won: number; conversion: number; calls: number; connected: number; connect_rate: number }
+export function leaderboard(days = 7): Promise<SeatRank[]> {
+  return unwrap(request.get('/admin/sales/leaderboard', { params: { days } }))
+}
+export interface AuditRow { id: string; admin_id: string | null; action: string; lead_id: string | null; detail: any; created_at: string | null }
+export function leadAudit(leadId: string, params?: { skip?: number; limit?: number }): Promise<{ total: number; items: AuditRow[] }> {
+  return unwrap(request.get('/admin/sales/audit', { params: { lead_id: leadId, ...params } }))
+}
+export const AUDIT_ACTION: Record<string, string> = {
+  create: '创建', import: '导入', claim: '认领', release: '退回公海', assign: '派单',
+  auto_assign: '自动分配', merge: '合并', status_change: '改状态', dnc: 'DNC 开关', update: '编辑', recycle: '回收',
 }
 export function listActivities(id: string, params?: { skip?: number; limit?: number }): Promise<{ total: number; items: SalesActivity[] }> {
   return unwrap(request.get(`/admin/sales/leads/${id}/activities`, { params }))

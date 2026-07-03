@@ -9,9 +9,11 @@ import {
   analyzeText, leadWecomMessages, listSeats, batchAssign,
   sourceStats, findDuplicates, mergeLeads, importExcel,
   exportLeads, getSalesConfig, updateSalesConfig, getScripts, setScripts,
+  autoAssign, leaderboard, leadAudit, AUDIT_ACTION,
   LEAD_STATUS, LEAD_SOURCE, type SalesLead, type SalesActivity, type LeadListParams,
   type IntentAnalysis, type WecomMsg, type SalesBoard, type Seat,
   type SourceStat, type DupGroup, type SalesConfig, type Script,
+  type SeatRank, type AuditRow,
 } from '../api/sales'
 
 const STATUS_TAG: Record<string, string> = {
@@ -34,7 +36,9 @@ const loading = ref(false)
 const fStatus = ref('')
 const fSource = ref('')
 const fTag = ref('')
+const fPhone = ref<'' | 'yes' | 'no'>('')   // 电话:全部/有/无
 const fQ = ref('')
+const phoneParam = () => (fPhone.value === 'yes' ? true : fPhone.value === 'no' ? false : undefined)
 const cfg = ref<SalesConfig>({ public_pool_recycle_days: 7, sla_overdue_hours: 48, seat_only_admin_ids: [], tag_catalog: [] })
 async function loadCfg() { try { cfg.value = await getSalesConfig() } catch { /* ignore */ } }
 const board = ref<SalesBoard>({ total: 0, by_status: {}, by_pool: {}, today_new: 0, today_calls: 0, today_connected: 0, connect_rate: 0, my_due: 0 })
@@ -62,7 +66,7 @@ async function load() {
       rows.value = r.items; total.value = r.total
     } else {
       const params: LeadListParams = {
-        status: fStatus.value || undefined, source: fSource.value || undefined,
+        status: fStatus.value || undefined, source: fSource.value || undefined, has_phone: phoneParam(),
         tag: fTag.value || undefined,
         region_code: regionCode(regionPath.value), q: fQ.value || undefined,
         skip, limit: pageSize,
@@ -84,7 +88,7 @@ async function loadBoard() { try { board.value = await salesBoard(); now.value =
 async function onExport() {
   try {
     const params: LeadListParams = {
-      status: fStatus.value || undefined, source: fSource.value || undefined,
+      status: fStatus.value || undefined, source: fSource.value || undefined, has_phone: phoneParam(),
       tag: fTag.value || undefined, region_code: regionCode(regionPath.value), q: fQ.value || undefined,
     }
     if (view.value === 'public') params.pool = 'public'
@@ -161,6 +165,37 @@ async function batchClaim() {
     tableRef.value?.clearSelection(); load(); loadBoard()
   } catch (e: any) { ElMessage.error(e?.message || '认领失败') }
 }
+
+// 自动分配(公海轮询派给座席)
+const autoDlg = ref(false)
+const autoSeats = ref<string[]>([])
+const autoCount = ref(50)
+async function openAuto() {
+  if (!seats.value.length) { try { seats.value = await listSeats() } catch { /* ignore */ } }
+  autoSeats.value = []; autoCount.value = 50; autoDlg.value = true
+}
+async function doAuto() {
+  if (!autoSeats.value.length) { ElMessage.warning('请选择至少一个座席'); return }
+  try {
+    const r = await autoAssign(autoSeats.value, autoCount.value, regionCode(regionPath.value))
+    ElMessage.success(`已自动分配 ${r.assigned} 条(排除禁呼)`)
+    autoDlg.value = false; load(); loadBoard()
+  } catch (e: any) { ElMessage.error(e?.message || '自动分配失败') }
+}
+
+// 座席业绩排行
+const rankDlg = ref(false)
+const rankDays = ref(7)
+const ranks = ref<SeatRank[]>([])
+async function openRank() {
+  try { ranks.value = await leaderboard(rankDays.value); rankDlg.value = true }
+  catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+}
+async function reloadRank() { try { ranks.value = await leaderboard(rankDays.value) } catch { /* ignore */ } }
+
+// 操作审计(线索详情里)
+const auditRows = ref<AuditRow[]>([])
+async function loadAudit(id: string) { try { auditRows.value = (await leadAudit(id, { limit: 50 })).items } catch { auditRows.value = [] } }
 function switchView(v: 'public' | 'mine' | 'due' | 'sla' | 'recommend') { view.value = v; reload() }
 function viewSla() { view.value = 'sla'; reload() }
 
@@ -279,6 +314,7 @@ async function openDetail(r: SalesLead) {
   curTags.value = Array.isArray(r.tags) ? [...r.tags] : []
   await loadActs()
   try { wecomMsgs.value = (await leadWecomMessages(r.id, { limit: 50 })).items } catch { wecomMsgs.value = [] }
+  await loadAudit(r.id)
 }
 async function saveTags() {
   if (!cur.value) return
@@ -352,6 +388,8 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
       <el-button @click="onExport">导出</el-button>
       <el-button @click="openSourceStats">来源统计</el-button>
       <el-button @click="openDup">查重</el-button>
+      <el-button @click="openAuto">自动派单</el-button>
+      <el-button @click="openRank">业绩排行</el-button>
       <el-button @click="scriptMgrDlg = true">话术库</el-button>
       <el-button :icon="RefreshRight" @click="onRecycle">公海回收</el-button>
       <el-button @click="openCfg">设置</el-button>
@@ -386,6 +424,10 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
         </el-select>
         <el-select v-model="fTag" placeholder="标签" clearable style="width:120px" @change="reload">
           <el-option v-for="t in cfg.tag_catalog" :key="t" :label="t" :value="t" />
+        </el-select>
+        <el-select v-model="fPhone" placeholder="电话" clearable style="width:110px" @change="reload">
+          <el-option label="有电话" value="yes" />
+          <el-option label="无电话(待补号)" value="no" />
         </el-select>
         <el-cascader v-model="regionPath" :props="regionProps" placeholder="地区" clearable
           style="width:180px" @change="reload" />
@@ -549,6 +591,41 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
       <template #footer><el-button @click="scriptMgrDlg = false">取消</el-button><el-button type="primary" @click="saveScripts">保存</el-button></template>
     </el-dialog>
 
+    <!-- 自动派单 -->
+    <el-dialog v-model="autoDlg" title="自动分配公海线索" width="480px">
+      <p class="hint">把公海线索(排除禁呼/DNC,可按地区)按数量轮询平均派给选定座席。</p>
+      <el-form label-width="80px">
+        <el-form-item label="座席">
+          <el-select v-model="autoSeats" multiple filterable placeholder="选座席(轮询分配)" style="width:100%">
+            <el-option v-for="s in seats" :key="s.id" :label="s.name" :value="s.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="地区"><el-cascader v-model="regionPath" :props="regionProps" clearable placeholder="不选=全部公海" style="width:100%" /></el-form-item>
+        <el-form-item label="分配数量"><el-input-number v-model="autoCount" :min="1" :max="5000" /> 条(取最早跟进/最新的公海线索)</el-form-item>
+      </el-form>
+      <template #footer><el-button @click="autoDlg = false">取消</el-button><el-button type="primary" @click="doAuto">自动分配</el-button></template>
+    </el-dialog>
+
+    <!-- 座席业绩排行 -->
+    <el-dialog v-model="rankDlg" title="座席业绩排行" width="720px">
+      <div style="margin-bottom:10px">
+        统计周期
+        <el-select v-model="rankDays" style="width:120px" @change="reloadRank">
+          <el-option :label="'近 7 天'" :value="7" /><el-option :label="'近 30 天'" :value="30" /><el-option :label="'近 90 天'" :value="90" />
+        </el-select>
+      </div>
+      <el-table :data="ranks" border size="small">
+        <el-table-column type="index" label="#" width="50" />
+        <el-table-column prop="name" label="座席" min-width="120" />
+        <el-table-column prop="leads" label="私海线索" width="90" align="center" />
+        <el-table-column prop="won" label="成交" width="70" align="center" />
+        <el-table-column label="转化率" width="90" align="center"><template #default="{ row }">{{ (row.conversion * 100).toFixed(1) }}%</template></el-table-column>
+        <el-table-column prop="calls" label="拨打" width="70" align="center" />
+        <el-table-column prop="connected" label="接通" width="70" align="center" />
+        <el-table-column label="接通率" width="90" align="center"><template #default="{ row }">{{ (row.connect_rate * 100).toFixed(0) }}%</template></el-table-column>
+      </el-table>
+    </el-dialog>
+
     <!-- 批量派单 -->
     <el-dialog v-model="assignDlg" title="批量派单" width="420px">
       <p class="hint">把选中的 {{ selected.length }} 条线索分配给座席(进其私海)。</p>
@@ -657,6 +734,15 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
           </div>
         </div>
         <el-empty v-else description="暂无企微会话(接入会话存档后自动同步分析)" :image-size="60" />
+
+        <div class="sec-title">操作审计</div>
+        <el-timeline v-if="auditRows.length">
+          <el-timeline-item v-for="a in auditRows" :key="a.id" :timestamp="fmt(a.created_at)" placement="top" size="normal">
+            <b>{{ AUDIT_ACTION[a.action] || a.action }}</b>
+            <span v-if="a.detail && a.detail.after" class="muted"> → {{ LEAD_STATUS[a.detail.after] || a.detail.after }}</span>
+          </el-timeline-item>
+        </el-timeline>
+        <el-empty v-else description="暂无操作记录" :image-size="60" />
       </template>
     </el-drawer>
   </div>
