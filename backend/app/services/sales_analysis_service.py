@@ -115,6 +115,22 @@ async def analyze_activity(db: AsyncSession, *, activity_id: uuid.UUID) -> Sales
     return act
 
 
+async def transcribe_and_analyze(db: AsyncSession, *, activity_id: uuid.UUID) -> SalesLeadActivity:
+    """录音 → ASR 转写 → 意向分析。用于「有录音无转写」的跟进(呼叫中心回传录音后)。
+
+    转写可能耗数十秒(腾讯录音文件识别是异步任务),生产建议放后台任务调用本函数。
+    """
+    from app.services import asr_service
+    act = await db.get(SalesLeadActivity, activity_id)
+    if act is None:
+        raise AppError(code=404, message="跟进记录不存在")
+    if not (act.recording_url or "").strip():
+        raise AppError(code=400, message="该跟进没有录音,无法转写")
+    act.asr_text = await asr_service.transcribe(act.recording_url, source=act.channel or "call")
+    await db.flush()
+    return await analyze_activity(db, activity_id=activity_id)
+
+
 async def _rollup_to_lead(db: AsyncSession, *, lead_id: uuid.UUID,
                           score: int, analysis: dict) -> None:
     """把最新一次分析汇总到线索:意向分/分层 + 合并产品意见(去重保序)。"""

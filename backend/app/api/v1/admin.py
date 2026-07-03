@@ -3745,6 +3745,15 @@ async def sales_analyze_activity(activity_id: uuid.UUID, db: DbDep, admin: Admin
     return make_ok(ActivityOut.model_validate(act).model_dump(mode="json"))
 
 
+@router.post("/sales/activities/{activity_id}/transcribe", response_model=BaseResponse[dict])
+async def sales_transcribe_activity(activity_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """有录音无转写 → 腾讯 ASR 转写 → 意向分析回填(dev-mock 无密钥时用占位转写)。"""
+    from app.services import sales_analysis_service as ana
+    act = await ana.transcribe_and_analyze(db, activity_id=activity_id)
+    await db.commit()
+    return make_ok(ActivityOut.model_validate(act).model_dump(mode="json"))
+
+
 @router.post("/sales/analyze", response_model=BaseResponse[dict])
 async def sales_analyze_text(body: AnalyzeTextIn, db: DbDep, admin: AdminDep):
     """试跑:任意转写文本 → 意向分析 schema(不落库)。"""
