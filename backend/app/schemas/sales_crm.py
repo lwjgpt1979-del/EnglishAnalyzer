@@ -67,6 +67,35 @@ class SalesLeadImport(BaseModel):
     source: str = "import"
 
 
+class MapPoiItem(BaseModel):
+    """采集来的一条 POI(百度地图/探迹/Excel 通用最小字段)。"""
+    name: str
+    phone: str | None = None
+    address: str | None = None
+    business: str | None = None       # 主营业务/经营类目
+    city: str | None = None           # 城市名(经 region_service 解析成区划码)
+
+
+class SalesLeadIngest(BaseModel):
+    items: list[MapPoiItem]
+    source: str = "baidu_map"         # baidu_map|tungee|import|...
+    source_note: str | None = None    # 合规:来源与合法性依据(检索词/日期/依据)
+    require_phone: bool = True
+
+
+class BaiduAkIn(BaseModel):
+    ak: str
+
+
+class BaiduFetchIn(BaseModel):
+    region_name: str | None = None    # 城市名(如 南京市 / 江苏省南京市)
+    districts: list[str] = []         # 区/县(可多选;为空则整市检索)
+    keywords: list[str] = []          # 关键词(可多个,分别检索、跨词去重)
+    types: list[str] = []             # 行业分类(仅高德:POI 类型码或类目汉字,如 培训机构/141201)
+    pages: int = 3                    # 每关键词翻页数(每页≤20)
+    ingest: bool = False              # true→直接入库(按 phone 去重)
+
+
 class ActivityCreate(BaseModel):
     channel: str                      # call|wechat|note|sms
     content: str | None = None

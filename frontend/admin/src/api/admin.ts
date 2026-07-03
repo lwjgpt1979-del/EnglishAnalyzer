@@ -1539,6 +1539,47 @@ export function deleteRegion(code: string): Promise<{ deleted: string }> {
   return unwrap(request.delete(`/admin/regions/${code}`))
 }
 
+// ── 百度地图获客 ─────────────────────────────────────────────
+export interface BaiduPoi {
+  name: string; phone: string | null; address: string | null; business: string | null; city: string
+  region_province?: string | null; region_city?: string | null; region_district?: string | null; region_town?: string | null
+}
+export interface BaiduFetchResult {
+  fetched: number; with_phone: number; quota_stopped: boolean; daily_cap_stopped?: boolean; calls?: number; region: string
+  preview: BaiduPoi[]; ingest?: { created: number; skipped: number; shared_phone?: number; no_phone: number; region_unresolved: number }
+}
+export interface MapUsageOne { used: number; quota: number; remaining: number }
+export interface MapUsage { date: string; baidu: MapUsageOne; amap: MapUsageOne }
+export function getMapUsage(): Promise<MapUsage> {
+  return unwrap(request.get('/admin/sales/map/usage'))
+}
+export function setMapQuota(body: { baidu?: number; amap?: number }): Promise<{ daily_quota: { baidu: number; amap: number } }> {
+  return unwrap(request.put('/admin/sales/map/quota', body))
+}
+// 手动模式:把已检索到的 POI 直接入库(不再调地图 API、不耗配额)
+export function ingestMapItems(items: BaiduPoi[], source: string, sourceNote?: string): Promise<{ created: number; skipped: number; shared_phone?: number; no_phone: number; region_unresolved: number }> {
+  return unwrap(request.post('/admin/sales/leads/ingest', { items, source, source_note: sourceNote, require_phone: true }))
+}
+export function getBaiduAk(): Promise<{ ak_set: boolean; ak_masked: string }> {
+  return unwrap(request.get('/admin/sales/baidu/ak'))
+}
+export function setBaiduAk(ak: string): Promise<{ ak_masked: string }> {
+  return unwrap(request.put('/admin/sales/baidu/ak', { ak }))
+}
+export function baiduFetch(body: { region_name?: string; districts?: string[]; keywords: string[]; pages: number; ingest: boolean }): Promise<BaiduFetchResult> {
+  return unwrap(request.post('/admin/sales/baidu/fetch', body, { timeout: 120000 }))
+}
+// 高德地图获客(同结构;source=amap)
+export function getAmapKey(): Promise<{ ak_set: boolean; ak_masked: string }> {
+  return unwrap(request.get('/admin/sales/amap/ak'))
+}
+export function setAmapKey(ak: string): Promise<{ ak_masked: string }> {
+  return unwrap(request.put('/admin/sales/amap/ak', { ak }))
+}
+export function amapFetch(body: { region_name?: string; districts?: string[]; keywords: string[]; types?: string[]; pages: number; ingest: boolean }): Promise<BaiduFetchResult> {
+  return unwrap(request.post('/admin/sales/amap/fetch', body, { timeout: 120000 }))
+}
+
 // ── R10 语法掌握判定校准(用真实作答反查「已掌握」判得准不准)────────────
 export interface GrammarCalibWorstNode {
   node_id: string; name: string; answers: number

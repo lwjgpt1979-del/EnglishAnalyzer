@@ -34,7 +34,7 @@ DEFAULTS: dict = {
 }
 
 STATUSES = ("new", "contacted", "interested", "negotiating", "won", "lost", "invalid")
-SOURCES = ("baidu_map", "meituan", "dianping", "tungee", "manual", "import", "other")
+SOURCES = ("baidu_map", "amap", "meituan", "dianping", "tungee", "manual", "import", "other")
 CHANNELS = ("call", "wechat", "note", "sms")
 
 
@@ -107,6 +107,126 @@ async def create_lead(db: AsyncSession, *, data: dict) -> SalesLead:
     return lead
 
 
+import re as _re
+
+# 多号分隔符:仅逗号/分号/顿号/斜杠(不含空格——单个号码内部可能带空格,不能据此截断)
+_PHONE_SPLIT = _re.compile(r"[,，;；/、]+")
+
+
+def _first_phone(raw: object) -> str | None:
+    """一个字段里可能有多号(「025-83xxxxxx,138xxxx」)→ 取首个 ≥7 位数字的号,
+    清掉空格/括号等杂字符(只留数字与短横),保住区号-号码完整。"""
+    if not raw:
+        return None
+    for part in _PHONE_SPLIT.split(str(raw)):
+        cleaned = _re.sub(r"[^\d\-]", "", part).strip("-")
+        if len(_re.sub(r"\D", "", cleaned)) >= 7:
+            return cleaned or None
+    return None
+
+
+_SHARED_TAG = "同号多机构"   # 同一电话挂在不同地址 → 疑似一个老板多店/多机构
+_NOPHONE_TAG = "待补号"      # 无电话线索:入库但需人工补号才能外呼
+
+
+def _merge_tags(tags: object, tag: str) -> list:
+    lst = list(tags) if isinstance(tags, list) else []
+    if tag not in lst:
+        lst.append(tag)
+    return lst
+
+
+def _norm_addr(a: object) -> str:
+    return _re.sub(r"\s+", "", (str(a).strip() if a else ""))
+
+
+async def ingest_external_leads(db: AsyncSession, *, items: list[dict], source: str,
+                                source_note: str | None = None,
+                                require_phone: bool = False) -> dict:
+    """采集→入库通用适配器:{name,phone,address,business,city} 列表 → 经 region_service 解析城市/地址
+    为 region_code → 归一 → 智能去重入库。source 自动填(非法值兜底 other),source_note 记来源(合规)。
+    不管数据来自百度 API / 探迹 / Excel,都过这一层。
+
+    去重:
+    - 有电话:同号同址=真重复跳过;同号不同址=保留 + 打「同号多机构」标(新旧线索都标,疑似一个老板多店)。
+    - 无电话:按「同名 + 地址」去重——同名同址跳过;同名不同址照样入库(不打同号标)。
+    require_phone=True 时无电话直接跳过(默认 False:无电话也入库)。
+    返回 {created, skipped, shared_phone, no_phone, region_unresolved}。
+    """
+    from app.services import region_service
+    src = source if source in SOURCES else "other"
+    norm, no_phone, unresolved = [], 0, 0
+    for it in items:
+        phone = _first_phone(it.get("phone"))
+        if not phone:
+            no_phone += 1
+            if require_phone:
+                continue
+        city = (it.get("city") or "").strip()
+        addr = (it.get("address") or "").strip()
+        code = rname = None
+        if city:
+            code, rname = await region_service.region_from_name(db, city)
+        if code is None and addr:
+            code, rname = await region_service.region_from_name(db, addr)
+        if code is None:
+            unresolved += 1
+        norm.append({
+            "name": (it.get("name") or "").strip() or "未命名机构",
+            "phone": phone,
+            "address": addr or None,
+            "region_code": code, "region_name": rname,
+            "industry": (it.get("business") or it.get("industry") or "").strip() or None,
+            "source": src, "source_note": source_note,
+        })
+
+    # 预取已存在线索:有电话按 phone,无电话按 name(仅无电话的历史线索)
+    phones = {n["phone"] for n in norm if n.get("phone")}
+    names_np = {n["name"] for n in norm if not n.get("phone")}
+    exist_ph: dict[str, list] = {}
+    exist_nm: dict[str, list] = {}
+    if phones:
+        for lead in (await db.execute(sa.select(SalesLead).where(SalesLead.phone.in_(phones)))).scalars().all():
+            exist_ph.setdefault(lead.phone, []).append(lead)
+    if names_np:
+        for lead in (await db.execute(sa.select(SalesLead).where(
+                SalesLead.phone.is_(None), SalesLead.name.in_(names_np)))).scalars().all():
+            exist_nm.setdefault(lead.name, []).append(lead)
+
+    created = skipped = shared = 0
+    batch_ph: dict[str, set] = {}
+    batch_nm: dict[str, set] = {}
+    flag_existing: set = set()
+    for n in norm:
+        phone, name, an = n.get("phone"), n["name"], _norm_addr(n.get("address"))
+        if phone:
+            seen = {_norm_addr(l.address) for l in exist_ph.get(phone, [])} | batch_ph.get(phone, set())
+            if an in seen:               # 同号同址 → 真重复
+                skipped += 1
+                continue
+            if exist_ph.get(phone) or batch_ph.get(phone):   # 同号不同址 → 一号多店
+                n["tags"] = _merge_tags(n.get("tags"), _SHARED_TAG)
+                shared += 1
+                flag_existing.update(exist_ph.get(phone, []))
+            batch_ph.setdefault(phone, set()).add(an)
+        else:                            # 无电话:按 同名+地址 去重,并打「待补号」标
+            seen = {_norm_addr(l.address) for l in exist_nm.get(name, [])} | batch_nm.get(name, set())
+            if an in seen:               # 同名同址 → 真重复
+                skipped += 1
+                continue
+            n["tags"] = _merge_tags(n.get("tags"), _NOPHONE_TAG)
+            batch_nm.setdefault(name, set()).add(an)
+        await create_lead(db, data=n)
+        created += 1
+
+    for lead in flag_existing:           # 已存在的同号线索也补标
+        lead.tags = _merge_tags(lead.tags, _SHARED_TAG)
+    await db.flush()
+
+    return {"created": created, "skipped": skipped, "shared_phone": shared,
+            "no_phone": no_phone, "region_unresolved": unresolved}
+
+
 async def import_leads(db: AsyncSession, *, items: list[dict], source: str = "import") -> dict:
     """批量导入:按 phone 去重(已存在则跳过)。返回 {created, skipped}。"""
     created = skipped = 0
@@ -133,6 +253,7 @@ async def list_leads(
     db: AsyncSession, *, pool: str | None = None, status: str | None = None,
     source: str | None = None, region_code: str | None = None,
     owner_admin_id: uuid.UUID | None = None, dnc: bool | None = None,
+    has_phone: bool | None = None,
     due: bool = False, sla: bool = False, tag: str | None = None,
     seat_admin_id: uuid.UUID | None = None, q: str | None = None,
     skip: int = 0, limit: int = 20,
@@ -143,6 +264,10 @@ async def list_leads(
                                  SalesLead.owner_admin_id == seat_admin_id))
     if tag:
         base = base.where(SalesLead.tags.contains([tag]))
+    if has_phone is True:           # 有电话
+        base = base.where(SalesLead.phone.isnot(None))
+    elif has_phone is False:        # 无电话(待补号)
+        base = base.where(SalesLead.phone.is_(None))
     if pool:
         base = base.where(SalesLead.pool == pool)
     if status:

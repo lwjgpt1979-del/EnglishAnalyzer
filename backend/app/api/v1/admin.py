@@ -27,7 +27,8 @@ from app.schemas.questions import (
 from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.sales_crm import (
-    SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, ActivityCreate,
+    SalesLeadCreate, SalesLeadUpdate, SalesLeadImport, SalesLeadIngest,
+    BaiduAkIn, BaiduFetchIn, ActivityCreate,
     SalesLeadOut, ActivityOut, CallRecordIn, AnalyzeTextIn, BatchAssignIn, MergeLeadsIn,
     SalesConfigUpdate, ScriptsIn,
     WecomIngestIn, WecomConfigUpdate, WecomMsgOut,
@@ -3457,16 +3458,17 @@ async def sales_list_leads(
     db: DbDep, admin: AdminDep,
     pool: str | None = None, status: str | None = None, source: str | None = None,
     region_code: str | None = None, mine: bool = False, dnc: bool | None = None,
+    has_phone: bool | None = None,
     due: bool = False, sla: bool = False, tag: str | None = None,
     q: str | None = None, skip: int = 0, limit: int = 20,
 ):
-    """线索分页列表。mine=只看自己私海;due=到期待办;sla=SLA 违约;tag=标签;座席自动限权。"""
+    """线索分页列表。mine=只看自己私海;due=到期待办;sla=SLA 违约;tag=标签;has_phone=有/无电话;座席自动限权。"""
     from app.services import sales_crm_service as crm
     seat = await crm.seat_scope_for(db, admin.id)   # 座席只看公海+自己私海
     rows, total = await crm.list_leads(
         db, pool=pool, status=status, source=source, region_code=region_code,
-        owner_admin_id=(admin.id if mine else None), dnc=dnc, due=due, sla=sla, tag=tag,
-        seat_admin_id=seat, q=q, skip=skip, limit=limit)
+        owner_admin_id=(admin.id if mine else None), dnc=dnc, has_phone=has_phone,
+        due=due, sla=sla, tag=tag, seat_admin_id=seat, q=q, skip=skip, limit=limit)
     return make_ok({"total": total, "items": [_lead_json(r) for r in rows]})
 
 
@@ -3487,6 +3489,95 @@ async def sales_import_leads(body: SalesLeadImport, db: DbDep, admin: AdminDep):
         db, items=[it.model_dump(exclude_none=True) for it in body.items], source=body.source)
     await db.commit()
     return make_ok(res)
+
+
+@router.post("/sales/leads/ingest", response_model=BaseResponse[dict])
+async def sales_ingest_leads(body: SalesLeadIngest, db: DbDep, admin: AdminDep):
+    """采集→入库通用适配器:{名称,电话,地址,主营业务,城市} 列表 → 解析城市为区划码 + 归一 →
+    按 phone 去重入库。数据来自百度地图 API / 探迹 / Excel 均走此口。source_note 记合规来源。"""
+    from app.services import sales_crm_service as crm
+    res = await crm.ingest_external_leads(
+        db, items=[it.model_dump() for it in body.items],
+        source=body.source, source_note=body.source_note, require_phone=body.require_phone)
+    await db.commit()
+    return make_ok(res)
+
+
+# ── 百度地图获客(官方 Place API;AK 走配置;额度用尽即停)──────────────────
+@router.get("/sales/baidu/ak", response_model=BaseResponse[dict])
+async def sales_baidu_ak_get(db: DbDep, admin: AdminDep):
+    from app.services import baidu_lead_service as bd
+    ak = await bd.get_ak(db)
+    return make_ok({"ak_set": bool(ak), "ak_masked": bd.mask_ak(ak)})
+
+
+@router.put("/sales/baidu/ak", response_model=BaseResponse[dict])
+async def sales_baidu_ak_set(body: BaiduAkIn, db: DbDep, admin: AdminDep):
+    from app.services import baidu_lead_service as bd
+    await bd.set_ak(db, ak=body.ak, updated_by=admin.id)
+    await db.commit()
+    return make_ok({"ak_masked": bd.mask_ak(await bd.get_ak(db))})
+
+
+@router.post("/sales/baidu/fetch", response_model=BaseResponse[dict])
+async def sales_baidu_fetch(body: BaiduFetchIn, db: DbDep, admin: AdminDep):
+    """按 城市(+区县)+ 关键词 调官方百度 Place API 检索 POI;ingest=true 直接入库(按 phone 去重)。
+    额度用尽自动停(返回 quota_stopped=True)。"""
+    from app.services import baidu_lead_service as bd
+    res = await bd.fetch_and_ingest(
+        db, region_name=body.region_name, districts=body.districts,
+        keywords=body.keywords, pages=body.pages, ingest=body.ingest)
+    await db.commit()   # 预览也提交:留住 map_usage 日用量计数(预览同样消耗真实配额)
+    return make_ok(res)
+
+
+# ── 高德地图获客(官方 POI 文本检索;Key 走配置;额度用尽即停)────────────────
+@router.get("/sales/amap/ak", response_model=BaseResponse[dict])
+async def sales_amap_key_get(db: DbDep, admin: AdminDep):
+    from app.services import amap_lead_service as am
+    k = await am.get_key(db)
+    return make_ok({"ak_set": bool(k), "ak_masked": am.mask_key(k)})
+
+
+@router.put("/sales/amap/ak", response_model=BaseResponse[dict])
+async def sales_amap_key_set(body: BaiduAkIn, db: DbDep, admin: AdminDep):
+    from app.services import amap_lead_service as am
+    await am.set_key(db, key=body.ak, updated_by=admin.id)
+    await db.commit()
+    return make_ok({"ak_masked": am.mask_key(await am.get_key(db))})
+
+
+@router.post("/sales/amap/fetch", response_model=BaseResponse[dict])
+async def sales_amap_fetch(body: BaiduFetchIn, db: DbDep, admin: AdminDep):
+    """按 城市(+区县)+ 关键词 调官方高德 POI 检索;ingest=true 直接入库(按 phone 去重)。额度用尽自动停。"""
+    from app.services import amap_lead_service as am
+    res = await am.fetch_and_ingest(
+        db, region_name=body.region_name, districts=body.districts,
+        keywords=body.keywords, types=body.types, pages=body.pages, ingest=body.ingest)
+    await db.commit()   # 预览也提交:留住 map_usage 日用量计数(预览同样消耗真实配额)
+    return make_ok(res)
+
+
+# ── 地图获客:每日查询次数限额 + 用量 ─────────────────────────────────────────
+class _MapQuotaIn(BaseModel):
+    baidu: int | None = None
+    amap: int | None = None
+
+
+@router.get("/sales/map/usage", response_model=BaseResponse[dict])
+async def sales_map_usage(db: DbDep, admin: AdminDep):
+    """各数据源今日已用/每日上限/剩余(按东八区自然日)。"""
+    from app.services import map_usage_service as usage
+    return make_ok(await usage.get_usage(db))
+
+
+@router.put("/sales/map/quota", response_model=BaseResponse[dict])
+async def sales_map_quota(body: _MapQuotaIn, db: DbDep, admin: AdminDep):
+    """设置每日查询次数上限(百度/高德各自)。"""
+    from app.services import map_usage_service as usage
+    cfg = await usage.set_quota(db, quota=body.model_dump(exclude_none=True), updated_by=admin.id)
+    await db.commit()
+    return make_ok(cfg)
 
 
 @router.patch("/sales/leads/{lead_id}", response_model=BaseResponse[dict])

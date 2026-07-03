@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'lecture-split', name: 'lecture-split', component: () => import('../views/LectureSplit.vue') },
         { path: 'exam-type-stats', name: 'exam-type-stats', component: () => import('../views/ExamTypeStats.vue') },
         { path: 'grammar-calibration', name: 'grammar-calibration', component: () => import('../views/GrammarCalibration.vue') },
+        { path: 'baidu-leads', name: 'baidu-leads', component: () => import('../views/BaiduLeads.vue') },
         { path: 'textbook-word-stats', name: 'textbook-word-stats', component: () => import('../views/TextbookWordStats.vue') },
         { path: 'long-sentences', name: 'long-sentences', component: () => import('../views/LongSentences.vue') },
         { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },
