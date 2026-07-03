@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import uuid
@@ -76,15 +77,122 @@ def rsa_decrypt_random_key(encrypt_random_key_b64: str, private_key_pem: str) ->
     return key.decrypt(base64.b64decode(encrypt_random_key_b64), padding.PKCS1v15())
 
 
-async def pull_via_sdk(db: AsyncSession, *, limit: int = 1000) -> dict:
-    """接入位:真·拉取(GetChatData → RSA 解密钥 → 原生 DecryptData → ingest)。
+def _load_private_key_pem() -> str | None:
+    """会话存档 RSA 私钥:优先 env WECOM_ARCHIVE_PRIVATE_KEY(PEM),否则 _FILE 指向的文件。"""
+    import os
+    pem = os.environ.get("WECOM_ARCHIVE_PRIVATE_KEY")
+    if pem and "PRIVATE KEY" in pem:
+        return pem
+    path = os.environ.get("WECOM_ARCHIVE_PRIVATE_KEY_FILE")
+    if path and os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    return None
 
-    需:签约会话存档 + 部署 libWeWorkFinanceSdk_C.so(ctypes 绑定)+ corpid/secret/私钥。
-    未就绪时明确报错,避免"假装拉到"。就绪后在此拼装 messages 调 ingest_messages。
+
+def _to_msg(plain: dict, seq) -> dict:
+    """企微会话明文 JSON → 内部消息 dict(供 ingest_messages)。"""
+    mt = plain.get("msgtype") or "text"
+    text = ""
+    if mt == "text":
+        text = (plain.get("text") or {}).get("content") or ""
+    # 外部联系人 id 以 wm/wo 开头;取 from 或 tolist 里的外部 id
+    ext = None
+    cand = [plain.get("from")] + list(plain.get("tolist") or [])
+    ext = next((c for c in cand if isinstance(c, str) and c[:2] in ("wm", "wo")), None)
+    return {"msg_id": plain.get("msgid"), "seq": seq, "from_userid": plain.get("from"),
+            "external_userid": ext, "roomid": plain.get("roomid"), "msgtype": mt,
+            "content_text": text or None, "msgtime": plain.get("msgtime")}
+
+
+async def _set_last_seq(db: AsyncSession, seq: int) -> None:
+    row = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _CFG_KEY))).scalar_one_or_none()
+    if row is not None and isinstance(row.value, dict):
+        row.value = {**row.value, "last_seq": int(seq)}
+        await db.flush()
+
+
+def _pull_real_sync(lib_path: str, corp_id: str, secret: str, private_key_pem: str,
+                    seq: int, limit: int) -> tuple[list[dict], int]:
+    """ctypes 绑定 libWeWorkFinanceSdk_C:GetChatData → RSA 解随机密钥 → DecryptData → 明文。
+
+    ⚠️ 部署时按你拿到的 .so 版本核对 ABI(尤其 DecryptData 的 encrypt_key 传 base64 还是原始)。
     """
-    raise NotImplementedError(
-        "企微会话存档真·拉取未接入:需签约 + 部署 libWeWorkFinanceSdk + 配置 corpid/secret/RSA 私钥。"
-        "当前可用 ingest_messages 接入位喂已解密消息(见 /admin/sales/wecom/ingest)。")
+    import base64
+    import ctypes
+    import json
+    lib = ctypes.CDLL(lib_path)
+    lib.NewSdk.restype = ctypes.c_void_p
+    lib.NewSlice.restype = ctypes.c_void_p
+    lib.GetContentFromSlice.restype = ctypes.c_char_p
+    lib.GetContentFromSlice.argtypes = [ctypes.c_void_p]
+    lib.Init.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+    lib.GetChatData.argtypes = [ctypes.c_void_p, ctypes.c_ulonglong, ctypes.c_uint,
+                                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p]
+    lib.DecryptData.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_void_p]
+    lib.FreeSlice.argtypes = [ctypes.c_void_p]
+    lib.DestroySdk.argtypes = [ctypes.c_void_p]
+
+    sdk = lib.NewSdk()
+    try:
+        if lib.Init(sdk, corp_id.encode(), secret.encode()) != 0:
+            raise RuntimeError("会话存档 Init 失败(检查 corpid/secret)")
+        chat_slice = lib.NewSlice()
+        try:
+            if lib.GetChatData(sdk, seq, limit, b"", b"", 5, chat_slice) != 0:
+                raise RuntimeError("GetChatData 失败(检查存档权限/IP 白名单)")
+            data = json.loads((lib.GetContentFromSlice(chat_slice) or b"{}").decode())
+        finally:
+            lib.FreeSlice(chat_slice)
+        out, max_seq = [], seq
+        for c in (data.get("chatdata") or []):
+            random_key = rsa_decrypt_random_key(c["encrypt_random_key"], private_key_pem)
+            msg_slice = lib.NewSlice()
+            try:
+                r = lib.DecryptData(sdk, base64.b64encode(random_key),
+                                    c["encrypt_chat_msg"].encode(), msg_slice)
+                if r != 0:
+                    continue
+                plain = json.loads((lib.GetContentFromSlice(msg_slice) or b"{}").decode())
+            finally:
+                lib.FreeSlice(msg_slice)
+            out.append(_to_msg(plain, c.get("seq")))
+            max_seq = max(max_seq, int(c.get("seq") or 0))
+        return out, max_seq
+    finally:
+        lib.DestroySdk(sdk)
+
+
+async def pull_via_sdk(db: AsyncSession, *, limit: int = 1000) -> dict:
+    """真·拉取:GetChatData → RSA 解密钥 → 原生 DecryptData → ingest_messages(去重+关联+分析)。
+
+    就绪条件:corp_id(配置)+ env WECOM_ARCHIVE_SECRET + RSA 私钥(env)+ libWeWorkFinanceSdk_C.so(env)。
+    未就绪 → 返回 dev-mock 状态(列出缺什么),不"假装拉到"、不污染库。
+    """
+    import os
+    cfg = await get_config(db)
+    corp_id = cfg.get("corp_id") or ""
+    secret = os.environ.get("WECOM_ARCHIVE_SECRET") or ""
+    pkey = _load_private_key_pem()
+    lib_path = os.environ.get("WECOM_FINANCE_SDK_LIB") or ""
+    missing = [n for n, v in [
+        ("corp_id(配置)", corp_id), ("env WECOM_ARCHIVE_SECRET", secret),
+        ("env WECOM_ARCHIVE_PRIVATE_KEY(_FILE)", pkey),
+        ("env WECOM_FINANCE_SDK_LIB", lib_path and os.path.exists(lib_path))] if not v]
+    if missing:
+        return {"dev_mock": True, "stored": 0, "linked": 0, "analyzed_leads": 0,
+                "missing": missing,
+                "note": "会话存档真拉取未就绪;配齐后自动走 GetChatData→解密→ingest。"
+                        "联调可先用 /admin/sales/wecom/ingest 喂已解密消息。"}
+    seq = int(cfg.get("last_seq") or 0)
+    msgs, new_seq = await asyncio.to_thread(_pull_real_sync, lib_path, corp_id, secret, pkey, seq, limit)
+    res = await ingest_messages(db, messages=msgs)
+    if new_seq and new_seq != seq:
+        await _set_last_seq(db, new_seq)
+    res["last_seq"] = new_seq
+    res["pulled"] = len(msgs)
+    return res
 
 
 # ── 入库 + 关联线索 + 分析 ────────────────────────────────────────────────────
