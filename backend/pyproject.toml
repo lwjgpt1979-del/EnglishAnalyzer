@@ -18,6 +18,7 @@ dependencies = [
     "alibabacloud-dysmsapi20170525>=2.0.0",
     "alibabacloud-tea-openapi>=0.3.0",
     "tencentcloud-sdk-python-ocr>=3.0.0",
+    "tencentcloud-sdk-python-asr>=3.0.0",
     "cos-python-sdk-v5>=1.9.30",
     "passlib[bcrypt]>=1.7.4",
     "fpdf2>=2.7.0",
