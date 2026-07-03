@@ -3754,6 +3754,50 @@ async def sales_transcribe_activity(activity_id: uuid.UUID, db: DbDep, admin: Ad
     return make_ok(ActivityOut.model_validate(act).model_dump(mode="json"))
 
 
+# ── 呼叫中心接入(通用中转 webhook + 字段映射配置)────────────────────────────
+class _CallCenterCfgIn(BaseModel):
+    webhook_token: str | None = None
+    auto_transcribe: bool | None = None
+    field_map: dict | None = None
+
+
+@router.post("/sales/call-center/webhook", response_model=BaseResponse[dict])
+async def sales_call_center_webhook(request: Request, db: DbDep):
+    """呼叫中心通话结束回调(外部服务器直连,无登录;webhook_token 鉴权)。
+    落 call 跟进 + 挂录音,有录音则后台自动 ASR + 意向分析。字段映射走配置。"""
+    from app.services import call_center_service as cc
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 — 非 JSON → 退回 query 参数
+        body = dict(request.query_params)
+    if not isinstance(body, dict):
+        body = {}
+    cfg = await cc.get_config(db)
+    token = body.get("token") or request.query_params.get("token")
+    if cfg["webhook_token"] and token != cfg["webhook_token"]:
+        raise AppError(code=401, message="webhook token 无效")
+    res = await cc.handle_webhook(db, body=body)
+    await db.commit()
+    if res["matched"] and res["has_recording"] and cfg["auto_transcribe"]:
+        cc.schedule_transcribe(uuid.UUID(res["activity_id"]))
+    return make_ok(res)
+
+
+@router.get("/sales/call-center/config", response_model=BaseResponse[dict])
+async def sales_call_center_config(db: DbDep, admin: AdminDep):
+    """呼叫中心接入配置(webhook token / 字段映射 / 自动转写)。"""
+    from app.services import call_center_service as cc
+    return make_ok(await cc.get_config(db))
+
+
+@router.put("/sales/call-center/config", response_model=BaseResponse[dict])
+async def sales_call_center_config_set(body: _CallCenterCfgIn, db: DbDep, admin: AdminDep):
+    from app.services import call_center_service as cc
+    cfg = await cc.update_config(db, patch=body.model_dump(exclude_none=True), updated_by=admin.id)
+    await db.commit()
+    return make_ok(cfg)
+
+
 @router.post("/sales/analyze", response_model=BaseResponse[dict])
 async def sales_analyze_text(body: AnalyzeTextIn, db: DbDep, admin: AdminDep):
     """试跑:任意转写文本 → 意向分析 schema(不落库)。"""
