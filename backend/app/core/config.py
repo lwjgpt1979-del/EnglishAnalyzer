@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     tencent_ocr_secret_id: str = "placeholder_tencent_ocr_sid"
     tencent_ocr_secret_key: str = "placeholder_tencent_ocr_skey"
 
+    # 阿里云呼叫中心 CCC（电销外呼→通话记录→录音；placeholder=dev-mock，配真 AK 即走真 API）
+    aliyun_ccc_access_key_id: str = "placeholder_ccc_ak_id"
+    aliyun_ccc_access_key_secret: str = "placeholder_ccc_ak_secret"
+
     # 豆包 Vision（火山引擎方舟，M40）
     # dev 模式：doubao_api_key 以 'placeholder' 开头时触发 mock，无需真实 key
     doubao_api_key: str = "placeholder-doubao-dev"

@@ -3805,6 +3805,50 @@ async def sales_analyze_text(body: AnalyzeTextIn, db: DbDep, admin: AdminDep):
     return make_ok(await ana.analyze_transcript(body.text, source=body.source))
 
 
+# ─── 电销 CRM · 阿里云呼叫中心 CCC(拉取中转)────────────────────────────────
+
+class _CccCfgIn(BaseModel):
+    instance_id: str | None = None
+    region_id: str | None = None
+    endpoint: str | None = None
+    api_version: str | None = None
+    action_get_contact: str | None = None
+    auto_transcribe: bool | None = None
+    field_map: dict | None = None
+
+
+class _CccPullIn(BaseModel):
+    contact_id: str
+    phone: str | None = None
+
+
+@router.get("/sales/ccc/config", response_model=BaseResponse[dict])
+async def sales_ccc_config(db: DbDep, admin: AdminDep):
+    """阿里云 CCC 接入配置(实例/接口名/字段映射;AccessKey 走 env,不在此)。"""
+    from app.services import aliyun_ccc_service as ccc
+    cfg = await ccc.get_config(db)
+    cfg["dev_mock"] = ccc.is_dev_mock()
+    return make_ok(cfg)
+
+
+@router.put("/sales/ccc/config", response_model=BaseResponse[dict])
+async def sales_ccc_config_set(body: _CccCfgIn, db: DbDep, admin: AdminDep):
+    from app.services import aliyun_ccc_service as ccc
+    cfg = await ccc.update_config(db, patch=body.model_dump(exclude_none=True), updated_by=admin.id)
+    await db.commit()
+    return make_ok(cfg)
+
+
+@router.post("/sales/ccc/pull", response_model=BaseResponse[dict])
+async def sales_ccc_pull(body: _CccPullIn, db: DbDep, admin: AdminDep):
+    """联调触发:按 contactId 拉 CCC 通话记录 → 匹配线索 → 落 call 跟进(有录音后台转写分析)。
+    dev-mock(未配 CCC AccessKey)下模拟一条,验匹配→落库链路;配真 AK 走真 API。"""
+    from app.services import aliyun_ccc_service as ccc
+    res = await ccc.fetch_and_ingest(db, contact_id=body.contact_id, phone=body.phone)
+    await db.commit()
+    return make_ok(res)
+
+
 # ─── 电销 CRM · P2 企微会话存档 ───────────────────────────────────────────────
 
 @router.get("/sales/wecom/config", response_model=BaseResponse[dict])
