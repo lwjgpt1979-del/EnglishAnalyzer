@@ -3756,15 +3756,18 @@ async def sales_transcribe_activity(activity_id: uuid.UUID, db: DbDep, admin: Ad
 
 # ── 呼叫中心接入(通用中转 webhook + 字段映射配置)────────────────────────────
 class _CallCenterCfgIn(BaseModel):
+    provider: str | None = None          # generic | aliyun_ccc
     webhook_token: str | None = None
     auto_transcribe: bool | None = None
     field_map: dict | None = None
+    vendors: dict | None = None          # {key: {label,enabled,webhook_token,recording_url_prefix,field_map} | None=删}
 
 
 @router.post("/sales/call-center/webhook", response_model=BaseResponse[dict])
 async def sales_call_center_webhook(request: Request, db: DbDep):
     """呼叫中心通话结束回调(外部服务器直连,无登录;webhook_token 鉴权)。
-    落 call 跟进 + 挂录音,有录音则后台自动 ASR + 意向分析。字段映射走配置。"""
+    多服务商并行:带 ?vendor=key 用该服务商的 token/字段映射(七陌/合力各推各的);
+    不带 vendor 走顶层配置(单服务商兼容)。落 call 跟进 + 挂录音,自动 ASR + 意向分析。"""
     from app.services import call_center_service as cc
     try:
         body = await request.json()
@@ -3773,10 +3776,15 @@ async def sales_call_center_webhook(request: Request, db: DbDep):
     if not isinstance(body, dict):
         body = {}
     cfg = await cc.get_config(db)
+    vendor = request.query_params.get("vendor") or None
     token = body.get("token") or request.query_params.get("token")
-    if cfg["webhook_token"] and token != cfg["webhook_token"]:
+    expected = cfg["webhook_token"]
+    if vendor:
+        vc = (cfg.get("vendors") or {}).get(vendor) or {}
+        expected = vc.get("webhook_token") or expected   # 服务商专属 token,缺省回落顶层
+    if expected and token != expected:
         raise AppError(code=401, message="webhook token 无效")
-    res = await cc.handle_webhook(db, body=body)
+    res = await cc.handle_webhook(db, body=body, vendor=vendor)
     await db.commit()
     if res["matched"] and res["has_recording"] and cfg["auto_transcribe"]:
         cc.schedule_transcribe(uuid.UUID(res["activity_id"]))
@@ -3785,9 +3793,11 @@ async def sales_call_center_webhook(request: Request, db: DbDep):
 
 @router.get("/sales/call-center/config", response_model=BaseResponse[dict])
 async def sales_call_center_config(db: DbDep, admin: AdminDep):
-    """呼叫中心接入配置(webhook token / 字段映射 / 自动转写)。"""
+    """呼叫中心接入配置(webhook token / 字段映射 / 多服务商;presets=可一键添加的服务商模板)。"""
     from app.services import call_center_service as cc
-    return make_ok(await cc.get_config(db))
+    cfg = await cc.get_config(db)
+    cfg["presets"] = cc.VENDOR_PRESETS
+    return make_ok(cfg)
 
 
 @router.put("/sales/call-center/config", response_model=BaseResponse[dict])
@@ -3814,6 +3824,7 @@ class _CccCfgIn(BaseModel):
     api_version: str | None = None
     action_get_contact: str | None = None
     auto_transcribe: bool | None = None
+    mock_recording_url: str | None = None
     field_map: dict | None = None
 
 

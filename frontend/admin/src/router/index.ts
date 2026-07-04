@@ -59,6 +59,7 @@ const router = createRouter({
         { path: 'system-settings', name: 'system-settings', component: () => import('../views/SystemSettings.vue') },
         { path: 'institution-packages', name: 'institution-packages', component: () => import('../views/InstitutionPackages.vue') },
         { path: 'sales-leads', name: 'sales-leads', component: () => import('../views/SalesLeads.vue') },
+        { path: 'sales-call-center', name: 'sales-call-center', component: () => import('../views/SalesCallCenter.vue') },
       ],
     },
   ],

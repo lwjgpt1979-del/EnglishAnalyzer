@@ -209,3 +209,53 @@ export const LEAD_SOURCE: Record<string, string> = {
   baidu_map: '百度地图', meituan: '美团', dianping: '大众点评',
   tungee: '探迹', manual: '手动', import: '导入', other: '其他',
 }
+
+// ── 呼叫中心接入(服务商可切换 + 多服务商并行)──────────────────────────────
+export interface CallCenterVendor {
+  label: string
+  enabled: boolean
+  webhook_token: string
+  recording_url_prefix: string
+  field_map: Record<string, string>
+}
+export interface CallCenterConfig {
+  provider: 'generic' | 'aliyun_ccc'
+  webhook_token: string
+  auto_transcribe: boolean
+  field_map: Record<string, string>
+  vendors: Record<string, CallCenterVendor>
+  presets?: Record<string, CallCenterVendor>
+}
+export function getCallCenterConfig(): Promise<CallCenterConfig> {
+  return unwrap(request.get('/admin/sales/call-center/config'))
+}
+// vendors 里某 key 传 null 表示删除该服务商
+export function updateCallCenterConfig(
+  patch: Partial<Omit<CallCenterConfig, 'vendors'>> & { vendors?: Record<string, CallCenterVendor | null> },
+): Promise<CallCenterConfig> {
+  return unwrap(request.put('/admin/sales/call-center/config', patch))
+}
+
+export interface CccConfig {
+  instance_id: string
+  region_id: string
+  endpoint: string
+  api_version: string
+  action_get_contact: string
+  auto_transcribe: boolean
+  mock_recording_url: string
+  field_map: Record<string, string>
+  dev_mock?: boolean
+}
+export function getCccConfig(): Promise<CccConfig> {
+  return unwrap(request.get('/admin/sales/ccc/config'))
+}
+export function updateCccConfig(patch: Partial<CccConfig>): Promise<CccConfig> {
+  return unwrap(request.put('/admin/sales/ccc/config', patch))
+}
+export function cccPull(contactId: string, phone?: string): Promise<{
+  matched: boolean; lead_id: string | null; activity_id: string | null
+  has_recording: boolean; dev_mock?: boolean; error?: string; phone?: string
+}> {
+  return unwrap(request.post('/admin/sales/ccc/pull', { contact_id: contactId, phone: phone || null }))
+}
