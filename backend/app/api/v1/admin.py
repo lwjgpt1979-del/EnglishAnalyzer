@@ -4074,6 +4074,106 @@ async def sales_ccc_pull(body: _CccPullIn, db: DbDep, admin: AdminDep):
     return make_ok(res)
 
 
+# ─── 存量召回 / 分群触达(域24;与电销 CRM 同源)────────────────────────────────
+
+class _SegmentIn(BaseModel):
+    id: uuid.UUID | None = None
+    name: str
+    description: str | None = None
+    rule: dict
+
+
+class _SegmentResolveIn(BaseModel):
+    rule: dict
+
+
+class _CampaignIn(BaseModel):
+    name: str
+    segment_id: uuid.UUID | None = None
+    rule: dict | None = None            # 即席规则(不存分群直接触达)
+    channel: str                        # station | sales_lead
+    title: str | None = None
+    content: str | None = None
+    lead_tag: str | None = None
+
+
+def _seg_out(s) -> dict:
+    return {"id": str(s.id), "name": s.name, "description": s.description, "rule": s.rule,
+            "last_count": s.last_count, "updated_at": s.updated_at.isoformat() if s.updated_at else None}
+
+
+def _camp_out(c) -> dict:
+    return {"id": str(c.id), "name": c.name, "segment_id": str(c.segment_id) if c.segment_id else None,
+            "channel": c.channel, "title": c.title, "content": c.content, "lead_tag": c.lead_tag,
+            "status": c.status, "stats": c.stats,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "executed_at": c.executed_at.isoformat() if c.executed_at else None}
+
+
+@router.get("/reach/fields", response_model=BaseResponse[dict])
+async def reach_fields(db: DbDep, admin: AdminDep):
+    """分群可用字段(admin 建规则用)。"""
+    from app.services import segment_service as seg
+    return make_ok({"fields": seg.FIELDS, "channels": ["station", "sales_lead"]})
+
+
+@router.post("/reach/segments/resolve", response_model=BaseResponse[dict])
+async def reach_segment_resolve(body: _SegmentResolveIn, db: DbDep, admin: AdminDep):
+    """试算:规则 → 命中人数 + 样本(不落库)。"""
+    from app.services import segment_service as seg
+    return make_ok(await seg.resolve(db, body.rule))
+
+
+@router.get("/reach/segments", response_model=BaseResponse[dict])
+async def reach_segments_list(db: DbDep, admin: AdminDep, skip: int = 0, limit: int = 50):
+    from app.services import segment_service as seg
+    res = await seg.list_segments(db, skip=skip, limit=limit)
+    return make_ok({"total": res["total"], "items": [_seg_out(s) for s in res["items"]]})
+
+
+@router.put("/reach/segments", response_model=BaseResponse[dict])
+async def reach_segment_upsert(body: _SegmentIn, db: DbDep, admin: AdminDep):
+    from app.services import segment_service as seg
+    s = await seg.upsert_segment(db, segment_id=body.id, name=body.name,
+                                 description=body.description, rule=body.rule, admin_id=admin.id)
+    await db.commit()
+    return make_ok(_seg_out(s))
+
+
+@router.delete("/reach/segments/{segment_id}", response_model=BaseResponse[dict])
+async def reach_segment_delete(segment_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    from app.services import segment_service as seg
+    await seg.delete_segment(db, segment_id=segment_id)
+    await db.commit()
+    return make_ok({"deleted": str(segment_id)})
+
+
+@router.get("/reach/campaigns", response_model=BaseResponse[dict])
+async def reach_campaigns_list(db: DbDep, admin: AdminDep, skip: int = 0, limit: int = 50):
+    from app.services import reach_service as rs
+    res = await rs.list_campaigns(db, skip=skip, limit=limit)
+    return make_ok({"total": res["total"], "items": [_camp_out(c) for c in res["items"]]})
+
+
+@router.post("/reach/campaigns", response_model=BaseResponse[dict])
+async def reach_campaign_create(body: _CampaignIn, db: DbDep, admin: AdminDep):
+    from app.services import reach_service as rs
+    c = await rs.create_campaign(
+        db, name=body.name, segment_id=body.segment_id, rule=body.rule, channel=body.channel,
+        title=body.title, content=body.content, lead_tag=body.lead_tag, admin_id=admin.id)
+    await db.commit()
+    return make_ok(_camp_out(c))
+
+
+@router.post("/reach/campaigns/{campaign_id}/run", response_model=BaseResponse[dict])
+async def reach_campaign_run(campaign_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """执行触达:圈人 → 站内通知 / 生成电销线索 → 回填统计。"""
+    from app.services import reach_service as rs
+    c = await rs.run_campaign(db, campaign_id=campaign_id)
+    await db.commit()
+    return make_ok(_camp_out(c))
+
+
 # ─── 电销 CRM · P2 企微会话存档 ───────────────────────────────────────────────
 
 @router.get("/sales/wecom/config", response_model=BaseResponse[dict])

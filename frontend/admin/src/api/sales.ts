@@ -207,7 +207,7 @@ export const LEAD_STATUS: Record<string, string> = {
 }
 export const LEAD_SOURCE: Record<string, string> = {
   baidu_map: '百度地图', meituan: '美团', dianping: '大众点评',
-  tungee: '探迹', manual: '手动', import: '导入', other: '其他',
+  tungee: '探迹', manual: '手动', import: '导入', recall: '存量召回', other: '其他',
 }
 
 // ── 呼叫中心接入(服务商可切换 + 多服务商并行)──────────────────────────────

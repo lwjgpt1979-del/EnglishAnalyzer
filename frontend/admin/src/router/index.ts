@@ -63,6 +63,7 @@ const router = createRouter({
         { path: 'institution-packages', name: 'institution-packages', component: () => import('../views/InstitutionPackages.vue') },
         { path: 'sales-leads', name: 'sales-leads', component: () => import('../views/SalesLeads.vue') },
         { path: 'sales-call-center', name: 'sales-call-center', component: () => import('../views/SalesCallCenter.vue') },
+        { path: 'reach', name: 'reach', component: () => import('../views/Reach.vue') },
       ],
     },
   ],
