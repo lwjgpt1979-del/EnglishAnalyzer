@@ -62,6 +62,9 @@ class User(Base):
     # —— 运营管理员账号密码登录（M5 / D-098；C 端用户这两列为 NULL）——
     username = mapped_column(sa.String, nullable=True, unique=True)
     password_hash = mapped_column(sa.String, nullable=True)
+    # —— 模块权限(RBAC):NULL=全权超管;非空=子管理员仅可访问所列模块 ——
+    # 模块键见 app/core/module_map.MODULES(content/vocab/…/finance/system)
+    admin_modules = mapped_column(JSONB, nullable=True)
     nickname = mapped_column(sa.String, nullable=True)
     avatar_url = mapped_column(sa.String, nullable=True)
     role = mapped_column(user_role_enum, nullable=False)

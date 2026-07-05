@@ -67,6 +67,8 @@ async def authenticate(
         return None
     if str(user.role) not in allowed_roles:
         return None
+    if not user.is_active:            # 已停用账号拒发 token(get_current_user 也拦,双保险)
+        return None
     if not verify_password(password, user.password_hash):
         return None
     return user

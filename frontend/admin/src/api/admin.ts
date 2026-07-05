@@ -1645,6 +1645,42 @@ export function seedTextbookMap(overwrite = false): Promise<{ provinces: number;
   return unwrap(request.post('/admin/textbook-map/seed', {}, { params: { overwrite } }))
 }
 
+// ── 平台级操作审计(admin 写操作自动留痕)─────────────────────────────────
+export interface AuditLogRow {
+  id: string; admin_id: string | null; admin_name: string | null
+  method: string; path: string; module: string; status: number
+  query: string | null; detail: Record<string, unknown> | null
+  ip: string | null; duration_ms: number | null; created_at: string
+}
+export function listAuditLogs(params: {
+  module?: string; method?: string; admin_id?: string; q?: string
+  status_min?: number; date_from?: string; date_to?: string; skip?: number; limit?: number
+}): Promise<{ total: number; items: AuditLogRow[] }> {
+  return unwrap(request.get('/admin/audit-logs', { params }))
+}
+export function getAuditAdmins(): Promise<{ admin_id: string; name: string }[]> {
+  return unwrap(request.get('/admin/audit-logs/admins'))
+}
+
+// ── 管理员账号 + 模块权限(RBAC)──────────────────────────────────────────
+export interface AdminMe { id: string; username: string | null; nickname: string | null; modules: string[] | null }
+export interface AdminAccountRow { id: string; username: string; nickname: string | null; modules: string[] | null; is_active: boolean; created_at: string | null }
+export function adminMe(): Promise<AdminMe> {
+  return unwrap(request.get('/admin/me'))
+}
+export function listAdminAccounts(params: { skip?: number; limit?: number }): Promise<{ total: number; items: AdminAccountRow[] }> {
+  return unwrap(request.get('/admin/admins', { params }))
+}
+export function createAdminAccount(body: { username: string; password: string; nickname?: string; modules?: string[] | null }): Promise<AdminAccountRow> {
+  return unwrap(request.post('/admin/admins', body))
+}
+export function updateAdminAccount(id: string, body: { nickname?: string; modules?: string[]; all_modules?: boolean; is_active?: boolean }): Promise<AdminAccountRow> {
+  return unwrap(request.patch(`/admin/admins/${id}`, body))
+}
+export function resetAdminPassword(id: string, password: string): Promise<{ id: string }> {
+  return unwrap(request.post(`/admin/admins/${id}/reset-password`, { password }))
+}
+
 // ── R10 语法掌握判定校准(用真实作答反查「已掌握」判得准不准)────────────
 export interface GrammarCalibWorstNode {
   node_id: string; name: string; answers: number

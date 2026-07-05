@@ -1,6 +1,6 @@
 """
-域9: 系统配置与通知 (2 张表)
-  system_configs · notifications
+域9: 系统配置与通知 (3 张表)
+  system_configs · notifications · admin_audit_log
 """
 
 import uuid
@@ -24,6 +24,36 @@ notification_type_enum = sa.Enum(
     "weekly_report",
     name="notification_type",
 )
+
+
+class AdminAuditLog(Base):
+    """平台级操作审计:admin 后台所有**写操作**(POST/PUT/PATCH/DELETE)自动留痕。
+
+    由 ASGI 中间件(app/core/audit_middleware.py)统一记录,业务代码零埋点;
+    请求体已脱敏(password/key/token 等 → ***)并截断。只增不改,供追责/合规(PIPL)。
+    module 按路径前缀归类(finance/sales/ops/content/system…),便于筛查。
+    """
+
+    __tablename__ = "admin_audit_log"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id = mapped_column(UUID(as_uuid=True), nullable=True)    # 不加 FK:账号删了留痕仍在;未认证请求为 NULL
+    method = mapped_column(sa.String(8), nullable=False)           # POST/PUT/PATCH/DELETE
+    path = mapped_column(sa.String(255), nullable=False)           # 请求路径(不含 query)
+    module = mapped_column(sa.String(32), nullable=False)          # 按路径归类:finance/sales/ops/…
+    status = mapped_column(sa.Integer, nullable=False)             # 响应码(200/403/500…)
+    query = mapped_column(sa.String(255), nullable=True)           # query string(截断)
+    detail = mapped_column(JSONB, nullable=True)                   # 脱敏后的请求体(截断)
+    ip = mapped_column(sa.String(64), nullable=True)
+    duration_ms = mapped_column(sa.Integer, nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_admin_audit_created", "created_at"),
+        sa.Index("ix_admin_audit_admin", "admin_id", "created_at"),
+        sa.Index("ix_admin_audit_module", "module", "created_at"),
+    )
 
 
 class SystemConfig(Base):

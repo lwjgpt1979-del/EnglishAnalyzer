@@ -76,6 +76,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 平台级操作审计:admin 写操作(POST/PUT/PATCH/DELETE)自动留痕(零埋点,失败不影响业务)
+    from app.core.audit_middleware import AdminAuditMiddleware
+    app.add_middleware(AdminAuditMiddleware)
+
     # 行为埋点（§5.5 DAU/MAU）：按 token 记录日活，进程内去重，失败不影响请求
     @app.middleware("http")
     async def _activity_mw(request, call_next):

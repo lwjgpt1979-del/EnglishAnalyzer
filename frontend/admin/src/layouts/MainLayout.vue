@@ -97,12 +97,43 @@ const navGroups: NavGroup[] = [
     { path: '/sensitive-words', label: '敏感词库' },
     { path: '/regions', label: '地区管理' },
     { path: '/system-settings', label: '系统参数' },
+    { path: '/audit-logs', label: '操作审计' },
+    { path: '/admin-accounts', label: '账号与权限' },
   ] },
 ]
 
 // 默认展开全部分组（含二级子类）：保证所有页面可见、不被折叠或裁切
 const defaultOpeneds = navGroups.flatMap(g =>
   [g.key, ...(g.subs ? g.subs.map((_, i) => `${g.key}-${i}`) : [])])
+
+// ── 模块权限(RBAC):按 /admin/me 的 modules 过滤菜单 ─────────────────────────
+// 分组 key → 后端模块键(app/core/module_map.MODULES);modules=null 全权显示全部
+const GROUP_MODULE: Record<string, string> = {
+  'g-content': 'content', 'g-vocab': 'vocab', 'g-speak': 'speak',
+  'g-teacher': 'teacher_inst', 'g-ops': 'ops', 'g-sales': 'sales',
+  'g-finance': 'finance', 'g-support': 'support', 'g-system': 'system',
+}
+const myModules = ref<string[] | null>(null)   // null=全权(默认按全权渲染,拿到 me 后收紧)
+const isSuper = computed(() => myModules.value === null)
+const visibleGroups = computed(() => {
+  let groups = navGroups
+  if (myModules.value !== null) {
+    groups = groups.filter(g => myModules.value!.includes(GROUP_MODULE[g.key] || ''))
+  }
+  // 「账号与权限」仅超管可见
+  if (!isSuper.value) {
+    groups = groups.map(g => g.key !== 'g-system' ? g : {
+      ...g, items: (g.items || []).filter(it => it.path !== '/admin-accounts'),
+    })
+  }
+  return groups
+})
+onMounted(async () => {
+  try {
+    const { adminMe } = await import('../api/admin')
+    myModules.value = (await adminMe()).modules
+  } catch { /* 拿不到 me 不拦(接口侧仍有强制) */ }
+})
 
 function onLogout() {
   auth.logout()
@@ -178,7 +209,7 @@ onBeforeUnmount(() => window.removeEventListener('click', closeCtx))
           <el-icon><Histogram /></el-icon>
           <span>数据大盘</span>
         </el-menu-item>
-        <el-sub-menu v-for="g in navGroups" :key="g.key" :index="g.key">
+        <el-sub-menu v-for="g in visibleGroups" :key="g.key" :index="g.key">
           <template #title>
             <el-icon><component :is="g.icon" /></el-icon>
             <span>{{ g.title }}</span>

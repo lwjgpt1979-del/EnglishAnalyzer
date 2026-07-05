@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, Form
@@ -142,7 +143,27 @@ from app.services import (
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-AdminDep = Annotated[User, Depends(require_role("platform_admin"))]
+_require_platform_admin = require_role("platform_admin")
+
+
+async def _admin_with_module_check(
+        request: Request,
+        current: User = Depends(_require_platform_admin)) -> User:
+    """模块权限(RBAC)单点强制:admin_modules=NULL 全权;非空则按「路径→模块」放行。
+
+    映射与操作审计共用(app/core/module_map),口径一致;/me、/dashboard 全员放行。
+    """
+    mods = current.admin_modules
+    if mods is None:
+        return current
+    from app.core.module_map import is_common_path, module_of
+    path = request.url.path
+    if is_common_path(path) or module_of(path) in mods:
+        return current
+    raise AppError(code=403, message="无权访问该模块,请联系超级管理员")
+
+
+AdminDep = Annotated[User, Depends(_admin_with_module_check)]
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
@@ -3624,6 +3645,103 @@ async def sales_map_crawl_run(body: _CrawlRunIn, db: DbDep, admin: AdminDep):
                                respect_enabled=False)
     await db.commit()
     return make_ok(res)
+
+
+# ── 管理员账号 + 模块权限(RBAC)────────────────────────────────────────────────
+class _AdminCreateIn(BaseModel):
+    username: str
+    password: str
+    nickname: str | None = None
+    modules: list[str] | None = None      # None=全权超管;非空=仅所列模块
+
+
+class _AdminUpdateIn(BaseModel):
+    nickname: str | None = None
+    modules: list[str] | None = None
+    all_modules: bool = False             # true=改为全权(modules 置 NULL)
+    is_active: bool | None = None
+
+
+class _AdminResetPwdIn(BaseModel):
+    password: str
+
+
+def _require_super(admin: User) -> None:
+    """账号管理仅全权超管可操作(防子管理员自我提权)。"""
+    if admin.admin_modules is not None:
+        raise AppError(code=403, message="仅超级管理员可管理账号")
+
+
+@router.get("/me", response_model=BaseResponse[dict])
+async def admin_me(admin: AdminDep):
+    """当前管理员信息(前端据 modules 过滤菜单;None=全权)。"""
+    return make_ok({"id": str(admin.id), "username": admin.username,
+                    "nickname": admin.nickname, "modules": admin.admin_modules})
+
+
+@router.get("/admins", response_model=BaseResponse[dict])
+async def admin_list_admins(db: DbDep, admin: AdminDep, skip: int = 0, limit: int = 50):
+    """管理员账号列表(分页;仅超管)。"""
+    _require_super(admin)
+    from app.services import admin_account_service as acc
+    return make_ok(await acc.list_admins(db, skip=skip, limit=limit))
+
+
+@router.post("/admins", response_model=BaseResponse[dict])
+async def admin_create_admin(body: _AdminCreateIn, db: DbDep, admin: AdminDep):
+    """创建子管理员(仅超管)。modules 不传=全权;传列表=仅所列模块。"""
+    _require_super(admin)
+    from app.services import admin_account_service as acc
+    r = await acc.create(db, username=body.username, password=body.password,
+                         nickname=body.nickname, modules=body.modules)
+    await db.commit()
+    return make_ok(r)
+
+
+@router.patch("/admins/{admin_id}", response_model=BaseResponse[dict])
+async def admin_update_admin(admin_id: uuid.UUID, body: _AdminUpdateIn, db: DbDep, admin: AdminDep):
+    """改昵称/模块权限/启停用(仅超管;不能停用自己/给自己降权)。"""
+    _require_super(admin)
+    from app.services import admin_account_service as acc
+    mods = None if body.all_modules else (body.modules if body.modules is not None else ...)
+    r = await acc.update(db, admin_id, operator=admin, nickname=body.nickname,
+                         modules=mods, is_active=body.is_active)
+    await db.commit()
+    return make_ok(r)
+
+
+@router.post("/admins/{admin_id}/reset-password", response_model=BaseResponse[dict])
+async def admin_reset_admin_pwd(admin_id: uuid.UUID, body: _AdminResetPwdIn, db: DbDep, admin: AdminDep):
+    """重置某管理员密码(仅超管)。"""
+    _require_super(admin)
+    from app.services import admin_account_service as acc
+    r = await acc.reset_password(db, admin_id, password=body.password)
+    await db.commit()
+    return make_ok(r)
+
+
+# ── 平台级操作审计(中间件自动留痕,此处只查)──────────────────────────────────
+@router.get("/audit-logs", response_model=BaseResponse[dict])
+async def admin_audit_logs(
+        db: DbDep, admin: AdminDep,
+        module: str | None = None, method: str | None = None,
+        admin_id: uuid.UUID | None = None, q: str | None = None,
+        status_min: int | None = None,
+        date_from: datetime | None = None, date_to: datetime | None = None,
+        skip: int = 0, limit: int = 50):
+    """操作审计列表(分页)。所有 admin 写操作自动留痕;q 模糊匹配路径。"""
+    from app.services import admin_audit_service as aud
+    return make_ok(await aud.list_logs(
+        db, module=module, method=method, admin_id=admin_id, q=q,
+        status_min=status_min, date_from=date_from, date_to=date_to,
+        skip=skip, limit=limit))
+
+
+@router.get("/audit-logs/admins", response_model=BaseResponse[list])
+async def admin_audit_admins(db: DbDep, admin: AdminDep):
+    """出现过的操作人下拉。"""
+    from app.services import admin_audit_service as aud
+    return make_ok(await aud.admin_options(db))
 
 
 # ── 地区↔英语教材版本 映射(省级默认+可校对+地市例外)────────────────────────
