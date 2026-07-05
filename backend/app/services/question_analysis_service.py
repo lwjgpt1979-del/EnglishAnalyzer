@@ -336,12 +336,17 @@ async def suggest_cloze_analysis(
 async def suggest_analysis(
     db: AsyncSession, *, question_ids: list[uuid.UUID]
 ) -> list[dict]:
-    """按题型分发解析建议:完型→双轴(载体槽+线索);阅读→题目层(rc技能+定位句)。"""
+    """按题型分发解析建议:完型→双轴(载体槽+线索);阅读→题目层(rc技能+定位句)。
+    完型判定 = question_type 为「完型」或 section 含「完形/完型」(与前端 _fine_type 显示一致,防错位)。"""
     qs = (await db.execute(
-        sa.select(PlatformQuestion.id, PlatformQuestion.question_type)
+        sa.select(PlatformQuestion.id, PlatformQuestion.question_type, PlatformQuestion.section)
         .where(PlatformQuestion.id.in_(question_ids)))).all()
-    cloze_ids = [qid for qid, qt in qs if (qt or "") == "完型"]
-    reading_ids = [qid for qid, qt in qs if (qt or "") != "完型"]
+
+    def _is_cloze(qt: str | None, sec: str | None) -> bool:
+        return (qt or "") == "完型" or "完形" in (sec or "") or "完型" in (sec or "")
+
+    cloze_ids = [qid for qid, qt, sec in qs if _is_cloze(qt, sec)]
+    reading_ids = [qid for qid, qt, sec in qs if not _is_cloze(qt, sec)]
     out: list[dict] = []
     if cloze_ids:
         out += await suggest_cloze_analysis(db, question_ids=cloze_ids)
