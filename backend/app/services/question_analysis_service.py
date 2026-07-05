@@ -32,6 +32,17 @@ CLUE_TYPES = ("句内固定搭配", "句内语法约束", "跨句逻辑关系", 
 SLOT_TYPES = ("副词槽", "连词槽", "介词槽", "代词槽", "交际用语槽", "动词形式槽", "名词槽", "形容词槽")
 
 _OPT_PREFIX = re.compile(r"^[A-DＡ-Ｄ][.、．)]\s*")
+_OPT_SPLIT = re.compile(r"\s*[A-DＡ-Ｄ][.、．)]\s*")
+
+
+def parse_options_from_stem(stem: str) -> list[str] | None:
+    """从题干解析嵌入式选项(切题器常把 'A. x  B. y  C. z  D. w' 留在 stem、options 列为空)。
+    解析出 3-4 项才认,否则 None(宁缺勿错)。"""
+    parts = [p.strip().strip("\t").strip() for p in _OPT_SPLIT.split(stem or "")]
+    opts = [p for p in parts[1:] if p]      # parts[0] 是题号等前缀
+    return opts if 3 <= len(opts) <= 4 else None
+
+
 _CONJS = {"but", "and", "so", "or", "because", "though", "although", "while", "until",
           "unless", "if", "when", "before", "after", "since", "as", "however", "besides"}
 _PREPS = {"in", "on", "at", "for", "with", "by", "from", "of", "to", "about", "under",
@@ -128,15 +139,17 @@ def validate_cloze_analysis(analysis: dict, *, context_text: str) -> list[str]:
     codes = analysis.get("kp_codes") or []
     if not isinstance(codes, list) or not codes or not all(isinstance(c, str) and c.strip() for c in codes):
         errs.append("kp_codes 须为非空编码列表(线索轴为主)")
-    dts = analysis.get("distractor_types") or {}
+    # 完形干扰项 = 原义 + 干扰机制(词义本身合理、但与语境线索冲突——与阅读的枚举错因不同)
+    dts = analysis.get("distractors") or {}
     if not isinstance(dts, dict):
-        errs.append("distractor_types 须为对象")
+        errs.append("distractors 须为对象 {选项: {meaning, why_wrong}}")
     else:
         for k, v in dts.items():
             if str(k).upper() not in {"A", "B", "C", "D"}:
                 errs.append(f"干扰项键非法:{k}")
-            if v not in DISTRACTOR_TYPES:
-                errs.append(f"干扰项错因不在枚举内:{v}")
+            if not isinstance(v, dict) or not (v.get("meaning") or "").strip() \
+                    or not (v.get("why_wrong") or "").strip():
+                errs.append(f"干扰项 {k} 须含 原义(meaning)+干扰机制(why_wrong)")
     return errs
 
 
@@ -153,9 +166,13 @@ def analysis_constraints_text(analysis: dict | None) -> str:
     if analysis.get("rc_code"):                      # 阅读
         lines.append(f"本题阅读技能:{analysis['rc_code']}(变式必须考同一技能,答案须可回文定位)")
     dts = analysis.get("distractor_types") or {}
-    if dts:
+    if dts:                                          # 阅读:枚举错因策略
         lines.append("干扰项错因策略(变式按同策略造干扰项):" +
                      "、".join(sorted(set(dts.values()))))
+    dss = analysis.get("distractors") or {}
+    if dss:                                          # 完形:同干扰机制(原义合理×语境冲突)
+        mech = "; ".join(f"{k}:{(v or {}).get('why_wrong', '')}" for k, v in sorted(dss.items()))
+        lines.append(f"干扰项设计机制(变式按同机制造干扰项——词义本身合理但与语境线索冲突):{mech[:300]}")
     return ("\n".join(lines) + "\n") if lines else ""
 
 
@@ -243,29 +260,43 @@ async def suggest_reading_analysis(
 
 _CLOZE_SYSTEM = (
     "你是中小学英语完形填空测评专家。完形四选项同词性,词性本身区分度为零;"
-    "真正被测的是「语境线索」。对给定空做双轴解析,只返回 JSON:"
+    "真正被测的是「语境线索」——干扰项的词义本身合理,错在与语境线索冲突。"
+    "对给定空做双轴解析,只返回 JSON:"
     '{"clue_type":"线索类型","clue":"决定答案的线索句(必须逐字摘自原文)",'
-    '"kp_codes":["考点编码(从目录挑,线索轴为主)"],"distractor_types":{"A":"错因",...}}。'
+    '"answer_letter":"正确项字母(未给答案时按语境推断)",'
+    '"kp_codes":["考点编码(从目录挑,线索轴为主)"],'
+    '"distractors":{"A":{"meaning":"该词原义(中文)","why_wrong":"为何在本语境是干扰(必须指出与哪条线索冲突)"},...}}。'
     "线索类型只能取:" + "、".join(CLUE_TYPES) + "。"
-    "错因只能取:" + "、".join(DISTRACTOR_TYPES) + "。正确项不出现在 distractor_types。"
+    "distractors 只列**非正确项**,每项必须给 meaning+why_wrong。"
 )
+
+
+def _effective_options(q: PlatformQuestion) -> list[str] | None:
+    """options 列优先;为空则从 stem 解析嵌入式选项(切题器常把选项留在题干)。"""
+    if q.options:
+        return list(q.options) if isinstance(q.options, list) else None
+    return parse_options_from_stem(q.stem or "")
 
 
 def _mock_cloze_suggestion(q: PlatformQuestion, context: str) -> dict:
     first = re.split(r"(?<=[.!?])\s+", context.strip())[0][:200]
-    return {"slot": classify_cloze_slot(q.options),
+    opts = _effective_options(q) or []
+    dss = {chr(65 + i): {"meaning": f"mock 原义{i}", "why_wrong": "mock:与线索句语境冲突"}
+           for i, _ in enumerate(opts[:2])}
+    return {"slot": classify_cloze_slot(opts),
             "clue_type": "跨句逻辑关系", "clue": first,
-            "kp_codes": ["rc-6-1"], "distractor_types": {}}
+            "kp_codes": ["rc-6-1"], "distractors": dss}
 
 
 async def _llm_cloze_suggestion(q: PlatformQuestion, context: str, clue_catalog: str) -> dict:
-    slot = classify_cloze_slot(q.options)
-    opts = json.dumps(q.options, ensure_ascii=False) if q.options else "(无选项)"
+    eff = _effective_options(q)
+    slot = classify_cloze_slot(eff)
+    opts = json.dumps(eff, ensure_ascii=False) if eff else "(无选项)"
     user = (f"【线索轴考点目录】\n{clue_catalog}\n\n【原文(空格即本题)】\n{context[:3500]}\n\n"
-            f"【本空题干】{q.stem}\n【选项】{opts}\n【正确答案】{q.answer or '未知'}\n"
+            f"【本空题干】{q.stem}\n【选项(A-D 顺序)】{opts}\n【正确答案】{q.answer or '未知(请按语境推断)'}\n"
             f"【载体槽(程序已判)】{slot or '未定'}")
     resp = await chat_completion(system_prompt=_CLOZE_SYSTEM, user_prompt=user,
-                                 max_tokens=1024, response_format={"type": "json_object"})
+                                 max_tokens=1400, response_format={"type": "json_object"})
     ana = json.loads((resp.choices[0].message.content or "{}").strip())
     ana["slot"] = slot or ana.get("slot")   # 载体槽以程序判定为准
     return ana

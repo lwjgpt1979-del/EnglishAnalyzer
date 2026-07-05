@@ -241,10 +241,17 @@ const anaTarget = ref<PaperQuestion | null>(null)
 const anaErrors = ref<string[]>([])
 const anaConfirmed = ref(false)   // 已有人工确认过的解析
 const anaIsCloze = computed(() => anaTarget.value?.question_type === '完型')
+type DistractorNote = { meaning: string; why_wrong: string }
+const _emptyDss = (): Record<string, DistractorNote> => ({
+  A: { meaning: '', why_wrong: '' }, B: { meaning: '', why_wrong: '' },
+  C: { meaning: '', why_wrong: '' }, D: { meaning: '', why_wrong: '' },
+})
 const anaForm = ref<{ rc_code: string; evidence: string; answer_reason: string;
-  slot: string; clue_type: string; clue: string; kp_codes: string; dts: Record<string, string> }>({
+  slot: string; clue_type: string; clue: string; kp_codes: string;
+  dts: Record<string, string>; dss: Record<string, DistractorNote> }>({
   rc_code: '', evidence: '', answer_reason: '',
-  slot: '', clue_type: '', clue: '', kp_codes: '', dts: { A: '', B: '', C: '', D: '' },
+  slot: '', clue_type: '', clue: '', kp_codes: '',
+  dts: { A: '', B: '', C: '', D: '' }, dss: _emptyDss(),
 })
 async function openAnalysis(q: PaperQuestion) {
   anaTarget.value = q
@@ -253,19 +260,24 @@ async function openAnalysis(q: PaperQuestion) {
   anaErrors.value = []
   anaConfirmed.value = false
   anaForm.value = { rc_code: '', evidence: '', answer_reason: '',
-    slot: '', clue_type: '', clue: '', kp_codes: '', dts: { A: '', B: '', C: '', D: '' } }
+    slot: '', clue_type: '', clue: '', kp_codes: '',
+    dts: { A: '', B: '', C: '', D: '' }, dss: _emptyDss() }
   try {
     const [item] = await suggestQuestionAnalysis([q.id])
     const src = item?.existing || item?.analysis   // 已确认过的优先展示
     anaConfirmed.value = !!item?.existing?.confirmed_at
     anaErrors.value = item?.existing ? [] : (item?.errors || [])
     if (src) {
+      const dss = _emptyDss()
+      for (const [k, v] of Object.entries(src.distractors || {}))
+        dss[k] = { meaning: v?.meaning || '', why_wrong: v?.why_wrong || '' }
       anaForm.value = {
         rc_code: src.rc_code || '', evidence: src.evidence || '',
         answer_reason: src.answer_reason || '',
         slot: src.slot || '', clue_type: src.clue_type || '', clue: src.clue || '',
         kp_codes: (src.kp_codes || []).join(','),
         dts: { A: '', B: '', C: '', D: '', ...(src.distractor_types || {}) },
+        dss,
       }
     }
   } catch (e: any) { ElMessage.error(e?.message || 'AI 解析建议失败') }
@@ -277,11 +289,15 @@ async function saveAnalysis() {
   try {
     const dts: Record<string, string> = {}
     for (const [k, v] of Object.entries(anaForm.value.dts)) if (v) dts[k] = v
+    const dss: Record<string, DistractorNote> = {}
+    for (const [k, v] of Object.entries(anaForm.value.dss))
+      if (v.meaning.trim() || v.why_wrong.trim())
+        dss[k] = { meaning: v.meaning.trim(), why_wrong: v.why_wrong.trim() }
     const payload: QuestionAnalysis = anaIsCloze.value
       ? { slot: anaForm.value.slot.trim() || null, clue_type: anaForm.value.clue_type,
           clue: anaForm.value.clue.trim(),
           kp_codes: anaForm.value.kp_codes.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean),
-          distractor_types: dts }
+          distractors: dss, distractor_types: {} }
       : { rc_code: anaForm.value.rc_code.trim(), evidence: anaForm.value.evidence.trim(),
           answer_reason: anaForm.value.answer_reason.trim(), distractor_types: dts }
     await confirmQuestionAnalysis(anaTarget.value.id, payload)
@@ -960,7 +976,17 @@ onMounted(load)
                 placeholder="由定位句到正确项的推理(1-2 句)" />
             </el-form-item>
           </template>
-          <el-form-item label="干扰项错因">
+          <!-- 完形:干扰项=原义+干扰机制(词义本身合理,错在与语境线索冲突);阅读:枚举错因 -->
+          <el-form-item v-if="anaIsCloze" label="干扰项">
+            <div style="display:flex;flex-direction:column;gap:6px;width:100%">
+              <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
+                <span style="width:18px;color:#606266">{{ k }}</span>
+                <el-input v-model="anaForm.dss[k].meaning" placeholder="原义(正确项留空)" style="width:180px" />
+                <el-input v-model="anaForm.dss[k].why_wrong" placeholder="干扰机制:与哪条语境线索冲突" style="flex:1" />
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item v-else label="干扰项错因">
             <div style="display:flex;flex-direction:column;gap:6px;width:100%">
               <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
                 <span style="width:18px;color:#606266">{{ k }}</span>

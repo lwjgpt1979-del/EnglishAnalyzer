@@ -81,7 +81,7 @@ def test_classify_cloze_slot():
 def test_validate_cloze_analysis():
     ok = {"slot": "副词槽", "clue_type": "跨句逻辑关系",
           "clue": "He runs for half an hour", "kp_codes": ["rc-6-1"],
-          "distractor_types": {"A": "无中生有"}}
+          "distractors": {"A": {"meaning": "开心地", "why_wrong": "与沮丧基调相反"}}}
     assert qas.validate_cloze_analysis(ok, context_text=_PASSAGE) == []
     assert any("幻觉" in e for e in qas.validate_cloze_analysis(
         {**ok, "clue": "made-up sentence"}, context_text=_PASSAGE))
@@ -91,14 +91,31 @@ def test_validate_cloze_analysis():
         {**ok, "kp_codes": []}, context_text=_PASSAGE))
     assert any("载体槽" in e for e in qas.validate_cloze_analysis(
         {**ok, "slot": "神仙槽"}, context_text=_PASSAGE))
+    # 干扰项必须 原义+干扰机制 双全(半空/枚举串都不行)
+    assert any("meaning" in e for e in qas.validate_cloze_analysis(
+        {**ok, "distractors": {"A": {"meaning": "开心地", "why_wrong": " "}}},
+        context_text=_PASSAGE))
+    assert any("须为对象" in e or "meaning" in e for e in qas.validate_cloze_analysis(
+        {**ok, "distractors": {"A": "无中生有"}}, context_text=_PASSAGE))
+
+
+def test_parse_options_from_stem():
+    # 切题器把选项留在 stem、options 列为空(徐州卷实况:tab 分隔)
+    stem = "11. A. Happily\tB. Usually\tC. Unluckily\tD. Hopefully"
+    assert qas.parse_options_from_stem(stem) == ["Happily", "Usually", "Unluckily", "Hopefully"]
+    assert qas.classify_cloze_slot(qas.parse_options_from_stem(stem)) == "副词槽"
+    assert qas.parse_options_from_stem("plain sentence no options") is None
+    assert qas.parse_options_from_stem("") is None
 
 
 def test_analysis_constraints_text():
-    t = qas.analysis_constraints_text({"clue_type": "跨句逻辑关系", "slot": "副词槽",
-                                       "distractor_types": {"B": "无中生有"}})
-    assert "同线索类型" in t and "副词槽" in t and "无中生有" in t
-    t2 = qas.analysis_constraints_text({"rc_code": "rc-1-1"})
-    assert "rc-1-1" in t2 and "回文定位" in t2
+    t = qas.analysis_constraints_text({
+        "clue_type": "跨句逻辑关系", "slot": "副词槽",
+        "distractors": {"B": {"meaning": "通常", "why_wrong": "与一次性事件矛盾"}}})
+    assert "同线索类型" in t and "副词槽" in t and "与一次性事件矛盾" in t
+    t2 = qas.analysis_constraints_text({"rc_code": "rc-1-1",
+                                        "distractor_types": {"B": "无中生有"}})
+    assert "rc-1-1" in t2 and "回文定位" in t2 and "无中生有" in t2
     assert qas.analysis_constraints_text(None) == ""
 
 
@@ -126,11 +143,25 @@ async def test_suggest_dispatch_cloze(db_session):
 
 
 @pytest.mark.asyncio
+async def test_suggest_cloze_options_embedded_in_stem(db_session):
+    """徐州卷实况:options 列为空、选项嵌在 stem → 仍能程序判出载体槽。"""
+    block_id = await pqs.create_passage(db_session, text=_PASSAGE)
+    r = await pqs.import_real_question(
+        db_session, stem="11. A. Happily\tB. Usually\tC. Unluckily\tD. Hopefully",
+        answer=None, options=None,
+        question_type="完型", section="完形填空", block_id=block_id, status="published")
+    await db_session.flush()
+    items = await qas.suggest_analysis(db_session, question_ids=[r.question_id])
+    assert items[0]["analysis"]["slot"] == "副词槽"
+
+
+@pytest.mark.asyncio
 async def test_confirm_cloze_writes_with_kind(db_session):
     qid = await _seed_cloze(db_session)
     good = {"slot": "副词槽", "clue_type": "跨句逻辑关系",
             "clue": "Tom gets up at six every morning.",
-            "kp_codes": ["rc-6-1"], "distractor_types": {"A": "无中生有"}}
+            "kp_codes": ["rc-6-1"],
+            "distractors": {"A": {"meaning": "开心地", "why_wrong": "与沮丧基调相反"}}}
     saved = await qas.confirm_analysis(
         db_session, question_id=qid, analysis=good, admin_id=uuid.uuid4())
     assert saved["kind"] == "cloze" and saved["confirmed_at"]

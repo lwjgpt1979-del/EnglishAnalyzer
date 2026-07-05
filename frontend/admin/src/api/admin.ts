@@ -1517,6 +1517,9 @@ export interface QuestionAnalysis {
   clue_type?: string
   clue?: string
   kp_codes?: string[]
+  answer_letter?: string
+  // 完形干扰项=原义+干扰机制(词义合理但与语境线索冲突);阅读用 distractor_types 枚举
+  distractors?: Record<string, { meaning: string; why_wrong: string }>
   distractor_types: Record<string, string>
   kind?: string
   confirmed_by?: string
