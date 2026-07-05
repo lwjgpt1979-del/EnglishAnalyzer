@@ -1506,6 +1506,29 @@ export function genSimFromReal(realId: string, count = 3): Promise<{ generated: 
   return unwrap(request.post(`/admin/platform-questions/${realId}/gen-sim`, null, { params: { count } }))
 }
 
+// ── 题目层科学解析(试点:阅读)——AI 建议 + 人工确认唯一写库 ──
+export interface QuestionAnalysis {
+  rc_code: string
+  evidence: string
+  answer_reason: string
+  distractor_types: Record<string, string>
+  confirmed_by?: string
+  confirmed_at?: string
+}
+export interface AnalysisSuggestItem {
+  question_id: string
+  analysis: QuestionAnalysis | null
+  errors: string[]
+  existing?: QuestionAnalysis | null
+}
+export function suggestQuestionAnalysis(questionIds: string[]): Promise<AnalysisSuggestItem[]> {
+  return unwrap(request.post('/admin/question-analysis/suggest',
+    { question_ids: questionIds }, { timeout: 90000 }))
+}
+export function confirmQuestionAnalysis(questionId: string, analysis: QuestionAnalysis): Promise<QuestionAnalysis> {
+  return unwrap(request.put(`/admin/platform-questions/${questionId}/analysis`, { analysis }))
+}
+
 // P0:按考点「反向生成」仿真(dimension: verb_fill 动词填空 / vocab_form 词汇运用 / dictation / grammar)
 export function genSimForNode(
   nodeId: string,

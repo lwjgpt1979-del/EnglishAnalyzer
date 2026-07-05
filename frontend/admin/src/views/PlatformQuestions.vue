@@ -5,7 +5,8 @@ import { UploadFilled, Warning, Document, Notebook } from '@element-plus/icons-v
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
-  createKnowledgeNode, genSimFromReal,
+  createKnowledgeNode, genSimFromReal, suggestQuestionAnalysis, confirmQuestionAnalysis,
+  type QuestionAnalysis,
   type QuestionKpRef, type KpPrompt, type KpProposal,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions, batchUploadPapers, parsePaper, convertPaperDoc,
   listRegions, uploadImageViaPresign,
@@ -228,6 +229,56 @@ async function onDeriveSim(q: PaperQuestion) {
     ElMessage.success(`已从本题派生 ${r.generated} 道同考点仿真(草稿,可到仿真审核发布)`)
   } catch (e: any) { ElMessage.error(e?.message || '派生仿真失败') }
   finally { genBusy.value = null }
+}
+
+// ── 题目层科学解析(试点:阅读)——AI 建议预填,人工逐题确认才写库 ──
+const DISTRACTOR_TYPES = ['原文近似词误配', '以偏概全', '过度推断', '无中生有', '张冠李戴', '因果倒置']
+const anaDlg = ref(false)
+const anaBusy = ref(false)
+const anaSaving = ref(false)
+const anaTarget = ref<PaperQuestion | null>(null)
+const anaErrors = ref<string[]>([])
+const anaConfirmed = ref(false)   // 已有人工确认过的解析
+const anaForm = ref<{ rc_code: string; evidence: string; answer_reason: string; dts: Record<string, string> }>({
+  rc_code: '', evidence: '', answer_reason: '', dts: { A: '', B: '', C: '', D: '' },
+})
+async function openAnalysis(q: PaperQuestion) {
+  anaTarget.value = q
+  anaDlg.value = true
+  anaBusy.value = true
+  anaErrors.value = []
+  anaConfirmed.value = false
+  anaForm.value = { rc_code: '', evidence: '', answer_reason: '', dts: { A: '', B: '', C: '', D: '' } }
+  try {
+    const [item] = await suggestQuestionAnalysis([q.id])
+    const src = item?.existing || item?.analysis   // 已确认过的优先展示
+    anaConfirmed.value = !!item?.existing?.confirmed_at
+    anaErrors.value = item?.existing ? [] : (item?.errors || [])
+    if (src) {
+      anaForm.value = {
+        rc_code: src.rc_code || '', evidence: src.evidence || '',
+        answer_reason: src.answer_reason || '',
+        dts: { A: '', B: '', C: '', D: '', ...(src.distractor_types || {}) },
+      }
+    }
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 解析建议失败') }
+  finally { anaBusy.value = false }
+}
+async function saveAnalysis() {
+  if (!anaTarget.value) return
+  anaSaving.value = true
+  try {
+    const dts: Record<string, string> = {}
+    for (const [k, v] of Object.entries(anaForm.value.dts)) if (v) dts[k] = v
+    const payload: QuestionAnalysis = {
+      rc_code: anaForm.value.rc_code.trim(), evidence: anaForm.value.evidence.trim(),
+      answer_reason: anaForm.value.answer_reason.trim(), distractor_types: dts,
+    }
+    await confirmQuestionAnalysis(anaTarget.value.id, payload)
+    ElMessage.success('解析已确认写库(定位句已通过原文子串校验)')
+    anaDlg.value = false
+  } catch (e: any) { ElMessage.error(e?.message || '确认失败(未通过校验?)') }
+  finally { anaSaving.value = false }
 }
 
 // ── 一键挂某大题:选该题型提示词 → AI 对该段每题建议 ──
@@ -844,6 +895,9 @@ onMounted(load)
                         :loading="genBusy === q.id"
                         :title="`从本题派生 ${simDeriveCount} 道同考点仿真(继承本题「${q.question_type}」题型与考点,落草稿待审)`"
                         @click="onDeriveSim(q)">↻ 派生仿真</el-button>
+                      <el-button v-if="q.question_type === '阅读'" size="small" text type="warning" style="height:22px;padding:0 6px"
+                        title="AI 生成题目层解析(rc技能/定位句/干扰项错因),人工确认后才写库;定位句程序校验防幻觉"
+                        @click="openAnalysis(q)">解析</el-button>
                     </div>
                   </div>
                   <el-tag size="small" :type="q.status === 'published' ? 'success' : 'info'" style="flex-shrink:0">{{ q.status === 'published' ? '已发布' : '草稿' }}</el-tag>
@@ -853,6 +907,45 @@ onMounted(load)
           </el-checkbox-group>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- 题目层科学解析(阅读试点):AI 建议预填 → 人工改/确认 → 唯一写库入口 -->
+    <el-dialog v-model="anaDlg" title="题目层解析(人工确认后写库)" width="620px" append-to-body>
+      <div v-if="anaBusy" style="text-align:center;color:#909399;padding:24px">AI 生成解析建议中…</div>
+      <template v-else>
+        <div style="font-size:12px;color:#909399;margin-bottom:10px;white-space:pre-wrap">{{ anaTarget?.stem }}</div>
+        <el-alert v-if="anaConfirmed" type="success" :closable="false" style="margin-bottom:10px"
+          title="本题已有人工确认的解析(下方为已存内容,可修改后重新确认)" />
+        <el-alert v-if="anaErrors.length" type="warning" :closable="false" style="margin-bottom:10px"
+          :title="'AI 建议未通过程序校验,请人工修正:' + anaErrors.join(';')" />
+        <el-form label-width="92px" size="small">
+          <el-form-item label="rc 技能编码">
+            <el-input v-model="anaForm.rc_code" placeholder="如 rc-1-1(细节直查)" />
+          </el-form-item>
+          <el-form-item label="定位句">
+            <el-input v-model="anaForm.evidence" type="textarea" :rows="2"
+              placeholder="必须逐字摘自原文(保存时程序校验子串,防幻觉)" />
+          </el-form-item>
+          <el-form-item label="答案归因">
+            <el-input v-model="anaForm.answer_reason" type="textarea" :rows="2"
+              placeholder="由定位句到正确项的推理(1-2 句)" />
+          </el-form-item>
+          <el-form-item label="干扰项错因">
+            <div style="display:flex;flex-direction:column;gap:6px;width:100%">
+              <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
+                <span style="width:18px;color:#606266">{{ k }}</span>
+                <el-select v-model="anaForm.dts[k]" clearable placeholder="(正确项/不标)" style="flex:1">
+                  <el-option v-for="t in DISTRACTOR_TYPES" :key="t" :label="t" :value="t" />
+                </el-select>
+              </div>
+            </div>
+          </el-form-item>
+        </el-form>
+        <div style="text-align:right">
+          <el-button @click="anaDlg = false">取消</el-button>
+          <el-button type="primary" :loading="anaSaving" @click="saveAnalysis">人工确认并写库</el-button>
+        </div>
+      </template>
     </el-dialog>
 
     <!-- 受控知识点树选择器:给某题/某大题挂知识点(只能挑已建节点) -->
