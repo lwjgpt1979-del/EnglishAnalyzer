@@ -473,6 +473,129 @@ def classify_reading_skill(stem: str) -> str | None:
     return None
 
 
+# ── 词汇运用/动词填空「语境+所给词 → 词形考点」确定性归桶(Phase A-4)────────────
+# 题干形如 "Two more ___ (library) will be built..."。按高特异性语境信号归到 cf-*/jf-* 叶子;
+# 无把握返回 None(交 LLM/人工)。规则顺序即优先级:形态类(复数/级/序数)先于时态,
+# 避免 "two ___ (watch) yesterday" 被时间标志误判成过去时。
+import re as _re
+
+_WF_BLANK = _re.compile(r"_{2,}\s*[（(]\s*(?:not\s+)?([A-Za-z][A-Za-z'’ -]*?)\s*[)）]")
+_IRREG_NOUNS = {"man", "woman", "child", "foot", "tooth", "mouse", "person",
+                "sheep", "deer", "fish", "goose"}
+_IRREG_ADJS = {"good", "well", "bad", "ill", "badly", "many", "much", "little", "far", "old"}
+_CARDINALS = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+              "eleven", "twelve", "thirteen", "fifteen", "twenty", "thirty", "forty", "fifty",
+              "sixty", "seventy", "eighty", "ninety", "hundred"}
+# 只认明确数词/复数量词(可带 more);裸 some/more 会误伤名词化(some ___(suggest))与
+# 比较级(more ___(careful))——抽检实证,勿放宽。
+_NUM_TRIGGER = _re.compile(
+    r"\b(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+|many|several|"
+    r"both|(?:a\s+)?few|lots\s+of|plenty\s+of|hundreds\s+of|thousands\s+of)\s+(?:more\s+)?_{2,}",
+    _re.IGNORECASE)
+_COMP_TRIGGER = _re.compile(r"(?:\b(?:even|much|a\s+little|a\s+lot|far)\s+_{2,}|_{2,}[^.!?]{0,30}\bthan\b)", _re.IGNORECASE)
+# 最高级只认高特异范围短语(one of the ___ / of all / in the world…);泛 the…of 会把
+# 名词化(win→winner)/形容词化(south→southern)误判成最高级——抽检实证,勿放宽。
+_SUPER_TRIGGER = _re.compile(
+    r"(?:\bone\s+of\s+the\s+_{2,}|\bthe\s+_{2,}[^.!?]{0,36}\b(?:of\s+all|in\s+the\s+world|in\s+china|of\s+the\s+(?:three|four|five|six)\b))",
+    _re.IGNORECASE)
+_GERUND_TRIGGER = _re.compile(r"\b(?:about|of|at|in|on|for|without|by|after|before|from|enjoy(?:s|ed)?|finish(?:es|ed)?|practi[sc]e[sd]?|mind|keep[s]?|avoid[s]?)\s+_{2,}", _re.IGNORECASE)
+_INF_TRIGGER = _re.compile(r"\b(?:told|asked|want(?:s|ed)?|would\s+like|['’]d\s+like|decide[sd]?|hope[sd]?|plan(?:s|ned)?|agree[sd]?|promise[sd]?|refuse[sd]?|learn(?:s|ed|t)?|it\s+is\s+\w+\s+(?:for\s+\w+\s+)?)\s*_{2,}", _re.IGNORECASE)
+# 只留无歧义的形容词后缀:-ent/-ant/-al/-ive 等会把动词/名词(invent/arrival)误判——抽检实证。
+_ADV_SUFFIX = _re.compile(r"(?:ful|ous|less)$")
+# 系动词/冠词/程度词/物主代词(its beauty=名词槽)后接空 → 非副词槽,排除副词化
+_LINKING_BEFORE = _re.compile(r"\b(?:a|an|the|is|are|was|were|be|been|being|feel[s]?|felt|look(?:s|ed)?|sound[s]?|smell[s]?|taste[sd]?|get[s]?|got|become|became|more|most|very|so|too|quite|its|his|her|their|my|our|your)\s*$", _re.IGNORECASE)
+_PAST_MARK = _re.compile(r"\b(?:yesterday|last\s+(?:night|week|month|year)|ago|just\s+now|the\s+other\s+day)\b", _re.IGNORECASE)
+_PROG_MARK = _re.compile(r"(?:\bLook\b\s*[!！]|\bListen\b\s*[!！]|right\s+now|at\s+the\s+moment)", _re.IGNORECASE)
+_PERF_MARK = _re.compile(r"\b(?:since|so\s+far|already|yet|ever|never|for\s+the\s+past)\b", _re.IGNORECASE)
+_FUT_MARK = _re.compile(r"\b(?:tomorrow|next\s+(?:week|month|year)|in\s+the\s+future|from\s+now\s+on)\b", _re.IGNORECASE)
+_PASSIVE_TRIGGER = _re.compile(r"\b(?:is|are|was|were|be|been|being)\s+_{2,}", _re.IGNORECASE)
+
+
+_PRONOUNS = {"it", "he", "she", "they", "we", "you", "i", "him", "her", "them", "us", "me", "one"}
+_AGE_IDIOM = _re.compile(r"\bin\s+(?:his|her|their|my|our|one's)\s+_{2,}", _re.IGNORECASE)
+# 常用形容词(初中高频):所给词在此表而比较/最高级未触发 → 多为副词化/反义派生(luckily/
+# untidy/highly),叶子归属需人判 → 放弃。-ful/-ous/-less 后缀词不在表内(3c 规则单独处理)。
+_COMMON_ADJS = {
+    "lucky", "high", "tidy", "kind", "happy", "sad", "angry", "easy", "hard", "quick",
+    "slow", "loud", "quiet", "warm", "cold", "hot", "cool", "safe", "true", "real",
+    "usual", "sudden", "recent", "final", "main", "polite", "honest", "brave", "clever",
+    "healthy", "heavy", "light", "strong", "weak", "clear", "clean", "dirty", "deep",
+    "wide", "narrow", "noisy", "busy", "lazy", "early", "late", "near", "close", "proper",
+    "correct", "direct", "exact", "fluent", "frequent", "gentle", "simple", "possible",
+    "probable", "terrible", "comfortable", "suitable", "different", "important", "patient",
+}
+
+
+def classify_word_form(stem: str) -> str | None:
+    """词汇运用/动词填空题干 → 词形考点编码(cf-*/jf-*);无高置信信号返回 None。"""
+    s = (stem or "").strip()
+    blanks = _WF_BLANK.findall(s)
+    # 多空题干 = 短文型或 OCR 合并的多题(标注会张冠李戴)→ 放弃
+    if len(blanks) != 1:
+        return None
+    m = _WF_BLANK.search(s)
+    given = m.group(1).strip().lower()
+    # 0) 所给词是代词(考代词形式而非词形变化,叶子需语境判断)→ 交 LLM/人工
+    if given in _PRONOUNS:
+        return None
+    # 0b) 时间/时态标志只在空位附近(±70字)找,避免多句题干跨句误触发
+    win = s[max(0, m.start() - 70):m.end() + 70]
+    # 1) 所给词是基数词 + 空位前有限定词(the/'s/物主)→ 序数词构成;
+    #    "in his ___(ninety)"(年龄惯用)与 "think ___(two)"(→twice,倍数副词)等无限定词场景跳过
+    if given in _CARDINALS:
+        if _AGE_IDIOM.search(s):
+            return None
+        if _re.search(r"(?:\bthe|['’]s|\b(?:his|her|my|their|our|its|your))\s+_{2,}\s*$",
+                      s[:m.end()].rstrip(")）").rstrip(), _re.IGNORECASE) or \
+           _re.search(r"(?:\bthe|['’]s|\b(?:his|her|my|their|our|its|your))\s+_{2,}", s, _re.IGNORECASE):
+            return "cf-6-1-2"
+        return None
+    # 2) 数量词 + 空 → 名词复数(规则/不规则按所给词)
+    if _NUM_TRIGGER.search(s):
+        return "cf-1-1-3" if given in _IRREG_NOUNS else "cf-1-1-2"
+    # 3) 比较级 / 最高级(规则/不规则按所给词)
+    if _COMP_TRIGGER.search(s) or _SUPER_TRIGGER.search(s):
+        return "cf-5-3-4" if given in _IRREG_ADJS else "cf-5-3-3"
+    # 3b) 所给词是形/副歧义词(far/little/well…)或常用形容词而级未触发 → 多为副词化/
+    #     反义派生(luckily/untidy/highly),叶子需人判,放弃交 LLM/人工
+    if given in _IRREG_ADJS or given in _COMMON_ADJS:
+        return None
+    # 3b2) "for sb ___(v)" = for-sb-to-do 结构 → 不定式(须先于将来时标志判定)
+    if _re.search(r"\bfor\s+(?:you|me|him|her|us|them|sb|somebody|someone)\s+_{2,}", s, _re.IGNORECASE):
+        return "jf-5-1-2"
+    # 3c) 副词化(-ful/-ous/-less 无歧义形容词后缀 + 非系动词/冠词槽)——须先于名词槽防护:
+    #     "the fire ___(successful)." 是副词槽,后缀信号比「the+词+空」更特异
+    if _ADV_SUFFIX.search(given) and not _LINKING_BEFORE.search(s[:m.start()]):
+        return "cf-5-2-1"
+    # 3d) 空位前是「冠词(+形容词)」= 名词槽("a big ___(succeed)"→success 名词化),
+    #     禁走时态/动名词等动词类规则,交 LLM/人工(构词法叶子需人判)
+    if _re.search(r"\b(?:a|an|the)\s+(?:\w+\s+)?_{2,}\s*$", s[:m.start()] + "__", _re.IGNORECASE) or \
+       _re.search(r"\b(?:a|an)\s+(?:\w+\s+)?_{2,}", s, _re.IGNORECASE):
+        return None
+    # 4) 介词/动名词动词 + 空 → 动名词构成
+    if _GERUND_TRIGGER.search(s):
+        return "jf-5-2-1"
+    # 5) 不定式触发动词 + 空 → 不定式构成
+    if _INF_TRIGGER.search(s):
+        return "jf-5-1-2"
+    # 7) 被动(be + 空,含 by 更稳,此处保守要求 by)
+    if _PASSIVE_TRIGGER.search(win) and _re.search(r"\bby\b", win, _re.IGNORECASE):
+        return "jf-4"
+    # 8) 时态(强时间标志;只看空位附近窗口;放最后,避免盖过形态类)
+    if _PAST_MARK.search(win):
+        return "jf-3-2"
+    if _PROG_MARK.search(win):
+        return "jf-3-4"
+    if _PERF_MARK.search(win) and _re.search(r"\b(?:have|has|had)\b", win, _re.IGNORECASE):
+        return "jf-3-6"
+    # 将来标志:若空位在 if/when 从句内(主将从现,实际填一般现在),歧义 → 跳过
+    if _FUT_MARK.search(win):
+        if _re.search(r"\b(?:if|when|as\s+soon\s+as|unless|until)\b[^.!?]{0,60}_{2,}", s, _re.IGNORECASE):
+            return None
+        return "jf-3-3"
+    return None
+
+
 async def _rc_rule_matches(
     db: AsyncSession, qs: list[PlatformQuestion]
 ) -> dict[uuid.UUID, list[tuple]]:
@@ -496,6 +619,29 @@ async def _rc_rule_matches(
         if ref:
             out[qid] = [ref]
     return out
+
+
+_WF_SECTION = _re.compile(r"词汇|词语|适当形式|词形|动词")
+
+
+async def _wf_rule_matches(
+    db: AsyncSession, qs: list[PlatformQuestion]
+) -> dict[uuid.UUID, list[tuple]]:
+    """词汇运用/动词填空(按 section 归)逐题按语境+所给词确定性归到词形考点。"""
+    want: dict[uuid.UUID, str] = {}
+    for q in qs:
+        if not _WF_SECTION.search(q.section or ""):
+            continue
+        code = classify_word_form(q.stem or "")
+        if code:
+            want[q.id] = code
+    if not want:
+        return {}
+    rows = (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
+        .where(KnowledgeNode.code.in_(set(want.values()))))).all()
+    code_map = {c: (nid, nm, c) for nid, nm, c in rows}
+    return {qid: [code_map[code]] for qid, code in want.items() if code in code_map}
 
 
 async def suggest_kps_for_paper(
@@ -522,8 +668,9 @@ async def suggest_kps_for_paper(
             .where(PlatformQuestionKp.question_id.in_([q.id for q in qs]))
         )).scalars().all())
         qs = [q for q in qs if q.id not in attached]
-    # 确定性 rc 技能预标:阅读逐问按问法精确打 rc-* 叶子(无需 LLM,离线亦生效)。P1①
+    # 确定性预标(无需 LLM,离线亦生效):阅读问法→rc 叶子(P1①) + 词形语境→cf/jf 叶子(A-4)
     rc_pre = await _rc_rule_matches(db, qs)
+    rc_pre.update(await _wf_rule_matches(db, qs))
     if not qs:
         return {}, {}
     if is_llm_dev_mode():
