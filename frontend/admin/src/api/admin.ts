@@ -1506,12 +1506,19 @@ export function genSimFromReal(realId: string, count = 3): Promise<{ generated: 
   return unwrap(request.post(`/admin/platform-questions/${realId}/gen-sim`, null, { params: { count } }))
 }
 
-// ── 题目层科学解析(试点:阅读)——AI 建议 + 人工确认唯一写库 ──
+// ── 题目层科学解析(阅读+完形)——AI 建议 + 人工确认唯一写库 ──
 export interface QuestionAnalysis {
-  rc_code: string
-  evidence: string
-  answer_reason: string
+  // 阅读:rc技能 + 定位句
+  rc_code?: string
+  evidence?: string
+  answer_reason?: string
+  // 完形双轴:载体槽(程序判) + 线索类型/线索句 + 线索轴考点
+  slot?: string | null
+  clue_type?: string
+  clue?: string
+  kp_codes?: string[]
   distractor_types: Record<string, string>
+  kind?: string
   confirmed_by?: string
   confirmed_at?: string
 }

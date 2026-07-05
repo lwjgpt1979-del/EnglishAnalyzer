@@ -231,16 +231,20 @@ async function onDeriveSim(q: PaperQuestion) {
   finally { genBusy.value = null }
 }
 
-// ── 题目层科学解析(试点:阅读)——AI 建议预填,人工逐题确认才写库 ──
+// ── 题目层科学解析(阅读+完形)——AI 建议预填,人工逐题确认才写库 ──
 const DISTRACTOR_TYPES = ['原文近似词误配', '以偏概全', '过度推断', '无中生有', '张冠李戴', '因果倒置']
+const CLUE_TYPES = ['句内固定搭配', '句内语法约束', '跨句逻辑关系', '跨句词汇复现', '全篇情感基调', '指代与人物追踪', '情景交际惯用']
 const anaDlg = ref(false)
 const anaBusy = ref(false)
 const anaSaving = ref(false)
 const anaTarget = ref<PaperQuestion | null>(null)
 const anaErrors = ref<string[]>([])
 const anaConfirmed = ref(false)   // 已有人工确认过的解析
-const anaForm = ref<{ rc_code: string; evidence: string; answer_reason: string; dts: Record<string, string> }>({
-  rc_code: '', evidence: '', answer_reason: '', dts: { A: '', B: '', C: '', D: '' },
+const anaIsCloze = computed(() => anaTarget.value?.question_type === '完型')
+const anaForm = ref<{ rc_code: string; evidence: string; answer_reason: string;
+  slot: string; clue_type: string; clue: string; kp_codes: string; dts: Record<string, string> }>({
+  rc_code: '', evidence: '', answer_reason: '',
+  slot: '', clue_type: '', clue: '', kp_codes: '', dts: { A: '', B: '', C: '', D: '' },
 })
 async function openAnalysis(q: PaperQuestion) {
   anaTarget.value = q
@@ -248,7 +252,8 @@ async function openAnalysis(q: PaperQuestion) {
   anaBusy.value = true
   anaErrors.value = []
   anaConfirmed.value = false
-  anaForm.value = { rc_code: '', evidence: '', answer_reason: '', dts: { A: '', B: '', C: '', D: '' } }
+  anaForm.value = { rc_code: '', evidence: '', answer_reason: '',
+    slot: '', clue_type: '', clue: '', kp_codes: '', dts: { A: '', B: '', C: '', D: '' } }
   try {
     const [item] = await suggestQuestionAnalysis([q.id])
     const src = item?.existing || item?.analysis   // 已确认过的优先展示
@@ -258,6 +263,8 @@ async function openAnalysis(q: PaperQuestion) {
       anaForm.value = {
         rc_code: src.rc_code || '', evidence: src.evidence || '',
         answer_reason: src.answer_reason || '',
+        slot: src.slot || '', clue_type: src.clue_type || '', clue: src.clue || '',
+        kp_codes: (src.kp_codes || []).join(','),
         dts: { A: '', B: '', C: '', D: '', ...(src.distractor_types || {}) },
       }
     }
@@ -270,12 +277,15 @@ async function saveAnalysis() {
   try {
     const dts: Record<string, string> = {}
     for (const [k, v] of Object.entries(anaForm.value.dts)) if (v) dts[k] = v
-    const payload: QuestionAnalysis = {
-      rc_code: anaForm.value.rc_code.trim(), evidence: anaForm.value.evidence.trim(),
-      answer_reason: anaForm.value.answer_reason.trim(), distractor_types: dts,
-    }
+    const payload: QuestionAnalysis = anaIsCloze.value
+      ? { slot: anaForm.value.slot.trim() || null, clue_type: anaForm.value.clue_type,
+          clue: anaForm.value.clue.trim(),
+          kp_codes: anaForm.value.kp_codes.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean),
+          distractor_types: dts }
+      : { rc_code: anaForm.value.rc_code.trim(), evidence: anaForm.value.evidence.trim(),
+          answer_reason: anaForm.value.answer_reason.trim(), distractor_types: dts }
     await confirmQuestionAnalysis(anaTarget.value.id, payload)
-    ElMessage.success('解析已确认写库(定位句已通过原文子串校验)')
+    ElMessage.success('解析已确认写库(线索句已通过原文子串校验)')
     anaDlg.value = false
   } catch (e: any) { ElMessage.error(e?.message || '确认失败(未通过校验?)') }
   finally { anaSaving.value = false }
@@ -895,8 +905,8 @@ onMounted(load)
                         :loading="genBusy === q.id"
                         :title="`从本题派生 ${simDeriveCount} 道同考点仿真(继承本题「${q.question_type}」题型与考点,落草稿待审)`"
                         @click="onDeriveSim(q)">↻ 派生仿真</el-button>
-                      <el-button v-if="q.question_type === '阅读'" size="small" text type="warning" style="height:22px;padding:0 6px"
-                        title="AI 生成题目层解析(rc技能/定位句/干扰项错因),人工确认后才写库;定位句程序校验防幻觉"
+                      <el-button v-if="q.question_type === '阅读' || q.question_type === '完型'" size="small" text type="warning" style="height:22px;padding:0 6px"
+                        title="AI 生成题目层解析(阅读:rc技能+定位句;完形:载体槽+线索类型),人工确认后才写库;线索句程序校验防幻觉"
                         @click="openAnalysis(q)">解析</el-button>
                     </div>
                   </div>
@@ -919,17 +929,37 @@ onMounted(load)
         <el-alert v-if="anaErrors.length" type="warning" :closable="false" style="margin-bottom:10px"
           :title="'AI 建议未通过程序校验,请人工修正:' + anaErrors.join(';')" />
         <el-form label-width="92px" size="small">
-          <el-form-item label="rc 技能编码">
-            <el-input v-model="anaForm.rc_code" placeholder="如 rc-1-1(细节直查)" />
-          </el-form-item>
-          <el-form-item label="定位句">
-            <el-input v-model="anaForm.evidence" type="textarea" :rows="2"
-              placeholder="必须逐字摘自原文(保存时程序校验子串,防幻觉)" />
-          </el-form-item>
-          <el-form-item label="答案归因">
-            <el-input v-model="anaForm.answer_reason" type="textarea" :rows="2"
-              placeholder="由定位句到正确项的推理(1-2 句)" />
-          </el-form-item>
+          <!-- 完形双轴:载体槽(程序判,区分度=0 的形式轴)+ 线索类型(真构念)+ 线索句 + 线索轴考点 -->
+          <template v-if="anaIsCloze">
+            <el-form-item label="载体槽">
+              <el-input v-model="anaForm.slot" placeholder="程序按选项词性判定(如 副词槽);拿不准为空" />
+            </el-form-item>
+            <el-form-item label="线索类型">
+              <el-select v-model="anaForm.clue_type" placeholder="真构念:决定学情归因与仿真变式" style="width:100%">
+                <el-option v-for="t in CLUE_TYPES" :key="t" :label="t" :value="t" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="线索句">
+              <el-input v-model="anaForm.clue" type="textarea" :rows="2"
+                placeholder="决定答案的原文句(保存时程序校验子串,防幻觉)" />
+            </el-form-item>
+            <el-form-item label="考点编码">
+              <el-input v-model="anaForm.kp_codes" placeholder="线索轴为主,逗号分隔(如 rc-6-1)" />
+            </el-form-item>
+          </template>
+          <template v-else>
+            <el-form-item label="rc 技能编码">
+              <el-input v-model="anaForm.rc_code" placeholder="如 rc-1-1(细节直查)" />
+            </el-form-item>
+            <el-form-item label="定位句">
+              <el-input v-model="anaForm.evidence" type="textarea" :rows="2"
+                placeholder="必须逐字摘自原文(保存时程序校验子串,防幻觉)" />
+            </el-form-item>
+            <el-form-item label="答案归因">
+              <el-input v-model="anaForm.answer_reason" type="textarea" :rows="2"
+                placeholder="由定位句到正确项的推理(1-2 句)" />
+            </el-form-item>
+          </template>
           <el-form-item label="干扰项错因">
             <div style="display:flex;flex-direction:column;gap:6px;width:100%">
               <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">

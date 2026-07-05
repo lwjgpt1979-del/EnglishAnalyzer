@@ -763,6 +763,9 @@ async def _rewrite_variants(real: PlatformQuestion, count: int, kp_names: list[s
             "explanation": real.explanation,
         } for i in range(count)]
     kp_line = ("本题考点:" + "、".join(kp_names) + "(必须保持,不得更换考点)。\n") if kp_names else ""
+    # 人工确认过的题目层解析 → 变式硬约束(完形:同线索类型+同载体槽;阅读:同技能;同错因策略)
+    from app.services.question_analysis_service import analysis_constraints_text
+    kp_line += analysis_constraints_text((real.meta or {}).get("analysis"))
     system = (
         "你是英语命题专家。基于给定母题改写出**同考点、同题型、同难度**的新题,"
         "保持考查点不变、情境/数据不同。严格输出 JSON。"

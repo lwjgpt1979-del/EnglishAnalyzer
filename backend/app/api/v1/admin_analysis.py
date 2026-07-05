@@ -33,8 +33,9 @@ class ConfirmAnalysisIn(BaseModel):
 
 @router.post("/question-analysis/suggest", response_model=BaseResponse[list])
 async def suggest_question_analysis_api(body: SuggestAnalysisIn, db: DbDep, admin: AdminDep):
-    """AI 生成题目层解析**建议**(不落库):逐条带程序校验结果(定位句子串/枚举/rc目录)。"""
-    items = await qas.suggest_reading_analysis(db, question_ids=body.question_ids)
+    """AI 生成题目层解析**建议**(不落库),按题型分发:完型=双轴(载体槽程序判+线索);
+    阅读=rc技能+定位句。逐条带程序校验结果(线索句子串/枚举/图谱编码)。"""
+    items = await qas.suggest_analysis(db, question_ids=body.question_ids)
     return make_ok(items)
 
 
