@@ -1580,6 +1580,41 @@ export function amapFetch(body: { region_name?: string; districts?: string[]; ke
   return unwrap(request.post('/admin/sales/amap/fetch', body, { timeout: 120000 }))
 }
 
+// ── 地图获客·按区县自动采集(每日 cron 续采;目标省可配)────────────────────
+export interface MapCrawlConfig { enabled: boolean; provinces: string[]; keywords: string[]; amap_types: string[]; pages: number }
+export interface MapCrawlProgressOne { total: number; done: number; empty: number; error: number; pending: number; fetched: number; ingested: number }
+export interface MapCrawlProgress { provinces: string[]; enabled: boolean; baidu: MapCrawlProgressOne; amap: MapCrawlProgressOne }
+export function getMapCrawlConfig(): Promise<MapCrawlConfig> {
+  return unwrap(request.get('/admin/sales/map/crawl-config'))
+}
+export function setMapCrawlConfig(patch: Partial<MapCrawlConfig>): Promise<MapCrawlConfig> {
+  return unwrap(request.put('/admin/sales/map/crawl-config', patch))
+}
+export function getMapCrawlProgress(): Promise<MapCrawlProgress> {
+  return unwrap(request.get('/admin/sales/map/crawl-progress'))
+}
+export function runMapCrawl(body: { source: string; max_districts?: number }): Promise<{ source: string; districts_done: number; fetched: number; ingested: number; stopped: string | null; remaining_pending: number }> {
+  return unwrap(request.post('/admin/sales/map/crawl-run', body, { timeout: 600000 }))
+}
+
+// ── 地区↔英语教材版本 映射 ───────────────────────────────────────────────
+export interface TextbookRow { region_code: string; region_name: string; level: number; versions: string[]; note: string | null; verified: boolean; updated_at: string | null }
+export function listTextbookMap(params: { level?: number; skip?: number; limit?: number }): Promise<{ total: number; items: TextbookRow[] }> {
+  return unwrap(request.get('/admin/textbook-map', { params }))
+}
+export function getTextbookVersions(): Promise<{ versions: string[] }> {
+  return unwrap(request.get('/admin/textbook-map/versions'))
+}
+export function upsertTextbookMap(body: { region_code: string; versions: string[]; note?: string | null; verified?: boolean }): Promise<{ region_code: string }> {
+  return unwrap(request.put('/admin/textbook-map', body))
+}
+export function deleteTextbookMap(regionCode: string): Promise<{ deleted: string }> {
+  return unwrap(request.delete(`/admin/textbook-map/${regionCode}`))
+}
+export function seedTextbookMap(overwrite = false): Promise<{ provinces: number; written: number; skipped: number }> {
+  return unwrap(request.post('/admin/textbook-map/seed', {}, { params: { overwrite } }))
+}
+
 // ── R10 语法掌握判定校准(用真实作答反查「已掌握」判得准不准)────────────
 export interface GrammarCalibWorstNode {
   node_id: string; name: string; answers: number

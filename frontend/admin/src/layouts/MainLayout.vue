@@ -73,7 +73,8 @@ const navGroups: NavGroup[] = [
   ] },
   { key: 'g-sales', title: '销售 / 电销 CRM', icon: Phone, items: [
     { path: '/sales-leads', label: '电销线索' },
-    { path: '/baidu-leads', label: '百度地图获客' },
+    { path: '/baidu-leads', label: '地图获客' },
+    { path: '/textbook-map', label: '教材版本地图' },
     { path: '/sales-call-center', label: '呼叫中心接入' },
   ] },
   { key: 'g-finance', title: '营收 / 财务', icon: Coin, items: [

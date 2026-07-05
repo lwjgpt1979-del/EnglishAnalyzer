@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d9_system import SystemConfig
@@ -24,6 +25,17 @@ DEFAULTS: dict = {
 
 def _today() -> str:
     return datetime.now(_CN_TZ).strftime("%Y-%m-%d")
+
+
+async def _ensure_row(db: AsyncSession) -> None:
+    """幂等建 map_fetch 配置行(并发安全:ON CONFLICT DO NOTHING),之后再 SELECT 一定命中。"""
+    await db.execute(
+        pg_insert(SystemConfig)
+        .values(id=uuid.uuid4(), key=_KEY,
+                value={"daily_quota": dict(DEFAULTS["daily_quota"])},
+                description="地图获客每日限额 + 用量")
+        .on_conflict_do_nothing(index_elements=["key"]))
+    await db.flush()
 
 
 async def _row(db: AsyncSession) -> SystemConfig | None:
@@ -67,18 +79,14 @@ async def remaining(db: AsyncSession, source: str) -> int:
 
 
 async def bump(db: AsyncSession, *, source: str, n: int) -> None:
-    """把今日 source 用量 +n(跨天先归零)。随调用方事务落库。"""
+    """把今日 source 用量 +n(跨天先归零)。随调用方事务落库。并发安全:先幂等建行再更新。"""
     if n <= 0 or source not in SOURCES:
         return
+    await _ensure_row(db)          # 保证行存在(避免「查不到就 INSERT」撞唯一键)
     row = await _row(db)
-    today = _today()
-    if row is None:
-        db.add(SystemConfig(id=uuid.uuid4(), key=_KEY,
-                            value={"daily_quota": dict(DEFAULTS["daily_quota"]),
-                                   "usage": {"date": today, source: n}},
-                            description="地图获客每日限额 + 用量"))
-        await db.flush()
+    if row is None:                # 理论不会;兜底
         return
+    today = _today()
     val = dict(row.value or {})
     u = dict(val.get("usage") or {})
     if u.get("date") != today:
@@ -90,17 +98,13 @@ async def bump(db: AsyncSession, *, source: str, n: int) -> None:
 
 
 async def set_quota(db: AsyncSession, *, quota: dict, updated_by: uuid.UUID) -> dict:
-    """设置每日上限。quota={baidu?:int, amap?:int}。"""
+    """设置每日上限。quota={baidu?:int, amap?:int}。并发安全:先幂等建行再更新。"""
     clean = {s: int(quota[s]) for s in SOURCES if s in quota and quota[s] is not None}
+    await _ensure_row(db)
     row = await _row(db)
-    if row is None:
-        db.add(SystemConfig(id=uuid.uuid4(), key=_KEY,
-                            value={"daily_quota": {**DEFAULTS["daily_quota"], **clean}},
-                            description="地图获客每日限额 + 用量", updated_by=updated_by))
-    else:
-        val = dict(row.value or {})
-        val["daily_quota"] = {**DEFAULTS["daily_quota"], **(val.get("daily_quota") or {}), **clean}
-        row.value = val
-        row.updated_by = updated_by
+    val = dict(row.value or {})
+    val["daily_quota"] = {**DEFAULTS["daily_quota"], **(val.get("daily_quota") or {}), **clean}
+    row.value = val
+    row.updated_by = updated_by
     await db.flush()
     return await get_config(db)

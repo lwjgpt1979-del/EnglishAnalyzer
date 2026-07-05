@@ -156,3 +156,29 @@ class SalesAuditLog(Base):
         sa.Index("ix_sales_audit_lead", "lead_id", "created_at"),
         sa.Index("ix_sales_audit_admin", "admin_id", "created_at"),
     )
+
+
+class MapCrawlProgress(Base):
+    """地图获客「按区县自动采集」的覆盖进度(百度/高德各自一行/区县)。
+
+    每日任务据此挑「还没采过的区县」继续采,撞配额停、次日续。
+    粒度=区县(level3):map API 的 region 参数只可靠支持到区县,乡镇名会被忽略/串错地方。
+    status: done(已采完) / empty(采到 0 条,也算采过) / error(出错,可重试)。
+    """
+
+    __tablename__ = "map_crawl_progress"
+
+    source = mapped_column(sa.String(20), primary_key=True)         # baidu / amap
+    region_code = mapped_column(sa.String(12), primary_key=True)    # 区县码(level3, 6 位)
+    region_name = mapped_column(sa.String(64), nullable=False)      # 区县名
+    city_name = mapped_column(sa.String(64), nullable=True)         # 所属市名(检索 region_name 兜底)
+    status = mapped_column(sa.String(12), nullable=False, default="done")
+    fetched = mapped_column(sa.Integer, nullable=False, default=0)     # 本区县检索到条数
+    ingested = mapped_column(sa.Integer, nullable=False, default=0)    # 新入库条数
+    error = mapped_column(sa.Text, nullable=True)
+    fetched_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_map_crawl_source_status", "source", "status"),
+    )

@@ -36,7 +36,7 @@ class SystemConfig(Base):
     value = mapped_column(JSONB, nullable=False)
     description = mapped_column(sa.Text, nullable=True)
     updated_by = mapped_column(
-        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True   # 自动流程(如用量计数)无操作人
     )
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()

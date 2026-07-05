@@ -3580,6 +3580,102 @@ async def sales_map_quota(body: _MapQuotaIn, db: DbDep, admin: AdminDep):
     return make_ok(cfg)
 
 
+# ── 地图获客:按区县自动采集(目标省配置 + 覆盖进度 + 立即采一轮)──────────────
+class _CrawlConfigIn(BaseModel):
+    enabled: bool | None = None
+    provinces: list[str] | None = None       # 目标省 level1 码(如 ["32"]=江苏)
+    keywords: list[str] | None = None
+    amap_types: list[str] | None = None       # 高德 POI 类目码
+    pages: int | None = None
+
+
+class _CrawlRunIn(BaseModel):
+    source: str                               # baidu / amap
+    max_districts: int | None = None          # 只采前 N 个区县(试跑);不传=按配额尽量采
+
+
+@router.get("/sales/map/crawl-config", response_model=BaseResponse[dict])
+async def sales_map_crawl_config(db: DbDep, admin: AdminDep):
+    """按区县自动采集的配置(目标省/关键词/高德类目/页数/开关)。"""
+    from app.services import map_crawl_service as crawl
+    return make_ok(await crawl.get_config(db))
+
+
+@router.put("/sales/map/crawl-config", response_model=BaseResponse[dict])
+async def sales_map_crawl_config_set(body: _CrawlConfigIn, db: DbDep, admin: AdminDep):
+    from app.services import map_crawl_service as crawl
+    cfg = await crawl.set_config(db, patch=body.model_dump(exclude_none=True), updated_by=admin.id)
+    await db.commit()
+    return make_ok(cfg)
+
+
+@router.get("/sales/map/crawl-progress", response_model=BaseResponse[dict])
+async def sales_map_crawl_progress(db: DbDep, admin: AdminDep):
+    """每源区县覆盖进度(总数/已采/空/出错/待采/累计条数)。"""
+    from app.services import map_crawl_service as crawl
+    return make_ok(await crawl.progress(db))
+
+
+@router.post("/sales/map/crawl-run", response_model=BaseResponse[dict])
+async def sales_map_crawl_run(body: _CrawlRunIn, db: DbDep, admin: AdminDep):
+    """立即采一轮(手动触发;不受 enabled 开关限制,按每日配额自动停)。"""
+    from app.services import map_crawl_service as crawl
+    res = await crawl.run_once(db, body.source, max_districts=body.max_districts,
+                               respect_enabled=False)
+    await db.commit()
+    return make_ok(res)
+
+
+# ── 地区↔英语教材版本 映射(省级默认+可校对+地市例外)────────────────────────
+class _TextbookUpsertIn(BaseModel):
+    region_code: str
+    versions: list[str]
+    note: str | None = None
+    verified: bool = True             # admin 手动改的默认视为已校对
+
+
+@router.get("/textbook-map", response_model=BaseResponse[dict])
+async def textbook_map_list(db: DbDep, admin: AdminDep,
+                            level: int | None = None, skip: int = 0, limit: int = 50):
+    """地区↔教材版本映射列表(分页)。level 可筛省/市/区县(1/2/3)。"""
+    from app.services import textbook_map_service as tb
+    return make_ok(await tb.list_map(db, level=level, skip=skip, limit=limit))
+
+
+@router.get("/textbook-map/versions", response_model=BaseResponse[dict])
+async def textbook_map_versions(db: DbDep, admin: AdminDep):
+    """已知教材版本白名单(下拉备选)。"""
+    from app.services import textbook_map_service as tb
+    return make_ok({"versions": tb.KNOWN_VERSIONS})
+
+
+@router.put("/textbook-map", response_model=BaseResponse[dict])
+async def textbook_map_upsert(body: _TextbookUpsertIn, db: DbDep, admin: AdminDep):
+    """新增/修改一条地区映射(地市例外按 4/6 位码加行覆盖省级默认)。"""
+    from app.services import textbook_map_service as tb
+    r = await tb.upsert(db, region_code=body.region_code, versions=body.versions,
+                        note=body.note, verified=body.verified)
+    await db.commit()
+    return make_ok(r)
+
+
+@router.delete("/textbook-map/{region_code}", response_model=BaseResponse[dict])
+async def textbook_map_delete(region_code: str, db: DbDep, admin: AdminDep):
+    from app.services import textbook_map_service as tb
+    r = await tb.delete(db, region_code)
+    await db.commit()
+    return make_ok(r)
+
+
+@router.post("/textbook-map/seed", response_model=BaseResponse[dict])
+async def textbook_map_seed(db: DbDep, admin: AdminDep, overwrite: bool = False):
+    """按省灌省级默认(overwrite=False 只补缺,不动已校对的)。"""
+    from app.services import textbook_map_service as tb
+    r = await tb.seed_defaults(db, overwrite=overwrite)
+    await db.commit()
+    return make_ok(r)
+
+
 @router.patch("/sales/leads/{lead_id}", response_model=BaseResponse[dict])
 async def sales_update_lead(lead_id: uuid.UUID, body: SalesLeadUpdate, db: DbDep, admin: AdminDep):
     """改线索(状态/DNC/consent/下次跟进/意向分/地区等)。"""
