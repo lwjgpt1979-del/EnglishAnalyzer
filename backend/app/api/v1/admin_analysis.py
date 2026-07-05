@@ -31,6 +31,15 @@ class ConfirmAnalysisIn(BaseModel):
     analysis: dict
 
 
+class ConfirmBatchItem(BaseModel):
+    question_id: uuid.UUID
+    analysis: dict
+
+
+class ConfirmBatchIn(BaseModel):
+    items: list[ConfirmBatchItem] = Field(..., min_length=1, max_length=50)
+
+
 @router.post("/question-analysis/suggest", response_model=BaseResponse[list])
 async def suggest_question_analysis_api(body: SuggestAnalysisIn, db: DbDep, admin: AdminDep):
     """AI 生成题目层解析**建议**(不落库),按题型分发:完型=双轴(载体槽程序判+线索);
@@ -48,3 +57,13 @@ async def confirm_question_analysis_api(
         db, question_id=question_id, analysis=body.analysis, admin_id=admin.id)
     await db.commit()
     return make_ok(saved)
+
+
+@router.post("/question-analysis/confirm-batch", response_model=BaseResponse[dict])
+async def confirm_analysis_batch_api(body: ConfirmBatchIn, db: DbDep, admin: AdminDep):
+    """批量确认写库(降人工:一键采纳校验通过项):逐条硬校验,返回 {confirmed, failed}。
+    失败项带原因不写库,不影响其余;整批一次 commit。"""
+    res = await qas.confirm_analysis_batch(
+        db, items=[it.model_dump() for it in body.items], admin_id=admin.id)
+    await db.commit()
+    return make_ok(res)

@@ -389,3 +389,24 @@ async def confirm_analysis(
     q.meta = {**(q.meta or {}), "analysis": saved}
     await db.flush()
     return saved
+
+
+async def confirm_analysis_batch(
+    db: AsyncSession, *, items: list[dict], admin_id: uuid.UUID,
+) -> dict:
+    """批量确认写库(降人工):逐条复用 confirm_analysis 的硬校验;通过的写库、失败的收原因。
+    校验失败在 flush 前 raise → session 不脏,失败项不影响后续。返回 {confirmed, failed}。"""
+    confirmed: list[str] = []
+    failed: list[dict] = []
+    for it in items:
+        qid = it.get("question_id")
+        ana = it.get("analysis")
+        try:
+            await confirm_analysis(
+                db, question_id=uuid.UUID(str(qid)), analysis=ana or {}, admin_id=admin_id)
+            confirmed.append(str(qid))
+        except AppError as exc:
+            failed.append({"question_id": str(qid), "error": exc.message})
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"question_id": str(qid), "error": f"异常:{exc}"})
+    return {"confirmed": confirmed, "failed": failed}

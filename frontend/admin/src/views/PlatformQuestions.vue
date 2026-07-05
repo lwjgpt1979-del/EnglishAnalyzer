@@ -6,7 +6,8 @@ import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
   createKnowledgeNode, genSimFromReal, suggestQuestionAnalysis, confirmQuestionAnalysis,
-  type QuestionAnalysis,
+  confirmQuestionAnalysisBatch,
+  type QuestionAnalysis, type AnalysisSuggestItem,
   type QuestionKpRef, type KpPrompt, type KpProposal,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions, batchUploadPapers, parsePaper, convertPaperDoc,
   listRegions, uploadImageViaPresign,
@@ -305,6 +306,56 @@ async function saveAnalysis() {
     anaDlg.value = false
   } catch (e: any) { ElMessage.error(e?.message || '确认失败(未通过校验?)') }
   finally { anaSaving.value = false }
+}
+
+// ── 批量解析(降人工:整段 AI 建议 → 一键采纳校验通过项,只逐个驳回异常)──
+const anaBatchDlg = ref(false)
+const anaBatchBusy = ref(false)
+const anaBatchSaving = ref(false)
+const anaBatchSection = ref('')
+const anaBatchItems = ref<AnalysisSuggestItem[]>([])
+const anaBatchQmap = ref<Record<string, PaperQuestion>>({})
+const anaBatchPassCount = computed(() => anaBatchItems.value.filter(it => it.analysis && !it.errors.length).length)
+function analyzableSection(sec: { name: string }): boolean {
+  return /完形|完型|阅读/.test(sec.name)
+}
+function anaSummary(it: AnalysisSuggestItem): string {
+  const a = it.analysis
+  if (!a) return '(无建议)'
+  if (a.clue_type) return `${a.slot || '—'} · ${a.clue_type} · ${(a.kp_codes || []).join(',')}`
+  return `${a.rc_code || '—'} · ${(a.evidence || '').slice(0, 24)}`
+}
+async function openAnaBatch(sec: { name: string; groups: any[] }) {
+  const qs: PaperQuestion[] = sec.groups.flatMap(g => g.rows)
+    .filter((q: PaperQuestion) => q.question_type === '完型' || q.question_type === '阅读')
+  if (!qs.length) { ElMessage.info('本大题无完形/阅读题'); return }
+  anaBatchSection.value = sec.name
+  anaBatchQmap.value = Object.fromEntries(qs.map(q => [q.id, q]))
+  anaBatchItems.value = []
+  anaBatchDlg.value = true
+  anaBatchBusy.value = true
+  try {
+    anaBatchItems.value = await suggestQuestionAnalysis(qs.map(q => q.id))
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 批量解析失败') }
+  finally { anaBatchBusy.value = false }
+}
+async function adoptAnaBatch() {
+  const pass = anaBatchItems.value.filter(it => it.analysis && !it.errors.length)
+  if (!pass.length) { ElMessage.warning('无校验通过的建议可采纳'); return }
+  anaBatchSaving.value = true
+  try {
+    const r = await confirmQuestionAnalysisBatch(
+      pass.map(it => ({ question_id: it.question_id, analysis: it.analysis as QuestionAnalysis })))
+    ElMessage.success(`已采纳 ${r.confirmed.length} 道${r.failed.length ? `,失败 ${r.failed.length}` : ''}`)
+    // 采纳后从列表移除已写库项;剩报错项留给人工逐个改
+    const done = new Set(r.confirmed)
+    anaBatchItems.value = anaBatchItems.value.filter(it => !done.has(it.question_id))
+  } catch (e: any) { ElMessage.error(e?.message || '批量采纳失败') }
+  finally { anaBatchSaving.value = false }
+}
+function editAnaBatchItem(it: AnalysisSuggestItem) {
+  const q = anaBatchQmap.value[it.question_id]
+  if (q) { anaBatchDlg.value = false; openAnalysis(q) }   // 复用单题弹窗人工改
 }
 
 // ── 一键挂某大题:选该题型提示词 → AI 对该段每题建议 ──
@@ -887,6 +938,9 @@ onMounted(load)
               <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px;display:flex;align-items:center;gap:8px">
                 <span>{{ sec.name }}</span>
                 <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openSectionSuggest(sec.name)">一键挂知识点(AI)</el-button>
+                <el-button v-if="analyzableSection(sec)" size="small" text type="warning" style="height:22px;padding:0 6px"
+                  title="整段 AI 解析(完形双轴/阅读题目层)→ 一键采纳校验通过项,只逐个驳回异常"
+                  @click="openAnaBatch(sec)">批量解析全段</el-button>
                 <el-button size="small" text style="height:22px;padding:0 6px;color:#909399" @click="openSectionKpPicker(sec.name)">手动挂</el-button>
                 <el-button size="small" :type="secAllChecked(sec) ? 'primary' : 'default'" plain
                   style="height:22px;padding:0 8px;margin-left:6px"
@@ -1000,6 +1054,36 @@ onMounted(load)
         <div style="text-align:right">
           <el-button @click="anaDlg = false">取消</el-button>
           <el-button type="primary" :loading="anaSaving" @click="saveAnalysis">人工确认并写库</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 批量解析:整段 AI 建议 → 一键采纳校验通过项;报错项逐个「改」走单题弹窗 -->
+    <el-dialog v-model="anaBatchDlg" :title="`批量解析:${anaBatchSection}`" width="720px" append-to-body>
+      <div v-if="anaBatchBusy" style="text-align:center;color:#909399;padding:24px">AI 批量解析中…(整段一次)</div>
+      <template v-else>
+        <div style="font-size:12px;color:#606266;margin-bottom:8px">
+          共 {{ anaBatchItems.length }} 题;<b style="color:#67c23a">{{ anaBatchPassCount }}</b> 道通过硬校验(线索句子串/枚举/图谱编码)可直接采纳,其余需人工修。
+        </div>
+        <div style="max-height:52vh;overflow:auto">
+          <div v-for="it in anaBatchItems" :key="it.question_id"
+            style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px dashed #f0f0f0;font-size:12px">
+            <el-tag size="small" :type="it.analysis && !it.errors.length ? 'success' : 'warning'" style="flex-shrink:0">
+              {{ it.analysis && !it.errors.length ? '通过' : '需改' }}
+            </el-tag>
+            <span style="width:30px;color:#909399;flex-shrink:0">{{ (anaBatchQmap[it.question_id] || {}).question_no }}</span>
+            <div style="flex:1;min-width:0">
+              <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#303133">{{ anaSummary(it) }}</div>
+              <div v-if="it.errors.length" style="color:#e6a23c">{{ it.errors.join(';') }}</div>
+            </div>
+            <el-button size="small" text type="primary" style="height:20px;padding:0 6px;flex-shrink:0" @click="editAnaBatchItem(it)">改</el-button>
+          </div>
+        </div>
+        <div style="text-align:right;margin-top:12px">
+          <el-button @click="anaBatchDlg = false">关闭</el-button>
+          <el-button type="primary" :loading="anaBatchSaving" :disabled="!anaBatchPassCount" @click="adoptAnaBatch">
+            一键采纳 {{ anaBatchPassCount }} 道通过项
+          </el-button>
         </div>
       </template>
     </el-dialog>

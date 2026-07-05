@@ -173,6 +173,27 @@ async def test_confirm_cloze_writes_with_kind(db_session):
 
 
 @pytest.mark.asyncio
+async def test_confirm_batch_partitions_pass_fail(db_session):
+    """批量确认:通过项写库、失败项带原因不写、不影响其余(降人工一键采纳的核心)。"""
+    qid_ok = await _seed_reading(db_session)
+    qid_bad = await _seed_reading(db_session)
+    items = [
+        {"question_id": str(qid_ok), "analysis": {
+            "rc_code": "rc-1-1", "evidence": "He runs for half an hour and then has breakfast.",
+            "answer_reason": "then 表先后。", "distractor_types": {"B": "无中生有"}}},
+        {"question_id": str(qid_bad), "analysis": {   # 幻觉定位句 → 失败
+            "rc_code": "rc-1-1", "evidence": "made-up sentence not in passage.",
+            "answer_reason": "x", "distractor_types": {}}},
+    ]
+    res = await qas.confirm_analysis_batch(db_session, items=items, admin_id=uuid.uuid4())
+    assert res["confirmed"] == [str(qid_ok)]
+    assert len(res["failed"]) == 1 and res["failed"][0]["question_id"] == str(qid_bad)
+    ok = (await db_session.execute(select(PlatformQuestion).where(PlatformQuestion.id == qid_ok))).scalar_one()
+    bad = (await db_session.execute(select(PlatformQuestion).where(PlatformQuestion.id == qid_bad))).scalar_one()
+    assert (ok.meta or {}).get("analysis") and not (bad.meta or {}).get("analysis")
+
+
+@pytest.mark.asyncio
 async def test_confirm_writes_and_rejects_invalid(db_session):
     qid = await _seed_reading(db_session)
     admin_id = uuid.uuid4()

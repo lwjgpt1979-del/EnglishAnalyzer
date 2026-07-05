@@ -1538,6 +1538,12 @@ export function suggestQuestionAnalysis(questionIds: string[]): Promise<Analysis
 export function confirmQuestionAnalysis(questionId: string, analysis: QuestionAnalysis): Promise<QuestionAnalysis> {
   return unwrap(request.put(`/admin/platform-questions/${questionId}/analysis`, { analysis }))
 }
+// 批量一键采纳(降人工):通过硬校验的写库、失败的返原因
+export function confirmQuestionAnalysisBatch(
+  items: { question_id: string; analysis: QuestionAnalysis }[],
+): Promise<{ confirmed: string[]; failed: { question_id: string; error: string }[] }> {
+  return unwrap(request.post('/admin/question-analysis/confirm-batch', { items }))
+}
 
 // P0:按考点「反向生成」仿真(dimension: verb_fill 动词填空 / vocab_form 词汇运用 / dictation / grammar)
 export function genSimForNode(
@@ -1682,6 +1688,25 @@ export function updateAdminAccount(id: string, body: { nickname?: string; module
 }
 export function resetAdminPassword(id: string, password: string): Promise<{ id: string }> {
   return unwrap(request.post(`/admin/admins/${id}/reset-password`, { password }))
+}
+
+// ── 定时任务健康看板 ─────────────────────────────────────────────────────────
+export interface TaskRunItem {
+  task: string; label: string; cadence_hours: number | null
+  last_status: string; last_run_at: string | null
+  last_result: Record<string, unknown> | null; last_error: string | null
+  duration_ms: number | null; last_success_at: string | null; stale: boolean
+}
+export interface TaskRunRow {
+  id: string; task: string; label: string; status: string
+  result: Record<string, unknown> | null; error: string | null
+  started_at: string; finished_at: string | null; duration_ms: number | null
+}
+export function getTaskRunsOverview(): Promise<{ summary: { ok: number; stale: number; failing: number; total: number }; items: TaskRunItem[] }> {
+  return unwrap(request.get('/admin/task-runs/overview'))
+}
+export function listTaskRuns(params: { task?: string; status?: string; skip?: number; limit?: number }): Promise<{ total: number; items: TaskRunRow[] }> {
+  return unwrap(request.get('/admin/task-runs', { params }))
 }
 
 // ── R10 语法掌握判定校准(用真实作答反查「已掌握」判得准不准)────────────
