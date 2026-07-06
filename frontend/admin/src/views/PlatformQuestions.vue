@@ -233,76 +233,147 @@ async function onDeriveSim(q: PaperQuestion) {
 }
 
 // ── 题目层科学解析(阅读+完形)——AI 建议预填,人工逐题确认才写库 ──
-const DISTRACTOR_TYPES = ['原文近似词误配', '以偏概全', '过度推断', '无中生有', '张冠李戴', '因果倒置']
 const CLUE_TYPES = ['句内固定搭配', '句内语法约束', '跨句逻辑关系', '跨句词汇复现', '全篇情感基调', '指代与人物追踪', '情景交际惯用']
+const SLOT_TYPES = ['副词槽', '连词槽', '介词槽', '代词槽', '交际用语槽', '动词形式槽', '动词短语槽', '实义动词槽', '名词槽', '形容词槽', '数词槽']
 const anaDlg = ref(false)
 const anaBusy = ref(false)
 const anaSaving = ref(false)
 const anaTarget = ref<PaperQuestion | null>(null)
 const anaErrors = ref<string[]>([])
 const anaConfirmed = ref(false)   // 已有人工确认过的解析
+const anaIgnore = ref(false)      // 人工判定校验误报 → 忽略校验强制写库
 const anaIsCloze = computed(() => anaTarget.value?.question_type === '完型')
+const anaIsWriting = computed(() => anaTarget.value?.question_type === '写作')
+const WRITING_GENRES = ['记叙文', '议论文', '说明文', '应用文']
+const WRITING_TENSES = ['一般现在时', '一般过去时', '一般将来时', '现在完成时', '现在进行时', '过去进行时', '混合时态']
 type DistractorNote = { meaning: string; why_wrong: string }
+// 写作表单:要点/目标句型/失分点用「一行一条」文本框,保存时序列化成结构
+type WritingForm = { genre: string; sub_format: string; main_tense: string;
+  points: string; wr_codes: string; strategy: string; structure: string;
+  model_essay: string; target_expressions: string; pitfalls: string }
+const _emptyW = (): WritingForm => ({ genre: '', sub_format: '', main_tense: '',
+  points: '', wr_codes: '', strategy: '', structure: '',
+  model_essay: '', target_expressions: '', pitfalls: '' })
 const _emptyDss = (): Record<string, DistractorNote> => ({
   A: { meaning: '', why_wrong: '' }, B: { meaning: '', why_wrong: '' },
   C: { meaning: '', why_wrong: '' }, D: { meaning: '', why_wrong: '' },
 })
 const anaForm = ref<{ rc_code: string; evidence: string; answer_reason: string;
   slot: string; clue_type: string; clue: string; kp_codes: string;
-  dts: Record<string, string>; dss: Record<string, DistractorNote> }>({
+  dss: Record<string, DistractorNote>; w: WritingForm }>({
   rc_code: '', evidence: '', answer_reason: '',
   slot: '', clue_type: '', clue: '', kp_codes: '',
-  dts: { A: '', B: '', C: '', D: '' }, dss: _emptyDss(),
+  dss: _emptyDss(), w: _emptyW(),
 })
+function _resetAnaForm() {
+  anaForm.value = { rc_code: '', evidence: '', answer_reason: '',
+    slot: '', clue_type: '', clue: '', kp_codes: '',
+    dss: _emptyDss(), w: _emptyW() }
+}
+function _fillAnaForm(src: QuestionAnalysis | null | undefined) {
+  if (!src) { _resetAnaForm(); return }
+  const dss = _emptyDss()
+  for (const [k, v] of Object.entries(src.distractors || {}))
+    dss[k] = { meaning: v?.meaning || '', why_wrong: v?.why_wrong || '' }
+  const w = _emptyW()
+  w.genre = src.genre || ''; w.sub_format = src.sub_format || ''; w.main_tense = src.main_tense || ''
+  w.points = (src.points || []).map(p => p.point).join('\n')
+  w.wr_codes = (src.wr_codes || []).join(',')
+  w.strategy = src.strategy || ''
+  w.structure = (src.structure || []).map(b => (b.role ? `${b.role}: ${b.guide}` : b.guide)).join('\n')
+  w.model_essay = src.model_essay || ''
+  w.target_expressions = (src.target_expressions || []).join('\n')
+  w.pitfalls = (src.pitfalls || []).map(p => (p.type ? `${p.type}: ${p.trap}` : p.trap)).join('\n')
+  anaForm.value = {
+    rc_code: src.rc_code || '', evidence: src.evidence || '',
+    answer_reason: src.answer_reason || '',
+    slot: src.slot || '', clue_type: src.clue_type || '', clue: src.clue || '',
+    kp_codes: (src.kp_codes || []).join(','),
+    dss, w,
+  }
+}
 async function openAnalysis(q: PaperQuestion) {
   anaTarget.value = q
   anaDlg.value = true
   anaBusy.value = true
   anaErrors.value = []
   anaConfirmed.value = false
-  anaForm.value = { rc_code: '', evidence: '', answer_reason: '',
-    slot: '', clue_type: '', clue: '', kp_codes: '',
-    dts: { A: '', B: '', C: '', D: '' }, dss: _emptyDss() }
+  anaIgnore.value = false
+  _resetAnaForm()
   try {
     const [item] = await suggestQuestionAnalysis([q.id])
-    const src = item?.existing || item?.analysis   // 已确认过的优先展示
     anaConfirmed.value = !!item?.existing?.confirmed_at
     anaErrors.value = item?.existing ? [] : (item?.errors || [])
-    if (src) {
-      const dss = _emptyDss()
-      for (const [k, v] of Object.entries(src.distractors || {}))
-        dss[k] = { meaning: v?.meaning || '', why_wrong: v?.why_wrong || '' }
-      anaForm.value = {
-        rc_code: src.rc_code || '', evidence: src.evidence || '',
-        answer_reason: src.answer_reason || '',
-        slot: src.slot || '', clue_type: src.clue_type || '', clue: src.clue || '',
-        kp_codes: (src.kp_codes || []).join(','),
-        dts: { A: '', B: '', C: '', D: '', ...(src.distractor_types || {}) },
-        dss,
-      }
-    }
+    _fillAnaForm(item?.existing || item?.analysis)   // 已确认过的优先展示
   } catch (e: any) { ElMessage.error(e?.message || 'AI 解析建议失败') }
   finally { anaBusy.value = false }
+}
+// 「AI 重新解析」:忽略暂存强制重跑 LLM(误报/漏项时重试),用新建议回填表单
+async function reanalyzeAnalysis() {
+  if (!anaTarget.value || anaBusy.value) return
+  anaBusy.value = true
+  anaErrors.value = []
+  try {
+    const [item] = await suggestQuestionAnalysis([anaTarget.value.id], true)
+    anaErrors.value = item?.errors || []
+    anaIgnore.value = false
+    _fillAnaForm(item?.analysis)
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 重新解析失败') }
+  finally { anaBusy.value = false }
+}
+// 「查看」:直接用批量已算好的建议秒开详情弹窗(不重跑 LLM),可就地确认写库
+function viewAnaBatchItem(it: AnalysisSuggestItem) {
+  const q = anaBatchQmap.value[it.question_id]
+  if (!q) return
+  anaTarget.value = q
+  anaErrors.value = it.errors || []
+  anaConfirmed.value = false
+  anaBusy.value = false
+  anaIgnore.value = false
+  _fillAnaForm(it.analysis)
+  anaDlg.value = true            // 批量弹窗保留在底层,详情叠加于上
 }
 async function saveAnalysis() {
   if (!anaTarget.value) return
   anaSaving.value = true
   try {
-    const dts: Record<string, string> = {}
-    for (const [k, v] of Object.entries(anaForm.value.dts)) if (v) dts[k] = v
     const dss: Record<string, DistractorNote> = {}
     for (const [k, v] of Object.entries(anaForm.value.dss))
       if (v.meaning.trim() || v.why_wrong.trim())
         dss[k] = { meaning: v.meaning.trim(), why_wrong: v.why_wrong.trim() }
-    const payload: QuestionAnalysis = anaIsCloze.value
-      ? { slot: anaForm.value.slot.trim() || null, clue_type: anaForm.value.clue_type,
-          clue: anaForm.value.clue.trim(),
-          kp_codes: anaForm.value.kp_codes.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean),
-          distractors: dss, distractor_types: {} }
-      : { rc_code: anaForm.value.rc_code.trim(), evidence: anaForm.value.evidence.trim(),
-          answer_reason: anaForm.value.answer_reason.trim(), distractor_types: dts }
-    await confirmQuestionAnalysis(anaTarget.value.id, payload)
-    ElMessage.success('解析已确认写库(线索句已通过原文子串校验)')
+    const lines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean)
+    const csv = (s: string) => s.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean)
+    let payload: QuestionAnalysis
+    if (anaIsWriting.value) {
+      const w = anaForm.value.w
+      payload = {
+        genre: w.genre, sub_format: w.sub_format.trim() || undefined,
+        main_tense: w.main_tense || undefined,
+        points: lines(w.points).map((point, i) => ({ id: i + 1, point })),
+        wr_codes: csv(w.wr_codes),
+        strategy: w.strategy.trim() || undefined,
+        structure: lines(w.structure).map(l => {
+          const m = l.match(/^(.+?)[:：]\s*(.+)$/)
+          return m ? { role: m[1].trim(), guide: m[2].trim() } : { guide: l }
+        }),
+        model_essay: w.model_essay.trim(),
+        target_expressions: lines(w.target_expressions),
+        pitfalls: lines(w.pitfalls).map(l => {
+          const m = l.match(/^(.+?)[:：]\s*(.+)$/)
+          return m ? { type: m[1].trim(), trap: m[2].trim() } : { trap: l }
+        }),
+      }
+    } else if (anaIsCloze.value) {
+      payload = { slot: anaForm.value.slot.trim() || null, clue_type: anaForm.value.clue_type,
+        clue: anaForm.value.clue.trim(), kp_codes: csv(anaForm.value.kp_codes), distractors: dss }
+    } else {
+      payload = { rc_code: anaForm.value.rc_code.trim(), evidence: anaForm.value.evidence.trim(),
+        answer_reason: anaForm.value.answer_reason.trim(), distractors: dss }
+    }
+    await confirmQuestionAnalysis(anaTarget.value.id, payload, anaIgnore.value)
+    ElMessage.success(anaIgnore.value ? '已人工忽略校验强制写库(已记审计)' : '解析已确认写库(已通过原文子串校验)')
+    // 若从批量「查看」进来:确认后从待办列表移除该行,保持列表与库一致
+    anaBatchItems.value = anaBatchItems.value.filter(it => it.question_id !== anaTarget.value!.id)
     anaDlg.value = false
   } catch (e: any) { ElMessage.error(e?.message || '确认失败(未通过校验?)') }
   finally { anaSaving.value = false }
@@ -317,7 +388,13 @@ const anaBatchItems = ref<AnalysisSuggestItem[]>([])
 const anaBatchQmap = ref<Record<string, PaperQuestion>>({})
 const anaBatchPassCount = computed(() => anaBatchItems.value.filter(it => it.analysis && !it.errors.length).length)
 function analyzableSection(sec: { name: string }): boolean {
-  return /完形|完型|阅读/.test(sec.name)
+  return /完形|完型|阅读|书面|写作/.test(sec.name)
+}
+// 单题是否可做题目层解析:类型即完型/阅读/写作,或——阅读理解题机械形式常为「单选/填空」
+// (如徐州卷 26-40),但所在大题名表明是阅读/完形段 → 也应可解析(后端按 section 分发)。
+function isAnalyzableQuestion(q: { question_type: string }, sectionName: string): boolean {
+  if (q.question_type === '完型' || q.question_type === '阅读' || q.question_type === '写作') return true
+  return /完形|完型|阅读/.test(sectionName || '') && (q.question_type === '单选' || q.question_type === '填空')
 }
 function anaSummary(it: AnalysisSuggestItem): string {
   const a = it.analysis
@@ -325,19 +402,34 @@ function anaSummary(it: AnalysisSuggestItem): string {
   if (a.clue_type) return `${a.slot || '—'} · ${a.clue_type} · ${(a.kp_codes || []).join(',')}`
   return `${a.rc_code || '—'} · ${(a.evidence || '').slice(0, 24)}`
 }
+const anaBatchStaged = computed(() => anaBatchItems.value.some(it => it.staged))
+async function _runAnaBatch(force: boolean) {
+  anaBatchBusy.value = true
+  try {
+    anaBatchItems.value = await suggestQuestionAnalysis(
+      Object.keys(anaBatchQmap.value), force)
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 批量解析失败') }
+  finally { anaBatchBusy.value = false }
+}
 async function openAnaBatch(sec: { name: string; groups: any[] }) {
+  // 防重入:上一次解析还在途(未 commit 暂存)时再点,只重开弹窗看进度,绝不再发第二个全段请求
+  // (否则秒读缓存尚未落库 → 又全量重跑,正是卡顿的根因)
+  if (anaBatchBusy.value) { anaBatchDlg.value = true; return }
   const qs: PaperQuestion[] = sec.groups.flatMap(g => g.rows)
-    .filter((q: PaperQuestion) => q.question_type === '完型' || q.question_type === '阅读')
+    .filter((q: PaperQuestion) => isAnalyzableQuestion(q, sec.name))
   if (!qs.length) { ElMessage.info('本大题无完形/阅读题'); return }
   anaBatchSection.value = sec.name
   anaBatchQmap.value = Object.fromEntries(qs.map(q => [q.id, q]))
   anaBatchItems.value = []
   anaBatchDlg.value = true
-  anaBatchBusy.value = true
+  await _runAnaBatch(false)     // 优先读暂存(秒开);只对没解析过的跑 LLM
+}
+async function reparseAnaBatch() {
   try {
-    anaBatchItems.value = await suggestQuestionAnalysis(qs.map(q => q.id))
-  } catch (e: any) { ElMessage.error(e?.message || 'AI 批量解析失败') }
-  finally { anaBatchBusy.value = false }
+    await ElMessageBox.confirm('忽略已暂存的建议,对本段全部题重新解析(会重新消耗 LLM)。继续?',
+      '重新解析全段', { type: 'warning' })
+  } catch { return }
+  await _runAnaBatch(true)
 }
 async function adoptAnaBatch() {
   const pass = anaBatchItems.value.filter(it => it.analysis && !it.errors.length)
@@ -939,8 +1031,9 @@ onMounted(load)
                 <span>{{ sec.name }}</span>
                 <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openSectionSuggest(sec.name)">一键挂知识点(AI)</el-button>
                 <el-button v-if="analyzableSection(sec)" size="small" text type="warning" style="height:22px;padding:0 6px"
+                  :loading="anaBatchBusy" :disabled="anaBatchBusy"
                   title="整段 AI 解析(完形双轴/阅读题目层)→ 一键采纳校验通过项,只逐个驳回异常"
-                  @click="openAnaBatch(sec)">批量解析全段</el-button>
+                  @click="openAnaBatch(sec)">{{ anaBatchBusy ? '解析中…' : '批量解析全段' }}</el-button>
                 <el-button size="small" text style="height:22px;padding:0 6px;color:#909399" @click="openSectionKpPicker(sec.name)">手动挂</el-button>
                 <el-button size="small" :type="secAllChecked(sec) ? 'primary' : 'default'" plain
                   style="height:22px;padding:0 8px;margin-left:6px"
@@ -975,7 +1068,7 @@ onMounted(load)
                         :loading="genBusy === q.id"
                         :title="`从本题派生 ${simDeriveCount} 道同考点仿真(继承本题「${q.question_type}」题型与考点,落草稿待审)`"
                         @click="onDeriveSim(q)">↻ 派生仿真</el-button>
-                      <el-button v-if="q.question_type === '阅读' || q.question_type === '完型'" size="small" text type="warning" style="height:22px;padding:0 6px"
+                      <el-button v-if="isAnalyzableQuestion(q, sec.name)" size="small" text type="warning" style="height:22px;padding:0 6px"
                         title="AI 生成题目层解析(阅读:rc技能+定位句;完形:载体槽+线索类型),人工确认后才写库;线索句程序校验防幻觉"
                         @click="openAnalysis(q)">解析</el-button>
                     </div>
@@ -999,10 +1092,56 @@ onMounted(load)
         <el-alert v-if="anaErrors.length" type="warning" :closable="false" style="margin-bottom:10px"
           :title="'AI 建议未通过程序校验,请人工修正:' + anaErrors.join(';')" />
         <el-form label-width="92px" size="small">
+          <!-- 书面表达:体裁+要点(客观锚)+主时态+wr考点+范文+目标句型(取自范文)+失分点 -->
+          <template v-if="anaIsWriting">
+            <el-form-item label="体裁">
+              <div style="display:flex;gap:8px;width:100%">
+                <el-select v-model="anaForm.w.genre" placeholder="体裁" style="width:130px">
+                  <el-option v-for="g in WRITING_GENRES" :key="g" :label="g" :value="g" />
+                </el-select>
+                <el-input v-model="anaForm.w.sub_format" placeholder="具体文体(如 演讲稿/书信/通知,可空)" style="flex:1" />
+              </div>
+            </el-form-item>
+            <el-form-item label="主时态">
+              <el-select v-model="anaForm.w.main_tense" clearable placeholder="主时态(如 一般现在时)" style="width:100%">
+                <el-option v-for="t in WRITING_TENSES" :key="t" :label="t" :value="t" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="要点">
+              <el-input v-model="anaForm.w.points" type="textarea" :rows="3"
+                placeholder="一行一条要点(客观锚:漏要点是第一失分源);范文须覆盖全部要点" />
+            </el-form-item>
+            <el-form-item label="写作考点">
+              <el-input v-model="anaForm.w.wr_codes" placeholder="wr-* 编码,逗号分隔(如 wr-1-2,wr-4-1)" />
+            </el-form-item>
+            <el-form-item label="套路名">
+              <el-input v-model="anaForm.w.strategy"
+                placeholder="一句话好记公式(如 三段式演讲稿:问候引题→分点论述→升华号召);仿真同体裁复用" />
+            </el-form-item>
+            <el-form-item label="结构套路">
+              <el-input v-model="anaForm.w.structure" type="textarea" :rows="4"
+                placeholder="逐段一行「角色: 该段写什么+现成开头语/连接词/句式」,学生照着套(如 开头: 问候引题 Good morning! I'd like to talk about…)" />
+            </el-form-item>
+            <el-form-item label="范文">
+              <el-input v-model="anaForm.w.model_essay" type="textarea" :rows="5"
+                placeholder="覆盖全部要点、词数达标的范文(目标句型须逐字出自此范文)" />
+            </el-form-item>
+            <el-form-item label="目标句型">
+              <el-input v-model="anaForm.w.target_expressions" type="textarea" :rows="2"
+                placeholder="一行一条,升格靶;必须逐字取自上面范文(保存时程序校验子串,防幻觉)" />
+            </el-form-item>
+            <el-form-item label="失分点">
+              <el-input v-model="anaForm.w.pitfalls" type="textarea" :rows="2"
+                placeholder="一行一条,格式「类型: 陷阱」(如 时态: 演讲稿易误用过去时)" />
+            </el-form-item>
+          </template>
           <!-- 完形双轴:载体槽(程序判,区分度=0 的形式轴)+ 线索类型(真构念)+ 线索句 + 线索轴考点 -->
-          <template v-if="anaIsCloze">
+          <template v-else-if="anaIsCloze">
             <el-form-item label="载体槽">
-              <el-input v-model="anaForm.slot" placeholder="程序按选项词性判定(如 副词槽);拿不准为空" />
+              <el-select v-model="anaForm.slot" clearable filterable style="width:100%"
+                placeholder="程序按选项词性判定(如 副词槽/动词短语槽);拿不准可留空">
+                <el-option v-for="s in SLOT_TYPES" :key="s" :label="s" :value="s" />
+              </el-select>
             </el-form-item>
             <el-form-item label="线索类型">
               <el-select v-model="anaForm.clue_type" placeholder="真构念:决定学情归因与仿真变式" style="width:100%">
@@ -1030,40 +1169,39 @@ onMounted(load)
                 placeholder="由定位句到正确项的推理(1-2 句)" />
             </el-form-item>
           </template>
-          <!-- 完形:干扰项=原义+干扰机制(词义本身合理,错在与语境线索冲突);阅读:枚举错因 -->
-          <el-form-item v-if="anaIsCloze" label="干扰项">
+          <!-- 干扰项=原义/义项+干扰机制(完形:词义合理但与语境线索冲突;阅读:选项主张与定位句/原文事实冲突)。正确项留空;写作无此项 -->
+          <el-form-item v-if="!anaIsWriting" label="干扰项">
             <div style="display:flex;flex-direction:column;gap:6px;width:100%">
               <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
                 <span style="width:18px;color:#606266">{{ k }}</span>
-                <el-input v-model="anaForm.dss[k].meaning" placeholder="原义(正确项留空)" style="width:180px" />
-                <el-input v-model="anaForm.dss[k].why_wrong" placeholder="干扰机制:与哪条语境线索冲突" style="flex:1" />
-              </div>
-            </div>
-          </el-form-item>
-          <el-form-item v-else label="干扰项错因">
-            <div style="display:flex;flex-direction:column;gap:6px;width:100%">
-              <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
-                <span style="width:18px;color:#606266">{{ k }}</span>
-                <el-select v-model="anaForm.dts[k]" clearable placeholder="(正确项/不标)" style="flex:1">
-                  <el-option v-for="t in DISTRACTOR_TYPES" :key="t" :label="t" :value="t" />
-                </el-select>
+                <el-input v-model="anaForm.dss[k].meaning"
+                  :placeholder="anaIsCloze ? '原义(正确项留空)' : '选项义项/主张(正确项留空)'" style="width:180px" />
+                <el-input v-model="anaForm.dss[k].why_wrong"
+                  :placeholder="anaIsCloze ? '干扰机制:与哪条语境线索冲突' : '干扰机制:与哪处定位句/原文冲突(可点明张冠李戴等)'" style="flex:1" />
               </div>
             </div>
           </el-form-item>
         </el-form>
-        <div style="text-align:right">
-          <el-button @click="anaDlg = false">取消</el-button>
-          <el-button type="primary" :loading="anaSaving" @click="saveAnalysis">人工确认并写库</el-button>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <el-button text type="primary" :loading="anaBusy" @click="reanalyzeAnalysis">↻ AI 重新解析</el-button>
+          <div style="display:flex;align-items:center;gap:10px">
+            <el-checkbox v-if="anaErrors.length" v-model="anaIgnore"
+              title="人工判定程序校验为误报(如定位句实为原文但子串比对过严),忽略后强制写库并记审计">忽略校验</el-checkbox>
+            <el-button @click="anaDlg = false">取消</el-button>
+            <el-button type="primary" :loading="anaSaving" :disabled="anaErrors.length > 0 && !anaIgnore"
+              @click="saveAnalysis">{{ anaIgnore ? '忽略校验强制写库' : '人工确认并写库' }}</el-button>
+          </div>
         </div>
       </template>
     </el-dialog>
 
     <!-- 批量解析:整段 AI 建议 → 一键采纳校验通过项;报错项逐个「改」走单题弹窗 -->
     <el-dialog v-model="anaBatchDlg" :title="`批量解析:${anaBatchSection}`" width="720px" append-to-body>
-      <div v-if="anaBatchBusy" style="text-align:center;color:#909399;padding:24px">AI 批量解析中…(整段一次)</div>
+      <div v-if="anaBatchBusy" style="text-align:center;color:#909399;padding:24px">AI 批量解析中…(整段并发,已暂存的秒读)</div>
       <template v-else>
         <div style="font-size:12px;color:#606266;margin-bottom:8px">
           共 {{ anaBatchItems.length }} 题;<b style="color:#67c23a">{{ anaBatchPassCount }}</b> 道通过硬校验(线索句子串/枚举/图谱编码)可直接采纳,其余需人工修。
+          <el-tag v-if="anaBatchStaged" size="small" type="info" effect="plain" style="margin-left:6px">已暂存·再开不重跑</el-tag>
         </div>
         <div style="max-height:52vh;overflow:auto">
           <div v-for="it in anaBatchItems" :key="it.question_id"
@@ -1076,14 +1214,20 @@ onMounted(load)
               <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#303133">{{ anaSummary(it) }}</div>
               <div v-if="it.errors.length" style="color:#e6a23c">{{ it.errors.join(';') }}</div>
             </div>
+            <el-button size="small" text type="primary" style="height:20px;padding:0 6px;flex-shrink:0"
+              :disabled="!it.analysis" @click="viewAnaBatchItem(it)">查看</el-button>
             <el-button size="small" text type="primary" style="height:20px;padding:0 6px;flex-shrink:0" @click="editAnaBatchItem(it)">改</el-button>
           </div>
         </div>
-        <div style="text-align:right;margin-top:12px">
-          <el-button @click="anaBatchDlg = false">关闭</el-button>
-          <el-button type="primary" :loading="anaBatchSaving" :disabled="!anaBatchPassCount" @click="adoptAnaBatch">
-            一键采纳 {{ anaBatchPassCount }} 道通过项
-          </el-button>
+        <div style="display:flex;align-items:center;margin-top:12px">
+          <span style="font-size:12px;color:#a0a4ab">解析结果已暂存,「一键采纳/人工确认」才正式写库</span>
+          <div style="margin-left:auto">
+            <el-button @click="reparseAnaBatch">重新解析</el-button>
+            <el-button @click="anaBatchDlg = false">关闭</el-button>
+            <el-button type="primary" :loading="anaBatchSaving" :disabled="!anaBatchPassCount" @click="adoptAnaBatch">
+              一键采纳 {{ anaBatchPassCount }} 道通过项
+            </el-button>
+          </div>
         </div>
       </template>
     </el-dialog>

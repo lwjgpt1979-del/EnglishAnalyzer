@@ -1518,9 +1518,22 @@ export interface QuestionAnalysis {
   clue?: string
   kp_codes?: string[]
   answer_letter?: string
-  // 完形干扰项=原义+干扰机制(词义合理但与语境线索冲突);阅读用 distractor_types 枚举
+  // 干扰项=原义/义项+干扰机制(完形与阅读同构);distractor_types 为历史枚举字段,仅兼容旧数据读取
   distractors?: Record<string, { meaning: string; why_wrong: string }>
-  distractor_types: Record<string, string>
+  distractor_types?: Record<string, string>
+  // 书面表达:体裁+要点(客观锚)+主时态+wr考点+范文+要点↔句映射+目标句型(取自范文)+失分点
+  genre?: string
+  sub_format?: string
+  main_tense?: string
+  points?: { id?: number; point: string }[]
+  wr_codes?: string[]
+  strategy?: string                                              // 一句话套路名(照着能写)
+  structure?: { role?: string; guide: string; point_ids?: number[] }[]   // 逐段骨架+句式模板
+  model_essay?: string
+  point_map?: Record<string, string>
+  target_expressions?: string[]
+  pitfalls?: { type?: string; trap: string }[]
+  validation_skipped?: string[]
   kind?: string
   confirmed_by?: string
   confirmed_at?: string
@@ -1530,13 +1543,14 @@ export interface AnalysisSuggestItem {
   analysis: QuestionAnalysis | null
   errors: string[]
   existing?: QuestionAnalysis | null
+  staged?: boolean       // true=来自暂存(未重跑 LLM)
 }
-export function suggestQuestionAnalysis(questionIds: string[]): Promise<AnalysisSuggestItem[]> {
+export function suggestQuestionAnalysis(questionIds: string[], force = false): Promise<AnalysisSuggestItem[]> {
   return unwrap(request.post('/admin/question-analysis/suggest',
-    { question_ids: questionIds }, { timeout: 90000 }))
+    { question_ids: questionIds, force }, { timeout: 180000 }))
 }
-export function confirmQuestionAnalysis(questionId: string, analysis: QuestionAnalysis): Promise<QuestionAnalysis> {
-  return unwrap(request.put(`/admin/platform-questions/${questionId}/analysis`, { analysis }))
+export function confirmQuestionAnalysis(questionId: string, analysis: QuestionAnalysis, force = false): Promise<QuestionAnalysis> {
+  return unwrap(request.put(`/admin/platform-questions/${questionId}/analysis`, { analysis, force }))
 }
 // 批量一键采纳(降人工):通过硬校验的写库、失败的返原因
 export function confirmQuestionAnalysisBatch(

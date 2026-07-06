@@ -25,10 +25,12 @@ AdminDep = Annotated[User, Depends(require_role("platform_admin"))]
 
 class SuggestAnalysisIn(BaseModel):
     question_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=50)
+    force: bool = False       # True=忽略暂存重新解析;False=已暂存/已确认的秒读不重跑
 
 
 class ConfirmAnalysisIn(BaseModel):
     analysis: dict
+    force: bool = False       # True=人工忽略程序校验(判定误报)强制写库,记 validation_skipped 审计
 
 
 class ConfirmBatchItem(BaseModel):
@@ -42,9 +44,10 @@ class ConfirmBatchIn(BaseModel):
 
 @router.post("/question-analysis/suggest", response_model=BaseResponse[list])
 async def suggest_question_analysis_api(body: SuggestAnalysisIn, db: DbDep, admin: AdminDep):
-    """AI 生成题目层解析**建议**(不落库),按题型分发:完型=双轴(载体槽程序判+线索);
-    阅读=rc技能+定位句。逐条带程序校验结果(线索句子串/枚举/图谱编码)。"""
-    items = await qas.suggest_analysis(db, question_ids=body.question_ids)
+    """AI 生成题目层解析**建议**并暂存(meta.analysis_draft),按题型分发:完型=双轴;阅读=rc技能+定位句。
+    已暂存/已确认的秒读不重跑(force=True 强制重解析);人工确认才正式写库。"""
+    items = await qas.suggest_analysis(
+        db, question_ids=body.question_ids, force=body.force)
     return make_ok(items)
 
 
@@ -52,9 +55,9 @@ async def suggest_question_analysis_api(body: SuggestAnalysisIn, db: DbDep, admi
 async def confirm_question_analysis_api(
     question_id: uuid.UUID, body: ConfirmAnalysisIn, db: DbDep, admin: AdminDep,
 ):
-    """人工确认解析并写库(唯一写入口;服务端重校验,不合格 400)。"""
+    """人工确认解析并写库(唯一写入口;服务端重校验,不合格 400;force=True 人工忽略校验强制写)。"""
     saved = await qas.confirm_analysis(
-        db, question_id=question_id, analysis=body.analysis, admin_id=admin.id)
+        db, question_id=question_id, analysis=body.analysis, admin_id=admin.id, force=body.force)
     await db.commit()
     return make_ok(saved)
 

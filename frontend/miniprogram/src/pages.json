@@ -72,6 +72,7 @@
     { "path": "pages/essay/index", "style": { "navigationBarTitleText": "作文精修" } },
     { "path": "pages/essay/train", "style": { "navigationBarTitleText": "写作能力训练" } },
     { "path": "pages/reading-expression/grade", "style": { "navigationBarTitleText": "阅读表达批改" } },
+    { "path": "pages/writing/practice", "style": { "navigationBarTitleText": "书面表达训练" } },
     { "path": "pages/essay/error-book", "style": { "navigationBarTitleText": "写作错因本" } },
     { "path": "pages/essay/detail", "style": { "navigationBarTitleText": "精修详情" } },
     { "path": "pages/assignments/index", "style": { "navigationBarTitleText": "老师任务" } },

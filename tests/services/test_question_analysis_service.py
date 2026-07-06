@@ -16,7 +16,8 @@ _PASSAGE = ("Tom gets up at six every morning. He runs for half an hour and then
 
 def test_validator_evidence_substring():
     ok = {"rc_code": "rc-1-1", "evidence": "He runs for half an hour",
-          "answer_reason": "细节定位", "distractor_types": {"B": "无中生有"}}
+          "answer_reason": "细节定位",
+          "distractors": {"B": {"meaning": "放学后跑步", "why_wrong": "与定位句时间冲突"}}}
     assert qas.validate_reading_analysis(ok, context_text=_PASSAGE) == []
     # 幻觉定位句 → 一票否决
     bad = {**ok, "evidence": "Tom swims every evening."}
@@ -26,12 +27,14 @@ def test_validator_evidence_substring():
     assert qas.validate_reading_analysis(ws, context_text=_PASSAGE) == []
 
 
-def test_validator_enum_and_fields():
+def test_validator_distractors_and_fields():
+    # 阅读干扰项与完形同构:原义(meaning)+干扰机制(why_wrong);空 distractors 允许(可只标错项)
     base = {"rc_code": "rc-1-1", "evidence": "Tom gets up at six",
-            "answer_reason": "ok", "distractor_types": {}}
+            "answer_reason": "ok", "distractors": {}}
     assert qas.validate_reading_analysis(base, context_text=_PASSAGE) == []
-    assert any("枚举" in e for e in qas.validate_reading_analysis(
-        {**base, "distractor_types": {"B": "瞎编的错因"}}, context_text=_PASSAGE))
+    # 干扰项半空(缺 why_wrong)→ 报错
+    assert any("干扰机制" in e or "meaning" in e for e in qas.validate_reading_analysis(
+        {**base, "distractors": {"B": {"meaning": "放学后", "why_wrong": " "}}}, context_text=_PASSAGE))
     assert any("rc_code" in e for e in qas.validate_reading_analysis(
         {**base, "rc_code": "xx-9"}, context_text=_PASSAGE))
     assert any("answer_reason" in e for e in qas.validate_reading_analysis(
@@ -129,6 +132,77 @@ async def _seed_cloze(s) -> uuid.UUID:
     return r.question_id
 
 
+_ESSAY = ("Only by working hard can we grow. I am grateful to my parents for their love.")
+
+
+def test_validate_writing_analysis():
+    ok = {"genre": "应用文", "sub_format": "演讲稿",
+          "points": [{"id": 1, "point": "懂感恩"}], "main_tense": "一般现在时",
+          "wr_codes": ["wr-1-2"], "model_essay": _ESSAY,
+          "target_expressions": ["Only by working hard can we grow"],
+          "pitfalls": [{"type": "时态", "trap": "易误用过去时"}]}
+    assert qas.validate_writing_analysis(ok, context_text="") == []
+    # 体裁非枚举
+    assert any("genre" in e for e in qas.validate_writing_analysis(
+        {**ok, "genre": "神仙文"}, context_text=""))
+    # 要点空
+    assert any("points" in e for e in qas.validate_writing_analysis(
+        {**ok, "points": []}, context_text=""))
+    # wr_codes 空
+    assert any("wr_codes" in e for e in qas.validate_writing_analysis(
+        {**ok, "wr_codes": []}, context_text=""))
+    # 范文缺
+    assert any("model_essay" in e or "范文" in e for e in qas.validate_writing_analysis(
+        {**ok, "model_essay": " "}, context_text=""))
+    # 目标句型不是范文子串 → 幻觉
+    assert any("幻觉" in e for e in qas.validate_writing_analysis(
+        {**ok, "target_expressions": ["a sentence not in the essay"]}, context_text=""))
+    # 结构套路选填,合式通过;每段 guide 空 → 报错
+    assert qas.validate_writing_analysis(
+        {**ok, "structure": [{"role": "开头", "guide": "问候引题 Good morning!"}]}, context_text="") == []
+    assert any("structure" in e for e in qas.validate_writing_analysis(
+        {**ok, "structure": [{"role": "开头", "guide": " "}]}, context_text=""))
+
+
+async def _seed_writing(s) -> uuid.UUID:
+    r = await pqs.import_real_question(
+        s, stem="以 To be a better self 为题写一篇演讲稿,从懂感恩、亲自然、爱自己三方面谈。",
+        answer=None, options=None,
+        question_type="写作", section="书面表达", status="published")
+    await s.flush()
+    return r.question_id
+
+
+@pytest.mark.asyncio
+async def test_suggest_dispatch_writing(db_session):
+    """分发:书面表达走写作建议(体裁/要点/范文/目标句型),不写库。"""
+    qid = await _seed_writing(db_session)
+    items = await qas.suggest_analysis(db_session, question_ids=[qid])
+    assert len(items) == 1
+    ana = items[0]["analysis"]
+    assert ana["genre"] in qas.WRITING_GENRES and ana["points"] and ana["model_essay"]
+    q = (await db_session.execute(
+        select(PlatformQuestion).where(PlatformQuestion.id == qid))).scalar_one()
+    assert not (q.meta or {}).get("analysis")     # 建议不落库
+
+
+@pytest.mark.asyncio
+async def test_confirm_writing_writes_with_kind(db_session):
+    qid = await _seed_writing(db_session)
+    good = {"genre": "应用文", "sub_format": "演讲稿",
+            "points": [{"id": 1, "point": "懂感恩"}], "main_tense": "一般现在时",
+            "wr_codes": ["wr-1-2"], "model_essay": _ESSAY,
+            "target_expressions": ["Only by working hard can we grow"]}
+    saved = await qas.confirm_analysis(
+        db_session, question_id=qid, analysis=good, admin_id=uuid.uuid4())
+    assert saved["kind"] == "writing" and saved["confirmed_at"]
+    from app.core.exceptions import AppError
+    with pytest.raises(AppError):   # 图谱不存在的写作编码 → 拒绝
+        await qas.confirm_analysis(db_session, question_id=qid,
+                                   analysis={**good, "wr_codes": ["wr-99-99"]},
+                                   admin_id=uuid.uuid4())
+
+
 @pytest.mark.asyncio
 async def test_suggest_dispatch_cloze(db_session):
     """分发:完型走双轴建议(载体槽=程序判定的副词槽),不写库。"""
@@ -180,10 +254,11 @@ async def test_confirm_batch_partitions_pass_fail(db_session):
     items = [
         {"question_id": str(qid_ok), "analysis": {
             "rc_code": "rc-1-1", "evidence": "He runs for half an hour and then has breakfast.",
-            "answer_reason": "then 表先后。", "distractor_types": {"B": "无中生有"}}},
+            "answer_reason": "then 表先后。",
+            "distractors": {"B": {"meaning": "放学后跑步", "why_wrong": "与定位句时间冲突"}}}},
         {"question_id": str(qid_bad), "analysis": {   # 幻觉定位句 → 失败
             "rc_code": "rc-1-1", "evidence": "made-up sentence not in passage.",
-            "answer_reason": "x", "distractor_types": {}}},
+            "answer_reason": "x", "distractors": {}}},
     ]
     res = await qas.confirm_analysis_batch(db_session, items=items, admin_id=uuid.uuid4())
     assert res["confirmed"] == [str(qid_ok)]
@@ -198,7 +273,8 @@ async def test_confirm_writes_and_rejects_invalid(db_session):
     qid = await _seed_reading(db_session)
     admin_id = uuid.uuid4()
     good = {"rc_code": "rc-1-1", "evidence": "He runs for half an hour and then has breakfast.",
-            "answer_reason": "then 表先后,跑步在早餐前。", "distractor_types": {"B": "无中生有"}}
+            "answer_reason": "then 表先后,跑步在早餐前。",
+            "distractors": {"B": {"meaning": "放学后跑步", "why_wrong": "与定位句时间冲突"}}}
     saved = await qas.confirm_analysis(
         db_session, question_id=qid, analysis=good, admin_id=admin_id)
     assert saved["confirmed_by"] == str(admin_id) and saved["confirmed_at"]
@@ -211,3 +287,21 @@ async def test_confirm_writes_and_rejects_invalid(db_session):
         await qas.confirm_analysis(db_session, question_id=qid,
                                    analysis={**good, "evidence": "made-up sentence."},
                                    admin_id=admin_id)
+
+
+@pytest.mark.asyncio
+async def test_confirm_force_ignores_validation(db_session):
+    """人工判定校验误报 → force=True 忽略校验强制写库,并记 validation_skipped 审计。"""
+    qid = await _seed_reading(db_session)
+    bad = {"rc_code": "rc-1-1", "evidence": "made-up sentence not in passage.",
+           "answer_reason": "人工判定定位句其实对(子串过严)。", "distractors": {}}
+    from app.core.exceptions import AppError
+    with pytest.raises(AppError):                     # 不 force → 仍拒绝
+        await qas.confirm_analysis(db_session, question_id=qid, analysis=bad, admin_id=uuid.uuid4())
+    saved = await qas.confirm_analysis(               # force → 写库 + 留审计
+        db_session, question_id=qid, analysis=bad, admin_id=uuid.uuid4(), force=True)
+    assert saved["confirmed_at"] and saved.get("validation_skipped")
+    assert any("幻觉" in e for e in saved["validation_skipped"])
+    q = (await db_session.execute(
+        select(PlatformQuestion).where(PlatformQuestion.id == qid))).scalar_one()
+    assert (q.meta or {}).get("analysis", {}).get("validation_skipped")

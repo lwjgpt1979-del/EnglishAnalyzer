@@ -8,6 +8,7 @@ R2.2/R2.3:AI 改写派生仿真 / KP 直生备选 + 真题到来下架备选。
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -785,12 +786,59 @@ async def _rewrite_variants(real: PlatformQuestion, count: int, kp_names: list[s
         return []
 
 
+def _is_writing_q(q: PlatformQuestion) -> bool:
+    """书面表达题:题型「写作」或已确认解析是写作(有 genre)。"""
+    return (q.question_type or "") == "写作" or "genre" in ((q.meta or {}).get("analysis") or {})
+
+
+async def _rewrite_writing_variants(real: PlatformQuestion, count: int) -> list[dict]:
+    """书面表达母题 → count 道【同体裁·同要点条数·同套路·同考点】新写作题(仅换话题/情境)。
+    每道自带完整写作解析(要点/范文/结构套路/目标句型),让仿真直接可用于学生练习+自动评分。"""
+    ana = (real.meta or {}).get("analysis") or {}
+    n_pts = len(ana.get("points") or []) or 3
+    if is_llm_dev_mode():
+        return [{"stem": f"{real.stem}(仿真变式{i + 1})",
+                 "analysis": {**ana, "model_essay": ana.get("model_essay") or "Mock model essay.",
+                              "derived_from": str(real.id)}} for i in range(count)]
+    from app.services.question_analysis_service import analysis_constraints_text
+    from app.services.llm_provider import complete_json
+    # 一次只出【1 道】(含范文的完整解析很占 token,整批一次调用必截断)——逐道并发生成
+    system = (
+        "你是英语命题专家兼写作教研。基于母题写作解析,出【1 道】同体裁·同要点条数·同套路·同考点的新书面表达题,"
+        "只换话题/情境;自带完整写作解析(供学生练习与自动评分直接用)。严格输出 JSON:"
+        '{"stem":"新题干(写作要求+要点提示)",'
+        '"analysis":{"genre":..,"sub_format":..,"main_tense":..,"points":[{"id":1,"point":..}],'
+        '"wr_codes":[..],"strategy":..,"structure":[{"role":..,"guide":..,"point_ids":[..]}],'
+        '"model_essay":"范文","point_map":{"1":..},"target_expressions":[".. 逐字取自本题范文"],'
+        '"pitfalls":[{"type":..,"trap":..}]}}。'
+        "铁律:target_expressions 必须逐字出现在 model_essay 里;strategy/genre/wr_codes 与母题一致;"
+        f"points 正好 {n_pts} 条,范文须覆盖全部要点。")
+    constraints = analysis_constraints_text(ana)
+    hints = ["校园活动", "环保公益", "文化交流", "科技生活", "健康运动", "志愿服务"]
+
+    async def _one(idx: int) -> dict | None:
+        user = (f"{constraints}母题题干:{real.stem}\n母题范文(仅参考风格):{(ana.get('model_essay') or '')[:600]}\n\n"
+                f"换一个与母题不同的话题(可从「{hints[idx % len(hints)]}」方向取材,但保持同体裁/套路/考点),生成 1 道新题。")
+        d = await complete_json(
+            system_prompt=system, user_prompt=user, max_tokens=2600, escalate_ceiling=4200,
+            validate=lambda x: bool((x.get("analysis") or {}).get("model_essay")), feature="writing_sim")
+        if not d:
+            return None
+        a = d.get("analysis") or {}
+        a["derived_from"] = str(real.id)
+        return {"stem": d.get("stem"), "analysis": a}
+
+    results = await asyncio.gather(*[_one(i) for i in range(count)])
+    return [r for r in results if r and r.get("stem")]
+
+
 async def generate_sim_from_real(
     db: AsyncSession, *, real_id: uuid.UUID, count: int = 3, status: str = "draft"
 ) -> list[uuid.UUID]:
     """单题真题派生 count 道仿真(parent_real_id=real_id),继承母题 KP,版本按题位累加。
 
     短文题组(有 block_id)请走 generate_sim_for_block(整组改写,共享新短文)。
+    书面表达走写作变式路径(新题干 + 完整新解析,同体裁/套路/考点)。
     """
     real = (await db.execute(
         sa.select(PlatformQuestion).where(PlatformQuestion.id == real_id)
@@ -799,6 +847,27 @@ async def generate_sim_from_real(
         raise AppError(code=404, message="母题真题不存在")
     parent_nodes = await _node_ids_of(db, real_id)
     base = await _next_sim_version(db, [real_id])
+
+    if _is_writing_q(real):        # 书面表达:反向生成同体裁/套路/考点的新写作题(自带解析)
+        out: list[uuid.UUID] = []
+        for i, v in enumerate(await _rewrite_writing_variants(real, count)):
+            if not v.get("stem"):
+                continue
+            ana = {**(v.get("analysis") or {}), "kind": "writing"}
+            sim = await add_sim(
+                db, stem=v["stem"], parent_real_id=real_id, is_fallback=False,
+                answer=ana.get("model_essay"), question_type=_fine_type(real),
+                difficulty=real.difficulty, status=status)
+            sim.sim_version = base + i
+            for c in (*_EXAM_COLS, "region_code", "section"):    # 继承可筛选字段(meta 单独设)
+                setattr(sim, c, getattr(real, c))
+            new_meta = {**(real.meta or {}), "analysis": ana}    # 用变式自己的解析覆盖母题解析
+            new_meta.pop("analysis_draft", None)
+            sim.meta = new_meta
+            for nid in parent_nodes:
+                await attach_node(db, sim.id, nid)
+            out.append(sim.id)
+        return out
 
     out: list[uuid.UUID] = []
     for i, v in enumerate(await _rewrite_variants(real, count, await _kp_names(db, parent_nodes))):
