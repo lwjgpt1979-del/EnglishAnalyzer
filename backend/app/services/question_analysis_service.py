@@ -695,6 +695,18 @@ async def confirm_analysis(
     new_meta = {**(q.meta or {}), "analysis": saved}
     new_meta.pop("analysis_draft", None)      # 确认即正式保存,清掉暂存草稿
     q.meta = new_meta
+    # 把解析里的考点码挂成 platform_question_kp 边(幂等·附加):让 BKT/仿真继承考点/学情统计都吃到
+    # 完形→kp_codes、写作→wr_codes、阅读→rc_code。force 跳过校验时,只挂图谱里真实存在的码。
+    codes = (analysis.get("kp_codes") or []) if saved["kind"] == "cloze" else \
+            (analysis.get("wr_codes") or []) if saved["kind"] == "writing" else \
+            [analysis.get("rc_code")]
+    codes = [c for c in codes if c and str(c).strip()]
+    if codes:
+        from app.services.platform_question_service import attach_node
+        node_ids = (await db.execute(
+            sa.select(KnowledgeNode.id).where(KnowledgeNode.code.in_(codes)))).scalars().all()
+        for nid in node_ids:
+            await attach_node(db, question_id, nid)
     await db.flush()
     return saved
 

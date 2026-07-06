@@ -196,6 +196,13 @@ async def test_confirm_writing_writes_with_kind(db_session):
     saved = await qas.confirm_analysis(
         db_session, question_id=qid, analysis=good, admin_id=uuid.uuid4())
     assert saved["kind"] == "writing" and saved["confirmed_at"]
+    # 确认时 wr_codes 自动挂成 platform_question_kp 边(供 BKT/仿真继承/学情统计)
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import PlatformQuestionKp
+    edge_codes = (await db_session.execute(
+        select(KnowledgeNode.code).join(PlatformQuestionKp, PlatformQuestionKp.node_id == KnowledgeNode.id)
+        .where(PlatformQuestionKp.question_id == qid))).scalars().all()
+    assert "wr-1-2" in edge_codes
     from app.core.exceptions import AppError
     with pytest.raises(AppError):   # 图谱不存在的写作编码 → 拒绝
         await qas.confirm_analysis(db_session, question_id=qid,
