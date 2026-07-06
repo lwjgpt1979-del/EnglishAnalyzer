@@ -512,6 +512,27 @@ def schedule_doc_conversions(paper_ids: list[uuid.UUID]) -> None:
         t.add_done_callback(_convert_tasks.discard)
 
 
+_READING_EXPR_SECTIONS = ("阅读与表达", "阅读表达")
+
+
+async def _reading_expr_passage_warning(db: AsyncSession, paper_id: uuid.UUID) -> str | None:
+    """解析护栏:检测「阅读与表达题挂的短文被其他大题共用」——徐州式错挂(该段本应有独立短文,
+    若与阅读理解等共用,多半是短文漏抽、题被错挂到别段短文)。返回警告文本;None=无异常。"""
+    blocks = list((await db.execute(sa.text(
+        "SELECT DISTINCT block_id FROM platform_question "
+        "WHERE paper_id = :p AND section = ANY(:s) AND block_id IS NOT NULL"),
+        {"p": paper_id, "s": list(_READING_EXPR_SECTIONS)})).scalars().all())
+    if not blocks:
+        return None
+    shared = (await db.execute(sa.text(
+        "SELECT count(*) FROM platform_question "
+        "WHERE block_id = ANY(:b) AND NOT (section = ANY(:s))"),
+        {"b": blocks, "s": list(_READING_EXPR_SECTIONS)})).scalar()
+    if shared:
+        return "阅读与表达题的短文与其他大题共用(疑似短文漏抽/错挂,该段应有独立短文),请核对短文关联"
+    return None
+
+
 async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID,
                                 force_llm: bool = False) -> dict:
     """批量上传后「解析原题目」:读该卷本地文件 → 取文字(扫描件 PDF 走 OCR)→ 拆题 →
@@ -599,9 +620,15 @@ async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID,
             except Exception:  # noqa: BLE001
                 pass
         paper.parse_status = "parsed"
-        paper.meta = {k: v for k, v in (paper.meta or {}).items() if k != "parse_error"}  # 清除旧错误
+        # 清旧错误/警告;跑护栏,若命中错挂模式则记警告(供列表行内提示 + 导入后复查)
+        new_meta = {k: v for k, v in (paper.meta or {}).items() if k not in ("parse_error", "parse_warnings")}
+        warn = await _reading_expr_passage_warning(db, paper.id)
+        if warn:
+            new_meta["parse_warnings"] = [warn]
+            _log.warning("解析护栏(paper=%s):%s", paper.id, warn)
+        paper.meta = new_meta
         await db.flush()
-        return {"imported": imported, "status": "parsed"}
+        return {"imported": imported, "status": "parsed", "warnings": [warn] if warn else []}
     except Exception as exc:  # noqa: BLE001
         paper.parse_status = "failed"
         paper.meta = {**(paper.meta or {}), "parse_error": str(exc)[:300]}   # 存失败原因,供列表行内显示
