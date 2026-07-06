@@ -1538,6 +1538,10 @@ export interface QuestionAnalysis {
   target_form?: string
   change_type?: string
   answer_word?: string       // 短文填空(开放填空)应填的词
+  // 完成句子/翻译/句型转换(句法结构)
+  target_structure?: string
+  key_points?: string[]
+  answer?: string
   validation_skipped?: string[]
   kind?: string
   confirmed_by?: string

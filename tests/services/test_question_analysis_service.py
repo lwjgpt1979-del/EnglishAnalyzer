@@ -394,6 +394,50 @@ async def test_confirm_passage_fill_writes_and_attaches_kp(db_session):
     assert "rc-6-1" in codes
 
 
+def test_validate_sentence_analysis():
+    ok = {"target_structure": "被动语态", "kp_codes": ["jf-1-1"],
+          "key_points": ["was made", "介词 of"], "answer": "Was the first kite made of wood?"}
+    assert qas.validate_sentence_analysis(ok) == []
+    assert any("target_structure" in e for e in qas.validate_sentence_analysis({**ok, "target_structure": " "}))
+    assert any("key_points" in e for e in qas.validate_sentence_analysis({**ok, "key_points": []}))
+    assert any("answer" in e for e in qas.validate_sentence_analysis({**ok, "answer": " "}))
+    assert any("jf-" in e or "cf-" in e for e in qas.validate_sentence_analysis({**ok, "kp_codes": ["rc-1-1"]}))
+
+
+async def _seed_sentence(s) -> uuid.UUID:
+    r = await pqs.import_real_question(
+        s, stem="历史上第一个风筝是木头做的吗? ___ the first kite ___ of wood in history?",
+        answer="Was ... made", options=None,
+        question_type="填空", section="完成句子", status="published")
+    await s.flush()
+    return r.question_id
+
+
+@pytest.mark.asyncio
+async def test_suggest_dispatch_sentence(db_session):
+    """分发:完成句子(完成句子段·填空)走 sentence(目标句型 + 采分点 + 参考答案),不写库。"""
+    qid = await _seed_sentence(db_session)
+    items = await qas.suggest_analysis(db_session, question_ids=[qid])
+    ana = items[0]["analysis"]
+    assert ana and ana.get("target_structure") and ana.get("key_points") and ana.get("answer")
+    assert "distractors" not in ana and "clue_type" not in ana and "change_type" not in ana
+
+
+@pytest.mark.asyncio
+async def test_confirm_sentence_writes_and_attaches_kp(db_session):
+    qid = await _seed_sentence(db_session)
+    good = {"target_structure": "一般过去时被动语态", "kp_codes": ["jf-1-1"],
+            "key_points": ["was made", "of 表材料"], "answer": "Was the first kite made of wood in history?"}
+    saved = await qas.confirm_analysis(db_session, question_id=qid, analysis=good, admin_id=uuid.uuid4())
+    assert saved["kind"] == "sentence" and saved["confirmed_at"]
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import PlatformQuestionKp
+    codes = (await db_session.execute(
+        select(KnowledgeNode.code).join(PlatformQuestionKp, PlatformQuestionKp.node_id == KnowledgeNode.id)
+        .where(PlatformQuestionKp.question_id == qid))).scalars().all()
+    assert "jf-1-1" in codes
+
+
 @pytest.mark.asyncio
 async def test_confirm_batch_partitions_pass_fail(db_session):
     """批量确认:通过项写库、失败项带原因不写、不影响其余(降人工一键采纳的核心)。"""

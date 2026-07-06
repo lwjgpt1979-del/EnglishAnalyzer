@@ -281,6 +281,25 @@ def validate_word_fill_analysis(analysis: dict, *, context_text: str = "") -> li
     return errs
 
 
+def validate_sentence_analysis(analysis: dict, *, context_text: str = "") -> list[str]:
+    """校验完成句子/翻译/句型转换(句法结构)解析。production 型→无干扰项、不强制原文子串。
+    校验:目标句型 + 考点(jf-/cf-)+ 采分点(非空)+ 参考答案。"""
+    errs: list[str] = []
+    if not (analysis.get("target_structure") or "").strip():
+        errs.append("缺少 target_structure(目标句型/结构:强调句/宾语从句/被动/非谓语等)")
+    codes = analysis.get("kp_codes") or []
+    if not isinstance(codes, list) or not codes or not all(isinstance(c, str) and c.strip() for c in codes):
+        errs.append("kp_codes 须为非空考点编码列表(句法 jf-/词法 cf-)")
+    elif not all(str(c).startswith(("cf-", "jf-")) for c in codes):
+        errs.append("kp_codes 须为句法 jf- 或词法 cf- 编码")
+    kps = analysis.get("key_points") or []
+    if not isinstance(kps, list) or not kps or not all(isinstance(x, str) and x.strip() for x in kps):
+        errs.append("key_points 须为非空采分点列表")
+    if not (analysis.get("answer") or "").strip():
+        errs.append("缺少 answer(参考答案句)")
+    return errs
+
+
 def validate_writing_analysis(analysis: dict, *, context_text: str) -> list[str]:
     """校验一份书面表达写作解析;返回错误列表(空=通过)。
 
@@ -351,6 +370,9 @@ def analysis_constraints_text(analysis: dict | None) -> str:
     if analysis.get("kind") == "word_fill":                                 # 填空词形类:同考点+同词形变化
         lines.append(f"本题词形考点:{'、'.join(analysis.get('kp_codes') or [])};词形变化类型:"
                      f"{analysis.get('change_type', '')}(变式考同考点、同变化类型,换词/情境)")
+    if analysis.get("kind") == "sentence":                                  # 完成句子:同句法结构+同考点
+        lines.append(f"本题目标句型:{analysis.get('target_structure', '')};句法考点:"
+                     f"{'、'.join(analysis.get('kp_codes') or [])}(变式考同句型/结构,换话题/词汇)")
     dts = analysis.get("distractor_types") or {}
     if dts:                                          # 阅读:枚举错因策略
         lines.append("干扰项错因策略(变式按同策略造干扰项):" +
@@ -861,6 +883,69 @@ async def suggest_passage_fill_analysis(
     return out
 
 
+_SENTENCE_SYSTEM = (
+    "你是中小学英语句法测评专家。对给定的「完成句子/句子翻译/句型转换」题做题目层解析——考的是**句法结构**"
+    "(时态/语态/从句/非谓语/强调/倒装/固定句型)。只返回 JSON:"
+    '{"target_structure":"目标句型/结构(如 宾语从句/被动语态/It is … that 强调句/not … until)",'
+    '"kp_codes":["考点编码(句法 jf- / 词法 cf-)"],'
+    '"key_points":["采分点(必须写对的结构/连接词/形态,逐条)"],'
+    '"answer":"参考答案(完整英文句)"}。'
+    "kp_codes 必须来自给定目录且为 jf-/cf- 编码;key_points 精确到具体采分点。"
+)
+
+
+def _mock_sentence_suggestion(q: PlatformQuestion, context: str) -> dict:
+    return {"target_structure": "一般过去时", "kp_codes": ["jf-3-2-3"],
+            "key_points": ["谓语动词过去式", "语序"], "answer": q.answer or "It was made of wood."}
+
+
+async def _llm_sentence_suggestion(q: PlatformQuestion, context: str, cat: str) -> dict:
+    user = (f"【词法/句法考点目录】\n{cat}\n\n【题目(含中文提示/所给词)】{q.stem}\n【参考答案】{q.answer or '未知'}")
+    data = await complete_json(
+        system_prompt=_SENTENCE_SYSTEM, user_prompt=user, max_tokens=1200, escalate_ceiling=2400,
+        validate=lambda d: bool(d.get("kp_codes") and (d.get("target_structure") or "").strip()),
+        feature="sentence_analysis")
+    return data or {}
+
+
+async def suggest_sentence_analysis(
+    db: AsyncSession, *, question_ids: list[uuid.UUID]
+) -> list[dict]:
+    """为完成句子/翻译/句型转换生成解析建议:目标句型 + jf/cf 考点 + 采分点 + 参考答案。"""
+    pairs = await _load_with_context(db, question_ids)
+    cat = "\n".join(
+        f"{c} {n}" for c, n in (await db.execute(
+            sa.select(KnowledgeNode.code, KnowledgeNode.name).where(sa.or_(
+                KnowledgeNode.code.like("cf-%"), KnowledgeNode.code.like("jf-%")))
+            .order_by(KnowledgeNode.code))).all())
+
+    async def _gen(q, context):
+        try:
+            if is_llm_dev_mode():
+                return _mock_sentence_suggestion(q, context), None
+            return await _llm_sentence_suggestion(q, context, cat), None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"生成失败:{exc}"
+    gens = await _gather_bounded(
+        [_gen(q, ctx) for q, ctx in pairs], limit=_LLM_CONCURRENCY)
+    out = []
+    for (q, context), (ana, gen_err) in zip(pairs, gens):
+        existing = (q.meta or {}).get("analysis")
+        if gen_err:
+            out.append({"question_id": str(q.id), "analysis": None,
+                        "errors": [gen_err], "existing": existing})
+            continue
+        errs = validate_sentence_analysis(ana)
+        if not errs:
+            missing = await _kp_codes_exist(db, ana.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        _stage_draft(q, ana, errs)
+        out.append({"question_id": str(q.id), "analysis": ana,
+                    "errors": errs, "existing": existing})
+    return out
+
+
 async def suggest_analysis(
     db: AsyncSession, *, question_ids: list[uuid.UUID], force: bool = False
 ) -> list[dict]:
@@ -899,6 +984,11 @@ async def suggest_analysis(
         sec = q.section or ""
         return (q.question_type or "") == "填空" and bool(_re.search(r"短文|缺词", sec))
 
+    def _is_sentence(q: PlatformQuestion) -> bool:
+        # 完成句子/翻译/句型转换(句法结构):填空题 + 完成句子/翻译/句型转换段
+        sec = q.section or ""
+        return (q.question_type or "") == "填空" and bool(_re.search(r"完成句子|翻译|句型转换|根据.*中文", sec))
+
     cached: dict[str, dict] = {}
     to_gen: list[uuid.UUID] = []
     for qid in question_ids:
@@ -921,7 +1011,9 @@ async def suggest_analysis(
         rest3 = [i for i in rest2 if not _is_grammar_mc(qmap[i])]
         wordfill_ids = [i for i in rest3 if _is_word_fill(qmap[i])]
         passfill_ids = [i for i in rest3 if not _is_word_fill(qmap[i]) and _is_passage_fill(qmap[i])]
-        reading_ids = [i for i in rest3 if not _is_word_fill(qmap[i]) and not _is_passage_fill(qmap[i])]
+        rest4 = [i for i in rest3 if not _is_word_fill(qmap[i]) and not _is_passage_fill(qmap[i])]
+        sentence_ids = [i for i in rest4 if _is_sentence(qmap[i])]
+        reading_ids = [i for i in rest4 if not _is_sentence(qmap[i])]
         if cloze_ids:
             gen += await suggest_cloze_analysis(db, question_ids=cloze_ids)
         if writing_ids:
@@ -932,6 +1024,8 @@ async def suggest_analysis(
             gen += await suggest_word_fill_analysis(db, question_ids=wordfill_ids)
         if passfill_ids:
             gen += await suggest_passage_fill_analysis(db, question_ids=passfill_ids)
+        if sentence_ids:
+            gen += await suggest_sentence_analysis(db, question_ids=sentence_ids)
         if reading_ids:
             gen += await suggest_reading_analysis(db, question_ids=reading_ids)
         await db.commit()        # 暂存落库(生成的建议写进 meta.analysis_draft)
@@ -992,6 +1086,13 @@ async def confirm_analysis(
             if missing:
                 errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
         analysis = {**analysis, "kind": "word_fill"}
+    elif "target_structure" in analysis:              # 完成句子/翻译/句型转换(句法结构)
+        errs = validate_sentence_analysis(analysis)
+        if not errs:
+            missing = await _kp_codes_exist(db, analysis.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        analysis = {**analysis, "kind": "sentence"}
     else:                                             # 语法单选(词法/句法):kp_codes(cf-/jf-)+ 干扰机制
         errs = validate_grammar_mc_analysis(analysis)
         if not errs:
@@ -1011,7 +1112,7 @@ async def confirm_analysis(
     q.meta = new_meta
     # 把解析里的考点码挂成 platform_question_kp 边(幂等·附加):让 BKT/仿真继承考点/学情统计都吃到
     # 完形→kp_codes、写作→wr_codes、阅读→rc_code。force 跳过校验时,只挂图谱里真实存在的码。
-    codes = (analysis.get("kp_codes") or []) if saved["kind"] in ("cloze", "grammar_mc", "word_fill", "passage_fill") else \
+    codes = (analysis.get("kp_codes") or []) if saved["kind"] in ("cloze", "grammar_mc", "word_fill", "passage_fill", "sentence") else \
             (analysis.get("wr_codes") or []) if saved["kind"] == "writing" else \
             [analysis.get("rc_code")]
     codes = [c for c in codes if c and str(c).strip()]

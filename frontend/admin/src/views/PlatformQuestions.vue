@@ -254,6 +254,9 @@ const anaIsWordFill = computed(() => anaTarget.value?.question_type === '填空'
 // 短文填空(开放填空):填空 + 短文/缺词段
 const anaIsPassageFill = computed(() => anaTarget.value?.question_type === '填空'
   && /短文|缺词/.test(anaTarget.value?.section || ''))
+// 完成句子/翻译/句型转换(句法结构):填空 + 完成句子/翻译/句型转换段
+const anaIsSentence = computed(() => anaTarget.value?.question_type === '填空'
+  && /完成句子|翻译|句型转换/.test(anaTarget.value?.section || ''))
 const WRITING_GENRES = ['记叙文', '议论文', '说明文', '应用文']
 const WRITING_TENSES = ['一般现在时', '一般过去时', '一般将来时', '现在完成时', '现在进行时', '过去进行时', '混合时态']
 type DistractorNote = { meaning: string; why_wrong: string }
@@ -271,17 +274,20 @@ const _emptyDss = (): Record<string, DistractorNote> => ({
 // 填空词形类表单:所给词/目标形式/词形变化类型
 type WordFillForm = { given: string; target_form: string; change_type: string }
 const _emptyWf = (): WordFillForm => ({ given: '', target_form: '', change_type: '' })
+// 完成句子表单:目标句型/采分点(一行一条)/参考答案
+type SentenceForm = { target_structure: string; key_points: string; answer: string }
+const _emptyStc = (): SentenceForm => ({ target_structure: '', key_points: '', answer: '' })
 const anaForm = ref<{ rc_code: string; evidence: string; answer_reason: string;
   slot: string; clue_type: string; clue: string; kp_codes: string; answer_word: string;
-  dss: Record<string, DistractorNote>; w: WritingForm; wf: WordFillForm }>({
+  dss: Record<string, DistractorNote>; w: WritingForm; wf: WordFillForm; stc: SentenceForm }>({
   rc_code: '', evidence: '', answer_reason: '',
   slot: '', clue_type: '', clue: '', kp_codes: '', answer_word: '',
-  dss: _emptyDss(), w: _emptyW(), wf: _emptyWf(),
+  dss: _emptyDss(), w: _emptyW(), wf: _emptyWf(), stc: _emptyStc(),
 })
 function _resetAnaForm() {
   anaForm.value = { rc_code: '', evidence: '', answer_reason: '',
     slot: '', clue_type: '', clue: '', kp_codes: '', answer_word: '',
-    dss: _emptyDss(), w: _emptyW(), wf: _emptyWf() }
+    dss: _emptyDss(), w: _emptyW(), wf: _emptyWf(), stc: _emptyStc() }
 }
 function _fillAnaForm(src: QuestionAnalysis | null | undefined) {
   if (!src) { _resetAnaForm(); return }
@@ -299,12 +305,16 @@ function _fillAnaForm(src: QuestionAnalysis | null | undefined) {
   w.pitfalls = (src.pitfalls || []).map(p => (p.type ? `${p.type}: ${p.trap}` : p.trap)).join('\n')
   const wf = _emptyWf()
   wf.given = src.given || ''; wf.target_form = src.target_form || ''; wf.change_type = src.change_type || ''
+  const stc = _emptyStc()
+  stc.target_structure = src.target_structure || ''
+  stc.key_points = (src.key_points || []).join('\n')
+  stc.answer = src.answer || ''
   anaForm.value = {
     rc_code: src.rc_code || '', evidence: src.evidence || '',
     answer_reason: src.answer_reason || '',
     slot: src.slot || '', clue_type: src.clue_type || '', clue: src.clue || '',
     kp_codes: (src.kp_codes || []).join(','), answer_word: src.answer_word || '',
-    dss, w, wf,
+    dss, w, wf, stc,
   }
 }
 async function openAnalysis(q: PaperQuestion) {
@@ -391,6 +401,11 @@ async function saveAnalysis() {
       // 短文填空:clue_type + clue + answer_word + kp_codes(有 clue_type 但无 distractors → 后端分发 passage_fill)
       payload = { clue_type: anaForm.value.clue_type, clue: anaForm.value.clue.trim(),
         answer_word: anaForm.value.answer_word.trim(), kp_codes: csv(anaForm.value.kp_codes) }
+    } else if (anaIsSentence.value) {
+      // 完成句子:target_structure + kp_codes + key_points + answer(有 target_structure → 后端分发 sentence)
+      const st = anaForm.value.stc
+      payload = { target_structure: st.target_structure.trim(), kp_codes: csv(anaForm.value.kp_codes),
+        key_points: lines(st.key_points), answer: st.answer.trim() }
     } else if (anaIsGrammar.value) {
       // 语法单选:kp_codes(cf/jf)+ 答案依据 + 干扰机制(无 rc_code/clue_type → 后端分发到 grammar_mc)
       payload = { kp_codes: csv(anaForm.value.kp_codes),
@@ -417,7 +432,7 @@ const anaBatchItems = ref<AnalysisSuggestItem[]>([])
 const anaBatchQmap = ref<Record<string, PaperQuestion>>({})
 const anaBatchPassCount = computed(() => anaBatchItems.value.filter(it => it.analysis && !it.errors.length).length)
 function analyzableSection(sec: { name: string }): boolean {
-  return /完形|完型|阅读|书面|写作|单项|选择填空|词汇|词语|动词|单词|适当形式|词形|短文填空|缺词/.test(sec.name)
+  return /完形|完型|阅读|书面|写作|单项|选择填空|词汇|词语|动词|单词|适当形式|词形|短文填空|缺词|完成句子|翻译|句型转换/.test(sec.name)
 }
 // 单题是否可做题目层解析:类型即完型/阅读/写作;语法单选(单选·非阅读/听力段);
 // 填空词形类(填空·词形段);或阅读理解题机械形式常为「单选/填空」但段名表明是阅读/完形。
@@ -428,6 +443,7 @@ function isAnalyzableQuestion(q: { question_type: string }, sectionName: string)
   if (q.question_type === '填空' && /词汇|词语|动词|单词|所给|适当形式|词形/.test(sec)
     && !/短文|完成句子|翻译|句型转换|缺词/.test(sec)) return true          // 填空词形类
   if (q.question_type === '填空' && /短文|缺词/.test(sec)) return true      // 短文填空(开放填空)
+  if (q.question_type === '填空' && /完成句子|翻译|句型转换/.test(sec)) return true   // 完成句子(句法)
   return /完形|完型|阅读/.test(sec) && (q.question_type === '单选' || q.question_type === '填空')
 }
 function anaSummary(it: AnalysisSuggestItem): string {
@@ -1246,6 +1262,22 @@ onMounted(load)
               <el-input v-model="anaForm.kp_codes" placeholder="cf-/jf-/rc-,逗号分隔(线索轴为主)" />
             </el-form-item>
           </template>
+          <!-- 完成句子/翻译/句型转换(句法结构):目标句型 + 考点 + 采分点 + 参考答案。production 型无干扰项 -->
+          <template v-else-if="anaIsSentence">
+            <el-form-item label="目标句型">
+              <el-input v-model="anaForm.stc.target_structure" placeholder="如 宾语从句/被动语态/It is … that 强调句/not … until" />
+            </el-form-item>
+            <el-form-item label="考点编码">
+              <el-input v-model="anaForm.kp_codes" placeholder="句法 jf- / 词法 cf-,逗号分隔" />
+            </el-form-item>
+            <el-form-item label="采分点">
+              <el-input v-model="anaForm.stc.key_points" type="textarea" :rows="2"
+                placeholder="一行一条(必须写对的结构/连接词/形态)" />
+            </el-form-item>
+            <el-form-item label="参考答案">
+              <el-input v-model="anaForm.stc.answer" type="textarea" :rows="2" placeholder="完整英文参考句" />
+            </el-form-item>
+          </template>
           <!-- 语法单选(词法/句法):cf-/jf- 考点 + 答案规则依据(无原文子串,单选自足)-->
           <template v-else-if="anaIsGrammar">
             <el-form-item label="考点编码">
@@ -1269,8 +1301,8 @@ onMounted(load)
                 placeholder="由定位句到正确项的推理(1-2 句)" />
             </el-form-item>
           </template>
-          <!-- 干扰项=原义/义项+干扰机制。正确项留空;写作/填空词形类/短文填空(开放填空)无此项 -->
-          <el-form-item v-if="!anaIsWriting && !anaIsWordFill && !anaIsPassageFill" label="干扰项">
+          <!-- 干扰项=原义/义项+干扰机制。正确项留空;写作/词形/短文填空/完成句子(开放/产出型)无此项 -->
+          <el-form-item v-if="!anaIsWriting && !anaIsWordFill && !anaIsPassageFill && !anaIsSentence" label="干扰项">
             <div style="display:flex;flex-direction:column;gap:6px;width:100%">
               <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
                 <span style="width:18px;color:#606266">{{ k }}</span>
