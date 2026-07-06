@@ -22,6 +22,48 @@ from app.services.llm_provider import complete_json, is_llm_dev_mode
 _DIM_OF_WR = {"wr-1": "content", "wr-2": "accuracy", "wr-3": "richness", "wr-4": "organization",
               "wr-5": "mechanics", "wr-6": "content"}
 
+# ── 写作评分量表(运营可配置:满分/各维达标线)。system_configs.writing_rubric;此为缺失兜底 ──
+_WRITING_RUBRIC_KEY = "writing_rubric"
+DEFAULT_WRITING_RUBRIC = {
+    "full_score": 20,               # 满分(中考 20;高考可配 25 等)
+    "accuracy_pass_ratio": 0.7,     # 语言准确达标线:score/full ≥ 此比例
+    "organization_pass_ratio": 0.6, # 结构连贯达标线
+    "richness_min_targets": 1,      # 语言丰富达标:至少命中的目标句型数
+}
+
+
+async def get_writing_rubric(db: AsyncSession) -> dict:
+    """读 system_configs.writing_rubric(满分/各维达标线)。缺失/缺字段用默认兜底。"""
+    from app.models.d9_system import SystemConfig
+    cfg = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _WRITING_RUBRIC_KEY))).scalar_one_or_none()
+    data = (cfg.value if isinstance(cfg.value, dict) else {}) if cfg else {}
+    return {**DEFAULT_WRITING_RUBRIC, **data}
+
+
+async def update_writing_rubric(db: AsyncSession, *, rubric: dict, updated_by) -> dict:
+    """运营改写作评分量表:upsert system_configs.writing_rubric。只接受已知字段,数值兜底。"""
+    import uuid as _uuid
+    from app.models.d9_system import SystemConfig
+    merged = {**DEFAULT_WRITING_RUBRIC}
+    if isinstance(rubric.get("full_score"), (int, float)):
+        merged["full_score"] = max(1, int(rubric["full_score"]))
+    for k in ("accuracy_pass_ratio", "organization_pass_ratio"):
+        if isinstance(rubric.get(k), (int, float)):
+            merged[k] = min(1.0, max(0.0, float(rubric[k])))
+    if isinstance(rubric.get("richness_min_targets"), (int, float)):
+        merged["richness_min_targets"] = max(0, int(rubric["richness_min_targets"]))
+    cfg = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _WRITING_RUBRIC_KEY))).scalar_one_or_none()
+    if cfg is None:
+        db.add(SystemConfig(id=_uuid.uuid4(), key=_WRITING_RUBRIC_KEY, value=merged,
+                            description="书面表达评分量表(满分/各维达标线)", updated_by=updated_by))
+    else:
+        cfg.value = merged
+        cfg.updated_by = updated_by
+    await db.flush()
+    return merged
+
 _SYSTEM_PROMPT = (
     "你是中小学英语书面表达阅卷老师兼写作教练。对照【写作解析】(要点/范文/目标句型/体裁·主时态)批改学生作文,"
     "宽松合理、面向提分。只返回 JSON,键:\n"
@@ -94,23 +136,24 @@ async def grade_writing(*, analysis: dict, student_essay: str, prompt: str = "",
     return data
 
 
-def _dim_passes(result: dict) -> dict:
-    """5 维各自是否达标 → 供 BKT 多维掌握信号(维度独立,一维弱不否决另一维)。"""
+def _dim_passes(result: dict, rubric: dict | None = None) -> dict:
+    """5 维各自是否达标 → 供 BKT 多维掌握信号(维度独立,一维弱不否决另一维)。达标线读量表。"""
+    r = {**DEFAULT_WRITING_RUBRIC, **(rubric or {})}
     pts = result.get("points") or []
-    content = bool(pts) and all(p.get("hit") for p in pts)        # 要点全覆盖
+    content = bool(pts) and all(p.get("hit") for p in pts)        # 要点全覆盖(客观锚,不设配置)
     acc = result.get("accuracy") or {}
-    accuracy = int(acc.get("score", 0)) >= int(acc.get("full", 1)) * 0.7   # 准确率≥70%
+    accuracy = float(acc.get("score", 0)) >= float(acc.get("full", 1)) * r["accuracy_pass_ratio"]
     rich = result.get("richness") or {}
-    richness = len(rich.get("used_targets") or []) >= 1            # 至少用 1 个目标句型
+    richness = len(rich.get("used_targets") or []) >= r["richness_min_targets"]
     org = result.get("organization") or {}
-    organization = int(org.get("score", 0)) >= int(org.get("full", 1)) * 0.6
+    organization = float(org.get("score", 0)) >= float(org.get("full", 1)) * r["organization_pass_ratio"]
     return {"content": content, "accuracy": accuracy, "richness": richness,
             "organization": organization, "mechanics": accuracy}
 
 
 async def grade_platform_writing_question(
     db: AsyncSession, *, student_id: uuid.UUID, question_id: uuid.UUID,
-    student_essay: str, full_score: int = 20,
+    student_essay: str, full_score: int | None = None,
 ) -> dict:
     """批改平台书面表达题并落 BKT:解析(要点/范文)由服务端从题 meta 取(不下发前端 → 防作弊)。
 
@@ -130,9 +173,11 @@ async def grade_platform_writing_question(
     if not analysis.get("points"):
         raise AppError(code=400, message="该题尚无写作解析(要点/范文),请先在后台完成解析确认")
 
+    rubric = await get_writing_rubric(db)          # 满分/达标线读后台配置(铁律:运营可配置不写死)
     result = await grade_writing(
-        analysis=analysis, student_essay=student_essay, prompt=q.stem or "", full_score=full_score)
-    passes = _dim_passes(result)
+        analysis=analysis, student_essay=student_essay, prompt=q.stem or "",
+        full_score=full_score or rubric["full_score"])
+    passes = _dim_passes(result, rubric)
 
     # 题挂的 wr-* 节点(code→维度);没有则用解析 wr_codes 解析
     rows = (await db.execute(
@@ -186,6 +231,7 @@ async def list_writing_practice_questions(
         ).where(PlatformQuestionKp.node_id == node_id)
     rows = (await db.execute(
         stmt.order_by(PlatformQuestion.created_at.desc()).limit(limit))).all()
+    full_score = (await get_writing_rubric(db))["full_score"]      # 满分读后台配置
     out = []
     for r in rows:
         a = (r.meta or {}).get("analysis") or {}
@@ -197,6 +243,6 @@ async def list_writing_practice_questions(
                         "point": (p.get("point") if isinstance(p, dict) else str(p))}
                        for i, p in enumerate(a.get("points") or [])],
             "structure": a.get("structure") or [],       # S1 搭框架脚手架
-            "full_score": 20,
+            "full_score": full_score,
         })
     return out

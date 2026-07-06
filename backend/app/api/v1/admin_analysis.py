@@ -16,6 +16,7 @@ from app.core.security import require_role
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.services import question_analysis_service as qas
+from app.services import writing_grade_service as wgs
 
 router = APIRouter(prefix="/admin", tags=["admin-analysis"])
 
@@ -70,3 +71,25 @@ async def confirm_analysis_batch_api(body: ConfirmBatchIn, db: DbDep, admin: Adm
         db, items=[it.model_dump() for it in body.items], admin_id=admin.id)
     await db.commit()
     return make_ok(res)
+
+
+class WritingRubricUpdate(BaseModel):
+    full_score: int | None = Field(None, ge=1, le=100)
+    accuracy_pass_ratio: float | None = Field(None, ge=0, le=1)
+    organization_pass_ratio: float | None = Field(None, ge=0, le=1)
+    richness_min_targets: int | None = Field(None, ge=0, le=10)
+
+
+@router.get("/writing-rubric", response_model=BaseResponse[dict])
+async def get_writing_rubric_api(db: DbDep, admin: AdminDep):
+    """读书面表达评分量表(满分/各维达标线);缺失返回默认兜底。"""
+    return make_ok(await wgs.get_writing_rubric(db))
+
+
+@router.put("/writing-rubric", response_model=BaseResponse[dict])
+async def update_writing_rubric_api(body: WritingRubricUpdate, db: DbDep, admin: AdminDep):
+    """运营改写作评分量表(满分/达标线),写 system_configs.writing_rubric。"""
+    saved = await wgs.update_writing_rubric(
+        db, rubric=body.model_dump(exclude_none=True), updated_by=admin.id)
+    await db.commit()
+    return make_ok(saved)

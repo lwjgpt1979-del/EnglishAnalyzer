@@ -1552,6 +1552,19 @@ export function suggestQuestionAnalysis(questionIds: string[], force = false): P
 export function confirmQuestionAnalysis(questionId: string, analysis: QuestionAnalysis, force = false): Promise<QuestionAnalysis> {
   return unwrap(request.put(`/admin/platform-questions/${questionId}/analysis`, { analysis, force }))
 }
+// 书面表达评分量表(满分/各维达标线)——运营可配置,读后台配置不写死
+export interface WritingRubric {
+  full_score: number
+  accuracy_pass_ratio: number
+  organization_pass_ratio: number
+  richness_min_targets: number
+}
+export function getWritingRubric(): Promise<WritingRubric> {
+  return unwrap(request.get('/admin/writing-rubric'))
+}
+export function updateWritingRubric(body: Partial<WritingRubric>): Promise<WritingRubric> {
+  return unwrap(request.put('/admin/writing-rubric', body))
+}
 // 批量一键采纳(降人工):通过硬校验的写库、失败的返原因
 export function confirmQuestionAnalysisBatch(
   items: { question_id: string; analysis: QuestionAnalysis }[],

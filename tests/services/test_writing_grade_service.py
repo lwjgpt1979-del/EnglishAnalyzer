@@ -54,6 +54,27 @@ def test_dim_passes():
     assert not p2["content"] and not p2["accuracy"] and not p2["richness"] and not p2["organization"]
 
 
+def test_dim_passes_uses_rubric():
+    # 准确 7/10:默认 0.7 达标;若量表调到 0.8 则不达标(达标线可配)
+    res = {"points": [{"hit": True}], "accuracy": {"score": 7, "full": 10},
+           "richness": {"used_targets": ["x"]}, "organization": {"score": 3, "full": 4}}
+    assert wgs._dim_passes(res)["accuracy"] is True
+    assert wgs._dim_passes(res, {"accuracy_pass_ratio": 0.8})["accuracy"] is False
+    # 丰富达标线可配:要求 2 个目标句型时,只用 1 个不达标
+    assert wgs._dim_passes(res, {"richness_min_targets": 2})["richness"] is False
+
+
+@pytest.mark.asyncio
+async def test_writing_rubric_config_roundtrip(db_session):
+    r0 = await wgs.get_writing_rubric(db_session)
+    assert r0["full_score"] == 20 and r0["accuracy_pass_ratio"] == 0.7   # 默认兜底
+    saved = await wgs.update_writing_rubric(       # updated_by 可空(自动流程无操作人);端点传真 admin.id
+        db_session, rubric={"full_score": 25, "accuracy_pass_ratio": 0.8}, updated_by=None)
+    assert saved["full_score"] == 25 and saved["accuracy_pass_ratio"] == 0.8
+    r1 = await wgs.get_writing_rubric(db_session)      # 读回持久化值 + 未改字段仍兜底
+    assert r1["full_score"] == 25 and r1["organization_pass_ratio"] == 0.6
+
+
 async def _seed_writing_q(s, *, status="published", with_analysis=True) -> uuid.UUID:
     r = await pqs.import_real_question(
         s, stem="以 To be a better self 为题写一篇演讲稿。", answer=None, options=None,

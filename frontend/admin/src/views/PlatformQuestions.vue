@@ -6,8 +6,8 @@ import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
   createKnowledgeNode, genSimFromReal, suggestQuestionAnalysis, confirmQuestionAnalysis,
-  confirmQuestionAnalysisBatch,
-  type QuestionAnalysis, type AnalysisSuggestItem,
+  confirmQuestionAnalysisBatch, getWritingRubric, updateWritingRubric,
+  type QuestionAnalysis, type AnalysisSuggestItem, type WritingRubric,
   type QuestionKpRef, type KpPrompt, type KpProposal,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions, batchUploadPapers, parsePaper, convertPaperDoc,
   listRegions, uploadImageViaPresign,
@@ -448,6 +448,24 @@ async function adoptAnaBatch() {
 function editAnaBatchItem(it: AnalysisSuggestItem) {
   const q = anaBatchQmap.value[it.question_id]
   if (q) { anaBatchDlg.value = false; openAnalysis(q) }   // 复用单题弹窗人工改
+}
+
+// ── 书面表达评分量表(运营可配置:满分/各维达标线)──
+const rubricDlg = ref(false)
+const rubricSaving = ref(false)
+const rubric = ref<WritingRubric>({ full_score: 20, accuracy_pass_ratio: 0.7, organization_pass_ratio: 0.6, richness_min_targets: 1 })
+async function openRubric() {
+  rubricDlg.value = true
+  try { rubric.value = await getWritingRubric() } catch (e: any) { ElMessage.error(e?.message || '读取量表失败') }
+}
+async function saveRubric() {
+  rubricSaving.value = true
+  try {
+    rubric.value = await updateWritingRubric(rubric.value)
+    ElMessage.success('写作评分量表已保存(全局生效)')
+    rubricDlg.value = false
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+  finally { rubricSaving.value = false }
 }
 
 // ── 一键挂某大题:选该题型提示词 → AI 对该段每题建议 ──
@@ -1021,6 +1039,7 @@ onMounted(load)
           <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
           <el-button type="success" :disabled="curPaper?.status === 'published'" @click="onPublishPaper">发布成为母题</el-button>
           <el-button type="primary" :disabled="!checkedIds.length" @click="onGenSimChecked">勾选题派生仿真</el-button>
+          <el-button text type="info" @click="openRubric" title="书面表达 AI 评分的满分与各维达标线(运营可配置,读后台配置)">写作评分量表</el-button>
           <span v-if="simGen.running" style="font-size:12px;color:#409eff">后台派生中 {{ simGen.done }}/{{ simGen.total || '…' }} 题位，已生成 {{ simGen.generated }} 道</span>
         </div>
         <div style="max-height:520px;overflow:auto">
@@ -1260,6 +1279,32 @@ onMounted(load)
           <span @click="onPickProposalParent(data)" style="cursor:pointer">{{ data.name }}</span>
         </template>
       </el-tree>
+    </el-dialog>
+
+    <!-- 书面表达评分量表(运营可配置,全局生效)-->
+    <el-dialog v-model="rubricDlg" title="书面表达评分量表(运营可配置)" width="480px" append-to-body>
+      <div style="font-size:12px;color:#909399;margin-bottom:14px">AI 5 维批改的满分与各维达标线,全局生效(学生端满分、掌握判定均读此配置)。</div>
+      <el-form label-width="150px" size="small">
+        <el-form-item label="满分">
+          <el-input-number v-model="rubric.full_score" :min="1" :max="100" />
+          <span style="margin-left:8px;color:#909399;font-size:12px">中考 20 / 高考可设 25</span>
+        </el-form-item>
+        <el-form-item label="语言准确达标线">
+          <el-input-number v-model="rubric.accuracy_pass_ratio" :min="0" :max="1" :step="0.05" :precision="2" />
+          <span style="margin-left:8px;color:#909399;font-size:12px">得分/满分 ≥ 此比例算达标</span>
+        </el-form-item>
+        <el-form-item label="结构连贯达标线">
+          <el-input-number v-model="rubric.organization_pass_ratio" :min="0" :max="1" :step="0.05" :precision="2" />
+        </el-form-item>
+        <el-form-item label="丰富度达标(目标句型数)">
+          <el-input-number v-model="rubric.richness_min_targets" :min="0" :max="10" />
+          <span style="margin-left:8px;color:#909399;font-size:12px">至少命中几个目标句型算达标</span>
+        </el-form-item>
+      </el-form>
+      <div style="text-align:right">
+        <el-button @click="rubricDlg = false">取消</el-button>
+        <el-button type="primary" :loading="rubricSaving" @click="saveRubric">保存</el-button>
+      </div>
     </el-dialog>
 
     <!-- 大题级 AI 建议:选该题型提示词 → AI 对整段每题建议考点 -->
