@@ -220,6 +220,30 @@ def validate_cloze_analysis(analysis: dict, *, context_text: str) -> list[str]:
     return errs
 
 
+def validate_grammar_mc_analysis(analysis: dict, *, context_text: str = "") -> list[str]:
+    """校验语法单选(词法/句法)解析。单选自足→**不强制原文子串**;校验:考点(cf-/jf-)+ 答案依据 +
+    干扰项「原义/形态 + 违规机制」双全。"""
+    errs: list[str] = []
+    codes = analysis.get("kp_codes") or []
+    if not isinstance(codes, list) or not codes or not all(isinstance(c, str) and c.strip() for c in codes):
+        errs.append("kp_codes 须为非空考点编码列表(词法 cf-/句法 jf-)")
+    elif not all(str(c).startswith(("cf-", "jf-")) for c in codes):
+        errs.append("kp_codes 须为词法 cf- 或句法 jf- 编码")
+    if not (analysis.get("answer_reason") or "").strip():
+        errs.append("缺少 answer_reason(正确项命中哪条语法/搭配规则)")
+    dts = analysis.get("distractors") or {}
+    if not isinstance(dts, dict):
+        errs.append("distractors 须为对象 {选项: {meaning, why_wrong}}")
+    else:
+        for k, v in dts.items():
+            if str(k).upper() not in {"A", "B", "C", "D"}:
+                errs.append(f"干扰项键非法:{k}")
+            if not isinstance(v, dict) or not (v.get("meaning") or "").strip() \
+                    or not (v.get("why_wrong") or "").strip():
+                errs.append(f"干扰项 {k} 须含 原义/形态(meaning)+违规机制(why_wrong)")
+    return errs
+
+
 def validate_writing_analysis(analysis: dict, *, context_text: str) -> list[str]:
     """校验一份书面表达写作解析;返回错误列表(空=通过)。
 
@@ -285,6 +309,8 @@ def analysis_constraints_text(analysis: dict | None) -> str:
         tgts = [t for t in (analysis.get("target_expressions") or []) if (t or "").strip()]
         if tgts:
             lines.append("目标高级句型(变式范文须示范同类句型):" + "; ".join(tgts)[:300])
+    if analysis.get("kind") == "grammar_mc" and analysis.get("kp_codes"):   # 语法单选:同词法/句法考点
+        lines.append("本题语法考点:" + "、".join(analysis["kp_codes"]) + "(变式必须考同考点、同结构,只换话题/词汇)")
     dts = analysis.get("distractor_types") or {}
     if dts:                                          # 阅读:枚举错因策略
         lines.append("干扰项错因策略(变式按同策略造干扰项):" +
@@ -600,6 +626,72 @@ async def suggest_writing_analysis(
     return out
 
 
+_GRAMMAR_MC_SYSTEM = (
+    "你是中小学英语语法命题测评专家。对给定的语法单项选择题做「题目层解析」——考的是词法/句法(时态/非谓语/"
+    "从句/介词/情态/搭配等),不是话题。只返回 JSON:"
+    '{"kp_codes":["考点编码(从目录挑,词法 cf- / 句法 jf-)"],'
+    '"answer_reason":"正确项命中哪条语法/搭配规则(1-2句)",'
+    '"distractors":{"A":{"meaning":"该选项的形态/义(中文)","why_wrong":"为何错——违反哪条规则(时态不符/搭配错/结构非法等)"},...}}。'
+    "distractors 只列**非正确项**;每项 meaning(它是什么)+why_wrong(违反的规则)双全。"
+    "kp_codes 必须来自给定目录且为 cf-/jf- 编码。"
+)
+
+
+def _mock_grammar_mc_suggestion(q: PlatformQuestion, context: str) -> dict:
+    ans = (q.answer or "").strip().upper()
+    opts = q.options if isinstance(q.options, list) else []
+    dss = {chr(65 + i): {"meaning": f"mock 形态{i}", "why_wrong": "mock:与本句时态/搭配不符"}
+           for i in range(len(opts)) if chr(65 + i) != ans}
+    return {"kp_codes": ["jf-1-1"], "answer_reason": "dev-mock:命中该语法规则。", "distractors": dss}
+
+
+async def _llm_grammar_mc_suggestion(q: PlatformQuestion, context: str, gram_catalog: str) -> dict:
+    opts = json.dumps(q.options, ensure_ascii=False) if q.options else "(选项在题干)"
+    user = (f"【词法/句法考点目录】\n{gram_catalog}\n\n【题目】{q.stem}\n【选项】{opts}\n【正确答案】{q.answer or '未知'}")
+    data = await complete_json(
+        system_prompt=_GRAMMAR_MC_SYSTEM, user_prompt=user, max_tokens=1200, escalate_ceiling=2400,
+        validate=lambda d: bool(d.get("kp_codes")), feature="grammar_mc_analysis")
+    return data or {}
+
+
+async def suggest_grammar_mc_analysis(
+    db: AsyncSession, *, question_ids: list[uuid.UUID]
+) -> list[dict]:
+    """为语法单选生成「题目层解析」建议并暂存:cf-/jf- 考点 + 答案规则依据 + 干扰项违规机制。"""
+    pairs = await _load_with_context(db, question_ids)
+    gram_catalog = "\n".join(
+        f"{c} {n}" for c, n in (await db.execute(
+            sa.select(KnowledgeNode.code, KnowledgeNode.name).where(sa.or_(
+                KnowledgeNode.code.like("cf-%"), KnowledgeNode.code.like("jf-%")))
+            .order_by(KnowledgeNode.code))).all())
+
+    async def _gen(q, context):
+        try:
+            if is_llm_dev_mode():
+                return _mock_grammar_mc_suggestion(q, context), None
+            return await _llm_grammar_mc_suggestion(q, context, gram_catalog), None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"生成失败:{exc}"
+    gens = await _gather_bounded(
+        [_gen(q, ctx) for q, ctx in pairs], limit=_LLM_CONCURRENCY)
+    out = []
+    for (q, context), (ana, gen_err) in zip(pairs, gens):
+        existing = (q.meta or {}).get("analysis")
+        if gen_err:
+            out.append({"question_id": str(q.id), "analysis": None,
+                        "errors": [gen_err], "existing": existing})
+            continue
+        errs = validate_grammar_mc_analysis(ana)
+        if not errs:
+            missing = await _kp_codes_exist(db, ana.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        _stage_draft(q, ana, errs)
+        out.append({"question_id": str(q.id), "analysis": ana,
+                    "errors": errs, "existing": existing})
+    return out
+
+
 async def suggest_analysis(
     db: AsyncSession, *, question_ids: list[uuid.UUID], force: bool = False
 ) -> list[dict]:
@@ -618,6 +710,11 @@ async def suggest_analysis(
         qt, sec = q.question_type, q.section
         return (qt or "") == "写作" or "书面" in (sec or "") or "写作" in (sec or "")
 
+    def _is_grammar_mc(q: PlatformQuestion) -> bool:
+        # 语法单选(词法/句法):题型单选,且不是阅读理解单选、不是听力单选
+        sec = q.section or ""
+        return (q.question_type or "") == "单选" and "阅读" not in sec and "听力" not in sec
+
     cached: dict[str, dict] = {}
     to_gen: list[uuid.UUID] = []
     for qid in question_ids:
@@ -633,12 +730,16 @@ async def suggest_analysis(
     gen: list[dict] = []
     if to_gen:
         cloze_ids = [i for i in to_gen if _is_cloze(qmap[i])]
-        writing_ids = [i for i in to_gen if not _is_cloze(qmap[i]) and _is_writing(qmap[i])]
-        reading_ids = [i for i in to_gen if not _is_cloze(qmap[i]) and not _is_writing(qmap[i])]
+        rest = [i for i in to_gen if not _is_cloze(qmap[i])]
+        writing_ids = [i for i in rest if _is_writing(qmap[i])]
+        grammar_ids = [i for i in rest if not _is_writing(qmap[i]) and _is_grammar_mc(qmap[i])]
+        reading_ids = [i for i in rest if not _is_writing(qmap[i]) and not _is_grammar_mc(qmap[i])]
         if cloze_ids:
             gen += await suggest_cloze_analysis(db, question_ids=cloze_ids)
         if writing_ids:
             gen += await suggest_writing_analysis(db, question_ids=writing_ids)
+        if grammar_ids:
+            gen += await suggest_grammar_mc_analysis(db, question_ids=grammar_ids)
         if reading_ids:
             gen += await suggest_reading_analysis(db, question_ids=reading_ids)
         await db.commit()        # 暂存落库(生成的建议写进 meta.analysis_draft)
@@ -680,11 +781,18 @@ async def confirm_analysis(
             if missing:
                 errs = [f"wr_codes 不在图谱:{','.join(missing)}"]
         analysis = {**analysis, "kind": "writing"}
-    else:                                             # 阅读题目层解析
+    elif "rc_code" in analysis:                       # 阅读题目层解析
         errs = validate_reading_analysis(analysis, context_text=context)
         if not errs and not await _rc_code_exists(db, analysis.get("rc_code", "")):
             errs = [f"rc_code 不在图谱:{analysis.get('rc_code')}"]
         analysis = {**analysis, "kind": "reading"}
+    else:                                             # 语法单选(词法/句法):kp_codes(cf-/jf-)+ 干扰机制
+        errs = validate_grammar_mc_analysis(analysis)
+        if not errs:
+            missing = await _kp_codes_exist(db, analysis.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        analysis = {**analysis, "kind": "grammar_mc"}
     if errs and not force:
         raise AppError(code=400, message="解析未通过校验:" + ";".join(errs))
     saved = {**analysis,
@@ -697,7 +805,7 @@ async def confirm_analysis(
     q.meta = new_meta
     # 把解析里的考点码挂成 platform_question_kp 边(幂等·附加):让 BKT/仿真继承考点/学情统计都吃到
     # 完形→kp_codes、写作→wr_codes、阅读→rc_code。force 跳过校验时,只挂图谱里真实存在的码。
-    codes = (analysis.get("kp_codes") or []) if saved["kind"] == "cloze" else \
+    codes = (analysis.get("kp_codes") or []) if saved["kind"] in ("cloze", "grammar_mc") else \
             (analysis.get("wr_codes") or []) if saved["kind"] == "writing" else \
             [analysis.get("rc_code")]
     codes = [c for c in codes if c and str(c).strip()]

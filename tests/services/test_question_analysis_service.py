@@ -253,6 +253,57 @@ async def test_confirm_cloze_writes_with_kind(db_session):
                                    admin_id=uuid.uuid4())
 
 
+def test_validate_grammar_mc_analysis():
+    ok = {"kp_codes": ["jf-1-1"], "answer_reason": "一般现在时第三人称加 s",
+          "distractors": {"A": {"meaning": "原形", "why_wrong": "主语第三人称单数,谓语须加 s"}}}
+    assert qas.validate_grammar_mc_analysis(ok) == []
+    # 非 cf-/jf- 编码 → 拒
+    assert any("cf-" in e or "jf-" in e for e in qas.validate_grammar_mc_analysis(
+        {**ok, "kp_codes": ["rc-1-1"]}))
+    # kp_codes 空 / 答案依据空 / 干扰项半空
+    assert any("kp_codes" in e for e in qas.validate_grammar_mc_analysis({**ok, "kp_codes": []}))
+    assert any("answer_reason" in e for e in qas.validate_grammar_mc_analysis({**ok, "answer_reason": " "}))
+    assert any("违规机制" in e or "meaning" in e for e in qas.validate_grammar_mc_analysis(
+        {**ok, "distractors": {"A": {"meaning": "原形", "why_wrong": " "}}}))
+
+
+async def _seed_grammar_mc(s, *, answer="B") -> uuid.UUID:
+    r = await pqs.import_real_question(
+        s, stem="He ____ to school every day.", answer=answer,
+        options=["A. go", "B. goes", "C. going", "D. gone"],
+        question_type="单选", section="单项选择", status="published")
+    await s.flush()
+    return r.question_id
+
+
+@pytest.mark.asyncio
+async def test_suggest_dispatch_grammar_mc(db_session):
+    """分发:语法单选(单选·非阅读/听力段)走 grammar_mc 建议(cf/jf 考点 + 干扰项违规机制),不写库。"""
+    qid = await _seed_grammar_mc(db_session)
+    items = await qas.suggest_analysis(db_session, question_ids=[qid])
+    ana = items[0]["analysis"]
+    assert ana and ana.get("kp_codes") and ana.get("distractors")   # grammar_mc 形态(非 rc_code/clue_type/genre)
+    assert "rc_code" not in ana and "clue_type" not in ana
+    q = (await db_session.execute(
+        select(PlatformQuestion).where(PlatformQuestion.id == qid))).scalar_one()
+    assert not (q.meta or {}).get("analysis")
+
+
+@pytest.mark.asyncio
+async def test_confirm_grammar_mc_writes_and_attaches_kp(db_session):
+    qid = await _seed_grammar_mc(db_session)
+    good = {"kp_codes": ["jf-1-1"], "answer_reason": "第三人称单数谓语加 s",
+            "distractors": {"A": {"meaning": "动词原形", "why_wrong": "主语 He 为三单,谓语须加 s"}}}
+    saved = await qas.confirm_analysis(db_session, question_id=qid, analysis=good, admin_id=uuid.uuid4())
+    assert saved["kind"] == "grammar_mc" and saved["confirmed_at"]
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import PlatformQuestionKp
+    codes = (await db_session.execute(
+        select(KnowledgeNode.code).join(PlatformQuestionKp, PlatformQuestionKp.node_id == KnowledgeNode.id)
+        .where(PlatformQuestionKp.question_id == qid))).scalars().all()
+    assert "jf-1-1" in codes       # 确认即自动挂 cf/jf 考点边
+
+
 @pytest.mark.asyncio
 async def test_confirm_batch_partitions_pass_fail(db_session):
     """批量确认:通过项写库、失败项带原因不写、不影响其余(降人工一键采纳的核心)。"""

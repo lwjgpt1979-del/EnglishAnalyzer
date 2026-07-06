@@ -244,6 +244,9 @@ const anaConfirmed = ref(false)   // 已有人工确认过的解析
 const anaIgnore = ref(false)      // 人工判定校验误报 → 忽略校验强制写库
 const anaIsCloze = computed(() => anaTarget.value?.question_type === '完型')
 const anaIsWriting = computed(() => anaTarget.value?.question_type === '写作')
+// 语法单选:单选且非阅读理解单选、非听力单选(词法/句法)
+const anaIsGrammar = computed(() => anaTarget.value?.question_type === '单选'
+  && !/阅读|听力/.test(anaTarget.value?.section || ''))
 const WRITING_GENRES = ['记叙文', '议论文', '说明文', '应用文']
 const WRITING_TENSES = ['一般现在时', '一般过去时', '一般将来时', '现在完成时', '现在进行时', '过去进行时', '混合时态']
 type DistractorNote = { meaning: string; why_wrong: string }
@@ -366,6 +369,10 @@ async function saveAnalysis() {
     } else if (anaIsCloze.value) {
       payload = { slot: anaForm.value.slot.trim() || null, clue_type: anaForm.value.clue_type,
         clue: anaForm.value.clue.trim(), kp_codes: csv(anaForm.value.kp_codes), distractors: dss }
+    } else if (anaIsGrammar.value) {
+      // 语法单选:kp_codes(cf/jf)+ 答案依据 + 干扰机制(无 rc_code/clue_type → 后端分发到 grammar_mc)
+      payload = { kp_codes: csv(anaForm.value.kp_codes),
+        answer_reason: anaForm.value.answer_reason.trim(), distractors: dss }
     } else {
       payload = { rc_code: anaForm.value.rc_code.trim(), evidence: anaForm.value.evidence.trim(),
         answer_reason: anaForm.value.answer_reason.trim(), distractors: dss }
@@ -388,12 +395,13 @@ const anaBatchItems = ref<AnalysisSuggestItem[]>([])
 const anaBatchQmap = ref<Record<string, PaperQuestion>>({})
 const anaBatchPassCount = computed(() => anaBatchItems.value.filter(it => it.analysis && !it.errors.length).length)
 function analyzableSection(sec: { name: string }): boolean {
-  return /完形|完型|阅读|书面|写作/.test(sec.name)
+  return /完形|完型|阅读|书面|写作|单项|选择填空/.test(sec.name)
 }
-// 单题是否可做题目层解析:类型即完型/阅读/写作,或——阅读理解题机械形式常为「单选/填空」
-// (如徐州卷 26-40),但所在大题名表明是阅读/完形段 → 也应可解析(后端按 section 分发)。
+// 单题是否可做题目层解析:类型即完型/阅读/写作;语法单选(单选·非阅读/听力段);
+// 或阅读理解题机械形式常为「单选/填空」(如徐州卷 26-40),但所在大题名表明是阅读/完形段。
 function isAnalyzableQuestion(q: { question_type: string }, sectionName: string): boolean {
   if (q.question_type === '完型' || q.question_type === '阅读' || q.question_type === '写作') return true
+  if (q.question_type === '单选' && !/阅读|听力/.test(sectionName || '')) return true   // 语法单选
   return /完形|完型|阅读/.test(sectionName || '') && (q.question_type === '单选' || q.question_type === '填空')
 }
 function anaSummary(it: AnalysisSuggestItem): string {
@@ -1175,6 +1183,16 @@ onMounted(load)
               <el-input v-model="anaForm.kp_codes" placeholder="线索轴为主,逗号分隔(如 rc-6-1)" />
             </el-form-item>
           </template>
+          <!-- 语法单选(词法/句法):cf-/jf- 考点 + 答案规则依据(无原文子串,单选自足)-->
+          <template v-else-if="anaIsGrammar">
+            <el-form-item label="考点编码">
+              <el-input v-model="anaForm.kp_codes" placeholder="词法 cf- / 句法 jf-,逗号分隔(如 jf-1-1)" />
+            </el-form-item>
+            <el-form-item label="答案依据">
+              <el-input v-model="anaForm.answer_reason" type="textarea" :rows="2"
+                placeholder="正确项命中哪条语法/搭配规则(1-2 句)" />
+            </el-form-item>
+          </template>
           <template v-else>
             <el-form-item label="rc 技能编码">
               <el-input v-model="anaForm.rc_code" placeholder="如 rc-1-1(细节直查)" />
@@ -1194,9 +1212,9 @@ onMounted(load)
               <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
                 <span style="width:18px;color:#606266">{{ k }}</span>
                 <el-input v-model="anaForm.dss[k].meaning"
-                  :placeholder="anaIsCloze ? '原义(正确项留空)' : '选项义项/主张(正确项留空)'" style="width:180px" />
+                  :placeholder="anaIsGrammar ? '选项形态/义(正确项留空)' : anaIsCloze ? '原义(正确项留空)' : '选项义项/主张(正确项留空)'" style="width:180px" />
                 <el-input v-model="anaForm.dss[k].why_wrong"
-                  :placeholder="anaIsCloze ? '干扰机制:与哪条语境线索冲突' : '干扰机制:与哪处定位句/原文冲突(可点明张冠李戴等)'" style="flex:1" />
+                  :placeholder="anaIsGrammar ? '违规机制:违反哪条语法/搭配' : anaIsCloze ? '干扰机制:与哪条语境线索冲突' : '干扰机制:与哪处定位句/原文冲突(可点明张冠李戴等)'" style="flex:1" />
               </div>
             </div>
           </el-form-item>
