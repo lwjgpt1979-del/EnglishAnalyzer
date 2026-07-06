@@ -304,6 +304,48 @@ async def test_confirm_grammar_mc_writes_and_attaches_kp(db_session):
     assert "jf-1-1" in codes       # 确认即自动挂 cf/jf 考点边
 
 
+def test_validate_word_fill_analysis():
+    ok = {"given": "divide", "target_form": "was dividing", "change_type": "过去进行时",
+          "kp_codes": ["jf-3-1-3"], "answer_reason": "据 when 从句定过去进行时"}
+    assert qas.validate_word_fill_analysis(ok) == []
+    assert any("cf-" in e or "jf-" in e for e in qas.validate_word_fill_analysis({**ok, "kp_codes": ["rc-1-1"]}))
+    assert any("change_type" in e for e in qas.validate_word_fill_analysis({**ok, "change_type": " "}))
+    assert any("answer_reason" in e for e in qas.validate_word_fill_analysis({**ok, "answer_reason": " "}))
+
+
+async def _seed_word_fill(s) -> uuid.UUID:
+    r = await pqs.import_real_question(
+        s, stem="I had my finger cut when I _____ (divide) the apple.", answer="was dividing",
+        options=None, question_type="填空", section="词汇运用", status="published")
+    await s.flush()
+    return r.question_id
+
+
+@pytest.mark.asyncio
+async def test_suggest_dispatch_word_fill(db_session):
+    """分发:填空词形类(词汇运用段)走 word_fill(change_type + cf/jf 考点),不写库。"""
+    qid = await _seed_word_fill(db_session)
+    items = await qas.suggest_analysis(db_session, question_ids=[qid])
+    ana = items[0]["analysis"]
+    assert ana and ana.get("change_type") and ana.get("kp_codes")
+    assert "distractors" not in ana and "rc_code" not in ana
+
+
+@pytest.mark.asyncio
+async def test_confirm_word_fill_writes_and_attaches_kp(db_session):
+    qid = await _seed_word_fill(db_session)
+    good = {"given": "divide", "target_form": "was dividing", "change_type": "过去进行时",
+            "kp_codes": ["jf-1-1"], "answer_reason": "据 when 引导的时间状语从句定过去进行时"}
+    saved = await qas.confirm_analysis(db_session, question_id=qid, analysis=good, admin_id=uuid.uuid4())
+    assert saved["kind"] == "word_fill" and saved["confirmed_at"]
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import PlatformQuestionKp
+    codes = (await db_session.execute(
+        select(KnowledgeNode.code).join(PlatformQuestionKp, PlatformQuestionKp.node_id == KnowledgeNode.id)
+        .where(PlatformQuestionKp.question_id == qid))).scalars().all()
+    assert "jf-1-1" in codes
+
+
 @pytest.mark.asyncio
 async def test_confirm_batch_partitions_pass_fail(db_session):
     """批量确认:通过项写库、失败项带原因不写、不影响其余(降人工一键采纳的核心)。"""

@@ -1533,6 +1533,10 @@ export interface QuestionAnalysis {
   point_map?: Record<string, string>
   target_expressions?: string[]
   pitfalls?: { type?: string; trap: string }[]
+  // 填空词形类(动词填空/词汇运用/单词拼写):所给词→定形
+  given?: string
+  target_form?: string
+  change_type?: string
   validation_skipped?: string[]
   kind?: string
   confirmed_by?: string

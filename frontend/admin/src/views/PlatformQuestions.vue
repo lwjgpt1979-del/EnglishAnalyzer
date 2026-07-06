@@ -247,6 +247,10 @@ const anaIsWriting = computed(() => anaTarget.value?.question_type === '写作')
 // 语法单选:单选且非阅读理解单选、非听力单选(词法/句法)
 const anaIsGrammar = computed(() => anaTarget.value?.question_type === '单选'
   && !/阅读|听力/.test(anaTarget.value?.section || ''))
+// 填空词形类:填空 + 词形段(词汇/词语/动词/单词/所给/适当形式/词形),排除短文/完成句子/翻译/句型转换
+const anaIsWordFill = computed(() => anaTarget.value?.question_type === '填空'
+  && /词汇|词语|动词|单词|所给|适当形式|词形/.test(anaTarget.value?.section || '')
+  && !/短文|完成句子|翻译|句型转换|缺词/.test(anaTarget.value?.section || ''))
 const WRITING_GENRES = ['记叙文', '议论文', '说明文', '应用文']
 const WRITING_TENSES = ['一般现在时', '一般过去时', '一般将来时', '现在完成时', '现在进行时', '过去进行时', '混合时态']
 type DistractorNote = { meaning: string; why_wrong: string }
@@ -261,17 +265,20 @@ const _emptyDss = (): Record<string, DistractorNote> => ({
   A: { meaning: '', why_wrong: '' }, B: { meaning: '', why_wrong: '' },
   C: { meaning: '', why_wrong: '' }, D: { meaning: '', why_wrong: '' },
 })
+// 填空词形类表单:所给词/目标形式/词形变化类型
+type WordFillForm = { given: string; target_form: string; change_type: string }
+const _emptyWf = (): WordFillForm => ({ given: '', target_form: '', change_type: '' })
 const anaForm = ref<{ rc_code: string; evidence: string; answer_reason: string;
   slot: string; clue_type: string; clue: string; kp_codes: string;
-  dss: Record<string, DistractorNote>; w: WritingForm }>({
+  dss: Record<string, DistractorNote>; w: WritingForm; wf: WordFillForm }>({
   rc_code: '', evidence: '', answer_reason: '',
   slot: '', clue_type: '', clue: '', kp_codes: '',
-  dss: _emptyDss(), w: _emptyW(),
+  dss: _emptyDss(), w: _emptyW(), wf: _emptyWf(),
 })
 function _resetAnaForm() {
   anaForm.value = { rc_code: '', evidence: '', answer_reason: '',
     slot: '', clue_type: '', clue: '', kp_codes: '',
-    dss: _emptyDss(), w: _emptyW() }
+    dss: _emptyDss(), w: _emptyW(), wf: _emptyWf() }
 }
 function _fillAnaForm(src: QuestionAnalysis | null | undefined) {
   if (!src) { _resetAnaForm(); return }
@@ -287,12 +294,14 @@ function _fillAnaForm(src: QuestionAnalysis | null | undefined) {
   w.model_essay = src.model_essay || ''
   w.target_expressions = (src.target_expressions || []).join('\n')
   w.pitfalls = (src.pitfalls || []).map(p => (p.type ? `${p.type}: ${p.trap}` : p.trap)).join('\n')
+  const wf = _emptyWf()
+  wf.given = src.given || ''; wf.target_form = src.target_form || ''; wf.change_type = src.change_type || ''
   anaForm.value = {
     rc_code: src.rc_code || '', evidence: src.evidence || '',
     answer_reason: src.answer_reason || '',
     slot: src.slot || '', clue_type: src.clue_type || '', clue: src.clue || '',
     kp_codes: (src.kp_codes || []).join(','),
-    dss, w,
+    dss, w, wf,
   }
 }
 async function openAnalysis(q: PaperQuestion) {
@@ -369,6 +378,12 @@ async function saveAnalysis() {
     } else if (anaIsCloze.value) {
       payload = { slot: anaForm.value.slot.trim() || null, clue_type: anaForm.value.clue_type,
         clue: anaForm.value.clue.trim(), kp_codes: csv(anaForm.value.kp_codes), distractors: dss }
+    } else if (anaIsWordFill.value) {
+      // 填空词形类:given/target_form/change_type + kp_codes + 定形依据(有 change_type → 后端分发 word_fill)
+      const wf = anaForm.value.wf
+      payload = { given: wf.given.trim(), target_form: wf.target_form.trim(),
+        change_type: wf.change_type.trim(), kp_codes: csv(anaForm.value.kp_codes),
+        answer_reason: anaForm.value.answer_reason.trim() }
     } else if (anaIsGrammar.value) {
       // 语法单选:kp_codes(cf/jf)+ 答案依据 + 干扰机制(无 rc_code/clue_type → 后端分发到 grammar_mc)
       payload = { kp_codes: csv(anaForm.value.kp_codes),
@@ -395,14 +410,17 @@ const anaBatchItems = ref<AnalysisSuggestItem[]>([])
 const anaBatchQmap = ref<Record<string, PaperQuestion>>({})
 const anaBatchPassCount = computed(() => anaBatchItems.value.filter(it => it.analysis && !it.errors.length).length)
 function analyzableSection(sec: { name: string }): boolean {
-  return /完形|完型|阅读|书面|写作|单项|选择填空/.test(sec.name)
+  return /完形|完型|阅读|书面|写作|单项|选择填空|词汇|词语|动词|单词|适当形式|词形/.test(sec.name)
 }
 // 单题是否可做题目层解析:类型即完型/阅读/写作;语法单选(单选·非阅读/听力段);
-// 或阅读理解题机械形式常为「单选/填空」(如徐州卷 26-40),但所在大题名表明是阅读/完形段。
+// 填空词形类(填空·词形段);或阅读理解题机械形式常为「单选/填空」但段名表明是阅读/完形。
 function isAnalyzableQuestion(q: { question_type: string }, sectionName: string): boolean {
+  const sec = sectionName || ''
   if (q.question_type === '完型' || q.question_type === '阅读' || q.question_type === '写作') return true
-  if (q.question_type === '单选' && !/阅读|听力/.test(sectionName || '')) return true   // 语法单选
-  return /完形|完型|阅读/.test(sectionName || '') && (q.question_type === '单选' || q.question_type === '填空')
+  if (q.question_type === '单选' && !/阅读|听力/.test(sec)) return true   // 语法单选
+  if (q.question_type === '填空' && /词汇|词语|动词|单词|所给|适当形式|词形/.test(sec)
+    && !/短文|完成句子|翻译|句型转换|缺词/.test(sec)) return true          // 填空词形类
+  return /完形|完型|阅读/.test(sec) && (q.question_type === '单选' || q.question_type === '填空')
 }
 function anaSummary(it: AnalysisSuggestItem): string {
   const a = it.analysis
@@ -1183,6 +1201,25 @@ onMounted(load)
               <el-input v-model="anaForm.kp_codes" placeholder="线索轴为主,逗号分隔(如 rc-6-1)" />
             </el-form-item>
           </template>
+          <!-- 填空词形类(动词填空/词汇运用/单词拼写):给词→定形,开放填空无干扰项 -->
+          <template v-else-if="anaIsWordFill">
+            <el-form-item label="所给词">
+              <el-input v-model="anaForm.wf.given" placeholder="括号里给的原词(如 divide)" />
+            </el-form-item>
+            <el-form-item label="目标形式">
+              <el-input v-model="anaForm.wf.target_form" placeholder="应填的正确形式(如 was dividing)" />
+            </el-form-item>
+            <el-form-item label="词形变化类型">
+              <el-input v-model="anaForm.wf.change_type" placeholder="如 过去进行时/被动语态/名词复数/形容词比较级/动词→名词派生" />
+            </el-form-item>
+            <el-form-item label="考点编码">
+              <el-input v-model="anaForm.kp_codes" placeholder="词法 cf- / 句法 jf-,逗号分隔" />
+            </el-form-item>
+            <el-form-item label="定形依据">
+              <el-input v-model="anaForm.answer_reason" type="textarea" :rows="2"
+                placeholder="据什么线索定这个形式(时间状语/主句时态/主谓一致/语义)" />
+            </el-form-item>
+          </template>
           <!-- 语法单选(词法/句法):cf-/jf- 考点 + 答案规则依据(无原文子串,单选自足)-->
           <template v-else-if="anaIsGrammar">
             <el-form-item label="考点编码">
@@ -1206,8 +1243,8 @@ onMounted(load)
                 placeholder="由定位句到正确项的推理(1-2 句)" />
             </el-form-item>
           </template>
-          <!-- 干扰项=原义/义项+干扰机制(完形:词义合理但与语境线索冲突;阅读:选项主张与定位句/原文事实冲突)。正确项留空;写作无此项 -->
-          <el-form-item v-if="!anaIsWriting" label="干扰项">
+          <!-- 干扰项=原义/义项+干扰机制。正确项留空;写作/填空词形类(开放填空)无此项 -->
+          <el-form-item v-if="!anaIsWriting && !anaIsWordFill" label="干扰项">
             <div style="display:flex;flex-direction:column;gap:6px;width:100%">
               <div v-for="k in ['A','B','C','D']" :key="k" style="display:flex;align-items:center;gap:8px">
                 <span style="width:18px;color:#606266">{{ k }}</span>

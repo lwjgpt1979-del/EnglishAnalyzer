@@ -244,6 +244,22 @@ def validate_grammar_mc_analysis(analysis: dict, *, context_text: str = "") -> l
     return errs
 
 
+def validate_word_fill_analysis(analysis: dict, *, context_text: str = "") -> list[str]:
+    """校验填空词形类(动词填空/词汇运用/单词拼写)解析:给词→定形。开放填空无干扰项。
+    校验:考点(cf-/jf-)+ 词形变化类型 + 定形依据/答案依据。单句自足,不强制原文子串。"""
+    errs: list[str] = []
+    codes = analysis.get("kp_codes") or []
+    if not isinstance(codes, list) or not codes or not all(isinstance(c, str) and c.strip() for c in codes):
+        errs.append("kp_codes 须为非空考点编码列表(词法 cf-/句法 jf-)")
+    elif not all(str(c).startswith(("cf-", "jf-")) for c in codes):
+        errs.append("kp_codes 须为词法 cf- 或句法 jf- 编码")
+    if not (analysis.get("change_type") or "").strip():
+        errs.append("缺少 change_type(词形变化类型:时态/语态/非谓语/名词复数/派生等)")
+    if not (analysis.get("answer_reason") or "").strip():
+        errs.append("缺少 answer_reason(定形依据:据什么线索定这个形式)")
+    return errs
+
+
 def validate_writing_analysis(analysis: dict, *, context_text: str) -> list[str]:
     """校验一份书面表达写作解析;返回错误列表(空=通过)。
 
@@ -311,6 +327,9 @@ def analysis_constraints_text(analysis: dict | None) -> str:
             lines.append("目标高级句型(变式范文须示范同类句型):" + "; ".join(tgts)[:300])
     if analysis.get("kind") == "grammar_mc" and analysis.get("kp_codes"):   # 语法单选:同词法/句法考点
         lines.append("本题语法考点:" + "、".join(analysis["kp_codes"]) + "(变式必须考同考点、同结构,只换话题/词汇)")
+    if analysis.get("kind") == "word_fill":                                 # 填空词形类:同考点+同词形变化
+        lines.append(f"本题词形考点:{'、'.join(analysis.get('kp_codes') or [])};词形变化类型:"
+                     f"{analysis.get('change_type', '')}(变式考同考点、同变化类型,换词/情境)")
     dts = analysis.get("distractor_types") or {}
     if dts:                                          # 阅读:枚举错因策略
         lines.append("干扰项错因策略(变式按同策略造干扰项):" +
@@ -692,6 +711,69 @@ async def suggest_grammar_mc_analysis(
     return out
 
 
+_WORD_FILL_SYSTEM = (
+    "你是中小学英语语法/词汇测评专家。对给定的「用所给词的适当形式填空」题(动词填空/词汇运用/单词拼写)做题目层解析——"
+    "考的是**词形变化**(时态/语态/非谓语/主谓一致/名词复数/所有格/形容词副词级/派生构词)。只返回 JSON:"
+    '{"given":"所给原词(括号里给的词,如 divide)","target_form":"应填的正确形式(如 was dividing)",'
+    '"change_type":"词形变化类型(如 过去进行时/被动语态/名词复数/形容词比较级/动词→名词派生)",'
+    '"kp_codes":["考点编码(词法 cf- / 句法 jf-)"],"answer_reason":"定形依据(据什么线索定这个形式:时间状语/主句时态/主谓一致/语义)"}。'
+    "kp_codes 必须来自给定目录且为 cf-/jf- 编码;change_type 精确到具体变化。"
+)
+
+
+def _mock_word_fill_suggestion(q: PlatformQuestion, context: str) -> dict:
+    return {"given": "divide", "target_form": q.answer or "was dividing",
+            "change_type": "过去进行时", "kp_codes": ["jf-3-1-3"],
+            "answer_reason": "dev-mock:据时间线索定时态。"}
+
+
+async def _llm_word_fill_suggestion(q: PlatformQuestion, context: str, cat: str) -> dict:
+    user = (f"【词法/句法考点目录】\n{cat}\n\n【题目(含所给词)】{q.stem}\n【参考答案】{q.answer or '未知'}")
+    data = await complete_json(
+        system_prompt=_WORD_FILL_SYSTEM, user_prompt=user, max_tokens=1000, escalate_ceiling=2000,
+        validate=lambda d: bool(d.get("kp_codes") and (d.get("change_type") or "").strip()),
+        feature="word_fill_analysis")
+    return data or {}
+
+
+async def suggest_word_fill_analysis(
+    db: AsyncSession, *, question_ids: list[uuid.UUID]
+) -> list[dict]:
+    """为填空词形类(动词填空/词汇运用/单词拼写)生成解析建议:词形变化类型 + cf/jf 考点 + 定形依据。"""
+    pairs = await _load_with_context(db, question_ids)
+    cat = "\n".join(
+        f"{c} {n}" for c, n in (await db.execute(
+            sa.select(KnowledgeNode.code, KnowledgeNode.name).where(sa.or_(
+                KnowledgeNode.code.like("cf-%"), KnowledgeNode.code.like("jf-%")))
+            .order_by(KnowledgeNode.code))).all())
+
+    async def _gen(q, context):
+        try:
+            if is_llm_dev_mode():
+                return _mock_word_fill_suggestion(q, context), None
+            return await _llm_word_fill_suggestion(q, context, cat), None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"生成失败:{exc}"
+    gens = await _gather_bounded(
+        [_gen(q, ctx) for q, ctx in pairs], limit=_LLM_CONCURRENCY)
+    out = []
+    for (q, context), (ana, gen_err) in zip(pairs, gens):
+        existing = (q.meta or {}).get("analysis")
+        if gen_err:
+            out.append({"question_id": str(q.id), "analysis": None,
+                        "errors": [gen_err], "existing": existing})
+            continue
+        errs = validate_word_fill_analysis(ana)
+        if not errs:
+            missing = await _kp_codes_exist(db, ana.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        _stage_draft(q, ana, errs)
+        out.append({"question_id": str(q.id), "analysis": ana,
+                    "errors": errs, "existing": existing})
+    return out
+
+
 async def suggest_analysis(
     db: AsyncSession, *, question_ids: list[uuid.UUID], force: bool = False
 ) -> list[dict]:
@@ -715,6 +797,16 @@ async def suggest_analysis(
         sec = q.section or ""
         return (q.question_type or "") == "单选" and "阅读" not in sec and "听力" not in sec
 
+    import re as _re
+    def _is_word_fill(q: PlatformQuestion) -> bool:
+        # 填空词形类(动词填空/词汇运用/单词拼写):填空题 + 词形段,排除短文填空/完成句子/翻译/句型转换
+        sec = q.section or ""
+        if (q.question_type or "") != "填空":
+            return False
+        if _re.search(r"短文|完成句子|翻译|句型转换|缺词|完形|完型", sec):
+            return False
+        return bool(_re.search(r"词汇|词语|动词|单词|所给|适当形式|词形", sec))
+
     cached: dict[str, dict] = {}
     to_gen: list[uuid.UUID] = []
     for qid in question_ids:
@@ -732,14 +824,18 @@ async def suggest_analysis(
         cloze_ids = [i for i in to_gen if _is_cloze(qmap[i])]
         rest = [i for i in to_gen if not _is_cloze(qmap[i])]
         writing_ids = [i for i in rest if _is_writing(qmap[i])]
-        grammar_ids = [i for i in rest if not _is_writing(qmap[i]) and _is_grammar_mc(qmap[i])]
-        reading_ids = [i for i in rest if not _is_writing(qmap[i]) and not _is_grammar_mc(qmap[i])]
+        rest2 = [i for i in rest if not _is_writing(qmap[i])]
+        grammar_ids = [i for i in rest2 if _is_grammar_mc(qmap[i])]
+        wordfill_ids = [i for i in rest2 if not _is_grammar_mc(qmap[i]) and _is_word_fill(qmap[i])]
+        reading_ids = [i for i in rest2 if not _is_grammar_mc(qmap[i]) and not _is_word_fill(qmap[i])]
         if cloze_ids:
             gen += await suggest_cloze_analysis(db, question_ids=cloze_ids)
         if writing_ids:
             gen += await suggest_writing_analysis(db, question_ids=writing_ids)
         if grammar_ids:
             gen += await suggest_grammar_mc_analysis(db, question_ids=grammar_ids)
+        if wordfill_ids:
+            gen += await suggest_word_fill_analysis(db, question_ids=wordfill_ids)
         if reading_ids:
             gen += await suggest_reading_analysis(db, question_ids=reading_ids)
         await db.commit()        # 暂存落库(生成的建议写进 meta.analysis_draft)
@@ -786,6 +882,13 @@ async def confirm_analysis(
         if not errs and not await _rc_code_exists(db, analysis.get("rc_code", "")):
             errs = [f"rc_code 不在图谱:{analysis.get('rc_code')}"]
         analysis = {**analysis, "kind": "reading"}
+    elif "change_type" in analysis:                   # 填空词形类(动词填空/词汇运用/单词拼写)
+        errs = validate_word_fill_analysis(analysis)
+        if not errs:
+            missing = await _kp_codes_exist(db, analysis.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        analysis = {**analysis, "kind": "word_fill"}
     else:                                             # 语法单选(词法/句法):kp_codes(cf-/jf-)+ 干扰机制
         errs = validate_grammar_mc_analysis(analysis)
         if not errs:
@@ -805,7 +908,7 @@ async def confirm_analysis(
     q.meta = new_meta
     # 把解析里的考点码挂成 platform_question_kp 边(幂等·附加):让 BKT/仿真继承考点/学情统计都吃到
     # 完形→kp_codes、写作→wr_codes、阅读→rc_code。force 跳过校验时,只挂图谱里真实存在的码。
-    codes = (analysis.get("kp_codes") or []) if saved["kind"] in ("cloze", "grammar_mc") else \
+    codes = (analysis.get("kp_codes") or []) if saved["kind"] in ("cloze", "grammar_mc", "word_fill") else \
             (analysis.get("wr_codes") or []) if saved["kind"] == "writing" else \
             [analysis.get("rc_code")]
     codes = [c for c in codes if c and str(c).strip()]
