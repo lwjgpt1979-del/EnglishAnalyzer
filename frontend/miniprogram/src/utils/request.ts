@@ -6,6 +6,7 @@ export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   data?: unknown
   header?: Record<string, string>
+  timeout?: number   // 毫秒;AI 批改等长耗时接口需调高(uni.request 默认约 60s 会中止长请求)
 }
 
 /** 底层请求：不做 401 续期，仅回传原始 uni.request 结果。 */
@@ -23,6 +24,7 @@ function rawRequest(url: string, options: RequestOptions): Promise<UniApp.Reques
       method: options.method || 'GET',
       data: options.data,
       header,
+      timeout: options.timeout,
       success: resolve,
       fail: (err) => reject(new Error(err.errMsg || '网络请求失败')),
     })

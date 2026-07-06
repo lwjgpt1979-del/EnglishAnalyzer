@@ -84,8 +84,9 @@ async def grade_writing(*, analysis: dict, student_essay: str, prompt: str = "",
     }
     user = (f"【题目】{prompt}\n\n【写作解析(评分依据)】\n{json.dumps(ana_brief, ensure_ascii=False)}\n\n"
             f"【学生作文】\n{essay}\n\n满分:{full_score}")
+    # 5 维诊断(要点+错因+升格+逐句批注+总评)输出较大,上限给足避免截断→502
     data = await complete_json(
-        system_prompt=_SYSTEM_PROMPT, user_prompt=user, max_tokens=2000, escalate_ceiling=3200,
+        system_prompt=_SYSTEM_PROMPT, user_prompt=user, max_tokens=3200, escalate_ceiling=6000,
         validate=lambda d: isinstance(d.get("points"), list), feature="writing_grade")
     if data is None:
         raise AppError(code=502, message="AI 写作批改失败(截断/抖动重试后仍失败),请重试")

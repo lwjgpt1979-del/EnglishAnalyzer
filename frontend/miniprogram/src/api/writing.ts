@@ -56,5 +56,6 @@ export function gradeWritingByQuestion(payload: {
   return request<WritingGradeResult>('/api/v1/writing-practice/grade-question', {
     method: 'POST',
     data: payload,
+    timeout: 180000,   // AI 5 维批改走大模型,约 60-120s,需长超时
   })
 }
