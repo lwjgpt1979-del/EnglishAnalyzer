@@ -1537,6 +1537,7 @@ export interface QuestionAnalysis {
   given?: string
   target_form?: string
   change_type?: string
+  answer_word?: string       // 短文填空(开放填空)应填的词
   validation_skipped?: string[]
   kind?: string
   confirmed_by?: string

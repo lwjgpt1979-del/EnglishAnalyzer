@@ -346,6 +346,54 @@ async def test_confirm_word_fill_writes_and_attaches_kp(db_session):
     assert "jf-1-1" in codes
 
 
+def test_validate_passage_fill_analysis():
+    ok = {"clue_type": "跨句词汇复现", "clue": "He runs for half an hour",
+          "answer_word": "runs", "kp_codes": ["rc-6-1"]}
+    assert qas.validate_passage_fill_analysis(ok, context_text=_PASSAGE) == []
+    assert any("幻觉" in e for e in qas.validate_passage_fill_analysis(
+        {**ok, "clue": "made-up sentence"}, context_text=_PASSAGE))
+    assert any("answer_word" in e for e in qas.validate_passage_fill_analysis(
+        {**ok, "answer_word": " "}, context_text=_PASSAGE))
+    assert any("clue_type" in e for e in qas.validate_passage_fill_analysis(
+        {**ok, "clue_type": "瞎编"}, context_text=_PASSAGE))
+    assert any("cf-" in e or "jf-" in e or "rc-" in e for e in qas.validate_passage_fill_analysis(
+        {**ok, "kp_codes": ["wr-1-1"]}, context_text=_PASSAGE))
+
+
+async def _seed_passage_fill(s) -> uuid.UUID:
+    block_id = await pqs.create_passage(s, text=_PASSAGE)
+    r = await pqs.import_real_question(
+        s, stem="Tom gets up at six every morning. He ___ for half an hour.", answer="runs",
+        options=None, question_type="填空", section="短文填空", block_id=block_id, status="published")
+    await s.flush()
+    return r.question_id
+
+
+@pytest.mark.asyncio
+async def test_suggest_dispatch_passage_fill(db_session):
+    """分发:短文填空(短文段·填空)走 passage_fill(线索句 + 应填词,无干扰项),不写库。"""
+    qid = await _seed_passage_fill(db_session)
+    items = await qas.suggest_analysis(db_session, question_ids=[qid])
+    ana = items[0]["analysis"]
+    assert ana and ana.get("clue_type") and ana.get("answer_word")
+    assert "distractors" not in ana and "slot" not in ana and "change_type" not in ana
+
+
+@pytest.mark.asyncio
+async def test_confirm_passage_fill_writes_and_attaches_kp(db_session):
+    qid = await _seed_passage_fill(db_session)
+    good = {"clue_type": "跨句词汇复现", "clue": "He runs for half an hour",
+            "answer_word": "runs", "kp_codes": ["rc-6-1"]}
+    saved = await qas.confirm_analysis(db_session, question_id=qid, analysis=good, admin_id=uuid.uuid4())
+    assert saved["kind"] == "passage_fill" and saved["confirmed_at"]
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import PlatformQuestionKp
+    codes = (await db_session.execute(
+        select(KnowledgeNode.code).join(PlatformQuestionKp, PlatformQuestionKp.node_id == KnowledgeNode.id)
+        .where(PlatformQuestionKp.question_id == qid))).scalars().all()
+    assert "rc-6-1" in codes
+
+
 @pytest.mark.asyncio
 async def test_confirm_batch_partitions_pass_fail(db_session):
     """批量确认:通过项写库、失败项带原因不写、不影响其余(降人工一键采纳的核心)。"""

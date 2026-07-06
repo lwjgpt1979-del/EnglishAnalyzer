@@ -190,6 +190,27 @@ def validate_reading_analysis(analysis: dict, *, context_text: str) -> list[str]
     return errs
 
 
+def validate_passage_fill_analysis(analysis: dict, *, context_text: str) -> list[str]:
+    """校验短文填空(开放填空)解析:复用完形「线索类型+线索句」轴,但**无载体槽/无干扰项**(无选项)。
+    线索句须短文子串(防幻觉);线索类型枚举;应填词非空;kp_codes(cf-/jf-/rc-)非空。"""
+    errs: list[str] = []
+    clue = (analysis.get("clue") or "").strip()
+    if not clue:
+        errs.append("缺少线索句 clue")
+    elif _norm(clue) not in _norm(context_text):
+        errs.append("线索句不是原文子串(疑似幻觉)")
+    if analysis.get("clue_type") not in CLUE_TYPES:
+        errs.append("clue_type 不在枚举内")
+    if not (analysis.get("answer_word") or "").strip():
+        errs.append("缺少 answer_word(应填的词)")
+    codes = analysis.get("kp_codes") or []
+    if not isinstance(codes, list) or not codes or not all(isinstance(c, str) and c.strip() for c in codes):
+        errs.append("kp_codes 须为非空编码列表(cf-/jf-/rc-)")
+    elif not all(str(c).startswith(("cf-", "jf-", "rc-")) for c in codes):
+        errs.append("kp_codes 须为 cf-/jf-/rc- 编码")
+    return errs
+
+
 def validate_cloze_analysis(analysis: dict, *, context_text: str) -> list[str]:
     """校验一份完形逐空解析;返回错误列表(空=通过)。"""
     errs: list[str] = []
@@ -774,6 +795,72 @@ async def suggest_word_fill_analysis(
     return out
 
 
+_PASSAGE_FILL_SYSTEM = (
+    "你是中小学英语短文填空(开放填空)测评专家。整篇短文挖空、学生按语境填词——被测的是「语境线索」。"
+    "对给定空做解析,只返回 JSON:"
+    '{"clue_type":"线索类型","clue":"决定答案的线索句(必须逐字摘自短文)",'
+    '"answer_word":"应填的词","kp_codes":["考点编码(cf-/jf-/rc-,线索轴为主)"]}。'
+    "线索类型只能取:" + "、".join(CLUE_TYPES) + "。"
+    "★clue 必须从【短文】里**逐字复制**一句(或连续一小段),不得改写/翻译/拼接;程序会做子串比对,凑不出即判幻觉。"
+)
+
+
+def _mock_passage_fill_suggestion(q: PlatformQuestion, context: str) -> dict:
+    first = re.split(r"(?<=[.!?])\s+", context.strip())[0][:200]
+    return {"clue_type": "跨句词汇复现", "clue": first,
+            "answer_word": q.answer or "word", "kp_codes": ["rc-4-1"]}
+
+
+async def _llm_passage_fill_suggestion(q: PlatformQuestion, context: str, clue_catalog: str) -> dict:
+    user = (f"【线索轴考点目录】\n{clue_catalog}\n\n【短文(空格即本题)】\n{context[:3500]}\n\n"
+            f"【本空题干】{q.stem}\n【参考答案】{q.answer or '未知(请按语境推断)'}")
+    ana = await complete_json(
+        system_prompt=_PASSAGE_FILL_SYSTEM, user_prompt=user, max_tokens=1400, escalate_ceiling=2800,
+        validate=lambda d: bool((d.get("clue") or "").strip()), feature="passage_fill_analysis")
+    if ana is None:
+        raise ValueError("LLM 未产出有效解析(截断/抖动重试后仍失败),可点「改」重试")
+    return ana
+
+
+async def suggest_passage_fill_analysis(
+    db: AsyncSession, *, question_ids: list[uuid.UUID]
+) -> list[dict]:
+    """为短文填空(开放填空)生成解析建议:线索类型 + 线索句(短文子串)+ 应填词 + 线索轴考点。"""
+    pairs = await _load_with_context(db, question_ids)
+    clue_catalog = "\n".join(
+        f"{c} {n}" for c, n in (await db.execute(
+            sa.select(KnowledgeNode.code, KnowledgeNode.name).where(sa.or_(
+                KnowledgeNode.code.like("cf-%"), KnowledgeNode.code.like("jf-%"),
+                KnowledgeNode.code.like("rc-4%"), KnowledgeNode.code.like("rc-6%")))
+            .order_by(KnowledgeNode.code))).all())
+
+    async def _gen(q, context):
+        try:
+            if is_llm_dev_mode():
+                return _mock_passage_fill_suggestion(q, context), None
+            return await _llm_passage_fill_suggestion(q, context, clue_catalog), None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"生成失败:{exc}"
+    gens = await _gather_bounded(
+        [_gen(q, ctx) for q, ctx in pairs], limit=_LLM_CONCURRENCY)
+    out = []
+    for (q, context), (ana, gen_err) in zip(pairs, gens):
+        existing = (q.meta or {}).get("analysis")
+        if gen_err:
+            out.append({"question_id": str(q.id), "analysis": None,
+                        "errors": [gen_err], "existing": existing})
+            continue
+        errs = validate_passage_fill_analysis(ana, context_text=context)
+        if not errs:
+            missing = await _kp_codes_exist(db, ana.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        _stage_draft(q, ana, errs)
+        out.append({"question_id": str(q.id), "analysis": ana,
+                    "errors": errs, "existing": existing})
+    return out
+
+
 async def suggest_analysis(
     db: AsyncSession, *, question_ids: list[uuid.UUID], force: bool = False
 ) -> list[dict]:
@@ -807,6 +894,11 @@ async def suggest_analysis(
             return False
         return bool(_re.search(r"词汇|词语|动词|单词|所给|适当形式|词形", sec))
 
+    def _is_passage_fill(q: PlatformQuestion) -> bool:
+        # 短文填空/缺词填空(开放填空):填空题 + 短文/缺词段
+        sec = q.section or ""
+        return (q.question_type or "") == "填空" and bool(_re.search(r"短文|缺词", sec))
+
     cached: dict[str, dict] = {}
     to_gen: list[uuid.UUID] = []
     for qid in question_ids:
@@ -826,8 +918,10 @@ async def suggest_analysis(
         writing_ids = [i for i in rest if _is_writing(qmap[i])]
         rest2 = [i for i in rest if not _is_writing(qmap[i])]
         grammar_ids = [i for i in rest2 if _is_grammar_mc(qmap[i])]
-        wordfill_ids = [i for i in rest2 if not _is_grammar_mc(qmap[i]) and _is_word_fill(qmap[i])]
-        reading_ids = [i for i in rest2 if not _is_grammar_mc(qmap[i]) and not _is_word_fill(qmap[i])]
+        rest3 = [i for i in rest2 if not _is_grammar_mc(qmap[i])]
+        wordfill_ids = [i for i in rest3 if _is_word_fill(qmap[i])]
+        passfill_ids = [i for i in rest3 if not _is_word_fill(qmap[i]) and _is_passage_fill(qmap[i])]
+        reading_ids = [i for i in rest3 if not _is_word_fill(qmap[i]) and not _is_passage_fill(qmap[i])]
         if cloze_ids:
             gen += await suggest_cloze_analysis(db, question_ids=cloze_ids)
         if writing_ids:
@@ -836,6 +930,8 @@ async def suggest_analysis(
             gen += await suggest_grammar_mc_analysis(db, question_ids=grammar_ids)
         if wordfill_ids:
             gen += await suggest_word_fill_analysis(db, question_ids=wordfill_ids)
+        if passfill_ids:
+            gen += await suggest_passage_fill_analysis(db, question_ids=passfill_ids)
         if reading_ids:
             gen += await suggest_reading_analysis(db, question_ids=reading_ids)
         await db.commit()        # 暂存落库(生成的建议写进 meta.analysis_draft)
@@ -861,7 +957,7 @@ async def confirm_analysis(
         raise AppError(code=404, message="题目不存在")
     pairs = await _load_with_context(db, [question_id])
     context = pairs[0][1]
-    if "clue_type" in analysis:                       # 完形双轴解析
+    if "clue_type" in analysis and "distractors" in analysis:   # 完形双轴(有干扰项)
         if analysis.get("slot"):                       # 手输/旧建议的「动词短语」等归一到枚举
             analysis = {**analysis, "slot": normalize_slot(analysis.get("slot"))}
         errs = validate_cloze_analysis(analysis, context_text=context)
@@ -870,6 +966,13 @@ async def confirm_analysis(
             if missing:
                 errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
         analysis = {**analysis, "kind": "cloze"}
+    elif "clue_type" in analysis:                     # 短文填空(开放填空,线索轴无干扰项)
+        errs = validate_passage_fill_analysis(analysis, context_text=context)
+        if not errs:
+            missing = await _kp_codes_exist(db, analysis.get("kp_codes") or [])
+            if missing:
+                errs = [f"kp_codes 不在图谱:{','.join(missing)}"]
+        analysis = {**analysis, "kind": "passage_fill"}
     elif "genre" in analysis:                         # 书面表达写作解析
         errs = validate_writing_analysis(analysis, context_text=context)
         if not errs:
@@ -908,7 +1011,7 @@ async def confirm_analysis(
     q.meta = new_meta
     # 把解析里的考点码挂成 platform_question_kp 边(幂等·附加):让 BKT/仿真继承考点/学情统计都吃到
     # 完形→kp_codes、写作→wr_codes、阅读→rc_code。force 跳过校验时,只挂图谱里真实存在的码。
-    codes = (analysis.get("kp_codes") or []) if saved["kind"] in ("cloze", "grammar_mc", "word_fill") else \
+    codes = (analysis.get("kp_codes") or []) if saved["kind"] in ("cloze", "grammar_mc", "word_fill", "passage_fill") else \
             (analysis.get("wr_codes") or []) if saved["kind"] == "writing" else \
             [analysis.get("rc_code")]
     codes = [c for c in codes if c and str(c).strip()]
