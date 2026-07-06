@@ -28,9 +28,28 @@ FIELDS: dict = {
                             "options": ["school", "stationery", "training", "search", "referral", "other"]},
     "city_prefix": {"label": "城市/省(region码前缀,如32=江苏)", "type": "str"},
     "grade": {"label": "偏好年级(如 初中7年级)", "type": "str"},
+    "inactive_days": {"label": "近N天无任何学习行为(不活跃)", "type": "int", "hint": "流失预警/沉睡召回"},
 }
 
 _NOW = sa.func.now()
+
+# 「活跃」信号源:学生行为表(student_id + created_at)。近N天任一有记录=活跃。
+_ACTIVITY_SOURCES = [
+    ("study_checkins", "student_id"),
+    ("essays", "student_id"),
+    ("listening_records", "student_id"),
+    ("speaking_sessions", "student_id"),
+]
+
+
+def _inactive_clause(n: int):
+    """近 n 天无任何学习行为:NOT(任一行为表在窗口内存在该用户的记录)。"""
+    exists_list = []
+    for tname, ucol in _ACTIVITY_SOURCES:
+        t = sa.table(tname, sa.column(ucol), sa.column("created_at"))
+        exists_list.append(sa.exists().where(sa.and_(
+            t.c[ucol] == User.id, t.c.created_at >= _NOW - timedelta(days=n))))
+    return sa.not_(sa.or_(*exists_list))
 
 
 def _active_ps_exists():
@@ -78,6 +97,8 @@ def _condition_clause(field: str, value):
         return User.created_at <= _NOW - timedelta(days=_int(value))
     if field == "acquisition_channel":
         return User.acquisition_channel == str(value)
+    if field == "inactive_days":
+        return _inactive_clause(_int(value))
     if field == "city_prefix":
         return User.city_code.like(f"{str(value)}%")
     if field == "grade":

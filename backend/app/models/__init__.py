@@ -123,7 +123,7 @@ from .d23_sales_crm import (  # noqa: F401
     SalesLead, SalesLeadActivity, WecomChatArchive, SalesAuditLog,
 )
 
-# 域24: 存量用户召回 / 分群触达(分群 + 触达任务;喂电销 CRM)
-from .d24_reach import UserSegment, ReachCampaign  # noqa: F401
+# 域24: 存量用户召回 / 分群触达(分群 + 触达任务 + 触达明细;喂电销 CRM)
+from .d24_reach import UserSegment, ReachCampaign, ReachLog  # noqa: F401
 
 __all__ = ["Base"]

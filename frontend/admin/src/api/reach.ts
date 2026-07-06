@@ -48,11 +48,14 @@ export interface Campaign {
   id: string
   name: string
   segment_id: string | null
-  channel: 'station' | 'sales_lead'
+  channel: 'station' | 'sales_lead' | 'sms'
   title: string | null
   content: string | null
   lead_tag: string | null
-  status: 'draft' | 'done' | 'failed'
+  recurring: boolean
+  enabled: boolean
+  total_reached: number
+  status: 'draft' | 'done' | 'failed' | 'active'
   stats: { matched: number; sent: number; failed: number; skipped: number } | null
   created_at: string | null
   executed_at: string | null
@@ -62,15 +65,19 @@ export function listCampaigns(params?: { skip?: number; limit?: number }): Promi
 }
 export function createCampaign(body: {
   name: string; channel: string; segment_id?: string | null; rule?: SegmentRule | null
-  title?: string | null; content?: string | null; lead_tag?: string | null
+  title?: string | null; content?: string | null; lead_tag?: string | null; recurring?: boolean
 }): Promise<Campaign> {
   return unwrap(request.post('/admin/reach/campaigns', body))
 }
 export function runCampaign(id: string): Promise<Campaign> {
   return unwrap(request.post(`/admin/reach/campaigns/${id}/run`))
 }
+export function toggleCampaign(id: string, enabled: boolean): Promise<Campaign> {
+  return unwrap(request.post(`/admin/reach/campaigns/${id}/toggle`, { enabled }))
+}
 
 export const CHANNEL_LABEL: Record<string, string> = {
   station: '站内通知',
   sales_lead: '生成电销线索',
+  sms: '营销短信',
 }

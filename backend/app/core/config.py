@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     sms_sign_name: str = "engGramer"
     sms_template_code_verify: str = ""
     sms_template_code_invite: str = ""
+    sms_template_code_marketing: str = ""   # 营销短信模板(含退订,如「【好乐学】${content},退订回T」);空=dev-mock 不真发
 
     # 微信订阅消息（打卡提醒，D-108；绑定通知，M33；作业通知，M35）
     wechat_subscribe_provider: str = "placeholder-dev"  # 'placeholder-*' 触发 dev mock

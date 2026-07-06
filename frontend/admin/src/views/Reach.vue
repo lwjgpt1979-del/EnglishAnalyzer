@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   type Campaign, type ReachFields, type Segment, type SegmentCondition,
   CHANNEL_LABEL, createCampaign, deleteSegment, getReachFields, listCampaigns,
-  listSegments, resolveSegment, runCampaign, upsertSegment,
+  listSegments, resolveSegment, runCampaign, toggleCampaign, upsertSegment,
 } from '../api/reach'
 
 const fields = ref<ReachFields['fields']>({})
@@ -80,36 +80,43 @@ async function removeSegment(s: Segment) {
 
 // ── 触达任务对话框 ────────────────────────────────────────────────────────
 const campDlg = reactive({
-  open: false, name: '', source: 'segment' as 'segment' | 'inline',
-  segment_id: '' as string, channel: 'sales_lead' as 'station' | 'sales_lead',
-  title: '', content: '', lead_tag: '会员将到期',
+  open: false, name: '', segment_id: '' as string,
+  channel: 'sales_lead' as 'station' | 'sales_lead' | 'sms',
+  title: '', content: '', lead_tag: '会员将到期', recurring: false,
 })
+const isMsgChannel = computed(() => campDlg.channel === 'station' || campDlg.channel === 'sms')
 function openCampFrom(s?: Segment) {
   campDlg.open = true; campDlg.name = ''
-  campDlg.source = 'segment'; campDlg.segment_id = s?.id || (segments.value[0]?.id ?? '')
-  campDlg.channel = 'sales_lead'; campDlg.title = ''; campDlg.content = ''; campDlg.lead_tag = '会员将到期'
+  campDlg.segment_id = s?.id || (segments.value[0]?.id ?? '')
+  campDlg.channel = 'sales_lead'; campDlg.title = ''; campDlg.content = ''
+  campDlg.lead_tag = '会员将到期'; campDlg.recurring = false
 }
 async function submitCampaign() {
   if (!campDlg.name.trim()) { ElMessage.warning('填任务名'); return }
-  const body: Parameters<typeof createCampaign>[0] = {
-    name: campDlg.name, channel: campDlg.channel,
-    segment_id: campDlg.source === 'segment' ? campDlg.segment_id : null,
-    rule: campDlg.source === 'inline' ? currentRule.value : null,
-    title: campDlg.channel === 'station' ? campDlg.title : null,
-    content: campDlg.channel === 'station' ? campDlg.content : null,
+  if (!campDlg.segment_id) { ElMessage.warning('选一个分群'); return }
+  if (isMsgChannel.value && !campDlg.content.trim()) { ElMessage.warning('通知/短信要填内容'); return }
+  await createCampaign({
+    name: campDlg.name, channel: campDlg.channel, segment_id: campDlg.segment_id, rule: null,
+    title: isMsgChannel.value ? campDlg.title : null,
+    content: isMsgChannel.value ? campDlg.content : null,
     lead_tag: campDlg.channel === 'sales_lead' ? campDlg.lead_tag : null,
-  }
-  if (campDlg.source === 'segment' && !campDlg.segment_id) { ElMessage.warning('选一个分群'); return }
-  if (campDlg.channel === 'station' && !campDlg.content.trim()) { ElMessage.warning('站内通知要填内容'); return }
-  await createCampaign(body)
-  ElMessage.success('触达任务已创建(草稿),点「执行」下发')
+    recurring: campDlg.recurring,
+  })
+  ElMessage.success('触达任务已创建(草稿),点「执行」下发' + (campDlg.recurring ? ';自动任务由 cron 每日增量跑' : ''))
   campDlg.open = false
+  await loadAll()
+}
+async function toggle(c: Campaign) {
+  await toggleCampaign(c.id, !c.enabled)
+  ElMessage.success(c.enabled ? '已停用' : '已启用')
   await loadAll()
 }
 const running = ref('')
 async function doRun(c: Campaign) {
-  const tip = c.channel === 'sales_lead' ? '将把命中用户生成电销线索(已在池的跳过)' : '将向命中用户发站内通知'
-  await ElMessageBox.confirm(`执行「${c.name}」?${tip}。不可撤销。`, '确认执行', { type: 'warning' })
+  const tip = c.channel === 'sales_lead' ? '将把命中用户生成电销线索(已在池/已触达的跳过)'
+    : c.channel === 'sms' ? '将向命中用户发营销短信(未配模板则 dev-mock 不真发)'
+    : '将向命中用户发站内通知'
+  await ElMessageBox.confirm(`执行「${c.name}」?${tip}。已触达过的用户不会重复。`, '确认执行', { type: 'warning' })
   running.value = c.id
   try {
     const r = await runCampaign(c.id)
@@ -142,26 +149,29 @@ function ruleSummary(s: Segment) {
       </template>
       <el-table :data="campaigns" size="small">
         <el-table-column prop="name" label="任务" min-width="140" />
-        <el-table-column label="渠道" width="120">
+        <el-table-column label="渠道" width="150">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.channel === 'sales_lead' ? 'warning' : 'info'">{{ CHANNEL_LABEL[row.channel] }}</el-tag>
+            <el-tag size="small" :type="row.channel === 'sales_lead' ? 'warning' : row.channel === 'sms' ? 'success' : 'info'">{{ CHANNEL_LABEL[row.channel] }}</el-tag>
+            <el-tag v-if="row.recurring" size="small" type="primary" effect="plain" style="margin-left: 4px">自动</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.status === 'done' ? 'success' : row.status === 'failed' ? 'danger' : ''">{{ row.status }}</el-tag>
+            <el-tag size="small" :type="row.status === 'done' ? 'success' : row.status === 'active' ? 'primary' : row.status === 'failed' ? 'danger' : ''">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="结果" min-width="200">
+        <el-table-column label="结果" min-width="220">
           <template #default="{ row }">
-            <span v-if="row.stats">命中 {{ row.stats.matched }} · 成功 {{ row.stats.sent }} · 跳过 {{ row.stats.skipped }}<span v-if="row.stats.failed"> · 失败 {{ row.stats.failed }}</span></span>
+            <span v-if="row.stats">最近:命中 {{ row.stats.matched }} · 成功 {{ row.stats.sent }} · 跳过 {{ row.stats.skipped }}<span v-if="row.stats.failed"> · 失败 {{ row.stats.failed }}</span></span>
             <span v-else style="color: var(--el-text-color-secondary)">未执行</span>
+            <span v-if="row.total_reached" style="color: var(--el-text-color-secondary); font-size: 12px"> · 累计触达 {{ row.total_reached }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <el-button v-if="row.status === 'draft'" size="small" type="primary" :loading="running === row.id" @click="doRun(row)">执行</el-button>
-            <span v-else style="color: var(--el-text-color-secondary); font-size: 12px">{{ row.executed_at?.slice(0, 16).replace('T', ' ') }}</span>
+            <el-button v-if="row.status === 'draft' || (row.recurring && row.enabled)" size="small" type="primary" :loading="running === row.id" @click="doRun(row)">{{ row.recurring ? '手动跑一次' : '执行' }}</el-button>
+            <el-button v-if="row.recurring" size="small" :type="row.enabled ? 'info' : 'success'" plain @click="toggle(row)">{{ row.enabled ? '停用' : '启用' }}</el-button>
+            <span v-if="!row.recurring && row.status !== 'draft'" style="color: var(--el-text-color-secondary); font-size: 12px">{{ row.executed_at?.slice(0, 16).replace('T', ' ') }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -248,11 +258,12 @@ function ruleSummary(s: Segment) {
           <el-radio-group v-model="campDlg.channel">
             <el-radio-button value="sales_lead">生成电销线索</el-radio-button>
             <el-radio-button value="station">站内通知</el-radio-button>
+            <el-radio-button value="sms">营销短信</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <template v-if="campDlg.channel === 'station'">
-          <el-form-item label="标题"><el-input v-model="campDlg.title" style="width: 300px" /></el-form-item>
-          <el-form-item label="内容"><el-input v-model="campDlg.content" type="textarea" :rows="3" style="width: 380px" /></el-form-item>
+        <template v-if="isMsgChannel">
+          <el-form-item v-if="campDlg.channel === 'station'" label="标题"><el-input v-model="campDlg.title" style="width: 300px" /></el-form-item>
+          <el-form-item label="内容"><el-input v-model="campDlg.content" type="textarea" :rows="3" style="width: 380px" :placeholder="campDlg.channel === 'sms' ? '短信正文(生产走已报备营销模板+退订;未配则 dev-mock 不真发)' : ''" /></el-form-item>
         </template>
         <template v-else>
           <el-form-item label="线索标签"><el-input v-model="campDlg.lead_tag" style="width: 200px" /></el-form-item>
@@ -260,6 +271,10 @@ function ruleSummary(s: Segment) {
             <span style="color: var(--el-text-color-secondary); font-size: 12px">命中用户(有手机号、未在线索池)将生成电销线索,进「电销线索」页,座席可拨。</span>
           </el-form-item>
         </template>
+        <el-form-item label="自动触达">
+          <el-switch v-model="campDlg.recurring" />
+          <span style="color: var(--el-text-color-secondary); font-size: 12px; margin-left: 8px">开启后由 cron 每日增量跑——只触达新进入分群、未触达过的人(如"7天内到期"每天自动提醒)。</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="campDlg.open = false">取消</el-button>

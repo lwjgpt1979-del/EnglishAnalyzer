@@ -4091,10 +4091,15 @@ class _CampaignIn(BaseModel):
     name: str
     segment_id: uuid.UUID | None = None
     rule: dict | None = None            # 即席规则(不存分群直接触达)
-    channel: str                        # station | sales_lead
+    channel: str                        # station | sales_lead | sms
     title: str | None = None
     content: str | None = None
     lead_tag: str | None = None
+    recurring: bool = False             # True=生命周期自动化(cron 每日增量)
+
+
+class _CampaignToggleIn(BaseModel):
+    enabled: bool
 
 
 def _seg_out(s) -> dict:
@@ -4105,6 +4110,7 @@ def _seg_out(s) -> dict:
 def _camp_out(c) -> dict:
     return {"id": str(c.id), "name": c.name, "segment_id": str(c.segment_id) if c.segment_id else None,
             "channel": c.channel, "title": c.title, "content": c.content, "lead_tag": c.lead_tag,
+            "recurring": c.recurring, "enabled": c.enabled, "total_reached": c.total_reached,
             "status": c.status, "stats": c.stats,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "executed_at": c.executed_at.isoformat() if c.executed_at else None}
@@ -4112,9 +4118,10 @@ def _camp_out(c) -> dict:
 
 @router.get("/reach/fields", response_model=BaseResponse[dict])
 async def reach_fields(db: DbDep, admin: AdminDep):
-    """分群可用字段(admin 建规则用)。"""
+    """分群可用字段 + 渠道(admin 建规则用)。"""
     from app.services import segment_service as seg
-    return make_ok({"fields": seg.FIELDS, "channels": ["station", "sales_lead"]})
+    from app.services import reach_service as rs
+    return make_ok({"fields": seg.FIELDS, "channels": list(rs.CHANNELS)})
 
 
 @router.post("/reach/segments/resolve", response_model=BaseResponse[dict])
@@ -4160,16 +4167,26 @@ async def reach_campaign_create(body: _CampaignIn, db: DbDep, admin: AdminDep):
     from app.services import reach_service as rs
     c = await rs.create_campaign(
         db, name=body.name, segment_id=body.segment_id, rule=body.rule, channel=body.channel,
-        title=body.title, content=body.content, lead_tag=body.lead_tag, admin_id=admin.id)
+        title=body.title, content=body.content, lead_tag=body.lead_tag,
+        recurring=body.recurring, admin_id=admin.id)
     await db.commit()
     return make_ok(_camp_out(c))
 
 
 @router.post("/reach/campaigns/{campaign_id}/run", response_model=BaseResponse[dict])
 async def reach_campaign_run(campaign_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """执行触达:圈人 → 站内通知 / 生成电销线索 → 回填统计。"""
+    """执行触达:圈人 →(recurring 排除已触达)→ 站内/短信/生成线索 → 回填统计。"""
     from app.services import reach_service as rs
     c = await rs.run_campaign(db, campaign_id=campaign_id)
+    await db.commit()
+    return make_ok(_camp_out(c))
+
+
+@router.post("/reach/campaigns/{campaign_id}/toggle", response_model=BaseResponse[dict])
+async def reach_campaign_toggle(campaign_id: uuid.UUID, body: _CampaignToggleIn, db: DbDep, admin: AdminDep):
+    """启/停任务(recurring 任务停用后 cron 不再跑)。"""
+    from app.services import reach_service as rs
+    c = await rs.set_enabled(db, campaign_id=campaign_id, enabled=body.enabled)
     await db.commit()
     return make_ok(_camp_out(c))
 

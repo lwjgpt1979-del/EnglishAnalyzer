@@ -22,6 +22,32 @@ def _is_dev_mode() -> bool:
     return settings.sms_provider.startswith("placeholder")
 
 
+async def send_marketing(*, phone: str, content: str) -> None:
+    """营销短信(存量召回用)。dev-mock 记日志;生产走阿里云营销模板。
+
+    ⚠️ 合规:营销短信必须用**已报备的营销模板**且**带退订**(如「【好乐学】${content},退订回T」),
+    并遵守发送时段、频次、黑名单。未配 sms_template_code_marketing → 视为 dev-mock 不真发。
+    """
+    if _is_dev_mode() or not settings.sms_template_code_marketing:
+        logger.warning("[SMS 营销 DEV MOCK] phone=%s content=%s", phone, content)
+        return
+    from alibabacloud_dysmsapi20170525.client import Client
+    from alibabacloud_dysmsapi20170525.models import SendSmsRequest
+    from alibabacloud_tea_openapi.models import Config
+
+    cfg = Config(access_key_id=settings.sms_access_key_id,
+                 access_key_secret=settings.sms_access_key_secret,
+                 endpoint="dysmsapi.aliyuncs.com")
+    client = Client(cfg)
+    req = SendSmsRequest(
+        phone_numbers=phone, sign_name=settings.sms_sign_name,
+        template_code=settings.sms_template_code_marketing,
+        template_param=f'{{"content":{content!r}}}')
+    resp = await asyncio.to_thread(client.send_sms, req)
+    if resp.body.code != "OK":
+        raise AppError(code=503, message=f"营销短信发送失败：{resp.body.message}")
+
+
 def generate_code() -> str:
     if _is_dev_mode():
         return DEV_FIXED_CODE

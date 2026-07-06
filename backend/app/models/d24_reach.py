@@ -47,17 +47,38 @@ class ReachCampaign(Base):
     segment_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("user_segment.id", ondelete="SET NULL"), nullable=True)
     rule_snapshot = mapped_column(JSONB, nullable=True)           # 执行时的规则快照(分群改了也可追溯)
-    channel = mapped_column(sa.String(16), nullable=False)        # station | sales_lead
-    # 文案:station 用 title/content;sales_lead 用 lead_tag(打到线索标签)+ source_note
+    channel = mapped_column(sa.String(16), nullable=False)        # station | sales_lead | sms
+    # 文案:station/sms 用 title/content;sales_lead 用 lead_tag(打到线索标签)+ source_note
     title = mapped_column(sa.String(120), nullable=True)
     content = mapped_column(sa.Text, nullable=True)
     lead_tag = mapped_column(sa.String(40), nullable=True)        # 生成线索时打的运营标签,如 会员将到期
+    # 生命周期自动化:recurring=True 由 cron 每日增量触达(仅新进入分群、未触达过的人),
+    # 状态停留 active(不置 done);enabled 为总开关。one-shot(recurring=False)执行一次即 done。
+    recurring = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    enabled = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'draft'"))
-    # draft | done | failed
-    stats = mapped_column(JSONB, nullable=True)                   # {matched,sent,failed,skipped}
+    # draft | done | failed | active(recurring 运行中)
+    stats = mapped_column(JSONB, nullable=True)                   # 最近一次:{matched,sent,failed,skipped}
+    total_reached = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))  # 累计触达
     created_by = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True)
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
-    executed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    executed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)  # 最近一次执行
 
     __table_args__ = (sa.Index("ix_reach_campaign_created", "created_at"),)
+
+
+class ReachLog(Base):
+    """触达明细:谁在何时被哪个任务/渠道触达。用于审计 + recurring 去重(每人每任务一次)。"""
+
+    __tablename__ = "reach_log"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("reach_campaign.id", ondelete="CASCADE"), nullable=False)
+    user_id = mapped_column(UUID(as_uuid=True), nullable=False)   # 不设 FK(用户注销不牵连历史触达)
+    channel = mapped_column(sa.String(16), nullable=False)
+    reached_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_reach_log_campaign_user", "campaign_id", "user_id"),)
