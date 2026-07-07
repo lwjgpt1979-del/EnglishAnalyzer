@@ -315,7 +315,7 @@ export function updateVocabMedia(
 export interface CurriculumUnitsResp {
   total: number
   items: AdminCurriculumUnit[]
-  options: { textbooks: string[]; grades: string[]; semesters: string[] }
+  options: { textbooks: string[]; grades: string[]; all_grades?: string[]; semesters: string[] }
 }
 export function listCurriculumUnits(params?: {
   textbook_version?: string; grade?: string; semester?: string; skip?: number; limit?: number
@@ -326,6 +326,16 @@ export function listCurriculumUnits(params?: {
 // 批量删除单元(连带知识图谱边 / 单词通词表 / 短文及考点边;返回删除数)
 export function deleteCurriculumUnits(unitIds: string[]): Promise<{ deleted: number }> {
   return unwrap(request.post('/admin/curriculum/units/delete', { unit_ids: unitIds }))
+}
+
+// 发布闸门:单元 draft/published(学生只见 published);整理好再发布
+export function setUnitStatus(unitId: string, status: 'draft' | 'published'): Promise<{ updated: number }> {
+  return unwrap(request.put(`/admin/curriculum/units/${unitId}/status`, { status }))
+}
+export function publishUnitsBulk(body: {
+  textbook_version: string; grade: string; semester: string; status: 'draft' | 'published'
+}): Promise<{ updated: number }> {
+  return unwrap(request.post('/admin/curriculum/units/publish-bulk', body))
 }
 
 export interface GenerateUnitResult {

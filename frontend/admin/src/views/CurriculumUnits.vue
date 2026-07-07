@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, Refresh, Document, Notebook, Search, Cpu, CircleCheck, CircleClose, Delete, Plus, Collection } from '@element-plus/icons-vue'
 import {
-  listCurriculumUnits, deleteCurriculumUnits,
+  listCurriculumUnits, deleteCurriculumUnits, setUnitStatus, publishUnitsBulk,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
   fetchUnitPdfBlob, getUnitStructured, generateUnitStructured, linkUnitStructured,
@@ -59,6 +59,34 @@ async function load() {
 }
 // 筛选变更:回到第一页再查
 function reload() { page.value = 1; load() }
+
+// ── 发布闸门:单元 draft/published(学生只见 published)──
+async function togglePublish(row: AdminCurriculumUnit) {
+  const next = row.status === 'published' ? 'draft' : 'published'
+  try {
+    await setUnitStatus(row.unit_id, next)
+    row.status = next
+    ElMessage.success(next === 'published' ? '已发布(学生可见)' : '已下架(学生不可见)')
+  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+}
+async function publishSemester(status: 'draft' | 'published') {
+  if (!filterTextbook.value || !filterGrade.value || !filterSemester.value) {
+    ElMessage.warning('请先在上方选定 教材版 + 年级 + 学期,再整学期发布/下架'); return
+  }
+  const label = status === 'published' ? '发布' : '下架'
+  try {
+    await ElMessageBox.confirm(
+      `确认${label}「${filterTextbook.value} ${filterGrade.value} ${filterSemester.value}学期」下全部单元?`,
+      `整学期${label}`, { type: 'warning' })
+  } catch { return }
+  try {
+    const { updated } = await publishUnitsBulk({
+      textbook_version: filterTextbook.value, grade: filterGrade.value,
+      semester: filterSemester.value, status })
+    ElMessage.success(`已${label} ${updated} 个单元`)
+    load()
+  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+}
 
 // ── 选择删除 ──────────────────────────────────────────────────────────────────
 const tableRef = ref<{ clearSelection: () => void } | null>(null)
@@ -712,6 +740,10 @@ onMounted(load)
         共 {{ total }} 个单元 ·
         本页已挂考点 {{ rows.filter(r => r.kp_count > 0).length }} 个
       </span>
+      <el-button type="success" :disabled="!filterTextbook || !filterGrade || !filterSemester"
+        title="选定 教材版+年级+学期 后,整学期一键发布(学生可见)" @click="publishSemester('published')">整学期发布</el-button>
+      <el-button plain :disabled="!filterTextbook || !filterGrade || !filterSemester"
+        @click="publishSemester('draft')">整学期下架</el-button>
       <div style="flex:1" />
       <el-button
         type="success" plain
@@ -746,9 +778,14 @@ onMounted(load)
           </el-button>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="340" fixed="right">
+      <el-table-column label="操作" width="470" fixed="right">
         <template #default="{ row }">
           <div class="act-row">
+            <el-tag size="small" :type="row.status === 'published' ? 'success' : 'info'" effect="plain">
+              {{ row.status === 'published' ? '已发布' : '草稿' }}
+            </el-tag>
+            <el-button size="small" :type="row.status === 'published' ? 'warning' : 'success'" plain
+              @click="togglePublish(row)">{{ row.status === 'published' ? '下架' : '发布' }}</el-button>
             <el-button size="small" type="primary" @click="onViewPassages(row)"><el-icon style="margin-right:4px"><Document /></el-icon>短文</el-button>
             <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)"><el-icon style="margin-right:4px"><Notebook /></el-icon>原版PDF</el-button>
             <el-button size="small" @click="onViewNodes(row)">单元考点 {{ row.kp_count || 0 }}</el-button>

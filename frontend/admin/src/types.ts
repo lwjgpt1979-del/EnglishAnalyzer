@@ -106,6 +106,7 @@ export interface AdminCurriculumUnit {
   word_count: number     // 单元重点单词数
   content_rate: number   // 已关联短文 / 短文总数，0-1
   unit_pdf_url?: string | null   // 拆出的单元独立 PDF(COS)
+  status?: string        // 发布闸门:draft/published(学生只见 published)
 }
 
 // V2 M28：真题试卷（内部管理，版权规避）

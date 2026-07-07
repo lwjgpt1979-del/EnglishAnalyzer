@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
@@ -701,6 +701,7 @@ async def list_units(
             CurriculumUnit.textbook_version == textbook_version,
             CurriculumUnit.grade == grade,
             CurriculumUnit.semester == semester,
+            CurriculumUnit.status == "published",     # 发布闸门:学生只见已发布单元
         ).order_by(CurriculumUnit.unit_no)
     )
     units = list(r.scalars().all())
@@ -727,6 +728,32 @@ async def list_units(
             kp_count=kp_count,
         ))
     return out
+
+
+async def set_unit_status(db: AsyncSession, *, unit_id: uuid.UUID, status: str) -> int:
+    """发布/下架单个单元。status ∈ {draft, published}。返回受影响行数。"""
+    if status not in ("draft", "published"):
+        from app.core.exceptions import AppError
+        raise AppError(code=400, message="status 仅支持 draft / published")
+    r = await db.execute(
+        update(CurriculumUnit).where(CurriculumUnit.id == unit_id).values(status=status))
+    return r.rowcount or 0
+
+
+async def set_units_status_bulk(
+    db: AsyncSession, *, textbook_version: str, grade: str, semester: str, status: str,
+) -> int:
+    """整学期一键发布/下架(某 教材版+年级+学期 下全部单元)。"""
+    if status not in ("draft", "published"):
+        from app.core.exceptions import AppError
+        raise AppError(code=400, message="status 仅支持 draft / published")
+    r = await db.execute(
+        update(CurriculumUnit).where(
+            CurriculumUnit.textbook_version == textbook_version,
+            CurriculumUnit.grade == normalize_grade(grade),
+            CurriculumUnit.semester == semester,
+        ).values(status=status))
+    return r.rowcount or 0
 
 
 async def get_unit_detail(
@@ -860,6 +887,7 @@ class UnitContentStat:
     passage_count: int = 0  # 短文总数
     word_count: int = 0     # 单元重点单词数(curriculum_words.is_core)
     unit_pdf_url: str | None = None   # 拆出的单元独立 PDF(COS)
+    status: str = "published"         # 发布闸门:draft/published(学生只见 published)
 
 
 # 年级中文数字→序(七<八<九),用于 SQL 排序 CASE 与 options 排序,避免字符串序(七<九<八)错乱。
@@ -1012,5 +1040,6 @@ async def list_units_with_stats(
             word_count=word_rollup.get(u.id, 0),
             content_rate=min(rate, 1.0),
             unit_pdf_url=u.unit_pdf_url,
+            status=getattr(u, "status", "published"),
         ))
     return result, total
