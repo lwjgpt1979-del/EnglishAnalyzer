@@ -8,18 +8,21 @@ Cron 条目（每周一 08:00）：
 """
 import asyncio
 
-from app.core.database import _async_session_factory
-from app.services import weekly_report_service
+from app.services import task_run_service, weekly_report_service
+
+
+async def _work(s):
+    res = await weekly_report_service.run_weekly_reports(s)
+    await s.commit()
+    return res
 
 
 async def _main() -> None:
-    async with _async_session_factory() as s:
-        res = await weekly_report_service.run_weekly_reports(s)
-        await s.commit()
-        print(
-            f"[weekly-reports] students_processed={res['students_processed']} "
-            f"relatives_notified={res['relatives_notified']}"
-        )
+    res = await task_run_service.run("weekly_reports", _work)
+    print(
+        f"[weekly-reports] students_processed={res['students_processed']} "
+        f"relatives_notified={res['relatives_notified']}"
+    )
 
 
 if __name__ == "__main__":

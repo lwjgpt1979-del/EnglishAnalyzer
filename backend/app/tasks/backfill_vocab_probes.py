@@ -10,15 +10,16 @@
 import argparse
 import asyncio
 
-from app.core.database import _async_session_factory
+from app.services import task_run_service
 from app.services import vocab_probe_service as vps
 
 
 async def _main(budget: int, limit: int | None) -> None:
-    async with _async_session_factory() as s:
-        res = await vps.backfill_probes(
+    async def _work(s):
+        return await vps.backfill_probes(
             s, only_missing=True, limit=limit, max_tokens_budget=budget)
-        print(f"[vocab-probe-backfill] {res}")
+    res = await task_run_service.run("vocab_probes_backfill", _work)
+    print(f"[vocab-probe-backfill] {res}")
 
 
 if __name__ == "__main__":

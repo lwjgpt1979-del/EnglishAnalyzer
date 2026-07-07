@@ -3647,6 +3647,22 @@ async def sales_map_crawl_run(body: _CrawlRunIn, db: DbDep, admin: AdminDep):
     return make_ok(res)
 
 
+# ── 定时任务健康看板(cron 运行记录 + 失败告警)──────────────────────────────────
+@router.get("/task-runs/overview", response_model=BaseResponse[dict])
+async def task_runs_overview(db: DbDep, admin: AdminDep):
+    """每个定时任务的最近运行 + 是否哑火/失败(从没跑过也列出)。"""
+    from app.services import task_run_service as tr
+    return make_ok(await tr.overview(db))
+
+
+@router.get("/task-runs", response_model=BaseResponse[dict])
+async def task_runs_list(db: DbDep, admin: AdminDep, task: str | None = None,
+                         status: str | None = None, skip: int = 0, limit: int = 50):
+    """某任务的运行历史(分页)。"""
+    from app.services import task_run_service as tr
+    return make_ok(await tr.list_runs(db, task=task, status=status, skip=skip, limit=limit))
+
+
 # ── 管理员账号 + 模块权限(RBAC)────────────────────────────────────────────────
 class _AdminCreateIn(BaseModel):
     username: str

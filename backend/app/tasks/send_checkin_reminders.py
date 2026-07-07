@@ -3,15 +3,18 @@
 """
 import asyncio
 
-from app.core.database import _async_session_factory
-from app.services import reminder_service
+from app.services import reminder_service, task_run_service
+
+
+async def _work(s):
+    res = await reminder_service.run_checkin_reminders(s)
+    await s.commit()
+    return res
 
 
 async def _main() -> None:
-    async with _async_session_factory() as s:
-        res = await reminder_service.run_checkin_reminders(s)
-        await s.commit()
-        print(f"[checkin-reminders] notified={res['notified']}")
+    res = await task_run_service.run("checkin_reminders", _work)
+    print(f"[checkin-reminders] notified={res['notified']}")
 
 
 if __name__ == "__main__":

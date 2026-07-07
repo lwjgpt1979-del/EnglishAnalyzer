@@ -26,6 +26,31 @@ notification_type_enum = sa.Enum(
 )
 
 
+class TaskRun(Base):
+    """定时任务运行记录:每个 crontab 任务(app/tasks/*)每次跑都留一行。
+
+    由 task_run_service.run() 统一包裹写入(任务代码零侵入,~2 行);供后台看板
+    「上次跑没跑/成功失败/耗时/结果」+ 失败自动告警超管,解决 cron 哑火无人知的盲区。
+    status: running(进行中) / success / failed。result 存任务返回的汇总 dict。
+    """
+
+    __tablename__ = "task_run"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task = mapped_column(sa.String(48), nullable=False)          # 任务键(见 task_run_service.TASKS)
+    status = mapped_column(sa.String(10), nullable=False)        # running/success/failed
+    result = mapped_column(JSONB, nullable=True)                 # 成功时的汇总(notified/filled…)
+    error = mapped_column(sa.Text, nullable=True)                # 失败时的异常摘要
+    started_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    finished_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    duration_ms = mapped_column(sa.Integer, nullable=True)
+
+    __table_args__ = (
+        sa.Index("ix_task_run_task_started", "task", "started_at"),
+    )
+
+
 class AdminAuditLog(Base):
     """平台级操作审计:admin 后台所有**写操作**(POST/PUT/PATCH/DELETE)自动留痕。
 

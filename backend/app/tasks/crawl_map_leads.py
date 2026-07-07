@@ -12,15 +12,19 @@
 import argparse
 import asyncio
 
-from app.core.database import _async_session_factory
 from app.services import map_crawl_service as crawl
+from app.services import task_run_service
 
 
 async def _main(sources: list[str], max_districts: int | None) -> None:
-    async with _async_session_factory() as s:
+    async def _work(s):
+        out = {}
         for src in sources:
             res = await crawl.run_once(s, src, max_districts=max_districts)
             print(f"[map-crawl] {res}")
+            out[src] = res
+        return out
+    await task_run_service.run("map_crawl", _work)
 
 
 if __name__ == "__main__":

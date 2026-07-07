@@ -241,7 +241,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import {
   getDailyPath, getKpProbes, submitKpProbe, submitKpProduce, getKpTransfer, submitKpTransfer,
   getKpRetention, submitKpRetention, placementStart, placementAnswer,
@@ -438,6 +438,11 @@ function afterPlacement() {
   if (pl.start_line) startLearn(pl.start_line.kp_id, pl.start_line.name)
   else backHome()
 }
+
+// 支持从知识点页直达单点四维检测:?kp_id=xxx&name=yyy
+onLoad((q: any) => {
+  if (q?.kp_id) startLearn(q.kp_id, q.name ? decodeURIComponent(q.name) : '')
+})
 
 onShow(() => { if (phase.value === 'home') loadHome() })
 </script>

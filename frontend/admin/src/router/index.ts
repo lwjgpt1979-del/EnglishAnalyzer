@@ -25,6 +25,7 @@ const router = createRouter({
         { path: 'textbook-map', name: 'textbook-map', component: () => import('../views/TextbookMap.vue') },
         { path: 'audit-logs', name: 'audit-logs', component: () => import('../views/AuditLogs.vue') },
         { path: 'admin-accounts', name: 'admin-accounts', component: () => import('../views/AdminAccounts.vue') },
+        { path: 'task-runs', name: 'task-runs', component: () => import('../views/TaskRuns.vue') },
         { path: 'textbook-word-stats', name: 'textbook-word-stats', component: () => import('../views/TextbookWordStats.vue') },
         { path: 'long-sentences', name: 'long-sentences', component: () => import('../views/LongSentences.vue') },
         { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },

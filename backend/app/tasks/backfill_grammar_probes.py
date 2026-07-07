@@ -10,15 +10,16 @@ KP 级公共缓存:所有学生共享,一点全网只生成一次;only_missing �
 import argparse
 import asyncio
 
-from app.core.database import _async_session_factory
 from app.services import grammar_probe_service as gp
+from app.services import task_run_service
 
 
 async def _main(budget: int, limit: int | None) -> None:
-    async with _async_session_factory() as s:
-        res = await gp.backfill_probes(
+    async def _work(s):
+        return await gp.backfill_probes(
             s, only_missing=True, limit=limit, max_tokens_budget=budget)
-        print(f"[grammar-probe-backfill] {res}")
+    res = await task_run_service.run("grammar_probes_backfill", _work)
+    print(f"[grammar-probe-backfill] {res}")
 
 
 if __name__ == "__main__":

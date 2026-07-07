@@ -15,7 +15,7 @@
           v-for="kp in detail.knowledge_points"
           :key="kp.id"
           class="kp-row"
-          @tap="goKp(kp.id)"
+          @tap="goKp(kp.id, kp.name, kp.category)"
         >
           <view class="kp-body">
             <text class="kp-name">{{ kp.name }}</text>
@@ -98,8 +98,10 @@ onShow(() => {
   loadMastery()
 })
 
-function goKp(id: string) {
-  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${id}` })
+function goKp(id: string, name?: string, category?: string) {
+  const n = name ? `&name=${encodeURIComponent(name)}` : ''
+  const c = category ? `&cat=${category}` : ''
+  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${id}${n}${c}` })
 }
 
 function goAdaptive() {

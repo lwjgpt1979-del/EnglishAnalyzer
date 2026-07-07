@@ -3,15 +3,18 @@
 """
 import asyncio
 
-from app.core.database import _async_session_factory
-from app.services import refund_service
+from app.services import refund_service, task_run_service
+
+
+async def _work(s):
+    res = await refund_service.run_sla_alerts(s)
+    await s.commit()
+    return res
 
 
 async def _main() -> None:
-    async with _async_session_factory() as s:
-        res = await refund_service.run_sla_alerts(s)
-        await s.commit()
-        print(f"[refund-sla] overdue={res['overdue']} admins_notified={res['admins_notified']}")
+    res = await task_run_service.run("refund_sla_alerts", _work)
+    print(f"[refund-sla] overdue={res['overdue']} admins_notified={res['admins_notified']}")
 
 
 if __name__ == "__main__":

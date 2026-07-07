@@ -99,6 +99,7 @@ const navGroups: NavGroup[] = [
     { path: '/regions', label: '地区管理' },
     { path: '/system-settings', label: '系统参数' },
     { path: '/audit-logs', label: '操作审计' },
+    { path: '/task-runs', label: '定时任务健康' },
     { path: '/admin-accounts', label: '账号与权限' },
   ] },
 ]

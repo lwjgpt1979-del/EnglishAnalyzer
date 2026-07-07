@@ -9,8 +9,28 @@
       >{{ t.label }}</view>
     </view>
 
-    <!-- 掌握卡片 -->
-    <view class="mastery-card" v-if="mastery && mastery.total > 0">
+    <!-- 语法类 KP:R10 四维掌握卡(识别/纠错/产出/迁移 + 诚实标签 + 直达检测) -->
+    <view class="g4-card" v-if="isGrammar && gStatus">
+      <view class="g4-head">
+        <text class="g4-label" :class="'st-' + gStatus.status">{{ gStatus.label }}</text>
+        <view class="g4-btn" @tap="goGrammar">{{ gActionText }}</view>
+      </view>
+      <view class="g4-dims">
+        <view class="g4-dim" v-for="d in G_DIMS" :key="d.key">
+          <text class="g4-dim-label">{{ d.label }}</text>
+          <view class="g4-bar"><view class="g4-fill" :style="{ width: Math.round(((gStatus as any)[d.key] || 0) * 100) + '%' }" /></view>
+          <text class="g4-dim-val">{{ Math.round(((gStatus as any)[d.key] || 0) * 100) }}%</text>
+        </view>
+        <view class="g4-dim">
+          <text class="g4-dim-label">迁移</text>
+          <text class="g4-dim-val" :class="{ ok: gStatus.transfer_ok }">{{ gStatus.transfer_ok ? '已通过' : '未通过' }}</text>
+        </view>
+      </view>
+      <text class="g4-evidence" v-if="gStatus.evidence?.length">{{ gStatus.evidence.join(';') }}</text>
+    </view>
+
+    <!-- 非语法类:正确率台账;没练过给「摸底」引导而非整块消失 -->
+    <view class="mastery-card" v-else-if="mastery && mastery.total > 0">
       <view class="mastery-row">
         <text class="mastery-label">正确率</text>
         <text class="mastery-val accent">{{ mastery.accuracy !== null ? Math.round(mastery.accuracy * 100) + '%' : '—' }}</text>
@@ -24,20 +44,27 @@
         <text class="mastery-val">{{ mastery.last_activity_at.slice(0, 10) }}</text>
       </view>
     </view>
+    <view class="mastery-card mastery-hint" v-else-if="mastery !== null || !loading">
+      <text class="mastery-tip">还没检测过这个知识点 —— 先做 5 题摸个底,看看自己会不会</text>
+    </view>
 
-    <!-- Tab 1: 课本内容（含 4 维度子 tab） -->
+    <!-- Tab 1: 课本内容(只展示有内容的维度) -->
     <template v-if="activeView === 'content'">
-      <view class="subtabs">
+      <view class="subtabs" v-if="availDims.length > 1">
         <view
-          v-for="d in dims" :key="d.key"
+          v-for="d in availDims" :key="d.key"
           class="subtab" :class="{ active: activeDim === d.key }"
           @tap="activeDim = d.key"
         >{{ d.label }}</view>
       </view>
       <view v-if="loading" class="empty">加载中…</view>
-      <view v-else-if="!currentContent" class="empty">该维度暂无内容</view>
+      <view v-else-if="availDims.length === 0" class="empty">
+        <text class="empty-title">讲解内容制作中</text>
+        <text class="empty-sub">这个知识点的课本讲解还没上线\n可以先练几题检验掌握情况,或看「仿真题」</text>
+      </view>
       <scroll-view v-else scroll-y class="content">
-        <rich-text :nodes="md2html(currentContent.content_md || '')" class="md" />
+        <view class="dim-badge" v-if="availDims.length === 1">{{ availDims[0].label }}</view>
+        <rich-text :nodes="md2html(currentContent?.content_md || '')" class="md" />
       </scroll-view>
       <view class="practice-bar">
         <button class="btn-secondary" @tap="goPractice">练习（5 题）</button>
@@ -60,7 +87,7 @@
           </view>
           <text class="card-stem">{{ i + 1 }}. {{ q.stem }}</text>
         </view>
-        <view class="list-foot">点击任意题开始练习</view>
+        <view class="list-foot">点击任意题进入本知识点练习</view>
       </scroll-view>
     </template>
 
@@ -89,6 +116,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { getKpContents, getKpMastery } from '@/api/curriculum'
+import { getKpStatus } from '@/api/grammar'
 import { listPracticeQuestions } from '@/api/questions'
 import { listWrongQuestionsByKp } from '@/api/wrongQuestions'
 import { md2html } from '@/utils/md'
@@ -98,7 +126,7 @@ type ViewKey = 'content' | 'questions' | 'wrong'
 const viewTabs: { key: ViewKey; label: string }[] = [
   { key: 'content', label: '课本内容' },
   { key: 'questions', label: '仿真题' },
-  { key: 'wrong', label: '我做过的相关题' },
+  { key: 'wrong', label: '相关错题' },
 ]
 const activeView = ref<ViewKey>('content')
 
@@ -112,13 +140,25 @@ const dims = [
   { key: 'writing',     label: '写作' },
 ]
 const contents = ref<KPContentOut[]>([])
-const activeDim = ref('grammar')
+const activeDim = ref('')
 const loading = ref(true)
 const kpId = ref('')
+const kpName = ref('')
+
+// 只保留真有内容的维度做 tab(避免让用户挨个点 6 个空维度)
+const availDims = computed(() =>
+  dims.filter(d => contents.value.some(
+    c => c.dimension === d.key && (c.content_md || '').trim())))
 
 const currentContent = computed(
   () => contents.value.find(c => c.dimension === activeDim.value) || null,
 )
+
+function setTitle(name: string) {
+  if (!name) return
+  kpName.value = name
+  uni.setNavigationBarTitle({ title: name })
+}
 
 // —— 掌握台账 ——
 const mastery = ref<KpMasteryItem | null>(null)
@@ -126,7 +166,37 @@ const mastery = ref<KpMasteryItem | null>(null)
 async function loadMastery() {
   try {
     mastery.value = await getKpMastery(kpId.value)
+    if (!kpName.value && mastery.value?.kp_name) setTitle(mastery.value.kp_name)
   } catch { /* 静默失败 */ }
+}
+
+// —— R10 语法四维掌握(仅语法类 KP:识别/纠错/产出/迁移 BKT + 诚实标签)——
+const isGrammar = ref(false)
+type GStatus = Awaited<ReturnType<typeof getKpStatus>>
+const gStatus = ref<GStatus | null>(null)
+const G_DIMS = [
+  { key: 'recognize', label: '识别' },
+  { key: 'detect', label: '纠错' },
+  { key: 'produce_score', label: '产出' },
+] as const
+
+async function loadGrammarStatus() {
+  if (!isGrammar.value) return
+  try { gStatus.value = await getKpStatus(kpId.value) } catch { /* 静默:退回旧台账 */ }
+}
+
+const gActionText = computed(() => {
+  const s = gStatus.value?.status
+  if (s === 'mastered') return '复测巩固'
+  if (s === 'due_retain') return '去复测'
+  if (s === 'learning' || s === 'retaining') return '继续闯关'
+  return '测一测'
+})
+
+function goGrammar() {
+  uni.navigateTo({
+    url: `/pages/grammar/index?kp_id=${kpId.value}&name=${encodeURIComponent(kpName.value || '')}`,
+  })
 }
 
 // —— Tab 2：仿真题（懒加载） ——
@@ -141,18 +211,25 @@ const wLoaded = ref(false)
 
 onLoad(async (q: any) => {
   kpId.value = q.id || ''
+  if (q.name) setTitle(decodeURIComponent(q.name))
+  isGrammar.value = q.cat === 'grammar'
   try {
     contents.value = await getKpContents(q.id)
+    // 默认落在第一个「有内容」的维度(而不是写死语法);全空则留空展示整体空态
+    activeDim.value = availDims.value[0]?.key || ''
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
   } finally {
     loading.value = false
   }
   loadMastery()
+  loadGrammarStatus()
 })
 
 onShow(() => {
-  if (kpId.value) loadMastery()
+  if (!kpId.value) return
+  loadMastery()
+  loadGrammarStatus()   // 从语法检测页返回后刷新四维
 })
 
 async function switchView(key: ViewKey) {
@@ -186,12 +263,17 @@ async function loadWrongs() {
   }
 }
 
+// 只有当前维度真有内容时才按维度练;否则按整个知识点练(避免"暂无内容却练该维度"的矛盾)
+function dimParam(): string {
+  return currentContent.value ? `&dim=${activeDim.value}` : ''
+}
+
 function goPractice() {
-  uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}&dim=${activeDim.value}` })
+  uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}${dimParam()}` })
 }
 
 function goExam() {
-  uni.navigateTo({ url: `/pages/practice/v2-exam?kp=${kpId.value}&count=10&dim=${activeDim.value}` })
+  uni.navigateTo({ url: `/pages/practice/v2-exam?kp=${kpId.value}&count=10${dimParam()}` })
 }
 
 function goWrongDetail(id: string) {
@@ -216,7 +298,20 @@ function goWrongDetail(id: string) {
   flex: 1; text-align: center; padding: 18rpx 0; font-size: 26rpx; color: var(--c-text-second);
 }
 .subtab.active { color: var(--c-primary); font-weight: 700; }
-.empty { text-align: center; padding: 80rpx 24rpx; color: var(--c-text-hint); font-size: 28rpx; }
+/* 空态撑满剩余空间:练习按钮才能贴住底部,不再悬在页面中间 */
+.empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 80rpx 48rpx; color: var(--c-text-hint); font-size: 28rpx; text-align: center;
+}
+.empty-title { font-size: 32rpx; color: var(--c-text-second); font-weight: 600; margin-bottom: 16rpx; }
+.empty-sub { font-size: 26rpx; color: var(--c-text-hint); line-height: 1.7; white-space: pre-line; }
+.mastery-hint { justify-content: center; }
+.mastery-tip { font-size: 24rpx; color: var(--c-text-second); }
+.dim-badge {
+  display: inline-block; font-size: 22rpx; color: var(--c-primary);
+  background: rgba(61, 139, 245, 0.08); border-radius: 999rpx;
+  padding: 4rpx 18rpx; margin-bottom: 16rpx;
+}
 .content { flex: 1; padding: 24rpx; }
 .md { font-size: 28rpx; line-height: 1.7; color: var(--c-text-body); }
 .list { flex: 1; padding: 16rpx 24rpx; }
@@ -235,6 +330,31 @@ function goWrongDetail(id: string) {
 .btn-primary, .btn-secondary { flex: 1; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; text-align: center; }
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); }
 .btn-secondary { background: var(--c-bg-soft); color: var(--c-text-body); border: 2rpx solid var(--c-border); }
+/* R10 语法四维掌握卡 */
+.g4-card {
+  background: var(--c-bg-card); border-bottom: 1rpx solid var(--c-border);
+  padding: 20rpx 32rpx 16rpx;
+}
+.g4-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14rpx; }
+.g4-label { font-size: 26rpx; font-weight: 700; padding: 4rpx 18rpx; border-radius: 999rpx; }
+.st-mastered { background: #E7F6EC; color: #2E8B57; }
+.st-learning { background: #FFF4E5; color: #B7791F; }
+.st-due_retain { background: #FDECEC; color: #D14343; }
+.st-retaining { background: #EAF3FE; color: var(--c-primary); }
+.st-new { background: var(--c-bg-soft); color: var(--c-text-second); }
+.g4-btn {
+  font-size: 24rpx; color: var(--c-on-primary); background: var(--c-primary);
+  border-radius: 999rpx; padding: 8rpx 28rpx; font-weight: 600;
+}
+.g4-dims { display: flex; gap: 24rpx; }
+.g4-dim { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
+.g4-dim-label { font-size: 22rpx; color: var(--c-text-hint); }
+.g4-bar { width: 100%; height: 10rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; }
+.g4-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; }
+.g4-dim-val { font-size: 22rpx; color: var(--c-text-second); font-weight: 600; }
+.g4-dim-val.ok { color: #2E8B57; }
+.g4-evidence { display: block; margin-top: 12rpx; font-size: 22rpx; color: var(--c-text-hint); }
+
 .mastery-card {
   background: var(--c-bg-card); border-bottom: 1rpx solid var(--c-border);
   padding: 20rpx 32rpx; display: flex; gap: 40rpx;
