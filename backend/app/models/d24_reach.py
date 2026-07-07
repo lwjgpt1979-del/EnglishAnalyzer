@@ -51,6 +51,9 @@ class ReachCampaign(Base):
     # 文案:station/sms 用 title/content;sales_lead 用 lead_tag(打到线索标签)+ source_note
     title = mapped_column(sa.String(120), nullable=True)
     content = mapped_column(sa.Text, nullable=True)
+    # A/B 文案:[{"label":"A","title":..,"content":..}, ...];空=单文案(用上面 title/content)。
+    # 执行时按 user_id 稳定分流到某变体,reach_log.variant 记归因。仅 station/sms 有意义。
+    variants = mapped_column(JSONB, nullable=True)
     lead_tag = mapped_column(sa.String(40), nullable=True)        # 生成线索时打的运营标签,如 会员将到期
     # 生命周期自动化:recurring=True 由 cron 每日增量触达(仅新进入分群、未触达过的人),
     # 状态停留 active(不置 done);enabled 为总开关。one-shot(recurring=False)执行一次即 done。
@@ -78,6 +81,7 @@ class ReachLog(Base):
         UUID(as_uuid=True), sa.ForeignKey("reach_campaign.id", ondelete="CASCADE"), nullable=False)
     user_id = mapped_column(UUID(as_uuid=True), nullable=False)   # 不设 FK(用户注销不牵连历史触达)
     channel = mapped_column(sa.String(16), nullable=False)
+    variant = mapped_column(sa.String(8), nullable=True)          # A/B 命中的变体标签(单文案为 NULL)
     reached_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 

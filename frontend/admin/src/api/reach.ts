@@ -44,6 +44,7 @@ export function deleteSegment(id: string): Promise<{ deleted: string }> {
   return unwrap(request.delete(`/admin/reach/segments/${id}`))
 }
 
+export interface Variant { label: string; title?: string | null; content: string }
 export interface Campaign {
   id: string
   name: string
@@ -52,6 +53,7 @@ export interface Campaign {
   title: string | null
   content: string | null
   lead_tag: string | null
+  variants: Variant[] | null
   recurring: boolean
   enabled: boolean
   total_reached: number
@@ -60,14 +62,27 @@ export interface Campaign {
   created_at: string | null
   executed_at: string | null
 }
+export interface ReachLogItem {
+  user_id: string; nickname: string | null; phone: string | null
+  channel: string; variant: string | null; reached_at: string | null
+}
+export interface ReachLogs {
+  total: number
+  items: ReachLogItem[]
+  variant_summary: { variant: string; count: number }[]
+}
 export function listCampaigns(params?: { skip?: number; limit?: number }): Promise<{ total: number; items: Campaign[] }> {
   return unwrap(request.get('/admin/reach/campaigns', { params }))
 }
 export function createCampaign(body: {
   name: string; channel: string; segment_id?: string | null; rule?: SegmentRule | null
   title?: string | null; content?: string | null; lead_tag?: string | null; recurring?: boolean
+  variants?: Variant[] | null
 }): Promise<Campaign> {
   return unwrap(request.post('/admin/reach/campaigns', body))
+}
+export function getCampaignLogs(id: string, params?: { skip?: number; limit?: number }): Promise<ReachLogs> {
+  return unwrap(request.get(`/admin/reach/campaigns/${id}/logs`, { params }))
 }
 export function runCampaign(id: string): Promise<Campaign> {
   return unwrap(request.post(`/admin/reach/campaigns/${id}/run`))

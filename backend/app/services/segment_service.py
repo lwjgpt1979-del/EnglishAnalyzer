@@ -29,6 +29,10 @@ FIELDS: dict = {
     "city_prefix": {"label": "城市/省(region码前缀,如32=江苏)", "type": "str"},
     "grade": {"label": "偏好年级(如 初中7年级)", "type": "str"},
     "inactive_days": {"label": "近N天无任何学习行为(不活跃)", "type": "int", "hint": "流失预警/沉睡召回"},
+    "textbook_version": {"label": "偏好教材版本(如 译林版/人教版)", "type": "str"},
+    "institution_member": {"label": "是否机构学员", "type": "bool"},
+    "birth_year_gte": {"label": "出生年 ≥(卡低龄下限)", "type": "int"},
+    "birth_year_lte": {"label": "出生年 ≤(卡高龄上限)", "type": "int"},
 }
 
 _NOW = sa.func.now()
@@ -99,6 +103,14 @@ def _condition_clause(field: str, value):
         return User.acquisition_channel == str(value)
     if field == "inactive_days":
         return _inactive_clause(_int(value))
+    if field == "textbook_version":
+        return User.preferred_textbook_version == str(value)
+    if field == "institution_member":
+        return User.institution_id.isnot(None) if bool(value) else User.institution_id.is_(None)
+    if field == "birth_year_gte":
+        return User.birth_year >= _int(value)
+    if field == "birth_year_lte":
+        return User.birth_year <= _int(value)
     if field == "city_prefix":
         return User.city_code.like(f"{str(value)}%")
     if field == "grade":

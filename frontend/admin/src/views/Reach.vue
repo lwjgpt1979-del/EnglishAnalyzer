@@ -2,8 +2,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  type Campaign, type ReachFields, type Segment, type SegmentCondition,
-  CHANNEL_LABEL, createCampaign, deleteSegment, getReachFields, listCampaigns,
+  type Campaign, type ReachFields, type ReachLogs, type Segment, type SegmentCondition,
+  type Variant,
+  CHANNEL_LABEL, createCampaign, deleteSegment, getCampaignLogs, getReachFields, listCampaigns,
   listSegments, resolveSegment, runCampaign, toggleCampaign, upsertSegment,
 } from '../api/reach'
 
@@ -82,25 +83,30 @@ async function removeSegment(s: Segment) {
 const campDlg = reactive({
   open: false, name: '', segment_id: '' as string,
   channel: 'sales_lead' as 'station' | 'sales_lead' | 'sms',
-  title: '', content: '', lead_tag: '会员将到期', recurring: false,
+  title: '', content: '', lead_tag: '会员将到期', recurring: false, abTest: false,
 })
+const abVariants = ref<Variant[]>([])
 const isMsgChannel = computed(() => campDlg.channel === 'station' || campDlg.channel === 'sms')
 function openCampFrom(s?: Segment) {
   campDlg.open = true; campDlg.name = ''
   campDlg.segment_id = s?.id || (segments.value[0]?.id ?? '')
   campDlg.channel = 'sales_lead'; campDlg.title = ''; campDlg.content = ''
-  campDlg.lead_tag = '会员将到期'; campDlg.recurring = false
+  campDlg.lead_tag = '会员将到期'; campDlg.recurring = false; campDlg.abTest = false
+  abVariants.value = [{ label: 'A', title: '', content: '' }, { label: 'B', title: '', content: '' }]
 }
 async function submitCampaign() {
   if (!campDlg.name.trim()) { ElMessage.warning('填任务名'); return }
   if (!campDlg.segment_id) { ElMessage.warning('选一个分群'); return }
-  if (isMsgChannel.value && !campDlg.content.trim()) { ElMessage.warning('通知/短信要填内容'); return }
+  const useAB = isMsgChannel.value && campDlg.abTest
+  if (useAB && abVariants.value.some(v => !v.content.trim())) { ElMessage.warning('每个 A/B 变体都要填内容'); return }
+  if (isMsgChannel.value && !useAB && !campDlg.content.trim()) { ElMessage.warning('通知/短信要填内容'); return }
   await createCampaign({
     name: campDlg.name, channel: campDlg.channel, segment_id: campDlg.segment_id, rule: null,
-    title: isMsgChannel.value ? campDlg.title : null,
-    content: isMsgChannel.value ? campDlg.content : null,
+    title: isMsgChannel.value && !useAB ? campDlg.title : null,
+    content: isMsgChannel.value && !useAB ? campDlg.content : null,
     lead_tag: campDlg.channel === 'sales_lead' ? campDlg.lead_tag : null,
     recurring: campDlg.recurring,
+    variants: useAB ? abVariants.value : null,
   })
   ElMessage.success('触达任务已创建(草稿),点「执行」下发' + (campDlg.recurring ? ';自动任务由 cron 每日增量跑' : ''))
   campDlg.open = false
@@ -110,6 +116,25 @@ async function toggle(c: Campaign) {
   await toggleCampaign(c.id, !c.enabled)
   ElMessage.success(c.enabled ? '已停用' : '已启用')
   await loadAll()
+}
+
+// ── 触达明细审计抽屉 ──────────────────────────────────────────────────────
+const logDrawer = reactive({ open: false, campaign: null as Campaign | null, page: 1, size: 20 })
+const logData = ref<ReachLogs>({ total: 0, items: [], variant_summary: [] })
+const logLoading = ref(false)
+async function openLogs(c: Campaign) {
+  logDrawer.open = true; logDrawer.campaign = c; logDrawer.page = 1
+  await loadLogs()
+}
+async function loadLogs() {
+  if (!logDrawer.campaign) return
+  logLoading.value = true
+  try {
+    logData.value = await getCampaignLogs(logDrawer.campaign.id, {
+      skip: (logDrawer.page - 1) * logDrawer.size, limit: logDrawer.size })
+  } finally {
+    logLoading.value = false
+  }
 }
 const running = ref('')
 async function doRun(c: Campaign) {
@@ -167,10 +192,12 @@ function ruleSummary(s: Segment) {
             <span v-if="row.total_reached" style="color: var(--el-text-color-secondary); font-size: 12px"> · 累计触达 {{ row.total_reached }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180">
+        <el-table-column label="操作" width="240">
           <template #default="{ row }">
             <el-button v-if="row.status === 'draft' || (row.recurring && row.enabled)" size="small" type="primary" :loading="running === row.id" @click="doRun(row)">{{ row.recurring ? '手动跑一次' : '执行' }}</el-button>
             <el-button v-if="row.recurring" size="small" :type="row.enabled ? 'info' : 'success'" plain @click="toggle(row)">{{ row.enabled ? '停用' : '启用' }}</el-button>
+            <el-button v-if="row.total_reached" size="small" text @click="openLogs(row)">明细</el-button>
+            <el-tag v-if="row.variants" size="small" effect="plain" style="margin-left: 2px">A/B</el-tag>
             <span v-if="!row.recurring && row.status !== 'draft'" style="color: var(--el-text-color-secondary); font-size: 12px">{{ row.executed_at?.slice(0, 16).replace('T', ' ') }}</span>
           </template>
         </el-table-column>
@@ -262,8 +289,27 @@ function ruleSummary(s: Segment) {
           </el-radio-group>
         </el-form-item>
         <template v-if="isMsgChannel">
-          <el-form-item v-if="campDlg.channel === 'station'" label="标题"><el-input v-model="campDlg.title" style="width: 300px" /></el-form-item>
-          <el-form-item label="内容"><el-input v-model="campDlg.content" type="textarea" :rows="3" style="width: 380px" :placeholder="campDlg.channel === 'sms' ? '短信正文(生产走已报备营销模板+退订;未配则 dev-mock 不真发)' : ''" /></el-form-item>
+          <el-form-item label="A/B 文案">
+            <el-switch v-model="campDlg.abTest" />
+            <span style="color: var(--el-text-color-secondary); font-size: 12px; margin-left: 8px">开启后按用户稳定分流到不同文案,执行后看各变体触达数对比效果。</span>
+          </el-form-item>
+          <template v-if="!campDlg.abTest">
+            <el-form-item v-if="campDlg.channel === 'station'" label="标题"><el-input v-model="campDlg.title" style="width: 300px" /></el-form-item>
+            <el-form-item label="内容"><el-input v-model="campDlg.content" type="textarea" :rows="3" style="width: 380px" :placeholder="campDlg.channel === 'sms' ? '短信正文(生产走已报备营销模板+退订;未配则 dev-mock 不真发)' : ''" /></el-form-item>
+          </template>
+          <el-form-item v-else label="变体">
+            <div style="width: 100%">
+              <div v-for="(v, i) in abVariants" :key="i" class="variant-box">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+                  <el-tag size="small">变体 {{ v.label }}</el-tag>
+                  <el-input v-if="campDlg.channel === 'station'" v-model="v.title" placeholder="标题" size="small" style="width: 200px" />
+                  <el-button v-if="abVariants.length > 2" text type="danger" size="small" @click="abVariants.splice(i, 1)">删</el-button>
+                </div>
+                <el-input v-model="v.content" type="textarea" :rows="2" placeholder="文案内容" style="width: 100%" />
+              </div>
+              <el-button text type="primary" size="small" @click="abVariants.push({ label: String.fromCharCode(65 + abVariants.length), title: '', content: '' })">+ 加变体</el-button>
+            </div>
+          </el-form-item>
         </template>
         <template v-else>
           <el-form-item label="线索标签"><el-input v-model="campDlg.lead_tag" style="width: 200px" /></el-form-item>
@@ -281,5 +327,38 @@ function ruleSummary(s: Segment) {
         <el-button type="primary" @click="submitCampaign">创建(草稿)</el-button>
       </template>
     </el-dialog>
+
+    <!-- 触达明细审计抽屉 -->
+    <el-drawer v-model="logDrawer.open" :title="`触达明细 · ${logDrawer.campaign?.name || ''}`" size="640px">
+      <div v-loading="logLoading">
+        <div v-if="logData.variant_summary.length > 1" style="margin-bottom: 12px">
+          <b style="font-size: 13px">A/B 各变体触达</b>
+          <el-tag v-for="s in logData.variant_summary" :key="s.variant" size="small" style="margin-left: 8px">
+            {{ s.variant }}:{{ s.count }}
+          </el-tag>
+        </div>
+        <el-table :data="logData.items" size="small">
+          <el-table-column label="用户" min-width="120">
+            <template #default="{ row }">{{ row.nickname || row.phone || row.user_id.slice(0, 8) }}</template>
+          </el-table-column>
+          <el-table-column prop="phone" label="手机" width="130" />
+          <el-table-column label="渠道" width="110">
+            <template #default="{ row }">{{ CHANNEL_LABEL[row.channel] || row.channel }}</template>
+          </el-table-column>
+          <el-table-column prop="variant" label="变体" width="70" />
+          <el-table-column label="触达时间" width="150">
+            <template #default="{ row }">{{ row.reached_at?.slice(0, 16).replace('T', ' ') }}</template>
+          </el-table-column>
+        </el-table>
+        <el-pagination
+          style="margin-top: 12px" layout="total, prev, pager, next" :total="logData.total"
+          :page-size="logDrawer.size" :current-page="logDrawer.page"
+          @current-change="(p: number) => { logDrawer.page = p; loadLogs() }" />
+      </div>
+    </el-drawer>
   </div>
 </template>
+
+<style scoped>
+.variant-box { border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+</style>

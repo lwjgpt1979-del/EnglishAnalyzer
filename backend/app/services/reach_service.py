@@ -9,6 +9,7 @@ one-shot(recurring=False)执行一次即 done。所有触达写 reach_log(审计
 """
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
+from app.models.d1_users import User
 from app.models.d23_sales_crm import SalesLead
 from app.models.d24_reach import ReachCampaign, ReachLog, UserSegment
 from app.services import notification_service, segment_service, sms_service
@@ -31,10 +33,28 @@ async def list_campaigns(db: AsyncSession, *, skip: int = 0, limit: int = 50) ->
     return {"total": int(total), "items": rows}
 
 
+def _clean_variants(variants, channel: str) -> list | None:
+    """校验并规整 A/B 变体。仅 station/sms 有意义;每个变体需 content。返回 None=单文案。"""
+    if not variants:
+        return None
+    if channel not in ("station", "sms"):
+        raise AppError(code=400, message="A/B 文案仅站内通知/短信渠道支持")
+    if not isinstance(variants, list) or len(variants) < 2:
+        raise AppError(code=400, message="A/B 至少要 2 个变体")
+    out = []
+    for i, v in enumerate(variants):
+        if not isinstance(v, dict) or not (v.get("content") or "").strip():
+            raise AppError(code=400, message=f"变体 {i + 1} 缺内容")
+        out.append({"label": str(v.get("label") or chr(65 + i))[:8],
+                    "title": v.get("title"), "content": v["content"]})
+    return out
+
+
 async def create_campaign(db: AsyncSession, *, name: str, channel: str, admin_id: uuid.UUID,
                           segment_id: uuid.UUID | None = None, rule: dict | None = None,
                           title: str | None = None, content: str | None = None,
-                          lead_tag: str | None = None, recurring: bool = False) -> ReachCampaign:
+                          lead_tag: str | None = None, recurring: bool = False,
+                          variants: list | None = None) -> ReachCampaign:
     if channel not in CHANNELS:
         raise AppError(code=400, message=f"渠道非法 {channel!r},仅 {CHANNELS}")
     snap = rule
@@ -46,11 +66,12 @@ async def create_campaign(db: AsyncSession, *, name: str, channel: str, admin_id
     if snap is None:
         raise AppError(code=400, message="需指定分群或即席规则")
     segment_service.build_where(snap)   # 校验
-    if channel in ("station", "sms") and not (content or "").strip():
+    variants = _clean_variants(variants, channel)
+    if channel in ("station", "sms") and not variants and not (content or "").strip():
         raise AppError(code=400, message="站内通知/短信需填内容")
     camp = ReachCampaign(
         id=uuid.uuid4(), name=name, segment_id=segment_id, rule_snapshot=snap,
-        channel=channel, title=title, content=content, lead_tag=lead_tag,
+        channel=channel, title=title, content=content, variants=variants, lead_tag=lead_tag,
         recurring=recurring, enabled=True, status="draft", created_by=admin_id)
     db.add(camp)
     await db.flush()
@@ -71,8 +92,20 @@ async def _reached_ids(db: AsyncSession, campaign_id: uuid.UUID) -> set:
         sa.select(ReachLog.user_id).where(ReachLog.campaign_id == campaign_id))).scalars().all())
 
 
-def _log_reach(db: AsyncSession, camp: ReachCampaign, user_id: uuid.UUID) -> None:
-    db.add(ReachLog(id=uuid.uuid4(), campaign_id=camp.id, user_id=user_id, channel=camp.channel))
+def _log_reach(db: AsyncSession, camp: ReachCampaign, user_id: uuid.UUID,
+               variant: str | None = None) -> None:
+    db.add(ReachLog(id=uuid.uuid4(), campaign_id=camp.id, user_id=user_id,
+                    channel=camp.channel, variant=variant))
+
+
+def _pick_variant(camp: ReachCampaign, user_id: uuid.UUID):
+    """按 user_id 稳定分流到某变体 → (title, content, label)。无 variants → 单文案。"""
+    vs = camp.variants
+    if not vs:
+        return camp.title, camp.content, None
+    idx = int(hashlib.md5(str(user_id).encode()).hexdigest(), 16) % len(vs)
+    v = vs[idx]
+    return (v.get("title") or camp.title), v.get("content") or "", v.get("label")
 
 
 async def run_campaign(db: AsyncSession, *, campaign_id: uuid.UUID) -> ReachCampaign:
@@ -116,13 +149,14 @@ async def run_campaign(db: AsyncSession, *, campaign_id: uuid.UUID) -> ReachCamp
 
 
 async def _run_station(db: AsyncSession, camp: ReachCampaign, rows, stats: dict) -> None:
-    title = camp.title or "来自好乐学的消息"
     for r in rows:
+        title, content, variant = _pick_variant(camp, r.id)
         try:
             await notification_service.emit(
-                db, user_id=r.id, type_="membership", title=title, content=camp.content or "",
-                meta={"reach_campaign_id": str(camp.id)})
-            _log_reach(db, camp, r.id)
+                db, user_id=r.id, type_="membership", title=title or "来自好乐学的消息",
+                content=content or "",
+                meta={"reach_campaign_id": str(camp.id), "variant": variant})
+            _log_reach(db, camp, r.id, variant)
             stats["sent"] += 1
         except Exception:  # noqa: BLE001
             stats["failed"] += 1
@@ -135,9 +169,10 @@ async def _run_sms(db: AsyncSession, camp: ReachCampaign, rows, stats: dict) -> 
         if not phone:
             stats["skipped"] += 1
             continue
+        _title, content, variant = _pick_variant(camp, r.id)
         try:
-            await sms_service.send_marketing(phone=phone, content=camp.content or "")
-            _log_reach(db, camp, r.id)
+            await sms_service.send_marketing(phone=phone, content=content or "")
+            _log_reach(db, camp, r.id, variant)
             stats["sent"] += 1
         except Exception:  # noqa: BLE001
             stats["failed"] += 1
@@ -185,3 +220,27 @@ async def run_recurring_all(db: AsyncSession) -> dict:
             await db.rollback()
             out["details"].append({"id": str(camp.id), "name": camp.name, "error": str(exc)})
     return out
+
+
+# ── 触达明细审计 ──────────────────────────────────────────────────────────────
+
+async def get_logs(db: AsyncSession, *, campaign_id: uuid.UUID, skip: int = 0, limit: int = 50) -> dict:
+    """某任务的触达明细(分页,左连 users 取昵称/手机)+ A/B 变体汇总。"""
+    total = (await db.execute(sa.select(sa.func.count()).select_from(ReachLog)
+             .where(ReachLog.campaign_id == campaign_id))).scalar_one()
+    rows = (await db.execute(
+        sa.select(ReachLog.user_id, ReachLog.channel, ReachLog.variant, ReachLog.reached_at,
+                  User.nickname, User.phone)
+        .outerjoin(User, User.id == ReachLog.user_id)
+        .where(ReachLog.campaign_id == campaign_id)
+        .order_by(ReachLog.reached_at.desc()).offset(skip).limit(limit))).all()
+    summary = (await db.execute(
+        sa.select(ReachLog.variant, sa.func.count()).where(ReachLog.campaign_id == campaign_id)
+        .group_by(ReachLog.variant))).all()
+    return {
+        "total": int(total),
+        "items": [{"user_id": str(r.user_id), "nickname": r.nickname, "phone": r.phone,
+                   "channel": r.channel, "variant": r.variant,
+                   "reached_at": r.reached_at.isoformat() if r.reached_at else None} for r in rows],
+        "variant_summary": [{"variant": v or "(单文案)", "count": int(n)} for v, n in summary],
+    }

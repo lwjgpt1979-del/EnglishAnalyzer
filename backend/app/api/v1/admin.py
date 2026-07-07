@@ -4096,6 +4096,7 @@ class _CampaignIn(BaseModel):
     content: str | None = None
     lead_tag: str | None = None
     recurring: bool = False             # True=生命周期自动化(cron 每日增量)
+    variants: list | None = None        # A/B 文案 [{label,title,content}],>=2;空=单文案
 
 
 class _CampaignToggleIn(BaseModel):
@@ -4110,6 +4111,7 @@ def _seg_out(s) -> dict:
 def _camp_out(c) -> dict:
     return {"id": str(c.id), "name": c.name, "segment_id": str(c.segment_id) if c.segment_id else None,
             "channel": c.channel, "title": c.title, "content": c.content, "lead_tag": c.lead_tag,
+            "variants": c.variants,
             "recurring": c.recurring, "enabled": c.enabled, "total_reached": c.total_reached,
             "status": c.status, "stats": c.stats,
             "created_at": c.created_at.isoformat() if c.created_at else None,
@@ -4168,7 +4170,7 @@ async def reach_campaign_create(body: _CampaignIn, db: DbDep, admin: AdminDep):
     c = await rs.create_campaign(
         db, name=body.name, segment_id=body.segment_id, rule=body.rule, channel=body.channel,
         title=body.title, content=body.content, lead_tag=body.lead_tag,
-        recurring=body.recurring, admin_id=admin.id)
+        recurring=body.recurring, variants=body.variants, admin_id=admin.id)
     await db.commit()
     return make_ok(_camp_out(c))
 
@@ -4189,6 +4191,14 @@ async def reach_campaign_toggle(campaign_id: uuid.UUID, body: _CampaignToggleIn,
     c = await rs.set_enabled(db, campaign_id=campaign_id, enabled=body.enabled)
     await db.commit()
     return make_ok(_camp_out(c))
+
+
+@router.get("/reach/campaigns/{campaign_id}/logs", response_model=BaseResponse[dict])
+async def reach_campaign_logs(campaign_id: uuid.UUID, db: DbDep, admin: AdminDep,
+                              skip: int = 0, limit: int = 50):
+    """触达明细审计(分页)+ A/B 变体汇总。"""
+    from app.services import reach_service as rs
+    return make_ok(await rs.get_logs(db, campaign_id=campaign_id, skip=skip, limit=limit))
 
 
 # ─── 电销 CRM · P2 企微会话存档 ───────────────────────────────────────────────
