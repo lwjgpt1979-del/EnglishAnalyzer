@@ -31,7 +31,7 @@ const filterSemester = ref('')
 const total    = ref(0)
 const page     = ref(1)
 const pageSize = 50
-const options  = ref<{ textbooks: string[]; grades: string[]; semesters: string[] }>({ textbooks: [], grades: [], semesters: [] })
+const options  = ref<{ textbooks: string[]; grades: string[]; all_grades?: string[]; semesters: string[] }>({ textbooks: [], grades: [], all_grades: [], semesters: [] })
 const textbookOptions = computed(() => options.value.textbooks)
 const gradeOptions    = computed(() => options.value.grades)
 const semesterOptions = computed(() => options.value.semesters)
@@ -498,7 +498,10 @@ function diffColor(d: number | null): string {
 // ── PDF 上传 Dialog ──────────────────────────────────────────────────────────
 
 const VERSIONS     = ['译林版', '人教版', '外研版', '北师大版']
-const GRADES       = ['小学5年级', '小学6年级', '七年级', '八年级', '九年级']
+// 规范年级主数据:优先用后端下发的 all_grades(单一真源);兜底为规范全量。禁止再用「七年级」旧格式。
+const _CANON_GRADES = ['小学1年级', '小学2年级', '小学3年级', '小学4年级', '小学5年级', '小学6年级',
+  '初中7年级', '初中8年级', '初中9年级', '高中1年级', '高中2年级', '高中3年级']
+const GRADES       = computed(() => (options.value.all_grades?.length ? options.value.all_grades : _CANON_GRADES))
 const SEMS         = ['上', '下']
 
 const pdfDialogVisible = ref(false)

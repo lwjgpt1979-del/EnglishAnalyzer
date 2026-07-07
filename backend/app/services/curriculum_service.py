@@ -418,6 +418,7 @@ async def persist_unit(
     content_status 默认 "draft"（M5 审核闸门）：新生成的知识点内容先进草稿，
     需运营审核后才对学生可见；seed 脚本 / 可信内容可显式传 "published"。
     """
+    ai_unit.grade = normalize_grade(ai_unit.grade)   # 写入即归一到规范年级(单一格式)
     # 1. curriculum_units（按 textbook+grade+semester+unit_no 唯一）
     cu_q = await db.execute(
         select(CurriculumUnit).where(
@@ -526,6 +527,7 @@ async def upsert_unit_shell(
     """只 upsert curriculum_units 主表（按 textbook+grade+semester+unit_no 唯一），
     不生成知识点/词/讲解/短文。供「只拆 PDF」批量流使用；AI 内容由单元「生成内容」按需补。
     """
+    grade = normalize_grade(grade)     # 写入即归一到规范年级(单一格式,免再产生旧格式脏数据)
     cu = (await db.execute(
         select(CurriculumUnit).where(
             CurriculumUnit.textbook_version == textbook_version,
@@ -693,6 +695,7 @@ async def list_units(
     grade: str,
     semester: str,
 ) -> list[UnitOut]:
+    grade = normalize_grade(grade)      # 防御:任何旧格式(七年级/7年级)归一到规范,与迁移后数据对齐
     r = await db.execute(
         select(CurriculumUnit).where(
             CurriculumUnit.textbook_version == textbook_version,
@@ -863,6 +866,33 @@ class UnitContentStat:
 _CN_GRADE_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
                  "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 
+# ── 年级/学期规范主数据(全项目单一真源;学生端已用此格式,admin/教材侧统一到此)──
+CANONICAL_GRADES = ["小学1年级", "小学2年级", "小学3年级", "小学4年级", "小学5年级", "小学6年级",
+                    "初中7年级", "初中8年级", "初中9年级", "高中1年级", "高中2年级", "高中3年级"]
+CANONICAL_SEMESTERS = ["上", "下"]
+
+
+def normalize_grade(g: str | None) -> str | None:
+    """年级归一到规范格式(如 初中7年级 / 小学5年级)。兼容旧格式:七/八/九年级(无「初中」前缀、中文数字)、
+    7年级(阿拉伯无前缀)。已规范或识别不了的(如 测试年级)原样返回。幂等。"""
+    import re
+    if not g:
+        return g
+    s = g.strip()
+    if re.match(r"^(小学|初中|高中)\d+年级$", s):        # 已规范
+        return s
+    core = re.sub(r"^(小学|初中|高中)", "", s)           # 去可能的前缀
+    m = re.search(r"([1-9]|[一二三四五六七八九])", core)
+    if not m:
+        return s
+    d = m.group(1)
+    n = _CN_GRADE_NUM.get(d, None) or (int(d) if d.isdigit() else None)
+    if n is None:
+        return s
+    # 无前缀裸年级只出现在旧初中(七/八/九=7~9)→ 初中;带前缀的已在上面返回。
+    stage = "小学" if n <= 6 else "初中" if n <= 9 else "高中"
+    return f"{stage}{n}年级"
+
 
 def _grade_rank_py(g: str) -> int:
     import re
@@ -895,8 +925,9 @@ async def unit_filter_options(db: AsyncSession) -> dict:
     ).distinct())).all()
     return {
         "textbooks": sorted({t for t, _g, _s in rows}),
-        "grades": sorted({g for _t, g, _s in rows}, key=_grade_rank_py),
-        "semesters": sorted({s for _t, _g, s in rows}, key=lambda s: 1 if "下" in (s or "") else 0),
+        "grades": sorted({g for _t, g, _s in rows}, key=_grade_rank_py),   # 有数据的年级(筛选用)
+        "all_grades": CANONICAL_GRADES,                                    # 规范全量年级(创建表单用,单一真源)
+        "semesters": sorted({s for _t, _g, s in rows}, key=lambda s: 1 if "下" in (s or "") else 0) or CANONICAL_SEMESTERS,
     }
 
 

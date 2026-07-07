@@ -71,7 +71,8 @@ import { onShow } from '@dcloudio/uni-app'
 import { listCurriculumUnits, type CurriculumUnitStat } from '@/api/adminCurriculum'
 
 const VERSIONS = ['译林版', '人教版', '外研版', '北师大版']
-const GRADES   = ['小学5年级', '小学6年级', '七年级', '八年级', '九年级']
+// 规范年级(与学生端/后端统一;禁用「七年级」旧格式)
+const GRADES   = ['小学5年级', '小学6年级', '初中7年级', '初中8年级', '初中9年级']
 const SEMS     = ['上', '下']
 
 const loading  = ref(true)
