@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, Warning, Document, Notebook } from '@element-plus/icons-vue'
+import AppDialog from '../components/AppDialog.vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
@@ -114,28 +115,29 @@ async function openPaper(p: PlatformPaper) {
   finally { paperLoading.value = false }
 }
 
-// 重新解析:清掉旧题、按原卷重新拆题入库(幂等)。mode='llm' → 强制走 AI 整卷解析(排版复杂时用)
+// 试卷重新生成:清掉旧题、按原卷重新拆题入库(幂等)。引擎二选一——基础版=规则,AI 版(mode='llm')=LLM 整卷解析(排版复杂/规则漏题时用)
 const reparsing = ref(false)
+const reparseEngine = ref<'rule' | 'llm'>('rule')   // 拆题引擎:基础版 / AI 版
 async function onReparse(mode?: 'llm') {
   if (!curPaper.value) return
   const llm = mode === 'llm'
   try {
     await ElMessageBox.confirm(
-      llm ? '将清空本卷现有题目,用 AI 整卷解析拆题(适合个性化排版/规则漏题;较慢,消耗少量 AI 额度)。是否继续?'
-          : '将清空本卷现有题目,按原卷文件重新解析拆题(草稿)。是否继续?',
-      llm ? 'AI 解析' : '重新解析', { type: 'warning', confirmButtonText: llm ? 'AI 解析' : '重新解析' })
+      llm ? '将清空本卷现有题目,用【AI 版】整卷解析重新拆题生成(适合个性化排版/规则漏题;较慢,消耗少量 AI 额度)。是否继续?'
+          : '将清空本卷现有题目,用【基础版】规则重新拆题生成(草稿)。是否继续?',
+      '试卷重新生成', { type: 'warning', confirmButtonText: '试卷重新生成' })
   } catch { return }
   reparsing.value = true
   paperLoading.value = true
   try {
     const r = await parsePaper(curPaper.value.id, llm ? 'llm' : undefined)
-    if (r.status === 'parsed') ElMessage.success(`已${llm ? 'AI ' : '重新'}解析:${r.imported} 题`)
+    if (r.status === 'parsed') ElMessage.success(`已重新生成(${llm ? 'AI 版' : '基础版'}):${r.imported} 题`)
     else ElMessage.error(r.error || '解析失败')
     const d = await getPlatformPaper(curPaper.value.id)   // 刷新弹框
     curPaper.value = d.paper
     paperQuestions.value = d.questions
     await load()                                          // 刷新列表题数
-  } catch (e: any) { ElMessage.error(e?.message || '重新解析失败') }
+  } catch (e: any) { ElMessage.error(e?.message || '试卷重新生成失败') }
   finally { reparsing.value = false; paperLoading.value = false }
 }
 
@@ -1072,7 +1074,7 @@ onMounted(load)
     </div>
 
     <!-- 试卷详情:整卷题(按大题分节、阅读题组折叠)+ 整卷发布 + 勾选派生仿真 -->
-    <el-dialog v-model="paperDlg" :title="curPaper ? curPaper.name : '试卷详情'" width="960px" :close-on-click-modal="false">
+    <AppDialog v-model="paperDlg" :title="curPaper ? curPaper.name : '试卷详情'" width="960px" :close-on-click-modal="false">
       <div v-loading="paperLoading">
         <div style="display:flex;align-items:center;margin-bottom:10px;gap:12px">
           <el-tag :type="curPaper?.status === 'published' ? 'success' : 'info'" size="small">{{ curPaper?.status === 'published' ? '已发布' : '草稿' }}</el-tag>
@@ -1080,10 +1082,15 @@ onMounted(load)
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
           <el-tag v-if="unmappedCount" type="warning" size="small"><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>{{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
-          <el-button v-if="curPaper?.source_filename" :loading="reparsing" @click="onReparse()"
-            title="清空本卷题目,按原卷文件重新拆题(草稿)">重新解析</el-button>
-          <el-button v-if="curPaper?.source_filename" :loading="reparsing" @click="onReparse('llm')"
-            title="排版复杂/规则漏题时用:清空后走 AI 整卷解析(较慢,消耗少量 AI 额度)">AI 解析</el-button>
+          <template v-if="curPaper?.source_filename">
+            <el-select v-model="reparseEngine" style="width:104px"
+              title="基础版=规则拆题(快,不耗 AI);AI 版=LLM 整卷拆题(排版复杂/规则漏题时用,较慢,消耗少量 AI 额度)">
+              <el-option label="基础版" value="rule" />
+              <el-option label="AI 版" value="llm" />
+            </el-select>
+            <el-button :loading="reparsing" @click="onReparse(reparseEngine === 'llm' ? 'llm' : undefined)"
+              title="清空本卷题目,按所选引擎重新拆题生成(草稿)">试卷重新生成</el-button>
+          </template>
           <el-button :loading="suggesting" @click="onSuggestKp"
             title="整卷按每个大题/题型分别调用其匹配提示词,候选考点按本卷学段(高⊇初⊇小)过滤">AI 整卷匹配知识点</el-button>
           <el-button v-if="suggestTotal" type="warning" :loading="acceptingAll" @click="acceptAllSuggest">采纳全部建议 ({{ suggestTotal }})</el-button>
@@ -1149,10 +1156,10 @@ onMounted(load)
           </el-checkbox-group>
         </div>
       </div>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 题目层科学解析(阅读试点):AI 建议预填 → 人工改/确认 → 唯一写库入口 -->
-    <el-dialog v-model="anaDlg" title="题目层解析(人工确认后写库)" width="620px" append-to-body>
+    <AppDialog v-model="anaDlg" title="题目层解析(人工确认后写库)" width="620px" append-to-body>
       <div v-if="anaBusy" style="text-align:center;color:#909399;padding:24px">AI 生成解析建议中…</div>
       <template v-else>
         <div style="font-size:12px;color:#909399;margin-bottom:10px;white-space:pre-wrap">{{ anaTarget?.stem }}</div>
@@ -1325,10 +1332,10 @@ onMounted(load)
           </div>
         </div>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 批量解析:整段 AI 建议 → 一键采纳校验通过项;报错项逐个「改」走单题弹窗 -->
-    <el-dialog v-model="anaBatchDlg" :title="`批量解析:${anaBatchSection}`" width="720px" append-to-body>
+    <AppDialog v-model="anaBatchDlg" :title="`批量解析:${anaBatchSection}`" width="720px" append-to-body>
       <div v-if="anaBatchBusy" style="text-align:center;color:#909399;padding:24px">AI 批量解析中…(整段并发,已暂存的秒读)</div>
       <template v-else>
         <div style="font-size:12px;color:#606266;margin-bottom:8px">
@@ -1362,10 +1369,10 @@ onMounted(load)
           </div>
         </div>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 受控知识点树选择器:给某题/某大题挂知识点(只能挑已建节点) -->
-    <el-dialog v-model="kpPickerDlg" title="挂知识点(受控树)" width="460px" append-to-body>
+    <AppDialog v-model="kpPickerDlg" title="挂知识点(受控树)" width="460px" append-to-body>
       <div style="font-size:12px;color:#909399;margin-bottom:8px">
         {{ kpTargetSection ? `为「${kpTargetSection}」整段挑知识点(挂到该大题所有小问)` : `为「${kpTarget?.question_no}」题挑知识点` }},点击节点即挂上
       </div>
@@ -1377,10 +1384,10 @@ onMounted(load)
           <span @click="onPickKp(data)" style="cursor:pointer">{{ data.name }}</span>
         </template>
       </el-tree>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 缺口建议·未定分类:人工选归属分类,在其下新建该考点并挂到本题 -->
-    <el-dialog v-model="propPickerDlg" title="选归属分类(新建考点)" width="460px" append-to-body>
+    <AppDialog v-model="propPickerDlg" title="选归属分类(新建考点)" width="460px" append-to-body>
       <div style="font-size:12px;color:#909399;margin-bottom:8px">
         将新建考点「<b>{{ propTarget?.p.name }}</b>」并归到所选分类下,挂到「{{ propTarget?.q.question_no }}」题。点击下方某个分类即归到其下。
       </div>
@@ -1392,10 +1399,10 @@ onMounted(load)
           <span @click="onPickProposalParent(data)" style="cursor:pointer">{{ data.name }}</span>
         </template>
       </el-tree>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 书面表达评分量表(运营可配置,全局生效)-->
-    <el-dialog v-model="rubricDlg" title="书面表达评分量表(运营可配置)" width="480px" append-to-body>
+    <AppDialog v-model="rubricDlg" title="书面表达评分量表(运营可配置)" width="480px" append-to-body>
       <div style="font-size:12px;color:#909399;margin-bottom:14px">AI 5 维批改的满分与各维达标线,全局生效(学生端满分、掌握判定均读此配置)。</div>
       <el-form label-width="150px" size="small">
         <el-form-item label="满分">
@@ -1418,10 +1425,10 @@ onMounted(load)
         <el-button @click="rubricDlg = false">取消</el-button>
         <el-button type="primary" :loading="rubricSaving" @click="saveRubric">保存</el-button>
       </div>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 大题级 AI 建议:选该题型提示词 → AI 对整段每题建议考点 -->
-    <el-dialog v-model="secSuggestDlg" title="一键挂知识点(AI 建议)" width="560px" append-to-body>
+    <AppDialog v-model="secSuggestDlg" title="一键挂知识点(AI 建议)" width="560px" append-to-body>
       <div style="font-size:13px;color:#606266;margin-bottom:10px">
         大题「{{ secSuggestName }}」(题型:{{ secSuggestType }})—— 选一套提示词,AI 为该段每题建议考点(不自动挂,逐题 ✓ 采纳)。
       </div>
@@ -1438,10 +1445,10 @@ onMounted(load)
         <el-button @click="secSuggestDlg = false">取消</el-button>
         <el-button type="primary" :loading="secSuggesting" :disabled="!secPrompts.length" @click="runSectionSuggest">开始 AI 建议</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 批量上传真题:文件 → COS + 建草稿占位试卷(题目延后解析)-->
-    <el-dialog v-model="batchDlg" title="批量上传真题(文件 → COS,建草稿占位)" width="820px" :close-on-click-modal="false">
+    <AppDialog v-model="batchDlg" title="批量上传真题(文件 → COS,建草稿占位)" width="820px" :close-on-click-modal="false">
       <el-form :inline="true" label-width="72px" style="margin-bottom:10px">
         <el-form-item label="教材版本" required>
           <el-select v-model="metaTextbook" style="width:140px">
@@ -1496,9 +1503,9 @@ onMounted(load)
           上传{{ batchFiles.length ? `（${batchFiles.length} 份）` : '' }}
         </el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog v-model="dlg" title="上传真题 → 抽题 → 校对导入" width="900px" @close="stopPoll" :close-on-click-modal="false">
+    <AppDialog v-model="dlg" title="上传真题 → 抽题 → 校对导入" width="900px" @close="stopPoll" :close-on-click-modal="false">
       <!-- 选源 -->
       <div v-if="step === 0">
         <el-form :inline="true" label-width="72px" style="margin-bottom:10px">
@@ -1596,7 +1603,7 @@ onMounted(load)
           <el-button type="primary" :loading="importing" @click="doImport">导入 {{ editRows.length }} 题</el-button>
         </div>
       </div>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 
