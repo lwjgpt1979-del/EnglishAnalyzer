@@ -45,11 +45,6 @@ class AIKnowledgePointItem(BaseModel):
         if s in _KP_CATEGORIES:
             return s
         return _KP_CATEGORY_ALIASES.get(s, "vocabulary")
-    contents: dict[str, str] = Field(
-        default_factory=dict,
-        description="key ∈ {listening, vocabulary, grammar, reading, translation, writing}, value 为 markdown。"
-                    "骨架生成(上传阶段)留空，六维讲解按需延后生成。",
-    )
 
 
 class AIGeneratedUnit(BaseModel):

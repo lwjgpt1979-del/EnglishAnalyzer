@@ -16,14 +16,6 @@ def _make_kp(i: int) -> AIKnowledgePointItem:
         name=f"KP {i}",
         category="grammar",
         description="Basic grammar",
-        contents={
-            "listening": "## 听力\nBasic.",
-            "vocabulary": "## 词汇\nBasic.",
-            "grammar": "## 语法\nSubject + V.",
-            "reading": "## 阅读\nBasic.",
-            "translation": "## 翻译\nBasic.",
-            "writing": "## 写作\nBasic.",
-        },
     )
 
 

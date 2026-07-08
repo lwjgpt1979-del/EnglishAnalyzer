@@ -50,19 +50,10 @@ def _make_unique_unit() -> AIGeneratedUnit:
     """构造一个 code 含唯一 nonce 的 mock 单元。
 
     dev-mock 的 generate_unit 输出 code 固定（按 grade/sem/unit 派生），多次跑
-    测试时历史已提交的 KnowledgePoint / KnowledgePointContent 会被本测试按 code
-    查回并计入断言，导致计数被污染。这里给每个 code 加 uuid 后缀，确保 found_kps
-    只命中本次新建的 KP，contents 恰好 = KP 数 × 6。
+    测试时历史已提交的 KnowledgePoint 会被本测试按 code 查回并计入断言，导致计数
+    被污染。这里给每个 code 加 uuid 后缀，确保 found_kps 只命中本次新建的 KP。
     """
     nonce = uuid.uuid4().hex[:8]
-    six_dims = {
-        "listening": "## 听力\nmock",
-        "vocabulary": "## 词汇\nmock",
-        "grammar": "## 语法\nmock",
-        "reading": "## 阅读\nmock",
-        "translation": "## 翻译\nmock",
-        "writing": "## 写作\nmock",
-    }
     return AIGeneratedUnit(
         textbook_version="译林版",
         grade="小学5年级",
@@ -75,7 +66,6 @@ def _make_unique_unit() -> AIGeneratedUnit:
                 name=f"知识点 {i}（mock）",
                 category="grammar",
                 description="占位描述：测试 mock 数据",
-                contents=dict(six_dims),
             )
             for i in range(1, 4)
         ],

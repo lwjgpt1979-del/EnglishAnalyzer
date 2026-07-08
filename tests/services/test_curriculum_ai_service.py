@@ -35,10 +35,8 @@ async def test_dev_mock_returns_valid_structure():
     assert len(unit.knowledge_points) >= 3
     assert len(unit.words) >= 5
 
-    # 知识点 6 维度都得有
+    # 讲解已迁到 kp_lecture(按考点类型的教学环节),不再随 AI 单元生成;此处只校验骨架。
     for kp in unit.knowledge_points:
-        assert set(kp.contents.keys()) == {"listening", "vocabulary", "grammar", "reading", "translation", "writing"}
-        assert all(v.strip() for v in kp.contents.values())
         # code 必须包含 unit 标识方便幂等 upsert
         assert "u1" in kp.code or str(unit.unit_no) in kp.code
 
