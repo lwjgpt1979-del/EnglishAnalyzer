@@ -1,8 +1,8 @@
 """ProMax 学生自助出卷（功能模块 5C，M51）。
 
 ProMax 专属；每周最多 N 份（默认 3，自然周一 0:00 重置）。
-组卷复用 adaptive_question_service.get_adaptive_set（按薄弱点）；
-批改复用 question_service.submit_exam_attempts（错题统一落 wrong_questions）。
+组卷复用 adaptive_question_service.get_adaptive_set(KP-First,按薄弱 node 出 platform 题);
+客观区批改走 question_serve_service.submit_exam(判分 + 错题落 wrong_record + 真值 answer_log)。
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from app.services import (
     adaptive_question_service,
     listening_service,
     membership_service,
-    question_service,
+    question_serve_service,
 )
 
 WEEKLY_QUOTA = 3          # 每周自助出卷份数上限默认值（后台 system_configs 可覆盖）
@@ -191,18 +191,18 @@ async def submit_self_exam(
             "user_answer": ua or "未作答", "explanation": it.get("explanation", ""),
         })
 
-    # 客观：沿用 submit_exam_attempts（按 simulated_question id 判分 + 错题归 wrong_questions）
+    # 客观:KP-First 判分(按 platform_question id 判分 + 错题落 wrong_record + 真值 answer_log)
     obj_total = obj_correct = 0
     if obj_items:
         obj_answers = [
             PracticeAttemptIn(
-                question_id=uuid.UUID(it["sim_question_id"]),
+                question_id=uuid.UUID(it["sim_question_id"]),   # 现为 platform_question id(字段名沿用)
                 user_answer=ans_map.get(it["id"]) or "未作答",
             )
             for it in obj_items
         ]
-        obj_res = await question_service.submit_exam_attempts(
-            db, user_id=student_id, answers=obj_answers
+        obj_res = await question_serve_service.submit_exam(
+            db, student_id=student_id, answers=obj_answers
         )
         obj_total, obj_correct = obj_res.total, obj_res.correct_count
         stem_by_sid = {it["sim_question_id"]: it["stem"] for it in obj_items}

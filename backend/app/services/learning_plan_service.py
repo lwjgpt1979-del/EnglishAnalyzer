@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d5_learning import StudyCheckin
-from app.models.d12_v2_exams import SimPracticeRecord
+from app.models.d15_knowledge_graph import KnowledgeNode
+from app.models.d16_question_domain import AnswerLog
 from app.schemas.learning_plan import PlanTask, TodayPlanOut
 from app.services import kp_mastery_service
 
@@ -30,16 +31,16 @@ async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPla
     today = datetime.now(timezone.utc).date()
     today_start = datetime.combine(today, time.min, tzinfo=timezone.utc)
 
-    # 今日练过的 KP 集合（派生完成状态用）
-    practiced_kps: set[uuid.UUID] = set(
+    # 今日练过的知识点**名称**集合(KP-First:answer_log 命中 node → node 名;与台账 kp_key 按名匹配)
+    practiced_names: set[str] = set(
         (await db.execute(
-            select(SimPracticeRecord.knowledge_point_id).where(
-                SimPracticeRecord.student_id == student_id,
-                SimPracticeRecord.created_at >= today_start,
-            )
+            select(KnowledgeNode.name)
+            .join(AnswerLog, AnswerLog.node_id == KnowledgeNode.id)
+            .where(AnswerLog.student_id == student_id,
+                   AnswerLog.answered_at >= today_start)
         )).scalars().all()
     )
-    practiced_any_today = len(practiced_kps) > 0
+    practiced_any_today = len(practiced_names) > 0
 
     # 掌握台账（弱项在前）
     ledger = await kp_mastery_service.get_mastery_tree(db, student_id=student_id)
@@ -57,7 +58,7 @@ async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPla
         level, _suggestion = kp_mastery_service.review_suggestion(
             accuracy=acc, total=total, days_since=None
         )
-        done = r.kp_id is not None and r.kp_id in practiced_kps
+        done = r.kp_key in practiced_names
         tasks.append(PlanTask(
             type="weak_kp",
             title=f"攻克薄弱点：{r.kp_key}",

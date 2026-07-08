@@ -107,20 +107,29 @@ async def mark_mastered(
 
 
 async def to_wq_out_fields(db: AsyncSession, wr: WrongRecord) -> dict:
-    """把 wrong_record(+uploaded_question 内容)映射成旧 WrongQuestionOut 字段(前台无感)。"""
-    from app.models.d16_question_domain import UploadedQuestion
-    uq = None
+    """把 wrong_record(+ platform/uploaded 题面)映射成旧 WrongQuestionOut 字段(前台无感)。"""
+    from app.models.d16_question_domain import PlatformQuestion, UploadedQuestion
+    stem = correct = qtype = student_ans = None
+    difficulty = None
     if wr.q_scope == "uploaded":
         uq = (await db.execute(
             sa.select(UploadedQuestion).where(UploadedQuestion.id == wr.question_id)
         )).scalar_one_or_none()
+        if uq:
+            stem, student_ans, correct, qtype = uq.stem, uq.student_answer, uq.correct_answer, uq.question_type
+    elif wr.q_scope == "platform":   # 练习/模拟考做错的平台仿真题(KP-First 新路径)
+        pq = (await db.execute(
+            sa.select(PlatformQuestion).where(PlatformQuestion.id == wr.question_id)
+        )).scalar_one_or_none()
+        if pq:
+            stem, correct, qtype, difficulty = pq.stem, pq.answer, str(pq.question_type or ""), pq.difficulty
     return {
         "id": wr.id, "student_id": wr.student_id, "source_image_url": "",
-        "question_text": (uq.stem if uq else None),
-        "student_answer": (uq.student_answer if uq else None),
-        "correct_answer": (uq.correct_answer if uq else None),
-        "question_type": (uq.question_type if uq else None),
-        "difficulty": None, "tags": None,
+        "question_text": stem,
+        "student_answer": student_ans,
+        "correct_answer": correct,
+        "question_type": qtype,
+        "difficulty": difficulty, "tags": None,
         "is_mastered": wr.status == "mastered", "mastered_at": wr.mastered_at,
         "created_at": wr.created_at, "updated_at": wr.created_at, "ocr_status": None,
         "review_count": wr.review_count, "easiness_factor": wr.easiness_factor,

@@ -69,3 +69,18 @@ async def list_open_wrongs(
     return list((await db.execute(
         stmt.order_by(WrongRecord.created_at.desc()).limit(limit)
     )).scalars().all())
+
+
+async def list_by_node(
+    db: AsyncSession, *, student_id: uuid.UUID, node_id: uuid.UUID,
+    skip: int = 0, limit: int = 50,
+) -> tuple[list[WrongRecord], int]:
+    """某 node 下该生的**全部**错题(open + mastered),分页。知识点页「相关错题」用。"""
+    base = sa.select(WrongRecord).where(
+        WrongRecord.student_id == student_id, WrongRecord.node_id == node_id)
+    total = (await db.execute(
+        sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
+    rows = list((await db.execute(
+        base.order_by(WrongRecord.created_at.desc()).offset(skip).limit(limit)
+    )).scalars().all())
+    return rows, total

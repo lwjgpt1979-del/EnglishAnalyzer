@@ -11,7 +11,7 @@ from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import make_ok
 from app.schemas.questions import AdaptiveSetOut, ExamAttemptIn, PracticeAttemptIn, SimQuestionOut
-from app.services import adaptive_question_service, question_service
+from app.services import adaptive_question_service, question_serve_service, question_service
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -22,11 +22,14 @@ async def list_practice_questions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     limit: int = Query(5, ge=1, le=20),
-    dimension: str | None = Query(None, description="按维度过滤：listening/dictation/grammar/writing"),
+    dimension: str | None = Query(None, description="(已弃用)老维度过滤，KP-First 不再使用"),
 ):
-    items = await question_service.list_questions_by_kp(
-        db, kp_id=kp_id, dimension=dimension, limit=limit,
-    )
+    """KP-First:按知识 node 出题(platform 真题派生仿真优先 → 现生成兜底,默认上架)。
+
+    kp_id 传的是 knowledge_nodes.id。底层走 question_serve_service,不碰 simulated_questions。
+    """
+    items = await question_serve_service.serve_by_node(db, node_id=kp_id, count=limit)
+    await db.commit()   # 可能触发现生成(写 platform_question),需提交
     return make_ok([i.model_dump(mode="json") for i in items])
 
 
@@ -36,13 +39,13 @@ async def submit_practice_attempt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await question_service.submit_attempt(
+    result = await question_serve_service.submit_one(
         db,
-        user_id=current_user.id,
+        student_id=current_user.id,
         question_id=body.question_id,
         user_answer=body.user_answer,
     )
-    await db.commit()  # 错题落库要 commit
+    await db.commit()  # answer_log/wrong_record 落库要 commit
     return make_ok(result.model_dump(mode="json"))
 
 
@@ -52,13 +55,13 @@ async def submit_exam_attempts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """模拟考批量提交：一次判 N 题，错题统一落库，返回总分 + 每题结果。"""
-    result = await question_service.submit_exam_attempts(
+    """模拟考批量提交:一次判 N 题,答错落 wrong_record,返回总分 + 每题结果。"""
+    result = await question_serve_service.submit_exam(
         db,
-        user_id=current_user.id,
+        student_id=current_user.id,
         answers=body.items,
     )
-    await db.commit()  # 错题落库要 commit
+    await db.commit()
     return make_ok(result.model_dump(mode="json"))
 
 
@@ -100,32 +103,10 @@ async def get_adaptive_set(
     result = await adaptive_question_service.get_adaptive_set(
         db, student_id=current_user.id, total=total, unit_id=unit_id
     )
-    await db.commit()
-    # 构建 kp_id → kp_name 映射，供完成页按 KP 展示分析
-    from sqlalchemy import select as _sel
-    from app.models.d4_knowledge import KnowledgePoint as _KP
-    kp_ids = {q.knowledge_point_id for q in result.questions if q.knowledge_point_id}
-    kp_name_map: dict = {}
-    if kp_ids:
-        kp_rows = (await db.execute(
-            _sel(_KP.id, _KP.name).where(_KP.id.in_(kp_ids))
-        )).all()
-        kp_name_map = {row.id: row.name for row in kp_rows}
-
-    questions_out = [
-        SimQuestionOut(
-            id=q.id,
-            question_type=q.question_type,
-            stem=q.stem,
-            options=q.options,
-            difficulty=q.difficulty,
-            kp_name=kp_name_map.get(q.knowledge_point_id) if q.knowledge_point_id else None,
-            passage=(q.generation_metadata or {}).get("passage"),
-        )
-        for q in result.questions
-    ]
+    await db.commit()   # 可能触发现生成(写 platform_question),需提交
+    # KP-First:adaptive 直接返回 SimQuestionOut(已带 kp_name/passage),无需再映射
     return make_ok(
-        AdaptiveSetOut(questions=questions_out, weak_kp_names=result.weak_kp_names).model_dump(mode="json")
+        AdaptiveSetOut(questions=result.questions, weak_kp_names=result.weak_kp_names).model_dump(mode="json")
     )
 
 

@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import StudentRelative, User
-from app.models.d12_v2_exams import SimPracticeRecord
+from app.models.d16_question_domain import AnswerLog
 from app.models.d13_v2_user_papers import UserPaperQuestion, UserUploadedPaper
 from app.models.d3_wrong_questions import AiAnalysis
 from app.models.d5_learning import StudyCheckin
@@ -92,12 +92,12 @@ async def generate_student_weekly_report(
     )
     max_streak = streak_q.scalar() or 0
 
-    # 本周仿真题做题数
+    # 本周做题数(KP-First:answer_log 练习/模拟考/自适应作答真值)
     practice_q = await db.execute(
-        select(func.count()).where(
-            SimPracticeRecord.student_id == student_id,
-            SimPracticeRecord.created_at >= ws_dt,
-            SimPracticeRecord.created_at <= we_dt,
+        select(func.count()).select_from(AnswerLog).where(
+            AnswerLog.student_id == student_id,
+            AnswerLog.answered_at >= ws_dt,
+            AnswerLog.answered_at <= we_dt,
         )
     )
     practice_count = practice_q.scalar() or 0

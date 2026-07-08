@@ -20,7 +20,7 @@ from app.models.d1_users import User
 from app.models.d2_payments import Order, RefundRecord
 from app.models.d8_usage import DailyUsage
 from app.models.d9_system import FeatureUsage
-from app.models.d12_v2_exams import SimPracticeRecord
+from app.models.d16_question_domain import AnswerLog
 
 REFUND_WINDOW_DAYS = 7
 DUPLICATE_WINDOW_HOURS = 72
@@ -66,7 +66,7 @@ async def _used_since(db: AsyncSession, order: Order) -> int:
     """派生该订单生效后受益人是否使用过付费能力（返回计数，>0 即已使用）。
 
     不为每个功能埋 per-order 计数器，改由现有用量信号派生：
-      - sim_practice_records（练习/出题作答）created_at > paid_at
+      - answer_log(练习/模拟考/自适应作答,KP-First 真值)answered_at > paid_at
       - feature_usage（权益配额计数）updated_at > paid_at 且 count>0
     """
     since = _aware(order.paid_at) or _aware(order.created_at)
@@ -75,9 +75,9 @@ async def _used_since(db: AsyncSession, order: Order) -> int:
     uid = order.beneficiary_id
 
     n1 = await db.scalar(
-        select(func.count()).select_from(SimPracticeRecord).where(
-            and_(SimPracticeRecord.student_id == uid,
-                 SimPracticeRecord.created_at > since)
+        select(func.count()).select_from(AnswerLog).where(
+            and_(AnswerLog.student_id == uid,
+                 AnswerLog.answered_at > since)
         )
     ) or 0
     n2 = await db.scalar(

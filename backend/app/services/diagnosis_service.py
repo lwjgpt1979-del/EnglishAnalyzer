@@ -199,54 +199,29 @@ async def _aggregate_structured_dimensions(
     *,
     student_id: uuid.UUID,
 ) -> tuple[list[KpDimensionItem], list[SemesterDimensionItem]]:
-    """按知识点 / 按学期聚合练习正确率（数据源：sim_practice_records）。
+    """按知识点(node) / 按学期聚合作答正确率(KP-First 数据源:answer_log,挂规范 node)。
 
-    - 按知识点：直接按 knowledge_point_id 聚合，弱项（正确率低）在前。
-    - 按学期：经 unit_knowledge_points → curriculum_units 拿到 (grade, semester)；
-      一条作答记录计入其知识点命中的每个学期，同一学期内去重（避免同学期多单元重复计数）。
+    - 按知识点:按 answer_log.node_id 聚合,弱项(正确率低)在前。
+    - 按学期:经 unit_node → curriculum_units 拿 (grade, semester);一条作答计入其 node 命中的每个学期。
+    - 整卷错题的 KP 归因待整卷流写 answer_log/wrong_record 后自然纳入(整卷迁移轴),本处不再读老 user_paper KP。
     """
-    from app.models.d4_knowledge import (
-        CurriculumUnit,
-        KnowledgePoint,
-        UnitKnowledgePoint,
-    )
-    from app.models.d12_v2_exams import SimPracticeRecord
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import AnswerLog
+    from app.models.d17_curriculum_kg import UnitNode
 
     recs = (await db.execute(
-        select(SimPracticeRecord.knowledge_point_id, SimPracticeRecord.is_correct)
-        .where(SimPracticeRecord.student_id == student_id)
+        select(AnswerLog.node_id, AnswerLog.is_correct)
+        .where(AnswerLog.student_id == student_id, AnswerLog.node_id.isnot(None))
     )).all()
 
-    # 按 KP 聚合 [attempts, correct]（来源：sim_practice_records）
+    # 按 node 聚合 [attempts, correct]
     kp_agg: dict[uuid.UUID, list[int]] = {}
-    for kp_id, ok in recs:
-        slot = kp_agg.setdefault(kp_id, [0, 0])
+    for node_id, ok in recs:
+        slot = kp_agg.setdefault(node_id, [0, 0])
         slot[0] += 1
         if ok:
             slot[1] += 1
-
-    # ── 整卷错题 KP（来源：user_paper_question_knowledge_points，is_wrong=True）──
-    from app.models.d13_v2_user_papers import (
-        UserPaperQuestion,
-        UserPaperQuestionKnowledgePoint,
-        UserUploadedPaper,
-    )
-    paper_kp_ids = (await db.execute(
-        select(UserPaperQuestionKnowledgePoint.knowledge_point_id)
-        .join(
-            UserPaperQuestion,
-            UserPaperQuestion.id == UserPaperQuestionKnowledgePoint.user_paper_question_id,
-        )
-        .join(UserUploadedPaper, UserUploadedPaper.id == UserPaperQuestion.user_paper_id)
-        .where(
-            UserUploadedPaper.student_id == student_id,
-            UserPaperQuestion.is_wrong == True,
-        )
-    )).scalars().all()
-    for kp_id in paper_kp_ids:
-        slot = kp_agg.setdefault(kp_id, [0, 0])
-        slot[0] += 1          # attempt + 1
-        # is_correct = False（is_wrong=True → 不加 correct）
 
     if not kp_agg:
         return [], []
@@ -254,42 +229,38 @@ async def _aggregate_structured_dimensions(
     kp_ids = list(kp_agg.keys())
 
     kp_meta: dict[uuid.UUID, tuple[str, str | None]] = {
-        kid: (name, str(cat) if cat is not None else None)
-        for kid, name, cat in (await db.execute(
-            select(KnowledgePoint.id, KnowledgePoint.name, KnowledgePoint.category)
-            .where(KnowledgePoint.id.in_(kp_ids))
+        nid: (name, str(kind) if kind is not None else None)
+        for nid, name, kind in (await db.execute(
+            select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.node_kind)
+            .where(KnowledgeNode.id.in_(kp_ids))
         )).all()
     }
 
     kp_dimension = [
         KpDimensionItem(
-            knowledge_point_id=kid,
-            knowledge_point_name=kp_meta.get(kid, ("未知知识点", None))[0],
-            category=kp_meta.get(kid, (None, None))[1],
+            knowledge_point_id=nid,
+            knowledge_point_name=kp_meta.get(nid, ("未知知识点", None))[0],
+            category=kp_meta.get(nid, (None, None))[1],
             attempts=attempts,
             correct=correct,
             accuracy=round(correct / attempts, 4) if attempts else 0.0,
         )
-        for kid, (attempts, correct) in kp_agg.items()
+        for nid, (attempts, correct) in kp_agg.items()
     ]
     kp_dimension.sort(key=lambda it: (it.accuracy, -it.attempts))  # 弱项在前
 
-    # KP → {(grade, semester)}
+    # node → {(grade, semester)} 经 unit_node → curriculum_units
     sem_map: dict[uuid.UUID, set[tuple[str, str]]] = {}
-    for kid, grade, sem in (await db.execute(
-        select(
-            UnitKnowledgePoint.knowledge_point_id,
-            CurriculumUnit.grade,
-            CurriculumUnit.semester,
-        )
-        .join(CurriculumUnit, CurriculumUnit.id == UnitKnowledgePoint.unit_id)
-        .where(UnitKnowledgePoint.knowledge_point_id.in_(kp_ids))
+    for nid, grade, sem in (await db.execute(
+        select(UnitNode.node_id, CurriculumUnit.grade, CurriculumUnit.semester)
+        .join(CurriculumUnit, CurriculumUnit.id == UnitNode.unit_id)
+        .where(UnitNode.node_id.in_(kp_ids))
     )).all():
-        sem_map.setdefault(kid, set()).add((grade, str(sem)))
+        sem_map.setdefault(nid, set()).add((grade, str(sem)))
 
     sem_agg: dict[tuple[str, str], list[int]] = {}
-    for kp_id, ok in recs:
-        for key in sem_map.get(kp_id, set()):
+    for node_id, ok in recs:
+        for key in sem_map.get(node_id, set()):
             slot = sem_agg.setdefault(key, [0, 0])
             slot[0] += 1
             if ok:

@@ -13,7 +13,7 @@ from app.models.d1_users import User, Institution
 from app.models.d2_payments import Membership, Order, RefundRecord
 from app.models.d5_learning import Essay, StudyCheckin, ListeningWrongQuestion  # noqa: F401
 from app.models.d5_learning import VocabPronLog
-from app.models.d12_v2_exams import SimPracticeRecord
+from app.models.d16_question_domain import AnswerLog
 from app.models.d3_wrong_questions import WrongQuestion
 
 
@@ -79,7 +79,7 @@ async def get_dashboard(db: AsyncSession) -> dict:
     usage_today = {
         "checkins": await _count(
             select(func.count()).select_from(StudyCheckin).where(StudyCheckin.checkin_date == now.date())),
-        "practice": await _today(SimPracticeRecord, SimPracticeRecord.created_at),
+        "practice": await _today(AnswerLog, AnswerLog.answered_at),
         "wrong_upload": await _today(WrongQuestion, WrongQuestion.created_at),
         "essays": await _today(Essay, Essay.created_at),
         "shadow": await _today(VocabPronLog, VocabPronLog.created_at),

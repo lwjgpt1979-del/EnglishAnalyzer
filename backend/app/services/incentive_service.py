@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d5_learning import SpeakingSession, StudyCheckin
 from app.models.d4_knowledge import StudentKpMastery
-from app.models.d12_v2_exams import SimExamSession, SimPracticeRecord
+import sqlalchemy as sa
+
+from app.models.d16_question_domain import AnswerLog
 from app.services import checkin_service
 
 # XP 权重
@@ -32,9 +34,10 @@ _MASTERY_THRESHOLD = 0.8  # KP 正确率达标线
 
 async def get_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
     # ── 统计（各活动计数）────────────────────────────────────────────────
+    # 练习题数只算 feature='practice'(考试作答另计场次 XP,避免同题既算练习又算考试双计)
     total_practice = int((await db.execute(
-        select(func.count()).select_from(SimPracticeRecord)
-        .where(SimPracticeRecord.student_id == student_id)
+        select(func.count()).select_from(AnswerLog)
+        .where(AnswerLog.student_id == student_id, AnswerLog.feature == "practice")
     )).scalar() or 0)
 
     checkin_days = int((await db.execute(
@@ -58,14 +61,15 @@ async def get_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
         )
     )).scalar() or 0)
 
-    exam_count = int((await db.execute(
-        select(func.count()).select_from(SimExamSession)
-        .where(SimExamSession.student_id == student_id)
-    )).scalar() or 0)
-    best_exam_acc = float((await db.execute(
-        select(func.coalesce(func.max(SimExamSession.accuracy), 0.0))
-        .where(SimExamSession.student_id == student_id)
-    )).scalar() or 0.0)
+    # 模拟考「场次」= 一次 submit_exam 的所有题共享同一 answered_at(Postgres now()=事务时间)。
+    # 按 answered_at 分组即为场次;每场正确率 = 该组对数/总数,取最高。KP-First 无独立成绩表。
+    exam_sessions = (await db.execute(
+        select(func.count().label("total"),
+               func.sum(sa.cast(AnswerLog.is_correct, sa.Integer)).label("correct"))
+        .where(AnswerLog.student_id == student_id, AnswerLog.feature == "exam")
+        .group_by(AnswerLog.answered_at))).all()
+    exam_count = len(exam_sessions)
+    best_exam_acc = max((int(r.correct or 0) / r.total for r in exam_sessions if r.total), default=0.0)
 
     speaking_count = int((await db.execute(
         select(func.count()).select_from(SpeakingSession)

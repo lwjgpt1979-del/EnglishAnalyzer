@@ -93,17 +93,13 @@ async def list_wrong_questions_by_kp(
     skip: int = Query(0, ge=0, description="分页偏移"),
     limit: int = Query(20, ge=1, le=100, description="每页条数"),
 ):
-    """按知识点查当前学生的相关错题（M3 关联视图，D-093）。"""
+    """按知识 node 查当前学生的相关错题(KP-First:读 wrong_record,含平台/上传题面)。"""
     await get_rls_db(db, str(current_user.id))
-    items, total = await wrong_question_service.list_wrong_questions_by_kp(
-        db, student_id=current_user.id, kp_id=kp_id, skip=skip, limit=limit
-    )
-    return make_ok(
-        WrongQuestionListOut(
-            items=[WrongQuestionOut.model_validate(wq) for wq in items],
-            total=total,
-        )
-    )
+    from app.services import wrong_center_service, wrong_review_service
+    rows, total = await wrong_center_service.list_by_node(
+        db, student_id=current_user.id, node_id=kp_id, skip=skip, limit=limit)
+    items = [WrongQuestionOut(**await wrong_review_service.to_wq_out_fields(db, wr)) for wr in rows]
+    return make_ok(WrongQuestionListOut(items=items, total=total))
 
 
 # ── SM-2 复习计划（M36）— 必须在 /{wq_id} 之前定义，否则 FastAPI 路由被截获 ───────
@@ -136,8 +132,17 @@ async def get_wrong_question(
     db: DbDep,
     current_user: UserDep,
 ):
-    """获取单条错题详情（只能查自己的）。"""
+    """获取单条错题详情(只能查自己的)。KP-First:优先按 wrong_record id 查,回退老 WrongQuestion。"""
     await get_rls_db(db, str(current_user.id))
+    # KP-First:相关错题/复习队列返回的是 wrong_record id
+    import sqlalchemy as _sa
+    from app.models.d16_question_domain import WrongRecord
+    from app.services import wrong_review_service
+    wr = (await db.execute(_sa.select(WrongRecord).where(
+        WrongRecord.id == wq_id, WrongRecord.student_id == current_user.id))).scalar_one_or_none()
+    if wr is not None:
+        return make_ok(WrongQuestionOut(**await wrong_review_service.to_wq_out_fields(db, wr)))
+    # 回退:老 WrongQuestion(拍照错题等旧数据)
     wq = await wrong_question_service.get_wrong_question(
         db, wq_id=wq_id, student_id=current_user.id
     )
@@ -200,13 +205,14 @@ async def list_analyses(
     db: DbDep,
     current_user: UserDep,
 ):
-    """查询某道错题的全部 AI 分析历史。"""
+    """查询某道错题的全部 AI 分析历史。KP-First 的 wrong_record(练习/上传错题)无老式 AI 诊断,返回空。"""
     await get_rls_db(db, str(current_user.id))
     wq = await wrong_question_service.get_wrong_question(
         db, wq_id=wq_id, student_id=current_user.id
     )
     if wq is None:
-        raise AppError(code=404, message="错题不存在或无权访问")
+        # 不是老 WrongQuestion → 可能是 wrong_record(KP-First),没有老 AI 诊断,优雅返回空(不 404 弹窗)
+        return make_ok([])
     analyses = await wrong_question_service.list_analyses(db, wrong_question_id=wq_id)
     return make_ok([AiAnalysisOut.model_validate(a) for a in analyses])
 

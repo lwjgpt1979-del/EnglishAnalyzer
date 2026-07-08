@@ -43,15 +43,19 @@ async def _seed(db):
         "INSERT INTO wrong_questions (id,student_id,source_image_url,is_mastered,created_at,mastered_at) "
         "VALUES (:i,:s,'seed',true,:c,:c)"), {"i": uuid.uuid4(), "s": uid, "c": now})
     # 1 场模拟考 acc=0.9 → exam XP 10 + exam_ace 解锁
-    await db.execute(text(
-        "INSERT INTO sim_exam_sessions (id,student_id,total,correct_count,accuracy) "
-        "VALUES (:i,:s,10,9,0.9)"), {"i": uuid.uuid4(), "s": uid})
+    # KP-First:一场 = 同一 answered_at 的一批 exam 作答(10题9对);feature='exam' 不计练习 XP
+    exam_ts = now - timedelta(hours=1)
+    for i in range(10):
+        await db.execute(text(
+            "INSERT INTO answer_log (id,student_id,q_scope,question_id,is_correct,node_id,feature,answered_at) "
+            "VALUES (:i,:s,'platform',:q,:ok,NULL,'exam',:ts)"),
+            {"i": uuid.uuid4(), "s": uid, "q": uuid.uuid4(), "ok": i < 9, "ts": exam_ts})
     await db.flush()
     return uid
 
 
 async def _cleanup(db):
-    for t in ["study_checkins", "sim_exam_sessions"]:
+    for t in ["study_checkins", "answer_log"]:
         await db.execute(text(
             f"DELETE FROM {t} WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"),
             {"p": f"{_TAG}_%"})
