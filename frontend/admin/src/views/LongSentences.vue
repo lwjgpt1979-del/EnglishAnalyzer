@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -527,7 +528,7 @@ onMounted(() => {
     </el-card>
 
     <!-- 上传长难句:文字 → LLM 语法点 → 关联知识图谱 -->
-    <el-dialog v-model="uploadDlg" title="上传长难句" width="920px" top="6vh">
+    <AppDialog v-model="uploadDlg" title="上传长难句" width="920px" top="6vh">
       <div class="ul-input">
         <el-input v-model="uploadText" type="textarea" :rows="4" resize="vertical"
           placeholder="粘贴一段英文(长难句/课文片段),点「LLM 解析语法点」抽出语法点,再逐点关联知识图谱" />
@@ -562,7 +563,7 @@ onMounted(() => {
         </div>
       </div>
       <template #footer><el-button @click="uploadDlg = false">关闭</el-button></template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

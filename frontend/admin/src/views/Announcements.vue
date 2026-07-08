@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -106,7 +107,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="dialog" title="发布公告" width="560px">
+    <AppDialog v-model="dialog" title="发布公告" width="560px">
       <el-form label-width="90px">
         <el-form-item label="标题"><el-input v-model="form.title" maxlength="120" placeholder="公告标题" /></el-form-item>
         <el-form-item label="内容"><el-input v-model="form.content" type="textarea" :rows="5" placeholder="公告正文" /></el-form-item>
@@ -128,7 +129,7 @@ onMounted(load)
         <el-form-item label="置顶"><el-switch v-model="form.pinned" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" @click="save">发布</el-button></template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

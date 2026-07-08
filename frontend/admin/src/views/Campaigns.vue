@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listCampaigns, createCampaign, setCampaignActive, type CampaignItem } from '../api/admin'
@@ -99,7 +100,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="dialog" title="新建限时活动" width="540px">
+    <AppDialog v-model="dialog" title="新建限时活动" width="540px">
       <el-form label-width="100px">
         <el-form-item label="活动名称"><el-input v-model="form.name" maxlength="100" placeholder="如：开学季特惠" /></el-form-item>
         <el-form-item label="活动时间">
@@ -122,7 +123,7 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" @click="save">创建</el-button></template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

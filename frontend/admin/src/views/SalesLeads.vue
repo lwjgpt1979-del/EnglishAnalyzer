@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Phone, Plus, Upload, Refresh, RefreshRight } from '@element-plus/icons-vue'
@@ -499,7 +500,7 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
     </div>
 
     <!-- 新增 -->
-    <el-dialog v-model="addDlg" title="新增线索" width="520px">
+    <AppDialog v-model="addDlg" title="新增线索" width="520px">
       <el-form label-width="80px">
         <el-form-item label="商家名"><el-input v-model="addForm.name" maxlength="200" /></el-form-item>
         <el-form-item label="联系人"><el-input v-model="addForm.contact_name" /></el-form-item>
@@ -517,10 +518,10 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="addDlg = false">取消</el-button><el-button type="primary" @click="saveAdd">保存</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 导入 -->
-    <el-dialog v-model="impDlg" title="批量导入线索" width="560px">
+    <AppDialog v-model="impDlg" title="批量导入线索" width="560px">
       <el-tabs>
         <el-tab-pane label="粘贴文本">
           <p class="hint">每行一条,逗号/Tab 分隔:<b>名称,电话,城市,行业</b>。城市走 region 匹配,按 phone 去重。</p>
@@ -536,20 +537,20 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
       <el-form-item label="来源" style="margin-top:8px">
         <el-select v-model="impSource" style="width:160px"><el-option v-for="(v, k) in LEAD_SOURCE" :key="k" :label="v" :value="k" /></el-select>
       </el-form-item>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 来源统计 -->
-    <el-dialog v-model="srcDlg" title="线索来源统计" width="480px">
+    <AppDialog v-model="srcDlg" title="线索来源统计" width="480px">
       <el-table :data="srcStats" border size="small">
         <el-table-column label="来源"><template #default="{ row }">{{ LEAD_SOURCE[row.source] || row.source }}</template></el-table-column>
         <el-table-column prop="total" label="线索数" width="90" align="center" />
         <el-table-column prop="won" label="成交" width="80" align="center" />
         <el-table-column label="转化率" width="100" align="center"><template #default="{ row }">{{ (row.conversion * 100).toFixed(1) }}%</template></el-table-column>
       </el-table>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 查重合并 -->
-    <el-dialog v-model="dupDlg" title="重复线索查重合并(按电话)" width="640px">
+    <AppDialog v-model="dupDlg" title="重复线索查重合并(按电话)" width="640px">
       <div v-loading="dupLoading">
         <el-empty v-if="!dupGroups.length && !dupLoading" description="没有重复线索" :image-size="70" />
         <div v-for="g in dupGroups" :key="g.phone" class="dup-group">
@@ -560,10 +561,10 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
           </div>
         </div>
       </div>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 设置(座席权限 / 回收 / SLA)-->
-    <el-dialog v-model="cfgDlg" title="电销 CRM 设置" width="520px">
+    <AppDialog v-model="cfgDlg" title="电销 CRM 设置" width="520px">
       <el-form label-width="140px">
         <el-form-item label="公海回收天数"><el-input-number v-model="cfg.public_pool_recycle_days" :min="1" /> 天未跟进回收</el-form-item>
         <el-form-item label="SLA 超时告警"><el-input-number v-model="cfg.sla_overdue_hours" :min="1" /> 小时</el-form-item>
@@ -574,10 +575,10 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="cfgDlg = false">取消</el-button><el-button type="primary" @click="saveCfg">保存</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 话术库 / SOP -->
-    <el-dialog v-model="scriptMgrDlg" title="话术库 / 跟进 SOP" width="640px">
+    <AppDialog v-model="scriptMgrDlg" title="话术库 / 跟进 SOP" width="640px">
       <p class="hint">按阶段配话术;跟进时在对应状态的线索里一键填入。stage 留空=通用。</p>
       <div v-for="(s, i) in scripts" :key="i" class="script-row">
         <el-input v-model="s.title" placeholder="标题" style="width:150px" />
@@ -589,10 +590,10 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
       </div>
       <el-button size="small" @click="addScript" style="margin-top:8px">+ 加一条</el-button>
       <template #footer><el-button @click="scriptMgrDlg = false">取消</el-button><el-button type="primary" @click="saveScripts">保存</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 自动派单 -->
-    <el-dialog v-model="autoDlg" title="自动分配公海线索" width="480px">
+    <AppDialog v-model="autoDlg" title="自动分配公海线索" width="480px">
       <p class="hint">把公海线索(排除禁呼/DNC,可按地区)按数量轮询平均派给选定座席。</p>
       <el-form label-width="80px">
         <el-form-item label="座席">
@@ -604,10 +605,10 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
         <el-form-item label="分配数量"><el-input-number v-model="autoCount" :min="1" :max="5000" /> 条(取最早跟进/最新的公海线索)</el-form-item>
       </el-form>
       <template #footer><el-button @click="autoDlg = false">取消</el-button><el-button type="primary" @click="doAuto">自动分配</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 座席业绩排行 -->
-    <el-dialog v-model="rankDlg" title="座席业绩排行" width="720px">
+    <AppDialog v-model="rankDlg" title="座席业绩排行" width="720px">
       <div style="margin-bottom:10px">
         统计周期
         <el-select v-model="rankDays" style="width:120px" @change="reloadRank">
@@ -624,16 +625,16 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
         <el-table-column prop="connected" label="接通" width="70" align="center" />
         <el-table-column label="接通率" width="90" align="center"><template #default="{ row }">{{ (row.connect_rate * 100).toFixed(0) }}%</template></el-table-column>
       </el-table>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 批量派单 -->
-    <el-dialog v-model="assignDlg" title="批量派单" width="420px">
+    <AppDialog v-model="assignDlg" title="批量派单" width="420px">
       <p class="hint">把选中的 {{ selected.length }} 条线索分配给座席(进其私海)。</p>
       <el-select v-model="assignSeat" placeholder="选择座席" filterable style="width:100%">
         <el-option v-for="s in seats" :key="s.id" :label="s.name" :value="s.id" />
       </el-select>
       <template #footer><el-button @click="assignDlg = false">取消</el-button><el-button type="primary" @click="doAssign">派单</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 详情 + 跟进 -->
     <el-drawer v-model="drawer" :title="cur?.name || '线索详情'" size="560px">

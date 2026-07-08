@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listGenJobs, retryGenJob, getGenJob, type GenJob } from '../api/admin'
@@ -93,7 +94,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="dlg" :title="cur ? `生成结果 · ${cur.textbook_version} ${cur.grade} ${cur.semester}学期` : '生成结果'" width="640px">
+    <AppDialog v-model="dlg" :title="cur ? `生成结果 · ${cur.textbook_version} ${cur.grade} ${cur.semester}学期` : '生成结果'" width="640px">
       <el-table v-if="cur" :data="cur.results" border size="small" style="width:100%">
         <el-table-column label="状态" width="60" align="center">
           <template #default="{ row }"><el-tag :type="row.status === 'ok' ? 'success' : 'danger'" size="small"><el-icon><CircleCheck v-if="row.status === 'ok'" /><CircleClose v-else /></el-icon></el-tag></template>
@@ -114,7 +115,7 @@ onMounted(load)
         <el-button v-if="cur && cur.failed && cur.status !== 'running'" type="warning" :loading="retrying[cur.job_id]" @click="onRetry(cur)"><el-icon style="margin-right:4px"><Refresh /></el-icon>重试失败单元</el-button>
         <el-button @click="dlg = false">关闭</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

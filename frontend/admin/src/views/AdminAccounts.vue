@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -155,7 +156,7 @@ onMounted(async () => {
       @current-change="(p: number) => { page = p; load() }" />
 
     <!-- 新建 -->
-    <el-dialog v-model="dlgNew" title="新建管理员" width="520px">
+    <AppDialog v-model="dlgNew" title="新建管理员" width="520px">
       <el-form label-width="90px">
         <el-form-item label="用户名"><el-input v-model="fNew.username" placeholder="登录账号,如 sales_wang" /></el-form-item>
         <el-form-item label="密码"><el-input v-model="fNew.password" type="password" show-password placeholder="至少 8 位" /></el-form-item>
@@ -171,10 +172,10 @@ onMounted(async () => {
         <el-button @click="dlgNew = false">取消</el-button>
         <el-button type="primary" @click="saveNew">创建</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 改权限 -->
-    <el-dialog v-model="dlgEdit" :title="`改权限:${editRow?.username || ''}`" width="520px">
+    <AppDialog v-model="dlgEdit" :title="`改权限:${editRow?.username || ''}`" width="520px">
       <el-form label-width="90px">
         <el-form-item label="昵称"><el-input v-model="fEdit.nickname" /></el-form-item>
         <el-form-item label="权限">
@@ -188,7 +189,7 @@ onMounted(async () => {
         <el-button @click="dlgEdit = false">取消</el-button>
         <el-button type="primary" @click="saveEdit">保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

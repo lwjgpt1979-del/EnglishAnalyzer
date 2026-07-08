@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { reactive } from 'vue'
@@ -227,14 +228,14 @@ onMounted(() => { load(); loadQuality() })
       />
     </div>
 
-    <el-dialog v-model="limitDialog" title="老师额度覆盖（留空=随全局默认）" width="440px">
+    <AppDialog v-model="limitDialog" title="老师额度覆盖（留空=随全局默认）" width="440px">
       <el-form label-width="150px">
         <el-form-item label="绑定学生上限"><el-input-number v-model="limitForm.max_students" :min="0" /></el-form-item>
         <el-form-item label="月度出卷上限"><el-input-number v-model="limitForm.monthly_paper_quota" :min="0" /></el-form-item>
         <el-form-item label="月度批改上限"><el-input-number v-model="limitForm.monthly_grading_quota" :min="0" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="limitDialog = false">取消</el-button><el-button type="primary" @click="saveLimit">保存</el-button></template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

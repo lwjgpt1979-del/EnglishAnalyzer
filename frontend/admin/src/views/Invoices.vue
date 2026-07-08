@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listInvoices, issueInvoice, rejectInvoice, type AdminInvoiceItem } from '../api/admin'
@@ -101,7 +102,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="issueOpen" title="开具发票" width="460px">
+    <AppDialog v-model="issueOpen" title="开具发票" width="460px">
       <el-form label-width="90px">
         <el-form-item label="发票号码"><el-input v-model="form.invoice_no" placeholder="税控系统的发票号" /></el-form-item>
         <el-form-item label="发票链接"><el-input v-model="form.invoice_url" placeholder="电子发票 PDF 下载链接（可选）" /></el-form-item>
@@ -110,7 +111,7 @@ onMounted(load)
         <el-button @click="issueOpen = false">取消</el-button>
         <el-button type="primary" @click="submitIssue">确认开具</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

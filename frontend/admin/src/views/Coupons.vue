@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listCoupons, createCoupon, setCouponActive, grantCoupon, type CouponItem } from '../api/admin'
@@ -123,7 +124,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="dialog" title="建券" width="560px">
+    <AppDialog v-model="dialog" title="建券" width="560px">
       <el-form label-width="92px">
         <el-form-item label="券名"><el-input v-model="form.name" maxlength="100" placeholder="如：暑期满100减20" /></el-form-item>
         <el-form-item label="类型">
@@ -160,7 +161,7 @@ onMounted(load)
         <el-button @click="dialog = false">取消</el-button>
         <el-button type="primary" @click="save">建券</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

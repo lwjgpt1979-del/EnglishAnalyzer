@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -188,7 +189,7 @@ onMounted(load)
     />
 
     <!-- 通过：建节点 -->
-    <el-dialog v-model="approveDlg" title="通过 → 建立标准节点" width="420px">
+    <AppDialog v-model="approveDlg" title="通过 → 建立标准节点" width="420px">
       <p v-if="approving" class="dlg-name">{{ approving.raw_name }}</p>
       <el-form label-width="72px">
         <el-form-item label="轴">
@@ -215,10 +216,10 @@ onMounted(load)
         <el-button @click="approveDlg = false">取消</el-button>
         <el-button type="success" @click="confirmApprove">确认通过</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 归并：选目标节点 -->
-    <el-dialog v-model="mergeDlg" title="归并 → 作为已有节点的别名" width="480px">
+    <AppDialog v-model="mergeDlg" title="归并 → 作为已有节点的别名" width="480px">
       <p v-if="merging" class="dlg-name">{{ merging.raw_name }}</p>
       <el-select
         v-model="mergeTarget"
@@ -242,7 +243,7 @@ onMounted(load)
         <el-button @click="mergeDlg = false">取消</el-button>
         <el-button type="primary" @click="confirmMerge">确认归并</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

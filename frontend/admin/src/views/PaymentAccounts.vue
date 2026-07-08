@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -154,7 +155,7 @@ onMounted(load)
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogOpen" :title="editing ? '编辑收款主体' : '新增收款主体'" width="560px">
+    <AppDialog v-model="dialogOpen" :title="editing ? '编辑收款主体' : '新增收款主体'" width="560px">
       <el-form label-width="110px">
         <el-form-item label="名称"><el-input v-model="form.name" placeholder="如 XX教育科技公司" /></el-form-item>
         <el-form-item label="主体类型">
@@ -187,9 +188,9 @@ onMounted(load)
         <el-button @click="dialogOpen = false">取消</el-button>
         <el-button type="primary" @click="save">保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog v-model="secretsOpen" :title="`密钥管理 — ${secretsAcc?.name || ''}`" width="600px">
+    <AppDialog v-model="secretsOpen" :title="`密钥管理 — ${secretsAcc?.name || ''}`" width="600px">
       <p class="hint">密钥加密存库、明文不回显；留空=不修改。修改后即时生效，无需改服务器或重启。</p>
       <el-form label-position="top">
         <el-form-item v-for="k in (secretsAcc?.required_secret_keys || [])" :key="k">
@@ -207,7 +208,7 @@ onMounted(load)
         <el-button @click="secretsOpen = false">取消</el-button>
         <el-button type="primary" @click="saveSecrets">加密保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listFaq, createFaq, updateFaq, deleteFaq, type FaqItem } from '../api/admin'
@@ -102,7 +103,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="dialog" :title="editing ? '编辑 FAQ' : '新增 FAQ'" width="560px">
+    <AppDialog v-model="dialog" :title="editing ? '编辑 FAQ' : '新增 FAQ'" width="560px">
       <el-form label-width="72px">
         <el-form-item label="受众">
           <el-radio-group v-model="form.audience">
@@ -120,7 +121,7 @@ onMounted(load)
         <el-button @click="dialog = false">取消</el-button>
         <el-button type="primary" @click="save">保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

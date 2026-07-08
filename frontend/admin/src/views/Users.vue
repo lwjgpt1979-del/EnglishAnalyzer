@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listUsers, banUser, unbanUser, type AdminUserItem } from '../api/admin'
@@ -108,7 +109,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="banOpen" :title="`封禁 ${banForm.label}`" width="460px">
+    <AppDialog v-model="banOpen" :title="`封禁 ${banForm.label}`" width="460px">
       <el-form label-width="80px">
         <el-form-item label="封禁时长">
           <el-radio-group v-model="banForm.days">
@@ -126,7 +127,7 @@ onMounted(load)
         <el-button @click="banOpen = false">取消</el-button>
         <el-button type="danger" :loading="banning" @click="submitBan">确认封禁</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

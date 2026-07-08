@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Warning } from '@element-plus/icons-vue'
@@ -111,7 +112,7 @@ onMounted(load)
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
 
-    <el-dialog v-model="dialog" title="新增敏感词" width="420px">
+    <AppDialog v-model="dialog" title="新增敏感词" width="420px">
       <el-form label-width="72px">
         <el-form-item label="敏感词"><el-input v-model="form.word" maxlength="64" /></el-form-item>
         <el-form-item label="分类">
@@ -125,9 +126,9 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" @click="save">添加</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog v-model="batchDialog" title="批量导入敏感词" width="480px">
+    <AppDialog v-model="batchDialog" title="批量导入敏感词" width="480px">
       <el-form label-width="72px">
         <el-form-item label="词列表"><el-input v-model="batchForm.text" type="textarea" :rows="6" placeholder="每行一个，或用逗号分隔" /></el-form-item>
         <el-form-item label="分类">
@@ -141,7 +142,7 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <template #footer><el-button @click="batchDialog = false">取消</el-button><el-button type="primary" @click="saveBatch">导入</el-button></template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

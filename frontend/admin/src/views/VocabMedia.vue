@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia } from '../api/admin'
@@ -188,7 +189,7 @@ onMounted(load)
     </div>
 
     <!-- 编辑弹窗 -->
-    <el-dialog v-model="editDialogVisible" :title="`编辑：${editingRow?.word}`" width="520px">
+    <AppDialog v-model="editDialogVisible" :title="`编辑：${editingRow?.word}`" width="520px">
       <el-form label-width="100px">
         <el-form-item label="英文描述">
           <el-input v-model="editEnDesc" type="textarea" :rows="4" placeholder="用英文描述单词含义…" />
@@ -201,6 +202,6 @@ onMounted(load)
         <el-button @click="editDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="onSaveEdit">保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>

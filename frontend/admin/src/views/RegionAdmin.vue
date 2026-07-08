@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminListRegions, createRegion, updateRegion, deleteRegion, type RegionNode } from '../api/admin'
@@ -72,7 +73,7 @@ async function del(data: RegionNode) {
       </template>
     </el-tree>
 
-    <el-dialog v-model="addDlg" :title="`新增${LEVEL_NAME[addLevel] || ''}地区`" width="420px">
+    <AppDialog v-model="addDlg" :title="`新增${LEVEL_NAME[addLevel] || ''}地区`" width="420px">
       <el-form label-width="90px">
         <el-form-item label="上级">
           <span style="color:#909399">{{ addParent || '(省级,无上级)' }}</span>
@@ -86,7 +87,7 @@ async function del(data: RegionNode) {
         <el-button @click="addDlg = false">取消</el-button>
         <el-button type="primary" @click="confirmAdd">新增</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

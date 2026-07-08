@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -178,9 +179,9 @@ onMounted(load)
         :page-size="PAGE_SIZE" :current-page="Math.floor(skip / PAGE_SIZE) + 1" @current-change="onPage" />
     </div>
 
-    <el-dialog v-model="evidenceOpen" title="纠纷举证包（§4.6.4）" width="720px">
+    <AppDialog v-model="evidenceOpen" title="纠纷举证包（§4.6.4）" width="720px">
       <pre class="evidence">{{ evidenceJson }}</pre>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

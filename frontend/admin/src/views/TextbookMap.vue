@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -135,7 +136,7 @@ onMounted(async () => { versionOptions.value = (await getTextbookVersions()).ver
       :total="total" :current-page="page" :page-size="pageSize"
       @current-change="(p: number) => { page = p; load() }" />
 
-    <el-dialog v-model="dlg" :title="editing ? `编辑 ${form.region_name}` : '加地市例外'" width="520px">
+    <AppDialog v-model="dlg" :title="editing ? `编辑 ${form.region_name}` : '加地市例外'" width="520px">
       <el-form label-width="90px">
         <el-form-item v-if="!editing" label="地区">
           <div style="display:flex; gap:8px; flex-wrap:wrap">
@@ -168,7 +169,7 @@ onMounted(async () => { versionOptions.value = (await getTextbookVersions()).ver
         <el-button @click="dlg = false">取消</el-button>
         <el-button type="primary" @click="save">保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

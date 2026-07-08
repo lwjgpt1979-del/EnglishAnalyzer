@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -131,7 +132,7 @@ onMounted(load)
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="editVisible" :title="editing ? `${editing.feature.title} · ${tierLabel[editing.tier] || editing.tier}` : ''" width="420px">
+    <AppDialog v-model="editVisible" :title="editing ? `${editing.feature.title} · ${tierLabel[editing.tier] || editing.tier}` : ''" width="420px">
       <el-form label-width="80px">
         <el-form-item label="规则">
           <el-radio-group v-model="form.mode">
@@ -156,9 +157,9 @@ onMounted(load)
         <el-button @click="onReset" :loading="saving">恢复默认</el-button>
         <el-button type="primary" @click="onSave" :loading="saving">保存覆盖</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog v-model="addonVisible" :title="addonFeat ? `${addonFeat.title} · 加量包` : ''" width="420px">
+    <AppDialog v-model="addonVisible" :title="addonFeat ? `${addonFeat.title} · 加量包` : ''" width="420px">
       <p class="hint">仅当用户已是最高档({{ cfg?.top_tier || 'promax' }})、配额用尽时出现购买；余额永久、需有会员才可用。</p>
       <el-form label-width="90px">
         <el-form-item label="开启加量包"><el-switch v-model="addonForm.enabled" /></el-form-item>
@@ -168,7 +169,7 @@ onMounted(load)
       <template #footer>
         <el-button type="primary" @click="saveAddon" :loading="saving">保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listVocabLists, createVocabList, listVocabItems, addVocabItems } from '../api/admin'
@@ -109,7 +110,7 @@ onMounted(load)
     </div>
 
     <!-- 新建词库 -->
-    <el-dialog v-model="createDlg" title="新建通用词库" width="420px">
+    <AppDialog v-model="createDlg" title="新建通用词库" width="420px">
       <el-form label-width="72px">
         <el-form-item label="名称"><el-input v-model="form.name" placeholder="如 高考3500" /></el-form-item>
         <el-form-item label="层级">
@@ -128,16 +129,16 @@ onMounted(load)
         <el-button @click="createDlg = false">取消</el-button>
         <el-button type="success" @click="confirmCreate">创建</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- 加词 -->
-    <el-dialog v-model="addDlg" title="批量加词(空格/逗号/换行分隔,按顺序排名)" width="480px">
+    <AppDialog v-model="addDlg" title="批量加词(空格/逗号/换行分隔,按顺序排名)" width="480px">
       <el-input v-model="wordsText" type="textarea" :rows="8" placeholder="abandon ability able ..." />
       <template #footer>
         <el-button @click="addDlg = false">取消</el-button>
         <el-button type="primary" @click="confirmAdd">加入</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

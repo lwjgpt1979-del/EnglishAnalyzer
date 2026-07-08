@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -134,7 +135,7 @@ onMounted(load)
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogOpen" :title="editing ? '编辑分公司' : '新增分公司'" width="540px">
+    <AppDialog v-model="dialogOpen" :title="editing ? '编辑分公司' : '新增分公司'" width="540px">
       <el-form label-width="110px">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="联系电话"><el-input v-model="form.contact_phone" /></el-form-item>
@@ -150,9 +151,9 @@ onMounted(load)
         <el-button @click="dialogOpen = false">取消</el-button>
         <el-button type="primary" @click="save">保存</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
-    <el-dialog v-model="cityOpen" :title="`城市归属 — ${cityBranch?.name || ''}`" width="500px">
+    <AppDialog v-model="cityOpen" :title="`城市归属 — ${cityBranch?.name || ''}`" width="500px">
       <p class="hint">一个城市同一时刻只能归一家分公司。解除后保留历史（置失效日）。</p>
       <div class="city-add">
         <el-input v-model="newCity" placeholder="城市编码（如 310100 上海）" @keyup.enter="addCity" />
@@ -165,7 +166,7 @@ onMounted(load)
           <template #default="{ row }"><el-button size="small" link type="danger" @click="delCity(row.id)">解除</el-button></template>
         </el-table-column>
       </el-table>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 
