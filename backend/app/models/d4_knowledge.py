@@ -70,6 +70,33 @@ class CurriculumUnit(Base):
     )
 
 
+class CurriculumCatalog(Base):
+    """教材主数据(版本 / 年级 / 学期 唯一真源 + 上下架)。
+
+    全站「版本 / 年级 / 学期」可选项,以及学生端内容可见性,一律以本表为准
+    (见 CLAUDE.md「主数据上架/下架」铁律)。可先建版本(内容后补);
+    上架粒度 = 版本 + 年级 + 学期 组合。status: published=上架(学生/机构可见)/
+    draft=下架(仅 admin 可见可管)。年级/学期为纯 String,支持自定义增删。
+    """
+
+    __tablename__ = "curriculum_catalog"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    textbook_version = mapped_column(sa.String, nullable=False)
+    grade = mapped_column(sa.String, nullable=False)
+    semester = mapped_column(sa.String, nullable=False)
+    status = mapped_column(sa.String, nullable=False, server_default="draft")
+    sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    created_at = mapped_column(sa.DateTime(timezone=True), server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "textbook_version", "grade", "semester",
+            name="uix_curriculum_catalog_identity",
+        ),
+    )
+
+
 class CurriculumUnitPassage(Base):
     """单元析出的短文/范文:听力脚本 / 阅读短文(可多篇) / 写作要求与范文。
 

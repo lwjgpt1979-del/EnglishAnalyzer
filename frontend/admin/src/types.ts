@@ -202,38 +202,6 @@ export interface VocabWordItem {
   verified: boolean
 }
 
-// ── 知识节点资源（KP-First R6）──────────────────────────────
-export interface NodeResourceItem2 {
-  id: string
-  node_id: string
-  node_name?: string | null
-  resource_type: string
-  dimension?: string | null
-  title?: string | null
-  content_md?: string | null
-  media_url?: string | null
-  status: string
-}
-
-// 单元补全总览(发布前预览完整度 + 补全缺失维度)
-export interface LectureCell { id: string; status: string; has_content: boolean; pending_version_id?: string | null }
-export interface UnitContentNode {
-  node_id: string
-  name: string
-  dims: Record<string, LectureCell | null>
-}
-export interface UnitContentOverview { total_nodes: number; items: UnitContentNode[] }
-
-// 版本对比(C2)
-export interface VersionDiffSide {
-  label: string
-  content_md: string
-  version_no?: number | null
-  source?: string | null
-  status?: string | null
-}
-export interface VersionDiffOut { base: VersionDiffSide; incoming: VersionDiffSide }
-
 // 知识图谱总览(D1)
 export interface KpNodeOverviewItem {
   id: string
@@ -244,7 +212,8 @@ export interface KpNodeOverviewItem {
   status: string
   applicable_stages?: string[] | null
   source?: string | null
-  dims_filled: number
+  lecture_filled: number
+  lecture_total: number
   unit_refs: number
   question_refs: number
   alias_count: number
@@ -267,7 +236,17 @@ export interface NodeTreeItem {
 }
 
 // 节点详情(D2)
-export interface NodeDimCell2 { id: string; status: string }
+// 考点讲解:按类型的教学环节 section(status: empty/draft/published)
+export interface LectureSectionCell {
+  section_key: string; title: string; order: number
+  content_md?: string | null; media_url?: string | null
+  status: string; source?: string | null; has_content: boolean
+}
+export interface NodeLecture {
+  kp_type: string; kp_type_label: string
+  total: number; filled: number
+  sections: LectureSectionCell[]
+}
 export interface NodeUnitRef { unit_id: string; unit_title: string; textbook_version: string; grade: string; semester: string }
 export interface NodeMastery { learners: number; avg?: number | null; mastered: number; mid: number; weak: number }
 export interface KpNodeDetail {
@@ -280,23 +259,12 @@ export interface KpNodeDetail {
   applicable_stages?: string[] | null
   description?: string | null
   source: string
-  dims: Record<string, NodeDimCell2 | null>
+  lecture: NodeLecture
   aliases: { alias: string; source: string }[]
   units: NodeUnitRef[]
   question_real: number
   question_sim: number
   mastery: NodeMastery
-}
-
-// 版本历史(C3)
-export interface VersionItem {
-  id: string
-  version_no: number
-  source: string
-  status: string
-  content_md?: string | null
-  created_at?: string | null
-  reviewed_at?: string | null
 }
 
 // ── 长难句管理(KP-First L7)──────────────────────────────

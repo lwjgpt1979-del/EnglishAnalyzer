@@ -70,6 +70,15 @@ async def _seed_unit(unit_no: int = 19) -> None:
             s.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=kp.name,
                             alias_norm=norm, source="seed"))
         await curriculum_service.persist_unit(s, ai_unit=ai, content_status="published")
+        # 教材目录上架该组合:catalog 是学生内容可见的唯一闸门(API 用独立 session,须 commit)
+        from app.models.d4_knowledge import CurriculumCatalog
+        from sqlalchemy.dialects.postgresql import insert as _pg_insert
+        await s.execute(_pg_insert(CurriculumCatalog).values(
+            id=uuid.uuid4(), textbook_version="译林版", grade="小学5年级",
+            semester="上", status="published",
+        ).on_conflict_do_update(
+            index_elements=["textbook_version", "grade", "semester"],
+            set_={"status": "published"}))
         await s.commit()
 
 
@@ -198,13 +207,13 @@ def _norm(s: str) -> str:
 
 
 async def _seed_kp_node_with_lectures(*, unit_version, unit_grade, unit_sem, unit_no,
-                                      kp_name, dims_published, dims_draft=()):
-    """建 单元+旧KP+UnitKP边 + 句法node+alias(kp_name) + node_resource(lecture 各维度)。返回 kp_id。"""
+                                      kp_name, sections_published, sections_draft=()):
+    """建 单元 + 句法 node + alias(kp_name) + UnitNode 边 + kp_lecture(各教学环节)。返回 (node_id, node_id)。"""
     from sqlalchemy import select as _sel
-    from app.models.d4_knowledge import CurriculumUnit, KnowledgePoint, UnitKnowledgePoint
+    from app.models.d4_knowledge import CurriculumUnit
     from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
     from app.models.d17_curriculum_kg import UnitNode
-    from app.models.d19_node_resource import NodeResource
+    from app.models.d25_kp_lecture import KpLecture
     async with _async_session_factory() as s:
         cu = (await s.execute(_sel(CurriculumUnit).where(
             CurriculumUnit.textbook_version == unit_version, CurriculumUnit.grade == unit_grade,
@@ -214,35 +223,40 @@ async def _seed_kp_node_with_lectures(*, unit_version, unit_grade, unit_sem, uni
                                 semester=unit_sem, unit_no=unit_no, unit_title="单元")
             s.add(cu)
             await s.flush()
-        kp = KnowledgePoint(id=uuid.uuid4(), code=f"lc-{uuid.uuid4().hex[:6]}", name=kp_name,
-                            category="grammar", description="d",
-                            applicable_grades=[unit_grade], applicable_textbooks=[unit_version])
         node = KnowledgeNode(id=uuid.uuid4(), axis="knowledge", node_kind="句法", name=kp_name,
-                             code=f"lcn-{uuid.uuid4().hex[:6]}", status="active", source="seed")
-        s.add_all([kp, node])
+                             code=f"jf-{uuid.uuid4().hex[:6]}", status="active", source="seed")
+        s.add(node)
         await s.flush()
-        s.add(UnitKnowledgePoint(unit_id=cu.id, knowledge_point_id=kp.id))
-        s.add(UnitNode(unit_id=cu.id, node_id=node.id, source="seed"))  # R8.4:付费墙经 unit_node
+        s.add(UnitNode(unit_id=cu.id, node_id=node.id, source="seed"))   # R8.4:付费墙经 unit_node
         s.add(NodeAlias(id=uuid.uuid4(), node_id=node.id, alias=kp_name,
                         alias_norm=_norm(kp_name), source="seed"))
-        for d in dims_published:
-            s.add(NodeResource(id=uuid.uuid4(), node_id=node.id, resource_type="lecture",
-                               dimension=d, content_md=f"published {d}", media_url=f"https://x/{d}.mp3",
-                               status="published"))
-        for d in dims_draft:
-            s.add(NodeResource(id=uuid.uuid4(), node_id=node.id, resource_type="lecture",
-                               dimension=d, content_md=f"draft {d}", status="draft"))
+        for k in sections_published:
+            s.add(KpLecture(id=uuid.uuid4(), node_id=node.id, section_key=k,
+                            content_md=f"published {k}", media_url=f"https://x/{k}.mp3", status="published"))
+        for k in sections_draft:
+            s.add(KpLecture(id=uuid.uuid4(), node_id=node.id, section_key=k,
+                            content_md=f"draft {k}", status="draft"))
         await s.commit()
-        return kp.id, node.id
+        return node.id, node.id
+
+
+async def _cleanup_lecture_node(node_id):
+    async with _async_session_factory() as s:
+        from sqlalchemy import text as _t
+        await s.execute(_t("DELETE FROM kp_lecture WHERE node_id = :n"), {"n": str(node_id)})
+        await s.execute(_t("DELETE FROM unit_node WHERE node_id = :n"), {"n": str(node_id)})
+        await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(node_id)})
+        await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(node_id)})
+        await s.commit()
 
 
 @pytest.mark.asyncio
-async def test_get_kp_contents_returns_6_dimensions(client):
-    """KP-First 直切:GET contents 读 node_resource(lecture 六维),受 paywall(unit_no=19)。"""
-    six = ["listening", "vocabulary", "grammar", "reading", "translation", "writing"]
-    kp_id, node_id = await _seed_kp_node_with_lectures(
+async def test_get_kp_contents_returns_sections(client):
+    """学生 GET contents 读 kp_lecture 已发布环节(语法=idea/examples/pitfall),受 paywall(unit_no=19)。"""
+    secs = ["idea", "examples", "pitfall"]
+    _, node_id = await _seed_kp_node_with_lectures(
         unit_version="译林版", unit_grade="小学5年级", unit_sem="上", unit_no=19,
-        kp_name=f"直切六维KP_{uuid.uuid4().hex[:6]}", dims_published=six)
+        kp_name=f"讲解环节KP_{uuid.uuid4().hex[:6]}", sections_published=secs)
     suffix = f"kpcontent_{uuid.uuid4().hex[:6]}"
     await _seed_user_with_semester(f"m2_curriculum_{suffix}")
     h = await _login(client, suffix)
@@ -250,88 +264,25 @@ async def test_get_kp_contents_returns_6_dimensions(client):
         resp = await client.get(f"/api/v1/curriculum/knowledge-points/{node_id}/contents", headers=h)
         assert resp.status_code == 200, resp.text
         contents = resp.json()["data"]
-        dims = {c["dimension"] for c in contents}
-        assert set(six).issubset(dims)
+        keys = {c["section_key"] for c in contents}
+        assert set(secs).issubset(keys)
         for c in contents:
-            assert c["content_md"] and "audio_url" in c
+            assert c["content_md"] and c["title"] and "media_url" in c
     finally:
-        async with _async_session_factory() as s:
-            from sqlalchemy import text as _t
-            await s.execute(_t("DELETE FROM unit_node WHERE node_id = :n"), {"n": str(node_id)})
-            await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(node_id)})
-            await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(node_id)})
-            await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(node_id)})
-            await s.commit()
+        await _cleanup_lecture_node(node_id)
 
 
 @pytest.mark.asyncio
 async def test_get_kp_contents_filters_published(client):
-    """KP-First 直切:get_kp_contents 只返回 published 的 node_resource lecture(draft 不可见)。"""
-    kp_id, node_id = await _seed_kp_node_with_lectures(
+    """get_kp_contents 只返回 published 的讲解环节(draft 不可见)。"""
+    _, node_id = await _seed_kp_node_with_lectures(
         unit_version=f"测试版{uuid.uuid4().hex[:6]}", unit_grade="测试年级", unit_sem="上", unit_no=1,
         kp_name=f"过滤测试KP_{uuid.uuid4().hex[:6]}",
-        dims_published=["grammar"], dims_draft=["listening"])
+        sections_published=["idea"], sections_draft=["examples"])
     try:
         async with _async_session_factory() as s:
             contents = await curriculum_service.get_kp_contents(s, user_id=uuid.uuid4(), node_id=node_id)
-        dims = {c.dimension for c in contents}
-        assert dims == {"grammar"}
+        keys = {c.section_key for c in contents}
+        assert keys == {"idea"}
     finally:
-        async with _async_session_factory() as s:
-            from sqlalchemy import text as _t
-            await s.execute(_t("DELETE FROM unit_node WHERE node_id = :n"), {"n": str(node_id)})
-            await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(node_id)})
-            await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(node_id)})
-            await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(node_id)})
-            await s.commit()
-
-
-@pytest.mark.asyncio
-async def test_persist_unit_writes_node_resource_lectures_draft(client):
-    """KP-First:persist_unit 把生成内容直写 node_resource(lecture);命中 node 的 KP 默认 draft。
-
-    生成内容仅在 KP 受控匹配到 node 时落 lecture(不建游离点),故预置 mock KP 名的 node+alias。
-    """
-    from sqlalchemy import select, text as _t
-    from app.models.d15_knowledge_graph import KnowledgeNode, NodeAlias
-    from app.models.d19_node_resource import NodeResource
-    from app.services.kp_normalize import normalize_kp_name
-
-    # g7 unit 11 的 mock KP 名稳定;为其预置 node+alias 供 match_kp 命中
-    ai = await curriculum_ai_service.generate_unit(
-        textbook_version="译林版", grade="初中7年级", semester="上", unit_no=11,
-    )
-    kp_names = [kp.name for kp in ai.knowledge_points]
-    node_ids: list[uuid.UUID] = []
-    async with _async_session_factory() as s:
-        for nm in kp_names:
-            nid = uuid.uuid4()
-            s.add(KnowledgeNode(id=nid, axis="knowledge", node_kind="语法", name=nm,
-                                code=f"cuctt-{uuid.uuid4().hex[:8]}", status="active", source="seed"))
-            await s.flush()
-            s.add(NodeAlias(id=uuid.uuid4(), node_id=nid, alias=nm,
-                            alias_norm=normalize_kp_name(nm), source="seed"))
-            node_ids.append(nid)
-        await s.commit()
-    try:
-        async with _async_session_factory() as s:
-            await curriculum_service.persist_unit(s, ai_unit=ai)  # 默认 draft
-            await s.flush()
-            rows = (await s.execute(
-                select(NodeResource).where(
-                    NodeResource.node_id.in_(node_ids),
-                    NodeResource.resource_type == "lecture",
-                )
-            )).scalars().all()
-            assert rows, "persist_unit 应为命中 node 的 KP 写 node_resource lecture"
-            assert all(str(r.status) == "draft" for r in rows)
-            assert {str(r.dimension) for r in rows} == {
-                "listening", "vocabulary", "grammar", "reading", "translation", "writing"}
-            await s.rollback()  # node_resource 随之回滚,不污染库
-    finally:
-        async with _async_session_factory() as s:
-            for nid in node_ids:
-                await s.execute(_t("DELETE FROM node_resource WHERE node_id = :n"), {"n": str(nid)})
-                await s.execute(_t("DELETE FROM knowledge_node_aliases WHERE node_id = :n"), {"n": str(nid)})
-                await s.execute(_t("DELETE FROM knowledge_nodes WHERE id = :n"), {"n": str(nid)})
-            await s.commit()
+        await _cleanup_lecture_node(node_id)

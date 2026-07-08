@@ -1,14 +1,15 @@
 <script setup lang="ts">
+import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, Refresh, Document, Notebook, Search, Cpu, CircleCheck, CircleClose, Delete, Plus, Collection } from '@element-plus/icons-vue'
 import {
-  listCurriculumUnits, deleteCurriculumUnits, setUnitStatus, publishUnitsBulk,
+  listCurriculumUnits, deleteCurriculumUnits,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
   fetchUnitPdfBlob, getUnitStructured, generateUnitStructured, linkUnitStructured,
-  linkSectionNode, newNodeForSection, getNodeTree, getUnitLinkedNodes,
+  linkSectionNode, unlinkSectionNode, newNodeForSection, getNodeTree, getUnitLinkedNodes,
   getUnitWords, saveUnitWords, deleteUnitWord, ocrUnitWords, parseUnitWordsText,
   uploadParseLs, listUploadedLs, linkUploadedLsNode, newUploadedLsNode, deleteUploadedLs, autoLinkUnitLs,
   type UnitLinkedNode, type UploadedLsItem,
@@ -60,33 +61,7 @@ async function load() {
 // 筛选变更:回到第一页再查
 function reload() { page.value = 1; load() }
 
-// ── 发布闸门:单元 draft/published(学生只见 published)──
-async function togglePublish(row: AdminCurriculumUnit) {
-  const next = row.status === 'published' ? 'draft' : 'published'
-  try {
-    await setUnitStatus(row.unit_id, next)
-    row.status = next
-    ElMessage.success(next === 'published' ? '已发布(学生可见)' : '已下架(学生不可见)')
-  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
-}
-async function publishSemester(status: 'draft' | 'published') {
-  if (!filterTextbook.value || !filterGrade.value || !filterSemester.value) {
-    ElMessage.warning('请先在上方选定 教材版 + 年级 + 学期,再整学期发布/下架'); return
-  }
-  const label = status === 'published' ? '发布' : '下架'
-  try {
-    await ElMessageBox.confirm(
-      `确认${label}「${filterTextbook.value} ${filterGrade.value} ${filterSemester.value}学期」下全部单元?`,
-      `整学期${label}`, { type: 'warning' })
-  } catch { return }
-  try {
-    const { updated } = await publishUnitsBulk({
-      textbook_version: filterTextbook.value, grade: filterGrade.value,
-      semester: filterSemester.value, status })
-    ElMessage.success(`已${label} ${updated} 个单元`)
-    load()
-  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
-}
+// 上下架已移到独立「教材版本维护」页(curriculum_catalog);本页只管内容整理,不再发布/下架。
 
 // ── 选择删除 ──────────────────────────────────────────────────────────────────
 const tableRef = ref<{ clearSelection: () => void } | null>(null)
@@ -515,6 +490,21 @@ function cancelRelink(sec: { id: string }) {
   pickNode.value[sec.id] = ''
 }
 
+// 取消关联:清该板块的图谱节点(就地清标签);单元内无其它板块挂同节点时后端一并删聚合边
+async function onUnlink(sec: { id: string; node_id: string | null; node_code: string | null; node_name?: string | null }) {
+  try {
+    await ElMessageBox.confirm('取消该考点与知识图谱节点的关联?学生端单元考点会相应减少(可再重新挂靠)。',
+      '取消关联', { type: 'warning' })
+  } catch { return }
+  try {
+    await unlinkSectionNode(sec.id)
+    sec.node_id = null; sec.node_code = null; sec.node_name = null
+    relinkOpen.value[sec.id] = false
+    pickNode.value[sec.id] = ''
+    ElMessage.success('已取消关联')
+  } catch (e: any) { ElMessage.error(e?.message || '取消关联失败') }
+}
+
 // 句子难度色(0–100)
 function diffColor(d: number | null): string {
   if (d == null) return '#c0c4cc'
@@ -740,10 +730,6 @@ onMounted(load)
         共 {{ total }} 个单元 ·
         本页已挂考点 {{ rows.filter(r => r.kp_count > 0).length }} 个
       </span>
-      <el-button type="success" :disabled="!filterTextbook || !filterGrade || !filterSemester"
-        title="选定 教材版+年级+学期 后,整学期一键发布(学生可见)" @click="publishSemester('published')">整学期发布</el-button>
-      <el-button plain :disabled="!filterTextbook || !filterGrade || !filterSemester"
-        @click="publishSemester('draft')">整学期下架</el-button>
       <div style="flex:1" />
       <el-button
         type="success" plain
@@ -778,14 +764,9 @@ onMounted(load)
           </el-button>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="470" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
           <div class="act-row">
-            <el-tag size="small" :type="row.status === 'published' ? 'success' : 'info'" effect="plain">
-              {{ row.status === 'published' ? '已发布' : '草稿' }}
-            </el-tag>
-            <el-button size="small" :type="row.status === 'published' ? 'warning' : 'success'" plain
-              @click="togglePublish(row)">{{ row.status === 'published' ? '下架' : '发布' }}</el-button>
             <el-button size="small" type="primary" @click="onViewPassages(row)"><el-icon style="margin-right:4px"><Document /></el-icon>短文</el-button>
             <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)"><el-icon style="margin-right:4px"><Notebook /></el-icon>原版PDF</el-button>
             <el-button size="small" @click="onViewNodes(row)">单元考点 {{ row.kp_count || 0 }}</el-button>
@@ -801,7 +782,7 @@ onMounted(load)
     </div>
 
     <!-- ── 单元知识图谱节点 Dialog ── -->
-    <el-dialog v-model="nodesDlg" :title="`单元考点 · ${nodesUnitTitle}`" width="640px">
+    <AppDialog v-model="nodesDlg" :title="`单元考点 · ${nodesUnitTitle}`" width="640px">
       <div class="hint" style="margin-bottom:10px">单元考点 = 单元解析里语法点/听力考点已关联到知识图谱的节点(去重)。要增删请到「短文」弹框里挂靠/改挂。</div>
       <el-table v-loading="nodesLoading" :data="unitKps" border style="width:100%">
         <el-table-column label="知识图谱考点" min-width="220" show-overflow-tooltip>
@@ -818,10 +799,10 @@ onMounted(load)
       <template #footer>
         <el-button @click="nodesDlg = false">关闭</el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- ── 单元长难句(粘贴文字 → LLM 语法点 → 关联知识图谱)Dialog ── -->
-    <el-dialog v-model="lsDlg" :title="`单元长难句 · ${lsTitle}`" width="940px" top="6vh">
+    <AppDialog v-model="lsDlg" :title="`单元长难句 · ${lsTitle}`" width="940px" top="6vh">
       <div v-loading="lsLoading">
         <div class="words-ocr">
           <div class="pane-head"><span>① 粘贴长难句文字 → LLM 抽语法点</span></div>
@@ -866,10 +847,10 @@ onMounted(load)
         <el-empty v-if="!lsLoading && !lsItems.length" description="本单元暂无长难句,粘贴文字后点「LLM 解析语法点」" :image-size="50" />
       </div>
       <template #footer><el-button @click="lsDlg = false">关闭</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- ── 单元重点单词(挂词力通)Dialog ── -->
-    <el-dialog v-model="wordsDlg" :title="`单元重点单词 · ${wordsTitle}`" width="900px" top="6vh">
+    <AppDialog v-model="wordsDlg" :title="`单元重点单词 · ${wordsTitle}`" width="900px" top="6vh">
       <div v-loading="wordsLoading">
         <!-- 多图 OCR -->
         <div class="words-ocr">
@@ -950,10 +931,10 @@ onMounted(load)
           保存待挂词{{ pendingWords.length ? `（${pendingWords.length}）` : '' }}
         </el-button>
       </template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- ── 单元短文(听力/阅读/写作)Dialog ── -->
-    <el-dialog v-model="passDlg" :title="`单元短文 · ${passTitle}`" width="1120px" top="5vh"
+    <AppDialog v-model="passDlg" :title="`单元短文 · ${passTitle}`" width="1120px" top="5vh"
                @closed="revokePdf(); pdfSrc = ''">
       <div class="pass-wrap">
         <!-- 左:单元 PDF 预览(同源 blob,对照原文;按需点击加载,避免开弹框就整份下载拖慢) -->
@@ -1002,6 +983,7 @@ onMounted(load)
                     已关联 {{ g.node_name || g.node_code }} <span class="muted">{{ g.node_code }}</span>
                   </el-tag>
                   <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="primary" style="margin-left:2px" @click="onRelink(g)">改挂</el-button>
+                  <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="danger" style="margin-left:2px" @click="onUnlink(g)">取消关联</el-button>
                   <span class="muted" style="margin-left:6px">{{ g.sentences.length }} 句</span>
                 </div>
                 <div v-if="!g.node_code || relinkOpen[g.id]" class="link-row">
@@ -1032,6 +1014,7 @@ onMounted(load)
                     已关联 {{ g.node_name || g.node_code }} <span class="muted">{{ g.node_code }}</span>
                   </el-tag>
                   <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="primary" style="margin-left:2px" @click="onRelink(g)">改挂</el-button>
+                  <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="danger" style="margin-left:2px" @click="onUnlink(g)">取消关联</el-button>
                   <span class="muted" style="margin-left:6px">{{ g.sentences.length }} 句</span>
                 </div>
                 <div v-if="!g.node_code || relinkOpen[g.id]" class="link-row">
@@ -1066,10 +1049,10 @@ onMounted(load)
         </div>
       </div>
       <template #footer><el-button @click="passDlg = false">关闭</el-button></template>
-    </el-dialog>
+    </AppDialog>
 
     <!-- ── PDF 上传 Dialog ── -->
-    <el-dialog
+    <AppDialog
       v-model="pdfDialogVisible"
       title="上传教材 PDF · 拆分单元(挂 PDF)"
       width="680px"
@@ -1261,7 +1244,7 @@ onMounted(load)
           </div>
         </div>
       </div>
-    </el-dialog>
+    </AppDialog>
   </div>
 </template>
 

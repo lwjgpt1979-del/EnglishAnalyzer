@@ -107,7 +107,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { loadCurriculumOptions, curriculumFallback } from '@/utils/curriculumOptions'
 import { updateProfile } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useBrandingStore } from '@/stores/branding'
@@ -152,17 +153,25 @@ function onFeatChange(e: any) {
 }
 
 // ── 教材选择 ───────────────────────────────────────────────────────────────────
-const textbookOptions = ['译林版', '人教PEP', '外研版']
-const gradeOptions = ['小学5年级', '小学6年级', '初中7年级', '初中8年级', '初中9年级']
-const semesterOptions = ['上', '下']
+// 教材版本/年级/学期:后台单一真源(GET /curriculum/options),初值兜底
+const _prefFb = curriculumFallback()
+const textbookOptions = ref<string[]>(_prefFb.textbook_versions)
+const gradeOptions = ref<string[]>(_prefFb.grades)
+const semesterOptions = ref<string[]>(_prefFb.semesters)
+onMounted(async () => {
+  const opt = await loadCurriculumOptions()
+  textbookOptions.value = opt.textbook_versions
+  gradeOptions.value = opt.grades
+  semesterOptions.value = opt.semesters
+})
 
 const textbook = ref('')
 const grade = ref('')
 const semester = ref<'上' | '下' | ''>('')
 
-function onTextbookChange(e: any) { textbook.value = textbookOptions[e.detail.value] }
-function onGradeChange(e: any) { grade.value = gradeOptions[e.detail.value] }
-function onSemesterChange(e: any) { semester.value = semesterOptions[e.detail.value] as '上' | '下' }
+function onTextbookChange(e: any) { textbook.value = textbookOptions.value[e.detail.value] }
+function onGradeChange(e: any) { grade.value = gradeOptions.value[e.detail.value] }
+function onSemesterChange(e: any) { semester.value = semesterOptions.value[e.detail.value] as '上' | '下' }
 
 const canConfirm = computed(() => !!textbook.value && !!grade.value && !!semester.value)
 

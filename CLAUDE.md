@@ -14,6 +14,16 @@
 
 admin / institution 端(Vue + Element Plus):优先用 Element Plus 自带的线性图标组件(`@element-plus/icons-vue`,本身即线性描边风格),不要用 emoji 作图标;菜单/标题里的装饰 emoji 一并替换。
 
+## 弹框统一控件:最大化 / 复原 / 关闭(admin / institution 全项目强制)
+
+**admin 与机构(institution)系统里,所有弹出框(dialog)标题栏都必须提供「最大化 / 复原 / 关闭」三个控件**;不允许只有一个 `×`。大表格/长表单弹框尤其需要最大化来铺满屏。
+
+铁律:
+- **统一用封装组件**:用 `frontend/admin/src/components/AppDialog.vue`(institution 端照此建一份同名组件)替代裸 `el-dialog`——它在 `el-dialog` 上加了「最大化(fullscreen)/ 复原 / 关闭」三控件,近乎透明替换:把 `<el-dialog …>` 改成 `<AppDialog …>`(闭合标签同改),`v-model` / `title` / `width` / 其余属性与插槽照常透传。**不要**再各弹框自己写标题栏控件。
+- **最大化 = fullscreen**、复原 = 退出 fullscreen、关闭 = 收起;组件已 `:show-close="false"` 接管标题栏,不再叠加 `el-dialog` 自带的 `×`。
+- **自定义标题**:需要富标题的,给 `AppDialog` 传 `#header` 插槽(会渲染在标题位,三控件仍在最右);普通场景传 `title` 属性即可。
+- **新增弹框**一律用 `AppDialog`;发现历史裸 `el-dialog` 的,收敛过来(无自定义 `#header` 的可直接换标签)。
+
 ## 运营可配置值:必须读后台配置,禁止写死遮蔽(全项目强制)
 
 **凡「运营/后台可配置」的值——价格、额度、限制、配额、文案、开关、模型名等——业务代码必须经对应 service 从 `system_configs`(或相应配置表)读取,严禁在代码里写死常量来决定实际行为。** 否则会出现「后台改了不生效」(典型事故:会员价显示读写死的 `order_service.UNIT_PRICE_FEN`,而非后台 `semester_pricing`)。
@@ -25,6 +35,17 @@ admin / institution 端(Vue + Element Plus):优先用 Element Plus 自带的线�
 - **前端不写死**:小程序/admin 展示的价格、额度等一律走接口,不在前端写死(初始占位值也应尽量避免误导;接口失败要有明确兜底/提示)。
 
 ~~已知待办:机构激活码定价 `institution_purchase_service.py` 的 `_TIER_MONTHLY_FEN` 写死且无后台入口~~ —— 已配置化:计费读 `pricing_service.get_institution_code_pricing()`(`system_configs.institution_code_pricing`,分/月),后台入口 admin `/admin/institution-code-pricing` GET/PUT(定价配置页);机构采购页估价走 `/institution/code-pricing`,与计费同源。常量仅兜底/白名单。
+
+## 主数据「上架/下架」+ 按角色可见(全项目强制)
+
+**凡「版本/清单」类主数据——教材版本、年级/学期候选、题库/资源分类、机构可选项等——必须由后台单一主数据源产出,并带「上架/下架」状态;严禁前端或多个接口各自写死候选清单,更禁止把「后台真有内容」和「前端展示清单」割裂(典型事故:后台只有译林版有内容,前端修改偏好却写死显示 5 个版本)。**
+
+铁律:
+- **单一主数据源**:每类「版本/清单」只有一个真源(主数据表或配置),各端(学生小程序、机构平台、admin)共用同一份接口取值,不另起写死清单。前端只允许「接口失败兜底」,兜底常量必须注释「实际值见 xxx 接口」。
+- **上架/下架可见性**:内容消费侧(**学生小程序、机构平台**)**只见已上架(published)**;**admin 后台上架/下架全部可见可管**。展示接口按角色/状态过滤,严禁把下架项泄露给 C 端。
+- **统一控制页**:每类主数据配一个 admin 管理页做「编辑 + 上架/下架」(参照课程单元发布闸门 `curriculum_units.status` draft/published);状态切换走后端 service,不在前端本地态糊弄。
+- **数量天然对齐**:C 端可选项 = 后台已上架项,不做「规范全量 ∪ distinct」这类会显示空壳版本的合并;需要「学生可填自身属性(如真实年级)」的例外,单独说明并尽量按所选版本已上架内容动态收敛。
+- **遇到新的「版本/清单」类功能一律照此办理**;发现历史写死清单的,收敛到主数据 + 上下架 + 角色可见。
 
 ## 列表页必须分页(admin / institution 全项目强制)
 

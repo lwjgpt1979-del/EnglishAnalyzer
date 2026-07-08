@@ -1,6 +1,17 @@
 import { request } from '@/utils/request'
 import type { UnitOut, UnitDetailOut, KPContentOut, KpMasterySummaryItem, KpMasteryItem } from '@/types/api'
 
+export interface CurriculumOptions {
+  textbook_versions: string[]
+  grades: string[]
+  semesters: string[]
+}
+
+/** 教材版本/年级/学期可选值——后台单一真源(curriculum_service.preference_options)。 */
+export function getCurriculumOptions(): Promise<CurriculumOptions> {
+  return request<CurriculumOptions>('/api/v1/curriculum/options', { method: 'GET' })
+}
+
 export function listUnits(
   textbook_version: string,
   grade: string,

@@ -113,9 +113,11 @@ class UnitDetailOut(UnitOut):
 
 
 class KPContentOut(BaseModel):
-    dimension: str  # listening | vocabulary | grammar | reading | translation | writing
+    """考点讲解的一个「教学环节」(按考点类型自适应,见 kp_lecture_service.LECTURE_TEMPLATES)。"""
+    section_key: str      # concept | rule | examples | pitfalls | ...(随类型)
+    title: str            # 环节中文标题(如 概念点破 / 例句精讲)
     content_md: str
-    audio_url: str | None = None
+    media_url: str | None = None
 
 
 # ─── 运营审核/编辑（M5）：运营可见完整字段，仅 platform_admin 可访问 ────────────

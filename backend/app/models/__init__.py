@@ -31,6 +31,7 @@ from .d3_wrong_questions import WrongQuestion, OcrTask, AiAnalysis, TeacherComme
 from .d4_knowledge import (  # noqa: F401
     KnowledgePoint,
     CurriculumUnit,
+    CurriculumCatalog,
     UnitKnowledgePoint,
     CurriculumWord,
     WrongQuestionKnowledgePoint,
@@ -107,7 +108,6 @@ from .d18_vocab_kg import (  # noqa: F401
 )
 
 # 域19: 知识节点资源 KP-First (R6, 1 张表)
-from .d19_node_resource import NodeResource  # noqa: F401
 
 # 域20: 长难句解析 KP-First (2 张表)
 from .d20_long_sentence import LongSentence, LongSentenceNode  # noqa: F401
@@ -125,5 +125,6 @@ from .d23_sales_crm import (  # noqa: F401
 
 # 域24: 存量用户召回 / 分群触达(分群 + 触达任务 + 触达明细;喂电销 CRM)
 from .d24_reach import UserSegment, ReachCampaign, ReachLog  # noqa: F401
+from .d25_kp_lecture import KpLecture  # noqa: F401
 
 __all__ = ["Base"]

@@ -121,22 +121,13 @@ async def test_persist_unit_creates_all_6_tables(db_session):
     )).scalar_one()
     assert cu_found.unit_title == ai.unit_title
 
-    # 2. unit_node 边挂到受控树节点(每个 KP 一条)
+    # 2. unit_node 边挂到受控树节点(每个 KP 一条)。讲解不在 persist 时写(改由 admin 讲解补全 kp_lecture)。
     from app.models.d17_curriculum_kg import UnitNode
-    from app.models.d19_node_resource import NodeResource
     edges = (await db_session.execute(
         select(UnitNode).where(UnitNode.unit_id == cu.id)
     )).scalars().all()
     assert len(edges) == len(ai.knowledge_points)
     assert {e.node_id for e in edges} == set(node_ids.values())
-
-    # 3. 六维讲解挂到这些节点(KP 数 × 6)
-    lec = (await db_session.execute(
-        select(NodeResource).where(
-            NodeResource.node_id.in_(list(node_ids.values())),
-            NodeResource.resource_type == "lecture")
-    )).scalars().all()
-    assert len(lec) == len(ai.knowledge_points) * 6
 
     # 5/6. curriculum_words ↔ vocabulary_words（>= 同理）
     cw = (await db_session.execute(
@@ -204,9 +195,9 @@ async def test_delete_units_ignores_unknown_ids(db_session):
 
 
 @pytest.mark.asyncio
-async def test_persist_unit_unmatched_parks_pending(db_session):
-    """E2:树上无匹配节点时,persist_unit 不自建节点——落候选 + 六维内容暂存,无 unit_node 边。"""
-    from app.models.d11_v2_curriculum import PendingKpContent
+async def test_persist_unit_unmatched_falls_to_candidate(db_session):
+    """E2:树上无匹配节点时,persist_unit 不自建节点——落候选(供人工挂树),无 unit_node 边。
+    讲解不再随生成暂存(旧 pending_kp_content 已退役),内容改由 admin 讲解补全生成。"""
     from app.models.d15_knowledge_graph import KpCandidate
     from app.models.d17_curriculum_kg import UnitNode
     from app.services.kp_normalize import normalize_kp_name
@@ -220,10 +211,6 @@ async def test_persist_unit_unmatched_parks_pending(db_session):
     edges = (await db_session.execute(
         select(UnitNode).where(UnitNode.unit_id == cu.id))).scalars().all()
     assert len(edges) == 0
-    # 六维内容暂存 pending(KP 数 × 6)
-    pend = (await db_session.execute(
-        select(PendingKpContent).where(PendingKpContent.kp_name_norm.in_(norms)))).scalars().all()
-    assert len(pend) == len(ai.knowledge_points) * 6
     # 候选已建(供人工挂到树上)
     cand = (await db_session.execute(
         select(KpCandidate).where(KpCandidate.name_norm.in_(norms)))).scalars().all()

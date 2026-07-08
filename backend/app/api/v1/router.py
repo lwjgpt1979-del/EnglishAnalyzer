@@ -30,6 +30,7 @@ from app.api.v1.reading_expression import router as reading_expression_router
 from app.api.v1.writing_practice import router as writing_practice_router
 from app.api.v1.admin_analysis import router as admin_analysis_router
 from app.api.v1.admin_curriculum import router as admin_curriculum_router
+from app.api.v1.admin_kp_lecture import router as admin_kp_lecture_router
 from app.api.v1.assignments import router as assignments_router
 from app.api.v1.institution import router as institution_router
 from app.api.v1.student_papers import router as student_papers_router
@@ -79,6 +80,7 @@ v1_router.include_router(reading_expression_router)
 v1_router.include_router(writing_practice_router)
 v1_router.include_router(admin_analysis_router)
 v1_router.include_router(admin_curriculum_router)
+v1_router.include_router(admin_kp_lecture_router)
 v1_router.include_router(assignments_router)
 v1_router.include_router(institution_router)
 v1_router.include_router(student_papers_router)

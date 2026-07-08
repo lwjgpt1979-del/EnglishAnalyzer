@@ -23,10 +23,6 @@ import type {
   UnitExtractResult,
   VocabListItem2,
   VocabWordItem,
-  NodeResourceItem2,
-  UnitContentOverview,
-  VersionDiffOut,
-  VersionItem,
   KpNodeOverviewOut,
   KpNodeDetail,
   NodeTreeItem,
@@ -328,14 +324,35 @@ export function deleteCurriculumUnits(unitIds: string[]): Promise<{ deleted: num
   return unwrap(request.post('/admin/curriculum/units/delete', { unit_ids: unitIds }))
 }
 
-// 发布闸门:单元 draft/published(学生只见 published);整理好再发布
-export function setUnitStatus(unitId: string, status: 'draft' | 'published'): Promise<{ updated: number }> {
-  return unwrap(request.put(`/admin/curriculum/units/${unitId}/status`, { status }))
+// ── 教材主数据(版本/年级/学期 唯一真源 + 上下架)──────────────────────────────
+// 上下架已从「课程单元页」移到独立的「教材版本维护」页(curriculum_catalog)。
+export interface CatalogItem {
+  id: string
+  textbook_version: string
+  grade: string
+  semester: string
+  status: 'draft' | 'published'
+  sort_order?: number
 }
-export function publishUnitsBulk(body: {
-  textbook_version: string; grade: string; semester: string; status: 'draft' | 'published'
-}): Promise<{ updated: number }> {
-  return unwrap(request.post('/admin/curriculum/units/publish-bulk', body))
+export interface CatalogListResp { total: number; items: CatalogItem[] }
+export interface CatalogOptions { textbook_versions: string[]; grades: string[]; semesters: string[] }
+
+export function listCatalog(params?: {
+  textbook_version?: string; grade?: string; semester?: string; skip?: number; limit?: number
+}): Promise<CatalogListResp> {
+  return unwrap<CatalogListResp>(request.get('/admin/curriculum/catalog', { params }))
+}
+export function getCatalogOptions(): Promise<CatalogOptions> {
+  return unwrap<CatalogOptions>(request.get('/admin/curriculum/catalog/options'))
+}
+export function addCatalog(body: { textbook_version: string; grade: string; semester: string }): Promise<CatalogItem> {
+  return unwrap<CatalogItem>(request.post('/admin/curriculum/catalog', body))
+}
+export function setCatalogStatus(catalogId: string, status: 'draft' | 'published'): Promise<{ updated: number }> {
+  return unwrap(request.put(`/admin/curriculum/catalog/${catalogId}/status`, { status }))
+}
+export function deleteCatalog(catalogId: string): Promise<{ deleted: number }> {
+  return unwrap(request.delete(`/admin/curriculum/catalog/${catalogId}`))
 }
 
 export interface GenerateUnitResult {
@@ -401,6 +418,10 @@ export function linkUnitStructured(unitId: string): Promise<UnitStructured & { l
 export function linkSectionNode(sectionId: string, nodeId: string): Promise<{ node_id: string; node_code: string; name: string }> {
   return unwrap(request.post(`/admin/curriculum-unit-sections/${sectionId}/link-node`, { node_id: nodeId }))
 }
+// 取消关联:清该板块的图谱节点(单元内无其它板块挂同节点时一并删聚合边)
+export function unlinkSectionNode(sectionId: string): Promise<{ section_id: string; unlinked: boolean }> {
+  return unwrap(request.post(`/admin/curriculum-unit-sections/${sectionId}/unlink-node`, {}))
+}
 // 目录没有→在所选父分类下新建图谱节点(手工标签)并挂靠
 export function newNodeForSection(sectionId: string, parentId: string, name: string): Promise<{ node_id: string; node_code: string; name: string }> {
   return unwrap(request.post(`/admin/curriculum-unit-sections/${sectionId}/new-node`, { parent_id: parentId, name }))
@@ -464,44 +485,10 @@ export function addVocabItems(listId: string, items: Array<{ word: string; rank?
     request.post(`/admin/vocab-lists/${listId}/items`, { items }))
 }
 
-// ── 知识节点资源（KP-First R6）──────────────────────────────
-export function listNodeResources(params: {
-  status?: string; node_id?: string; resource_type?: string; unit_id?: string; skip?: number; limit?: number
-}) {
-  return unwrap<{ total: number; items: NodeResourceItem2[] }>(
-    request.get('/admin/node-resources', { params }))
-}
-
-export function addNodeResource(body: {
-  node_id: string; resource_type: string; dimension?: string; title?: string
-  content_md?: string; media_url?: string; status?: string
-}) {
-  return unwrap<NodeResourceItem2>(request.post('/admin/node-resources', body))
-}
-
-export function updateNodeResource(id: string, body: {
-  content_md?: string; media_url?: string; title?: string
-}) {
-  return unwrap<NodeResourceItem2>(request.put(`/admin/node-resources/${id}`, body))
-}
-
-export function reviewNodeResource(id: string, approve: boolean) {
-  return unwrap<NodeResourceItem2>(request.post(`/admin/node-resources/${id}/review`, { approve }))
-}
-
-// 单元补全总览:每个对齐节点 × 六维讲解状态(缺失/草稿/已发布)
-export function unitContentOverview(unitId: string): Promise<UnitContentOverview> {
-  return unwrap<UnitContentOverview>(request.get(`/admin/curriculum/units/${unitId}/content-overview`))
-}
-
-// 一键发布整单元:所有对齐节点下 draft/reviewing 讲解 → published
-export function publishUnit(unitId: string): Promise<{ published: number; already_published: number; missing_dims: number }> {
-  return unwrap(request.post(`/admin/curriculum/units/${unitId}/publish`))
-}
-
 // 知识图谱总览(D1)
 export function listKnowledgeNodes(params: {
-  axis?: string; stage?: string; status?: string; q?: string; skip?: number; limit?: number
+  axis?: string; stage?: string; status?: string; q?: string
+  linked?: 'unit' | 'question' | 'both'; skip?: number; limit?: number
 }): Promise<KpNodeOverviewOut> {
   return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params }))
 }
@@ -543,24 +530,39 @@ export function getKpExamStats(f: ExamStatFilter = {}): Promise<ExamStats> {
   return unwrap(request.get('/admin/kp-exam-stats', { params }))
 }
 
-// 详解拆分审核
-export interface LectureNode { id: string; name: string; code: string; content: string; child_count: number }
-export function listLectureNodes(params: { grp?: string; skip?: number; limit?: number }): Promise<{ items: LectureNode[]; total: number }> {
-  return unwrap(request.get('/admin/lecture-nodes', { params }))
-}
-export function splitLecture(nodeId: string): Promise<{ node_id: string; name: string; code: string; content: string; subs: string[]; existing: string[] }> {
-  return unwrap(request.post(`/admin/knowledge-nodes/${nodeId}/split-lecture`, {}, { timeout: 90000 }))
-}
-
 // 节点详情 / 维护(D2)
 export function getKnowledgeNode(id: string): Promise<KpNodeDetail> {
   return unwrap<KpNodeDetail>(request.get(`/admin/knowledge-nodes/${id}`))
+}
+
+// ── 考点讲解(kp_lecture):按类型的教学环节 补全 / AI 生成 / 发布 ──────────────────
+import type { NodeLecture } from '../types'
+export function getNodeLecture(nodeId: string): Promise<NodeLecture> {
+  return unwrap<NodeLecture>(request.get(`/admin/knowledge-nodes/${nodeId}/lecture`))
+}
+export function upsertLectureSection(nodeId: string, sectionKey: string,
+  body: { content_md?: string; media_url?: string }): Promise<{ id: string; status: string; title: string }> {
+  return unwrap(request.put(`/admin/knowledge-nodes/${nodeId}/lecture/${sectionKey}`, body))
+}
+export function generateLectureSection(nodeId: string, sectionKey: string): Promise<{ content_md: string; status: string }> {
+  return unwrap(request.post(`/admin/knowledge-nodes/${nodeId}/lecture/${sectionKey}/generate`, {}, { timeout: 120000 }))
+}
+export function generateMissingLecture(nodeId: string): Promise<{ generated: number }> {
+  return unwrap(request.post(`/admin/knowledge-nodes/${nodeId}/lecture/generate-missing`, {}, { timeout: 300000 }))
+}
+export function setLectureSectionStatus(nodeId: string, sectionKey: string, status: 'draft' | 'published'): Promise<{ updated: number }> {
+  return unwrap(request.put(`/admin/knowledge-nodes/${nodeId}/lecture/${sectionKey}/status`, { status }))
+}
+export function publishAllLecture(nodeId: string, status: 'draft' | 'published'): Promise<{ updated: number }> {
+  return unwrap(request.put(`/admin/knowledge-nodes/${nodeId}/lecture/publish-all`, { status }))
+}
+export function deleteLectureSection(nodeId: string, sectionKey: string): Promise<{ deleted: number }> {
+  return unwrap(request.delete(`/admin/knowledge-nodes/${nodeId}/lecture/${sectionKey}`))
 }
 // 知识点详情枢纽(F):详解正文 + 反向关联(教材/真题/仿真)+ 关系边
 export interface NodeHubQuestion { id: string; question_no?: string | null; section?: string | null; stem?: string | null; status: string; paper_name?: string | null }
 export interface NodeHub {
   id: string; name: string; code: string; status: string; node_kind?: string | null; description?: string | null
-  lectures: { dimension?: string | null; status?: string | null; content_md?: string | null }[]
   units: { unit_id: string; unit_title?: string; textbook_version?: string; grade?: string; semester?: string }[]
   real_questions: NodeHubQuestion[]; sim_questions: NodeHubQuestion[]
   relations: { node_id: string; name: string; code?: string | null; relation: string }[]
@@ -586,24 +588,6 @@ export function getNodeChildren(id: string): Promise<NodeChild[]> {
 }
 export function restoreKnowledgeNode(id: string): Promise<{ id: string; status: string }> {
   return unwrap(request.post(`/admin/knowledge-nodes/${id}/restore`))
-}
-
-// 内容版本对比 / 审核(C2)
-export function versionDiff(versionId: string, against = 'current'): Promise<VersionDiffOut> {
-  return unwrap<VersionDiffOut>(request.get(`/admin/node-resource-versions/${versionId}/diff`, { params: { against } }))
-}
-export function approveVersion(versionId: string): Promise<Record<string, string>> {
-  return unwrap(request.post(`/admin/node-resource-versions/${versionId}/approve`))
-}
-export function rejectVersion(versionId: string): Promise<Record<string, string>> {
-  return unwrap(request.post(`/admin/node-resource-versions/${versionId}/reject`))
-}
-// 版本历史 + 回滚(C3)
-export function listResourceVersions(resourceId: string): Promise<{ resource_id: string; total: number; items: VersionItem[] }> {
-  return unwrap(request.get(`/admin/node-resources/${resourceId}/versions`))
-}
-export function rollbackVersion(resourceId: string, versionId: string): Promise<Record<string, string>> {
-  return unwrap(request.post(`/admin/node-resources/${resourceId}/rollback/${versionId}`))
 }
 
 // ── 长难句管理（KP-First L7）──────────────────────────────

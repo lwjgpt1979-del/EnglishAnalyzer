@@ -48,13 +48,13 @@
       <text class="mastery-tip">还没检测过这个知识点 —— 先做 5 题摸个底,看看自己会不会</text>
     </view>
 
-    <!-- Tab 1: 课本内容(只展示有内容的维度) -->
+    <!-- Tab 1: 课本内容(按讲解环节) -->
     <template v-if="activeView === 'content'">
       <view class="subtabs" v-if="availDims.length > 1">
         <view
           v-for="d in availDims" :key="d.key"
-          class="subtab" :class="{ active: activeDim === d.key }"
-          @tap="activeDim = d.key"
+          class="subtab" :class="{ active: activeSection === d.key }"
+          @tap="activeSection = d.key"
         >{{ d.label }}</view>
       </view>
       <view v-if="loading" class="empty">加载中…</view>
@@ -63,8 +63,13 @@
         <text class="empty-sub">这个知识点的课本讲解还没上线\n可以先练几题检验掌握情况,或看「仿真题」</text>
       </view>
       <scroll-view v-else scroll-y class="content">
-        <view class="dim-badge" v-if="availDims.length === 1">{{ availDims[0].label }}</view>
-        <rich-text :nodes="md2html(currentContent?.content_md || '')" class="md" />
+        <view class="lecture-card">
+          <view class="lecture-head">
+            <text class="lecture-bar" />
+            <text class="lecture-title">{{ currentTitle }}</text>
+          </view>
+          <rich-text :nodes="md2html(cleanContent)" class="md" />
+        </view>
       </scroll-view>
       <view class="practice-bar">
         <button class="btn-secondary" @tap="goPractice">练习（5 题）</button>
@@ -130,29 +135,35 @@ const viewTabs: { key: ViewKey; label: string }[] = [
 ]
 const activeView = ref<ViewKey>('content')
 
-// —— Tab 1：课本内容 ——
-const dims = [
-  { key: 'listening',   label: '听力' },
-  { key: 'vocabulary',  label: '词汇' },
-  { key: 'grammar',     label: '语法' },
-  { key: 'reading',     label: '阅读' },
-  { key: 'translation', label: '翻译' },
-  { key: 'writing',     label: '写作' },
-]
+// —— Tab 1：课本内容(按考点类型的教学环节 section,后台单一真源下发)——
 const contents = ref<KPContentOut[]>([])
-const activeDim = ref('')
+const activeSection = ref('')
 const loading = ref(true)
 const kpId = ref('')
 const kpName = ref('')
 
-// 只保留真有内容的维度做 tab(避免让用户挨个点 6 个空维度)
+// 环节做 subtab:后端只返回已发布且有正文的环节(concept/rule/…),按返回顺序
 const availDims = computed(() =>
-  dims.filter(d => contents.value.some(
-    c => c.dimension === d.key && (c.content_md || '').trim())))
+  contents.value
+    .filter(c => (c.content_md || '').trim())
+    .map(c => ({ key: c.section_key, label: c.title })))
 
 const currentContent = computed(
-  () => contents.value.find(c => c.dimension === activeDim.value) || null,
+  () => contents.value.find(c => c.section_key === activeSection.value) || null,
 )
+const currentTitle = computed(
+  () => availDims.value.find(d => d.key === activeSection.value)?.label || '',
+)
+// 去掉正文开头与环节同名的粗体标题(如「**一句话搞懂**:」),避免和上方 tab / 卡片标题重复
+const cleanContent = computed(() => {
+  let md = (currentContent.value?.content_md || '').trim()
+  const t = currentTitle.value
+  if (t) {
+    const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    md = md.replace(new RegExp('^\\s*\\*\\*\\s*' + esc + '\\s*\\*\\*\\s*[：:]?\\s*'), '')
+  }
+  return md.trim()
+})
 
 function setTitle(name: string) {
   if (!name) return
@@ -215,8 +226,8 @@ onLoad(async (q: any) => {
   isGrammar.value = q.cat === 'grammar'
   try {
     contents.value = await getKpContents(q.id)
-    // 默认落在第一个「有内容」的维度(而不是写死语法);全空则留空展示整体空态
-    activeDim.value = availDims.value[0]?.key || ''
+    // 默认落在第一个有内容的环节;全空则展示整体空态「讲解内容制作中」
+    activeSection.value = availDims.value[0]?.key || ''
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
   } finally {
@@ -263,17 +274,13 @@ async function loadWrongs() {
   }
 }
 
-// 只有当前维度真有内容时才按维度练;否则按整个知识点练(避免"暂无内容却练该维度"的矛盾)
-function dimParam(): string {
-  return currentContent.value ? `&dim=${activeDim.value}` : ''
-}
-
+// 讲解环节是教学内容、不是练习维度:练习一律按整个知识点(不再带 dim 参数)
 function goPractice() {
-  uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}${dimParam()}` })
+  uni.navigateTo({ url: `/pages/practice/v2-session?kp=${kpId.value}` })
 }
 
 function goExam() {
-  uni.navigateTo({ url: `/pages/practice/v2-exam?kp=${kpId.value}&count=10${dimParam()}` })
+  uni.navigateTo({ url: `/pages/practice/v2-exam?kp=${kpId.value}&count=10` })
 }
 
 function goWrongDetail(id: string) {
@@ -293,11 +300,19 @@ function goWrongDetail(id: string) {
   content: ''; position: absolute; left: 25%; right: 25%; bottom: 0;
   height: 4rpx; background: var(--c-primary);
 }
-.subtabs { display: flex; background: var(--c-bg-soft); border-bottom: 1rpx solid var(--c-border); }
-.subtab {
-  flex: 1; text-align: center; padding: 18rpx 0; font-size: 26rpx; color: var(--c-text-second);
+/* 分段胶囊子 tab:整段一个软底容器,选中项为白底浮起 */
+.subtabs {
+  display: flex; gap: 8rpx; margin: 20rpx 24rpx 4rpx; padding: 6rpx;
+  background: var(--c-bg-soft); border-radius: 999rpx;
 }
-.subtab.active { color: var(--c-primary); font-weight: 700; }
+.subtab {
+  flex: 1; text-align: center; padding: 16rpx 0; font-size: 26rpx;
+  color: var(--c-text-second); border-radius: 999rpx; transition: all .15s;
+}
+.subtab.active {
+  color: var(--c-primary); font-weight: 700; background: var(--c-bg-card);
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, .06);
+}
 /* 空态撑满剩余空间:练习按钮才能贴住底部,不再悬在页面中间 */
 .empty {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -307,13 +322,20 @@ function goWrongDetail(id: string) {
 .empty-sub { font-size: 26rpx; color: var(--c-text-hint); line-height: 1.7; white-space: pre-line; }
 .mastery-hint { justify-content: center; }
 .mastery-tip { font-size: 24rpx; color: var(--c-text-second); }
-.dim-badge {
-  display: inline-block; font-size: 22rpx; color: var(--c-primary);
-  background: rgba(61, 139, 245, 0.08); border-radius: 999rpx;
-  padding: 4rpx 18rpx; margin-bottom: 16rpx;
-}
 .content { flex: 1; padding: 24rpx; }
-.md { font-size: 28rpx; line-height: 1.7; color: var(--c-text-body); }
+/* 讲解白卡:浮在页面底色上,圆角 + 柔和阴影,内容不再顶边平铺 */
+.lecture-card {
+  background: var(--c-bg-card); border-radius: 24rpx;
+  padding: 32rpx 32rpx 36rpx; box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, .04);
+}
+.lecture-head { display: flex; align-items: center; margin-bottom: 20rpx; }
+.lecture-bar {
+  width: 8rpx; height: 32rpx; border-radius: 999rpx;
+  background: var(--c-primary); margin-right: 14rpx;
+}
+.lecture-title { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
+/* 正文:容器字号会 cascade 到 md2html 输出的无字号 <p>(mp-weixin rich-text 靠内联样式,外部 CSS 进不去内部) */
+.md { font-size: 30rpx; line-height: 1.85; color: var(--c-text-body); }
 .list { flex: 1; padding: 16rpx 24rpx; }
 .card {
   background: var(--c-bg-card); border: 1rpx solid var(--c-border);

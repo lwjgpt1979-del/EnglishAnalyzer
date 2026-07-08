@@ -24,6 +24,7 @@ interface NavGroup { key: string; title: string; icon: Component; items?: NavIte
 const navGroups: NavGroup[] = [
   { key: 'g-content', title: '内容生产', icon: Collection, subs: [
     { title: '课程 / 教材', items: [
+      { path: '/textbook-catalog', label: '教材版本维护' },
       { path: '/curriculum-units', label: '课程内容生成' },
       { path: '/curriculum-gen-jobs', label: '课程生成任务' },
     ] },
@@ -37,8 +38,6 @@ const navGroups: NavGroup[] = [
       { path: '/exam-type-stats', label: '考试类型统计' },
       { path: '/grammar-calibration', label: '语法判定校准(R10)' },
       { path: '/kp-prompts', label: '习题匹配知识脑图提示词' },
-      { path: '/node-resources', label: '知识点资源' },
-      { path: '/lecture-split', label: '详解拆分审核' },
     ] },
     { title: '句子 / 写作', items: [
       { path: '/long-sentences', label: '长难句管理' },

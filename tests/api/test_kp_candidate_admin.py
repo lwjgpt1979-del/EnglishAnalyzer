@@ -152,7 +152,7 @@ async def test_knowledge_node_detail_update_retire(client):
         assert r.status_code == 200, r.text
         d = r.json()["data"]
         assert d["name"] == f"{_TAG}详情点" and d["status"] == "active"
-        assert "dims" in d and "mastery" in d and d["mastery"]["learners"] == 0
+        assert "lecture" in d and "mastery" in d and d["mastery"]["learners"] == 0
 
         # 改名 + 子类型 + 学段 + 描述
         r = await client.patch(f"/api/v1/admin/knowledge-nodes/{node_id}", headers=admin, json={
@@ -178,7 +178,7 @@ async def test_knowledge_nodes_overview(client):
     from app.models.d4_knowledge import CurriculumUnit
     from app.models.d17_curriculum_kg import UnitNode
     from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
-    from app.models.d19_node_resource import NodeResource
+    from app.models.d25_kp_lecture import KpLecture
     node_id = await _seed_node(f"{_TAG}总览点")          # 自带 1 别名
     unit_id, q_id = uuid.uuid4(), uuid.uuid4()
     async with _async_session_factory() as s:
@@ -186,10 +186,10 @@ async def test_knowledge_nodes_overview(client):
                              semester="下", unit_no=1, unit_title=f"{_TAG}U"))
         await s.flush()
         s.add(UnitNode(unit_id=unit_id, node_id=node_id, source="manual"))
-        # 两维讲解
-        for dim in ("grammar", "reading"):
-            s.add(NodeResource(id=uuid.uuid4(), node_id=node_id, resource_type="lecture",
-                               dimension=dim, content_md="x", status="draft"))
+        # 两个讲解环节(语法模板:idea/examples/pitfall)
+        for sk in ("idea", "examples"):
+            s.add(KpLecture(id=uuid.uuid4(), node_id=node_id, section_key=sk,
+                            content_md="x", status="draft"))
         s.add(PlatformQuestion(id=q_id, type="real", question_type="单选",
                                stem=f"{_TAG}题", answer="A", status="published"))
         await s.flush()
@@ -201,14 +201,14 @@ async def test_knowledge_nodes_overview(client):
         assert r.status_code == 200, r.text
         data = r.json()["data"]
         item = next(it for it in data["items"] if it["name"] == f"{_TAG}总览点")
-        assert item["dims_filled"] == 2 and item["unit_refs"] == 1
+        assert item["lecture_filled"] == 2 and item["unit_refs"] == 1
         assert item["question_refs"] == 1 and item["alias_count"] == 1
         assert item["status"] == "active"
     finally:
         async with _async_session_factory() as s:
             await s.execute(text("DELETE FROM platform_question_kp WHERE node_id=:n"), {"n": str(node_id)})
             await s.execute(text("DELETE FROM platform_question WHERE id=:q"), {"q": str(q_id)})
-            await s.execute(text("DELETE FROM node_resource WHERE node_id=:n"), {"n": str(node_id)})
+            await s.execute(text("DELETE FROM kp_lecture WHERE node_id=:n"), {"n": str(node_id)})
             await s.execute(text("DELETE FROM unit_node WHERE unit_id=:u"), {"u": str(unit_id)})
             await s.execute(text("DELETE FROM curriculum_units WHERE id=:u"), {"u": str(unit_id)})
             await s.commit()

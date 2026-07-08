@@ -42,7 +42,8 @@ class KpNodeOverviewItem(BaseModel):
     status: str
     applicable_stages: list[str] | None = None
     source: str | None = None     # seed/textbook/exam/manual(manual=人工新建)
-    dims_filled: int          # 六维讲解已有几维(0-6)
+    lecture_filled: int       # 讲解已填环节数
+    lecture_total: int        # 该考点类型模板环节数(分母)
     unit_refs: int            # 被多少教材单元引用
     question_refs: int        # 被多少真题/仿真引用
     alias_count: int
@@ -67,9 +68,24 @@ class NodeUnitRef(BaseModel):
     semester: str
 
 
-class NodeDimCell(BaseModel):
-    id: uuid.UUID
+class LectureSectionCell(BaseModel):
+    """考点讲解的一个教学环节(按类型模板)。status: empty/draft/published。"""
+    section_key: str
+    title: str
+    order: int
+    content_md: str | None = None
+    media_url: str | None = None
     status: str
+    source: str | None = None
+    has_content: bool
+
+
+class LectureOut(BaseModel):
+    kp_type: str          # grammar/reading/listening/writing
+    kp_type_label: str    # 语法/阅读/听力/写作
+    total: int            # 该类型模板环节数
+    filled: int           # 已填(有正文)环节数
+    sections: list[LectureSectionCell]
 
 
 class NodeMastery(BaseModel):
@@ -90,7 +106,7 @@ class KpNodeDetailOut(BaseModel):
     applicable_stages: list[str] | None = None
     description: str | None = None
     source: str
-    dims: dict[str, NodeDimCell | None]
+    lecture: LectureOut
     aliases: list[NodeAliasItem]
     units: list[NodeUnitRef]
     question_real: int

@@ -132,15 +132,14 @@
 import { onMounted, ref, computed } from 'vue'
 import { getStudentDiagnosisAsRelative, getStudentCheckinCalendar, getChildSpeakingStats, getChildVocabOverview, type SpeakStats, type ChildVocabOverview } from '@/api/relative'
 import { createOrder, payOrder, getSemesterPricing } from '@/api/orders'
+import { loadCurriculumOptions, curriculumFallback } from '@/utils/curriculumOptions'
 import type { RelativeCheckinCalendar } from '@/types/api'
 
-// ── 学期选择选项（与 semester-purchase.vue 保持同步）──────────────────────────
-const textbookOptions = ['译林版', '人教版', '北师大版']
-const gradeOptions = [
-  '小学3年级', '小学4年级', '小学5年级', '小学6年级',
-  '初中7年级', '初中8年级', '初中9年级',
-]
-const semesterOptions = ['上', '下']
+// ── 教材版本/年级/学期:后台单一真源(GET /curriculum/options),初值兜底,onMounted 刷新 ──
+const _prefFb = curriculumFallback()
+const textbookOptions = ref<string[]>(_prefFb.textbook_versions)
+const gradeOptions = ref<string[]>(_prefFb.grades)
+const semesterOptions = ref<string[]>(_prefFb.semesters)
 
 // ── 学期状态 ──────────────────────────────────────────────────────────────────
 const textbook = ref('译林版')
@@ -182,6 +181,11 @@ const cells = computed(() => {
 })
 
 onMounted(async () => {
+  loadCurriculumOptions().then((o) => {
+    textbookOptions.value = o.textbook_versions
+    gradeOptions.value = o.grades
+    semesterOptions.value = o.semesters
+  })
   try {
     const p = await getSemesterPricing()
     tiers.value = [

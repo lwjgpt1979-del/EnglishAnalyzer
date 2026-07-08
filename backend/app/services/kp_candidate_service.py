@@ -42,27 +42,6 @@ async def _backfill_unit_edges(db, node_id: uuid.UUID, source_ref: dict | None) 
         )
 
 
-async def _materialize_pending_content(db, node_id: uuid.UUID, norm: str) -> int:
-    """候选出 node 后 → 取该 KP 名暂存的讲解(pending_kp_content)物化为 node_resource lecture,
-    并删除已物化行。返回物化条数(生成内容不丢:未命中时暂存,审核后到位)。"""
-    from app.models.d11_v2_curriculum import PendingKpContent
-    from app.services import node_resource_service as nrs
-    rows = (await db.execute(
-        sa.select(PendingKpContent).where(PendingKpContent.kp_name_norm == norm)
-    )).scalars().all()
-    count = 0
-    for r in rows:
-        if r.dimension not in nrs._DIMENSIONS:
-            continue
-        # 走 C1 版本流:挂到既有节点若已有发布内容,产生待审版本而非覆盖
-        await nrs.submit_lecture_version(
-            db, node_id=node_id, dimension=r.dimension, content_md=r.content_md,
-            source=r.generated_by or "ai_full", status_if_new="draft")
-        await db.delete(r)
-        count += 1
-    if count:
-        await db.flush()
-    return count
 
 
 async def _get_pending(db: AsyncSession, candidate_id: uuid.UUID) -> KpCandidate:
@@ -107,12 +86,12 @@ async def list_candidates(
 
 async def list_nodes_overview(
     db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
-    status: str | None = None, q: str | None = None, skip: int = 0, limit: int = 20,
+    status: str | None = None, q: str | None = None, linked: str | None = None,
+    skip: int = 0, limit: int = 20,
 ) -> tuple[list[dict], int]:
-    """知识图谱总览(D1):节点分页 + 每节点摘要(六维完整度/引用单元/引用真题/别名数)。"""
+    """知识图谱总览(D1):节点分页 + 每节点摘要(讲解完整度/引用单元/引用真题/别名数)。"""
     from sqlalchemy.dialects.postgresql import JSONB
     from app.models.d16_question_domain import PlatformQuestionKp
-    from app.models.d19_node_resource import NodeResource
 
     base = sa.select(KnowledgeNode)
     if axis:
@@ -125,6 +104,13 @@ async def list_nodes_overview(
         base = base.where(sa.or_(
             KnowledgeNode.applicable_stages.is_(None),
             KnowledgeNode.applicable_stages.op("@>")(sa.cast([stage], JSONB))))
+    # 关联筛选:unit=已关联教材单元 / question=已关联真题 / both=两者同时关联(EXISTS 子查询)
+    if linked in ("unit", "both"):
+        base = base.where(sa.select(UnitNode.node_id).where(UnitNode.node_id == KnowledgeNode.id).exists())
+    if linked in ("question", "both"):
+        base = base.where(
+            sa.select(PlatformQuestionKp.node_id)
+            .where(PlatformQuestionKp.node_id == KnowledgeNode.id).exists())
     total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(
         base.order_by(KnowledgeNode.name).offset(skip).limit(limit))).scalars().all()
@@ -134,10 +120,9 @@ async def list_nodes_overview(
 
     async def _counts(stmt):
         return {nid: c for nid, c in (await db.execute(stmt)).all()}
-    dims = await _counts(
-        sa.select(NodeResource.node_id, sa.func.count(sa.distinct(NodeResource.dimension)))
-        .where(NodeResource.node_id.in_(ids), NodeResource.resource_type == "lecture")
-        .group_by(NodeResource.node_id))
+    # 讲解完整度:已填讲解环节数(kp_lecture);分母 = 该考点类型模板环节数
+    from app.services import kp_lecture_service as kl
+    lec_filled = await kl.filled_counts(db, node_ids=ids)
     units = await _counts(
         sa.select(UnitNode.node_id, sa.func.count()).where(UnitNode.node_id.in_(ids))
         .group_by(UnitNode.node_id))
@@ -150,7 +135,8 @@ async def list_nodes_overview(
     items = [{
         "id": r.id, "axis": r.axis, "node_kind": r.node_kind, "name": r.name, "code": r.code,
         "status": r.status, "applicable_stages": r.applicable_stages, "source": r.source,
-        "dims_filled": int(dims.get(r.id, 0)), "unit_refs": int(units.get(r.id, 0)),
+        "lecture_filled": int(lec_filled.get(r.id, 0)), "lecture_total": len(kl.template_for(r.code)),
+        "unit_refs": int(units.get(r.id, 0)),
         "question_refs": int(ques.get(r.id, 0)), "alias_count": int(aliases.get(r.id, 0)),
     } for r in rows]
     return items, total
@@ -372,11 +358,10 @@ async def set_parent(db: AsyncSession, *, node_id: uuid.UUID, parent_id: uuid.UU
 
 
 async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
-    """节点详情(D2):基础字段 + 别名 + 引用单元 + 引用真题 + 六维完整度 + 学生掌握分布。"""
+    """节点详情(D2):基础字段 + 别名 + 引用单元 + 引用真题 + 讲解完整度(按类型) + 学生掌握分布。"""
     from app.models.d4_knowledge import CurriculumUnit
     from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, StudentKp
-    from app.models.d19_node_resource import NodeResource
-    from app.services.node_resource_service import LECTURE_DIMENSIONS
+    from app.services import kp_lecture_service as kl
 
     node = await db.get(KnowledgeNode, node_id)
     if node is None:
@@ -400,10 +385,7 @@ async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
         .join(PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id)
         .where(PlatformQuestionKp.node_id == node_id).group_by(PlatformQuestion.type))).all())
 
-    lec = {dim: {"id": rid, "status": st} for rid, dim, st in (await db.execute(
-        sa.select(NodeResource.id, NodeResource.dimension, NodeResource.status)
-        .where(NodeResource.node_id == node_id, NodeResource.resource_type == "lecture"))).all() if dim}
-    dims = {d: lec.get(d) for d in LECTURE_DIMENSIONS}
+    lecture = await kl.list_sections(db, node_id=node_id, code=node.code)   # 讲解:模板环节 + 完整度
 
     m = (await db.execute(sa.select(
         sa.func.count(), sa.func.avg(StudentKp.mastery),
@@ -418,7 +400,7 @@ async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
         "id": node.id, "axis": node.axis, "node_kind": node.node_kind, "name": node.name,
         "code": node.code, "status": node.status, "applicable_stages": node.applicable_stages,
         "description": node.description, "source": node.source,
-        "dims": dims, "aliases": aliases, "units": units,
+        "lecture": lecture, "aliases": aliases, "units": units,
         "question_real": int(qbtype.get("real", 0)), "question_sim": int(qbtype.get("sim", 0)),
         "mastery": mastery,
     }
@@ -431,17 +413,14 @@ async def node_hub(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
     from app.models.d16_question_domain import (
         PlatformQuestion, PlatformQuestionKp, PlatformPaper,
     )
-    from app.models.d19_node_resource import NodeResource
+    from app.services import kp_lecture_service as kl
 
     node = await db.get(KnowledgeNode, node_id)
     if node is None:
         raise AppError(code=404, message="知识点不存在")
 
-    # 详解正文(考点通常 1 条 vocabulary/grammar)
-    lectures = [{"dimension": dim, "status": st, "content_md": md} for dim, st, md in (await db.execute(
-        sa.select(NodeResource.dimension, NodeResource.status, NodeResource.content_md)
-        .where(NodeResource.node_id == node_id, NodeResource.resource_type == "lecture")
-        .order_by(NodeResource.dimension))).all()]
+    # 讲解正文:按考点类型的教学环节(含完整度)
+    lectures = (await kl.list_sections(db, node_id=node_id, code=node.code))["sections"]
 
     # 反向 · 教材单元
     units = [{"unit_id": uid, "unit_title": title, "textbook_version": tv, "grade": g, "semester": sem}
@@ -623,7 +602,6 @@ async def approve(
     cand.reviewed_at = _now()
     await db.flush()
     await _backfill_unit_edges(db, node.id, cand.source_ref)   # R1:回填来源单元的边
-    await _materialize_pending_content(db, node.id, norm)       # 生成内容物化为 lecture
     invalidate_node_tree_cache()
     return node
 
@@ -656,7 +634,6 @@ async def merge(
     cand.reviewed_at = _now()
     await db.flush()
     await _backfill_unit_edges(db, target_node_id, cand.source_ref)   # R1:回填来源单元的边
-    await _materialize_pending_content(db, target_node_id, norm)      # 生成内容物化为 lecture
     return target
 
 

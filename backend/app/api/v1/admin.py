@@ -370,11 +370,13 @@ async def list_kp_nodes(
 async def knowledge_nodes_overview_api(
     db: DbDep, admin: AdminDep,
     axis: str | None = None, stage: str | None = None, status: str | None = None,
-    q: str | None = None, skip: int = 0, limit: int = 30,
+    q: str | None = None, linked: str | None = None, skip: int = 0, limit: int = 30,
 ):
-    """知识图谱总览(D1):节点分页 + 每节点完整度/引用计数。status 空=全部。"""
+    """知识图谱总览(D1):节点分页 + 每节点完整度/引用计数。status 空=全部;
+    linked: unit=已关联教材 / question=已关联真题 / both=两者同时关联。"""
     items, total = await kp_candidate_service.list_nodes_overview(
-        db, axis=axis, stage=stage, status=status or None, q=q, skip=skip, limit=limit)
+        db, axis=axis, stage=stage, status=status or None, q=q, linked=linked or None,
+        skip=skip, limit=limit)
     return make_ok(KpNodeOverviewOut(total=total, items=[KpNodeOverviewItem(**it) for it in items]))
 
 
@@ -413,22 +415,6 @@ async def kp_exam_stats_api(db: DbDep, admin: AdminDep, grp: str | None = None,
     return make_ok(await kp_candidate_service.exam_type_stats(
         db, grp=grp, textbook=textbook, stage=stage, grade=grade,
         region_code=region_code, exam_type=exam_type))
-
-
-@router.get("/lecture-nodes", response_model=BaseResponse[dict])
-async def list_lecture_nodes_api(db: DbDep, admin: AdminDep,
-                                 grp: str | None = None, skip: int = 0, limit: int = 20):
-    """有详解的考点列表(供「详解拆分审核」页)。grp=词法/句法 可筛。"""
-    from app.services import kp_split_service as kss2
-    items, total = await kss2.list_lecture_nodes(db, grp=grp, skip=skip, limit=limit)
-    return make_ok({"items": [{**it, "id": str(it["id"])} for it in items], "total": total})
-
-
-@router.post("/knowledge-nodes/{node_id}/split-lecture", response_model=BaseResponse[dict])
-async def split_lecture_api(node_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """AI 把该考点的详解拆成若干子考点(只返回建议名,不建节点;人工确认后再建)。"""
-    from app.services import kp_split_service as kss2
-    return make_ok(await kss2.split_lecture(db, node_id))
 
 
 @router.post("/knowledge-nodes/{node_id}/move", response_model=BaseResponse[dict])
@@ -1329,6 +1315,14 @@ async def manual_link_section_api(section_id: uuid.UUID, body: dict, db: DbDep, 
     return make_ok(r)
 
 
+@router.post("/curriculum-unit-sections/{section_id}/unlink-node", response_model=BaseResponse[dict])
+async def unlink_section_api(section_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """取消该语法点/听力考点与知识图谱节点的关联(单元内无其它板块挂同节点时一并删聚合边)。"""
+    r = await curriculum_service.unlink_section(db, section_id=section_id)
+    await db.commit()
+    return make_ok(r)
+
+
 @router.post("/curriculum-unit-sections/{section_id}/new-node", response_model=BaseResponse[dict])
 async def new_node_for_section_api(section_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
     """目录没有→在所选父分类下新建图谱节点(手工标签)并挂靠。body: {parent_id, name}。"""
@@ -1968,136 +1962,6 @@ async def delete_region_admin(code: str, db: DbDep, admin: AdminDep):
     await db.commit()
     return make_ok({"deleted": code})
 
-
-# ─── 知识节点资源管理（R6 资源层补全）────────────────────────────────────────────
-
-def _to_node_resource_item(r, node_name: str | None = None) -> NodeResourceItem:
-    return NodeResourceItem(
-        id=r.id, node_id=r.node_id, node_name=node_name, resource_type=r.resource_type,
-        dimension=r.dimension, title=r.title, content_md=r.content_md, media_url=r.media_url,
-        resource_json=r.resource_json, status=r.status,
-    )
-
-
-@router.get("/node-resources", response_model=BaseResponse[NodeResourceListOut])
-async def list_node_resources_api(
-    db: DbDep, admin: AdminDep, status: str | None = "draft",
-    node_id: uuid.UUID | None = None, resource_type: str | None = None,
-    unit_id: uuid.UUID | None = None, skip: int = 0, limit: int = 20,
-):
-    from app.services import node_resource_service as nrs
-    from app.models.d15_knowledge_graph import KnowledgeNode
-    status = status or None        # 空串 = 全部状态
-    rows, total = await nrs.list_for_review(db, status=status, node_id=node_id,
-                                            resource_type=resource_type, unit_id=unit_id,
-                                            skip=skip, limit=limit)
-    nids = {r.node_id for r in rows}
-    names = dict((await db.execute(
-        select(KnowledgeNode.id, KnowledgeNode.name).where(KnowledgeNode.id.in_(nids)))).all()) if nids else {}
-    return make_ok(NodeResourceListOut(
-        total=total, items=[_to_node_resource_item(r, names.get(r.node_id)) for r in rows]))
-
-
-@router.get("/curriculum/units/{unit_id}/content-overview",
-            response_model=BaseResponse[UnitContentOverviewOut])
-async def unit_content_overview_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """单元补全总览:每个对齐节点 × 六维讲解状态(缺失/草稿/已发布),供发布前预览+补全。"""
-    from app.services import node_resource_service as nrs
-    nodes = await nrs.unit_content_overview(db, unit_id=unit_id)
-    return make_ok(UnitContentOverviewOut(total_nodes=len(nodes), items=nodes))
-
-
-@router.post("/curriculum/units/{unit_id}/publish", response_model=BaseResponse[UnitPublishOut])
-async def publish_unit_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """一键发布整单元:该单元所有对齐节点下 draft/reviewing 讲解 → published。"""
-    from app.services import node_resource_service as nrs
-    r = await nrs.publish_unit(db, unit_id=unit_id, reviewer_id=admin.id)
-    await db.commit()
-    return make_ok(UnitPublishOut(**r))
-
-
-# ─── 内容版本对比 / 审核(C2)────────────────────────────────────────
-@router.get("/node-resource-versions/{version_id}/diff", response_model=BaseResponse[VersionDiffOut])
-async def version_diff_api(version_id: uuid.UUID, db: DbDep, admin: AdminDep, against: str = "current"):
-    """取待审版本与对比基准(当前线上 / 另一版本)的两份正文,供前端行级 diff。"""
-    from app.services import node_resource_service as nrs
-    return make_ok(VersionDiffOut(**(await nrs.version_diff(db, version_id=version_id, against=against))))
-
-
-@router.post("/node-resource-versions/{version_id}/approve", response_model=BaseResponse[dict])
-async def approve_version_api(version_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """审核通过待审版本 → 替换线上、旧版归档。"""
-    from app.services import node_resource_service as nrs
-    r = await nrs.approve_version(db, version_id=version_id, reviewer_id=admin.id)
-    await db.commit()
-    return make_ok({k: str(v) for k, v in r.items()})
-
-
-@router.post("/node-resource-versions/{version_id}/reject", response_model=BaseResponse[dict])
-async def reject_version_api(version_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """驳回待审版本(线上不变)。"""
-    from app.services import node_resource_service as nrs
-    r = await nrs.reject_version(db, version_id=version_id, reviewer_id=admin.id)
-    await db.commit()
-    return make_ok({k: str(v) for k, v in r.items()})
-
-
-@router.get("/node-resources/{resource_id}/versions", response_model=BaseResponse[VersionListOut])
-async def list_versions_api(resource_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """某讲解的版本历史(版本号倒序),供查看/对比/回滚。"""
-    from app.services import node_resource_service as nrs
-    rows = await nrs.list_versions(db, resource_id=resource_id)
-    items = [VersionItem(id=r.id, version_no=r.version_no, source=r.source, status=r.status,
-                         content_md=r.content_md, created_at=r.created_at, reviewed_at=r.reviewed_at)
-             for r in rows]
-    return make_ok(VersionListOut(resource_id=resource_id, total=len(items), items=items))
-
-
-@router.post("/node-resources/{resource_id}/rollback/{version_id}", response_model=BaseResponse[dict])
-async def rollback_version_api(resource_id: uuid.UUID, version_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """回滚:把某历史(archived)版本重新提升为线上。"""
-    from app.services import node_resource_service as nrs
-    r = await nrs.rollback_to_version(db, resource_id=resource_id, version_id=version_id, reviewer_id=admin.id)
-    await db.commit()
-    return make_ok({k: str(v) for k, v in r.items()})
-
-
-@router.post("/node-resources", response_model=BaseResponse[NodeResourceItem])
-async def add_node_resource_api(body: AddResourceIn, db: DbDep, admin: AdminDep):
-    from app.services import node_resource_service as nrs
-    if body.resource_type == "lecture":
-        if not body.dimension or not body.content_md:
-            raise AppError(code=400, message="lecture 需 dimension + content_md")
-        # C1:走版本流——覆盖已发布讲解则产生待审新版(不覆盖线上)
-        ret = await nrs.submit_lecture_version(
-            db, node_id=body.node_id, dimension=body.dimension, content_md=body.content_md,
-            media_url=body.media_url, source="manual", status_if_new=body.status, created_by=admin.id)
-        await db.commit()
-        from app.models.d19_node_resource import NodeResource as _NR
-        r = (await db.execute(select(_NR).where(_NR.id == ret["resource_id"]))).scalar_one()
-    else:
-        r = await nrs.add_resource(db, node_id=body.node_id, resource_type=body.resource_type,
-                                   title=body.title, content_md=body.content_md, media_url=body.media_url,
-                                   resource_json=body.resource_json, status=body.status)
-        await db.commit()
-    return make_ok(_to_node_resource_item(r))
-
-
-@router.post("/node-resources/{resource_id}/review", response_model=BaseResponse[NodeResourceItem])
-async def review_node_resource_api(resource_id: uuid.UUID, body: ReviewRequest, db: DbDep, admin: AdminDep):
-    from app.services import node_resource_service as nrs
-    r = await nrs.review(db, resource_id=resource_id, approve=body.approve, reviewer_id=admin.id)
-    await db.commit()
-    return make_ok(_to_node_resource_item(r))
-
-
-@router.put("/node-resources/{resource_id}", response_model=BaseResponse[NodeResourceItem])
-async def update_node_resource_api(resource_id: uuid.UUID, body: UpdateResourceIn, db: DbDep, admin: AdminDep):
-    from app.services import node_resource_service as nrs
-    r = await nrs.update_resource(db, resource_id=resource_id, content_md=body.content_md,
-                                  media_url=body.media_url, title=body.title, resource_json=body.resource_json)
-    await db.commit()
-    return make_ok(_to_node_resource_item(r))
 
 
 # ─── 长难句管理（抽取 / 审核 / 配置,复用 R6 审核范式）───────────────────────────

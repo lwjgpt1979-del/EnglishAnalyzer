@@ -564,9 +564,10 @@ export interface UnitDetailOut extends UnitOut {
 }
 
 export interface KPContentOut {
-  dimension: string
+  section_key: string   // concept | rule | examples | ...(随考点类型)
+  title: string         // 环节中文标题
   content_md: string
-  audio_url: string | null
+  media_url: string | null
 }
 
 export interface KpMasteryItem {

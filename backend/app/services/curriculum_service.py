@@ -35,26 +35,6 @@ from app.services import semester_service
 
 # ─── Persist ────────────────────────────────────────────────────────────────
 
-async def _park_pending_content(
-    db: AsyncSession, *, norm: str, dimension: str, content_md: str, unit_id: uuid.UUID,
-) -> None:
-    """E2:未命中树上节点时,把该 KP 名某维讲解暂存(按 norm+dim 覆盖),
-    待人工把候选挂到树上后 _materialize_pending_content 物化为 node_resource。"""
-    from app.models.d11_v2_curriculum import PendingKpContent
-    existing = (await db.execute(
-        select(PendingKpContent).where(
-            PendingKpContent.kp_name_norm == norm,
-            PendingKpContent.dimension == dimension)
-    )).scalar_one_or_none()
-    if existing is not None:
-        existing.content_md = content_md
-        existing.source_unit_id = unit_id
-    else:
-        db.add(PendingKpContent(
-            id=uuid.uuid4(), kp_name_norm=norm, dimension=dimension,
-            content_md=content_md, source_unit_id=unit_id, generated_by="ai_full"))
-    await db.flush()
-
 
 async def persist_unit_passages(db: AsyncSession, *, unit_id: uuid.UUID, passages: list) -> int:
     """落库单元析出的短文(听力/阅读/写作)。整体覆盖该单元的旧短文(重生成幂等)。"""
@@ -186,6 +166,22 @@ async def record_node_alias(db: AsyncSession, *, node_id: uuid.UUID, raw_name: s
     return True
 
 
+async def _sync_unit_node(db: AsyncSession, *, unit_id: uuid.UUID, node_id: uuid.UUID,
+                          source: str = "structured") -> None:
+    """把「单元 section → 图谱节点」的挂靠同步为单元级 unit_node 边(去重)。
+
+    unit_node 是单元↔知识图谱节点的**聚合唯一源**:学生端单元列表「N 个知识点」、
+    单元详情考点、单元掌握度都读它。结构化解析/人工挂靠只写了 section.node_id,
+    必须回写 unit_node,否则学生端数不到(admin 走 section 去重、学生走 unit_node → 两边打架)。
+    """
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d17_curriculum_kg import UnitNode
+    await db.execute(
+        pg_insert(UnitNode)
+        .values(unit_id=unit_id, node_id=node_id, source=source)
+        .on_conflict_do_nothing(index_elements=["unit_id", "node_id"]))
+
+
 async def link_unit_sections(db: AsyncSession, *, unit_id: uuid.UUID,
                              only_unlinked: bool = True) -> dict:
     """第二步「关联知识图谱」:把单元结构化里的
@@ -260,6 +256,7 @@ async def link_unit_sections(db: AsyncSession, *, unit_id: uuid.UUID,
                 best, best_score = c, score
         if best is not None and best_score >= KP_AUTO_LINK_THRESHOLD:
             s.node_id, s.node_code = best["node_id"], best["code"]
+            await _sync_unit_node(db, unit_id=unit_id, node_id=best["node_id"])   # 回写单元级聚合边
             out["linked"] += 1
             # 沉淀别称:本次来源名 → 该节点,下次同名可精确命中(非完全相同才值得存)
             if best_score < 1.0:
@@ -313,10 +310,38 @@ async def manual_link_section(db: AsyncSession, *, section_id: uuid.UUID,
     if node is None or node.id not in allowed:
         raise AppError(code=400, message="所选节点不在该板块允许的目录范围(语法→词法/句法,听力→听力)")
     sec.node_id, sec.node_code = node.id, node.code
+    await _sync_unit_node(db, unit_id=sec.unit_id, node_id=node.id, source="manual")   # 回写单元级聚合边
     await db.flush()
     # 人工挂靠的来源名沉淀为别称,后续同名自动命中
     await record_node_alias(db, node_id=node.id, raw_name=sec.point_name or "", source="manual")
     return {"node_id": str(node.id), "node_code": node.code, "name": node.name}
+
+
+async def unlink_section(db: AsyncSession, *, section_id: uuid.UUID) -> dict:
+    """取消某板块与知识图谱节点的关联(清 section.node_id)。
+
+    unit_node 是单元级聚合边:仅当本单元**已无其它板块**挂在同一节点时才删聚合边,
+    否则学生端单元考点会误少(与 _sync_unit_node 去重回写对称)。别名不回收(留作历史)。
+    """
+    import sqlalchemy as _sa
+    from app.models.d22_unit_structured import UnitSection
+    from app.models.d17_curriculum_kg import UnitNode
+
+    sec = (await db.execute(_sa.select(UnitSection).where(UnitSection.id == section_id))).scalar_one_or_none()
+    if sec is None:
+        raise AppError(code=404, message="板块不存在")
+    old_node_id = sec.node_id
+    if old_node_id is None:
+        return {"section_id": str(section_id), "unlinked": False}
+    sec.node_id, sec.node_code = None, None
+    await db.flush()
+    # 单元内是否还有别的板块挂在这个节点;没有才删聚合边
+    still = (await db.execute(_sa.select(_sa.func.count()).select_from(UnitSection).where(
+        UnitSection.unit_id == sec.unit_id, UnitSection.node_id == old_node_id))).scalar() or 0
+    if still == 0:
+        await db.execute(_sa.delete(UnitNode).where(
+            UnitNode.unit_id == sec.unit_id, UnitNode.node_id == old_node_id))
+    return {"section_id": str(section_id), "unlinked": True}
 
 
 async def new_node_for_section(db: AsyncSession, *, section_id: uuid.UUID,
@@ -353,6 +378,7 @@ async def new_node_for_section(db: AsyncSession, *, section_id: uuid.UUID,
     db.add(NodeAlias(id=_uuid.uuid4(), node_id=node.id, alias=nm[:120],
                      alias_norm=normalize_kp_name(nm), source="manual"))
     sec.node_id, sec.node_code = node.id, node.code
+    await _sync_unit_node(db, unit_id=sec.unit_id, node_id=node.id, source="manual")   # 回写单元级聚合边
     await db.flush()
     from app.services.kp_candidate_service import invalidate_node_tree_cache
     invalidate_node_tree_cache()
@@ -444,38 +470,28 @@ async def persist_unit(
         cu.unit_title = ai_unit.unit_title
 
     # 2. 知识点 → E2 受控映射:AI 知识点名 match_kp 到受控树上的既有节点。
-    #    命中 → 建 unit_node 边 + 版本化挂讲解;未命中 → 落候选(附 unit 来源)+ 暂存六维内容,
-    #    待人工把候选挂到树上后物化。**不再自建节点**(知识点骨架由后台受控树定义)。
+    #    命中 → 建 unit_node 边;未命中 → 落候选(附 unit 来源),待人工挂树。**不再自建节点**。
+    #    讲解内容不在此写:改由 admin「讲解补全」按考点类型的教学环节生成(kp_lecture),与教材生成解耦。
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.models.d17_curriculum_kg import UnitNode
-    from app.services import node_resource_service as nrs
     from app.services import curriculum_kp_service as ckp
     from app.services.kp_match_service import match_kp
-    from app.services.kp_normalize import stages_from_grades, normalize_kp_name
+    from app.services.kp_normalize import stages_from_grades
     stages = stages_from_grades([ai_unit.grade])
     stage = stages[0] if stages else None
     for kp_in in ai_unit.knowledge_points:
         if not kp_in.name or not kp_in.name.strip():
             continue
-        dims = [(d, md) for d, md in kp_in.contents.items() if d in nrs._DIMENSIONS]
         r = await match_kp(
             db, raw_name=kp_in.name, axis_hint="knowledge", stage_hint=stage,
             source_type="textbook", source_ref={"unit_ids": [str(cu.id)]})
-        if r.node_id is not None:                       # 命中受控树节点 → 挂内容 + 建边
+        if r.node_id is not None:                       # 命中受控树节点 → 建边
             await db.execute(
                 pg_insert(UnitNode)
                 .values(unit_id=cu.id, node_id=r.node_id, source="ai_extract")
                 .on_conflict_do_nothing(index_elements=["unit_id", "node_id"]))
-            for dim, md in dims:
-                await nrs.submit_lecture_version(
-                    db, node_id=r.node_id, dimension=dim, content_md=md,
-                    source="ai_full", status_if_new=content_status,
-                    origin_ref={"flow": "generate", "unit_id": str(cu.id)})
-        elif r.candidate_id is not None:                # 未命中 → 候选 + 暂存内容,待人工挂树
+        elif r.candidate_id is not None:                # 未命中 → 候选(附 unit 来源),待人工挂树
             await ckp._attach_unit_to_candidate(db, r.candidate_id, cu.id)
-            norm = normalize_kp_name(kp_in.name)
-            for dim, md in dims:
-                await _park_pending_content(db, norm=norm, dimension=dim, content_md=md, unit_id=cu.id)
 
     # 5. vocabulary_words + 6. curriculum_words
     for w_in in ai_unit.words:
@@ -696,13 +712,16 @@ async def list_units(
     semester: str,
 ) -> list[UnitOut]:
     grade = normalize_grade(grade)      # 防御:任何旧格式(七年级/7年级)归一到规范,与迁移后数据对齐
+    # 上架闸门(唯一真源=教材主数据):该 版本+年级+学期 组合须已上架,学生方可见其单元。
+    from app.services import curriculum_catalog_service as cat
+    if not await cat.is_published(db, textbook_version=textbook_version, grade=grade, semester=semester):
+        return []
     r = await db.execute(
         select(CurriculumUnit).where(
             CurriculumUnit.textbook_version == textbook_version,
             CurriculumUnit.grade == grade,
             CurriculumUnit.semester == semester,
-            CurriculumUnit.status == "published",     # 发布闸门:学生只见已发布单元
-        ).order_by(CurriculumUnit.unit_no)
+        ).order_by(CurriculumUnit.unit_no)     # 组合已上架 → 该学期全部单元可见(上下架已移到目录级)
     )
     units = list(r.scalars().all())
 
@@ -820,9 +839,10 @@ async def get_kp_contents(
     user_id: uuid.UUID,
     node_id: uuid.UUID,
 ) -> list[KPContentOut]:
-    """返回某知识 node 的六维讲解(R8.4:入参为 node_id)。受其所属单元的锁约束。"""
+    """返回某知识 node 的讲解——按考点类型的教学环节(已发布)。受其所属单元的锁约束。"""
     from app.models.d17_curriculum_kg import UnitNode
-    from app.models.d19_node_resource import NodeResource
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.services import kp_lecture_service as kl
 
     cu = (await db.execute(
         select(CurriculumUnit).join(
@@ -839,18 +859,13 @@ async def get_kp_contents(
         if locked:
             raise AppError(code=403, message="该知识点所属单元需购买学期会员后解锁")
 
-    contents = (await db.execute(
-        select(NodeResource).where(
-            NodeResource.node_id == node_id,
-            NodeResource.resource_type == "lecture",
-            NodeResource.status == "published",
-        )
-    )).scalars().all()
+    code = (await db.execute(
+        select(KnowledgeNode.code).where(KnowledgeNode.id == node_id))).scalar_one_or_none()
+    secs = await kl.published_sections(db, node_id=node_id, code=code)
     return [KPContentOut(
-        dimension=str(c.dimension or ""),
-        content_md=c.content_md or "",
-        audio_url=c.media_url,
-    ) for c in contents]
+        section_key=s["section_key"], title=s["title"],
+        content_md=s["content_md"] or "", media_url=s.get("media_url"),
+    ) for s in secs]
 
 
 # ─── 运营审核/编辑 ──────────────────────────────────────────────────────────────
@@ -894,10 +909,22 @@ class UnitContentStat:
 _CN_GRADE_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
                  "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 
-# ── 年级/学期规范主数据(全项目单一真源;学生端已用此格式,admin/教材侧统一到此)──
+# ── 教材版本/年级/学期规范主数据(全项目单一真源;学生偏好、admin、教材侧统一到此)──
+CANONICAL_TEXTBOOKS = ["译林版", "人教版", "外研版", "北师大版", "冀教版"]
 CANONICAL_GRADES = ["小学1年级", "小学2年级", "小学3年级", "小学4年级", "小学5年级", "小学6年级",
                     "初中7年级", "初中8年级", "初中9年级", "高中1年级", "高中2年级", "高中3年级"]
 CANONICAL_SEMESTERS = ["上", "下"]
+
+
+async def preference_options(db: AsyncSession, *, include_unpublished: bool = False) -> dict:
+    """教材版本/年级/学期可选值——委托教材主数据(curriculum_catalog)。
+
+    唯一真源 = curriculum_catalog(见 CLAUDE.md「主数据上架/下架」铁律)。消费侧只见上架组合
+    派生的版本/年级/学期;admin 传 include_unpublished=True 见全部。CANONICAL_* 仅用于维护页
+    「新增目录」表单的候选建议与兜底,不再决定 C 端实际可选项。
+    """
+    from app.services import curriculum_catalog_service as cat
+    return await cat.preference_options(db, include_unpublished=include_unpublished)
 
 
 def normalize_grade(g: str | None) -> str | None:

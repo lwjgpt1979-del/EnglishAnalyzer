@@ -6,15 +6,15 @@ import {
   listKnowledgeNodes, getKnowledgeNode, getNodeHub, updateKnowledgeNode,
   retireKnowledgeNode, restoreKnowledgeNode, deleteKnowledgeNode,
   getNodeTree, createKnowledgeNode, moveKnowledgeNode,
+  getNodeLecture, upsertLectureSection, generateLectureSection, generateMissingLecture,
+  setLectureSectionStatus, publishAllLecture,
   type NodeHub,
 } from '../api/admin'
-import type { KpNodeOverviewItem, KpNodeDetail, NodeTreeItem } from '../types'
+import type { KpNodeOverviewItem, KpNodeDetail, NodeTreeItem, LectureSectionCell } from '../types'
 import { EditPen } from '@element-plus/icons-vue'
+import AppDialog from '../components/AppDialog.vue'
 
 const router = useRouter()
-const DIMS = ['listening', 'vocabulary', 'grammar', 'reading', 'translation', 'writing']
-const DIM_LABEL: Record<string, string> = {
-  listening: '听力', vocabulary: '词汇', grammar: '语法', reading: '阅读', translation: '翻译', writing: '写作' }
 const STAGE_OPTS = ['小', '初', '高']
 
 const STAGES = [{ label: '全部学段', value: '' }, { label: '小', value: '小' }, { label: '初', value: '初' }, { label: '高', value: '高' }]
@@ -25,9 +25,14 @@ const STATUSES = [
 const STATUS_TAG: Record<string, string> = { active: 'success', candidate: 'warning', retired: 'info' }
 const STATUS_LABEL: Record<string, string> = { active: '启用', candidate: '候选', retired: '停用' }
 
+const LINKED = [
+  { label: '全部', value: '' }, { label: '已关联教材', value: 'unit' },
+  { label: '已关联真题', value: 'question' }, { label: '同时关联教材+真题', value: 'both' },
+]
 const stage = ref('')
 const status = ref('active')
 const q = ref('')
+const linked = ref('')          // 关联筛选:''=全部 / unit / question / both
 const rows = ref<KpNodeOverviewItem[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -40,6 +45,7 @@ async function load() {
     const data = await listKnowledgeNodes({
       stage: stage.value || undefined,
       status: status.value || undefined, q: q.value || undefined,
+      linked: (linked.value || undefined) as 'unit' | 'question' | 'both' | undefined,
       skip: (page.value - 1) * pageSize, limit: pageSize,
     })
     rows.value = data.items
@@ -130,10 +136,6 @@ async function openDetail(id: string) {
   finally { detailLoading.value = false }
 }
 function gotoQuestions() { router.push({ path: '/platform-questions' }) }
-function dimClass(cell: { status: string } | null): string {
-  if (!cell) return 'cell-missing'
-  return cell.status === 'published' ? 'cell-pub' : 'cell-draft'
-}
 async function saveEdit() {
   if (!detail.value) return
   if (!edit.value.name.trim()) { ElMessage.warning('名称不能为空'); return }
@@ -162,10 +164,68 @@ async function toggleStatus() {
   } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
   finally { detailBusy.value = false }
 }
-function goSupplement() {
-  const u = detail.value?.units[0]
-  if (u) router.push({ path: '/node-resources', query: { unit_id: u.unit_id } })
-  else ElMessage.info('该节点暂未挂到任何单元,无法定位补全页')
+// ── 讲解补全(kp_lecture:按类型环节)──────────────────────────────────────────
+const lecBusy = ref('')          // 正在 AI 生成的 section_key,'__all__'=一键补全
+const editDlg = ref(false)
+const editSection = ref<LectureSectionCell | null>(null)
+const editMd = ref('')
+const editSaving = ref(false)
+
+async function reloadLecture() {
+  if (!detail.value) return
+  detail.value.lecture = await getNodeLecture(detail.value.id)
+}
+async function genSection(key: string) {
+  if (!detail.value) return
+  lecBusy.value = key
+  try {
+    await generateLectureSection(detail.value.id, key)
+    await reloadLecture()
+    ElMessage.success('AI 已生成草稿,确认后发布')
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 生成失败') }
+  finally { lecBusy.value = '' }
+}
+async function genMissing() {
+  if (!detail.value) return
+  lecBusy.value = '__all__'
+  try {
+    const { generated } = await generateMissingLecture(detail.value.id)
+    await reloadLecture()
+    ElMessage.success(generated ? `AI 已补 ${generated} 个环节(草稿)` : '没有缺失环节')
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 补全失败') }
+  finally { lecBusy.value = '' }
+}
+async function toggleSection(s: LectureSectionCell) {
+  if (!detail.value) return
+  const next = s.status === 'published' ? 'draft' : 'published'
+  try {
+    await setLectureSectionStatus(detail.value.id, s.section_key, next)
+    await reloadLecture(); await load()
+  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+}
+async function publishAll(status: 'draft' | 'published') {
+  if (!detail.value) return
+  try {
+    await publishAllLecture(detail.value.id, status)
+    await reloadLecture(); await load()
+    ElMessage.success(status === 'published' ? '已整点发布' : '已整点下架')
+  } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+}
+function openEdit(s: LectureSectionCell) {
+  editSection.value = s
+  editMd.value = s.content_md || ''
+  editDlg.value = true
+}
+async function saveSection() {
+  if (!detail.value || !editSection.value) return
+  editSaving.value = true
+  try {
+    await upsertLectureSection(detail.value.id, editSection.value.section_key, { content_md: editMd.value })
+    editDlg.value = false
+    await reloadLecture(); await load()
+    ElMessage.success('已保存(草稿)')
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+  finally { editSaving.value = false }
 }
 
 onMounted(loadTree)
@@ -225,10 +285,14 @@ onMounted(loadTree)
       <el-select v-model="status" style="width:100px" @change="reload">
         <el-option v-for="s in STATUSES" :key="s.value" :label="s.label" :value="s.value" />
       </el-select>
+      <span style="margin-left:12px">关联：</span>
+      <el-select v-model="linked" style="width:170px" @change="reload">
+        <el-option v-for="l in LINKED" :key="l.value" :label="l.label" :value="l.value" />
+      </el-select>
       <el-input v-model="q" placeholder="搜知识点名" clearable style="width:200px;margin-left:12px"
         @keyup.enter="reload" @clear="reload" />
       <el-button type="primary" style="margin-left:8px" @click="reload">查询</el-button>
-      <span class="hint">知识点骨架(knowledge_nodes)总览。共 {{ total }} 个节点。完整度=六维讲解已配几维。</span>
+      <span class="hint">知识点骨架(knowledge_nodes)总览。共 {{ total }} 个节点。讲解完整度=该考点类型模板的教学环节已配几个。</span>
     </div>
 
     <el-table v-loading="loading" :data="rows" border style="width:100%">
@@ -249,11 +313,11 @@ onMounted(loadTree)
           <el-tag :type="STATUS_TAG[row.status] || 'info'" size="small">{{ STATUS_LABEL[row.status] || row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="六维完整度" width="150">
+      <el-table-column label="讲解完整度" width="150">
         <template #default="{ row }">
-          <el-progress :percentage="Math.round(row.dims_filled / 6 * 100)" :stroke-width="14"
-            :status="row.dims_filled === 6 ? 'success' : (row.dims_filled === 0 ? 'exception' : undefined)"
-            :format="() => `${row.dims_filled}/6`" />
+          <el-progress :percentage="row.lecture_total ? Math.round(row.lecture_filled / row.lecture_total * 100) : 0" :stroke-width="14"
+            :status="row.lecture_total && row.lecture_filled === row.lecture_total ? 'success' : (row.lecture_filled === 0 ? 'exception' : undefined)"
+            :format="() => `${row.lecture_filled}/${row.lecture_total}`" />
         </template>
       </el-table-column>
       <el-table-column prop="unit_refs" label="引用单元" width="90" align="center" />
@@ -297,12 +361,34 @@ onMounted(loadTree)
             <el-form-item><el-button type="primary" :loading="detailBusy" @click="saveEdit">保存修改</el-button></el-form-item>
           </el-form>
 
-          <el-divider content-position="left">六维讲解完整度</el-divider>
-          <div class="d-dims">
-            <span v-for="d in DIMS" :key="d" :class="['cell', dimClass(detail.dims[d])]">
-              {{ DIM_LABEL[d] }}：{{ detail.dims[d] ? (detail.dims[d]!.status === 'published' ? '已发布' : '草稿') : '缺' }}
-            </span>
-            <el-button size="small" type="warning" plain style="margin-left:8px" @click="goSupplement"><el-icon style="vertical-align:-2px;margin-right:4px"><EditPen /></el-icon>去补全</el-button>
+          <el-divider content-position="left">
+            讲解补全 · {{ detail.lecture.kp_type_label }}类({{ detail.lecture.filled }}/{{ detail.lecture.total }})
+          </el-divider>
+          <div class="lec-tools">
+            <el-button size="small" type="primary" plain :loading="lecBusy === '__all__'"
+              @click="genMissing">AI 一键补全缺失</el-button>
+            <el-button size="small" type="success" plain @click="publishAll('published')">整点发布</el-button>
+            <el-button size="small" plain @click="publishAll('draft')">整点下架</el-button>
+          </div>
+          <div class="lec-list">
+            <div v-for="s in detail.lecture.sections" :key="s.section_key" class="lec-sec">
+              <div class="lec-head">
+                <span class="lec-title">{{ s.title }}</span>
+                <el-tag size="small" :type="s.status === 'published' ? 'success' : (s.status === 'draft' ? 'warning' : 'info')" effect="plain">
+                  {{ s.status === 'published' ? '已发布' : (s.status === 'draft' ? '草稿' : '缺') }}
+                </el-tag>
+                <span v-if="s.source === 'ai'" class="lec-ai">AI</span>
+                <div style="flex:1" />
+                <el-button size="small" text type="primary" :loading="lecBusy === s.section_key"
+                  @click="genSection(s.section_key)">AI 生成</el-button>
+                <el-button size="small" text @click="openEdit(s)">编辑</el-button>
+                <el-button v-if="s.has_content" size="small" text
+                  :type="s.status === 'published' ? 'warning' : 'success'"
+                  @click="toggleSection(s)">{{ s.status === 'published' ? '下架' : '发布' }}</el-button>
+              </div>
+              <pre v-if="s.content_md" class="lec-md">{{ s.content_md }}</pre>
+              <div v-else class="lec-empty">（未填写）</div>
+            </div>
           </div>
 
           <el-divider content-position="left">学生掌握分布</el-divider>
@@ -313,17 +399,6 @@ onMounted(loadTree)
             <el-tag type="warning" effect="plain">一般 {{ detail.mastery.mid }}</el-tag>
             <el-tag type="danger" effect="plain">薄弱 {{ detail.mastery.weak }}</el-tag>
             <span v-if="!detail.mastery.learners" class="muted">暂无学生学习数据</span>
-          </div>
-
-          <el-divider content-position="left">详解正文</el-divider>
-          <el-empty v-if="!hub || !hub.lectures.length" description="该知识点暂无详解" :image-size="48" />
-          <div v-else>
-            <div v-for="(l, i) in hub.lectures" :key="i" class="d-lecture">
-              <div class="sub">{{ DIM_LABEL[l.dimension || ''] || l.dimension }}维 ·
-                <el-tag size="small" :type="l.status === 'published' ? 'success' : 'info'">{{ l.status === 'published' ? '已发布' : '草稿' }}</el-tag>
-              </div>
-              <pre class="md">{{ l.content_md }}</pre>
-            </div>
           </div>
 
           <el-divider content-position="left">反向关联 · 教材单元({{ hub ? hub.units.length : 0 }})</el-divider>
@@ -365,10 +440,30 @@ onMounted(loadTree)
         </template>
       </div>
     </el-drawer>
+
+    <!-- 编辑讲解环节 -->
+    <AppDialog v-model="editDlg" :title="editSection ? `编辑讲解 · ${editSection.title}` : '编辑讲解'" width="720px">
+      <el-input v-model="editMd" type="textarea" :rows="16" placeholder="该环节讲解正文(Markdown)" />
+      <template #footer>
+        <el-button @click="editDlg = false">取消</el-button>
+        <el-button type="primary" :loading="editSaving" @click="saveSection">保存(草稿)</el-button>
+      </template>
+    </AppDialog>
   </div>
 </template>
 
 <style scoped>
+.lec-tools { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.lec-list { display: flex; flex-direction: column; gap: 12px; }
+.lec-sec { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 10px 12px; }
+.lec-head { display: flex; align-items: center; gap: 8px; }
+.lec-title { font-weight: 600; }
+.lec-ai { font-size: 11px; color: var(--el-color-primary); border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 4px; padding: 0 4px; }
+.lec-md { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6;
+  background: var(--el-fill-color-lighter); border-radius: 6px; padding: 8px 10px; margin: 8px 0 0;
+  max-height: 220px; overflow: auto; }
+.lec-empty { color: var(--el-text-color-placeholder); font-size: 13px; margin-top: 6px; }
 .toolbar { margin-bottom: 16px; display: flex; align-items: center; flex-wrap: wrap; }
 .hint { margin-left: 16px; color: #909399; font-size: 12px; }
 .pager { margin-top: 16px; display: flex; justify-content: flex-end; }

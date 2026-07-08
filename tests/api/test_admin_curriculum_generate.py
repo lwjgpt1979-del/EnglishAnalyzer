@@ -93,11 +93,11 @@ async def test_generate_requires_admin(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_curriculum_units_returns_list(admin_client: AsyncClient):
-    """Admin 鉴权 → 200 + list（允许为空）。"""
+    """Admin 鉴权 → 200 + 分页结构 {total, items, options}（items 允许为空）。"""
     r = await admin_client.get("/api/v1/admin/curriculum/units")
     assert r.status_code == 200
     data = r.json()["data"]
-    assert isinstance(data, list)
+    assert isinstance(data, dict) and isinstance(data["items"], list) and "total" in data
 
 
 @pytest.mark.asyncio
@@ -107,7 +107,7 @@ async def test_list_curriculum_units_has_correct_fields(
     """返回的每条数据有 unit_id / kp_count / content_count / content_rate 字段。"""
     r = await admin_client.get("/api/v1/admin/curriculum/units")
     assert r.status_code == 200
-    items = r.json()["data"]
+    items = r.json()["data"]["items"]
     # 找到刚植入的单元
     target = next((i for i in items if i["unit_id"] == seeded_unit_id), None)
     assert target is not None

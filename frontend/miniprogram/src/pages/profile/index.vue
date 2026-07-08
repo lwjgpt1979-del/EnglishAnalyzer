@@ -284,11 +284,14 @@ import { getSemesterPricing } from '@/api/orders'
 import { updateProfile, wxBindPhone, getInfoChangeQuota } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { listRegions, type RegionNode } from '@/api/regions'
+import { loadCurriculumOptions, curriculumFallback } from '@/utils/curriculumOptions'
 import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
 
-const TEXTBOOK_VERSIONS = ['译林版', '人教版', '外研版', '北师大版', '冀教版']
-const GRADES = ['小学3年级', '小学4年级', '小学5年级', '小学6年级', '初中7年级', '初中8年级', '初中9年级', '高中1年级', '高中2年级', '高中3年级']
-const SEMESTERS = ['上', '下']
+// 教材版本/年级/学期:后台单一真源(GET /curriculum/options);初值兜底,openPrefEdit 时刷新
+const _prefFb = curriculumFallback()
+const TEXTBOOK_VERSIONS = ref<string[]>(_prefFb.textbook_versions)
+const GRADES = ref<string[]>(_prefFb.grades)
+const SEMESTERS = ref<string[]>(_prefFb.semesters)
 
 const auth = useAuthStore()
 const myInvite = ref<{ code: string; expires_at: string } | null>(null)
@@ -360,9 +363,13 @@ async function onProvChange(e: any) {
 
 async function openPrefEdit() {
   const u: any = auth.user
-  prefForm.textbookIdx = Math.max(0, TEXTBOOK_VERSIONS.indexOf(u?.preferred_textbook_version || ''))
-  prefForm.gradeIdx = Math.max(0, GRADES.indexOf(u?.preferred_grade || ''))
-  prefForm.semIdx = Math.max(0, SEMESTERS.indexOf(u?.preferred_semester || ''))
+  const opt = await loadCurriculumOptions()   // 后台单一真源(缓存)
+  TEXTBOOK_VERSIONS.value = opt.textbook_versions
+  GRADES.value = opt.grades
+  SEMESTERS.value = opt.semesters
+  prefForm.textbookIdx = Math.max(0, TEXTBOOK_VERSIONS.value.indexOf(u?.preferred_textbook_version || ''))
+  prefForm.gradeIdx = Math.max(0, GRADES.value.indexOf(u?.preferred_grade || ''))
+  prefForm.semIdx = Math.max(0, SEMESTERS.value.indexOf(u?.preferred_semester || ''))
   showPrefEdit.value = true
   getInfoChangeQuota().then(q => { infoChangeRemaining.value = q.remaining; infoChangeLimit.value = q.limit }).catch(() => {})
   // init city picker（懒加载省→市）
@@ -381,16 +388,16 @@ async function onSavePref() {
   try {
     const cityCode = cities.value[prefForm.cityIdx]?.code ?? null
     await updateProfile({
-      preferred_textbook_version: TEXTBOOK_VERSIONS[prefForm.textbookIdx],
-      preferred_grade: GRADES[prefForm.gradeIdx],
-      preferred_semester: SEMESTERS[prefForm.semIdx],
+      preferred_textbook_version: TEXTBOOK_VERSIONS.value[prefForm.textbookIdx],
+      preferred_grade: GRADES.value[prefForm.gradeIdx],
+      preferred_semester: SEMESTERS.value[prefForm.semIdx],
       city_code: cityCode,
     })
     const u: any = auth.user
     if (u) {
-      u.preferred_textbook_version = TEXTBOOK_VERSIONS[prefForm.textbookIdx]
-      u.preferred_grade = GRADES[prefForm.gradeIdx]
-      u.preferred_semester = SEMESTERS[prefForm.semIdx]
+      u.preferred_textbook_version = TEXTBOOK_VERSIONS.value[prefForm.textbookIdx]
+      u.preferred_grade = GRADES.value[prefForm.gradeIdx]
+      u.preferred_semester = SEMESTERS.value[prefForm.semIdx]
       u.city_code = cityCode
     }
     await resolveCityDisplay()
