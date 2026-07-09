@@ -101,7 +101,8 @@ onShow(() => {
 function goKp(id: string, name?: string, category?: string) {
   const n = name ? `&name=${encodeURIComponent(name)}` : ''
   const c = category ? `&cat=${category}` : ''
-  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${id}${n}${c}` })
+  const u = unitId.value ? `&unit=${unitId.value}` : ''   // 传本单元 → 看例句补「本单元教材原句」
+  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${id}${n}${c}${u}` })
 }
 
 function goAdaptive() {

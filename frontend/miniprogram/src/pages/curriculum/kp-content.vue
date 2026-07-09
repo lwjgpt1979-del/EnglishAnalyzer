@@ -70,6 +70,20 @@
           </view>
           <rich-text :nodes="md2html(cleanContent)" class="md" />
         </view>
+
+        <!-- 看例句 环节下：本单元教材原始例句（结构化解析产物） -->
+        <view class="lecture-card tb-card" v-if="activeSection === 'examples' && textbookSentences.length">
+          <view class="lecture-head">
+            <text class="lecture-bar tb-bar" />
+            <text class="lecture-title">{{ unitId ? '教材原句（本单元）' : '教材原句' }}</text>
+          </view>
+          <view class="tb-list">
+            <view class="tb-item" v-for="(s, i) in textbookSentences" :key="i">
+              <text class="tb-dot" />
+              <text class="tb-text">{{ s.text }}</text>
+            </view>
+          </view>
+        </view>
       </scroll-view>
       <view class="practice-bar">
         <button class="btn-secondary" @tap="goPractice">练习（5 题）</button>
@@ -120,7 +134,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { getKpContents, getKpMastery } from '@/api/curriculum'
+import { getKpContents, getKpMastery, getTextbookSentences } from '@/api/curriculum'
+import type { TextbookSentence } from '@/api/curriculum'
 import { getKpStatus } from '@/api/grammar'
 import { listPracticeQuestions } from '@/api/questions'
 import { listWrongQuestionsByKp } from '@/api/wrongQuestions'
@@ -141,6 +156,10 @@ const activeSection = ref('')
 const loading = ref(true)
 const kpId = ref('')
 const kpName = ref('')
+const unitId = ref('')
+
+// 本单元教材原始例句（结构化解析产物）；在「看例句」环节下追加展示
+const textbookSentences = ref<TextbookSentence[]>([])
 
 // 环节做 subtab:后端只返回已发布且有正文的环节(concept/rule/…),按返回顺序
 const availDims = computed(() =>
@@ -222,6 +241,7 @@ const wLoaded = ref(false)
 
 onLoad(async (q: any) => {
   kpId.value = q.id || ''
+  unitId.value = q.unit || ''
   if (q.name) setTitle(decodeURIComponent(q.name))
   isGrammar.value = q.cat === 'grammar'
   try {
@@ -233,6 +253,10 @@ onLoad(async (q: any) => {
   } finally {
     loading.value = false
   }
+  // 本单元教材原句（有 unit 上下文则收敛到本单元，否则取该考点全部已发布单元）
+  try {
+    textbookSentences.value = await getTextbookSentences(q.id, unitId.value || undefined)
+  } catch { /* 无原句静默 */ }
   loadMastery()
   loadGrammarStatus()
 })
@@ -346,6 +370,13 @@ function goWrongDetail(id: string) {
 .lecture-title { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
 /* 正文:容器字号会 cascade 到 md2html 输出的无字号 <p>(mp-weixin rich-text 靠内联样式,外部 CSS 进不去内部) */
 .md { font-size: 30rpx; line-height: 1.85; color: var(--c-text-body); }
+/* 教材原句卡 */
+.tb-card { margin-top: 20rpx; }
+.tb-bar { background: var(--c-gold, #ffb020); }
+.tb-list { display: flex; flex-direction: column; gap: 18rpx; }
+.tb-item { display: flex; align-items: flex-start; gap: 14rpx; }
+.tb-dot { width: 12rpx; height: 12rpx; border-radius: 999rpx; background: var(--c-gold, #ffb020); margin-top: 14rpx; flex-shrink: 0; }
+.tb-text { flex: 1; font-size: 30rpx; line-height: 1.7; color: var(--c-text-body); }
 .list { flex: 1; padding: 16rpx 24rpx; }
 .card {
   background: var(--c-bg-card); border: 1rpx solid var(--c-border);

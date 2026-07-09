@@ -43,6 +43,20 @@ export function getKpMastery(kpId: string): Promise<KpMasteryItem | null> {
   )
 }
 
+export interface TextbookSentence {
+  text: string
+  difficulty: number | null
+}
+
+/** 本考点在教材单元原文中抽取的原始例句；给 unitId 则收敛到「本单元」 */
+export function getTextbookSentences(kpId: string, unitId?: string): Promise<TextbookSentence[]> {
+  const q = unitId ? `?unit_id=${unitId}` : ''
+  return request<TextbookSentence[]>(
+    `/api/v1/curriculum/knowledge-points/${kpId}/textbook-sentences${q}`,
+    { method: 'GET' },
+  )
+}
+
 export function getUnitMasterySummary(unitId: string): Promise<KpMasterySummaryItem[]> {
   return request<KpMasterySummaryItem[]>(
     `/api/v1/curriculum/units/${unitId}/mastery-summary`,

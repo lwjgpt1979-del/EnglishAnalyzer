@@ -68,6 +68,32 @@ async def get_kp_contents(
     return make_ok([c.model_dump(mode="json") for c in contents])
 
 
+@router.get("/knowledge-points/{node_id}/textbook-sentences")
+async def get_textbook_sentences(
+    node_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+    unit_id: uuid.UUID | None = Query(None, description="给了则只取该单元的原句；否则取该考点在所有已发布单元的原句"),
+):
+    """本考点在教材单元原文中抽取的**原始例句**(结构化解析产物 UnitSection.node_id=node → 句子)。
+    只取已发布单元(C 端可见性);unit_id 给了则收敛到「本单元」。用于知识点页「看例句」补教材原句。"""
+    from sqlalchemy import select as _select
+    from app.models.d22_unit_structured import UnitSection, UnitSectionSentence
+    from app.models.d4_knowledge import CurriculumUnit
+
+    stmt = (
+        _select(UnitSectionSentence.text, UnitSectionSentence.difficulty)
+        .join(UnitSection, UnitSection.id == UnitSectionSentence.section_id)
+        .join(CurriculumUnit, CurriculumUnit.id == UnitSection.unit_id)
+        .where(UnitSection.node_id == node_id, CurriculumUnit.status == "published")
+    )
+    if unit_id is not None:
+        stmt = stmt.where(UnitSection.unit_id == unit_id)
+    stmt = stmt.order_by(UnitSection.sort_order, UnitSectionSentence.sort_order)
+    rows = (await db.execute(stmt)).all()
+    return make_ok([{"text": t, "difficulty": d} for t, d in rows])
+
+
 @router.get("/knowledge-points/{node_id}/mastery")
 async def get_kp_mastery(
     node_id: uuid.UUID,
