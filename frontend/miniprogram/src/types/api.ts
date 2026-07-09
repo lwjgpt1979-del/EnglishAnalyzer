@@ -63,6 +63,10 @@ export interface WrongQuestionOut {
   question_type: string | null
   difficulty: number | null
   tags: string[] | null
+  // KP-First 平台练习/模拟考错题的内置题面;source 区分数据源
+  options: string[] | null
+  explanation: string | null
+  source: 'platform' | 'uploaded' | null
   is_mastered: boolean
   mastered_at: string | null
   created_at: string

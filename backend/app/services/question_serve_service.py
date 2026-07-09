@@ -10,6 +10,7 @@ sim_practice_records/ai_questions 全不涉及)。作答只写 KP-First 真值:
 """
 from __future__ import annotations
 
+import random
 import uuid
 
 import sqlalchemy as sa
@@ -17,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d15_knowledge_graph import KnowledgeNode
-from app.models.d16_question_domain import Passage, PlatformQuestion, PlatformQuestionKp
+from app.models.d16_question_domain import (
+    AnswerLog, Passage, PlatformQuestion, PlatformQuestionKp, WrongRecord,
+)
 from app.schemas.questions import (
     ExamItemResult, ExamResultOut, PracticeResultOut, SimQuestionOut,
 )
@@ -108,26 +111,103 @@ async def _passages(db: AsyncSession, rows: list[PlatformQuestion]) -> dict[uuid
     return {pid: txt for pid, txt in prows}
 
 
-async def serve_by_node(
-    db: AsyncSession, *, node_id: uuid.UUID, count: int, exclude_ids: set | None = None,
-) -> list[SimQuestionOut]:
-    """出 count 道题:已发布 platform 仿真优先;不足则现生成(默认上架)后再取。不写任何老表。
+async def _fetch_sim_in(
+    db: AsyncSession, node_id: uuid.UUID, ids: set,
+) -> list[PlatformQuestion]:
+    """按 id 集合取本 node 的已发布·可点选单选仿真(用于「错题原题」重出)。"""
+    if not ids:
+        return []
+    rows = list((await db.execute(
+        _sim_query(node_id).where(PlatformQuestion.id.in_(ids)))).scalars().all())
+    return [r for r in rows if isinstance(r.options, list) and len(r.options) >= 2]
 
-    exclude_ids:排除已做过的题(自适应组题去重用,不传=不排除)。
+
+def _interleave(a: list, b: list, count: int) -> list:
+    """交错取 a、b 直到凑够 count(两源都有则均衡混合,一源空则全取另一源)。"""
+    out: list = []
+    i = j = 0
+    while len(out) < count and (i < len(a) or j < len(b)):
+        if i < len(a):
+            out.append(a[i]); i += 1
+        if len(out) >= count:
+            break
+        if j < len(b):
+            out.append(b[j]); j += 1
+    return out
+
+
+async def _serve_for_student(
+    db: AsyncSession, node_id: uuid.UUID, count: int, student_id: uuid.UUID,
+) -> list[PlatformQuestion]:
+    """学生练习组池:题源 = 该 node 的「错题」+「未做过的题」,随机交错。不足则现生成未做过题补齐。
+
+    - 错题:open 状态 wrong_record(q_scope=platform)指向的原题(重做订正价值)。
+    - 未做过:该 node 已发布单选仿真且不在该生 answer_log 里。
+    - 都不足时才落到「已做过对的题 / 现生成」兜底,保证凑够 count。
+    """
+    done_ids = set((await db.execute(
+        sa.select(AnswerLog.question_id).where(
+            AnswerLog.student_id == student_id, AnswerLog.q_scope == "platform",
+            AnswerLog.node_id == node_id))).scalars().all())
+    wrong_ids = set((await db.execute(
+        sa.select(WrongRecord.question_id).where(
+            WrongRecord.student_id == student_id, WrongRecord.q_scope == "platform",
+            WrongRecord.node_id == node_id, WrongRecord.status == "open"))).scalars().all())
+
+    wrong_rows = await _fetch_sim_in(db, node_id, wrong_ids)         # 错题原题
+    new_rows = await _fetch_sim(db, node_id, count * 3, exclude_ids=done_ids or None)  # 未做过
+    random.shuffle(wrong_rows)
+    random.shuffle(new_rows)
+    picked = _interleave(wrong_rows, new_rows, count)
+
+    # 不足:现生成「未做过」补(有界重试);仍不足最后允许已做过对的题兜底
+    picked_ids = {p.id for p in picked}
+    tries = 0
+    while len(picked) < count and tries < 3:
+        await _generate_once(db, node_id, count - len(picked))
+        await db.flush()
+        more = await _fetch_sim(db, node_id, count * 3, exclude_ids=(done_ids | picked_ids) or None)
+        random.shuffle(more)
+        for m in more:
+            if len(picked) >= count:
+                break
+            if m.id not in picked_ids:
+                picked.append(m); picked_ids.add(m.id)
+        tries += 1
+    if len(picked) < count:   # 兜底:允许已做过对的题补齐(排除已选)
+        extra = await _fetch_sim(db, node_id, count * 2, exclude_ids=picked_ids or None)
+        for m in extra:
+            if len(picked) >= count:
+                break
+            picked.append(m); picked_ids.add(m.id)
+    return picked[:count]
+
+
+async def serve_by_node(
+    db: AsyncSession, *, node_id: uuid.UUID, count: int,
+    student_id: uuid.UUID | None = None, exclude_ids: set | None = None,
+) -> list[SimQuestionOut]:
+    """出 count 道题。不写任何老表。
+
+    - 传 student_id(学生练习):题源 = 该 node 的「错题」+「未做过的题」随机交错(见 _serve_for_student)。
+    - 不传(自适应等):已发布 platform 仿真优先,exclude_ids 去重,不足现生成(默认上架)。
     """
     node = (await db.execute(
         sa.select(KnowledgeNode).where(KnowledgeNode.id == node_id))).scalar_one_or_none()
     if node is None:
         raise AppError(code=404, message="知识点不存在")
 
-    rows = await _fetch_sim(db, node_id, count, exclude_ids)
-    # 不足则现生成补齐(有界重试:混题型每轮约六成可用,最多 3 轮防死循环)
-    for _ in range(3):
-        if len(rows) >= count:
-            break
-        await _generate_once(db, node_id, count - len(rows))
-        await db.flush()
+    if student_id is not None:
+        rows = await _serve_for_student(db, node_id, count, student_id)
+    else:
         rows = await _fetch_sim(db, node_id, count, exclude_ids)
+        # 不足则现生成补齐(有界重试:混题型每轮约六成可用,最多 3 轮防死循环)
+        for _ in range(3):
+            if len(rows) >= count:
+                break
+            await _generate_once(db, node_id, count - len(rows))
+            await db.flush()
+            rows = await _fetch_sim(db, node_id, count, exclude_ids)
 
     passages = await _passages(db, rows)
     return [SimQuestionOut(
@@ -166,6 +246,11 @@ async def _judge_one(
     if not correct:
         wq_id = await wrong_center_service.record_wrong(
             db, student_id=student_id, q_scope="platform", question_id=pq.id, node_id=node_id)
+    elif feature == "practice" and node_id is not None:
+        # 「两者结合」:练习答对该 node → 顺带推进该 node 下今日到期的错题复习进度(不直接判掌握)
+        from app.services import wrong_review_service
+        await wrong_review_service.advance_due_wrongs_on_node(
+            db, student_id=student_id, node_id=node_id)
     return pq, correct, wq_id
 
 

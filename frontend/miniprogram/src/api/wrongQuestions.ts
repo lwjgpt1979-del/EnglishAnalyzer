@@ -115,6 +115,10 @@ export interface WrongQuestionReviewItem {
   student_answer: string | null
   correct_answer: string | null
   question_type: string | null
+  // KP-First 客观重做需要选项/解析
+  options: string[] | null
+  explanation: string | null
+  source: 'platform' | 'uploaded' | null
   review_count: number
   easiness_factor: number
   review_interval_days: number
@@ -128,14 +132,33 @@ export interface ReviewQueueOut {
   stats: ReviewStats
 }
 
+/** 错题重做/复习客观判分结果 */
+export interface RedoResult {
+  is_correct: boolean
+  correct_answer: string | null
+  explanation: string | null
+  mastered: boolean
+  next_review_at: string | null
+  review_count: number
+}
+
 export function getReviewQueue(): Promise<ReviewQueueOut> {
   return request<ReviewQueueOut>('/api/v1/wrong-questions/review-queue', { method: 'GET' })
 }
 
-export function submitReview(wqId: string, quality: number): Promise<WrongQuestionReviewItem> {
-  return request<WrongQuestionReviewItem>(`/api/v1/wrong-questions/${wqId}/review`, {
+/** 复习队列：客观重做那道错题（答对推进 SM-2，答错归零重排） */
+export function submitReview(wqId: string, userAnswer: string): Promise<RedoResult> {
+  return request<RedoResult>(`/api/v1/wrong-questions/${wqId}/review`, {
     method: 'POST',
-    data: { quality },
+    data: { user_answer: userAnswer },
+  })
+}
+
+/** 错题详情：主动重做订正（答对→立即掌握；答错→今日重排复习） */
+export function redoWrong(wqId: string, userAnswer: string): Promise<RedoResult> {
+  return request<RedoResult>(`/api/v1/wrong-questions/${wqId}/redo`, {
+    method: 'POST',
+    data: { user_answer: userAnswer },
   })
 }
 

@@ -44,6 +44,11 @@ class WrongQuestionOut(BaseModel):
     question_type: str | None
     difficulty: int | None
     tags: list[str] | None
+    # KP-First:平台练习/模拟考错题携带内置题面(选项+正确答案+解析),前端直接展示,
+    # 无需老图像式「AI 诊断」。source 区分数据源:platform|uploaded|None(=老图片 WrongQuestion)
+    options: list | None = None
+    explanation: str | None = None
+    source: str | None = None
     is_mastered: bool
     mastered_at: datetime | None
     created_at: datetime
@@ -70,9 +75,19 @@ class ReviewQueueOut(BaseModel):
     stats: dict  # {total_unmastered, due_today, new_unscheduled}
 
 
-class SubmitReviewIn(BaseModel):
-    """POST /wrong-questions/{id}/review 请求体。"""
-    quality: int = Field(..., ge=0, le=5, description="复习质量 0=完全忘记 5=完全掌握")
+class RedoIn(BaseModel):
+    """POST /wrong-questions/{id}/redo 与 /review 请求体：学生对该错题的重新作答（客观判分）。"""
+    user_answer: str = Field(default="", description="重做作答（选项字母或文本），空串按答错处理")
+
+
+class RedoResultOut(BaseModel):
+    """错题重做/复习客观判分结果。"""
+    is_correct: bool
+    correct_answer: str | None = None
+    explanation: str | None = None
+    mastered: bool = False           # 本次是否订正/掌握
+    next_review_at: date | None = None
+    review_count: int = 0
 
 
 class AiAnalysisOut(BaseModel):

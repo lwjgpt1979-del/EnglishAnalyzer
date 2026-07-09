@@ -74,6 +74,44 @@
         </view>
       </view>
 
+      <!-- KP-First 平台练习/模拟考错题：重做订正（选项作答 → 客观判分；答对即订正）。不走老图像 AI 诊断 -->
+      <view v-if="isKpFirst && wq.options?.length" class="card">
+        <view class="card-title">{{ revealed ? '订正详情' : '重做订正' }}</view>
+        <view class="opt-list">
+          <view
+            v-for="(opt, i) in wq.options"
+            :key="i"
+            class="opt-item"
+            :class="optClass(i, opt)"
+            @tap="onPick(i)"
+          >
+            <text class="opt-text">{{ opt }}</text>
+            <view v-if="revealed && isCorrectOption(opt)" class="ic ic-check-circle opt-ok" />
+          </view>
+        </view>
+
+        <button
+          v-if="!revealed"
+          class="btn-redo"
+          :disabled="selectedIdx === null || redoing"
+          @tap="onRedo"
+        >{{ redoing ? '判分中…' : '提交订正' }}</button>
+
+        <view v-if="revealed" class="redo-feedback">
+          <text class="fb-line" :class="feedbackCorrect ? 'fb-ok' : 'fb-no'">
+            {{ feedbackCorrect ? '✓ 答对，已订正' : '✗ 答错，本题已排入复习' }}
+          </text>
+          <view class="answer-row">
+            <text class="answer-label">正确答案</text>
+            <text class="answer-val">{{ wq.correct_answer || '—' }}</text>
+          </view>
+          <view v-if="wq.explanation" class="expl-box">
+            <view class="stem-label"><view class="ic ic-idea" style="width:26rpx;height:26rpx" /><text>解析</text></view>
+            <text class="expl-text">{{ wq.explanation }}</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 元信息卡：彩色标签胶囊 -->
       <view class="card meta-card">
         <view class="meta-chips">
@@ -87,8 +125,8 @@
         >{{ wq.is_mastered ? '✓ 已掌握' : '○ 未掌握' }}</view>
       </view>
 
-      <!-- AI 分析 -->
-      <view class="card">
+      <!-- AI 分析（仅老图片错题；KP-First 平台/上传练习错题已有内置解析，不走老图像诊断，避免 404） -->
+      <view class="card" v-if="!isKpFirst">
         <view class="card-title">AI 诊断分析</view>
         <button class="btn-analyze" :disabled="analyzing" @tap="onAnalyze">
           {{ analyzing ? '分析中（约3-8秒）…' : '触发 AI 分析' }}
@@ -140,30 +178,33 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import {
   analyzeWrongQuestion,
   confirmOcrText,
   getWrongQuestion,
   listAnalyses,
   markMastered,
+  redoWrong,
   triggerOcr,
   reportContentFeedback,
 } from '@/api/wrongQuestions'
+import type { RedoResult } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 import { getComments } from '@/api/teacher'
 import type { AiAnalysisOut, ConfirmOcrTextRequest, TeacherCommentOut, WrongQuestionOut } from '@/types/api'
 
 const auth = useAuthStore()
 
-// uni-app 小程序获取路由参数方式
-// 防御：DevTools 可能直接打开 detail 页而无 ?id= 参数 → 不再让 setup 崩溃
+// 路由参数：一律用 onLoad(options) 读取（真机可靠）。getCurrentPages().options 在 setup 期
+// 常常尚未就绪 → 取到空 id → 详情用空 id 打开（无题干 + //analyses 404）。onLoad 先于 onMounted。
+let wqId = ''
 const pages = getCurrentPages()
 const currentPage = pages[pages.length - 1] as (UniApp.Page & { options?: Record<string, string> }) | undefined
-const wqId = currentPage?.options?.id || ''
-if (!wqId) {
-  console.warn('[detail] 缺 ?id= 参数，将仅显示错误提示')
-  uni.showToast({ title: '错题 ID 缺失', icon: 'none' })
-}
+wqId = currentPage?.options?.id || ''   // 兜底：多数场景可用
+onLoad((opts?: Record<string, string>) => {
+  if (opts?.id) wqId = opts.id
+})
 
 const wq = ref<WrongQuestionOut | null>(null)
 const fromAssignment = computed(() => (wq.value?.source_image_url || '').startsWith('assignment://'))
@@ -171,6 +212,55 @@ const isRealImage = computed(() => {
   const u = wq.value?.source_image_url || ''
   return /^https?:\/\//.test(u) || u.startsWith('/') || u.startsWith('data:') || u.startsWith('wxfile://')
 })
+// KP-First 平台/上传练习错题：有内置题面(选项/解析)，展示解析卡、隐藏老图像 AI 诊断（否则 analyze 404）
+const isKpFirst = computed(() => wq.value?.source === 'platform' || wq.value?.source === 'uploaded')
+const letter = (i: number) => String.fromCharCode(65 + i)
+function isCorrectOption(opt: string): boolean {
+  const ans = (wq.value?.correct_answer || '').trim()
+  if (!ans) return false
+  const idx = wq.value?.options?.indexOf(opt) ?? -1
+  // 正确答案可能是字母(A/B)或选项原文
+  return ans === opt || (idx >= 0 && ans.toUpperCase() === letter(idx))
+}
+
+// —— 重做订正（客观判分：选项字母 → /redo）——
+const selectedIdx = ref<number | null>(null)
+const redoing = ref(false)
+const redoResult = ref<RedoResult | null>(null)
+// 已揭晓 = 本次已提交，或该错题原本已掌握（订正过）→ 展示正确答案/解析、锁定选项
+const revealed = computed(() => redoResult.value !== null || (wq.value?.is_mastered ?? false))
+const feedbackCorrect = computed(() =>
+  redoResult.value ? redoResult.value.is_correct : (wq.value?.is_mastered ?? false))
+
+function onPick(i: number) {
+  if (revealed.value) return
+  selectedIdx.value = i
+}
+function optClass(i: number, opt: string): string {
+  if (revealed.value) {
+    if (isCorrectOption(opt)) return 'opt-correct'
+    if (redoResult.value && selectedIdx.value === i) return 'opt-wrong'  // 我选错的那项
+    return ''
+  }
+  return selectedIdx.value === i ? 'opt-selected' : ''
+}
+async function onRedo() {
+  if (selectedIdx.value === null || !wq.value) return
+  redoing.value = true
+  try {
+    redoResult.value = await redoWrong(wqId, letter(selectedIdx.value))
+    if (redoResult.value.mastered) {
+      wq.value.is_mastered = true
+      uni.showToast({ title: '订正成功', icon: 'success' })
+    } else {
+      uni.showToast({ title: '答错了，已排入复习', icon: 'none' })
+    }
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message, icon: 'none' })
+  } finally {
+    redoing.value = false
+  }
+}
 const latestAnalysis = ref<AiAnalysisOut | null>(null)
 const analyzing = ref(false)
 const teacherComments = ref<TeacherCommentOut[]>([])
@@ -272,13 +362,20 @@ async function onConfirmOcr() {
 onUnmounted(() => stopOcrPolling())
 
 onMounted(async () => {
+  if (!wqId) {
+    uni.showToast({ title: '错题 ID 缺失', icon: 'none' })
+    return
+  }
   if (!auth.isLoggedIn()) {
     await auth.login()
   }
   try {
     wq.value = await getWrongQuestion(wqId)
-    const analyses = await listAnalyses(wqId)
-    if (analyses.length > 0) latestAnalysis.value = analyses[0]
+    // KP-First 练习/上传错题无老式 AI 诊断，跳过 analyses 拉取（老图片错题才有）
+    if (!isKpFirst.value) {
+      const analyses = await listAnalyses(wqId)
+      if (analyses.length > 0) latestAnalysis.value = analyses[0]
+    }
     try {
       teacherComments.value = await getComments(wqId)
     } catch { /* 无批注也不报错 */ }
@@ -363,6 +460,26 @@ function onReportError() {
   border-bottom: 1rpx solid var(--c-border);
 }
 .label { width: 140rpx; color: var(--c-text-second); font-size: 28rpx; }
+
+/* KP-First 选项 / 正确答案 / 解析 */
+.opt-list { display: flex; flex-direction: column; gap: 12rpx; margin-bottom: 8rpx; }
+.opt-item { display: flex; align-items: center; gap: 14rpx; padding: 18rpx 20rpx; border-radius: var(--r-md); background: var(--c-bg-page); border: 1rpx solid var(--c-border); }
+.opt-item.opt-selected { background: var(--c-primary-faint); border-color: var(--c-primary); }
+.opt-item.opt-correct { background: var(--c-primary-faint); border-color: var(--c-primary); }
+.opt-item.opt-wrong { background: #fdecec; border-color: #e35b5b; }
+.opt-text { flex: 1; color: var(--c-ink); font-size: 28rpx; line-height: 1.5; }
+.opt-ok { width: 32rpx; height: 32rpx; flex-shrink: 0; }
+.btn-redo { margin-top: 22rpx; background: var(--c-primary); color: #fff; border-radius: var(--r-pill); font-size: 30rpx; font-weight: 700; padding: 18rpx 0; }
+.btn-redo[disabled] { background: var(--c-primary-soft); color: #9aa7b8; }
+.redo-feedback { margin-top: 20rpx; }
+.fb-line { display: block; font-size: 28rpx; font-weight: 700; margin-bottom: 12rpx; }
+.fb-ok { color: var(--c-primary-deep); }
+.fb-no { color: #e35b5b; }
+.answer-row { display: flex; align-items: center; gap: 16rpx; margin-top: 16rpx; }
+.answer-label { font-size: 24rpx; color: var(--c-text-second); }
+.answer-val { font-size: 30rpx; font-weight: 700; color: var(--c-primary-deep); }
+.expl-box { margin-top: 20rpx; padding-top: 20rpx; border-top: 1rpx solid var(--c-border); }
+.expl-text { display: block; margin-top: 12rpx; font-size: 28rpx; color: var(--c-text-second); line-height: 1.7; }
 
 /* 元信息卡：彩色标签胶囊 */
 .meta-card { display: flex; align-items: center; justify-content: space-between; padding: 20rpx 24rpx; }

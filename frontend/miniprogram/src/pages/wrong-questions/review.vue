@@ -55,43 +55,50 @@
         <!-- 题干 -->
         <text class="question-text">{{ current!.question_text || '（无题干，请查看原图）' }}</text>
 
-        <!-- 答案区（默认遮盖，点击揭示） -->
-        <view v-if="!revealed" class="reveal-wrap" @tap="revealed = true">
-          <text class="reveal-hint">点击查看正确答案</text>
-        </view>
-        <view v-else class="answer-wrap">
-          <view class="ans-item">
-            <text class="ans-k">你的作答</text>
-            <text class="ans-v ans-wrong">{{ current!.student_answer || '未作答' }}</text>
+        <!-- 作答区：有选项→单选重做；无选项→文本作答（客观判分，取代旧自评） -->
+        <view v-if="current!.options && current!.options.length" class="opt-list">
+          <view
+            v-for="(opt, i) in current!.options"
+            :key="i"
+            class="opt-item"
+            :class="optClass(i, opt)"
+            @tap="onPick(i)"
+          >
+            <text class="opt-text">{{ opt }}</text>
+            <view v-if="answered && isCorrectOption(opt)" class="ic ic-check-circle opt-ok" />
           </view>
-          <view class="ans-divider" />
+        </view>
+        <input
+          v-else
+          class="text-input"
+          :disabled="answered"
+          :value="textAnswer"
+          placeholder="输入你的答案"
+          @input="textAnswer = $event.detail.value"
+        />
+
+        <!-- 提交前 -->
+        <button
+          v-if="!answered"
+          class="btn-primary submit-btn"
+          :disabled="!canSubmit || submitting"
+          @tap="submit"
+        >{{ submitting ? '判分中…' : '提交' }}</button>
+
+        <!-- 提交后：客观反馈 + 正确答案 + 解析 -->
+        <view v-else class="fb-wrap">
+          <text class="fb-line" :class="result!.is_correct ? 'fb-ok' : 'fb-no'">
+            {{ result!.is_correct ? (result!.mastered ? '✓ 答对，已订正掌握' : '✓ 答对，继续巩固') : '✗ 答错了' }}
+          </text>
           <view class="ans-item">
             <text class="ans-k">正确答案</text>
             <text class="ans-v ans-right">{{ current!.correct_answer || '—' }}</text>
           </view>
-        </view>
-
-        <!-- 评分按钮（揭示后才显示）-->
-        <view v-if="revealed" class="quality-wrap">
-          <text class="quality-label">这道题你掌握得怎么样？</text>
-          <view class="quality-btns">
-            <view
-              v-for="(btn, i) in qualityBtns"
-              :key="btn.q"
-              class="q-btn"
-              :class="[`q-lv-${i}`, selectedQuality === btn.q ? 'selected' : '']"
-              @tap="selectedQuality = btn.q"
-            >
-              <view class="q-icon" />
-              <text class="q-label">{{ btn.label }}</text>
-            </view>
+          <view v-if="result!.explanation" class="expl-box">
+            <text class="expl-text">{{ result!.explanation }}</text>
           </view>
-          <button
-            class="btn-primary submit-btn"
-            :disabled="selectedQuality === null || submitting"
-            @tap="submitQuality"
-          >
-            {{ submitting ? '提交中…' : '确认' }}
+          <button class="btn-primary submit-btn" @tap="next">
+            {{ currentIdx + 1 >= queue.length ? '完成' : '下一题' }}
           </button>
         </view>
       </view>
@@ -103,16 +110,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { getReviewQueue, submitReview } from '@/api/wrongQuestions'
-import type { WrongQuestionReviewItem, ReviewStats } from '@/api/wrongQuestions'
+import type { WrongQuestionReviewItem, ReviewStats, RedoResult } from '@/api/wrongQuestions'
 
 const loading = ref(true)
 const finished = ref(false)
 const queue = ref<WrongQuestionReviewItem[]>([])
 const currentIdx = ref(0)
-const revealed = ref(false)
-const selectedQuality = ref<number | null>(null)
 const submitting = ref(false)
 const stats = ref<ReviewStats>({ total_unmastered: 0, due_today: 0, new_unscheduled: 0 })
+
+// 当前题作答态（客观重做）
+const selectedIdx = ref<number | null>(null)
+const textAnswer = ref('')
+const answered = ref(false)
+const result = ref<RedoResult | null>(null)
 
 // 结算统计
 const reviewedCount = ref(0)
@@ -127,14 +138,30 @@ const current = computed(() =>
 const progressPct = computed(() =>
   queue.value.length > 0 ? Math.round(currentIdx.value / queue.value.length * 100) : 0
 )
+const hasOptions = computed(() => !!(current.value?.options && current.value.options.length))
+const canSubmit = computed(() =>
+  hasOptions.value ? selectedIdx.value !== null : textAnswer.value.trim().length > 0
+)
 
-const qualityBtns = [
-  { q: 0, icon: '😰', label: '完全忘了' },
-  { q: 2, icon: '😕', label: '模糊' },
-  { q: 3, icon: '🤔', label: '想起来了' },
-  { q: 4, icon: '😊', label: '基本掌握' },
-  { q: 5, icon: '🎯', label: '完全掌握' },
-]
+const letter = (i: number) => String.fromCharCode(65 + i)
+function isCorrectOption(opt: string): boolean {
+  const ans = (current.value?.correct_answer || '').trim()
+  if (!ans) return false
+  const idx = current.value?.options?.indexOf(opt) ?? -1
+  return ans === opt || (idx >= 0 && ans.toUpperCase() === letter(idx))
+}
+function onPick(i: number) {
+  if (answered.value) return
+  selectedIdx.value = i
+}
+function optClass(i: number, opt: string): string {
+  if (answered.value) {
+    if (isCorrectOption(opt)) return 'opt-correct'
+    if (selectedIdx.value === i) return 'opt-wrong'
+    return ''
+  }
+  return selectedIdx.value === i ? 'opt-selected' : ''
+}
 
 async function load() {
   loading.value = true
@@ -150,28 +177,33 @@ async function load() {
 }
 load()
 
-async function submitQuality() {
-  if (selectedQuality.value === null || !current.value) return
+async function submit() {
+  if (!canSubmit.value || !current.value) return
   submitting.value = true
   try {
-    const updated = await submitReview(current.value.id, selectedQuality.value)
+    const ua = hasOptions.value ? letter(selectedIdx.value as number) : textAnswer.value.trim()
+    result.value = await submitReview(current.value.id, ua)
+    answered.value = true
     reviewedCount.value++
-    if (updated.is_mastered) masteredCount.value++
-    if (selectedQuality.value < 3) needRetryCount.value++
-
-    // 下一题
-    if (currentIdx.value + 1 >= queue.value.length) {
-      finished.value = true
-    } else {
-      currentIdx.value++
-      revealed.value = false
-      selectedQuality.value = null
-    }
+    if (result.value.mastered) masteredCount.value++
+    if (!result.value.is_correct) needRetryCount.value++
   } catch (e: any) {
     uni.showToast({ title: e?.message || '提交失败', icon: 'none' })
   } finally {
     submitting.value = false
   }
+}
+
+function next() {
+  if (currentIdx.value + 1 >= queue.value.length) {
+    finished.value = true
+    return
+  }
+  currentIdx.value++
+  selectedIdx.value = null
+  textAnswer.value = ''
+  answered.value = false
+  result.value = null
 }
 
 function goBack() {
@@ -205,6 +237,24 @@ function goBack() {
 .meta-tag { font-size: 22rpx; font-weight: 700; color: #3f87b8; background: #e9f4fb; padding: 5rpx 18rpx; border-radius: 999rpx; }
 .meta-review { font-size: 22rpx; color: var(--c-text-hint); }
 .question-text { display: block; font-size: 32rpx; color: var(--c-ink); line-height: 1.6; font-weight: 700; margin-bottom: 28rpx; }
+
+/* 客观重做作答区 */
+.opt-list { display: flex; flex-direction: column; gap: 12rpx; margin-bottom: 24rpx; }
+.opt-item { display: flex; align-items: center; gap: 14rpx; padding: 20rpx 22rpx; border-radius: var(--r-md); background: var(--c-bg-page); border: 2rpx solid var(--c-border); }
+.opt-item.opt-selected { background: #eaf4fb; border-color: #7bbde8; }
+.opt-item.opt-correct { background: #eafaf1; border-color: #2ecc71; }
+.opt-item.opt-wrong { background: #fdecec; border-color: #e35b5b; }
+.opt-text { flex: 1; color: var(--c-ink); font-size: 28rpx; line-height: 1.5; }
+.opt-ok { width: 32rpx; height: 32rpx; flex-shrink: 0; }
+.text-input { border: 2rpx solid var(--c-border); border-radius: var(--r-md); padding: 20rpx 22rpx; font-size: 28rpx; margin-bottom: 24rpx; background: var(--c-bg-page); }
+
+/* 客观反馈 */
+.fb-wrap { border-top: 1rpx solid var(--c-border); padding-top: 24rpx; }
+.fb-line { display: block; font-size: 30rpx; font-weight: 800; margin-bottom: 18rpx; }
+.fb-ok { color: #18a058; }
+.fb-no { color: #e35b5b; }
+.expl-box { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 20rpx 22rpx; margin: 16rpx 0 24rpx; }
+.expl-text { font-size: 26rpx; color: var(--c-text-second); line-height: 1.7; }
 
 /* 揭示区 */
 .reveal-wrap { background: #eef5fb; border: 2rpx dashed #b6d8ee; border-radius: var(--r-md); padding: 40rpx; text-align: center; margin-bottom: 28rpx; }

@@ -28,7 +28,8 @@ async def list_practice_questions(
 
     kp_id 传的是 knowledge_nodes.id。底层走 question_serve_service,不碰 simulated_questions。
     """
-    items = await question_serve_service.serve_by_node(db, node_id=kp_id, count=limit)
+    items = await question_serve_service.serve_by_node(
+        db, node_id=kp_id, count=limit, student_id=current_user.id)   # 题源=错题+未做过,随机
     await db.commit()   # 可能触发现生成(写 platform_question),需提交
     return make_ok([i.model_dump(mode="json") for i in items])
 

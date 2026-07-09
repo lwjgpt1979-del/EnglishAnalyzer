@@ -18,8 +18,9 @@ from app.schemas.base import BaseResponse, make_ok
 from app.schemas.wrong_questions import (
     AiAnalysisOut,
     MarkMasteredRequest,
+    RedoIn,
+    RedoResultOut,
     ReviewQueueOut,
-    SubmitReviewIn,
     WrongQuestionCreate,
     WrongQuestionListOut,
     WrongQuestionOut,
@@ -217,26 +218,35 @@ async def list_analyses(
     return make_ok([AiAnalysisOut.model_validate(a) for a in analyses])
 
 
-@router.post("/{wq_id}/review", response_model=BaseResponse[WrongQuestionOut])
+@router.post("/{wq_id}/review", response_model=BaseResponse[RedoResultOut])
 async def submit_review(
     wq_id: uuid.UUID,
-    body: SubmitReviewIn,
+    body: RedoIn,
     db: DbDep,
     current_user: UserDep,
 ):
-    """提交复习质量（0-5），更新 SM-2 调度(KP-First:wq_id 为 wrong_record id,直接切新表)。"""
+    """复习队列客观重做判分：真正重新作答该错题 → 判分驱动 SM-2（答对推进、答错归零），连续达标判掌握。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import wrong_review_service
-    wr = await wrong_review_service.submit_review(
-        db, student_id=current_user.id, wrong_record_id=wq_id, quality=body.quality,
+    result = await wrong_review_service.submit_review(
+        db, student_id=current_user.id, wrong_record_id=wq_id, user_answer=body.user_answer,
     )
     await db.commit()
-    return make_ok(WrongQuestionOut(
-        id=wr.id, student_id=wr.student_id, source_image_url="",
-        question_text=None, student_answer=None, correct_answer=None, question_type=None,
-        difficulty=None, tags=None, is_mastered=(wr.status == "mastered"),
-        mastered_at=wr.mastered_at, created_at=wr.created_at, updated_at=wr.created_at,
-        ocr_status=None, review_count=wr.review_count, easiness_factor=wr.easiness_factor,
-        review_interval_days=wr.review_interval_days, next_review_at=wr.next_review_at,
-        last_review_at=wr.last_review_at,
-    ))
+    return make_ok(RedoResultOut(**result))
+
+
+@router.post("/{wq_id}/redo", response_model=BaseResponse[RedoResultOut])
+async def redo_wrong(
+    wq_id: uuid.UUID,
+    body: RedoIn,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """错题主动重做订正（错题详情入口）：重做那道错题，答对 → 立即订正（掌握）；答错 → 保持未掌握、今日重排复习。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import wrong_review_service
+    result = await wrong_review_service.redo(
+        db, student_id=current_user.id, wrong_record_id=wq_id, user_answer=body.user_answer,
+    )
+    await db.commit()
+    return make_ok(RedoResultOut(**result))
