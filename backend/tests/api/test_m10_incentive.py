@@ -33,11 +33,16 @@ async def _seed(db):
         await db.execute(text(
             "INSERT INTO study_checkins (id,student_id,checkin_date,new_words_count,review_done,streak_days) "
             "VALUES (:i,:s,:d,5,true,:st)"), {"i": uuid.uuid4(), "s": uid, "d": today - timedelta(days=d), "st": 2 - d})
-    # 1 个达标 KP（acc=1.0）→ kp XP 20
+    # 1 个达标 KP（acc=1.0）→ kp XP 20（R8.1:掌握台账走 student_kp/node）
+    nid = uuid.uuid4()
     await db.execute(text(
-        "INSERT INTO student_kp_mastery (student_id,kp_key,kp_id,correct_count,wrong_count,sources,last_activity_at) "
-        "VALUES (:s,:k,NULL,10,0,ARRAY['practice'],:ts)"),
-        {"s": uid, "k": f"{_TAG}_kp", "ts": now})
+        "INSERT INTO knowledge_nodes (id,axis,name,code,status,source) "
+        "VALUES (:n,'knowledge',:nm,:c,'active','seed')"),
+        {"n": nid, "nm": f"{_TAG}_kp", "c": f"{_TAG}_{nid.hex[:8]}"})
+    await db.execute(text(
+        "INSERT INTO student_kp (student_id,node_id,practice_count,wrong_count,source_tags,last_practice_at) "
+        "VALUES (:s,:n,10,0,ARRAY['practice'],:ts)"),
+        {"s": uid, "n": nid, "ts": now})
     # 1 道已掌握错题 → wrong XP 15
     await db.execute(text(
         "INSERT INTO wrong_questions (id,student_id,source_image_url,is_mastered,created_at,mastered_at) "
@@ -62,7 +67,8 @@ async def _cleanup(db):
     await db.execute(text(
         "DELETE FROM wrong_questions WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"),
         {"p": f"{_TAG}_%"})
-    await db.execute(text("DELETE FROM student_kp_mastery WHERE kp_key LIKE :p"), {"p": f"{_TAG}_%"})
+    await db.execute(text("DELETE FROM student_kp WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"), {"p": f"{_TAG}_%"})
+    await db.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_TAG}_%"})
     await db.execute(text("DELETE FROM users WHERE openid LIKE :p"), {"p": f"{_TAG}_%"})
     await db.flush()
 

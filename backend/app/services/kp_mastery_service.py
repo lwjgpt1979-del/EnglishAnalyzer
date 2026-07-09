@@ -320,7 +320,7 @@ async def get_mastery_tree_for_teacher(
     *,
     teacher_id: uuid.UUID,
     student_id: uuid.UUID,
-) -> list[StudentKpMastery]:
+) -> list["MasteryRow"]:
     """教师查学生 KP 台账，先鉴权（学生须绑定该教师）。
 
     未绑定 → 抛 AppError(403)。
@@ -383,15 +383,19 @@ async def get_class_kp_stats(
             "students_attention": [],
         }
 
-    # 批量查台账（一次 SQL，按 student_id IN）
-    mastery_rows = list(
-        (await db.execute(
-            select(StudentKpMastery).where(
-                StudentKpMastery.student_id.in_(student_ids),
-                StudentKpMastery.last_activity_at.is_not(None),
-            )
-        )).scalars().all()
-    )
+    # 批量查台账（一次 SQL，按 student_id IN）——R8.1:读 student_kp(node),按 name 当 kp_key
+    from app.models.d16_question_domain import StudentKp
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    _ClsRow = _namedtuple("_ClsRow", "student_id kp_key correct_count wrong_count")
+    mastery_rows = [
+        _ClsRow(sid, name, max((pc or 0) - (wc or 0), 0), wc or 0)
+        for sid, name, pc, wc in (await db.execute(
+            select(StudentKp.student_id, KnowledgeNode.name,
+                   StudentKp.practice_count, StudentKp.wrong_count)
+            .join(KnowledgeNode, KnowledgeNode.id == StudentKp.node_id)
+            .where(StudentKp.student_id.in_(student_ids), StudentKp.practice_count > 0)
+        )).all()
+    ]
 
     # 拿学生昵称
     nick_map: dict[str, str | None] = {
@@ -455,24 +459,45 @@ async def get_class_kp_stats(
     }
 
 
+from collections import namedtuple as _namedtuple
+
+# R8.1:掌握台账统一到 node。get_mastery_tree 直读 student_kp(node),不再读旧
+# student_kp_mastery(kp_key)。返回与旧台账**字段等价**的轻量行,消费者(diagnosis/
+# learning_plan/teacher/relative)按属性取用无需改。correct = practice_count − wrong_count。
+MasteryRow = _namedtuple(
+    "MasteryRow", "kp_key kp_id kp_description correct_count wrong_count last_activity_at sources")
+
+
 async def get_mastery_tree(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
-) -> list[StudentKpMastery]:
-    """返回当前学生的知识点树，按正确率升序（弱项在前）。
+) -> list["MasteryRow"]:
+    """返回当前学生的知识点树(node 维度),按正确率升序(弱项在前)。
 
     正确率 = correct_count / (correct_count + wrong_count)，total=0 时视为 0。
+    R8.1:读 student_kp join knowledge_nodes(替代旧 student_kp_mastery)。
     """
-    rows = await db.execute(
-        select(StudentKpMastery)
-        .where(StudentKpMastery.student_id == student_id)
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import StudentKp
+    rows = (await db.execute(
+        select(StudentKp.node_id, KnowledgeNode.name, KnowledgeNode.description,
+               StudentKp.practice_count, StudentKp.wrong_count, StudentKp.last_practice_at,
+               StudentKp.source_tags)
+        .join(KnowledgeNode, KnowledgeNode.id == StudentKp.node_id)
+        .where(StudentKp.student_id == student_id)
         .order_by(
             text(
-                "CASE WHEN correct_count + wrong_count = 0 THEN 0.0 "
-                "ELSE correct_count::float / (correct_count + wrong_count) END ASC"
+                "CASE WHEN student_kp.practice_count = 0 THEN 0.0 "
+                "ELSE (student_kp.practice_count - student_kp.wrong_count)::float "
+                "/ student_kp.practice_count END ASC"
             ),
-            StudentKpMastery.last_activity_at.desc(),
+            StudentKp.last_practice_at.desc().nulls_last(),
         )
-    )
-    return list(rows.scalars().all())
+    )).all()
+    return [
+        MasteryRow(kp_key=name, kp_id=nid, kp_description=desc,
+                   correct_count=max((pc or 0) - (wc or 0), 0), wrong_count=wc or 0,
+                   last_activity_at=last, sources=list(tags or []))
+        for nid, name, desc, pc, wc, last, tags in rows
+    ]

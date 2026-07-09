@@ -12,6 +12,29 @@ R8 目标:**把"按 kp_id/kp_key 取数"全部切到 node_id,退役旧 KP 轴三
 
 ---
 
+## 现状复核(2026-07 重整 —— 以此为准,下方原盘点部分已过时)
+
+自本方案初稿后,多项已顺带完成,R8 剩余面**比原文小很多**:
+
+**已完成(无需再做):**
+- 取题载体:`simulated_questions` 主流量已退役(b66a828),练习/模拟考/自适应/自助出卷统一到 `platform_question`(node)。→ **R8.3 基本完成**。
+- 端点主键:`curriculum` 的 `/knowledge-points/{node_id}/...`(讲解/单点掌握/单元汇总)、`grammar` 的 `/kp/{kp_id}/...`(kp_id 实为 node_id,直查 `knowledge_nodes`)已是 node。`/kp-mastery/` 读 `student_kp`(node),趋势已改 `answer_log` 重放。→ **R8.2 大半完成**。
+
+**剩余(真正要做,按独立性/价值排序):**
+1. **R8.1 退役旧掌握台账 `student_kp_mastery`(本次开发目标,最独立)**
+   - 写:`upsert_mastery`(调用方 ai_service / question_service / practice_service / user_paper_service / assignment_service)现**双写**旧台账 + `student_kp`;改为**只写 `student_kp`(node)**。
+   - 读:`get_mastery_tree` / `get_mastery_tree_for_teacher`(消费者 diagnosis / learning_plan / teacher / relative,用 correct_count/wrong_count/kp_key/kp_id/kp_description/last_activity_at)→ 改读 `student_kp` join `knowledge_nodes`,口径**等价**(correct=practice_count−wrong_count)。
+   - 读:`incentive_service`(已掌握 KP 数)、`institution_service`(班级 top 弱项 by kp_key)→ 改读 `student_kp`。
+   - 迁移:删 `student_kp_mastery` + `kp_mastery_snapshots`;删模型;删已无端点调用的旧 `get_kp_trend`(kp_key/快照)。
+2. **R8.4/8.5 退役旧 `knowledge_points` / `unit_knowledge_points`(后续,较缠绕)**
+   - `curriculum_service.persist_unit` / `curriculum_kp_service` 仍建/用;practice / question / user_paper / speaking 仍按 `knowledge_point_id` 取题实体。需先把这些取数改 node,再删表。范围更大,R8.1 之后单独排。
+
+**等价对拍口径**:R8.1 只换键/换账,不改算法(弱项排序仍按正确率 correct/total,不引入加权掌握度,避免行为漂移)。
+
+---
+
+---
+
 ## 一、现状盘点(按 kp_id / kp_key 取数的点)
 
 ### A. HTTP 端点

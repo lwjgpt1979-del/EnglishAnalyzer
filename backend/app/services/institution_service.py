@@ -202,7 +202,8 @@ async def set_teacher_quota(
 
 async def learning_center(db: AsyncSession, *, institution_id: uuid.UUID) -> dict:
     """机构学情数据中心（5B.4）：名下学生活跃率 / 打卡概览 / 薄弱知识点 Top。"""
-    from app.models.d4_knowledge import StudentKpMastery
+    from app.models.d16_question_domain import StudentKp   # R8.1:掌握台账统一到 node
+    from app.models.d15_knowledge_graph import KnowledgeNode
     from app.models.d9_system import UserActivity
 
     student_ids = select(Student.id).where(Student.institution_id == institution_id)
@@ -222,16 +223,17 @@ async def learning_center(db: AsyncSession, *, institution_id: uuid.UUID) -> dic
         select(func.count()).select_from(StudyCheckin).where(
             StudyCheckin.student_id.in_(student_ids), StudyCheckin.checkin_date >= d30)) or 0)
 
-    # 薄弱知识点 Top10：正确率<0.6 且有作答，按涉及学生数排序
-    rate = StudentKpMastery.correct_count * 1.0 / func.nullif(
-        StudentKpMastery.correct_count + StudentKpMastery.wrong_count, 0)
+    # 薄弱知识点 Top10：正确率<0.6 且作答≥3，按涉及学生数排序(R8.1:读 student_kp 按 node)
+    rate = (StudentKp.practice_count - StudentKp.wrong_count) * 1.0 / func.nullif(
+        StudentKp.practice_count, 0)
     weak_rows = (await db.execute(
-        select(StudentKpMastery.kp_key, func.count(func.distinct(StudentKpMastery.student_id)),
-               func.max(StudentKpMastery.kp_description))
-        .where(StudentKpMastery.student_id.in_(student_ids),
-               (StudentKpMastery.correct_count + StudentKpMastery.wrong_count) >= 3, rate < 0.6)
-        .group_by(StudentKpMastery.kp_key)
-        .order_by(func.count(func.distinct(StudentKpMastery.student_id)).desc()).limit(10))).all()
+        select(KnowledgeNode.name, func.count(func.distinct(StudentKp.student_id)),
+               func.max(KnowledgeNode.description))
+        .join(KnowledgeNode, KnowledgeNode.id == StudentKp.node_id)
+        .where(StudentKp.student_id.in_(student_ids),
+               StudentKp.practice_count >= 3, rate < 0.6)
+        .group_by(KnowledgeNode.name)
+        .order_by(func.count(func.distinct(StudentKp.student_id)).desc()).limit(10))).all()
     weak_kp = [{"kp_key": k, "student_count": int(c or 0), "description": d} for k, c, d in weak_rows]
 
     return {

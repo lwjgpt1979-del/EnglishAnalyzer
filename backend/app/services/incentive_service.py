@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d5_learning import SpeakingSession, StudyCheckin
-from app.models.d4_knowledge import StudentKpMastery
 import sqlalchemy as sa
 
 from app.models.d16_question_domain import AnswerLog
@@ -45,12 +44,14 @@ async def get_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
         .where(StudyCheckin.student_id == student_id)
     )).scalar() or 0)
 
+    # R8.1:掌握台账统一到 node,读 student_kp(correct=practice_count−wrong_count)
+    from app.models.d16_question_domain import StudentKp
     mastered_kp = int((await db.execute(
-        select(func.count()).select_from(StudentKpMastery).where(
-            StudentKpMastery.student_id == student_id,
-            (StudentKpMastery.correct_count + StudentKpMastery.wrong_count) > 0,
-            StudentKpMastery.correct_count
-            >= _MASTERY_THRESHOLD * (StudentKpMastery.correct_count + StudentKpMastery.wrong_count),
+        select(func.count()).select_from(StudentKp).where(
+            StudentKp.student_id == student_id,
+            StudentKp.practice_count > 0,
+            (StudentKp.practice_count - StudentKp.wrong_count)
+            >= _MASTERY_THRESHOLD * StudentKp.practice_count,
         )
     )).scalar() or 0)
 

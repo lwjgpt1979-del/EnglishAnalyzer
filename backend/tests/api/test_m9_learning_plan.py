@@ -40,11 +40,12 @@ async def _seed_user(db) -> uuid.UUID:
 
 
 async def _add_mastery(db, uid, key, kp_id, correct, wrong):
+    # R8.1:掌握台账走 student_kp/node(kp_id 即 node_id;kp_key 由 node.name 提供)
     now = datetime.now(timezone.utc)
     await db.execute(text(
-        "INSERT INTO student_kp_mastery (student_id, kp_key, kp_id, correct_count, wrong_count, sources, last_activity_at) "
-        "VALUES (:s, :k, :kid, :c, :w, ARRAY['practice'], :ts)"
-    ), {"s": uid, "k": key, "kid": kp_id, "c": correct, "w": wrong, "ts": now})
+        "INSERT INTO student_kp (student_id, node_id, practice_count, wrong_count, source_tags, last_practice_at) "
+        "VALUES (:s, :n, :pc, :w, ARRAY['practice'], :ts)"
+    ), {"s": uid, "n": kp_id, "pc": correct + wrong, "w": wrong, "ts": now})
     await db.flush()
 
 
@@ -62,7 +63,7 @@ async def _cleanup(db):
         "DELETE FROM answer_log WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"
     ), {"p": f"{_TAG}_%"})
     await db.execute(text("DELETE FROM study_checkins WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"), {"p": f"{_TAG}_%"})
-    await db.execute(text("DELETE FROM student_kp_mastery WHERE kp_key LIKE :p"), {"p": f"{_TAG}_%"})
+    await db.execute(text("DELETE FROM student_kp WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"), {"p": f"{_TAG}_%"})
     await db.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_TAG}_%"})
     await db.execute(text("DELETE FROM users WHERE openid LIKE :p"), {"p": f"{_TAG}_%"})
     await db.flush()
@@ -82,10 +83,9 @@ async def test_weak_kp_task_filtering_and_done_derivation():
             kp_strong = uuid.uuid4()
             await _add_kp(db, kp_weak, f"{_TAG}_弱项")
             await _add_kp(db, kp_strong, f"{_TAG}_强项")
-            # 弱项 acc=0.2，强项 acc=0.9（应被过滤）;mastery.kp_id=NULL(FK 指老 knowledge_points),
-            # done 派生按名称匹配 node(不依赖 kp_id)
-            await _add_mastery(db, uid, f"{_TAG}_弱项", None, 2, 8)
-            await _add_mastery(db, uid, f"{_TAG}_强项", None, 9, 1)
+            # 弱项 acc=0.2，强项 acc=0.9（应被过滤）;R8.1:掌握台账走 student_kp(node_id)
+            await _add_mastery(db, uid, f"{_TAG}_弱项", kp_weak, 2, 8)
+            await _add_mastery(db, uid, f"{_TAG}_强项", kp_strong, 9, 1)
             # 今日练过弱项 KP → done 应为 True（KP-First: answer_log 命中该 node,今日）
             await db.execute(text(
                 "INSERT INTO answer_log (id, student_id, q_scope, question_id, is_correct, node_id, feature, answered_at) "
@@ -117,7 +117,7 @@ async def test_learn_fallback_when_no_weak_kp():
             uid = await _seed_user(db)
             kp = uuid.uuid4()
             await _add_kp(db, kp, f"{_TAG}_掌握")
-            await _add_mastery(db, uid, f"{_TAG}_掌握", None, 10, 0)  # acc=1.0
+            await _add_mastery(db, uid, f"{_TAG}_掌握", kp, 10, 0)  # acc=1.0
             plan = await svc.get_today_plan(db, student_id=uid)
             assert all(t.type != "weak_kp" for t in plan.tasks)
             assert any(t.type == "learn" for t in plan.tasks)
