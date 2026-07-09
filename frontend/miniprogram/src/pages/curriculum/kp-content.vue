@@ -29,20 +29,25 @@
       <text class="g4-evidence" v-if="gStatus.evidence?.length">{{ gStatus.evidence.join(';') }}</text>
     </view>
 
-    <!-- 非语法类:正确率台账;没练过给「摸底」引导而非整块消失 -->
+    <!-- 非语法类:加权掌握度台账;没练过给「摸底」引导而非整块消失 -->
     <view class="mastery-card" v-else-if="mastery && mastery.total > 0">
-      <view class="mastery-row">
-        <text class="mastery-label">正确率</text>
-        <text class="mastery-val accent">{{ mastery.accuracy !== null ? Math.round(mastery.accuracy * 100) + '%' : '—' }}</text>
+      <view class="mastery-stats">
+        <view class="mastery-row">
+          <text class="mastery-label">掌握度</text>
+          <text class="mastery-val accent">{{ mastery.mastery != null ? Math.round(mastery.mastery * 100) + '%' : '—' }}</text>
+        </view>
+        <view class="mastery-row">
+          <text class="mastery-label">练习次数</text>
+          <text class="mastery-val">{{ mastery.total }} 题</text>
+        </view>
+        <view class="mastery-row" v-if="mastery.last_activity_at">
+          <text class="mastery-label">最近练习</text>
+          <text class="mastery-val">{{ mastery.last_activity_at.slice(0, 10) }}</text>
+        </view>
       </view>
-      <view class="mastery-row">
-        <text class="mastery-label">练习次数</text>
-        <text class="mastery-val">{{ mastery.total }} 题</text>
-      </view>
-      <view class="mastery-row" v-if="mastery.last_activity_at">
-        <text class="mastery-label">最近练习</text>
-        <text class="mastery-val">{{ mastery.last_activity_at.slice(0, 10) }}</text>
-      </view>
+      <text class="mastery-evidence" v-if="(mastery.mastery_events ?? 0) < 10">
+        证据不足:仅 {{ mastery.mastery_events ?? 0 }} 次判定,多练几题评估更准
+      </text>
     </view>
     <view class="mastery-card mastery-hint" v-else-if="mastery !== null || !loading">
       <text class="mastery-tip">还没检测过这个知识点 —— 先做 5 题摸个底,看看自己会不会</text>
@@ -420,8 +425,10 @@ function goWrongDetail(id: string) {
 
 .mastery-card {
   background: var(--c-bg-card); border-bottom: 1rpx solid var(--c-border);
-  padding: 20rpx 32rpx; display: flex; gap: 40rpx;
+  padding: 20rpx 32rpx; display: flex; flex-direction: column; gap: 10rpx;
 }
+.mastery-stats { display: flex; gap: 40rpx; }
+.mastery-evidence { font-size: 22rpx; color: var(--c-text-hint); }
 .mastery-row { display: flex; flex-direction: column; align-items: center; }
 .mastery-label { font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 4rpx; }
 .mastery-val { font-size: 30rpx; font-weight: 700; color: var(--c-text-body); }

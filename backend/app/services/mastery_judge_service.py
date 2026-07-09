@@ -45,24 +45,42 @@ async def log_answer(
     db: AsyncSession, *, student_id: uuid.UUID, q_scope: str, question_id: uuid.UUID,
     node_id: uuid.UUID | None, is_correct: bool, feature: str | None = None,
 ) -> None:
-    """记一次作答:answer_log 事件 + student_kp(node 投影)计数。"""
+    """记一次作答:answer_log 事件 + student_kp(node 投影)计数。
+
+    加权掌握度(m139):首答(feature!='review' 且此前无该题作答)→ 计 fa_correct/fa_wrong;
+    订正/复习(feature='review')不计首答,其订正对/错由 wrong_review_service 记 corrected_count/
+    redo_wrong_count。原 practice_count/wrong_count 仍按每次作答累加(总次数,供既有正确率)。
+    """
+    # 首答判定要在写入本条 answer_log 之前查(避免把自己算进历史)
+    is_first = feature != "review" and (await db.execute(
+        sa.select(AnswerLog.id).where(
+            AnswerLog.student_id == student_id,
+            AnswerLog.question_id == question_id,
+        ).limit(1)
+    )).first() is None
     db.add(AnswerLog(
         id=uuid.uuid4(), student_id=student_id, q_scope=q_scope,
         question_id=question_id, is_correct=is_correct, feature=feature, node_id=node_id,
     ))
     if node_id is not None:
+        delta_wrong = 0 if is_correct else 1
+        delta_fa_correct = 1 if (is_first and is_correct) else 0
+        delta_fa_wrong = 1 if (is_first and not is_correct) else 0
         await db.execute(
             pg_insert(StudentKp)
             .values(
                 student_id=student_id, node_id=node_id,
-                practice_count=1, wrong_count=0 if is_correct else 1,
+                practice_count=1, wrong_count=delta_wrong,
+                fa_correct=delta_fa_correct, fa_wrong=delta_fa_wrong,
                 last_practice_at=sa.func.now(), source_tags=["practice"], in_scope=True,
             )
             .on_conflict_do_update(
                 index_elements=["student_id", "node_id"],
                 set_={
                     "practice_count": StudentKp.practice_count + 1,
-                    "wrong_count": StudentKp.wrong_count + (0 if is_correct else 1),
+                    "wrong_count": StudentKp.wrong_count + delta_wrong,
+                    "fa_correct": StudentKp.fa_correct + delta_fa_correct,
+                    "fa_wrong": StudentKp.fa_wrong + delta_fa_wrong,
                     "last_practice_at": sa.func.now(),
                 },
             )

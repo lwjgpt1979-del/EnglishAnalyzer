@@ -180,6 +180,12 @@ class StudentKp(Base):
     mastery = mapped_column(sa.Numeric(5, 4), nullable=True)            # 掌握度 0–1
     practice_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    # 加权掌握度计数器(m139):首答对/首答错 + 订正对/订正错;独立于 practice_count/wrong_count
+    # (后者仍是总作答次数,供既有正确率/弱项)。掌握度公式见 kp_mastery_service.weighted_mastery。
+    fa_correct = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))       # 首答对
+    fa_wrong = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))         # 首答错
+    corrected_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))  # 订正做对(每题首次)
+    redo_wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0")) # 订正又做错(每次)
     last_practice_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     source_tags = mapped_column(ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"))
     in_scope = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))

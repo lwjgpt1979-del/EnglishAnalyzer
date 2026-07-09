@@ -120,15 +120,21 @@ async def get_kp_mastery(
 
     if sk is None:
         return make_ok({"kp_name": node.name, "correct_count": 0, "wrong_count": 0,
-                        "total": 0, "accuracy": None, "last_activity_at": None})
+                        "total": 0, "accuracy": None, "mastery": None, "mastery_events": 0,
+                        "last_activity_at": None})
+    from app.services.kp_mastery_service import weighted_mastery
     correct = max((sk.practice_count or 0) - (sk.wrong_count or 0), 0)
     total = correct + (sk.wrong_count or 0)
+    mastery, events = weighted_mastery(
+        sk.fa_correct, sk.fa_wrong, sk.corrected_count, sk.redo_wrong_count)
     return make_ok({
         "kp_name": node.name,
         "correct_count": correct,
         "wrong_count": sk.wrong_count or 0,
         "total": total,
-        "accuracy": round(correct / total, 4) if total else None,
+        "accuracy": round(correct / total, 4) if total else None,  # 兼容:原始正确率
+        "mastery": mastery,             # 加权掌握度 0–1(展示口径)
+        "mastery_events": events,       # 事件数 C;< 10 证据不足
         "last_activity_at": sk.last_practice_at.isoformat() if sk.last_practice_at else None,
     })
 
@@ -160,11 +166,14 @@ async def get_unit_mastery_summary(
     )).scalars().all() if node_ids else []
     sk_map = {sk.node_id: sk for sk in sk_rows}
 
+    from app.services.kp_mastery_service import weighted_mastery
     result = []
     for n in nodes:
         sk = sk_map.get(n.id)
         correct = max((sk.practice_count or 0) - (sk.wrong_count or 0), 0) if sk else 0
         total = correct + (sk.wrong_count or 0) if sk else 0
+        mastery, events = weighted_mastery(
+            sk.fa_correct, sk.fa_wrong, sk.corrected_count, sk.redo_wrong_count) if sk else (None, 0)
         result.append({
             "kp_id": str(n.id),
             "kp_name": n.name,
@@ -172,7 +181,9 @@ async def get_unit_mastery_summary(
             "correct_count": correct,
             "wrong_count": (sk.wrong_count or 0) if sk else 0,
             "total": total,
-            "accuracy": round(correct / total, 4) if total else None,
+            "accuracy": round(correct / total, 4) if total else None,  # 兼容:原始正确率
+            "mastery": mastery,             # 加权掌握度 0–1(展示口径)
+            "mastery_events": events,       # 事件数 C;< 10 证据不足
             "last_activity_at": sk.last_practice_at.isoformat() if sk and sk.last_practice_at else None,
         })
     return make_ok(result)

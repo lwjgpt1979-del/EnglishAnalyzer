@@ -201,6 +201,31 @@ async def _grade_and_log(
     await mastery_judge_service.log_answer(
         db, student_id=student_id, q_scope=wr.q_scope, question_id=wr.question_id,
         node_id=wr.node_id, is_correct=correct, feature="review")
+    # 加权掌握度(m139):订正做对(每题首次)→ corrected_count;订正又做错(每次)→ redo_wrong_count。
+    # log_answer 已确保该 node 的 student_kp 行存在;node 为空的错题不计。
+    if wr.node_id is not None:
+        from app.models.d16_question_domain import AnswerLog, StudentKp
+        if correct:
+            # 首次订正成功?数该题 feature='review' 且答对的 answer_log(含刚写入的这条);==1 即首次
+            n_ok = (await db.execute(
+                sa.select(sa.func.count()).select_from(AnswerLog).where(
+                    AnswerLog.student_id == student_id,
+                    AnswerLog.question_id == wr.question_id,
+                    AnswerLog.feature == "review", AnswerLog.is_correct.is_(True),
+                )
+            )).scalar_one()
+            if n_ok == 1:
+                await db.execute(
+                    sa.update(StudentKp)
+                    .where(StudentKp.student_id == student_id, StudentKp.node_id == wr.node_id)
+                    .values(corrected_count=StudentKp.corrected_count + 1)
+                )
+        else:
+            await db.execute(
+                sa.update(StudentKp)
+                .where(StudentKp.student_id == student_id, StudentKp.node_id == wr.node_id)
+                .values(redo_wrong_count=StudentKp.redo_wrong_count + 1)
+            )
     return correct, payload
 
 

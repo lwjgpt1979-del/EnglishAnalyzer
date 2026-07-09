@@ -6,7 +6,7 @@
         <text class="badge">U{{ detail.unit_no }}</text>
         <text class="title">{{ detail.unit_title }}</text>
         <text class="meta">{{ detail.knowledge_points.length }} 知识点 · {{ detail.words.length }} 词</text>
-        <text class="meta accent" v-if="overallAccuracy !== null">综合正确率 {{ overallAccuracy }}%</text>
+        <text class="meta accent" v-if="overallMastery !== null">综合掌握度 {{ overallMastery }}%</text>
       </view>
 
       <view class="card">
@@ -22,9 +22,9 @@
             <text class="kp-cat">{{ catLabel(kp.category) }}</text>
             <view class="kp-progress-wrap" v-if="masteryMap[kp.id]?.total > 0">
               <view class="kp-progress-bar">
-                <view class="kp-progress-fill" :style="{ width: Math.round((masteryMap[kp.id]?.accuracy ?? 0) * 100) + '%' }" />
+                <view class="kp-progress-fill" :style="{ width: Math.round((masteryMap[kp.id]?.mastery ?? 0) * 100) + '%' }" />
               </view>
-              <text class="kp-acc">{{ Math.round((masteryMap[kp.id]?.accuracy ?? 0) * 100) }}%</text>
+              <text class="kp-acc">{{ Math.round((masteryMap[kp.id]?.mastery ?? 0) * 100) }}%</text>
             </view>
             <text class="kp-no-data" v-else>未练习</text>
           </view>
@@ -66,12 +66,12 @@ const masteryMap = computed(() => {
   return m
 })
 
-const overallAccuracy = computed(() => {
-  const practiced = mastery.value.filter(m => m.total > 0)
+const overallMastery = computed(() => {
+  // 综合掌握度 = 已练知识点的加权掌握度均值
+  const practiced = mastery.value.filter(m => m.total > 0 && m.mastery != null)
   if (!practiced.length) return null
-  const totalCorrect = practiced.reduce((s, m) => s + m.correct_count, 0)
-  const totalAttempts = practiced.reduce((s, m) => s + m.total, 0)
-  return totalAttempts > 0 ? Math.round(totalCorrect / totalAttempts * 100) : null
+  const avg = practiced.reduce((s, m) => s + (m.mastery ?? 0), 0) / practiced.length
+  return Math.round(avg * 100)
 })
 
 async function loadMastery() {

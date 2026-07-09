@@ -29,6 +29,38 @@ _WEAK_THRESHOLD = 0.4    # 正确率 < 0.4 视为薄弱
 _MEDIUM_THRESHOLD = 0.7  # 0.4 ≤ 正确率 < 0.7 视为待巩固
 _STALE_DAYS = 14         # 超过 N 天未练习 → 提醒复习
 
+# ── 加权掌握度(m139;替代裸正确率)──────────────────────────────────────────────
+# 裸正确率(correct/total)对小样本(3对3=100%)/少量错误误导。改为加权:基数下限 10
+# 压小样本、错罚重、订正回收部分分。四计数器见 student_kp(fa_correct/fa_wrong/
+# corrected_count/redo_wrong_count),写入见 mastery_judge_service.log_answer(首答)与
+# wrong_review_service(订正对/错)。分档沿用上面的 0.4/0.7 阈值。
+MASTERY_BASE = 10           # 分母下限(证据基数);事件数 < 10 时按 10 计
+W_CORRECT = 1.0
+W_WRONG = -1.5
+W_REDO_OK = 0.3
+W_REDO_BAD = -0.3
+
+
+def weighted_mastery(
+    fa_correct: int, fa_wrong: int, corrected: int, redo_wrong: int
+) -> tuple[float, int]:
+    """加权掌握度。返回 (掌握度 0–1, 事件数 C)。
+
+    S = 1·首答对 − 1.5·首答错 + 0.3·订正对 − 0.3·订正错
+    C = 首答对 + 首答错 + 订正对 + 订正错 ; D = max(10, C) ; m = clamp(S/D, 0, 1)
+    C < 10 视为证据不足(调用方可据此提示「需更多练习」)。
+    """
+    fa_correct = fa_correct or 0
+    fa_wrong = fa_wrong or 0
+    corrected = corrected or 0
+    redo_wrong = redo_wrong or 0
+    s = (W_CORRECT * fa_correct + W_WRONG * fa_wrong
+         + W_REDO_OK * corrected + W_REDO_BAD * redo_wrong)
+    c = fa_correct + fa_wrong + corrected + redo_wrong
+    d = max(MASTERY_BASE, c)
+    m = s / d
+    return max(0.0, min(1.0, round(m, 4))), c
+
 
 def review_suggestion(
     *, accuracy: float, total: int, days_since: int | None

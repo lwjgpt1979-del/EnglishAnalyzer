@@ -579,7 +579,9 @@ export interface KpMasteryItem {
   correct_count: number
   wrong_count: number
   total: number
-  accuracy: number | null
+  accuracy: number | null          // 原始正确率(兼容保留)
+  mastery: number | null           // 加权掌握度 0–1(展示口径)
+  mastery_events: number           // 事件数 C;< 10 证据不足
   last_activity_at: string | null
 }
 
@@ -590,7 +592,9 @@ export interface KpMasterySummaryItem {
   correct_count: number
   wrong_count: number
   total: number
-  accuracy: number | null
+  accuracy: number | null          // 原始正确率(兼容保留)
+  mastery: number | null           // 加权掌握度 0–1(展示口径)
+  mastery_events: number           // 事件数 C;< 10 证据不足
   last_activity_at: string | null
 }
 
