@@ -562,6 +562,10 @@ export function generateMissingLecture(nodeId: string): Promise<{ generated: num
 export function bulkGenerateLecture(nodeIds: string[]): Promise<{ nodes: number; sections_missing: number; generated: number; failed: number }> {
   return unwrap(request.post('/admin/knowledge-nodes/bulk-generate-lecture', { node_ids: nodeIds }, { timeout: 600000 }))
 }
+// 批量:把勾选/全部考点的讲解整体发布(默认)或下架(仅翻状态)
+export function bulkPublishLecture(nodeIds: string[], status: 'draft' | 'published' = 'published'): Promise<{ nodes: number; updated: number }> {
+  return unwrap(request.post('/admin/knowledge-nodes/bulk-publish-lecture', { node_ids: nodeIds, status }, { timeout: 120000 }))
+}
 export function setLectureSectionStatus(nodeId: string, sectionKey: string, status: 'draft' | 'published'): Promise<{ updated: number }> {
   return unwrap(request.put(`/admin/knowledge-nodes/${nodeId}/lecture/${sectionKey}/status`, { status }))
 }

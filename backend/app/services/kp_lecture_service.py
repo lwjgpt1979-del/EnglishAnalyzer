@@ -143,6 +143,20 @@ async def set_status_all(db: AsyncSession, *, node_id: uuid.UUID, status: str) -
     return r.rowcount or 0
 
 
+async def set_status_all_bulk(
+    db: AsyncSession, *, node_ids: list[uuid.UUID], status: str
+) -> dict:
+    """批量:把多个考点的全部讲解环节整体发布/下架(单条 UPDATE,仅翻状态不生成)。"""
+    if status not in ("draft", "published"):
+        raise ValueError(f"非法状态:{status}")
+    if not node_ids:
+        return {"nodes": 0, "updated": 0}
+    r = await db.execute(
+        update(KpLecture).where(KpLecture.node_id.in_(node_ids)).values(status=status))
+    await db.commit()
+    return {"nodes": len(node_ids), "updated": r.rowcount or 0}
+
+
 async def delete_section(db: AsyncSession, *, node_id: uuid.UUID, section_key: str) -> int:
     r = await db.execute(delete(KpLecture).where(
         KpLecture.node_id == node_id, KpLecture.section_key == section_key))

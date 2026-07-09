@@ -39,10 +39,22 @@ class BulkGenIn(BaseModel):
     node_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=50)
 
 
+class BulkPublishIn(BaseModel):
+    node_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=1000)
+    status: str = Field("published", pattern="^(draft|published)$")
+
+
 @router.post("/bulk-generate-lecture", response_model=BaseResponse[dict])
 async def bulk_generate_lecture(body: BulkGenIn, db: DbDep, admin: AdminDep):
     """批量:对勾选的多个考点并发 AI 生成各自缺失的讲解环节(草稿)。单次≤50 个考点。"""
     return make_ok(await kl.generate_bulk_missing(db, node_ids=body.node_ids))
+
+
+@router.post("/bulk-publish-lecture", response_model=BaseResponse[dict])
+async def bulk_publish_lecture(body: BulkPublishIn, db: DbDep, admin: AdminDep):
+    """批量:把勾选/全部考点的全部讲解环节整体发布(默认)或下架。仅翻状态、不生成。"""
+    return make_ok(await kl.set_status_all_bulk(
+        db, node_ids=body.node_ids, status=body.status))
 
 
 async def _node(db: AsyncSession, node_id: uuid.UUID) -> KnowledgeNode:

@@ -7,7 +7,7 @@ import {
   retireKnowledgeNode, restoreKnowledgeNode, deleteKnowledgeNode,
   getNodeTree, createKnowledgeNode, moveKnowledgeNode,
   getNodeLecture, upsertLectureSection, generateLectureSection, generateMissingLecture,
-  setLectureSectionStatus, publishAllLecture, bulkGenerateLecture,
+  setLectureSectionStatus, publishAllLecture, bulkGenerateLecture, bulkPublishLecture,
   listKnowledgeRoots,
   type NodeHub, type KnowledgeRoot,
 } from '../api/admin'
@@ -77,6 +77,50 @@ async function bulkGenLecture() {
     await load()
   } catch (e: any) { ElMessage.error(e?.message || '批量生成失败') }
   finally { bulkGenning.value = false }
+}
+
+// 批量发布讲解:把勾选考点的全部讲解环节整体发布(学生端可见);仅翻状态,不生成
+const bulkPublishing = ref(false)
+async function bulkPublish() {
+  if (!selected.value.length) return
+  await doPublish(selected.value.map(r => r.id),
+    `将把勾选的 ${selected.value.length} 个考点的全部讲解环节整体发布(学生端可见)。是否继续?`)
+}
+// 全选发布:把当前筛选下全部考点的讲解整体发布(无需逐页勾选)
+async function publishAllMatching() {
+  if (!total.value) return
+  try {
+    await ElMessageBox.confirm(
+      `将把当前筛选下全部 ${total.value} 个考点的讲解整体发布(学生端可见)。是否继续?`,
+      '全选发布', { type: 'warning' })
+  } catch { return }
+  bulkPublishing.value = true
+  try {
+    const data = await listKnowledgeNodes({
+      stage: stage.value || undefined, status: status.value || undefined, q: q.value || undefined,
+      linked: (linked.value || undefined) as 'unit' | 'question' | 'both' | undefined,
+      roots: roots.value.length ? roots.value : undefined,
+      skip: 0, limit: total.value,
+    })
+    const ids = data.items.map(r => r.id)
+    if (!ids.length) { ElMessage.warning('没有可发布的考点'); return }
+    const r = await bulkPublishLecture(ids, 'published')
+    ElMessage.success(`已发布 ${r.updated} 个讲解环节（${r.nodes} 个考点）`)
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '全选发布失败') }
+  finally { bulkPublishing.value = false }
+}
+async function doPublish(ids: string[], confirmMsg: string) {
+  try {
+    await ElMessageBox.confirm(confirmMsg, '批量发布讲解', { type: 'warning' })
+  } catch { return }
+  bulkPublishing.value = true
+  try {
+    const r = await bulkPublishLecture(ids, 'published')
+    ElMessage.success(`已发布 ${r.updated} 个讲解环节（${r.nodes} 个考点）`)
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '批量发布失败') }
+  finally { bulkPublishing.value = false }
 }
 
 // ── 知识分类树(F:单树,去 3 轴)──
@@ -329,7 +373,15 @@ onMounted(() => { loadTree(); loadRootOptions() })
         style="margin-left:8px" @click="bulkGenLecture">
         AI 批量生成讲解{{ selected.length ? `(${selected.length})` : '' }}
       </el-button>
-      <span class="hint">知识点骨架(knowledge_nodes)总览。共 {{ total }} 个节点。讲解完整度=该考点类型模板的教学环节已配几个。勾选考点可并发批量生成缺失讲解(草稿,需再发布)。</span>
+      <el-button type="primary" :disabled="!selected.length" :loading="bulkPublishing"
+        style="margin-left:8px" @click="bulkPublish">
+        批量发布讲解{{ selected.length ? `(${selected.length})` : '' }}
+      </el-button>
+      <el-button type="primary" plain :disabled="!total" :loading="bulkPublishing"
+        style="margin-left:8px" @click="publishAllMatching">
+        全选发布(全部 {{ total }})
+      </el-button>
+      <span class="hint">知识点骨架(knowledge_nodes)总览。共 {{ total }} 个节点。讲解完整度=该考点类型模板的教学环节已配几个。勾选考点可并发批量生成缺失讲解(草稿,需再发布);再「批量发布/全选发布」把讲解整体发布,学生端才可见。</span>
     </div>
 
     <el-table v-loading="loading" :data="rows" border style="width:100%" row-key="id"
