@@ -121,6 +121,7 @@ async def get_kp_mastery(
     if sk is None:
         return make_ok({"kp_name": node.name, "correct_count": 0, "wrong_count": 0,
                         "total": 0, "accuracy": None, "mastery": None, "mastery_events": 0,
+                        "fa_correct": 0, "fa_wrong": 0, "corrected_count": 0, "redo_wrong_count": 0,
                         "last_activity_at": None})
     from app.services.kp_mastery_service import weighted_mastery
     correct = max((sk.practice_count or 0) - (sk.wrong_count or 0), 0)
@@ -135,6 +136,11 @@ async def get_kp_mastery(
         "accuracy": round(correct / total, 4) if total else None,  # 兼容:原始正确率
         "mastery": mastery,             # 加权掌握度 0–1(展示口径)
         "mastery_events": events,       # 事件数 C;< 10 证据不足
+        # 掌握度四计数器(供前端「掌握度详情」展开算式)
+        "fa_correct": sk.fa_correct or 0,
+        "fa_wrong": sk.fa_wrong or 0,
+        "corrected_count": sk.corrected_count or 0,
+        "redo_wrong_count": sk.redo_wrong_count or 0,
         "last_activity_at": sk.last_practice_at.isoformat() if sk.last_practice_at else None,
     })
 

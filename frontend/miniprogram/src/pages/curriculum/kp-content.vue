@@ -32,8 +32,8 @@
     <!-- 非语法类:加权掌握度台账;没练过给「摸底」引导而非整块消失 -->
     <view class="mastery-card" v-else-if="mastery && mastery.total > 0">
       <view class="mastery-stats">
-        <view class="mastery-row">
-          <text class="mastery-label">掌握度</text>
+        <view class="mastery-row tappable" @tap="showMasteryDetail = true">
+          <text class="mastery-label">掌握度<text class="mastery-detail-hint"> 算式›</text></text>
           <text class="mastery-val accent">{{ mastery.mastery != null ? Math.round(mastery.mastery * 100) + '%' : '—' }}</text>
         </view>
         <view class="mastery-row">
@@ -133,6 +133,33 @@
         </view>
       </scroll-view>
     </template>
+
+    <!-- 掌握度算式详情 -->
+    <view class="md-mask" v-if="showMasteryDetail && masteryDetail" @tap="showMasteryDetail = false">
+      <view class="md-card" @tap.stop>
+        <view class="md-head">
+          <text class="md-title">掌握度算式</text>
+          <text class="md-close" @tap="showMasteryDetail = false">✕</text>
+        </view>
+        <view class="md-hero">
+          <text class="md-pct">{{ masteryDetail.pct }}%</text>
+          <text class="md-tier" :class="'md-tier-' + masteryDetail.tier">{{ masteryDetail.tierLabel }}</text>
+        </view>
+        <view class="md-rows">
+          <view class="md-row"><text class="md-k">首答对</text><text class="md-x">{{ masteryDetail.faC }} × 1</text><text class="md-v">+{{ masteryDetail.faC }}</text></view>
+          <view class="md-row"><text class="md-k">首答错</text><text class="md-x">{{ masteryDetail.faW }} × -1.5</text><text class="md-v neg">{{ masteryDetail.cWrong }}</text></view>
+          <view class="md-row"><text class="md-k">订正做对</text><text class="md-x">{{ masteryDetail.kc }} × 0.3</text><text class="md-v">+{{ masteryDetail.cKc }}</text></view>
+          <view class="md-row"><text class="md-k">订正做错</text><text class="md-x">{{ masteryDetail.kf }} × -0.3</text><text class="md-v neg">{{ masteryDetail.cKf }}</text></view>
+        </view>
+        <view class="md-formula">
+          <text class="md-f-line">分子 S = {{ masteryDetail.S }}</text>
+          <text class="md-f-line">分母 D = max(10, 事件数 {{ masteryDetail.C }}) = {{ masteryDetail.D }}</text>
+          <text class="md-f-line strong">掌握度 = S ÷ D = {{ masteryDetail.pct }}%</text>
+        </view>
+        <text class="md-note" v-if="masteryDetail.C < 10">证据不足:事件数不足 10 时分母按 10 计,多练几题评估更准。</text>
+        <text class="md-note dim">基数下限 10 压小样本;答错重罚、订正回收部分分,比裸正确率更反映真实掌握。</text>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -204,6 +231,27 @@ async function loadMastery() {
     if (!kpName.value && mastery.value?.kp_name) setTitle(mastery.value.kp_name)
   } catch { /* 静默失败 */ }
 }
+
+// —— 掌握度算式详情(点掌握度弹出:四计数器 → 加权公式)——
+const showMasteryDetail = ref(false)
+const masteryDetail = computed(() => {
+  const m = mastery.value
+  if (!m || m.mastery == null) return null
+  const faC = m.fa_correct ?? 0, faW = m.fa_wrong ?? 0
+  const kc = m.corrected_count ?? 0, kf = m.redo_wrong_count ?? 0
+  const r1 = (x: number) => Math.round(x * 10) / 10
+  const S = r1(faC - 1.5 * faW + 0.3 * kc - 0.3 * kf)
+  const C = faC + faW + kc + kf
+  const D = Math.max(10, C)
+  const pct = Math.round((m.mastery ?? 0) * 100)     // 与卡片同源(后端掌握度)
+  const tier = m.mastery >= 0.7 ? 'mastered' : m.mastery >= 0.4 ? 'mid' : 'weak'
+  const tierLabel = tier === 'mastered' ? '已掌握' : tier === 'mid' ? '待巩固' : '薄弱'
+  return {
+    faC, faW, kc, kf,
+    cWrong: r1(-1.5 * faW), cKc: r1(0.3 * kc), cKf: r1(-0.3 * kf),
+    S, C, D, pct, tier, tierLabel,
+  }
+})
 
 // —— R10 语法四维掌握(仅语法类 KP:识别/纠错/产出/迁移 BKT + 诚实标签)——
 const isGrammar = ref(false)
@@ -433,4 +481,37 @@ function goWrongDetail(id: string) {
 .mastery-label { font-size: 22rpx; color: var(--c-text-hint); margin-bottom: 4rpx; }
 .mastery-val { font-size: 30rpx; font-weight: 700; color: var(--c-text-body); }
 .mastery-val.accent { color: var(--c-primary); }
+.mastery-row.tappable { position: relative; }
+.mastery-detail-hint { font-size: 20rpx; color: var(--c-primary); }
+
+/* 掌握度算式弹层 */
+.md-mask {
+  position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 100;
+  background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center;
+  padding: 48rpx;
+}
+.md-card {
+  width: 100%; max-width: 620rpx; background: var(--c-bg-card);
+  border-radius: 24rpx; padding: 32rpx; box-shadow: 0 8rpx 40rpx rgba(0,0,0,.2);
+}
+.md-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; }
+.md-title { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
+.md-close { font-size: 34rpx; color: var(--c-text-hint); padding: 0 8rpx; }
+.md-hero { display: flex; align-items: baseline; gap: 16rpx; margin-bottom: 24rpx; }
+.md-pct { font-size: 64rpx; font-weight: 800; color: var(--c-primary); line-height: 1; }
+.md-tier { font-size: 24rpx; font-weight: 700; padding: 4rpx 16rpx; border-radius: 20rpx; }
+.md-tier-mastered { background: #e7f7ef; color: #2f9d6e; }
+.md-tier-mid { background: #fdf1e2; color: #d98a1f; }
+.md-tier-weak { background: #fdeceb; color: #e0654f; }
+.md-rows { border-top: 1rpx solid var(--c-border); padding-top: 16rpx; }
+.md-row { display: flex; align-items: center; padding: 8rpx 0; font-size: 26rpx; }
+.md-k { width: 150rpx; color: var(--c-text-body); }
+.md-x { flex: 1; color: var(--c-text-hint); font-size: 24rpx; }
+.md-v { width: 90rpx; text-align: right; font-weight: 700; color: #2f9d6e; }
+.md-v.neg { color: #e0654f; }
+.md-formula { border-top: 1rpx solid var(--c-border); margin-top: 12rpx; padding-top: 16rpx; }
+.md-f-line { display: block; font-size: 26rpx; color: var(--c-text-body); line-height: 1.9; }
+.md-f-line.strong { font-weight: 800; color: var(--c-ink); }
+.md-note { display: block; margin-top: 16rpx; font-size: 22rpx; color: var(--c-text-hint); line-height: 1.6; }
+.md-note.dim { color: var(--c-text-hint); opacity: .8; }
 </style>

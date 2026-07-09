@@ -582,6 +582,11 @@ export interface KpMasteryItem {
   accuracy: number | null          // 原始正确率(兼容保留)
   mastery: number | null           // 加权掌握度 0–1(展示口径)
   mastery_events: number           // 事件数 C;< 10 证据不足
+  // 掌握度四计数器(掌握度详情算式)
+  fa_correct?: number              // 首答对 ×1
+  fa_wrong?: number                // 首答错 ×-1.5
+  corrected_count?: number         // 订正对 ×0.3
+  redo_wrong_count?: number        // 订正错 ×-0.3
   last_activity_at: string | null
 }
 
