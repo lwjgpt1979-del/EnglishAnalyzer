@@ -214,6 +214,7 @@ export interface KpNodeOverviewItem {
   source?: string | null
   lecture_filled: number
   lecture_total: number
+  lecture_published: number
   unit_refs: number
   question_refs: number
   alias_count: number

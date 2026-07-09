@@ -149,6 +149,7 @@ async def list_nodes_overview(
     # 讲解完整度:已填讲解环节数(kp_lecture);分母 = 该考点类型模板环节数
     from app.services import kp_lecture_service as kl
     lec_filled = await kl.filled_counts(db, node_ids=ids)
+    lec_published = await kl.filled_counts(db, node_ids=ids, published_only=True)
     units = await _counts(
         sa.select(UnitNode.node_id, sa.func.count()).where(UnitNode.node_id.in_(ids))
         .group_by(UnitNode.node_id))
@@ -162,6 +163,7 @@ async def list_nodes_overview(
         "id": r.id, "axis": r.axis, "node_kind": r.node_kind, "name": r.name, "code": r.code,
         "status": r.status, "applicable_stages": r.applicable_stages, "source": r.source,
         "lecture_filled": int(lec_filled.get(r.id, 0)), "lecture_total": len(kl.template_for(r.code)),
+        "lecture_published": int(lec_published.get(r.id, 0)),
         "unit_refs": int(units.get(r.id, 0)),
         "question_refs": int(ques.get(r.id, 0)), "alias_count": int(aliases.get(r.id, 0)),
     } for r in rows]

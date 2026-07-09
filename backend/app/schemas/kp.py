@@ -44,6 +44,7 @@ class KpNodeOverviewItem(BaseModel):
     source: str | None = None     # seed/textbook/exam/manual(manual=人工新建)
     lecture_filled: int       # 讲解已填环节数
     lecture_total: int        # 该考点类型模板环节数(分母)
+    lecture_published: int = 0 # 已发布(有正文)环节数
     unit_refs: int            # 被多少教材单元引用
     question_refs: int        # 被多少真题/仿真引用
     alias_count: int

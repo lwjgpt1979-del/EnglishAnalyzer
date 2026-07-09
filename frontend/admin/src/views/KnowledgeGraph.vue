@@ -411,6 +411,14 @@ onMounted(() => { loadTree(); loadRootOptions() })
             :format="() => `${row.lecture_filled}/${row.lecture_total}`" />
         </template>
       </el-table-column>
+      <el-table-column label="已发布" width="110" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="!row.lecture_filled" type="info" size="small">—</el-tag>
+          <el-tag v-else-if="row.lecture_published >= row.lecture_filled" type="success" size="small">已发布</el-tag>
+          <el-tag v-else-if="row.lecture_published > 0" type="warning" size="small">部分 {{ row.lecture_published }}/{{ row.lecture_filled }}</el-tag>
+          <el-tag v-else type="danger" size="small">未发布</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="unit_refs" label="引用单元" width="90" align="center" />
       <el-table-column prop="question_refs" label="引用真题" width="90" align="center" />
       <el-table-column prop="alias_count" label="别名" width="70" align="center" />
