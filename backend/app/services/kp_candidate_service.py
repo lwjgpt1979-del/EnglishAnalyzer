@@ -84,12 +84,35 @@ async def list_candidates(
     return list(rows), total
 
 
+async def list_roots(db: AsyncSession) -> list[dict]:
+    """知识图谱根目录(顶层分类,parent_id 为空)选项——多选过滤下拉的单一真源。排除已停用。"""
+    rows = (await db.execute(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code, KnowledgeNode.axis)
+        .where(KnowledgeNode.parent_id.is_(None), KnowledgeNode.status != "retired")
+        .order_by(KnowledgeNode.axis, KnowledgeNode.code))).all()
+    return [{"id": str(i), "name": n, "code": c, "axis": a} for i, n, c, a in rows]
+
+
+async def _descendant_ids(db: AsyncSession, root_ids: list) -> list:
+    """递归取所选根目录下的**全部后代节点 id**(含根本身)。按真实 parent_id 树,不靠 code 前缀
+    (大量 m-* 节点 code 不带根前缀,前缀过滤会漏)。"""
+    sql = sa.text(
+        "WITH RECURSIVE sub AS ("
+        "  SELECT id FROM knowledge_nodes WHERE id IN :roots"
+        "  UNION ALL"
+        "  SELECT kn.id FROM knowledge_nodes kn JOIN sub ON kn.parent_id = sub.id"
+        ") SELECT id FROM sub"
+    ).bindparams(sa.bindparam("roots", expanding=True))
+    return list((await db.execute(sql, {"roots": [str(r) for r in root_ids]})).scalars().all())
+
+
 async def list_nodes_overview(
     db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
     status: str | None = None, q: str | None = None, linked: str | None = None,
-    skip: int = 0, limit: int = 20,
+    root_ids: list | None = None, skip: int = 0, limit: int = 20,
 ) -> tuple[list[dict], int]:
-    """知识图谱总览(D1):节点分页 + 每节点摘要(讲解完整度/引用单元/引用真题/别名数)。"""
+    """知识图谱总览(D1):节点分页 + 每节点摘要(讲解完整度/引用单元/引用真题/别名数)。
+    root_ids:多选根目录过滤——只出这些根节点子树下的节点(含根)。"""
     from sqlalchemy.dialects.postgresql import JSONB
     from app.models.d16_question_domain import PlatformQuestionKp
 
@@ -100,6 +123,9 @@ async def list_nodes_overview(
         base = base.where(KnowledgeNode.status == status)
     if q:
         base = base.where(KnowledgeNode.name.ilike(f"%{q}%"))
+    if root_ids:
+        sub_ids = await _descendant_ids(db, root_ids)
+        base = base.where(KnowledgeNode.id.in_(sub_ids))
     if stage:                                   # JSONB:空(适用全部)或含该学段
         base = base.where(sa.or_(
             KnowledgeNode.applicable_stages.is_(None),
