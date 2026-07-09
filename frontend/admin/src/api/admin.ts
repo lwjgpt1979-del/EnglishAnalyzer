@@ -488,9 +488,17 @@ export function addVocabItems(listId: string, items: Array<{ word: string; rank?
 // 知识图谱总览(D1)
 export function listKnowledgeNodes(params: {
   axis?: string; stage?: string; status?: string; q?: string
-  linked?: 'unit' | 'question' | 'both'; skip?: number; limit?: number
+  linked?: 'unit' | 'question' | 'both'; roots?: string[]; skip?: number; limit?: number
 }): Promise<KpNodeOverviewOut> {
-  return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params }))
+  const p: Record<string, unknown> = { ...params }
+  if (params.roots?.length) p.roots = params.roots.join(',')   // 多选根目录 → 逗号分隔
+  else delete p.roots
+  return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params: p }))
+}
+// 根目录(顶层分类)选项——多选过滤下拉
+export interface KnowledgeRoot { id: string; name: string; code: string; axis: string }
+export function listKnowledgeRoots(): Promise<KnowledgeRoot[]> {
+  return unwrap<KnowledgeRoot[]>(request.get('/admin/knowledge-nodes/roots'))
 }
 // 受控知识树(E1)
 export function getNodeTree(axis?: string, withCounts = false, stage?: string): Promise<{ items: NodeTreeItem[] }> {
@@ -549,6 +557,10 @@ export function generateLectureSection(nodeId: string, sectionKey: string): Prom
 }
 export function generateMissingLecture(nodeId: string): Promise<{ generated: number }> {
   return unwrap(request.post(`/admin/knowledge-nodes/${nodeId}/lecture/generate-missing`, {}, { timeout: 300000 }))
+}
+// 批量:勾选多个考点,并发 AI 生成各自缺失讲解环节
+export function bulkGenerateLecture(nodeIds: string[]): Promise<{ nodes: number; sections_missing: number; generated: number; failed: number }> {
+  return unwrap(request.post('/admin/knowledge-nodes/bulk-generate-lecture', { node_ids: nodeIds }, { timeout: 600000 }))
 }
 export function setLectureSectionStatus(nodeId: string, sectionKey: string, status: 'draft' | 'published'): Promise<{ updated: number }> {
   return unwrap(request.put(`/admin/knowledge-nodes/${nodeId}/lecture/${sectionKey}/status`, { status }))

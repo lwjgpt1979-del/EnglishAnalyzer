@@ -194,6 +194,53 @@ async def generate_section(db: AsyncSession, *, code: str | None, name: str, sec
     return md
 
 
+async def generate_bulk_missing(db: AsyncSession, *, node_ids: list[uuid.UUID],
+                                concurrency: int = 6) -> dict:
+    """批量:对多个考点并发 AI 生成各自「还没内容」的讲解环节(均落草稿,人工确认后发布)。
+
+    LLM 生成阶段并发(信号量限流,不占 DB);写库阶段顺序 upsert(避免并发 session)。
+    返回 {nodes, sections_missing, generated, failed}。
+    """
+    import asyncio
+    from app.models.d15_knowledge_graph import KnowledgeNode
+
+    nodes = (await db.execute(
+        select(KnowledgeNode.id, KnowledgeNode.code, KnowledgeNode.name)
+        .where(KnowledgeNode.id.in_(node_ids)))).all()
+    # 收集所有「缺内容」的 (node, section) 任务
+    tasks: list[tuple] = []
+    for nid, code, name in nodes:
+        data = await list_sections(db, node_id=nid, code=code)
+        for s in data["sections"]:
+            if not s["has_content"]:
+                tasks.append((nid, code, name, s["section_key"]))
+
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def _gen(nid, code, name, sk):
+        async with sem:                    # generate_section 只调 LLM、不碰 db,可安全并发
+            last = "生成为空"
+            for attempt in range(2):       # 1 次重试:抗 LLM 偶发空返回/超时
+                try:
+                    md = await generate_section(db, code=code, name=name, section_key=sk)
+                    if (md or "").strip():
+                        return (nid, code, sk, md, None)
+                except Exception as e:     # noqa: BLE001 单个失败不拖垮整批
+                    last = str(e)[:120]
+            return (nid, code, sk, None, last)
+
+    results = await asyncio.gather(*[_gen(*t) for t in tasks]) if tasks else []
+    generated = failed = 0
+    for nid, code, sk, md, err in results:      # 顺序写库(每条各自 commit)
+        if err or not (md or "").strip():
+            failed += 1
+            continue
+        await upsert_section(db, node_id=nid, code=code, section_key=sk, content_md=md, source="ai")
+        generated += 1
+    return {"nodes": len(nodes), "sections_missing": len(tasks),
+            "generated": generated, "failed": failed}
+
+
 async def filled_counts(db: AsyncSession, *, node_ids: list[uuid.UUID],
                         published_only: bool = False) -> dict[uuid.UUID, int]:
     """批量:各 node 已填(published_only 时=已发布)且有正文的 section 数。供总览完整度列。"""

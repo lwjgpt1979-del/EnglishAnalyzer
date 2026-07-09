@@ -7,8 +7,9 @@ import {
   retireKnowledgeNode, restoreKnowledgeNode, deleteKnowledgeNode,
   getNodeTree, createKnowledgeNode, moveKnowledgeNode,
   getNodeLecture, upsertLectureSection, generateLectureSection, generateMissingLecture,
-  setLectureSectionStatus, publishAllLecture,
-  type NodeHub,
+  setLectureSectionStatus, publishAllLecture, bulkGenerateLecture,
+  listKnowledgeRoots,
+  type NodeHub, type KnowledgeRoot,
 } from '../api/admin'
 import type { KpNodeOverviewItem, KpNodeDetail, NodeTreeItem, LectureSectionCell } from '../types'
 import { EditPen } from '@element-plus/icons-vue'
@@ -33,11 +34,15 @@ const stage = ref('')
 const status = ref('active')
 const q = ref('')
 const linked = ref('')          // 关联筛选:''=全部 / unit / question / both
+const roots = ref<string[]>([]) // 多选根目录过滤(根节点 id)
+const rootOptions = ref<KnowledgeRoot[]>([])
 const rows = ref<KpNodeOverviewItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 30
 const loading = ref(false)
+const selected = ref<KpNodeOverviewItem[]>([])   // 批量勾选(跨页保留)
+const bulkGenning = ref(false)
 
 async function load() {
   loading.value = true
@@ -46,6 +51,7 @@ async function load() {
       stage: stage.value || undefined,
       status: status.value || undefined, q: q.value || undefined,
       linked: (linked.value || undefined) as 'unit' | 'question' | 'both' | undefined,
+      roots: roots.value.length ? roots.value : undefined,
       skip: (page.value - 1) * pageSize, limit: pageSize,
     })
     rows.value = data.items
@@ -54,6 +60,24 @@ async function load() {
   finally { loading.value = false }
 }
 function reload() { page.value = 1; load() }
+
+// 批量生成讲解:勾选的考点并发 AI 补全缺失环节(落草稿,需再逐点/整点发布)
+async function bulkGenLecture() {
+  if (!selected.value.length) return
+  const ids = selected.value.map(r => r.id)
+  try {
+    await ElMessageBox.confirm(
+      `将为勾选的 ${ids.length} 个考点并发 AI 生成「缺失」的讲解环节(落草稿,较慢,消耗 AI 额度)。生成后到各考点详情确认并发布。是否继续?`,
+      'AI 批量生成讲解', { type: 'warning' })
+  } catch { return }
+  bulkGenning.value = true
+  try {
+    const r = await bulkGenerateLecture(ids)
+    ElMessage.success(`已生成 ${r.generated} 个讲解环节（${r.nodes} 个考点${r.failed ? `，${r.failed} 个失败` : ''}），均为草稿`)
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '批量生成失败') }
+  finally { bulkGenning.value = false }
+}
 
 // ── 知识分类树(F:单树,去 3 轴)──
 const viewMode = ref<'tree' | 'list'>('tree')
@@ -228,7 +252,11 @@ async function saveSection() {
   finally { editSaving.value = false }
 }
 
-onMounted(loadTree)
+async function loadRootOptions() {
+  try { rootOptions.value = await listKnowledgeRoots() } catch { /* 静默:下拉空不影响主流程 */ }
+}
+
+onMounted(() => { loadTree(); loadRootOptions() })
 </script>
 
 <template>
@@ -289,13 +317,24 @@ onMounted(loadTree)
       <el-select v-model="linked" style="width:170px" @change="reload">
         <el-option v-for="l in LINKED" :key="l.value" :label="l.label" :value="l.value" />
       </el-select>
+      <span style="margin-left:12px">根目录：</span>
+      <el-select v-model="roots" multiple collapse-tags collapse-tags-tooltip clearable
+        placeholder="全部根目录" style="width:240px" @change="reload">
+        <el-option v-for="r in rootOptions" :key="r.id" :label="r.name" :value="r.id" />
+      </el-select>
       <el-input v-model="q" placeholder="搜知识点名" clearable style="width:200px;margin-left:12px"
         @keyup.enter="reload" @clear="reload" />
       <el-button type="primary" style="margin-left:8px" @click="reload">查询</el-button>
-      <span class="hint">知识点骨架(knowledge_nodes)总览。共 {{ total }} 个节点。讲解完整度=该考点类型模板的教学环节已配几个。</span>
+      <el-button type="success" :disabled="!selected.length" :loading="bulkGenning"
+        style="margin-left:8px" @click="bulkGenLecture">
+        AI 批量生成讲解{{ selected.length ? `(${selected.length})` : '' }}
+      </el-button>
+      <span class="hint">知识点骨架(knowledge_nodes)总览。共 {{ total }} 个节点。讲解完整度=该考点类型模板的教学环节已配几个。勾选考点可并发批量生成缺失讲解(草稿,需再发布)。</span>
     </div>
 
-    <el-table v-loading="loading" :data="rows" border style="width:100%">
+    <el-table v-loading="loading" :data="rows" border style="width:100%" row-key="id"
+              @selection-change="(rs: KpNodeOverviewItem[]) => selected = rs">
+      <el-table-column type="selection" width="44" reserve-selection />
       <el-table-column prop="name" label="知识点" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <el-link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-link>
