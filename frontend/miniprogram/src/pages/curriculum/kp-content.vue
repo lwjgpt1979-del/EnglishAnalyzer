@@ -241,6 +241,8 @@ onShow(() => {
   if (!kpId.value) return
   loadMastery()
   loadGrammarStatus()   // 从语法检测页返回后刷新四维
+  // 从错题详情订正返回后刷新错题掌握徽标(已加载过才刷,避免首进空跑)
+  if (wLoaded.value) refreshWrongs()
 })
 
 async function switchView(key: ViewKey) {
@@ -272,6 +274,14 @@ async function loadWrongs() {
   } finally {
     wLoading.value = false
   }
+}
+
+// 静默刷新错题列表(从错题详情订正返回后更新已掌握徽标),不置 wLoading 以免列表闪现「加载中」
+async function refreshWrongs() {
+  try {
+    const res = await listWrongQuestionsByKp(kpId.value, 0, 50)
+    wrongs.value = res.items
+  } catch { /* 刷新失败保留旧列表,静默 */ }
 }
 
 // 讲解环节是教学内容、不是练习维度:练习一律按整个知识点(不再带 dim 参数)
