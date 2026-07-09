@@ -26,7 +26,9 @@ class KpMasteryItem(BaseModel):
     kp_description: str | None      # 知识点简介
     correct_count: int
     wrong_count: int
-    accuracy: float                 # correct / total，total=0 时为 0.0
+    accuracy: float                 # 原始正确率 correct/total（兼容保留）
+    mastery: float                  # 加权掌握度 0–1（展示口径）
+    mastery_events: int             # 事件数 C；< 10 证据不足
     sources: list[str]              # 贡献来源，如 ['practice', 'paper_upload']
     last_activity_at: str | None
 
@@ -43,21 +45,20 @@ async def get_kp_mastery(db: DbDep, current_user: UserDep):
 
 class KpTrendPoint(BaseModel):
     date: str           # YYYY-MM-DD
-    accuracy: float
-    correct_count: int
-    wrong_count: int
+    mastery: float      # 加权掌握度 0–1（当日日末值）
+    mastery_events: int # 事件数 C
 
 
 @router.get("/trend", response_model=BaseResponse[list[KpTrendPoint]])
 async def get_kp_trend(
     db: DbDep,
     current_user: UserDep,
-    kp_key: str = Query(..., description="知识点名称"),
+    node_id: uuid.UUID = Query(..., description="知识点 node_id（列表 kp_id）"),
     days: int = Query(30, ge=7, le=90, description="查询最近 N 天（7-90）"),
 ):
-    """返回指定知识点近 N 天的日正确率趋势（M46）。"""
+    """返回指定知识点近 N 天的日加权掌握度趋势（从 answer_log 重放，无需历史快照）。"""
     await get_rls_db(db, str(current_user.id))
-    points = await kp_mastery_service.get_kp_trend(
-        db, student_id=current_user.id, kp_key=kp_key, days=days
+    points = await kp_mastery_service.get_kp_mastery_trend(
+        db, student_id=current_user.id, node_id=node_id, days=days
     )
     return make_ok([KpTrendPoint(**p) for p in points])

@@ -24,21 +24,21 @@
             <text class="ov-label">已覆盖知识点</text>
           </view>
           <view class="ov-item">
-            <text class="ov-num" :class="accClass(avgAccuracy)">
-              {{ (avgAccuracy * 100).toFixed(0) }}%
+            <text class="ov-num" :class="accClass(avgMastery)">
+              {{ (avgMastery * 100).toFixed(0) }}%
             </text>
-            <text class="ov-label">平均正确率</text>
+            <text class="ov-label">平均掌握度</text>
           </view>
           <view class="ov-item">
             <text class="ov-num text-green">{{ masteredCount }}</text>
-            <text class="ov-label">已掌握 ≥80%</text>
+            <text class="ov-label">已掌握 ≥70%</text>
           </view>
           <view class="ov-item">
             <text class="ov-num text-red">{{ weakCount }}</text>
-            <text class="ov-label">需加强 &lt;60%</text>
+            <text class="ov-label">需加强 &lt;40%</text>
           </view>
         </view>
-        <text class="ov-hint">弱项优先排列，建议从正确率最低的知识点开始练习</text>
+        <text class="ov-hint">弱项优先排列，建议从掌握度最低的知识点开始练习</text>
       </view>
 
       <!-- 来源筛选 -->
@@ -59,14 +59,14 @@
         v-for="item in filteredItems"
         :key="item.kp_key"
         class="card kp-card"
-        @tap="goTrend(item.kp_key)"
+        @tap="goTrend(item.kp_id, item.kp_key)"
       >
         <!-- 标题行 -->
         <view class="kp-header">
-          <view class="kp-dot" :class="dotClass(item.accuracy)" />
+          <view class="kp-dot" :class="dotClass(item.mastery)" />
           <text class="kp-name">{{ item.kp_key }}</text>
-          <text class="kp-acc" :class="accClass(item.accuracy)">
-            {{ (item.accuracy * 100).toFixed(0) }}%
+          <text class="kp-acc" :class="accClass(item.mastery)">
+            {{ (item.mastery * 100).toFixed(0) }}%
           </text>
         </view>
 
@@ -74,8 +74,8 @@
         <view class="bar-track">
           <view
             class="bar-fill"
-            :class="accClass(item.accuracy)"
-            :style="{ width: Math.max(4, Math.round(item.accuracy * 100)) + '%' }"
+            :class="accClass(item.mastery)"
+            :style="{ width: Math.max(4, Math.round(item.mastery * 100)) + '%' }"
           />
         </view>
 
@@ -84,6 +84,7 @@
           <view class="stat-ok"><view class="ic ic-check stat-mark" /><text>{{ item.correct_count }} 对</text></view>
           <view class="stat-wrong"><view class="ic ic-x-circle stat-mark" /><text>{{ item.wrong_count }} 错</text></view>
           <text class="stat-total">共 {{ item.correct_count + item.wrong_count }} 题</text>
+          <text v-if="item.mastery_events < 10" class="stat-evidence">证据不足</text>
         </view>
 
         <!-- 来源标签 + 描述 -->
@@ -150,31 +151,31 @@ const filteredItems = computed(() => {
   return items.value.filter(i => i.sources.includes(activeFilter.value))
 })
 
-// ── 统计 ──────────────────────────────────────────────────────────────────────
-const avgAccuracy = computed(() => {
+// ── 统计（加权掌握度，分档 0.4/0.7）───────────────────────────────────────────
+const avgMastery = computed(() => {
   if (!items.value.length) return 0
-  const total = items.value.reduce((s, i) => s + i.accuracy, 0)
+  const total = items.value.reduce((s, i) => s + i.mastery, 0)
   return total / items.value.length
 })
 
 const masteredCount = computed(() =>
-  items.value.filter(i => i.accuracy >= 0.8 && (i.correct_count + i.wrong_count) > 0).length
+  items.value.filter(i => i.mastery >= 0.7 && (i.correct_count + i.wrong_count) > 0).length
 )
 
 const weakCount = computed(() =>
-  items.value.filter(i => i.accuracy < 0.6 && (i.correct_count + i.wrong_count) > 0).length
+  items.value.filter(i => i.mastery < 0.4 && (i.correct_count + i.wrong_count) > 0).length
 )
 
-// ── 工具函数 ──────────────────────────────────────────────────────────────────
-function accClass(acc: number) {
-  if (acc >= 0.8) return 'acc-green'
-  if (acc >= 0.6) return 'acc-yellow'
+// ── 工具函数（阈值沿用掌握度分档 0.4/0.7）──────────────────────────────────────
+function accClass(m: number) {
+  if (m >= 0.7) return 'acc-green'
+  if (m >= 0.4) return 'acc-yellow'
   return 'acc-red'
 }
 
-function dotClass(acc: number) {
-  if (acc >= 0.8) return 'dot-green'
-  if (acc >= 0.6) return 'dot-yellow'
+function dotClass(m: number) {
+  if (m >= 0.7) return 'dot-green'
+  if (m >= 0.4) return 'dot-yellow'
   return 'dot-red'
 }
 
@@ -185,9 +186,11 @@ function formatDate(iso: string) {
   return `${M}月${D}日`
 }
 
-// M46 — 跳转趋势页
-function goTrend(kpKey: string) {
-  uni.navigateTo({ url: `/pages/kp-mastery/trend?kpKey=${encodeURIComponent(kpKey)}` })
+// M46 — 跳转趋势页（按 node_id;未挂 node 的历史条目不跳）
+function goTrend(nodeId: string | null, name = '') {
+  if (!nodeId) { uni.showToast({ title: '该知识点暂无趋势', icon: 'none' }); return }
+  const n = name ? `&name=${encodeURIComponent(name)}` : ''
+  uni.navigateTo({ url: `/pages/kp-mastery/trend?nodeId=${encodeURIComponent(nodeId)}${n}` })
 }
 </script>
 
@@ -345,6 +348,7 @@ function goTrend(kpKey: string) {
   .stat-ok    { color: #52c41a; display: flex; align-items: center; gap: 6rpx; }
   .stat-wrong { color: #ff4d4f; display: flex; align-items: center; gap: 6rpx; }
   .stat-total { color: #999; }
+  .stat-evidence { color: #bbb; margin-left: auto; }
   .stat-mark  { width: 26rpx; height: 26rpx; flex-shrink: 0; }
 }
 

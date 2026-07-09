@@ -92,23 +92,79 @@ async def get_kp_mastery_nodes(db: AsyncSession, *, student_id: uuid.UUID) -> li
     rows = (await db.execute(
         select(StudentKp.node_id, KnowledgeNode.name, KnowledgeNode.description,
                StudentKp.practice_count, StudentKp.wrong_count, StudentKp.source_tags,
-               StudentKp.last_practice_at, StudentKp.mastery)
+               StudentKp.last_practice_at,
+               StudentKp.fa_correct, StudentKp.fa_wrong,
+               StudentKp.corrected_count, StudentKp.redo_wrong_count)
         .join(KnowledgeNode, KnowledgeNode.id == StudentKp.node_id)
         .where(StudentKp.student_id == student_id)
     )).all()
     out = []
-    for nid, name, desc, pc, wc, tags, last, mastery in rows:
+    for nid, name, desc, pc, wc, tags, last, fac, faw, kc, kf in rows:
         correct = max((pc or 0) - (wc or 0), 0)
         total = correct + (wc or 0)
+        mastery, events = weighted_mastery(fac, faw, kc, kf)
         out.append({
             "kp_key": name, "kp_id": nid, "kp_description": desc,
             "correct_count": correct, "wrong_count": wc or 0,
-            "accuracy": round(correct / total, 4) if total else 0.0,
+            "accuracy": round(correct / total, 4) if total else 0.0,  # 兼容:原始正确率
+            "mastery": mastery,          # 加权掌握度 0–1(展示口径)
+            "mastery_events": events,    # 事件数 C;< 10 证据不足
             "sources": list(tags or []),
             "last_activity_at": last.isoformat() if last else None,
         })
-    out.sort(key=lambda x: (x["accuracy"], -(x["correct_count"] + x["wrong_count"])))
+    # 弱项在前:按加权掌握度升序(证据越少越靠不确定,用事件数补足次序)
+    out.sort(key=lambda x: (x["mastery"], -x["mastery_events"]))
     return out
+
+
+async def get_kp_mastery_trend(
+    db: AsyncSession, *, student_id: uuid.UUID, node_id: uuid.UUID, days: int = 30
+) -> list[dict]:
+    """某 node 近 N 天的**加权掌握度**日趋势(从 answer_log 逐事件重放,无需历史快照)。
+
+    重放规则与写侧(log_answer / wrong_review._grade_and_log)一致:
+      · 非订正(feature!='review')且该题首次出现 → 首答对/错(fa)。
+      · 订正(feature='review'):答对且该题首次订正对 → Kc;答错 → Kf(每次)。
+    每个事件后按 weighted_mastery 计当前掌握度,同一天以最后一个事件为准(日末值)。
+    返回按日期升序、仅活动日的点:[{date, mastery, mastery_events}]。
+    """
+    from datetime import date as _date, timedelta
+    from app.models.d16_question_domain import AnswerLog
+
+    rows = (await db.execute(
+        select(AnswerLog.question_id, AnswerLog.is_correct,
+               AnswerLog.feature, AnswerLog.answered_at)
+        .where(AnswerLog.student_id == student_id, AnswerLog.node_id == node_id)
+        .order_by(AnswerLog.answered_at.asc())
+    )).all()
+
+    fa_c = fa_w = kc = kf = 0
+    seen: set = set()          # 出现过的题(判首次)
+    review_ok: set = set()     # 已计过订正对的题(Kc 每题一次)
+    by_day: dict[str, dict] = {}
+    for qid, is_correct, feature, answered_at in rows:
+        first_seen = qid not in seen
+        if feature != "review":
+            if first_seen:
+                if is_correct:
+                    fa_c += 1
+                else:
+                    fa_w += 1
+        else:
+            if is_correct:
+                if qid not in review_ok:
+                    kc += 1
+                    review_ok.add(qid)
+            else:
+                kf += 1
+        seen.add(qid)
+        m, c = weighted_mastery(fa_c, fa_w, kc, kf)
+        day = answered_at.date().isoformat()
+        by_day[day] = {"date": day, "mastery": m, "mastery_events": c}   # 日末值
+
+    since = (_date.today() - timedelta(days=days - 1)).isoformat()
+    return sorted((p for d, p in by_day.items() if d >= since),
+                  key=lambda p: p["date"])
 
 
 async def upsert_mastery(

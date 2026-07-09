@@ -93,6 +93,29 @@ async def test_first_attempt_counts_once_and_excludes_review(db_session):
                                 sk.corrected_count, sk.redo_wrong_count)[0] == 0.0
 
 
+@pytest.mark.asyncio
+async def test_trend_reconstructs_from_answer_log(db_session):
+    """趋势:从 answer_log 重放 首答/订正 → 当日日末掌握度。校验 fa/Kc/Kf 分支。"""
+    db = db_session
+    sid, nid = uuid.uuid4(), await _seed_node(db)
+    q2 = uuid.uuid4()
+
+    async def log(qid, correct, feature="practice"):
+        await mastery_judge_service.log_answer(
+            db, student_id=sid, q_scope="platform", question_id=qid,
+            node_id=nid, is_correct=correct, feature=feature)
+
+    await log(uuid.uuid4(), True)                     # 首答对 → fa_c=1
+    await log(q2, False)                              # 首答错 → fa_w=1
+    await log(q2, True, feature="review")             # 该题首次订正对 → Kc=1
+    await log(uuid.uuid4(), False, feature="review")  # 首事件即订正错 → Kf=1(不计首答)
+
+    pts = await kms.get_kp_mastery_trend(db, student_id=sid, node_id=nid, days=30)
+    assert len(pts) == 1                              # 同一天 → 一个日末点
+    # weighted(1,1,1,1): S=1-1.5+0.3-0.3=-0.5<0 → 0.0;C=4
+    assert pts[0]["mastery"] == 0.0 and pts[0]["mastery_events"] == 4
+
+
 async def _seed_wrong(db, sid, nid, answer="B") -> uuid.UUID:
     """建一道 platform_question(答案 B/单选)+ 指向它、挂 node 的 open wrong_record。"""
     qid, rid = uuid.uuid4(), uuid.uuid4()

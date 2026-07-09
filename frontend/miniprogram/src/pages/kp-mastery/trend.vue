@@ -12,29 +12,22 @@
 
     <view v-else>
 
-      <!-- 当前正确率概览 -->
+      <!-- 当前掌握度概览 -->
       <view class="card overview-card">
-        <view class="ov-kp">{{ kpKey }}</view>
+        <view class="ov-kp">{{ kpName }}</view>
         <view class="ov-row">
           <view class="ov-item">
-            <text class="ov-num" :class="accClass(latest.accuracy)">
-              {{ pct(latest.accuracy) }}
+            <text class="ov-num" :class="accClass(latest.mastery)">
+              {{ pct(latest.mastery) }}
             </text>
-            <text class="ov-label">当前正确率</text>
+            <text class="ov-label">当前掌握度</text>
           </view>
           <view class="ov-item">
-            <text class="ov-num">{{ latest.correct_count + latest.wrong_count }}</text>
-            <text class="ov-label">累计答题</text>
-          </view>
-          <view class="ov-item">
-            <text class="ov-num text-green">{{ latest.correct_count }}</text>
-            <text class="ov-label">答对</text>
-          </view>
-          <view class="ov-item">
-            <text class="ov-num text-red">{{ latest.wrong_count }}</text>
-            <text class="ov-label">答错</text>
+            <text class="ov-num">{{ latest.mastery_events }}</text>
+            <text class="ov-label">判定事件数</text>
           </view>
         </view>
+        <text v-if="latest.mastery_events < 10" class="ov-evidence">证据不足:多练几题评估更准</text>
       </view>
 
       <!-- 天数切换 -->
@@ -50,14 +43,14 @@
 
       <!-- CSS Sparkline 趋势图 -->
       <view class="card chart-card">
-        <view class="chart-title">正确率趋势</view>
+        <view class="chart-title">掌握度趋势</view>
 
         <!-- 纵轴刻度 -->
         <view class="chart-area">
           <view class="y-axis">
             <text class="y-label">100%</text>
-            <text class="y-label">80%</text>
-            <text class="y-label">60%</text>
+            <text class="y-label">70%</text>
+            <text class="y-label">40%</text>
             <text class="y-label">0%</text>
           </view>
 
@@ -74,8 +67,8 @@
                 <view class="bar-track">
                   <view
                     class="bar-fill"
-                    :class="accClass(p.accuracy)"
-                    :style="{ height: barHeight(p.accuracy) }"
+                    :class="accClass(p.mastery)"
+                    :style="{ height: barHeight(p.mastery) }"
                   />
                 </view>
                 <!-- 日期标签（每隔几天显示一个） -->
@@ -87,20 +80,20 @@
 
         <!-- 参考线 -->
         <view class="ref-lines">
-          <view class="ref-line ref-80" />
-          <view class="ref-line ref-60" />
+          <view class="ref-line ref-70" />
+          <view class="ref-line ref-40" />
         </view>
 
-        <!-- 图例 -->
+        <!-- 图例（分档 0.4/0.7）-->
         <view class="legend-row">
           <view class="legend-item">
-            <view class="legend-dot dot-green" /><text class="legend-label">≥80% 已掌握</text>
+            <view class="legend-dot dot-green" /><text class="legend-label">≥70% 已掌握</text>
           </view>
           <view class="legend-item">
-            <view class="legend-dot dot-yellow" /><text class="legend-label">60-80% 较熟练</text>
+            <view class="legend-dot dot-yellow" /><text class="legend-label">40-70% 待巩固</text>
           </view>
           <view class="legend-item">
-            <view class="legend-dot dot-red" /><text class="legend-label">&lt;60% 需加强</text>
+            <view class="legend-dot dot-red" /><text class="legend-label">&lt;40% 需加强</text>
           </view>
         </view>
       </view>
@@ -110,18 +103,14 @@
         <view class="detail-date"><view class="ic ic-calendar detail-date-ic" /><text>{{ displayPoints[selectedPoint]?.date ?? '' }}</text></view>
         <view class="detail-row">
           <view class="detail-item">
-            <text class="detail-num" :class="accClass(displayPoints[selectedPoint]?.accuracy ?? 0)">
-              {{ pct(displayPoints[selectedPoint]?.accuracy ?? 0) }}
+            <text class="detail-num" :class="accClass(displayPoints[selectedPoint]?.mastery ?? 0)">
+              {{ pct(displayPoints[selectedPoint]?.mastery ?? 0) }}
             </text>
-            <text class="detail-label">正确率</text>
+            <text class="detail-label">掌握度</text>
           </view>
           <view class="detail-item">
-            <text class="detail-num text-green">{{ displayPoints[selectedPoint]?.correct_count ?? 0 }}</text>
-            <text class="detail-label">累计答对</text>
-          </view>
-          <view class="detail-item">
-            <text class="detail-num text-red">{{ displayPoints[selectedPoint]?.wrong_count ?? 0 }}</text>
-            <text class="detail-label">累计答错</text>
+            <text class="detail-num">{{ displayPoints[selectedPoint]?.mastery_events ?? 0 }}</text>
+            <text class="detail-label">判定事件数</text>
           </view>
         </view>
       </view>
@@ -138,11 +127,11 @@
           <view class="list-bar-track">
             <view
               class="list-bar-fill"
-              :class="accClass(p.accuracy)"
-              :style="{ width: Math.max(4, Math.round(p.accuracy * 100)) + '%' }"
+              :class="accClass(p.mastery)"
+              :style="{ width: Math.max(4, Math.round(p.mastery * 100)) + '%' }"
             />
           </view>
-          <text class="list-pct" :class="accClass(p.accuracy)">{{ pct(p.accuracy) }}</text>
+          <text class="list-pct" :class="accClass(p.mastery)">{{ pct(p.mastery) }}</text>
         </view>
       </view>
 
@@ -155,7 +144,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { getKpTrend, type KpTrendPoint } from '@/api/kpMastery'
 
 const loading = ref(true)
-const kpKey = ref('')
+const nodeId = ref('')
+const kpName = ref('')
 const points = ref<KpTrendPoint[]>([])
 const selectedDays = ref(30)
 const selectedPoint = ref(0)
@@ -165,15 +155,16 @@ const PERIODS = [7, 14, 30]
 onMounted(async () => {
   const pages = getCurrentPages()
   const page = pages[pages.length - 1] as any
-  kpKey.value = decodeURIComponent(page.options?.kpKey || '')
-  if (kpKey.value) uni.setNavigationBarTitle({ title: kpKey.value + ' 趋势' })
+  nodeId.value = decodeURIComponent(page.options?.nodeId || '')
+  kpName.value = decodeURIComponent(page.options?.name || '')
+  uni.setNavigationBarTitle({ title: (kpName.value || '掌握度') + ' 趋势' })
   await loadTrend()
 })
 
 async function loadTrend() {
   loading.value = true
   try {
-    points.value = await getKpTrend(kpKey.value, selectedDays.value)
+    points.value = await getKpTrend(nodeId.value, selectedDays.value)
     selectedPoint.value = Math.max(0, points.value.length - 1)
   } catch (e: any) {
     uni.showToast({ title: e?.message || '加载失败', icon: 'none' })
@@ -193,20 +184,20 @@ const displayPoints = computed(() => points.value)
 const latest = computed(() =>
   points.value.length > 0
     ? points.value[points.value.length - 1]
-    : { accuracy: 0, correct_count: 0, wrong_count: 0, date: '' }
+    : { mastery: 0, mastery_events: 0, date: '' }
 )
 
 /** 柱高度 0% ~ 100%，最低保留 4rpx 可见 */
-function barHeight(accuracy: number): string {
-  const pctVal = Math.max(3, Math.round(accuracy * 100))
+function barHeight(mastery: number): string {
+  const pctVal = Math.max(3, Math.round(mastery * 100))
   return `${pctVal}%`
 }
 
-function pct(acc: number) { return `${(acc * 100).toFixed(0)}%` }
+function pct(m: number) { return `${(m * 100).toFixed(0)}%` }
 
-function accClass(acc: number) {
-  if (acc >= 0.8) return 'acc-green'
-  if (acc >= 0.6) return 'acc-yellow'
+function accClass(m: number) {
+  if (m >= 0.7) return 'acc-green'
+  if (m >= 0.4) return 'acc-yellow'
   return 'acc-red'
 }
 
@@ -244,6 +235,7 @@ function shortDate(dateStr: string, i: number): string {
   .ov-item { display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
   .ov-num { font-size: 40rpx; font-weight: 700; color: #333; }
   .ov-label { font-size: 22rpx; color: #999; }
+  .ov-evidence { display: block; margin-top: 16rpx; font-size: 22rpx; color: #bbb; }
 }
 
 /* 天数选择 */
@@ -288,8 +280,8 @@ function shortDate(dateStr: string, i: number): string {
 .ref-line {
   position: absolute; left: 52rpx; right: 24rpx; height: 1rpx; border-top: 1rpx dashed;
 }
-.ref-80 { bottom: 226rpx; border-color: #52c41a; }  /* 80%: 200rpx * 0.8 = 160, 加 padding */
-.ref-60 { bottom: 186rpx; border-color: #ffb020; }  /* 60% */
+.ref-70 { bottom: 206rpx; border-color: #52c41a; }  /* 70% 掌握线（≈2rpx/1%）*/
+.ref-40 { bottom: 146rpx; border-color: #ffb020; }  /* 40% 薄弱线 */
 
 /* 图例 */
 .legend-row { display: flex; gap: 24rpx; margin-top: 16rpx; flex-wrap: wrap; }
