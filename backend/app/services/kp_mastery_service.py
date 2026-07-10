@@ -84,12 +84,29 @@ def review_suggestion(
     return level, msg
 
 
+async def grammar_overrides(
+    db: AsyncSession, *, student_id: uuid.UUID, nodes_with_code: list
+) -> dict:
+    """语法类 node 的掌握度改由**四维派生(瓶颈)**,与详情 g4-card 单一真源;非语法/无四维记录
+    的 node 不在结果里(回退加权口径)。nodes_with_code: [(node_id, code), …]。
+    返回 {node_id: (mastery, events)}。"""
+    from app.services.kp_lecture_service import kp_type_of
+    from app.services import grammar_probe_service
+    gids = [nid for nid, code in nodes_with_code if kp_type_of(code) == "grammar"]
+    if not gids:
+        return {}
+    return await grammar_probe_service.overall_mastery_for_nodes(
+        db, student_id=student_id, node_ids=gids)
+
+
 async def get_kp_mastery_nodes(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
-    """B:个人知识点掌握(node 维度,直读新表 student_kp)→ /kp-mastery 形状。弱项在前。"""
+    """B:个人知识点掌握(node 维度,直读新表 student_kp)→ /kp-mastery 形状。弱项在前。
+    语法类 node 的掌握度用四维派生(与详情一致);其余用加权口径。"""
     from app.models.d15_knowledge_graph import KnowledgeNode
     from app.models.d16_question_domain import StudentKp
     rows = (await db.execute(
         select(StudentKp.node_id, KnowledgeNode.name, KnowledgeNode.description,
+               KnowledgeNode.code,
                StudentKp.practice_count, StudentKp.wrong_count, StudentKp.source_tags,
                StudentKp.last_practice_at,
                StudentKp.fa_correct, StudentKp.fa_wrong,
@@ -97,11 +114,13 @@ async def get_kp_mastery_nodes(db: AsyncSession, *, student_id: uuid.UUID) -> li
         .join(KnowledgeNode, KnowledgeNode.id == StudentKp.node_id)
         .where(StudentKp.student_id == student_id)
     )).all()
+    g_over = await grammar_overrides(
+        db, student_id=student_id, nodes_with_code=[(r[0], r[3]) for r in rows])
     out = []
-    for nid, name, desc, pc, wc, tags, last, fac, faw, kc, kf in rows:
+    for nid, name, desc, code, pc, wc, tags, last, fac, faw, kc, kf in rows:
         correct = max((pc or 0) - (wc or 0), 0)
         total = correct + (wc or 0)
-        mastery, events = weighted_mastery(fac, faw, kc, kf)
+        mastery, events = g_over.get(nid) or weighted_mastery(fac, faw, kc, kf)
         out.append({
             "kp_key": name, "kp_id": nid, "kp_description": desc,
             "correct_count": correct, "wrong_count": wc or 0,

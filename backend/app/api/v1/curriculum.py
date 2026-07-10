@@ -123,10 +123,12 @@ async def get_kp_mastery(
                         "total": 0, "accuracy": None, "mastery": None, "mastery_events": 0,
                         "fa_correct": 0, "fa_wrong": 0, "corrected_count": 0, "redo_wrong_count": 0,
                         "last_activity_at": None})
-    from app.services.kp_mastery_service import weighted_mastery
+    from app.services.kp_mastery_service import weighted_mastery, grammar_overrides
     correct = max((sk.practice_count or 0) - (sk.wrong_count or 0), 0)
     total = correct + (sk.wrong_count or 0)
-    mastery, events = weighted_mastery(
+    # 语法类考点掌握度由四维派生(与 g4-card 详情一致);其余用加权口径
+    g_over = await grammar_overrides(db, student_id=current_user.id, nodes_with_code=[(node_id, node.code)])
+    mastery, events = g_over.get(node_id) or weighted_mastery(
         sk.fa_correct, sk.fa_wrong, sk.corrected_count, sk.redo_wrong_count)
     return make_ok({
         "kp_name": node.name,
@@ -172,14 +174,22 @@ async def get_unit_mastery_summary(
     )).scalars().all() if node_ids else []
     sk_map = {sk.node_id: sk for sk in sk_rows}
 
-    from app.services.kp_mastery_service import weighted_mastery
+    from app.services.kp_mastery_service import weighted_mastery, grammar_overrides
+    # 语法类考点掌握度由四维派生(与详情一致);其余用加权口径
+    g_over = await grammar_overrides(
+        db, student_id=current_user.id, nodes_with_code=[(n.id, n.code) for n in nodes])
     result = []
     for n in nodes:
         sk = sk_map.get(n.id)
         correct = max((sk.practice_count or 0) - (sk.wrong_count or 0), 0) if sk else 0
         total = correct + (sk.wrong_count or 0) if sk else 0
-        mastery, events = weighted_mastery(
-            sk.fa_correct, sk.fa_wrong, sk.corrected_count, sk.redo_wrong_count) if sk else (None, 0)
+        if n.id in g_over:
+            mastery, events = g_over[n.id]
+        elif sk:
+            mastery, events = weighted_mastery(
+                sk.fa_correct, sk.fa_wrong, sk.corrected_count, sk.redo_wrong_count)
+        else:
+            mastery, events = None, 0
         result.append({
             "kp_id": str(n.id),
             "kp_name": n.name,

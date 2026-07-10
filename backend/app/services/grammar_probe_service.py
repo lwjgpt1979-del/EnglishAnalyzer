@@ -36,6 +36,34 @@ _PROD_PASS = 4              # 总分 ≥4/6 且「用对结构」≥1 视为产�
 _RETAIN_LADDER = [3, 7, 15, 30, 60]
 RETAIN_MIN_DAYS = 3        # 至少隔 3 天才复测(破"刷同一套题过拟合")
 
+# 四维派生「单一掌握度%」用的证据基数下限:四维 BKT 本身已含蒙对/手滑,评估靠 BKT 收敛
+# 而非事件计数,故对四维节点用固定基数(不触发加权口径的「证据不足 <10」提示)。
+GRAMMAR_EVIDENCE_FLOOR = 10
+
+
+async def overall_mastery_for_nodes(
+    db: AsyncSession, *, student_id: uuid.UUID, node_ids: list,
+) -> dict:
+    """语法四维 → 单一聚合掌握度(**瓶颈:最弱的已练维**),供图谱页/单元综合等聚合视图,
+    与知识点详情 g4-card 同源。返回 {node_id: (mastery 0–1, events)};无四维记录或全维未练的
+    node 不在结果里(调用方对这类 node 回退加权口径)。transfer_ok 是独立门(不并入%)。"""
+    if not node_ids:
+        return {}
+    rows = (await db.execute(
+        sa.select(StudentGrammarMastery).where(
+            StudentGrammarMastery.student_id == student_id,
+            StudentGrammarMastery.kp_id.in_(list(node_ids)),
+        )
+    )).scalars().all()
+    out: dict = {}
+    for m in rows:
+        dims = [float(d) for d in (m.mastery_recognize, m.mastery_detect, m.mastery_produce)
+                if d is not None]
+        if not dims:
+            continue
+        out[m.kp_id] = (round(min(dims), 4), GRAMMAR_EVIDENCE_FLOOR)
+    return out
+
 
 # ── 探针库(KP 级公共缓存)────────────────────────────────────────────
 async def ensure_probes(db: AsyncSession, kp: KnowledgeNode) -> dict:
