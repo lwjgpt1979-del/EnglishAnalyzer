@@ -307,32 +307,9 @@ async def vocab_cards(db: AsyncSession, student_id, *, limit: int = 12) -> list[
     return out
 
 
-async def _wrong_kp_names(db: AsyncSession, student_id, *, limit: int = 5) -> list[str]:
-    """学生错题关联的高频知识点。"""
-    from sqlalchemy import func
-    from app.models.d3_wrong_questions import WrongQuestion
-    from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
-    rows = (await db.execute(
-        select(KnowledgePoint.name, func.count().label("c"))
-        .join(WrongQuestionKnowledgePoint,
-              WrongQuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-        .join(WrongQuestion, WrongQuestion.id == WrongQuestionKnowledgePoint.wrong_question_id)
-        .where(WrongQuestion.student_id == student_id,
-               WrongQuestion.is_mastered.is_(False))
-        .group_by(KnowledgePoint.name).order_by(func.count().desc()).limit(limit)
-    )).all()
-    return [r[0] for r in rows if r[0]]
-
-
-async def _wq_kp_names(db: AsyncSession, wq_id, *, limit: int = 4) -> list[str]:
-    from app.models.d4_knowledge import KnowledgePoint, WrongQuestionKnowledgePoint
-    rows = (await db.execute(
-        select(KnowledgePoint.name)
-        .join(WrongQuestionKnowledgePoint,
-              WrongQuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-        .where(WrongQuestionKnowledgePoint.wrong_question_id == wq_id).limit(limit)
-    )).all()
-    return [r[0] for r in rows if r[0]]
+# R8 Phase6b 已退役 _wrong_kp_names / _wq_kp_names:旧错题 KP 名原读 wrong_question_knowledge_points
+# (硬 FK→knowledge_points)。错题真源已是 node 化 wrong_record(见 _top_wrong_from_record);旧
+# WrongQuestion 回退路径改用其 tags 作话题标签(见 _top_due_wrong),不再读旧 KP 链。
 
 
 async def _top_wrong_from_record(db: AsyncSession, student_id) -> dict | None:
@@ -394,7 +371,8 @@ async def _top_due_wrong(db: AsyncSession, student_id) -> dict | None:
         "stem": (wq.question_text or "").strip()[:300],
         "answer": (wq.correct_answer or "").strip()[:200],
         "student_answer": (wq.student_answer or "").strip()[:200],
-        "kps": await _wq_kp_names(db, wq.id),
+        # R8 Phase6b:旧 WrongQuestion 无 node,话题标签改用其 tags(不再读旧 KP 链)
+        "kps": [t for t in (wq.tags or []) if isinstance(t, str)][:4],
     }
 
 

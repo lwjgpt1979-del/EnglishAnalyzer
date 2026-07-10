@@ -437,75 +437,9 @@ async def test_list_analyses_endpoint(client: AsyncClient, auth_headers):
 import pytest_asyncio as _pytest_asyncio_m3  # noqa: F401 (确保已导入)
 
 
-async def _make_kp(db_session):
-    """建一个最小知识点，返回 ORM 对象。"""
-    from app.models.d4_knowledge import KnowledgePoint
-    kp = KnowledgePoint(
-        id=uuid.uuid4(),
-        code=f"KP_{uuid.uuid4().hex[:8]}",
-        name="一般过去时",
-        category="grammar",
-        applicable_grades=["七年级"],
-        applicable_textbooks=["人教版"],
-    )
-    db_session.add(kp)
-    await db_session.flush()
-    return kp
-
-
-async def _link_wq_kp(db_session, wq_id, kp_id):
-    from app.models.d4_knowledge import WrongQuestionKnowledgePoint
-    db_session.add(WrongQuestionKnowledgePoint(
-        wrong_question_id=wq_id, knowledge_point_id=kp_id,
-    ))
-    await db_session.flush()
-
-
-@pytest.mark.asyncio
-async def test_list_wrong_questions_by_kp_service(db_session, test_student):
-    from app.services.wrong_question_service import list_wrong_questions_by_kp
-
-    kp = await _make_kp(db_session)
-    # 关联到该 KP 的错题
-    wq_linked = await create_wrong_question(
-        db_session, student_id=test_student.id,
-        data=WrongQuestionCreate(source_image_url="https://cdn.example.com/linked.jpg"),
-    )
-    await _link_wq_kp(db_session, wq_linked.id, kp.id)
-    # 未关联的错题（不应出现）
-    await create_wrong_question(
-        db_session, student_id=test_student.id,
-        data=WrongQuestionCreate(source_image_url="https://cdn.example.com/unlinked.jpg"),
-    )
-
-    items, total = await list_wrong_questions_by_kp(
-        db_session, student_id=test_student.id, kp_id=kp.id, skip=0, limit=20,
-    )
-    assert total == 1
-    assert len(items) == 1
-    assert items[0].id == wq_linked.id
-
-
-@pytest.mark.asyncio
-async def test_list_wrong_questions_by_kp_isolates_students(db_session, test_student):
-    """别的学生关联到同一 KP 的错题，不应被当前学生看到。"""
-    from app.services.auth_service import upsert_user
-    from app.services.wrong_question_service import list_wrong_questions_by_kp
-
-    kp = await _make_kp(db_session)
-    other = await upsert_user(db_session, openid=f"wq_other_{uuid.uuid4().hex[:8]}")
-    await db_session.flush()
-    other_wq = await create_wrong_question(
-        db_session, student_id=other.id,
-        data=WrongQuestionCreate(source_image_url="https://cdn.example.com/other.jpg"),
-    )
-    await _link_wq_kp(db_session, other_wq.id, kp.id)
-
-    items, total = await list_wrong_questions_by_kp(
-        db_session, student_id=test_student.id, kp_id=kp.id,
-    )
-    assert total == 0
-    assert items == []
+# R8 Phase6b:按 KP 查错题的 service(list_wrong_questions_by_kp,join wrong_question_knowledge_points)
+# 及其 _make_kp/_link_wq_kp 种子已退役——错题按知识点查已改走节点化 wrong_center_service.list_by_node
+# (见下方 API 测试,直读 wrong_record)。对应两个 service 单测一并移除。
 
 
 @pytest.mark.asyncio

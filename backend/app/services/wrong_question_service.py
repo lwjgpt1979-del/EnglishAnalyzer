@@ -113,39 +113,9 @@ async def list_wrong_questions(
     return list(rows.scalars().all()), total
 
 
-async def list_wrong_questions_by_kp(
-    db: AsyncSession,
-    *,
-    student_id: uuid.UUID,
-    kp_id: uuid.UUID,
-    skip: int = 0,
-    limit: int = 20,
-) -> tuple[list[WrongQuestion], int]:
-    """按知识点查当前学生的错题（join 关联表 wrong_question_knowledge_points），
-
-    按创建时间倒序，返回 (items, total)。M3 关联视图用（D-093）。
-    """
-    from app.models.d4_knowledge import WrongQuestionKnowledgePoint
-
-    base = (
-        select(WrongQuestion)
-        .join(
-            WrongQuestionKnowledgePoint,
-            WrongQuestionKnowledgePoint.wrong_question_id == WrongQuestion.id,
-        )
-        .where(
-            WrongQuestion.student_id == student_id,
-            WrongQuestionKnowledgePoint.knowledge_point_id == kp_id,
-        )
-    )
-    total: int = (await db.execute(
-        select(func.count()).select_from(base.subquery())
-    )).scalar_one()
-
-    rows = await db.execute(
-        base.order_by(WrongQuestion.created_at.desc()).offset(skip).limit(limit)
-    )
-    return list(rows.scalars().all()), total
+# R8 Phase6b 已退役 list_wrong_questions_by_kp:原 join wrong_question_knowledge_points(硬 FK→
+# knowledge_points)按 KP 查错题。已被节点化 wrong_center_service.list_by_node 取代(见 API
+# /wrong-questions/by-kp,直读 wrong_record),本函数无调用方,一并删除。
 
 
 async def mark_mastered(
