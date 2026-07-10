@@ -159,18 +159,22 @@ async def test_get_adaptive_set_excludes_already_done(
 ):
     """已做过的题（sim_practice_records 里有记录）不应重复出现。"""
     from app.services import adaptive_question_service
-    from app.services.question_ai_service import generate_questions
-    from app.services.question_service import persist_questions
 
-    # 先生成并存一道题
-    ai_qs = await generate_questions(
-        kp_name=kp.name,
-        kp_category=kp.category,
-        kp_description=kp.description,
-        count=1,
+    # 直接建一道仿真题（question_service.persist_questions 已退役，改直插模型）
+    sq = SimulatedQuestion(
+        id=uuid.uuid4(),
+        knowledge_point_id=kp.id,
+        question_type="单选",
+        stem="占位题干",
+        options=["A. x", "B. y", "C. z", "D. w"],
+        answer="B",
+        explanation="占位解析",
+        difficulty=1,
+        status="published",
     )
-    saved = await persist_questions(db, kp_id=kp.id, questions=ai_qs, status="published")
+    db.add(sq)
     await db.flush()
+    saved = [sq]
 
     # 记录该学生已做过这道题
     rec = SimPracticeRecord(

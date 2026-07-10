@@ -14,7 +14,6 @@ from app.core.database import _async_session_factory
 from app.main import app
 from app.models.d4_knowledge import KnowledgePoint
 from app.models.d12_v2_exams import SimulatedQuestion
-from app.services import question_ai_service, question_service
 
 
 @pytest.fixture(autouse=True)
@@ -38,9 +37,8 @@ async def _login(client: AsyncClient, suffix: str) -> dict:
 async def _seed_kp_with_questions() -> tuple[uuid.UUID, uuid.UUID]:
     """返回 (kp_id, single_choice_question_id)；新 session commit，跨请求可见。
 
-    dev mock 会生成 2 道单选（answer 分别为 B / A），这里显式锁定 answer="B"
-    的那道单选返回，保证 test_submit_correct/wrong_attempt 的 == "B" 断言确定，
-    根治 .limit(1) 无 ORDER BY 导致的偶发 flaky。
+    直插 5 道仿真题（question_service.persist_questions 已退役），含一道 answer="B"
+    的单选，保证 test_submit_correct/wrong_attempt 的 == "B" 断言确定。
     """
     async with _async_session_factory() as s:
         kp = KnowledgePoint(
@@ -54,10 +52,20 @@ async def _seed_kp_with_questions() -> tuple[uuid.UUID, uuid.UUID]:
         )
         s.add(kp)
         await s.flush()
-        qs = await question_ai_service.generate_questions(
-            kp_name=kp.name, kp_category="grammar", kp_description="d", count=5,
-        )
-        await question_service.persist_questions(s, kp_id=kp.id, questions=qs, status="published")
+        specs = [
+            ("单选", ["A. x", "B. y", "C. z", "D. w"], "B"),
+            ("单选", ["A. x", "B. y", "C. z", "D. w"], "A"),
+            ("填空", None, "goes"),
+            ("判断", None, "对"),
+            ("填空", None, "can|may"),
+        ]
+        for qtype, opts, ans in specs:
+            s.add(SimulatedQuestion(
+                id=uuid.uuid4(), knowledge_point_id=kp.id,
+                question_type=qtype, stem=f"占位 {qtype} 题干",
+                options=opts, answer=ans, explanation="占位解析",
+                difficulty=1, status="published",
+            ))
         await s.commit()
 
         single_b = (await s.execute(
@@ -241,14 +249,26 @@ async def _seed_kp_with_dimension_questions() -> uuid.UUID:
         )
         s.add(kp)
         await s.flush()
-        for dim in ("listening", "dictation"):
-            qs = await question_ai_service.generate_questions(
-                kp_name=kp.name, kp_category="grammar", kp_description="d",
-                dimension=dim, count=3,
-            )
-            await question_service.persist_questions(
-                s, kp_id=kp.id, questions=qs, dimension=dim, status="published",
-            )
+        dim_specs = {
+            "listening": [
+                ("单选", ["A. x", "B. y", "C. z", "D. w"], "B"),
+                ("阅读", ["A. x", "B. y", "C. z", "D. w"], "C"),
+                ("单选", ["A. x", "B. y", "C. z", "D. w"], "A"),
+            ],
+            "dictation": [
+                ("填空", None, "apple"),
+                ("填空", None, "banana"),
+                ("填空", None, "cat"),
+            ],
+        }
+        for dim, specs in dim_specs.items():
+            for qtype, opts, ans in specs:
+                s.add(SimulatedQuestion(
+                    id=uuid.uuid4(), knowledge_point_id=kp.id,
+                    question_type=qtype, stem=f"占位 {qtype} 题干",
+                    options=opts, answer=ans, explanation="占位解析",
+                    difficulty=1, dimension=dim, status="published",
+                ))
         await s.commit()
         return kp.id
 
