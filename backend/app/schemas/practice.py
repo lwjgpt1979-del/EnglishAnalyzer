@@ -19,7 +19,8 @@ class PracticeQuestionOut(BaseModel):
     """下发给学生的题目（不含答案与解析，防作弊）。"""
 
     id: uuid.UUID
-    knowledge_point_id: uuid.UUID
+    # R8 Phase6-前置:现承载 node_id(未命中受控树时为 None);字段名保持前端兼容
+    knowledge_point_id: uuid.UUID | None = None
     knowledge_point_name: str
     question_type: str
     difficulty: int

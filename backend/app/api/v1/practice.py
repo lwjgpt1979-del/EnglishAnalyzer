@@ -4,13 +4,11 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
 from app.core.security import get_current_user
 from app.models.d1_users import User
-from app.models.d4_knowledge import KnowledgePoint
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.practice import (
     GenerateQuestionsRequest,
@@ -48,16 +46,13 @@ async def generate_questions(
     await entitlement_service.consume(db, user_id=current_user.id, key="practice.generate")
     await db.commit()
 
-    kp_id = questions[0].knowledge_point_id
-    kp_result = await db.execute(select(KnowledgePoint).where(KnowledgePoint.id == kp_id))
-    kp = kp_result.scalar_one()
-
+    # R8 Phase6-前置:知识点 id/名改取题上的 node_id + content 里的知识点名(生成时已写),不再查旧 knowledge_points。
     return make_ok(
         [
             PracticeQuestionOut(
                 id=q.id,
-                knowledge_point_id=q.knowledge_point_id,
-                knowledge_point_name=kp.name,
+                knowledge_point_id=q.node_id,
+                knowledge_point_name=str(q.content.get("knowledge_point") or ""),
                 question_type=str(q.question_type),
                 difficulty=q.difficulty,
                 stem=q.content["stem"],

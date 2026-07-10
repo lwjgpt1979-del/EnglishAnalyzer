@@ -30,8 +30,13 @@ class AiQuestion(Base):
     __tablename__ = "ai_questions"
 
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # R8 Phase6-前置:练习知识点改挂 KP-First 的 node(match_kp 命中→node_id,未命中→NULL)。
+    node_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=True
+    )
+    # 旧硬 FK:已改可空、生成不再必写,列体待 Phase6 连同 knowledge_points 一并 drop。
     knowledge_point_id = mapped_column(
-        UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), nullable=False
+        UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), nullable=True
     )
     unit_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("curriculum_units.id"), nullable=True

@@ -94,7 +94,6 @@ from app.core.exceptions import AppError
 from app.services.auth_service import upsert_user
 from app.services.practice_service import (
     generate_practice_questions,
-    get_or_create_knowledge_point,
     get_practice_history,
     get_practice_stats,
     get_question,
@@ -138,20 +137,8 @@ def _make_mock_response(json_text: str):
     return resp
 
 
-@pytest.mark.asyncio
-async def test_get_or_create_knowledge_point_creates(db_session):
-    kp = await get_or_create_knowledge_point(db_session, name="一般现在时")
-    await db_session.flush()
-    assert kp.name == "一般现在时"
-    assert kp.id is not None
-
-
-@pytest.mark.asyncio
-async def test_get_or_create_knowledge_point_is_idempotent(db_session):
-    kp1 = await get_or_create_knowledge_point(db_session, name="时态混淆")
-    await db_session.flush()
-    kp2 = await get_or_create_knowledge_point(db_session, name="时态混淆")
-    assert kp1.id == kp2.id
+# R8 Phase6-前置:get_or_create_knowledge_point 已退役(练习不再建 knowledge_points,
+# 知识点改经 match_kp 挂 node),对应两个单测一并移除。
 
 
 @pytest.mark.asyncio

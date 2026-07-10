@@ -1,8 +1,8 @@
 """AI 练习模块业务逻辑。
 
 功能：
-- get_or_create_knowledge_point: 按 name 找或建 KnowledgePoint（满足 ai_questions FK）
-- generate_practice_questions: 调 DeepSeek 生成单选题，写入 ai_questions（dev mock）
+- generate_practice_questions: 调 DeepSeek 生成单选题，写入 ai_questions（dev mock）；
+  知识点经 match_kp 挂 KP-First 的 node(node_id)，不再建旧 knowledge_points（R8 Phase6-前置）
 - get_question: 按 id 取题（含答案，内部用）
 - submit_answer: 服务端判分，写入 practice_records
 - get_practice_history: 学生练习记录分页
@@ -60,32 +60,8 @@ def _slugify_code(name: str) -> str:
     return ascii_part[:40]
 
 
-async def get_or_create_knowledge_point(
-    db: AsyncSession,
-    *,
-    name: str,
-    category: str = "grammar",
-) -> KnowledgePoint:
-    """按 name 查找知识点；不存在则创建（默认 category=grammar）。"""
-    result = await db.execute(select(KnowledgePoint).where(KnowledgePoint.name == name))
-    existing = result.scalar_one_or_none()
-    if existing:
-        return existing
-
-    code = f"auto_{_slugify_code(name)}_{uuid.uuid4().hex[:8]}"
-    kp = KnowledgePoint(
-        id=uuid.uuid4(),
-        code=code,
-        name=name,
-        category=category,  # type: ignore[arg-type]
-        description=None,
-        applicable_grades=[],
-        applicable_textbooks=[],
-        sort_order=0,
-    )
-    db.add(kp)
-    await db.flush()
-    return kp
+# R8 Phase6-前置 已退役 get_or_create_knowledge_point:练习生成不再建 knowledge_points,
+# 知识点改经 match_kp 命中 KP-First 的 node(见 generate_practice_questions / _materialize_from_platform)。
 
 
 def _dev_mock_questions(knowledge_point: str, count: int) -> list[dict]:
@@ -117,7 +93,7 @@ def _dev_mock_questions(knowledge_point: str, count: int) -> list[dict]:
 
 
 async def _materialize_from_platform(
-    db: AsyncSession, *, kp, kp_name: str, count: int, difficulty: int,
+    db: AsyncSession, *, kp_name: str, count: int, difficulty: int,
 ) -> list[AiQuestion]:
     """取材 platform_question 有源题(该 KP 对应 node 的已发布·有内容仿真),物化进 AiQuestion。
 
@@ -155,7 +131,7 @@ async def _materialize_from_platform(
             out.append(existing)
             continue
         q = AiQuestion(
-            id=uuid.uuid4(), knowledge_point_id=kp.id, unit_id=None,
+            id=uuid.uuid4(), node_id=m.node_id, unit_id=None,
             question_type="单选", difficulty=(pq.difficulty or difficulty),
             content={
                 "stem": pq.stem, "options": pq.options, "answer": pq.answer,
@@ -198,11 +174,16 @@ async def generate_practice_questions(
                 raise AppError(code=400, message="暂无薄弱知识点，请先完成练习或上传错题")
             kp_name = report.top_weak_knowledge_points[0].knowledge_point
 
-    kp = await get_or_create_knowledge_point(db, name=kp_name)
+    # R8 Phase6-前置:知识点改挂 KP-First 的 node(match_kp 命中→node_id,未命中→NULL),
+    # 不再经 get_or_create 建 knowledge_points。
+    from app.services.kp_match_service import match_kp as _match_kp
+    _m = await _match_kp(db, raw_name=kp_name, axis_hint="knowledge",
+                         source_type="exam", use_llm=False)
+    node_id = _m.node_id
 
     # R7 收尾:取材优先 platform_question 有源题(真题派生·已发布·有内容),物化进 AiQuestion(作答链不变);
     # 无有源题则回退 AI 生成(系统未上线题库空时即走此回退,有题后自动用平台题)。
-    sourced = await _materialize_from_platform(db, kp=kp, kp_name=kp_name, count=count, difficulty=difficulty)
+    sourced = await _materialize_from_platform(db, kp_name=kp_name, count=count, difficulty=difficulty)
     if sourced:
         return sourced
 
@@ -238,7 +219,7 @@ async def generate_practice_questions(
             continue
         q = AiQuestion(
             id=uuid.uuid4(),
-            knowledge_point_id=kp.id,
+            node_id=node_id,
             unit_id=None,
             question_type="单选",  # type: ignore[arg-type]
             difficulty=difficulty,
@@ -247,6 +228,7 @@ async def generate_practice_questions(
                 "options": rq["options"],
                 "answer": rq["answer"],
                 "explanation": rq["explanation"],
+                "knowledge_point": kp_name,
             },
             is_active=True,
             generated_at=now,
@@ -306,25 +288,28 @@ async def submit_answer(
     # R8:掌握账统一到 student_kp(node)。刷题对错落 answer_log(真值)+ student_kp 投影,
     # 由 mastery_judge_service.log_answer **单一写入**(不再另调 upsert_mastery,避免 node 双计)。
     # 别名精确命中 node 才记(零 LLM、零副作用,不在热路径累加候选);未命中不记,不阻断判分。
-    kp_name = str(question.content.get("knowledge_point", "")) or None
-    if not kp_name and question.knowledge_point_id:
-        kp_obj = (await db.execute(
-            select(KnowledgePoint).where(KnowledgePoint.id == question.knowledge_point_id)
-        )).scalar_one_or_none()
-        if kp_obj:
-            kp_name = kp_obj.name
-    if kp_name:
-        try:
+    # R8 Phase6-前置:node 优先取题上的 node_id(生成时已挂);无则回退旧路径(content 名/旧 kp_id → 别名)。
+    node_id = question.node_id
+    if node_id is None:
+        kp_name = str(question.content.get("knowledge_point", "")) or None
+        if not kp_name and question.knowledge_point_id:
+            kp_obj = (await db.execute(
+                select(KnowledgePoint).where(KnowledgePoint.id == question.knowledge_point_id)
+            )).scalar_one_or_none()
+            if kp_obj:
+                kp_name = kp_obj.name
+        if kp_name:
             from app.models.d15_knowledge_graph import NodeAlias
-            from app.services import mastery_judge_service
             from app.services.kp_match_service import normalize_kp_name
             nn = normalize_kp_name(kp_name)
             node_id = (await db.execute(
                 select(NodeAlias.node_id).where(NodeAlias.alias_norm == nn))).scalar_one_or_none() if nn else None
-            if node_id is not None:
-                await mastery_judge_service.log_answer(
-                    db, student_id=student_id, q_scope="ai", question_id=question_id,
-                    node_id=node_id, is_correct=is_correct, feature="practice")
+    if node_id is not None:
+        try:
+            from app.services import mastery_judge_service
+            await mastery_judge_service.log_answer(
+                db, student_id=student_id, q_scope="ai", question_id=question_id,
+                node_id=node_id, is_correct=is_correct, feature="practice")
         except Exception:  # noqa: BLE001 — 真值记录是旁路,绝不阻断刷题
             pass
 
@@ -361,14 +346,23 @@ async def get_practice_stats(
     *,
     student_id: uuid.UUID,
 ) -> dict:
-    """聚合练习统计：总数、正确数、正确率、按知识点细分。"""
+    """聚合练习统计：总数、正确数、正确率、按知识点细分。
+
+    R8 Phase6-前置:知识点名改取 node(node_id → knowledge_nodes),LEFT JOIN 保全总数;
+    旧无 node 的题回退取题面里的知识点名,再兜底"未知知识点"。
+    """
+    from app.models.d15_knowledge_graph import KnowledgeNode
     result = await db.execute(
         select(
             PracticeRecord.is_correct,
-            KnowledgePoint.name,
+            func.coalesce(
+                KnowledgeNode.name,
+                AiQuestion.content["knowledge_point"].astext,
+                "未知知识点",
+            ).label("name"),
         )
         .join(AiQuestion, AiQuestion.id == PracticeRecord.question_id)
-        .join(KnowledgePoint, KnowledgePoint.id == AiQuestion.knowledge_point_id)
+        .join(KnowledgeNode, KnowledgeNode.id == AiQuestion.node_id, isouter=True)
         .where(PracticeRecord.student_id == student_id)
     )
     rows = result.all()

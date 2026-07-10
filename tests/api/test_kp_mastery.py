@@ -79,6 +79,9 @@ async def _purge_nodes():
                              "(SELECT id FROM knowledge_nodes WHERE code LIKE :p)"), {"p": f"{_NTAG}%"})
         await s.execute(text("DELETE FROM knowledge_node_aliases WHERE node_id IN "
                              "(SELECT id FROM knowledge_nodes WHERE code LIKE :p)"), {"p": f"{_NTAG}%"})
+        # R8 Phase6-前置:练习题现挂 node_id,删 node 前先解 FK 引用
+        await s.execute(text("UPDATE ai_questions SET node_id = NULL WHERE node_id IN "
+                             "(SELECT id FROM knowledge_nodes WHERE code LIKE :p)"), {"p": f"{_NTAG}%"})
         await s.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_NTAG}%"})
         await s.commit()
 
