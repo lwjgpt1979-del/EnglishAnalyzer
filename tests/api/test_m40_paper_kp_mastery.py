@@ -58,6 +58,8 @@ async def _seed_mock_kp_nodes():
         async with _async_session_factory() as s:
             await s.execute(text("DELETE FROM student_kp WHERE node_id = ANY(:ids)"), {"ids": created})
             await s.execute(text("DELETE FROM knowledge_node_aliases WHERE node_id = ANY(:ids)"), {"ids": created})
+            # R8 Phase4:组卷题现挂 node_id,删 node 前先解 FK 引用
+            await s.execute(text("UPDATE user_paper_questions SET node_id = NULL WHERE node_id = ANY(:ids)"), {"ids": created})
             await s.execute(text("DELETE FROM knowledge_nodes WHERE id = ANY(:ids)"), {"ids": created})
             await s.commit()
 

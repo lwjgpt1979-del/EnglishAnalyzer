@@ -84,9 +84,7 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
             # Step 2: DeepSeek 批量归类 KP（M40 新增）
             kp_map: dict[str, str] = await classify_kps(parsed)
 
-            # Step 3: 落库题目 + 题目↔知识点关联 + 写入 student_kp_mastery
-            from app.services.practice_service import get_or_create_knowledge_point
-            from app.models.d13_v2_user_papers import UserPaperQuestionKnowledgePoint
+            # Step 3: 落库题目 + 题目↔node 关联(KP-First)+ 补写掌握账(student_kp/node)
             for pq in parsed:
                 is_wrong = _is_wrong(pq.student_answer, pq.correct_answer)
                 q = UserPaperQuestion(
@@ -102,28 +100,27 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                 db.add(q)
                 await db.flush()   # 取 q.id 以建关联
 
-                # 知识点：归类名 → 标准 KP（get_or_create），建题目↔KP关联 + 写台账
+                # 知识点(KP-First):归类名 → match_kp 命中 node(未命中落候选 pending),
+                # 把 node 挂到题上(q.node_id)+ 掌握账补写(student_kp/node)+ 错题收口 wrong_record
                 qno = pq.question_no or ""
                 kp_key = kp_map.get(qno)
                 if kp_key:
-                    kp = await get_or_create_knowledge_point(db, name=kp_key)
-                    db.add(UserPaperQuestionKnowledgePoint(
-                        user_paper_question_id=q.id, knowledge_point_id=kp.id))
+                    # 掌握账:kp_key → node 补写(upsert_mastery 内部自做 match_kp→student_kp)
                     await upsert_mastery(
                         db,
                         student_id=paper.student_id,
                         kp_key=kp_key,
-                        kp_id=kp.id,     # 关联标准 KP UUID（M4 深化）
+                        kp_id=None,
                         is_correct=not is_wrong,
                         source="paper_upload",
                     )
-                    # R3:KP-First 对齐(match_kp 命中 node/落候选)+ 整卷错题收口进 wrong_record
-                    # (加法式,失败不阻断整卷管线;旧路径保留供过渡)
+                    # 题↔node 关联 + 整卷错题收口进 wrong_record(失败不阻断整卷管线)
                     try:
                         from app.services.kp_match_service import match_kp
                         from app.services import wrong_center_service
                         m = await match_kp(db, raw_name=kp_key, axis_hint="knowledge",
                                            source_type="uploaded_student")
+                        q.node_id = m.node_id   # 命中→挂 node;未命中→NULL(候选已落 pending)
                         if is_wrong:
                             await wrong_center_service.record_wrong(
                                 db, student_id=paper.student_id, q_scope="uploaded",
@@ -229,30 +226,29 @@ async def paper_kp_summary(
 
     非本人持有 → None。薄弱（weak）= 该 KP 本卷有错题，优先排前。
     """
-    from app.models.d13_v2_user_papers import UserPaperQuestionKnowledgePoint as _Link
-    from app.models.d4_knowledge import KnowledgePoint
+    from app.models.d15_knowledge_graph import KnowledgeNode
 
     paper = await db.get(UserUploadedPaper, paper_id)
     if paper is None or paper.student_id != student_id:
         return None
 
+    # R8 Phase4:按 node 归集(题上 node_id,未命中的题不计入 KP 汇总)
     rows = (await db.execute(
         select(
-            KnowledgePoint.id, KnowledgePoint.name,
+            KnowledgeNode.id, KnowledgeNode.name,
             func.count(UserPaperQuestion.id),
             func.count().filter(UserPaperQuestion.is_wrong.is_(True)),
         )
         .select_from(UserPaperQuestion)
-        .join(_Link, _Link.user_paper_question_id == UserPaperQuestion.id)
-        .join(KnowledgePoint, KnowledgePoint.id == _Link.knowledge_point_id)
+        .join(KnowledgeNode, KnowledgeNode.id == UserPaperQuestion.node_id)
         .where(UserPaperQuestion.user_paper_id == paper_id)
-        .group_by(KnowledgePoint.id, KnowledgePoint.name)
+        .group_by(KnowledgeNode.id, KnowledgeNode.name)
     )).all()
 
     items = [
-        {"kp_id": str(kp_id), "kp_name": name, "total": int(total),
+        {"kp_id": str(node_id), "kp_name": name, "total": int(total),
          "wrong": int(wrong), "weak": int(wrong) > 0}
-        for kp_id, name, total, wrong in rows
+        for node_id, name, total, wrong in rows
     ]
     items.sort(key=lambda x: (not x["weak"], -x["wrong"], x["kp_name"]))
     return {"paper_id": str(paper_id), "items": items}
@@ -267,8 +263,7 @@ async def practice_for_question(
     校验题目归属（题→卷→学生）；无关联知识点 → AppError。
     """
     from app.core.exceptions import AppError
-    from app.models.d13_v2_user_papers import UserPaperQuestionKnowledgePoint as _Link
-    from app.models.d4_knowledge import KnowledgePoint
+    from app.models.d15_knowledge_graph import KnowledgeNode
     from app.services import practice_service
 
     # 校验归属
@@ -281,9 +276,9 @@ async def practice_for_question(
         raise AppError(code=404, message="题目不存在或无权访问")
 
     kp_name = await db.scalar(
-        select(KnowledgePoint.name)
-        .join(_Link, _Link.knowledge_point_id == KnowledgePoint.id)
-        .where(_Link.user_paper_question_id == question_id).limit(1))
+        select(KnowledgeNode.name)
+        .join(UserPaperQuestion, UserPaperQuestion.node_id == KnowledgeNode.id)
+        .where(UserPaperQuestion.id == question_id).limit(1))
     if not kp_name:
         raise AppError(code=400, message="该题暂无关联知识点，无法生成同类练习")
 

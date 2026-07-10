@@ -37,19 +37,16 @@ async def test_kp_summary_and_practice_guards():
         await db.execute(text(
             "INSERT INTO user_uploaded_papers (id,student_id,title,source_image_urls,ocr_status) "
             "VALUES (:i,:s,'卷1','[]'::jsonb,'completed')"), {"i": paper, "s": stu})
-        for q, wrong in ((q_wrong, True), (q_ok, False), (q_nokp, True)):
-            await db.execute(text(
-                "INSERT INTO user_paper_questions (id,user_paper_id,stem,is_wrong) "
-                "VALUES (:i,:p,'x',:w)"), {"i": q, "p": paper, "w": wrong})
+        # R8 Phase4:题↔KP 关联改走 node_id(KP-First),q_wrong/q_ok 挂同一 node,q_nokp 不挂
         await db.execute(text(
-            "INSERT INTO knowledge_points (id,code,name,category,applicable_grades,applicable_textbooks) "
-            "VALUES (:i,:c,'一般现在时','grammar','{}','{}')"),
+            "INSERT INTO knowledge_nodes (id,axis,name,code,status,source) "
+            "VALUES (:i,'knowledge','一般现在时',:c,'active','seed')"),
             {"i": kp, "c": f"{_TAG}_{kp.hex[:6]}"})
-        # 关联：q_wrong 与 q_ok 挂到同一 KP；q_nokp 不挂
-        for q in (q_wrong, q_ok):
+        for q, wrong in ((q_wrong, True), (q_ok, False), (q_nokp, True)):
+            node = kp if q in (q_wrong, q_ok) else None
             await db.execute(text(
-                "INSERT INTO user_paper_question_knowledge_points (user_paper_question_id,knowledge_point_id) "
-                "VALUES (:q,:k)"), {"q": q, "k": kp})
+                "INSERT INTO user_paper_questions (id,user_paper_id,stem,is_wrong,node_id) "
+                "VALUES (:i,:p,'x',:w,:n)"), {"i": q, "p": paper, "w": wrong, "n": node})
         await db.flush()
         try:
             # 归集：该 KP 总 2 / 错 1 / 薄弱
@@ -70,10 +67,9 @@ async def test_kp_summary_and_practice_guards():
                 await ups.practice_for_question(db, question_id=q_nokp, student_id=stu)
             assert e2.value.code == 400
         finally:
-            await db.execute(text("DELETE FROM user_paper_question_knowledge_points WHERE knowledge_point_id=:k"), {"k": kp})
             await db.execute(text("DELETE FROM user_paper_questions WHERE user_paper_id=:p"), {"p": paper})
             await db.execute(text("DELETE FROM user_uploaded_papers WHERE id=:p"), {"p": paper})
-            await db.execute(text("DELETE FROM knowledge_points WHERE id=:k"), {"k": kp})
+            await db.execute(text("DELETE FROM knowledge_nodes WHERE id=:k"), {"k": kp})
             await db.execute(text("DELETE FROM users WHERE openid LIKE :p"), {"p": f"{_TAG}_%"})
             await db.commit()
     await engine.dispose()
