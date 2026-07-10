@@ -42,41 +42,38 @@ async def is_grammar_node(db: AsyncSession, node_id: uuid.UUID) -> bool:
 
 async def grammar_leaf_nodes(db: AsyncSession, *, stage: str | None = "初", limit: int = 400) -> list[dict]:
     """语法子树的「叶子细点」(无子节点、active),按 词法<句法 → sort_order 排难度序。
-    stage 非空时按 applicable_stages 过滤(小/初/高);为空则不限学段。"""
+    stage 非空时按 applicable_stages 过滤(小/初/高);为空则不限学段。
+
+    性能:全子树一次取 (id,parent_id,...) 建内存映射,顶层根上溯在内存走 —— 避免旧版
+    对每个叶子逐层发 DB 查询(400 叶 × 树深 = 上千次往返,~7s)导致「语法精进」页加载慢。"""
     sub = await grammar_subtree_ids(db)
     if not sub:
         return []
     roots = await _grammar_root_ids(db)
     root_rank = {r: i for i, r in enumerate(roots)}
-    parents = set((await db.execute(
-        sa.select(KnowledgeNode.parent_id).where(KnowledgeNode.parent_id.isnot(None)))).scalars().all())
+    # 全子树(不限 status)一次取,建 id→parent_id 内存映射 + 判叶子(子树内谁被当过父)
     rows = (await db.execute(
         sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.parent_id,
-                  KnowledgeNode.sort_order, KnowledgeNode.applicable_stages)
-        .where(KnowledgeNode.id.in_(sub), KnowledgeNode.status == "active"))).all()
+                  KnowledgeNode.sort_order, KnowledgeNode.applicable_stages, KnowledgeNode.status)
+        .where(KnowledgeNode.id.in_(sub)))).all()
+    parent_map = {r[0]: r[2] for r in rows}
+    has_child = {r[2] for r in rows if r[2] is not None}   # 有子节点者 = 非叶子
 
-    # 找每个叶子所属的顶层根(用于难度排序:词法在前)
-    async def _root_of(nid, pid):
-        cur = pid
-        # 简化:沿 parent 上溯到顶层(子树不深)
-        guard = 0
-        while cur is not None and cur not in root_rank and guard < 20:
-            par = (await db.execute(
-                sa.select(KnowledgeNode.parent_id).where(KnowledgeNode.id == cur))).scalar_one_or_none()
-            cur = par
+    def _root_of(nid):
+        cur, guard = nid, 0
+        while cur is not None and cur not in root_rank and guard < 30:
+            cur = parent_map.get(cur)
             guard += 1
         return cur
 
     out = []
-    for nid, name, pid, so, stages in rows:
-        if nid in parents:        # 非叶子(粗点)跳过
+    for nid, name, pid, so, stages, status in rows:
+        if status != "active" or nid in has_child:   # 非 active 或 非叶子(粗点)跳过
             continue
         if stage and not (stages and stage in stages):
             continue
-        out.append({"kp_id": str(nid), "name": name, "_pid": pid, "_so": so or 0})
+        out.append({"kp_id": str(nid), "name": name,
+                    "_rr": root_rank.get(_root_of(nid), 99), "_so": so or 0})
     # 排序:词法<句法 → sort_order → 名称
-    for d in out:
-        rid = await _root_of(uuid.UUID(d["kp_id"]), d["_pid"])
-        d["_rr"] = root_rank.get(rid, 99)
     out.sort(key=lambda d: (d["_rr"], d["_so"], d["name"]))
     return [{"kp_id": d["kp_id"], "name": d["name"]} for d in out[:limit]]
