@@ -36,26 +36,8 @@ class SimQuestionOut(BaseModel):
 
 # ─── 运营审核（M5）：运营可见完整字段（含 answer），仅 platform_admin 可访问 ──
 
-class AdminQuestionItem(BaseModel):
-    id: uuid.UUID
-    knowledge_point_id: uuid.UUID
-    question_type: str
-    stem: str
-    options: list[str] | None = None
-    answer: str
-    explanation: str | None = None
-    difficulty: int
-    dimension: str | None = None
-    status: str
-
-
-class AdminQuestionListOut(BaseModel):
-    total: int
-    items: list[AdminQuestionItem]
-
-
-class QuestionReviewRequest(BaseModel):
-    approve: bool = Field(..., description="true=通过→published，false=驳回→retired")
+# R8 Phase6a-2 part2 已退役:AdminQuestionItem / AdminQuestionListOut / QuestionReviewRequest
+# —— 旧仿真题运营审核(读 simulated_questions)的 DTO,审核已改走 platform_question,零引用。
 
 
 class PracticeAttemptIn(BaseModel):

@@ -10,8 +10,6 @@ from unittest.mock import AsyncMock, patch
 from app.core.database import _async_session_factory
 from app.main import app
 from app.models.d1_users import User
-from app.models.d4_knowledge import KnowledgePoint
-from app.models.d12_v2_exams import SimulatedQuestion
 from app.services import admin_auth_service, admin_stats_service
 
 
@@ -42,20 +40,17 @@ async def _make_admin(client: AsyncClient, suffix: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_overview_counts_draft_delta(db_session):
-    """新增 2 道 draft 题后，draft 计数 +2；四状态键齐全。"""
+    """新增 2 道 draft 仿真题后，draft 计数 +2；四状态键齐全。
+
+    R8 Phase6a-2:仿真题各状态改统计 platform_question(type='sim'),种子改建平台仿真题。
+    """
+    from app.models.d16_question_domain import PlatformQuestion
     before = await admin_stats_service.get_overview(db_session)
-    kp = KnowledgePoint(
-        id=uuid.uuid4(), code=f"ov-{uuid.uuid4().hex[:6]}", name="overviewKP",
-        category="grammar", description="d",
-        applicable_grades=["小学5年级"], applicable_textbooks=["译林版"],
-    )
-    db_session.add(kp)
-    await db_session.flush()
     for i in range(2):
-        db_session.add(SimulatedQuestion(
-            id=uuid.uuid4(), knowledge_point_id=kp.id, question_type="单选",
-            stem=f"overview q{i}", options=["A", "B"], answer="A",
-            explanation="x", difficulty=1, status="draft",
+        db_session.add(PlatformQuestion(
+            id=uuid.uuid4(), type="sim", is_fallback=True, status="draft",
+            question_type="单选", stem=f"overview q{i}", options=["A", "B"],
+            answer="A", explanation="x", difficulty=1,
         ))
     await db_session.flush()
     after = await admin_stats_service.get_overview(db_session)

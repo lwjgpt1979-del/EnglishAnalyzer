@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import User, Teacher
 from app.models.d2_payments import Order
-from app.models.d12_v2_exams import SimulatedQuestion
+from app.models.d16_question_domain import PlatformQuestion
 from app.models.d25_kp_lecture import KpLecture
 from app.schemas.admin import AdminOverviewOut
 
@@ -21,8 +21,11 @@ def _normalize(rows: list[tuple[str, int]]) -> dict[str, int]:
 
 
 async def get_overview(db: AsyncSession) -> AdminOverviewOut:
+    # R8 Phase6a-2:仿真题各状态改统计节点化 platform_question(type='sim'),不再读退役 simulated_questions
     q_rows = (await db.execute(
-        select(SimulatedQuestion.status, func.count()).group_by(SimulatedQuestion.status)
+        select(PlatformQuestion.status, func.count())
+        .where(PlatformQuestion.type == "sim")
+        .group_by(PlatformQuestion.status)
     )).all()
     # 考点讲解:kp_lecture(按类型的教学环节),按状态计数(draft/published)
     c_rows = (await db.execute(

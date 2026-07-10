@@ -1,11 +1,8 @@
 import request, { unwrap } from './request'
 import type {
-  AdminQuestionListOut,
-  AdminQuestionItem,
   AdminOverview,
   SemesterPricing,
   InstitutionCodePricing,
-  ReviewStatus,
   AdminCurriculumUnit,
   AdminVocabMediaItem,
   AdminVocabMediaListOut,
@@ -36,23 +33,8 @@ export function getOverview() {
   return unwrap<AdminOverview>(request.get('/admin/overview'))
 }
 
-// ── 仿真题审核 ──────────────────────────────────────────────
-export function listQuestions(params: {
-  status: ReviewStatus
-  kp_id?: string
-  skip?: number
-  limit?: number
-}) {
-  return unwrap<AdminQuestionListOut>(
-    request.get('/admin/questions', { params }),
-  )
-}
-
-export function reviewQuestion(id: string, approve: boolean) {
-  return unwrap<AdminQuestionItem>(
-    request.post(`/admin/questions/${id}/review`, { approve }),
-  )
-}
+// R8 Phase6a-2 part2 已退役 listQuestions/reviewQuestion(读旧 /admin/questions=simulated_questions,
+// 前端零调用)——仿真题审核走节点化 platform_question(listPlatformQuestions type='sim' + reviewPlatformBulk)。
 
 // 知识点内容审核已退役:改由 node-resources(node_resource lecture)统一承接。
 

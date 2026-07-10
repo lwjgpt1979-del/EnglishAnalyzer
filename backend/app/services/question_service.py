@@ -22,60 +22,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.models.d4_knowledge import KnowledgePoint
 from app.models.d7_teacher import Class, ClassStudent
-from app.models.d12_v2_exams import SimExamSession, SimPracticeRecord, SimulatedQuestion
+from app.models.d12_v2_exams import SimExamSession, SimPracticeRecord
 from app.schemas.questions import (
     ExamHistoryItem, ExamHistoryOut, ExamRankOut,
     KPAccuracyItem, KPAccuracyOut,
 )
 
 
-# R8 Phase6a-1:SimulatedQuestion 提交/去重闭环(persist_questions / list_questions_by_kp /
-# submit_attempt / submit_exam_attempts / _record_wrong / _mark_mastered / _log_attempt /
-# _upsert_kp_mastery)已退役——零调用方,simulated_questions/sim_*_records/
-# wrong_question_knowledge_points 的写者归零。保留:运营审核(list_questions_for_review /
-# review_question,admin 仿真审核页)+ 学情读(get_kp_accuracy / get_exam_history / get_exam_rank,
-# 小程序诊断页),它们读存量 sim 数据,待组卷器/诊断切 platform_question 后于 6a-2 一并退。
+# R8 Phase6a-1/6a-2:SimulatedQuestion 提交闭环 + 运营审核均已退役——写者归零(6a-1)、
+# 运营审核前端零调用改走 platform_question(6a-2 part2)。本模块对 simulated_questions 的引用已清空。
+# 仅剩学情读 get_kp_accuracy / get_exam_history / get_exam_rank(读 sim_*_records,小程序诊断页),
+# 待 6a-2 part3 切 answer_log/student_kp 后一并退,届时 sim 全表可 drop。
 
 
-# ─── 运营审核（M5）────────────────────────────────────────────────────────────
-
-async def list_questions_for_review(
-    db: AsyncSession,
-    *,
-    status: str = "draft",
-    kp_id: uuid.UUID | None = None,
-    skip: int = 0,
-    limit: int = 20,
-) -> tuple[list[SimulatedQuestion], int]:
-    """运营按状态分页查仿真题（返回完整 ORM 行，含 answer，仅运营可见）。"""
-    base = select(SimulatedQuestion).where(SimulatedQuestion.status == status)
-    if kp_id is not None:
-        base = base.where(SimulatedQuestion.knowledge_point_id == kp_id)
-    total: int = (await db.execute(
-        select(func.count()).select_from(base.subquery())
-    )).scalar_one()
-    rows = (await db.execute(
-        base.order_by(SimulatedQuestion.created_at).offset(skip).limit(limit)
-    )).scalars().all()
-    return list(rows), total
-
-
-async def review_question(
-    db: AsyncSession,
-    *,
-    question_id: uuid.UUID,
-    approve: bool,
-) -> SimulatedQuestion:
-    """审核一道题：approve→published，reject→retired。题不存在抛 AppError(404)。"""
-    sq = (await db.execute(
-        select(SimulatedQuestion).where(SimulatedQuestion.id == question_id)
-    )).scalar_one_or_none()
-    if sq is None:
-        from app.core.exceptions import AppError
-        raise AppError(code=404, message="题目不存在")
-    sq.status = "published" if approve else "retired"
-    await db.flush()
-    return sq
+# R8 Phase6a-2 已退役:仿真题运营审核(list_questions_for_review / review_question)读旧
+# simulated_questions,前端零调用——admin「仿真题审核」页(QuestionsReview.vue)早已改走
+# 节点化 platform_question(listPlatformQuestions type='sim' + reviewPlatformBulk)。一并删。
 
 
 # ─── Grading ────────────────────────────────────────────────────────────────

@@ -46,71 +46,8 @@ async def seeded_kp(db_session):
     return kp
 
 
-# NOTE: test_persist_* 全部删除 —— persist_questions 已随退役 SimulatedQuestion
-# 写入子系统一并移除；下方保留的 list_for_review / review_question 测试改用直插种子。
-
-
-async def _seed_sim(db_session, kp, *, count=1, status="draft",
-                    question_type="单选", dimension=None):
-    """直插 SimulatedQuestion（替代已退役的 persist_questions）。返回创建的行列表。"""
-    rows = []
-    has_opts = question_type in ("单选", "阅读", "完型")
-    for i in range(count):
-        sq = SimulatedQuestion(
-            id=uuid.uuid4(), knowledge_point_id=kp.id,
-            question_type=question_type, stem=f"占位题干 {i} {uuid.uuid4().hex[:6]}",
-            options=["A. x", "B. y", "C. z", "D. w"] if has_opts else None,
-            answer="B", explanation="占位解析", difficulty=1,
-            dimension=dimension, status=status,
-        )
-        db_session.add(sq)
-        rows.append(sq)
-    await db_session.flush()
-    return rows
-
-
-@pytest.mark.asyncio
-async def test_list_for_review_filters_status(db_session, seeded_kp):
-    """运营待审列表按 status 过滤；草稿题不出现在 published 列表里。"""
-    await _seed_sim(db_session, seeded_kp, count=3, status="draft")
-    rows, total = await question_service.list_questions_for_review(
-        db_session, status="draft", kp_id=seeded_kp.id,
-    )
-    assert total == 3 and len(rows) == 3
-    rows_pub, total_pub = await question_service.list_questions_for_review(
-        db_session, status="published", kp_id=seeded_kp.id,
-    )
-    assert total_pub == 0 and rows_pub == []
-
-
-@pytest.mark.asyncio
-async def test_review_approve_publishes(db_session, seeded_kp):
-    """审核通过 → status=published。"""
-    [sq] = await _seed_sim(db_session, seeded_kp, count=1, status="draft")
-    reviewed = await question_service.review_question(
-        db_session, question_id=sq.id, approve=True,
-    )
-    assert str(reviewed.status) == "published"
-
-
-@pytest.mark.asyncio
-async def test_review_reject_retires(db_session, seeded_kp):
-    """审核驳回 → status=retired。"""
-    [sq] = await _seed_sim(db_session, seeded_kp, count=1, status="draft")
-    reviewed = await question_service.review_question(
-        db_session, question_id=sq.id, approve=False,
-    )
-    assert str(reviewed.status) == "retired"
-
-
-@pytest.mark.asyncio
-async def test_review_missing_question_raises(db_session):
-    """审核不存在的题抛 AppError。"""
-    from app.core.exceptions import AppError
-    with pytest.raises(AppError):
-        await question_service.review_question(
-            db_session, question_id=uuid.uuid4(), approve=True,
-        )
+# NOTE: test_persist_* + list_for_review / review_question 测试全部删除(含 _seed_sim 种子)——
+# R8 Phase6a-2 part2 退役旧仿真题运营审核(读 simulated_questions),审核改走 platform_question。
 
 
 # NOTE: test_list_filters_by_dimension / test_list_without_dimension_returns_all 已删除

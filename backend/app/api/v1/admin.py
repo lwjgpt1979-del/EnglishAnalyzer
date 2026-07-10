@@ -16,15 +16,9 @@ from app.core.security import create_access_token, create_refresh_token, require
 from app.models.d1_users import User
 from app.schemas.auth import AdminLoginRequest, TokenResponse
 from app.models.d5_learning import VocabularyWord
-from app.models.d12_v2_exams import SimulatedQuestion
 from app.schemas.admin import AdminOverviewOut
 from app.schemas.base import BaseResponse, make_ok
 from app.api.v1.upload import PresignRequest, PresignOut
-from app.schemas.questions import (
-    AdminQuestionItem,
-    AdminQuestionListOut,
-    QuestionReviewRequest,
-)
 from app.schemas.semesters import SemesterPricing, SemesterPricingUpdate
 from app.schemas.curriculum import UnitDeleteIn
 from app.schemas.sales_crm import (
@@ -127,7 +121,6 @@ from app.services import (
     essay_service,
     kp_candidate_service,
     pricing_service,
-    question_service,
     teacher_service,
     vocab_media_service,
 )
@@ -195,21 +188,6 @@ async def get_overview(db: DbDep, admin: AdminDep):
     return make_ok(await admin_stats_service.get_overview(db))
 
 
-def _to_admin_item(r: SimulatedQuestion) -> AdminQuestionItem:
-    return AdminQuestionItem(
-        id=r.id,
-        knowledge_point_id=r.knowledge_point_id,
-        question_type=str(r.question_type),
-        stem=r.stem,
-        options=r.options,
-        answer=r.answer,
-        explanation=r.explanation,
-        difficulty=r.difficulty,
-        dimension=str(r.dimension) if r.dimension is not None else None,
-        status=str(r.status),
-    )
-
-
 @router.get("/teachers", response_model=BaseResponse[AdminTeacherListOut])
 async def list_teachers_admin(
     db: DbDep,
@@ -268,39 +246,9 @@ async def review_teacher_cert(
     ))
 
 
-# ─── 仿真题审核发布流（M5）─────────────────────────────────────────────────
-
-@router.get("/questions", response_model=BaseResponse[AdminQuestionListOut])
-async def list_questions_for_review(
-    db: DbDep,
-    admin: AdminDep,
-    status: str = "draft",
-    kp_id: uuid.UUID | None = None,
-    skip: int = 0,
-    limit: int = 20,
-):
-    """运营按状态分页查仿真题（含 answer，仅运营可见）。默认看待审草稿。"""
-    rows, total = await question_service.list_questions_for_review(
-        db, status=status, kp_id=kp_id, skip=skip, limit=limit,
-    )
-    return make_ok(AdminQuestionListOut(
-        total=total, items=[_to_admin_item(r) for r in rows],
-    ))
-
-
-@router.post("/questions/{question_id}/review", response_model=BaseResponse[AdminQuestionItem])
-async def review_question(
-    question_id: uuid.UUID,
-    body: QuestionReviewRequest,
-    db: DbDep,
-    admin: AdminDep,
-):
-    """审核一道仿真题：approve→published，reject→retired。"""
-    r = await question_service.review_question(
-        db, question_id=question_id, approve=body.approve,
-    )
-    await db.commit()
-    return make_ok(_to_admin_item(r))
+# R8 Phase6a-2 part2 已退役:旧「仿真题审核发布流」(GET /questions、POST /questions/{id}/review)
+# 读旧 simulated_questions,前端零调用——admin 仿真题审核页已改走节点化 platform_question
+# (GET /platform-questions type='sim' + POST /platform-questions/review-bulk)。
 
 
 # ─── 知识点内容审核/编辑 ───────────────────────────────────────────────────────
