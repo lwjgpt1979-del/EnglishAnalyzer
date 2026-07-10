@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d4_knowledge import CurriculumUnit, KnowledgePoint, UnitKnowledgePoint
+from app.models.d4_knowledge import CurriculumUnit
 from app.models.d15_knowledge_graph import KnowledgeNode, KpCandidate
 from app.models.d17_curriculum_kg import UnitNode
 from app.services.kp_match_service import match_kp
@@ -127,11 +127,16 @@ async def extract_for_ai_unit(
 
 
 async def reextract_unit(db: AsyncSession, *, unit_id: uuid.UUID) -> ExtractResult:
-    """重跑对齐:从该单元已有(旧)知识点名取材,再走受控匹配(不重新生成内容)。"""
+    """重跑对齐:从该单元已挂的 node 名取材,再走受控匹配(幂等重建边,不重新生成内容)。
+
+    R8 Phase5b:取材源从旧 unit_knowledge_points 切到 unit_node → knowledge_nodes(单一真源)。
+    """
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d17_curriculum_kg import UnitNode
     names = (await db.execute(
-        sa.select(KnowledgePoint.name)
-        .join(UnitKnowledgePoint, UnitKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-        .where(UnitKnowledgePoint.unit_id == unit_id)
+        sa.select(KnowledgeNode.name)
+        .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
+        .where(UnitNode.unit_id == unit_id)
     )).scalars().all()
     return await extract_unit_nodes(db, unit_id=unit_id, kp_names=list(names), source="ai_extract")
 

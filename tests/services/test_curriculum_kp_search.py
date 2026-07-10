@@ -6,7 +6,8 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import _async_session_factory
-from app.models.d4_knowledge import KnowledgePoint
+# R8 Phase5b:search_kps 已改搜 knowledge_nodes(单一真源),种子改建 KnowledgeNode
+from app.models.d15_knowledge_graph import KnowledgeNode
 
 
 @pytest_asyncio.fixture
@@ -23,15 +24,15 @@ _TAG = uuid.uuid4().hex[:8]
 
 @pytest_asyncio.fixture
 async def seed_kps(db: AsyncSession):
-    """插入 4 个知识点：2 个含唯一标记词，1 个含"被动"，1 个其他。"""
-    def _kp(name: str) -> KnowledgePoint:
-        return KnowledgePoint(
+    """插入 4 个知识 node：2 个含唯一标记词，1 个含"被动"，1 个其他。"""
+    def _kp(name: str) -> KnowledgeNode:
+        return KnowledgeNode(
             id=uuid.uuid4(),
-            code=f"TST_{uuid.uuid4().hex[:6]}",
+            axis="knowledge",
+            node_kind="grammar",
             name=name,
-            category="grammar",
-            applicable_grades=["小学5年级"],
-            applicable_textbooks=["译林版"],
+            code=f"TST_{uuid.uuid4().hex[:6]}",
+            status="active",
         )
     kps = [_kp(f"现在完成时{_TAG}"), _kp(f"过去完成时{_TAG}"), _kp("被动语态"), _kp("一般现在时")]
     for k in kps:

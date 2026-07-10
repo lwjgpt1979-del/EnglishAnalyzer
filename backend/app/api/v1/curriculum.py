@@ -211,15 +211,18 @@ async def search_knowledge_points(
     q: str = Query("", description="搜索关键词（知识点名称模糊匹配）"),
     limit: int = Query(10, ge=1, le=20, description="最多返回条数"),
 ):
-    """按知识点名称模糊搜索，供前端选择目标 KP。无需会员。"""
+    """按知识 node 名称模糊搜索，供前端选择目标知识点。无需会员。
+
+    R8 Phase5b:改搜 knowledge_nodes(单一真源);category 复用 node_kind。
+    """
     from app.schemas.curriculum import KPSearchItem
-    kps = await curriculum_service.search_kps(db, q=q, limit=limit)
+    nodes = await curriculum_service.search_kps(db, q=q, limit=limit)
     return make_ok([
         KPSearchItem(
-            id=kp.id,
-            name=kp.name,
-            category=str(kp.category),
-            description=kp.description if hasattr(kp, "description") else None,
+            id=n.id,
+            name=n.name,
+            category=str(n.node_kind or ""),
+            description=n.description,
         ).model_dump(mode="json")
-        for kp in kps
+        for n in nodes
     ])

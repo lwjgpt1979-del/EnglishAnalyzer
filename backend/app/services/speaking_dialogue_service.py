@@ -250,11 +250,13 @@ async def _semester_units(db: AsyncSession, student_id, *, limit: int = 3) -> li
 
 
 async def _unit_kp_names(db: AsyncSession, unit_id) -> list[str]:
-    from app.models.d4_knowledge import KnowledgePoint, UnitKnowledgePoint
+    # R8 Phase5b:单元考点名改读 unit_node → knowledge_nodes(单一真源),不再读旧 unit_knowledge_points
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d17_curriculum_kg import UnitNode
     rows = (await db.execute(
-        select(KnowledgePoint.name)
-        .join(UnitKnowledgePoint, UnitKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-        .where(UnitKnowledgePoint.unit_id == unit_id).limit(8)
+        select(KnowledgeNode.name)
+        .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
+        .where(UnitNode.unit_id == unit_id).limit(8)
     )).all()
     return [r[0] for r in rows if r[0]]
 

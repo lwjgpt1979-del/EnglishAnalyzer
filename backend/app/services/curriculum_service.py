@@ -17,8 +17,6 @@ from app.core.exceptions import AppError
 from app.models.d4_knowledge import (
     CurriculumUnit,
     CurriculumUnitPassage,
-    KnowledgePoint,
-    UnitKnowledgePoint,
     CurriculumWord,
 )
 from app.models.d5_learning import VocabularyWord
@@ -878,11 +876,17 @@ async def search_kps(
     *,
     q: str,
     limit: int = 10,
-) -> list[KnowledgePoint]:
-    """按名称模糊搜索知识点（ILIKE）。q 为空则不过滤，返回前 limit 条。"""
-    stmt = select(KnowledgePoint).order_by(KnowledgePoint.name)
+):
+    """按名称模糊搜索知识 node（ILIKE）。q 为空则不过滤，返回前 limit 条 active 节点。
+
+    R8 Phase5b:搜索源从旧 knowledge_points 切到 knowledge_nodes(单一真源)。
+    """
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    stmt = (select(KnowledgeNode)
+            .where(KnowledgeNode.status == "active")
+            .order_by(KnowledgeNode.name))
     if q:
-        stmt = stmt.where(KnowledgePoint.name.ilike(f"%{q}%"))
+        stmt = stmt.where(KnowledgeNode.name.ilike(f"%{q}%"))
     stmt = stmt.limit(limit)
     return list((await db.execute(stmt)).scalars().all())
 
