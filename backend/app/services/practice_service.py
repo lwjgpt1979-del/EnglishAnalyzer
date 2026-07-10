@@ -303,30 +303,17 @@ async def submit_answer(
     question.usage_count = (question.usage_count or 0) + 1
     await db.flush()
 
-    # M39: 更新个人知识点掌握台账
-    from app.services import kp_mastery_service
+    # R8:掌握账统一到 student_kp(node)。刷题对错落 answer_log(真值)+ student_kp 投影,
+    # 由 mastery_judge_service.log_answer **单一写入**(不再另调 upsert_mastery,避免 node 双计)。
+    # 别名精确命中 node 才记(零 LLM、零副作用,不在热路径累加候选);未命中不记,不阻断判分。
     kp_name = str(question.content.get("knowledge_point", "")) or None
-    kp_desc: str | None = None
-    if not kp_name:
-        kp_result = await db.execute(
+    if not kp_name and question.knowledge_point_id:
+        kp_obj = (await db.execute(
             select(KnowledgePoint).where(KnowledgePoint.id == question.knowledge_point_id)
-        )
-        kp_obj = kp_result.scalar_one_or_none()
+        )).scalar_one_or_none()
         if kp_obj:
             kp_name = kp_obj.name
-            kp_desc = kp_obj.description
     if kp_name:
-        await kp_mastery_service.upsert_mastery(
-            db,
-            student_id=student_id,
-            kp_key=kp_name,
-            kp_id=question.knowledge_point_id,
-            is_correct=is_correct,
-            source="practice",
-            kp_description=kp_desc,
-        )
-        # R10 第2步:把刷题对错挂到规范 node,落 answer_log(对题真值分母)+ student_kp 投影。
-        # 用别名表直查命中 node(零 LLM、零副作用——不在刷题热路径上累加候选);未命中则不记,不影响判分。
         try:
             from app.models.d15_knowledge_graph import NodeAlias
             from app.services import mastery_judge_service
