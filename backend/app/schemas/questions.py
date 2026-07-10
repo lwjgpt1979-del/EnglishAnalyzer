@@ -76,59 +76,8 @@ class ExamResultOut(BaseModel):
     items: list[ExamItemResult]
 
 
-# ─── 学情：知识点正确率（D-084 后续）────────────────────────────────────────
-
-class KPAccuracyItem(BaseModel):
-    """单个知识点的练习正确率聚合。"""
-    knowledge_point_id: uuid.UUID
-    knowledge_point_name: str
-    attempts: int = Field(..., description="该 KP 累计作答次数")
-    correct: int = Field(..., description="累计答对次数")
-    accuracy: float = Field(..., description="正确率，保留 4 位小数")
-
-
-class KPAccuracyOut(BaseModel):
-    """学生维度的逐 KP 正确率，弱项（正确率低）在前。"""
-    total_attempts: int
-    overall_accuracy: float
-    items: list[KPAccuracyItem]
-
-
-# ─── 模拟考成绩历史（D-086 后续）─────────────────────────────────────────────
-
-class ExamHistoryItem(BaseModel):
-    """一次模拟考的成绩快照。"""
-    id: uuid.UUID
-    total: int
-    correct_count: int
-    accuracy: float = Field(..., description="正确率，保留 4 位小数")
-    created_at: datetime
-
-
-class ExamHistoryOut(BaseModel):
-    """学生的模拟考成绩历史，最新在前。"""
-    total_exams: int
-    items: list[ExamHistoryItem]
-
-
-# ─── 班级排名（学生端百分位，不暴露他人姓名，D-088）──────────────────────────
-
-class ExamRankOut(BaseModel):
-    """学生在所属班级的模拟考排名（百分位）。
-
-    隐私：仅返回本人名次/百分位与班级聚合值，绝不返回其他同学的姓名或个人成绩。
-    排名口径：按每位学生模拟考平均正确率降序。
-    """
-    in_class: bool = Field(..., description="是否在任一班级中")
-    ranked: bool = Field(..., description="是否已纳入排名（本人 + 班级均有模拟考成绩）")
-    class_name: str | None = Field(None, description="参与排名的班级名")
-    my_rank: int | None = Field(None, description="名次，1 为第一名（并列同名次）")
-    total_ranked: int | None = Field(None, description="班级内有模拟考成绩的学生数")
-    percentile: float | None = Field(
-        None, description="超过的同班同学比例 0~1（仅本人有成绩或班级仅 1 人时为 null）"
-    )
-    my_avg_accuracy: float | None = Field(None, description="本人模拟考平均正确率")
-    class_avg_accuracy: float | None = Field(None, description="班级模拟考平均正确率")
+# R8 Phase6a-2 part3 已退役:KPAccuracyItem/KPAccuracyOut/ExamHistoryItem/ExamHistoryOut/ExamRankOut
+# —— 诊断页三张读冻结 sim 表的卡片(知识点正确率/模考历史/班级排名)的 DTO,随卡片退役,零引用。
 
 
 # ─── 智能出题（D-130 AI 智能出题）──────────────────────────────────────────────

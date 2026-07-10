@@ -662,44 +662,6 @@ export interface ExamResultOut {
   items: ExamItemResult[]
 }
 
-export interface KPAccuracyItem {
-  knowledge_point_id: string
-  knowledge_point_name: string
-  attempts: number
-  correct: number
-  accuracy: number
-}
-
-export interface KPAccuracyOut {
-  total_attempts: number
-  overall_accuracy: number
-  items: KPAccuracyItem[]
-}
-
-export interface ExamHistoryItem {
-  id: string
-  total: number
-  correct_count: number
-  accuracy: number
-  created_at: string
-}
-
-export interface ExamHistoryOut {
-  total_exams: number
-  items: ExamHistoryItem[]
-}
-
-export interface ExamRankOut {
-  in_class: boolean
-  ranked: boolean
-  class_name: string | null
-  my_rank: number | null
-  total_ranked: number | null
-  percentile: number | null
-  my_avg_accuracy: number | null
-  class_avg_accuracy: number | null
-}
-
 // ─── V2 整卷上传 OCR 拆题（D-089 / M4）──
 
 export type PaperOcrStatus = 'pending' | 'processing' | 'completed' | 'failed' | null

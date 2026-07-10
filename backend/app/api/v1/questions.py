@@ -11,7 +11,7 @@ from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import make_ok
 from app.schemas.questions import AdaptiveSetOut, ExamAttemptIn, PracticeAttemptIn, SimQuestionOut
-from app.services import adaptive_question_service, question_serve_service, question_service
+from app.services import adaptive_question_service, question_serve_service
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -66,27 +66,8 @@ async def submit_exam_attempts(
     return make_ok(result.model_dump(mode="json"))
 
 
-@router.get("/kp-accuracy")
-async def get_kp_accuracy(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """学情：按知识点聚合练习正确率，弱项（正确率低）在前。"""
-    result = await question_service.get_kp_accuracy(db, user_id=current_user.id)
-    return make_ok(result.model_dump(mode="json"))
-
-
-@router.get("/exam-history")
-async def get_exam_history(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    limit: int = Query(20, ge=1, le=100),
-):
-    """模拟考成绩历史，最新在前。"""
-    result = await question_service.get_exam_history(
-        db, user_id=current_user.id, limit=limit,
-    )
-    return make_ok(result.model_dump(mode="json"))
+# R8 Phase6a-2 part3 已退役:GET /kp-accuracy、/exam-history(读冻结的 sim_practice_records/
+# sim_exam_sessions)。知识点正确率与诊断页 kp_dimension(answer_log/node)重复;模考历史读冻结表已空。
 
 
 @router.get("/adaptive-set", response_model=None)
@@ -111,11 +92,5 @@ async def get_adaptive_set(
     )
 
 
-@router.get("/exam-rank")
-async def get_exam_rank(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """学生端：我在所属班级的模拟考排名（百分位，不显示他人姓名）。"""
-    result = await question_service.get_exam_rank(db, user_id=current_user.id)
-    return make_ok(result.model_dump(mode="json"))
+# R8 Phase6a-2 part3 已退役:GET /exam-rank(班级模考排名,读冻结的 sim_exam_sessions)。
+# 日后可基于 answer_log(feature='exam')重建为节点化新特性。

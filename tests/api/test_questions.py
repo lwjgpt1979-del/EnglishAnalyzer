@@ -173,66 +173,8 @@ async def test_submit_exam_attempts_batch(client):
         assert it["wrong_question_id"] is not None
 
 
-@pytest.mark.asyncio
-async def test_kp_accuracy_endpoint(client):
-    """作答后 GET /kp-accuracy 返回该 KP 的正确率聚合。"""
-    kp_id, q_id = await _seed_kp_with_questions()
-    h = await _login(client, f"acc_{uuid.uuid4().hex[:6]}")
-
-    # 该单选题答对一次、答错一次
-    await client.post(
-        "/api/v1/questions/practice-attempts",
-        json={"question_id": str(q_id), "user_answer": "B"}, headers=h,
-    )
-    await client.post(
-        "/api/v1/questions/practice-attempts",
-        json={"question_id": str(q_id), "user_answer": "A"}, headers=h,
-    )
-
-    resp = await client.get("/api/v1/questions/kp-accuracy", headers=h)
-    assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
-    assert data["total_attempts"] == 2
-    assert data["overall_accuracy"] == 0.5
-    assert len(data["items"]) == 1
-    item = data["items"][0]
-    assert item["knowledge_point_id"] == str(kp_id)
-    assert item["attempts"] == 2
-    assert item["correct"] == 1
-    assert item["accuracy"] == 0.5
-
-
-@pytest.mark.asyncio
-async def test_exam_history_endpoint(client):
-    """模拟考批量提交后 GET /exam-history 返回成绩快照。"""
-    kp_id, _ = await _seed_kp_with_questions()
-    h = await _login(client, f"hist_{uuid.uuid4().hex[:6]}")
-
-    # 取该 KP 的题，造一场 3 对 2 错的模拟考
-    async with _async_session_factory() as s:
-        rows = (await s.execute(
-            select(SimulatedQuestion).where(
-                SimulatedQuestion.knowledge_point_id == kp_id
-            ).limit(5)
-        )).scalars().all()
-    items = []
-    for i, q in enumerate(rows):
-        ua = q.answer.split("|")[0].strip() if i < 3 else f"__wrong__{q.answer}"
-        items.append({"question_id": str(q.id), "user_answer": ua})
-
-    await client.post(
-        "/api/v1/questions/exam-attempts", json={"items": items}, headers=h,
-    )
-
-    resp = await client.get("/api/v1/questions/exam-history", headers=h)
-    assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
-    assert data["total_exams"] == 1
-    rec = data["items"][0]
-    assert rec["total"] == 5
-    assert rec["correct_count"] == 3
-    assert rec["accuracy"] == 0.6
-    assert rec["created_at"]
+# R8 Phase6a-2 part3 已退役 test_kp_accuracy_endpoint / test_exam_history_endpoint:
+# GET /kp-accuracy、/exam-history 端点已删(读冻结 sim 表,与诊断页 kp_dimension 重复/已空)。
 
 
 async def _seed_kp_with_dimension_questions() -> uuid.UUID:

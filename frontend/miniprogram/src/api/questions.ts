@@ -6,9 +6,6 @@ import type {
   PracticeResultOut,
   ExamAttemptIn,
   ExamResultOut,
-  KPAccuracyOut,
-  ExamHistoryOut,
-  ExamRankOut,
 } from '@/types/api'
 
 export function listPracticeQuestions(
@@ -36,21 +33,6 @@ export function submitExam(body: ExamAttemptIn): Promise<ExamResultOut> {
     method: 'POST',
     data: body,
   })
-}
-
-export function getKpAccuracy(): Promise<KPAccuracyOut> {
-  return request<KPAccuracyOut>('/api/v1/questions/kp-accuracy')
-}
-
-export function getExamHistory(limit = 20): Promise<ExamHistoryOut> {
-  return request<ExamHistoryOut>('/api/v1/questions/exam-history', {
-    method: 'GET',
-    data: { limit },
-  })
-}
-
-export function getExamRank(): Promise<ExamRankOut> {
-  return request<ExamRankOut>('/api/v1/questions/exam-rank')
 }
 
 export function getAdaptiveSet(total = 5, unitId?: string): Promise<AdaptiveSetOut> {
