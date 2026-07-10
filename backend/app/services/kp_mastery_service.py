@@ -145,9 +145,24 @@ async def get_kp_mastery_trend(
       · 订正(feature='review'):答对且该题首次订正对 → Kc;答错 → Kf(每次)。
     每个事件后按 weighted_mastery 计当前掌握度,同一天以最后一个事件为准(日末值)。
     返回按日期升序、仅活动日的点:[{date, mastery, mastery_events}]。
+
+    语法类 node:趋势由四维 replay 派生(与聚合/详情同源);无探针事件则回退本加权重放。
     """
     from datetime import date as _date, timedelta
+    from app.models.d15_knowledge_graph import KnowledgeNode
     from app.models.d16_question_domain import AnswerLog
+
+    # 语法 node → 四维瓶颈趋势(有探针事件时);与 grammar_overrides 聚合口径一致
+    from app.services.kp_lecture_service import kp_type_of
+    from app.services import grammar_probe_service
+    code = (await db.execute(
+        select(KnowledgeNode.code).where(KnowledgeNode.id == node_id))).scalar_one_or_none()
+    if kp_type_of(code) == "grammar":
+        g_trend = await grammar_probe_service.mastery_trend(
+            db, student_id=student_id, node_id=node_id, days=days)
+        if g_trend:
+            return g_trend
+        # 无探针事件 → 落到下方加权重放(该语法 node 只被练习过、无四维数据)
 
     rows = (await db.execute(
         select(AnswerLog.question_id, AnswerLog.is_correct,

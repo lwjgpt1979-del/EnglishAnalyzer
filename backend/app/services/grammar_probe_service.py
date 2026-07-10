@@ -65,6 +65,56 @@ async def overall_mastery_for_nodes(
     return out
 
 
+async def mastery_trend(
+    db: AsyncSession, *, student_id: uuid.UUID, node_id: uuid.UUID, days: int = 30,
+) -> list[dict]:
+    """语法四维掌握度**日趋势**:按维 replay 探针事件(recognize/detect/produce 各自 BKT),
+    日末取瓶颈 min —— 与聚合口径(overall_mastery_for_nodes)同源。无探针事件返回空(调用方回退加权)。
+
+    探针作答写 answer_log 时 node_id 置空、qid 为确定性 uuid5(见各 submit_*),故按 qid 反查、
+    按维累加 bkt_update(从 None=L0 起,与写侧同一函数)可精确复现存量四维轨迹。维度归属:
+      · recognize ← probe:recognize:i + grouped + retain:transfer:i(复测走识别 BKT)
+      · detect    ← probe:detect:i
+      · produce   ← produce
+    transfer 是独立门(不并入 min),不参与。"""
+    from datetime import date as _date, timedelta
+    from app.models.d16_question_domain import AnswerLog
+
+    K = 16   # 每维探针索引上限(足够覆盖历史,含已重生成的探针)
+
+    def _q(s: str) -> uuid.UUID:
+        return uuid.uuid5(uuid.NAMESPACE_OID, s)
+
+    qid_dim: dict = {}
+    for i in range(K):
+        qid_dim[_q(f"grammar-probe:{node_id}:recognize:{i}")] = "recognize"
+        qid_dim[_q(f"grammar-probe:{node_id}:detect:{i}")] = "detect"
+        qid_dim[_q(f"grammar-retain:{node_id}:transfer:{i}")] = "recognize"
+    qid_dim[_q(f"grammar-grouped:{node_id}")] = "recognize"
+    qid_dim[_q(f"grammar-produce:{node_id}")] = "produce"
+
+    rows = (await db.execute(
+        sa.select(AnswerLog.question_id, AnswerLog.is_correct, AnswerLog.answered_at)
+        .where(AnswerLog.student_id == student_id, AnswerLog.question_id.in_(list(qid_dim)))
+        .order_by(AnswerLog.answered_at.asc())
+    )).all()
+
+    dims: dict = {"recognize": None, "detect": None, "produce": None}
+    by_day: dict[str, dict] = {}
+    for qid, correct, at in rows:
+        dim = qid_dim.get(qid)
+        if dim is None:
+            continue
+        dims[dim] = mastery_judge_service.bkt_update(dims[dim], correct)
+        vals = [v for v in dims.values() if v is not None]
+        m = round(min(vals), 4) if vals else 0.0
+        day = at.date().isoformat()
+        by_day[day] = {"date": day, "mastery": m, "mastery_events": GRAMMAR_EVIDENCE_FLOOR}   # 日末值
+
+    since = (_date.today() - timedelta(days=days - 1)).isoformat()
+    return sorted((p for d, p in by_day.items() if d >= since), key=lambda p: p["date"])
+
+
 # ── 探针库(KP 级公共缓存)────────────────────────────────────────────
 async def ensure_probes(db: AsyncSession, kp: KnowledgeNode) -> dict:
     """取该语法点探针库;无缓存则 LLM 生成(走 fast 档)并写回 grammar_probes_json。"""
