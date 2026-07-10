@@ -807,9 +807,8 @@ export function createExamPaper(body: ExamPaperCreate): Promise<AdminExamPaperIt
   return unwrap<AdminExamPaperItem>(request.post('/admin/exam-papers', body))
 }
 
-export function generateSimQuestionsFromPaper(paperId: string): Promise<{ paper_id: string; sim_questions_created: number }> {
-  return unwrap(request.post(`/admin/exam-papers/${paperId}/generate`))
-}
+// R8 Phase5a 已退役 generateSimQuestionsFromPaper:后端 /exam-papers/{id}/generate 已删,
+// 仿真生成统一到节点化 platform_question 流(genSimFromReal/genSimBulk/genSimForNode)。
 
 // ── M11 主题中心 ────────────────────────────────────────────────────────────
 export interface ThemeTokens {

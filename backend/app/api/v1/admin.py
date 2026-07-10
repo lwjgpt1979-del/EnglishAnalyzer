@@ -2293,59 +2293,9 @@ async def list_exam_papers(
     return make_ok(ExamPaperListOut(items=items, total=total))
 
 
-@router.post("/exam-papers/{paper_id}/generate", response_model=BaseResponse[dict])
-async def generate_sim_questions_from_paper(
-    paper_id: uuid.UUID, db: DbDep, admin: AdminDep
-):
-    """触发 AI 依据真题生成仿真题（规避版权：仿真题与原题措辞不同）。
-
-    MVP 实现：基于 ExamQuestion 记录（若存在）批量创建 SimulatedQuestion draft。
-    生产版本接入 LLM 改写服务。
-    """
-    from sqlalchemy import select as _s
-    from app.models.d12_v2_exams import ExamQuestion as _EQ
-
-    paper = (await db.execute(
-        _s(_EP).where(_EP.id == paper_id)
-    )).scalar_one_or_none()
-    if paper is None:
-        raise AppError(code=404, message="试卷不存在")
-
-    # 取该试卷下所有 exam_questions
-    eq_rows = (await db.execute(
-        _s(_EQ).where(_EQ.paper_id == paper_id)
-    )).scalars().all()
-
-    # 取第一个知识点（MVP：用首个可用 KP）
-    from app.models.d11_v2_curriculum import KnowledgePoint as _KP
-    kp = (await db.execute(_s(_KP).limit(1))).scalar_one_or_none()
-    if kp is None:
-        raise AppError(code=400, message="暂无知识点，请先生成课程内容")
-
-    created = 0
-    for eq in eq_rows:
-        # 检查是否已有仿真题
-        existing = (await db.execute(
-            _s(_SQ).where(_SQ.source_exam_question_id == eq.id)
-        )).scalar_one_or_none()
-        if existing:
-            continue
-        db.add(_SQ(
-            id=uuid.uuid4(),
-            source_exam_question_id=eq.id,
-            knowledge_point_id=kp.id,
-            question_type=eq.question_type,
-            stem=f"[仿真] {eq.stem}",
-            options=eq.options,
-            answer=eq.answer or "A",
-            explanation=eq.explanation,
-            difficulty=eq.difficulty or 3,
-            status="draft",
-        ))
-        created += 1
-
-    await db.commit()
-    return make_ok({"paper_id": str(paper_id), "sim_questions_created": created})
+# R8 Phase5a 已退役:POST /exam-papers/{id}/generate(依真题批量建 SimulatedQuestion)。
+# 该 MVP 端「取首个可用 KP」硬挂 knowledge_points(挑 KP 本身是 bug),且前端无任何调用方;
+# 仿真生成已统一到节点化的 platform_question 流(genSimFromReal/genSimBulk/genSimForNode)。
 
 
 # ── M2 课程内容 AI 生成 ────────────────────────────────────────────────────────
