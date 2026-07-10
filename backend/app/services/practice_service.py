@@ -186,11 +186,11 @@ async def generate_practice_questions(
     """
     kp_name = knowledge_point
     if not kp_name:
-        # M43：优先从 student_kp_mastery 台账读弱项
-        from app.services.adaptive_question_service import _get_weak_kp_names_from_mastery
-        mastery_weak = await _get_weak_kp_names_from_mastery(db, student_id=student_id, top_n=1)
-        if mastery_weak:
-            kp_name = mastery_weak[0]
+        # M43/R8：优先从 student_kp(node)读最弱知识点(有练习记录、正确率最低)
+        from app.services.adaptive_question_service import _weak_nodes_global
+        weak = await _weak_nodes_global(db, student_id=student_id, top_n=1)
+        if weak:
+            kp_name = weak[0][1]   # (node_id, name) → name
         else:
             # fallback：旧 diagnosis_service 逻辑
             report = await diagnosis_service.get_diagnosis_report(db, student_id=student_id)

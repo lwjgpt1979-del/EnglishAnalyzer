@@ -12,8 +12,45 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_asyncio
+from sqlalchemy import text
 
 from app.core.config import settings
+
+
+# R8:弱项从 student_kp(node)读。练习用的 KP 名须是 active node+alias,
+# upsert_mastery 的 match_kp 才解析得到、掌握写进 student_kp,_weak_nodes_global 才捞得到。
+_MOCK_KP_NAMES = ["动词短语辨析", "过去完成时", "虚拟语气"]
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _seed_mock_kp_nodes():
+    from app.core.database import _async_session_factory
+    from app.services.kp_normalize import normalize_kp_name
+    created: list = []
+    async with _async_session_factory() as s:
+        for name in _MOCK_KP_NAMES:
+            norm = normalize_kp_name(name)
+            if (await s.execute(text("SELECT 1 FROM knowledge_node_aliases WHERE alias_norm=:n"), {"n": norm})).first():
+                continue
+            nid = uuid.uuid4()
+            await s.execute(text(
+                "INSERT INTO knowledge_nodes (id,axis,name,code,status,source) "
+                "VALUES (:i,'knowledge',:nm,:c,'active','seed')"),
+                {"i": nid, "nm": name, "c": f"m43seed-{nid.hex[:8]}"})
+            await s.execute(text(
+                "INSERT INTO knowledge_node_aliases (id,node_id,alias,alias_norm,source) "
+                "VALUES (:i,:n,:a,:an,'seed')"),
+                {"i": uuid.uuid4(), "n": nid, "a": name, "an": norm})
+            created.append(nid)
+        await s.commit()
+    yield
+    if created:
+        async with _async_session_factory() as s:
+            await s.execute(text("DELETE FROM student_kp WHERE node_id = ANY(:ids)"), {"ids": created})
+            await s.execute(text("DELETE FROM knowledge_node_aliases WHERE node_id = ANY(:ids)"), {"ids": created})
+            await s.execute(text("DELETE FROM knowledge_nodes WHERE id = ANY(:ids)"), {"ids": created})
+            await s.commit()
 
 
 async def _login(client, openid: str) -> str:
