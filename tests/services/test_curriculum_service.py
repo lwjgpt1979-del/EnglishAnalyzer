@@ -9,10 +9,8 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import _async_session_factory
-from app.models.d4_knowledge import (
+from app.models.d4_knowledge import (  # R8:KnowledgePoint/UnitKnowledgePoint 已退役,单元知识点=unit_node 边
     CurriculumUnit,
-    KnowledgePoint,
-    UnitKnowledgePoint,
     CurriculumWord,
 )
 from app.models.d5_learning import VocabularyWord
@@ -209,27 +207,24 @@ async def test_persist_unit_unmatched_falls_to_candidate(db_session):
 
 @pytest.mark.asyncio
 async def test_persist_unit_idempotent(db_session):
-    """二次 persist 不应产生重复行。"""
-    ai = await curriculum_ai_service.generate_unit(
-        textbook_version="译林版", grade="小学5年级", semester="上", unit_no=1,
-    )
-    await curriculum_service.persist_unit(db_session, ai_unit=ai)
-    await db_session.flush()
-    count_kps_1 = len((await db_session.execute(
-        select(KnowledgePoint).where(
-            KnowledgePoint.code.in_([k.code for k in ai.knowledge_points])
-        )
-    )).scalars().all())
+    """二次 persist 不应产生重复 unit_node 边（R8:KP 落图谱节点,单元知识点=unit_node 边）。"""
+    from app.models.d17_curriculum_kg import UnitNode
 
-    await curriculum_service.persist_unit(db_session, ai_unit=ai)
-    await db_session.flush()
-    count_kps_2 = len((await db_session.execute(
-        select(KnowledgePoint).where(
-            KnowledgePoint.code.in_([k.code for k in ai.knowledge_points])
-        )
-    )).scalars().all())
+    ai = _make_unique_unit()
+    await _seed_kp_nodes(db_session, [kp.name for kp in ai.knowledge_points])
 
-    assert count_kps_1 == count_kps_2
+    cu = await curriculum_service.persist_unit(db_session, ai_unit=ai)
+    await db_session.flush()
+    count_1 = len((await db_session.execute(
+        select(UnitNode).where(UnitNode.unit_id == cu.id))).scalars().all())
+
+    cu2 = await curriculum_service.persist_unit(db_session, ai_unit=ai)
+    await db_session.flush()
+    assert cu2.id == cu.id   # 同 code → 同单元,不新建
+    count_2 = len((await db_session.execute(
+        select(UnitNode).where(UnitNode.unit_id == cu.id))).scalars().all())
+
+    assert count_1 == count_2 == len(ai.knowledge_points)
 
 
 @pytest.mark.asyncio

@@ -36,17 +36,13 @@ async def _seed_platform_sim() -> tuple[uuid.UUID, uuid.UUID]:
 
 
 async def _purge(db):
-    # 先删引用 ppsrc 知识点的 ai_questions(否则删 knowledge_points 撞 FK)
-    await db.execute(text("DELETE FROM ai_questions WHERE knowledge_point_id IN "
-                          "(SELECT id FROM knowledge_points WHERE name LIKE :p OR code LIKE :a)"),
-                     {"p": f"{_TAG}%", "a": f"auto_{_TAG}%"})
+    # R8 KP-First:旧 knowledge_points 表 + ai_questions.knowledge_point_id 列已退役,
+    # 只按 platform_question 派生的 ai_questions 及新图谱表清理。
     await db.execute(text("DELETE FROM ai_questions WHERE content->>'source_platform_question_id' IN "
                           "(SELECT id::text FROM platform_question WHERE stem LIKE :p)"), {"p": f"{_TAG}%"})
     await db.execute(text("DELETE FROM platform_question WHERE stem LIKE :p"), {"p": f"{_TAG}%"})
     await db.execute(text("DELETE FROM knowledge_node_aliases WHERE alias LIKE :p"), {"p": f"{_TAG}%"})
     await db.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_TAG}%"})
-    await db.execute(text("DELETE FROM knowledge_points WHERE name LIKE :p OR code LIKE :a"),
-                     {"p": f"{_TAG}%", "a": f"auto_{_TAG}%"})
 
 
 async def _cleanup(node_id):

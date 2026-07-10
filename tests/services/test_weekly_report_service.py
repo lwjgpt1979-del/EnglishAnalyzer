@@ -10,10 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import _async_session_factory
 from app.models.d1_users import StudentRelative, User
-from app.models.d12_v2_exams import SimPracticeRecord, SimulatedQuestion
 from app.models.d13_v2_user_papers import UserPaperQuestion, UserUploadedPaper
-from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
-from app.models.d4_knowledge import KnowledgePoint
+from app.models.d16_question_domain import AnswerLog  # R8:做题真值改读 answer_log(sim_practice_records 已退役)
 from app.models.d5_learning import StudyCheckin
 
 
@@ -109,40 +107,23 @@ async def test_generate_report_no_data_returns_zeros(db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_generate_report_counts_practice(db: AsyncSession):
-    """本周仿真题做题数正确统计。"""
+    """本周做题数正确统计（KP-First:answer_log 真值）。"""
     from app.services.weekly_report_service import generate_student_weekly_report
 
     student = await _make_user(db, "student")
 
-    # 知识点 + 仿真题（需要 FK）
-    kp = KnowledgePoint(
-        id=uuid.uuid4(), code=f"WR_{uuid.uuid4().hex[:6]}", name="现在完成时",
-        category="grammar", applicable_grades=["小学5年级"], applicable_textbooks=["译林版"],
-    )
-    db.add(kp)
-    await db.flush()
-
-    sim_q = SimulatedQuestion(
-        id=uuid.uuid4(), knowledge_point_id=kp.id, question_type="单选",
-        stem="test", answer="A", difficulty=2, status="published",
-    )
-    db.add(sim_q)
-    await db.flush()
-
-    # 本周 2 道做题记录
+    # 本周 2 条作答记录（answer_log.answered_at 在周内）
     for _ in range(2):
-        db.add(SimPracticeRecord(
-            id=uuid.uuid4(), student_id=student.id,
-            simulated_question_id=sim_q.id, knowledge_point_id=kp.id,
-            is_correct=True, user_answer="A",
-            created_at=_dt(WEEK_START + timedelta(days=1)),
+        db.add(AnswerLog(
+            id=uuid.uuid4(), student_id=student.id, q_scope="platform",
+            question_id=uuid.uuid4(), is_correct=True, feature="practice",
+            answered_at=_dt(WEEK_START + timedelta(days=1)),
         ))
-    # 上周 1 道（不应计入）
-    db.add(SimPracticeRecord(
-        id=uuid.uuid4(), student_id=student.id,
-        simulated_question_id=sim_q.id, knowledge_point_id=kp.id,
-        is_correct=True, user_answer="A",
-        created_at=_dt(WEEK_START - timedelta(days=3)),
+    # 上周 1 条（不应计入）
+    db.add(AnswerLog(
+        id=uuid.uuid4(), student_id=student.id, q_scope="platform",
+        question_id=uuid.uuid4(), is_correct=True, feature="practice",
+        answered_at=_dt(WEEK_START - timedelta(days=3)),
     ))
     await db.flush()
 

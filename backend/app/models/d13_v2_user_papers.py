@@ -40,7 +40,3 @@ class UserPaperQuestion(Base):
 
 # R8 Phase4 已退役:题↔KP 关联改为 UserPaperQuestion.node_id(见上)。
 # 表体待 Phase6 连同 knowledge_points 一并 drop,此处保留仅为迁移期兼容,业务代码不再读写。
-class UserPaperQuestionKnowledgePoint(Base):
-    __tablename__ = "user_paper_question_knowledge_points"
-    user_paper_question_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("user_paper_questions.id"), primary_key=True)
-    knowledge_point_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), primary_key=True)

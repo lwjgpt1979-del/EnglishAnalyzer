@@ -49,61 +49,6 @@ class ExamQuestion(Base):
     updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())
 
 
-class ExamQuestionKnowledgePoint(Base):
-    __tablename__ = "exam_question_knowledge_points"
-    exam_question_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("exam_questions.id"), primary_key=True)
-    knowledge_point_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), primary_key=True)
-    relevance = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("100"))
-
-
-class SimulatedQuestion(Base):
-    __tablename__ = "simulated_questions"
-    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    source_exam_question_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("exam_questions.id"), nullable=True)
-    knowledge_point_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), nullable=False)
-    question_type = mapped_column(ai_question_type_enum, nullable=False)
-    stem = mapped_column(sa.Text, nullable=False)
-    options = mapped_column(JSONB, nullable=True)
-    answer = mapped_column(sa.Text, nullable=False)
-    explanation = mapped_column(sa.Text, nullable=True)
-    difficulty = mapped_column(sa.SmallInteger, nullable=False)
-    dimension = mapped_column(dimension_enum, nullable=True)
-    generation_metadata = mapped_column(JSONB, nullable=True)
-    status = mapped_column(sim_status_enum, nullable=False, server_default=sa.text("'draft'"))
-    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
-    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())
-
-
-class SimPracticeRecord(Base):
-    """V2 仿真题逐题作答日志（练习 + 模拟考都写）。
-
-    用途：学情按知识点聚合正确率。knowledge_point_id 冗余自 simulated_questions，
-    避免聚合时 JOIN。每次作答（无论对错）写一行。
-    """
-    __tablename__ = "sim_practice_records"
-    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, index=True)
-    simulated_question_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("simulated_questions.id"), nullable=False)
-    knowledge_point_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id"), nullable=False, index=True)
-    is_correct = mapped_column(sa.Boolean, nullable=False)
-    user_answer = mapped_column(sa.Text, nullable=False)
-    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
-
-
-class SimExamSession(Base):
-    """V2 模拟考一次性批量提交的成绩快照（成绩历史）。
-
-    每次 submit_exam_attempts 落一行；逐题明细仍在 sim_practice_records。
-    """
-    __tablename__ = "sim_exam_sessions"
-    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False, index=True)
-    total = mapped_column(sa.Integer, nullable=False)
-    correct_count = mapped_column(sa.Integer, nullable=False)
-    accuracy = mapped_column(sa.Float, nullable=False)
-    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
-
-
 self_exam_status_enum = sa.Enum("answering", "done", name="self_exam_status")
 
 

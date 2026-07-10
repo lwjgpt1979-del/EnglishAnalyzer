@@ -601,7 +601,7 @@ async def delete_units(db: AsyncSession, *, unit_ids: list[uuid.UUID]) -> int:
     返回实际删除的单元数。
     """
     import sqlalchemy as _sa
-    from app.models.d4_knowledge import CurriculumWord, UnitKnowledgePoint
+    from app.models.d4_knowledge import CurriculumWord
     from app.models.d6_ai_questions import AiQuestion
     from app.models.d17_curriculum_kg import UnitNode
 
@@ -620,10 +620,9 @@ async def delete_units(db: AsyncSession, *, unit_ids: list[uuid.UUID]) -> int:
         _sa.update(AiQuestion).where(AiQuestion.unit_id.in_(existing))
         .values(unit_id=None)
     )
-    # 知识图谱关联:新边(unit_node)+ 旧桥(unit_knowledge_points)——只删边,留节点
+    # 知识图谱关联:单元级聚合边 unit_node——只删边,留节点
+    # (R8 Phase6c:旧桥 unit_knowledge_points 已随 knowledge_points 退役,不再删)
     await db.execute(_sa.delete(UnitNode).where(UnitNode.unit_id.in_(existing)))
-    await db.execute(
-        _sa.delete(UnitKnowledgePoint).where(UnitKnowledgePoint.unit_id.in_(existing)))
     # 单词通关联:单元词表(curriculum_words)——只删关联,留 vocabulary_words 主表
     await db.execute(_sa.delete(CurriculumWord).where(CurriculumWord.unit_id.in_(existing)))
     # 主表(级联删短文 curriculum_unit_passages → unit_passage_kp)

@@ -12,8 +12,8 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import _async_session_factory
 from app.main import app
-from app.models.d4_knowledge import KnowledgePoint
-from app.models.d12_v2_exams import SimulatedQuestion
+from app.models.d15_knowledge_graph import KnowledgeNode
+from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
 
 
 @pytest.fixture(autouse=True)
@@ -35,22 +35,17 @@ async def _login(client: AsyncClient, suffix: str) -> dict:
 
 
 async def _seed_kp_with_questions() -> tuple[uuid.UUID, uuid.UUID]:
-    """返回 (kp_id, single_choice_question_id)；新 session commit，跨请求可见。
+    """返回 (node_id, single_choice_question_id)；新 session commit，跨请求可见。
 
-    直插 5 道仿真题（question_service.persist_questions 已退役），含一道 answer="B"
-    的单选，保证 test_submit_correct/wrong_attempt 的 == "B" 断言确定。
+    R8 KP-First:直插 5 道 platform 仿真题(type='sim',is_fallback)挂到知识 node(platform_question_kp),
+    含一道 answer="B" 的单选,保证 test_submit_correct/wrong_attempt 的 == "B" 断言确定。
     """
+    node_id = uuid.uuid4()
+    single_b_id: uuid.UUID | None = None
     async with _async_session_factory() as s:
-        kp = KnowledgePoint(
-            id=uuid.uuid4(),
-            code=f"m3-test-{uuid.uuid4().hex[:8]}",
-            name="M3 测试 KP",
-            category="grammar",
-            description="m3 test",
-            applicable_grades=["小学5年级"],
-            applicable_textbooks=["译林版"],
-        )
-        s.add(kp)
+        s.add(KnowledgeNode(
+            id=node_id, axis="knowledge", node_kind="句法", name="M3 测试 KP",
+            code=f"m3-test-{uuid.uuid4().hex[:8]}", status="active", source="seed"))
         await s.flush()
         specs = [
             ("单选", ["A. x", "B. y", "C. z", "D. w"], "B"),
@@ -60,22 +55,17 @@ async def _seed_kp_with_questions() -> tuple[uuid.UUID, uuid.UUID]:
             ("填空", None, "can|may"),
         ]
         for qtype, opts, ans in specs:
-            s.add(SimulatedQuestion(
-                id=uuid.uuid4(), knowledge_point_id=kp.id,
+            qid = uuid.uuid4()
+            s.add(PlatformQuestion(
+                id=qid, type="sim", is_fallback=True, status="published",
                 question_type=qtype, stem=f"占位 {qtype} 题干",
-                options=opts, answer=ans, explanation="占位解析",
-                difficulty=1, status="published",
-            ))
+                options=opts, answer=ans, explanation="占位解析", difficulty=1))
+            await s.flush()
+            s.add(PlatformQuestionKp(question_id=qid, node_id=node_id))
+            if qtype == "单选" and ans == "B" and single_b_id is None:
+                single_b_id = qid
         await s.commit()
-
-        single_b = (await s.execute(
-            select(SimulatedQuestion).where(
-                SimulatedQuestion.knowledge_point_id == kp.id,
-                SimulatedQuestion.question_type == "单选",
-                SimulatedQuestion.answer == "B",
-            ).limit(1)
-        )).scalar_one()
-        return kp.id, single_b.id
+        return node_id, single_b_id
 
 
 @pytest.mark.asyncio
@@ -136,12 +126,12 @@ async def test_submit_exam_attempts_batch(client):
     """模拟考批量：5 题提交 3 对 2 错 → total=5, correct_count=3。"""
     kp_id, _ = await _seed_kp_with_questions()
 
-    # 取该 KP 全部 5 题的 (id, type, answer)，按真答案造 3 对 2 错
+    # 取该 node 全部 5 题的 (id, type, answer)，按真答案造 3 对 2 错
     async with _async_session_factory() as s:
         rows = (await s.execute(
-            select(SimulatedQuestion).where(
-                SimulatedQuestion.knowledge_point_id == kp_id
-            ).limit(5)
+            select(PlatformQuestion)
+            .join(PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id)
+            .where(PlatformQuestionKp.node_id == kp_id).limit(5)
         )).scalars().all()
 
     assert len(rows) == 5
@@ -177,67 +167,8 @@ async def test_submit_exam_attempts_batch(client):
 # GET /kp-accuracy、/exam-history 端点已删(读冻结 sim 表,与诊断页 kp_dimension 重复/已空)。
 
 
-async def _seed_kp_with_dimension_questions() -> uuid.UUID:
-    """灌一个 KP：listening 3 题（单选/阅读）+ dictation 3 题（填空）。返回 kp_id。"""
-    async with _async_session_factory() as s:
-        kp = KnowledgePoint(
-            id=uuid.uuid4(),
-            code=f"m3-dim-{uuid.uuid4().hex[:8]}",
-            name="维度测试 KP",
-            category="grammar",
-            description="dim test",
-            applicable_grades=["小学5年级"],
-            applicable_textbooks=["译林版"],
-        )
-        s.add(kp)
-        await s.flush()
-        dim_specs = {
-            "listening": [
-                ("单选", ["A. x", "B. y", "C. z", "D. w"], "B"),
-                ("阅读", ["A. x", "B. y", "C. z", "D. w"], "C"),
-                ("单选", ["A. x", "B. y", "C. z", "D. w"], "A"),
-            ],
-            "dictation": [
-                ("填空", None, "apple"),
-                ("填空", None, "banana"),
-                ("填空", None, "cat"),
-            ],
-        }
-        for dim, specs in dim_specs.items():
-            for qtype, opts, ans in specs:
-                s.add(SimulatedQuestion(
-                    id=uuid.uuid4(), knowledge_point_id=kp.id,
-                    question_type=qtype, stem=f"占位 {qtype} 题干",
-                    options=opts, answer=ans, explanation="占位解析",
-                    difficulty=1, dimension=dim, status="published",
-                ))
-        await s.commit()
-        return kp.id
-
-
-@pytest.mark.asyncio
-async def test_practice_questions_filter_by_dimension(client):
-    """带 ?dimension=listening 只返回听力题（单选/阅读），不含听写填空。"""
-    kp_id = await _seed_kp_with_dimension_questions()
-    h = await _login(client, f"dim_{uuid.uuid4().hex[:6]}")
-    resp = await client.get(
-        f"/api/v1/questions/kp/{kp_id}/practice-questions?limit=10&dimension=listening",
-        headers=h,
-    )
-    assert resp.status_code == 200, resp.text
-    items = resp.json()["data"]
-    assert len(items) == 3
-    assert all(it["question_type"] in ("单选", "阅读") for it in items)
-
-
-@pytest.mark.asyncio
-async def test_practice_questions_no_dimension_returns_all(client):
-    """不带 dimension 返回该 KP 全部题（向后兼容）。"""
-    kp_id = await _seed_kp_with_dimension_questions()
-    h = await _login(client, f"dim2_{uuid.uuid4().hex[:6]}")
-    resp = await client.get(
-        f"/api/v1/questions/kp/{kp_id}/practice-questions?limit=20",
-        headers=h,
-    )
-    assert resp.status_code == 200, resp.text
-    assert len(resp.json()["data"]) == 6
+# R8 KP-First 已退役 test_practice_questions_filter_by_dimension /
+# test_practice_questions_no_dimension_returns_all:
+# 「维度(dimension)过滤」在 KP-First 已弃用(questions.py 的 dimension 参数标注已弃用),
+# 且 serve_by_node 现按 node 出题、不足时现生成补齐到 limit(不再是"返回固定几道"),
+# 原「按维度筛/返回精确条数」的语义不复存在。节点化出题覆盖见上方 test_list_questions_*。

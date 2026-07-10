@@ -25,7 +25,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
-from app.models.d4_knowledge import KnowledgePoint
 from app.models.d6_ai_questions import AiQuestion, PracticeRecord
 from app.services import diagnosis_service
 from app.services.llm_provider import chat_completion, is_llm_dev_mode
@@ -288,16 +287,11 @@ async def submit_answer(
     # R8:掌握账统一到 student_kp(node)。刷题对错落 answer_log(真值)+ student_kp 投影,
     # 由 mastery_judge_service.log_answer **单一写入**(不再另调 upsert_mastery,避免 node 双计)。
     # 别名精确命中 node 才记(零 LLM、零副作用,不在热路径累加候选);未命中不记,不阻断判分。
-    # R8 Phase6-前置:node 优先取题上的 node_id(生成时已挂);无则回退旧路径(content 名/旧 kp_id → 别名)。
+    # R8 Phase6-前置/6c:node 优先取题上的 node_id(生成时已挂);无则按 content 里的知识点名过别名回退。
+    # (旧 kp_id→KnowledgePoint 回退随 knowledge_points 退役一并删)
     node_id = question.node_id
     if node_id is None:
         kp_name = str(question.content.get("knowledge_point", "")) or None
-        if not kp_name and question.knowledge_point_id:
-            kp_obj = (await db.execute(
-                select(KnowledgePoint).where(KnowledgePoint.id == question.knowledge_point_id)
-            )).scalar_one_or_none()
-            if kp_obj:
-                kp_name = kp_obj.name
         if kp_name:
             from app.models.d15_knowledge_graph import NodeAlias
             from app.services.kp_match_service import normalize_kp_name

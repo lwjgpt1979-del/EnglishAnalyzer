@@ -27,14 +27,11 @@ from .d2_payments import (  # noqa: F401
 # 域3: 错题与 AI 诊断 (4 张表)
 from .d3_wrong_questions import WrongQuestion, OcrTask, AiAnalysis, TeacherComment  # noqa: F401
 
-# 域4: 知识体系 (5 张表)
+# 域4: 知识体系(R8 Phase6c 退役 knowledge_points/unit_knowledge_points/wrong_question_knowledge_points)
 from .d4_knowledge import (  # noqa: F401
-    KnowledgePoint,
     CurriculumUnit,
     CurriculumCatalog,
-    UnitKnowledgePoint,
     CurriculumWord,
-    WrongQuestionKnowledgePoint,
 )
 
 # 域5: 学习功能 (5 张表)
@@ -70,19 +67,14 @@ from .d10_branch import (  # noqa: F401
     BranchCompany, BranchCompanyCity, BranchSettlement, PaymentAccount,
 )
 
-# 域11: V2 教材深度内容 (1 张表)
-from .d11_v2_curriculum import KnowledgePointContent, PendingKpContent, CurriculumGenJob  # noqa: F401
+# 域11: V2 教材深度内容(R8 Phase6c 退役 knowledge_point_contents)
+from .d11_v2_curriculum import PendingKpContent, CurriculumGenJob  # noqa: F401
 
-# 域12: V2 真题与仿真题 (4 张表)
-from .d12_v2_exams import (  # noqa: F401
-    ExamPaper, ExamQuestion, ExamQuestionKnowledgePoint, SimulatedQuestion,
-    SimPracticeRecord, SimExamSession,
-)
+# 域12: V2 真题与仿真题(R8 Phase6a2/6c 退役 simulated_questions/sim_*_records/exam_question_knowledge_points)
+from .d12_v2_exams import ExamPaper, ExamQuestion, SelfExam  # noqa: F401
 
-# 域13: V2 学生整卷上传 (3 张表)
-from .d13_v2_user_papers import (  # noqa: F401
-    UserUploadedPaper, UserPaperQuestion, UserPaperQuestionKnowledgePoint,
-)
+# 域13: V2 学生整卷上传(R8 Phase4/6c 退役 user_paper_question_knowledge_points)
+from .d13_v2_user_papers import UserUploadedPaper, UserPaperQuestion  # noqa: F401
 
 # 域14: V2 学期会员 (1 张表)
 from .d14_v2_semesters import PurchasedSemester  # noqa: F401

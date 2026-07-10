@@ -26,28 +26,6 @@ knowledge_category_enum = sa.Enum(
 # ─── MODELS ──────────────────────────────────────────────────────────────────
 
 
-class KnowledgePoint(Base):
-    __tablename__ = "knowledge_points"
-
-    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    code = mapped_column(sa.String, nullable=False, unique=True)
-    name = mapped_column(sa.String, nullable=False)
-    category = mapped_column(knowledge_category_enum, nullable=False)
-    description = mapped_column(sa.Text, nullable=True)
-    # PostgreSQL TEXT[]
-    applicable_grades = mapped_column(ARRAY(sa.String), nullable=False)
-    applicable_textbooks = mapped_column(ARRAY(sa.String), nullable=False)
-    # 自引用 FK（树形知识点结构）
-    parent_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("knowledge_points.id"),
-        nullable=True,
-    )
-    sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
-    # R10.1 语法理解探针库(词级公共复用:四维题面 + 误区,LLM 生成缓存)
-    grammar_probes_json = mapped_column(JSONB, nullable=True)
-
-
 class CurriculumUnit(Base):
     __tablename__ = "curriculum_units"
 
@@ -140,23 +118,6 @@ class UnitPassageKp(Base):
                                server_default=sa.func.now())
 
 
-class UnitKnowledgePoint(Base):
-    """课单元与知识点多对多（复合 PK）。"""
-
-    __tablename__ = "unit_knowledge_points"
-
-    unit_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("curriculum_units.id"),
-        primary_key=True,
-    )
-    knowledge_point_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("knowledge_points.id"),
-        primary_key=True,
-    )
-
-
 class CurriculumWord(Base):
     """课单元词汇表（word_id → vocabulary_words，域5，字符串 FK，延迟解析）。"""
 
@@ -176,23 +137,6 @@ class CurriculumWord(Base):
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
 
 
-class WrongQuestionKnowledgePoint(Base):
-    """错题与知识点多对多（AI 诊断结果关联）。"""
-
-    __tablename__ = "wrong_question_knowledge_points"
-
-    wrong_question_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("wrong_questions.id"),
-        primary_key=True,
-    )
-    knowledge_point_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("knowledge_points.id"),
-        primary_key=True,
-    )
-
-
 # R8.1:旧掌握台账 StudentKpMastery + 日快照 KpMasterySnapshot 已退役(迁移 m140 删表)。
 # 掌握账统一到 student_kp(node);趋势/回归从 answer_log 重放。
 
@@ -210,8 +154,10 @@ class StudentGrammarMastery(Base):
                        server_default=sa.text("gen_random_uuid()"))
     student_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # R8 Phase6c:kp_id 实际存 knowledge_nodes.id(R10 早已 re-base,dev DB 约束 fk_sgm_kp_node→knowledge_nodes);
+    # 修正模型注解与库一致(原误写 knowledge_points)。列名沿用 kp_id。
     kp_id = mapped_column(
-        UUID(as_uuid=True), sa.ForeignKey("knowledge_points.id", ondelete="CASCADE"), nullable=False)
+        UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id", ondelete="CASCADE"), nullable=False)
     mastery_recognize = mapped_column(sa.Numeric(5, 4), nullable=True)
     mastery_detect = mapped_column(sa.Numeric(5, 4), nullable=True)
     mastery_produce = mapped_column(sa.Numeric(5, 4), nullable=True)

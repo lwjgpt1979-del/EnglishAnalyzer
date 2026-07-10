@@ -1,10 +1,8 @@
-"""TDD: adaptive_question_service — 按薄弱知识点智能出题。
+"""adaptive_question_service — 按薄弱知识点智能出题（KP-First）。
 
-Red-Green-Refactor 顺序：
-  1. 写此测试
-  2. 跑 pytest → 必须 RED（ImportError / AttributeError）
-  3. 写 adaptive_question_service.py 最小实现
-  4. 跑 pytest → GREEN
+R8 KP-First:弱项来源从「错题 AI 分析(knowledge_points)」切到 student_kp(node 掌握台账),
+出题走 question_serve_service.serve_by_node(platform 仿真优先→现生成兜底,answer_log 去重)。
+原基于 simulated_questions/sim_practice_records/KnowledgePoint 的种子已随退役表一并迁移。
 """
 from __future__ import annotations
 
@@ -12,15 +10,18 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import _async_session_factory
 from app.models.d1_users import User
-from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
-from app.models.d4_knowledge import KnowledgePoint
-from app.models.d12_v2_exams import SimPracticeRecord, SimulatedQuestion
+from app.models.d15_knowledge_graph import KnowledgeNode
+from app.models.d16_question_domain import (
+    AnswerLog,
+    PlatformQuestion,
+    PlatformQuestionKp,
+    StudentKp,
+)
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -51,66 +52,45 @@ async def student(db: AsyncSession) -> User:
     return u
 
 
-def _make_kp(name: str, desc: str = "") -> KnowledgePoint:
-    return KnowledgePoint(
+async def _make_node(db: AsyncSession, name: str) -> KnowledgeNode:
+    node = KnowledgeNode(
         id=uuid.uuid4(),
-        code=f"TST_{uuid.uuid4().hex[:6]}",
+        axis="knowledge",
+        node_kind="句法",
         name=name,
-        category="grammar",
-        description=desc or None,
-        applicable_grades=["小学5年级"],
-        applicable_textbooks=["译林版"],
+        code=f"TST_{uuid.uuid4().hex[:8]}",
+        status="active",
+        source="seed",
     )
+    db.add(node)
+    await db.flush()
+    return node
+
+
+async def _make_weak(db: AsyncSession, student: User, node: KnowledgeNode) -> None:
+    """把某 node 记为该生薄弱项(有练习记录、正确率低、在学习范围内)。"""
+    db.add(StudentKp(
+        student_id=student.id, node_id=node.id,
+        practice_count=4, wrong_count=3, in_scope=True,
+    ))
+    await db.flush()
 
 
 @pytest_asyncio.fixture
-async def kp(db: AsyncSession) -> KnowledgePoint:
-    kp = _make_kp("现在完成时", "表示过去发生对现在有影响的动作")
-    db.add(kp)
-    await db.flush()
+async def kp(db: AsyncSession) -> KnowledgeNode:
+    return await _make_node(db, "现在完成时")
+
+
+@pytest_asyncio.fixture
+async def kp2(db: AsyncSession) -> KnowledgeNode:
+    return await _make_node(db, "被动语态")
+
+
+@pytest_asyncio.fixture
+async def weak_kp(db: AsyncSession, student: User, kp: KnowledgeNode) -> KnowledgeNode:
+    """把 kp 标为薄弱项，让自适应有可出题的弱 node。"""
+    await _make_weak(db, student, kp)
     return kp
-
-
-@pytest_asyncio.fixture
-async def kp2(db: AsyncSession) -> KnowledgePoint:
-    kp = _make_kp("被动语态", "表示主语是动作的承受者")
-    db.add(kp)
-    await db.flush()
-    return kp
-
-
-@pytest_asyncio.fixture
-async def wrong_question_with_analysis(
-    db: AsyncSession, student: User, kp: KnowledgePoint
-) -> WrongQuestion:
-    """造一道错题 + AI 分析，让诊断数据中有薄弱知识点。"""
-    wq = WrongQuestion(
-        id=uuid.uuid4(),
-        student_id=student.id,
-        question_type="单选",
-        question_text="He ___ to school yesterday.",
-        correct_answer="went",
-        student_answer="go",
-        source_image_url="v2-practice",
-        is_mastered=False,
-    )
-    db.add(wq)
-    await db.flush()
-
-    ai = AiAnalysis(
-        id=uuid.uuid4(),
-        wrong_question_id=wq.id,
-        student_id=student.id,
-        llm_provider="deepseek",
-        error_types=["时态错误"],
-        knowledge_points=[kp.name],
-        diagnosis="时态使用错误",
-        suggestions="注意过去式的使用",
-        tokens_used=100,
-    )
-    db.add(ai)
-    await db.flush()
-    return wq
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
@@ -119,8 +99,8 @@ async def wrong_question_with_analysis(
 async def test_get_adaptive_set_returns_questions(
     db: AsyncSession,
     student: User,
-    kp: KnowledgePoint,
-    wrong_question_with_analysis,
+    kp: KnowledgeNode,
+    weak_kp,
 ):
     """有薄弱知识点时，应返回至少1道题。"""
     from app.services import adaptive_question_service
@@ -139,7 +119,7 @@ async def test_get_adaptive_set_no_data_returns_empty(
     db: AsyncSession,
     student: User,
 ):
-    """没有任何错题时，返回空题集（不报错）。"""
+    """没有任何薄弱记录时，返回空题集（不报错）。"""
     from app.services import adaptive_question_service
 
     result = await adaptive_question_service.get_adaptive_set(
@@ -154,87 +134,48 @@ async def test_get_adaptive_set_no_data_returns_empty(
 async def test_get_adaptive_set_excludes_already_done(
     db: AsyncSession,
     student: User,
-    kp: KnowledgePoint,
-    wrong_question_with_analysis,
+    kp: KnowledgeNode,
+    weak_kp,
 ):
-    """已做过的题（sim_practice_records 里有记录）不应重复出现。"""
+    """已做过的题（answer_log 里有记录）不应重复出现。"""
     from app.services import adaptive_question_service
 
-    # 直接建一道仿真题（question_service.persist_questions 已退役，改直插模型）
-    sq = SimulatedQuestion(
-        id=uuid.uuid4(),
-        knowledge_point_id=kp.id,
-        question_type="单选",
-        stem="占位题干",
-        options=["A. x", "B. y", "C. z", "D. w"],
-        answer="B",
-        explanation="占位解析",
-        difficulty=1,
-        status="published",
-    )
-    db.add(sq)
+    # 该 node 已发布一道 platform 仿真题
+    q_id = uuid.uuid4()
+    db.add(PlatformQuestion(
+        id=q_id, type="sim", is_fallback=True, status="published",
+        question_type="单选", stem="占位题干", options=["A. x", "B. y", "C. z", "D. w"],
+        answer="B", explanation="占位解析", difficulty=1,
+    ))
     await db.flush()
-    saved = [sq]
-
-    # 记录该学生已做过这道题
-    rec = SimPracticeRecord(
-        id=uuid.uuid4(),
-        student_id=student.id,
-        simulated_question_id=saved[0].id,
-        knowledge_point_id=kp.id,
-        is_correct=False,
-        user_answer="wrong",
-    )
-    db.add(rec)
+    db.add(PlatformQuestionKp(question_id=q_id, node_id=kp.id))
+    # 记录该生已做过这道题(answer_log 真值)
+    db.add(AnswerLog(
+        id=uuid.uuid4(), student_id=student.id, q_scope="platform",
+        question_id=q_id, is_correct=False, feature="practice", node_id=kp.id,
+    ))
     await db.flush()
 
-    # 如果题库只有这1道且已做过，结果应该是0道（或由 AI 新生成的题）
-    # 此测试只验证"已做过"的那道题 id 不在结果里
     result = await adaptive_question_service.get_adaptive_set(
         db, student_id=student.id, total=5
     )
-    done_ids = {saved[0].id}
     result_ids = {q.id for q in result.questions}
-    assert not (done_ids & result_ids), "已做过的题不应再次出现"
+    assert q_id not in result_ids, "已做过的题不应再次出现"
 
 
 @pytest.mark.asyncio
 async def test_get_adaptive_set_respects_total_limit(
     db: AsyncSession,
     student: User,
-    kp: KnowledgePoint,
-    kp2: KnowledgePoint,
-    wrong_question_with_analysis,
+    kp: KnowledgeNode,
+    kp2: KnowledgeNode,
+    weak_kp,
 ):
     """返回题目数量不超过 total 参数。"""
     from app.services import adaptive_question_service
 
-    # 给 kp2 也加错题记录
-    wq2 = WrongQuestion(
-        id=uuid.uuid4(),
-        student_id=student.id,
-        question_type="填空",
-        question_text="The window ___ broken.",
-        correct_answer="was",
-        student_answer="is",
-        source_image_url="v2-practice",
-        is_mastered=False,
-    )
-    db.add(wq2)
-    await db.flush()
-    ai2 = AiAnalysis(
-        id=uuid.uuid4(),
-        wrong_question_id=wq2.id,
-        student_id=student.id,
-        llm_provider="deepseek",
-        error_types=["语态错误"],
-        knowledge_points=[kp2.name],
-        diagnosis="语态使用错误",
-        suggestions="注意被动语态",
-        tokens_used=100,
-    )
-    db.add(ai2)
-    await db.flush()
+    # kp2 也标为薄弱项
+    await _make_weak(db, student, kp2)
 
     result = await adaptive_question_service.get_adaptive_set(
         db, student_id=student.id, total=3
@@ -242,13 +183,6 @@ async def test_get_adaptive_set_respects_total_limit(
     assert len(result.questions) <= 3
 
 
-def test_to_enum_type_maps_fill_types():
-    """物化题型映射:客观填空类→enum「填空」;选择类如实继承;未知/主观→兜底单选。"""
-    from app.services.adaptive_question_service import _to_enum_type
-    assert _to_enum_type("动词填空") == "填空"
-    assert _to_enum_type("词汇运用") == "填空"
-    assert _to_enum_type("短文填空") == "填空"
-    assert _to_enum_type("完型") == "完型"
-    assert _to_enum_type("阅读") == "阅读"
-    assert _to_enum_type("单选") == "单选"
-    assert _to_enum_type(None) == "单选"
+# R8 KP-First 已退役 test_to_enum_type_maps_fill_types:
+# _to_enum_type 是老「物化 simulated_questions 时的题型枚举映射」辅助,KP-First 出题直接
+# 走 platform_question(serve_by_node 统一出单选),不再物化,该辅助已删。

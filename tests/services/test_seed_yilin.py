@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.database import _async_session_factory
-from app.models.d4_knowledge import CurriculumUnit, UnitKnowledgePoint
+from app.models.d4_knowledge import CurriculumUnit  # R8:UnitKnowledgePoint 已退役,单元知识点=unit_node 边
 
 
 @pytest.fixture(autouse=True)

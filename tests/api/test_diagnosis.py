@@ -324,21 +324,26 @@ def test_diagnosis_report_dimensions_default_empty():
 
 
 async def _make_kp_with_unit(db_session, *, accuracy_attempts, student_id):
-    """建 KP + 单元 + 关联，并按 accuracy_attempts=[(is_correct), ...] 写练习记录。"""
-    from app.models.d4_knowledge import (
-        CurriculumUnit, KnowledgePoint, UnitKnowledgePoint,
-    )
-    from app.models.d12_v2_exams import SimPracticeRecord, SimulatedQuestion
+    """建 node + 单元 + unit_node 边，并按 accuracy_attempts=[(is_correct), ...] 写 answer_log。
 
-    kp = KnowledgePoint(
+    R8 KP-First:诊断维度改由 answer_log.node_id 聚合(kp)、unit_node→curriculum_units(学期),
+    不再走已退役的 knowledge_points/simulated_questions/sim_practice_records。
+    """
+    from app.models.d4_knowledge import CurriculumUnit
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import AnswerLog
+    from app.models.d17_curriculum_kg import UnitNode
+
+    node = KnowledgeNode(
         id=uuid.uuid4(),
-        code=f"KP_{uuid.uuid4().hex[:8]}",
+        axis="knowledge",
+        node_kind="grammar",
         name="一般过去时",
-        category="grammar",
-        applicable_grades=["七年级"],
-        applicable_textbooks=["人教版"],
+        code=f"node-{uuid.uuid4().hex[:8]}",
+        status="active",
+        source="seed",
     )
-    db_session.add(kp)
+    db_session.add(node)
     unit = CurriculumUnit(
         id=uuid.uuid4(),
         textbook_version="人教版",
@@ -349,32 +354,19 @@ async def _make_kp_with_unit(db_session, *, accuracy_attempts, student_id):
     )
     db_session.add(unit)
     await db_session.flush()
-    db_session.add(UnitKnowledgePoint(unit_id=unit.id, knowledge_point_id=kp.id))
-    # 一道仿真题（练习记录 FK 需要）
-    sq = SimulatedQuestion(
-        id=uuid.uuid4(),
-        knowledge_point_id=kp.id,
-        question_type="单选",
-        stem="She ___ to school yesterday.",
-        options=["go", "goes", "went", "going"],
-        answer="C",
-        explanation="过去时",
-        difficulty=2,
-        status="published",
-    )
-    db_session.add(sq)
-    await db_session.flush()
+    db_session.add(UnitNode(unit_id=unit.id, node_id=node.id, source="seed"))
     for ok in accuracy_attempts:
-        db_session.add(SimPracticeRecord(
+        db_session.add(AnswerLog(
             id=uuid.uuid4(),
             student_id=student_id,
-            simulated_question_id=sq.id,
-            knowledge_point_id=kp.id,
+            q_scope="platform",
+            question_id=uuid.uuid4(),
             is_correct=ok,
-            user_answer="C" if ok else "A",
+            feature="practice",
+            node_id=node.id,
         ))
     await db_session.flush()
-    return kp, unit
+    return node, unit
 
 
 @pytest.mark.asyncio

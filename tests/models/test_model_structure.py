@@ -121,23 +121,10 @@ def test_wrong_question_columns():
 
 
 def test_d4_knowledge_tables():
-    from app.models.d4_knowledge import (
-        KnowledgePoint, CurriculumUnit, UnitKnowledgePoint,
-        CurriculumWord, WrongQuestionKnowledgePoint,
-    )
-    assert KnowledgePoint.__tablename__ == "knowledge_points"
+    # R8 KP-First 退役 KnowledgePoint/UnitKnowledgePoint/WrongQuestionKnowledgePoint（表已 DROP）。
+    from app.models.d4_knowledge import CurriculumUnit, CurriculumWord
     assert CurriculumUnit.__tablename__ == "curriculum_units"
-    assert UnitKnowledgePoint.__tablename__ == "unit_knowledge_points"
     assert CurriculumWord.__tablename__ == "curriculum_words"
-    assert WrongQuestionKnowledgePoint.__tablename__ == "wrong_question_knowledge_points"
-
-
-def test_knowledge_point_self_fk():
-    from app.models.d4_knowledge import KnowledgePoint
-    cols = {c.name for c in KnowledgePoint.__table__.columns}
-    assert "parent_id" in cols, "knowledge_points 缺少 parent_id 自引用 FK"
-    assert "applicable_grades" in cols
-    assert "applicable_textbooks" in cols
 
 
 def test_curriculum_unit_unique_constraint():
@@ -292,9 +279,8 @@ def test_all_37_tables_in_metadata():
         "institution_purchases", "activation_codes",
         # 域3
         "wrong_questions", "ocr_tasks", "ai_analyses", "teacher_comments",
-        # 域4
-        "knowledge_points", "curriculum_units", "unit_knowledge_points",
-        "curriculum_words", "wrong_question_knowledge_points",
+        # 域4（R8 KP-First 退役 knowledge_points/unit_knowledge_points/wrong_question_knowledge_points）
+        "curriculum_units", "curriculum_words",
         # 域5
         "vocabulary_words", "vocabulary_learning", "essays",
         "listening_records", "study_checkins",
@@ -308,14 +294,11 @@ def test_all_37_tables_in_metadata():
         "system_configs", "notifications",
         # 域10
         "branch_companies", "branch_company_cities", "branch_settlements",
-        # 域11: V2 教材深度内容
-        "knowledge_point_contents",
-        # 域12: V2 真题与仿真题
-        "exam_papers", "exam_questions", "exam_question_knowledge_points",
-        "simulated_questions", "sim_practice_records", "sim_exam_sessions",
-        # 域13: V2 学生整卷上传
+        # 域12: V2 真题（R8 KP-First 退役 exam_question_knowledge_points/simulated_questions/
+        #   sim_practice_records/sim_exam_sessions）
+        "exam_papers", "exam_questions",
+        # 域13: V2 学生整卷上传（R8 退役 user_paper_question_knowledge_points）
         "user_uploaded_papers", "user_paper_questions",
-        "user_paper_question_knowledge_points",
         # 域14: V2 学期会员
         "purchased_semesters",
         # 域15: 知识图谱骨架（KP-First R0.1）
@@ -337,32 +320,25 @@ def test_all_37_tables_in_metadata():
     missing = expected_tables - actual_tables
     assert not missing, f"Base.metadata 缺少以下表: {sorted(missing)}"
     # 实际表数量会随新功能增长——此处为防"意外增删表"的护栏，新增合法表后同步更新。
-    # 132 = 旧 133 − R8.1b 退役 2(student_kp_mastery/kp_mastery_snapshots) + 敏感操作审批 1(sensitive_approval)。
-    assert len(actual_tables) == 132, f"期望 132 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
-
-
-def test_d11_v2_curriculum_tables():
-    from app.models.d11_v2_curriculum import KnowledgePointContent
-    assert KnowledgePointContent.__tablename__ == "knowledge_point_contents"
+    # 123 = 旧 132 − R8 KP-First Phase6c 退役 9 张
+    #   (knowledge_points/unit_knowledge_points/wrong_question_knowledge_points/
+    #    knowledge_point_contents/exam_question_knowledge_points/simulated_questions/
+    #    sim_practice_records/sim_exam_sessions/user_paper_question_knowledge_points)。
+    assert len(actual_tables) == 123, f"期望 123 张表，实际 {len(actual_tables)} 张: {sorted(actual_tables)}"
 
 
 def test_d12_v2_exams_tables():
-    from app.models.d12_v2_exams import (
-        ExamPaper, ExamQuestion, ExamQuestionKnowledgePoint, SimulatedQuestion,
-    )
+    # R8 KP-First 退役 ExamQuestionKnowledgePoint/SimulatedQuestion（表已 DROP）。
+    from app.models.d12_v2_exams import ExamPaper, ExamQuestion
     assert ExamPaper.__tablename__ == "exam_papers"
     assert ExamQuestion.__tablename__ == "exam_questions"
-    assert ExamQuestionKnowledgePoint.__tablename__ == "exam_question_knowledge_points"
-    assert SimulatedQuestion.__tablename__ == "simulated_questions"
 
 
 def test_d13_v2_user_papers_tables():
-    from app.models.d13_v2_user_papers import (
-        UserUploadedPaper, UserPaperQuestion, UserPaperQuestionKnowledgePoint,
-    )
+    # R8 KP-First 退役 UserPaperQuestionKnowledgePoint（表已 DROP）。
+    from app.models.d13_v2_user_papers import UserUploadedPaper, UserPaperQuestion
     assert UserUploadedPaper.__tablename__ == "user_uploaded_papers"
     assert UserPaperQuestion.__tablename__ == "user_paper_questions"
-    assert UserPaperQuestionKnowledgePoint.__tablename__ == "user_paper_question_knowledge_points"
 
 
 def test_d14_v2_semesters_tables():

@@ -2134,7 +2134,7 @@ async def add_vocab_items_api(list_id: uuid.UUID, body: VocabItemsIn, db: DbDep,
 # ─── V2 M28：真题试卷管理（版权规避：真题内部存储，仅对外暴露仿真题）──────────
 
 from pydantic import BaseModel as _BM, Field as _F
-from app.models.d12_v2_exams import ExamPaper as _EP, SimulatedQuestion as _SQ
+from app.models.d12_v2_exams import ExamPaper as _EP
 
 
 class ExamPaperCreate(_BM):
@@ -2206,9 +2206,8 @@ async def list_exam_papers(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
-    """列出所有真题试卷（含仿真题数量统计）。"""
+    """列出所有真题试卷。"""
     from sqlalchemy import func, select as _s
-    from app.models.d12_v2_exams import ExamQuestion as _EQ
 
     total: int = (await db.execute(
         _s(func.count()).select_from(_EP)
@@ -2220,12 +2219,7 @@ async def list_exam_papers(
 
     items = []
     for p in rows:
-        # 统计该试卷关联的仿真题数（通过 exam_questions → simulated_questions）
-        sim_cnt: int = (await db.execute(
-            _s(func.count(_SQ.id))
-            .join(_EQ, _EQ.id == _SQ.source_exam_question_id)
-            .where(_EQ.paper_id == p.id)
-        )).scalar_one()
+        # R8 Phase6c:仿真题已迁 platform_question,simulated_questions 退役 → 不再按卷计仿真数(恒 0)
         items.append(ExamPaperOut(
             id=str(p.id),
             title=p.title,
@@ -2235,7 +2229,7 @@ async def list_exam_papers(
             region=p.region,
             paper_url=p.paper_url,
             status=str(p.status),
-            sim_count=sim_cnt,
+            sim_count=0,
             created_at=p.created_at.isoformat(),
         ))
     return make_ok(ExamPaperListOut(items=items, total=total))
