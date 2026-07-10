@@ -81,6 +81,7 @@ const navGroups: NavGroup[] = [
     { path: '/pricing', label: '定价配置' },
     { path: '/entitlements', label: '会员权益配置' },
     { path: '/refunds', label: '退款 / 申诉审核' },
+    { path: '/approvals', label: '敏感操作审批' },
     { path: '/payment-accounts', label: '收款主体' },
     { path: '/branch-companies', label: '分公司管理' },
     { path: '/finance', label: '财务管理' },

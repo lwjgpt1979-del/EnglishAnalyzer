@@ -895,6 +895,27 @@ export function reviewRefund(id: string, body: {
     request.post(`/admin/refunds/${id}/review`, body),
   )
 }
+// ── 敏感操作二次审批(maker-checker)──
+export interface ApprovalItem {
+  id: string; action_type: string; summary: string; amount_fen: number | null
+  status: string; maker_id: string; maker_name: string | null; maker_note: string | null
+  checker_id: string | null; checker_name: string | null; checker_note: string | null
+  exec_error: string | null; created_at: string | null; decided_at: string | null
+}
+export interface ApprovalConfig { enabled: boolean; refund_amount_fen: number; coupon_grant_count: number }
+export function listApprovals(params: { status?: string; skip?: number; limit?: number }): Promise<{ total: number; items: ApprovalItem[] }> {
+  return unwrap(request.get('/admin/approvals', { params }))
+}
+export function decideApproval(id: string, body: { approve: boolean; note?: string | null }): Promise<{ id: string; status: string }> {
+  return unwrap(request.post(`/admin/approvals/${id}/decide`, body))
+}
+export function getApprovalConfig(): Promise<ApprovalConfig> {
+  return unwrap(request.get('/admin/approvals/config'))
+}
+export function updateApprovalConfig(body: Partial<ApprovalConfig>): Promise<ApprovalConfig> {
+  return unwrap(request.put('/admin/approvals/config', body))
+}
+
 export function getOrderEvidence(orderId: string): Promise<Record<string, unknown>> {
   return unwrap<Record<string, unknown>>(request.get(`/admin/orders/${orderId}/evidence`))
 }

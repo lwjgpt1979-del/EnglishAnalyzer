@@ -44,6 +44,7 @@ const router = createRouter({
         { path: 'notifications', name: 'notifications', component: () => import('../views/Notifications.vue') },
         { path: 'entitlements', name: 'entitlements', component: () => import('../views/Entitlements.vue') },
         { path: 'refunds', name: 'refunds', component: () => import('../views/Refunds.vue') },
+        { path: 'approvals', name: 'approvals', component: () => import('../views/SensitiveApprovals.vue') },
         { path: 'payment-accounts', name: 'payment-accounts', component: () => import('../views/PaymentAccounts.vue') },
         { path: 'branch-companies', name: 'branch-companies', component: () => import('../views/BranchCompanies.vue') },
         { path: 'users', name: 'users', component: () => import('../views/Users.vue') },
