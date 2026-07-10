@@ -2615,7 +2615,20 @@ async def admin_list_refunds(
 async def admin_review_refund(
     refund_id: uuid.UUID, body: RefundReviewRequest, db: DbDep, admin: AdminDep,
 ):
-    """审核一条退款/申诉：approve 执行退款（dev-mock）/驳回。"""
+    """审核一条退款/申诉：approve 执行退款（dev-mock）/驳回。
+
+    二次审批(maker-checker):批准且金额达阈值 → 落待审批,由另一位管理员复核后才执行;
+    驳回/小额直接执行。
+    """
+    from app.services import approval_service
+    if body.approve:
+        gate = await approval_service.gate_refund_approve(
+            db, admin=admin, refund_id=refund_id,
+            amount_fen=body.amount_fen, reason=body.reason)
+        if gate is not None:
+            await db.commit()
+            return make_ok({"pending_approval_id": str(gate.id), "status": "pending_approval",
+                            "message": "已提交二次审批,需另一位管理员复核"})
     rec = await _refund_svc.review(
         db, admin, refund_id,
         approve=body.approve, amount_fen=body.amount_fen, reason=body.reason)
@@ -3087,8 +3100,18 @@ async def admin_set_coupon_active(coupon_id: uuid.UUID, body: dict, db: DbDep, a
 
 @router.post("/coupons/{coupon_id}/grant", response_model=None)
 async def admin_grant_coupon(coupon_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
-    """直发给用户。body={user_ids:[uuid,...]}。"""
+    """直发给用户。body={user_ids:[uuid,...]}。
+
+    二次审批:发券人数达阈值 → 落待审批,另一位管理员复核后才发;未达阈值直接发。
+    """
     uids = [uuid.UUID(x) for x in (body or {}).get("user_ids", [])]
+    from app.services import approval_service
+    gate = await approval_service.gate_coupon_grant(
+        db, admin=admin, coupon_id=coupon_id, user_ids=uids)
+    if gate is not None:
+        await db.commit()
+        return make_ok({"pending_approval_id": str(gate.id), "status": "pending_approval",
+                        "message": "已提交二次审批,需另一位管理员复核"})
     n = await _coupon_svc.admin_grant(db, coupon_id=coupon_id, user_ids=uids)
     await db.commit()
     return make_ok({"granted": n})
