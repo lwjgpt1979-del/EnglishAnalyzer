@@ -193,74 +193,8 @@ class WrongQuestionKnowledgePoint(Base):
     )
 
 
-class StudentKpMastery(Base):
-    """每位学生对每个知识点的掌握台账（M39）。
-
-    kp_key 为知识点名称字符串，是联合主键的一部分。
-    标准教材 KP → kp_id 填写对应 UUID；教师/自定义 KP → kp_id = NULL。
-    sources 记录累积写入的来源列表（去重），如 ['practice', 'paper_upload', 'assignment']。
-    kp_description 为知识点简介（标准KP来自 knowledge_points.description，自定义KP可由 AI 填入）。
-    """
-
-    __tablename__ = "student_kp_mastery"
-
-    student_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        primary_key=True,
-    )
-    kp_key = mapped_column(sa.Text, nullable=False, primary_key=True)
-    kp_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("knowledge_points.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    correct_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
-    wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
-    # 贡献来源列表，去重存储，如 ['practice', 'paper_upload', 'assignment', 'wrong_question']
-    sources = mapped_column(ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"))
-    # 知识点简介：标准KP来自 knowledge_points.description，自定义KP可由 AI 填入
-    kp_description = mapped_column(sa.Text, nullable=True)
-    last_activity_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
-
-
-class KpMasterySnapshot(Base):
-    """KP 掌握度日快照（M46 趋势图数据源）。
-
-    每次 upsert_mastery 时写入/更新当天的快照行（按 UTC 日期去重）。
-    存储当时的 correct_count / wrong_count / accuracy，用于绘制趋势折线。
-    UNIQUE(student_id, kp_key, snapshot_date) 保证每天最多一行。
-    """
-
-    __tablename__ = "kp_mastery_snapshots"
-
-    id = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=sa.text("gen_random_uuid()"),
-    )
-    student_id = mapped_column(
-        UUID(as_uuid=True),
-        sa.ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    kp_key = mapped_column(sa.Text, nullable=False)
-    snapshot_date = mapped_column(sa.Date, nullable=False)      # UTC 日期
-    accuracy = mapped_column(sa.Float, nullable=False, default=0.0)
-    correct_count = mapped_column(sa.Integer, nullable=False, default=0)
-    wrong_count = mapped_column(sa.Integer, nullable=False, default=0)
-    recorded_at = mapped_column(
-        sa.TIMESTAMP(timezone=True),
-        nullable=False,
-        server_default=sa.text("now()"),
-    )
-
-    __table_args__ = (
-        sa.UniqueConstraint("student_id", "kp_key", "snapshot_date",
-                            name="uq_kp_snapshot_student_kp_date"),
-    )
+# R8.1:旧掌握台账 StudentKpMastery + 日快照 KpMasterySnapshot 已退役(迁移 m140 删表)。
+# 掌握账统一到 student_kp(node);趋势/回归从 answer_log 重放。
 
 
 class StudentGrammarMastery(Base):

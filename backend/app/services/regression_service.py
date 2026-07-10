@@ -1,21 +1,22 @@
 """学情退步预警 service（M13）。
 
-从 kp_mastery_snapshots 检测「知识点正确率下滑」：
-对每个 KP 取近 lookback_days 的日快照，比较「历史峰值」与「最新」正确率，
-跌幅 ≥ min_drop 且最新有足够样本 → 判为退步，按跌幅排序、分严重度。
+检测「知识点正确率下滑」：对每个 node 取近 lookback_days 的每日**累计**正确率,
+比较「历史峰值」与「最新」,跌幅 ≥ min_drop 且最新有足够样本 → 判退步、按跌幅排序分严重度。
 
-无新表；可被学情报告、预警接口、通知推送共用。
+R8.1:数据源从旧 kp_mastery_snapshots(kp_key 快照)改为从 answer_log(node)**重放**
+每日累计正确率(无需快照表)。可被学情报告、预警接口、通知推送共用。
 """
 from __future__ import annotations
 
 import uuid
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d4_knowledge import KpMasterySnapshot
+from app.models.d15_knowledge_graph import KnowledgeNode
+from app.models.d16_question_domain import AnswerLog
 
 _LOOKBACK_DAYS = 21
 _MIN_DROP = 0.15      # 正确率跌幅阈值
@@ -39,42 +40,53 @@ async def detect_regressions(
     min_total: int = _MIN_TOTAL,
 ) -> list[dict]:
     since = datetime.now(timezone.utc).date() - timedelta(days=lookback_days)
-    rows = (await db.execute(
-        select(KpMasterySnapshot)
-        .where(
-            KpMasterySnapshot.student_id == student_id,
-            KpMasterySnapshot.snapshot_date >= since,
-        )
-        .order_by(KpMasterySnapshot.kp_key, KpMasterySnapshot.snapshot_date)
-    )).scalars().all()
+    # 从 answer_log 逐事件重放每 node 的每日累计正确率(替代旧 kp_mastery_snapshots)。
+    # 累计需从头算,故取该生全部作答;仅保留窗口内(>= since)的日末点。
+    events = (await db.execute(
+        select(AnswerLog.node_id, AnswerLog.is_correct, AnswerLog.answered_at)
+        .where(AnswerLog.student_id == student_id, AnswerLog.node_id.isnot(None))
+        .order_by(AnswerLog.answered_at.asc())
+    )).all()
 
-    by_kp: dict[str, list[KpMasterySnapshot]] = defaultdict(list)
-    for r in rows:
-        by_kp[r.kp_key].append(r)
+    _Snap = namedtuple("_Snap", "date accuracy total")
+    cum: dict = defaultdict(lambda: [0, 0])          # node_id -> [correct, total] 累计
+    by_node: dict = defaultdict(dict)                # node_id -> {date_iso: (correct, total)} 日末
+    for node_id, is_correct, at in events:
+        c = cum[node_id]
+        c[1] += 1
+        if is_correct:
+            c[0] += 1
+        d = at.date()
+        if d >= since:
+            by_node[node_id][d.isoformat()] = (c[0], c[1])
+
+    if not by_node:
+        return []
+    names = {nid: nm for nid, nm in (await db.execute(
+        select(KnowledgeNode.id, KnowledgeNode.name)
+        .where(KnowledgeNode.id.in_(list(by_node.keys()))))).all()}
 
     alerts: list[dict] = []
-    for kp_key, snaps in by_kp.items():
+    for node_id, day_map in by_node.items():
+        snaps = [_Snap(d, (c / t if t else 0.0), t) for d, (c, t) in sorted(day_map.items())]
         if len(snaps) < 2:
             continue
         latest = snaps[-1]
-        latest_total = latest.correct_count + latest.wrong_count
-        if latest_total < min_total:
+        if latest.total < min_total:
             continue
-        # 历史峰值（最新之前的最高正确率）
-        earlier = snaps[:-1]
-        peak = max(earlier, key=lambda s: s.accuracy)
-        drop = round(float(peak.accuracy) - float(latest.accuracy), 4)
+        peak = max(snaps[:-1], key=lambda s: s.accuracy)   # 最新之前的历史峰值
+        drop = round(peak.accuracy - latest.accuracy, 4)
         if drop < min_drop:
             continue
         alerts.append({
-            "kp_key": kp_key,
-            "latest_accuracy": round(float(latest.accuracy), 4),
-            "peak_accuracy": round(float(peak.accuracy), 4),
+            "kp_key": names.get(node_id, ""),
+            "latest_accuracy": round(latest.accuracy, 4),
+            "peak_accuracy": round(peak.accuracy, 4),
             "drop": drop,
             "severity": _severity(drop),
-            "latest_date": latest.snapshot_date.isoformat(),
-            "peak_date": peak.snapshot_date.isoformat(),
-            "latest_total": latest_total,
+            "latest_date": latest.date,
+            "peak_date": peak.date,
+            "latest_total": latest.total,
         })
 
     alerts.sort(key=lambda a: a["drop"], reverse=True)
@@ -134,13 +146,13 @@ async def notify_student_regressions(db: AsyncSession, *, student_id: uuid.UUID)
 
 
 async def run_regression_alerts(db: AsyncSession) -> dict:
-    """批量：对近期有快照的学生检测并推送退步预警（cron 调用）。调用方 commit。"""
+    """批量：对近期有作答的学生检测并推送退步预警（cron 调用）。调用方 commit。"""
     from datetime import date
 
     recent = date.today() - timedelta(days=_LOOKBACK_DAYS)
     student_ids = (await db.execute(
-        select(KpMasterySnapshot.student_id)
-        .where(KpMasterySnapshot.snapshot_date >= recent)
+        select(AnswerLog.student_id)
+        .where(AnswerLog.answered_at >= recent, AnswerLog.node_id.isnot(None))
         .distinct()
     )).scalars().all()
     total_notified = 0

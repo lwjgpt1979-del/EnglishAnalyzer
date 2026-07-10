@@ -19,7 +19,6 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d4_knowledge import StudentKpMastery, KpMasterySnapshot
 
 # 合法来源标识符
 KpSource = Literal["practice", "paper_upload", "assignment", "wrong_question"]
@@ -177,87 +176,23 @@ async def upsert_mastery(
     source: KpSource,
     kp_description: str | None = None,
 ) -> None:
-    """UPSERT 一次答题结果到个人知识点台账。
+    """把一次(kp_key 维度)作答结果补写到 student_kp(node)。不 commit。
 
-    - 原子性累加 correct_count / wrong_count（PostgreSQL ON CONFLICT DO UPDATE）
-    - source 合并到 sources 数组（PostgreSQL array_append + DISTINCT，去重）
-    - kp_description 仅首次写入（已有值则保留）
-    - 不 commit，由调用方负责
+    R8.1:旧 student_kp_mastery / 日快照台账已退役,掌握账只留 student_kp(node)。
+    本函数负责 kp_key 维度的作答(上传/AI/作业)经 node_alias 精确解析到 node 后补写;
+    node 维度的练习/复习作答走 mastery_judge_service.log_answer。kp_id/kp_description
+    参数保留兼容(不再使用)。
     """
-    delta_correct = 1 if is_correct else 0
     delta_wrong = 0 if is_correct else 1
     now = datetime.now(timezone.utc)
 
-    stmt = pg_insert(StudentKpMastery).values(
-        student_id=student_id,
-        kp_key=kp_key,
-        kp_id=kp_id,
-        correct_count=delta_correct,
-        wrong_count=delta_wrong,
-        sources=[source],
-        kp_description=kp_description,
-        last_activity_at=now,
-    ).on_conflict_do_update(
-        index_elements=["student_id", "kp_key"],
-        set_={
-            "correct_count": StudentKpMastery.correct_count + delta_correct,
-            "wrong_count": StudentKpMastery.wrong_count + delta_wrong,
-            # 合并来源：用 PostgreSQL array 去重（避免 Python 层竞态）
-            "sources": text(
-                "ARRAY(SELECT DISTINCT unnest(student_kp_mastery.sources || ARRAY[:src]))"
-            ).bindparams(src=source),
-            # kp_description 仅首次写入有值时填入，已有值保留
-            "kp_description": text(
-                "COALESCE(student_kp_mastery.kp_description, :desc)"
-            ).bindparams(desc=kp_description),
-            "last_activity_at": now,
-            # kp_id 首次写入后固定，不覆盖
-            "kp_id": StudentKpMastery.kp_id,
-        },
-    )
-    await db.execute(stmt)
-
-    # ── 日快照（M46）─────────────────────────────────────────────────────────
-    # 读取更新后的台账行，写入/更新当天快照（每 UTC 日期最多一行）
-    today = now.date()
-    row = (await db.execute(
-        select(StudentKpMastery).where(
-            StudentKpMastery.student_id == student_id,
-            StudentKpMastery.kp_key == kp_key,
-        )
-    )).scalar_one_or_none()
-
-    if row is not None:
-        total = row.correct_count + row.wrong_count
-        snap_accuracy = row.correct_count / total if total > 0 else 0.0
-        snap_stmt = pg_insert(KpMasterySnapshot).values(
-            student_id=student_id,
-            kp_key=kp_key,
-            snapshot_date=today,
-            accuracy=snap_accuracy,
-            correct_count=row.correct_count,
-            wrong_count=row.wrong_count,
-            recorded_at=now,
-        ).on_conflict_do_update(
-            constraint="uq_kp_snapshot_student_kp_date",
-            set_={
-                "accuracy": snap_accuracy,
-                "correct_count": row.correct_count,
-                "wrong_count": row.wrong_count,
-                "recorded_at": now,
-            },
-        )
-        await db.execute(snap_stmt)
-
-    # ── B:同步补写新域 student_kp(node 维度,供 /kp-mastery 直读新表)──────────────
-    # kp_key(名)精确解析到句法/知识 node(node_alias);命中才补写,不创建候选、失败不阻断主台账。
+    # R8.0:kp_key 经受控匹配 match_kp(别名/模糊命中→node;不中→落候选 pending 交管理员,
+    # 绝不建游离节点)。命中 node 才补写 student_kp;树外 KP 记候选,掌握账只统计树内 node。失败不阻断。
     try:
-        from app.models.d15_knowledge_graph import NodeAlias
         from app.models.d16_question_domain import StudentKp
-        from app.services.kp_normalize import normalize_kp_name
-        node_id = (await db.execute(
-            select(NodeAlias.node_id).where(NodeAlias.alias_norm == normalize_kp_name(kp_key))
-        )).scalar_one_or_none()
+        from app.services.kp_match_service import match_kp
+        mr = await match_kp(db, raw_name=kp_key, source_type="mastery_hook", use_llm=False)
+        node_id = mr.node_id
         if node_id is not None:
             await db.execute(
                 pg_insert(StudentKp).values(
@@ -278,41 +213,6 @@ async def upsert_mastery(
                 ))
     except Exception:  # noqa: BLE001
         pass
-
-
-async def get_kp_trend(
-    db: AsyncSession,
-    *,
-    student_id: uuid.UUID,
-    kp_key: str,
-    days: int = 30,
-) -> list[dict]:
-    """返回指定 KP 的历史趋势快照（最近 days 天，按日期 ASC）。
-
-    返回格式：[{date: "YYYY-MM-DD", accuracy: float, correct_count: int, wrong_count: int}, ...]
-    """
-    from datetime import timedelta
-    since = datetime.now(timezone.utc).date() - timedelta(days=days - 1)
-
-    rows = (await db.execute(
-        select(KpMasterySnapshot)
-        .where(
-            KpMasterySnapshot.student_id == student_id,
-            KpMasterySnapshot.kp_key == kp_key,
-            KpMasterySnapshot.snapshot_date >= since,
-        )
-        .order_by(KpMasterySnapshot.snapshot_date.asc())
-    )).scalars().all()
-
-    return [
-        {
-            "date": str(r.snapshot_date),
-            "accuracy": round(r.accuracy, 4),
-            "correct_count": r.correct_count,
-            "wrong_count": r.wrong_count,
-        }
-        for r in rows
-    ]
 
 
 async def get_mastery_tree_for_teacher(

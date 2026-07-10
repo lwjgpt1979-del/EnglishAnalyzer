@@ -12,8 +12,46 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_asyncio
+from sqlalchemy import text
 
 from app.core.config import settings
+
+
+# R8.0:掌握账只统计树内 node。dev-mock 分类出的 KP 名(assignment/整卷→「英语综合」,
+# 错题AI→「动词短语…」)本不在受控树里,故先把它们 seed 成 active node+alias,
+# 让 upsert_mastery 的 match_kp 能解析到 node 并写 student_kp。
+_MOCK_KP_NAMES = ["英语综合", "动词短语 hand in/out/over/up"]
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _seed_mock_kp_nodes():
+    from app.core.database import _async_session_factory
+    from app.services.kp_normalize import normalize_kp_name
+    created: list = []
+    async with _async_session_factory() as s:
+        for name in _MOCK_KP_NAMES:
+            norm = normalize_kp_name(name)
+            if (await s.execute(text("SELECT 1 FROM knowledge_node_aliases WHERE alias_norm=:n"), {"n": norm})).first():
+                continue   # 树里已有,不动
+            nid = uuid.uuid4()
+            await s.execute(text(
+                "INSERT INTO knowledge_nodes (id,axis,name,code,status,source) "
+                "VALUES (:i,'knowledge',:nm,:c,'active','seed')"),
+                {"i": nid, "nm": name, "c": f"m41seed-{nid.hex[:8]}"})
+            await s.execute(text(
+                "INSERT INTO knowledge_node_aliases (id,node_id,alias,alias_norm,source) "
+                "VALUES (:i,:n,:a,:an,'seed')"),
+                {"i": uuid.uuid4(), "n": nid, "a": name, "an": norm})
+            created.append(nid)
+        await s.commit()
+    yield
+    if created:
+        async with _async_session_factory() as s:
+            await s.execute(text("DELETE FROM student_kp WHERE node_id = ANY(:ids)"), {"ids": created})
+            await s.execute(text("DELETE FROM knowledge_node_aliases WHERE node_id = ANY(:ids)"), {"ids": created})
+            await s.execute(text("DELETE FROM knowledge_nodes WHERE id = ANY(:ids)"), {"ids": created})
+            await s.commit()
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
