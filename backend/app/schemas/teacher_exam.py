@@ -7,14 +7,16 @@ from pydantic import BaseModel
 
 
 class SimQuestionOut(BaseModel):
-    """仿真题简要信息（老师选题/学生答题用，不含答案）。"""
+    """仿真题简要信息（老师选题/学生答题用，不含答案）。
+
+    R8 Phase6a-2:题源改为 platform_question。前端仅用 id/question_type/stem/options/difficulty;
+    旧 knowledge_point_id/dimension 去除(node 归属经 platform_question_kp,非本视图所需)。
+    """
     id: uuid.UUID
-    knowledge_point_id: uuid.UUID
     question_type: str
     stem: str
     options: list | None = None
-    difficulty: int
-    dimension: str | None = None
+    difficulty: int = 3
     model_config = {"from_attributes": True}
 
 

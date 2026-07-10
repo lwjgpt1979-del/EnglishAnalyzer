@@ -146,11 +146,12 @@ class ClassPaperQuestion(Base):
         sa.ForeignKey("class_papers.id", ondelete="CASCADE"),
         nullable=False,
     )
-    sim_question_id = mapped_column(
-        UUID(as_uuid=True), sa.ForeignKey("simulated_questions.id"), nullable=False
+    # R8 Phase6a-2:组卷题源从退役的 simulated_questions 迁到 KP-First 的 platform_question
+    platform_question_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("platform_question.id"), nullable=False
     )
     order_no = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("1"))
 
     __table_args__ = (
-        sa.UniqueConstraint("class_paper_id", "sim_question_id", name="uq_cpq_paper_question"),
+        sa.UniqueConstraint("class_paper_id", "platform_question_id", name="uq_cpq_paper_question"),
     )

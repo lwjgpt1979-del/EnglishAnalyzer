@@ -182,3 +182,53 @@ async def test_student_outside_class_cannot_see_papers(
 
     r = await client.get(f"/api/v1/student/classes/{class_id}/papers", headers=sh)
     assert r.status_code == 403
+
+
+# ── R8 Phase6a-2:题源为 platform_question 的端到端 ────────────────────────────
+
+@pytest.mark.asyncio
+async def test_paper_with_platform_question_end_to_end(client: AsyncClient, teacher_token: str):
+    """种一道已发布 platform 仿真题 → 老师浏览到 → 组卷收录 → 详情含其题面(id/stem/difficulty)。"""
+    from sqlalchemy import text
+    from app.core.database import _async_session_factory
+    from app.models.d16_question_domain import PlatformQuestion
+
+    pqid = uuid.uuid4()
+    async with _async_session_factory() as s:
+        s.add(PlatformQuestion(
+            id=pqid, type="sim", is_fallback=True, status="published", question_type="单选",
+            stem="6a2-e2e:She ___ to school every day.",
+            options=["go", "goes", "going", "gone"], answer="B",
+            explanation="第三人称单数", difficulty=2))
+        await s.commit()
+
+    h = {"Authorization": f"Bearer {teacher_token}"}
+    try:
+        # 浏览能看到这道平台仿真题
+        rb = await client.get("/api/v1/teacher/sim-questions?limit=200", headers=h)
+        assert rb.status_code == 200, rb.text
+        assert str(pqid) in [it["id"] for it in rb.json()["data"]["items"]]
+
+        # 用它组卷
+        rc = await client.post("/api/v1/teacher/classes",
+                               json={"name": f"e2e_{uuid.uuid4().hex[:4]}"}, headers=h)
+        class_id = rc.json()["data"]["id"]
+        rp = await client.post(
+            f"/api/v1/teacher/classes/{class_id}/papers",
+            json={"title": "平台题卷", "question_ids": [str(pqid)]}, headers=h)
+        assert rp.status_code == 200, rp.text
+        paper = rp.json()["data"]
+        assert paper["question_count"] == 1
+
+        # 详情含该题
+        rd = await client.get(f"/api/v1/teacher/papers/{paper['paper_id']}", headers=h)
+        assert rd.status_code == 200, rd.text
+        qs = rd.json()["data"]["questions"]
+        assert len(qs) == 1
+        assert qs[0]["id"] == str(pqid)
+        assert qs[0]["stem"].startswith("6a2-e2e") and qs[0]["difficulty"] == 2
+    finally:
+        async with _async_session_factory() as s:
+            await s.execute(text("DELETE FROM class_paper_questions WHERE platform_question_id=:p"), {"p": pqid})
+            await s.execute(text("DELETE FROM platform_question WHERE id=:p"), {"p": pqid})
+            await s.commit()

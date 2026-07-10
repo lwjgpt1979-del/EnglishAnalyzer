@@ -7,9 +7,9 @@ import type {
   ClassPaperCreate,
 } from '@/types/api'
 
-// ── 教师：仿真题浏览 ───────────────────────────────────────────────
+// ── 教师：仿真题浏览（题源 platform_question）───────────────────────
 export function listSimQuestions(params?: {
-  kp_id?: string
+  node_id?: string   // R8 Phase6a-2:按知识 node 过滤(经 platform_question_kp);原 kp_id 已退役
   question_type?: string
   difficulty?: number
   skip?: number

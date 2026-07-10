@@ -91,15 +91,14 @@ async def get_student_paper_detail(
         status=paper.status,
         created_at=paper.created_at,
         # 学生视角：只给 stem/options/difficulty，不给 answer/explanation
+        # R8 Phase6a-2:题源 platform_question(容忍 nullable 字段)
         questions=[
             SimQuestionOut(
                 id=q.id,
-                knowledge_point_id=q.knowledge_point_id,
-                question_type=str(q.question_type),
-                stem=q.stem,
+                question_type=str(q.question_type or "单选"),
+                stem=q.stem or "",
                 options=q.options,
-                difficulty=q.difficulty,
-                dimension=str(q.dimension) if q.dimension else None,
+                difficulty=int(q.difficulty or 3),
             )
             for q in questions
         ],

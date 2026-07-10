@@ -14,40 +14,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, delete as sql_delete
 
 from app.models.d7_teacher import Class, ClassPaper, ClassPaperQuestion
-from app.models.d12_v2_exams import SimulatedQuestion
+from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
 from app.core.exceptions import AppError
 
 
 async def browse_sim_questions(
     db: AsyncSession,
     *,
-    kp_id: uuid.UUID | None = None,
+    node_id: uuid.UUID | None = None,
     question_type: str | None = None,
     difficulty: int | None = None,
     skip: int = 0,
     limit: int = 20,
-) -> tuple[list[SimulatedQuestion], int]:
-    """浏览平台已发布仿真题（老师选题用）。
+) -> tuple[list[PlatformQuestion], int]:
+    """浏览平台已发布仿真题(老师选题用)。
 
-    MVP 简化：只按 kp_id / question_type / difficulty 筛选；
-    教材版本/年级 通过 kp_id 间接定位（老师先在 KP 视图选题）。
+    R8 Phase6a-2:题源从退役的 simulated_questions 迁到 platform_question(type='sim',已发布,
+    非弃用,有答案/选项)。可选按 node_id(经 platform_question_kp)/ question_type / difficulty 筛选。
     """
-    base_stmt = select(SimulatedQuestion).where(
-        SimulatedQuestion.status == "published"
+    base_stmt = select(PlatformQuestion).where(
+        PlatformQuestion.type == "sim",
+        PlatformQuestion.status == "published",
+        PlatformQuestion.deprecated_at.is_(None),
     )
-    if kp_id is not None:
-        base_stmt = base_stmt.where(SimulatedQuestion.knowledge_point_id == kp_id)
+    if node_id is not None:
+        base_stmt = base_stmt.join(
+            PlatformQuestionKp, PlatformQuestionKp.question_id == PlatformQuestion.id,
+        ).where(PlatformQuestionKp.node_id == node_id)
     if question_type is not None:
-        base_stmt = base_stmt.where(SimulatedQuestion.question_type == question_type)
+        base_stmt = base_stmt.where(PlatformQuestion.question_type == question_type)
     if difficulty is not None:
-        base_stmt = base_stmt.where(SimulatedQuestion.difficulty == difficulty)
+        base_stmt = base_stmt.where(PlatformQuestion.difficulty == difficulty)
 
     total: int = (await db.execute(
         select(func.count()).select_from(base_stmt.subquery())
     )).scalar_one()
 
     rows = (await db.execute(
-        base_stmt.order_by(SimulatedQuestion.created_at.desc()).offset(skip).limit(limit)
+        base_stmt.order_by(PlatformQuestion.created_at.desc()).offset(skip).limit(limit)
     )).scalars().all()
 
     return list(rows), total
@@ -68,7 +72,7 @@ async def create_class_paper(
     """创建班级卷子（老师选题组卷）。
 
     - 验证 class 属于该 teacher
-    - 验证所有 sim_question_id 存在且已发布
+    - 只收录存在且已发布(platform_question type='sim' published 非弃用)的题
     - 创建 ClassPaper + ClassPaperQuestion 行（order_no 按顺序）
     """
     cls = (await db.execute(
@@ -76,6 +80,16 @@ async def create_class_paper(
     )).scalar_one_or_none()
     if cls is None:
         raise AppError(code=404, message="班级不存在或无权限")
+
+    # R8 Phase6a-2:仅保留合法的 platform 仿真题(已发布、非弃用),过滤无效 id
+    valid_ids = set((await db.execute(
+        select(PlatformQuestion.id).where(
+            PlatformQuestion.id.in_(question_ids),
+            PlatformQuestion.type == "sim",
+            PlatformQuestion.status == "published",
+            PlatformQuestion.deprecated_at.is_(None),
+        )
+    )).scalars().all())
 
     paper = ClassPaper(
         id=uuid.uuid4(),
@@ -91,12 +105,16 @@ async def create_class_paper(
     db.add(paper)
     await db.flush()
 
-    for idx, qid in enumerate(question_ids, start=1):
+    order = 0
+    for qid in question_ids:               # 保持老师给定顺序,仅收录合法题
+        if qid not in valid_ids:
+            continue
+        order += 1
         db.add(ClassPaperQuestion(
             id=uuid.uuid4(),
             class_paper_id=paper.id,
-            sim_question_id=qid,
-            order_no=idx,
+            platform_question_id=qid,
+            order_no=order,
         ))
     await db.flush()
     return paper
@@ -126,8 +144,8 @@ async def get_paper_question_count(
 
 async def get_paper_with_questions(
     db: AsyncSession, *, paper_id: uuid.UUID
-) -> tuple[ClassPaper, list[SimulatedQuestion]]:
-    """返回卷子 + 有序题目列表。"""
+) -> tuple[ClassPaper, list[PlatformQuestion]]:
+    """返回卷子 + 有序题目列表（题源:platform_question）。"""
     paper = (await db.execute(
         select(ClassPaper).where(ClassPaper.id == paper_id)
     )).scalar_one_or_none()
@@ -135,9 +153,9 @@ async def get_paper_with_questions(
         raise AppError(code=404, message="试卷不存在")
 
     q_rows = (await db.execute(
-        select(SimulatedQuestion)
+        select(PlatformQuestion)
         .join(ClassPaperQuestion,
-              ClassPaperQuestion.sim_question_id == SimulatedQuestion.id)
+              ClassPaperQuestion.platform_question_id == PlatformQuestion.id)
         .where(ClassPaperQuestion.class_paper_id == paper_id)
         .order_by(ClassPaperQuestion.order_no)
     )).scalars().all()

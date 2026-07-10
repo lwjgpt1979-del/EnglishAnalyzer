@@ -702,27 +702,38 @@ def _ensure_teacher_cert(current_user: User, db_teacher) -> None:  # type: ignor
     teacher_service.ensure_certified(db_teacher)
 
 
+def _sim_out(q) -> SimQuestionOut:
+    """platform_question → SimQuestionOut(容忍 nullable 字段)。"""
+    return SimQuestionOut(
+        id=q.id,
+        question_type=str(q.question_type or "单选"),
+        stem=q.stem or "",
+        options=q.options,
+        difficulty=int(q.difficulty or 3),
+    )
+
+
 @router.get("/sim-questions", response_model=BaseResponse[SimQuestionListOut])
 async def browse_sim_questions_api(
     db: DbDep, current_user: TeacherDep,
-    kp_id: uuid.UUID | None = None,
+    node_id: uuid.UUID | None = None,
     question_type: str | None = None,
     difficulty: int | None = None,
     skip: int = 0,
     limit: int = 20,
 ):
-    """老师浏览平台仿真题库（用于组卷选题）。"""
+    """老师浏览平台仿真题库（用于组卷选题;题源 platform_question）。"""
     await get_rls_db(db, str(current_user.id))
     items, total = await teacher_exam_service.browse_sim_questions(
         db,
-        kp_id=kp_id,
+        node_id=node_id,
         question_type=question_type,
         difficulty=difficulty,
         skip=skip,
         limit=limit,
     )
     return make_ok(SimQuestionListOut(
-        items=[SimQuestionOut.model_validate(q) for q in items],
+        items=[_sim_out(q) for q in items],
         total=total,
     ))
 
@@ -809,7 +820,7 @@ async def get_class_paper_detail_api(
         question_count=len(questions),
         status=paper.status,
         created_at=paper.created_at,
-        questions=[SimQuestionOut.model_validate(q) for q in questions],
+        questions=[_sim_out(q) for q in questions],
     ))
 
 
