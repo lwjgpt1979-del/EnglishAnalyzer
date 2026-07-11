@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, Form
+from fastapi import APIRouter, Body, Depends, Query, Request, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -4137,3 +4137,36 @@ async def sales_export_leads(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=sales_leads.xlsx"})
+
+
+# ── 词库缺词审核(作业/课程缺词 → 入库)──────────────────────────────────────
+@router.get("/vocab-reviews")
+async def admin_list_vocab_reviews(db: DbDep, admin: AdminDep,
+                                   status: str = Query("pending"),
+                                   skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200)):
+    """缺词审核列表(分页,按出现次数倒序)。"""
+    from app.services import vocab_intensive_service
+    return make_ok(await vocab_intensive_service.list_reviews(db, status=status, skip=skip, limit=limit))
+
+
+@router.post("/vocab-reviews/{review_id}/approve")
+async def admin_approve_vocab_review(review_id: uuid.UUID, db: DbDep, admin: AdminDep,
+                                     phonetic: str | None = Body(None),
+                                     definitions: list = Body([])):
+    """审核通过 → 词加入词库 VocabularyWord(definitions 由 admin 填)。"""
+    from app.services import vocab_intensive_service
+    ok = await vocab_intensive_service.approve_review(
+        db, review_id=review_id, phonetic=phonetic, definitions=definitions)
+    if not ok:
+        raise AppError(code=404, message="审核项不存在或已处理")
+    return make_ok({"approved": True})
+
+
+@router.post("/vocab-reviews/{review_id}/reject")
+async def admin_reject_vocab_review(review_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """驳回缺词。"""
+    from app.services import vocab_intensive_service
+    ok = await vocab_intensive_service.reject_review(db, review_id=review_id)
+    if not ok:
+        raise AppError(code=404, message="审核项不存在或已处理")
+    return make_ok({"rejected": True})

@@ -118,6 +118,7 @@
     { "path": "pages/intensive/homework", "style": { "navigationBarTitleText": "作业精讲" } },
     { "path": "pages/intensive/course", "style": { "navigationBarTitleText": "课程精讲" } },
     { "path": "pages/intensive/module", "style": { "navigationBarTitleText": "精讲" } },
+    { "path": "pages/intensive/words", "style": { "navigationBarTitleText": "单词精讲" } },
     { "path": "pages/practice/v2-session", "style": { "navigationBarTitleText": "练习" } },
     { "path": "pages/practice/v2-exam", "style": { "navigationBarTitleText": "模拟考" } },
     { "path": "pages/practice/adaptive", "style": { "navigationBarTitleText": "智能出题" } },

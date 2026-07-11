@@ -164,3 +164,20 @@ export function makeUpCheckin(date: string): Promise<VocabMakeUpResult> {
     method: 'POST', data: { date },
   })
 }
+
+// 单词精讲(作业按批次 / 课程按单元;详解取词库)
+export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any }
+export interface HwWordBatch { paper_id: string; title: string; date: string; word_count: number }
+export interface CourseWordUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; word_count: number }
+export function getHwWordBatches(): Promise<{ batches: HwWordBatch[] }> {
+  return request<{ batches: HwWordBatch[] }>('/api/v1/vocabulary/intensive/homework/batches', { method: 'GET' })
+}
+export function getHwWords(paperId: string): Promise<{ words: IntensiveWord[] }> {
+  return request<{ words: IntensiveWord[] }>('/api/v1/vocabulary/intensive/homework/words', { method: 'GET', data: { paper_id: paperId } })
+}
+export function getCourseWordUnits(): Promise<{ version: string | null; units: CourseWordUnit[] }> {
+  return request<{ version: string | null; units: CourseWordUnit[] }>('/api/v1/vocabulary/intensive/course/units', { method: 'GET' })
+}
+export function getCourseWords(unitId: string): Promise<{ words: IntensiveWord[] }> {
+  return request<{ words: IntensiveWord[] }>('/api/v1/vocabulary/intensive/course/words', { method: 'GET', data: { unit_id: unitId } })
+}

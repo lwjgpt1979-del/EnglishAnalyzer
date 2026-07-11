@@ -22,7 +22,10 @@ const modules = [
   { kind: 'sentence', title: '长难句', sub: '按教材单元拆长难句', ic: 'ic-sentence' },
 ]
 function go(m: { kind: string }) {
-  uni.navigateTo({ url: `/pages/intensive/module?mode=course&kind=${m.kind}` })
+  const url = m.kind === 'word'
+    ? '/pages/intensive/words?mode=course'
+    : `/pages/intensive/module?mode=course&kind=${m.kind}`
+  uni.navigateTo({ url })
 }
 </script>
 

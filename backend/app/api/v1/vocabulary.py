@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
@@ -255,6 +255,35 @@ async def pinnable(db: DbDep, current_user: UserDep):
     """可挑选加入优先学的词:本人候选(作业/试卷/错题)+ 当前学期教材词,标注是否已 pin。"""
     await get_rls_db(db, str(current_user.id))
     return make_ok({"words": await vocab_pin_service.pinnable_words(db, student_id=current_user.id)})
+
+
+@router.get("/intensive/homework/batches", response_model=BaseResponse[dict])
+async def hw_word_batches(db: DbDep, current_user: UserDep):
+    """作业精讲·单词:按来源卷(批次)归组的词清单概览。"""
+    from app.services import vocab_intensive_service
+    return make_ok({"batches": await vocab_intensive_service.homework_batches(db, student_id=current_user.id)})
+
+
+@router.get("/intensive/homework/words", response_model=BaseResponse[dict])
+async def hw_word_list(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
+    """作业精讲·单词:某批次(卷)里的词 + 词库详解。"""
+    from app.services import vocab_intensive_service
+    return make_ok({"words": await vocab_intensive_service.homework_words(
+        db, student_id=current_user.id, paper_id=paper_id)})
+
+
+@router.get("/intensive/course/units", response_model=BaseResponse[dict])
+async def course_word_units(db: DbDep, current_user: UserDep):
+    """课程精讲·单词:当前教材单元(年级→册→单元)+ 每单元词数。"""
+    from app.services import vocab_intensive_service
+    return make_ok(await vocab_intensive_service.course_units(db, student_id=current_user.id))
+
+
+@router.get("/intensive/course/words", response_model=BaseResponse[dict])
+async def course_word_list(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
+    """课程精讲·单词:某教材单元的词 + 词库详解。"""
+    from app.services import vocab_intensive_service
+    return make_ok({"words": await vocab_intensive_service.course_words(db, unit_id=unit_id)})
 
 
 @router.post("/pins", response_model=BaseResponse[dict])

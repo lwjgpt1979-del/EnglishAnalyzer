@@ -481,6 +481,14 @@ async def paper_vocab_candidates(
         return {"words": []}
     hit = {w.word.lower(): w for w in (await db.execute(
         select(VocabularyWord).where(func.lower(VocabularyWord.word).in_(words)))).scalars().all()}
+    # 缺词审核:原文里出现但词库没有的词 → 落审核队列(best-effort,失败不影响生词返回)
+    missing = [w for w in words if w not in hit]
+    if missing:
+        try:
+            from app.services import vocab_intensive_service
+            await vocab_intensive_service.report_missing_words(db, words=missing, source="paper")
+        except Exception:  # noqa: BLE001
+            pass
     if not hit:
         return {"words": []}
     ids = [w.id for w in hit.values()]
