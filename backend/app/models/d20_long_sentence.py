@@ -131,3 +131,17 @@ class LongSentenceFavorite(Base):
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (sa.Index("ix_ls_favorite_user", "user_id"),)
+
+
+class SentenceAnalysisCache(Base):
+    """长难句解析结果暂存(按句子文本 md5 缓存 LLM 解析,命中不再重复付费调用)。
+
+    第三方付费调用暂存规则的落地:analyze_sentence 结果与学生无关(同句同解析),
+    全局按 text_hash 缓存;analyze_sentence_cached 先查后算。
+    """
+    __tablename__ = "sentence_analysis_cache"
+
+    text_hash = mapped_column(sa.String(32), primary_key=True)   # 归一化句子的 md5
+    text = mapped_column(sa.Text, nullable=False)
+    analysis_json = mapped_column(JSONB, nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

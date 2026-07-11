@@ -102,7 +102,7 @@ from .d18_vocab_kg import (  # noqa: F401
 # 域19: 知识节点资源 KP-First (R6, 1 张表)
 
 # 域20: 长难句解析 KP-First (2 张表)
-from .d20_long_sentence import LongSentence, LongSentenceNode  # noqa: F401
+from .d20_long_sentence import LongSentence, LongSentenceNode, SentenceAnalysisCache  # noqa: F401
 
 # 域21: 行政区划地区表(唯一数据源)
 from .d21_region import Region  # noqa: F401

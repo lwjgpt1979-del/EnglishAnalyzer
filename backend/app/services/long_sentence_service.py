@@ -1045,6 +1045,27 @@ async def extract_student_for_question(
     return n
 
 
+async def analyze_sentence_cached(db: AsyncSession, sentence: str) -> dict:
+    """带暂存的长难句解析:按句子 md5 全局缓存 LLM 结果,命中直接返回,不重复付费调用。
+    (第三方付费调用「没落地就暂存」规则的落地;同句解析与学生无关,可全局共享。)"""
+    import hashlib
+    from app.models.d20_long_sentence import SentenceAnalysisCache
+    text = (sentence or "").strip()
+    if not text:
+        return await analyze_sentence(sentence)
+    h = hashlib.md5(text.encode("utf-8")).hexdigest()
+    row = await db.get(SentenceAnalysisCache, h)
+    if row is not None:
+        return row.analysis_json
+    result = await analyze_sentence(text)
+    try:
+        db.add(SentenceAnalysisCache(text_hash=h, text=text, analysis_json=result))
+        await db.commit()
+    except Exception:  # noqa: BLE001 并发/写失败不影响返回
+        await db.rollback()
+    return result
+
+
 async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: str) -> bool:
     """学生**手动**把一句长难句加入自己的待学习区(student_long_sentence,本人可见)。
     幂等按 (owner, text);返回是否新增。供整卷/作业里逐句「加入待学习」。"""
@@ -1058,7 +1079,7 @@ async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: s
     if exists:
         return False
     comp = syntactic_complexity(text, DEFAULT_MIN_WORDS)
-    analysis = await analyze_sentence(text)
+    analysis = dict(await analyze_sentence_cached(db, text))   # 复用暂存,避免重复付费解析
     analysis["difficulty"] = comp["difficulty"]
     analysis["complexity"] = comp
     db.add(StudentLongSentence(

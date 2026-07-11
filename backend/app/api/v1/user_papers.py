@@ -137,8 +137,8 @@ async def analyze_sentence(
     db: DbDep,
     current_user: UserDep,
 ):
-    """P3:按需解析一句长难句(结构切分 + 释义),复用长难句服务。"""
-    return make_ok(await user_paper_service.analyze_paper_sentence(body.sentence))
+    """P3:按需解析一句长难句(结构切分 + 释义),带暂存复用。"""
+    return make_ok(await user_paper_service.analyze_paper_sentence(db, body.sentence))
 
 
 @router.post("/save-sentence")

@@ -524,10 +524,10 @@ async def paper_long_sentences(
     return {"sentences": out[:15]}
 
 
-async def analyze_paper_sentence(sentence: str) -> dict:
-    """P3:按需解析一句长难句(复用 long_sentence_service.analyze_sentence)。"""
+async def analyze_paper_sentence(db: AsyncSession, sentence: str) -> dict:
+    """P3:按需解析一句长难句(带暂存,命中缓存不重复调 LLM)。"""
     from app.services import long_sentence_service as ls
-    return await ls.analyze_sentence(sentence)
+    return await ls.analyze_sentence_cached(db, sentence)
 
 
 async def update_section(
