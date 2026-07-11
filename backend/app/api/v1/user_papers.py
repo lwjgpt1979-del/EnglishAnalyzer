@@ -17,7 +17,7 @@ from app.core.exceptions import AppError
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import make_ok
-from app.schemas.user_papers import UserPaperCreate, UserPaperListOut
+from app.schemas.user_papers import UserPaperCreate, UserPaperListOut, SectionUpdateIn, AnalyzeSentenceIn
 from app.services import user_paper_service
 
 router = APIRouter(prefix="/user-papers", tags=["user-papers"])
@@ -81,6 +81,87 @@ async def get_user_paper(
     if detail is None:
         raise AppError(code=404, message="试卷不存在或无权访问")
     return make_ok(detail.model_dump(mode="json"))
+
+
+@router.get("/{paper_id}/grammar-status")
+async def get_paper_grammar_status(
+    paper_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """P1:本卷语法点对照学生掌握度 → 已学 / 薄弱 / 未学(未学可一键去学)。"""
+    r = await user_paper_service.paper_grammar_status(
+        db, paper_id=paper_id, student_id=current_user.id)
+    if r is None:
+        raise AppError(code=404, message="试卷不存在或无权访问")
+    return make_ok(r)
+
+
+@router.get("/{paper_id}/vocab")
+async def get_paper_vocab(
+    paper_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """P2:本卷原文里的『生词』(未学/接收度低),可挑选加入词力通优先学(走 /vocabulary/pins)。"""
+    r = await user_paper_service.paper_vocab_candidates(
+        db, paper_id=paper_id, student_id=current_user.id)
+    if r is None:
+        raise AppError(code=404, message="试卷不存在或无权访问")
+    return make_ok(r)
+
+
+@router.get("/{paper_id}/long-sentences")
+async def get_paper_long_sentences(
+    paper_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """P3:从本卷短文拆出的长难句,可逐句解析。"""
+    r = await user_paper_service.paper_long_sentences(
+        db, paper_id=paper_id, student_id=current_user.id)
+    if r is None:
+        raise AppError(code=404, message="试卷不存在或无权访问")
+    return make_ok(r)
+
+
+@router.post("/analyze-sentence")
+async def analyze_sentence(
+    body: AnalyzeSentenceIn,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """P3:按需解析一句长难句(结构切分 + 释义),复用长难句服务。"""
+    return make_ok(await user_paper_service.analyze_paper_sentence(body.sentence))
+
+
+@router.post("/{paper_id}/add-to-plan")
+async def add_paper_to_plan(
+    paper_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """P4 闭环:把本卷「未学 + 薄弱」语法一键加入学习目标 → 今日计划带出「去学/去练」。"""
+    r = await user_paper_service.add_paper_grammar_to_plan(
+        db, paper_id=paper_id, student_id=current_user.id)
+    if r is None:
+        raise AppError(code=404, message="试卷不存在或无权访问")
+    return make_ok(r)
+
+
+@router.put("/sections/{section_id}")
+async def update_paper_section(
+    section_id: uuid.UUID,
+    body: SectionUpdateIn,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """学生修改某大题的题型分类(AI 建议不准时可改;改后不再标「建议」)。"""
+    ok = await user_paper_service.update_section(
+        db, section_id=section_id, student_id=current_user.id, label=body.label)
+    if not ok:
+        raise AppError(code=404, message="大题不存在或无权访问")
+    return make_ok({"updated": True, "label": body.label.strip()})
 
 
 @router.get("/wrongs")

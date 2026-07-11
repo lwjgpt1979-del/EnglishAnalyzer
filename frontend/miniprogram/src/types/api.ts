@@ -676,6 +676,17 @@ export interface UserPaperQuestionOut {
   correct_answer: string | null
   explanation: string | null
   is_wrong: boolean
+  passage?: string | null       // 所属短文/语篇(完形/阅读;独立题为空)
+  block_key?: string | null     // 同篇小问共享的分组键
+}
+
+/** 原卷大题/板块(还原题型结构) */
+export interface UserPaperSectionOut {
+  id: string
+  label: string
+  section_type: string | null
+  is_suggested?: boolean        // AI 建议分类(原卷没识别到大题头);前端标「建议」、学生可改
+  questions: UserPaperQuestionOut[]
 }
 
 /** 试卷概要（列表用） */
@@ -688,8 +699,9 @@ export interface UserPaperOut {
   created_at: string
 }
 
-/** 试卷详情：概要 + 题目列表 */
+/** 试卷详情：概要 + 按原卷大题分组(sections) + 扁平题目列表(questions,兼容) */
 export interface UserPaperDetailOut extends UserPaperOut {
+  sections?: UserPaperSectionOut[]
   questions: UserPaperQuestionOut[]
 }
 

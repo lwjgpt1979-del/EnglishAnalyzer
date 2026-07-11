@@ -23,6 +23,27 @@ class UserPaperQuestionOut(BaseModel):
     correct_answer: str | None
     explanation: str | None
     is_wrong: bool
+    passage: str | None = None       # 所属短文/语篇(完形/阅读;独立题为空)
+    block_key: str | None = None     # 同篇小问共享的分组键
+
+
+class UserPaperSectionOut(BaseModel):
+    """原卷大题/板块(还原题型结构):单项选择 / 完形填空 / 阅读理解…"""
+    id: uuid.UUID
+    label: str
+    section_type: str | None = None
+    is_suggested: bool = False       # True=AI 建议分类(原卷没识别到大题头),前端标「建议」、学生可改
+    questions: list[UserPaperQuestionOut]
+
+
+class SectionUpdateIn(BaseModel):
+    """学生修改大题的题型分类。"""
+    label: str = Field(..., min_length=1, max_length=40)
+
+
+class AnalyzeSentenceIn(BaseModel):
+    """P3:按需解析一句长难句。"""
+    sentence: str = Field(..., min_length=1, max_length=600)
 
 
 class UserPaperOut(BaseModel):
@@ -36,7 +57,8 @@ class UserPaperOut(BaseModel):
 
 
 class UserPaperDetailOut(UserPaperOut):
-    """试卷详情：概要 + 拆出的题目列表。"""
+    """试卷详情：概要 + 按原卷大题分组的结构(sections) + 扁平题目列表(questions,兼容)。"""
+    sections: list[UserPaperSectionOut] = []
     questions: list[UserPaperQuestionOut]
 
 

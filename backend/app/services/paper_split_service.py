@@ -54,20 +54,26 @@ _USER_PROMPT_TEMPLATE = """以下是从一整张英语试卷图片中识别到�
 【手写体识别（学生作答内容，通常是题号 + 答案）】
 {handwritten_text}
 
-请把整卷拆分为多道题目。每一项格式：
+请把整卷拆分为多道题目。每道题格式：
 {{
   "section": "该题所属大题名（如 听力理解/单项选择/完形填空/阅读理解/任务型阅读/词汇运用/首字母填空/短文填空/书面表达 等，忠实原卷大题标题；无法判断则 null）",
   "question_no": "题号（如 27），无法识别则 null",
   "question_type": "单选|填空|完型|阅读|写作|判断|连线",
   "stem": "该题完整题干（含选项，不含学生作答）",
-  "passage": "仅【阅读/完形/任务型 等“一篇短文+多小题”】填该短文正文；独立小题（单选等）为 null",
-  "block_key": "同一篇短文下的各小题给同一个 key（如 cloze1、readingA），标识题组；独立小题为 null",
+  "block_key": "阅读理解/完形填空/任务型阅读 这类『一篇短文带多道小题』的小题，同一篇短文的小题都给同一个 key（如 readingA、readingB、cloze1）；独立小题（单选等）为 null",
   "student_answer": "该题学生手写答案（按题号从手写体匹配，无法识别则 null）",
   "correct_answer": "正确答案（可推断则填，否则 null）",
   "explanation": "简要解析（可推断则填，否则 null）"
 }}
 
-要求：**务必按原卷大题给每题填 section**；同一大题下的题 section 相同；按题号顺序输出；识别不到任何题目时 questions 返回 []。"""
+另外**单独**返回一个 passages 对象，键是 block_key，值是该短文/语篇的**完整原文（逐字照抄印刷体识别，不要改写、不要缩略）**：
+{{ "readingA": "短文全文……", "cloze1": "完形填空的语篇全文……" }}
+
+铁律：
+- **只要识别文字里出现了阅读理解/完形填空/任务型阅读的短文正文，就必须把它完整放进 passages，并让对应小题的 block_key 指向它**——绝不能因为题干没重复短文就把短文丢掉。短文通常在这组小题的前面。
+- 完形填空的语篇（带 1/2/3… 空的整段文章）也要作为 passage 放进 passages。
+- 没有任何短文的卷子，passages 返回 {{}}。
+- **务必按原卷大题给每题填 section**；同一大题下的题 section 相同；按题号顺序输出；识别不到任何题目时 questions 返回 []。"""
 
 
 def _normalize_type(raw: object) -> str:
@@ -428,18 +434,30 @@ def _try_parse_doubao_json(text: str) -> list[ParsedPaperQuestion] | None:
     handwritten_text 为空。若解析成功返回列表；否则返回 None 降级到传统流程。
     """
     text = text.strip()
-    if not text.startswith("["):
+    if text[:1] not in "[{":          # 兼容:裸数组(旧) 或 {questions,passages}(新)
         return None
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
         return None
+    passages_map: dict[str, str] = {}
+    if isinstance(data, dict):
+        pm = data.get("passages")
+        if isinstance(pm, dict):
+            passages_map = {str(k): (str(v) or "").strip() for k, v in pm.items()
+                            if v and str(v).strip()}
+        data = (data.get("questions")
+                or next((v for v in data.values() if isinstance(v, list)), None))
     if not isinstance(data, list):
         return None
     result: list[ParsedPaperQuestion] = []
     for item in data:
         if not isinstance(item, dict):
             continue
+        block_key = (item.get("block_key") or "").strip() or None
+        passage = (item.get("passage") or "").strip() or None
+        if not passage and block_key:      # 短文单独放 passages → 按 block_key 回填
+            passage = passages_map.get(block_key) or None
         result.append(
             ParsedPaperQuestion(
                 question_no=item.get("question_no"),
@@ -449,8 +467,8 @@ def _try_parse_doubao_json(text: str) -> list[ParsedPaperQuestion] | None:
                 correct_answer=item.get("correct_answer"),
                 explanation=item.get("explanation"),
                 section=(item.get("section") or "").strip() or None,
-                passage=(item.get("passage") or "").strip() or None,
-                block_key=(item.get("block_key") or "").strip() or None,
+                passage=passage,
+                block_key=block_key,
             )
         )
     return result if result else None
@@ -468,7 +486,7 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     - JSON 解析失败 / 非数组 → AppError(500, "整卷拆题返回格式异常")
     """
     # M40: 豆包直出 JSON — 优先尝试直接解析，跳过 DeepSeek 拆题步骤
-    if ocr.handwritten_text == "" and (ocr.printed_text or "").strip().startswith("["):
+    if ocr.handwritten_text == "" and (ocr.printed_text or "").strip()[:1] in "[{":
         parsed = _try_parse_doubao_json(ocr.printed_text or "")
         if parsed is not None:
             return parsed
@@ -489,7 +507,7 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
         # 整卷题多,输出预算给足 16384。
         response = await chat_completion(
             system_prompt=_SYSTEM_PROMPT,
-            user_prompt=prompt + '\n\n返回 JSON 对象:{"questions":[ ...上面格式的每道题... ]}。',
+            user_prompt=prompt + '\n\n返回 JSON 对象:{"questions":[ ...上面格式的每道题... ], "passages":{ "block_key":"短文原文", ... }}。',
             model=fast_model(),
             max_tokens=16384,
             response_format={"type": "json_object"},
@@ -507,8 +525,14 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     except json.JSONDecodeError as exc:
         raise AppError(code=500, message="整卷拆题返回格式异常") from exc
 
+    # 短文单独放 passages 映射(block_key→原文);题只带 block_key。省 token、更可靠。
+    passages_map: dict[str, str] = {}
     # 容错:接受裸数组,或 {questions:[...]} / {items:[...]} / 首个是 list 的值
     if isinstance(data, dict):
+        pm = data.get("passages")
+        if isinstance(pm, dict):
+            passages_map = {str(k): (str(v) or "").strip() for k, v in pm.items()
+                            if v and str(v).strip()}
         data = (data.get("questions") or data.get("items")
                 or next((v for v in data.values() if isinstance(v, list)), None))
     if not isinstance(data, list):
@@ -518,6 +542,11 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     for item in data:
         if not isinstance(item, dict):
             continue
+        block_key = (item.get("block_key") or "").strip() or None
+        # passage 优先取题内联;没有则按 block_key 从 passages 映射回填
+        passage = (item.get("passage") or "").strip() or None
+        if not passage and block_key:
+            passage = passages_map.get(block_key) or None
         result.append(
             ParsedPaperQuestion(
                 question_no=item.get("question_no"),
@@ -527,8 +556,8 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
                 correct_answer=item.get("correct_answer"),
                 explanation=item.get("explanation"),
                 section=(item.get("section") or "").strip() or None,
-                passage=(item.get("passage") or "").strip() or None,
-                block_key=(item.get("block_key") or "").strip() or None,
+                passage=passage,
+                block_key=block_key,
             )
         )
     return result

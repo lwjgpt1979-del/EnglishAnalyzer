@@ -25,6 +25,45 @@ def _is_wrong(student_answer: str | None, correct_answer: str | None) -> bool:
     return student_answer.strip().lower() != correct_answer.strip().lower()
 
 
+def _section_type(label: str | None) -> str | None:
+    """由原卷大题名推板块类型键(供前端图标/分组;识别不到留 None)。"""
+    l = label or ""
+    if "完形" in l or "完型" in l:
+        return "cloze"
+    if "阅读" in l or "任务型" in l:
+        return "reading"
+    if "单项" in l or "单选" in l or "选择" in l:
+        return "mcq"
+    if "书面" in l or "作文" in l or "写作" in l:
+        return "writing"
+    if "词汇" in l or "首字母" in l or "短文填空" in l or "填空" in l:
+        return "fill"
+    if "听力" in l:
+        return "listening"
+    return None
+
+
+# 原卷没识别到大题头时,按「题型 + 有无短文」推一个建议大题名(前端标「建议」,学生可改)
+_SUGGEST_BY_TYPE = {
+    "单选": "单项选择", "阅读": "阅读理解", "完型": "完形填空",
+    "填空": "词汇/短文填空", "写作": "书面表达", "判断": "判断", "连线": "连线",
+}
+
+
+def _suggest_section_label(question_type: str | None, has_passage: bool) -> str:
+    if has_passage:
+        return "阅读理解"                      # 有短文优先判阅读
+    return _SUGGEST_BY_TYPE.get(question_type or "", "其它")
+
+
+def _label_of(pq) -> tuple[str, bool]:
+    """返回(大题名, 是否 AI 建议)。原卷有大题名→用它(非建议);否则按题型推(建议)。"""
+    raw = (pq.section or "").strip()
+    if raw:
+        return raw, False
+    return _suggest_section_label(pq.question_type, bool(pq.passage or pq.block_key)), True
+
+
 async def create_paper(
     db: AsyncSession,
     *,
@@ -84,11 +123,30 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
             # Step 2: DeepSeek 批量归类 KP（M40 新增）
             kp_map: dict[str, str] = await classify_kps(parsed)
 
-            # Step 3: 落库题目 + 题目↔node 关联(KP-First)+ 补写掌握账(student_kp/node)
+            # Step 2.5: 还原原卷「大题/板块」结构——按 section 首次出现顺序建 user_paper_sections
+            from app.models.d13_v2_user_papers import UserPaperSection
+            sec_id_by_label: dict[str, uuid.UUID] = {}
+            _sec_ord = 0
             for pq in parsed:
+                label, suggested = _label_of(pq)
+                if label not in sec_id_by_label:
+                    sec = UserPaperSection(
+                        user_paper_id=paper.id, label=label,
+                        section_type=_section_type(label), is_suggested=suggested, sort_order=_sec_ord)
+                    db.add(sec)
+                    await db.flush()
+                    sec_id_by_label[label] = sec.id
+                    _sec_ord += 1
+
+            # Step 3: 落库题目(带大题/语篇/顺序)+ 题目↔node 关联(KP-First)+ 补写掌握账
+            for _i, pq in enumerate(parsed):
                 is_wrong = _is_wrong(pq.student_answer, pq.correct_answer)
                 q = UserPaperQuestion(
                     user_paper_id=paper.id,
+                    section_id=sec_id_by_label.get(_label_of(pq)[0]),
+                    passage=pq.passage,
+                    block_key=pq.block_key,
+                    sort_order=_i,
                     question_no=pq.question_no,
                     question_type=pq.question_type,
                     stem=pq.stem,
@@ -121,6 +179,10 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                         m = await match_kp(db, raw_name=kp_key, axis_hint="knowledge",
                                            source_type="uploaded_student")
                         q.node_id = m.node_id   # 命中→挂 node;未命中→NULL(候选已落 pending)
+                        if m.node_id is None:   # 未命中图谱且是语法名 → 进个人语法树(个人的归个人)
+                            from app.services import grammar_progress_service
+                            await grammar_progress_service.add_personal_if_grammar(
+                                db, student_id=paper.student_id, name=kp_key, source="upload_paper")
                         if is_wrong:
                             await wrong_center_service.record_wrong(
                                 db, student_id=paper.student_id, q_scope="uploaded",
@@ -188,25 +250,44 @@ async def get_paper_detail(
     if paper is None or paper.student_id != student_id:
         return None
 
+    from app.models.d13_v2_user_papers import UserPaperSection
+    from app.schemas.user_papers import UserPaperSectionOut
+
     qs = (await db.execute(
         select(UserPaperQuestion)
         .where(UserPaperQuestion.user_paper_id == paper_id)
-        .order_by(UserPaperQuestion.created_at.asc())
+        .order_by(UserPaperQuestion.sort_order.asc(), UserPaperQuestion.created_at.asc())
+    )).scalars().all()
+    secs = (await db.execute(
+        select(UserPaperSection)
+        .where(UserPaperSection.user_paper_id == paper_id)
+        .order_by(UserPaperSection.sort_order.asc())
     )).scalars().all()
 
-    questions = [
-        UserPaperQuestionOut(
-            id=q.id,
-            question_no=q.question_no,
-            question_type=q.question_type,
-            stem=q.stem,
-            student_answer=q.student_answer,
-            correct_answer=q.correct_answer,
-            explanation=q.explanation,
-            is_wrong=q.is_wrong,
+    def _q_out(q):
+        return UserPaperQuestionOut(
+            id=q.id, question_no=q.question_no, question_type=q.question_type, stem=q.stem,
+            student_answer=q.student_answer, correct_answer=q.correct_answer,
+            explanation=q.explanation, is_wrong=q.is_wrong,
+            passage=q.passage, block_key=q.block_key,
         )
-        for q in qs
+
+    questions = [_q_out(q) for q in qs]            # 扁平列表(兼容旧展示)
+    # 按大题分组;历史数据(section_id 为空)归到「未分组」保证不丢题
+    by_sec: dict = {}
+    for q in qs:
+        by_sec.setdefault(q.section_id, []).append(q)
+    sections = [
+        UserPaperSectionOut(id=s.id, label=s.label, section_type=s.section_type,
+                            is_suggested=s.is_suggested,
+                            questions=[_q_out(q) for q in by_sec.get(s.id, [])])
+        for s in secs
     ]
+    if by_sec.get(None):                           # 无 section 的历史题兜底
+        import uuid as _uuid
+        sections.append(UserPaperSectionOut(
+            id=_uuid.uuid4(), label="未分组", section_type=None,
+            questions=[_q_out(q) for q in by_sec[None]]))
 
     return UserPaperDetailOut(
         id=paper.id,
@@ -215,8 +296,219 @@ async def get_paper_detail(
         ocr_status=paper.ocr_status,
         question_count=len(questions),
         created_at=paper.created_at,
+        sections=sections,
         questions=questions,
     )
+
+
+async def paper_grammar_status(
+    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID
+) -> dict | None:
+    """P1:本卷考的语法点(题目已挂 node)对照学生掌握度 → 已学 / 薄弱 / 未学。
+
+    未学(new)=该语法点没练过记录;薄弱(weak)=练过但掌握度 < 0.7;已学(learned)=≥ 0.7。
+    语法点掌握度优先用四维派生(与知识点页一致),无四维记录回退加权口径。非本人 → None。
+    """
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d16_question_domain import StudentKp
+    from app.services.kp_lecture_service import kp_type_of
+    from app.services.kp_mastery_service import weighted_mastery, grammar_overrides
+
+    paper = await db.get(UserUploadedPaper, paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+
+    # 本卷题目挂到的知识节点(去重)→ 只取语法点(cf/jf)
+    rows = (await db.execute(
+        select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
+        .join(UserPaperQuestion, UserPaperQuestion.node_id == KnowledgeNode.id)
+        .where(UserPaperQuestion.user_paper_id == paper_id)
+        .distinct())).all()
+    grammar = [(nid, name, code) for nid, name, code in rows if kp_type_of(code) == "grammar"]
+    if not grammar:
+        return {"learned": [], "weak": [], "new": [], "total": 0}
+
+    ov = await grammar_overrides(db, student_id=student_id,
+                                 nodes_with_code=[(nid, code) for nid, _n, code in grammar])
+    sk_map = {sk.node_id: sk for sk in (await db.execute(
+        select(StudentKp).where(StudentKp.student_id == student_id,
+                                StudentKp.node_id.in_([nid for nid, _n, _c in grammar])))).scalars().all()}
+
+    buckets = {"learned": [], "weak": [], "new": []}
+    for nid, name, code in grammar:
+        if nid in ov:
+            mastery, events = ov[nid]
+        elif nid in sk_map:
+            sk = sk_map[nid]
+            mastery, events = weighted_mastery(sk.fa_correct, sk.fa_wrong,
+                                               sk.corrected_count, sk.redo_wrong_count)
+        else:
+            mastery, events = None, 0
+        status = "new" if (not events or mastery is None) else ("learned" if mastery >= 0.7 else "weak")
+        buckets[status].append({
+            "node_id": str(nid), "name": name, "code": code,
+            "mastery": mastery, "events": events,
+        })
+
+    # 先修增强:未学语法点若有先修(NodeRelation prereq),标注先修是否已学,提示「先补先修」。
+    # 约定方向:边 (from=目标, relation='prereq', to=先修) —— 学 from 需先会 to。
+    if buckets["new"]:
+        await _attach_prereqs(db, student_id=student_id, items=buckets["new"])
+
+    return {**buckets, "total": len(grammar)}
+
+
+async def _attach_prereqs(db: AsyncSession, *, student_id: uuid.UUID, items: list[dict]) -> None:
+    """给本卷未学语法点挂「先修」:教材序里排在它之前、同顶层大类、且也没学的点(教材进度驱动)。
+
+    顺序天然来自教材(grade→semester→unit_no),不依赖手搓/AI 的 prereq 边;
+    先修全部取自未学池,故都是未学(learned=False)——即「先补先修」。未设进度则静默不挂。"""
+    from app.services import grammar_progress_service as gp
+    tree = await gp.personal_grammar_tree(db, student_id=student_id)
+    if not tree["has_progress"]:
+        return
+    # 未学池按 code→(rank) 建索引,顺带给本卷未学项补上自身 rank
+    rank_by_code = {n["code"]: n["rank"] for n in tree["unlearned"] if n.get("code")}
+    for it in items:
+        code = it.get("code")
+        r = rank_by_code.get(code)
+        if r is None:                      # 该点不在当前进度未学池(超前/已学)→ 不挂先修
+            continue
+        top = code.split("-")[0]
+        # unlearned 已按教材序排;顺序过滤即先修(教材序更早、同顶层大类、也没学)
+        pre = [{"node_id": n["node_id"], "name": n["name"], "learned": False}
+               for n in tree["unlearned"]
+               if n.get("code") and n["code"].split("-")[0] == top
+               and n["rank"] < r and n["code"] != code]
+        if pre:
+            it["prereq"] = pre[:3]
+
+
+async def add_paper_grammar_to_plan(
+    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID
+) -> dict | None:
+    """P4 闭环:把本卷「未学 + 薄弱」语法点一键加入学习目标 → 今日计划带出「去学/去练」。
+    复用 paper_grammar_status 分桶;已学的不加。非本人 → None。"""
+    from app.services import learning_plan_service
+    status = await paper_grammar_status(db, paper_id=paper_id, student_id=student_id)
+    if status is None:
+        return None
+    node_ids = [uuid.UUID(x["node_id"]) for x in (status["new"] + status["weak"])]
+    added = await learning_plan_service.add_targets(
+        db, student_id=student_id, node_ids=node_ids, source="paper_upload")
+    return {"added": added, "selected": len(node_ids),
+            "new": len(status["new"]), "weak": len(status["weak"])}
+
+
+# ── P2 生词 / P3 长难句:从本卷原文拆,复用词力通 / 长难句服务 ──────────────────
+# 常见功能词/高频词,抽生词时滤掉(避免 the/is 这类混进候选)。
+_VOCAB_STOP = frozenset("""
+the and for are but not you all any can had her was one our out day get has him his how man new now
+old see two way who did its let put say she too use dad mom the this that these those with have from they
+will would could should about there their what when where which while your yours been being does were what
+into than then them been over more most some such only very much many just like also each here does
+""".split())
+
+
+async def _paper_texts(db: AsyncSession, paper_id: uuid.UUID) -> tuple[list[str], list[str]]:
+    """本卷原文素材:去重短文(passages)+ 题干(stems),供抽生词/拆长难句。"""
+    prows = (await db.execute(
+        select(UserPaperQuestion.block_key, UserPaperQuestion.passage)
+        .where(UserPaperQuestion.user_paper_id == paper_id,
+               UserPaperQuestion.passage.isnot(None)))).all()
+    passages = list({(bk or p): p for bk, p in prows if p}.values())   # 同篇按 block_key 去重
+    stems = [s for (s,) in (await db.execute(
+        select(UserPaperQuestion.stem)
+        .where(UserPaperQuestion.user_paper_id == paper_id,
+               UserPaperQuestion.stem.isnot(None)))).all()]
+    return passages, stems
+
+
+async def paper_vocab_candidates(
+    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID
+) -> dict | None:
+    """P2:从本卷原文+题干抽词 → 词典命中 → 只留『生词(未学/接收度<0.6)』供挑选加入词力通优先学。
+    复用 vocab_pin_service._words_from_text 抽词、词力通 pin 走 /vocabulary/pins。非本人 → None。"""
+    from app.models.d5_learning import VocabularyWord, VocabularyLearning, StudentVocabCandidate
+    from app.services.vocab_pin_service import _words_from_text
+
+    paper = await db.get(UserUploadedPaper, paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    passages, stems = await _paper_texts(db, paper_id)
+    words = [w for w in _words_from_text(" ".join(passages + stems))
+             if len(w) >= 3 and w not in _VOCAB_STOP]
+    if not words:
+        return {"words": []}
+    hit = {w.word.lower(): w for w in (await db.execute(
+        select(VocabularyWord).where(func.lower(VocabularyWord.word).in_(words)))).scalars().all()}
+    if not hit:
+        return {"words": []}
+    ids = [w.id for w in hit.values()]
+    recep = {r.word_id: r.mastery_recep for r in (await db.execute(
+        select(VocabularyLearning).where(VocabularyLearning.student_id == student_id,
+                                         VocabularyLearning.word_id.in_(ids)))).scalars().all()}
+    pinned = set((await db.execute(
+        select(StudentVocabCandidate.word_id).where(
+            StudentVocabCandidate.student_id == student_id,
+            StudentVocabCandidate.priority > 0,
+            StudentVocabCandidate.word_id.in_(ids)))).scalars().all())
+    out, added = [], set()
+    for w in words:                                      # 保持原文出现顺序
+        vw = hit.get(w)
+        if vw is None or vw.id in added:
+            continue
+        rc = recep.get(vw.id)
+        if rc is not None and float(rc) >= 0.6:          # 接收度够 → 已掌握,不算生词
+            continue
+        added.add(vw.id)
+        out.append({"word_id": str(vw.id), "word": vw.word, "phonetic": vw.phonetic,
+                    "recep": float(rc) if rc is not None else None, "pinned": vw.id in pinned})
+    return {"words": out[:40]}
+
+
+async def paper_long_sentences(
+    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID
+) -> dict | None:
+    """P3:从本卷短文拆长难句(复用 long_sentence_service 切句 + 长句判定),供逐句解析。非本人 → None。"""
+    from app.services import long_sentence_service as ls
+    paper = await db.get(UserUploadedPaper, paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    passages, _ = await _paper_texts(db, paper_id)
+    seen, out = set(), []
+    for p in passages:
+        for s in ls.split_sentences(p):
+            key = (s or "").strip()
+            if key and key not in seen and ls.is_long_sentence(s):
+                seen.add(key)
+                out.append(key)
+    return {"sentences": out[:15]}
+
+
+async def analyze_paper_sentence(sentence: str) -> dict:
+    """P3:按需解析一句长难句(复用 long_sentence_service.analyze_sentence)。"""
+    from app.services import long_sentence_service as ls
+    return await ls.analyze_sentence(sentence)
+
+
+async def update_section(
+    db: AsyncSession, *, section_id: uuid.UUID, student_id: uuid.UUID, label: str
+) -> bool:
+    """学生修改大题分类:改 label + 重推 section_type + 置 is_suggested=false(已人工确认)。
+    校验该大题所属试卷属于本人;成功返回 True,越权/不存在返回 False。"""
+    from app.models.d13_v2_user_papers import UserPaperSection
+    sec = await db.get(UserPaperSection, section_id)
+    if sec is None:
+        return False
+    paper = await db.get(UserUploadedPaper, sec.user_paper_id)
+    if paper is None or paper.student_id != student_id:
+        return False
+    sec.label = label.strip()
+    sec.section_type = _section_type(sec.label)
+    sec.is_suggested = False
+    await db.commit()
+    return True
 
 
 async def paper_kp_summary(

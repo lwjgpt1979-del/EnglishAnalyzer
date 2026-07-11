@@ -74,7 +74,7 @@ from .d11_v2_curriculum import PendingKpContent, CurriculumGenJob  # noqa: F401
 from .d12_v2_exams import ExamPaper, ExamQuestion, SelfExam  # noqa: F401
 
 # 域13: V2 学生整卷上传(R8 Phase4/6c 退役 user_paper_question_knowledge_points)
-from .d13_v2_user_papers import UserUploadedPaper, UserPaperQuestion  # noqa: F401
+from .d13_v2_user_papers import UserUploadedPaper, UserPaperQuestion, UserPaperSection  # noqa: F401
 
 # 域14: V2 学期会员 (1 张表)
 from .d14_v2_semesters import PurchasedSemester  # noqa: F401

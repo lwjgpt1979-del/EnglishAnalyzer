@@ -60,23 +60,32 @@ def _is_doubao_dev_mode() -> bool:
 _SYSTEM_PROMPT = (
     "你是一个专业的英语试卷结构化助手。"
     "你会收到一整张英语试卷图片（含印刷体题目和学生手写答案），"
-    "请把整卷拆分为一道道独立题目，严格按 JSON 数组输出，不要任何额外文字。"
+    "请把整卷拆成结构化数据（保留原卷大题结构与阅读/完形的短文原文），严格按 JSON 输出，不要任何额外文字。"
 )
 
-_USER_PROMPT = """请分析这张英语试卷图片，把所有题目拆分为结构化 JSON 数组。
+_USER_PROMPT = """请分析这张英语试卷图片，把所有题目拆分为结构化数据，返回 JSON 对象：{"questions":[...], "passages":{...}}。
 
-每一项格式：
+questions 每一项：
 {
+  "section": "该题所属大题名（单项选择/完形填空/阅读理解/任务型阅读/词汇运用/首字母填空/短文填空/书面表达/听力理解 等，忠实原卷大题标题；无法判断则 null）",
   "question_no": "题号（如 27），无法识别则 null",
   "question_type": "单选|填空|完型|阅读|写作|判断|连线",
   "stem": "该题完整题干（含选项，不含学生作答）",
+  "block_key": "阅读理解/完形填空/任务型阅读 这类『一篇短文带多道小题』的小题，同一篇短文的小题都给同一个 key（如 readingA、readingB、cloze1）；独立小题为 null",
   "student_answer": "该题学生手写答案，无法识别则 null",
   "correct_answer": "正确答案（可推断则填，否则 null）",
   "explanation": "简要解析（可推断则填，否则 null）"
 }
 
-要求：按题号顺序输出；识别不到任何题目时返回空数组 []。
-只返回纯 JSON 数组，不要任何 markdown 代码块或额外文字。"""
+passages 是一个对象，键是 block_key，值是该短文/语篇的**完整原文（逐字照抄图片，不要改写、不要缩略、不要翻译）**：
+{ "readingA": "短文全文……", "cloze1": "完形填空语篇全文……" }
+
+铁律：
+- **图片里有阅读理解/完形填空/任务型阅读的短文正文，必须把它完整放进 passages，并让对应小题的 block_key 指向它**——绝不能因为题干没重复短文就漏掉短文。短文通常在这组小题前面。
+- **务必按原卷大题给每题填 section**；同一大题下的题 section 相同。
+- 没有任何短文的卷子，passages 返回 {}。
+- 按题号顺序输出；识别不到任何题目时 questions 返回 []。
+只返回纯 JSON，不要任何 markdown 代码块或额外文字。"""
 
 
 # ── Provider 实现 ─────────────────────────────────────────────────────────────
@@ -191,7 +200,7 @@ class DoubaoVisionProvider:
                         ],
                     },
                 ],
-                max_tokens=8192,
+                max_tokens=12288,   # 含短文原文(passages),给足预算防截断
             )
         except Exception as exc:
             _log.error("DoubaoVision API failed: %s", exc)

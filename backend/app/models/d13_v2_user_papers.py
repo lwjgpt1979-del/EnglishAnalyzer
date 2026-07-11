@@ -20,10 +20,31 @@ class UserUploadedPaper(Base):
     updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())
 
 
+class UserPaperSection(Base):
+    """整卷的「大题/板块」结构(还原原卷题型结构):单项选择 / 完形填空 / 阅读理解 / 书面表达…
+
+    一卷多大题,大题内多题;完形/阅读的「短文+多小问」按 block_key 在题上共享 passage。
+    label=原卷大题名;section_type=题型板块键(mcq/cloze/reading/…);sort_order 保原卷顺序。
+    """
+    __tablename__ = "user_paper_sections"
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_paper_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("user_uploaded_papers.id"), nullable=False)
+    label = mapped_column(sa.String, nullable=False)          # 大题名(原卷识别 或 AI 建议)
+    section_type = mapped_column(sa.String, nullable=True)    # 题型板块键
+    # AI 建议的分类(原卷没识别到大题头时按题型推):前端标「建议」,学生可改;改后置 false
+    is_suggested = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+
+
 class UserPaperQuestion(Base):
     __tablename__ = "user_paper_questions"
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_paper_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("user_uploaded_papers.id"), nullable=False)
+    # 还原原卷结构:归属大题 + 语篇分组(完形/阅读同篇共享 passage)+ 卷面顺序
+    section_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("user_paper_sections.id", ondelete="SET NULL"), nullable=True)
+    passage = mapped_column(sa.Text, nullable=True)           # 该题所属短文/语篇(完形/阅读;独立题为空)
+    block_key = mapped_column(sa.String, nullable=True)       # 同篇小问共享的分组键
+    sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     question_no = mapped_column(sa.String, nullable=True)
     question_type = mapped_column(ai_question_type_enum, nullable=True)
     stem = mapped_column(sa.Text, nullable=True)
