@@ -111,20 +111,11 @@
           <view v-for="(s, i) in sentences" :key="i" class="ls-item">
             <text class="ls-text">{{ s }}</text>
             <view class="ls-row">
-              <view class="ls-btn" @tap="analyzeOne(i)">
-                <text>{{ lsBusy === i ? '解析中…' : (lsResult[i] ? '收起' : '解析') }}</text>
+              <view class="ls-btn" @tap="openAnalysis(i)">
+                <text>解析 ›</text>
               </view>
               <view class="ls-btn ls-add" :class="{ done: lsSaved.has(i) }" @tap="saveSentence(i)">
                 <text>{{ lsSaved.has(i) ? '已加入' : '加入待学习' }}</text>
-              </view>
-            </view>
-            <view v-if="lsResult[i]" class="ls-ana">
-              <text v-if="lsResult[i].translation" class="ls-trans">{{ lsResult[i].translation }}</text>
-              <view v-if="lsResult[i].segments && lsResult[i].segments.length" class="ls-comps">
-                <view v-for="(c, ci) in lsResult[i].segments" :key="ci" class="ls-comp">
-                  <text class="ls-comp-t">{{ c.type }}</text>
-                  <text class="ls-comp-x">{{ c.text }}</text>
-                </view>
               </view>
             </view>
           </view>
@@ -200,7 +191,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, analyzePaperSentence, savePaperSentence, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, savePaperSentence, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
 import { addPins } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
 
@@ -320,8 +311,6 @@ async function addVocab() {
 
 // P3:本卷长难句 → 逐句解析
 const sentences = ref<string[]>([])
-const lsResult = ref<Record<number, any>>({})
-const lsBusy = ref<number>(-1)
 const lsSaved = ref<Set<number>>(new Set())
 async function saveSentence(i: number) {
   if (lsSaved.value.has(i)) return
@@ -334,15 +323,10 @@ async function saveSentence(i: number) {
 async function loadSentences() {
   try { sentences.value = (await getPaperLongSentences(paperId.value)).sentences } catch { /* ignore */ }
 }
-async function analyzeOne(i: number) {
-  if (lsBusy.value >= 0) return
-  if (lsResult.value[i]) { const r = { ...lsResult.value }; delete r[i]; lsResult.value = r; return }  // 收起
-  lsBusy.value = i
-  try {
-    const r = await analyzePaperSentence(sentences.value[i])
-    lsResult.value = { ...lsResult.value, [i]: r }
-  } catch (e: any) { uni.showToast({ title: e?.message || '解析失败', icon: 'none' }) }
-  finally { lsBusy.value = -1 }
+// 长难句解析单开一页(不再内嵌试卷页)
+function openAnalysis(i: number) {
+  const saved = lsSaved.value.has(i) ? '1' : '0'
+  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(sentences.value[i])}&saved=${saved}` })
 }
 
 // 学生改大题的题型分类(AI 建议不准时)
