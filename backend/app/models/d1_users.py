@@ -117,6 +117,7 @@ class User(Base):
     preferred_textbook_version = mapped_column(sa.String, nullable=True)
     preferred_grade = mapped_column(sa.String, nullable=True)
     preferred_semester = mapped_column(semester_enum, nullable=True)
+    preferred_unit_no = mapped_column(sa.Integer, nullable=True)   # 学到第几单元(教材进度;算未学池的细粒度位置)
 
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),

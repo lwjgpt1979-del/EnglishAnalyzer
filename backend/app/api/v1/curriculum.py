@@ -25,6 +25,14 @@ async def get_preference_options(db: DbDep, current_user: UserDep):
     return make_ok(await curriculum_service.preference_options(db))
 
 
+@router.get("/grammar-tree")
+async def get_grammar_tree(db: DbDep, current_user: UserDep):
+    """个人语法树(教材进度驱动,分组可视):词法/句法 → 二级分类 → 已学/未学项 + 个人自建节点。
+    未设年级/学期 → has_progress=false。"""
+    from app.services import grammar_progress_service
+    return make_ok(await grammar_progress_service.grammar_tree_grouped(db, student_id=current_user.id))
+
+
 @router.get("/units")
 async def list_units(
     db: DbDep,

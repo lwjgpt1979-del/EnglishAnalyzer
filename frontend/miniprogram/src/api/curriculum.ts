@@ -12,6 +12,21 @@ export function getCurriculumOptions(): Promise<CurriculumOptions> {
   return request<CurriculumOptions>('/api/v1/curriculum/options', { method: 'GET' })
 }
 
+// 个人语法树(教材进度驱动,分组可视):词法/句法 → 二级分类 → 已学/未学项 + 个人自建节点
+export interface GrammarTreeItem { node_id: string; name: string; status: 'learned' | 'unlearned' }
+export interface GrammarTreeCat { code: string; name: string; learned: number; unlearned: number; items: GrammarTreeItem[] }
+export interface GrammarTreeRoot { code: string; name: string; learned: number; unlearned: number; cats: GrammarTreeCat[] }
+export interface GrammarPersonalNode { personal_id: string; name: string; anchor: string | null; source: string }
+export interface GrammarTree {
+  has_progress: boolean
+  totals: { learned: number; unlearned: number }
+  roots: GrammarTreeRoot[]
+  personal: GrammarPersonalNode[]
+}
+export function getGrammarTree(): Promise<GrammarTree> {
+  return request<GrammarTree>('/api/v1/curriculum/grammar-tree', { method: 'GET' })
+}
+
 export function listUnits(
   textbook_version: string,
   grade: string,

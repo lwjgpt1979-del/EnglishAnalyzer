@@ -186,6 +186,8 @@ async def update_profile_api(body: UpdateProfileRequest, db: DbDep, current_user
         current_user.preferred_grade = body.preferred_grade
     if body.preferred_semester is not None:
         current_user.preferred_semester = body.preferred_semester
+    if body.preferred_unit_no is not None:
+        current_user.preferred_unit_no = body.preferred_unit_no
     if body.city_code is not None:
         current_user.city_code = body.city_code
         current_user.city_source = "manual"
@@ -195,5 +197,6 @@ async def update_profile_api(body: UpdateProfileRequest, db: DbDep, current_user
         "preferred_textbook_version": current_user.preferred_textbook_version,
         "preferred_grade": current_user.preferred_grade,
         "preferred_semester": str(current_user.preferred_semester) if current_user.preferred_semester else None,
+        "preferred_unit_no": current_user.preferred_unit_no,
         "city_code": current_user.city_code,
     })

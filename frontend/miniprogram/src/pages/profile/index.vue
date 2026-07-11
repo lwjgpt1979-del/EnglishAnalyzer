@@ -61,10 +61,15 @@
         <text class="pref-val">{{ (auth.user as any)?.preferred_semester || '未设置' }}</text>
       </view>
       <view class="pref-row">
+        <text class="pref-label">学习进度</text>
+        <text class="pref-val">{{ (auth.user as any)?.preferred_unit_no ? `第${(auth.user as any).preferred_unit_no}单元` : '按整学期' }}</text>
+      </view>
+      <view class="pref-row">
         <text class="pref-label">所在城市</text>
         <text class="pref-val">{{ cityDisplayName || '未设置' }}</text>
       </view>
       <button class="btn-menu" style="margin-top:16rpx" @tap="openPrefEdit">修改偏好</button>
+      <button class="btn-menu" style="margin-top:12rpx" @tap="() => uni.navigateTo({ url: '/pages/curriculum/grammar-tree' })">我的语法树（已学/未学）</button>
 
       <!-- 编辑弹窗 -->
       <view v-if="showPrefEdit" class="modal" @tap.self="showPrefEdit = false">
@@ -75,19 +80,25 @@
           </text>
 
           <text class="pref-label" style="margin-bottom:8rpx;display:block">教材版本</text>
-          <picker :range="TEXTBOOK_VERSIONS" :value="prefForm.textbookIdx" @change="(e: any) => prefForm.textbookIdx = +e.detail.value">
+          <picker :range="TEXTBOOK_VERSIONS" :value="prefForm.textbookIdx" @change="(e: any) => { prefForm.textbookIdx = +e.detail.value; reloadPrefUnits() }">
             <view class="picker-row">{{ TEXTBOOK_VERSIONS[prefForm.textbookIdx] }} ›</view>
           </picker>
 
           <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">年级</text>
-          <picker :range="GRADES" :value="prefForm.gradeIdx" @change="(e: any) => prefForm.gradeIdx = +e.detail.value">
+          <picker :range="GRADES" :value="prefForm.gradeIdx" @change="(e: any) => { prefForm.gradeIdx = +e.detail.value; reloadPrefUnits() }">
             <view class="picker-row">{{ GRADES[prefForm.gradeIdx] }} ›</view>
           </picker>
 
           <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">学期</text>
-          <picker :range="SEMESTERS" :value="prefForm.semIdx" @change="(e: any) => prefForm.semIdx = +e.detail.value">
+          <picker :range="SEMESTERS" :value="prefForm.semIdx" @change="(e: any) => { prefForm.semIdx = +e.detail.value; reloadPrefUnits() }">
             <view class="picker-row">{{ SEMESTERS[prefForm.semIdx] }} ›</view>
           </picker>
+
+          <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">学习进度（学到第几单元）</text>
+          <picker :range="unitLabels" :value="prefForm.unitIdx" @change="(e: any) => prefForm.unitIdx = +e.detail.value">
+            <view class="picker-row">{{ unitLabels[prefForm.unitIdx] || '未指定（按整学期算）' }} ›</view>
+          </picker>
+          <text class="pref-hint">用于「未学语法/先修」更精确——只把学到这一单元之前的语法算作应学。</text>
 
           <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">省份</text>
           <picker :range="provinceNames" :value="prefForm.provIdx" @change="onProvChange">
@@ -285,7 +296,8 @@ import { updateProfile, wxBindPhone, getInfoChangeQuota } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { listRegions, type RegionNode } from '@/api/regions'
 import { loadCurriculumOptions, curriculumFallback } from '@/utils/curriculumOptions'
-import type { PurchasedSemesterOut, QRCodeOut, BoundStudent } from '@/types/api'
+import { listUnits } from '@/api/curriculum'
+import type { PurchasedSemesterOut, QRCodeOut, BoundStudent, UnitOut } from '@/types/api'
 
 // 教材版本/年级/学期:后台单一真源(GET /curriculum/options);初值兜底,openPrefEdit 时刷新
 const _prefFb = curriculumFallback()
@@ -323,9 +335,28 @@ const prefForm = reactive({
   textbookIdx: 0,
   gradeIdx: 0,
   semIdx: 0,
+  unitIdx: 0,          // 0 = 未指定(按整学期);≥1 → prefUnits[unitIdx-1]
   provIdx: 0,
   cityIdx: 0,
 })
+
+// 学习进度:当前教材/年级/学期下的单元清单(供「学到第几单元」选择)
+const prefUnits = ref<UnitOut[]>([])
+const unitLabels = computed(() => ['未指定（按整学期算）',
+  ...prefUnits.value.map(u => `第${u.unit_no}单元 ${u.unit_title || ''}`.trim())])
+async function reloadPrefUnits() {
+  const tb = TEXTBOOK_VERSIONS.value[prefForm.textbookIdx]
+  const g = GRADES.value[prefForm.gradeIdx]
+  const s = SEMESTERS.value[prefForm.semIdx]
+  if (!tb || !g || !s) { prefUnits.value = []; prefForm.unitIdx = 0; return }
+  try {
+    prefUnits.value = (await listUnits(tb, g, s)) || []
+  } catch { prefUnits.value = [] }
+  // 用已存进度回选;换了教材/年级/学期后进度超范围则回「未指定」
+  const cur = (auth.user as any)?.preferred_unit_no
+  const i = cur ? prefUnits.value.findIndex(u => u.unit_no === cur) : -1
+  prefForm.unitIdx = i >= 0 ? i + 1 : 0
+}
 
 // 地区（后端 region 表唯一源，懒加载）
 const provinces = ref<RegionNode[]>([])
@@ -370,6 +401,7 @@ async function openPrefEdit() {
   prefForm.textbookIdx = Math.max(0, TEXTBOOK_VERSIONS.value.indexOf(u?.preferred_textbook_version || ''))
   prefForm.gradeIdx = Math.max(0, GRADES.value.indexOf(u?.preferred_grade || ''))
   prefForm.semIdx = Math.max(0, SEMESTERS.value.indexOf(u?.preferred_semester || ''))
+  await reloadPrefUnits()   // 载入当前教材/年级/学期的单元清单 + 回选已存进度
   showPrefEdit.value = true
   getInfoChangeQuota().then(q => { infoChangeRemaining.value = q.remaining; infoChangeLimit.value = q.limit }).catch(() => {})
   // init city picker（懒加载省→市）
@@ -387,10 +419,12 @@ async function onSavePref() {
   prefSaving.value = true
   try {
     const cityCode = cities.value[prefForm.cityIdx]?.code ?? null
+    const unitNo = prefForm.unitIdx > 0 ? (prefUnits.value[prefForm.unitIdx - 1]?.unit_no ?? null) : null
     await updateProfile({
       preferred_textbook_version: TEXTBOOK_VERSIONS.value[prefForm.textbookIdx],
       preferred_grade: GRADES.value[prefForm.gradeIdx],
       preferred_semester: SEMESTERS.value[prefForm.semIdx],
+      preferred_unit_no: unitNo,
       city_code: cityCode,
     })
     const u: any = auth.user
@@ -398,6 +432,7 @@ async function onSavePref() {
       u.preferred_textbook_version = TEXTBOOK_VERSIONS.value[prefForm.textbookIdx]
       u.preferred_grade = GRADES.value[prefForm.gradeIdx]
       u.preferred_semester = SEMESTERS.value[prefForm.semIdx]
+      u.preferred_unit_no = unitNo
       u.city_code = cityCode
     }
     await resolveCityDisplay()
@@ -711,6 +746,7 @@ function goBuySemester() {
 .pref-row { display: flex; justify-content: space-between; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .pref-row:last-of-type { border-bottom: none; }
 .pref-label { font-size: 26rpx; color: var(--c-text-second); }
+.pref-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; line-height: 1.5; }
 .info-quota-tip { display: block; font-size: 22rpx; color: var(--c-gold, #e6a23c); background: #fff7e6; padding: 12rpx 16rpx; border-radius: 8rpx; margin-bottom: 16rpx; }
 .pref-val { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
 .picker-row { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; font-size: 28rpx; color: var(--c-ink); }

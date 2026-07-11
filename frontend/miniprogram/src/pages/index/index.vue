@@ -243,7 +243,12 @@ function goTask(t: PlanTask) {
   if (t.action === 'review') {
     uni.navigateTo({ url: '/pages/wrong-questions/review' })
   } else if (t.action === 'learn') {
-    goLearn()
+    // 学习目标(上传试卷带来的未学语法)带 kp_id → 直达该考点讲解页;否则通用学习入口
+    if (t.kp_id) {
+      uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${t.kp_id}${t.kp_key ? `&name=${encodeURIComponent(t.kp_key)}` : ''}&cat=grammar` })
+    } else {
+      goLearn()
+    }
   } else { // practice
     if (t.kp_id) {
       uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${t.kp_id}` })

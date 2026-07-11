@@ -44,4 +44,5 @@ class UpdateProfileRequest(BaseModel):
     preferred_textbook_version: str | None = None
     preferred_grade: str | None = None
     preferred_semester: str | None = None
+    preferred_unit_no: int | None = None  # 学到第几单元(教材进度;算未学池)
     city_code: str | None = None  # V2 M27 预留

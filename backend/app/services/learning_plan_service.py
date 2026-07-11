@@ -27,6 +27,49 @@ _MAX_WEAK_TASKS = 3
 _WEAK_ACC_CEILING = 0.7  # 仅正确率 < 0.7 的 KP 进入"攻克薄弱点"
 
 
+async def add_targets(db: AsyncSession, *, student_id: uuid.UUID,
+                      node_ids: list[uuid.UUID], source: str = "manual") -> int:
+    """把一批考点加入学生的学习目标(幂等去重)。返回新增条数。供「上传试卷→一键加入计划」。"""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d26_kp_target import StudentKpTarget
+    added = 0
+    for nid in node_ids:
+        r = await db.execute(
+            pg_insert(StudentKpTarget)
+            .values(id=uuid.uuid4(), student_id=student_id, node_id=nid, source=source)
+            .on_conflict_do_nothing(index_elements=["student_id", "node_id"])
+            .returning(StudentKpTarget.id))
+        if r.first() is not None:      # RETURNING 只在真插入时有行(冲突跳过则无)
+            added += 1
+    await db.commit()
+    return added
+
+
+async def _active_targets(db: AsyncSession, *, student_id: uuid.UUID, limit: int = 5) -> list[tuple]:
+    """学生的学习目标里「还没掌握」的考点(未练过 或 掌握度 < 0.7)→ [(node_id, name)]。已掌握的淡出。"""
+    from sqlalchemy import and_
+    from app.models.d26_kp_target import StudentKpTarget
+    from app.models.d16_question_domain import StudentKp
+    rows = (await db.execute(
+        select(StudentKpTarget.node_id, KnowledgeNode.name,
+               StudentKp.fa_correct, StudentKp.fa_wrong,
+               StudentKp.corrected_count, StudentKp.redo_wrong_count)
+        .join(KnowledgeNode, KnowledgeNode.id == StudentKpTarget.node_id)
+        .outerjoin(StudentKp, and_(StudentKp.node_id == StudentKpTarget.node_id,
+                                   StudentKp.student_id == student_id))
+        .where(StudentKpTarget.student_id == student_id)
+        .order_by(StudentKpTarget.created_at.desc()))).all()
+    out: list[tuple] = []
+    for nid, name, fac, faw, corr, redo in rows:
+        if fac is None and faw is None:                 # 没练过 → 未学,保留
+            out.append((nid, name))
+        else:
+            mastery, _ = kp_mastery_service.weighted_mastery(fac, faw, corr, redo)
+            if mastery < 0.7:                           # 未掌握,保留;已掌握淡出
+                out.append((nid, name))
+    return out[:limit]
+
+
 async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPlanOut:
     today = datetime.now(timezone.utc).date()
     today_start = datetime.combine(today, time.min, tzinfo=timezone.utc)
@@ -69,6 +112,23 @@ async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPla
             kp_key=r.kp_key,
             accuracy=round(acc, 4),
             level=level,
+        ))
+
+    # 学习目标(上传试卷等加进来的『未学/薄弱』语法)——台账里没记录的未学考点靠它进计划;
+    # 已在弱项任务里的按名去重,避免重复;已掌握的 _active_targets 已过滤淡出。
+    seen_names = {t.kp_key for t in tasks if t.kp_key}
+    for nid, name in await _active_targets(db, student_id=student_id):
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        tasks.append(PlanTask(
+            type="learn",
+            title=f"学新语法：{name}",
+            subtitle="来自你上传的试卷 · 先看讲解再练",
+            action="learn",
+            done=name in practiced_names,
+            kp_id=str(nid),
+            kp_key=name,
         ))
 
     # 待复习错题：按 SM-2 遗忘曲线取「今日到期 + 新错题」，而非全部未掌握（M12）
