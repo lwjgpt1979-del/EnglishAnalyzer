@@ -70,11 +70,12 @@ const text = ref('')
 const a = ref<any>(null)
 const loading = ref(true)
 const saved = ref(false)
+const paperId = ref('')
 
 async function save() {
   if (saved.value || !text.value) return
   try {
-    await savePaperSentence(text.value)
+    await savePaperSentence(text.value, paperId.value || undefined)
     saved.value = true
     uni.showToast({ title: '已加入待学习', icon: 'success' })
   } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
@@ -83,6 +84,7 @@ async function save() {
 onLoad(async (q: any) => {
   text.value = decodeURIComponent(q.text || '')
   saved.value = q.saved === '1'
+  paperId.value = q.paperId || ''
   if (!text.value) { loading.value = false; return }
   try { a.value = await analyzePaperSentence(text.value) } catch { /* ignore */ }
   finally { loading.value = false }

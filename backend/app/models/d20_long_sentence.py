@@ -77,6 +77,7 @@ class StudentLongSentence(Base):
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_id = mapped_column(UUID(as_uuid=True), nullable=False)           # 学生
     source_question_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 来源:上传题(uploaded_question.id)
+    source_paper_id = mapped_column(UUID(as_uuid=True), nullable=True)     # 来源卷(作业精讲按批次归组)
     text = mapped_column(sa.Text, nullable=False)
     analysis_json = mapped_column(JSONB, nullable=True)
     difficulty = mapped_column(sa.Integer, nullable=True)

@@ -50,8 +50,8 @@ export function analyzePaperSentence(sentence: string): Promise<any> {
   return request<any>(`/api/v1/user-papers/analyze-sentence`, { method: 'POST', data: { sentence } })
 }
 // 问题4:手动把一句长难句加入待学习区(→ 长难句学习)
-export function savePaperSentence(sentence: string): Promise<{ added: boolean }> {
-  return request<{ added: boolean }>(`/api/v1/user-papers/save-sentence`, { method: 'POST', data: { sentence } })
+export function savePaperSentence(sentence: string, paperId?: string): Promise<{ added: boolean }> {
+  return request<{ added: boolean }>(`/api/v1/user-papers/save-sentence`, { method: 'POST', data: { sentence, paper_id: paperId } })
 }
 export function getPaperGrammarStatus(paperId: string): Promise<PaperGrammarStatus> {
   return request<PaperGrammarStatus>(`/api/v1/user-papers/${paperId}/grammar-status`, { method: 'GET' })

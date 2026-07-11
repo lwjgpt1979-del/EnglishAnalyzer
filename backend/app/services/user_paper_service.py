@@ -433,7 +433,8 @@ async def add_paper_grammar_to_plan(
         return None
     node_ids = [uuid.UUID(x["node_id"]) for x in (status["new"] + status["weak"])]
     added = await learning_plan_service.add_targets(
-        db, student_id=student_id, node_ids=node_ids, source="paper_upload")
+        db, student_id=student_id, node_ids=node_ids, source="paper_upload",
+        source_paper_id=paper_id)
     return {"added": added, "selected": len(node_ids),
             "new": len(status["new"]), "weak": len(status["weak"])}
 

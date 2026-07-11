@@ -34,12 +34,12 @@ const saved = ref<Set<number>>(new Set())
 
 function openAnalysis(i: number) {
   const s = saved.value.has(i) ? '1' : '0'
-  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(sentences.value[i])}&saved=${s}` })
+  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(sentences.value[i])}&saved=${s}&paperId=${paperId.value}` })
 }
 async function save(i: number) {
   if (saved.value.has(i)) return
   try {
-    await savePaperSentence(sentences.value[i])
+    await savePaperSentence(sentences.value[i], paperId.value)
     saved.value = new Set([...saved.value, i])
     uni.showToast({ title: '已加入待学习', icon: 'success' })
   } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }

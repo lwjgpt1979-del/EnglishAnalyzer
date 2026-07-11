@@ -131,8 +131,8 @@ export function getPins(): Promise<{ pins: VocabPin[] }> {
 export function getPinnable(): Promise<{ words: PinnableWord[] }> {
   return request<{ words: PinnableWord[] }>('/api/v1/vocabulary/pinnable', { method: 'GET' })
 }
-export function addPins(wordIds: string[], priority = 1): Promise<{ pinned: number }> {
-  return request<{ pinned: number }>('/api/v1/vocabulary/pins', { method: 'POST', data: { word_ids: wordIds, priority } })
+export function addPins(wordIds: string[], priority = 1, paperId?: string): Promise<{ pinned: number }> {
+  return request<{ pinned: number }>('/api/v1/vocabulary/pins', { method: 'POST', data: { word_ids: wordIds, priority, paper_id: paperId } })
 }
 export function setPinPriority(wordId: string, priority: number): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/api/v1/vocabulary/pins/${wordId}`, { method: 'PUT', data: { priority } })

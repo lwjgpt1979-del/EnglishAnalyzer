@@ -42,8 +42,9 @@ class SectionUpdateIn(BaseModel):
 
 
 class AnalyzeSentenceIn(BaseModel):
-    """P3:按需解析一句长难句。"""
+    """P3:按需解析一句长难句;save 时可带来源卷(作业精讲按批次归组)。"""
     sentence: str = Field(..., min_length=1, max_length=600)
+    paper_id: uuid.UUID | None = None
 
 
 class UserPaperOut(BaseModel):

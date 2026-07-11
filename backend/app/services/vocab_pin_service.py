@@ -35,19 +35,24 @@ def _words_from_text(text: str) -> list[str]:
 
 
 async def _upsert_pin(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID,
-                      source: str, priority: int) -> None:
-    """加入/更新优先学(unique student+word → 冲突则升级 priority)。"""
+                      source: str, priority: int, source_paper_id: uuid.UUID | None = None) -> None:
+    """加入/更新优先学(unique student+word → 冲突则升级 priority)。source_paper_id:来源卷(作业精讲批次)。"""
+    set_ = {"priority": priority}
+    if source_paper_id is not None:
+        set_["source_paper_id"] = source_paper_id
     await db.execute(
         pg_insert(StudentVocabCandidate)
-        .values(id=uuid.uuid4(), student_id=student_id, word_id=word_id, source=source, priority=priority)
+        .values(id=uuid.uuid4(), student_id=student_id, word_id=word_id, source=source,
+                priority=priority, source_paper_id=source_paper_id)
         .on_conflict_do_update(
             index_elements=["student_id", "word_id"],
-            set_={"priority": priority}))
+            set_=set_))
 
 
 async def pin_words(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list,
-                    priority: int = _DEFAULT_PRIORITY) -> dict:
-    """从来源库挑选加入优先学。返回 {pinned}。"""
+                    priority: int = _DEFAULT_PRIORITY,
+                    source_paper_id: uuid.UUID | None = None) -> dict:
+    """从来源库挑选加入优先学。返回 {pinned}。source_paper_id:来源卷(作业精讲按批次归组)。"""
     n = 0
     pinned_ids: list = []
     for wid in word_ids:
@@ -57,7 +62,8 @@ async def pin_words(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list,
             continue
         if (await db.execute(sa.select(VocabularyWord.id).where(VocabularyWord.id == wid))).scalar_one_or_none() is None:
             continue
-        await _upsert_pin(db, student_id=student_id, word_id=wid, source="pick", priority=max(1, priority))
+        await _upsert_pin(db, student_id=student_id, word_id=wid, source="pick" if source_paper_id is None else "paper",
+                          priority=max(1, priority), source_paper_id=source_paper_id)
         pinned_ids.append(wid)
         n += 1
     await db.flush()

@@ -21,6 +21,7 @@ class StudentKpTarget(Base):
     student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
     node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=False)
     source = mapped_column(sa.String(24), nullable=False, server_default="manual")  # paper_upload / manual
+    source_paper_id = mapped_column(UUID(as_uuid=True), nullable=True)   # 来源卷(作业精讲按批次归组)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (

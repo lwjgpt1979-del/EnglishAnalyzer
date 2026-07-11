@@ -76,6 +76,18 @@
         <text class="learn-arrow">›</text>
       </view>
 
+      <!-- 两大精讲入口:作业(上传作业/试卷,优先)/ 课程(教材课程) -->
+      <view class="jj-row">
+        <view class="jj-card jj-hw" @tap="() => uni.navigateTo({ url: '/pages/intensive/homework' })">
+          <view class="qi qi-file" />
+          <view class="jj-text"><text class="jj-title">作业精讲</text><text class="jj-sub">你上传的作业/试卷</text></view>
+        </view>
+        <view class="jj-card jj-course" @tap="() => uni.navigateTo({ url: '/pages/intensive/course' })">
+          <view class="qi qi-book" />
+          <view class="jj-text"><text class="jj-title">课程精讲</text><text class="jj-sub">按教材课程学</text></view>
+        </view>
+      </view>
+
       <view class="quick-grid">
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })">
           <view class="qi qi-ai" />
@@ -470,6 +482,14 @@ onMounted(() => {
 .learn-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-on-primary); }
 .learn-sub { font-size: var(--fs-body); color: var(--c-on-primary); opacity: 0.85; }
 .learn-arrow { font-size: 48rpx; color: var(--c-on-primary); opacity: 0.8; font-weight: 700; }
+.jj-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-bottom: 20rpx; }
+.jj-card { display: flex; align-items: center; gap: 16rpx; padding: 28rpx 24rpx; border-radius: 20rpx; }
+.jj-card .qi { width: 56rpx; height: 56rpx; flex-shrink: 0; }
+.jj-hw { background: linear-gradient(135deg, #e9f2ff, #d7e8ff); }
+.jj-course { background: linear-gradient(135deg, #eafaf1, #d9f5e5); }
+.jj-text { display: flex; flex-direction: column; gap: 4rpx; }
+.jj-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.jj-sub { font-size: 21rpx; color: var(--c-text-hint); }
 .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-bottom: 32rpx; }
 .quick-card {
   background: var(--c-bg-card);

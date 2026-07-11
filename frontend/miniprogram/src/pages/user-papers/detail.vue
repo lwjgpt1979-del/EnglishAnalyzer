@@ -292,7 +292,7 @@ async function addVocab() {
   vocabBusy.value = true
   try {
     const ids = [...picked.value]
-    await addPins(ids, 1)
+    await addPins(ids, 1, paperId.value)   // 带来源卷 → 作业精讲按批次归组
     // 本地标记已加,清空选择
     vocab.value = vocab.value.map(w => ids.includes(w.word_id) ? { ...w, pinned: true } : w)
     picked.value = new Set()

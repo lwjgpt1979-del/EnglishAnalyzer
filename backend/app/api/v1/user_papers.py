@@ -150,7 +150,7 @@ async def save_sentence(
     """问题4:学生手动把一句长难句加入待学习区(student_long_sentence,进长难句学习)。"""
     from app.services import long_sentence_service
     added = await long_sentence_service.add_student_sentence(
-        db, owner_id=current_user.id, text=body.sentence)
+        db, owner_id=current_user.id, text=body.sentence, source_paper_id=body.paper_id)
     return make_ok({"added": added})
 
 

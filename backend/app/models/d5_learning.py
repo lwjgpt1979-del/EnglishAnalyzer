@@ -122,6 +122,7 @@ class StudentVocabCandidate(Base):
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id"), nullable=False
     )
     source = mapped_column(sa.String(20), nullable=False)  # paper/wrong_question/manual/pick/photo
+    source_paper_id = mapped_column(UUID(as_uuid=True), nullable=True)   # 来源卷(作业精讲按批次归组)
     # R9.6 优先学:0=普通候选,>0=学生主动优先学(数值越大越先);拍照/挑选加入即置>0
     priority = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))
     created_at = mapped_column(

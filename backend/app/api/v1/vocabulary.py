@@ -259,10 +259,12 @@ async def pinnable(db: DbDep, current_user: UserDep):
 
 @router.post("/pins", response_model=BaseResponse[dict])
 async def add_pins(db: DbDep, current_user: UserDep,
-                   word_ids: list[uuid.UUID] = Body(..., embed=True), priority: int = Body(1)):
-    """从来源库挑选加入优先学(可设级别)。"""
+                   word_ids: list[uuid.UUID] = Body(..., embed=True), priority: int = Body(1),
+                   paper_id: uuid.UUID | None = Body(None)):
+    """从来源库挑选加入优先学(可设级别)。paper_id:来源卷(作业精讲按批次归组)。"""
     await get_rls_db(db, str(current_user.id))
-    r = await vocab_pin_service.pin_words(db, student_id=current_user.id, word_ids=word_ids, priority=priority)
+    r = await vocab_pin_service.pin_words(db, student_id=current_user.id, word_ids=word_ids,
+                                          priority=priority, source_paper_id=paper_id)
     await db.commit()
     return make_ok(r)
 

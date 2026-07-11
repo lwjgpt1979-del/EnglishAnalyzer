@@ -326,8 +326,11 @@ def _enrich_analysis(data: dict, sentence: str, syntax: list[str]) -> dict:
     return data
 
 
-async def analyze_sentence(sentence: str) -> dict:
+async def analyze_sentence(sentence: str, with_paraphrase: bool = True) -> dict:
     """AI 多维结构拆解 → analysis_json(适配小程序「长难句学习」UI)。dev 确定性 mock;生产走 LLM。
+
+    with_paraphrase=False:跳过「释义单选探针」那次额外 LLM 调用(纯展示解析不需要它,省一次调用/费用;
+    需要理解检测的场景如长难句学习再传 True)。
 
     产出结构:
       sentence_type  整句类型(主从复合句/并列句/简单句)
@@ -354,7 +357,8 @@ async def analyze_sentence(sentence: str) -> dict:
             "grammar_points": [{"name": p, "explanation": "mock 讲解"} for p in (syntax or ["长句修饰"])],
             "explanations": [{"idx": s["idx"], "text": f"{s['type']} mock 解析"} for s in segs],
         }, sentence, syntax)
-        res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
+        if with_paraphrase:
+            res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
         return res
     system = (
         "你是英语语法专家。把给定长难句做**多维结构化拆解**,供学习 App 展示。严格输出 JSON,所有 type/name/解析用中文。\n"
@@ -385,7 +389,8 @@ async def analyze_sentence(sentence: str) -> dict:
                                validate=lambda d: bool(d.get("segments")))
     if data:
         res = _enrich_analysis(data, sentence, syntax)
-        res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
+        if with_paraphrase:
+            res["paraphrase"] = await generate_paraphrase(sentence, res.get("translation"))
         return res
     return _enrich_analysis({"sentence_type": "", "translation": "", "summary": "",
                              "segments": [], "structure": [], "components": {},
@@ -1045,30 +1050,44 @@ async def extract_student_for_question(
     return n
 
 
-async def analyze_sentence_cached(db: AsyncSession, sentence: str) -> dict:
-    """带暂存的长难句解析:按句子 md5 全局缓存 LLM 结果,命中直接返回,不重复付费调用。
-    (第三方付费调用「没落地就暂存」规则的落地;同句解析与学生无关,可全局共享。)"""
+async def analyze_sentence_cached(db: AsyncSession, sentence: str, with_paraphrase: bool = False) -> dict:
+    """带暂存的长难句解析:按句子 md5 全局缓存,命中不重复付费调用。
+    (第三方付费调用「没落地就暂存」规则的落地;同句解析与学生无关,可全局共享。)
+
+    缓存只存**核心解析**;`paraphrase`(释义检测探针,又一次 LLM)按需生成:
+    - 纯展示(解析页)默认 with_paraphrase=False —— 不生成、不等它,首次快一倍;
+    - 需要理解检测(加入待学习→长难句学习)传 True —— 生成后**回填缓存**,同句后续复用。"""
     import hashlib
     from app.models.d20_long_sentence import SentenceAnalysisCache
     text = (sentence or "").strip()
     if not text:
-        return await analyze_sentence(sentence)
+        return await analyze_sentence(sentence, with_paraphrase=with_paraphrase)
     h = hashlib.md5(text.encode("utf-8")).hexdigest()
     row = await db.get(SentenceAnalysisCache, h)
-    if row is not None:
-        return row.analysis_json
-    result = await analyze_sentence(text)
+    core = dict(row.analysis_json) if row is not None else await analyze_sentence(text, with_paraphrase=False)
+
+    if with_paraphrase and not core.get("paraphrase"):
+        p = await generate_paraphrase(text, core.get("translation"))
+        if p:
+            core["paraphrase"] = p
+
     try:
-        db.add(SentenceAnalysisCache(text_hash=h, text=text, analysis_json=result))
-        await db.commit()
+        if row is None:
+            db.add(SentenceAnalysisCache(text_hash=h, text=text, analysis_json=core))
+            await db.commit()
+        elif core.get("paraphrase") and not (row.analysis_json or {}).get("paraphrase"):
+            row.analysis_json = core            # 回填 paraphrase,后续同句免再生成
+            await db.commit()
     except Exception:  # noqa: BLE001 并发/写失败不影响返回
         await db.rollback()
-    return result
+    return core
 
 
-async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: str) -> bool:
+async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: str,
+                               source_paper_id: uuid.UUID | None = None) -> bool:
     """学生**手动**把一句长难句加入自己的待学习区(student_long_sentence,本人可见)。
-    幂等按 (owner, text);返回是否新增。供整卷/作业里逐句「加入待学习」。"""
+    幂等按 (owner, text);返回是否新增。供整卷/作业里逐句「加入待学习」。
+    source_paper_id:来源卷(作业精讲按批次归组)。"""
     from app.models.d20_long_sentence import StudentLongSentence
     text = (text or "").strip()
     if not text:
@@ -1079,11 +1098,12 @@ async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: s
     if exists:
         return False
     comp = syntactic_complexity(text, DEFAULT_MIN_WORDS)
-    analysis = dict(await analyze_sentence_cached(db, text))   # 复用暂存,避免重复付费解析
+    # 存进待学习的句子以后要做「理解检测」,带上 paraphrase 探针(复用暂存,含则不再生成)
+    analysis = dict(await analyze_sentence_cached(db, text, with_paraphrase=True))
     analysis["difficulty"] = comp["difficulty"]
     analysis["complexity"] = comp
     db.add(StudentLongSentence(
-        id=uuid.uuid4(), owner_id=owner_id, text=text,
+        id=uuid.uuid4(), owner_id=owner_id, text=text, source_paper_id=source_paper_id,
         analysis_json=analysis, difficulty=comp["difficulty"], status="published"))
     await db.commit()
     return True
