@@ -1045,6 +1045,29 @@ async def extract_student_for_question(
     return n
 
 
+async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: str) -> bool:
+    """学生**手动**把一句长难句加入自己的待学习区(student_long_sentence,本人可见)。
+    幂等按 (owner, text);返回是否新增。供整卷/作业里逐句「加入待学习」。"""
+    from app.models.d20_long_sentence import StudentLongSentence
+    text = (text or "").strip()
+    if not text:
+        return False
+    exists = (await db.execute(sa.select(StudentLongSentence.id).where(
+        StudentLongSentence.owner_id == owner_id,
+        StudentLongSentence.text == text).limit(1))).first()
+    if exists:
+        return False
+    comp = syntactic_complexity(text, DEFAULT_MIN_WORDS)
+    analysis = await analyze_sentence(text)
+    analysis["difficulty"] = comp["difficulty"]
+    analysis["complexity"] = comp
+    db.add(StudentLongSentence(
+        id=uuid.uuid4(), owner_id=owner_id, text=text,
+        analysis_json=analysis, difficulty=comp["difficulty"], status="published"))
+    await db.commit()
+    return True
+
+
 async def list_student_published(
     db: AsyncSession, *, owner_id: uuid.UUID, limit: int = 50,
 ) -> list:

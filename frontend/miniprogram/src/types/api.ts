@@ -715,6 +715,7 @@ export interface UserPaperCreateResult {
   id: string
   title: string | null
   ocr_status: PaperOcrStatus
+  reused?: boolean        // 同图已解析过 → 复用,未重复解析
 }
 
 // ── 词力通（P1 / D-100）──────────────────────────────────────────────

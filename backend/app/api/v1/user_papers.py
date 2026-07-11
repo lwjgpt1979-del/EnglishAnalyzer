@@ -37,12 +37,17 @@ async def create_user_paper(
     await get_rls_db(db, str(current_user.id))
     from app.services import entitlement_service
     await entitlement_service.require_feature(db, user_id=current_user.id, key="paper.upload")
-    paper = await user_paper_service.create_paper(
+    paper, reused = await user_paper_service.create_paper(
         db,
         student_id=current_user.id,
         source_image_urls=body.source_image_urls,
         title=body.title,
     )
+    if reused:
+        # 问题1:同图已解析过 → 直接复用,不重复扣费、不重复解析
+        return make_ok({"id": str(paper.id), "title": paper.title,
+                        "ocr_status": paper.ocr_status, "reused": True})
+
     await entitlement_service.consume(db, user_id=current_user.id, key="paper.upload")
     await db.commit()
 
@@ -53,6 +58,7 @@ async def create_user_paper(
             "id": str(paper.id),
             "title": paper.title,
             "ocr_status": paper.ocr_status,
+            "reused": False,
         }
     )
 
@@ -133,6 +139,19 @@ async def analyze_sentence(
 ):
     """P3:按需解析一句长难句(结构切分 + 释义),复用长难句服务。"""
     return make_ok(await user_paper_service.analyze_paper_sentence(body.sentence))
+
+
+@router.post("/save-sentence")
+async def save_sentence(
+    body: AnalyzeSentenceIn,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """问题4:学生手动把一句长难句加入待学习区(student_long_sentence,进长难句学习)。"""
+    from app.services import long_sentence_service
+    added = await long_sentence_service.add_student_sentence(
+        db, owner_id=current_user.id, text=body.sentence)
+    return make_ok({"added": added})
 
 
 @router.post("/{paper_id}/add-to-plan")

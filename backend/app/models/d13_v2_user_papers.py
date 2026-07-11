@@ -15,6 +15,7 @@ class UserUploadedPaper(Base):
     student_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False)
     title = mapped_column(sa.String, nullable=True)
     source_image_urls = mapped_column(JSONB, nullable=False)
+    image_hash = mapped_column(sa.String(32), nullable=True, index=True)  # 图片内容 md5(同图重复上传去重)
     ocr_status = mapped_column(sa.String, nullable=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())

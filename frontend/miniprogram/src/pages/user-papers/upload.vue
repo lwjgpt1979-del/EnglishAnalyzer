@@ -137,6 +137,7 @@ async function submit() {
       items.value.map((i) => i.url),
       title.value.trim() || undefined,
     )
+    if (res.reused) uni.showToast({ title: '这张卷子已解析过,已为你打开', icon: 'none' })
     uni.redirectTo({ url: `/pages/user-papers/detail?id=${res.id}` })
   } catch (e) {
     errorMsg.value = (e as Error).message || '提交失败'

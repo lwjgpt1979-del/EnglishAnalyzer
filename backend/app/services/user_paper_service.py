@@ -64,24 +64,56 @@ def _label_of(pq) -> tuple[str, bool]:
     return _suggest_section_label(pq.question_type, bool(pq.passage or pq.block_key)), True
 
 
+async def _images_hash(source_image_urls: list[str]) -> str | None:
+    """按顺序抓图片字节 → 合并 md5(同一张图重复上传去重)。任一抓取失败 → None(不拦截,照常解析)。"""
+    import hashlib
+    import httpx
+    from app.services import upload_service
+    h = hashlib.md5()
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            for url in source_image_urls:
+                r = await client.get(upload_service.make_fetch_url(url))
+                r.raise_for_status()
+                h.update(r.content)
+        return h.hexdigest()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def create_paper(
     db: AsyncSession,
     *,
     student_id: uuid.UUID,
     source_image_urls: list[str],
     title: str | None,
-) -> UserUploadedPaper:
-    """创建整卷记录，ocr_status=pending（后台管线随后处理）。"""
+) -> tuple[UserUploadedPaper, bool]:
+    """创建整卷记录，ocr_status=pending。返回 (paper, reused)。
+
+    去重(问题1):同一学生上传**内容相同**的图片(md5 一致)时,直接复用已有卷,
+    不重复解析——reused=True,调用方跳过扣费与后台管线。"""
+    img_hash = await _images_hash(source_image_urls)
+    if img_hash:
+        existing = (await db.execute(
+            select(UserUploadedPaper).where(
+                UserUploadedPaper.student_id == student_id,
+                UserUploadedPaper.image_hash == img_hash,
+                UserUploadedPaper.ocr_status.in_(["completed", "processing", "pending"]))
+            .order_by(UserUploadedPaper.created_at.desc()).limit(1))).scalar_one_or_none()
+        if existing is not None:
+            return existing, True
+
     paper = UserUploadedPaper(
         student_id=student_id,
         title=title,
         source_image_urls=source_image_urls,
+        image_hash=img_hash,
         ocr_status="pending",
     )
     db.add(paper)
     await db.flush()
     await db.refresh(paper)
-    return paper
+    return paper, False
 
 
 async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
@@ -104,15 +136,11 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
         await db.commit()
 
         try:
-            # Step 1: 豆包Vision看图拆题（每张图独立处理，多页合并）
-            printed_parts: list[str] = []
-            handwritten_parts: list[str] = []
-            for url in paper.source_image_urls:
-                ocr = await run_ocr(url)
-                if ocr.printed_text:
-                    printed_parts.append(ocr.printed_text)
-                if ocr.handwritten_text:
-                    handwritten_parts.append(ocr.handwritten_text)
+            # Step 1: 豆包Vision看图拆题——多张图**并发** OCR(各自独立 LLM 调用,不碰 db),显著提速
+            import asyncio
+            ocr_results = await asyncio.gather(*[run_ocr(url) for url in paper.source_image_urls])
+            printed_parts = [o.printed_text for o in ocr_results if o.printed_text]
+            handwritten_parts = [o.handwritten_text for o in ocr_results if o.handwritten_text]
 
             merged = OcrResult(
                 printed_text="\n".join(printed_parts),
@@ -122,6 +150,22 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
 
             # Step 2: DeepSeek 批量归类 KP（M40 新增）
             kp_map: dict[str, str] = await classify_kps(parsed)
+
+            # Step 2.4: 去重——每个 distinct kp_key 只受控匹配一次(含 LLM),避免 N 题×每题一次 LLM(慢因)。
+            # 未命中且是语法名的,在此一次性建个人语法节点(幂等)。
+            from app.services.kp_match_service import match_kp
+            from app.services import grammar_progress_service
+            match_cache: dict[str, uuid.UUID | None] = {}
+            for _key in {v for v in kp_map.values() if v}:
+                try:
+                    _m = await match_kp(db, raw_name=_key, axis_hint="knowledge",
+                                        source_type="uploaded_student")
+                    match_cache[_key] = _m.node_id
+                    if _m.node_id is None:
+                        await grammar_progress_service.add_personal_if_grammar(
+                            db, student_id=paper.student_id, name=_key, source="upload_paper")
+                except Exception:  # noqa: BLE001
+                    match_cache[_key] = None
 
             # Step 2.5: 还原原卷「大题/板块」结构——按 section 首次出现顺序建 user_paper_sections
             from app.models.d13_v2_user_papers import UserPaperSection
@@ -163,32 +207,26 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                 qno = pq.question_no or ""
                 kp_key = kp_map.get(qno)
                 if kp_key:
-                    # 掌握账:kp_key → node 补写(upsert_mastery 内部自做 match_kp→student_kp)
+                    node_id = match_cache.get(kp_key)   # Step 2.4 已受控匹配,直接复用(不再逐题 LLM)
+                    # 掌握账:传入已解析 node_id,免 upsert_mastery 内部再匹配
                     await upsert_mastery(
                         db,
                         student_id=paper.student_id,
                         kp_key=kp_key,
-                        kp_id=None,
+                        kp_id=node_id,
                         is_correct=not is_wrong,
                         source="paper_upload",
                     )
-                    # 题↔node 关联 + 整卷错题收口进 wrong_record(失败不阻断整卷管线)
-                    try:
-                        from app.services.kp_match_service import match_kp
-                        from app.services import wrong_center_service
-                        m = await match_kp(db, raw_name=kp_key, axis_hint="knowledge",
-                                           source_type="uploaded_student")
-                        q.node_id = m.node_id   # 命中→挂 node;未命中→NULL(候选已落 pending)
-                        if m.node_id is None:   # 未命中图谱且是语法名 → 进个人语法树(个人的归个人)
-                            from app.services import grammar_progress_service
-                            await grammar_progress_service.add_personal_if_grammar(
-                                db, student_id=paper.student_id, name=kp_key, source="upload_paper")
-                        if is_wrong:
+                    q.node_id = node_id   # 命中→挂 node;未命中→NULL(候选/个人节点已在 Step 2.4 处理)
+                    # 整卷错题收口进 wrong_record(失败不阻断整卷管线)
+                    if is_wrong:
+                        try:
+                            from app.services import wrong_center_service
                             await wrong_center_service.record_wrong(
                                 db, student_id=paper.student_id, q_scope="uploaded",
-                                question_id=q.id, node_id=m.node_id)
-                    except Exception:  # noqa: BLE001
-                        pass
+                                question_id=q.id, node_id=node_id)
+                        except Exception:  # noqa: BLE001
+                            pass
 
             # P2：整卷题干里命中词典的生词 → 该生词力通候选池（best-effort）
             try:

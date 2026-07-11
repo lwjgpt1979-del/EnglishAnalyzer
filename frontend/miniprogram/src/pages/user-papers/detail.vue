@@ -4,7 +4,10 @@
 
     <template v-else-if="paper">
       <view class="head card">
-        <text class="title">{{ paper.title || '未命名试卷' }}</text>
+        <view class="head-top">
+          <text class="title">{{ paper.title || '未命名试卷' }}</text>
+          <text class="head-list" @tap="goList">我的整卷 ›</text>
+        </view>
         <view class="status" :class="statusClass">
           <text>{{ statusText }}</text>
         </view>
@@ -111,6 +114,9 @@
               <view class="ls-btn" @tap="analyzeOne(i)">
                 <text>{{ lsBusy === i ? '解析中…' : (lsResult[i] ? '收起' : '解析') }}</text>
               </view>
+              <view class="ls-btn ls-add" :class="{ done: lsSaved.has(i) }" @tap="saveSentence(i)">
+                <text>{{ lsSaved.has(i) ? '已加入' : '加入待学习' }}</text>
+              </view>
             </view>
             <view v-if="lsResult[i]" class="ls-ana">
               <text v-if="lsResult[i].translation" class="ls-trans">{{ lsResult[i].translation }}</text>
@@ -194,7 +200,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, analyzePaperSentence, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, analyzePaperSentence, savePaperSentence, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
 import { addPins } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
 
@@ -316,6 +322,15 @@ async function addVocab() {
 const sentences = ref<string[]>([])
 const lsResult = ref<Record<number, any>>({})
 const lsBusy = ref<number>(-1)
+const lsSaved = ref<Set<number>>(new Set())
+async function saveSentence(i: number) {
+  if (lsSaved.value.has(i)) return
+  try {
+    await savePaperSentence(sentences.value[i])
+    lsSaved.value = new Set([...lsSaved.value, i])
+    uni.showToast({ title: '已加入待学习', icon: 'success' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
 async function loadSentences() {
   try { sentences.value = (await getPaperLongSentences(paperId.value)).sentences } catch { /* ignore */ }
 }
@@ -414,6 +429,9 @@ onUnload(() => {
 function goUpload() {
   uni.redirectTo({ url: '/pages/user-papers/upload' })
 }
+function goList() {
+  uni.navigateTo({ url: '/pages/user-papers/list' })
+}
 </script>
 
 <style scoped>
@@ -421,6 +439,8 @@ function goUpload() {
 .empty { text-align: center; padding: 80rpx 0; color: var(--c-text-hint); }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); margin-bottom: 20rpx; }
 .head { display: flex; flex-direction: column; gap: 12rpx; }
+.head-top { display: flex; align-items: center; justify-content: space-between; }
+.head-list { font-size: 24rpx; color: var(--c-primary); flex-shrink: 0; }
 .title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); }
 .status { align-self: flex-start; font-size: 24rpx; padding: 4rpx 16rpx; border-radius: 20rpx; }
 .status.ok { background: #eafaf1; color: #2ecc71; }
@@ -464,8 +484,9 @@ function goUpload() {
 .ls-item { border-top: 2rpx solid var(--c-line); padding: 16rpx 0 12rpx; }
 .ls-item:first-of-type { border-top: none; }
 .ls-text { font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
-.ls-row { display: flex; justify-content: flex-end; margin-top: 8rpx; }
+.ls-row { display: flex; justify-content: flex-end; gap: 12rpx; margin-top: 8rpx; }
 .ls-btn { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 24rpx; }
+.ls-add.done { color: #2ecc71; border-color: #2ecc71; }
 .ls-ana { margin-top: 12rpx; padding: 14rpx; background: var(--c-primary-faint); border-radius: 12rpx; display: flex; flex-direction: column; gap: 10rpx; }
 .ls-trans { font-size: 25rpx; color: var(--c-ink); line-height: 1.6; }
 .ls-comps { display: flex; flex-direction: column; gap: 8rpx; }
