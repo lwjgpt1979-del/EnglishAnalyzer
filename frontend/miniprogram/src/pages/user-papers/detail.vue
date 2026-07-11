@@ -104,21 +104,13 @@
           </view>
         </view>
 
-        <!-- P3:本卷长难句 → 逐句解析 -->
-        <view v-if="sentences.length" class="card gr-card">
-          <text class="gr-title">本卷长难句 · {{ sentences.length }}</text>
-          <text class="gr-hint">原文里的长难句,点「解析」拆结构、看意思。</text>
-          <view v-for="(s, i) in sentences" :key="i" class="ls-item">
-            <text class="ls-text">{{ s }}</text>
-            <view class="ls-row">
-              <view class="ls-btn" @tap="openAnalysis(i)">
-                <text>解析 ›</text>
-              </view>
-              <view class="ls-btn ls-add" :class="{ done: lsSaved.has(i) }" @tap="saveSentence(i)">
-                <text>{{ lsSaved.has(i) ? '已加入' : '加入待学习' }}</text>
-              </view>
-            </view>
+        <!-- P3:本卷长难句 → 单开一页(不在试卷页内嵌) -->
+        <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
+          <view class="entry-main">
+            <text class="entry-title">本卷长难句</text>
+            <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思、加入待学习</text>
           </view>
+          <text class="entry-arrow">›</text>
         </view>
 
         <!-- 全部/错题 筛选 -->
@@ -191,7 +183,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, savePaperSentence, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
 import { addPins } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
 
@@ -309,24 +301,13 @@ async function addVocab() {
   finally { vocabBusy.value = false }
 }
 
-// P3:本卷长难句 → 逐句解析
+// P3:本卷长难句 → 整块单开一页(试卷页只留入口,不内嵌列表/解析)
 const sentences = ref<string[]>([])
-const lsSaved = ref<Set<number>>(new Set())
-async function saveSentence(i: number) {
-  if (lsSaved.value.has(i)) return
-  try {
-    await savePaperSentence(sentences.value[i])
-    lsSaved.value = new Set([...lsSaved.value, i])
-    uni.showToast({ title: '已加入待学习', icon: 'success' })
-  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
-}
 async function loadSentences() {
   try { sentences.value = (await getPaperLongSentences(paperId.value)).sentences } catch { /* ignore */ }
 }
-// 长难句解析单开一页(不再内嵌试卷页)
-function openAnalysis(i: number) {
-  const saved = lsSaved.value.has(i) ? '1' : '0'
-  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(sentences.value[i])}&saved=${saved}` })
+function openLongSentences() {
+  uni.navigateTo({ url: `/pages/user-papers/long-sentences?paperId=${paperId.value}` })
 }
 
 // 学生改大题的题型分类(AI 建议不准时)
@@ -455,6 +436,12 @@ function goList() {
 .gr-plan-btn.busy { opacity: .6; }
 .gr-plan-btn .ic-target, .gr-plan-btn .ic-book { width: 34rpx; height: 34rpx; filter: brightness(0) invert(1); }
 .gr-hint { font-size: 23rpx; color: var(--c-text-hint); margin: -4rpx 0 4rpx; }
+/* 长难句入口卡(整块单开一页) */
+.entry-card { display: flex; align-items: center; gap: 12rpx; }
+.entry-main { flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
+.entry-title { font-size: 28rpx; font-weight: 800; color: var(--c-ink); }
+.entry-sub { font-size: 23rpx; color: var(--c-text-hint); }
+.entry-arrow { font-size: 34rpx; color: var(--c-text-hint); }
 /* 先修增强 */
 .gr-newitem { display: flex; flex-direction: column; gap: 6rpx; }
 .gr-pre { display: flex; flex-wrap: wrap; align-items: center; gap: 10rpx; margin: 2rpx 0 4rpx 6rpx; }

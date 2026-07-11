@@ -114,6 +114,7 @@
     { "path": "pages/curriculum/kp-content", "style": { "navigationBarTitleText": "知识点" } },
     { "path": "pages/curriculum/grammar-tree", "style": { "navigationBarTitleText": "我的语法树" } },
     { "path": "pages/user-papers/sentence", "style": { "navigationBarTitleText": "长难句解析" } },
+    { "path": "pages/user-papers/long-sentences", "style": { "navigationBarTitleText": "本卷长难句" } },
     { "path": "pages/practice/v2-session", "style": { "navigationBarTitleText": "练习" } },
     { "path": "pages/practice/v2-exam", "style": { "navigationBarTitleText": "模拟考" } },
     { "path": "pages/practice/adaptive", "style": { "navigationBarTitleText": "智能出题" } },
