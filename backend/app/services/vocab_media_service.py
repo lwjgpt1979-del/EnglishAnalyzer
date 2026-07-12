@@ -39,9 +39,12 @@ _IMG_TTL = 60.0
 _img_cache: dict = {"data": None, "ts": 0.0}
 
 _DEF_PRIMARY = (
-    'A clear, simple illustration that obviously represents the English word "{word}" '
-    '({meaning}), for children learning English vocabulary. Single clear subject, clean '
-    'plain background, NO text, letters or numbers anywhere in the image.'
+    'A clear, simple illustration that visually conveys the MEANING of the English word/phrase '
+    '"{word}" — {meaning}. Depict a concrete scene, object or action that unambiguously expresses '
+    'this meaning; for feelings or abstract words show a character whose facial expression, posture '
+    'and the surrounding situation clearly convey it, together with the object causing it. '
+    'One clear focal subject, clean plain background. Do NOT draw a random generic child. '
+    'Absolutely NO text, letters, numbers or words anywhere in the image.'
 )
 _DEF_STYLES = [
     "flat vector illustration, bright cheerful colors",
@@ -80,26 +83,36 @@ def _merge_img_config(saved: dict | None) -> dict:
 
 
 async def _ai_visual_brief(word: str, meaning: str, pos: str) -> str:
-    """用 DeepSeek 把词(尤其抽象词/虚词)转成一句"可画的具体视觉场景"，提升图片可理解性。"""
+    """用 LLM 把词(尤其抽象词/虚词/短语)转成一句"可画的具体视觉场景",提升图片可理解性。
+    这是配图准确性的核心:场景越具体(动作/表情/对象/空间关系),T2I 出图越贴合词义。空/过短则重试一次。"""
     if llm_provider.is_llm_dev_mode():
-        return ""   # dev-mock：不增强，走主要要求模板
-    try:
-        resp = await llm_provider.chat_completion(
-            system_prompt=(
-                "You design ONE concrete, illustratable visual scene for a text-to-image model so a "
-                "child instantly understands an English word/phrase. For abstract words, prepositions, "
-                "conjunctions or verbs, depict a clear concrete situation or simple visual metaphor that "
-                "conveys the meaning. Output ONE short English sentence describing only what is visible "
-                "(objects, people, action, spatial relation). No text/letters/words in the image. "
-                "No style words, no explanations."
-            ),
-            user_prompt=f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}",
-            max_tokens=120,
-        )
-        return (resp.choices[0].message.content or "").strip().replace("\n", " ")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[配图AI提示词] %s 失败: %s", word, e)
-        return ""
+        return ""   # dev-mock:不增强,走主模板
+    system = (
+        "You are a visual designer for a children's English vocabulary app. For the given word/phrase, "
+        "design ONE vivid, concrete, unambiguous scene for a text-to-image model, so a child who sees the "
+        "picture instantly grasps its MEANING.\n"
+        "- Concrete noun: show that exact object as the clear focal subject.\n"
+        "- Verb / action: show a character actively performing it with obvious body language.\n"
+        "- Feeling / abstract word: show a character whose facial expression, posture and the surrounding "
+        "situation unmistakably convey the feeling, TOGETHER WITH the object or cause of it.\n"
+        "- Preposition / phrase: depict the exact spatial or situational relationship it describes.\n"
+        "Rules: describe ONLY what is visible (subject, action, key objects, expression, spatial relation). "
+        "Make it specific to THIS meaning — NEVER a generic child just standing or smiling. "
+        "No text/letters/words in the image. No style adjectives, no explanation. Output ONE English sentence."
+    )
+    up = f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}"
+    for _ in range(2):
+        try:
+            # 走非推理 fast 档:主模型是推理模型,max_tokens 被推理吃光→空返回(brief 生不出的根因)
+            resp = await llm_provider.chat_completion(
+                system_prompt=system, user_prompt=up, max_tokens=256,
+                model=llm_provider.fast_model(), feature="vocab_image_brief")
+            brief = (resp.choices[0].message.content or "").strip().replace("\n", " ")
+            if len(brief) >= 12:      # 太短/空视为无效 → 重试一次
+                return brief
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[配图AI提示词] %s 失败: %s", word, e)
+    return ""
 
 
 async def get_image_config(db: AsyncSession) -> dict:
