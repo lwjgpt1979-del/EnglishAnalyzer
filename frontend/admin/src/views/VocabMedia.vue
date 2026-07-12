@@ -2,7 +2,7 @@
 import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia, deleteVocabWords } from '../api/admin'
+import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions } from '../api/admin'
 import type { AdminVocabMediaItem } from '../types'
 import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete } from '@element-plus/icons-vue'
 
@@ -15,14 +15,25 @@ const selected = ref<AdminVocabMediaItem[]>([])
 // 筛选（服务端：搜索全库，非当前页）
 const filterStatus = ref('draft')
 const searchWord = ref('')
+const fTextbook = ref('')
+const fGrade = ref('')
+const fSemester = ref('')
+const opts = ref<{ textbook_versions: string[]; grades: string[]; semesters: string[] }>(
+  { textbook_versions: [], grades: [], semesters: [] })
 const page = ref(1)
 const limit = 20
+
+async function loadOptions() {
+  try { opts.value = await vocabTextbookOptions() } catch { /* 静默 */ }
+}
 
 async function load() {
   loading.value = true
   try {
     const result = await listVocabMedia({
       media_status: filterStatus.value, q: searchWord.value || undefined,
+      textbook: fTextbook.value || undefined, grade: fGrade.value || undefined,
+      semester: fSemester.value || undefined,
       skip: (page.value - 1) * limit, limit,
     })
     rows.value = result.items
@@ -168,20 +179,29 @@ function statusLabel(status: string): string {
   return { draft: '草稿', published: '已发布', retired: '已驳回' }[status] ?? status
 }
 
-onMounted(load)
+onMounted(() => { loadOptions(); load() })
 </script>
 
 <template>
   <div class="page">
     <!-- 筛选 + 批量工具栏 -->
     <div class="toolbar">
-      <el-select v-model="filterStatus" style="width: 120px" @change="reload">
-        <el-option label="全部" value="" />
+      <el-select v-model="filterStatus" style="width: 110px" @change="reload">
+        <el-option label="全部状态" value="" />
         <el-option label="草稿" value="draft" />
         <el-option label="已发布" value="published" />
         <el-option label="已驳回" value="retired" />
       </el-select>
-      <el-input v-model="searchWord" placeholder="搜索单词（全库）" clearable style="width: 200px"
+      <el-select v-model="fTextbook" placeholder="教材版本" clearable style="width: 130px" @change="reload">
+        <el-option v-for="t in opts.textbook_versions" :key="t" :label="t" :value="t" />
+      </el-select>
+      <el-select v-model="fGrade" placeholder="年级" clearable style="width: 120px" @change="reload">
+        <el-option v-for="g in opts.grades" :key="g" :label="g" :value="g" />
+      </el-select>
+      <el-select v-model="fSemester" placeholder="上/下册" clearable style="width: 100px" @change="reload">
+        <el-option v-for="s in opts.semesters" :key="s" :label="s + '册'" :value="s" />
+      </el-select>
+      <el-input v-model="searchWord" placeholder="搜索单词（全库）" clearable style="width: 180px"
         :prefix-icon="Search" @keyup.enter="reload" @clear="reload" />
       <el-button :loading="loading" @click="reload"><el-icon><Refresh /></el-icon>&nbsp;刷新</el-button>
 

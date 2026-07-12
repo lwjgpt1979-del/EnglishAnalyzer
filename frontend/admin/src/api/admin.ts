@@ -271,8 +271,15 @@ export function listVocabMedia(params: {
   skip?: number
   limit?: number
   q?: string
+  textbook?: string
+  grade?: string
+  semester?: string
 }): Promise<AdminVocabMediaListOut> {
   return unwrap<AdminVocabMediaListOut>(request.get('/admin/vocab', { params }))
+}
+export interface VocabTextbookOptions { textbook_versions: string[]; grades: string[]; semesters: string[] }
+export function vocabTextbookOptions() {
+  return unwrap<VocabTextbookOptions>(request.get('/admin/vocab/textbook-options'))
 }
 
 export function generateVocabMedia(wordId: string): Promise<AdminVocabMediaItem> {
@@ -305,6 +312,13 @@ export function listCurriculumUnits(params?: {
   textbook_version?: string; grade?: string; semester?: string; skip?: number; limit?: number
 }): Promise<CurriculumUnitsResp> {
   return unwrap<CurriculumUnitsResp>(request.get('/admin/curriculum/units', { params }))
+}
+
+// 改单元基础字段(标题/教材/年级/学期/Unit 号;只传的才改,身份重复后端 409)
+export function updateCurriculumUnit(unitId: string, body: {
+  textbook_version?: string; grade?: string; semester?: string; unit_no?: number; unit_title?: string
+}): Promise<AdminCurriculumUnit> {
+  return unwrap<AdminCurriculumUnit>(request.patch(`/admin/curriculum/units/${unitId}`, body))
 }
 
 // 批量删除单元(连带知识图谱边 / 单词通词表 / 短文及考点边;返回删除数)

@@ -840,15 +840,23 @@ async def backfill_vocab_audio(db: DbDep, admin: AdminDep):
     return make_ok(await vocab_media_service.backfill_audio(db))
 
 
+@router.get("/vocab/textbook-options")
+async def vocab_textbook_options(db: DbDep, admin: AdminDep):
+    """词力通媒体筛选下拉:教材版本/年级/学期(委托教材主数据,admin 见全部)。"""
+    return make_ok(await curriculum_service.preference_options(db, include_unpublished=True))
+
+
 @router.get("/vocab", response_model=BaseResponse[AdminVocabMediaListOut])
 async def list_vocab_media(
     db: DbDep, admin: AdminDep,
     media_status: str = "draft", skip: int = 0, limit: int = 20,
     q: str | None = None,
+    textbook: str | None = None, grade: str | None = None, semester: str | None = None,
 ):
-    """按媒体状态分页查单词。默认看待审草稿。q 按单词模糊搜(全库,非当前页)。"""
+    """按媒体状态分页查单词。默认看待审草稿。q 全库模糊搜;textbook/grade/semester 按教材归属筛。"""
     rows, total = await vocab_media_service.list_words_for_media_review(
         db, media_status=media_status, skip=skip, limit=limit, q=q,
+        textbook=textbook, grade=grade, semester=semester,
     )
     return make_ok(AdminVocabMediaListOut(
         total=total, items=[_to_vocab_media_item(w) for w in rows],
@@ -958,6 +966,28 @@ async def list_curriculum_units(
             }
             for s in stats
         ],
+    })
+
+
+class UnitBasicUpdate(BaseModel):
+    """单元基础字段修改(只传的字段才改)。"""
+    textbook_version: str | None = None
+    grade: str | None = None
+    semester: str | None = None       # "上" / "下"
+    unit_no: int | None = None
+    unit_title: str | None = None
+
+
+@router.patch("/curriculum/units/{unit_id}", response_model=BaseResponse[dict])
+async def update_curriculum_unit_api(unit_id: uuid.UUID, body: UnitBasicUpdate, db: DbDep, admin: AdminDep):
+    """改单元基础字段(标题/教材版本/年级/学期/Unit 号)。只传的字段才改;身份重复 409。"""
+    cu = await curriculum_service.update_unit_basic(
+        db, unit_id=unit_id, **body.model_dump(exclude_unset=True))
+    await db.commit()
+    return make_ok({
+        "unit_id": str(cu.id), "textbook_version": cu.textbook_version,
+        "grade": cu.grade, "semester": str(cu.semester),
+        "unit_no": cu.unit_no, "unit_title": cu.unit_title,
     })
 
 
