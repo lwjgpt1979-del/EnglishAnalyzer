@@ -278,6 +278,11 @@ export function listVocabMedia(params: {
 export function generateVocabMedia(wordId: string): Promise<AdminVocabMediaItem> {
   return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/generate-media`))
 }
+// 批量彻底删除词条(连带清 课程/学习/发音日志 等引用,不可恢复)
+export function deleteVocabWords(wordIds: string[]) {
+  return unwrap<{ deleted: number }>(
+    request.post('/admin/vocab/media/delete-batch', { word_ids: wordIds }))
+}
 
 export function reviewVocabMedia(wordId: string, approve: boolean): Promise<AdminVocabMediaItem> {
   return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/media/review`, { approve }))

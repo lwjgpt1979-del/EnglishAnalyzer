@@ -855,6 +855,14 @@ async def list_vocab_media(
     ))
 
 
+@router.post("/vocab/media/delete-batch")
+async def delete_vocab_words_batch(db: DbDep, admin: AdminDep,
+                                   word_ids: list[uuid.UUID] = Body(..., embed=True)):
+    """彻底删除选中词条(连带清 课程单元词/学习记录/发音日志 等引用)。不可恢复。"""
+    res = await vocab_media_service.delete_words(db, word_ids=word_ids)
+    return make_ok(res)
+
+
 @router.post("/vocab/{word_id}/media/review", response_model=BaseResponse[AdminVocabMediaItem])
 async def review_vocab_media(word_id: uuid.UUID, body: VocabMediaReviewRequest, db: DbDep, admin: AdminDep):
     """审核单词媒体：approve→published，reject→retired。"""

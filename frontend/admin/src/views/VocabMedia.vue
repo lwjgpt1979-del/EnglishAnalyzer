@@ -2,9 +2,9 @@
 import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia } from '../api/admin'
+import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia, deleteVocabWords } from '../api/admin'
 import type { AdminVocabMediaItem } from '../types'
-import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search } from '@element-plus/icons-vue'
+import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete } from '@element-plus/icons-vue'
 
 const rows = ref<AdminVocabMediaItem[]>([])
 const total = ref(0)
@@ -111,6 +111,23 @@ async function batchReview(approve: boolean) {
   selected.value = []
   load()
 }
+async function batchDelete() {
+  if (!selected.value.length) return
+  const n = selected.value.length
+  try {
+    await ElMessageBox.confirm(
+      `彻底删除选中的 ${n} 个词条？将从整个词力通移除：词库词条 + 课程单元挂载 + 学生学习记录 + 媒体 + 词单。此操作不可恢复！`,
+      '批量删除词条', { type: 'error', confirmButtonText: '确认删除', confirmButtonClass: 'el-button--danger' })
+  } catch { return }
+  try {
+    const res = await deleteVocabWords(selected.value.map(r => r.word_id))
+    ElMessage.success(`已删除 ${res.deleted} 个词条`)
+    selected.value = []
+    load()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '删除失败')
+  }
+}
 
 // 编辑弹窗
 const editDialogVisible = ref(false)
@@ -174,7 +191,8 @@ onMounted(load)
         <span class="sel-hint">已选 {{ selected.length }}</span>
         <el-button type="primary" :icon="Cpu" @click="batchGenerate">批量生成</el-button>
         <el-button type="success" :icon="CircleCheck" @click="batchReview(true)">批量发布</el-button>
-        <el-button type="danger" plain :icon="CircleClose" @click="batchReview(false)">批量驳回</el-button>
+        <el-button type="warning" plain :icon="CircleClose" @click="batchReview(false)">批量驳回</el-button>
+        <el-button type="danger" :icon="Delete" @click="batchDelete">批量删除</el-button>
       </template>
       <span class="count">共 {{ total }} 个词</span>
     </div>

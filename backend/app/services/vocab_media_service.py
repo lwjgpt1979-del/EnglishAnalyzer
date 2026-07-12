@@ -399,6 +399,24 @@ async def update_word_media(
     return w
 
 
+async def delete_words(db: AsyncSession, *, word_ids: list) -> dict:
+    """彻底删除词条(不可恢复)。先清无 CASCADE 的阻断引用(课程单元词/学习记录/发音日志),
+    再删词——其余引用(student_vocab_candidates/vocab_node/vocab_question/vocab_wrong/
+    vocab_list_item)为 ON DELETE CASCADE 自动清。返回删除数。"""
+    from sqlalchemy import text as _text
+    if not word_ids:
+        return {"deleted": 0}
+    ids = [str(w) for w in word_ids]
+    # 阻断性引用(NO ACTION)先手动清
+    for tbl in ("curriculum_words", "vocabulary_learning", "vocab_pron_logs"):
+        await db.execute(
+            _text(f"DELETE FROM {tbl} WHERE word_id = ANY(CAST(:ids AS uuid[]))"), {"ids": ids})
+    r = await db.execute(
+        _text("DELETE FROM vocabulary_words WHERE id = ANY(CAST(:ids AS uuid[]))"), {"ids": ids})
+    await db.commit()
+    return {"deleted": r.rowcount or 0}
+
+
 async def list_words_for_media_review(
     db: AsyncSession, *, media_status: str = "draft", skip: int = 0, limit: int = 20,
     q: str | None = None,
