@@ -123,7 +123,7 @@ async function onReview(row: AdminVocabMediaItem, approve: boolean) {
 }
 
 // —— 批量操作 ——
-const batch = ref({ running: false, total: 0, done: 0, ok: 0, failed: 0 })
+const batch = ref({ running: false, total: 0, done: 0, ok: 0, failed: 0, skipped: 0, label: '' })
 async function batchGenerate() {
   if (!selected.value.length) return
   try {
@@ -132,7 +132,7 @@ async function batchGenerate() {
       '批量生成媒体', { type: 'warning' })
   } catch { return }
   const items = [...selected.value]
-  batch.value = { running: true, total: items.length, done: 0, ok: 0, failed: 0 }
+  batch.value = { running: true, total: items.length, done: 0, ok: 0, failed: 0, skipped: 0, label: '媒体' }
   for (const row of items) {
     try { patchRow(await generateVocabMedia(row.word_id)); batch.value.ok++ }
     catch { batch.value.failed++ }
@@ -140,6 +140,28 @@ async function batchGenerate() {
   }
   batch.value.running = false
   ElMessage.success(`批量生成完成：成功 ${batch.value.ok}${batch.value.failed ? `，失败 ${batch.value.failed}` : ''}`)
+  load()
+}
+async function batchGif() {
+  if (!selected.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `对选中的 ${selected.value.length} 个词生成动图 GIF：仅动作/过程类词会生成（付费，每词约 1 图生 + 2 图生图），名词/静态词自动跳过。是否继续？`,
+      '批量生成 GIF', { type: 'warning' })
+  } catch { return }
+  const items = [...selected.value]
+  batch.value = { running: true, total: items.length, done: 0, ok: 0, failed: 0, skipped: 0, label: 'GIF' }
+  for (const row of items) {
+    try {
+      const r = await generateVocabGif(row.word_id)
+      if (!r.animated) batch.value.skipped++
+      else if (r.gif_url) { patchRow(r); batch.value.ok++ }
+      else batch.value.failed++
+    } catch { batch.value.failed++ }
+    batch.value.done++
+  }
+  batch.value.running = false
+  ElMessage.success(`批量 GIF 完成：生成 ${batch.value.ok}，静态跳过 ${batch.value.skipped}${batch.value.failed ? `，失败 ${batch.value.failed}` : ''}`)
   load()
 }
 async function batchReview(approve: boolean) {
@@ -248,6 +270,7 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
       <template v-if="selected.length">
         <span class="sel-hint">已选 {{ selected.length }}</span>
         <el-button type="primary" :icon="Cpu" @click="batchGenerate">批量生成</el-button>
+        <el-button type="primary" plain :icon="Film" @click="batchGif">批量生成GIF</el-button>
         <el-button type="success" :icon="CircleCheck" @click="batchReview(true)">批量发布</el-button>
         <el-button type="warning" plain :icon="CircleClose" @click="batchReview(false)">批量驳回</el-button>
         <el-button type="danger" :icon="Delete" @click="batchDelete">批量删除</el-button>
@@ -258,7 +281,7 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
     <!-- 批量生成进度 -->
     <el-alert v-if="batch.running || (batch.total > 0 && batch.done < batch.total)" type="info" :closable="false" class="gen-bar">
       <template #title>
-        批量生成中：{{ batch.done }} / {{ batch.total }}（成功 {{ batch.ok }}<span v-if="batch.failed">，失败 {{ batch.failed }}</span>）
+        批量{{ batch.label }}生成中：{{ batch.done }} / {{ batch.total }}（成功 {{ batch.ok }}<span v-if="batch.skipped">，静态跳过 {{ batch.skipped }}</span><span v-if="batch.failed">，失败 {{ batch.failed }}</span>）
         <el-progress :percentage="batch.total ? Math.round(batch.done / batch.total * 100) : 0" :stroke-width="10" style="margin-top:6px" />
       </template>
     </el-alert>
