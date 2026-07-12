@@ -401,8 +401,13 @@ async def update_word_media(
 
 async def list_words_for_media_review(
     db: AsyncSession, *, media_status: str = "draft", skip: int = 0, limit: int = 20,
+    q: str | None = None,
 ) -> tuple[list[VocabularyWord], int]:
-    base = select(VocabularyWord).where(VocabularyWord.media_status == media_status)
+    base = select(VocabularyWord)
+    if media_status:                       # 空=全部状态(不过滤)
+        base = base.where(VocabularyWord.media_status == media_status)
+    if q:                                  # 全库按单词模糊搜
+        base = base.where(VocabularyWord.word.ilike(f"%{q}%"))
     total = (await db.execute(
         select(func.count()).select_from(base.subquery())
     )).scalar_one()

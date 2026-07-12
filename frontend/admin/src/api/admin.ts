@@ -270,6 +270,7 @@ export function listVocabMedia(params: {
   media_status?: string
   skip?: number
   limit?: number
+  q?: string
 }): Promise<AdminVocabMediaListOut> {
   return unwrap<AdminVocabMediaListOut>(request.get('/admin/vocab', { params }))
 }

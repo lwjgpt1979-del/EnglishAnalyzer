@@ -844,10 +844,11 @@ async def backfill_vocab_audio(db: DbDep, admin: AdminDep):
 async def list_vocab_media(
     db: DbDep, admin: AdminDep,
     media_status: str = "draft", skip: int = 0, limit: int = 20,
+    q: str | None = None,
 ):
-    """按媒体状态分页查单词。默认看待审草稿。"""
+    """按媒体状态分页查单词。默认看待审草稿。q 按单词模糊搜(全库,非当前页)。"""
     rows, total = await vocab_media_service.list_words_for_media_review(
-        db, media_status=media_status, skip=skip, limit=limit,
+        db, media_status=media_status, skip=skip, limit=limit, q=q,
     )
     return make_ok(AdminVocabMediaListOut(
         total=total, items=[_to_vocab_media_item(w) for w in rows],
