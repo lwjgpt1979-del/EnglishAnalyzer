@@ -82,6 +82,7 @@ export interface AdminVocabMediaItem {
   word_id: string
   word: string
   image_urls: string[] | null
+  gif_url: string | null
   en_description: string | null
   word_audio_url: string | null
   en_desc_audio_url: string | null

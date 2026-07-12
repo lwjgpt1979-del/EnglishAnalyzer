@@ -282,6 +282,62 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
     return w
 
 
+# ── 动图 GIF(A 方案:动词/动作词关键帧,复用腾讯 Img2Img 保一致 + Pillow 拼 GIF)──────
+async def _ai_motion_frames(word: str, meaning: str, pos: str) -> list[str] | None:
+    """判定该词是否宜用动图(动作/移动/过程/时间变化),是则给 3 帧连续动作场景(首→中→末,
+    同一人物/场景只推进姿势)。静态词(名词/形容词/静态状态)返回 None。走 fast 档。"""
+    if llm_provider.is_llm_dev_mode():
+        return [f"a child starting to {word}", f"a child doing {word}",
+                f"a child finishing {word}"] if (pos or "").lower().startswith(("v", "动")) else None
+    system = (
+        "Decide whether an English word/phrase is best taught with a short ANIMATION (an action, "
+        "movement, process or change over time) rather than one static picture. Concrete nouns, "
+        "adjectives and static states do NOT need animation.\n"
+        "If it needs animation, describe a 3-frame sequence (beginning → middle → end) of ONE consistent "
+        "character in ONE consistent setting performing the action — each frame is ONE concrete visible "
+        "moment, only the pose/action progresses between frames. Describe only what is visible. "
+        "No text/letters in the image, no style words.\n"
+        'Output strict JSON: {"animate": true|false, "frames": ["frame1 scene","frame2 scene","frame3 scene"]}. '
+        "If animate is false, frames = [].")
+    d = await llm_provider.complete_json(
+        system_prompt=system, user_prompt=f"Word/phrase: {word}\nPOS: {pos}\nMeaning (Chinese): {meaning}",
+        max_tokens=400, model=llm_provider.fast_model(), feature="vocab_gif_frames",
+        validate=lambda x: "animate" in x)
+    if not d or not d.get("animate"):
+        return None
+    frames = [str(f).strip() for f in (d.get("frames") or []) if str(f).strip()]
+    return frames if len(frames) >= 2 else None
+
+
+async def generate_gif_for_word(db: AsyncSession, *, word_id: uuid.UUID) -> tuple[VocabularyWord, bool]:
+    """给动作/过程类词生成关键帧 GIF:首帧 T2I → 后续帧 Img2Img 从首帧演进(保人物/风格一致)→
+    Pillow 拼 GIF 存 COS。返回 (word, animated);animated=False 表示该词无需动图(静态图即可)。"""
+    w = (await db.execute(
+        select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if w is None:
+        raise AppError(code=404, message="单词不存在")
+    frames_desc = await _ai_motion_frames(w.word, _primary_meaning(w), _pos_of(w))
+    if not frames_desc:
+        return w, False
+    cfg = await get_image_config(db)
+    style = (cfg.get("styles") or [""])[0]
+    suffix = "One clear consistent character, clean plain background, NO text/letters/numbers."
+    first = f"{frames_desc[0]} {suffix}" + (f" Style: {style}." if style else "")
+    url0 = await vocab_media_provider.t2i_to_cos(first, label=w.word)
+    if not url0:
+        return w, True   # 需要动图但首帧生成失败
+    urls = [url0]
+    for fd in frames_desc[1:]:
+        u = await vocab_media_provider.i2i_to_cos(f"{fd} {suffix}", url0, label=w.word, strength=0.6)
+        urls.append(u or url0)
+    gif = await vocab_media_provider.frames_to_gif_cos(urls, label=w.word)
+    if gif:
+        w.gif_url = gif
+        w.media_status = "draft"
+        await db.flush()
+    return w, True
+
+
 # ── 批量生成（后台触发，进程内进度）────────────────────────────────────────────
 _batch_state: dict = {"running": False, "total": 0, "done": 0, "ok": 0, "failed": 0}
 

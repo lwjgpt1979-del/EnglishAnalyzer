@@ -53,6 +53,7 @@ class AdminVocabMediaItem(BaseModel):
     word_id: uuid.UUID
     word: str
     image_urls: list[str] | None = None
+    gif_url: str | None = None
     en_description: str | None = None
     word_audio_url: str | None = None
     en_desc_audio_url: str | None = None

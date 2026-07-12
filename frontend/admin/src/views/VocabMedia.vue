@@ -2,9 +2,9 @@
 import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions, vocabUnitOptions, type VocabUnitOption } from '../api/admin'
+import { listVocabMedia, generateVocabMedia, generateVocabGif, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions, vocabUnitOptions, type VocabUnitOption } from '../api/admin'
 import type { AdminVocabMediaItem } from '../types'
-import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete } from '@element-plus/icons-vue'
+import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete, Film } from '@element-plus/icons-vue'
 
 const rows = ref<AdminVocabMediaItem[]>([])
 const total = ref(0)
@@ -88,6 +88,26 @@ async function onGenerate(row: AdminVocabMediaItem) {
     ElMessage.error(e?.message || '生成失败')
   } finally {
     generating.value[row.word_id] = false
+  }
+}
+
+const gifgen = ref<Record<string, boolean>>({})
+async function onGenerateGif(row: AdminVocabMediaItem) {
+  gifgen.value[row.word_id] = true
+  try {
+    const r = await generateVocabGif(row.word_id)
+    if (!r.animated) {
+      ElMessage.info(`「${row.word}」无需动图（静态图即可表达）`)
+    } else if (r.gif_url) {
+      ElMessage.success(`「${row.word}」动图生成完成（草稿）`)
+      patchRow(r)
+    } else {
+      ElMessage.warning(`「${row.word}」需要动图但生成失败，请重试`)
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '动图生成失败')
+  } finally {
+    gifgen.value[row.word_id] = false
   }
 }
 
@@ -253,15 +273,16 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
           <el-tag :type="statusTag(row.media_status)" size="small">{{ statusLabel(row.media_status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="配图" width="130" align="center">
+      <el-table-column label="配图 / 动图" width="160" align="center">
         <template #default="{ row }">
-          <div v-if="row.image_urls?.length" class="thumbs">
-            <el-image v-for="(u, i) in row.image_urls.slice(0, 3)" :key="i" :src="u"
+          <div class="thumbs">
+            <el-image v-for="(u, i) in (row.image_urls || []).slice(0, 2)" :key="i" :src="u"
               :preview-src-list="row.image_urls" :initial-index="i" fit="cover"
               class="thumb" preview-teleported hide-on-click-modal />
-            <span v-if="row.image_urls.length > 3" class="more">+{{ row.image_urls.length - 3 }}</span>
+            <el-image v-if="row.gif_url" :src="row.gif_url" :preview-src-list="[row.gif_url]" fit="cover"
+              class="thumb thumb-gif" preview-teleported hide-on-click-modal title="GIF 动图" />
+            <span v-if="!(row.image_urls?.length) && !row.gif_url" class="muted">—</span>
           </div>
-          <span v-else class="muted">—</span>
         </template>
       </el-table-column>
       <el-table-column label="发音" width="120" align="center">
@@ -287,11 +308,16 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
           <span v-else class="muted">暂无</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right" align="center">
+      <el-table-column label="操作" width="300" fixed="right" align="center">
         <template #default="{ row }">
           <el-button size="small" :loading="generating[row.word_id]" @click="onGenerate(row)">
             <el-icon><Cpu /></el-icon>&nbsp;生成
           </el-button>
+          <el-tooltip content="生成动图 GIF（动作/过程词）" placement="top">
+            <el-button size="small" :loading="gifgen[row.word_id]" @click="onGenerateGif(row)">
+              <el-icon><Film /></el-icon>&nbsp;GIF
+            </el-button>
+          </el-tooltip>
           <el-tooltip content="发布" placement="top">
             <el-button size="small" type="success" :icon="CircleCheck"
               :disabled="row.media_status === 'published'" @click="onReview(row, true)" />
@@ -348,6 +374,7 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
 .gen-bar { margin-bottom: 12px; }
 .thumbs { display: flex; gap: 4px; align-items: center; justify-content: center; }
 .thumb { width: 38px; height: 38px; border-radius: 4px; border: 1px solid var(--el-border-color-lighter); }
+.thumb-gif { border-color: var(--el-color-primary); box-shadow: 0 0 0 1px var(--el-color-primary-light-5); }
 .thumb-lg { width: 72px; height: 72px; border-radius: 6px; border: 1px solid var(--el-border-color-lighter); }
 .more { font-size: 12px; color: #909399; }
 .muted { color: #c0c4cc; font-size: 13px; }

@@ -48,6 +48,7 @@ class VocabularyWord(Base):
     star = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))  # 考频星级 0-5
     # —— 图背单词媒体（P1 词力通深化 / D-101；dev-mock 占位，真生成留 config 接缝）——
     image_urls = mapped_column(JSONB, nullable=True)
+    gif_url = mapped_column(sa.String, nullable=True)   # 动图(动词/动作/过程词的关键帧 GIF,静态词为空)
     en_description = mapped_column(sa.Text, nullable=True)
     word_audio_url = mapped_column(sa.String, nullable=True)
     en_desc_audio_url = mapped_column(sa.String, nullable=True)

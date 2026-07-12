@@ -295,6 +295,11 @@ export function deleteVocabWords(wordIds: string[]) {
   return unwrap<{ deleted: number }>(
     request.post('/admin/vocab/media/delete-batch', { word_ids: wordIds }))
 }
+// 生成动图 GIF(动作/过程词;静态词返回 animated=false)
+export function generateVocabGif(wordId: string): Promise<AdminVocabMediaItem & { animated: boolean }> {
+  return unwrap<AdminVocabMediaItem & { animated: boolean }>(
+    request.post(`/admin/vocab/${wordId}/generate-gif`))
+}
 
 export function reviewVocabMedia(wordId: string, approve: boolean): Promise<AdminVocabMediaItem> {
   return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/media/review`, { approve }))

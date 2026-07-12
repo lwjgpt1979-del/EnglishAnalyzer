@@ -785,6 +785,7 @@ def _to_vocab_media_item(w: VocabularyWord) -> AdminVocabMediaItem:
         word_id=w.id,
         word=w.word,
         image_urls=w.image_urls,
+        gif_url=w.gif_url,
         en_description=w.en_description,
         word_audio_url=w.word_audio_url,
         en_desc_audio_url=w.en_desc_audio_url,
@@ -798,6 +799,15 @@ async def generate_vocab_media(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
     w = await vocab_media_service.generate_for_word(db, word_id=word_id)
     await db.commit()
     return make_ok(_to_vocab_media_item(w))
+
+
+@router.post("/vocab/{word_id}/generate-gif")
+async def generate_vocab_gif(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """给动作/过程类词生成关键帧 GIF 动图(首帧 T2I → 后续帧 Img2Img 演进 → 拼 GIF)。
+    静态词返回 animated=false(无需动图)。付费调用,落 COS 持久化。"""
+    w, animated = await vocab_media_service.generate_gif_for_word(db, word_id=word_id)
+    await db.commit()
+    return make_ok({**_to_vocab_media_item(w).model_dump(mode="json"), "animated": animated})
 
 
 class VocabImageConfig(BaseModel):
