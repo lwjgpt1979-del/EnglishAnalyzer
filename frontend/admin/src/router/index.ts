@@ -14,6 +14,7 @@ const router = createRouter({
         { path: 'questions', name: 'questions', component: () => import('../views/QuestionsReview.vue') },
         { path: 'kp-candidates', name: 'kp-candidates', component: () => import('../views/KpCandidatesReview.vue') },
         { path: 'vocab-lists', name: 'vocab-lists', component: () => import('../views/VocabLists.vue') },
+        { path: 'vocab-reviews', name: 'vocab-reviews', component: () => import('../views/VocabReviews.vue') },
         { path: 'knowledge-graph', name: 'knowledge-graph', component: () => import('../views/KnowledgeGraph.vue') },
         { path: 'kp-prompts', name: 'kp-prompts', component: () => import('../views/KpPrompts.vue') },
         { path: 'llm-config', name: 'llm-config', component: () => import('../views/LlmConfig.vue') },

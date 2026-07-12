@@ -1774,3 +1774,15 @@ export interface GrammarCalibration {
 export function getGrammarCalibration(studentId?: string): Promise<GrammarCalibration> {
   return unwrap(request.get('/admin/grammar/calibration', { params: studentId ? { student_id: studentId } : {} }))
 }
+
+// 词库缺词审核
+export interface VocabReviewItem { id: string; word: string; source: string; occur_count: number; status: string; created_at: string | null }
+export function listVocabReviews(params: { status?: string; skip?: number; limit?: number }) {
+  return unwrap<{ total: number; items: VocabReviewItem[] }>(request.get('/admin/vocab-reviews', { params }))
+}
+export function approveVocabReview(id: string, body: { phonetic?: string; definitions?: any[] }) {
+  return unwrap<{ approved: boolean }>(request.post(`/admin/vocab-reviews/${id}/approve`, body))
+}
+export function rejectVocabReview(id: string) {
+  return unwrap<{ rejected: boolean }>(request.post(`/admin/vocab-reviews/${id}/reject`))
+}

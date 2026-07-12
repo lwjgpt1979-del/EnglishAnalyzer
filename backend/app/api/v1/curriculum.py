@@ -234,3 +234,52 @@ async def search_knowledge_points(
         ).model_dump(mode="json")
         for n in nodes
     ])
+
+
+# ── 语法精讲 / 长难句精讲(作业按批次 / 课程按单元)────────────────────────────
+@router.get("/intensive/grammar/homework/batches")
+async def gr_hw_batches(db: DbDep, current_user: UserDep):
+    from app.services import grammar_intensive_service as gi
+    return make_ok({"batches": await gi.homework_batches(db, student_id=current_user.id)})
+
+
+@router.get("/intensive/grammar/homework/points")
+async def gr_hw_points(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
+    from app.services import grammar_intensive_service as gi
+    return make_ok({"points": await gi.homework_points(db, student_id=current_user.id, paper_id=paper_id)})
+
+
+@router.get("/intensive/grammar/course/units")
+async def gr_course_units(db: DbDep, current_user: UserDep):
+    from app.services import grammar_intensive_service as gi
+    return make_ok(await gi.course_units(db, student_id=current_user.id))
+
+
+@router.get("/intensive/grammar/course/points")
+async def gr_course_points(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
+    from app.services import grammar_intensive_service as gi
+    return make_ok({"points": await gi.course_points(db, unit_id=unit_id)})
+
+
+@router.get("/intensive/sentence/homework/batches")
+async def se_hw_batches(db: DbDep, current_user: UserDep):
+    from app.services import sentence_intensive_service as si
+    return make_ok({"batches": await si.homework_batches(db, student_id=current_user.id)})
+
+
+@router.get("/intensive/sentence/homework/sentences")
+async def se_hw_sentences(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
+    from app.services import sentence_intensive_service as si
+    return make_ok({"sentences": await si.homework_sentences(db, student_id=current_user.id, paper_id=paper_id)})
+
+
+@router.get("/intensive/sentence/course/units")
+async def se_course_units(db: DbDep, current_user: UserDep):
+    from app.services import sentence_intensive_service as si
+    return make_ok(await si.course_units(db, student_id=current_user.id))
+
+
+@router.get("/intensive/sentence/course/sentences")
+async def se_course_sentences(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
+    from app.services import sentence_intensive_service as si
+    return make_ok({"sentences": await si.course_sentences(db, unit_id=unit_id)})

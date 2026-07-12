@@ -78,3 +78,34 @@ export function getUnitMasterySummary(unitId: string): Promise<KpMasterySummaryI
     { method: 'GET' },
   )
 }
+
+// 语法精讲 / 长难句精讲(作业按批次 / 课程按单元)
+export interface IntensiveBatch { paper_id: string; title: string; date: string; count: number }
+export interface IntensiveUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; count: number }
+export interface GrammarPoint { node_id: string; name: string; code: string }
+export interface SentenceItem { text: string }
+
+export function grHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
+  return request('/api/v1/curriculum/intensive/grammar/homework/batches', { method: 'GET' })
+}
+export function grHwPoints(paperId: string): Promise<{ points: GrammarPoint[] }> {
+  return request('/api/v1/curriculum/intensive/grammar/homework/points', { method: 'GET', data: { paper_id: paperId } })
+}
+export function grCourseUnits(): Promise<{ version: string | null; units: IntensiveUnit[] }> {
+  return request('/api/v1/curriculum/intensive/grammar/course/units', { method: 'GET' })
+}
+export function grCoursePoints(unitId: string): Promise<{ points: GrammarPoint[] }> {
+  return request('/api/v1/curriculum/intensive/grammar/course/points', { method: 'GET', data: { unit_id: unitId } })
+}
+export function seHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
+  return request('/api/v1/curriculum/intensive/sentence/homework/batches', { method: 'GET' })
+}
+export function seHwSentences(paperId: string): Promise<{ sentences: SentenceItem[] }> {
+  return request('/api/v1/curriculum/intensive/sentence/homework/sentences', { method: 'GET', data: { paper_id: paperId } })
+}
+export function seCourseUnits(): Promise<{ version: string | null; units: IntensiveUnit[] }> {
+  return request('/api/v1/curriculum/intensive/sentence/course/units', { method: 'GET' })
+}
+export function seCourseSentences(unitId: string): Promise<{ sentences: SentenceItem[] }> {
+  return request('/api/v1/curriculum/intensive/sentence/course/sentences', { method: 'GET', data: { unit_id: unitId } })
+}

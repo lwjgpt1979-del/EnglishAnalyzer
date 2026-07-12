@@ -21,11 +21,9 @@ const modules = [
   { kind: 'grammar', title: '语法精讲', sub: '按教材单元学语法', ic: 'ic-grammar' },
   { kind: 'sentence', title: '长难句', sub: '按教材单元拆长难句', ic: 'ic-sentence' },
 ]
+const PAGE: Record<string, string> = { word: 'words', grammar: 'grammar', sentence: 'sentence' }
 function go(m: { kind: string }) {
-  const url = m.kind === 'word'
-    ? '/pages/intensive/words?mode=course'
-    : `/pages/intensive/module?mode=course&kind=${m.kind}`
-  uni.navigateTo({ url })
+  uni.navigateTo({ url: `/pages/intensive/${PAGE[m.kind]}?mode=course` })
 }
 </script>
 

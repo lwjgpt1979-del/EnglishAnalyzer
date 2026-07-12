@@ -46,6 +46,7 @@ const navGroups: NavGroup[] = [
   ] },
   { key: 'g-vocab', title: '词汇 / 词力通', icon: Document, items: [
     { path: '/vocab-lists', label: '通用词库' },
+    { path: '/vocab-reviews', label: '缺词审核入库' },
     { path: '/textbook-word-stats', label: '教材高频词统计' },
     { path: '/vocab-media', label: '词力通媒体' },
     { path: '/vocab-image-gen', label: '词力通配图' },
