@@ -4162,6 +4162,22 @@ async def admin_approve_vocab_review(review_id: uuid.UUID, db: DbDep, admin: Adm
     return make_ok({"approved": True})
 
 
+@router.post("/vocab-reviews/approve-batch")
+async def admin_approve_vocab_batch(db: DbDep, admin: AdminDep,
+                                    review_ids: list[uuid.UUID] = Body(..., embed=True)):
+    """批量审核通过 → 入库 + 后台生成词力通全要素(文本/探针/媒体)。立即返回,进度走 gen-status。"""
+    from app.services import vocab_intensive_service
+    res = await vocab_intensive_service.approve_batch(db, review_ids=review_ids)
+    return make_ok(res)
+
+
+@router.get("/vocab-reviews/gen-status")
+async def admin_vocab_gen_status(db: DbDep, admin: AdminDep):
+    """入库要素生成进度(进程内)。"""
+    from app.services import vocab_intensive_service
+    return make_ok(vocab_intensive_service.gen_status())
+
+
 @router.post("/vocab-reviews/{review_id}/reject")
 async def admin_reject_vocab_review(review_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """驳回缺词。"""

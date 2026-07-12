@@ -1780,8 +1780,17 @@ export interface VocabReviewItem { id: string; word: string; source: string; occ
 export function listVocabReviews(params: { status?: string; skip?: number; limit?: number }) {
   return unwrap<{ total: number; items: VocabReviewItem[] }>(request.get('/admin/vocab-reviews', { params }))
 }
-export function approveVocabReview(id: string, body: { phonetic?: string; definitions?: any[] }) {
+export function approveVocabReview(id: string, body: { phonetic?: string; definitions?: any[] } = {}) {
   return unwrap<{ approved: boolean }>(request.post(`/admin/vocab-reviews/${id}/approve`, body))
+}
+// 批量入库(自动生成词力通全要素:文本/探针/媒体,后台跑)
+export function approveVocabBatch(reviewIds: string[]) {
+  return unwrap<{ approved: number; generating: number }>(
+    request.post('/admin/vocab-reviews/approve-batch', { review_ids: reviewIds }))
+}
+export interface VocabGenStatus { running: boolean; total: number; done: number; ok: number; failed: number }
+export function vocabGenStatus() {
+  return unwrap<VocabGenStatus>(request.get('/admin/vocab-reviews/gen-status'))
 }
 export function rejectVocabReview(id: string) {
   return unwrap<{ rejected: boolean }>(request.post(`/admin/vocab-reviews/${id}/reject`))
