@@ -421,18 +421,21 @@ async def list_words_for_media_review(
     db: AsyncSession, *, media_status: str = "draft", skip: int = 0, limit: int = 20,
     q: str | None = None,
     textbook: str | None = None, grade: str | None = None, semester: str | None = None,
+    unit_id=None,
 ) -> tuple[list[VocabularyWord], int]:
     base = select(VocabularyWord)
     if media_status:                       # 空=全部状态(不过滤)
         base = base.where(VocabularyWord.media_status == media_status)
     if q:                                  # 全库按单词模糊搜
         base = base.where(VocabularyWord.word.ilike(f"%{q}%"))
-    # 教材版本/年级/上下册:经 curriculum_words → curriculum_units 归属(EXISTS)
-    if textbook or grade or semester:
+    # 教材版本/年级/上下册/单元:经 curriculum_words → curriculum_units 归属(EXISTS)
+    if textbook or grade or semester or unit_id:
         from app.models.d4_knowledge import CurriculumWord, CurriculumUnit
         ex = (select(CurriculumWord.word_id)
               .join(CurriculumUnit, CurriculumUnit.id == CurriculumWord.unit_id)
               .where(CurriculumWord.word_id == VocabularyWord.id))
+        if unit_id:
+            ex = ex.where(CurriculumWord.unit_id == unit_id)
         if textbook:
             ex = ex.where(CurriculumUnit.textbook_version == textbook)
         if grade:

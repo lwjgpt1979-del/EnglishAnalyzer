@@ -2,7 +2,7 @@
 import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions } from '../api/admin'
+import { listVocabMedia, generateVocabMedia, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions, vocabUnitOptions, type VocabUnitOption } from '../api/admin'
 import type { AdminVocabMediaItem } from '../types'
 import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete } from '@element-plus/icons-vue'
 
@@ -18,13 +18,28 @@ const searchWord = ref('')
 const fTextbook = ref('')
 const fGrade = ref('')
 const fSemester = ref('')
+const fUnit = ref('')
 const opts = ref<{ textbook_versions: string[]; grades: string[]; semesters: string[] }>(
   { textbook_versions: [], grades: [], semesters: [] })
+const unitOpts = ref<VocabUnitOption[]>([])
 const page = ref(1)
 const limit = 20
 
 async function loadOptions() {
   try { opts.value = await vocabTextbookOptions() } catch { /* 静默 */ }
+}
+async function loadUnitOptions() {
+  try {
+    unitOpts.value = await vocabUnitOptions({
+      textbook: fTextbook.value || undefined, grade: fGrade.value || undefined,
+      semester: fSemester.value || undefined })
+  } catch { unitOpts.value = [] }
+}
+// 教材/年级/学期 变更 → 单元选项重载 + 清空已选单元 + 回第 1 页
+async function onScopeChange() {
+  fUnit.value = ''
+  await loadUnitOptions()
+  reload()
 }
 
 async function load() {
@@ -33,7 +48,7 @@ async function load() {
     const result = await listVocabMedia({
       media_status: filterStatus.value, q: searchWord.value || undefined,
       textbook: fTextbook.value || undefined, grade: fGrade.value || undefined,
-      semester: fSemester.value || undefined,
+      semester: fSemester.value || undefined, unit_id: fUnit.value || undefined,
       skip: (page.value - 1) * limit, limit,
     })
     rows.value = result.items
@@ -179,7 +194,7 @@ function statusLabel(status: string): string {
   return { draft: '草稿', published: '已发布', retired: '已驳回' }[status] ?? status
 }
 
-onMounted(() => { loadOptions(); load() })
+onMounted(() => { loadOptions(); loadUnitOptions(); load() })
 </script>
 
 <template>
@@ -192,14 +207,17 @@ onMounted(() => { loadOptions(); load() })
         <el-option label="已发布" value="published" />
         <el-option label="已驳回" value="retired" />
       </el-select>
-      <el-select v-model="fTextbook" placeholder="教材版本" clearable style="width: 130px" @change="reload">
+      <el-select v-model="fTextbook" placeholder="教材版本" clearable style="width: 130px" @change="onScopeChange">
         <el-option v-for="t in opts.textbook_versions" :key="t" :label="t" :value="t" />
       </el-select>
-      <el-select v-model="fGrade" placeholder="年级" clearable style="width: 120px" @change="reload">
+      <el-select v-model="fGrade" placeholder="年级" clearable style="width: 120px" @change="onScopeChange">
         <el-option v-for="g in opts.grades" :key="g" :label="g" :value="g" />
       </el-select>
-      <el-select v-model="fSemester" placeholder="上/下册" clearable style="width: 100px" @change="reload">
+      <el-select v-model="fSemester" placeholder="上/下册" clearable style="width: 100px" @change="onScopeChange">
         <el-option v-for="s in opts.semesters" :key="s" :label="s + '册'" :value="s" />
+      </el-select>
+      <el-select v-model="fUnit" placeholder="单元" clearable filterable style="width: 220px" @change="reload">
+        <el-option v-for="u in unitOpts" :key="u.id" :label="`U${u.unit_no} ${u.unit_title}`" :value="u.id" />
       </el-select>
       <el-input v-model="searchWord" placeholder="搜索单词（全库）" clearable style="width: 180px"
         :prefix-icon="Search" @keyup.enter="reload" @clear="reload" />

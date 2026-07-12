@@ -274,12 +274,17 @@ export function listVocabMedia(params: {
   textbook?: string
   grade?: string
   semester?: string
+  unit_id?: string
 }): Promise<AdminVocabMediaListOut> {
   return unwrap<AdminVocabMediaListOut>(request.get('/admin/vocab', { params }))
 }
 export interface VocabTextbookOptions { textbook_versions: string[]; grades: string[]; semesters: string[] }
 export function vocabTextbookOptions() {
   return unwrap<VocabTextbookOptions>(request.get('/admin/vocab/textbook-options'))
+}
+export interface VocabUnitOption { id: string; unit_no: number; unit_title: string }
+export function vocabUnitOptions(params: { textbook?: string; grade?: string; semester?: string }) {
+  return unwrap<VocabUnitOption[]>(request.get('/admin/vocab/unit-options', { params }))
 }
 
 export function generateVocabMedia(wordId: string): Promise<AdminVocabMediaItem> {

@@ -846,17 +846,36 @@ async def vocab_textbook_options(db: DbDep, admin: AdminDep):
     return make_ok(await curriculum_service.preference_options(db, include_unpublished=True))
 
 
+@router.get("/vocab/unit-options")
+async def vocab_unit_options(db: DbDep, admin: AdminDep,
+                             textbook: str | None = None, grade: str | None = None,
+                             semester: str | None = None):
+    """词力通媒体筛选下拉:单元(按所选 教材/年级/学期 收敛),按 unit_no 排序。"""
+    from sqlalchemy import select as _select
+    from app.models.d4_knowledge import CurriculumUnit
+    stmt = _select(CurriculumUnit.id, CurriculumUnit.unit_no, CurriculumUnit.unit_title)
+    if textbook:
+        stmt = stmt.where(CurriculumUnit.textbook_version == textbook)
+    if grade:
+        stmt = stmt.where(CurriculumUnit.grade == grade)
+    if semester:
+        stmt = stmt.where(CurriculumUnit.semester == semester)
+    rows = (await db.execute(stmt.order_by(CurriculumUnit.unit_no))).all()
+    return make_ok([{"id": str(i), "unit_no": n, "unit_title": t} for i, n, t in rows])
+
+
 @router.get("/vocab", response_model=BaseResponse[AdminVocabMediaListOut])
 async def list_vocab_media(
     db: DbDep, admin: AdminDep,
     media_status: str = "draft", skip: int = 0, limit: int = 20,
     q: str | None = None,
     textbook: str | None = None, grade: str | None = None, semester: str | None = None,
+    unit_id: uuid.UUID | None = None,
 ):
-    """按媒体状态分页查单词。默认看待审草稿。q 全库模糊搜;textbook/grade/semester 按教材归属筛。"""
+    """按媒体状态分页查单词。默认看待审草稿。q 全库模糊搜;textbook/grade/semester/unit_id 按教材归属筛。"""
     rows, total = await vocab_media_service.list_words_for_media_review(
         db, media_status=media_status, skip=skip, limit=limit, q=q,
-        textbook=textbook, grade=grade, semester=semester,
+        textbook=textbook, grade=grade, semester=semester, unit_id=unit_id,
     )
     return make_ok(AdminVocabMediaListOut(
         total=total, items=[_to_vocab_media_item(w) for w in rows],
