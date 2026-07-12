@@ -288,7 +288,8 @@ export function vocabUnitOptions(params: { textbook?: string; grade?: string; se
 }
 
 export function generateVocabMedia(wordId: string): Promise<AdminVocabMediaItem> {
-  return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/generate-media`))
+  // 生成媒体(LLM 描述+配图+双 TTS)较慢,放长超时避免默认 20s 超时
+  return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/generate-media`, undefined, { timeout: 120000 }))
 }
 // 批量彻底删除词条(连带清 课程/学习/发音日志 等引用,不可恢复)
 export function deleteVocabWords(wordIds: string[]) {
@@ -297,8 +298,9 @@ export function deleteVocabWords(wordIds: string[]) {
 }
 // 生成动图 GIF(动作/过程词;静态词返回 animated=false)
 export function generateVocabGif(wordId: string): Promise<AdminVocabMediaItem & { animated: boolean }> {
+  // GIF = 1 图生 + 2 图生图 + 拼图 + 传 COS,较慢,放长超时(3 分钟)避免默认 20s 超时
   return unwrap<AdminVocabMediaItem & { animated: boolean }>(
-    request.post(`/admin/vocab/${wordId}/generate-gif`))
+    request.post(`/admin/vocab/${wordId}/generate-gif`, undefined, { timeout: 180000 }))
 }
 
 export function reviewVocabMedia(wordId: string, approve: boolean): Promise<AdminVocabMediaItem> {
@@ -1824,4 +1826,17 @@ export function vocabGenStatus() {
 }
 export function rejectVocabReview(id: string) {
   return unwrap<{ rejected: boolean }>(request.post(`/admin/vocab-reviews/${id}/reject`))
+}
+
+// 第三方付费 API 资源总览
+export interface ThirdPartyItem {
+  category: string; name: string; provider: string; api: string; purpose: string
+  configured: boolean; mode: 'real' | 'mock'; billing: string; console: string; usage: string | null
+}
+export interface ThirdPartyStatus {
+  categories: { category: string; items: ThirdPartyItem[] }[]
+  total: number; configured: number; mock: number
+}
+export function getThirdPartyStatus() {
+  return unwrap<ThirdPartyStatus>(request.get('/admin/third-party/status'))
 }

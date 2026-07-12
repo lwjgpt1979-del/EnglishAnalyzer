@@ -299,10 +299,11 @@ async def _ai_motion_frames(word: str, meaning: str, pos: str) -> list[str] | No
         "No text/letters in the image, no style words.\n"
         'Output strict JSON: {"animate": true|false, "frames": ["frame1 scene","frame2 scene","frame3 scene"]}. '
         "If animate is false, frames = [].")
+    # 3 帧详细场景 JSON 易超 400 token 被截断→放弃;给足预算 + escalate 兜底
     d = await llm_provider.complete_json(
         system_prompt=system, user_prompt=f"Word/phrase: {word}\nPOS: {pos}\nMeaning (Chinese): {meaning}",
-        max_tokens=400, model=llm_provider.fast_model(), feature="vocab_gif_frames",
-        validate=lambda x: "animate" in x)
+        max_tokens=800, escalate_ceiling=1400, model=llm_provider.fast_model(),
+        feature="vocab_gif_frames", validate=lambda x: "animate" in x)
     if not d or not d.get("animate"):
         return None
     frames = [str(f).strip() for f in (d.get("frames") or []) if str(f).strip()]
