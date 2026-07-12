@@ -46,6 +46,12 @@ _DEF_PRIMARY = (
     'One clear focal subject, clean plain background. Do NOT draw a random generic child. '
     'Absolutely NO text, letters, numbers or words anywhere in the image.'
 )
+# 旧默认(诱导画小孩、词义表达差):存量配置里若仍是这句,自动升级为 _DEF_PRIMARY(不误伤自定义)
+_OLD_PRIMARY = (
+    'A clear, simple illustration that obviously represents the English word "{word}" '
+    '({meaning}), for children learning English vocabulary. Single clear subject, clean '
+    'plain background, NO text, letters or numbers anywhere in the image.'
+)
 _DEF_STYLES = [
     "flat vector illustration, bright cheerful colors",
     "cute kawaii cartoon style, soft pastel colors",
@@ -73,8 +79,10 @@ def _merge_img_config(saved: dict | None) -> dict:
             pass
         if "use_ai_prompt" in saved:
             cfg["use_ai_prompt"] = bool(saved["use_ai_prompt"])
-        if saved.get("primary"):
-            cfg["primary"] = str(saved["primary"])
+        # 保留自定义 primary;但「旧默认」自动升级为新默认(同步成新版,不误伤自定义)
+        sp = str(saved.get("primary") or "").strip()
+        if sp and sp != _OLD_PRIMARY.strip():
+            cfg["primary"] = sp
         if isinstance(saved.get("styles"), list):
             s = [str(x).strip() for x in saved["styles"] if str(x).strip()]
             if s:
