@@ -83,6 +83,19 @@ async def course_words(db: AsyncSession, *, unit_id: uuid.UUID) -> list[dict]:
     return [_word_out(w) for w in rows]
 
 
+# ── 精讲「完整词力通流程」:某单元/批次的 word_id 列表(供限定词集版 daily-task)──────
+async def course_word_ids(db: AsyncSession, *, unit_id: uuid.UUID) -> list[uuid.UUID]:
+    """某教材单元的词 id(保持与 course_words 相同顺序)。"""
+    return [uuid.UUID(w["word_id"]) for w in await course_words(db, unit_id=unit_id)]
+
+
+async def homework_word_ids(db: AsyncSession, *, student_id: uuid.UUID,
+                            paper_id: uuid.UUID) -> list[uuid.UUID]:
+    """某批次(卷)加入待学习的词 id(顺序同 homework_words)。"""
+    return [uuid.UUID(w["word_id"])
+            for w in await homework_words(db, student_id=student_id, paper_id=paper_id)]
+
+
 # ── 缺词审核:词库没有的词 → 队列 → admin 审核入库 ────────────────────────────
 async def report_missing_words(db: AsyncSession, *, words: list[str], source: str = "paper") -> int:
     """作业/课程里出现、但词库没有的词 → 落审核队列(按归一化词形去重累加)。返回新增/累加条数。"""

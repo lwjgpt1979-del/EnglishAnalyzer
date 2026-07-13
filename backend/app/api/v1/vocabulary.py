@@ -286,6 +286,27 @@ async def course_word_list(db: DbDep, current_user: UserDep, unit_id: uuid.UUID 
     return make_ok({"words": await vocab_intensive_service.course_words(db, unit_id=unit_id)})
 
 
+@router.get("/intensive/course/task", response_model=BaseResponse[DailyTaskOut])
+async def course_intensive_task(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
+    """课程精讲·单词「完整词力通流程」:限定在该单元词范围内的一组任务(结构同 daily-task)。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import vocab_intensive_service
+    wids = await vocab_intensive_service.course_word_ids(db, unit_id=unit_id)
+    return make_ok(await vocabulary_service.get_daily_task_scoped(
+        db, student_id=current_user.id, word_ids=wids))
+
+
+@router.get("/intensive/homework/task", response_model=BaseResponse[DailyTaskOut])
+async def homework_intensive_task(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
+    """作业精讲·单词「完整词力通流程」:限定在该批次(卷)词范围内的一组任务(结构同 daily-task)。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import vocab_intensive_service
+    wids = await vocab_intensive_service.homework_word_ids(
+        db, student_id=current_user.id, paper_id=paper_id)
+    return make_ok(await vocabulary_service.get_daily_task_scoped(
+        db, student_id=current_user.id, word_ids=wids))
+
+
 @router.post("/pins", response_model=BaseResponse[dict])
 async def add_pins(db: DbDep, current_user: UserDep,
                    word_ids: list[uuid.UUID] = Body(..., embed=True), priority: int = Body(1),

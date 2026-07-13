@@ -480,7 +480,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto } from '@/api/vocabulary'
+import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
 import type { VocabStudentCalendar } from '@/types/api'
@@ -1026,6 +1027,13 @@ function optionClass(i: number): string {
   return ''
 }
 
+// 精讲「完整词力通流程」:query 带 source=course|homework + unit_id/paper_id → 词集限定在该单元/批次
+const scope = ref<{ source: 'course' | 'homework'; id: string } | null>(null)
+onLoad((q: Record<string, string> = {}) => {
+  if (q.source === 'course' && q.unit_id) scope.value = { source: 'course', id: q.unit_id }
+  else if (q.source === 'homework' && q.paper_id) scope.value = { source: 'homework', id: q.paper_id }
+})
+
 async function load(fromReload = false) {
   if (!auth.isLoggedIn()) await auth.login()
   loading.value = true
@@ -1037,7 +1045,11 @@ async function load(fromReload = false) {
     settingDraft.wrong_carry_threshold = s.wrong_carry_threshold ?? 2
   }).catch(() => { /* 用默认 */ })
   try {
-    const task = await getDailyTask()
+    const task = scope.value
+      ? (scope.value.source === 'course'
+          ? await getCourseIntensiveTask(scope.value.id)
+          : await getHomeworkIntensiveTask(scope.value.id))
+      : await getDailyTask()
     // 错词滚入：把上一组错得多的词并入本组复习（去重，且不与本组新词重复）
     const carried = carryWords.value; carryWords.value = []
     const newIds = new Set(task.new_words.map((w) => w.word_id))

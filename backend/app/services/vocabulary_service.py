@@ -594,6 +594,40 @@ async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTas
     )
 
 
+async def get_daily_task_scoped(db: AsyncSession, *, student_id: uuid.UUID,
+                                word_ids: list[uuid.UUID]) -> DailyTaskOut:
+    """限定在给定 word_ids(某单元/批次)内的一组学习内容,结构同 daily-task,供单词精讲用。
+    review=这些词里到期的;new=这些词里尚无学习记录的(按「每组词数」限量,保持传入顺序)。
+    学完一组后前端 reload 再取下一组——已学词进入复习/移出新词,自然逐组推进整批。"""
+    if not word_ids:
+        return DailyTaskOut(new_words=[], review_words=[], new_count=0, review_count=0, new_limit=0)
+    now = datetime.now(timezone.utc)
+    wids = list(dict.fromkeys(word_ids))
+    # 复习:这些词里到期的学习记录(错词优先,同 daily-task)
+    review_rows = (await db.execute(
+        select(VocabularyLearning, VocabularyWord)
+        .join(VocabularyWord, VocabularyWord.id == VocabularyLearning.word_id)
+        .where(VocabularyLearning.student_id == student_id,
+               VocabularyLearning.word_id.in_(wids),
+               VocabularyLearning.next_review_at <= now)
+        .order_by(VocabularyLearning.is_wrong.desc(), VocabularyLearning.wrong_count.desc(),
+                  VocabularyLearning.next_review_at))).all()
+    review_words = [_to_card(w, level=str(lr.level), is_new=False) for lr, w in review_rows]
+    # 新词:这些词里尚无学习记录的,按传入顺序取前「每组词数」个
+    learned = set((await db.execute(
+        select(VocabularyLearning.word_id).where(
+            VocabularyLearning.student_id == student_id,
+            VocabularyLearning.word_id.in_(wids)))).scalars().all())
+    settings = await get_vocab_settings(db, student_id=student_id)
+    new_limit = settings["words_per_group"]
+    new_ids = [wid for wid in wids if wid not in learned][:new_limit]
+    new_map = {w.id: w for w in (await db.execute(
+        select(VocabularyWord).where(VocabularyWord.id.in_(new_ids)))).scalars().all()} if new_ids else {}
+    new_words = [_to_card(new_map[wid], level="new", is_new=True) for wid in new_ids if wid in new_map]
+    return DailyTaskOut(new_words=new_words, review_words=review_words,
+                        new_count=len(new_words), review_count=len(review_words), new_limit=new_limit)
+
+
 async def submit_answer(
     db: AsyncSession,
     *,

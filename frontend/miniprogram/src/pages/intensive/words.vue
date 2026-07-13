@@ -25,8 +25,12 @@
     <!-- 二级:词表 -->
     <template v-else>
       <view class="back" @tap="groupOpen = null"><text>‹ 返回{{ mode === 'homework' ? '批次' : '单元' }}</text></view>
+      <view v-if="!wordsLoading && words.length" class="start-btn" @tap="startStudy">
+        <text>▶ 开始学习(配图·发音·例句·检测)</text>
+      </view>
       <view v-if="wordsLoading" class="tip">加载中…</view>
       <view v-else-if="!words.length" class="tip">该{{ mode === 'homework' ? '批次' : '单元' }}没有单词</view>
+      <text v-else class="list-hint">共 {{ words.length }} 词 · 下方为词表预览,点上方按钮进入卡片学习</text>
       <view v-for="w in words" :key="w.word_id" class="card word">
         <view class="word-top">
           <text class="word-w">{{ w.word }}</text>
@@ -84,6 +88,15 @@ async function openGroup(g: any) {
   finally { wordsLoading.value = false }
 }
 
+// 进入完整词力通学习流(限定在该单元/批次词范围)
+function startStudy() {
+  const g = groupOpen.value
+  if (!g) return
+  const src = mode.value === 'homework' ? 'homework' : 'course'
+  const key = mode.value === 'homework' ? 'paper_id' : 'unit_id'
+  uni.navigateTo({ url: `/pages/vocabulary/index?source=${src}&${key}=${g.id}` })
+}
+
 async function load() {
   loading.value = true
   try {
@@ -118,6 +131,8 @@ onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
 .grp-sub { font-size: 22rpx; color: var(--c-text-hint); }
 .grp-cnt { font-size: 24rpx; color: var(--c-primary); flex-shrink: 0; }
 .back { padding: 8rpx 4rpx 16rpx; font-size: 26rpx; color: var(--c-primary); }
+.start-btn { background: var(--c-primary); color: #fff; text-align: center; padding: 24rpx; border-radius: 16rpx; font-size: 30rpx; font-weight: 600; margin-bottom: 16rpx; }
+.list-hint { display: block; color: var(--c-text-hint, #999); font-size: 24rpx; margin-bottom: 12rpx; }
 .word-top { display: flex; align-items: baseline; gap: 16rpx; }
 .word-w { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
 .word-ph { font-size: 24rpx; color: var(--c-text-hint); }

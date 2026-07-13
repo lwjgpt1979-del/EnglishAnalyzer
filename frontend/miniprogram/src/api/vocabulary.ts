@@ -181,3 +181,10 @@ export function getCourseWordUnits(): Promise<{ version: string | null; units: C
 export function getCourseWords(unitId: string): Promise<{ words: IntensiveWord[] }> {
   return request<{ words: IntensiveWord[] }>('/api/v1/vocabulary/intensive/course/words', { method: 'GET', data: { unit_id: unitId } })
 }
+// 精讲「完整词力通流程」:限定在该单元/批次词范围内的一组任务(结构同 daily-task)
+export function getCourseIntensiveTask(unitId: string): Promise<VocabDailyTask> {
+  return request<VocabDailyTask>('/api/v1/vocabulary/intensive/course/task', { method: 'GET', data: { unit_id: unitId } })
+}
+export function getHomeworkIntensiveTask(paperId: string): Promise<VocabDailyTask> {
+  return request<VocabDailyTask>('/api/v1/vocabulary/intensive/homework/task', { method: 'GET', data: { paper_id: paperId } })
+}
