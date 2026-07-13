@@ -122,6 +122,7 @@ from app.services import (
     kp_candidate_service,
     pricing_service,
     teacher_service,
+    vocab_media_asset_service,
     vocab_media_service,
 )
 
@@ -781,9 +782,16 @@ async def update_essay_templates(body: dict, db: DbDep, admin: AdminDep):
 # ─── 词力通图背单词媒体（P1 / D-101）──────────────────────────────────────────
 
 def _to_vocab_media_item(w: VocabularyWord) -> AdminVocabMediaItem:
+    _defs = w.definitions if isinstance(w.definitions, list) else []
+    _d0 = _defs[0] if _defs and isinstance(_defs[0], dict) else {}
+    # definitions 两种历史格式:{meaning,pos} 与 {zh,part_of_speech}
+    pos = str(_d0.get("pos") or _d0.get("part_of_speech") or "")
+    meaning = str(_d0.get("meaning") or _d0.get("zh") or "")
     return AdminVocabMediaItem(
         word_id=w.id,
         word=w.word,
+        meaning=meaning or None,
+        pos=pos or None,
         image_urls=w.image_urls,
         gif_url=w.gif_url,
         en_description=w.en_description,
@@ -793,21 +801,91 @@ def _to_vocab_media_item(w: VocabularyWord) -> AdminVocabMediaItem:
     )
 
 
+class VocabImagePromptBody(BaseModel):
+    system: str | None = None   # 可传"未保存的编辑版生成指令"做预览;不传则用后台已保存的当前指令
+
+
+@router.post("/vocab/{word_id}/image-prompt", response_model=BaseResponse[dict])
+async def suggest_vocab_image_prompt(word_id: uuid.UUID, db: DbDep, admin: AdminDep,
+                                     body: VocabImagePromptBody | None = None):
+    """按需(用户显式点击)生成一条 AI「画面描述提示词」(不出图),供弹框编辑。打开弹框时不调此接口。"""
+    prompt = await vocab_media_service.suggest_image_brief(
+        db, word_id=word_id, system=(body.system if body else None))
+    return make_ok({"prompt": prompt})
+
+
+class VocabBriefPromptBody(BaseModel):
+    prompt: str
+
+
+@router.get("/vocab/image-brief-prompt", response_model=BaseResponse[dict])
+async def get_vocab_brief_prompt(db: DbDep, admin: AdminDep):
+    """取「生成画面描述」用的系统指令(meta-prompt)当前版 + 历史版本。打开弹框时调它(不调大模型)。"""
+    return make_ok(await vocab_media_service.get_brief_prompt(db))
+
+
+@router.put("/vocab/image-brief-prompt", response_model=BaseResponse[dict])
+async def set_vocab_brief_prompt(body: VocabBriefPromptBody, db: DbDep, admin: AdminDep):
+    """保存新的生成指令;旧版自动进历史。"""
+    value = await vocab_media_service.set_brief_prompt(
+        db, prompt=body.prompt, updated_by=admin.id,
+        at=datetime.utcnow().isoformat(timespec="seconds"))
+    await db.commit()
+    return make_ok(value)
+
+
+# ── 词条媒体版本(历史保留 + 人工选用)──────────────────────────────────────────
+@router.get("/vocab/{word_id}/media-assets", response_model=BaseResponse[dict])
+async def list_vocab_media_assets(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """列出某词全部图/音/GIF 版本(新→旧,标当前选用)。"""
+    return make_ok(await vocab_media_asset_service.list_assets(db, word_id=word_id))
+
+
+@router.post("/vocab/media-assets/{asset_id}/select", response_model=BaseResponse[dict])
+async def select_vocab_media_asset(asset_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """人工选用某版本(同类其余取消选用),同步词条镜像字段。返回该词最新版本列表。"""
+    out = await vocab_media_asset_service.select_asset(db, asset_id=asset_id)
+    await db.commit()
+    return make_ok(out)
+
+
+@router.delete("/vocab/media-assets/{asset_id}", response_model=BaseResponse[dict])
+async def delete_vocab_media_asset(asset_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """删除某版本(若删的是选用版,自动改选该类最新一版)。返回该词最新版本列表。"""
+    out = await vocab_media_asset_service.delete_asset(db, asset_id=asset_id)
+    await db.commit()
+    return make_ok(out)
+
+
+class VocabGenerateMediaBody(BaseModel):
+    brief: str | None = None    # 人工编辑的画面描述提示词;为空/不传则由 AI 自动生成
+    do_images: bool = True      # 是否(重)生成图片;批量跳过已有图片时传 False
+    do_audio: bool = True       # 是否(重)生成音频;批量跳过已有音频时传 False
+
+
 @router.post("/vocab/{word_id}/generate-media", response_model=BaseResponse[AdminVocabMediaItem])
-async def generate_vocab_media(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """为单词生成图背媒体（英文描述+多图+双音频，dev-mock）。默认进 draft。"""
-    w = await vocab_media_service.generate_for_word(db, word_id=word_id)
+async def generate_vocab_media(word_id: uuid.UUID, db: DbDep, admin: AdminDep,
+                               body: VocabGenerateMediaBody | None = None):
+    """为单词生成图背媒体（英文描述+多图+音频）。默认进 draft。
+    body.brief 有值则用它当画面描述提示词(人工编辑),否则 AI 自动生成。
+    do_images/do_audio=False 跳过对应资源(保留现有),用于批量对已生成的词只补缺。"""
+    brief = (body.brief.strip() if body and body.brief and body.brief.strip() else None)
+    w = await vocab_media_service.generate_for_word(
+        db, word_id=word_id, brief_override=brief,
+        do_images=(body.do_images if body else True),
+        do_audio=(body.do_audio if body else True))
     await db.commit()
     return make_ok(_to_vocab_media_item(w))
 
 
 @router.post("/vocab/{word_id}/generate-gif")
 async def generate_vocab_gif(word_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """给动作/过程类词生成关键帧 GIF 动图(首帧 T2I → 后续帧 Img2Img 演进 → 拼 GIF)。
-    静态词返回 animated=false(无需动图)。付费调用,落 COS 持久化。"""
-    w, animated = await vocab_media_service.generate_gif_for_word(db, word_id=word_id)
+    """给动作/过程类词生成动图(现有静态配图当首帧 → 智谱 CogVideoX-Flash 图生视频 → 存 COS)。
+    gif_status: skip=无需动图 / generated=已生成 / failed=需要但生成失败(如免费档限流)。"""
+    w, gif_status = await vocab_media_service.generate_gif_for_word(db, word_id=word_id)
     await db.commit()
-    return make_ok({**_to_vocab_media_item(w).model_dump(mode="json"), "animated": animated})
+    return make_ok({**_to_vocab_media_item(w).model_dump(mode="json"),
+                    "gif_status": gif_status, "animated": gif_status != "skip"})
 
 
 class VocabImageConfig(BaseModel):
@@ -816,12 +894,25 @@ class VocabImageConfig(BaseModel):
     use_ai_prompt: bool = True
     primary: str
     styles: list[str]
+    style: str = ""     # 固定风格(空=每张随机);选定后所有词默认此风格
+
+
+class VocabImageStyleBody(BaseModel):
+    style: str = ""     # 从 styles 里选定一个;空=恢复随机
 
 
 @router.get("/vocab-image-config", response_model=BaseResponse[VocabImageConfig])
 async def get_vocab_image_config(db: DbDep, admin: AdminDep):
-    """读配图提示词配置（主要要求 + 随机风格 + 批量数量）。"""
+    """读配图提示词配置（主要要求 + 随机风格 + 固定风格 + 批量数量）。"""
     return make_ok(VocabImageConfig(**await vocab_media_service.get_image_config(db)))
+
+
+@router.put("/vocab-image/style", response_model=BaseResponse[VocabImageConfig])
+async def set_vocab_image_style(body: VocabImageStyleBody, db: DbDep, admin: AdminDep):
+    """只设「固定风格」(其余配置保留)。选定后所有词默认此风格;传空恢复随机。"""
+    saved = await vocab_media_service.set_image_style(db, style=body.style, updated_by=admin.id)
+    await db.commit()
+    return make_ok(VocabImageConfig(**saved))
 
 
 @router.put("/vocab-image-config", response_model=BaseResponse[VocabImageConfig])
@@ -914,6 +1005,7 @@ async def update_vocab_media(word_id: uuid.UUID, body: VocabMediaUpdateRequest, 
     w = await vocab_media_service.update_word_media(
         db, word_id=word_id, image_urls=body.image_urls, en_description=body.en_description,
         word_audio_url=body.word_audio_url, en_desc_audio_url=body.en_desc_audio_url,
+        meaning=body.meaning, pos=body.pos,
     )
     await db.commit()
     return make_ok(_to_vocab_media_item(w))
@@ -4254,3 +4346,11 @@ async def admin_reject_vocab_review(review_id: uuid.UUID, db: DbDep, admin: Admi
     if not ok:
         raise AppError(code=404, message="审核项不存在或已处理")
     return make_ok({"rejected": True})
+
+
+# ── 第三方付费 API 资源总览(图像/声音/LLM/存储 配置状态)────────────────────
+@router.get("/third-party/status")
+async def admin_third_party_status(admin: AdminDep):
+    """所有第三方付费能力的配置状态清单(已配/占位),按类别分组。用量/余额见 /llm-usage、/llm-balance。"""
+    from app.services import third_party_service
+    return make_ok(third_party_service.status_inventory())

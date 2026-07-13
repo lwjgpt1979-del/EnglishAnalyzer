@@ -66,7 +66,8 @@ const sections = computed(() => {
 
 function defText(d: any): string {
   if (!d) return ''
-  if (Array.isArray(d)) return d.map((x: any) => typeof x === 'string' ? x : [x.pos, x.meaning].filter(Boolean).join(' ')).join('；')
+  if (Array.isArray(d)) return d.map((x: any) => typeof x === 'string' ? x
+    : [x.pos || x.part_of_speech, x.meaning || x.zh || x.definition].filter(Boolean).join(' ')).join('；')
   if (typeof d === 'string') return d
   return ''
 }

@@ -52,6 +52,8 @@ class VocabAnswerResult(BaseModel):
 class AdminVocabMediaItem(BaseModel):
     word_id: uuid.UUID
     word: str
+    meaning: str | None = None      # 中文词义(取自 definitions[0].meaning/zh)
+    pos: str | None = None          # 词性(取自 definitions[0].pos)
     image_urls: list[str] | None = None
     gif_url: str | None = None
     en_description: str | None = None
@@ -74,6 +76,8 @@ class VocabMediaUpdateRequest(BaseModel):
     en_description: str | None = None
     word_audio_url: str | None = None
     en_desc_audio_url: str | None = None
+    meaning: str | None = None      # 中文词义(写入 definitions[0].meaning)
+    pos: str | None = None          # 词性(写入 definitions[0].pos)
 
 
 # ─── 错词本（P1 / D-103）──────────────────────────────────────────────────────

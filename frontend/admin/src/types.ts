@@ -81,6 +81,8 @@ export interface AdminTeacherListOut {
 export interface AdminVocabMediaItem {
   word_id: string
   word: string
+  meaning: string | null
+  pos: string | null
   image_urls: string[] | null
   gif_url: string | null
   en_description: string | null

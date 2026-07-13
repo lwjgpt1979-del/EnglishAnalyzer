@@ -156,7 +156,11 @@ export function getSpeakingSemesters() {
 
 // ── 词力通配图提示词配置 + 批量 ──
 export interface VocabImageConfig {
-  batch_size: number; images_per_word: number; use_ai_prompt: boolean; primary: string; styles: string[]
+  batch_size: number; images_per_word: number; use_ai_prompt: boolean; primary: string; styles: string[]; style?: string
+}
+// 只设固定风格(选定后所有词默认此风格;空=恢复随机)
+export function setVocabImageStyle(style: string) {
+  return unwrap<VocabImageConfig>(request.put('/admin/vocab-image/style', { style }))
 }
 export interface VocabImageBatchStatus {
   running: boolean; total: number; done: number; ok: number; failed: number
@@ -287,9 +291,44 @@ export function vocabUnitOptions(params: { textbook?: string; grade?: string; se
   return unwrap<VocabUnitOption[]>(request.get('/admin/vocab/unit-options', { params }))
 }
 
-export function generateVocabMedia(wordId: string): Promise<AdminVocabMediaItem> {
-  // 生成媒体(LLM 描述+配图+双 TTS)较慢,放长超时避免默认 20s 超时
-  return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/generate-media`, undefined, { timeout: 120000 }))
+export function generateVocabMedia(
+  wordId: string,
+  opts?: { brief?: string; do_images?: boolean; do_audio?: boolean },
+): Promise<AdminVocabMediaItem> {
+  // 生成媒体(LLM 描述+配图+TTS)较慢,放长超时避免默认 20s 超时
+  // brief 有值=用人工编辑的画面描述提示词;do_images/do_audio=false 跳过对应资源(保留现有)
+  const body: Record<string, unknown> = {}
+  if (opts?.brief) body.brief = opts.brief
+  if (opts?.do_images === false) body.do_images = false
+  if (opts?.do_audio === false) body.do_audio = false
+  return unwrap<AdminVocabMediaItem>(request.post(`/admin/vocab/${wordId}/generate-media`,
+    Object.keys(body).length ? body : undefined, { timeout: 120000 }))
+}
+// —— 词条媒体版本(历史保留 + 人工选用)——
+export interface VocabMediaAsset { id: string; url: string; style: string | null; prompt: string | null; selected: boolean; created_at: string | null }
+export interface VocabMediaAssets { image: VocabMediaAsset[]; audio: VocabMediaAsset[]; gif: VocabMediaAsset[] }
+export function listVocabMediaAssets(wordId: string) {
+  return unwrap<VocabMediaAssets>(request.get(`/admin/vocab/${wordId}/media-assets`))
+}
+export function selectVocabMediaAsset(assetId: string) {
+  return unwrap<VocabMediaAssets>(request.post(`/admin/vocab/media-assets/${assetId}/select`))
+}
+export function deleteVocabMediaAsset(assetId: string) {
+  return unwrap<VocabMediaAssets>(request.delete(`/admin/vocab/media-assets/${assetId}`))
+}
+// 按需(用户显式点击)生成一条 AI 画面描述提示词(不出图);system=可传未保存的编辑版生成指令做预览
+export function suggestVocabImagePrompt(wordId: string, system?: string): Promise<{ prompt: string }> {
+  return unwrap<{ prompt: string }>(
+    request.post(`/admin/vocab/${wordId}/image-prompt`, system ? { system } : undefined, { timeout: 60000 }))
+}
+export interface VocabBriefPrompt { current: string; history: Array<{ prompt: string; at?: string }> }
+// 取「生成画面描述」用的系统指令(meta-prompt)当前版 + 历史(打开弹框时调,不调大模型)
+export function getVocabBriefPrompt(): Promise<VocabBriefPrompt> {
+  return unwrap<VocabBriefPrompt>(request.get(`/admin/vocab/image-brief-prompt`))
+}
+// 保存新的生成指令(旧版自动进历史)
+export function setVocabBriefPrompt(prompt: string): Promise<VocabBriefPrompt> {
+  return unwrap<VocabBriefPrompt>(request.put(`/admin/vocab/image-brief-prompt`, { prompt }))
 }
 // 批量彻底删除词条(连带清 课程/学习/发音日志 等引用,不可恢复)
 export function deleteVocabWords(wordIds: string[]) {
@@ -297,10 +336,12 @@ export function deleteVocabWords(wordIds: string[]) {
     request.post('/admin/vocab/media/delete-batch', { word_ids: wordIds }))
 }
 // 生成动图 GIF(动作/过程词;静态词返回 animated=false)
-export function generateVocabGif(wordId: string): Promise<AdminVocabMediaItem & { animated: boolean }> {
-  // GIF = 1 图生 + 2 图生图 + 拼图 + 传 COS,较慢,放长超时(3 分钟)避免默认 20s 超时
-  return unwrap<AdminVocabMediaItem & { animated: boolean }>(
-    request.post(`/admin/vocab/${wordId}/generate-gif`, undefined, { timeout: 180000 }))
+export type VocabGifStatus = 'skip' | 'generated' | 'failed'
+export function generateVocabGif(wordId: string): Promise<AdminVocabMediaItem & { gif_status: VocabGifStatus; animated: boolean }> {
+  // 动图 = 图生视频(智谱 CogVideoX-Flash 异步:提交→轮询→取 mp4→传 COS),后端轮询上限 260s+限流重试,
+  // 放长超时(5.5 分钟)覆盖轮询 + 下载转存,避免默认 20s 超时
+  return unwrap<AdminVocabMediaItem & { gif_status: VocabGifStatus; animated: boolean }>(
+    request.post(`/admin/vocab/${wordId}/generate-gif`, undefined, { timeout: 330000 }))
 }
 
 export function reviewVocabMedia(wordId: string, approve: boolean): Promise<AdminVocabMediaItem> {
@@ -309,7 +350,7 @@ export function reviewVocabMedia(wordId: string, approve: boolean): Promise<Admi
 
 export function updateVocabMedia(
   wordId: string,
-  body: { en_description?: string; image_urls?: string[]; word_audio_url?: string; en_desc_audio_url?: string },
+  body: { en_description?: string; image_urls?: string[]; word_audio_url?: string; en_desc_audio_url?: string; meaning?: string; pos?: string },
 ): Promise<AdminVocabMediaItem> {
   return unwrap<AdminVocabMediaItem>(request.put(`/admin/vocab/${wordId}/media`, body))
 }

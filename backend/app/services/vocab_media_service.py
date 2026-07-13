@@ -19,7 +19,8 @@ from app.core.config import settings
 from app.core.exceptions import AppError
 from app.models.d5_learning import VocabularyWord
 from app.models.d9_system import SystemConfig
-from app.services import llm_provider, tts_service, vocab_media_provider
+from app.services import (
+    llm_provider, tts_service, vocab_media_asset_service, vocab_media_provider)
 
 
 async def _tts_cos(text: str) -> str:
@@ -40,18 +41,29 @@ _img_cache: dict = {"data": None, "ts": 0.0}
 
 _DEF_PRIMARY = (
     'A clear, simple illustration that visually conveys the MEANING of the English word/phrase '
+    '"{word}" — {meaning}. Depict the concrete object, scene or action that unambiguously expresses '
+    'this meaning. Include a person ONLY if the meaning itself is a person, a feeling, or a human '
+    'action — then show their expression/posture and its cause; for objects, food, quantities, '
+    'places and things show ONLY those, with NO people in the image. '
+    'One clear focal subject, clean plain background. '
+    'Absolutely NO text, letters, numbers or words anywhere in the image.'
+)
+# 旧默认(会诱导画小孩/词义表达差):存量配置里若仍是其中任一句,自动升级为最新 _DEF_PRIMARY(不误伤自定义)
+_OLD_PRIMARY = (
+    'A clear, simple illustration that obviously represents the English word "{word}" '
+    '({meaning}), for children learning English vocabulary. Single clear subject, clean '
+    'plain background, NO text, letters or numbers anywhere in the image.'
+)
+# 上一版默认(feelings/abstract 无条件"show a character",仍爱塞小孩)→ 一并自愈升级
+_PREV_PRIMARY = (
+    'A clear, simple illustration that visually conveys the MEANING of the English word/phrase '
     '"{word}" — {meaning}. Depict a concrete scene, object or action that unambiguously expresses '
     'this meaning; for feelings or abstract words show a character whose facial expression, posture '
     'and the surrounding situation clearly convey it, together with the object causing it. '
     'One clear focal subject, clean plain background. Do NOT draw a random generic child. '
     'Absolutely NO text, letters, numbers or words anywhere in the image.'
 )
-# 旧默认(诱导画小孩、词义表达差):存量配置里若仍是这句,自动升级为 _DEF_PRIMARY(不误伤自定义)
-_OLD_PRIMARY = (
-    'A clear, simple illustration that obviously represents the English word "{word}" '
-    '({meaning}), for children learning English vocabulary. Single clear subject, clean '
-    'plain background, NO text, letters or numbers anywhere in the image.'
-)
+_UPGRADABLE_PRIMARY = {_OLD_PRIMARY.strip(), _PREV_PRIMARY.strip()}
 _DEF_STYLES = [
     "flat vector illustration, bright cheerful colors",
     "cute kawaii cartoon style, soft pastel colors",
@@ -62,8 +74,9 @@ _DEF_STYLES = [
 
 
 def _default_img_config() -> dict:
+    # style: 固定风格(为空=每张从 styles 随机);后台选一个即成所有词的默认风格
     return {"batch_size": 20, "images_per_word": 1, "use_ai_prompt": True,
-            "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES)}
+            "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES), "style": ""}
 
 
 def _merge_img_config(saved: dict | None) -> dict:
@@ -81,40 +94,76 @@ def _merge_img_config(saved: dict | None) -> dict:
             cfg["use_ai_prompt"] = bool(saved["use_ai_prompt"])
         # 保留自定义 primary;但「旧默认」自动升级为新默认(同步成新版,不误伤自定义)
         sp = str(saved.get("primary") or "").strip()
-        if sp and sp != _OLD_PRIMARY.strip():
+        if sp and sp not in _UPGRADABLE_PRIMARY:
             cfg["primary"] = sp
         if isinstance(saved.get("styles"), list):
             s = [str(x).strip() for x in saved["styles"] if str(x).strip()]
             if s:
                 cfg["styles"] = s
+        if "style" in saved:
+            cfg["style"] = str(saved.get("style") or "").strip()
     return cfg
 
 
-async def _ai_visual_brief(word: str, meaning: str, pos: str) -> str:
+# 「生成画面描述提示词」用的系统指令(meta-prompt)默认值。后台可编辑/保存/回滚(见 get/set_brief_prompt)。
+_DEF_BRIEF_SYSTEM = (
+    "Design ONE concrete scene for a text-to-image model so a learner instantly grasps the word's MEANING. "
+    "Output exactly ONE short English sentence, describing only what is visible, specific to this meaning. "
+    "Show a person ONLY if the word is about a person, a feeling, or a human action; for objects, food, "
+    "quantities, places and things show only the thing (make any amount obvious) with NO people. "
+    "No text or numbers in the image, no style words, no explanation."
+)
+_BRIEF_KEY = "vocab_image_brief_prompt"
+
+
+async def get_brief_prompt(db: AsyncSession) -> dict:
+    """取「生成画面描述」用的系统指令 + 历史版本。未配则用默认。返回 {current, history:[{prompt,at}]}。"""
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _BRIEF_KEY))).scalar_one_or_none()
+    v = row.value if row is not None else None
+    if not isinstance(v, dict):
+        return {"current": _DEF_BRIEF_SYSTEM, "history": []}
+    cur = (str(v.get("current") or "").strip()) or _DEF_BRIEF_SYSTEM
+    hist = v.get("history") if isinstance(v.get("history"), list) else []
+    return {"current": cur, "history": hist}
+
+
+async def set_brief_prompt(db: AsyncSession, *, prompt: str, updated_by, at: str) -> dict:
+    """保存新指令:旧版压入 history(去重、最多留 20 条)。空则回默认。"""
+    prompt = (prompt or "").strip() or _DEF_BRIEF_SYSTEM
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _BRIEF_KEY))).scalar_one_or_none()
+    old, hist = None, []
+    if row is not None and isinstance(row.value, dict):
+        old = str(row.value.get("current") or "").strip()
+        hist = row.value.get("history") if isinstance(row.value.get("history"), list) else []
+    if old and old != prompt:
+        hist = ([{"prompt": old, "at": at}] + [h for h in hist if h.get("prompt") != old])[:20]
+    value = {"current": prompt, "history": hist}
+    if row is None:
+        db.add(SystemConfig(id=uuid.uuid4(), key=_BRIEF_KEY, value=value,
+                            description="词力通配图-画面描述生成指令(meta-prompt,含历史)", updated_by=updated_by))
+    else:
+        row.value, row.updated_by = value, updated_by
+    await db.flush()
+    return value
+
+
+async def _ai_visual_brief(word: str, meaning: str, pos: str, system: str | None = None) -> str:
     """用 LLM 把词(尤其抽象词/虚词/短语)转成一句"可画的具体视觉场景",提升图片可理解性。
-    这是配图准确性的核心:场景越具体(动作/表情/对象/空间关系),T2I 出图越贴合词义。空/过短则重试一次。"""
+    system=生成指令(不传则用默认);由调用方从后台配置取当前版本传入。空/过短则重试一次。"""
     if llm_provider.is_llm_dev_mode():
         return ""   # dev-mock:不增强,走主模板
-    system = (
-        "You are a visual designer for a children's English vocabulary app. For the given word/phrase, "
-        "design ONE vivid, concrete, unambiguous scene for a text-to-image model, so a child who sees the "
-        "picture instantly grasps its MEANING.\n"
-        "- Concrete noun: show that exact object as the clear focal subject.\n"
-        "- Verb / action: show a character actively performing it with obvious body language.\n"
-        "- Feeling / abstract word: show a character whose facial expression, posture and the surrounding "
-        "situation unmistakably convey the feeling, TOGETHER WITH the object or cause of it.\n"
-        "- Preposition / phrase: depict the exact spatial or situational relationship it describes.\n"
-        "Rules: describe ONLY what is visible (subject, action, key objects, expression, spatial relation). "
-        "Make it specific to THIS meaning — NEVER a generic child just standing or smiling. "
-        "No text/letters/words in the image. No style adjectives, no explanation. Output ONE English sentence."
-    )
+    system = system or _DEF_BRIEF_SYSTEM
     up = f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}"
     for _ in range(2):
         try:
-            # 走非推理 fast 档:主模型是推理模型,max_tokens 被推理吃光→空返回(brief 生不出的根因)
+            # 关推理(disable_thinking):brief 是"一句话画面描述"的简单任务,v4-flash 若开推理会对
+            # 抽象词想十几秒甚至吃满 token 返回空(慢且失败)。关思考后 ~1s 稳定出结果,256 token 足够。
             resp = await llm_provider.chat_completion(
                 system_prompt=system, user_prompt=up, max_tokens=256,
-                model=llm_provider.fast_model(), feature="vocab_image_brief")
+                model=llm_provider.fast_model(), feature="vocab_image_brief",
+                disable_thinking=True)
             brief = (resp.choices[0].message.content or "").strip().replace("\n", " ")
             if len(brief) >= 12:      # 太短/空视为无效 → 重试一次
                 return brief
@@ -151,6 +200,13 @@ async def set_image_config(db: AsyncSession, *, config: dict, updated_by) -> dic
     return value
 
 
+async def set_image_style(db: AsyncSession, *, style: str, updated_by) -> dict:
+    """只更新「固定风格」(保留其余配置)。style 为空=恢复随机。返回完整配置。"""
+    cfg = dict(await get_image_config(db))
+    cfg["style"] = str(style or "").strip()
+    return await set_image_config(db, config=cfg, updated_by=updated_by)
+
+
 def _build_prompts(cfg: dict, *, word: str, meaning: str, n: int, brief: str = "") -> list[str]:
     """(AI视觉场景 brief +) 主要要求(固定模板) + 次要随机风格 → n 条提示词。"""
     try:
@@ -159,16 +215,21 @@ def _build_prompts(cfg: dict, *, word: str, meaning: str, n: int, brief: str = "
         base = f'{cfg["primary"]} word: "{word}".'
     if brief:
         base = f"{brief} {base}"   # AI 生成的可画场景放最前，主要要求作约束
-    styles = cfg.get("styles") or [""]
-    picks = random.sample(styles, k=min(n, len(styles))) if len(styles) >= n else \
-        [random.choice(styles) for _ in range(n)]
+    fixed = str(cfg.get("style") or "").strip()
+    if fixed:                       # 后台选定固定风格 → 所有图都用它(不再随机)
+        picks = [fixed] * n
+    else:
+        styles = cfg.get("styles") or [""]
+        picks = random.sample(styles, k=min(n, len(styles))) if len(styles) >= n else \
+            [random.choice(styles) for _ in range(n)]
     return [f"{base} Style: {s}." if s else base for s in picks]
 
 
 def _primary_meaning(w: VocabularyWord) -> str:
     d = w.definitions
-    if isinstance(d, list) and d:
-        return str(d[0].get("meaning", ""))
+    if isinstance(d, list) and d and isinstance(d[0], dict):
+        # definitions 有两种历史格式:{meaning,pos} 与 {zh,part_of_speech},两个键都认
+        return str(d[0].get("meaning") or d[0].get("zh") or "")
     return ""
 
 
@@ -185,15 +246,15 @@ async def _gen_en_description(word: str, meaning: str) -> str:
             "using simple English (CEFR A2). 2-3 short sentences, no Chinese."
         ),
         user_prompt=f"Word: {word}\nChinese meaning: {meaning}",
-        max_tokens=200,
-    )
+        max_tokens=200, model=llm_provider.fast_model(), disable_thinking=True,
+        feature="vocab_en_desc")
     return (resp.choices[0].message.content or "").strip()
 
 
 def _pos_of(w: VocabularyWord) -> str:
     d = w.definitions
     if isinstance(d, list) and d and isinstance(d[0], dict):
-        return str(d[0].get("pos", ""))
+        return str(d[0].get("pos") or d[0].get("part_of_speech") or "")
     return ""
 
 
@@ -215,6 +276,7 @@ async def _ai_example_phrase(word: str, meaning: str, pos: str, brief: str) -> d
             ),
             user_prompt=f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}",
             max_tokens=200, response_format={"type": "json_object"},
+            model=llm_provider.fast_model(), disable_thinking=True, feature="vocab_example",
         )
         data = _json.loads(resp.choices[0].message.content or "{}")
         ex = data.get("example") or {}
@@ -226,117 +288,151 @@ async def _ai_example_phrase(word: str, meaning: str, pos: str, brief: str) -> d
         return {"example": {"en": "", "zh": ""}, "phrase": {"en": "", "zh": ""}}
 
 
-async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None = None) -> list[str]:
-    """按配置生成配图(可选AI视觉场景)；并补充贴合图片的例句+短语(写到 w)。"""
+async def suggest_image_brief(db: AsyncSession, *, word_id: uuid.UUID,
+                              system: str | None = None) -> str:
+    """给某词返回一条 AI 建议的「画面描述提示词」(不出图),供后台弹框按需生成/编辑。
+    system=生成指令(前端可传未保存的编辑版预览);不传则用后台已保存的当前指令。"""
+    w = (await db.execute(
+        select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if w is None:
+        raise AppError(code=404, message="单词不存在")
+    sysp = system if (system and system.strip()) else (await get_brief_prompt(db))["current"]
+    return await _ai_visual_brief(w.word, _primary_meaning(w), _pos_of(w), system=sysp)
+
+
+async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None = None,
+                          brief_override: str | None = None,
+                          do_images: bool = True, do_audio: bool = True) -> list[str]:
+    """按配置生成配图(可选AI视觉场景)+ 贴合图片的例句/短语(写到 w)。
+    brief_override 非 None 时用它当画面描述(人工编辑),不再调 AI。
+    do_images=False 跳过出图/例句(保留现有);do_audio=False 跳过所有 TTS(保留现有音频)。"""
     cfg = cfg or await get_image_config(db)
     meaning = _primary_meaning(w)
     pos = _pos_of(w)
-    brief = ""
-    if cfg.get("use_ai_prompt"):
-        brief = await _ai_visual_brief(w.word, meaning, pos)
-    prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
-                             n=int(cfg.get("images_per_word", 1)), brief=brief)
     urls: list[str] = []
-    for p in prompts:
-        u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
-        if u:
-            urls.append(u)
-    # 例句(先贴合图片意思) + 短语：缺失时补充；并预生成语音(火山→COS缓存)写入 JSONB
-    ep = await _ai_example_phrase(w.word, meaning, pos, brief)
-    if ep["example"]["en"]:
-        ex = dict(ep["example"])
-        ex["audio"] = await _tts_cos(ex["en"])
-        w.examples = [ex]
-    if ep["phrase"]["en"]:
-        ph = dict(ep["phrase"])
-        ph["audio"] = await _tts_cos(ph["en"])
-        w.phrases = [ph]
-    # 单词发音：预生成并写库，供原词力通 + AI口语-词力通共用
-    if not w.word_audio_url:
+    if do_images:
+        brief = ""
+        if brief_override is not None:
+            brief = brief_override.strip()
+        elif cfg.get("use_ai_prompt"):
+            sysp = (await get_brief_prompt(db))["current"]
+            brief = await _ai_visual_brief(w.word, meaning, pos, system=sysp)
+        prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
+                                 n=int(cfg.get("images_per_word", 1)), brief=brief)
+        for p in prompts:
+            u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
+            if u:
+                urls.append(u)
+        if urls:   # 记为新图片版本(不覆盖历史),带当时风格+提示词,自动选用
+            await vocab_media_asset_service.record_assets(
+                db, word_id=w.id, kind="image", urls=urls,
+                style=(cfg.get("style") or "随机"), prompt=(brief or None))
+        # 例句(先贴合图片意思) + 短语；语音仅在 do_audio 时预生成(火山→COS缓存)
+        ep = await _ai_example_phrase(w.word, meaning, pos, brief)
+        if ep["example"]["en"]:
+            ex = dict(ep["example"])
+            if do_audio:
+                ex["audio"] = await _tts_cos(ex["en"])
+            w.examples = [ex]
+        if ep["phrase"]["en"]:
+            ph = dict(ep["phrase"])
+            if do_audio:
+                ph["audio"] = await _tts_cos(ph["en"])
+            w.phrases = [ph]
+    # 单词发音：do_audio 时(重)生成，记为新音频版本(不覆盖历史,自动选用→同步 word_audio_url)
+    if do_audio:
         wa = await _tts_cos(w.word)
         if wa:
-            w.word_audio_url = wa
+            await vocab_media_asset_service.record_assets(
+                db, word_id=w.id, kind="audio", urls=[wa])
     return urls
 
 
-async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID) -> VocabularyWord:
+async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
+                            brief_override: str | None = None,
+                            do_images: bool = True, do_audio: bool = True) -> VocabularyWord:
+    """生成词条媒体。do_images/do_audio 控制是否(重)生成图片/音频——批量时对已有资源可跳过。"""
     w = (await db.execute(
         select(VocabularyWord).where(VocabularyWord.id == word_id)
     )).scalar_one_or_none()
     if w is None:
         raise AppError(code=404, message="单词不存在")
-    meaning = _primary_meaning(w)
-    en = await _gen_en_description(w.word, meaning)
-    w.en_description = en
-    imgs = await _gen_images_for(db, w)
-    if imgs:
+    if not (do_images or do_audio):
+        return w                              # 图片、音频都跳过 → 无事可做
+    if do_images:
+        meaning = _primary_meaning(w)
+        w.en_description = await _gen_en_description(w.word, meaning)
+    imgs = await _gen_images_for(db, w, brief_override=brief_override,
+                                 do_images=do_images, do_audio=do_audio)
+    if do_images and imgs:
         w.image_urls = imgs
-    wa = vocab_media_provider.generate_tts(w.word)
-    ea = vocab_media_provider.generate_tts(en)
-    if wa:
-        w.word_audio_url = wa      # mock 返回空 → 不覆盖（卡片发音走火山 TTS 兜底）
-    if ea:
-        w.en_desc_audio_url = ea
     w.media_status = "draft"
     await db.flush()
     return w
 
 
-# ── 动图 GIF(A 方案:动词/动作词关键帧,复用腾讯 Img2Img 保一致 + Pillow 拼 GIF)──────
-async def _ai_motion_frames(word: str, meaning: str, pos: str) -> list[str] | None:
-    """判定该词是否宜用动图(动作/移动/过程/时间变化),是则给 3 帧连续动作场景(首→中→末,
-    同一人物/场景只推进姿势)。静态词(名词/形容词/静态状态)返回 None。走 fast 档。"""
+# ── 动图(动词/动作词:现有静态配图当首帧 + 智谱 CogVideoX-Flash 图生视频,真运动)──────
+async def _ai_motion_desc(word: str, meaning: str, pos: str) -> str | None:
+    """判定该词是否宜用动图(动作/移动/过程/时间变化),是则给「一句该图里要发生的可见运动」的
+    英文描述(喂图生视频,让静态配图动起来)。静态词(名词/形容词/静态状态)返回 None。走 fast 档。"""
     if llm_provider.is_llm_dev_mode():
-        return [f"a child starting to {word}", f"a child doing {word}",
-                f"a child finishing {word}"] if (pos or "").lower().startswith(("v", "动")) else None
+        return (f"the subject performs the action '{word}' with clear, visible, natural motion"
+                if (pos or "").lower().startswith(("v", "动")) else None)
     system = (
         "Decide whether an English word/phrase is best taught with a short ANIMATION (an action, "
         "movement, process or change over time) rather than one static picture. Concrete nouns, "
         "adjectives and static states do NOT need animation.\n"
-        "If it needs animation, describe a 3-frame sequence (beginning → middle → end) of ONE consistent "
-        "character in ONE consistent setting performing the action — each frame is ONE concrete visible "
-        "moment, only the pose/action progresses between frames. Describe only what is visible. "
-        "No text/letters in the image, no style words.\n"
-        'Output strict JSON: {"animate": true|false, "frames": ["frame1 scene","frame2 scene","frame3 scene"]}. '
-        "If animate is false, frames = [].")
-    # 3 帧详细场景 JSON 易超 400 token 被截断→放弃;给足预算 + escalate 兜底
+        "If it needs animation, write ONE English sentence describing the visible MOTION to apply to a "
+        "still image so it comes alive — what moves, how it moves, the direction/gesture of the action. "
+        "Keep the same single subject and setting; describe only visible movement (no style words, no text).\n"
+        'Output strict JSON: {"animate": true|false, "motion": "one motion sentence"}. '
+        "If animate is false, motion = \"\".")
     d = await llm_provider.complete_json(
         system_prompt=system, user_prompt=f"Word/phrase: {word}\nPOS: {pos}\nMeaning (Chinese): {meaning}",
-        max_tokens=800, escalate_ceiling=1400, model=llm_provider.fast_model(),
-        feature="vocab_gif_frames", validate=lambda x: "animate" in x)
+        max_tokens=400, escalate_ceiling=800, model=llm_provider.fast_model(),
+        feature="vocab_video_motion", validate=lambda x: "animate" in x)
     if not d or not d.get("animate"):
         return None
-    frames = [str(f).strip() for f in (d.get("frames") or []) if str(f).strip()]
-    return frames if len(frames) >= 2 else None
+    motion = str(d.get("motion") or "").strip()
+    return motion or None
 
 
-async def generate_gif_for_word(db: AsyncSession, *, word_id: uuid.UUID) -> tuple[VocabularyWord, bool]:
-    """给动作/过程类词生成关键帧 GIF:首帧 T2I → 后续帧 Img2Img 从首帧演进(保人物/风格一致)→
-    Pillow 拼 GIF 存 COS。返回 (word, animated);animated=False 表示该词无需动图(静态图即可)。"""
+async def generate_gif_for_word(db: AsyncSession, *, word_id: uuid.UUID) -> tuple[VocabularyWord, str]:
+    """给动作/过程类词生成动图:用该词现有静态配图当首帧 + AI 动作描述 → 智谱 CogVideoX-Flash
+    图生视频(真运动)→ 存 COS,写入 gif_url(实为 mp4 直链)。缺静态配图时先 T2I 生成一张当首帧。
+
+    返回 (word, status):
+      - "skip"      该词无需动图(名词/静态词,静态图即可);
+      - "generated" 本次真生成了新动图并已写库;
+      - "failed"    需要动图但生成失败(首帧或图生视频失败,如免费档限流)——不改动 gif_url。
+    """
     w = (await db.execute(
         select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
     if w is None:
         raise AppError(code=404, message="单词不存在")
-    frames_desc = await _ai_motion_frames(w.word, _primary_meaning(w), _pos_of(w))
-    if not frames_desc:
-        return w, False
-    cfg = await get_image_config(db)
-    style = (cfg.get("styles") or [""])[0]
-    suffix = "One clear consistent character, clean plain background, NO text/letters/numbers."
-    first = f"{frames_desc[0]} {suffix}" + (f" Style: {style}." if style else "")
-    url0 = await vocab_media_provider.t2i_to_cos(first, label=w.word)
-    if not url0:
-        return w, True   # 需要动图但首帧生成失败
-    urls = [url0]
-    for fd in frames_desc[1:]:
-        u = await vocab_media_provider.i2i_to_cos(f"{fd} {suffix}", url0, label=w.word, strength=0.6)
-        urls.append(u or url0)
-    gif = await vocab_media_provider.frames_to_gif_cos(urls, label=w.word)
-    if gif:
-        w.gif_url = gif
-        w.media_status = "draft"
-        await db.flush()
-    return w, True
+    motion = await _ai_motion_desc(w.word, _primary_meaning(w), _pos_of(w))
+    if not motion:
+        return w, "skip"
+    # 首帧:优先复用已生成的静态配图,避免重复付费;没有才现生成一张
+    base = next((u for u in (w.image_urls or []) if u), None)
+    if not base:
+        cfg = await get_image_config(db)
+        style = (cfg.get("styles") or [""])[0]
+        prompt = (f"A clear, simple illustration showing the meaning of '{w.word}' ({_primary_meaning(w)}). "
+                  "One clear subject, clean plain background, NO text/letters/numbers."
+                  + (f" Style: {style}." if style else ""))
+        base = await vocab_media_provider.t2i_to_cos(prompt, label=w.word)
+        if not base:
+            return w, "failed"   # 需要动图但首帧生成失败
+    video = await vocab_media_provider.i2v_to_cos(motion, base, label=w.word)
+    if not video:
+        return w, "failed"       # 需要动图但图生视频失败(勿让旧 gif_url 冒充成功)
+    # 记为新 GIF 版本(不覆盖历史,自动选用→同步 gif_url)
+    await vocab_media_asset_service.record_assets(
+        db, word_id=w.id, kind="gif", urls=[video], prompt=(motion or None))
+    w.media_status = "draft"
+    await db.flush()
+    return w, "generated"
 
 
 # ── 批量生成（后台触发，进程内进度）────────────────────────────────────────────
@@ -459,6 +555,8 @@ async def update_word_media(
     en_description: str | None = None,
     word_audio_url: str | None = None,
     en_desc_audio_url: str | None = None,
+    meaning: str | None = None,
+    pos: str | None = None,
 ) -> VocabularyWord:
     w = (await db.execute(
         select(VocabularyWord).where(VocabularyWord.id == word_id)
@@ -473,6 +571,18 @@ async def update_word_media(
         w.word_audio_url = word_audio_url
     if en_desc_audio_url is not None:
         w.en_desc_audio_url = en_desc_audio_url
+    # 中文词义/词性:写入首个 definition(统一 {meaning,pos});保留其余义项与键
+    if meaning is not None or pos is not None:
+        defs = list(w.definitions) if isinstance(w.definitions, list) else []
+        d0 = dict(defs[0]) if defs and isinstance(defs[0], dict) else {}
+        if meaning is not None:
+            d0["meaning"] = meaning.strip()
+            d0.pop("zh", None)                       # 去旧键,归一到 meaning
+        if pos is not None:
+            d0["pos"] = pos.strip()
+            d0.pop("part_of_speech", None)
+        defs = [d0] + defs[1:] if defs else [d0]
+        w.definitions = defs
     await db.flush()
     return w
 

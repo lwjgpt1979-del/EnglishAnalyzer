@@ -19,12 +19,12 @@ from app.models.d5_learning import VocabularyWord
 
 
 def _first_meaning(defs) -> str | None:
-    """从 definitions [{zh, part_of_speech?}] 取首个中文释义(带词性前缀)。"""
+    """从 definitions 取首个中文释义(带词性前缀)。统一格式 {meaning,pos};兼容旧 {zh,part_of_speech}。"""
     if not defs or not isinstance(defs, list):
         return None
     d0 = defs[0] or {}
-    zh = (d0.get("zh") or "").strip()
-    pos = (d0.get("part_of_speech") or "").strip()
+    zh = (d0.get("meaning") or d0.get("zh") or "").strip()
+    pos = (d0.get("pos") or d0.get("part_of_speech") or "").strip()
     if not zh:
         return None
     return f"{pos} {zh}".strip() if pos else zh
@@ -59,12 +59,12 @@ async def _get_or_create_word(db: AsyncSession, *, word: str, phonetic: str | No
         if phonetic and not existing.phonetic:
             existing.phonetic = phonetic; changed = True
         if meaning and not existing.definitions:
-            existing.definitions = [{"zh": meaning, "part_of_speech": pos or ""}]; changed = True
+            existing.definitions = [{"meaning": meaning, "pos": pos or ""}]; changed = True
         if changed:
             await db.flush()
         return existing.id, False
     new_id = uuid.uuid4()
-    defs = [{"zh": meaning, "part_of_speech": pos or ""}] if meaning else []
+    defs = [{"meaning": meaning, "pos": pos or ""}] if meaning else []
     db.add(VocabularyWord(id=new_id, word=norm, phonetic=(phonetic or None),
                           definitions=defs, difficulty=3,
                           type=("phrase" if wtype == "phrase" else "word"), source="textbook"))

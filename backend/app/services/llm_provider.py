@@ -60,6 +60,7 @@ async def chat_completion(
     temperature: float | None = None,
     model: str | None = None,
     feature: str = "other",
+    disable_thinking: bool = False,
 ) -> ChatCompletion:
     """统一的单轮 chat 调用：system + user 两条消息，返回原始 ChatCompletion。
 
@@ -71,6 +72,7 @@ async def chat_completion(
         user_prompt: 用户提示词。
         max_tokens: 最大生成 token 数。
         response_format: 可选，如 {"type": "json_object"} 强制 JSON 输出。
+        disable_thinking: 关闭推理(v4 系是推理模型;简单任务关思考可从 ~15s 降到 ~1s)。
     """
     from app.services import llm_config_service
     client = get_llm_client()
@@ -86,6 +88,8 @@ async def chat_completion(
         kwargs["response_format"] = response_format
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if disable_thinking:   # 关推理:抽取/改写等规格明确、无需重推理的任务提速用
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     resp = await client.chat.completions.create(**kwargs)
     try:    # 记用量台账 + 累加预算(失败不影响主调用)
         from app.services import usage_log_service

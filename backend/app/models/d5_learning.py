@@ -57,6 +57,24 @@ class VocabularyWord(Base):
     probes_json = mapped_column(JSONB, nullable=True)
 
 
+class VocabMediaAsset(Base):
+    """词条媒体版本历史:每次生成的图/音/GIF 都入库不覆盖,记风格+提示词,后台可人工选用。
+    词条上的 image_urls / word_audio_url / gif_url 是「当前选用」的镜像。"""
+
+    __tablename__ = "vocab_media_asset"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    kind = mapped_column(sa.String(12), nullable=False)     # image | audio | gif
+    url = mapped_column(sa.String, nullable=False)
+    style = mapped_column(sa.String, nullable=True)         # 图片:当时用的风格
+    prompt = mapped_column(sa.Text, nullable=True)          # 图片:当时的画面描述/提示词
+    selected = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()"))
+
+
 class VocabularyLearning(Base):
     """
     学生单词学习记录（SM-2 算法状态）。

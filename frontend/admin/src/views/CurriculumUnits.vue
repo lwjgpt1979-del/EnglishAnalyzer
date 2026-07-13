@@ -3,9 +3,9 @@ import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled, Refresh, Document, Notebook, Search, Cpu, CircleCheck, CircleClose, Delete, Plus, Collection } from '@element-plus/icons-vue'
+import { UploadFilled, Refresh, Document, Notebook, Search, Cpu, CircleCheck, CircleClose, Delete, Plus, Collection, EditPen } from '@element-plus/icons-vue'
 import {
-  listCurriculumUnits, deleteCurriculumUnits,
+  listCurriculumUnits, deleteCurriculumUnits, updateCurriculumUnit,
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
   fetchUnitPdfBlob, getUnitStructured, generateUnitStructured, linkUnitStructured,
@@ -136,6 +136,58 @@ async function deleteUnits(targets: AdminCurriculumUnit[]) {
 }
 
 
+// ── 单元基础信息编辑 ──────────────────────────────────────────────────────────
+const editDlg = ref(false)
+const editSaving = ref(false)
+const editRow = ref<AdminCurriculumUnit | null>(null)
+const editForm = ref({ textbook_version: '', grade: '', semester: '上', unit_no: 1, unit_title: '' })
+
+function openEdit(row: AdminCurriculumUnit) {
+  editRow.value = row
+  editForm.value = {
+    textbook_version: row.textbook_version,
+    grade: row.grade,
+    semester: row.semester,
+    unit_no: row.unit_no,
+    unit_title: row.unit_title || '',
+  }
+  editDlg.value = true
+}
+
+async function saveEdit() {
+  const row = editRow.value
+  if (!row) return
+  const f = editForm.value
+  if (!f.textbook_version.trim() || !f.grade.trim() || !f.semester) {
+    ElMessage.warning('教材版本 / 年级 / 学期不能为空'); return
+  }
+  if (!f.unit_no || f.unit_no < 1) { ElMessage.warning('Unit 号需为正整数'); return }
+  // 只提交有变化的字段
+  const patch: Record<string, any> = {}
+  if (f.textbook_version.trim() !== row.textbook_version) patch.textbook_version = f.textbook_version.trim()
+  if (f.grade.trim() !== row.grade) patch.grade = f.grade.trim()
+  if (f.semester !== row.semester) patch.semester = f.semester
+  if (f.unit_no !== row.unit_no) patch.unit_no = f.unit_no
+  if ((f.unit_title || '').trim() !== (row.unit_title || '')) patch.unit_title = (f.unit_title || '').trim()
+  if (!Object.keys(patch).length) { editDlg.value = false; return }   // 无改动
+  editSaving.value = true
+  try {
+    const updated = await updateCurriculumUnit(row.unit_id, patch)
+    // 原地更新该行(避免整表重载丢失滚动/选择)
+    Object.assign(row, {
+      textbook_version: updated.textbook_version, grade: updated.grade,
+      semester: updated.semester, unit_no: updated.unit_no, unit_title: updated.unit_title,
+    })
+    editDlg.value = false
+    ElMessage.success('已保存')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '保存失败')
+  } finally {
+    editSaving.value = false
+  }
+}
+
+
 const nodesDlg = ref(false)
 const nodesLoading = ref(false)
 // 单元考点 = 单元解析里语法点/听力考点已关联到知识图谱的节点(去重)
@@ -250,6 +302,37 @@ async function removeLinkedWord(w: UnitWordItem) {
     wordsUnit.value.word_count = linkedWords.value.length
     ElMessage.success('已移除')
   } catch (e: any) { ElMessage.error(e?.message || '移除失败') }
+}
+
+// 已挂词批量移除(多选;逐条删,词力通词条保留)
+const linkedTableRef = ref<{ clearSelection: () => void } | null>(null)
+const linkedSel = ref<UnitWordItem[]>([])
+const linkedRemoving = ref(false)
+function onLinkedSelChange(rows: UnitWordItem[]) { linkedSel.value = rows }
+
+async function batchRemoveLinked() {
+  const ws = linkedSel.value.filter(w => w.word_id)
+  if (!ws.length || !wordsUnit.value) return
+  try {
+    await ElMessageBox.confirm(
+      `从本单元批量移除选中的 ${ws.length} 个词?(词力通词条本身保留,仅解除与本单元的关联)`,
+      '批量移除', { type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消' })
+  } catch { return }
+  linkedRemoving.value = true
+  const uid = wordsUnit.value.unit_id
+  const failed = new Set<string>()
+  await runPool(ws, async (w) => {
+    try { await deleteUnitWord(uid, w.word_id as string) }
+    catch { failed.add(w.word_id as string) }
+  }, 4)
+  linkedWords.value = linkedWords.value.filter(x => !(x.word_id && ws.some(w => w.word_id === x.word_id) && !failed.has(x.word_id)))
+  wordsUnit.value.word_count = linkedWords.value.length
+  linkedTableRef.value?.clearSelection()
+  linkedSel.value = []
+  linkedRemoving.value = false
+  const ok = ws.length - failed.size
+  if (failed.size) ElMessage.warning(`已移除 ${ok} 个,${failed.size} 个失败`)
+  else ElMessage.success(`已移除 ${ok} 个`)
 }
 
 // ── 单元长难句(粘贴文字 → LLM 语法点 → 关联知识图谱)──
@@ -714,64 +797,82 @@ onMounted(load)
 
 <template>
   <div>
-    <!-- 工具栏 -->
+    <!-- 工具栏:左=筛选/统计,右=操作(批量操作随勾选出现) -->
     <div class="toolbar">
-      <el-select v-model="filterTextbook" placeholder="教材版本" clearable style="width:140px" @change="reload">
-        <el-option v-for="t in textbookOptions" :key="t" :label="t" :value="t" />
-      </el-select>
-      <el-select v-model="filterGrade" placeholder="年级" clearable style="width:140px" @change="reload">
-        <el-option v-for="g in gradeOptions" :key="g" :label="g" :value="g" />
-      </el-select>
-      <el-select v-model="filterSemester" placeholder="学期" clearable style="width:100px" @change="reload">
-        <el-option v-for="s in semesterOptions" :key="s" :label="s+'学期'" :value="s" />
-      </el-select>
-      <el-button @click="load" :loading="loading"><el-icon style="margin-right:4px"><Refresh /></el-icon>刷新</el-button>
-      <span class="stat-txt">
-        共 {{ total }} 个单元 ·
-        本页已挂考点 {{ rows.filter(r => r.kp_count > 0).length }} 个
-      </span>
-      <div style="flex:1" />
-      <el-button
-        type="success" plain
-        :disabled="!selected.length || batchParsing" :loading="batchParsing"
-        @click="batchParseSelected"
-      ><el-icon style="margin-right:4px"><Cpu /></el-icon>{{ batchParsing ? `解析中 ${batchProg.done}/${batchProg.total}` : `批量解析${selected.length ? `（${selected.length}）` : ''}` }}</el-button>
-      <el-button
-        type="danger" plain
-        :disabled="!selected.length" :loading="deleting"
-        @click="deleteUnits(selected)"
-      ><el-icon style="margin-right:4px"><Delete /></el-icon>删除选中{{ selected.length ? `（${selected.length}）` : '' }}</el-button>
-      <el-button @click="goUploadLs"><el-icon style="margin-right:4px"><Document /></el-icon>上传长难句</el-button>
-      <el-button type="primary" @click="openPdfDialog"><el-icon style="margin-right:4px"><Document /></el-icon>上传教材 PDF</el-button>
+      <div class="tb-left">
+        <el-select v-model="filterTextbook" placeholder="教材版本" clearable style="width:150px" @change="reload">
+          <el-option v-for="t in textbookOptions" :key="t" :label="t" :value="t" />
+        </el-select>
+        <el-select v-model="filterGrade" placeholder="年级" clearable style="width:130px" @change="reload">
+          <el-option v-for="g in gradeOptions" :key="g" :label="g" :value="g" />
+        </el-select>
+        <el-select v-model="filterSemester" placeholder="学期" clearable style="width:110px" @change="reload">
+          <el-option v-for="s in semesterOptions" :key="s" :label="s+'学期'" :value="s" />
+        </el-select>
+        <el-button @click="load" :loading="loading" :icon="Refresh" circle title="刷新" />
+        <span class="stat-txt">
+          共 <b>{{ total }}</b> 单元 · 本页 <b>{{ rows.filter(r => r.kp_count > 0).length }}</b>/{{ rows.length }} 已挂考点
+        </span>
+      </div>
+      <div class="tb-right">
+        <transition name="fade">
+          <div v-if="selected.length" class="tb-batch">
+            <span class="sel-badge">已选 {{ selected.length }}</span>
+            <el-button type="success" plain size="default" :loading="batchParsing" @click="batchParseSelected">
+              <el-icon style="margin-right:4px"><Cpu /></el-icon>{{ batchParsing ? `解析中 ${batchProg.done}/${batchProg.total}` : '批量解析' }}
+            </el-button>
+            <el-button type="danger" plain size="default" :loading="deleting" @click="deleteUnits(selected)">
+              <el-icon style="margin-right:4px"><Delete /></el-icon>删除
+            </el-button>
+            <el-divider direction="vertical" />
+          </div>
+        </transition>
+        <el-button @click="goUploadLs"><el-icon style="margin-right:4px"><Document /></el-icon>上传长难句</el-button>
+        <el-button type="primary" @click="openPdfDialog"><el-icon style="margin-right:4px"><UploadFilled /></el-icon>上传教材 PDF</el-button>
+      </div>
     </div>
 
-    <!-- 单元表格 -->
+    <!-- 单元表格:合并「教材/年级/学期/Unit」为单元身份列;考点/单词为可点标签 -->
     <el-table ref="tableRef" v-loading="loading" :data="rows" border style="width:100%"
               row-key="unit_id" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="44" />
-      <el-table-column prop="textbook_version" label="教材"   width="90" />
-      <el-table-column prop="grade"            label="年级"   width="110" />
-      <el-table-column prop="semester"         label="学期"   width="70">
-        <template #default="{ row }">{{ row.semester }}学期</template>
-      </el-table-column>
-      <el-table-column prop="unit_no"    label="Unit"  width="60" align="center" />
-      <el-table-column prop="unit_title" label="单元标题" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="kp_count"   label="单元考点"  width="80" align="center" />
-      <el-table-column label="重点单词" width="100" align="center">
+      <el-table-column label="单元" min-width="280">
         <template #default="{ row }">
-          <el-button size="small" link type="primary" @click="onViewWords(row)">
-            <el-icon style="margin-right:3px"><Collection /></el-icon>{{ row.word_count ? `${row.word_count} 词` : '挂单词' }}
+          <div class="unit-cell">
+            <div class="unit-title">
+              <span class="u-no">U{{ row.unit_no }}</span>
+              <span :class="{ 'u-empty': !row.unit_title }">{{ row.unit_title || '未命名单元' }}</span>
+            </div>
+            <div class="unit-meta">{{ row.textbook_version }} · {{ row.grade }} · {{ row.semester }}学期</div>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="单元考点" width="118" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.kp_count" type="success" effect="light" round class="cell-tag" @click="onViewNodes(row)">
+            {{ row.kp_count }} 考点
+          </el-tag>
+          <el-button v-else link type="info" size="small" @click="onViewNodes(row)">未挂靠</el-button>
+        </template>
+      </el-table-column>
+      <el-table-column label="重点单词" width="118" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.word_count" type="primary" effect="light" round class="cell-tag" @click="onViewWords(row)">
+            {{ row.word_count }} 词
+          </el-tag>
+          <el-button v-else link type="primary" size="small" @click="onViewWords(row)">
+            <el-icon style="margin-right:3px"><Collection /></el-icon>挂单词
           </el-button>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="380" fixed="right">
+      <el-table-column label="操作" width="270" fixed="right">
         <template #default="{ row }">
           <div class="act-row">
             <el-button size="small" type="primary" @click="onViewPassages(row)"><el-icon style="margin-right:4px"><Document /></el-icon>短文</el-button>
-            <el-button v-if="row.unit_pdf_url" size="small" @click="openUnitPdf(row)"><el-icon style="margin-right:4px"><Notebook /></el-icon>原版PDF</el-button>
-            <el-button size="small" @click="onViewNodes(row)">单元考点 {{ row.kp_count || 0 }}</el-button>
             <el-button size="small" @click="onViewLs(row)">长难句</el-button>
-            <el-button size="small" type="danger" plain :loading="deleting" @click="deleteUnits([row])"><el-icon><Delete /></el-icon></el-button>
+            <el-button size="small" :icon="EditPen" title="编辑基础信息(标题/教材/年级/学期/Unit)" @click="openEdit(row)" />
+            <el-button v-if="row.unit_pdf_url" size="small" :icon="Notebook" title="原版 PDF" @click="openUnitPdf(row)" />
+            <el-button size="small" type="danger" plain :icon="Delete" title="删除单元" :loading="deleting" @click="deleteUnits([row])" />
           </div>
         </template>
       </el-table-column>
@@ -780,6 +881,39 @@ onMounted(load)
       <el-pagination layout="total, prev, pager, next, jumper" :total="total"
         :page-size="pageSize" v-model:current-page="page" @current-change="load" />
     </div>
+
+    <!-- ── 单元基础信息编辑 Dialog ── -->
+    <AppDialog v-model="editDlg" title="编辑单元基础信息" width="520px">
+      <el-form label-width="88px" @submit.prevent>
+        <el-form-item label="单元标题">
+          <el-input v-model="editForm.unit_title" placeholder="如 This is me!(留空显示为「未命名单元」)" clearable maxlength="120" show-word-limit />
+        </el-form-item>
+        <el-form-item label="教材版本">
+          <el-select v-model="editForm.textbook_version" filterable allow-create default-first-option style="width:100%" placeholder="选择或输入教材版本">
+            <el-option v-for="t in textbookOptions" :key="t" :label="t" :value="t" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="年级">
+          <el-select v-model="editForm.grade" filterable allow-create default-first-option style="width:100%" placeholder="选择或输入年级">
+            <el-option v-for="g in gradeOptions" :key="g" :label="g" :value="g" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="学期">
+          <el-select v-model="editForm.semester" style="width:100%">
+            <el-option label="上学期" value="上" />
+            <el-option label="下学期" value="下" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Unit 号">
+          <el-input-number v-model="editForm.unit_no" :min="1" :max="99" />
+        </el-form-item>
+        <div class="hint">改「教材 / 年级 / 学期 / Unit 号」= 改单元身份;与已有单元重复会被拒绝。不影响该单元已挂的短文 / 考点 / 单词。</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDlg = false">取消</el-button>
+        <el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button>
+      </template>
+    </AppDialog>
 
     <!-- ── 单元知识图谱节点 Dialog ── -->
     <AppDialog v-model="nodesDlg" :title="`单元考点 · ${nodesUnitTitle}`" width="640px">
@@ -911,8 +1045,15 @@ onMounted(load)
         <el-empty v-else description="OCR 识别或「手动加一行」添加待保存的词" :image-size="46" />
 
         <!-- 已挂在单元 -->
-        <div class="pane-head" style="margin-top:14px"><span>③ 已挂在本单元({{ linkedWords.length }})· 词力通词库</span></div>
-        <el-table v-if="linkedWords.length" :data="linkedWords" border size="small" max-height="240">
+        <div class="pane-head" style="margin-top:14px">
+          <span>③ 已挂在本单元({{ linkedWords.length }})· 词力通词库</span>
+          <el-button v-if="linkedSel.length" size="small" type="danger" plain :loading="linkedRemoving" @click="batchRemoveLinked">
+            <el-icon style="margin-right:3px"><Delete /></el-icon>批量移除（{{ linkedSel.length }}）
+          </el-button>
+        </div>
+        <el-table ref="linkedTableRef" v-if="linkedWords.length" :data="linkedWords" border size="small" max-height="240"
+                  row-key="word_id" @selection-change="onLinkedSelChange">
+          <el-table-column type="selection" width="40" />
           <el-table-column prop="word" label="单词/词组" min-width="150" />
           <el-table-column prop="phonetic" label="音标" width="150" />
           <el-table-column prop="meaning" label="释义" min-width="200" show-overflow-tooltip />
@@ -1250,10 +1391,32 @@ onMounted(load)
 
 <style scoped>
 .toolbar {
-  display: flex; gap: 12px; align-items: center;
+  display: flex; gap: 12px; align-items: center; justify-content: space-between;
   flex-wrap: wrap; margin-bottom: 16px;
 }
-.stat-txt { color: #909399; font-size: 13px; }
+.tb-left, .tb-right, .tb-batch { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tb-right { justify-content: flex-end; }
+.stat-txt { color: #909399; font-size: 13px; white-space: nowrap; }
+.stat-txt b { color: #303133; font-weight: 600; }
+.sel-badge {
+  font-size: 13px; color: var(--c-primary, #3d8bf5); font-weight: 600;
+  background: #eef5ff; padding: 3px 10px; border-radius: 12px;
+}
+.fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* 单元身份单元格:标题 + 元信息两行 */
+.unit-cell { line-height: 1.4; }
+.unit-title { font-size: 14px; color: #303133; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.u-no {
+  flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--c-primary, #3d8bf5);
+  background: #eef5ff; border-radius: 4px; padding: 1px 7px; line-height: 18px;
+}
+.u-empty { color: #c0c4cc; font-weight: 400; font-style: italic; }
+.unit-meta { font-size: 12px; color: #909399; margin-top: 3px; }
+/* 考点/单词可点标签 */
+.cell-tag { cursor: pointer; transition: transform .1s ease; }
+.cell-tag:hover { transform: translateY(-1px); }
 .meta-tag {
   display: inline-block; background: #f0f9ff; color: #0369a1;
   font-size: 13px; padding: 4px 10px; border-radius: 4px; margin-bottom: 16px;

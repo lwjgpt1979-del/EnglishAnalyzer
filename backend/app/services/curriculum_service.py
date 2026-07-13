@@ -568,6 +568,54 @@ async def upsert_unit_shell(
     return cu
 
 
+async def update_unit_basic(
+    db: AsyncSession,
+    *,
+    unit_id: uuid.UUID,
+    textbook_version: str | None = None,
+    grade: str | None = None,
+    semester: str | None = None,
+    unit_no: int | None = None,
+    unit_title: str | None = None,
+) -> CurriculumUnit:
+    """按 id 改单元基础字段(标题 + 教材/年级/学期/Unit 号)。只传的字段才改。
+
+    身份字段(教材+年级+学期+Unit)有变时,校验唯一约束,冲突抛 409;不动短文/考点/词等内容。
+    """
+    cu = await db.get(CurriculumUnit, unit_id)
+    if cu is None:
+        raise AppError(code=404, message="单元不存在")
+
+    new_tb    = textbook_version if textbook_version is not None else cu.textbook_version
+    new_grade = normalize_grade(grade) if grade is not None else cu.grade
+    new_sem   = semester if semester is not None else str(cu.semester)
+    new_no    = unit_no if unit_no is not None else cu.unit_no
+    identity_changed = (
+        (new_tb, new_grade, str(new_sem), new_no)
+        != (cu.textbook_version, cu.grade, str(cu.semester), cu.unit_no)
+    )
+    if identity_changed:
+        dup = (await db.execute(
+            select(CurriculumUnit.id).where(
+                CurriculumUnit.textbook_version == new_tb,
+                CurriculumUnit.grade == new_grade,
+                CurriculumUnit.semester == new_sem,
+                CurriculumUnit.unit_no == new_no,
+                CurriculumUnit.id != unit_id,
+            )
+        )).scalar_one_or_none()
+        if dup is not None:
+            raise AppError(code=409, message=f"已存在相同「{new_tb} {new_grade} {new_sem}学期 U{new_no}」的单元")
+        cu.textbook_version = new_tb
+        cu.grade = new_grade
+        cu.semester = new_sem  # type: ignore[assignment]
+        cu.unit_no = new_no
+    if unit_title is not None:
+        cu.unit_title = unit_title.strip()
+    await db.flush()
+    return cu
+
+
 # ─── Admin：批量生成 ────────────────────────────────────────────────────────
 
 async def reset_semester(

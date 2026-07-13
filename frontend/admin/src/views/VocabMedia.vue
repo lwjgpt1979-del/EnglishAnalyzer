@@ -2,9 +2,9 @@
 import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listVocabMedia, generateVocabMedia, generateVocabGif, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions, vocabUnitOptions, type VocabUnitOption } from '../api/admin'
+import { listVocabMedia, generateVocabMedia, suggestVocabImagePrompt, getVocabImageConfig, setVocabImageStyle, generateVocabGif, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions, vocabUnitOptions, listVocabMediaAssets, selectVocabMediaAsset, deleteVocabMediaAsset, type VocabUnitOption, type VocabMediaAssets } from '../api/admin'
 import type { AdminVocabMediaItem } from '../types'
-import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete, Film } from '@element-plus/icons-vue'
+import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete, Film, Files } from '@element-plus/icons-vue'
 
 const rows = ref<AdminVocabMediaItem[]>([])
 const total = ref(0)
@@ -75,34 +75,80 @@ function audioCount(row: AdminVocabMediaItem) {
   return (row.word_audio_url ? 1 : 0) + (row.en_desc_audio_url ? 1 : 0)
 }
 
-async function onGenerate(row: AdminVocabMediaItem) {
-  generating.value[row.word_id] = true
+// 系统隐性描述:主要要求模板(primary) + 风格(styles) + 固定风格(style),来自「配图配置」页
+const imgCfg = ref<{ primary: string; styles: string[]; style: string } | null>(null)
+async function loadImgCfg(force = false) {
+  if (imgCfg.value && !force) return
   try {
-    const result = await generateVocabMedia(row.word_id)
-    ElMessage.success(`「${row.word}」媒体生成完成（草稿）`)
+    const c = await getVocabImageConfig()
+    imgCfg.value = { primary: c.primary, styles: c.styles, style: c.style || '' }
+  } catch { /* 静默 */ }
+}
+// 风格中文名(默认 5 种);自定义风格无映射则显英文原文
+const STYLE_ZH: Record<string, string> = {
+  'flat vector illustration, bright cheerful colors': '扁平矢量 · 明快配色',
+  'cute kawaii cartoon style, soft pastel colors': '卡哇伊卡通 · 柔和马卡龙',
+  'simple watercolor illustration, gentle warm tones': '水彩手绘 · 暖调',
+  'clean minimalist illustration with light soft shading': '极简 · 轻柔阴影',
+  'friendly rounded 3D render, soft studio lighting': '圆润 3D · 柔光',
+}
+function styleLabel(s: string) { return STYLE_ZH[s] ? `${STYLE_ZH[s]} — ${s}` : s }
+// 选定固定风格:持久化到配图配置,之后所有词默认此风格;空=恢复随机
+async function onPickStyle(s: string) {
+  try {
+    const c = await setVocabImageStyle(s)
+    if (imgCfg.value) imgCfg.value.style = c.style || ''
+    ElMessage.success(s ? `已设默认风格：${STYLE_ZH[s] || s}` : '已恢复随机风格')
+  } catch (e: any) { ElMessage.error(e?.message || '设置风格失败') }
+}
+
+// —— 单个生成:弹框(打开时不调大模型),按需点「用 AI 生成画面描述」才调 ——
+const promptDlg = ref({ visible: false, word_id: '', word: '', prompt: '', suggesting: false, generating: false })
+async function openGenerate(row: AdminVocabMediaItem) {
+  // 打开只准备状态(纯 GET 只读展示构成,不调大模型);画面描述留空
+  promptDlg.value = { visible: true, word_id: row.word_id, word: row.word, prompt: '', suggesting: false, generating: false }
+  loadImgCfg()
+}
+async function suggestPrompt() {
+  const d = promptDlg.value
+  d.suggesting = true
+  try {
+    d.prompt = (await suggestVocabImagePrompt(d.word_id)).prompt || ''
+  } catch (e: any) { ElMessage.warning(e?.message || 'AI 生成失败,可手动填写') }
+  finally { d.suggesting = false }
+}
+async function confirmGenerate() {
+  const d = promptDlg.value
+  d.generating = true
+  try {
+    const result = await generateVocabMedia(d.word_id, { brief: d.prompt.trim() || undefined })
+    ElMessage.success(`「${d.word}」媒体生成完成（草稿）`)
     patchRow(result)
     if (filterStatus.value && filterStatus.value !== result.media_status) {
-      rows.value = rows.value.filter(r => r.word_id !== row.word_id)
+      rows.value = rows.value.filter(r => r.word_id !== d.word_id)
     }
+    d.visible = false
   } catch (e: any) {
     ElMessage.error(e?.message || '生成失败')
   } finally {
-    generating.value[row.word_id] = false
+    d.generating = false
   }
 }
+
+const isVideo = (u: string) => /\.(mp4|webm|mov)(\?|$)/i.test(u || '')
 
 const gifgen = ref<Record<string, boolean>>({})
 async function onGenerateGif(row: AdminVocabMediaItem) {
   gifgen.value[row.word_id] = true
   try {
     const r = await generateVocabGif(row.word_id)
-    if (!r.animated) {
+    if (r.gif_status === 'skip') {
       ElMessage.info(`「${row.word}」无需动图（静态图即可表达）`)
-    } else if (r.gif_url) {
+    } else if (r.gif_status === 'generated') {
       ElMessage.success(`「${row.word}」动图生成完成（草稿）`)
       patchRow(r)
     } else {
-      ElMessage.warning(`「${row.word}」需要动图但生成失败，请重试`)
+      ElMessage.warning(`「${row.word}」需要动图但生成失败（免费档可能限流），请稍后重试`)
     }
   } catch (e: any) {
     ElMessage.error(e?.message || '动图生成失败')
@@ -122,40 +168,114 @@ async function onReview(row: AdminVocabMediaItem, approve: boolean) {
   }
 }
 
+// —— 版本历史(图/音/GIF 保留所有版本,可人工选用/删除)——
+const emptyAssets = (): VocabMediaAssets => ({ image: [], audio: [], gif: [] })
+const verDlg = ref({ visible: false, word_id: '', word: '', loading: false, busy: '', assets: emptyAssets() })
+async function openVersions(row: AdminVocabMediaItem) {
+  verDlg.value = { visible: true, word_id: row.word_id, word: row.word, loading: true, busy: '', assets: emptyAssets() }
+  try { verDlg.value.assets = await listVocabMediaAssets(row.word_id) }
+  catch (e: any) { ElMessage.error(e?.message || '加载版本失败') }
+  finally { verDlg.value.loading = false }
+}
+// 选用/删除后:刷新版本列表 + 用镜像回填该行(图/音/GIF)
+function applyAssetsToRow(a: VocabMediaAssets) {
+  const row = rows.value.find(r => r.word_id === verDlg.value.word_id)
+  if (!row) return
+  row.image_urls = a.image.filter(x => x.selected).map(x => x.url)
+  row.word_audio_url = a.audio.find(x => x.selected)?.url || null
+  row.gif_url = a.gif.find(x => x.selected)?.url || null
+}
+async function pickVersion(id: string) {
+  verDlg.value.busy = id
+  try { verDlg.value.assets = await selectVocabMediaAsset(id); applyAssetsToRow(verDlg.value.assets); ElMessage.success('已选用该版本') }
+  catch (e: any) { ElMessage.error(e?.message || '选用失败') }
+  finally { verDlg.value.busy = '' }
+}
+async function removeVersion(id: string) {
+  try { await ElMessageBox.confirm('删除这个版本?不可恢复。', '删除版本', { type: 'warning' }) } catch { return }
+  verDlg.value.busy = id
+  try { verDlg.value.assets = await deleteVocabMediaAsset(id); applyAssetsToRow(verDlg.value.assets); ElMessage.success('已删除') }
+  catch (e: any) { ElMessage.error(e?.message || '删除失败') }
+  finally { verDlg.value.busy = '' }
+}
+
 // —— 批量操作 ——
 const batch = ref({ running: false, total: 0, done: 0, ok: 0, failed: 0, skipped: 0, label: '' })
-async function batchGenerate() {
+
+// 批量生成:弹框逐词展示 AI 建议提示词(可编辑)+ 两个「跳过已有」开关(图片/音频,默认跳过)
+interface BatchPromptItem { word_id: string; word: string; prompt: string; loading: boolean; hasImage: boolean; hasAudio: boolean }
+const batchDlg = ref({ visible: false, running: false, skipImg: true, skipAudio: true, items: [] as BatchPromptItem[] })
+function openBatchGenerate() {
   if (!selected.value.length) return
-  try {
-    await ElMessageBox.confirm(
-      `为选中的 ${selected.value.length} 个词生成媒体（英文描述 + 单词/描述发音 + 配图，会调用付费接口）。是否继续？`,
-      '批量生成媒体', { type: 'warning' })
-  } catch { return }
-  const items = [...selected.value]
-  batch.value = { running: true, total: items.length, done: 0, ok: 0, failed: 0, skipped: 0, label: '媒体' }
-  for (const row of items) {
-    try { patchRow(await generateVocabMedia(row.word_id)); batch.value.ok++ }
-    catch { batch.value.failed++ }
-    batch.value.done++
+  // 打开不调大模型:各词画面描述留空(留空=生成时 AI 自动);需要可点「取建议」按需生成
+  loadImgCfg()   // 载入全局风格设置(供弹框顶部风格选择器)
+  batchDlg.value = {
+    visible: true, running: false, skipImg: true, skipAudio: true,   // 默认跳过已有
+    items: selected.value.map(r => ({
+      word_id: r.word_id, word: r.word, prompt: '', loading: false,
+      hasImage: !!(r.image_urls?.length),
+      hasAudio: !!(r.word_audio_url || r.en_desc_audio_url),
+    })),
   }
+}
+async function suggestBatchRow(it: BatchPromptItem) {
+  it.loading = true
+  try { it.prompt = (await suggestVocabImagePrompt(it.word_id)).prompt || '' }
+  catch { ElMessage.warning(`「${it.word}」建议生成失败`) }
+  finally { it.loading = false }
+}
+async function suggestBatchAll() {
+  await Promise.all(batchDlg.value.items.filter(it => !it.prompt.trim()).map(suggestBatchRow))
+}
+const GEN_CONCURRENCY = 4    // 批量生成并发数(同时出图/TTS 别太高,避免被限流)
+async function confirmBatchGenerate() {
+  const { skipImg, skipAudio } = batchDlg.value
+  // 按「跳过已有」开关,给每个词算出要不要出图/配音;两者都跳过则整词跳过
+  const jobs = batchDlg.value.items.map(it => ({
+    it,
+    do_images: !(skipImg && it.hasImage),
+    do_audio: !(skipAudio && it.hasAudio),
+  })).map(j => ({ ...j, skip: !j.do_images && !j.do_audio }))
+  const todo = jobs.filter(j => !j.skip)
+  const skipped = jobs.length - todo.length
+  if (!todo.length) { ElMessage.info('按当前「跳过已有」设置,选中的词都无需生成'); return }
+  batch.value = { running: true, total: todo.length, done: 0, ok: 0, failed: 0, skipped, label: '媒体' }
+  batchDlg.value.running = true
+  // 并发工作池:GEN_CONCURRENCY 个 worker 共享游标,各自取下一个词生成
+  let idx = 0
+  async function worker() {
+    while (idx < todo.length) {
+      const { it, do_images, do_audio } = todo[idx++]
+      try {
+        patchRow(await generateVocabMedia(it.word_id, {
+          brief: it.prompt.trim() || undefined, do_images, do_audio,
+        }))
+        batch.value.ok++
+      } catch { batch.value.failed++ }
+      batch.value.done++
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(GEN_CONCURRENCY, todo.length) }, worker))
+  batchDlg.value.running = false
   batch.value.running = false
-  ElMessage.success(`批量生成完成：成功 ${batch.value.ok}${batch.value.failed ? `，失败 ${batch.value.failed}` : ''}`)
+  batchDlg.value.visible = false
+  ElMessage.success(`批量生成完成：成功 ${batch.value.ok}${batch.value.failed ? `，失败 ${batch.value.failed}` : ''}${skipped ? `，跳过 ${skipped}` : ''}`)
   load()
 }
 async function batchGif() {
   if (!selected.value.length) return
   try {
     await ElMessageBox.confirm(
-      `对选中的 ${selected.value.length} 个词生成动图 GIF：仅动作/过程类词会生成（付费，每词约 1 图生 + 2 图生图），名词/静态词自动跳过。是否继续？`,
-      '批量生成 GIF', { type: 'warning' })
+      `对选中的 ${selected.value.length} 个词生成动图（图生视频）：仅动作/过程类词会生成，复用现有配图当首帧调已配置的图生视频服务（异步生成每词约 0.5–4 分钟），名词/静态词自动跳过。是否继续？`,
+      '批量生成动图', { type: 'warning' })
   } catch { return }
   const items = [...selected.value]
   batch.value = { running: true, total: items.length, done: 0, ok: 0, failed: 0, skipped: 0, label: 'GIF' }
   for (const row of items) {
     try {
       const r = await generateVocabGif(row.word_id)
-      if (!r.animated) batch.value.skipped++
-      else if (r.gif_url) { patchRow(r); batch.value.ok++ }
+      if (r.gif_status === 'skip') batch.value.skipped++
+      else if (r.gif_status === 'generated') { patchRow(r); batch.value.ok++ }
       else batch.value.failed++
     } catch { batch.value.failed++ }
     batch.value.done++
@@ -202,10 +322,14 @@ const editDialogVisible = ref(false)
 const editingRow = ref<AdminVocabMediaItem | null>(null)
 const editEnDesc = ref('')
 const editImageUrls = ref('')
+const editMeaning = ref('')
+const editPos = ref('')
 function openEdit(row: AdminVocabMediaItem) {
   editingRow.value = row
   editEnDesc.value = row.en_description ?? ''
   editImageUrls.value = (row.image_urls ?? []).join('\n')
+  editMeaning.value = row.meaning ?? ''
+  editPos.value = row.pos ?? ''
   editDialogVisible.value = true
 }
 async function onSaveEdit() {
@@ -215,6 +339,8 @@ async function onSaveEdit() {
     const result = await updateVocabMedia(editingRow.value.word_id, {
       en_description: editEnDesc.value || undefined,
       image_urls: urls.length ? urls : undefined,
+      meaning: editMeaning.value.trim(),
+      pos: editPos.value.trim(),
     })
     ElMessage.success('保存成功')
     patchRow(result)
@@ -269,7 +395,7 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
 
       <template v-if="selected.length">
         <span class="sel-hint">已选 {{ selected.length }}</span>
-        <el-button type="primary" :icon="Cpu" @click="batchGenerate">批量生成</el-button>
+        <el-button type="primary" :icon="Cpu" @click="openBatchGenerate">批量生成</el-button>
         <el-button type="primary" plain :icon="Film" @click="batchGif">批量生成GIF</el-button>
         <el-button type="success" :icon="CircleCheck" @click="batchReview(true)">批量发布</el-button>
         <el-button type="warning" plain :icon="CircleClose" @click="batchReview(false)">批量驳回</el-button>
@@ -291,6 +417,12 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
               @selection-change="(rs: AdminVocabMediaItem[]) => selected = rs">
       <el-table-column type="selection" width="44" reserve-selection />
       <el-table-column prop="word" label="单词" width="150" fixed="left" />
+      <el-table-column label="词性" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.pos" size="small" type="info" effect="plain">{{ row.pos }}</el-tag>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="statusTag(row.media_status)" size="small">{{ statusLabel(row.media_status) }}</el-tag>
@@ -302,8 +434,10 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
             <el-image v-for="(u, i) in (row.image_urls || []).slice(0, 2)" :key="i" :src="u"
               :preview-src-list="row.image_urls" :initial-index="i" fit="cover"
               class="thumb" preview-teleported hide-on-click-modal />
-            <el-image v-if="row.gif_url" :src="row.gif_url" :preview-src-list="[row.gif_url]" fit="cover"
-              class="thumb thumb-gif" preview-teleported hide-on-click-modal title="GIF 动图" />
+            <video v-if="row.gif_url && isVideo(row.gif_url)" :src="row.gif_url"
+              class="thumb thumb-gif" autoplay loop muted playsinline title="动图(图生视频)" />
+            <el-image v-else-if="row.gif_url" :src="row.gif_url" :preview-src-list="[row.gif_url]" fit="cover"
+              class="thumb thumb-gif" preview-teleported hide-on-click-modal title="动图" />
             <span v-if="!(row.image_urls?.length) && !row.gif_url" class="muted">—</span>
           </div>
         </template>
@@ -333,7 +467,7 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
       </el-table-column>
       <el-table-column label="操作" width="300" fixed="right" align="center">
         <template #default="{ row }">
-          <el-button size="small" :loading="generating[row.word_id]" @click="onGenerate(row)">
+          <el-button size="small" :loading="generating[row.word_id]" @click="openGenerate(row)">
             <el-icon><Cpu /></el-icon>&nbsp;生成
           </el-button>
           <el-tooltip content="生成动图 GIF（动作/过程词）" placement="top">
@@ -348,6 +482,9 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
           <el-tooltip content="驳回" placement="top">
             <el-button size="small" type="danger" plain :icon="CircleClose"
               :disabled="row.media_status === 'retired'" @click="onReview(row, false)" />
+          </el-tooltip>
+          <el-tooltip content="版本(选用/删除历史图·音·GIF)" placement="top">
+            <el-button size="small" :icon="Files" @click="openVersions(row)" />
           </el-tooltip>
           <el-tooltip content="编辑描述/配图" placement="top">
             <el-button size="small" :icon="EditPen" @click="openEdit(row)" />
@@ -366,6 +503,12 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
     <!-- 编辑弹窗 -->
     <AppDialog v-model="editDialogVisible" :title="`编辑：${editingRow?.word}`" width="560px">
       <el-form label-width="100px">
+        <el-form-item label="中文词义">
+          <el-input v-model="editMeaning" placeholder="该词的中文释义（配图/AI 生成都以此为准）" />
+        </el-form-item>
+        <el-form-item label="词性">
+          <el-input v-model="editPos" style="width:160px" placeholder="如 v. / n. / prep." />
+        </el-form-item>
         <el-form-item label="英文描述">
           <el-input v-model="editEnDesc" type="textarea" :rows="4" placeholder="用英文描述单词含义…" />
         </el-form-item>
@@ -383,6 +526,152 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
       <template #footer>
         <el-button @click="editDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="onSaveEdit">保存</el-button>
+      </template>
+    </AppDialog>
+
+    <!-- 媒体版本:图/音/GIF 保留所有版本,可人工选用/删除 -->
+    <AppDialog v-model="verDlg.visible" :title="`媒体版本：${verDlg.word}`" width="720px">
+      <div v-loading="verDlg.loading">
+        <!-- 图片 -->
+        <div class="ver-sec">
+          <div class="ver-h">图片 <span class="muted">共 {{ verDlg.assets.image.length }} 版</span></div>
+          <div v-if="!verDlg.assets.image.length" class="muted">暂无</div>
+          <div v-else class="ver-grid">
+            <div v-for="a in verDlg.assets.image" :key="a.id" class="ver-card" :class="{ sel: a.selected }">
+              <el-image :src="a.url" fit="cover" class="ver-thumb" :preview-src-list="[a.url]" preview-teleported hide-on-click-modal />
+              <div class="ver-meta">{{ a.style || '—' }}</div>
+              <div class="ver-ops">
+                <el-tag v-if="a.selected" type="success" size="small">当前</el-tag>
+                <el-button v-else size="small" :loading="verDlg.busy === a.id" @click="pickVersion(a.id)">选用</el-button>
+                <el-button size="small" text :icon="Delete" :disabled="a.selected" @click="removeVersion(a.id)" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- GIF/动图 -->
+        <div class="ver-sec">
+          <div class="ver-h">动图 <span class="muted">共 {{ verDlg.assets.gif.length }} 版</span></div>
+          <div v-if="!verDlg.assets.gif.length" class="muted">暂无</div>
+          <div v-else class="ver-grid">
+            <div v-for="a in verDlg.assets.gif" :key="a.id" class="ver-card" :class="{ sel: a.selected }">
+              <video v-if="isVideo(a.url)" :src="a.url" class="ver-thumb" autoplay loop muted playsinline />
+              <el-image v-else :src="a.url" fit="cover" class="ver-thumb" :preview-src-list="[a.url]" preview-teleported />
+              <div class="ver-ops">
+                <el-tag v-if="a.selected" type="success" size="small">当前</el-tag>
+                <el-button v-else size="small" :loading="verDlg.busy === a.id" @click="pickVersion(a.id)">选用</el-button>
+                <el-button size="small" text :icon="Delete" :disabled="a.selected" @click="removeVersion(a.id)" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 音频 -->
+        <div class="ver-sec">
+          <div class="ver-h">单词发音 <span class="muted">共 {{ verDlg.assets.audio.length }} 版</span></div>
+          <div v-if="!verDlg.assets.audio.length" class="muted">暂无</div>
+          <div v-for="a in verDlg.assets.audio" :key="a.id" class="ver-row">
+            <el-button size="small" :icon="VideoPlay" @click="play(a.url)">试听</el-button>
+            <span class="muted">{{ a.created_at?.slice(0, 16)?.replace('T', ' ') }}</span>
+            <el-tag v-if="a.selected" type="success" size="small">当前</el-tag>
+            <el-button v-else size="small" :loading="verDlg.busy === a.id" @click="pickVersion(a.id)">选用</el-button>
+            <el-button size="small" text :icon="Delete" :disabled="a.selected" @click="removeVersion(a.id)" />
+          </div>
+        </div>
+      </div>
+      <template #footer><el-button @click="verDlg.visible = false">关闭</el-button></template>
+    </AppDialog>
+
+    <!-- 单个生成:画面描述(可编辑) + 最终提示词构成(只读) -->
+    <AppDialog v-model="promptDlg.visible" :title="`生成配图：${promptDlg.word}`" width="680px">
+      <div class="fld-label">
+        <span>画面描述提示词</span>
+        <el-button size="small" :loading="promptDlg.suggesting" @click="suggestPrompt">
+          <el-icon><Cpu /></el-icon>&nbsp;用 AI 生成
+        </el-button>
+      </div>
+      <el-input v-model="promptDlg.prompt" type="textarea" :rows="5"
+        placeholder="描述这张图要画什么(主体/动作/场景);物体/量词类不必画人。留空=生成时由 AI 自动生成" />
+
+      <div class="fld-label" style="margin-top:14px">
+        <span>图片风格（全局默认）</span>
+        <el-select :model-value="imgCfg?.style || ''" size="small" style="width:360px"
+          placeholder="选一个固定风格" @change="onPickStyle">
+          <el-option label="🎲 随机（每张不同）" value="" />
+          <el-option v-for="s in (imgCfg?.styles || [])" :key="s" :label="styleLabel(s)" :value="s" />
+        </el-select>
+      </div>
+      <div class="muted" style="margin:4px 0 0">选定后所有单词生成都用此风格,再次选择即更改;选「随机」恢复默认。</div>
+
+      <el-collapse style="margin-top:14px">
+        <el-collapse-item name="compose">
+          <template #title>最终提示词构成（只读）—— 送 AI 出图的完整内容</template>
+          <div class="compose">
+            <div class="cp-row"><b>① 画面描述</b><span>{{ promptDlg.prompt || '(留空 → 生成时 AI 自动生成)' }}</span></div>
+            <div class="cp-row"><b>② 主要要求模板</b><span>{{ imgCfg?.primary || '(加载中…)' }}
+              <em>（系统隐性;生成时自动填入词与词义。在「配图生成/配置」页可改）</em></span></div>
+            <div class="cp-row"><b>③ 风格</b><span>{{ imgCfg?.style ? styleLabel(imgCfg.style)
+              : ('随机其一：' + (imgCfg?.styles || []).join('  /  ')) }}
+              <em>（在上方「图片风格」选择,全局默认）</em></span></div>
+            <div class="cp-note">最终 = ① + ② + “Style: ③”。①留空时后端自动产出①。</div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+
+      <template #footer>
+        <el-button @click="promptDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="promptDlg.generating" @click="confirmGenerate">确定生成</el-button>
+      </template>
+    </AppDialog>
+
+    <!-- 批量生成:逐词提示词编辑 -->
+    <AppDialog v-model="batchDlg.visible" :title="`批量生成配图（${batchDlg.items.length} 词）`" width="760px">
+      <div class="fld-label" style="margin-bottom:10px">
+        <span>图片风格（全局默认）</span>
+        <el-select :model-value="imgCfg?.style || ''" size="small" style="width:360px"
+          placeholder="选一个固定风格" @change="onPickStyle">
+          <el-option label="🎲 随机（每张不同）" value="" />
+          <el-option v-for="s in (imgCfg?.styles || [])" :key="s" :label="styleLabel(s)" :value="s" />
+        </el-select>
+      </div>
+      <div class="fld-label" style="margin-bottom:10px">
+        <span>已有资源</span>
+        <el-checkbox v-model="batchDlg.skipImg" :disabled="batchDlg.running">跳过已有图片</el-checkbox>
+        <el-checkbox v-model="batchDlg.skipAudio" :disabled="batchDlg.running">跳过已有音频</el-checkbox>
+        <span class="muted">勾选=已有的不重新生成(省钱);取消勾选=覆盖重生。</span>
+      </div>
+      <div class="fld-label" style="margin-bottom:10px">
+        <span class="muted">打开不自动调大模型。留空的词按 AI 自动生成;可逐条「取建议」或「全部取建议」后编辑。</span>
+        <el-button size="small" :disabled="batchDlg.running" @click="suggestBatchAll">
+          <el-icon><Cpu /></el-icon>&nbsp;全部取建议(空白项)
+        </el-button>
+      </div>
+      <el-table :data="batchDlg.items" border size="small" max-height="52vh">
+        <el-table-column label="单词" width="170">
+          <template #default="{ row }">
+            {{ row.word }}
+            <el-tag v-if="row.hasImage" type="info" size="small" style="margin-left:4px">图</el-tag>
+            <el-tag v-if="row.hasAudio" type="info" size="small" style="margin-left:2px">音</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="画面描述提示词(可编辑,留空=AI 自动)">
+          <template #default="{ row }">
+            <el-input v-model="row.prompt" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }"
+              :placeholder="row.loading ? 'AI 生成中…' : '留空=AI 自动生成'" :disabled="row.loading" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="92" align="center">
+          <template #default="{ row }">
+            <el-button size="small" :loading="row.loading" :disabled="batchDlg.running"
+              @click="suggestBatchRow(row)">取建议</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="batchDlg.running" style="margin-top:10px">
+        <el-progress :percentage="batch.total ? Math.round(batch.done / batch.total * 100) : 0" />
+        <span class="muted">进度 {{ batch.done }}/{{ batch.total }}（成功 {{ batch.ok }}，失败 {{ batch.failed }}）</span>
+      </div>
+      <template #footer>
+        <el-button :disabled="batchDlg.running" @click="batchDlg.visible = false">取消</el-button>
+        <el-button type="primary" :loading="batchDlg.running" @click="confirmBatchGenerate">确定批量生成</el-button>
       </template>
     </AppDialog>
   </div>
@@ -403,4 +692,20 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
 .muted { color: #c0c4cc; font-size: 13px; }
 .desc { color: #606266; font-size: 13px; }
 .pager { margin-top: 16px; display: flex; justify-content: flex-end; }
+.fld-label { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-weight: 600; }
+.fld-label .muted { font-weight: 400; }
+.compose { font-size: 13px; color: #606266; line-height: 1.6; }
+.compose .cp-row { display: flex; gap: 10px; margin-bottom: 8px; }
+.compose .cp-row b { flex: 0 0 108px; color: #303133; }
+.compose .cp-row em { color: #909399; font-style: normal; }
+.compose .cp-note { color: #909399; border-top: 1px dashed var(--el-border-color-lighter); padding-top: 8px; }
+.ver-sec { margin-bottom: 18px; }
+.ver-h { font-weight: 600; color: #303133; margin-bottom: 8px; }
+.ver-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.ver-card { width: 128px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 6px; }
+.ver-card.sel { border-color: var(--el-color-success); box-shadow: 0 0 0 1px var(--el-color-success-light-5); }
+.ver-thumb { width: 116px; height: 88px; border-radius: 6px; object-fit: cover; display: block; background: #f5f7fa; }
+.ver-meta { font-size: 12px; color: #909399; margin: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ver-ops { display: flex; align-items: center; gap: 6px; }
+.ver-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--el-border-color-lighter); }
 </style>

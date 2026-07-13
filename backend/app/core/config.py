@@ -73,6 +73,17 @@ class Settings(BaseSettings):
     tencent_aiart_secret_key: str = "placeholder-aiart-key"
     tencent_aiart_region: str = "ap-guangzhou"
     tencent_aiart_resolution: str = "1024:1024"
+    # 图生视频 provider:'zhipu'=智谱 CogVideoX 云 API;'selfhost'=自托管 GPU 上的 /i2v 服务(LTX-Video 等)
+    video_provider: str = "zhipu"
+    # 智谱 CogVideoX 图生视频(词力通「动作/过程词」动图；免费档 cogvideox-flash，后台批量刷、不在乎实时)
+    # dev 以 'zhipu-placeholder' 开头触发 mock(回退静态图，不真调)。异步：提交→轮询→取 mp4。
+    zhipu_video_api_key: str = "zhipu-placeholder-for-dev"
+    zhipu_video_model: str = "cogvideox-flash"
+    zhipu_video_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    # 自托管图生视频服务(video_provider=selfhost 时启用)：租的 GPU 机上跑 deploy/i2v_server.py，
+    # POST {image_url,prompt} 返回 mp4 字节。url 为空则该 provider 视为 dev-mock(回退静态图)。
+    selfhost_i2v_url: str = ""            # 如 https://xxx.featurize.cn:6006/i2v 或 http://localhost:6006/i2v(SSH 隧道)
+    selfhost_i2v_token: str = ""          # 与 GPU 服务的 I2V_TOKEN 一致,公网暴露必设
     tts_provider: str = "mock"  # 'mock'=占位；'volcano'=火山引擎语音合成
     tts_api_key: str = "tts-placeholder-for-dev"
     # 火山引擎语音合成（豆包 TTS，语音技术控制台，独立于 Ark 视觉）
