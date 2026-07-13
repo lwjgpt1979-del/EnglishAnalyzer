@@ -20,6 +20,27 @@ logger = logging.getLogger(__name__)
 
 _cos_client = None
 
+# 腾讯混元生图/图生图硬上限:同时只能 1 个任务(JobNumExceed)。全局信号量串行 + 限流重试,
+# 让批量并发时"出图"这步排队(LLM/TTS 仍并发),避免撞上限失败。
+_AIART_SEM = asyncio.Semaphore(1)
+
+
+async def _aiart_call(fn, *args, label: str = "", retries: int = 6, backoff: float = 3.0):
+    """在全局信号量内串行调用腾讯 AIArt(fn 同步,to_thread);遇任务上限/限流自动等待重试。"""
+    async with _AIART_SEM:
+        for attempt in range(retries + 1):
+            try:
+                return await asyncio.to_thread(fn, *args)
+            except Exception as e:  # noqa: BLE001
+                s = str(e)
+                if ("RequestLimitExceeded" in s or "JobNumExceed" in s
+                        or "TaskNumExceed" in s) and attempt < retries:
+                    logger.warning("[腾讯生图] %s 任务上限,%.0fs 后重试(%d/%d)",
+                                   label, backoff, attempt + 1, retries)
+                    await asyncio.sleep(backoff)
+                    continue
+                raise
+
 
 def is_image_dev_mode() -> bool:
     return (settings.image_provider != "tencent"
@@ -89,12 +110,71 @@ async def t2i_to_cos(prompt: str, *, label: str = "") -> str | None:
         h = hashlib.md5((prompt or "").encode()).hexdigest()[:4]
         return f"https://placehold.co/600x400?text={safe}-{h}"
     try:
-        tmp = await asyncio.to_thread(_tencent_t2i, prompt)
+        tmp = await _aiart_call(_tencent_t2i, prompt, label=(label or prompt[:20]))
         if not tmp:
             return None
         return await _persist_to_cos(tmp)
     except Exception as e:  # noqa: BLE001
         logger.error("[混元生图] %s 失败: %s", label or prompt[:20], e)
+        return None
+
+
+async def persist_image_bytes_to_cos(body: bytes, *, ext: str = "png") -> str | None:
+    """上传的图片字节 → COS(public-read)→ 直链;COS 未配返回 None(无处托管)。"""
+    if _cos_dev():
+        logger.error("[图生图] COS 未配置,上传图无处托管")
+        return None
+    key = f"vocab/img/{uuid.uuid4().hex}.{ext}"
+
+    def _put() -> None:
+        _get_cos_client().put_object(
+            Bucket=settings.cos_bucket, Key=key, Body=body,
+            ContentType=f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}", ACL="public-read")
+
+    await asyncio.to_thread(_put)
+    return f"{settings.cos_base_url}/{key}"
+
+
+async def fetch_image_to_cos(url: str) -> str | None:
+    """下载外部图片 URL → 转存 COS(持久化,避免外链过期/CORS)。COS 未配则原样返回。"""
+    try:
+        return await _persist_to_cos(url)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[图生图] 下载外链转存失败 %s: %s", url[:40], e)
+        return None
+
+
+def _tencent_i2i(prompt: str, input_url: str, strength: float) -> str | None:
+    """腾讯 Img2Img(图像风格化/图生图):基于原图 + 提示词生成变体。strength=重绘幅度。"""
+    from tencentcloud.common import credential
+    from tencentcloud.aiart.v20221229 import aiart_client, models
+    cred = credential.Credential(
+        settings.tencent_aiart_secret_id, settings.tencent_aiart_secret_key)
+    client = aiart_client.AiartClient(cred, settings.tencent_aiart_region)
+    req = models.ImageToImageRequest()
+    req.InputUrl = input_url
+    if prompt:
+        req.Prompt = prompt[:1024]
+    req.Strength = strength
+    req.RspImgType = "url"
+    req.LogoAdd = 0
+    resp = client.ImageToImage(req)
+    return getattr(resp, "ResultImage", None) or None
+
+
+async def i2i_to_cos(prompt: str, input_url: str, *, label: str = "",
+                     strength: float = 0.6) -> str | None:
+    """原图 + 提示词 → 腾讯图生图 → 转存 COS 直链。dev-mock 回退原图;失败返回 None。"""
+    if is_image_dev_mode():
+        return input_url
+    try:
+        tmp = await _aiart_call(_tencent_i2i, prompt, input_url, strength,
+                                label=(label or prompt[:20]))
+        if not tmp:
+            return None
+        return await _persist_to_cos(tmp)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[图生图] %s 失败: %s", label or prompt[:20], e)
         return None
 
 

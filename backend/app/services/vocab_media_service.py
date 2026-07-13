@@ -5,6 +5,7 @@ generate_for_word：英文描述（LLM，dev-mock 出固定文本）+ 多图 + �
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import random
 import time
@@ -23,16 +24,68 @@ from app.services import (
     llm_provider, tts_service, vocab_media_asset_service, vocab_media_provider)
 
 
-async def _tts_cos(text: str) -> str:
-    """火山 TTS → COS 缓存直链；失败/COS-dev 返回空串（前端再用 TTS 兜底）。"""
+async def _tts_cos(text: str, voice: str | None = None) -> str:
+    """火山 TTS → COS 缓存直链；voice 指定固定音色(空=按词哈希选男/女);失败/COS-dev 返回空串。"""
     text = (text or "").strip()
     if not text:
         return ""
     try:
-        return (await tts_service.get_or_create_audio_url(text)) or ""
+        return (await tts_service.get_or_create_audio_url(text, voice=voice or None)) or ""
     except Exception as e:  # noqa: BLE001
         logger.warning("[词力通TTS] %s 失败: %s", text[:20], e)
         return ""
+
+
+# 音色中文名(默认池;自定义音色无映射则显 id)。gender 供前端分组。
+_VOICE_ZH: dict[str, dict] = {
+    "en_male_tim_uranus_bigtts": {"label": "Tim·英式男声", "gender": "英男"},
+    "en_female_dacey_uranus_bigtts": {"label": "Dacey·英式女声", "gender": "英女"},
+    "en_female_stokie_uranus_bigtts": {"label": "Stokie·英式女声", "gender": "英女"},
+    "zh_male_wennuanahu_uranus_bigtts": {"label": "温暖阿虎", "gender": "男"},
+    "zh_male_jieshuonansheng_mars_bigtts": {"label": "解说男声", "gender": "男"},
+    "zh_female_shuangkuaisisi_moon_bigtts": {"label": "爽快思思", "gender": "女"},
+    "zh_female_wanwanxiaohe_moon_bigtts": {"label": "湾湾小何", "gender": "女"},
+}
+
+
+# 词力通音色下拉隐藏的音色(不删全局 TTS 池,只是不在此处供选)
+_VOICE_EXCLUDE = {"en_female_dacey_uranus_bigtts"}
+
+
+def voice_label(vid: str) -> str:
+    m = _VOICE_ZH.get(vid)
+    return f"{m['label']}（{m['gender']}）" if m else vid
+
+
+async def _curated_voice_ids(db: AsyncSession) -> list[str]:
+    """词力通下拉里实际可选的音色 id(男/女池去重、排除隐藏项)。"""
+    pools = await tts_service.get_voices(db)
+    return [v for v in dict.fromkeys((pools.get("male") or []) + (pools.get("female") or []))
+            if v not in _VOICE_EXCLUDE]
+
+
+def _auto_voice(word: str, curated: list[str]) -> str | None:
+    """自动音色:在下拉那几个音色里按词稳定随机(同词固定→音频可缓存;不同词分散)。"""
+    if not curated:
+        return None
+    idx = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16) % len(curated)
+    return curated[idx]
+
+
+async def voice_options(db: AsyncSession) -> dict:
+    """可选音色列表(男/女池,排除隐藏项) + 当前选用。供后台下拉(中文名 + id)。"""
+    ids = await _curated_voice_ids(db)
+    cfg = await get_image_config(db)
+    return {"voices": [{"id": v, "label": voice_label(v),
+                        "gender": _VOICE_ZH.get(v, {}).get("gender", "")} for v in ids],
+            "selected": cfg.get("voice") or ""}
+
+
+async def set_word_voice(db: AsyncSession, *, voice: str, updated_by) -> dict:
+    """只更新「固定音色」(保留其余配置)。voice 为空=恢复按词哈希选男/女。返回完整配置。"""
+    cfg = dict(await get_image_config(db))
+    cfg["voice"] = str(voice or "").strip()
+    return await set_image_config(db, config=cfg, updated_by=updated_by)
 
 # ── 配图提示词配置中心（system_configs，可后台配）─────────────────────────────
 _IMG_KEY = "vocab_image_gen"
@@ -74,9 +127,9 @@ _DEF_STYLES = [
 
 
 def _default_img_config() -> dict:
-    # style: 固定风格(为空=每张从 styles 随机);后台选一个即成所有词的默认风格
+    # style: 固定风格(为空=每张从 styles 随机);voice: 固定音色(为空=按词哈希选男/女)
     return {"batch_size": 20, "images_per_word": 1, "use_ai_prompt": True,
-            "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES), "style": ""}
+            "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES), "style": "", "voice": ""}
 
 
 def _merge_img_config(saved: dict | None) -> dict:
@@ -102,6 +155,8 @@ def _merge_img_config(saved: dict | None) -> dict:
                 cfg["styles"] = s
         if "style" in saved:
             cfg["style"] = str(saved.get("style") or "").strip()
+        if "voice" in saved:
+            cfg["voice"] = str(saved.get("voice") or "").strip()
     return cfg
 
 
@@ -309,6 +364,10 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
     cfg = cfg or await get_image_config(db)
     meaning = _primary_meaning(w)
     pos = _pos_of(w)
+    # 音色:配了固定音色→全用它;否则在页面下拉那几个音色里按词稳定随机(不再用全池男/女)
+    voice = (cfg.get("voice") or "").strip() or None
+    if not voice and do_audio:
+        voice = _auto_voice(w.word, await _curated_voice_ids(db))
     urls: list[str] = []
     if do_images:
         brief = ""
@@ -332,16 +391,16 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
         if ep["example"]["en"]:
             ex = dict(ep["example"])
             if do_audio:
-                ex["audio"] = await _tts_cos(ex["en"])
+                ex["audio"] = await _tts_cos(ex["en"], voice)
             w.examples = [ex]
         if ep["phrase"]["en"]:
             ph = dict(ep["phrase"])
             if do_audio:
-                ph["audio"] = await _tts_cos(ph["en"])
+                ph["audio"] = await _tts_cos(ph["en"], voice)
             w.phrases = [ph]
     # 单词发音：do_audio 时(重)生成，记为新音频版本(不覆盖历史,自动选用→同步 word_audio_url)
     if do_audio:
-        wa = await _tts_cos(w.word)
+        wa = await _tts_cos(w.word, voice)
         if wa:
             await vocab_media_asset_service.record_assets(
                 db, word_id=w.id, kind="audio", urls=[wa])
@@ -366,6 +425,43 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
                                  do_images=do_images, do_audio=do_audio)
     if do_images and imgs:
         w.image_urls = imgs
+    w.media_status = "draft"
+    await db.flush()
+    return w
+
+
+async def generate_i2i_for_word(db: AsyncSession, *, word_id: uuid.UUID,
+                                source_url: str | None = None, source_b64: str | None = None,
+                                prompt: str = "", strength: float = 0.6) -> VocabularyWord:
+    """图生图:上传图/图片地址当原图 → 腾讯图生图出变体。原图与结果都记为该词的图片版本
+    (原图入历史不选用,结果自动选用为当前)。"""
+    w = (await db.execute(
+        select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if w is None:
+        raise AppError(code=404, message="单词不存在")
+    # 解析原图 → COS 持久链
+    if source_b64:
+        import base64 as _b64
+        raw = _b64.b64decode(source_b64.split(",")[-1])   # 去掉可能的 data:...;base64, 前缀
+        src = await vocab_media_provider.persist_image_bytes_to_cos(raw)
+    elif source_url and source_url.strip():
+        src = await vocab_media_provider.fetch_image_to_cos(source_url.strip())
+    else:
+        raise AppError(code=400, message="请提供原图(上传或图片地址)")
+    if not src:
+        raise AppError(code=500, message="原图转存失败(检查 COS 配置)")
+    # 原图记为版本(入历史,不选用)并「先落库」——即便后续图生图失败,原图也已保留
+    await vocab_media_asset_service.record_assets(
+        db, word_id=w.id, kind="image", urls=[src], style="原图", prompt="图生图输入原图",
+        select_new=False)
+    await db.commit()
+    # 图生图 → 结果
+    result = await vocab_media_provider.i2i_to_cos(prompt or "", src, label=w.word, strength=strength)
+    if not result:
+        raise AppError(code=500, message="图生图失败,请重试(原图已存为版本,可在「版本」里查看/选用)")
+    # 结果记为版本并选用(→ 同步 image_urls)
+    await vocab_media_asset_service.record_assets(
+        db, word_id=w.id, kind="image", urls=[result], style="图生图", prompt=(prompt or None))
     w.media_status = "draft"
     await db.flush()
     return w

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import AppDialog from '../components/AppDialog.vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listVocabMedia, generateVocabMedia, suggestVocabImagePrompt, getVocabImageConfig, setVocabImageStyle, generateVocabGif, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions, vocabUnitOptions, listVocabMediaAssets, selectVocabMediaAsset, deleteVocabMediaAsset, type VocabUnitOption, type VocabMediaAssets } from '../api/admin'
+import { listVocabMedia, generateVocabMedia, generateVocabI2I, suggestVocabImagePrompt, getVocabImageConfig, setVocabImageStyle, getVocabVoiceOptions, setVocabWordVoice, generateVocabGif, reviewVocabMedia, updateVocabMedia, deleteVocabWords, vocabTextbookOptions, vocabUnitOptions, listVocabMediaAssets, selectVocabMediaAsset, deleteVocabMediaAsset, type VocabUnitOption, type VocabMediaAssets, type VocabVoiceOption } from '../api/admin'
 import type { AdminVocabMediaItem } from '../types'
-import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete, Film, Files } from '@element-plus/icons-vue'
+import { Refresh, Cpu, CircleCheck, CircleClose, EditPen, VideoPlay, Search, Delete, Film, Files, Upload } from '@element-plus/icons-vue'
 
 const rows = ref<AdminVocabMediaItem[]>([])
 const total = ref(0)
@@ -102,12 +102,66 @@ async function onPickStyle(s: string) {
   } catch (e: any) { ElMessage.error(e?.message || '设置风格失败') }
 }
 
+// 音色(全局默认,原理同风格):可选列表 + 当前选用
+const voiceOpts = ref<VocabVoiceOption[]>([])
+const voiceSel = ref('')
+let voiceLoaded = false
+async function loadVoices(force = false) {
+  if (voiceLoaded && !force) return
+  try {
+    const r = await getVocabVoiceOptions()
+    voiceOpts.value = r.voices; voiceSel.value = r.selected || ''; voiceLoaded = true
+  } catch { /* 静默 */ }
+}
+async function onPickVoice(v: string) {
+  try {
+    await setVocabWordVoice(v); voiceSel.value = v
+    const lbl = voiceOpts.value.find(o => o.id === v)?.label
+    ElMessage.success(v ? `已设默认音色：${lbl || v}` : '已恢复按词自动选男/女')
+  } catch (e: any) { ElMessage.error(e?.message || '设置音色失败') }
+}
+
 // —— 单个生成:弹框(打开时不调大模型),按需点「用 AI 生成画面描述」才调 ——
 const promptDlg = ref({ visible: false, word_id: '', word: '', prompt: '', suggesting: false, generating: false })
+// 图生图:原图(上传 base64 或图片地址)+ 重绘幅度
+const i2i = ref({ url: '', b64: '', preview: '', strength: 0.6, busy: false })
 async function openGenerate(row: AdminVocabMediaItem) {
   // 打开只准备状态(纯 GET 只读展示构成,不调大模型);画面描述留空
   promptDlg.value = { visible: true, word_id: row.word_id, word: row.word, prompt: '', suggesting: false, generating: false }
-  loadImgCfg()
+  i2i.value = { url: '', b64: '', preview: '', strength: 0.6, busy: false }
+  loadImgCfg(); loadVoices()
+}
+// 上传原图 → 读为 base64 预览(不立即上传后端)
+function onI2IFile(uploadFile: any) {
+  const file: File = uploadFile.raw || uploadFile
+  if (!file) return
+  if (file.size > 8 * 1024 * 1024) { ElMessage.warning('图片过大(>8MB),请压缩后再传'); return }
+  const reader = new FileReader()
+  reader.onload = () => { i2i.value.b64 = String(reader.result || ''); i2i.value.preview = i2i.value.b64; i2i.value.url = '' }
+  reader.readAsDataURL(file)
+}
+async function confirmI2I() {
+  const d = promptDlg.value
+  if (!i2i.value.b64 && !i2i.value.url.trim()) { ElMessage.warning('请上传原图或填图片地址'); return }
+  i2i.value.busy = true
+  try {
+    const result = await generateVocabI2I(d.word_id, {
+      source_b64: i2i.value.b64 || undefined,
+      source_url: i2i.value.b64 ? undefined : i2i.value.url.trim(),
+      prompt: d.prompt.trim() || undefined,
+      strength: i2i.value.strength,
+    })
+    ElMessage.success(`「${d.word}」图生图完成（原图+结果已记入版本）`)
+    patchRow(result)
+    if (filterStatus.value && filterStatus.value !== result.media_status) {
+      rows.value = rows.value.filter(r => r.word_id !== d.word_id)
+    }
+    d.visible = false
+  } catch (e: any) {
+    ElMessage.error(e?.message || '图生图失败')
+  } finally {
+    i2i.value.busy = false
+  }
 }
 async function suggestPrompt() {
   const d = promptDlg.value
@@ -205,10 +259,21 @@ const batch = ref({ running: false, total: 0, done: 0, ok: 0, failed: 0, skipped
 // 批量生成:弹框逐词展示 AI 建议提示词(可编辑)+ 两个「跳过已有」开关(图片/音频,默认跳过)
 interface BatchPromptItem { word_id: string; word: string; prompt: string; loading: boolean; hasImage: boolean; hasAudio: boolean }
 const batchDlg = ref({ visible: false, running: false, skipImg: true, skipAudio: true, items: [] as BatchPromptItem[] })
+// 按当前「跳过已有」勾选,实时算将生成/跳过多少
+const batchPlan = computed(() => {
+  const { skipImg, skipAudio, items } = batchDlg.value
+  let skip = 0
+  for (const it of items) {
+    const doImg = !(skipImg && it.hasImage)
+    const doAud = !(skipAudio && it.hasAudio)
+    if (!doImg && !doAud) skip++
+  }
+  return { total: items.length, skip, todo: items.length - skip }
+})
 function openBatchGenerate() {
   if (!selected.value.length) return
   // 打开不调大模型:各词画面描述留空(留空=生成时 AI 自动);需要可点「取建议」按需生成
-  loadImgCfg()   // 载入全局风格设置(供弹框顶部风格选择器)
+  loadImgCfg(); loadVoices()   // 载入全局风格+音色设置(供弹框顶部选择器)
   batchDlg.value = {
     visible: true, running: false, skipImg: true, skipAudio: true,   // 默认跳过已有
     items: selected.value.map(r => ({
@@ -226,6 +291,10 @@ async function suggestBatchRow(it: BatchPromptItem) {
 }
 async function suggestBatchAll() {
   await Promise.all(batchDlg.value.items.filter(it => !it.prompt.trim()).map(suggestBatchRow))
+}
+function removeBatchRow(row: BatchPromptItem) {
+  batchDlg.value.items = batchDlg.value.items.filter(it => it.word_id !== row.word_id)
+  if (!batchDlg.value.items.length) { batchDlg.value.visible = false; ElMessage.info('已清空,取消批量') }
 }
 const GEN_CONCURRENCY = 4    // 批量生成并发数(同时出图/TTS 别太高,避免被限流)
 async function confirmBatchGenerate() {
@@ -599,7 +668,15 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
           <el-option v-for="s in (imgCfg?.styles || [])" :key="s" :label="styleLabel(s)" :value="s" />
         </el-select>
       </div>
-      <div class="muted" style="margin:4px 0 0">选定后所有单词生成都用此风格,再次选择即更改;选「随机」恢复默认。</div>
+      <div class="fld-label" style="margin-top:8px">
+        <span>单词音色（全局默认）</span>
+        <el-select :model-value="voiceSel" size="small" style="width:360px"
+          placeholder="选一个固定音色" @change="onPickVoice">
+          <el-option label="🎧 自动（按词选男/女）" value="" />
+          <el-option v-for="v in voiceOpts" :key="v.id" :label="v.label" :value="v.id" />
+        </el-select>
+      </div>
+      <div class="muted" style="margin:4px 0 0">风格/音色选定后所有单词生成都用它,再次选择即更改;选「随机/自动」恢复默认。</div>
 
       <el-collapse style="margin-top:14px">
         <el-collapse-item name="compose">
@@ -616,9 +693,31 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
         </el-collapse-item>
       </el-collapse>
 
+      <!-- 图生图:基于原图(上传/地址)生成变体 -->
+      <div class="i2i-box">
+        <div class="fld-label"><b>图生图</b><span class="muted">基于原图生成变体;上方「画面描述」当变体提示词(可空)。原图与结果都记入版本。</span></div>
+        <div class="i2i-src">
+          <el-upload :show-file-list="false" :auto-upload="false" accept="image/*" :on-change="onI2IFile">
+            <el-button size="small" :icon="Upload">上传原图</el-button>
+          </el-upload>
+          <span class="muted">或</span>
+          <el-input v-model="i2i.url" size="small" placeholder="图片地址 https://…" style="width:320px"
+            @input="i2i.b64 = ''; i2i.preview = i2i.url" clearable />
+          <el-image v-if="i2i.preview || i2i.url" :src="i2i.preview || i2i.url" fit="cover" class="i2i-thumb"
+            :preview-src-list="[i2i.preview || i2i.url]" preview-teleported />
+        </div>
+        <div class="i2i-src">
+          <span class="muted">重绘幅度</span>
+          <el-slider v-model="i2i.strength" :min="0.2" :max="0.9" :step="0.05" style="width:240px" />
+          <span class="muted">{{ i2i.strength.toFixed(2) }}(越大越偏离原图)</span>
+          <el-button type="warning" plain size="small" :loading="i2i.busy"
+            :disabled="!i2i.b64 && !i2i.url.trim()" @click="confirmI2I">确定图生图</el-button>
+        </div>
+      </div>
+
       <template #footer>
         <el-button @click="promptDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="promptDlg.generating" @click="confirmGenerate">确定生成</el-button>
+        <el-button type="primary" :loading="promptDlg.generating" @click="confirmGenerate">确定生成(文生图)</el-button>
       </template>
     </AppDialog>
 
@@ -626,10 +725,16 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
     <AppDialog v-model="batchDlg.visible" :title="`批量生成配图（${batchDlg.items.length} 词）`" width="760px">
       <div class="fld-label" style="margin-bottom:10px">
         <span>图片风格（全局默认）</span>
-        <el-select :model-value="imgCfg?.style || ''" size="small" style="width:360px"
+        <el-select :model-value="imgCfg?.style || ''" size="small" style="width:300px"
           placeholder="选一个固定风格" @change="onPickStyle">
           <el-option label="🎲 随机（每张不同）" value="" />
           <el-option v-for="s in (imgCfg?.styles || [])" :key="s" :label="styleLabel(s)" :value="s" />
+        </el-select>
+        <span>音色</span>
+        <el-select :model-value="voiceSel" size="small" style="width:220px"
+          placeholder="选一个固定音色" @change="onPickVoice">
+          <el-option label="🎧 自动" value="" />
+          <el-option v-for="v in voiceOpts" :key="v.id" :label="v.label" :value="v.id" />
         </el-select>
       </div>
       <div class="fld-label" style="margin-bottom:10px">
@@ -637,6 +742,11 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
         <el-checkbox v-model="batchDlg.skipImg" :disabled="batchDlg.running">跳过已有图片</el-checkbox>
         <el-checkbox v-model="batchDlg.skipAudio" :disabled="batchDlg.running">跳过已有音频</el-checkbox>
         <span class="muted">勾选=已有的不重新生成(省钱);取消勾选=覆盖重生。</span>
+      </div>
+      <div class="fld-label" style="margin-bottom:10px">
+        <el-tag type="success" size="small">将生成 {{ batchPlan.todo }} 词</el-tag>
+        <el-tag v-if="batchPlan.skip" type="info" size="small">跳过 {{ batchPlan.skip }} 词(已有资源)</el-tag>
+        <span class="muted">共 {{ batchPlan.total }} 词。想生成被跳过的,取消上面对应勾选。</span>
       </div>
       <div class="fld-label" style="margin-bottom:10px">
         <span class="muted">打开不自动调大模型。留空的词按 AI 自动生成;可逐条「取建议」或「全部取建议」后编辑。</span>
@@ -658,10 +768,14 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
               :placeholder="row.loading ? 'AI 生成中…' : '留空=AI 自动生成'" :disabled="row.loading" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="92" align="center">
+        <el-table-column label="操作" width="140" align="center">
           <template #default="{ row }">
             <el-button size="small" :loading="row.loading" :disabled="batchDlg.running"
               @click="suggestBatchRow(row)">取建议</el-button>
+            <el-tooltip content="从本次批量移除该词" placement="top">
+              <el-button size="small" text :icon="Delete" :disabled="batchDlg.running"
+                @click="removeBatchRow(row)" />
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -708,4 +822,7 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
 .ver-meta { font-size: 12px; color: #909399; margin: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ver-ops { display: flex; align-items: center; gap: 6px; }
 .ver-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--el-border-color-lighter); }
+.i2i-box { margin-top: 14px; padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-lighter); }
+.i2i-src { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.i2i-thumb { width: 56px; height: 56px; border-radius: 6px; }
 </style>

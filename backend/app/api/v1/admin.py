@@ -863,6 +863,23 @@ class VocabGenerateMediaBody(BaseModel):
     do_audio: bool = True       # 是否(重)生成音频;批量跳过已有音频时传 False
 
 
+class VocabI2IBody(BaseModel):
+    source_url: str | None = None   # 原图地址(外链,后端会转存 COS)
+    source_b64: str | None = None   # 或上传图的 base64(可带 data: 前缀)
+    prompt: str | None = None       # 变体提示词(可空)
+    strength: float = 0.6           # 重绘幅度 0-1(越大越偏离原图)
+
+
+@router.post("/vocab/{word_id}/generate-i2i", response_model=BaseResponse[AdminVocabMediaItem])
+async def generate_vocab_i2i(word_id: uuid.UUID, body: VocabI2IBody, db: DbDep, admin: AdminDep):
+    """图生图:上传图/图片地址当原图 → 生成变体。原图与结果都记为该词图片版本(结果选用)。"""
+    w = await vocab_media_service.generate_i2i_for_word(
+        db, word_id=word_id, source_url=body.source_url, source_b64=body.source_b64,
+        prompt=(body.prompt or ""), strength=body.strength)
+    await db.commit()
+    return make_ok(_to_vocab_media_item(w))
+
+
 @router.post("/vocab/{word_id}/generate-media", response_model=BaseResponse[AdminVocabMediaItem])
 async def generate_vocab_media(word_id: uuid.UUID, db: DbDep, admin: AdminDep,
                                body: VocabGenerateMediaBody | None = None):
@@ -895,10 +912,29 @@ class VocabImageConfig(BaseModel):
     primary: str
     styles: list[str]
     style: str = ""     # 固定风格(空=每张随机);选定后所有词默认此风格
+    voice: str = ""     # 固定音色(空=按词哈希选男/女)
 
 
 class VocabImageStyleBody(BaseModel):
     style: str = ""     # 从 styles 里选定一个;空=恢复随机
+
+
+class VocabWordVoiceBody(BaseModel):
+    voice: str = ""     # 选定固定音色;空=按词哈希选男/女
+
+
+@router.get("/vocab/voice-options", response_model=BaseResponse[dict])
+async def get_vocab_voice_options(db: DbDep, admin: AdminDep):
+    """可选音色(男/女池,中文名+id) + 当前选用。供后台下拉。"""
+    return make_ok(await vocab_media_service.voice_options(db))
+
+
+@router.put("/vocab/voice", response_model=BaseResponse[VocabImageConfig])
+async def set_vocab_word_voice(body: VocabWordVoiceBody, db: DbDep, admin: AdminDep):
+    """只设「固定音色」(其余配置保留)。选定后所有词发音默认此音色;传空恢复按词哈希。"""
+    saved = await vocab_media_service.set_word_voice(db, voice=body.voice, updated_by=admin.id)
+    await db.commit()
+    return make_ok(VocabImageConfig(**saved))
 
 
 @router.get("/vocab-image-config", response_model=BaseResponse[VocabImageConfig])

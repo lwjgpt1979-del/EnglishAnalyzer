@@ -162,6 +162,14 @@ export interface VocabImageConfig {
 export function setVocabImageStyle(style: string) {
   return unwrap<VocabImageConfig>(request.put('/admin/vocab-image/style', { style }))
 }
+// 音色(全局默认,原理同风格):可选音色列表 + 当前选用;设置固定音色(空=按词哈希选男/女)
+export interface VocabVoiceOption { id: string; label: string; gender: string }
+export function getVocabVoiceOptions() {
+  return unwrap<{ voices: VocabVoiceOption[]; selected: string }>(request.get('/admin/vocab/voice-options'))
+}
+export function setVocabWordVoice(voice: string) {
+  return unwrap<VocabImageConfig>(request.put('/admin/vocab/voice', { voice }))
+}
 export interface VocabImageBatchStatus {
   running: boolean; total: number; done: number; ok: number; failed: number
 }
@@ -315,6 +323,14 @@ export function selectVocabMediaAsset(assetId: string) {
 }
 export function deleteVocabMediaAsset(assetId: string) {
   return unwrap<VocabMediaAssets>(request.delete(`/admin/vocab/media-assets/${assetId}`))
+}
+// 图生图:上传图(base64)或图片地址(source_url)当原图 → 生成变体;原图与结果都记为该词版本
+export function generateVocabI2I(
+  wordId: string,
+  body: { source_url?: string; source_b64?: string; prompt?: string; strength?: number },
+): Promise<AdminVocabMediaItem> {
+  return unwrap<AdminVocabMediaItem>(
+    request.post(`/admin/vocab/${wordId}/generate-i2i`, body, { timeout: 120000 }))
 }
 // 按需(用户显式点击)生成一条 AI 画面描述提示词(不出图);system=可传未保存的编辑版生成指令做预览
 export function suggestVocabImagePrompt(wordId: string, system?: string): Promise<{ prompt: string }> {
