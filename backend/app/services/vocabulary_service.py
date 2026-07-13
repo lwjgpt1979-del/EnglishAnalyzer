@@ -50,7 +50,8 @@ async def _ordered_new_words(
 ) -> list[VocabularyWord]:
     """按优先级返回该生未学过的新词（跨来源去重）。
 
-    优先级：P1 当前学期教材词 > P2 其他来源候选词(试卷/错题) > P3 过往购买学期教材词。
+    优先级：P0 个人体系命中 > pin 优先学 > P1 考纲主词源(按学段:初中→中考/高中→高考) >
+    P2 当前学期教材词 > P3 其他来源候选(试卷/错题) > P4 过往学期教材 > P5 通用词库(opt-in)。
     同一个词出现在多来源时取最高优先级。scope 内无可学新词时回退全局按难度
     （兼容内容未铺/新用户，不至于空页）。
     """
@@ -73,10 +74,21 @@ async def _ordered_new_words(
         .join(StudentKp, StudentKp.node_id == VocabNode.node_id)
         .where(StudentKp.student_id == student.id, StudentKp.in_scope.is_(True))
     )
-    # P1 当前学期教材词
+    # P1 考纲主词源(按学段):初中→中考(junior)、高中→高考(senior)考纲词表,作为词力通主词源;
+    #    无对应学段考纲词表时回退到下面的教材等来源。
+    pg = student.preferred_grade or ""
+    stage_level = "junior" if "初中" in pg else ("senior" if "高中" in pg else None)
+    if stage_level:
+        from app.models.d18_vocab_kg import VocabList, VocabListItem
+        parts.append(
+            select(VocabListItem.word_id.label("wid"), literal(1).label("p"))
+            .join(VocabList, VocabList.id == VocabListItem.list_id)
+            .where(VocabList.exam_level == stage_level, VocabList.status == "published")
+        )
+    # P2 当前学期教材词
     if all(pref):
         parts.append(
-            select(CurriculumWord.word_id.label("wid"), literal(1).label("p"))
+            select(CurriculumWord.word_id.label("wid"), literal(2).label("p"))
             .join(CurriculumUnit, CurriculumUnit.id == CurriculumWord.unit_id)
             .where(
                 CurriculumUnit.textbook_version == pref[0],
@@ -90,12 +102,12 @@ async def _ordered_new_words(
                (literal(-1) - StudentVocabCandidate.priority).label("p"))
         .where(StudentVocabCandidate.student_id == student.id, StudentVocabCandidate.priority > 0)
     )
-    # P2 其他来源候选词
+    # P3 其他来源候选词
     parts.append(
-        select(StudentVocabCandidate.word_id.label("wid"), literal(2).label("p"))
+        select(StudentVocabCandidate.word_id.label("wid"), literal(3).label("p"))
         .where(StudentVocabCandidate.student_id == student.id)
     )
-    # P3 过往购买学期（排除当前学期）教材词
+    # P4 过往购买学期（排除当前学期）教材词
     purchased = (await db.execute(
         select(
             PurchasedSemester.textbook_version,
@@ -113,7 +125,7 @@ async def _ordered_new_words(
             ) for (t, g, s) in past
         ])
         parts.append(
-            select(CurriculumWord.word_id.label("wid"), literal(3).label("p"))
+            select(CurriculumWord.word_id.label("wid"), literal(4).label("p"))
             .join(CurriculumUnit, CurriculumUnit.id == CurriculumWord.unit_id)
             .where(cond)
         )
@@ -124,7 +136,7 @@ async def _ordered_new_words(
     )).scalar_one_or_none()
     if setting is not None and getattr(setting, "include_general_vocab", False):
         from app.models.d18_vocab_kg import VocabListItem, VocabList
-        gp = select(VocabListItem.word_id.label("wid"), literal(4).label("p"))
+        gp = select(VocabListItem.word_id.label("wid"), literal(5).label("p"))
         if setting.general_vocab_list_id is not None:
             gp = gp.where(VocabListItem.list_id == setting.general_vocab_list_id)
         else:
