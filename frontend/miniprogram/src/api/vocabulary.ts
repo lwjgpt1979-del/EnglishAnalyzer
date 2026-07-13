@@ -170,7 +170,7 @@ export function makeUpCheckin(date: string): Promise<VocabMakeUpResult> {
 }
 
 // 单词精讲(作业按批次 / 课程按单元;详解取词库)
-export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any; image_url?: string | null; word_audio_url?: string | null }
+export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any; image_url?: string | null; word_audio_url?: string | null; en_description?: string | null; example?: { en?: string; zh?: string; audio?: string } | null }
 export interface HwWordBatch { paper_id: string; title: string; date: string; word_count: number }
 export interface CourseWordUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; word_count: number }
 export function getHwWordBatches(): Promise<{ batches: HwWordBatch[] }> {

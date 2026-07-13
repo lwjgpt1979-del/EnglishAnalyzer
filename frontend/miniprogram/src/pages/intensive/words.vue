@@ -31,7 +31,7 @@
       <view v-if="wordsLoading" class="tip">加载中…</view>
       <view v-else-if="!words.length" class="tip">该{{ mode === 'homework' ? '批次' : '单元' }}没有单词</view>
       <text v-else class="list-hint">共 {{ words.length }} 词 · 下方为词表预览,点上方按钮进入卡片学习</text>
-      <view v-for="w in words" :key="w.word_id" class="card word-row">
+      <view v-for="w in words" :key="w.word_id" class="card word-row" @tap="openCard(w)">
         <image v-if="w.image_url" :src="w.image_url" class="w-img" mode="aspectFill" />
         <view v-else class="w-img w-img-ph"><text>词</text></view>
         <view class="w-main">
@@ -46,6 +46,28 @@
         </view>
       </view>
     </template>
+
+    <!-- 单词卡片弹层:点单个词展开 -->
+    <view v-if="cardWord" class="card-mask" @tap="cardWord = null">
+      <view class="card-pop" @tap.stop>
+        <image v-if="cardWord.image_url" :src="cardWord.image_url" class="cp-img" mode="aspectFill" />
+        <view v-else class="cp-img cp-img-ph"><text>暂无配图</text></view>
+        <view class="cp-head">
+          <text class="cp-word">{{ cardWord.word }}</text>
+          <view class="cp-play" :class="{ on: playingId === cardWord.word_id }" @tap="playWord(cardWord)">
+            <text>{{ playingId === cardWord.word_id ? '♪ 播放中' : '🔊 发音' }}</text>
+          </view>
+        </view>
+        <text v-if="cardWord.phonetic" class="cp-ph">/{{ cardWord.phonetic }}/</text>
+        <text class="cp-def">{{ defText(cardWord.definitions) }}</text>
+        <view v-if="cardWord.example && cardWord.example.en" class="cp-ex">
+          <text class="cp-ex-en">{{ cardWord.example.en }}</text>
+          <text v-if="cardWord.example.zh" class="cp-ex-zh">{{ cardWord.example.zh }}</text>
+        </view>
+        <text v-if="cardWord.en_description" class="cp-desc">{{ cardWord.en_description }}</text>
+        <view class="cp-close" @tap="cardWord = null"><text>关闭</text></view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -57,6 +79,9 @@ import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords,
 import { resolveSpeakUrl } from '@/utils/tts'
 
 const mode = ref('homework')
+// 点单个词 → 展开单词卡片弹层
+const cardWord = ref<IntensiveWord | null>(null)
+function openCard(w: IntensiveWord) { cardWord.value = w }
 // 单词发音:优先用已生成的 word_audio_url,否则走 TTS
 const playingId = ref('')
 let _audio: UniApp.InnerAudioContext | null = null
@@ -166,4 +191,19 @@ onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
 .w-main { flex: 1; min-width: 0; }
 .w-play { width: 64rpx; height: 64rpx; border-radius: 50%; background: var(--c-bg-page, #f2f4f7); display: flex; align-items: center; justify-content: center; font-size: 30rpx; flex-shrink: 0; }
 .w-play.on { background: var(--c-primary); color: #fff; }
+.card-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 40rpx; }
+.card-pop { width: 100%; max-width: 620rpx; background: #fff; border-radius: 24rpx; padding: 24rpx; max-height: 84vh; overflow-y: auto; }
+.cp-img { width: 100%; height: 300rpx; border-radius: 16rpx; background: var(--c-bg-page, #f5f6f8); }
+.cp-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); font-size: 26rpx; }
+.cp-head { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
+.cp-word { font-size: 44rpx; font-weight: 800; color: var(--c-ink); }
+.cp-play { background: var(--c-primary); color: #fff; padding: 10rpx 22rpx; border-radius: 999rpx; font-size: 26rpx; }
+.cp-play.on { opacity: 0.7; }
+.cp-ph { display: block; font-size: 26rpx; color: var(--c-text-hint); margin-top: 6rpx; }
+.cp-def { display: block; font-size: 30rpx; color: var(--c-ink); margin-top: 14rpx; line-height: 1.6; }
+.cp-ex { margin-top: 16rpx; padding: 16rpx; background: var(--c-bg-page, #f5f6f8); border-radius: 12rpx; }
+.cp-ex-en { display: block; font-size: 28rpx; color: var(--c-ink); line-height: 1.6; }
+.cp-ex-zh { display: block; font-size: 24rpx; color: var(--c-text-sub); margin-top: 6rpx; }
+.cp-desc { display: block; font-size: 24rpx; color: var(--c-text-sub); margin-top: 14rpx; line-height: 1.6; }
+.cp-close { text-align: center; margin-top: 20rpx; padding: 20rpx; color: var(--c-primary); font-size: 28rpx; }
 </style>
