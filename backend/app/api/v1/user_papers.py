@@ -147,11 +147,13 @@ async def save_sentence(
     db: DbDep,
     current_user: UserDep,
 ):
-    """问题4:学生手动把一句长难句加入待学习区(student_long_sentence,进长难句学习)。"""
+    """学生把一句长难句「加入学习」——打包:该句 + 句中单词 + 句中语法点 一起进作业精讲的
+    长难句/单词/语法(同一来源卷=同一批次)。返回三项计数。"""
     from app.services import long_sentence_service
-    added = await long_sentence_service.add_student_sentence(
+    r = await long_sentence_service.add_paper_sentence_bundle(
         db, owner_id=current_user.id, text=body.sentence, source_paper_id=body.paper_id)
-    return make_ok({"added": added})
+    # 兼容旧字段 added(句是否新增)
+    return make_ok({"added": r["sentence_added"], **r})
 
 
 @router.post("/{paper_id}/add-to-plan")

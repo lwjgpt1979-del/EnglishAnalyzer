@@ -319,6 +319,18 @@ async def add_pins(db: DbDep, current_user: UserDep,
     return make_ok(r)
 
 
+@router.post("/intensive/homework/add", response_model=BaseResponse[dict])
+async def add_homework_candidates(db: DbDep, current_user: UserDep,
+                                  word_ids: list[uuid.UUID] = Body(..., embed=True),
+                                  paper_id: uuid.UUID = Body(...)):
+    """把试卷生词加入「作业待学习」→ 作业精讲按批次归组(候选,不进词力通优先学)。"""
+    await get_rls_db(db, str(current_user.id))
+    r = await vocab_pin_service.add_paper_candidates(
+        db, student_id=current_user.id, word_ids=word_ids, source_paper_id=paper_id)
+    await db.commit()
+    return make_ok(r)
+
+
 @router.put("/pins/{word_id}", response_model=BaseResponse[dict])
 async def update_pin(word_id: uuid.UUID, db: DbDep, current_user: UserDep, priority: int = Body(..., embed=True)):
     """调整某词优先级别(≤0 即移出优先学)。"""

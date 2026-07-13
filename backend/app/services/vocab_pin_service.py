@@ -49,6 +49,33 @@ async def _upsert_pin(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.
             set_=set_))
 
 
+async def add_paper_candidates(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list,
+                               source_paper_id: uuid.UUID) -> dict:
+    """把试卷生词加入「作业待学习」(候选,不进词力通优先学):建 StudentVocabCandidate
+    (priority=0, source_paper_id)→ 作业精讲按批次归组。已存在的词只补来源卷、不动其 priority。"""
+    n = 0
+    added_ids: list = []
+    for wid in word_ids:
+        try:
+            wid = wid if isinstance(wid, uuid.UUID) else uuid.UUID(str(wid))
+        except (ValueError, TypeError):
+            continue
+        if (await db.execute(sa.select(VocabularyWord.id).where(VocabularyWord.id == wid))).scalar_one_or_none() is None:
+            continue
+        await db.execute(
+            pg_insert(StudentVocabCandidate)
+            .values(id=uuid.uuid4(), student_id=student_id, word_id=wid, source="paper",
+                    priority=0, source_paper_id=source_paper_id)
+            .on_conflict_do_update(index_elements=["student_id", "word_id"],
+                                   set_={"source_paper_id": source_paper_id}))  # 冲突只补来源卷
+        added_ids.append(wid)
+        n += 1
+    await db.flush()
+    from app.services import vocab_probe_service
+    vocab_probe_service.enqueue_probe_gen(added_ids)
+    return {"added": n}
+
+
 async def pin_words(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list,
                     priority: int = _DEFAULT_PRIORITY,
                     source_paper_id: uuid.UUID | None = None) -> dict:

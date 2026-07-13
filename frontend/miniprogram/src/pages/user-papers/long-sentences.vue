@@ -39,9 +39,12 @@ function openAnalysis(i: number) {
 async function save(i: number) {
   if (saved.value.has(i)) return
   try {
-    await savePaperSentence(sentences.value[i], paperId.value)
+    const r = await savePaperSentence(sentences.value[i], paperId.value)
     saved.value = new Set([...saved.value, i])
-    uni.showToast({ title: '已加入待学习', icon: 'success' })
+    // 打包加入:句 + 词 + 语法 → 作业精讲
+    const extra = [r.words_added ? `词 ${r.words_added}` : '', r.grammar_added ? `语法 ${r.grammar_added}` : '']
+      .filter(Boolean).join(' · ')
+    uni.showToast({ title: extra ? `已加入作业精讲（句 · ${extra}）` : '已加入作业精讲·长难句', icon: 'none' })
   } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
 }
 

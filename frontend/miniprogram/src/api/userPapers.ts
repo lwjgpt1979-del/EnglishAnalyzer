@@ -49,9 +49,10 @@ export function getPaperLongSentences(paperId: string): Promise<{ sentences: str
 export function analyzePaperSentence(sentence: string): Promise<any> {
   return request<any>(`/api/v1/user-papers/analyze-sentence`, { method: 'POST', data: { sentence } })
 }
-// 问题4:手动把一句长难句加入待学习区(→ 长难句学习)
-export function savePaperSentence(sentence: string, paperId?: string): Promise<{ added: boolean }> {
-  return request<{ added: boolean }>(`/api/v1/user-papers/save-sentence`, { method: 'POST', data: { sentence, paper_id: paperId } })
+// 长难句「加入学习」:打包该句 + 句中单词 + 句中语法点 → 作业精讲(长难句/单词/语法,同批次)
+export interface SaveSentenceResult { added: boolean; sentence_added: boolean; words_added: number; grammar_added: number }
+export function savePaperSentence(sentence: string, paperId?: string): Promise<SaveSentenceResult> {
+  return request<SaveSentenceResult>(`/api/v1/user-papers/save-sentence`, { method: 'POST', data: { sentence, paper_id: paperId } })
 }
 export function getPaperGrammarStatus(paperId: string): Promise<PaperGrammarStatus> {
   return request<PaperGrammarStatus>(`/api/v1/user-papers/${paperId}/grammar-status`, { method: 'GET' })

@@ -31,12 +31,19 @@
       <view v-if="wordsLoading" class="tip">加载中…</view>
       <view v-else-if="!words.length" class="tip">该{{ mode === 'homework' ? '批次' : '单元' }}没有单词</view>
       <text v-else class="list-hint">共 {{ words.length }} 词 · 下方为词表预览,点上方按钮进入卡片学习</text>
-      <view v-for="w in words" :key="w.word_id" class="card word">
-        <view class="word-top">
-          <text class="word-w">{{ w.word }}</text>
-          <text v-if="w.phonetic" class="word-ph">/{{ w.phonetic }}/</text>
+      <view v-for="w in words" :key="w.word_id" class="card word-row">
+        <image v-if="w.image_url" :src="w.image_url" class="w-img" mode="aspectFill" />
+        <view v-else class="w-img w-img-ph"><text>词</text></view>
+        <view class="w-main">
+          <view class="word-top">
+            <text class="word-w">{{ w.word }}</text>
+            <text v-if="w.phonetic" class="word-ph">/{{ w.phonetic }}/</text>
+          </view>
+          <text class="word-def">{{ defText(w.definitions) }}</text>
         </view>
-        <text class="word-def">{{ defText(w.definitions) }}</text>
+        <view class="w-play" :class="{ on: playingId === w.word_id }" @tap.stop="playWord(w)">
+          <text>{{ playingId === w.word_id ? '♪' : '🔊' }}</text>
+        </view>
       </view>
     </template>
   </view>
@@ -47,8 +54,24 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords,
          type IntensiveWord, type HwWordBatch, type CourseWordUnit } from '@/api/vocabulary'
+import { resolveSpeakUrl } from '@/utils/tts'
 
 const mode = ref('homework')
+// 单词发音:优先用已生成的 word_audio_url,否则走 TTS
+const playingId = ref('')
+let _audio: UniApp.InnerAudioContext | null = null
+async function playWord(w: IntensiveWord) {
+  try {
+    const url = w.word_audio_url || (await resolveSpeakUrl(w.word))
+    if (_audio) { _audio.stop(); _audio.destroy() }
+    _audio = uni.createInnerAudioContext()
+    _audio.src = url
+    playingId.value = w.word_id
+    _audio.onEnded(() => { playingId.value = '' })
+    _audio.onError(() => { playingId.value = ''; uni.showToast({ title: '发音播放失败', icon: 'none' }) })
+    _audio.play()
+  } catch { playingId.value = ''; uni.showToast({ title: '发音获取失败', icon: 'none' }) }
+}
 const loading = ref(true)
 const groups = ref<any[]>([])          // {id, title, sub, count}
 const groupOpen = ref<any>(null)
@@ -137,4 +160,10 @@ onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
 .word-w { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
 .word-ph { font-size: 24rpx; color: var(--c-text-hint); }
 .word-def { display: block; font-size: 26rpx; color: var(--c-text-sub); margin-top: 8rpx; line-height: 1.6; }
+.word-row { display: flex; align-items: center; gap: 18rpx; }
+.w-img { width: 96rpx; height: 96rpx; border-radius: 12rpx; flex-shrink: 0; background: var(--c-bg-page, #f5f6f8); }
+.w-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); font-size: 24rpx; }
+.w-main { flex: 1; min-width: 0; }
+.w-play { width: 64rpx; height: 64rpx; border-radius: 50%; background: var(--c-bg-page, #f2f4f7); display: flex; align-items: center; justify-content: center; font-size: 30rpx; flex-shrink: 0; }
+.w-play.on { background: var(--c-primary); color: #fff; }
 </style>

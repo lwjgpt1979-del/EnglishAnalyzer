@@ -18,8 +18,13 @@ from app.models.d13_v2_user_papers import UserUploadedPaper
 
 
 def _word_out(w: VocabularyWord) -> dict:
+    # 列表行展示:图片 + 中文意思 + 发音。媒体按「已发布」门控(和学生端一致)
+    pub = str(w.media_status) == "published"
+    imgs = w.image_urls if (pub and isinstance(w.image_urls, list)) else None
     return {"word_id": str(w.id), "word": w.word, "phonetic": w.phonetic,
-            "definitions": w.definitions}
+            "definitions": w.definitions,
+            "image_url": (imgs[0] if imgs else None),
+            "word_audio_url": (w.word_audio_url if pub else None)}
 
 
 # ── 作业精讲 · 单词:按卷(批次)──────────────────────────────────────────────

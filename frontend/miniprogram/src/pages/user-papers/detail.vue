@@ -82,33 +82,38 @@
           <!-- P4 闭环:未学+薄弱一键成学习计划 -->
           <view v-if="planCount" class="gr-plan-btn" :class="{ busy: planBusy }" @tap="addToPlan">
             <text class="ic ic-target" />
-            <text>{{ planBusy ? '加入中…' : `一键加入学习计划（${planCount}）` }}</text>
+            <text>{{ planBusy ? '加入中…' : `加入待学习（${planCount}）` }}</text>
           </view>
         </view>
 
-        <!-- P2:本卷生词 → 加入词力通优先学 -->
+        <!-- P2:本卷生词 → 加入「作业精讲·单词」(可折叠) -->
         <view v-if="vocab.length" class="card gr-card">
-          <text class="gr-title">本卷生词 · {{ vocab.length }}</text>
-          <text class="gr-hint">从原文挑出你还没掌握的词,选中加入「词力通」优先学。</text>
-          <view class="gr-chips">
-            <view v-for="w in vocab" :key="w.word_id" class="gr-chip vw-chip"
-                  :class="{ 'vw-on': picked.has(w.word_id) || w.pinned }" @tap="toggleWord(w)">
-              <text>{{ w.word }}</text>
-              <text v-if="w.pinned" class="chip-go">已加</text>
-              <text v-else-if="picked.has(w.word_id)" class="chip-go">✓</text>
+          <view class="gr-head" @tap="vocabOpen = !vocabOpen">
+            <text class="gr-title">本卷生词 · {{ vocab.length }}</text>
+            <text class="gr-fold">{{ vocabOpen ? '收起 ▲' : '展开 ▼' }}</text>
+          </view>
+          <template v-if="vocabOpen">
+            <text class="gr-hint">从原文挑出你还没掌握的词,选中加入「作业精讲 · 单词」。</text>
+            <view class="gr-chips">
+              <view v-for="w in vocab" :key="w.word_id" class="gr-chip vw-chip"
+                    :class="{ 'vw-on': picked.has(w.word_id) || w.pinned }" @tap="toggleWord(w)">
+                <text>{{ w.word }}</text>
+                <text v-if="w.pinned" class="chip-go">已加</text>
+                <text v-else-if="picked.has(w.word_id)" class="chip-go">✓</text>
+              </view>
             </view>
-          </view>
-          <view v-if="pickCount" class="gr-plan-btn" :class="{ busy: vocabBusy }" @tap="addVocab">
-            <text class="ic ic-book" />
-            <text>{{ vocabBusy ? '加入中…' : `加入词力通（${pickCount}）` }}</text>
-          </view>
+            <view v-if="pickCount" class="gr-plan-btn" :class="{ busy: vocabBusy }" @tap="addVocab">
+              <text class="ic ic-book" />
+              <text>{{ vocabBusy ? '加入中…' : `加入待学习（${pickCount}）` }}</text>
+            </view>
+          </template>
         </view>
 
         <!-- P3:本卷长难句 → 单开一页(不在试卷页内嵌) -->
         <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
           <view class="entry-main">
             <text class="entry-title">本卷长难句</text>
-            <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思、加入待学习</text>
+            <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思;加入学习=句+词+语法一起进作业精讲</text>
           </view>
           <text class="entry-arrow">›</text>
         </view>
@@ -184,7 +189,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
-import { addPins } from '@/api/vocabulary'
+import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
 
 const paper = ref<UserPaperDetailOut | null>(null)
@@ -259,10 +264,10 @@ async function addToPlan() {
   try {
     const r = await addPaperToPlan(paperId.value)
     uni.showModal({
-      title: '已加入学习计划',
-      content: `本卷未学 ${r.new} + 薄弱 ${r.weak} 个语法点已加入,今日计划会带你去学去练。`,
-      confirmText: '去看计划', cancelText: '知道了',
-      success: (m) => { if (m.confirm) uni.switchTab({ url: '/pages/index/index' }) },
+      title: '已加入待学习',
+      content: `本卷未学 ${r.new} + 薄弱 ${r.weak} 个语法点已加入待学习,可在「作业精讲 → 语法精讲」按批次学。`,
+      confirmText: '去作业精讲', cancelText: '知道了',
+      success: (m) => { if (m.confirm) uni.navigateTo({ url: '/pages/intensive/homework' }) },
     })
   } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
   finally { planBusy.value = false }
@@ -277,6 +282,7 @@ function unlearnedPre(n: GrammarNodeItem) {
 const vocab = ref<PaperVocabWord[]>([])
 const picked = ref<Set<string>>(new Set())
 const vocabBusy = ref(false)
+const vocabOpen = ref(true)          // 本卷生词可折叠
 const pickCount = computed(() => picked.value.size)
 async function loadVocab() {
   try { vocab.value = (await getPaperVocab(paperId.value)).words } catch { /* ignore */ }
@@ -292,11 +298,11 @@ async function addVocab() {
   vocabBusy.value = true
   try {
     const ids = [...picked.value]
-    await addPins(ids, 1, paperId.value)   // 带来源卷 → 作业精讲按批次归组
+    await addHomeworkWords(ids, paperId.value)   // 作业精讲按批次归组(不进词力通优先学)
     // 本地标记已加,清空选择
     vocab.value = vocab.value.map(w => ids.includes(w.word_id) ? { ...w, pinned: true } : w)
     picked.value = new Set()
-    uni.showToast({ title: `已加入 ${ids.length} 个词`, icon: 'success' })
+    uni.showToast({ title: `已加入作业精讲 ${ids.length} 词`, icon: 'success' })
   } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
   finally { vocabBusy.value = false }
 }
@@ -421,6 +427,8 @@ function goList() {
 .btn-secondary { background: var(--c-bg-soft); color: var(--c-text-body); border: 2rpx solid var(--c-border); border-radius: var(--r-btn); padding: 16rpx 40rpx; font-size: 28rpx; }
 .gr-card { display: flex; flex-direction: column; gap: 16rpx; }
 .gr-title { font-size: 28rpx; font-weight: 800; color: var(--c-ink); }
+.gr-head { display: flex; align-items: center; justify-content: space-between; }
+.gr-fold { font-size: 24rpx; color: var(--c-primary); flex-shrink: 0; }
 .gr-group { display: flex; flex-direction: column; gap: 10rpx; }
 .gr-lbl { font-size: 24rpx; font-weight: 700; }
 .gr-new { color: var(--c-danger); }

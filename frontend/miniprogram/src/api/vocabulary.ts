@@ -134,6 +134,10 @@ export function getPinnable(): Promise<{ words: PinnableWord[] }> {
 export function addPins(wordIds: string[], priority = 1, paperId?: string): Promise<{ pinned: number }> {
   return request<{ pinned: number }>('/api/v1/vocabulary/pins', { method: 'POST', data: { word_ids: wordIds, priority, paper_id: paperId } })
 }
+// 试卷生词 → 作业待学习(作业精讲按批次归组,不进词力通优先学)
+export function addHomeworkWords(wordIds: string[], paperId: string): Promise<{ added: number }> {
+  return request<{ added: number }>('/api/v1/vocabulary/intensive/homework/add', { method: 'POST', data: { word_ids: wordIds, paper_id: paperId } })
+}
 export function setPinPriority(wordId: string, priority: number): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/api/v1/vocabulary/pins/${wordId}`, { method: 'PUT', data: { priority } })
 }
@@ -166,7 +170,7 @@ export function makeUpCheckin(date: string): Promise<VocabMakeUpResult> {
 }
 
 // 单词精讲(作业按批次 / 课程按单元;详解取词库)
-export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any }
+export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any; image_url?: string | null; word_audio_url?: string | null }
 export interface HwWordBatch { paper_id: string; title: string; date: string; word_count: number }
 export interface CourseWordUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; word_count: number }
 export function getHwWordBatches(): Promise<{ batches: HwWordBatch[] }> {
