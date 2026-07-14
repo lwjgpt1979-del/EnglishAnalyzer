@@ -383,10 +383,12 @@ async def analyze_sentence(sentence: str, with_paraphrase: bool = True) -> dict:
         '"key_words":[{"word":..,"pos":..,"meaning":..}],'
         '"grammar_points":[{"name":..,"explanation":..}],"explanations":[{"idx":1,"text":..}]}'
     )
+    # 关推理(disable_thinking):v4 系推理模型会把 token 烧在思考上→JSON 被截断→反复升档重试
+    # 仍失败,一句解析卡几十秒到分钟级。结构化抽取无需重推理,关掉后 token 全给输出,快且不截断。
     # finish_reason 感知:length 截断才升档(2000→≤4000)一次,否则瞬时抖动重试一次;全失败→模板兜底
     data = await complete_json(system_prompt=system, user_prompt=user, max_tokens=2000,
                                model=fast_model(), escalate_ceiling=4000, feature="ls_analyze",
-                               validate=lambda d: bool(d.get("segments")))
+                               validate=lambda d: bool(d.get("segments")), disable_thinking=True)
     if data:
         res = _enrich_analysis(data, sentence, syntax)
         if with_paraphrase:
@@ -428,9 +430,10 @@ async def generate_paraphrase(sentence: str, translation: str | None = None) -> 
         "\"misconceptions\":{\"干扰项原文\":\"错因\"}}。"
     )
     user = f"句子:{sentence}\n参考翻译:{translation or '(无)'}\n返回 JSON:"
+    # 关推理:出题是规格明确的结构化任务,推理模型开思考会烧 token 致截断变慢
     # finish_reason 感知重试;输出小、length 罕见,truncate 直接放弃→调用方退连接词题
     d = await complete_json(system_prompt=system, user_prompt=user, max_tokens=1000,
-                            model=fast_model(), feature="ls_paraphrase",
+                            model=fast_model(), feature="ls_paraphrase", disable_thinking=True,
                             validate=lambda x: len([o for o in (x.get("options") or []) if str(o).strip()]) >= 3
                             and bool(x.get("answer")))
     if not d:

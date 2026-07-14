@@ -115,6 +115,7 @@ async def complete_json(
     escalate_ceiling: int | None = None,
     validate: Callable[[dict], bool] | None = None,
     feature: str = "other",
+    disable_thinking: bool = False,
 ) -> dict | None:
     """带 finish_reason 感知的 JSON 调用,取代各处"盲目重试":
     - finish_reason=length(预算耗尽):盲重试必再失败。给了 escalate_ceiling 才把 max_tokens
@@ -128,7 +129,7 @@ async def complete_json(
             resp = await chat_completion(
                 system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=cur,
                 response_format={"type": "json_object"}, temperature=temperature, model=model,
-                feature=feature)
+                feature=feature, disable_thinking=disable_thinking)
             choice = resp.choices[0]
             if choice.finish_reason == "length":
                 if escalate_ceiling and cur < escalate_ceiling:
