@@ -100,6 +100,35 @@ export function getLlmUsage(days = 30) {
   return unwrap<LlmUsage>(request.get('/admin/llm-usage', { params: { days } }))
 }
 
+// LLM 调用清单(维护登记):每处调用 + 深度思考/对话 + 原因 + 近 N 天真实用量
+export interface LlmFeatureItem {
+  feature: string | null
+  mode: 'reasoning' | 'chat'
+  surface: string          // 消费端(前端项目):小程序端 / 运营后台
+  module: string           // 功能模块
+  service: string          // 后端 service(代码所在)
+  purpose: string
+  why: string
+  locations: string[]
+  model: string
+  tagged: boolean
+  calls: number | null
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  est_cost: number | null
+}
+export interface LlmFeatures {
+  days: number
+  counts: { total: number; reasoning: number; chat: number; untagged: number; mini: number; admin: number }
+  reasoning_model: string
+  chat_model: string
+  items: LlmFeatureItem[]
+  unregistered: { feature: string; calls: number; prompt_tokens: number; completion_tokens: number }[]
+}
+export function getLlmFeatures(days = 30) {
+  return unwrap<LlmFeatures>(request.get('/admin/llm-features', { params: { days } }))
+}
+
 export interface LlmBalance {
   ok: boolean; reason?: string
   available?: boolean; currency?: string; total?: number; granted?: number; topped_up?: number
@@ -280,6 +309,7 @@ export function reviewTeacherCert(
 // ── 词力通媒体管理 ────────────────────────────────────────────────────────────
 export function listVocabMedia(params: {
   media_status?: string
+  media_origin?: string
   skip?: number
   limit?: number
   q?: string

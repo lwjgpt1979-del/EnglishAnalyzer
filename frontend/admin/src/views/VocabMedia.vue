@@ -14,6 +14,7 @@ const selected = ref<AdminVocabMediaItem[]>([])
 
 // 筛选（服务端：搜索全库，非当前页）
 const filterStatus = ref('draft')
+const filterOrigin = ref('')      // ''=全部来源 / 'student'=学生端即时生成(待复核)
 const searchWord = ref('')
 const fTextbook = ref('')
 const fGrade = ref('')
@@ -47,6 +48,7 @@ async function load() {
   try {
     const result = await listVocabMedia({
       media_status: filterStatus.value, q: searchWord.value || undefined,
+      media_origin: filterOrigin.value || undefined,
       textbook: fTextbook.value || undefined, grade: fGrade.value || undefined,
       semester: fSemester.value || undefined, unit_id: fUnit.value || undefined,
       skip: (page.value - 1) * limit, limit,
@@ -444,6 +446,10 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
         <el-option label="已发布" value="published" />
         <el-option label="已驳回" value="retired" />
       </el-select>
+      <el-select v-model="filterOrigin" style="width: 150px" @change="reload">
+        <el-option label="全部来源" value="" />
+        <el-option label="学生端生成(待复核)" value="student" />
+      </el-select>
       <el-select v-model="fTextbook" placeholder="教材版本" clearable style="width: 130px" @change="onScopeChange">
         <el-option v-for="t in opts.textbook_versions" :key="t" :label="t" :value="t" />
       </el-select>
@@ -492,9 +498,11 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
           <span v-else class="muted">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="90" align="center">
+      <el-table-column label="状态" width="130" align="center">
         <template #default="{ row }">
           <el-tag :type="statusTag(row.media_status)" size="small">{{ statusLabel(row.media_status) }}</el-tag>
+          <el-tag v-if="row.media_origin === 'student'" type="warning" size="small" effect="dark"
+            style="margin-left:4px" title="学生端「加入学习」即时生成,待复核">学生</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="配图 / 动图" width="160" align="center">

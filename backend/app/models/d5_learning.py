@@ -53,6 +53,8 @@ class VocabularyWord(Base):
     word_audio_url = mapped_column(sa.String, nullable=True)
     en_desc_audio_url = mapped_column(sa.String, nullable=True)
     media_status = mapped_column(sa.String, nullable=False, server_default=sa.text("'draft'"))
+    # 媒体来源:'student'=学生端「加入学习」即时生成(自动发布,待后台复核) / 空=后台生成或历史
+    media_origin = mapped_column(sa.String(16), nullable=True)
     # R9.1 理解探针库(词级公共复用):{distractors, misconceptions, cloze_fallback, sense}
     probes_json = mapped_column(JSONB, nullable=True)
 

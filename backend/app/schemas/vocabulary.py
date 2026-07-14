@@ -60,6 +60,7 @@ class AdminVocabMediaItem(BaseModel):
     word_audio_url: str | None = None
     en_desc_audio_url: str | None = None
     media_status: str
+    media_origin: str | None = None   # 'student'=学生端加入学习即时生成(待复核) / 空=后台/历史
 
 
 class AdminVocabMediaListOut(BaseModel):

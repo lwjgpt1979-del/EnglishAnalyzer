@@ -89,6 +89,7 @@ export interface AdminVocabMediaItem {
   word_audio_url: string | null
   en_desc_audio_url: string | null
   media_status: 'draft' | 'published' | 'retired'
+  media_origin?: string | null   // 'student'=学生端加入学习即时生成(待复核)
 }
 export interface AdminVocabMediaListOut {
   total: number

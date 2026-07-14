@@ -594,6 +594,49 @@ async def get_llm_usage(db: DbDep, admin: AdminDep, days: int = 30):
     return make_ok(await usage_log_service.summary(db, days=max(1, min(days, 365))))
 
 
+@router.get("/llm-features", response_model=BaseResponse[dict])
+async def get_llm_features(db: DbDep, admin: AdminDep, days: int = 30):
+    """LLM 调用清单(维护登记):系统每一处调 LLM 的地方 + 深度思考/对话 分档 + 需要深度思考的原因,
+    并合并近 days 天真实用量(按 feature 标签统计,含成本估算)。
+    - reasoning(深度思考)= 不传 model→主模型/推理档;chat(对话)= 走快档或关思考。
+    - 未打 feature 标签的调用无法单独统计用量(untagged),页面会提示补标签。
+    """
+    days = max(1, min(days, 365))
+    from app.core.config import settings
+    from app.services import llm_config_service, usage_log_service
+    from app.services.llm_feature_registry import LLM_FEATURES, counts
+
+    reasoning_model = llm_config_service.active_model()                # 深度思考实际模型
+    chat_model = settings.llm_model_fast or reasoning_model            # 对话/快档实际模型
+    summary = await usage_log_service.summary(db, days=days)
+    by_feat = {r["feature"]: r for r in summary.get("by_feature", []) if r.get("feature")}
+
+    items, registered_feats = [], set()
+    for e in LLM_FEATURES:
+        model = reasoning_model if e["mode"] == "reasoning" else chat_model
+        row = {**e, "model": model, "calls": None, "prompt_tokens": None,
+               "completion_tokens": None, "est_cost": None, "tagged": bool(e["feature"])}
+        if e["feature"]:
+            registered_feats.add(e["feature"])
+            u = by_feat.get(e["feature"])
+            if u:
+                pin, pout = u["prompt_tokens"], u["completion_tokens"]
+                row.update(calls=u["calls"], prompt_tokens=pin, completion_tokens=pout,
+                           est_cost=round(usage_log_service.est_cost(model, pin, pout), 4))
+            else:
+                row.update(calls=0, prompt_tokens=0, completion_tokens=0, est_cost=0.0)
+        items.append(row)
+
+    # 用量里出现、但清单未登记的 feature(新增调用点忘了登记时提示补录)
+    unregistered = [{"feature": f, **{k: v for k, v in r.items() if k != "feature"}}
+                    for f, r in by_feat.items() if f not in registered_feats]
+    return make_ok({
+        "days": days, "counts": counts(),
+        "reasoning_model": reasoning_model, "chat_model": chat_model,
+        "items": items, "unregistered": unregistered,
+    })
+
+
 # ─── R10 语法掌握/定级:参数配置 + 探针离线预生成 ──────────────────────────
 @router.get("/grammar-config", response_model=BaseResponse[dict])
 async def get_grammar_config(db: DbDep, admin: AdminDep):
@@ -799,6 +842,7 @@ def _to_vocab_media_item(w: VocabularyWord) -> AdminVocabMediaItem:
         word_audio_url=w.word_audio_url,
         en_desc_audio_url=w.en_desc_audio_url,
         media_status=str(w.media_status),
+        media_origin=(w.media_origin or None),
     )
 
 
@@ -1006,13 +1050,14 @@ async def vocab_unit_options(db: DbDep, admin: AdminDep,
 async def list_vocab_media(
     db: DbDep, admin: AdminDep,
     media_status: str = "draft", skip: int = 0, limit: int = 20,
-    q: str | None = None,
+    q: str | None = None, media_origin: str | None = None,
     textbook: str | None = None, grade: str | None = None, semester: str | None = None,
     unit_id: uuid.UUID | None = None,
 ):
-    """按媒体状态分页查单词。默认看待审草稿。q 全库模糊搜;textbook/grade/semester/unit_id 按教材归属筛。"""
+    """按媒体状态分页查单词。默认看待审草稿。media_origin='student' 只看学生端即时生成的(待复核)。
+    q 全库模糊搜;textbook/grade/semester/unit_id 按教材归属筛。"""
     rows, total = await vocab_media_service.list_words_for_media_review(
-        db, media_status=media_status, skip=skip, limit=limit, q=q,
+        db, media_status=media_status, skip=skip, limit=limit, q=q, media_origin=media_origin,
         textbook=textbook, grade=grade, semester=semester, unit_id=unit_id,
     )
     return make_ok(AdminVocabMediaListOut(
