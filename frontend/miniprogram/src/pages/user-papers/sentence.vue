@@ -28,6 +28,7 @@
           <view class="q-stem-row">
             <text class="q-tag" :class="q.kind">{{ q.tag }}</text>
             <text class="q-stem">{{ q.clause || text }}</text>
+            <text v-if="q.answered_before && picked[qi] == null" class="q-done">已练 {{ q.stat_correct }}/{{ q.stat_total }}</text>
           </view>
           <text class="q-ask">{{ q.question }}</text>
           <view class="q-opts">
@@ -52,9 +53,9 @@
       </view>
 
       <!-- 成分/语法点 正确率(以往至今) -->
-      <view v-if="quiz.length && answeredCount" class="card">
+      <view v-if="quiz.length && hasStats" class="card">
         <text class="sec-t">正确率 · 以往至今</text>
-        <text class="sec-sub">本句 {{ answeredCount }}/{{ quiz.length }} 已答；下面是各成分/语法点历史累计。</text>
+        <text class="sec-sub">本次 {{ answeredCount }}/{{ quiz.length }} 已答；下面是各成分/语法点历史累计。</text>
         <view v-for="(q, qi) in quiz" :key="'sm'+qi" class="sm-row">
           <text class="sm-tag" :class="q.kind">{{ q.kind === 'component' ? '成分' : '语法' }}</text>
           <text class="sm-name">{{ q.options[q.answer] }}</text>
@@ -133,7 +134,7 @@
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
-  analyzePaperSentence, savePaperSentence,
+  savePaperSentence,
   getSentenceStudyAids, addGrammarTarget, recordGrammarAnswer,
   type GrammarQuizItem, type StudyWord,
 } from '@/api/userPapers'
@@ -163,6 +164,8 @@ function defText(d: any): string {
 }
 
 const answeredCount = computed(() => Object.keys(picked.value).length)
+// 有本次作答，或有任何历史累计，就展示正确率汇总(体现「以往至今」，不只当前)
+const hasStats = computed(() => answeredCount.value > 0 || quiz.value.some(q => q.stat_total > 0))
 function rate(q: GrammarQuizItem) { return q.stat_total ? Math.round(q.stat_correct / q.stat_total * 100) : 0 }
 
 async function pick(qi: number, oi: number) {
@@ -235,15 +238,18 @@ async function save() {
 
 onLoad(async (q: any) => {
   text.value = decodeURIComponent(q.text || '')
-  saved.value = q.saved === '1'
   paperId.value = q.paperId || ''
   if (!text.value) { loading.value = false; return }
   try {
-    a.value = await analyzePaperSentence(text.value)
-    const aids = await getSentenceStudyAids(text.value)
+    // 一次请求全给(解析 + 选择题 + 词 + 各项已加入/已练回显),避免二次解析、更快更稳
+    const aids = await getSentenceStudyAids(text.value, paperId.value || undefined)
+    a.value = aids.analysis
     quiz.value = aids.grammar_quiz || []
     words.value = aids.words || []
-  } catch { /* ignore */ }
+    saved.value = aids.sentence_added                                      // 已加入待学习回显
+    grammarAdded.value = new Set(quiz.value.filter(x => x.grammar_added && x.node_id).map(x => x.node_id as string))
+    wordAdded.value = new Set(words.value.filter(x => x.word_added && x.word_id).map(x => x.word_id as string))
+  } catch { /* 解析失败:a 为空,页面提示重试 */ }
   finally { loading.value = false }
 })
 </script>
@@ -269,6 +275,7 @@ onLoad(async (q: any) => {
 .q-stem-row { display: flex; align-items: flex-start; gap: 10rpx; background: var(--c-bg-soft, #f6f8fb); border-radius: 12rpx; padding: 14rpx 16rpx; }
 .q-tag { flex-shrink: 0; font-size: 19rpx; color: #fff; background: var(--c-primary); border-radius: 6rpx; padding: 3rpx 10rpx; margin-top: 4rpx; }
 .q-tag.component { background: #12a150; }
+.q-done { flex-shrink: 0; font-size: 19rpx; color: #ff8a3d; margin-top: 4rpx; }
 .q-stem { flex: 1; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
 .q-ask { display: block; font-size: 23rpx; color: var(--c-text-sub); margin: 14rpx 0 10rpx; }
 .q-opts { display: flex; flex-direction: column; gap: 12rpx; }

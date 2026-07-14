@@ -53,9 +53,11 @@ async def list_long_sentences(
 async def study_aids(
     db: DbDep, current_user: UserDep,
     sentence: Annotated[str, Body(..., embed=True, min_length=1, max_length=600)],
+    paper_id: Annotated[uuid.UUID | None, Body(embed=True)] = None,
 ):
-    """长难句学习页交互素材:语法提问式选择(grammar_quiz)+ 重点词卡片(words)。"""
-    return make_ok(await lss.sentence_study_aids(db, text=sentence, student_id=current_user.id))
+    """长难句学习页交互素材(一次全给):解析 + 成分/语法选择题 + 重点词 + 各项已加入/已练回显。"""
+    return make_ok(await lss.sentence_study_aids(
+        db, text=sentence, student_id=current_user.id, paper_id=paper_id))
 
 
 @router.post("/add-grammar", response_model=BaseResponse[dict])

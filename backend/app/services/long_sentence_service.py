@@ -1071,7 +1071,11 @@ async def analyze_sentence_cached(db: AsyncSession, sentence: str, with_paraphra
         return await analyze_sentence(sentence, with_paraphrase=with_paraphrase)
     h = hashlib.md5(text.encode("utf-8")).hexdigest()
     row = await db.get(SentenceAnalysisCache, h)
-    core = dict(row.analysis_json) if row is not None else await analyze_sentence(text, with_paraphrase=False)
+    core = dict(row.analysis_json) if row is not None else None
+    # 缓存缺失 **或缓存是坏的(空解析,曾因 LLM 失败被写入)** → 重新解析,好结果覆盖坏缓存
+    stale_bad = row is not None and not _analysis_ok(core)
+    if not _analysis_ok(core):
+        core = await analyze_sentence(text, with_paraphrase=False)
 
     if with_paraphrase and not core.get("paraphrase"):
         p = await generate_paraphrase(text, core.get("translation"))
@@ -1079,15 +1083,23 @@ async def analyze_sentence_cached(db: AsyncSession, sentence: str, with_paraphra
             core["paraphrase"] = p
 
     try:
-        if row is None:
-            db.add(SentenceAnalysisCache(text_hash=h, text=text, analysis_json=core))
-            await db.commit()
-        elif core.get("paraphrase") and not (row.analysis_json or {}).get("paraphrase"):
-            row.analysis_json = core            # 回填 paraphrase,后续同句免再生成
-            await db.commit()
+        if _analysis_ok(core):   # 仅当解析有效才落库,避免把失败结果永久缓存(→ 下次自动重试)
+            if row is None:
+                db.add(SentenceAnalysisCache(text_hash=h, text=text, analysis_json=core))
+                await db.commit()
+            elif stale_bad or (core.get("paraphrase") and not (row.analysis_json or {}).get("paraphrase")):
+                row.analysis_json = core            # 覆盖坏缓存 / 回填 paraphrase
+                await db.commit()
     except Exception:  # noqa: BLE001 并发/写失败不影响返回
         await db.rollback()
     return core
+
+
+def _analysis_ok(a: dict | None) -> bool:
+    """解析是否有效(非失败空壳):有译文/成分/语法点任一即算有效。"""
+    if not a:
+        return False
+    return bool(str(a.get("translation") or "").strip() or a.get("segments") or a.get("grammar_points"))
 
 
 async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: str,
@@ -1214,10 +1226,13 @@ async def _sentence_grammar_nodes(db: AsyncSession, text: str, analysis: dict) -
         if not name or name in seen_gp:
             continue
         seen_gp.add(name)
-        m = await match_kp(db, raw_name=name, axis_hint="knowledge", source_type="exam")
+        try:
+            m = await match_kp(db, raw_name=name, axis_hint="knowledge", source_type="exam")
+        except Exception:  # noqa: BLE001  单个匹配失败不影响整题(仍出题,只是没讲解节点)
+            m = None
         node_id = node_name = code = None
         in_syllabus = False
-        if m.node_id is not None:
+        if m is not None and m.node_id is not None:
             row = (await db.execute(sa.select(KnowledgeNode.code, KnowledgeNode.name)
                                     .where(KnowledgeNode.id == m.node_id))).first()
             if row:
@@ -1291,24 +1306,46 @@ def _mc_options(correct: str, cand: list[str], seed_text: str) -> list[str]:
     return options
 
 
-async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.UUID) -> dict:
-    """长难句学习页的交互素材:
-    - grammar_quiz:句子涉及的每个语法结构一题(提问式选择),带匹配的语法讲解节点;
-      答完可「查看讲解」→ kp-content(自动生成)+ 加入作业精讲·语法。
-    - words:重点词解析成单词卡片数据(word_id/图/音/释义),供「加入作业精讲·单词」和点开卡片。
+async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.UUID,
+                              paper_id: uuid.UUID | None = None) -> dict:
+    """长难句学习页交互素材(**一次请求全给**,避免前端二次解析):
+    - analysis:译文/句型/成分拆分/逐句解析(供展示,命中全局缓存)。
+    - sentence_added:该句是否已加入待学习(二次进入回显「已加入」)。
+    - grammar_quiz:成分题 + 语法点题,带历史正确率、是否练过、语法是否已加入作业精讲。
+    - words:重点词卡片数据,带是否已加入作业精讲。
+    解析/匹配失败均降级(不 500),保证页面可用。
     """
-    from app.models.d5_learning import VocabularyWord
+    from app.models.d5_learning import VocabularyWord, StudentVocabCandidate
+    from app.models.d20_long_sentence import StudentLongSentence
+    from app.models.d26_kp_target import StudentKpTarget
     from app.services import vocab_intensive_service as vis
     from app.services import grammar_quiz_stat_service as gqs
     from app.services.kp_normalize import normalize_kp_name
+    empty = {"analysis": None, "sentence_added": False, "grammar_quiz": [], "words": []}
     text = (text or "").strip()
     if not text:
-        return {"grammar_quiz": [], "words": []}
-    analysis = await analyze_sentence_cached(db, text, with_paraphrase=False)
+        return empty
+    try:
+        analysis = await analyze_sentence_cached(db, text, with_paraphrase=False)
+    except Exception:  # noqa: BLE001  解析失败降级为空(前端提示重试),不炸整页
+        return empty
+
+    # 是否已加入待学习(本人,同句)
+    sentence_added = (await db.execute(sa.select(StudentLongSentence.id).where(
+        StudentLongSentence.owner_id == student_id,
+        StudentLongSentence.text == text).limit(1))).first() is not None
 
     gnodes = await _sentence_grammar_nodes(db, text, analysis)
     gpool = await _grammar_distractor_pool(db)
     segs = analysis.get("segments") or []
+
+    # 已加入作业精讲·语法的节点(二次进入回显「已加入」)
+    node_ids = [uuid.UUID(g["node_id"]) for g in gnodes if g.get("node_id")]
+    added_nodes: set = set()
+    if node_ids:
+        added_nodes = {str(x) for x in (await db.execute(sa.select(StudentKpTarget.node_id).where(
+            StudentKpTarget.student_id == student_id,
+            StudentKpTarget.node_id.in_(node_ids)))).scalars().all()}
 
     # 成份题:每个**不同**成份类型考一次(重复类型如多个介词短语去重,取首个出现的文本)
     comp_items: list[tuple[str, str]] = []
@@ -1336,6 +1373,7 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
             "clause": txt, "explanation": None, "question": "这是什么句子成分？",
             "options": options, "answer": options.index(t),
             "stat_correct": st["correct"], "stat_total": st["total"],
+            "answered_before": st["total"] > 0, "grammar_added": False,
         })
     # ② 语法点(再考,深层语法功能;与成份跨度可能重叠,是不同层级的考查)
     for i, g in enumerate(gnodes):
@@ -1351,9 +1389,11 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
             "question": "这属于哪种语法结构？",
             "options": options, "answer": options.index(correct),
             "stat_correct": st["correct"], "stat_total": st["total"],
+            "answered_before": st["total"] > 0,
+            "grammar_added": bool(g.get("node_id") and g["node_id"] in added_nodes),
         })
 
-    # ② 重点词 → 单词卡片数据
+    # ③ 重点词 → 单词卡片数据(带是否已加入作业精讲·单词)
     kws = analysis.get("key_words") or []
     lowmap = {}
     if kws:
@@ -1361,6 +1401,12 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
         rows = (await db.execute(sa.select(VocabularyWord).where(
             sa.func.lower(VocabularyWord.word).in_(low)))).scalars().all()
         lowmap = {r.word.lower(): r for r in rows}
+    added_words: set = set()
+    if lowmap:
+        added_words = {str(x) for x in (await db.execute(sa.select(StudentVocabCandidate.word_id).where(
+            StudentVocabCandidate.student_id == student_id,
+            StudentVocabCandidate.word_id.in_([r.id for r in lowmap.values()]))
+        )).scalars().all()}
     words = []
     for k in kws:
         w = str(k.get("word") or "").strip()
@@ -1370,13 +1416,19 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
         if hit is not None:
             item = vis._word_out(hit)
             item["in_vocab"] = True
+            item["word_added"] = str(hit.id) in added_words
         else:
             item = {"word_id": None, "word": w, "phonetic": k.get("pos") or None,
                     "definitions": ([{"zh": k.get("meaning")}] if k.get("meaning") else None),
                     "image_url": None, "word_audio_url": None, "en_description": None,
-                    "example": None, "in_vocab": False}
+                    "example": None, "in_vocab": False, "word_added": False}
         words.append(item)
-    return {"grammar_quiz": quiz, "words": words}
+    analysis_out = {
+        "translation": analysis.get("translation"), "sentence_type": analysis.get("sentence_type"),
+        "segments": segs, "explanations": analysis.get("explanations") or [],
+    }
+    return {"analysis": analysis_out, "sentence_added": sentence_added,
+            "grammar_quiz": quiz, "words": words}
 
 
 async def list_student_published(

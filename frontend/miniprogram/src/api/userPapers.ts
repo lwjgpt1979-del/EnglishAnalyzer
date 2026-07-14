@@ -57,16 +57,20 @@ export interface GrammarQuizItem {
   in_syllabus: boolean; clause: string | null; explanation: string | null
   question: string; options: string[]; answer: number
   stat_correct: number; stat_total: number
+  answered_before: boolean; grammar_added: boolean
 }
 export interface StudyWord {
   word_id: string | null; word: string; phonetic: string | null; definitions: any
   image_url: string | null; word_audio_url: string | null
   en_description: string | null; example: { en?: string; zh?: string; audio?: string } | null
-  in_vocab: boolean
+  in_vocab: boolean; word_added: boolean
 }
-export interface SentenceStudyAids { grammar_quiz: GrammarQuizItem[]; words: StudyWord[] }
-export function getSentenceStudyAids(sentence: string): Promise<SentenceStudyAids> {
-  return request<SentenceStudyAids>(`/api/v1/long-sentences/study-aids`, { method: 'POST', data: { sentence } })
+export interface SentenceStudyAids {
+  analysis: any; sentence_added: boolean
+  grammar_quiz: GrammarQuizItem[]; words: StudyWord[]
+}
+export function getSentenceStudyAids(sentence: string, paperId?: string): Promise<SentenceStudyAids> {
+  return request<SentenceStudyAids>(`/api/v1/long-sentences/study-aids`, { method: 'POST', data: { sentence, paper_id: paperId } })
 }
 // 「查看讲解」时把该语法结构加入作业精讲·语法(按来源卷归组)
 export function addGrammarTarget(nodeId: string, paperId?: string): Promise<{ added: number }> {
