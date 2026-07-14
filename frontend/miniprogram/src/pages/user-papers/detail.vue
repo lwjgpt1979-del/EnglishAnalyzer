@@ -86,37 +86,38 @@
           </view>
         </view>
 
-        <!-- P2:本作业生词 → 加入「作业精讲·单词」(可折叠) -->
-        <view v-if="vocab.length" class="card gr-card">
-          <view class="gr-head" @tap="vocabOpen = !vocabOpen">
-            <text class="gr-title">本作业生词 · {{ vocab.length }}</text>
-            <text class="gr-fold">{{ vocabOpen ? '收起 ▲' : '展开 ▼' }}</text>
-          </view>
-          <template v-if="vocabOpen">
-            <text class="gr-hint">从原文挑出你还没掌握的词,选中加入「作业精讲 · 单词」。</text>
-            <view class="gr-chips">
-              <view v-for="w in vocab" :key="w.word_id" class="gr-chip vw-chip"
-                    :class="{ 'vw-on': picked.has(w.word_id) || w.pinned }" @tap="toggleWord(w)">
-                <text>{{ w.word }}</text>
-                <text v-if="w.pinned" class="chip-go">已加</text>
-                <text v-else-if="picked.has(w.word_id)" class="chip-go">✓</text>
+        <!-- P2/P3:本题生词 + 本题长难句 —— 有语篇时挂到阅读理解语篇下(见下方);
+             无语篇的卷(如纯单选)才回退显示在顶部 -->
+        <template v-if="!embedKey">
+          <view v-if="vocab.length" class="card gr-card">
+            <view class="gr-head" @tap="vocabOpen = !vocabOpen">
+              <text class="gr-title">本题生词 · {{ vocab.length }}</text>
+              <text class="gr-fold">{{ vocabOpen ? '收起 ▲' : '展开 ▼' }}</text>
+            </view>
+            <template v-if="vocabOpen">
+              <text class="gr-hint">从原文挑出你还没掌握的词,选中加入「作业精讲 · 单词」。</text>
+              <view class="gr-chips">
+                <view v-for="w in vocab" :key="w.word_id" class="gr-chip vw-chip"
+                      :class="{ 'vw-on': picked.has(w.word_id) || w.pinned }" @tap="toggleWord(w)">
+                  <text>{{ w.word }}</text>
+                  <text v-if="w.pinned" class="chip-go">已加</text>
+                  <text v-else-if="picked.has(w.word_id)" class="chip-go">✓</text>
+                </view>
               </view>
-            </view>
-            <view v-if="pickCount" class="gr-plan-btn" :class="{ busy: vocabBusy }" @tap="addVocab">
-              <text class="ic ic-book" />
-              <text>{{ vocabBusy ? '加入中…' : `加入待学习（${pickCount}）` }}</text>
-            </view>
-          </template>
-        </view>
-
-        <!-- P3:本作业长难句 → 单开一页(不在作业页内嵌) -->
-        <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
-          <view class="entry-main">
-            <text class="entry-title">本作业长难句</text>
-            <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思;加入学习=句+词+语法一起进作业精讲</text>
+              <view v-if="pickCount" class="gr-plan-btn" :class="{ busy: vocabBusy }" @tap="addVocab">
+                <text class="ic ic-book" />
+                <text>{{ vocabBusy ? '加入中…' : `加入待学习（${pickCount}）` }}</text>
+              </view>
+            </template>
           </view>
-          <text class="entry-arrow">›</text>
-        </view>
+          <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
+            <view class="entry-main">
+              <text class="entry-title">本题长难句</text>
+              <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思;加入学习=句+词+语法一起进作业精讲</text>
+            </view>
+            <text class="entry-arrow">›</text>
+          </view>
+        </template>
 
         <!-- 全部/错题 筛选 -->
         <view v-if="paper.questions.length" class="filter-row">
@@ -142,6 +143,39 @@
               </view>
               <text v-if="!collapsed[grp.key]" class="passage-text">{{ grp.passage }}</text>
             </view>
+
+            <!-- 本题生词 + 本题长难句:挂在阅读理解语篇正下方(整卷同一份,只在此语篇下出现一次) -->
+            <template v-if="grp.key === embedKey">
+              <view v-if="vocab.length" class="card gr-card">
+                <view class="gr-head" @tap="vocabOpen = !vocabOpen">
+                  <text class="gr-title">本题生词 · {{ vocab.length }}</text>
+                  <text class="gr-fold">{{ vocabOpen ? '收起 ▲' : '展开 ▼' }}</text>
+                </view>
+                <template v-if="vocabOpen">
+                  <text class="gr-hint">从原文挑出你还没掌握的词,选中加入「作业精讲 · 单词」。</text>
+                  <view class="gr-chips">
+                    <view v-for="w in vocab" :key="w.word_id" class="gr-chip vw-chip"
+                          :class="{ 'vw-on': picked.has(w.word_id) || w.pinned }" @tap="toggleWord(w)">
+                      <text>{{ w.word }}</text>
+                      <text v-if="w.pinned" class="chip-go">已加</text>
+                      <text v-else-if="picked.has(w.word_id)" class="chip-go">✓</text>
+                    </view>
+                  </view>
+                  <view v-if="pickCount" class="gr-plan-btn" :class="{ busy: vocabBusy }" @tap="addVocab">
+                    <text class="ic ic-book" />
+                    <text>{{ vocabBusy ? '加入中…' : `加入待学习（${pickCount}）` }}</text>
+                  </view>
+                </template>
+              </view>
+              <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
+                <view class="entry-main">
+                  <text class="entry-title">本题长难句</text>
+                  <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思;加入学习=句+词+语法一起进作业精讲</text>
+                </view>
+                <text class="entry-arrow">›</text>
+              </view>
+            </template>
+
             <view
               v-for="q in grp.questions" :key="q.id"
               class="card q-card" :class="{ wrong: q.is_wrong }"
@@ -237,6 +271,19 @@ const shownSections = computed(() => {
   }
   return out
 })
+// 本题生词/长难句挂载点:优先「阅读理解」题型第一个语篇块;否则任意题型第一个语篇块;
+// 无语篇(如纯单选卷)则为 null → 回退显示在顶部。
+const embedKey = computed<string | null>(() => {
+  const secs = shownSections.value
+  const firstPassage = (list: any[]) => {
+    for (const sec of list) {
+      const b = (sec.blocks || []).find((x: any) => x.passage)
+      if (b) return b.key
+    }
+    return null
+  }
+  return firstPassage(secs.filter(s => (s.label || '').includes('阅读'))) || firstPassage(secs)
+})
 const similarOpen = ref(false)
 const similarLoading = ref(false)
 const similarKp = ref('')
@@ -278,11 +325,11 @@ function unlearnedPre(n: GrammarNodeItem) {
   return (n.prereq || []).filter(p => !p.learned)
 }
 
-// P2:本作业生词 → 加入词力通优先学
+// P2:本题生词 → 加入词力通优先学
 const vocab = ref<PaperVocabWord[]>([])
 const picked = ref<Set<string>>(new Set())
 const vocabBusy = ref(false)
-const vocabOpen = ref(true)          // 本作业生词可折叠
+const vocabOpen = ref(true)          // 本题生词可折叠
 const pickCount = computed(() => picked.value.size)
 async function loadVocab() {
   try { vocab.value = (await getPaperVocab(paperId.value)).words } catch { /* ignore */ }
@@ -307,7 +354,7 @@ async function addVocab() {
   finally { vocabBusy.value = false }
 }
 
-// P3:本作业长难句 → 整块单开一页(作业页只留入口,不内嵌列表/解析)
+// P3:本题长难句 → 整块单开一页(作业页只留入口,不内嵌列表/解析)
 const sentences = ref<string[]>([])
 async function loadSentences() {
   try { sentences.value = (await getPaperLongSentences(paperId.value)).sentences } catch { /* ignore */ }
