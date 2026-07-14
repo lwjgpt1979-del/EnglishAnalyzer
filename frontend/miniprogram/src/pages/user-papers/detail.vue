@@ -5,7 +5,7 @@
     <template v-else-if="paper">
       <view class="head card">
         <view class="head-top">
-          <text class="title">{{ paper.title || '未命名作业' }}</text>
+          <text class="title" @tap="editTitle">{{ paper.title || '未命名作业' }}<text class="title-edit"> ✎</text></text>
           <text class="head-list" @tap="goList">我的作业 ›</text>
         </view>
         <view class="status" :class="statusClass">
@@ -222,7 +222,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, renamePaper, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
 import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
 
@@ -450,6 +450,23 @@ function goUpload() {
 function goList() {
   uni.navigateTo({ url: '/pages/user-papers/list' })
 }
+// 点标题可改名(自动命名后仍可自己修改)
+function editTitle() {
+  if (!paper.value) return
+  uni.showModal({
+    title: '作业名称', editable: true, placeholderText: '输入作业名称',
+    content: paper.value.title || '',
+    success: async (r) => {
+      const t = (r.confirm && (r.content || '').trim()) || ''
+      if (!t || !paper.value || t === paper.value.title) return
+      try {
+        await renamePaper(paperId.value, t)
+        paper.value.title = t
+        uni.showToast({ title: '已改名', icon: 'none' })
+      } catch (e: any) { uni.showToast({ title: e?.message || '改名失败', icon: 'none' }) }
+    },
+  })
+}
 </script>
 
 <style scoped>
@@ -460,6 +477,7 @@ function goList() {
 .head-top { display: flex; align-items: center; justify-content: space-between; }
 .head-list { font-size: 24rpx; color: var(--c-primary); flex-shrink: 0; }
 .title { font-size: 32rpx; font-weight: 800; color: var(--c-ink); }
+.title-edit { font-size: 24rpx; color: var(--c-primary); font-weight: 400; margin-left: 6rpx; }
 .status { align-self: flex-start; font-size: 24rpx; padding: 4rpx 16rpx; border-radius: 20rpx; }
 .status.ok { background: #eafaf1; color: #2ecc71; }
 .status.bad { background: var(--c-danger-bg); color: var(--c-danger); }

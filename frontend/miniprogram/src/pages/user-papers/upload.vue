@@ -10,7 +10,7 @@
       <!-- 标题 -->
       <view class="form-item">
         <text class="label">标题</text>
-        <input v-model="title" class="title-input" placeholder="如：期中英语卷（选填）" maxlength="100" />
+        <input v-model="title" class="title-input" placeholder="留空自动命名（名字+日期）" maxlength="100" />
       </view>
 
       <!-- 图片网格 -->

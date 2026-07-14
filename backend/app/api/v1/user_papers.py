@@ -170,6 +170,24 @@ async def add_paper_to_plan(
     return make_ok(r)
 
 
+@router.put("/{paper_id}/title")
+async def rename_paper(
+    paper_id: uuid.UUID,
+    body: dict,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """重命名作业标题(用户可自己修改自动生成的名字)。"""
+    title = str((body or {}).get("title") or "").strip()
+    if not title:
+        raise AppError(code=422, message="标题不能为空")
+    r = await user_paper_service.rename_paper(
+        db, paper_id=paper_id, student_id=current_user.id, title=title[:100])
+    if r is None:
+        raise AppError(code=404, message="作业不存在或无权访问")
+    return make_ok({"title": r})
+
+
 @router.put("/sections/{section_id}")
 async def update_paper_section(
     section_id: uuid.UUID,

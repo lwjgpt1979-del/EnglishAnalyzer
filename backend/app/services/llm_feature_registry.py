@@ -32,6 +32,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "作文分阶段诊断 + 改写范文", "why": "诊断 + 改写范文需多步推理与质量判断", "locations": ["essay_service.py:244"]},
     {"feature": None, "mode": "reasoning", "surface": "运营后台", "module": "知识点·题目归类", "service": "kp_classifier_service",
      "purpose": "题目归类到知识点", "why": "理解题意并映射到知识体系,属推断", "locations": ["kp_classifier_service.py:73"]},
+    {"feature": "paper_title", "mode": "chat", "surface": "小程序端", "module": "作业上传", "service": "user_paper_service",
+     "purpose": "从上传作业文字里提取标题名(自动命名)", "why": "规格明确的短标题抽取,关思考走快档", "locations": ["user_paper_service.py:96"]},
     {"feature": "kp_lecture", "mode": "reasoning", "surface": "运营后台", "module": "知识点·讲义", "service": "kp_lecture_service",
      "purpose": "生成知识点讲解小节(Markdown 讲义)", "why": "组织知识并推理表达生成教学内容", "locations": ["kp_lecture_service.py:253"]},
     {"feature": None, "mode": "reasoning", "surface": "运营后台", "module": "知识点·题目归类", "service": "kp_suggest_service",

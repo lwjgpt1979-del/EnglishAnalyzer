@@ -46,6 +46,11 @@ export function getPaperVocab(paperId: string): Promise<{ words: PaperVocabWord[
 export function getPaperLongSentences(paperId: string): Promise<{ sentences: string[] }> {
   return request<{ sentences: string[] }>(`/api/v1/user-papers/${paperId}/long-sentences`, { method: 'GET' })
 }
+// 重命名作业标题(改自动生成的名字)
+export function renamePaper(paperId: string, title: string): Promise<{ title: string }> {
+  return request<{ title: string }>(`/api/v1/user-papers/${paperId}/title`, { method: 'PUT', data: { title } })
+}
+
 export function analyzePaperSentence(sentence: string): Promise<any> {
   return request<any>(`/api/v1/user-papers/analyze-sentence`, { method: 'POST', data: { sentence } })
 }

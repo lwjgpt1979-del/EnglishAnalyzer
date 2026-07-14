@@ -81,6 +81,63 @@ async def _images_hash(source_image_urls: list[str]) -> str | None:
         return None
 
 
+async def _extract_paper_name(printed_text: str) -> str:
+    """从作业文字里提取一个简短标题名(印在卷上的标题/年级科目/单元测验名);提不出返回空。
+    关推理(结构化抽取,规格明确);失败返回空,交由调用方走「年月日作业X」兜底。"""
+    text = (printed_text or "").strip()
+    if not text:
+        return ""
+    from app.services.llm_provider import chat_completion, fast_model
+    sys = ("你从一份英语作业/试卷的文字里提取它的**标题名称**——如印在卷子上的标题、"
+           "年级+科目、单元测验名等。只输出这个简短名称(中文优先,≤12字),"
+           "没有明显标题就输出空字符串。不要解释、不要标点包裹。")
+    user = f"作业文字(节选):\n{text[:800]}\n\n输出标题名称(没有则留空):"
+    try:
+        resp = await chat_completion(system_prompt=sys, user_prompt=user, max_tokens=40,
+                                     model=fast_model(), disable_thinking=True, feature="paper_title")
+        name = (resp.choices[0].message.content or "").strip().strip('“”"\'　 ')
+    except Exception:  # noqa: BLE001
+        return ""
+    if not name or len(name) > 20 or name in ("空", "无", "None", "none", "N/A"):
+        return ""
+    return name
+
+
+async def _gen_paper_title(db: AsyncSession, paper: UserUploadedPaper, printed_text: str) -> str:
+    """自动作业标题:能解析出名字 → 「名字 年月日」;否则「年月日作业X」(X=该生当天第几份)。
+    年月日 = 上传日期(按 Asia/Shanghai)。"""
+    import datetime as _dt
+    from datetime import timezone as _tz
+    from zoneinfo import ZoneInfo
+    sh = ZoneInfo("Asia/Shanghai")
+    created = paper.created_at or _dt.datetime.now(_tz.utc)
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=_tz.utc)
+    local = created.astimezone(sh)
+    date_s = local.strftime("%Y-%m-%d")
+    name = await _extract_paper_name(printed_text)
+    if name:
+        return f"{name} {date_s}"
+    # 兜底:年月日作业X —— X=该生当天(本地)截至本份的第几份
+    day_start_utc = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(_tz.utc)
+    cnt = (await db.execute(select(func.count(UserUploadedPaper.id)).where(
+        UserUploadedPaper.student_id == paper.student_id,
+        UserUploadedPaper.created_at >= day_start_utc,
+        UserUploadedPaper.created_at <= paper.created_at))).scalar_one()
+    return f"{date_s}作业{int(cnt) or 1}"
+
+
+async def rename_paper(db: AsyncSession, *, paper_id: uuid.UUID,
+                       student_id: uuid.UUID, title: str) -> str | None:
+    """重命名作业标题(仅本人)。返回新标题;无权/不存在返回 None。"""
+    paper = await db.get(UserUploadedPaper, paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    paper.title = title
+    await db.commit()
+    return title
+
+
 async def create_paper(
     db: AsyncSession,
     *,
@@ -236,6 +293,13 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                     db, student_id=paper.student_id, text=stems_text, source="paper")
             except Exception:  # noqa: BLE001
                 pass
+
+            # 标题:用户没填 → 自动生成「名字 年月日」;解析不出名字 → 「年月日作业X」(best-effort)
+            if not (paper.title or "").strip():
+                try:
+                    paper.title = await _gen_paper_title(db, paper, merged.printed_text)
+                except Exception:  # noqa: BLE001
+                    pass
 
             paper.ocr_status = "completed"
         except Exception:
