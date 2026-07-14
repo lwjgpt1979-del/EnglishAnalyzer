@@ -64,21 +64,23 @@ def _label_of(pq) -> tuple[str, bool]:
     return _suggest_section_label(pq.question_type, bool(pq.passage or pq.block_key)), True
 
 
-async def _images_hash(source_image_urls: list[str]) -> str | None:
-    """按顺序抓图片字节 → 合并 md5(同一张图重复上传去重)。任一抓取失败 → None(不拦截,照常解析)。"""
+async def _image_hashes(source_image_urls: list[str]) -> tuple[str | None, list[str]]:
+    """抓每张图字节 → (整套合并 md5, [每张 md5])。任一抓取失败 → (None, [])(不拦截,照常解析)。"""
     import hashlib
     import httpx
     from app.services import upload_service
-    h = hashlib.md5()
+    combined = hashlib.md5()
+    per: list[str] = []
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             for url in source_image_urls:
                 r = await client.get(upload_service.make_fetch_url(url))
                 r.raise_for_status()
-                h.update(r.content)
-        return h.hexdigest()
+                per.append(hashlib.md5(r.content).hexdigest())
+                combined.update(r.content)
+        return combined.hexdigest(), per
     except Exception:  # noqa: BLE001
-        return None
+        return None, []
 
 
 async def _extract_paper_name(printed_text: str) -> str:
@@ -147,9 +149,11 @@ async def create_paper(
 ) -> tuple[UserUploadedPaper, bool]:
     """创建整卷记录，ocr_status=pending。返回 (paper, reused)。
 
-    去重(问题1):同一学生上传**内容相同**的图片(md5 一致)时,直接复用已有卷,
-    不重复解析——reused=True,调用方跳过扣费与后台管线。"""
-    img_hash = await _images_hash(source_image_urls)
+    去重:①整套图片相同(合并 md5 一致)→ 复用;②本次图片是某份已有卷的**子集**
+    (如先传 2 图、再传其中 1 图)→ 复用那份更完整的卷。命中即 reused=True,调用方
+    跳过扣费与后台管线(也就不会重复解析/重复计掌握度)。"""
+    img_hash, per_md5 = await _image_hashes(source_image_urls)
+    uniq = list(dict.fromkeys(per_md5))
     if img_hash:
         existing = (await db.execute(
             select(UserUploadedPaper).where(
@@ -159,12 +163,26 @@ async def create_paper(
             .order_by(UserUploadedPaper.created_at.desc()).limit(1))).scalar_one_or_none()
         if existing is not None:
             return existing, True
+    # ② 子集去重:本次每张图都已在某份已有卷里(image_md5s ⊇ 本次) → 复用那份
+    if uniq:
+        sub = (await db.execute(
+            select(UserUploadedPaper).where(
+                UserUploadedPaper.student_id == student_id,
+                UserUploadedPaper.duplicate_of.is_(None),
+                UserUploadedPaper.ocr_status.in_(["completed", "processing", "pending"]),
+                UserUploadedPaper.image_md5s.contains(uniq))
+            # 多份都含 → 优先复用图更多=更完整的那份(合并卷),其次最近
+            .order_by(func.jsonb_array_length(UserUploadedPaper.image_md5s).desc(),
+                      UserUploadedPaper.created_at.desc()).limit(1))).scalar_one_or_none()
+        if sub is not None:
+            return sub, True
 
     paper = UserUploadedPaper(
         student_id=student_id,
         title=title,
         source_image_urls=source_image_urls,
         image_hash=img_hash,
+        image_md5s=(uniq or None),
         ocr_status="pending",
     )
     db.add(paper)
