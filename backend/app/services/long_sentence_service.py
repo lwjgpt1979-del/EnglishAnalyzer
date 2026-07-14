@@ -1178,6 +1178,136 @@ async def add_paper_sentence_bundle(db: AsyncSession, *, owner_id: uuid.UUID, te
             "grammar_added": grammar_added}
 
 
+async def _sentence_grammar_nodes(db: AsyncSession, text: str, analysis: dict) -> list[dict]:
+    """句子涉及的语法点 → 匹配官方语法大纲节点(cf/jf),结果**缓存进** sentence_analysis_cache
+    的 analysis_json['grammar_nodes'](同句不重复付费匹配)。返回 [{name,node_id,code}]。"""
+    cached = analysis.get("grammar_nodes")
+    if cached is not None:
+        return cached
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.models.d20_long_sentence import SentenceAnalysisCache
+    import hashlib
+    names = [g.get("name") for g in (analysis.get("grammar_points") or []) if g.get("name")]
+    if not names:
+        names = [str(x) for x in (analysis.get("syntax_points") or []) if str(x).strip()]
+    out: list[dict] = []
+    seen: set = set()
+    for name in names:
+        m = await match_kp(db, raw_name=str(name), axis_hint="knowledge", source_type="exam")
+        if m.node_id is None:
+            continue
+        row = (await db.execute(sa.select(KnowledgeNode.code, KnowledgeNode.name)
+                                .where(KnowledgeNode.id == m.node_id))).first()
+        if not row or not row.code or not (row.code.startswith("cf") or row.code.startswith("jf")):
+            continue
+        if str(m.node_id) in seen:
+            continue
+        seen.add(str(m.node_id))
+        out.append({"name": str(name), "node_id": str(m.node_id),
+                    "node_name": row.name, "code": row.code})
+    # 回填缓存(best-effort;失败不影响返回)
+    try:
+        h = hashlib.md5((text or "").strip().encode("utf-8")).hexdigest()
+        rowc = await db.get(SentenceAnalysisCache, h)
+        if rowc is not None:
+            merged = dict(rowc.analysis_json or {})
+            merged["grammar_nodes"] = out
+            rowc.analysis_json = merged
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        await db.rollback()
+    return out
+
+
+_GRAMMAR_DISTRACTOR_POOL: list[str] | None = None
+
+
+async def _grammar_distractor_pool(db: AsyncSession) -> list[str]:
+    """官方语法大纲节点(cf/jf)名字池,给语法选择题当干扰项。进程内缓存一次。"""
+    global _GRAMMAR_DISTRACTOR_POOL
+    if _GRAMMAR_DISTRACTOR_POOL is None:
+        from app.models.d15_knowledge_graph import KnowledgeNode
+        rows = (await db.execute(sa.select(KnowledgeNode.name).where(
+            sa.or_(KnowledgeNode.code.ilike("cf%"), KnowledgeNode.code.ilike("jf%")),
+            KnowledgeNode.status == "active"))).scalars().all()
+        # 名字精简(去掉冒号后的例句),去重
+        pool = []
+        for n in rows:
+            base = (n or "").split(":")[0].split(":")[0].strip()
+            if base and base not in pool:
+                pool.append(base)
+        _GRAMMAR_DISTRACTOR_POOL = pool
+    return _GRAMMAR_DISTRACTOR_POOL
+
+
+async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.UUID) -> dict:
+    """长难句学习页的交互素材:
+    - grammar_quiz:句子涉及的每个语法结构一题(提问式选择),带匹配的语法讲解节点;
+      答完可「查看讲解」→ kp-content(自动生成)+ 加入作业精讲·语法。
+    - words:重点词解析成单词卡片数据(word_id/图/音/释义),供「加入作业精讲·单词」和点开卡片。
+    """
+    import hashlib
+    from app.models.d5_learning import VocabularyWord
+    from app.services import vocab_intensive_service as vis
+    text = (text or "").strip()
+    if not text:
+        return {"grammar_quiz": [], "words": []}
+    analysis = await analyze_sentence_cached(db, text, with_paraphrase=False)
+
+    # ① 语法提问式选择
+    gnodes = await _sentence_grammar_nodes(db, text, analysis)
+    pool = await _grammar_distractor_pool(db)
+    segs = analysis.get("segments") or []
+    quiz = []
+    for i, g in enumerate(gnodes):
+        correct = g["node_name"].split(":")[0].split(":")[0].strip() or g["name"]
+        # 干扰项:名字池里排除正确项,按 (句hash+序号) 确定性挑 3 个(同句稳定)
+        seed = int(hashlib.md5(f"{text}{i}".encode()).hexdigest(), 16)
+        cand = [p for p in pool if p and p != correct]
+        picks = []
+        for k in range(len(cand)):
+            picks.append(cand[(seed // (k + 1)) % len(cand)])
+            picks = list(dict.fromkeys(picks))
+            if len(picks) >= 3:
+                break
+        options = list(dict.fromkeys([correct, *picks]))[:4]
+        # 稳定打乱
+        options.sort(key=lambda o: hashlib.md5(f"{text}{i}{o}".encode()).hexdigest())
+        # 关联子句:段类型里含语法名关键词的那段文本(找不到就整句)
+        key = g["name"][:2]
+        clause = next((s.get("text") for s in segs if key and key in str(s.get("type") or "")), None)
+        quiz.append({
+            "node_id": g["node_id"], "node_name": g["node_name"], "code": g["code"],
+            "clause": clause, "question": f"「{clause or text}」运用了哪种语法结构?",
+            "options": options, "answer": options.index(correct),
+        })
+
+    # ② 重点词 → 单词卡片数据
+    kws = analysis.get("key_words") or []
+    lowmap = {}
+    if kws:
+        low = [str(k.get("word") or "").strip().lower() for k in kws if str(k.get("word") or "").strip()]
+        rows = (await db.execute(sa.select(VocabularyWord).where(
+            sa.func.lower(VocabularyWord.word).in_(low)))).scalars().all()
+        lowmap = {r.word.lower(): r for r in rows}
+    words = []
+    for k in kws:
+        w = str(k.get("word") or "").strip()
+        if not w:
+            continue
+        hit = lowmap.get(w.lower())
+        if hit is not None:
+            item = vis._word_out(hit)
+            item["in_vocab"] = True
+        else:
+            item = {"word_id": None, "word": w, "phonetic": k.get("pos") or None,
+                    "definitions": ([{"zh": k.get("meaning")}] if k.get("meaning") else None),
+                    "image_url": None, "word_audio_url": None, "en_description": None,
+                    "example": None, "in_vocab": False}
+        words.append(item)
+    return {"grammar_quiz": quiz, "words": words}
+
+
 async def list_student_published(
     db: AsyncSession, *, owner_id: uuid.UUID, limit: int = 50,
 ) -> list:

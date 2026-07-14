@@ -49,6 +49,29 @@ async def list_long_sentences(
     return make_ok(LongSentenceListOut(total=len(items), items=items))
 
 
+@router.post("/study-aids", response_model=BaseResponse[dict])
+async def study_aids(
+    db: DbDep, current_user: UserDep,
+    sentence: Annotated[str, Body(..., embed=True, min_length=1, max_length=600)],
+):
+    """长难句学习页交互素材:语法提问式选择(grammar_quiz)+ 重点词卡片(words)。"""
+    return make_ok(await lss.sentence_study_aids(db, text=sentence, student_id=current_user.id))
+
+
+@router.post("/add-grammar", response_model=BaseResponse[dict])
+async def add_grammar_target(
+    db: DbDep, current_user: UserDep,
+    node_id: Annotated[uuid.UUID, Body(..., embed=True)],
+    paper_id: Annotated[uuid.UUID | None, Body(embed=True)] = None,
+):
+    """把一个语法结构(node)加入作业精讲·语法(按来源卷归组)。长难句学习页「查看讲解」时调。"""
+    from app.services import learning_plan_service
+    n = await learning_plan_service.add_targets(
+        db, student_id=current_user.id, node_ids=[node_id],
+        source="long_sentence_quiz", source_paper_id=paper_id)
+    return make_ok({"added": n})
+
+
 @router.get("/next", response_model=BaseResponse[dict])
 async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
     """自适应推荐下一句:按学生水平 θ(年级估)选难度贴近的、优先薄弱句法点 + 课程对齐 + 个人材料。

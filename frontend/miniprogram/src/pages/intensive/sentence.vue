@@ -58,7 +58,9 @@ async function openGroup(g: any) {
   finally { itemsLoading.value = false }
 }
 function goAnalyze(text: string) {
-  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(text)}` })
+  // 作业模式带上批次卷号,学习页里加入的语法/单词才能归到同一作业批次
+  const pid = mode.value === 'homework' && groupOpen.value ? `&paperId=${groupOpen.value.id}` : ''
+  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(text)}${pid}` })
 }
 async function load() {
   loading.value = true
