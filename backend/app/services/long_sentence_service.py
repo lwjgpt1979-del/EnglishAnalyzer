@@ -1093,8 +1093,9 @@ async def analyze_sentence_cached(db: AsyncSession, sentence: str, with_paraphra
 async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: str,
                                source_paper_id: uuid.UUID | None = None) -> bool:
     """学生**手动**把一句长难句加入自己的待学习区(student_long_sentence,本人可见)。
-    幂等按 (owner, text);返回是否新增。供整卷/作业里逐句「加入待学习」。
-    source_paper_id:来源卷(作业精讲按批次归组)。"""
+    幂等**按卷**(owner, text, source_paper_id):同句在**不同卷**各留一行(各自进对应作业
+    精讲批次),同卷内去重一行。返回是否新增。source_paper_id:来源卷(作业精讲按批次归组)。
+    分析走全局 md5 暂存(analyze_sentence_cached),多行/多卷不重复付费。"""
     from app.models.d20_long_sentence import StudentLongSentence
     text = (text or "").strip()
     if not text:
@@ -1103,13 +1104,17 @@ async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: s
         StudentLongSentence.owner_id == owner_id,
         StudentLongSentence.text == text))).scalars().all()
     if existing:
-        # 幂等命中:这次带来源卷而旧行没有 → 回填(否则作业精讲按卷分组永远看不到这句)
-        if source_paper_id is not None and any(r.source_paper_id is None for r in existing):
-            for r in existing:
-                if r.source_paper_id is None:
-                    r.source_paper_id = source_paper_id
-            await db.commit()
-        return False
+        # 本卷已有此句(含个人区 None)→ 幂等返回
+        if any(r.source_paper_id == source_paper_id for r in existing):
+            return False
+        # 带卷加入、但只有「个人区(None)」旧行 → 回填到本卷复用,避免既有 None 又新建
+        if source_paper_id is not None:
+            orphan = next((r for r in existing if r.source_paper_id is None), None)
+            if orphan is not None:
+                orphan.source_paper_id = source_paper_id
+                await db.commit()
+                return False
+        # 否则(此句已属别的卷,本卷还没有)→ 继续为本卷新建一行(分析命中全局缓存,不再付费)
     comp = syntactic_complexity(text, DEFAULT_MIN_WORDS)
     # 存进待学习的句子以后要做「理解检测」,带上 paraphrase 探针(复用暂存,含则不再生成)
     analysis = dict(await analyze_sentence_cached(db, text, with_paraphrase=True))
