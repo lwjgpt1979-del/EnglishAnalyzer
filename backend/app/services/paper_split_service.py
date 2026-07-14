@@ -474,6 +474,31 @@ def _try_parse_doubao_json(text: str) -> list[ParsedPaperQuestion] | None:
     return result if result else None
 
 
+async def _split_cache_get(md5: str) -> str | None:
+    from app.core.database import async_session_factory
+    from app.models.d13_v2_user_papers import PaperSplitCache
+    try:
+        async with async_session_factory() as db:
+            row = await db.get(PaperSplitCache, md5)
+            return row.raw_json if row is not None else None
+    except Exception:  # noqa: BLE001  缓存不可用不阻断,照常真调
+        return None
+
+
+async def _split_cache_put(md5: str, raw_json: str) -> None:
+    from app.core.database import async_session_factory
+    from app.models.d13_v2_user_papers import PaperSplitCache
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    try:
+        async with async_session_factory() as db:
+            await db.execute(pg_insert(PaperSplitCache)
+                             .values(input_md5=md5, raw_json=raw_json)
+                             .on_conflict_do_nothing(index_elements=["input_md5"]))
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
     """将整卷 OCR 文字拆分为多道结构化题目。
 
@@ -502,25 +527,34 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
         handwritten_text=ocr.handwritten_text or "(无手写体识别结果)",
     )
 
-    try:
-        # 用 fast 模型(非重推理):主模型重推理会把 token 预算耗光、content 返空→「格式异常」再被重试 3 次。
-        # 整卷题多,输出预算给足 16384。
-        response = await chat_completion(
-            system_prompt=_SYSTEM_PROMPT,
-            user_prompt=prompt + '\n\n返回 JSON 对象:{"questions":[ ...上面格式的每道题... ], "passages":{ "block_key":"短文原文", ... }}。',
-            model=fast_model(),
-            max_tokens=16384,
-            disable_thinking=True,   # 关思考:拆题是结构化抽取,开思考会烧光 token 致 JSON 截断→失败
-            response_format={"type": "json_object"},
-            feature="paper_split",
-        )
-    except Exception as exc:
-        raise AppError(code=502, message=f"整卷拆题服务暂时不可用（{exc}）") from exc
+    # 拆题 LLM 结果暂存:按输入文本 md5 全局缓存(真题按题型段分段调 → 天然「按块」缓存;
+    # 整卷调用则「按卷」缓存)。同段/同卷再解析不重复付费。豆包 Vision 直出 JSON 走前面分支,不到这里。
+    import hashlib
+    _norm = "".join(c.lower() for c in (ocr.printed_text or "") if c.isalnum())
+    _md5 = hashlib.md5(_norm.encode()).hexdigest() if _norm else None
+    raw_text = await _split_cache_get(_md5) if _md5 else None
+    if raw_text is None:
+        try:
+            # 用 fast 模型(非重推理):主模型重推理会把 token 预算耗光、content 返空→「格式异常」再被重试 3 次。
+            # 整卷题多,输出预算给足 16384。
+            response = await chat_completion(
+                system_prompt=_SYSTEM_PROMPT,
+                user_prompt=prompt + '\n\n返回 JSON 对象:{"questions":[ ...上面格式的每道题... ], "passages":{ "block_key":"短文原文", ... }}。',
+                model=fast_model(),
+                max_tokens=16384,
+                disable_thinking=True,   # 关思考:拆题是结构化抽取,开思考会烧光 token 致 JSON 截断→失败
+                response_format={"type": "json_object"},
+                feature="paper_split",
+            )
+        except Exception as exc:
+            raise AppError(code=502, message=f"整卷拆题服务暂时不可用（{exc}）") from exc
 
-    raw_text = (response.choices[0].message.content or "").strip()
-    if raw_text.startswith("```"):
-        raw_text = raw_text.split("```")[-2] if raw_text.count("```") >= 2 else raw_text
-        raw_text = raw_text.lstrip("json").strip()
+        raw_text = (response.choices[0].message.content or "").strip()
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("```")[-2] if raw_text.count("```") >= 2 else raw_text
+            raw_text = raw_text.lstrip("json").strip()
+        if _md5 and raw_text:
+            await _split_cache_put(_md5, raw_text)
 
     try:
         data = json.loads(raw_text or "{}")

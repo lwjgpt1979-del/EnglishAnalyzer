@@ -85,3 +85,14 @@ class KpClassifyCache(Base):
     content_md5 = mapped_column(sa.String(32), primary_key=True)
     kp_key = mapped_column(sa.String(120), nullable=False)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class PaperSplitCache(Base):
+    """拆题(整卷/题型段 文字 → 结构化题目)LLM 结果暂存,按输入文本 md5 全局缓存。
+    仅传统 OCR / 真题 PDF 文本层会真调 DeepSeek 拆题 LLM;豆包 Vision 直出 JSON 不经此。
+    real_extract 按题型段分段调用 → 天然「按块」缓存;整卷调用则「按卷」缓存。"""
+    __tablename__ = "paper_split_cache"
+
+    input_md5 = mapped_column(sa.String(32), primary_key=True)
+    raw_json = mapped_column(sa.Text, nullable=False)   # 拆题 LLM 的原始 JSON 输出(命中后复用解析)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
