@@ -83,17 +83,28 @@ async def _image_hashes(source_image_urls: list[str]) -> tuple[str | None, list[
         return None, []
 
 
+# 题型/板块名 —— 这些不算「标题」,提取到就丢弃,交给「年月日作业X」兜底
+_SECTION_TITLE_WORDS = (
+    "阅读理解", "任务型阅读", "完形填空", "完型填空", "单项选择", "单项填空", "选择题",
+    "词汇运用", "词语运用", "单词拼写", "短文填空", "语法填空", "首字母", "书面表达",
+    "写作", "作文", "听力", "补全对话", "完成句子", "连词成句", "句型转换", "翻译",
+    "判断", "综合练习", "练习",
+)
+
+
 async def _extract_paper_name(printed_text: str) -> str:
-    """从作业文字里提取一个简短标题名(印在卷上的标题/年级科目/单元测验名);提不出返回空。
-    关推理(结构化抽取,规格明确);失败返回空,交由调用方走「年月日作业X」兜底。"""
+    """提取印在卷子**最上方的整体标题**(学校/年级/考试/单元名等);题型名(阅读理解/短文填空…)
+    不算标题、返回空,交由调用方走「年月日作业X」兜底。关推理(结构化抽取,规格明确)。"""
     text = (printed_text or "").strip()
     if not text:
         return ""
     from app.services.llm_provider import chat_completion, fast_model
-    sys = ("你从一份英语作业/试卷的文字里提取它的**标题名称**——如印在卷子上的标题、"
-           "年级+科目、单元测验名等。只输出这个简短名称(中文优先,≤12字),"
-           "没有明显标题就输出空字符串。不要解释、不要标点包裹。")
-    user = f"作业文字(节选):\n{text[:800]}\n\n输出标题名称(没有则留空):"
+    sys = ("你从一份英语作业/试卷的文字里,只提取**印在最上方的整体标题**——如学校名、"
+           "年级+科目、考试/单元名(例:『八年级英语期中试卷』『Unit 3 测试』)。"
+           "**绝不要**把题型/大题名(阅读理解、完形填空、短文填空、词汇运用、单项选择、"
+           "书面表达等)当标题;没有整体标题就输出空字符串。只输出标题(中文优先,≤12字),"
+           "不要解释、不要标点包裹。")
+    user = f"作业文字(节选):\n{text[:800]}\n\n输出整体标题(题型名不算、没有则留空):"
     try:
         resp = await chat_completion(system_prompt=sys, user_prompt=user, max_tokens=40,
                                      model=fast_model(), disable_thinking=True, feature="paper_title")
@@ -101,6 +112,8 @@ async def _extract_paper_name(printed_text: str) -> str:
     except Exception:  # noqa: BLE001
         return ""
     if not name or len(name) > 20 or name in ("空", "无", "None", "none", "N/A"):
+        return ""
+    if any(w in name for w in _SECTION_TITLE_WORDS):   # 题型名不算标题 → 走年月日作业X
         return ""
     return name
 
