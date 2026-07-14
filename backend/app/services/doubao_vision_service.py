@@ -200,7 +200,7 @@ class DoubaoVisionProvider:
                         ],
                     },
                 ],
-                max_tokens=12288,   # 含短文原文(passages),给足预算防截断
+                max_tokens=16384,   # 含短文原文(passages),密集页给足预算防截断
             )
         except Exception as exc:
             _log.error("DoubaoVision API failed: %s", exc)

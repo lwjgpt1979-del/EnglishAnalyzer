@@ -11,7 +11,7 @@ import json
 import logging
 
 from app.core.exceptions import AppError
-from app.services.llm_provider import chat_completion, is_llm_dev_mode
+from app.services.llm_provider import chat_completion, is_llm_dev_mode, fast_model
 from app.services.paper_split_service import ParsedPaperQuestion
 
 _log = logging.getLogger(__name__)
@@ -73,7 +73,10 @@ async def classify_kps(
         response = await chat_completion(
             system_prompt=_SYSTEM_PROMPT,
             user_prompt=prompt,
-            max_tokens=1024,
+            model=fast_model(),          # 归类=题干→知识点映射抽取,快档即可
+            disable_thinking=True,       # 关思考:开思考会烧光 token 致 JSON 截断→归类失败拖垮整卷
+            max_tokens=2048,             # 整卷多题,给足预算防截断
+            feature="kp_classify",
         )
     except Exception as exc:
         _log.error("KP classify failed: %s", exc)

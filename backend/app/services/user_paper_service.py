@@ -205,8 +205,11 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
             )
             parsed = await split_paper_questions(merged)
 
-            # Step 2: DeepSeek 批量归类 KP（M40 新增）
-            kp_map: dict[str, str] = await classify_kps(parsed)
+            # Step 2: DeepSeek 批量归类 KP（M40 新增）——归类是增强,失败不拖垮整卷(题目照常入库)
+            try:
+                kp_map: dict[str, str] = await classify_kps(parsed)
+            except Exception:  # noqa: BLE001
+                kp_map = {}
 
             # Step 2.4: 去重——每个 distinct kp_key 只受控匹配一次(含 LLM),避免 N 题×每题一次 LLM(慢因)。
             # 未命中且是语法名的,在此一次性建个人语法节点(幂等)。

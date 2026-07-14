@@ -198,6 +198,9 @@
       </template>
     </template>
 
+    <!-- 无数据兜底:必须紧跟上面的 loading/paper 链(不能被弹层的 v-if 打断,否则误绑到弹层上) -->
+    <view v-else class="empty">作业不存在或无权访问</view>
+
     <!-- 练同类结果弹层 -->
     <view v-if="similarOpen" class="modal" @tap.self="similarOpen = false">
       <view class="modal-card">
@@ -214,8 +217,6 @@
         <button class="btn-secondary" @tap="similarOpen = false">关闭</button>
       </view>
     </view>
-
-    <view v-else class="empty">作业不存在或无权访问</view>
   </view>
 </template>
 

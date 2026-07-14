@@ -510,7 +510,9 @@ async def split_paper_questions(ocr: OcrResult) -> list[ParsedPaperQuestion]:
             user_prompt=prompt + '\n\n返回 JSON 对象:{"questions":[ ...上面格式的每道题... ], "passages":{ "block_key":"短文原文", ... }}。',
             model=fast_model(),
             max_tokens=16384,
+            disable_thinking=True,   # 关思考:拆题是结构化抽取,开思考会烧光 token 致 JSON 截断→失败
             response_format={"type": "json_object"},
+            feature="paper_split",
         )
     except Exception as exc:
         raise AppError(code=502, message=f"整卷拆题服务暂时不可用（{exc}）") from exc
