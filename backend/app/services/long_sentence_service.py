@@ -1092,10 +1092,16 @@ async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: s
     text = (text or "").strip()
     if not text:
         return False
-    exists = (await db.execute(sa.select(StudentLongSentence.id).where(
+    existing = (await db.execute(sa.select(StudentLongSentence).where(
         StudentLongSentence.owner_id == owner_id,
-        StudentLongSentence.text == text).limit(1))).first()
-    if exists:
+        StudentLongSentence.text == text))).scalars().all()
+    if existing:
+        # 幂等命中:这次带来源卷而旧行没有 → 回填(否则作业精讲按卷分组永远看不到这句)
+        if source_paper_id is not None and any(r.source_paper_id is None for r in existing):
+            for r in existing:
+                if r.source_paper_id is None:
+                    r.source_paper_id = source_paper_id
+            await db.commit()
         return False
     comp = syntactic_complexity(text, DEFAULT_MIN_WORDS)
     # 存进待学习的句子以后要做「理解检测」,带上 paraphrase 探针(复用暂存,含则不再生成)
@@ -1135,12 +1141,19 @@ async def add_paper_sentence_bundle(db: AsyncSession, *, owner_id: uuid.UUID, te
                 r = await vocab_pin_service.add_paper_candidates(
                     db, student_id=owner_id, word_ids=list(wid_rows), source_paper_id=source_paper_id)
                 words_added = r.get("added", 0)
-        # 3) 语法:syntax_points 名 → node_id → 作业精讲·语法
+        # 3) 语法:syntax_points 名 → match_kp 语义匹配 → node_id → 作业精讲·语法
+        #    只保留官方语法大纲节点(code cf/jf)——作业精讲·语法只展示这类且有讲解页;
+        #    命中自动挖掘节点(m-)不显示,加了也是虚高,故过滤掉。
+        from app.models.d15_knowledge_graph import KnowledgeNode
+        syn = [str(x).strip() for x in (analysis.get("syntax_points") or []) if str(x).strip()]
         node_ids: list = []
-        for name in (analysis.get("syntax_points") or []):
-            m = await match_kp(db, raw_name=str(name), axis_hint="knowledge", source_type="exam")
+        for name in syn:
+            m = await match_kp(db, raw_name=name, axis_hint="knowledge", source_type="exam")
             if m.node_id is not None:
-                node_ids.append(m.node_id)
+                code = (await db.execute(sa.select(KnowledgeNode.code).where(
+                    KnowledgeNode.id == m.node_id))).scalar_one_or_none()
+                if code and (code.startswith("cf") or code.startswith("jf")):
+                    node_ids.append(m.node_id)
         if node_ids:
             from app.services import learning_plan_service
             grammar_added = await learning_plan_service.add_targets(

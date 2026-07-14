@@ -107,9 +107,11 @@ async def _controlled_select_llm(
         '返回 JSON:命中则 {"choice": <编号整数>},没有等同项则 {"choice": "NONE"}'
     )
     try:
+        from app.services import llm_provider
         resp = await chat_completion(
-            system_prompt=system, user_prompt=user, max_tokens=64,
+            system_prompt=system, user_prompt=user, max_tokens=128,
             response_format={"type": "json_object"},
+            model=llm_provider.fast_model(), disable_thinking=True, feature="kp_match",
         )
         raw = (resp.choices[0].message.content or "").strip()
         choice = json.loads(raw).get("choice")
