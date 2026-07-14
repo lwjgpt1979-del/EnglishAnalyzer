@@ -73,24 +73,83 @@ async def add_items(db: AsyncSession, *, list_id: uuid.UUID, items: list[dict]) 
     return n
 
 
+_BAND_STAR = {"high": 3, "mid": 2, "low": 1, "none": 0}
+_ITEM_SORT = {
+    "freq": (VocabListItem.frequency.desc().nullslast(), VocabListItem.rank.asc().nullslast()),
+    "rank": (VocabListItem.rank.asc().nullslast(), VocabListItem.frequency.desc().nullslast()),
+    "word": (sa.func.lower(VocabularyWord.word).asc(),),
+}
+
+
+def _item_conds(list_id, *, q=None, band=None, source=None, verified=None):
+    conds = [VocabListItem.list_id == list_id]
+    if q and q.strip():
+        conds.append(VocabularyWord.word.ilike(f"%{q.strip()}%"))
+    if band in _BAND_STAR:
+        conds.append(VocabListItem.star == _BAND_STAR[band])
+    if source == "exam":
+        conds.append(VocabListItem.added_from_exam.is_(True))
+    elif source == "syllabus":
+        conds.append(VocabListItem.added_from_exam.is_(False))
+    if verified is not None:
+        conds.append(VocabListItem.verified.is_(verified))
+    return conds
+
+
 async def list_items(
-    db: AsyncSession, *, list_id: uuid.UUID, skip: int = 0, limit: int = 100
-) -> list[dict]:
+    db: AsyncSession, *, list_id: uuid.UUID, skip: int = 0, limit: int = 100,
+    q: str | None = None, band: str | None = None, source: str | None = None,
+    verified: bool | None = None, sort: str = "freq",
+) -> tuple[list[dict], int]:
+    """搜索/筛选/排序/分页 列词条,返回 (items, 筛选后总数)。
+
+    q=词模糊; band=high|mid|low|none(频档 star 3/2/1/0); source=syllabus|exam(考纲原生/真题补录);
+    verified=已核; sort=freq(真题频次降)|rank(考纲排名升)|word(字母)。
+    """
+    conds = _item_conds(list_id, q=q, band=band, source=source, verified=verified)
+    total = int((await db.execute(
+        sa.select(sa.func.count())
+        .select_from(VocabListItem)
+        .join(VocabularyWord, VocabularyWord.id == VocabListItem.word_id)
+        .where(*conds))).scalar_one())
+    order = _ITEM_SORT.get(sort, _ITEM_SORT["freq"])
     rows = (await db.execute(
         sa.select(VocabListItem.word_id, VocabularyWord.word, VocabListItem.rank,
                   VocabListItem.frequency, VocabListItem.star, VocabListItem.verified,
                   VocabListItem.added_from_exam)
         .join(VocabularyWord, VocabularyWord.id == VocabListItem.word_id)
-        .where(VocabListItem.list_id == list_id)
-        # 真题频次高的在前(反哺后按热度看);同频次按考纲排名
-        .order_by(VocabListItem.frequency.desc().nullslast(), VocabListItem.rank.asc().nullslast())
-        .offset(skip).limit(limit)
+        .where(*conds).order_by(*order).offset(skip).limit(limit)
     )).all()
-    return [
+    items = [
         {"word_id": wid, "word": w, "rank": rank, "frequency": freq, "star": star,
          "verified": v, "added_from_exam": afe}
         for wid, w, rank, freq, star, v, afe in rows
     ]
+    return items, total
+
+
+async def list_stats(db: AsyncSession, *, list_id: uuid.UUID) -> dict:
+    """词表统计:总词/有真题频次/真题补录/高中低频/已核 数。供页面统计条。"""
+    r = (await db.execute(
+        sa.select(
+            sa.func.count(),
+            sa.func.count().filter(VocabListItem.frequency > 0),
+            sa.func.count().filter(VocabListItem.added_from_exam.is_(True)),
+            sa.func.count().filter(VocabListItem.star == 3),
+            sa.func.count().filter(VocabListItem.star == 2),
+            sa.func.count().filter(VocabListItem.star == 1),
+            sa.func.count().filter(VocabListItem.verified.is_(True)),
+        ).where(VocabListItem.list_id == list_id))).one()
+    total, with_freq, added, high, mid, low, verified = (int(x or 0) for x in r)
+    return {"total": total, "with_freq": with_freq, "added": added,
+            "high": high, "mid": mid, "low": low, "verified": verified}
+
+
+async def delete_item(db: AsyncSession, *, list_id: uuid.UUID, word_id: uuid.UUID) -> None:
+    """从词表移除一个词条(不删全局 VocabularyWord 主词)。"""
+    await db.execute(sa.delete(VocabListItem).where(
+        VocabListItem.list_id == list_id, VocabListItem.word_id == word_id))
+    await db.flush()
 
 
 # ─── 真题词频反哺(选中真题 → 分词/词形还原 → 频次 → 反哺考纲词表)───────────────

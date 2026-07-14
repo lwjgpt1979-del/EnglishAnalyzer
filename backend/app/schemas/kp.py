@@ -543,6 +543,7 @@ class VocabListOut(BaseModel):
     exam_level: str | None = None
     source_type: str | None = None
     status: str
+    item_count: int = 0
 
 
 class VocabListsOut(BaseModel):
@@ -573,8 +574,9 @@ class VocabItemOut(BaseModel):
 
 
 class VocabItemsOut(BaseModel):
-    total: int
+    total: int                          # 当前筛选后的总数(用于分页)
     items: list[VocabItemOut]
+    stats: dict | None = None           # 整表统计:total/with_freq/added/high/mid/low/verified
 
 
 # ── 长难句(学生端) ──────────────────────────────────────────

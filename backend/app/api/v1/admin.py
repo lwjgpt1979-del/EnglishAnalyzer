@@ -2294,11 +2294,16 @@ async def set_ls_config_api(body: LSConfigIn, db: DbDep, admin: AdminDep):
 
 @router.get("/vocab-lists", response_model=BaseResponse[VocabListsOut])
 async def list_vocab_lists_api(db: DbDep, admin: AdminDep, status: str | None = None):
+    import sqlalchemy as sa
     from app.services import vocab_list_service as vls
+    from app.models.d18_vocab_kg import VocabListItem as _VLI
     rows = await vls.list_lists(db, status=status)
+    counts = dict((await db.execute(
+        sa.select(_VLI.list_id, sa.func.count()).group_by(_VLI.list_id))).all())
     return make_ok(VocabListsOut(items=[
         VocabListOut(id=r.id, name=r.name, exam_level=r.exam_level,
-                     source_type=r.source_type, status=r.status) for r in rows]))
+                     source_type=r.source_type, status=r.status,
+                     item_count=int(counts.get(r.id, 0))) for r in rows]))
 
 
 @router.post("/vocab-lists", response_model=BaseResponse[VocabListOut])
@@ -2312,10 +2317,19 @@ async def create_vocab_list_api(body: VocabListCreate, db: DbDep, admin: AdminDe
 
 
 @router.get("/vocab-lists/{list_id}/items", response_model=BaseResponse[VocabItemsOut])
-async def list_vocab_items_api(list_id: uuid.UUID, db: DbDep, admin: AdminDep, skip: int = 0, limit: int = 100):
+async def list_vocab_items_api(
+    list_id: uuid.UUID, db: DbDep, admin: AdminDep,
+    skip: int = 0, limit: int = 50,
+    q: str | None = None, band: str | None = None, source: str | None = None,
+    verified: bool | None = None, sort: str = "freq",
+):
+    """词条:搜索(q)/筛选(band 频档、source 考纲原生|真题补录、verified 已核)/排序(sort)/分页。附整表统计。"""
     from app.services import vocab_list_service as vls
-    items = await vls.list_items(db, list_id=list_id, skip=skip, limit=limit)
-    return make_ok(VocabItemsOut(total=len(items), items=[VocabItemOut(**it) for it in items]))
+    items, total = await vls.list_items(
+        db, list_id=list_id, skip=skip, limit=limit,
+        q=q, band=band, source=source, verified=verified, sort=sort)
+    stats = await vls.list_stats(db, list_id=list_id)
+    return make_ok(VocabItemsOut(total=total, items=[VocabItemOut(**it) for it in items], stats=stats))
 
 
 @router.post("/vocab-lists/{list_id}/items", response_model=BaseResponse[VocabItemsOut])
@@ -2323,8 +2337,18 @@ async def add_vocab_items_api(list_id: uuid.UUID, body: VocabItemsIn, db: DbDep,
     from app.services import vocab_list_service as vls
     await vls.add_items(db, list_id=list_id, items=[it.model_dump(exclude_none=True) for it in body.items])
     await db.commit()
-    items = await vls.list_items(db, list_id=list_id, limit=500)
-    return make_ok(VocabItemsOut(total=len(items), items=[VocabItemOut(**it) for it in items]))
+    items, total = await vls.list_items(db, list_id=list_id, limit=50)
+    stats = await vls.list_stats(db, list_id=list_id)
+    return make_ok(VocabItemsOut(total=total, items=[VocabItemOut(**it) for it in items], stats=stats))
+
+
+@router.delete("/vocab-lists/{list_id}/items/{word_id}", response_model=BaseResponse[dict])
+async def delete_vocab_item_api(list_id: uuid.UUID, word_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """从词表移除一个词条(不删全局主词)。"""
+    from app.services import vocab_list_service as vls
+    await vls.delete_item(db, list_id=list_id, word_id=word_id)
+    await db.commit()
+    return make_ok({"deleted": True})
 
 
 class ExamFreqRebuildIn(BaseModel):

@@ -546,14 +546,24 @@ export function createVocabList(body: {
   return unwrap<VocabListItem2>(request.post('/admin/vocab-lists', body))
 }
 
-export function listVocabItems(listId: string, params?: { skip?: number; limit?: number }) {
-  return unwrap<{ total: number; items: VocabWordItem[] }>(
-    request.get(`/admin/vocab-lists/${listId}/items`, { params }))
+export interface VocabListStats {
+  total: number; with_freq: number; added: number
+  high: number; mid: number; low: number; verified: number
+}
+export interface VocabItemsResp { total: number; items: VocabWordItem[]; stats?: VocabListStats }
+export function listVocabItems(listId: string, params?: {
+  skip?: number; limit?: number
+  q?: string; band?: string; source?: string; verified?: boolean; sort?: string
+}): Promise<VocabItemsResp> {
+  return unwrap<VocabItemsResp>(request.get(`/admin/vocab-lists/${listId}/items`, { params }))
 }
 
 export function addVocabItems(listId: string, items: Array<{ word: string; rank?: number; star?: number }>) {
-  return unwrap<{ total: number; items: VocabWordItem[] }>(
-    request.post(`/admin/vocab-lists/${listId}/items`, { items }))
+  return unwrap<VocabItemsResp>(request.post(`/admin/vocab-lists/${listId}/items`, { items }))
+}
+
+export function deleteVocabItem(listId: string, wordId: string): Promise<{ deleted: boolean }> {
+  return unwrap(request.delete(`/admin/vocab-lists/${listId}/items/${wordId}`))
 }
 
 // 真题词频反哺考纲词表(整卷去重 + 词形还原;耗时约 1 分钟,给足超时)

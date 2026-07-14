@@ -194,6 +194,7 @@ export interface VocabListItem2 {
   exam_level?: string | null
   source_type?: string | null
   status: string
+  item_count?: number
 }
 
 export interface VocabWordItem {
