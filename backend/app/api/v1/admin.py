@@ -2330,6 +2330,7 @@ async def add_vocab_items_api(list_id: uuid.UUID, body: VocabItemsIn, db: DbDep,
 class ExamFreqRebuildIn(BaseModel):
     exam_type: str = "中考"            # 中考 | 高考
     list_name: str | None = None       # 不传按 exam_type 取默认考纲词表
+    add_min_freq: int | None = None    # 补录门槛(≥N 卷才补录);不传用默认(3),调低更全但更噪
 
 
 @router.post("/vocab-lists/rebuild-exam-freq", response_model=BaseResponse[dict])
@@ -2341,7 +2342,8 @@ async def rebuild_exam_freq_api(body: ExamFreqRebuildIn, db: DbDep, admin: Admin
     ln = body.list_name or _DEFAULT.get(body.exam_type)
     if not ln:
         raise AppError(code=400, message="未指定目标词表,且该考试无默认考纲词表")
-    r = await vls.rebuild_exam_frequency(db, exam_type=body.exam_type, list_name=ln)
+    r = await vls.rebuild_exam_frequency(
+        db, exam_type=body.exam_type, list_name=ln, add_min_freq=body.add_min_freq)
     await db.commit()
     return make_ok(r)
 

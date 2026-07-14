@@ -110,7 +110,7 @@ def _get_lemma_nlp():
 # 高/中/低频档阈值(出现在多少份不同真题卷);后续可挪到 system_configs
 _FREQ_HIGH = 10
 _FREQ_MID = 3
-_ADD_MIN_FREQ = 2   # 补录门槛:出现 <2 卷的新词多为人名/OCR 噪声,不补录
+_ADD_MIN_FREQ = 3   # 补录门槛默认:出现 <3 卷的新词多为人名/OCR 噪声,不补录(可经参数下调)
 
 
 def _bin_star(freq: int) -> int:
@@ -154,30 +154,24 @@ def _lemma_one(nlp, word: str) -> str:
 
 async def rebuild_exam_frequency(
     db: AsyncSession, *, exam_type: str = "中考", list_name: str = "中考考纲词汇(1600)",
+    add_min_freq: int | None = None,
 ) -> dict:
     """选中(全部)某考试真题 → 词形还原统计词频(整卷去重防重算)→ 反哺对应考纲词表:
     给命中的考纲词写「真题卷频次(frequency)+高/中/低频档(star)」,真题里出现但考纲未收录的词
-    (≥_ADD_MIN_FREQ 卷、内容词、非人名)补录进该表(added_from_exam=true)。返回统计摘要。
+    (≥add_min_freq 卷、内容词、非人名)补录进该表(added_from_exam=true)。返回统计摘要。
+
+    add_min_freq:补录门槛,不传用默认 _ADD_MIN_FREQ(=3,更去噪);调低会多补但夹带更多人名/OCR 噪声。
     """
     import hashlib
     import re as _re
     from collections import Counter
     from app.models.d16_question_domain import PlatformQuestion, PlatformPaper
 
+    add_min = add_min_freq if add_min_freq and add_min_freq >= 1 else _ADD_MIN_FREQ
+
     vl = (await db.execute(sa.select(VocabList).where(VocabList.name == list_name))).scalar_one_or_none()
     if vl is None:
         raise AppError(code=404, message=f"未找到词表「{list_name}」")
-
-    # 0) 复位:清掉该表本轮真题频次状态,保证可重复执行(幂等,不累积陈旧补录)。
-    #    考纲原生词只清 frequency/star;上轮真题补录的词直接删除(合格的会在下面重新补回)。
-    await db.execute(
-        sa.update(VocabListItem)
-        .where(VocabListItem.list_id == vl.id, VocabListItem.added_from_exam.is_(False))
-        .values(frequency=None, star=0))
-    await db.execute(
-        sa.delete(VocabListItem)
-        .where(VocabListItem.list_id == vl.id, VocabListItem.added_from_exam.is_(True)))
-    await db.flush()
 
     # 1) 取该考试所有真题(type='real')题面,按 paper 归并。
     #    只取「题干 stem + 选项 options」= 真题实际内容;不含 explanation(那是解析版编者注,非真题原词)。
@@ -215,6 +209,21 @@ async def rebuild_exam_frequency(
             continue
         seen.add(key)
         unique_texts.append(full)
+
+    # 空卷防护:该考试没有真题就直接报错、不动词表(否则下面复位会把已有考纲频次清空)
+    if not unique_texts:
+        raise AppError(code=400, message=f"「{exam_type}」暂无真题(platform_question type='real'),未做任何改动")
+
+    # 2.5) 复位:清掉该表本轮真题频次状态,保证可重复执行(幂等,不累积陈旧补录)。
+    #      考纲原生词只清 frequency/star;上轮真题补录的词直接删除(合格的会在下面重新补回)。
+    await db.execute(
+        sa.update(VocabListItem)
+        .where(VocabListItem.list_id == vl.id, VocabListItem.added_from_exam.is_(False))
+        .values(frequency=None, star=0))
+    await db.execute(
+        sa.delete(VocabListItem)
+        .where(VocabListItem.list_id == vl.id, VocabListItem.added_from_exam.is_(True)))
+    await db.flush()
 
     # 3) 逐卷分词+词形还原,累计「出现卷数」= 词频;并留一份归一化整卷文本供多词词条精确匹配
     nlp = _get_lemma_nlp()
@@ -264,7 +273,7 @@ async def rebuild_exam_frequency(
     # 5) 补录:真题里有、考纲没有、内容词、非人名、≥门槛卷
     added = 0
     for lm, f in freq.items():
-        if lm in covered or lm not in content_lemmas or f < _ADD_MIN_FREQ:
+        if lm in covered or lm not in content_lemmas or f < add_min:
             continue
         wid = await _get_or_create_word(db, lm)
         star = _bin_star(f)
@@ -287,7 +296,7 @@ async def rebuild_exam_frequency(
         "exam_word_forms": len(freq),
         "syllabus_words": len(items), "matched": matched, "added": added,
         "freq_high": high, "freq_mid": mid, "freq_low": low,
-        "thresholds": {"high": _FREQ_HIGH, "mid": _FREQ_MID, "add_min": _ADD_MIN_FREQ},
+        "thresholds": {"high": _FREQ_HIGH, "mid": _FREQ_MID, "add_min": add_min},
     }
 
 
