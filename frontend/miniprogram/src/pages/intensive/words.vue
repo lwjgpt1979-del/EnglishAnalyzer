@@ -51,6 +51,7 @@
     <view v-if="cardWord" class="card-mask" @tap="cardWord = null">
       <view class="card-pop" @tap.stop>
         <image v-if="cardWord.image_url" :src="cardWord.image_url" class="cp-img" mode="aspectFill" />
+        <view v-else-if="genWords.has(cardWord.word_id)" class="cp-img cp-img-ph"><text>配图/发音生成中…</text></view>
         <view v-else class="cp-img cp-img-ph"><text>暂无配图</text></view>
         <view class="cp-head">
           <text class="cp-word">{{ cardWord.word }}</text>
@@ -74,14 +75,33 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords,
+import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords, ensureWordMedia,
          type IntensiveWord, type HwWordBatch, type CourseWordUnit } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
 
 const mode = ref('homework')
-// 点单个词 → 展开单词卡片弹层
+// 点单个词 → 展开单词卡片弹层;无媒体的词点开即时生成配图/发音/信息(规则:见 CLAUDE.md)
 const cardWord = ref<IntensiveWord | null>(null)
-function openCard(w: IntensiveWord) { cardWord.value = w }
+const genWords = ref<Set<string>>(new Set())
+function openCard(w: IntensiveWord) {
+  cardWord.value = w
+  if (!w.image_url) genWordMedia(w)
+}
+async function genWordMedia(w: IntensiveWord) {
+  if (!w.word_id || genWords.value.has(w.word_id)) return
+  genWords.value = new Set([...genWords.value, w.word_id])
+  try {
+    const m = await ensureWordMedia(w.word_id)
+    w.image_url = m.image_url ?? null
+    w.word_audio_url = m.word_audio_url ?? null
+    w.en_description = m.en_description ?? null
+    w.example = (m.example as any) ?? null
+    if (m.definitions) w.definitions = m.definitions
+  } catch { /* 生成失败静默 */ }
+  finally {
+    const s = new Set(genWords.value); s.delete(w.word_id); genWords.value = s
+  }
+}
 // 单词发音:优先用已生成的 word_audio_url,否则走 TTS
 const playingId = ref('')
 let _audio: UniApp.InnerAudioContext | null = null

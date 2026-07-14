@@ -11,6 +11,27 @@
 - **前端不兜底靠后端**:前端可加会话内缓存减少请求,但**省钱的真源是后端缓存**——不允许「前端不缓存 → 每次点都打后端 → 后端每次真调」。
 - **新接第三方付费能力**一律先想「结果落哪、怎么复用」;发现历史有「每次现调且不缓存」的,收敛过来。
 
+## 无媒体/无内容:「查看即生成」兜底,不给用户空白(全项目强制)
+
+**凡展示给学生的「媒体/生成内容」——单词配图·发音·英文释义·例句、考点讲解等——如果该条目还没有内容,前端遇到「有人查看/点开」就立即触发后端即时生成并展示,绝不给空白页或「暂无」。** 生成结果**直接发布可见**(学生触发,全学生共享),同时标记来源供后台复核。
+
+铁律:
+- **触发点 = 消费点**:哪里展示、哪里就兜底。学生点开单词卡片(词力通/作业精讲/课程精讲/长难句里的词)、点进语法讲解等,发现无内容 → 立即调 `ensure_*` 端点生成(参考 `vocab_media_service.ensure_word_media`、`kp_lecture_service.ensure_ai_lecture`),前端显示「生成中…」,完成后原地更新。
+- **即时生成 + 落库缓存 + 全局共享**:生成即写业务表(词条/`kp_lecture`),`media_status`/`status` 置 `published` 直接可见;**同条目后续任何人查看命中缓存,不二次付费**(与上一节「第三方付费暂存」同源)。已有内容则幂等跳过。
+- **标记来源、可后台复核**:学生端即时生成的内容打来源标记(如 `vocabulary_words.media_origin='student'`、`kp_lecture.source='ai'`),后台管理页提供「按来源过滤」入口,运营可复核/改写/驳回;是对默认「AI 只出草稿、人工确认后发布」的**受控例外**(产品要求即时可见)。
+- **新增「会展示生成内容」的页面**一律照此办理:先想「没有时怎么即时补齐」,不允许出现「点开一片空白、要等运营手动生成」。
+
+## 新增 LLM 调用:必须登记到清单 + 打 feature 标签(全项目强制)
+
+**凡新增/改动一处调 DeepSeek LLM 的地方(`chat_completion` / `complete_json`),必须同步登记到 `backend/app/services/llm_feature_registry.py` 的 `LLM_FEATURES`,并给调用传 `feature="..."` 标签。** 该表是「LLM 调用清单」维护页(admin `/llm-features`,GET `/admin/llm-features`)的单一真源,标注 深度思考/对话 分档、需要该档的原因、消费端、功能模块,并合并真实用量与成本。漏登记 = 维护页看不到、用量算不清。
+
+铁律:
+- **一处调用一条登记**:新调用点落地时,在 `LLM_FEATURES` 加一条 `{feature, mode, surface, module, service, purpose, why, locations}`。`locations` 写 `文件名.py:行号`(改动后同步更新行号)。
+- **必打 `feature=` 标签**:`chat_completion`/`complete_json` 一律传 `feature="xxx"`(语义化、全局唯一),否则 `usage_log` 无法按用途单独统计(尤其深度思考的高成本调用)。历史未打标签的(registry 里 `feature=None`)遇到就补。
+- **分档要如实**:`mode="reasoning"`(深度思考)= 不传 `model=` → 主模型/推理档,thinking 开,仅用于**需多步推理/生成/判分**的重任务;`mode="chat"`(对话)= 传 `model=fast_model()` 或 `disable_thinking=True`,用于**规格明确的抽取/固定打分/受控选择**。能用快档的绝不占推理档。`why` 写清为何需要该档。
+- **消费端/模块如实标**:`surface` = 消费该能力的前端项目(小程序端 / 运营后台),按「哪个 api 路由调用该 service」判定,不臆断;`module` = 功能模块。
+- **未登记会被揪出**:维护页会列出「用量里有真实调用但不在 registry」的 feature,发现即补登记(勿留 `dbg`/`other` 之类裸标签在生产路径)。
+
 ## 图标设计规范(全项目统一)
 
 **所有图标统一使用「线性 SVG 图标」,风格对齐学生端首页(`miniprogram/src/pages/index/index.vue` 的 `qi-*` 图标)。禁止使用 emoji 作为 UI 图标。**
