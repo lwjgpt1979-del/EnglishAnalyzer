@@ -90,7 +90,7 @@ export function getUnitMasterySummary(unitId: string): Promise<KpMasterySummaryI
 // 语法精讲 / 长难句精讲(作业按批次 / 课程按单元)
 export interface IntensiveBatch { paper_id: string; title: string; date: string; count: number }
 export interface IntensiveUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; count: number }
-export interface GrammarPoint { node_id: string; name: string; code: string }
+export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string }
 export interface SentenceItem { text: string }
 
 export function grHwBatches(): Promise<{ batches: IntensiveBatch[] }> {

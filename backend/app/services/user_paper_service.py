@@ -277,7 +277,8 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                     match_cache[_key] = _m.node_id
                     if _m.node_id is None:
                         await grammar_progress_service.add_personal_if_grammar(
-                            db, student_id=paper.student_id, name=_key, source="upload_paper")
+                            db, student_id=paper.student_id, name=_key, source="upload_paper",
+                            source_paper_id=paper.id)
                 except Exception:  # noqa: BLE001
                     match_cache[_key] = None
 

@@ -27,6 +27,7 @@ class StudentGrammarNode(Base):
     name_norm = mapped_column(sa.String(120), nullable=False)              # 归一化去重键
     ref_node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=True)  # 匹配上图谱则回填
     anchor_code = mapped_column(sa.String(32), nullable=True)              # 挂靠的图谱骨架 code(定位在树里的位置)
+    source_paper_id = mapped_column(UUID(as_uuid=True), nullable=True)     # 来源上传作业(作业精讲·语法按卷归组用)
     source = mapped_column(sa.String(24), nullable=False, server_default="upload_paper")  # upload_paper / homework
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 

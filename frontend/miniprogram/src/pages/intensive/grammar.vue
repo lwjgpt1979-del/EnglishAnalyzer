@@ -21,10 +21,32 @@
       <view class="back" @tap="groupOpen = null"><text>‹ 返回{{ mode === 'homework' ? '批次' : '单元' }}</text></view>
       <view v-if="itemsLoading" class="tip">加载中…</view>
       <view v-else-if="!points.length" class="tip">该{{ mode === 'homework' ? '批次' : '单元' }}没有语法点</view>
-      <view v-for="p in points" :key="p.node_id" class="card pt" @tap="goLearn(p)">
-        <text class="pt-name">{{ p.name }}</text><text class="pt-go">看讲解 ›</text>
+      <view v-for="(p, pi) in points" :key="p.node_id || p.sgn_id || pi" class="card pt" @tap="goLearn(p)">
+        <view class="pt-main">
+          <text class="pt-name">{{ p.name }}</text>
+          <text v-if="p.personal" class="pt-tag">自建</text>
+        </view>
+        <text class="pt-go">{{ p.personal ? '练习 ›' : '看讲解 ›' }}</text>
       </view>
     </template>
+
+    <!-- 个人语法点:即时生成练习(该语法没入图谱,按语法名出题) -->
+    <view v-if="practiceOpen" class="modal" @tap.self="practiceOpen = false">
+      <view class="modal-card">
+        <text class="modal-title">练习 · {{ practiceKp }}</text>
+        <scroll-view scroll-y class="modal-body">
+          <view v-if="practiceLoading" class="tip">出题中…</view>
+          <view v-for="(q, i) in practiceList" :key="q.id" class="sq">
+            <text class="sq-stem">{{ i + 1 }}. {{ q.stem }}</text>
+            <view v-if="q.options && q.options.length" class="sq-opts">
+              <text v-for="(o, oi) in q.options" :key="oi" class="sq-opt">{{ o }}</text>
+            </view>
+          </view>
+          <text v-if="!practiceLoading && !practiceList.length" class="tip">未生成题目</text>
+        </scroll-view>
+        <view class="modal-close" @tap="practiceOpen = false"><text>关闭</text></view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -33,6 +55,8 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { grHwBatches, grHwPoints, grCourseUnits, grCoursePoints,
          type GrammarPoint, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
+import { generateQuestions } from '@/api/practice'
+import type { PracticeQuestionOut } from '@/types/api'
 
 const mode = ref('homework')
 const loading = ref(true)
@@ -56,7 +80,18 @@ async function openGroup(g: any) {
   } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
   finally { itemsLoading.value = false }
 }
-function goLearn(p: GrammarPoint) {
+const practiceOpen = ref(false)
+const practiceLoading = ref(false)
+const practiceKp = ref('')
+const practiceList = ref<PracticeQuestionOut[]>([])
+async function goLearn(p: GrammarPoint) {
+  if (p.personal || !p.node_id) {   // 个人语法(未入图谱)→ 按语法名即时出题练习
+    practiceKp.value = p.name; practiceList.value = []; practiceOpen.value = true; practiceLoading.value = true
+    try { practiceList.value = await generateQuestions(p.name, 5, 3) }
+    catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
+    finally { practiceLoading.value = false }
+    return
+  }
   uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${p.node_id}&name=${encodeURIComponent(p.name)}&cat=grammar` })
 }
 async function load() {
@@ -89,6 +124,18 @@ onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
 .grp-cnt { font-size: 24rpx; color: var(--c-primary); flex-shrink: 0; }
 .back { padding: 8rpx 4rpx 16rpx; font-size: 26rpx; color: var(--c-primary); }
 .pt { display: flex; align-items: center; justify-content: space-between; }
+.pt-main { display: flex; align-items: center; gap: 10rpx; flex: 1; min-width: 0; }
 .pt-name { font-size: 28rpx; color: var(--c-ink); }
-.pt-go { font-size: 23rpx; color: var(--c-primary); }
+.pt-tag { flex-shrink: 0; font-size: 19rpx; color: #ff8a3d; border: 2rpx solid #ffd8bd; border-radius: 6rpx; padding: 1rpx 8rpx; }
+.pt-go { font-size: 23rpx; color: var(--c-primary); flex-shrink: 0; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 40rpx; }
+.modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
+.modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.modal-body { flex: 1; margin: 16rpx 0; }
+.sq { padding: 14rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
+.sq:first-child { border-top: none; }
+.sq-stem { display: block; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
+.sq-opts { display: flex; flex-direction: column; gap: 4rpx; margin-top: 8rpx; }
+.sq-opt { font-size: 24rpx; color: var(--c-text-sub); }
+.modal-close { text-align: center; font-size: 26rpx; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 14rpx; }
 </style>

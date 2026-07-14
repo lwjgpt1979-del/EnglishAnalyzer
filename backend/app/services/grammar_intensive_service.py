@@ -22,36 +22,62 @@ _GRAMMAR = (KnowledgeNode.code.ilike("cf%")) | (KnowledgeNode.code.ilike("jf%"))
 
 
 def _pt(nid, name, code) -> dict:
-    return {"node_id": str(nid), "name": name, "code": code}
+    return {"node_id": str(nid), "name": name, "code": code, "personal": False}
 
 
 # ── 作业精讲 · 语法:按卷(批次)──────────────────────────────────────────────
 async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
-    """学生加入待学习的语法点,按来源卷(批次)归组。年月日倒序。"""
-    rows = (await db.execute(
+    """学生作业里的语法点,按来源卷(批次)归组。年月日倒序。
+    含两类:①匹配上图谱的语法(student_kp_target,cf/jf);②没匹配上的个人语法(挂个人树)。"""
+    from app.models.d27_student_grammar import StudentGrammarNode
+    kp = (await db.execute(
         select(StudentKpTarget.source_paper_id, func.count(StudentKpTarget.id),
                UserUploadedPaper.title, UserUploadedPaper.created_at)
         .join(KnowledgeNode, KnowledgeNode.id == StudentKpTarget.node_id)
         .join(UserUploadedPaper, UserUploadedPaper.id == StudentKpTarget.source_paper_id)
         .where(StudentKpTarget.student_id == student_id,
                StudentKpTarget.source_paper_id.isnot(None), _GRAMMAR)
-        .group_by(StudentKpTarget.source_paper_id, UserUploadedPaper.title, UserUploadedPaper.created_at)
-        .order_by(UserUploadedPaper.created_at.desc()))).all()
-    return [{"paper_id": str(pid), "title": title or "未命名试卷",
-             "date": created_at.strftime("%Y-%m-%d") if created_at else "",
-             "count": int(cnt)} for pid, cnt, title, created_at in rows]
+        .group_by(StudentKpTarget.source_paper_id, UserUploadedPaper.title, UserUploadedPaper.created_at))).all()
+    pers = (await db.execute(
+        select(StudentGrammarNode.source_paper_id, func.count(StudentGrammarNode.id),
+               UserUploadedPaper.title, UserUploadedPaper.created_at)
+        .join(UserUploadedPaper, UserUploadedPaper.id == StudentGrammarNode.source_paper_id)
+        .where(StudentGrammarNode.student_id == student_id,
+               StudentGrammarNode.source_paper_id.isnot(None),
+               StudentGrammarNode.ref_node_id.is_(None))   # 未匹配图谱的个人语法
+        .group_by(StudentGrammarNode.source_paper_id, UserUploadedPaper.title, UserUploadedPaper.created_at))).all()
+    merged: dict = {}
+    for pid, cnt, title, ca in list(kp) + list(pers):
+        m = merged.setdefault(pid, {"title": title, "ca": ca, "count": 0})
+        m["count"] += int(cnt)
+    out = [{"paper_id": str(pid), "title": m["title"] or "未命名作业",
+            "date": m["ca"].strftime("%Y-%m-%d") if m["ca"] else "", "count": m["count"]}
+           for pid, m in merged.items()]
+    out.sort(key=lambda x: x["date"], reverse=True)
+    return out
 
 
 async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
                           paper_id: uuid.UUID) -> list[dict]:
-    """某批次(卷)里加入待学习的语法点。"""
+    """某批次(卷)里的语法点:匹配上图谱的(可跳讲解)+ 未匹配的个人语法(personal,按名练习)。"""
+    from app.models.d27_student_grammar import StudentGrammarNode
     rows = (await db.execute(
         select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
         .join(StudentKpTarget, StudentKpTarget.node_id == KnowledgeNode.id)
         .where(StudentKpTarget.student_id == student_id,
                StudentKpTarget.source_paper_id == paper_id, _GRAMMAR)
         .order_by(KnowledgeNode.code))).all()
-    return [_pt(nid, name, code) for nid, name, code in rows]
+    out = [_pt(nid, name, code) for nid, name, code in rows]
+    pers = (await db.execute(
+        select(StudentGrammarNode.id, StudentGrammarNode.name)
+        .where(StudentGrammarNode.student_id == student_id,
+               StudentGrammarNode.source_paper_id == paper_id,
+               StudentGrammarNode.ref_node_id.is_(None))
+        .order_by(StudentGrammarNode.name))).all()
+    for sgn_id, pname in pers:
+        out.append({"node_id": None, "name": pname, "code": None,
+                    "personal": True, "sgn_id": str(sgn_id)})
+    return out
 
 
 # ── 课程精讲 · 语法:按教材单元 ────────────────────────────────────────────────

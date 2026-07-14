@@ -44,9 +44,11 @@ def _grammar_anchor(name: str) -> str | None:
 
 
 async def add_personal_if_grammar(db: AsyncSession, *, student_id: uuid.UUID,
-                                  name: str, source: str = "upload_paper") -> bool:
+                                  name: str, source: str = "upload_paper",
+                                  source_paper_id: uuid.UUID | None = None) -> bool:
     """上传拆题里未命中图谱的知识点:若是语法名 → 建/保留个人语法节点(挂个人树)。返回是否建。
-    命中图谱的走正常 node_id,不进这里;个人的归个人,不收编回公共图谱。"""
+    命中图谱的走正常 node_id,不进这里;个人的归个人,不收编回公共图谱。
+    source_paper_id:来源卷——首次建时记上,供作业精讲·语法按卷归组(旧行未记的回填一次)。"""
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     anchor = _grammar_anchor((name or "").strip())
     if not anchor:
@@ -54,11 +56,17 @@ async def add_personal_if_grammar(db: AsyncSession, *, student_id: uuid.UUID,
     norm = (name or "").strip().lower()
     if not norm:
         return False
-    await db.execute(
-        pg_insert(StudentGrammarNode)
-        .values(id=uuid.uuid4(), student_id=student_id, name=name.strip(),
-                name_norm=norm, anchor_code=anchor, source=source)
-        .on_conflict_do_nothing(index_elements=["student_id", "name_norm"]))
+    stmt = pg_insert(StudentGrammarNode).values(
+        id=uuid.uuid4(), student_id=student_id, name=name.strip(),
+        name_norm=norm, anchor_code=anchor, source=source, source_paper_id=source_paper_id)
+    if source_paper_id is not None:   # 已存在但没记来源卷 → 回填(便于归组);已记的不动
+        stmt = stmt.on_conflict_do_update(
+            constraint="uix_student_grammar_node",
+            set_={"source_paper_id": source_paper_id},
+            where=(StudentGrammarNode.source_paper_id.is_(None)))
+    else:
+        stmt = stmt.on_conflict_do_nothing(index_elements=["student_id", "name_norm"])
+    await db.execute(stmt)
     return True
 
 
