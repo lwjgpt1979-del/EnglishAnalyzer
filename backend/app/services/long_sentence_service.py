@@ -1035,17 +1035,24 @@ async def extract_student_for_question(
     from app.models.d20_long_sentence import StudentLongSentence
     if not text or await _student_already_extracted(db, question_id):
         return 0
+    # 同一句可能出现在多道题(阅读篇章被多个小题引用)→ 按 (owner, text) 去重,避免重复行
+    seen_texts = {(t or "").strip() for t in (await db.execute(sa.select(StudentLongSentence.text).where(
+        StudentLongSentence.owner_id == owner_id))).scalars().all()}
     n = 0
     for sent in split_sentences(text):
-        comp = syntactic_complexity(sent, min_words)
-        if not _is_long(comp, sent, min_words):
+        s = (sent or "").strip()
+        comp = syntactic_complexity(s, min_words)
+        if not _is_long(comp, s, min_words):
             continue
-        analysis = await analyze_sentence(sent)
+        if s in seen_texts:   # 本卷/历史已收录同句,跳过
+            continue
+        seen_texts.add(s)
+        analysis = await analyze_sentence(s)
         analysis["difficulty"] = comp["difficulty"]
         analysis["complexity"] = comp
         db.add(StudentLongSentence(
             id=uuid.uuid4(), owner_id=owner_id, source_question_id=question_id,
-            text=sent, analysis_json=analysis, difficulty=comp["difficulty"], status="published"))
+            text=s, analysis_json=analysis, difficulty=comp["difficulty"], status="published"))
         n += 1
     return n
 

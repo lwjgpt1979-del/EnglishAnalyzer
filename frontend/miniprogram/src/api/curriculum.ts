@@ -51,6 +51,14 @@ export function getKpContents(kpId: string): Promise<KPContentOut[]> {
   )
 }
 
+// 取讲解;若为空则后端即时 AI 生成兜底(全学生共享、落库缓存,不二次付费)
+export function ensureKpLecture(kpId: string): Promise<KPContentOut[]> {
+  return request<KPContentOut[]>(
+    `/api/v1/curriculum/knowledge-points/${kpId}/ensure-lecture`,
+    { method: 'POST' },
+  )
+}
+
 export function getKpMastery(kpId: string): Promise<KpMasteryItem | null> {
   return request<KpMasteryItem | null>(
     `/api/v1/curriculum/knowledge-points/${kpId}/mastery`,

@@ -99,6 +99,58 @@ async def published_sections(db: AsyncSession, *, node_id: uuid.UUID, code: str 
     return [s for s in data["sections"] if s["has_content"]]
 
 
+async def ensure_ai_lecture(db: AsyncSession, *, node_id: uuid.UUID,
+                            code: str | None = None, name: str | None = None) -> dict:
+    """考点讲解「即时兜底」:该 node 若缺已发布讲解,即时用 AI 生成缺失环节并**直接发布**
+    (source='ai',全学生共享;结果落 kp_lecture,同 node 后续命中不再付费——符合暂存铁律)。
+
+    AI 稿对学生可见,同时作为知识图谱的「待采纳」建议:admin 讲解管理里 source=ai 可复核/
+    改写/替换为 manual。已发布环节与人工整理中的草稿(manual+有正文)保留不覆盖。
+    返回 {generated, sections}(sections=当前已发布环节,供前端直接渲染)。
+    """
+    import asyncio
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    if code is None or name is None:
+        node = await db.get(KnowledgeNode, node_id)
+        if node is None:
+            return {"generated": 0, "sections": []}
+        code = code if code is not None else node.code
+        name = name or node.name
+
+    data = await list_sections(db, node_id=node_id, code=code)   # 全量:含状态/来源/正文
+    order_map = {t["key"]: t["order"] for t in template_for(code)}
+    missing: list[str] = []
+    for s in data["sections"]:
+        has_text = bool((s["content_md"] or "").strip())
+        published = s["status"] == "published" and has_text
+        manual_wip = s["source"] == "manual" and has_text        # 人工整理中,别覆盖
+        if not (published or manual_wip):
+            missing.append(s["section_key"])
+    if not missing:
+        return {"generated": 0, "sections": await published_sections(db, node_id=node_id, code=code)}
+
+    # LLM 生成阶段并发(generate_section 不触库);写库顺序 upsert 为 published/ai
+    mds = await asyncio.gather(*[
+        generate_section(db, code=code, name=name, section_key=k) for k in missing
+    ], return_exceptions=True)
+    generated = 0
+    for k, md in zip(missing, mds):
+        if isinstance(md, Exception) or not (md or "").strip():
+            continue
+        await db.execute(
+            pg_insert(KpLecture)
+            .values(id=uuid.uuid4(), node_id=node_id, section_key=k, content_md=md,
+                    source="ai", status="published", sort_order=order_map.get(k, 0))
+            .on_conflict_do_update(
+                index_elements=["node_id", "section_key"],
+                set_={"content_md": md, "source": "ai", "status": "published",
+                      "sort_order": order_map.get(k, 0)}))
+        generated += 1
+    if generated:
+        await db.commit()
+    return {"generated": generated, "sections": await published_sections(db, node_id=node_id, code=code)}
+
+
 async def upsert_section(db: AsyncSession, *, node_id: uuid.UUID, code: str | None,
                          section_key: str, content_md: str | None = None,
                          media_url: str | None = None, source: str = "manual") -> dict:

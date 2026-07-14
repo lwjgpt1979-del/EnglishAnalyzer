@@ -76,6 +76,20 @@ async def get_kp_contents(
     return make_ok([c.model_dump(mode="json") for c in contents])
 
 
+@router.post("/knowledge-points/{node_id}/ensure-lecture")
+async def ensure_kp_lecture(
+    node_id: uuid.UUID,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """取该考点讲解;若无已发布讲解,即时 AI 生成兜底(全学生共享、落库缓存,
+    同 node 不二次付费)。供作业精讲·语法等「点开常空白」的场景兜底。"""
+    contents = await curriculum_service.ensure_kp_contents(
+        db, user_id=current_user.id, node_id=node_id,
+    )
+    return make_ok([c.model_dump(mode="json") for c in contents])
+
+
 @router.get("/knowledge-points/{node_id}/textbook-sentences")
 async def get_textbook_sentences(
     node_id: uuid.UUID,

@@ -63,6 +63,10 @@
         >{{ d.label }}</view>
       </view>
       <view v-if="loading" class="empty">加载中…</view>
+      <view v-else-if="generating" class="empty">
+        <text class="empty-title">AI 讲解生成中…</text>
+        <text class="empty-sub">正在为这个知识点即时生成讲解,稍等几秒</text>
+      </view>
       <view v-else-if="availDims.length === 0" class="empty">
         <text class="empty-title">讲解内容制作中</text>
         <text class="empty-sub">这个知识点的课本讲解还没上线\n可以先练几题检验掌握情况,或看「仿真题」</text>
@@ -166,7 +170,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { getKpContents, getKpMastery, getTextbookSentences } from '@/api/curriculum'
+import { getKpContents, ensureKpLecture, getKpMastery, getTextbookSentences } from '@/api/curriculum'
 import type { TextbookSentence } from '@/api/curriculum'
 import { getKpStatus } from '@/api/grammar'
 import { listPracticeQuestions } from '@/api/questions'
@@ -186,6 +190,7 @@ const activeView = ref<ViewKey>('content')
 const contents = ref<KPContentOut[]>([])
 const activeSection = ref('')
 const loading = ref(true)
+const generating = ref(false)   // 无讲解时后端即时 AI 生成中
 const kpId = ref('')
 const kpName = ref('')
 const unitId = ref('')
@@ -299,6 +304,13 @@ onLoad(async (q: any) => {
   isGrammar.value = q.cat === 'grammar'
   try {
     contents.value = await getKpContents(q.id)
+    // 无讲解 → 即时 AI 生成兜底(全学生共享、后端落库缓存),不给学生空白页
+    if (!contents.value.length) {
+      loading.value = false   // 先退加载态,让「AI 讲解生成中」提示显示
+      generating.value = true
+      try { contents.value = await ensureKpLecture(q.id) } catch { /* 生成失败静默,保留空态 */ }
+      finally { generating.value = false }
+    }
     // 默认落在第一个有内容的环节;全空则展示整体空态「讲解内容制作中」
     activeSection.value = availDims.value[0]?.key || ''
   } catch (e: any) {

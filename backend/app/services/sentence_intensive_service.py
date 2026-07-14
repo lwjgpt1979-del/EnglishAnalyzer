@@ -21,7 +21,8 @@ from app.models.d20_long_sentence import LongSentence, StudentLongSentence
 async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
     """学生加入待学习的长难句,按来源卷(批次)归组。年月日倒序。"""
     rows = (await db.execute(
-        select(StudentLongSentence.source_paper_id, func.count(StudentLongSentence.id),
+        select(StudentLongSentence.source_paper_id,
+               func.count(func.distinct(StudentLongSentence.text)),   # 同句只算一条(存量可能有重复行)
                UserUploadedPaper.title, UserUploadedPaper.created_at)
         .join(UserUploadedPaper, UserUploadedPaper.id == StudentLongSentence.source_paper_id)
         .where(StudentLongSentence.owner_id == student_id,
@@ -36,14 +37,15 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
 
 async def homework_sentences(db: AsyncSession, *, student_id: uuid.UUID,
                              paper_id: uuid.UUID) -> list[dict]:
-    """某批次(卷)里加入待学习的长难句。"""
+    """某批次(卷)里加入待学习的长难句(按文本去重,存量可能有重复行)。"""
     rows = (await db.execute(
-        select(StudentLongSentence.text)
+        select(StudentLongSentence.text, func.min(StudentLongSentence.created_at).label("ca"))
         .where(StudentLongSentence.owner_id == student_id,
                StudentLongSentence.source_paper_id == paper_id,
                StudentLongSentence.status == "published")
-        .order_by(StudentLongSentence.created_at.desc()))).scalars().all()
-    return [{"text": t} for t in rows]
+        .group_by(StudentLongSentence.text)
+        .order_by(func.min(StudentLongSentence.created_at).desc()))).all()
+    return [{"text": t} for t, _ in rows]
 
 
 # ── 课程精讲 · 长难句:按教材单元 ──────────────────────────────────────────────

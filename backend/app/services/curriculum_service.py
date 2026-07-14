@@ -913,6 +913,37 @@ async def get_kp_contents(
     ) for s in secs]
 
 
+async def ensure_kp_contents(
+    db: AsyncSession, *, user_id: uuid.UUID, node_id: uuid.UUID,
+) -> list[KPContentOut]:
+    """取讲解,但若为空则即时 AI 生成兜底(全学生共享、落库缓存)。用于「作业精讲·语法」
+    等场景:考点常无人工讲解,不能给学生空白页。受单元锁约束(同 get_kp_contents)。"""
+    from app.models.d17_curriculum_kg import UnitNode
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.services import kp_lecture_service as kl
+
+    cu = (await db.execute(
+        select(CurriculumUnit).join(
+            UnitNode, UnitNode.unit_id == CurriculumUnit.id,
+        ).where(UnitNode.node_id == node_id).order_by(CurriculumUnit.unit_no))).scalars().first()
+    if cu is not None:
+        locked = await is_unit_locked(
+            db, user_id=user_id, textbook_version=cu.textbook_version,
+            grade=cu.grade, semester=str(cu.semester), unit_no=cu.unit_no)
+        if locked:
+            raise AppError(code=403, message="该知识点所属单元需购买学期会员后解锁")
+
+    node = (await db.execute(select(KnowledgeNode.code, KnowledgeNode.name)
+                             .where(KnowledgeNode.id == node_id))).first()
+    code = node.code if node else None
+    name = node.name if node else ""
+    r = await kl.ensure_ai_lecture(db, node_id=node_id, code=code, name=name)
+    return [KPContentOut(
+        section_key=s["section_key"], title=s["title"],
+        content_md=s["content_md"] or "", media_url=s.get("media_url"),
+    ) for s in r["sections"]]
+
+
 # ─── 运营审核/编辑 ──────────────────────────────────────────────────────────────
 # 旧 knowledge_point_contents 内容审核已退役:内容生成直写 node_resource(lecture),
 # 审核统一走 NodeResources 后台页(node_resource_service.list_for_review/review)。
