@@ -566,9 +566,10 @@ class VocabItemOut(BaseModel):
     word_id: uuid.UUID
     word: str
     rank: int | None = None
-    frequency: int | None = None
-    star: int
+    frequency: int | None = None      # 真题词频反哺:出现在多少份不同真题卷
+    star: int                          # 高/中/低频档:3/2/1/0
     verified: bool
+    added_from_exam: bool = False      # true=考纲原无、因真题出现被补录
 
 
 class VocabItemsOut(BaseModel):

@@ -556,6 +556,18 @@ export function addVocabItems(listId: string, items: Array<{ word: string; rank?
     request.post(`/admin/vocab-lists/${listId}/items`, { items }))
 }
 
+// 真题词频反哺考纲词表(整卷去重 + 词形还原;耗时约 1 分钟,给足超时)
+export interface ExamFreqResult {
+  list_name: string; exam_type: string
+  papers_total: number; papers_unique: number; papers_duplicated: number
+  exam_word_forms: number; syllabus_words: number; matched: number; added: number
+  freq_high: number; freq_mid: number; freq_low: number
+  thresholds: { high: number; mid: number; add_min: number }
+}
+export function rebuildExamFreq(body: { exam_type: string; list_name?: string }): Promise<ExamFreqResult> {
+  return unwrap<ExamFreqResult>(request.post('/admin/vocab-lists/rebuild-exam-freq', body, { timeout: 180000 }))
+}
+
 // 知识图谱总览(D1)
 export function listKnowledgeNodes(params: {
   axis?: string; stage?: string; status?: string; q?: string

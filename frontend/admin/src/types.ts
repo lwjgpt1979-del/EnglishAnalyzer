@@ -200,9 +200,10 @@ export interface VocabWordItem {
   word_id: string
   word: string
   rank?: number | null
-  frequency?: number | null
-  star: number
+  frequency?: number | null      // 真题词频:出现在多少份不同真题卷
+  star: number                    // 高/中/低频档:3/2/1/0
   verified: boolean
+  added_from_exam?: boolean       // true=考纲原无、真题补录
 }
 
 // 知识图谱总览(D1)

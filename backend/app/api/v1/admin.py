@@ -2327,6 +2327,25 @@ async def add_vocab_items_api(list_id: uuid.UUID, body: VocabItemsIn, db: DbDep,
     return make_ok(VocabItemsOut(total=len(items), items=[VocabItemOut(**it) for it in items]))
 
 
+class ExamFreqRebuildIn(BaseModel):
+    exam_type: str = "中考"            # 中考 | 高考
+    list_name: str | None = None       # 不传按 exam_type 取默认考纲词表
+
+
+@router.post("/vocab-lists/rebuild-exam-freq", response_model=BaseResponse[dict])
+async def rebuild_exam_freq_api(body: ExamFreqRebuildIn, db: DbDep, admin: AdminDep):
+    """选中(全部)某考试真题 → 分词/词形还原统计词频(整卷去重)→ 反哺对应考纲词表:
+    命中的考纲词写真题卷频次 + 高/中/低频档;真题里有考纲没有的内容词补录进表。耗时约 1 分钟。"""
+    from app.services import vocab_list_service as vls
+    _DEFAULT = {"中考": "中考考纲词汇(1600)", "高考": "高考考纲词汇(3500)"}
+    ln = body.list_name or _DEFAULT.get(body.exam_type)
+    if not ln:
+        raise AppError(code=400, message="未指定目标词表,且该考试无默认考纲词表")
+    r = await vls.rebuild_exam_frequency(db, exam_type=body.exam_type, list_name=ln)
+    await db.commit()
+    return make_ok(r)
+
+
 # ─── V2 M28：真题试卷管理（版权规避：真题内部存储，仅对外暴露仿真题）──────────
 
 from pydantic import BaseModel as _BM, Field as _F

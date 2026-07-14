@@ -2,7 +2,7 @@
 import AppDialog from '../components/AppDialog.vue'
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listVocabLists, createVocabList, listVocabItems, addVocabItems } from '../api/admin'
+import { listVocabLists, createVocabList, listVocabItems, addVocabItems, rebuildExamFreq } from '../api/admin'
 import type { VocabListItem2, VocabWordItem } from '../types'
 
 const lists = ref<VocabListItem2[]>([])
@@ -45,6 +45,30 @@ async function loadItems() {
     itemsTotal.value = r.total
   }
   finally { itemsLoading.value = false }
+}
+
+// 真题词频反哺:选中考纲词表 → 统计对应考试真题词频 → 写回频次/频档 + 补录未收录词
+const reflowing = ref(false)
+const isSyllabus = (l: VocabListItem2 | null) => !!l && (l.exam_level === 'junior' || l.exam_level === 'senior')
+async function reflowFromExam() {
+  if (!current.value) return
+  const examType = current.value.exam_level === 'senior' ? '高考' : '中考'
+  try {
+    await ElMessageBox.confirm(
+      `将统计全部「${examType}真题」词频(整卷去重、词形还原),反哺到「${current.value.name}」:` +
+      `命中的考纲词写真题卷频次 + 高/中/低频档;真题里有、考纲没有的内容词补录进表(标「真题补录」)。约需 1 分钟。`,
+      '从真题反哺词频', { type: 'warning', confirmButtonText: '开始统计', cancelButtonText: '取消' })
+  } catch { return }
+  reflowing.value = true
+  try {
+    const r = await rebuildExamFreq({ exam_type: examType, list_name: current.value.name })
+    ElMessage.success(
+      `完成:${r.papers_unique}/${r.papers_total} 卷(去重 ${r.papers_duplicated})· ` +
+      `命中 ${r.matched}、补录 ${r.added} · 高 ${r.freq_high}/中 ${r.freq_mid}/低 ${r.freq_low}`)
+    itemsPage.value = 1
+    await loadItems()
+  } catch (e: any) { ElMessage.error(e?.message || '统计失败') }
+  finally { reflowing.value = false }
 }
 
 async function confirmCreate() {
@@ -96,12 +120,37 @@ onMounted(load)
       <div class="toolbar">
         <span>{{ current ? `「${current.name}」词条` : '选择左侧词库查看词条' }}</span>
         <el-button v-if="current" size="small" type="primary" @click="addDlg = true">+ 加词</el-button>
+        <el-button v-if="isSyllabus(current)" size="small" type="warning" plain :loading="reflowing"
+                   title="统计对应考试真题词频(整卷去重),写回频次/频档并补录未收录词" @click="reflowFromExam">
+          从真题反哺频次
+        </el-button>
       </div>
       <el-table v-if="current" v-loading="itemsLoading" :data="items" border style="width: 100%">
-        <el-table-column prop="rank" label="排名" width="70" />
-        <el-table-column prop="word" label="词" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="star" label="星级" width="80" />
-        <el-table-column prop="verified" label="已核" width="70" />
+        <el-table-column prop="rank" label="考纲排名" width="86" />
+        <el-table-column prop="word" label="词" min-width="150" show-overflow-tooltip />
+        <el-table-column label="真题频次" width="92" align="center">
+          <template #default="{ row }">
+            <span v-if="row.frequency">{{ row.frequency }} 卷</span>
+            <span v-else style="color:#c0c4cc">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="频档" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.star >= 1" size="small" effect="light"
+                    :type="row.star === 3 ? 'danger' : row.star === 2 ? 'warning' : 'info'">
+              {{ ['', '低频', '中频', '高频'][row.star] }}
+            </el-tag>
+            <span v-else style="color:#c0c4cc">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="来自真题" width="98" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.added_from_exam" type="success" size="small" effect="plain">真题补录</el-tag>
+            <el-tag v-else-if="row.frequency > 0" type="success" size="small" effect="light">是</el-tag>
+            <span v-else style="color:#c0c4cc">否</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="verified" label="已核" width="66" />
       </el-table>
       <div v-if="current && itemsTotal > itemsPageSize" style="display:flex;justify-content:flex-end;margin-top:12px">
         <el-pagination layout="total, prev, pager, next, jumper" :total="itemsTotal"

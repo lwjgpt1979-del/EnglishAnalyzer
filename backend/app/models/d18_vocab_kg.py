@@ -91,5 +91,8 @@ class VocabListItem(Base):
     frequency = mapped_column(sa.Integer, nullable=True)
     star = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))
     verified = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    # R真题词频:frequency 复用为「中考真题卷频次」、star 为高/中/低频档(3/2/1/0);
+    # added_from_exam=true 表示考纲原本无、因真题出现被补录(区分原生考纲词)。
+    added_from_exam = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
 
     __table_args__ = (sa.Index("ix_vocab_list_item_word", "word_id"),)
