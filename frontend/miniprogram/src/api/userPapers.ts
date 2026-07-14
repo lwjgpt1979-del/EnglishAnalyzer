@@ -52,6 +52,7 @@ export function analyzePaperSentence(sentence: string): Promise<any> {
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {
+  kind: 'component' | 'grammar'; tag: string
   gp_key: string; node_id: string | null; node_name: string | null; code: string | null
   in_syllabus: boolean; clause: string | null; explanation: string | null
   question: string; options: string[]; answer: number

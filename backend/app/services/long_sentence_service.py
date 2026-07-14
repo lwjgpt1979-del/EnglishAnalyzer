@@ -1263,43 +1263,89 @@ async def _grammar_distractor_pool(db: AsyncSession) -> list[str]:
     return _GRAMMAR_DISTRACTOR_POOL
 
 
+# 句子成分/结构类型池(成份题的干扰项来源)
+_COMPONENT_TYPES = [
+    "主语", "谓语", "宾语", "表语", "定语", "状语", "补语",
+    "主句主语", "主句谓语", "主句宾语", "从句主语", "插入语", "同位语",
+    "介词短语", "名词短语", "动词短语", "形容词短语", "副词短语",
+    "现在分词", "过去分词", "不定式短语", "动名词",
+    "非限制性定语", "后置定语", "前置定语",
+    "结果状语", "目的状语", "时间状语", "原因状语", "条件状语", "方式状语", "让步状语",
+    "定语从句", "状语从句", "宾语从句", "主语从句", "表语从句", "并列结构",
+]
+
+
+def _mc_options(correct: str, cand: list[str], seed_text: str) -> list[str]:
+    """构造 4 选 1 选项:正确项 + 从候选里确定性挑 3 个干扰项,稳定打乱。"""
+    import hashlib
+    uniq = [c for c in dict.fromkeys(cand) if c and c != correct]
+    seed = int(hashlib.md5(seed_text.encode()).hexdigest(), 16)
+    picks: list[str] = []
+    for k in range(len(uniq)):
+        picks.append(uniq[(seed // (k + 1)) % len(uniq)])
+        picks = list(dict.fromkeys(picks))
+        if len(picks) >= 3:
+            break
+    options = list(dict.fromkeys([correct, *picks]))[:4]
+    options.sort(key=lambda o: hashlib.md5(f"{seed_text}{o}".encode()).hexdigest())
+    return options
+
+
 async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.UUID) -> dict:
     """长难句学习页的交互素材:
     - grammar_quiz:句子涉及的每个语法结构一题(提问式选择),带匹配的语法讲解节点;
       答完可「查看讲解」→ kp-content(自动生成)+ 加入作业精讲·语法。
     - words:重点词解析成单词卡片数据(word_id/图/音/释义),供「加入作业精讲·单词」和点开卡片。
     """
-    import hashlib
     from app.models.d5_learning import VocabularyWord
     from app.services import vocab_intensive_service as vis
+    from app.services import grammar_quiz_stat_service as gqs
+    from app.services.kp_normalize import normalize_kp_name
     text = (text or "").strip()
     if not text:
         return {"grammar_quiz": [], "words": []}
     analysis = await analyze_sentence_cached(db, text, with_paraphrase=False)
 
-    # ① 语法提问式选择:句子里**每个**语法点一题,带原句成份 + 历史正确率
-    from app.services import grammar_quiz_stat_service as gqs
     gnodes = await _sentence_grammar_nodes(db, text, analysis)
-    pool = await _grammar_distractor_pool(db)
-    stat_map = await gqs.accuracy(db, student_id=student_id, gp_keys=[g["gp_key"] for g in gnodes])
+    gpool = await _grammar_distractor_pool(db)
+    segs = analysis.get("segments") or []
+
+    # 成份题:每个**不同**成份类型考一次(重复类型如多个介词短语去重,取首个出现的文本)
+    comp_items: list[tuple[str, str]] = []
+    seen_types: set = set()
+    for s in segs:
+        t = str(s.get("type") or "").strip()
+        txt = str(s.get("text") or "").strip()
+        if t and txt and t not in seen_types:
+            seen_types.add(t)
+            comp_items.append((t, txt))
+
+    comp_keys = ["comp:" + normalize_kp_name(t)[:56] for t, _ in comp_items]
+    stat_map = await gqs.accuracy(db, student_id=student_id,
+                                  gp_keys=comp_keys + [g["gp_key"] for g in gnodes])
     quiz = []
+    # ① 句子成分(先考,全部成份类型)
+    for i, (t, txt) in enumerate(comp_items):
+        cand = [x for x, _ in comp_items if x != t] + [x for x in _COMPONENT_TYPES if x != t]
+        options = _mc_options(t, cand, f"{text}comp{i}")
+        key = comp_keys[i]
+        st = stat_map.get(key, {"correct": 0, "total": 0})
+        quiz.append({
+            "kind": "component", "tag": "句子成分", "gp_key": key,
+            "node_id": None, "node_name": None, "code": None, "in_syllabus": False,
+            "clause": txt, "explanation": None, "question": "这是什么句子成分？",
+            "options": options, "answer": options.index(t),
+            "stat_correct": st["correct"], "stat_total": st["total"],
+        })
+    # ② 语法点(再考,深层语法功能;与成份跨度可能重叠,是不同层级的考查)
     for i, g in enumerate(gnodes):
-        correct = g["name"]      # 正确答案 = 该语法点(具体到成份,如「现在分词短语作结果状语」)
-        # 干扰项:同句其它语法点名 + 语法节点名字池,排除正确项,确定性挑 3 个(同句稳定)
-        cand = [x["name"] for x in gnodes if x["name"] != correct] + [p for p in pool if p and p != correct]
-        cand = list(dict.fromkeys(cand))
-        seed = int(hashlib.md5(f"{text}{i}".encode()).hexdigest(), 16)
-        picks: list[str] = []
-        for k in range(len(cand)):
-            picks.append(cand[(seed // (k + 1)) % len(cand)])
-            picks = list(dict.fromkeys(picks))
-            if len(picks) >= 3:
-                break
-        options = list(dict.fromkeys([correct, *picks]))[:4]
-        options.sort(key=lambda o: hashlib.md5(f"{text}{i}{o}".encode()).hexdigest())
+        correct = g["name"]
+        cand = [x["name"] for x in gnodes if x["name"] != correct] + [p for p in gpool if p != correct]
+        options = _mc_options(correct, cand, f"{text}gp{i}")
         st = stat_map.get(g["gp_key"], {"correct": 0, "total": 0})
         quiz.append({
-            "gp_key": g["gp_key"], "node_id": g["node_id"], "node_name": g["node_name"],
+            "kind": "grammar", "tag": "语法点", "gp_key": g["gp_key"],
+            "node_id": g["node_id"], "node_name": g["node_name"],
             "code": g["code"], "in_syllabus": g["in_syllabus"],
             "clause": g["clause"], "explanation": g.get("explanation"),
             "question": "这属于哪种语法结构？",

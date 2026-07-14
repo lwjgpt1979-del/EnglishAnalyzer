@@ -19,11 +19,17 @@
 
       <!-- 语法结构 · 提问式选择 -->
       <view v-if="quiz.length" class="card">
-        <text class="sec-t">语法结构 · 选一选</text>
-        <text class="sec-sub">句子结构拆分就是语法。选一下，答对答错都能点进讲解。</text>
+        <text class="sec-t">结构 & 语法 · 选一选</text>
+        <text class="sec-sub">先认句子成分，再认语法点。选一下，答对答错都能看讲解。</text>
         <view v-for="(q, qi) in quiz" :key="qi" class="quiz">
-          <text class="q-stem">{{ q.clause || text }}</text>
-          <text class="q-ask">这属于哪种语法结构？</text>
+          <view v-if="qi === 0 || quiz[qi-1].kind !== q.kind" class="q-group">
+            {{ q.kind === 'component' ? '① 句子成分' : '② 语法点' }}
+          </view>
+          <view class="q-stem-row">
+            <text class="q-tag" :class="q.kind">{{ q.tag }}</text>
+            <text class="q-stem">{{ q.clause || text }}</text>
+          </view>
+          <text class="q-ask">{{ q.question }}</text>
           <view class="q-opts">
             <view v-for="(o, oi) in q.options" :key="oi" class="q-opt"
               :class="optClass(qi, oi)" @tap="pick(qi, oi)">
@@ -45,11 +51,12 @@
         </view>
       </view>
 
-      <!-- 语法点正确率(以往至今) -->
+      <!-- 成分/语法点 正确率(以往至今) -->
       <view v-if="quiz.length && answeredCount" class="card">
-        <text class="sec-t">语法点正确率 · 以往至今</text>
-        <text class="sec-sub">本句 {{ answeredCount }}/{{ quiz.length }} 已答；下面是各语法点历史累计。</text>
+        <text class="sec-t">正确率 · 以往至今</text>
+        <text class="sec-sub">本句 {{ answeredCount }}/{{ quiz.length }} 已答；下面是各成分/语法点历史累计。</text>
         <view v-for="(q, qi) in quiz" :key="'sm'+qi" class="sm-row">
+          <text class="sm-tag" :class="q.kind">{{ q.kind === 'component' ? '成分' : '语法' }}</text>
           <text class="sm-name">{{ q.options[q.answer] }}</text>
           <view class="sm-bar"><view class="sm-fill" :style="{ width: rate(q) + '%' }" /></view>
           <text class="sm-rate">{{ q.stat_total ? rate(q) + '%' : '—' }}</text>
@@ -258,7 +265,11 @@ onLoad(async (q: any) => {
 /* 语法选择题 */
 .quiz { padding: 16rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
 .quiz:first-of-type { border-top: none; }
-.q-stem { display: block; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); background: var(--c-bg-soft, #f6f8fb); border-radius: 12rpx; padding: 14rpx 16rpx; }
+.q-group { font-size: 24rpx; font-weight: 800; color: var(--c-primary); margin: 6rpx 0 12rpx; }
+.q-stem-row { display: flex; align-items: flex-start; gap: 10rpx; background: var(--c-bg-soft, #f6f8fb); border-radius: 12rpx; padding: 14rpx 16rpx; }
+.q-tag { flex-shrink: 0; font-size: 19rpx; color: #fff; background: var(--c-primary); border-radius: 6rpx; padding: 3rpx 10rpx; margin-top: 4rpx; }
+.q-tag.component { background: #12a150; }
+.q-stem { flex: 1; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
 .q-ask { display: block; font-size: 23rpx; color: var(--c-text-sub); margin: 14rpx 0 10rpx; }
 .q-opts { display: flex; flex-direction: column; gap: 12rpx; }
 .q-opt { font-size: 25rpx; color: var(--c-ink); border: 2rpx solid var(--c-line, #e6eaf0); border-radius: 12rpx; padding: 14rpx 18rpx; }
@@ -277,6 +288,8 @@ onLoad(async (q: any) => {
 /* 正确率汇总 */
 .sm-row { display: flex; align-items: center; gap: 14rpx; padding: 12rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
 .sm-row:first-of-type { border-top: none; }
+.sm-tag { flex-shrink: 0; font-size: 18rpx; color: #fff; background: var(--c-primary); border-radius: 5rpx; padding: 2rpx 8rpx; }
+.sm-tag.component { background: #12a150; }
 .sm-name { flex: 1; min-width: 0; font-size: 24rpx; color: var(--c-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sm-bar { width: 140rpx; height: 12rpx; background: #eef1f5; border-radius: 999rpx; overflow: hidden; flex-shrink: 0; }
 .sm-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; }
