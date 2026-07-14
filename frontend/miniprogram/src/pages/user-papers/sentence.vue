@@ -30,14 +30,30 @@
               <text>{{ o }}</text>
             </view>
           </view>
-          <view v-if="picked[qi] != null" class="q-feed">
-            <text class="q-res" :class="{ ok: picked[qi] === q.answer }">
-              {{ picked[qi] === q.answer ? '✓ 答对了' : '✗ 正确答案：' + q.options[q.answer] }}
-            </text>
-            <view class="q-view" :class="{ done: grammarAdded.has(q.node_id) }" @tap="viewGrammar(q)">
-              <text>{{ grammarAdded.has(q.node_id) ? '已加入 · 看讲解 →' : '查看讲解 →' }}</text>
+          <view v-if="picked[qi] != null" class="q-feed-wrap">
+            <view class="q-feed">
+              <text class="q-res" :class="{ ok: picked[qi] === q.answer }">
+                {{ picked[qi] === q.answer ? '✓ 答对了' : '✗ 答错了' }}
+              </text>
+              <view v-if="q.node_id" class="q-view" :class="{ done: grammarAdded.has(q.node_id) }" @tap="viewGrammar(q)">
+                <text>{{ grammarAdded.has(q.node_id) ? '已加入 · 看讲解 →' : '查看讲解 →' }}</text>
+              </view>
             </view>
+            <text class="q-ans">正确答案：{{ q.options[q.answer] }}</text>
+            <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
           </view>
+        </view>
+      </view>
+
+      <!-- 语法点正确率(以往至今) -->
+      <view v-if="quiz.length && answeredCount" class="card">
+        <text class="sec-t">语法点正确率 · 以往至今</text>
+        <text class="sec-sub">本句 {{ answeredCount }}/{{ quiz.length }} 已答；下面是各语法点历史累计。</text>
+        <view v-for="(q, qi) in quiz" :key="'sm'+qi" class="sm-row">
+          <text class="sm-name">{{ q.options[q.answer] }}</text>
+          <view class="sm-bar"><view class="sm-fill" :style="{ width: rate(q) + '%' }" /></view>
+          <text class="sm-rate">{{ q.stat_total ? rate(q) + '%' : '—' }}</text>
+          <text class="sm-cnt">{{ q.stat_correct }}/{{ q.stat_total }}</text>
         </view>
       </view>
 
@@ -107,11 +123,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   analyzePaperSentence, savePaperSentence,
-  getSentenceStudyAids, addGrammarTarget,
+  getSentenceStudyAids, addGrammarTarget, recordGrammarAnswer,
   type GrammarQuizItem, type StudyWord,
 } from '@/api/userPapers'
 import { addHomeworkWords } from '@/api/vocabulary'
@@ -139,9 +155,18 @@ function defText(d: any): string {
   return ''
 }
 
-function pick(qi: number, oi: number) {
+const answeredCount = computed(() => Object.keys(picked.value).length)
+function rate(q: GrammarQuizItem) { return q.stat_total ? Math.round(q.stat_correct / q.stat_total * 100) : 0 }
+
+async function pick(qi: number, oi: number) {
   if (picked.value[qi] != null) return   // 已答不改
   picked.value = { ...picked.value, [qi]: oi }
+  const q = quiz.value[qi]
+  const ok = oi === q.answer
+  try {   // 记录作答 → 累计正确率(以往至今)
+    const st = await recordGrammarAnswer(q.gp_key, q.options[q.answer], ok, q.node_id)
+    q.stat_correct = st.correct; q.stat_total = st.total
+  } catch { /* 记录失败不影响答题 */ }
 }
 function optClass(qi: number, oi: number) {
   const p = picked.value[qi]
@@ -153,6 +178,7 @@ function optClass(qi: number, oi: number) {
 }
 
 async function viewGrammar(q: GrammarQuizItem) {
+  if (!q.node_id) return
   // 答对答错都能看讲解:加入作业精讲·语法(按卷归组)+ 跳讲解页(无讲解会即时生成)
   if (!grammarAdded.value.has(q.node_id)) {
     try {
@@ -160,7 +186,7 @@ async function viewGrammar(q: GrammarQuizItem) {
       grammarAdded.value = new Set([...grammarAdded.value, q.node_id])
     } catch { /* 加入失败不挡看讲解 */ }
   }
-  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${q.node_id}&name=${encodeURIComponent(q.node_name)}&cat=grammar` })
+  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${q.node_id}&name=${encodeURIComponent(q.node_name || '')}&cat=grammar` })
 }
 
 async function addWord(w: StudyWord) {
@@ -239,11 +265,23 @@ onLoad(async (q: any) => {
 .q-opt.right { color: #12a150; border-color: #12a150; background: rgba(46,204,113,.08); }
 .q-opt.wrong { color: #e5484d; border-color: #e5484d; background: rgba(229,72,77,.08); }
 .q-opt.dim { color: var(--c-text-hint); }
-.q-feed { display: flex; align-items: center; justify-content: space-between; margin-top: 14rpx; }
+.q-feed-wrap { margin-top: 14rpx; }
+.q-feed { display: flex; align-items: center; justify-content: space-between; }
 .q-res { font-size: 23rpx; color: #e5484d; }
 .q-res.ok { color: #12a150; }
 .q-view { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
 .q-view.done { color: #2ecc71; border-color: #2ecc71; }
+.q-ans { display: block; font-size: 24rpx; font-weight: 600; color: var(--c-ink); margin-top: 12rpx; }
+.q-exp { display: block; font-size: 23rpx; color: var(--c-text-sub); line-height: 1.6; margin-top: 6rpx; }
+
+/* 正确率汇总 */
+.sm-row { display: flex; align-items: center; gap: 14rpx; padding: 12rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
+.sm-row:first-of-type { border-top: none; }
+.sm-name { flex: 1; min-width: 0; font-size: 24rpx; color: var(--c-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-bar { width: 140rpx; height: 12rpx; background: #eef1f5; border-radius: 999rpx; overflow: hidden; flex-shrink: 0; }
+.sm-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; }
+.sm-rate { font-size: 23rpx; font-weight: 700; color: var(--c-primary); width: 72rpx; text-align: right; flex-shrink: 0; }
+.sm-cnt { font-size: 21rpx; color: var(--c-text-hint); width: 70rpx; text-align: right; flex-shrink: 0; }
 
 /* 重点词 */
 .kw-list { display: flex; flex-direction: column; gap: 12rpx; }

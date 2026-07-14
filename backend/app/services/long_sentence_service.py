@@ -1178,33 +1178,56 @@ async def add_paper_sentence_bundle(db: AsyncSession, *, owner_id: uuid.UUID, te
             "grammar_added": grammar_added}
 
 
+def _link_clause(name: str, segs: list[dict]) -> str | None:
+    """把语法点名关联到原句成份:段类型是语法点名的子串(如「非限制性定语」⊂「现在分词短语作
+    非限制性定语」)则取该段文本;否则找与段类型有 3+ 字重叠的段。"""
+    for s in segs:
+        t = str(s.get("type") or "").strip()
+        if t and t in name and s.get("text"):
+            return s.get("text")
+    for s in segs:
+        t = str(s.get("type") or "").strip()
+        if t and len(set(t) & set(name)) >= 3 and s.get("text"):
+            return s.get("text")
+    return None
+
+
 async def _sentence_grammar_nodes(db: AsyncSession, text: str, analysis: dict) -> list[dict]:
-    """句子涉及的语法点 → 匹配官方语法大纲节点(cf/jf),结果**缓存进** sentence_analysis_cache
-    的 analysis_json['grammar_nodes'](同句不重复付费匹配)。返回 [{name,node_id,code}]。"""
+    """句子涉及的**每个**语法点 → 匹配语法节点(cf/jf 可入作业精讲;m- 仅供讲解),
+    关联原句成份,结果**缓存进** analysis_json['grammar_nodes'](同句不重复付费匹配)。
+    逐点保留(不按节点去重),返回 [{name,explanation,node_id,node_name,code,in_syllabus,clause,gp_key}]。"""
     cached = analysis.get("grammar_nodes")
-    if cached is not None:
-        return cached
+    if cached is not None and all(isinstance(g, dict) and "gp_key" in g for g in cached):
+        return cached   # 命中新版格式缓存;旧格式(无 gp_key)落到下面重算并覆盖
     from app.models.d15_knowledge_graph import KnowledgeNode
     from app.models.d20_long_sentence import SentenceAnalysisCache
+    from app.services.kp_normalize import normalize_kp_name
     import hashlib
-    names = [g.get("name") for g in (analysis.get("grammar_points") or []) if g.get("name")]
-    if not names:
-        names = [str(x) for x in (analysis.get("syntax_points") or []) if str(x).strip()]
+    gps = [g for g in (analysis.get("grammar_points") or []) if g.get("name")]
+    if not gps:
+        gps = [{"name": str(x)} for x in (analysis.get("syntax_points") or []) if str(x).strip()]
+    segs = analysis.get("segments") or []
     out: list[dict] = []
-    seen: set = set()
-    for name in names:
-        m = await match_kp(db, raw_name=str(name), axis_hint="knowledge", source_type="exam")
-        if m.node_id is None:
+    seen_gp: set = set()
+    for g in gps:
+        name = str(g.get("name") or "").strip()
+        if not name or name in seen_gp:
             continue
-        row = (await db.execute(sa.select(KnowledgeNode.code, KnowledgeNode.name)
-                                .where(KnowledgeNode.id == m.node_id))).first()
-        if not row or not row.code or not (row.code.startswith("cf") or row.code.startswith("jf")):
-            continue
-        if str(m.node_id) in seen:
-            continue
-        seen.add(str(m.node_id))
-        out.append({"name": str(name), "node_id": str(m.node_id),
-                    "node_name": row.name, "code": row.code})
+        seen_gp.add(name)
+        m = await match_kp(db, raw_name=name, axis_hint="knowledge", source_type="exam")
+        node_id = node_name = code = None
+        in_syllabus = False
+        if m.node_id is not None:
+            row = (await db.execute(sa.select(KnowledgeNode.code, KnowledgeNode.name)
+                                    .where(KnowledgeNode.id == m.node_id))).first()
+            if row:
+                node_id, node_name, code = str(m.node_id), row.name, row.code
+                in_syllabus = bool(code and (code.startswith("cf") or code.startswith("jf")))
+        gp_key = node_id or ("name:" + normalize_kp_name(name))[:64]
+        out.append({"name": name, "explanation": g.get("explanation"),
+                    "node_id": node_id, "node_name": node_name, "code": code,
+                    "in_syllabus": in_syllabus, "clause": _link_clause(name, segs),
+                    "gp_key": gp_key})
     # 回填缓存(best-effort;失败不影响返回)
     try:
         h = hashlib.md5((text or "").strip().encode("utf-8")).hexdigest()
@@ -1254,32 +1277,34 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
         return {"grammar_quiz": [], "words": []}
     analysis = await analyze_sentence_cached(db, text, with_paraphrase=False)
 
-    # ① 语法提问式选择
+    # ① 语法提问式选择:句子里**每个**语法点一题,带原句成份 + 历史正确率
+    from app.services import grammar_quiz_stat_service as gqs
     gnodes = await _sentence_grammar_nodes(db, text, analysis)
     pool = await _grammar_distractor_pool(db)
-    segs = analysis.get("segments") or []
+    stat_map = await gqs.accuracy(db, student_id=student_id, gp_keys=[g["gp_key"] for g in gnodes])
     quiz = []
     for i, g in enumerate(gnodes):
-        correct = g["node_name"].split(":")[0].split(":")[0].strip() or g["name"]
-        # 干扰项:名字池里排除正确项,按 (句hash+序号) 确定性挑 3 个(同句稳定)
+        correct = g["name"]      # 正确答案 = 该语法点(具体到成份,如「现在分词短语作结果状语」)
+        # 干扰项:同句其它语法点名 + 语法节点名字池,排除正确项,确定性挑 3 个(同句稳定)
+        cand = [x["name"] for x in gnodes if x["name"] != correct] + [p for p in pool if p and p != correct]
+        cand = list(dict.fromkeys(cand))
         seed = int(hashlib.md5(f"{text}{i}".encode()).hexdigest(), 16)
-        cand = [p for p in pool if p and p != correct]
-        picks = []
+        picks: list[str] = []
         for k in range(len(cand)):
             picks.append(cand[(seed // (k + 1)) % len(cand)])
             picks = list(dict.fromkeys(picks))
             if len(picks) >= 3:
                 break
         options = list(dict.fromkeys([correct, *picks]))[:4]
-        # 稳定打乱
         options.sort(key=lambda o: hashlib.md5(f"{text}{i}{o}".encode()).hexdigest())
-        # 关联子句:段类型里含语法名关键词的那段文本(找不到就整句)
-        key = g["name"][:2]
-        clause = next((s.get("text") for s in segs if key and key in str(s.get("type") or "")), None)
+        st = stat_map.get(g["gp_key"], {"correct": 0, "total": 0})
         quiz.append({
-            "node_id": g["node_id"], "node_name": g["node_name"], "code": g["code"],
-            "clause": clause, "question": f"「{clause or text}」运用了哪种语法结构?",
+            "gp_key": g["gp_key"], "node_id": g["node_id"], "node_name": g["node_name"],
+            "code": g["code"], "in_syllabus": g["in_syllabus"],
+            "clause": g["clause"], "explanation": g.get("explanation"),
+            "question": "这属于哪种语法结构？",
             "options": options, "answer": options.index(correct),
+            "stat_correct": st["correct"], "stat_total": st["total"],
         })
 
     # ② 重点词 → 单词卡片数据

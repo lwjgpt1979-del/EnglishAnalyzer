@@ -146,3 +146,26 @@ class SentenceAnalysisCache(Base):
     text = mapped_column(sa.Text, nullable=False)
     analysis_json = mapped_column(JSONB, nullable=False)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class StudentGrammarQuizStat(Base):
+    """长难句语法提问式选择的正确率统计(以往至今累计,按学生×语法点)。
+
+    gp_key:语法点稳定键(匹配到语法节点则用 node_id,否则 name:归一名)。供学习页
+    「考查完给所有语法点统计正确率」。
+    """
+    __tablename__ = "student_grammar_quiz_stat"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    gp_key = mapped_column(sa.String(64), nullable=False)
+    node_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    label = mapped_column(sa.String(120), nullable=False)
+    correct = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    total = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                               server_default=sa.func.now(), onupdate=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint("student_id", "gp_key", name="uq_grammar_quiz_stat_student_gp"),
+    )

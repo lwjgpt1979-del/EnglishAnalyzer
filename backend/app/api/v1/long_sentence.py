@@ -72,6 +72,21 @@ async def add_grammar_target(
     return make_ok({"added": n})
 
 
+@router.post("/grammar-answer", response_model=BaseResponse[dict])
+async def grammar_answer(
+    db: DbDep, current_user: UserDep,
+    gp_key: Annotated[str, Body(..., embed=True, max_length=64)],
+    label: Annotated[str, Body(..., embed=True, max_length=120)],
+    correct: Annotated[bool, Body(..., embed=True)],
+    node_id: Annotated[uuid.UUID | None, Body(embed=True)] = None,
+):
+    """记一次语法选择题作答(累计正确率,以往至今)。返回该语法点 {correct,total}。"""
+    from app.services import grammar_quiz_stat_service as gqs
+    r = await gqs.record(db, student_id=current_user.id, gp_key=gp_key,
+                         label=label, correct=correct, node_id=node_id)
+    return make_ok(r)
+
+
 @router.get("/next", response_model=BaseResponse[dict])
 async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
     """自适应推荐下一句:按学生水平 θ(年级估)选难度贴近的、优先薄弱句法点 + 课程对齐 + 个人材料。

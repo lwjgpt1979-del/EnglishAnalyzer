@@ -52,8 +52,10 @@ export function analyzePaperSentence(sentence: string): Promise<any> {
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {
-  node_id: string; node_name: string; code: string
-  clause: string | null; question: string; options: string[]; answer: number
+  gp_key: string; node_id: string | null; node_name: string | null; code: string | null
+  in_syllabus: boolean; clause: string | null; explanation: string | null
+  question: string; options: string[]; answer: number
+  stat_correct: number; stat_total: number
 }
 export interface StudyWord {
   word_id: string | null; word: string; phonetic: string | null; definitions: any
@@ -68,6 +70,12 @@ export function getSentenceStudyAids(sentence: string): Promise<SentenceStudyAid
 // 「查看讲解」时把该语法结构加入作业精讲·语法(按来源卷归组)
 export function addGrammarTarget(nodeId: string, paperId?: string): Promise<{ added: number }> {
   return request<{ added: number }>(`/api/v1/long-sentences/add-grammar`, { method: 'POST', data: { node_id: nodeId, paper_id: paperId } })
+}
+// 记一次语法选择题作答(累计正确率,以往至今),返回该语法点 {correct,total}
+export function recordGrammarAnswer(gpKey: string, label: string, correct: boolean, nodeId?: string | null): Promise<{ correct: number; total: number }> {
+  return request<{ correct: number; total: number }>(`/api/v1/long-sentences/grammar-answer`, {
+    method: 'POST', data: { gp_key: gpKey, label, correct, node_id: nodeId || undefined },
+  })
 }
 // 长难句「加入学习」:打包该句 + 句中单词 + 句中语法点 → 作业精讲(长难句/单词/语法,同批次)
 export interface SaveSentenceResult { added: boolean; sentence_added: boolean; words_added: number; grammar_added: number }
