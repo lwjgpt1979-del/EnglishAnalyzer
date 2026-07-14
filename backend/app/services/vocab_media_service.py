@@ -430,6 +430,22 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
     return w
 
 
+async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> VocabularyWord | None:
+    """单词媒体「即时兜底」:该词若没有已发布媒体(配图),即时生成图/音/英文释义/例句并
+    **直接发布**(学生触发,全学生共享;结果落词条,同词后续命中不再付费——暂存铁律)。
+    已有已发布配图 → 幂等跳过。供长难句/作业里「加入学习」时对无媒体的词即时补齐。"""
+    w = (await db.execute(select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if w is None:
+        return None
+    if str(w.media_status) == "published" and isinstance(w.image_urls, list) and w.image_urls:
+        return w                                  # 已有媒体,不重复生成
+    await generate_for_word(db, word_id=word_id, do_images=True, do_audio=True)
+    w.media_status = "published"                  # 学生即时生成 → 直接可见(素材已记版本,admin 仍可复核)
+    await db.commit()
+    await db.refresh(w)
+    return w
+
+
 async def generate_i2i_for_word(db: AsyncSession, *, word_id: uuid.UUID,
                                 source_url: str | None = None, source_b64: str | None = None,
                                 prompt: str = "", strength: float = 0.6) -> VocabularyWord:

@@ -331,6 +331,19 @@ async def add_homework_candidates(db: DbDep, current_user: UserDep,
     return make_ok(r)
 
 
+@router.post("/{word_id}/ensure-media", response_model=BaseResponse[dict])
+async def ensure_word_media_api(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """某词若无已发布媒体,即时生成配图/发音/英文释义/例句并发布(全学生共享、落词条缓存,
+    同词不二次付费)。返回更新后的单词卡片数据。供长难句/作业「加入学习」对无媒体词即时补齐。"""
+    from app.core.exceptions import AppError
+    from app.services import vocab_media_service
+    from app.services.vocab_intensive_service import _word_out
+    w = await vocab_media_service.ensure_word_media(db, word_id=word_id)
+    if w is None:
+        raise AppError(code=404, message="单词不存在")
+    return make_ok(_word_out(w))
+
+
 @router.put("/pins/{word_id}", response_model=BaseResponse[dict])
 async def update_pin(word_id: uuid.UUID, db: DbDep, current_user: UserDep, priority: int = Body(..., embed=True)):
     """调整某词优先级别(≤0 即移出优先学)。"""

@@ -138,6 +138,10 @@ export function addPins(wordIds: string[], priority = 1, paperId?: string): Prom
 export function addHomeworkWords(wordIds: string[], paperId: string): Promise<{ added: number }> {
   return request<{ added: number }>('/api/v1/vocabulary/intensive/homework/add', { method: 'POST', data: { word_ids: wordIds, paper_id: paperId } })
 }
+// 无媒体的词即时生成配图/发音/英文释义/例句并发布(全学生共享、落词条缓存),返回更新后的卡片
+export function ensureWordMedia(wordId: string): Promise<IntensiveWord> {
+  return request<IntensiveWord>(`/api/v1/vocabulary/${wordId}/ensure-media`, { method: 'POST' })
+}
 export function setPinPriority(wordId: string, priority: number): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/api/v1/vocabulary/pins/${wordId}`, { method: 'PUT', data: { priority } })
 }

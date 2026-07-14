@@ -72,9 +72,10 @@
         <view class="kw-list">
           <view v-for="(w, wi) in words" :key="wi" class="kw-row" @tap="openCard(w)">
             <image v-if="w.image_url" :src="w.image_url" class="kw-img" mode="aspectFill" />
+            <view v-else-if="genWords.has(w.word_id)" class="kw-img kw-gen"><text class="kw-gen-t">生成中</text></view>
             <view class="kw-main">
               <text class="kw-w">{{ w.word }}</text>
-              <text class="kw-def">{{ defText(w.definitions) }}</text>
+              <text class="kw-def">{{ genWords.has(w.word_id) ? '配图/发音生成中…' : defText(w.definitions) }}</text>
             </view>
             <view v-if="w.in_vocab" class="kw-add" :class="{ done: wordAdded.has(w.word_id) }"
               @tap.stop="addWord(w)">
@@ -138,7 +139,7 @@ import {
   getSentenceStudyAids, addGrammarTarget, recordGrammarAnswer,
   type GrammarQuizItem, type StudyWord,
 } from '@/api/userPapers'
-import { addHomeworkWords } from '@/api/vocabulary'
+import { addHomeworkWords, ensureWordMedia } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
 
 const text = ref('')
@@ -206,7 +207,26 @@ async function addWord(w: StudyWord) {
     await addHomeworkWords([w.word_id], paperId.value)
     wordAdded.value = new Set([...wordAdded.value, w.word_id])
     uni.showToast({ title: '已加入作业精讲·单词', icon: 'none' })
+    if (!w.image_url) genWordMedia(w)   // 无媒体 → 立即生成配图/发音/信息
   } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
+
+// 无媒体的词即时生成媒体+信息,回来原地更新卡片
+const genWords = ref<Set<string>>(new Set())
+async function genWordMedia(w: StudyWord) {
+  if (!w.word_id || genWords.value.has(w.word_id)) return
+  genWords.value = new Set([...genWords.value, w.word_id])
+  try {
+    const m = await ensureWordMedia(w.word_id)
+    w.image_url = m.image_url ?? null
+    w.word_audio_url = m.word_audio_url ?? null
+    w.en_description = m.en_description ?? null
+    w.example = (m.example as any) ?? null
+    if (m.definitions) w.definitions = m.definitions
+  } catch { /* 生成失败静默,不影响已加入 */ }
+  finally {
+    const s = new Set(genWords.value); s.delete(w.word_id); genWords.value = s
+  }
 }
 
 function openCard(w: StudyWord) { cardWord.value = w }
@@ -307,6 +327,8 @@ onLoad(async (q: any) => {
 .kw-list { display: flex; flex-direction: column; gap: 12rpx; }
 .kw-row { display: flex; align-items: center; gap: 16rpx; padding: 12rpx; background: var(--c-bg-soft, #f6f8fb); border-radius: 14rpx; }
 .kw-img { width: 84rpx; height: 84rpx; border-radius: 10rpx; flex-shrink: 0; background: #eef1f5; }
+.kw-gen { display: flex; align-items: center; justify-content: center; background: var(--c-primary-faint, #eaf2ff); }
+.kw-gen-t { font-size: 19rpx; color: var(--c-primary); }
 .kw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
 .kw-w { font-size: 27rpx; font-weight: 700; color: var(--c-primary); }
 .kw-def { font-size: 23rpx; color: var(--c-text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
