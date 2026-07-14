@@ -24,8 +24,17 @@ from app.models.base import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
-# ── 从环境变量覆盖数据库连接 URL ──────────────────────────────────────────────
+# ── 数据库连接 URL:优先 DATABASE_URL 环境变量;没有则回退读 .env(app settings)──
+# 不回退时 alembic.ini 里是占位符 placeholder,本地直接跑会连到不存在的主机
+# (被本机代理 fake-ip 解析成 198.18.x.x)而报连接失败——回退可让本地零配置直接跑。
 database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    try:
+        from app.core.config import settings
+        database_url = str(getattr(settings, "database_url", "")
+                           or getattr(settings, "DATABASE_URL", "")) or None
+    except Exception:  # noqa: BLE001  读不到就维持占位符,交由环境变量提供
+        database_url = None
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
