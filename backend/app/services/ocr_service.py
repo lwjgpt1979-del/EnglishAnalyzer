@@ -173,12 +173,66 @@ def get_ocr_provider() -> OcrProvider:
 _provider: OcrProvider = DualEngineOcrProvider()
 
 
+async def _ocr_cache_get(md5: str) -> OcrResult | None:
+    """按图 md5 查 OCR 缓存(独立 session,供并发 gather 安全调用)。"""
+    from app.core.database import async_session_factory
+    from app.models.d13_v2_user_papers import OcrCache
+    try:
+        async with async_session_factory() as db:
+            row = await db.get(OcrCache, md5)
+            if row is not None:
+                return OcrResult(printed_text=row.printed_text or "",
+                                 handwritten_text=row.handwritten_text or "")
+    except Exception:  # noqa: BLE001  缓存不可用不阻断,照常真调
+        return None
+    return None
+
+
+async def _ocr_cache_put(md5: str, result: OcrResult) -> None:
+    from app.core.database import async_session_factory
+    from app.models.d13_v2_user_papers import OcrCache
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    try:
+        async with async_session_factory() as db:
+            await db.execute(pg_insert(OcrCache).values(
+                image_md5=md5, printed_text=result.printed_text or "",
+                handwritten_text=result.handwritten_text or "",
+            ).on_conflict_do_nothing(index_elements=["image_md5"]))
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _image_md5(fetch_url: str) -> str | None:
+    import hashlib
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(fetch_url)
+            r.raise_for_status()
+            return hashlib.md5(r.content).hexdigest()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def run_ocr(image_url: str) -> OcrResult:
     """并行执行 OCR，返回 OcrResult（委托给当前 provider）。
 
     保持稳定的公开接口：调用方（user_paper_service / ocr.py 等）只依赖此函数，
     底层厂商切换对它们完全透明。
+
+    暂存(第三方付费铁律):按**图片内容 md5** 全局缓存 OCR 结果——同一张图(含不同学生
+    上传的相同图、失败重传)只识别一次,命中不重复付费。
     """
     from app.services import upload_service
     # 桶对象私有 → 转预签名 GET,第三方 OCR 才拉得到图（外部/dev URL 原样放行）
-    return await get_ocr_provider().recognize(upload_service.make_fetch_url(image_url))
+    fetch_url = upload_service.make_fetch_url(image_url)
+    md5 = await _image_md5(fetch_url)
+    if md5:
+        cached = await _ocr_cache_get(md5)
+        if cached is not None:
+            return cached
+    result = await get_ocr_provider().recognize(fetch_url)
+    if md5 and (result.printed_text or result.handwritten_text):
+        await _ocr_cache_put(md5, result)
+    return result

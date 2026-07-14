@@ -287,6 +287,18 @@ async def se_hw_sentences(db: DbDep, current_user: UserDep, paper_id: uuid.UUID 
     return make_ok({"sentences": await si.homework_sentences(db, student_id=current_user.id, paper_id=paper_id)})
 
 
+@router.get("/intensive/reading/homework/batches")
+async def rd_hw_batches(db: DbDep, current_user: UserDep):
+    from app.services import reading_intensive_service as ri
+    return make_ok({"batches": await ri.homework_batches(db, student_id=current_user.id)})
+
+
+@router.get("/intensive/reading/homework/passages")
+async def rd_hw_passages(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
+    from app.services import reading_intensive_service as ri
+    return make_ok({"blocks": await ri.homework_passages(db, student_id=current_user.id, paper_id=paper_id)})
+
+
 @router.get("/intensive/sentence/course/units")
 async def se_course_units(db: DbDep, current_user: UserDep):
     from app.services import sentence_intensive_service as si

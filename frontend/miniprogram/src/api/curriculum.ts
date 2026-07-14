@@ -111,6 +111,15 @@ export function seHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
 export function seHwSentences(paperId: string): Promise<{ sentences: SentenceItem[] }> {
   return request('/api/v1/curriculum/intensive/sentence/homework/sentences', { method: 'GET', data: { paper_id: paperId } })
 }
+// 阅读理解精讲(作业):按卷归组;每卷=短文+小题
+export interface ReadingQuestion { no: string | null; type: string | null; stem: string | null; student_answer: string | null; correct_answer: string | null; explanation: string | null; is_wrong: boolean }
+export interface ReadingBlock { block_label: string; passage: string; questions: ReadingQuestion[] }
+export function rdHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
+  return request('/api/v1/curriculum/intensive/reading/homework/batches', { method: 'GET' })
+}
+export function rdHwPassages(paperId: string): Promise<{ blocks: ReadingBlock[] }> {
+  return request('/api/v1/curriculum/intensive/reading/homework/passages', { method: 'GET', data: { paper_id: paperId } })
+}
 export function seCourseUnits(): Promise<{ version: string | null; units: IntensiveUnit[] }> {
   return request('/api/v1/curriculum/intensive/sentence/course/units', { method: 'GET' })
 }

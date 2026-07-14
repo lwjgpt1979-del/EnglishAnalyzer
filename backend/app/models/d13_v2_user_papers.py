@@ -62,3 +62,14 @@ class UserPaperQuestion(Base):
 
 # R8 Phase4 已退役:题↔KP 关联改为 UserPaperQuestion.node_id(见上)。
 # 表体待 Phase6 连同 knowledge_points 一并 drop,此处保留仅为迁移期兼容,业务代码不再读写。
+
+
+class OcrCache(Base):
+    """OCR 结果暂存(按图片内容 md5 全局缓存)。OCR/豆包 Vision 是拆卷最贵一步,
+    同一张图(含不同学生上传的相同图)只识别一次,命中不重复付费。"""
+    __tablename__ = "ocr_cache"
+
+    image_md5 = mapped_column(sa.String(32), primary_key=True)
+    printed_text = mapped_column(sa.Text, nullable=False, server_default="")
+    handwritten_text = mapped_column(sa.Text, nullable=False, server_default="")
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
