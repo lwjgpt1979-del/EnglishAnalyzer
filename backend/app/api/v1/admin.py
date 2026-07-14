@@ -317,15 +317,16 @@ async def knowledge_nodes_overview_api(
     db: DbDep, admin: AdminDep,
     axis: str | None = None, stage: str | None = None, status: str | None = None,
     q: str | None = None, linked: str | None = None, roots: str | None = None,
-    skip: int = 0, limit: int = 30,
+    ai_lecture: bool = False, skip: int = 0, limit: int = 30,
 ):
     """知识图谱总览(D1):节点分页 + 每节点完整度/引用计数。status 空=全部;
     linked: unit=已关联教材 / question=已关联真题 / both=两者同时关联;
-    roots: 逗号分隔的根目录 id(多选),只出这些根子树下的节点。"""
+    roots: 逗号分隔的根目录 id(多选),只出这些根子树下的节点;
+    ai_lecture=true:只出「有 AI 即时生成讲解(待采纳)」的节点。"""
     root_ids = [r for r in (roots or "").split(",") if r.strip()] or None
     items, total = await kp_candidate_service.list_nodes_overview(
         db, axis=axis, stage=stage, status=status or None, q=q, linked=linked or None,
-        root_ids=root_ids, skip=skip, limit=limit)
+        root_ids=root_ids, has_ai_lecture=ai_lecture, skip=skip, limit=limit)
     return make_ok(KpNodeOverviewOut(total=total, items=[KpNodeOverviewItem(**it) for it in items]))
 
 

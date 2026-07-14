@@ -317,3 +317,14 @@ async def filled_counts(db: AsyncSession, *, node_ids: list[uuid.UUID],
     rows = (await db.execute(
         select(KpLecture.node_id, func.count()).where(*conds).group_by(KpLecture.node_id))).all()
     return {nid: int(c) for nid, c in rows}
+
+
+async def ai_counts(db: AsyncSession, *, node_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """批量:各 node 由 AI 即时生成(source=ai)且有正文的 section 数。供「AI 讲解待采纳」列。"""
+    from sqlalchemy import func
+    rows = (await db.execute(
+        select(KpLecture.node_id, func.count()).where(
+            KpLecture.node_id.in_(node_ids), KpLecture.source == "ai",
+            KpLecture.content_md.isnot(None), KpLecture.content_md != "")
+        .group_by(KpLecture.node_id))).all()
+    return {nid: int(c) for nid, c in rows}

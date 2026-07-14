@@ -34,6 +34,7 @@ const stage = ref('')
 const status = ref('active')
 const q = ref('')
 const linked = ref('')          // 关联筛选:''=全部 / unit / question / both
+const aiLecture = ref(false)    // 只看「有 AI 即时生成讲解(待采纳)」的考点
 const roots = ref<string[]>([]) // 多选根目录过滤(根节点 id)
 const rootOptions = ref<KnowledgeRoot[]>([])
 const rows = ref<KpNodeOverviewItem[]>([])
@@ -52,6 +53,7 @@ async function load() {
       status: status.value || undefined, q: q.value || undefined,
       linked: (linked.value || undefined) as 'unit' | 'question' | 'both' | undefined,
       roots: roots.value.length ? roots.value : undefined,
+      ai_lecture: aiLecture.value || undefined,
       skip: (page.value - 1) * pageSize, limit: pageSize,
     })
     rows.value = data.items
@@ -366,6 +368,9 @@ onMounted(() => { loadTree(); loadRootOptions() })
         placeholder="全部根目录" style="width:240px" @change="reload">
         <el-option v-for="r in rootOptions" :key="r.id" :label="r.name" :value="r.id" />
       </el-select>
+      <el-checkbox v-model="aiLecture" style="margin-left:12px" @change="reload">
+        AI 讲解待采纳
+      </el-checkbox>
       <el-input v-model="q" placeholder="搜知识点名" clearable style="width:200px;margin-left:12px"
         @keyup.enter="reload" @clear="reload" />
       <el-button type="primary" style="margin-left:8px" @click="reload">查询</el-button>
@@ -417,6 +422,14 @@ onMounted(() => { loadTree(); loadRootOptions() })
           <el-tag v-else-if="row.lecture_published >= row.lecture_filled" type="success" size="small">已发布</el-tag>
           <el-tag v-else-if="row.lecture_published > 0" type="warning" size="small">部分 {{ row.lecture_published }}/{{ row.lecture_filled }}</el-tag>
           <el-tag v-else type="danger" size="small">未发布</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="AI 待采纳" width="100" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.lecture_ai" type="warning" size="small" effect="dark" title="AI 即时生成的讲解,点开考点可复核后采纳(改为人工)或下架">
+            AI {{ row.lecture_ai }}
+          </el-tag>
+          <span v-else style="color:#c0c4cc">—</span>
         </template>
       </el-table-column>
       <el-table-column prop="unit_refs" label="引用单元" width="90" align="center" />

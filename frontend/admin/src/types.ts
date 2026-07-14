@@ -220,6 +220,7 @@ export interface KpNodeOverviewItem {
   lecture_filled: number
   lecture_total: number
   lecture_published: number
+  lecture_ai?: number
   unit_refs: number
   question_refs: number
   alias_count: number

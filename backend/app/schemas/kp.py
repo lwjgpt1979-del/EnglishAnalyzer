@@ -45,6 +45,7 @@ class KpNodeOverviewItem(BaseModel):
     lecture_filled: int       # 讲解已填环节数
     lecture_total: int        # 该考点类型模板环节数(分母)
     lecture_published: int = 0 # 已发布(有正文)环节数
+    lecture_ai: int = 0        # AI 即时生成(source=ai)环节数——待采纳
     unit_refs: int            # 被多少教材单元引用
     question_refs: int        # 被多少真题/仿真引用
     alias_count: int

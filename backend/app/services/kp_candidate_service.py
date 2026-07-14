@@ -109,12 +109,15 @@ async def _descendant_ids(db: AsyncSession, root_ids: list) -> list:
 async def list_nodes_overview(
     db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
     status: str | None = None, q: str | None = None, linked: str | None = None,
-    root_ids: list | None = None, skip: int = 0, limit: int = 20,
+    root_ids: list | None = None, has_ai_lecture: bool = False,
+    skip: int = 0, limit: int = 20,
 ) -> tuple[list[dict], int]:
     """知识图谱总览(D1):节点分页 + 每节点摘要(讲解完整度/引用单元/引用真题/别名数)。
-    root_ids:多选根目录过滤——只出这些根节点子树下的节点(含根)。"""
+    root_ids:多选根目录过滤——只出这些根节点子树下的节点(含根)。
+    has_ai_lecture:只出「有 AI 即时生成讲解(source=ai)」的节点——「AI 讲解待采纳」队列。"""
     from sqlalchemy.dialects.postgresql import JSONB
     from app.models.d16_question_domain import PlatformQuestionKp
+    from app.models.d25_kp_lecture import KpLecture
 
     base = sa.select(KnowledgeNode)
     if axis:
@@ -137,6 +140,11 @@ async def list_nodes_overview(
         base = base.where(
             sa.select(PlatformQuestionKp.node_id)
             .where(PlatformQuestionKp.node_id == KnowledgeNode.id).exists())
+    if has_ai_lecture:                          # 只出「有 AI 即时生成讲解」的节点(待采纳队列)
+        base = base.where(
+            sa.select(KpLecture.node_id).where(
+                KpLecture.node_id == KnowledgeNode.id, KpLecture.source == "ai",
+                KpLecture.content_md.isnot(None), KpLecture.content_md != "").exists())
     total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(
         base.order_by(KnowledgeNode.name).offset(skip).limit(limit))).scalars().all()
@@ -150,6 +158,7 @@ async def list_nodes_overview(
     from app.services import kp_lecture_service as kl
     lec_filled = await kl.filled_counts(db, node_ids=ids)
     lec_published = await kl.filled_counts(db, node_ids=ids, published_only=True)
+    lec_ai = await kl.ai_counts(db, node_ids=ids)
     units = await _counts(
         sa.select(UnitNode.node_id, sa.func.count()).where(UnitNode.node_id.in_(ids))
         .group_by(UnitNode.node_id))
@@ -164,6 +173,7 @@ async def list_nodes_overview(
         "status": r.status, "applicable_stages": r.applicable_stages, "source": r.source,
         "lecture_filled": int(lec_filled.get(r.id, 0)), "lecture_total": len(kl.template_for(r.code)),
         "lecture_published": int(lec_published.get(r.id, 0)),
+        "lecture_ai": int(lec_ai.get(r.id, 0)),
         "unit_refs": int(units.get(r.id, 0)),
         "question_refs": int(ques.get(r.id, 0)), "alias_count": int(aliases.get(r.id, 0)),
     } for r in rows]

@@ -581,11 +581,13 @@ export function rebuildExamFreq(body: { exam_type: string; list_name?: string })
 // 知识图谱总览(D1)
 export function listKnowledgeNodes(params: {
   axis?: string; stage?: string; status?: string; q?: string
-  linked?: 'unit' | 'question' | 'both'; roots?: string[]; skip?: number; limit?: number
+  linked?: 'unit' | 'question' | 'both'; roots?: string[]
+  ai_lecture?: boolean; skip?: number; limit?: number
 }): Promise<KpNodeOverviewOut> {
   const p: Record<string, unknown> = { ...params }
   if (params.roots?.length) p.roots = params.roots.join(',')   // 多选根目录 → 逗号分隔
   else delete p.roots
+  if (!params.ai_lecture) delete p.ai_lecture
   return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params: p }))
 }
 // 根目录(顶层分类)选项——多选过滤下拉
