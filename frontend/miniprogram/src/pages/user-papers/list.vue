@@ -5,7 +5,7 @@
     <view class="upload-entry" @tap="goUpload">
       <view class="ue-icon"><view class="ic ic-plus" style="width:40rpx;height:40rpx" /></view>
       <view class="ue-text">
-        <text class="ue-title">拍整张试卷</text>
+        <text class="ue-title">拍整份作业</text>
         <text class="ue-sub">1~9 张图片，自动识别并拆题</text>
       </view>
       <text class="ue-arrow">›</text>
@@ -16,7 +16,7 @@
 
     <!-- 空状态 -->
     <view v-else-if="!loading && items.length === 0" class="center-tip">
-      <text>还没有上传整卷，点上方按钮试试 📄</text>
+      <text>还没有上传作业，点上方按钮试试 📄</text>
     </view>
 
     <!-- 列表 -->
@@ -28,7 +28,7 @@
         @tap="goDetail(p.id)"
       >
         <view class="pc-head">
-          <text class="pc-title">{{ p.title || '未命名试卷' }}</text>
+          <text class="pc-title">{{ p.title || '未命名作业' }}</text>
           <text class="status" :class="statusClass(p.ocr_status)">{{ statusText(p.ocr_status) }}</text>
         </view>
         <text class="pc-meta">{{ p.source_image_urls.length }} 张图片 · {{ p.question_count }} 道题</text>

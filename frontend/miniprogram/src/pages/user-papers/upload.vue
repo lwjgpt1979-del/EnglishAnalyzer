@@ -1,9 +1,9 @@
 <template>
   <view class="page">
     <view class="card">
-      <view class="card-title">拍整张试卷</view>
+      <view class="card-title">拍整份作业</view>
       <view class="hint">
-        一张试卷可拍 1~9 张图片。多张时请<text class="em">按页码顺序</text>排列，
+        一份作业可拍 1~9 张图片。多张时请<text class="em">按页码顺序</text>排列，
         系统会按此顺序拼接识别（可上移/下移调整）。
       </view>
 
@@ -42,7 +42,7 @@
       <view v-if="errorMsg" class="error-msg">{{ errorMsg }}</view>
     </view>
 
-    <view class="card-link" @tap="goList">查看我的试卷 ›</view>
+    <view class="card-link" @tap="goList">查看我的作业 ›</view>
   </view>
 </template>
 

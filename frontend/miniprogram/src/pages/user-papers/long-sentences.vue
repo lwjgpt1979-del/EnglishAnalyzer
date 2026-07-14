@@ -1,12 +1,12 @@
 <template>
   <view class="page">
     <view class="hd">
-      <text class="hd-title">本卷长难句</text>
+      <text class="hd-title">本作业长难句</text>
       <text class="hd-sub">原文里的长难句,点「解析」拆结构、看意思;可加入待学习。</text>
     </view>
 
     <view v-if="loading" class="tip">加载中…</view>
-    <view v-else-if="!sentences.length" class="tip">本卷没有识别到长难句</view>
+    <view v-else-if="!sentences.length" class="tip">本作业没有识别到长难句</view>
 
     <template v-else>
       <view v-for="(s, i) in sentences" :key="i" class="card ls-item">

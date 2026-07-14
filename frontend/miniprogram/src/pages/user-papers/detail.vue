@@ -5,8 +5,8 @@
     <template v-else-if="paper">
       <view class="head card">
         <view class="head-top">
-          <text class="title">{{ paper.title || '未命名试卷' }}</text>
-          <text class="head-list" @tap="goList">我的整卷 ›</text>
+          <text class="title">{{ paper.title || '未命名作业' }}</text>
+          <text class="head-list" @tap="goList">我的作业 ›</text>
         </view>
         <view class="status" :class="statusClass">
           <text>{{ statusText }}</text>
@@ -36,7 +36,7 @@
 
         <!-- 知识点归集卡（错题按知识点聚合，薄弱红标）-->
         <view v-if="kpItems.length" class="card kp-card">
-          <text class="kp-title">本卷知识点归集</text>
+          <text class="kp-title">本作业知识点归集</text>
           <view v-for="k in kpItems" :key="k.kp_id" class="kp-row">
             <text class="kp-name" :class="{ weak: k.weak }">{{ k.kp_name }}</text>
             <text class="kp-cnt">错 {{ k.wrong }}/{{ k.total }}</text>
@@ -44,9 +44,9 @@
           </view>
         </view>
 
-        <!-- P1:本卷语法点 学情(已学/薄弱/未学) -->
+        <!-- P1:本作业语法点 学情(已学/薄弱/未学) -->
         <view v-if="grammar && grammar.total" class="card gr-card">
-          <text class="gr-title">本卷语法点 · 学情（{{ grammar.total }}）</text>
+          <text class="gr-title">本作业语法点 · 学情（{{ grammar.total }}）</text>
           <view v-if="grammar.new.length" class="gr-group">
             <text class="gr-lbl gr-new">未学 {{ grammar.new.length }}</text>
             <view class="gr-chips">
@@ -86,10 +86,10 @@
           </view>
         </view>
 
-        <!-- P2:本卷生词 → 加入「作业精讲·单词」(可折叠) -->
+        <!-- P2:本作业生词 → 加入「作业精讲·单词」(可折叠) -->
         <view v-if="vocab.length" class="card gr-card">
           <view class="gr-head" @tap="vocabOpen = !vocabOpen">
-            <text class="gr-title">本卷生词 · {{ vocab.length }}</text>
+            <text class="gr-title">本作业生词 · {{ vocab.length }}</text>
             <text class="gr-fold">{{ vocabOpen ? '收起 ▲' : '展开 ▼' }}</text>
           </view>
           <template v-if="vocabOpen">
@@ -109,10 +109,10 @@
           </template>
         </view>
 
-        <!-- P3:本卷长难句 → 单开一页(不在试卷页内嵌) -->
+        <!-- P3:本作业长难句 → 单开一页(不在作业页内嵌) -->
         <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
           <view class="entry-main">
-            <text class="entry-title">本卷长难句</text>
+            <text class="entry-title">本作业长难句</text>
             <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思;加入学习=句+词+语法一起进作业精讲</text>
           </view>
           <text class="entry-arrow">›</text>
@@ -181,7 +181,7 @@
       </view>
     </view>
 
-    <view v-else class="empty">试卷不存在或无权访问</view>
+    <view v-else class="empty">作业不存在或无权访问</view>
   </view>
 </template>
 
@@ -246,7 +246,7 @@ async function loadKpSummary() {
   try { kpItems.value = (await getPaperKpSummary(paperId.value)).items } catch { /* ignore */ }
 }
 
-// P1:本卷语法点 已学/薄弱/未学
+// P1:本作业语法点 已学/薄弱/未学
 const grammar = ref<PaperGrammarStatus | null>(null)
 async function loadGrammar() {
   try { grammar.value = await getPaperGrammarStatus(paperId.value) } catch { /* ignore */ }
@@ -265,7 +265,7 @@ async function addToPlan() {
     const r = await addPaperToPlan(paperId.value)
     uni.showModal({
       title: '已加入待学习',
-      content: `本卷未学 ${r.new} + 薄弱 ${r.weak} 个语法点已加入待学习,可在「作业精讲 → 语法精讲」按批次学。`,
+      content: `本作业未学 ${r.new} + 薄弱 ${r.weak} 个语法点已加入待学习,可在「作业精讲 → 语法精讲」按批次学。`,
       confirmText: '去作业精讲', cancelText: '知道了',
       success: (m) => { if (m.confirm) uni.navigateTo({ url: '/pages/intensive/homework' }) },
     })
@@ -278,11 +278,11 @@ function unlearnedPre(n: GrammarNodeItem) {
   return (n.prereq || []).filter(p => !p.learned)
 }
 
-// P2:本卷生词 → 加入词力通优先学
+// P2:本作业生词 → 加入词力通优先学
 const vocab = ref<PaperVocabWord[]>([])
 const picked = ref<Set<string>>(new Set())
 const vocabBusy = ref(false)
-const vocabOpen = ref(true)          // 本卷生词可折叠
+const vocabOpen = ref(true)          // 本作业生词可折叠
 const pickCount = computed(() => picked.value.size)
 async function loadVocab() {
   try { vocab.value = (await getPaperVocab(paperId.value)).words } catch { /* ignore */ }
@@ -307,7 +307,7 @@ async function addVocab() {
   finally { vocabBusy.value = false }
 }
 
-// P3:本卷长难句 → 整块单开一页(试卷页只留入口,不内嵌列表/解析)
+// P3:本作业长难句 → 整块单开一页(作业页只留入口,不内嵌列表/解析)
 const sentences = ref<string[]>([])
 async function loadSentences() {
   try { sentences.value = (await getPaperLongSentences(paperId.value)).sentences } catch { /* ignore */ }
@@ -386,7 +386,7 @@ async function load() {
 onLoad((q: any) => {
   paperId.value = q.id || ''
   if (!paperId.value) {
-    uni.showToast({ title: '缺少试卷 id', icon: 'none' })
+    uni.showToast({ title: '缺少作业 id', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 800)
     return
   }

@@ -80,7 +80,7 @@
       <view class="jj-row">
         <view class="jj-card jj-hw" @tap="() => uni.navigateTo({ url: '/pages/intensive/homework' })">
           <view class="qi qi-file" />
-          <view class="jj-text"><text class="jj-title">作业精讲</text><text class="jj-sub">你上传的作业/试卷</text></view>
+          <view class="jj-text"><text class="jj-title">作业精讲</text><text class="jj-sub">你上传的作业</text></view>
         </view>
         <view class="jj-card jj-course" @tap="() => uni.navigateTo({ url: '/pages/intensive/course' })">
           <view class="qi qi-book" />
@@ -99,7 +99,7 @@
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">
           <view class="qi qi-file" />
-          <text class="quick-label">上传整卷</text>
+          <text class="quick-label">上传作业</text>
         </view>
         <view class="quick-card" @tap="() => uni.switchTab({ url: '/pages/wrong-questions/list' })">
           <view class="qi qi-book" />
