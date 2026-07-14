@@ -1128,10 +1128,12 @@ async def add_student_sentence(db: AsyncSession, *, owner_id: uuid.UUID, text: s
 
 
 async def add_paper_sentence_bundle(db: AsyncSession, *, owner_id: uuid.UUID, text: str,
-                                    source_paper_id: uuid.UUID | None = None) -> dict:
-    """长难句「加入学习」打包:该句 + 句中单词 + 句中语法点 一起加入作业精讲的 长难句/单词/语法
-    三模块(同一来源卷=同一批次)。返回 {sentence_added, words_added, grammar_added}。
-    source_paper_id 为空时只加句(词/语法需按卷归组,无卷则跳过)。"""
+                                    source_paper_id: uuid.UUID | None = None,
+                                    with_words_grammar: bool = False) -> dict:
+    """长难句「加入学习」:该句加入作业精讲·长难句(按来源卷=批次归组)。
+    with_words_grammar=True 时**顺带**把句中单词/语法点一并加入作业精讲的 单词/语法 模块;
+    当前产品决定**暂时只加长难句**(默认 False),以后需要连带加词/语法时置 True 即可。
+    返回 {sentence_added, words_added, grammar_added}。source_paper_id 为空时只加句。"""
     from app.models.d5_learning import VocabularyWord
     text = (text or "").strip()
     if not text:
@@ -1139,9 +1141,9 @@ async def add_paper_sentence_bundle(db: AsyncSession, *, owner_id: uuid.UUID, te
     # 1) 句 → student_long_sentence(已带来源卷;内部已算好并缓存解析)
     sent_added = await add_student_sentence(db, owner_id=owner_id, text=text,
                                             source_paper_id=source_paper_id)
-    analysis = await analyze_sentence_cached(db, text, with_paraphrase=True)   # 命中缓存,无额外成本
     words_added = grammar_added = 0
-    if source_paper_id is not None:
+    if with_words_grammar and source_paper_id is not None:
+        analysis = await analyze_sentence_cached(db, text, with_paraphrase=True)   # 命中缓存,无额外成本
         # 2) 词:key_words 词文本 → word_id → 作业精讲·单词
         kw = [str(x.get("word") or "").strip() for x in (analysis.get("key_words") or [])
               if isinstance(x, dict) and str(x.get("word") or "").strip()]
