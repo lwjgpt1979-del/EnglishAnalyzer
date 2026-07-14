@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import mapped_column
 
 from .base import Base
@@ -41,3 +41,14 @@ class KpLecture(Base):
         sa.UniqueConstraint("node_id", "section_key", name="uix_kp_lecture_identity"),
         sa.Index("ix_kp_lecture_node", "node_id"),
     )
+
+
+class GrammarLectureCache(Base):
+    """个人语法(未入图谱)的 AI 讲解暂存,按**语法名归一化 md5** 全局缓存。
+    个人节点不在 knowledge_nodes、进不了 kp_lecture;同名语法讲解全学生共享,命中不重复付费。"""
+    __tablename__ = "grammar_lecture_cache"
+
+    name_norm = mapped_column(sa.String(120), primary_key=True)   # 归一化语法名
+    display_name = mapped_column(sa.String(120), nullable=False)
+    sections = mapped_column(JSONB, nullable=False)              # [{section_key,title,content_md}]
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

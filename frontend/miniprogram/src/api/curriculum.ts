@@ -91,6 +91,11 @@ export function getUnitMasterySummary(unitId: string): Promise<KpMasterySummaryI
 export interface IntensiveBatch { paper_id: string; title: string; date: string; count: number }
 export interface IntensiveUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; count: number }
 export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string }
+export interface GrammarLectureSection { section_key: string; title: string; content_md: string }
+// 个人语法(未入图谱)按语法名即时生成 AI 讲解(全局缓存,同名不二次付费)
+export function namedGrammarLecture(name: string): Promise<{ sections: GrammarLectureSection[] }> {
+  return request('/api/v1/curriculum/grammar-lecture', { method: 'POST', data: { name } })
+}
 export interface SentenceItem { text: string }
 
 export function grHwBatches(): Promise<{ batches: IntensiveBatch[] }> {

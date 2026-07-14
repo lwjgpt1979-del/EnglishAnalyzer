@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -285,6 +285,17 @@ async def se_hw_batches(db: DbDep, current_user: UserDep):
 async def se_hw_sentences(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
     from app.services import sentence_intensive_service as si
     return make_ok({"sentences": await si.homework_sentences(db, student_id=current_user.id, paper_id=paper_id)})
+
+
+@router.post("/grammar-lecture")
+async def named_grammar_lecture(
+    db: DbDep, current_user: UserDep,
+    name: Annotated[str, Body(..., embed=True, min_length=1, max_length=120)],
+):
+    """个人语法(未入图谱)的 AI 讲解:按语法名即时生成并**全局缓存**(同名不二次付费)。
+    返回讲解各段 [{section_key,title,content_md}]。"""
+    from app.services import kp_lecture_service as kl
+    return make_ok({"sections": await kl.ensure_named_grammar_lecture(db, name=name)})
 
 
 @router.get("/intensive/reading/homework/batches")

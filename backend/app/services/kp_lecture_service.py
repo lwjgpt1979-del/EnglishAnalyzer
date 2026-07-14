@@ -99,6 +99,41 @@ async def published_sections(db: AsyncSession, *, node_id: uuid.UUID, code: str 
     return [s for s in data["sections"] if s["has_content"]]
 
 
+async def ensure_named_grammar_lecture(db: AsyncSession, *, name: str) -> list[dict]:
+    """个人语法(未入图谱、无 node)的 AI 讲解:按**语法名**即时生成 grammar 模板各段,
+    结果**按归一化名全局缓存**(grammar_lecture_cache),同名讲解全学生共享、命中不再付费。
+    返回 [{section_key,title,content_md}]。生成失败降级为空。"""
+    from app.models.d25_kp_lecture import GrammarLectureCache
+    from app.services.kp_normalize import normalize_kp_name
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    nm = (name or "").strip()
+    norm = normalize_kp_name(nm)[:120]
+    if not norm:
+        return []
+    row = await db.get(GrammarLectureCache, norm)
+    if row is not None and row.sections:
+        return row.sections
+    import asyncio
+    tpl = template_for(None)         # code=None → grammar 模板(idea/examples/pitfall)
+    # 各段并发生成(generate_section 不触库),快 ~3 倍
+    mds = await asyncio.gather(*[
+        generate_section(db, code=None, name=nm, section_key=t["key"]) for t in tpl
+    ], return_exceptions=True)
+    secs: list[dict] = []
+    for t, md in zip(tpl, mds):
+        if not isinstance(md, Exception) and md and md.strip():
+            secs.append({"section_key": t["key"], "title": t["title"], "content_md": md})
+    if secs:
+        try:                          # 落缓存(同名不二次付费);并发写冲突忽略
+            await db.execute(pg_insert(GrammarLectureCache)
+                             .values(name_norm=norm, display_name=nm[:120], sections=secs)
+                             .on_conflict_do_nothing(index_elements=["name_norm"]))
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            await db.rollback()
+    return secs
+
+
 async def ensure_ai_lecture(db: AsyncSession, *, node_id: uuid.UUID,
                             code: str | None = None, name: str | None = None) -> dict:
     """考点讲解「即时兜底」:该 node 若缺已发布讲解,即时用 AI 生成缺失环节并**直接发布**

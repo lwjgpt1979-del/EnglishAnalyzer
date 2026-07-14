@@ -30,11 +30,22 @@
       </view>
     </template>
 
-    <!-- 个人语法点:即时生成练习(该语法没入图谱,按语法名出题) -->
+    <!-- 个人语法点(未入图谱):AI 讲解(缓存)+ 按语法名出题练习 -->
     <view v-if="practiceOpen" class="modal" @tap.self="practiceOpen = false">
       <view class="modal-card">
-        <text class="modal-title">练习 · {{ practiceKp }}</text>
+        <text class="modal-title">{{ practiceKp }}<text class="modal-tag">自建语法</text></text>
         <scroll-view scroll-y class="modal-body">
+          <!-- 讲解 -->
+          <view v-if="lectureLoading" class="tip">AI 讲解生成中…</view>
+          <view v-for="s in lectureSections" :key="s.section_key" class="lec">
+            <text class="lec-title">{{ s.title }}</text>
+            <rich-text :nodes="md2html(s.content_md)" class="lec-md" />
+          </view>
+          <!-- 练习 -->
+          <view class="prac-hd">
+            <text class="prac-t">练一练</text>
+            <text v-if="!practiceList.length && !practiceLoading" class="prac-btn" @tap="genPractice">出题 ›</text>
+          </view>
           <view v-if="practiceLoading" class="tip">出题中…</view>
           <view v-for="(q, i) in practiceList" :key="q.id" class="sq">
             <text class="sq-stem">{{ i + 1 }}. {{ q.stem }}</text>
@@ -42,7 +53,6 @@
               <text v-for="(o, oi) in q.options" :key="oi" class="sq-opt">{{ o }}</text>
             </view>
           </view>
-          <text v-if="!practiceLoading && !practiceList.length" class="tip">未生成题目</text>
         </scroll-view>
         <view class="modal-close" @tap="practiceOpen = false"><text>关闭</text></view>
       </view>
@@ -56,7 +66,9 @@ import { onLoad } from '@dcloudio/uni-app'
 import { grHwBatches, grHwPoints, grCourseUnits, grCoursePoints,
          type GrammarPoint, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
 import { generateQuestions } from '@/api/practice'
+import { namedGrammarLecture, type GrammarLectureSection } from '@/api/curriculum'
 import type { PracticeQuestionOut } from '@/types/api'
+import { md2html } from '@/utils/md'
 
 const mode = ref('homework')
 const loading = ref(true)
@@ -84,15 +96,24 @@ const practiceOpen = ref(false)
 const practiceLoading = ref(false)
 const practiceKp = ref('')
 const practiceList = ref<PracticeQuestionOut[]>([])
+const lectureLoading = ref(false)
+const lectureSections = ref<GrammarLectureSection[]>([])
 async function goLearn(p: GrammarPoint) {
-  if (p.personal || !p.node_id) {   // 个人语法(未入图谱)→ 按语法名即时出题练习
-    practiceKp.value = p.name; practiceList.value = []; practiceOpen.value = true; practiceLoading.value = true
-    try { practiceList.value = await generateQuestions(p.name, 5, 3) }
-    catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
-    finally { practiceLoading.value = false }
+  if (p.personal || !p.node_id) {   // 个人语法(未入图谱)→ AI 讲解(缓存)+ 按名出题
+    practiceKp.value = p.name; practiceList.value = []; lectureSections.value = []
+    practiceOpen.value = true; lectureLoading.value = true
+    try { lectureSections.value = (await namedGrammarLecture(p.name)).sections }
+    catch { /* 讲解失败静默 */ }
+    finally { lectureLoading.value = false }
     return
   }
   uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${p.node_id}&name=${encodeURIComponent(p.name)}&cat=grammar` })
+}
+async function genPractice() {
+  practiceLoading.value = true
+  try { practiceList.value = await generateQuestions(practiceKp.value, 5, 3) }
+  catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
+  finally { practiceLoading.value = false }
 }
 async function load() {
   loading.value = true
@@ -131,7 +152,14 @@ onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 40rpx; }
 .modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
 .modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.modal-tag { font-size: 19rpx; color: #ff8a3d; border: 2rpx solid #ffd8bd; border-radius: 6rpx; padding: 1rpx 8rpx; margin-left: 10rpx; font-weight: 400; }
 .modal-body { flex: 1; margin: 16rpx 0; }
+.lec { padding: 8rpx 0 16rpx; }
+.lec-title { display: block; font-size: 24rpx; font-weight: 700; color: var(--c-primary); margin-bottom: 8rpx; }
+.lec-md { font-size: 25rpx; line-height: 1.7; color: var(--c-ink); }
+.prac-hd { display: flex; align-items: center; justify-content: space-between; border-top: 2rpx solid var(--c-line, #eef1f5); padding-top: 14rpx; margin-top: 6rpx; }
+.prac-t { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
+.prac-btn { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
 .sq { padding: 14rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
 .sq:first-child { border-top: none; }
 .sq-stem { display: block; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
