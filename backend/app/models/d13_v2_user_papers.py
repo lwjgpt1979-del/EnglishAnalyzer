@@ -75,3 +75,13 @@ class OcrCache(Base):
     printed_text = mapped_column(sa.Text, nullable=False, server_default="")
     handwritten_text = mapped_column(sa.Text, nullable=False, server_default="")
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class KpClassifyCache(Base):
+    """题目知识点归类结果暂存(按小题内容 md5 全局缓存)。同一小题(独立题按题干、
+    阅读/完形题按短文+题干)只归类一次,跨上传/跨学生复用,重叠题不重复调 LLM。"""
+    __tablename__ = "kp_classify_cache"
+
+    content_md5 = mapped_column(sa.String(32), primary_key=True)
+    kp_key = mapped_column(sa.String(120), nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
