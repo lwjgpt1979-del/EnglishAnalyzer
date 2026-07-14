@@ -16,6 +16,8 @@ class UserUploadedPaper(Base):
     title = mapped_column(sa.String, nullable=True)
     source_image_urls = mapped_column(JSONB, nullable=False)
     image_hash = mapped_column(sa.String(32), nullable=True, index=True)  # 图片内容 md5(同图重复上传去重)
+    content_hash = mapped_column(sa.String(32), nullable=True, index=True)  # 识别文本内容 md5(同卷重拍去重)
+    duplicate_of = mapped_column(UUID(as_uuid=True), nullable=True)  # 判为重复卷时指向原卷(不重复解析、不列第二条)
     ocr_status = mapped_column(sa.String, nullable=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now())

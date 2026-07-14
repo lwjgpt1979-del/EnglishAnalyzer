@@ -203,6 +203,29 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                 printed_text="\n".join(printed_parts),
                 handwritten_text="\n".join(handwritten_parts),
             )
+
+            # 同卷重拍去重:按**识别文本内容**(归一化后 md5)比对该生已有卷——
+            # 图 md5 挡不住"同一张卷拍两次(不同照片)",但识别出的文字一致 → 判为重复卷:
+            # 跳过拆题/归类(最贵几步不重复付费)+ 标记 duplicate_of(不再列第二条,详情指向原卷)。
+            import hashlib
+            _norm = "".join(c.lower() for c in (merged.printed_text or "") if c.isalnum())
+            paper.content_hash = hashlib.md5(_norm.encode()).hexdigest() if _norm else None
+            if paper.content_hash:
+                dup = (await db.execute(select(UserUploadedPaper).where(
+                    UserUploadedPaper.student_id == paper.student_id,
+                    UserUploadedPaper.id != paper.id,
+                    UserUploadedPaper.content_hash == paper.content_hash,
+                    UserUploadedPaper.duplicate_of.is_(None),
+                    UserUploadedPaper.ocr_status == "completed")
+                    .order_by(UserUploadedPaper.created_at.asc()).limit(1))).scalar_one_or_none()
+                if dup is not None:
+                    paper.duplicate_of = dup.id
+                    if not (paper.title or "").strip():
+                        paper.title = dup.title
+                    paper.ocr_status = "completed"
+                    await db.commit()
+                    return   # 同卷重拍 → 不再重复解析/归类
+
             parsed = await split_paper_questions(merged)
 
             # Step 2: DeepSeek 批量归类 KP（M40 新增）——归类是增强,失败不拖垮整卷(题目照常入库)
@@ -327,7 +350,8 @@ async def list_papers(
     """列出某学生的全部整卷（倒序），含每卷题目数。"""
     rows = (await db.execute(
         select(UserUploadedPaper)
-        .where(UserUploadedPaper.student_id == student_id)
+        .where(UserUploadedPaper.student_id == student_id,
+               UserUploadedPaper.duplicate_of.is_(None))   # 同卷重拍的重复卷不列
         .order_by(UserUploadedPaper.created_at.desc())
         .limit(limit)
     )).scalars().all()
@@ -358,14 +382,17 @@ async def get_paper_detail(
     from app.models.d13_v2_user_papers import UserPaperSection
     from app.schemas.user_papers import UserPaperSectionOut
 
+    # 同卷重拍的重复卷:题目/大题都取自原卷(本卷没重复解析)
+    eff_id = paper.duplicate_of or paper.id
+
     qs = (await db.execute(
         select(UserPaperQuestion)
-        .where(UserPaperQuestion.user_paper_id == paper_id)
+        .where(UserPaperQuestion.user_paper_id == eff_id)
         .order_by(UserPaperQuestion.sort_order.asc(), UserPaperQuestion.created_at.asc())
     )).scalars().all()
     secs = (await db.execute(
         select(UserPaperSection)
-        .where(UserPaperSection.user_paper_id == paper_id)
+        .where(UserPaperSection.user_paper_id == eff_id)
         .order_by(UserPaperSection.sort_order.asc())
     )).scalars().all()
 
