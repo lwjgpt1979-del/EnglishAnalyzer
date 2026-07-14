@@ -18,6 +18,7 @@ const router = createRouter({
         { path: 'knowledge-graph', name: 'knowledge-graph', component: () => import('../views/KnowledgeGraph.vue') },
         { path: 'kp-prompts', name: 'kp-prompts', component: () => import('../views/KpPrompts.vue') },
         { path: 'llm-config', name: 'llm-config', component: () => import('../views/LlmConfig.vue') },
+        { path: 'llm-features', name: 'llm-features', component: () => import('../views/LlmFeatures.vue') },
         { path: 'third-party', name: 'third-party', component: () => import('../views/ThirdPartyResources.vue') },
         { path: 'exam-type-stats', name: 'exam-type-stats', component: () => import('../views/ExamTypeStats.vue') },
         { path: 'grammar-calibration', name: 'grammar-calibration', component: () => import('../views/GrammarCalibration.vue') },

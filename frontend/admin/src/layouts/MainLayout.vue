@@ -97,6 +97,7 @@ const navGroups: NavGroup[] = [
   { key: 'g-system', title: '系统配置', icon: Setting, items: [
     { path: '/third-party', label: '第三方 API 资源', icon: Cpu },
     { path: '/llm-config', label: '模型配置', icon: Cpu },
+    { path: '/llm-features', label: 'LLM 调用清单', icon: Cpu },
     { path: '/sensitive-words', label: '敏感词库' },
     { path: '/regions', label: '地区管理' },
     { path: '/system-settings', label: '系统参数' },
