@@ -279,10 +279,12 @@ async def practice_for_question_api(question_id: uuid.UUID, db: DbDep, current_u
         "knowledge_point": kp_name,
         "questions": [
             {
-                "id": str(q.id), "knowledge_point_id": str(q.knowledge_point_id),
+                "id": str(q.id),
                 "knowledge_point_name": kp_name, "question_type": str(q.question_type),
                 "difficulty": q.difficulty, "stem": (q.content or {}).get("stem", ""),
                 "options": (q.content or {}).get("options"),
+                "answer": (q.content or {}).get("answer"),
+                "explanation": (q.content or {}).get("explanation"),
             } for q in qs
         ],
     })

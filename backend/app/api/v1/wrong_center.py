@@ -62,7 +62,6 @@ async def practice_wrong(wrong_record_id: uuid.UUID, db: DbDep, current_user: Us
         "questions": [
             {
                 "id": str(q.id),
-                "knowledge_point_id": str(q.knowledge_point_id) if q.knowledge_point_id else None,
                 "knowledge_point_name": kp_name,
                 "question_type": str(q.question_type),
                 "difficulty": q.difficulty,
