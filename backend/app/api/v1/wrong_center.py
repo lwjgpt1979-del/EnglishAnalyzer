@@ -29,12 +29,24 @@ UserDep = Annotated[User, Depends(get_current_user)]
 async def list_center(
     db: DbDep, current_user: UserDep,
     kind: str | None = Query(None, description="grammar|vocab;空=全部"),
+    status: str | None = Query(None, description="pending|reviewing|mastered;空=全部"),
     skip: int = 0, limit: int = 20,
 ):
-    """「我的错题」统一列表:只读 wrong_record(题面已冗余)。语法/词汇筛选 + 分页。"""
+    """「我的错题」统一列表:只读 wrong_record(题面已冗余)。语法/词汇 + 三态筛选 + 分页。"""
     items, total = await wrong_center_service.list_center(
-        db, student_id=current_user.id, kind=kind, skip=skip, limit=limit)
+        db, student_id=current_user.id, kind=kind, status=status, skip=skip, limit=limit)
     return make_ok({"items": items, "total": total})
+
+
+@router.get("/counts", response_model=BaseResponse[dict])
+async def lifecycle_counts(
+    db: DbDep, current_user: UserDep,
+    kind: str | None = Query(None, description="grammar|vocab;空=全部"),
+):
+    """状态 chip 计数(全部/待巩固/巩固中/已掌握),随 kind 变。"""
+    counts = await wrong_center_service.lifecycle_counts(
+        db, student_id=current_user.id, kind=kind)
+    return make_ok(counts)
 
 
 @router.post("/practice/{wrong_record_id}", response_model=BaseResponse[dict])

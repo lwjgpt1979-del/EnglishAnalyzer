@@ -18,13 +18,30 @@
       <text v-for="t in KIND_TABS" :key="t.value" class="src-tab" :class="{ active: kind === t.value }" @tap="switchKind(t.value)">{{ t.label }}</text>
     </view>
 
+    <!-- 状态子筛选:待巩固 / 巩固中 / 已掌握（带计数） -->
+    <scroll-view class="status-scroll" scroll-x enhanced>
+      <view class="status-row">
+        <view
+          v-for="s in STATUS_TABS"
+          :key="s.value"
+          class="status-chip"
+          :class="{ active: status === s.value, [s.value || 'all']: true }"
+          @tap="switchStatus(s.value)"
+        >
+          <text>{{ s.label }}</text>
+          <text class="chip-n">{{ s.n }}</text>
+        </view>
+      </view>
+    </scroll-view>
+
     <!-- 加载态 -->
     <view v-if="loading && items.length === 0" class="center-tip">加载中…</view>
 
     <!-- 空状态 -->
     <view v-else-if="!loading && items.length === 0" class="center-tip">
-      <text>还没有错题，去上传作业吧 📄</text>
+      <text>{{ status ? '这个状态下暂无错题' : '还没有错题，去上传作业吧 📄' }}</text>
       <button
+        v-if="!status"
         class="btn-sm"
         @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })"
       >
@@ -34,13 +51,10 @@
 
     <!-- 列表 -->
     <view v-else class="wq-list">
-      <view v-for="wq in items" :key="wq.id" class="wq-card">
-        <!-- 顶部:考点类型徽章 + 来源 -->
+      <view v-for="wq in activeItems" :key="wq.id" class="wq-card" :class="{ 'is-done': wq.lifecycle === 'mastered' }">
+        <!-- 顶部:状态 pill + 来源 -->
         <view class="wq-top">
-          <view class="kind-badge" :class="kindClass(wq)">
-            <view class="ic kind-ic" :class="kindIcon(wq)" />
-            <text>{{ kindLabel(wq) }}</text>
-          </view>
+          <view class="status-pill" :class="statusClass(wq)">{{ statusLabel(wq) }}</view>
           <text
             v-if="wq.source_route"
             class="src-chip src-link"
@@ -52,21 +66,34 @@
         <!-- 题干 -->
         <text class="wq-stem">{{ cardText(wq) }}</text>
 
-        <!-- 标签行 -->
-        <view v-if="wq.question_type || wq.kp_name || wq.is_mastered" class="wq-tags">
+        <!-- 标签行:考点类型 + 考点名 + 题型 -->
+        <view class="wq-tags">
+          <text class="mini-tag" :class="kindClass(wq)">{{ kindLabel(wq) }}</text>
           <text v-if="wq.kp_name" class="mini-tag mini-kp">{{ wq.kp_name }}</text>
           <text v-if="wq.question_type" class="mini-tag">{{ wq.question_type }}</text>
-          <text v-if="wq.is_mastered" class="mini-tag mini-done">✓ 已掌握</text>
         </view>
 
-        <!-- 底部:日期 + 练同类 -->
+        <!-- 底部:进度 + 练同类 -->
         <view class="wq-foot">
-          <text class="wq-date">{{ wq.created_at ? wq.created_at.slice(0, 10) : '' }}</text>
+          <text class="wq-progress">{{ progressText(wq) }}</text>
           <view class="prac-btn" :class="{ loading: pracLoading === wq.id }" @tap.stop="practiceWrong(wq)">
             <view class="ic ic-sparkle prac-ic" />
             <text>{{ pracLoading === wq.id ? '出题中…' : '练同类' }}</text>
           </view>
         </view>
+      </view>
+
+      <!-- 已掌握折叠区（仅「全部」视图）-->
+      <view v-if="showFold" class="fold-bar" @tap="doneOpen = !doneOpen">
+        <text>✓ 已掌握 {{ counts.mastered }}</text>
+        <text class="fold-arrow">{{ doneOpen ? '收起 ▴' : '展开 ▾' }}</text>
+      </view>
+      <view v-if="showFold && doneOpen" class="done-list">
+        <view v-for="wq in doneItems" :key="wq.id" class="done-row">
+          <view class="status-pill s-done">已掌握</view>
+          <text class="done-stem">{{ cardText(wq) }}</text>
+        </view>
+        <text v-if="doneItems.length < counts.mastered" class="done-hint">继续下拉「加载更多」可看到全部已掌握</text>
       </view>
 
       <!-- 加载更多 -->
@@ -96,9 +123,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getReviewQueue, listWrongCenter, practiceWrongCenter, type WrongCenterItem } from '@/api/wrongQuestions'
+import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, type WrongCenterItem, type WrongCenterCounts } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -157,35 +184,89 @@ function kindIcon(wq: WrongCenterItem): string {
 function sourceText(wq: WrongCenterItem): string {
   return wq.source_label === '整卷' ? '我的作业' : (wq.source_label || '错题')
 }
+// 状态 pill(三态)
+function statusLabel(wq: WrongCenterItem): string {
+  return wq.lifecycle === 'mastered' ? '已掌握' : wq.lifecycle === 'reviewing' ? '巩固中' : '待巩固'
+}
+function statusClass(wq: WrongCenterItem): string {
+  return wq.lifecycle === 'mastered' ? 's-done' : wq.lifecycle === 'reviewing' ? 's-review' : 's-pending'
+}
+// 进度小字
+function progressText(wq: WrongCenterItem): string {
+  if (wq.lifecycle === 'mastered') return '已过关'
+  if (wq.lifecycle === 'pending') return '还没开始巩固'
+  if (wq.next_review_at) return `下次复习 ${dueText(wq.next_review_at)}`
+  if (wq.practice_count > 0) return `已练 ${wq.practice_correct}/${wq.practice_count}`
+  return '巩固中'
+}
+function dueText(d: string): string {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const t = new Date(d + 'T00:00:00')
+  const diff = Math.round((t.getTime() - today.getTime()) / 86400000)
+  if (diff <= 0) return '今天'
+  if (diff === 1) return '明天'
+  return d.slice(5)
+}
+
 const total = ref(0)
 const loading = ref(false)
 const skip = ref(0)
 const LIMIT = 20
 const hasMore = ref(true)
 const kind = ref('')
+const status = ref('')
+const doneOpen = ref(false)
+const counts = ref<WrongCenterCounts>({ all: 0, pending: 0, reviewing: 0, mastered: 0 })
 const KIND_TABS = [
   { label: '全部', value: '' },
   { label: '语法', value: 'grammar' },
   { label: '词汇', value: 'vocab' },
 ]
+const STATUS_TABS = computed(() => [
+  { label: '全部', value: '', n: counts.value.all },
+  { label: '待巩固', value: 'pending', n: counts.value.pending },
+  { label: '巩固中', value: 'reviewing', n: counts.value.reviewing },
+  { label: '已掌握', value: 'mastered', n: counts.value.mastered },
+])
+// 全部视图:未掌握正常列,已掌握折叠沉底
+const activeItems = computed(() =>
+  status.value === '' ? items.value.filter(i => i.lifecycle !== 'mastered') : items.value)
+const doneItems = computed(() => items.value.filter(i => i.lifecycle === 'mastered'))
+const showFold = computed(() => status.value === '' && counts.value.mastered > 0)
+
+async function loadCounts() {
+  try { counts.value = await getWrongCenterCounts(kind.value) } catch { /* 忽略 */ }
+}
 
 function reload() {
   items.value = []
   skip.value = 0
   hasMore.value = true
+  doneOpen.value = false
+  loadCounts()
   loadItems()
 }
 
 function switchKind(v: string) {
   if (kind.value === v) return
   kind.value = v
+  status.value = ''
   reload()
+}
+function switchStatus(v: string) {
+  if (status.value === v) return
+  status.value = v
+  items.value = []
+  skip.value = 0
+  hasMore.value = true
+  loadItems()
 }
 
 onMounted(async () => {
   if (!auth.isLoggedIn()) {
     await auth.login()
   }
+  await loadCounts()
   await loadItems()
 })
 
@@ -193,7 +274,7 @@ async function loadItems() {
   if (loading.value) return
   loading.value = true
   try {
-    const res = await listWrongCenter(kind.value, skip.value, LIMIT)
+    const res = await listWrongCenter(kind.value, status.value, skip.value, LIMIT)
     items.value.push(...res.items)
     total.value = res.total
     hasMore.value = items.value.length < res.total
@@ -278,6 +359,10 @@ async function loadMore() {
 }
 .mini-kp { background: var(--c-primary-faint); color: var(--c-primary-deep); font-weight: 600; }
 .mini-done { background: #e6f8ee; color: #18a058; font-weight: 600; }
+/* 考点类型 mini-tag 上色(双类提高优先级,盖过 .mini-tag) */
+.mini-tag.k-gram { background: #e8f1ff; color: #2f77e6; font-weight: 600; }
+.mini-tag.k-vocab { background: #fff0e4; color: #f0821e; font-weight: 600; }
+.mini-tag.k-none { background: var(--c-bg-soft); color: var(--c-text-second); }
 /* 底部 */
 .wq-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 2rpx; }
 .prac-btn {
@@ -299,9 +384,41 @@ async function loadMore() {
 .sq-opt { font-size: 24rpx; color: var(--c-text-sub); }
 .muted { color: var(--c-text-hint); font-size: 24rpx; }
 .modal-close { text-align: center; font-size: 26rpx; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 14rpx; }
-.src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0; }
+.src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0 10rpx; }
 .src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
 .src-tab.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
+
+/* 状态子筛选 chip */
+.status-scroll { width: 100%; margin-bottom: 8rpx; white-space: nowrap; }
+.status-row { display: flex; flex-direction: row; gap: 12rpx; padding: 6rpx 0 10rpx; }
+.status-chip {
+  display: inline-flex; align-items: center; gap: 8rpx; flex-shrink: 0;
+  padding: 8rpx 20rpx; border-radius: 999rpx; font-size: 24rpx;
+  background: var(--c-bg-card); color: var(--c-text-second); border: 2rpx solid transparent;
+}
+.status-chip .chip-n { font-size: 20rpx; opacity: 0.7; }
+.status-chip.active { font-weight: 700; }
+.status-chip.active.all { background: #eef1f5; color: var(--c-ink); border-color: #d5dae2; }
+.status-chip.active.pending { background: #fff0e4; color: #c96a12; border-color: #f0821e; }
+.status-chip.active.reviewing { background: #e8f1ff; color: #185FA5; border-color: #3d8bf5; }
+.status-chip.active.mastered { background: #e6f8ee; color: #128a4c; border-color: #18a058; }
+
+/* 状态 pill */
+.status-pill { font-size: 22rpx; font-weight: 700; padding: 4rpx 16rpx; border-radius: 999rpx; }
+.s-pending { background: #fff0e4; color: #c96a12; }
+.s-review { background: #e8f1ff; color: #185FA5; }
+.s-done { background: #e6f8ee; color: #128a4c; }
+/* 已掌握卡片灰显 */
+.wq-card.is-done { opacity: 0.6; }
+.wq-progress { color: var(--c-text-hint); font-size: 23rpx; }
+
+/* 已掌握折叠区 */
+.fold-bar { display: flex; align-items: center; justify-content: space-between; padding: 18rpx 24rpx; margin-top: 4rpx; background: var(--c-bg-card); border-radius: 16rpx; font-size: 25rpx; font-weight: 600; color: #128a4c; }
+.fold-arrow { font-size: 23rpx; color: var(--c-text-second); font-weight: 400; }
+.done-list { margin-top: 12rpx; display: flex; flex-direction: column; gap: 10rpx; }
+.done-row { display: flex; align-items: center; gap: 14rpx; background: var(--c-bg-card); border-radius: 14rpx; padding: 16rpx 18rpx; opacity: 0.65; }
+.done-stem { flex: 1; min-width: 0; font-size: 26rpx; color: var(--c-text-second); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.done-hint { text-align: center; font-size: 21rpx; color: var(--c-text-hint); padding: 8rpx 0; }
 .wq-date { color: var(--c-text-hint); font-size: 24rpx; }
 .load-more { text-align: center; padding: 32rpx; color: var(--c-text-second); font-size: 28rpx; }
 .gray { color: var(--c-text-hint); }

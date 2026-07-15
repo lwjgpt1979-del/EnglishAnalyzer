@@ -244,6 +244,9 @@ class WrongRecord(Base):
     mastered_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     # SM-2 间隔重复(R3 承接错题复习)
     review_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    # 练同类作答统计(方案B):区分待巩固/巩固中 + 纳入掌握判定
+    practice_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    practice_correct = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     easiness_factor = mapped_column(sa.Numeric(4, 2), nullable=False, server_default=sa.text("2.50"))
     review_interval_days = mapped_column(sa.Integer, nullable=False, server_default=sa.text("1"))
     next_review_at = mapped_column(sa.Date, nullable=True)

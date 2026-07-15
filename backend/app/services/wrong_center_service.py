@@ -89,22 +89,73 @@ async def list_open_wrongs(
     )).scalars().all())
 
 
+# ── 错题三态生命周期(方案B)────────────────────────────────────────────────
+# 待巩固(pending):open 且从未复习/练习;巩固中(reviewing):open 且已复习或已练同类;
+# 已掌握(mastered):status=mastered。
+def _lifecycle_of(r: "WrongRecord") -> str:
+    if r.status == "mastered":
+        return "mastered"
+    if (r.review_count or 0) > 0 or (r.practice_count or 0) > 0:
+        return "reviewing"
+    return "pending"
+
+
+def _status_filter(status: str | None):
+    """把 chip 状态映射成 where 条件列表。None/all → 不过滤。"""
+    if status == "pending":
+        return [WrongRecord.status == "open", WrongRecord.review_count == 0,
+                WrongRecord.practice_count == 0]
+    if status == "reviewing":
+        return [WrongRecord.status == "open",
+                sa.or_(WrongRecord.review_count > 0, WrongRecord.practice_count > 0)]
+    if status == "mastered":
+        return [WrongRecord.status == "mastered"]
+    return []
+
+
+async def lifecycle_counts(
+    db: AsyncSession, *, student_id: uuid.UUID, kind: str | None = None,
+) -> dict:
+    """状态 chip 计数(不受分页/状态筛选影响,仅受 kind 影响)。"""
+    conds = [WrongRecord.student_id == student_id]
+    if kind in ("grammar", "vocab"):
+        conds.append(WrongRecord.kp_kind == kind)
+    rows = (await db.execute(
+        sa.select(WrongRecord.status, WrongRecord.review_count, WrongRecord.practice_count)
+        .where(*conds))).all()
+    out = {"all": len(rows), "pending": 0, "reviewing": 0, "mastered": 0}
+    for st, rc, pc in rows:
+        if st == "mastered":
+            out["mastered"] += 1
+        elif (rc or 0) > 0 or (pc or 0) > 0:
+            out["reviewing"] += 1
+        else:
+            out["pending"] += 1
+    return out
+
+
 async def list_center(
     db: AsyncSession, *, student_id: uuid.UUID, kind: str | None = None,
-    skip: int = 0, limit: int = 20,
+    status: str | None = None, skip: int = 0, limit: int = 20,
 ) -> tuple[list[dict], int]:
     """「我的错题」统一列表:只读 wrong_record(题面已冗余,自洽)。
 
-    kind ∈ {None(全部), grammar, vocab}。按 created_at 倒序分页。
-    返回卡片字典(id/题面/kp_kind/source_label/is_mastered/created_at)。
+    kind ∈ {None(全部), grammar, vocab};status ∈ {None(全部), pending, reviewing, mastered}。
+    排序:未掌握在前、已掌握沉底(灰显折叠),各按 created_at 倒序。
+    返回卡片字典(含 lifecycle/进度)。
     """
     base = sa.select(WrongRecord).where(WrongRecord.student_id == student_id)
     if kind in ("grammar", "vocab"):
         base = base.where(WrongRecord.kp_kind == kind)
+    for c in _status_filter(status):
+        base = base.where(c)
     total = (await db.execute(
         sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
+    # 已掌握沉底:先按 (status=mastered) 升序,再 created_at 倒序
+    mastered_flag = sa.case((WrongRecord.status == "mastered", 1), else_=0)
     rows = list((await db.execute(
-        base.order_by(WrongRecord.created_at.desc()).offset(skip).limit(limit)
+        base.order_by(mastered_flag.asc(), WrongRecord.created_at.desc())
+        .offset(skip).limit(limit)
     )).scalars().all())
     items = [{
         "id": str(r.id), "question_id": str(r.question_id), "q_scope": r.q_scope,
@@ -116,6 +167,11 @@ async def list_center(
         "source_id": str(r.source_id) if r.source_id else None,
         "source_route": _source_route(r.source_label, r.source_id),
         "is_mastered": r.status == "mastered",
+        "lifecycle": _lifecycle_of(r),
+        "review_count": r.review_count or 0,
+        "practice_count": r.practice_count or 0,
+        "practice_correct": r.practice_correct or 0,
+        "next_review_at": r.next_review_at.isoformat() if r.next_review_at else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]
     return items, total

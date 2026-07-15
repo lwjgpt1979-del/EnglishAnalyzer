@@ -84,13 +84,25 @@ export interface WrongCenterItem {
   source_id: string | null
   source_route: string | null
   is_mastered: boolean
+  lifecycle: 'pending' | 'reviewing' | 'mastered'
+  review_count: number
+  practice_count: number
+  practice_correct: number
+  next_review_at: string | null
   created_at: string | null
 }
-export function listWrongCenter(kind = '', skip = 0, limit = 20): Promise<{ items: WrongCenterItem[]; total: number }> {
+export function listWrongCenter(kind = '', status = '', skip = 0, limit = 20): Promise<{ items: WrongCenterItem[]; total: number }> {
   // 小程序运行时无 URLSearchParams,手拼 query
   let qs = `skip=${skip}&limit=${limit}`
   if (kind) qs += `&kind=${encodeURIComponent(kind)}`
+  if (status) qs += `&status=${encodeURIComponent(status)}`
   return request(`/api/v1/wrong-center/list?${qs}`)
+}
+
+/** 状态 chip 计数(全部/待巩固/巩固中/已掌握),随 kind 变 */
+export interface WrongCenterCounts { all: number; pending: number; reviewing: number; mastered: number }
+export function getWrongCenterCounts(kind = ''): Promise<WrongCenterCounts> {
+  return request(`/api/v1/wrong-center/counts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`)
 }
 
 /** 错题「练同类仿真题」(统一入口,按 wrong_record 派发) */
