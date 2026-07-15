@@ -63,6 +63,9 @@ export function addQuestionGrammar(qid: string): Promise<{ kind: string; added: 
 export function addQuestionVocab(qid: string): Promise<{ kind: string; added: number }> {
   return request(`/api/v1/user-papers/questions/${qid}/add-vocab`, { method: 'POST' })
 }
+export function addQuestionToWrong(qid: string): Promise<{ added: boolean; kp_kind: string | null }> {
+  return request(`/api/v1/user-papers/questions/${qid}/add-wrong`, { method: 'POST' })
+}
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {

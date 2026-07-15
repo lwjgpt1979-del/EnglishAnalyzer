@@ -265,6 +265,16 @@ async def add_question_vocab_api(question_id: uuid.UUID, db: DbDep, current_user
     return make_ok(r)
 
 
+@router.post("/questions/{question_id}/add-wrong")
+async def add_question_to_wrong_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """手动把某道题加入「我的错题」(答对想复习该考点的兜底;错题已自动进)。"""
+    r = await user_paper_service.add_question_to_wrong(
+        db, question_id=question_id, student_id=current_user.id)
+    if r is None:
+        raise AppError(code=404, message="题目不存在或无权访问")
+    return make_ok(r)
+
+
 @router.post("/questions/{question_id}/practice")
 async def practice_for_question_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """错题「练同类」：按该题知识点生成同类仿真练习（计入 practice.generate 配额）。"""

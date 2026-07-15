@@ -71,9 +71,30 @@
                 <text class="ans-line ans-ok">正确答案：{{ q.correct_answer || '（未提供）' }}</text>
               </view>
               <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
-              <!-- 错题练同类(单题级);语法/词汇动作收到底部三功能 -->
-              <view v-if="q.is_wrong" class="q-acts">
-                <view class="q-act q-act-sim" @tap="practiceSimilar(q.id)">
+              <!-- 单题动作:语法/词汇考点 → 加入作业精讲学习 + 我的错题(错自动/对手动);错题 → 练同类 -->
+              <view v-if="q.kp_kind || q.is_wrong" class="q-acts">
+                <!-- 语法考点 -->
+                <template v-if="q.kp_kind === 'grammar'">
+                  <view class="q-act" :class="{ done: qGrammar.has(q.id) }" @tap="addGrammar(q)">
+                    <text>{{ qGrammar.has(q.id) ? '已加入语法' : '加入语法学习' }}</text>
+                  </view>
+                  <text v-if="q.is_wrong" class="q-tag q-tag-wrong">已进错题·语法</text>
+                  <view v-else class="q-act" :class="{ done: qWrong.has(q.id) }" @tap="addToWrong(q)">
+                    <text>{{ qWrong.has(q.id) ? '已加入错题' : '加入我的错题' }}</text>
+                  </view>
+                </template>
+                <!-- 词汇考点 -->
+                <template v-else-if="q.kp_kind === 'vocab'">
+                  <view class="q-act" :class="{ done: qVocab.has(q.id) }" @tap="addVocabQ(q)">
+                    <text>{{ qVocab.has(q.id) ? '已加入单词' : '加入单词学习' }}</text>
+                  </view>
+                  <text v-if="q.is_wrong" class="q-tag q-tag-wrong">已进错题·词汇</text>
+                  <view v-else class="q-act" :class="{ done: qWrong.has(q.id) }" @tap="addToWrong(q)">
+                    <text>{{ qWrong.has(q.id) ? '已加入错题' : '加入我的错题' }}</text>
+                  </view>
+                </template>
+                <!-- 错题练同类 -->
+                <view v-if="q.is_wrong" class="q-act q-act-sim" @tap="practiceSimilar(q.id)">
                   <text>{{ similarLoading ? '生成中…' : '练同类仿真题' }}</text>
                 </view>
               </view>
@@ -128,7 +149,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperVocab, practiceForQuestion, recordPaperPractice, renamePaper, type SimilarQuestion, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperVocab, practiceForQuestion, recordPaperPractice, renamePaper, addQuestionGrammar, addQuestionVocab, addQuestionToWrong, type SimilarQuestion, type PaperVocabWord } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
@@ -251,6 +272,35 @@ async function practiceSimilar(qid: string) {
     uni.showToast({ title: e?.message || '生成失败', icon: 'none' })
   } finally { similarLoading.value = false }
 }
+// 单题考点动作:加入作业精讲(语法/单词) + 手动加入我的错题(答对的兜底)
+const qGrammar = ref<Set<string>>(new Set())
+const qVocab = ref<Set<string>>(new Set())
+const qWrong = ref<Set<string>>(new Set())
+async function addGrammar(q: any) {
+  if (qGrammar.value.has(q.id)) return
+  try {
+    const r = await addQuestionGrammar(q.id)
+    qGrammar.value = new Set([...qGrammar.value, q.id])
+    uni.showToast({ title: r.personal ? '已加入语法学习（自建）' : '已加入作业精讲·语法', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
+async function addVocabQ(q: any) {
+  if (qVocab.value.has(q.id)) return
+  try {
+    const r = await addQuestionVocab(q.id)
+    qVocab.value = new Set([...qVocab.value, q.id])
+    uni.showToast({ title: r.added ? `已加入作业精讲·单词（${r.added}）` : '本题没识别到可加入的生词', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
+async function addToWrong(q: any) {
+  if (qWrong.value.has(q.id)) return
+  try {
+    await addQuestionToWrong(q.id)
+    qWrong.value = new Set([...qWrong.value, q.id])
+    uni.showToast({ title: '已加入我的错题', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
+
 // 结算器:回写对应错题成绩(语法推进 SM-2),返回结果文案
 async function paperPracRecorder(total: number, correct: number): Promise<string> {
   const r = await recordPaperPractice(similarQid.value, total, correct)
@@ -448,8 +498,10 @@ function editTitle() {
 .tool-row { display: flex; align-items: center; justify-content: space-between; font-size: 26rpx; color: var(--c-ink); padding: 10rpx 0; border-bottom: 1rpx solid var(--c-border); }
 .tool-row:last-child { border-bottom: none; }
 .btn-similar { margin-top: 16rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-btn); font-size: 26rpx; padding: 12rpx 0; }
-.q-acts { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 16rpx; }
+.q-acts { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 16rpx; align-items: center; }
 .q-act { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 24rpx; }
+.q-tag { font-size: 22rpx; padding: 6rpx 18rpx; border-radius: 999rpx; font-weight: 600; }
+.q-tag-wrong { background: #fdecec; color: #c33; }
 .q-act.done { color: #2ecc71; border-color: #2ecc71; }
 .q-act-sim { color: var(--c-primary-deep); background: var(--c-primary-faint); border-color: transparent; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 100; }

@@ -822,6 +822,31 @@ async def add_question_vocab(db: AsyncSession, *, question_id: uuid.UUID,
     return {"kind": "vocab", "added": r.get("added", 0)}
 
 
+async def add_question_to_wrong(db: AsyncSession, *, question_id: uuid.UUID,
+                                student_id: uuid.UUID) -> dict | None:
+    """手动把某道题加入「我的错题」(答对但想复习该考点;错题已自动进,此为兜底)。
+    收口到 wrong_record(带题面+kp_kind+来源『整卷』),幂等。非本人 → None。"""
+    from app.services import wrong_center_service
+    q = await db.get(UserPaperQuestion, question_id)
+    if q is None:
+        return None
+    paper = await db.get(UserUploadedPaper, q.user_paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    code = None
+    if q.node_id:
+        from app.models.d15_knowledge_graph import KnowledgeNode
+        code = await db.scalar(select(KnowledgeNode.code).where(KnowledgeNode.id == q.node_id))
+    kk = kp_kind_of(q.kp_key, code)
+    await wrong_center_service.record_wrong(
+        db, student_id=student_id, q_scope="uploaded", question_id=q.id, node_id=q.node_id,
+        stem=q.stem, student_answer=q.student_answer, correct_answer=q.correct_answer,
+        explanation=q.explanation, question_type=q.question_type, kp_kind=kk,
+        kp_name=q.kp_key or None, source_label="整卷", source_id=q.user_paper_id)
+    await db.commit()
+    return {"added": True, "kp_kind": kk}
+
+
 async def practice_for_question(
     db: AsyncSession, *, question_id: uuid.UUID, student_id: uuid.UUID,
     count: int = 5, difficulty: int = 3,
