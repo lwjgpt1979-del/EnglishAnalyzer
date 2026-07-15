@@ -36,6 +36,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "整卷 OCR 文字拆成结构化题目", "why": "结构化抽取,关思考走快档防长卷 JSON 截断", "locations": ["paper_split_service.py:508"]},
     {"feature": "paper_title", "mode": "chat", "surface": "小程序端", "module": "作业上传", "service": "user_paper_service",
      "purpose": "从上传作业文字里提取标题名(自动命名)", "why": "规格明确的短标题抽取,关思考走快档", "locations": ["user_paper_service.py:96"]},
+    {"feature": "practice_gen", "mode": "chat", "surface": "小程序端", "module": "练习·练同类", "service": "practice_service",
+     "purpose": "按知识点生成仿真练习题", "why": "结构化出题、规格明确,关思考走快档(开思考会截断致出题500)", "locations": ["practice_service.py:196"]},
     {"feature": "kp_lecture", "mode": "reasoning", "surface": "运营后台", "module": "知识点·讲义", "service": "kp_lecture_service",
      "purpose": "生成知识点讲解小节(Markdown 讲义)", "why": "组织知识并推理表达生成教学内容", "locations": ["kp_lecture_service.py:253"]},
     {"feature": None, "mode": "reasoning", "surface": "运营后台", "module": "知识点·题目归类", "service": "kp_suggest_service",

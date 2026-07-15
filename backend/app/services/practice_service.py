@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.models.d6_ai_questions import AiQuestion, PracticeRecord
 from app.services import diagnosis_service
-from app.services.llm_provider import chat_completion, is_llm_dev_mode
+from app.services.llm_provider import chat_completion, is_llm_dev_mode, fast_model
 
 _SYSTEM_PROMPT = (
     "你是专业的英语出题老师，擅长围绕指定知识点生成高质量单选练习题。"
@@ -193,10 +193,15 @@ async def generate_practice_questions(
             knowledge_point=kp_name, count=count, difficulty=difficulty
         )
         try:
+            # 关思考+快档:出题是规格明确的结构化生成,主推理模型开思考会烧光 token→JSON 截断→
+            # 「格式异常」500(练同类仿真题报「服务器内部错误」的真因)。token 也给足防截断。
             response = await chat_completion(
                 system_prompt=_SYSTEM_PROMPT,
                 user_prompt=prompt,
-                max_tokens=2048,
+                model=fast_model(),
+                disable_thinking=True,
+                max_tokens=3072,
+                feature="practice_gen",
             )
         except Exception as exc:  # noqa: BLE001
             raise AppError(code=502, message=f"AI出题服务暂时不可用，请稍后重试（{exc}）") from exc
