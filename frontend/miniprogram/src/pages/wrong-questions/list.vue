@@ -117,64 +117,14 @@
       <view v-else-if="items.length > 0" class="load-more gray">已加载全部</view>
     </view>
 
-    <!-- 练同类仿真题 弹层(逐题作答判分) -->
-    <view v-if="pracOpen" class="modal" @tap="closePractice">
-      <view class="modal-card" @tap.stop>
-        <view class="modal-head">
-          <text class="modal-title">同类练习 · {{ pracKp }}</text>
-          <view class="modal-x" @tap.stop="closePractice"><text>✕</text></view>
-        </view>
-
-        <!-- 答题阶段 -->
-        <block v-if="!pracDone && curQ">
-          <view class="pr-top">
-            <text class="pr-idx">第 {{ pracIdx + 1 }} / {{ pracList.length }} 题</text>
-            <view class="pr-dots">
-              <view v-for="(q, i) in pracList" :key="i" class="pr-dot" :class="dotCls(q, i)" />
-            </view>
-          </view>
-          <scroll-view scroll-y class="modal-body">
-            <text class="pq-stem">{{ curQ.stem }}</text>
-            <view v-if="curQ.options" class="pq-opts">
-              <view
-                v-for="(v, oi) in curQ.options"
-                :key="oi"
-                class="pq-opt"
-                :class="optCls(curQ, v)"
-                @tap.stop="pickOpt(curQ, v)"
-              >
-                <text class="opt-badge">{{ letter(oi) }}</text>
-                <text class="opt-txt">{{ optText(v) }}</text>
-              </view>
-            </view>
-            <view v-if="pracState[curQ.id]" class="pq-fb">
-              <text :class="pracState[curQ.id].correct ? 'fb-ok' : 'fb-no'">
-                {{ pracState[curQ.id].correct ? '✓ 答对' : '✗ 答错，正确：' + optText(curQ.answer || '') }}
-              </text>
-              <text v-if="curQ.explanation" class="pq-expl">{{ curQ.explanation }}</text>
-            </view>
-          </scroll-view>
-          <view class="modal-actions">
-            <view
-              class="modal-btn primary"
-              :class="{ disabled: !pracState[curQ.id] || pracSaving }"
-              @tap.stop="nextQ"
-            ><text>{{ isLast ? (pracSaving ? '结算中…' : '查看结果') : '下一题 →' }}</text></view>
-          </view>
-        </block>
-
-        <!-- 结果阶段 -->
-        <block v-else-if="pracDone">
-          <view class="pr-result">
-            <text class="pr-score">{{ correctCount }}/{{ pracList.length }}</text>
-            <text class="pr-msg">{{ pracResultMsg }}</text>
-          </view>
-          <view class="modal-actions">
-            <view class="modal-btn ghost" @tap.stop="closePractice"><text>完成</text></view>
-          </view>
-        </block>
-      </view>
-    </view>
+    <!-- 练同类仿真题(逐题作答判分,与作业详情共用组件) -->
+    <PracticeQuiz
+      v-if="pracOpen"
+      :kp="pracKp"
+      :questions="pracList"
+      :recorder="pracRecorder"
+      @close="onPracClose"
+    />
 
     <!-- 词汇错题「学这个词」词力通双维闭环 -->
     <view v-if="vlOpen && vl" class="modal" @tap="closeVocab">
@@ -257,6 +207,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabLearn, submitVocabRecep, submitVocabSpell, type WrongCenterItem, type WrongCenterCounts, type PracticeQuestion, type VocabLearnPayload, type VocabProbe } from '@/api/wrongQuestions'
+import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -267,77 +218,27 @@ const pracLoading = ref('')
 const pracKp = ref('')
 const pracWid = ref('')
 const pracList = ref<PracticeQuestion[]>([])
-const pracState = reactive<Record<string, { picked: string; correct: boolean }>>({})
-const pracSaving = ref(false)
-const pracIdx = ref(0)            // 当前题(逐题作答)
-const pracDone = ref(false)       // 是否进入结果页
-const pracRecorded = ref(false)   // 是否已回写成绩(防重复)
-const pracResultMsg = ref('')
-const answeredCount = computed(() => Object.keys(pracState).length)
-const correctCount = computed(() => Object.values(pracState).filter(s => s.correct).length)
-const curQ = computed<PracticeQuestion | undefined>(() => pracList.value[pracIdx.value])
-const isLast = computed(() => pracIdx.value >= pracList.value.length - 1)
-const letter = (i: number) => String.fromCharCode(65 + i)
 
 async function practiceWrong(wq: WrongCenterItem) {
   if (pracLoading.value) return
   pracLoading.value = wq.id
   try {
     const r = await practiceWrongCenter(wq.id)
+    if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
     pracKp.value = r.knowledge_point
     pracWid.value = wq.id
     pracList.value = r.questions
-    Object.keys(pracState).forEach(k => delete pracState[k])
-    pracIdx.value = 0; pracDone.value = false; pracRecorded.value = false; pracResultMsg.value = ''
-    if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
     pracOpen.value = true
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { pracLoading.value = '' }
 }
-function pickOpt(q: PracticeQuestion, opt: string) {
-  if (pracState[q.id]) return   // 已作答锁定,再点无效
-  pracState[q.id] = { picked: opt, correct: (q.answer || '').trim() === opt.trim() }
+// 结算器:回写成绩(记 practice + 语法推进 SM-2),返回结果文案给组件展示
+async function pracRecorder(total: number, correct: number): Promise<string> {
+  const r = await recordPracticeResult(pracWid.value, total, correct)
+  loadCounts()
+  return r.just_mastered ? '🎉 恭喜，这道错题已掌握！' : `已计入巩固：本轮 ${correct}/${total} 正确`
 }
-function optCls(q: PracticeQuestion, opt: string): string {
-  const st = pracState[q.id]
-  if (!st) return ''
-  if ((q.answer || '').trim() === opt.trim()) return 'opt-correct'
-  if (st.picked === opt) return 'opt-wrong'
-  return 'opt-dim'
-}
-// 去掉选项自带的「A. 」前缀,统一用左侧字母徽章展示
-function optText(v: string): string {
-  return (v || '').replace(/^\s*[A-Da-d][.、)]\s*/, '')
-}
-function dotCls(q: PracticeQuestion, i: number): string {
-  if (i === pracIdx.value) return 'cur'
-  const st = pracState[q.id]
-  if (!st) return ''
-  return st.correct ? 'ok' : 'no'
-}
-async function nextQ() {
-  if (!curQ.value || !pracState[curQ.value.id]) return   // 未作答不可推进
-  if (!isLast.value) { pracIdx.value += 1; return }
-  // 最后一题 → 结算(回写一次成绩)
-  await recordPractice()
-  pracDone.value = true
-}
-async function recordPractice() {
-  if (pracRecorded.value || pracSaving.value || answeredCount.value === 0) return
-  pracSaving.value = true
-  try {
-    const r = await recordPracticeResult(pracWid.value, answeredCount.value, correctCount.value)
-    pracRecorded.value = true
-    pracResultMsg.value = r.just_mastered
-      ? '🎉 恭喜，这道错题已掌握！'
-      : `已计入巩固：本轮 ${correctCount.value}/${answeredCount.value} 正确`
-  } catch (e: any) {
-    uni.showToast({ title: e?.message || '结算失败', icon: 'none' })
-  } finally { pracSaving.value = false }
-}
-async function closePractice() {
-  // 中途关闭也回写已作答的成绩,不丢进度
-  if (answeredCount.value > 0 && !pracRecorded.value) await recordPractice()
+function onPracClose() {
   pracOpen.value = false
   reload()
 }

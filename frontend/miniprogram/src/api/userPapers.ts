@@ -116,8 +116,14 @@ export function getPaperKpSummary(paperId: string): Promise<{ paper_id: string; 
 }
 export interface SimilarQuestion {
   id: string; knowledge_point_name: string; question_type: string
-  difficulty: number; stem: string; options: Record<string, string> | null
+  difficulty: number; stem: string; options: string[] | null
+  answer: string | null; explanation: string | null
 }
 export function practiceForQuestion(questionId: string): Promise<{ knowledge_point: string; questions: SimilarQuestion[] }> {
   return request(`/api/v1/user-papers/questions/${questionId}/practice`, { method: 'POST' })
+}
+/** 作业详情练同类结算:回写对应错题 practice + 语法推进 SM-2 */
+export interface PaperPracticeResult { recorded: boolean; just_mastered?: boolean; lifecycle?: string }
+export function recordPaperPractice(questionId: string, total: number, correct: number): Promise<PaperPracticeResult> {
+  return request(`/api/v1/user-papers/questions/${questionId}/practice-result`, { method: 'POST', data: { total, correct } })
 }

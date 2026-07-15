@@ -212,29 +212,22 @@
     <!-- 无数据兜底:必须紧跟上面的 loading/paper 链(不能被弹层的 v-if 打断,否则误绑到弹层上) -->
     <view v-else class="empty">作业不存在或无权访问</view>
 
-    <!-- 练同类结果弹层 -->
-    <view v-if="similarOpen" class="modal" @tap.self="similarOpen = false">
-      <view class="modal-card">
-        <text class="modal-title">同类练习 · {{ similarKp }}</text>
-        <scroll-view scroll-y class="modal-body">
-          <view v-for="(sq, i) in similarList" :key="sq.id" class="sq">
-            <text class="sq-stem">{{ i + 1 }}. {{ sq.stem }}</text>
-            <view v-if="sq.options" class="sq-opts">
-              <text v-for="(v, kk) in sq.options" :key="kk" class="sq-opt">{{ kk }}. {{ v }}</text>
-            </view>
-          </view>
-          <text v-if="!similarList.length" class="muted">未生成题目</text>
-        </scroll-view>
-        <button class="btn-secondary" @tap="similarOpen = false">关闭</button>
-      </view>
-    </view>
+    <!-- 练同类·逐题作答判分(与我的错题共用组件) -->
+    <PracticeQuiz
+      v-if="similarOpen"
+      :kp="similarKp"
+      :questions="similarList"
+      :recorder="paperPracRecorder"
+      @close="similarOpen = false"
+    />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, renamePaper, addQuestionGrammar, addQuestionVocab, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, recordPaperPractice, renamePaper, addQuestionGrammar, addQuestionVocab, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
 
@@ -299,6 +292,7 @@ const embedKey = computed<string | null>(() => {
 const similarOpen = ref(false)
 const similarLoading = ref(false)
 const similarKp = ref('')
+const similarQid = ref('')
 const similarList = ref<SimilarQuestion[]>([])
 
 async function loadKpSummary() {
@@ -396,10 +390,19 @@ async function practiceSimilar(qid: string) {
   similarLoading.value = true
   try {
     const r = await practiceForQuestion(qid)
-    similarKp.value = r.knowledge_point; similarList.value = r.questions; similarOpen.value = true
+    if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
+    similarKp.value = r.knowledge_point; similarList.value = r.questions
+    similarQid.value = qid; similarOpen.value = true
   } catch (e: any) {
     uni.showToast({ title: e?.message || '生成失败', icon: 'none' })
   } finally { similarLoading.value = false }
+}
+// 结算器:回写对应错题成绩(语法推进 SM-2),返回结果文案
+async function paperPracRecorder(total: number, correct: number): Promise<string> {
+  const r = await recordPaperPractice(similarQid.value, total, correct)
+  if (r.recorded && r.just_mastered) return '🎉 恭喜，这道错题已掌握！'
+  if (r.recorded) return `已计入巩固：本轮 ${correct}/${total} 正确`
+  return `本轮 ${correct}/${total} 正确`
 }
 
 // 单题:加入语法学习 / 加入作业精讲·单词

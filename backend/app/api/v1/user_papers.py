@@ -288,3 +288,17 @@ async def practice_for_question_api(question_id: uuid.UUID, db: DbDep, current_u
             } for q in qs
         ],
     })
+
+
+@router.post("/questions/{question_id}/practice-result")
+async def paper_practice_result(
+    question_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep,
+):
+    """作业详情练同类结算:回写对应错题的 practice + 语法推进 SM-2。body: {total, correct}"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import wrong_center_service
+    r = await wrong_center_service.record_practice_for_question(
+        db, student_id=current_user.id, question_id=question_id,
+        total=int(body.get("total", 0)), correct=int(body.get("correct", 0)))
+    await db.commit()
+    return make_ok(r)

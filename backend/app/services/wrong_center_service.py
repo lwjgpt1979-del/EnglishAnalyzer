@@ -333,6 +333,23 @@ async def submit_vocab_spell(db: AsyncSession, *, student_id: uuid.UUID, wrong_r
             "just_mastered": mastered}
 
 
+async def record_practice_for_question(
+    db: AsyncSession, *, student_id: uuid.UUID, question_id: uuid.UUID,
+    total: int, correct: int,
+) -> dict:
+    """作业详情里练同类结算:按 user_paper_question 找到对应错题(wrong_record)回写成绩。
+    该题不是错题(无 wrong_record)→ 只返回 recorded=False(不影响练习体验)。"""
+    wr = (await db.execute(
+        sa.select(WrongRecord).where(
+            WrongRecord.student_id == student_id, WrongRecord.q_scope == "uploaded",
+            WrongRecord.question_id == question_id))).scalars().first()
+    if wr is None:
+        return {"recorded": False}
+    r = await record_practice_result(
+        db, student_id=student_id, wrong_record_id=wr.id, total=total, correct=correct)
+    return {"recorded": True, **r}
+
+
 async def practice_for_wrong(
     db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
     count: int = 5, difficulty: int = 3,
