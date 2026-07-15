@@ -33,31 +33,39 @@
     </view>
 
     <!-- 列表 -->
-    <view v-else>
+    <view v-else class="wq-list">
       <view v-for="wq in items" :key="wq.id" class="wq-card">
-        <view class="wq-icon">
-          <view class="ic wq-icon-emoji" :class="wq.kp_kind === 'grammar' ? 'ic-edit' : wq.kp_kind === 'vocab' ? 'ic-book' : 'ic-file'" />
+        <!-- 顶部:考点类型徽章 + 来源 -->
+        <view class="wq-top">
+          <view class="kind-badge" :class="kindClass(wq)">
+            <view class="ic kind-ic" :class="kindIcon(wq)" />
+            <text>{{ kindLabel(wq) }}</text>
+          </view>
+          <text
+            v-if="wq.source_route"
+            class="src-chip src-link"
+            @tap.stop="goSource(wq)"
+          >{{ sourceText(wq) }} ›</text>
+          <text v-else class="src-chip">{{ sourceText(wq) }}</text>
         </view>
-        <view class="wq-info">
-          <text class="wq-stem">{{ cardText(wq) }}</text>
-          <view class="wq-meta">
-            <text v-if="wq.kp_kind === 'grammar'" class="tag tag-gram">语法</text>
-            <text v-else-if="wq.kp_kind === 'vocab'" class="tag tag-vocab">词汇</text>
-            <!-- 来源标签:有可跳目标 → 点击回到错题来源(卷/作业),原生返回即可回来 -->
-            <text
-              class="tag tag-src"
-              :class="{ 'tag-link': wq.source_route }"
-              @tap.stop="wq.source_route && goSource(wq)"
-            >{{ wq.source_label }}{{ wq.source_route ? ' ›' : '' }}</text>
-            <text v-if="wq.question_type" class="tag">{{ wq.question_type }}</text>
-            <text v-if="wq.kp_name" class="tag tag-kp">{{ wq.kp_name }}</text>
-            <text v-if="wq.is_mastered" class="tag tag-green">已掌握</text>
+
+        <!-- 题干 -->
+        <text class="wq-stem">{{ cardText(wq) }}</text>
+
+        <!-- 标签行 -->
+        <view v-if="wq.question_type || wq.kp_name || wq.is_mastered" class="wq-tags">
+          <text v-if="wq.kp_name" class="mini-tag mini-kp">{{ wq.kp_name }}</text>
+          <text v-if="wq.question_type" class="mini-tag">{{ wq.question_type }}</text>
+          <text v-if="wq.is_mastered" class="mini-tag mini-done">✓ 已掌握</text>
+        </view>
+
+        <!-- 底部:日期 + 练同类 -->
+        <view class="wq-foot">
+          <text class="wq-date">{{ wq.created_at ? wq.created_at.slice(0, 10) : '' }}</text>
+          <view class="prac-btn" :class="{ loading: pracLoading === wq.id }" @tap.stop="practiceWrong(wq)">
+            <view class="ic ic-sparkle prac-ic" />
+            <text>{{ pracLoading === wq.id ? '出题中…' : '练同类' }}</text>
           </view>
-          <!-- 练同类仿真题 -->
-          <view class="pw-prac" @tap.stop="practiceWrong(wq)">
-            <text>{{ pracLoading === wq.id ? '出题中…' : '练同类仿真题' }}</text>
-          </view>
-          <text v-if="wq.created_at" class="wq-date">{{ wq.created_at.slice(0, 10) }}</text>
         </view>
       </view>
 
@@ -135,6 +143,19 @@ onShow(() => { loadReviewDue(); if (items.value.length) reload() })
 const items = ref<WrongCenterItem[]>([])
 function cardText(wq: WrongCenterItem): string {
   return wq.stem || '错题（点击查看）'
+}
+function kindLabel(wq: WrongCenterItem): string {
+  return wq.kp_kind === 'grammar' ? '语法' : wq.kp_kind === 'vocab' ? '词汇' : '错题'
+}
+function kindClass(wq: WrongCenterItem): string {
+  return wq.kp_kind === 'grammar' ? 'k-gram' : wq.kp_kind === 'vocab' ? 'k-vocab' : 'k-none'
+}
+function kindIcon(wq: WrongCenterItem): string {
+  return wq.kp_kind === 'grammar' ? 'ic-edit' : wq.kp_kind === 'vocab' ? 'ic-book' : 'ic-file'
+}
+// 来源展示名:整卷 → 我的作业
+function sourceText(wq: WrongCenterItem): string {
+  return wq.source_label === '整卷' ? '我的作业' : (wq.source_label || '错题')
 }
 const total = ref(0)
 const loading = ref(false)
@@ -218,45 +239,55 @@ async function loadMore() {
   font-weight: 700;
   border-radius: var(--r-btn);
 }
+.wq-list { display: flex; flex-direction: column; gap: 20rpx; }
 .wq-card {
-  display: flex;
   background: var(--c-bg-card);
-  border-radius: var(--r-lg);
-  margin-bottom: 20rpx;
-  overflow: hidden;
-  box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04);
+  border-radius: 24rpx;
+  padding: 24rpx 26rpx;
+  box-shadow: 0 6rpx 28rpx rgba(17, 24, 39, 0.05);
+  display: flex; flex-direction: column; gap: 16rpx;
 }
-.wq-icon { width: 120rpx; flex-shrink: 0; align-self: stretch; min-height: 120rpx; display: flex; align-items: center; justify-content: center; background: var(--c-bg-soft); }
-.wq-icon-emoji { width: 48rpx; height: 48rpx; }
-.wq-info {
-  flex: 1;
-  padding: 20rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-  min-width: 0;
+/* 顶部:类型徽章 + 来源 */
+.wq-top { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
+.kind-badge {
+  display: inline-flex; align-items: center; gap: 8rpx;
+  height: 44rpx; padding: 0 18rpx; border-radius: 999rpx;
+  font-size: 24rpx; font-weight: 700;
 }
+.kind-ic { width: 28rpx; height: 28rpx; }
+.k-gram { background: #e8f1ff; color: #2f77e6; }
+.k-vocab { background: #fff0e4; color: #f0821e; }
+.k-none { background: var(--c-bg-soft); color: var(--c-text-second); }
+.src-chip {
+  font-size: 23rpx; color: var(--c-text-second);
+  background: var(--c-bg-soft); padding: 7rpx 18rpx; border-radius: 999rpx;
+  white-space: nowrap; flex-shrink: 0;
+}
+.src-link { background: #f0ecff; color: #6D28D9; font-weight: 600; }
+/* 题干 */
 .wq-stem {
-  font-size: 28rpx; color: var(--c-ink); font-weight: 600; line-height: 1.45;
+  font-size: 30rpx; color: var(--c-ink); font-weight: 600; line-height: 1.5;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   overflow: hidden; text-overflow: ellipsis;
 }
-.wq-meta { display: flex; flex-wrap: wrap; gap: 8rpx; align-items: center; }
-.tag {
-  background: var(--c-primary-soft);
-  color: var(--c-primary-deep);
-  font-size: 22rpx;
-  font-weight: 600;
-  padding: 4rpx 14rpx;
-  border-radius: var(--r-pill);
+/* 标签行 */
+.wq-tags { display: flex; flex-wrap: wrap; gap: 10rpx; }
+.mini-tag {
+  font-size: 22rpx; color: var(--c-text-second); background: var(--c-bg-soft);
+  padding: 5rpx 16rpx; border-radius: 999rpx;
 }
-.tag-green { background: var(--c-success-bg); color: var(--c-success-dark); }
-.tag-src { background: #EDE9FE; color: #6D28D9; }
-.tag-link { border: 2rpx solid #6D28D9; font-weight: 700; }
-.tag-gram { background: #e6f0ff; color: #3d8bf5; }
-.tag-vocab { background: #fff1e6; color: #ff8a3d; }
-.tag-kp { background: var(--c-bg-soft); color: var(--c-text-second); font-weight: 500; }
-.pw-prac { display: inline-block; margin-top: 12rpx; font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
+.mini-kp { background: var(--c-primary-faint); color: var(--c-primary-deep); font-weight: 600; }
+.mini-done { background: #e6f8ee; color: #18a058; font-weight: 600; }
+/* 底部 */
+.wq-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 2rpx; }
+.prac-btn {
+  display: inline-flex; align-items: center; gap: 8rpx;
+  height: 58rpx; padding: 0 26rpx; border-radius: 999rpx;
+  background: var(--c-primary-faint); color: var(--c-primary-deep);
+  border: 2rpx solid var(--c-primary); font-size: 24rpx; font-weight: 700;
+}
+.prac-btn.loading { opacity: 0.6; }
+.prac-ic { width: 26rpx; height: 26rpx; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 40rpx; }
 .modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
 .modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
