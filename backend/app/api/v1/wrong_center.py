@@ -43,7 +43,22 @@ async def practice_wrong(wrong_record_id: uuid.UUID, db: DbDep, current_user: Us
     r = await wrong_center_service.practice_for_wrong(
         db, student_id=current_user.id, wrong_record_id=wrong_record_id)
     await db.commit()
-    return make_ok(r)
+    kp_name = r["knowledge_point"]
+    # generate 返回 AiQuestion ORM 对象,手动序列化(否则 response_model=dict 无法序列化)
+    return make_ok({
+        "knowledge_point": kp_name,
+        "questions": [
+            {
+                "id": str(q.id),
+                "knowledge_point_id": str(q.knowledge_point_id) if q.knowledge_point_id else None,
+                "knowledge_point_name": kp_name,
+                "question_type": str(q.question_type),
+                "difficulty": q.difficulty,
+                "stem": (q.content or {}).get("stem", ""),
+                "options": (q.content or {}).get("options"),
+            } for q in r["questions"]
+        ],
+    })
 
 
 @router.get("/review-queue", response_model=BaseResponse[WrongReviewQueueOut])
