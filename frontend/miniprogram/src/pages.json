@@ -9,10 +9,6 @@
       "style": { "navigationBarTitleText": "欢迎使用", "navigationBarBackgroundColor": "#fffef0", "navigationStyle": "custom" }
     },
     {
-      "path": "pages/upload/index",
-      "style": { "navigationBarTitleText": "上传错题" }
-    },
-    {
       "path": "pages/long-sentence/index",
       "style": { "navigationBarTitleText": "长难句学习" }
     },

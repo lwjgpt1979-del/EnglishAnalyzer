@@ -366,7 +366,8 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                             stem=pq.stem, student_answer=pq.student_answer,
                             correct_answer=pq.correct_answer, explanation=pq.explanation,
                             question_type=pq.question_type, kp_kind=_kk,
-                            kp_name=kp_key or None, source_label="整卷")
+                            kp_name=kp_key or None, source_label="整卷",
+                            source_id=paper.id)
                     except Exception:  # noqa: BLE001
                         pass
 

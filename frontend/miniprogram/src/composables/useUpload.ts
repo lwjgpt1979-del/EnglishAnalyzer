@@ -1,8 +1,5 @@
-import { ref } from 'vue'
 import { getPresignUrl } from '@/api/upload'
-import { createWrongQuestion } from '@/api/wrongQuestions'
 import { BASE_URL } from '@/utils/request'
-import type { WrongQuestionOut } from '@/types/api'
 
 type MimeType = 'image/jpeg' | 'image/png' | 'image/webp'
 
@@ -37,20 +34,6 @@ function uploadViaProxy(tempFilePath: string): Promise<string> {
   })
 }
 // #endif
-
-type UploadProgress =
-  | 'idle'
-  | 'choosing'
-  | 'presigning'
-  | 'uploading'
-  | 'creating'
-  | 'done'
-  | 'error'
-
-interface UploadOptions {
-  questionType?: string
-  difficulty?: number
-}
 
 /** 读取本地图片为纯 ArrayBuffer（跨 realm 安全）。H5 无 wx 文件 API，走 fetch 读 blob。 */
 function readFileAsArrayBuffer(tempFilePath: string): Promise<ArrayBuffer> {
@@ -133,64 +116,4 @@ export async function uploadOneImage(tempFilePath: string): Promise<string> {
 
   return presign.file_url
   // #endif
-}
-
-export function useUpload() {
-  const uploading = ref(false)
-  const progress = ref<UploadProgress>('idle')
-  const errorMsg = ref('')
-
-  async function uploadAndCreate(
-    options: UploadOptions = {},
-  ): Promise<WrongQuestionOut | null> {
-    uploading.value = true
-    progress.value = 'choosing'
-    errorMsg.value = ''
-
-    try {
-      // Step 1: 选图（用户取消时静默重置，不视为错误）
-      const tempFilePath = await new Promise<string>((resolve, reject) => {
-        uni.chooseImage({
-          count: 1,
-          sizeType: ['compressed'],
-          sourceType: ['album', 'camera'],
-          success: (res) => resolve(res.tempFilePaths[0]),
-          fail: (err) => {
-            const msg = err.errMsg || ''
-            const cancelled = new Error(msg || '选图取消') as Error & { isCancelled?: boolean }
-            cancelled.isCancelled = msg.includes('cancel')
-            reject(cancelled)
-          },
-        })
-      })
-
-      // Step 2-4: presign → 读取 → 直传 COS（跨端，统一走 uploadOneImage）
-      progress.value = 'uploading'
-      const fileUrl = await uploadOneImage(tempFilePath)
-
-      // Step 5: 创建错题记录
-      progress.value = 'creating'
-      const wq = await createWrongQuestion({
-        source_image_url: fileUrl,
-        question_type: options.questionType,
-        difficulty: options.difficulty,
-      })
-
-      progress.value = 'done'
-      return wq
-    } catch (e) {
-      // 用户主动取消选图：静默重置，不显示错误
-      if ((e as { isCancelled?: boolean }).isCancelled) {
-        progress.value = 'idle'
-        return null
-      }
-      progress.value = 'error'
-      errorMsg.value = (e as Error).message || '上传失败'
-      return null
-    } finally {
-      uploading.value = false
-    }
-  }
-
-  return { uploading, progress, errorMsg, uploadAndCreate }
 }

@@ -3,17 +3,9 @@ import type {
   AiAnalysisOut,
   ConfirmOcrTextRequest,
   OcrStatusOut,
-  WrongQuestionCreate,
   WrongQuestionListOut,
   WrongQuestionOut,
 } from '@/types/api'
-
-export function createWrongQuestion(data: WrongQuestionCreate): Promise<WrongQuestionOut> {
-  return request<WrongQuestionOut>('/api/v1/wrong-questions/', {
-    method: 'POST',
-    data,
-  })
-}
 
 export function listWrongQuestions(skip = 0, limit = 20, source = '', tag = ''): Promise<WrongQuestionListOut> {
   const params = new URLSearchParams({ skip: String(skip), limit: String(limit) })
@@ -162,6 +154,8 @@ export interface WrongCenterItem {
   kp_kind: 'grammar' | 'vocab' | null
   kp_name: string | null
   source_label: string
+  source_id: string | null
+  source_route: string | null
   is_mastered: boolean
   created_at: string | null
 }

@@ -43,7 +43,12 @@
           <view class="wq-meta">
             <text v-if="wq.kp_kind === 'grammar'" class="tag tag-gram">语法</text>
             <text v-else-if="wq.kp_kind === 'vocab'" class="tag tag-vocab">词汇</text>
-            <text class="tag tag-src">{{ wq.source_label }}</text>
+            <!-- 来源标签:有可跳目标 → 点击回到错题来源(卷/作业),原生返回即可回来 -->
+            <text
+              class="tag tag-src"
+              :class="{ 'tag-link': wq.source_route }"
+              @tap.stop="wq.source_route && goSource(wq)"
+            >{{ wq.source_label }}{{ wq.source_route ? ' ›' : '' }}</text>
             <text v-if="wq.question_type" class="tag">{{ wq.question_type }}</text>
             <text v-if="wq.kp_name" class="tag tag-kp">{{ wq.kp_name }}</text>
             <text v-if="wq.is_mastered" class="tag tag-green">已掌握</text>
@@ -103,6 +108,15 @@ async function practiceWrong(wq: WrongCenterItem) {
     pracKp.value = r.knowledge_point; pracList.value = r.questions; pracOpen.value = true
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { pracLoading.value = '' }
+}
+
+// 点击错题来源 → 回到来源(整卷详情/作业详情);navigateTo 入栈,原生返回即「立即回来」
+function goSource(wq: WrongCenterItem) {
+  if (!wq.source_route) return
+  uni.navigateTo({
+    url: wq.source_route,
+    fail: () => uni.showToast({ title: '来源已不可用', icon: 'none' }),
+  })
 }
 
 // 今日复习到期数
@@ -238,6 +252,7 @@ async function loadMore() {
 }
 .tag-green { background: var(--c-success-bg); color: var(--c-success-dark); }
 .tag-src { background: #EDE9FE; color: #6D28D9; }
+.tag-link { border: 2rpx solid #6D28D9; font-weight: 700; }
 .tag-gram { background: #e6f0ff; color: #3d8bf5; }
 .tag-vocab { background: #fff1e6; color: #ff8a3d; }
 .tag-kp { background: var(--c-bg-soft); color: var(--c-text-second); font-weight: 500; }

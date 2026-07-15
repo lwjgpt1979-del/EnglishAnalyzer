@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d16_question_domain import UploadedQuestion, UploadedQuestionKp
@@ -95,11 +96,29 @@ async def ingest_parsed(
 async def record_wrong_answer(
     db: AsyncSession, *, student_id: uuid.UUID, q_scope: str, question_id: uuid.UUID,
     kp_name: str | None = None, source_type: str = "uploaded_student",
+    stem: str | None = None, student_answer: str | None = None,
+    correct_answer: str | None = None, explanation: str | None = None,
+    question_type: str | None = None, source_label: str | None = None,
+    source_id: uuid.UUID | None = None,
 ) -> uuid.UUID | None:
-    """答错事件统一收口:match_kp(kp 名)→node(可空)→ record_wrong + add_source。返回 wrong_record id。"""
+    """答错事件统一收口:match_kp(kp 名)→node(可空)→ record_wrong + add_source。返回 wrong_record id。
+    题面/来源随写,「我的错题」只读 wrong_record 即自洽。"""
     node_id = None
     if kp_name and kp_name.strip():
         m = await match_kp(db, raw_name=kp_name, axis_hint="knowledge", source_type=source_type)
         node_id = m.node_id
+    # 语法/词汇判定(命中节点看 code,否则看归类名)
+    kp_kind = None
+    if kp_name:
+        code = None
+        if node_id:
+            from app.models.d15_knowledge_graph import KnowledgeNode
+            code = await db.scalar(
+                sa.select(KnowledgeNode.code).where(KnowledgeNode.id == node_id))
+        from app.services.user_paper_service import kp_kind_of
+        kp_kind = kp_kind_of(kp_name, code)
     return await wrong_center_service.record_wrong(
-        db, student_id=student_id, q_scope=q_scope, question_id=question_id, node_id=node_id)
+        db, student_id=student_id, q_scope=q_scope, question_id=question_id, node_id=node_id,
+        stem=stem, student_answer=student_answer, correct_answer=correct_answer,
+        explanation=explanation, question_type=question_type, kp_kind=kp_kind,
+        kp_name=kp_name or None, source_label=source_label, source_id=source_id)

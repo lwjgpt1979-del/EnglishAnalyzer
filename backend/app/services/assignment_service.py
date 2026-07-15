@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d1_users import Teacher, User
-from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d7_teacher import Assignment, AssignmentSubmission, ClassStudent
 from app.services import class_service, notification_service
 from app.services.question_service import _grade
@@ -55,22 +54,24 @@ def _auto_judge(questions: list, answers) -> tuple[float | None, list[dict]]:
 
 
 async def _sync_assignment_wrongs(db: AsyncSession, *, student_id, assignment_id, wrong_items) -> None:
-    marker = f"assignment://{assignment_id}"
-    await db.execute(delete(WrongQuestion).where(
-        WrongQuestion.student_id == student_id,
-        WrongQuestion.source_image_url == marker))
+    """机构作业订正错题 → 统一收口进 wrong_record(带题面+来源『作业』,可跳回作业详情)。
+    错题收敛后不再写旧 wrong_questions;同作业重交先删旧记录避免重复。"""
+    from app.models.d16_question_domain import WrongRecord
+    from app.services import ingest_service
+    await db.execute(delete(WrongRecord).where(
+        WrongRecord.student_id == student_id,
+        WrongRecord.q_scope == "uploaded",
+        WrongRecord.source_label == "作业",
+        WrongRecord.source_id == assignment_id))
     for idx, w in enumerate(wrong_items):
-        db.add(WrongQuestion(
-            id=uuid.uuid4(), student_id=student_id, source_image_url=marker,
-            question_text=w["stem"], student_answer=w["student_answer"],
-            correct_answer=w["correct_answer"], question_type=None))
-        # R7:作业错题统一收口进 wrong_record(match_kp 若有 KP 名;防御式不阻断提交)
         try:
-            from app.services import ingest_service
             qid = uuid.uuid5(uuid.NAMESPACE_OID, f"assignment:{assignment_id}:{idx}")
             await ingest_service.record_wrong_answer(
                 db, student_id=student_id, q_scope="uploaded", question_id=qid,
-                kp_name=w.get("kp") or w.get("knowledge_point"))
+                kp_name=w.get("kp") or w.get("knowledge_point"),
+                stem=w.get("stem"), student_answer=w.get("student_answer"),
+                correct_answer=w.get("correct_answer"),
+                source_label="作业", source_id=assignment_id)
         except Exception:  # noqa: BLE001
             pass
 

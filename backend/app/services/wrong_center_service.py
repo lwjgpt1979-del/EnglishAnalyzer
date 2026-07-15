@@ -24,6 +24,7 @@ async def record_wrong(
     correct_answer: str | None = None, explanation: str | None = None,
     question_type: str | None = None, kp_kind: str | None = None,
     kp_name: str | None = None, source_label: str | None = None,
+    source_id: uuid.UUID | None = None,
 ) -> uuid.UUID:
     """收口:某题做错 → upsert wrong_record。
 
@@ -41,7 +42,7 @@ async def record_wrong(
             status="open", next_review_at=today,
             stem=stem, student_answer=student_answer, correct_answer=correct_answer,
             explanation=explanation, question_type=question_type, kp_kind=kp_kind,
-            kp_name=kp_name, source_label=source_label,
+            kp_name=kp_name, source_label=source_label, source_id=source_id,
         )
         .on_conflict_do_update(
             constraint="uix_wrong_record_identity",
@@ -59,6 +60,7 @@ async def record_wrong(
                 "kp_kind": sa.func.coalesce(sa.text("EXCLUDED.kp_kind"), WrongRecord.kp_kind),
                 "kp_name": sa.func.coalesce(sa.text("EXCLUDED.kp_name"), WrongRecord.kp_name),
                 "source_label": sa.func.coalesce(sa.text("EXCLUDED.source_label"), WrongRecord.source_label),
+                "source_id": sa.func.coalesce(sa.text("EXCLUDED.source_id"), WrongRecord.source_id),
             },
         )
         .returning(WrongRecord.id)
@@ -111,10 +113,23 @@ async def list_center(
         "correct_answer": r.correct_answer, "explanation": r.explanation,
         "question_type": r.question_type, "kp_kind": r.kp_kind, "kp_name": r.kp_name,
         "source_label": r.source_label or "错题",
+        "source_id": str(r.source_id) if r.source_id else None,
+        "source_route": _source_route(r.source_label, r.source_id),
         "is_mastered": r.status == "mastered",
         "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]
     return items, total
+
+
+def _source_route(source_label: str | None, source_id: uuid.UUID | None) -> str | None:
+    """错题来源实体的小程序路由(供「点来源→回到来源→再返回」)。无可跳目标返回 None。"""
+    if source_id is None:
+        return None
+    if source_label == "整卷":
+        return f"/pages/user-papers/detail?id={source_id}"
+    if source_label == "作业":
+        return f"/pages/assignments/detail?id={source_id}"
+    return None
 
 
 async def practice_for_wrong(
