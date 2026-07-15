@@ -60,7 +60,7 @@
         v-for="wq in items"
         :key="wq.id"
         class="wq-card"
-        @tap="source === 'paper' ? null : goDetail(wq.id)"
+        @tap="wq.source_label === '整卷' ? null : goDetail(wq.id)"
       >
         <!-- 左侧：真实图片显示缩略图，否则显示类型图标（不放文字，避免溢出） -->
         <image
@@ -256,6 +256,15 @@ async function loadItems() {
     let res: { items: any[]; total: number }
     if (source.value === 'paper') {
       res = await listPaperWrongs(skip.value, LIMIT)
+    } else if (source.value === '') {
+      // 全部:合并「上传作业错题(整卷)」+「旧错题」;一个源失败不拖垮另一个
+      const [pw, wq] = await Promise.allSettled([
+        listPaperWrongs(skip.value, LIMIT),
+        listWrongQuestions(skip.value, LIMIT, '', activeTag.value),
+      ])
+      const pwv = pw.status === 'fulfilled' ? pw.value : { items: [], total: 0 }
+      const wqv = wq.status === 'fulfilled' ? wq.value : { items: [], total: 0 }
+      res = { items: [...pwv.items, ...wqv.items], total: pwv.total + wqv.total }
     } else {
       res = await listWrongQuestions(skip.value, LIMIT, source.value, activeTag.value)
     }
