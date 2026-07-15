@@ -817,10 +817,34 @@ async def practice_for_question(
     if not owned:
         raise AppError(code=404, message="题目不存在或无权访问")
 
-    kp_name = await db.scalar(
-        select(KnowledgeNode.name)
-        .join(UserPaperQuestion, UserPaperQuestion.node_id == KnowledgeNode.id)
-        .where(UserPaperQuestion.id == question_id).limit(1))
+    # 知识点:①命中图谱节点名 → ②该题归类名 kp_key → ③都没有则**即时归类**得到个人知识点
+    q = await db.get(UserPaperQuestion, question_id)
+    kp_name = None
+    if q and q.node_id:
+        kp_name = await db.scalar(select(KnowledgeNode.name).where(KnowledgeNode.id == q.node_id))
+    if not kp_name and q and q.kp_key:
+        kp_name = q.kp_key
+    if not kp_name and q and (q.stem or "").strip():
+        # 即时归类(单题;命中缓存不重复付费)→ 得到该题知识点,存为该生个人知识点
+        try:
+            from app.services.kp_classifier_service import classify_kps
+            from app.services.paper_split_service import ParsedPaperQuestion
+            pq = ParsedPaperQuestion(
+                question_no=q.question_no or "1", question_type=q.question_type, stem=q.stem,
+                student_answer=q.student_answer, correct_answer=q.correct_answer,
+                passage=q.passage, block_key=q.block_key, explanation=q.explanation)
+            m = await classify_kps([pq])
+            kp_name = m.get(q.question_no or "1") or (list(m.values())[0] if m else None)
+            if kp_name:
+                q.kp_key = kp_name
+                # 语法名 → 建个人语法节点(挂个人语法树,按卷),进作业精讲·语法
+                from app.services.grammar_progress_service import add_personal_if_grammar
+                await add_personal_if_grammar(
+                    db, student_id=student_id, name=kp_name, source="upload_paper",
+                    source_paper_id=q.user_paper_id)
+                await db.commit()
+        except Exception:  # noqa: BLE001
+            pass
     if not kp_name:
         raise AppError(code=400, message="该题暂无关联知识点，无法生成同类练习")
 
