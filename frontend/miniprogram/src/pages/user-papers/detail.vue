@@ -81,24 +81,14 @@
           </template>
           <view v-if="!blocksFor(sec).length" class="sec-empty">本题型该筛选下暂无题目</view>
 
-          <!-- 底部三功能(本题型级) -->
-          <view class="sec-tools">
-            <text class="tool-chip" :class="{ on: secGrammarOpen[sec.id] }" @tap="toggleSecGrammar(sec)">语法详情</text>
+          <!-- 底部功能:仅有原文的题型(阅读/完形)有 本题生词 + 长难句 -->
+          <view v-if="sec.hasPassage" class="sec-tools">
             <text class="tool-chip" :class="{ on: secVocabOpen[sec.id] }" @tap="toggleSecVocab(sec)">本题生词</text>
             <text class="tool-chip" @tap="openSecSentences(sec)">长难句</text>
           </view>
 
-          <!-- 语法详情:本题型语法考点 -->
-          <view v-if="secGrammarOpen[sec.id]" class="card tool-panel">
-            <text v-if="!secGrammar(sec).length" class="muted">本题型没有语法考点</text>
-            <view v-for="g in secGrammar(sec)" :key="g.key" class="tool-row" @tap="g.node_id && goLearnNode2(g)">
-              <text>{{ g.name }}</text>
-              <text v-if="g.node_id" class="chip-go">去讲解 ›</text>
-              <text v-else class="chip-go muted">个人语法</text>
-            </view>
-          </view>
           <!-- 本题生词:懒加载该题型生词 -->
-          <view v-if="secVocabOpen[sec.id]" class="card tool-panel">
+          <view v-if="sec.hasPassage && secVocabOpen[sec.id]" class="card tool-panel">
             <text v-if="secVocabLoading[sec.id]" class="muted">加载中…</text>
             <template v-else>
               <text v-if="!(secVocab[sec.id] || []).length" class="muted">本题型没有生词</text>
@@ -170,7 +160,9 @@ function toBlocks(qs: any[]) {
 // 每题型一块:全量题 + 错题数(兼容无 sections 的旧数据)
 const paperSections = computed(() => {
   const build = (id: string, label: string, is_suggested: boolean, qs: any[]) =>
-    ({ id, label, is_suggested, questions: qs, total: qs.length, wrongCount: qs.filter((q: any) => q.is_wrong).length })
+    ({ id, label, is_suggested, questions: qs, total: qs.length,
+       wrongCount: qs.filter((q: any) => q.is_wrong).length,
+       hasPassage: qs.some((q: any) => q.passage || q.block_key) })
   const out: any[] = []
   for (const sec of (paper.value?.sections || [])) {
     if ((sec.questions || []).length) out.push(build(sec.id, sec.label, !!sec.is_suggested, sec.questions))
@@ -188,22 +180,7 @@ function blocksFor(sec: any) {
   return toBlocks(isWrongView(sec) ? sec.questions.filter((q: any) => q.is_wrong) : sec.questions)
 }
 
-// —— 底部三功能(本题型级)——
-function goLearnNode2(g: any) {
-  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${g.node_id}&name=${encodeURIComponent(g.name)}&cat=grammar` })
-}
-const secGrammarOpen = ref<Record<string, boolean>>({})
-function toggleSecGrammar(sec: any) { secGrammarOpen.value = { ...secGrammarOpen.value, [sec.id]: !secGrammarOpen.value[sec.id] } }
-function secGrammar(sec: any) {
-  const seen = new Set<string>(); const out: any[] = []
-  for (const q of sec.questions) {
-    if (q.kp_kind !== 'grammar' || !q.kp_name) continue
-    const key = q.node_id || q.kp_name
-    if (seen.has(key)) continue
-    seen.add(key); out.push({ key, name: q.kp_name, node_id: q.node_id || null })
-  }
-  return out
-}
+// —— 底部功能(本题型级,仅有原文题型):生词 + 长难句 ——
 const secVocab = ref<Record<string, PaperVocabWord[]>>({})
 const secVocabOpen = ref<Record<string, boolean>>({})
 const secVocabLoading = ref<Record<string, boolean>>({})
