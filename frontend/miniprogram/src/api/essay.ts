@@ -24,10 +24,11 @@ export interface EssayDiagnosis {
   issues: { original: string; suggestion: string; type: string; explanation: string }[]
 }
 export function getEssayPrompts(stage?: string, genre?: string): Promise<EssayPrompt[]> {
-  const q = new URLSearchParams()
-  if (stage) q.set('stage', stage)
-  if (genre) q.set('genre', genre)
-  const qs = q.toString()
+  // 小程序运行时无 URLSearchParams,手拼 query
+  const parts: string[] = []
+  if (stage) parts.push(`stage=${encodeURIComponent(stage)}`)
+  if (genre) parts.push(`genre=${encodeURIComponent(genre)}`)
+  const qs = parts.join('&')
   return request<EssayPrompt[]>(`/api/v1/essays/prompts${qs ? '?' + qs : ''}`, { method: 'GET' })
 }
 export function analyzeEssayPrompt(p: { prompt_id?: string; text?: string }): Promise<PromptAnalysis> {

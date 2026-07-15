@@ -87,9 +87,10 @@ export interface WrongCenterItem {
   created_at: string | null
 }
 export function listWrongCenter(kind = '', skip = 0, limit = 20): Promise<{ items: WrongCenterItem[]; total: number }> {
-  const params = new URLSearchParams({ skip: String(skip), limit: String(limit) })
-  if (kind) params.set('kind', kind)
-  return request(`/api/v1/wrong-center/list?${params.toString()}`)
+  // 小程序运行时无 URLSearchParams,手拼 query
+  let qs = `skip=${skip}&limit=${limit}`
+  if (kind) qs += `&kind=${encodeURIComponent(kind)}`
+  return request(`/api/v1/wrong-center/list?${qs}`)
 }
 
 /** 错题「练同类仿真题」(统一入口,按 wrong_record 派发) */
