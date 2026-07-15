@@ -134,7 +134,10 @@
                 class="pq-opt"
                 :class="optCls(q, v)"
                 @tap="pickOpt(q, v)"
-              >{{ letter(oi) }}. {{ v }}</view>
+              >
+                <text class="opt-badge">{{ letter(oi) }}</text>
+                <text class="opt-txt">{{ optText(v) }}</text>
+              </view>
             </view>
             <view v-if="pracState[q.id]" class="pq-fb">
               <text :class="pracState[q.id].correct ? 'fb-ok' : 'fb-no'">
@@ -276,6 +279,10 @@ function optCls(q: PracticeQuestion, opt: string): string {
   if ((q.answer || '').trim() === opt.trim()) return 'opt-correct'
   if (st.picked === opt) return 'opt-wrong'
   return ''
+}
+// 去掉选项自带的「A. 」前缀,统一用左侧字母徽章展示
+function optText(v: string): string {
+  return (v || '').replace(/^\s*[A-Da-d][.、)]\s*/, '')
 }
 async function finishPractice() {
   if (pracSaving.value || answeredCount.value === 0) return
@@ -604,10 +611,14 @@ async function loadMore() {
 .pq { padding: 18rpx 0; border-top: 2rpx solid #eef1f5; }
 .pq:first-child { border-top: none; padding-top: 6rpx; }
 .pq-stem { display: block; font-size: 27rpx; line-height: 1.6; color: var(--c-ink); font-weight: 600; }
-.pq-opts { display: flex; flex-direction: column; gap: 10rpx; margin-top: 12rpx; }
-.pq-opt { font-size: 25rpx; color: var(--c-ink); background: var(--c-bg-page); border: 2rpx solid var(--c-border); border-radius: 12rpx; padding: 14rpx 18rpx; line-height: 1.4; }
+.pq-opts { display: flex; flex-direction: column; gap: 12rpx; margin-top: 14rpx; }
+.pq-opt { display: flex; align-items: center; gap: 14rpx; font-size: 26rpx; color: var(--c-ink); background: var(--c-bg-card); border: 2rpx solid var(--c-border); border-radius: 16rpx; padding: 18rpx 20rpx; line-height: 1.4; }
+.opt-badge { flex-shrink: 0; width: 44rpx; height: 44rpx; border-radius: 50%; background: var(--c-bg-soft); color: var(--c-text-second); font-size: 24rpx; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.opt-txt { flex: 1; }
 .pq-opt.opt-correct { background: #e6f8ee; border-color: #18a058; color: #128a4c; font-weight: 600; }
+.pq-opt.opt-correct .opt-badge { background: #18a058; color: #fff; }
 .pq-opt.opt-wrong { background: #fdecec; border-color: #e35b5b; color: #c33; }
+.pq-opt.opt-wrong .opt-badge { background: #e35b5b; color: #fff; }
 .pq-fb { margin-top: 10rpx; }
 .pq-fb .fb-ok { font-size: 24rpx; color: #128a4c; font-weight: 600; }
 .pq-fb .fb-no { font-size: 24rpx; color: #c33; font-weight: 600; }

@@ -186,6 +186,18 @@ async def generate_practice_questions(
     if sourced:
         return sourced
 
+    # 缓存复用(铁律:同输入不重复付费):该知识点已有 AI 题池 → 抽样返回,不再调 LLM。
+    # AiQuestion 是全局题库(不绑学生),按内容 knowledge_point 复用;池够就不再生成。
+    import random
+    pool = list((await db.execute(
+        select(AiQuestion).where(
+            AiQuestion.content["knowledge_point"].astext == kp_name,
+            AiQuestion.is_active.is_(True))
+        .order_by(AiQuestion.generated_at.desc()).limit(60)
+    )).scalars().all())
+    if len(pool) >= count:
+        return random.sample(pool, count)
+
     if is_llm_dev_mode():
         raw_questions = _dev_mock_questions(kp_name, count)
     else:
