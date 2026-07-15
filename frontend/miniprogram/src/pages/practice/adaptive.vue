@@ -7,7 +7,7 @@
     <view v-else-if="!questions.length" class="empty-card card">
       <view class="ic ic-edit empty-icon" />
       <text class="empty-title">暂无推荐题目</text>
-      <text class="empty-hint">先完成一些练习或上传错题，AI 就能为你精准出题了</text>
+      <text class="empty-hint">先完成一些练习或上传作业，AI 就能为你精准出题了</text>
       <button class="btn-primary" @tap="goBack">返回</button>
     </view>
 

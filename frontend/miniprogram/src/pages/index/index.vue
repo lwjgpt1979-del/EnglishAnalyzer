@@ -93,10 +93,6 @@
           <view class="qi qi-ai" />
           <text class="quick-label">智能出题</text>
         </view>
-        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/upload/index' })">
-          <view class="qi qi-camera" />
-          <text class="quick-label">单题上传</text>
-        </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">
           <view class="qi qi-file" />
           <text class="quick-label">上传作业</text>

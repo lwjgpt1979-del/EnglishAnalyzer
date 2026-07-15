@@ -45,12 +45,12 @@
 
     <!-- 空状态 -->
     <view v-else-if="!loading && items.length === 0" class="center-tip">
-      <text>还没有错题，去上传一题吧 📷</text>
+      <text>还没有错题，去上传作业吧 📄</text>
       <button
         class="btn-sm"
-        @tap="() => uni.navigateTo({ url: '/pages/upload/index' })"
+        @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })"
       >
-        上传错题
+        上传作业
       </button>
     </view>
 
