@@ -1,4 +1,4 @@
-<!-- 多题练习·逐题作答判分(全项目练习作答统一组件) -->
+<!-- 多题练习·逐题作答判分(全项目练习作答统一组件;支持 选择/判断/填空) -->
 <template>
   <view class="modal" @tap="close">
     <view class="modal-card" @tap.stop>
@@ -17,7 +17,9 @@
         </view>
         <scroll-view scroll-y class="modal-body">
           <text class="pq-stem">{{ cur.stem }}</text>
-          <view v-if="cur.options" class="pq-opts">
+
+          <!-- 选择/判断:点选 -->
+          <view v-if="hasOptions(cur)" class="pq-opts">
             <view
               v-for="(v, oi) in cur.options"
               :key="oi"
@@ -25,10 +27,22 @@
               :class="optCls(cur, oi)"
               @tap.stop="pick(cur, oi)"
             >
-              <text class="opt-badge">{{ letter(oi) }}</text>
+              <text v-if="!isJudge(cur)" class="opt-badge">{{ letter(oi) }}</text>
               <text class="opt-txt">{{ optText(v) }}</text>
             </view>
           </view>
+          <!-- 填空:文本输入 -->
+          <view v-else class="pq-fill">
+            <input
+              class="pq-input"
+              :value="fillInput"
+              :disabled="!!state[cur.id]"
+              placeholder="请输入答案"
+              @input="fillInput = $event.detail.value"
+              @confirm="submitFill(cur)"
+            />
+          </view>
+
           <view v-if="state[cur.id]" class="pq-fb">
             <text :class="state[cur.id].correct ? 'fb-ok' : 'fb-no'">
               {{ state[cur.id].correct ? '✓ 答对' : '✗ 答错，正确：' + fbAnswer(cur) }}
@@ -37,8 +51,18 @@
           </view>
           <view v-else-if="judging" class="pq-judging">判分中…</view>
         </scroll-view>
+
         <view class="modal-actions">
+          <!-- 填空未答:提交按钮 -->
           <view
+            v-if="!hasOptions(cur) && !state[cur.id]"
+            class="modal-btn primary"
+            :class="{ disabled: !fillInput.trim() || judging }"
+            @tap.stop="submitFill(cur)"
+          ><text>{{ judging ? '判分中…' : '提交答案' }}</text></view>
+          <!-- 已答/选择题:下一题 -->
+          <view
+            v-else
             class="modal-btn primary"
             :class="{ disabled: !state[cur.id] || saving }"
             @tap.stop="next"
@@ -61,18 +85,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import type { PracticeQuestion } from '@/api/wrongQuestions'
 
 type JudgeResult = { correct: boolean; correct_answer: string; explanation?: string }
+export type ChosenAnswer = { index: number; letter: string; text: string; input: string }
 const props = defineProps<{
   kp: string
   questions: PracticeQuestion[]
-  // 结算器:整轮做完回写成绩并返回结果文案。不传则只本地统计。
   recorder?: (total: number, correct: number) => Promise<string>
-  // 服务端判分钩子:传则每题点选走它(题目不含答案的场景,如练习/自适应);不传则本地按 q.answer 判。
-  judge?: (q: PracticeQuestion, chosen: string) => Promise<JudgeResult>
-  // 页面自渲染结果页(如自适应的按考点统计):做完 emit finish + close,不显组件内结果页。
+  // 服务端判分钩子:传则每题走它(题不含答案的练习/自适应);不传则本地按 q.answer 判。
+  judge?: (q: PracticeQuestion, ans: ChosenAnswer) => Promise<JudgeResult>
+  // 页面自渲染结果页(如自适应按考点统计):做完 emit finish + close,不显组件内结果页。
   hideResult?: boolean
   lastLabel?: string
 }>()
@@ -85,6 +109,7 @@ const saving = ref(false)
 const judging = ref(false)
 const recorded = ref(false)
 const resultMsg = ref('')
+const fillInput = ref('')
 const state = reactive<Record<string, St>>({})
 
 const cur = computed<PracticeQuestion | undefined>(() => props.questions[idx.value])
@@ -93,10 +118,15 @@ const answeredCount = computed(() => Object.keys(state).length)
 const correctCount = computed(() => Object.values(state).filter(s => s.correct).length)
 const lastLabel = computed(() => props.lastLabel || '查看结果')
 const letter = (i: number) => String.fromCharCode(65 + i)
+watch(idx, () => { fillInput.value = '' })
+
+function hasOptions(q: PracticeQuestion): boolean { return !!(q.options && q.options.length) }
+function isJudge(q: PracticeQuestion): boolean {
+  return !!(q.options && q.options.length === 2 && q.options.every(o => o === '对' || o === '错'))
+}
 function optText(v: string): string {
   return (v || '').replace(/^\s*[A-Da-d][.、)]\s*/, '')
 }
-// 把「正确答案」(字母或选项原文)解析成选项下标
 function answerToIdx(ans: string, q: PracticeQuestion): number {
   const a = (ans || '').trim()
   if (!a || !q.options) return -1
@@ -104,21 +134,36 @@ function answerToIdx(ans: string, q: PracticeQuestion): number {
   if (a.length === 1 && byLetter >= 0 && byLetter < q.options.length) return byLetter
   return q.options.findIndex(o => optText(o).trim() === a || (o || '').trim() === a)
 }
+function apply(q: PracticeQuestion, pickedIdx: number, r: JudgeResult) {
+  state[q.id] = { pickedIdx, correct: r.correct, correctIdx: answerToIdx(r.correct_answer, q),
+                  correctText: r.correct_answer, explanation: r.explanation || '' }
+}
 async function pick(q: PracticeQuestion, oi: number) {
   if (state[q.id] || judging.value) return
+  const ans: ChosenAnswer = { index: oi, letter: letter(oi), text: optText(q.options![oi]), input: '' }
   if (props.judge) {
     judging.value = true
-    try {
-      const r = await props.judge(q, letter(oi))
-      const ci = answerToIdx(r.correct_answer, q)
-      state[q.id] = { pickedIdx: oi, correct: r.correct, correctIdx: ci,
-                      correctText: r.correct_answer, explanation: r.explanation || '' }
-    } catch (e: any) { uni.showToast({ title: e?.message || '判分失败', icon: 'none' }) }
+    try { apply(q, oi, await props.judge(q, ans)) }
+    catch (e: any) { uni.showToast({ title: e?.message || '判分失败', icon: 'none' }) }
     finally { judging.value = false }
   } else {
     const ci = answerToIdx(q.answer || '', q)
-    state[q.id] = { pickedIdx: oi, correct: ci === oi, correctIdx: ci,
-                    correctText: q.answer || '', explanation: q.explanation || '' }
+    apply(q, oi, { correct: ci === oi, correct_answer: q.answer || '', explanation: q.explanation || '' })
+  }
+}
+async function submitFill(q: PracticeQuestion) {
+  if (state[q.id] || judging.value) return
+  const input = fillInput.value.trim()
+  if (!input) return
+  const ans: ChosenAnswer = { index: -1, letter: '', text: input, input }
+  if (props.judge) {
+    judging.value = true
+    try { apply(q, -1, await props.judge(q, ans)) }
+    catch (e: any) { uni.showToast({ title: e?.message || '判分失败', icon: 'none' }) }
+    finally { judging.value = false }
+  } else {
+    const correct = (q.answer || '').trim().toLowerCase() === input.toLowerCase()
+    apply(q, -1, { correct, correct_answer: q.answer || '', explanation: q.explanation || '' })
   }
 }
 function optCls(q: PracticeQuestion, oi: number): string {
@@ -189,6 +234,8 @@ async function close() {
 .pq-opt.opt-wrong { background: #fdecec; border-color: #e35b5b; color: #c33; }
 .pq-opt.opt-wrong .opt-badge { background: #e35b5b; color: #fff; }
 .opt-dim { opacity: 0.5; }
+.pq-fill { margin-top: 14rpx; }
+.pq-input { height: 84rpx; background: var(--c-bg-card); border: 2rpx solid var(--c-border); border-radius: 16rpx; padding: 0 22rpx; font-size: 28rpx; }
 .pq-fb { margin-top: 14rpx; }
 .pq-fb .fb-ok { font-size: 24rpx; color: #128a4c; font-weight: 600; }
 .pq-fb .fb-no { font-size: 24rpx; color: #c33; font-weight: 600; }

@@ -71,7 +71,7 @@ import { grHwBatches, grHwPoints, grCourseUnits, grCoursePoints,
          type GrammarPoint, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
 import { generateQuestions, submitAnswer } from '@/api/practice'
 import { namedGrammarLecture, type GrammarLectureSection } from '@/api/curriculum'
-import PracticeQuiz from '@/components/PracticeQuiz.vue'
+import PracticeQuiz, { type ChosenAnswer } from '@/components/PracticeQuiz.vue'
 import type { PracticeQuestion } from '@/api/wrongQuestions'
 import { md2html } from '@/utils/md'
 
@@ -127,8 +127,8 @@ async function startPractice() {
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { practiceLoading.value = false }
 }
-async function quizJudge(q: PracticeQuestion, chosen: string) {
-  const r = await submitAnswer(q.id, chosen)
+async function quizJudge(q: PracticeQuestion, ans: ChosenAnswer) {
+  const r = await submitAnswer(q.id, ans.letter || ans.input)   // 语法练习为单选,用字母
   return { correct: r.is_correct, correct_answer: r.correct_answer, explanation: r.explanation }
 }
 async function load() {
