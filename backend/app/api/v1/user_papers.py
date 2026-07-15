@@ -108,10 +108,11 @@ async def get_paper_vocab(
     paper_id: uuid.UUID,
     db: DbDep,
     current_user: UserDep,
+    section_id: uuid.UUID | None = Query(None, description="给定→只取该题型的生词(本题型级)"),
 ):
     """P2:本卷原文里的『生词』(未学/接收度低),可挑选加入词力通优先学(走 /vocabulary/pins)。"""
     r = await user_paper_service.paper_vocab_candidates(
-        db, paper_id=paper_id, student_id=current_user.id)
+        db, paper_id=paper_id, student_id=current_user.id, section_id=section_id)
     if r is None:
         raise AppError(code=404, message="试卷不存在或无权访问")
     return make_ok(r)
@@ -122,10 +123,11 @@ async def get_paper_long_sentences(
     paper_id: uuid.UUID,
     db: DbDep,
     current_user: UserDep,
+    section_id: uuid.UUID | None = Query(None, description="给定→只取该题型的长难句(本题型级)"),
 ):
     """P3:从本卷短文拆出的长难句,可逐句解析。"""
     r = await user_paper_service.paper_long_sentences(
-        db, paper_id=paper_id, student_id=current_user.id)
+        db, paper_id=paper_id, student_id=current_user.id, section_id=section_id)
     if r is None:
         raise AppError(code=404, message="试卷不存在或无权访问")
     return make_ok(r)

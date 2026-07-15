@@ -27,184 +27,96 @@
         <button class="btn-secondary" @tap="goUpload">重新上传</button>
       </view>
 
-      <!-- 完成：知识点归集 + 题目列表 -->
+      <!-- 完成：按题型分块 -->
       <template v-else-if="paper.ocr_status === 'completed'">
         <view v-if="!paper.questions.length" class="card empty-q">
           <text>未识别到题目，请重试或换更清晰的图片</text>
           <button class="btn-secondary" @tap="goUpload">重新上传</button>
         </view>
 
-        <!-- 知识点归集卡（错题按知识点聚合，薄弱红标）-->
-        <view v-if="kpItems.length" class="card kp-card">
-          <text class="kp-title">本作业知识点归集</text>
-          <view v-for="k in kpItems" :key="k.kp_id" class="kp-row">
-            <text class="kp-name" :class="{ weak: k.weak }">{{ k.kp_name }}</text>
-            <text class="kp-cnt">错 {{ k.wrong }}/{{ k.total }}</text>
-            <text v-if="k.weak" class="kp-weak">薄弱</text>
-          </view>
-        </view>
-
-        <!-- P1:本作业语法点 学情(已学/薄弱/未学) -->
-        <view v-if="grammar && grammar.total" class="card gr-card">
-          <text class="gr-title">本作业语法点 · 学情（{{ grammar.total }}）</text>
-          <view v-if="grammar.new.length" class="gr-group">
-            <text class="gr-lbl gr-new">未学 {{ grammar.new.length }}</text>
-            <view class="gr-chips">
-              <view v-for="n in grammar.new" :key="n.node_id" class="gr-newitem">
-                <view class="gr-chip chip-new" @tap="goLearnNode(n)">
-                  <text>{{ n.name }}</text><text class="chip-go">去学 ›</text>
-                </view>
-                <!-- 先修增强:该未学语法有未学先修 → 提示先补(prereq 边为空时不显示) -->
-                <view v-if="unlearnedPre(n).length" class="gr-pre">
-                  <text class="gr-pre-lbl">先补先修:</text>
-                  <text v-for="p in unlearnedPre(n)" :key="p.node_id" class="gr-pre-chip"
-                        @tap="goLearnNode({ node_id: p.node_id, name: p.name } as any)">{{ p.name }} ›</text>
-                </view>
-              </view>
-            </view>
-          </view>
-          <view v-if="grammar.weak.length" class="gr-group">
-            <text class="gr-lbl gr-weak">薄弱 {{ grammar.weak.length }}</text>
-            <view class="gr-chips">
-              <view v-for="n in grammar.weak" :key="n.node_id" class="gr-chip chip-weak" @tap="goLearnNode(n)">
-                <text>{{ n.name }}</text><text class="chip-go">去练 ›</text>
-              </view>
-            </view>
-          </view>
-          <view v-if="grammar.learned.length" class="gr-group">
-            <text class="gr-lbl gr-ok">已学 {{ grammar.learned.length }}</text>
-            <view class="gr-chips">
-              <view v-for="n in grammar.learned" :key="n.node_id" class="gr-chip chip-ok" @tap="goLearnNode(n)">
-                <text>{{ n.name }}</text>
-              </view>
-            </view>
-          </view>
-          <!-- P4 闭环:未学+薄弱一键成学习计划 -->
-          <view v-if="planCount" class="gr-plan-btn" :class="{ busy: planBusy }" @tap="addToPlan">
-            <text class="ic ic-target" />
-            <text>{{ planBusy ? '加入中…' : `加入待学习（${planCount}）` }}</text>
-          </view>
-        </view>
-
-        <!-- P2/P3:本题生词 + 本题长难句 —— 有语篇时挂到阅读理解语篇下(见下方);
-             无语篇的卷(如纯单选)才回退显示在顶部 -->
-        <template v-if="!embedKey">
-          <view v-if="vocab.length" class="card gr-card">
-            <view class="gr-head" @tap="vocabOpen = !vocabOpen">
-              <text class="gr-title">本题生词 · {{ vocab.length }}</text>
-              <text class="gr-fold">{{ vocabOpen ? '收起 ▲' : '展开 ▼' }}</text>
-            </view>
-            <template v-if="vocabOpen">
-              <text class="gr-hint">从原文挑出你还没掌握的词,选中加入「作业精讲 · 单词」。</text>
-              <view class="gr-chips">
-                <view v-for="w in vocab" :key="w.word_id" class="gr-chip vw-chip"
-                      :class="{ 'vw-on': picked.has(w.word_id) || w.pinned }" @tap="toggleWord(w)">
-                  <text>{{ w.word }}</text>
-                  <text v-if="w.pinned" class="chip-go">已加</text>
-                  <text v-else-if="picked.has(w.word_id)" class="chip-go">✓</text>
-                </view>
-              </view>
-              <view v-if="pickCount" class="gr-plan-btn" :class="{ busy: vocabBusy }" @tap="addVocab">
-                <text class="ic ic-book" />
-                <text>{{ vocabBusy ? '加入中…' : `加入待学习（${pickCount}）` }}</text>
-              </view>
-            </template>
-          </view>
-          <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
-            <view class="entry-main">
-              <text class="entry-title">本题长难句</text>
-              <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思;加入学习=句+词+语法一起进作业精讲</text>
-            </view>
-            <text class="entry-arrow">›</text>
-          </view>
-        </template>
-
-        <!-- 全部/错题 筛选 -->
-        <view v-if="paper.questions.length" class="filter-row">
-          <text class="fbtn" :class="{ on: !onlyWrong }" @tap="onlyWrong = false">全部 {{ paper.questions.length }}</text>
-          <text class="fbtn" :class="{ on: onlyWrong }" @tap="onlyWrong = true">错题 {{ wrongCount }}</text>
-        </view>
-
-        <!-- 按原卷大题分组(还原题型结构):大题头 → 语篇(完形/阅读只显示一次) → 小题 -->
-        <view v-for="sec in shownSections" :key="sec.id" class="section">
+        <!-- 每个题型 = 一块:题型名 + 本题型 全部|错题 → 原文 → 题目 → 底部三功能 -->
+        <view v-for="sec in paperSections" :key="sec.id" class="section">
           <view class="sec-head">
             <text class="sec-bar" />
             <text class="sec-label">{{ sec.label }}</text>
             <text v-if="sec.is_suggested" class="sec-sug">建议</text>
             <view style="flex:1" />
             <text v-if="sec.id !== 'all'" class="sec-edit" @tap="editSection(sec)">改题型</text>
-            <text class="sec-cnt">{{ sec.questions.length }} 题</text>
           </view>
-          <template v-for="grp in sec.blocks" :key="grp.key">
+          <!-- 本题型 全部|错题(默认错题;无错题默认全部) -->
+          <view class="sec-filter">
+            <text class="fbtn" :class="{ on: !isWrongView(sec) }" @tap="setWrong(sec, false)">全部 {{ sec.total }}</text>
+            <text class="fbtn" :class="{ on: isWrongView(sec) }" @tap="setWrong(sec, true)">错题 {{ sec.wrongCount }}</text>
+          </view>
+
+          <template v-for="grp in blocksFor(sec)" :key="grp.key">
+            <!-- 原文(阅读/完形语篇) -->
             <view v-if="grp.passage" class="card passage-card" @tap="toggleBlock(grp.key)">
               <view class="passage-head">
-                <text class="passage-title">短文{{ grp.blockLabel }}</text>
+                <text class="passage-title">原文{{ grp.blockLabel }}</text>
                 <text class="passage-toggle">{{ collapsed[grp.key] ? '展开 ▾' : '收起 ▴' }}</text>
               </view>
               <text v-if="!collapsed[grp.key]" class="passage-text">{{ grp.passage }}</text>
             </view>
 
-            <!-- 本题生词 + 本题长难句:挂在阅读理解语篇正下方(整卷同一份,只在此语篇下出现一次) -->
-            <template v-if="grp.key === embedKey">
-              <view v-if="vocab.length" class="card gr-card">
-                <view class="gr-head" @tap="vocabOpen = !vocabOpen">
-                  <text class="gr-title">本题生词 · {{ vocab.length }}</text>
-                  <text class="gr-fold">{{ vocabOpen ? '收起 ▲' : '展开 ▼' }}</text>
-                </view>
-                <template v-if="vocabOpen">
-                  <text class="gr-hint">从原文挑出你还没掌握的词,选中加入「作业精讲 · 单词」。</text>
-                  <view class="gr-chips">
-                    <view v-for="w in vocab" :key="w.word_id" class="gr-chip vw-chip"
-                          :class="{ 'vw-on': picked.has(w.word_id) || w.pinned }" @tap="toggleWord(w)">
-                      <text>{{ w.word }}</text>
-                      <text v-if="w.pinned" class="chip-go">已加</text>
-                      <text v-else-if="picked.has(w.word_id)" class="chip-go">✓</text>
-                    </view>
-                  </view>
-                  <view v-if="pickCount" class="gr-plan-btn" :class="{ busy: vocabBusy }" @tap="addVocab">
-                    <text class="ic ic-book" />
-                    <text>{{ vocabBusy ? '加入中…' : `加入待学习（${pickCount}）` }}</text>
-                  </view>
-                </template>
-              </view>
-              <view v-if="sentences.length" class="card entry-card" @tap="openLongSentences">
-                <view class="entry-main">
-                  <text class="entry-title">本题长难句</text>
-                  <text class="entry-sub">{{ sentences.length }} 句 · 拆结构看意思;加入学习=句+词+语法一起进作业精讲</text>
-                </view>
-                <text class="entry-arrow">›</text>
-              </view>
-            </template>
-
-            <view
-              v-for="q in grp.questions" :key="q.id"
-              class="card q-card" :class="{ wrong: q.is_wrong }"
-            >
+            <view v-for="q in grp.questions" :key="q.id" class="card q-card" :class="{ wrong: q.is_wrong }">
               <view class="q-head">
                 <text class="q-no">{{ q.question_no ? `第 ${q.question_no} 题` : '题目' }}</text>
-                <text class="q-type">{{ q.question_type || '题目' }}</text>
                 <view v-if="q.is_wrong" class="q-flag"><view class="ic ic-x-circle" style="width:26rpx;height:26rpx" /><text>错</text></view>
+                <view v-else class="q-flag q-ok"><view class="ic ic-check-circle" style="width:26rpx;height:26rpx" /><text>对</text></view>
               </view>
               <text class="q-stem">{{ q.stem || '（题干识别为空）' }}</text>
               <view class="q-ans">
-                <text class="ans-line">你的答案：{{ q.student_answer || '（未识别）' }}</text>
-                <text class="ans-line">正确答案：{{ q.correct_answer || '（未提供）' }}</text>
+                <text class="ans-line" :class="{ 'ans-x': q.is_wrong }">你的答案：{{ q.student_answer || '（未识别）' }}</text>
+                <text class="ans-line ans-ok">正确答案：{{ q.correct_answer || '（未提供）' }}</text>
               </view>
               <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
-              <!-- 单题动作:考语法→加入语法学习;考词汇→加入单词;错题→练同类 -->
-              <view class="q-acts">
-                <view v-if="q.kp_kind === 'grammar'" class="q-act" :class="{ done: qGrammar.has(q.id) }" @tap="addGrammar(q)">
-                  <text>{{ qGrammar.has(q.id) ? '已加入语法' : '加入语法学习' }}</text>
-                </view>
-                <view v-if="q.kp_kind === 'vocab'" class="q-act" :class="{ done: qVocab.has(q.id) }" @tap="addVocabQ(q)">
-                  <text>{{ qVocab.has(q.id) ? '已加入单词' : '加入作业精讲·单词' }}</text>
-                </view>
-                <view v-if="q.is_wrong" class="q-act q-act-sim" @tap="practiceSimilar(q.id)">
+              <!-- 错题练同类(单题级);语法/词汇动作收到底部三功能 -->
+              <view v-if="q.is_wrong" class="q-acts">
+                <view class="q-act q-act-sim" @tap="practiceSimilar(q.id)">
                   <text>{{ similarLoading ? '生成中…' : '练同类仿真题' }}</text>
                 </view>
               </view>
             </view>
           </template>
+          <view v-if="!blocksFor(sec).length" class="sec-empty">本题型该筛选下暂无题目</view>
+
+          <!-- 底部三功能(本题型级) -->
+          <view class="sec-tools">
+            <text class="tool-chip" :class="{ on: secGrammarOpen[sec.id] }" @tap="toggleSecGrammar(sec)">语法详情</text>
+            <text class="tool-chip" :class="{ on: secVocabOpen[sec.id] }" @tap="toggleSecVocab(sec)">本题生词</text>
+            <text class="tool-chip" @tap="openSecSentences(sec)">长难句</text>
+          </view>
+
+          <!-- 语法详情:本题型语法考点 -->
+          <view v-if="secGrammarOpen[sec.id]" class="card tool-panel">
+            <text v-if="!secGrammar(sec).length" class="muted">本题型没有语法考点</text>
+            <view v-for="g in secGrammar(sec)" :key="g.key" class="tool-row" @tap="g.node_id && goLearnNode2(g)">
+              <text>{{ g.name }}</text>
+              <text v-if="g.node_id" class="chip-go">去讲解 ›</text>
+              <text v-else class="chip-go muted">个人语法</text>
+            </view>
+          </view>
+          <!-- 本题生词:懒加载该题型生词 -->
+          <view v-if="secVocabOpen[sec.id]" class="card tool-panel">
+            <text v-if="secVocabLoading[sec.id]" class="muted">加载中…</text>
+            <template v-else>
+              <text v-if="!(secVocab[sec.id] || []).length" class="muted">本题型没有生词</text>
+              <template v-else>
+                <view class="gr-chips">
+                  <view v-for="w in secVocab[sec.id]" :key="w.word_id" class="gr-chip vw-chip"
+                        :class="{ 'vw-on': secPickedHas(sec, w) || w.pinned }" @tap="toggleSecWord(sec, w)">
+                    <text>{{ w.word }}</text>
+                    <text v-if="w.pinned" class="chip-go">已加</text>
+                    <text v-else-if="secPickedHas(sec, w)" class="chip-go">✓</text>
+                  </view>
+                </view>
+                <view v-if="secPickCount(sec)" class="gr-plan-btn" @tap="addSecVocab(sec)">
+                  <text class="ic ic-book" /><text>加入待学习（{{ secPickCount(sec) }}）</text>
+                </view>
+              </template>
+            </template>
+          </view>
         </view>
       </template>
     </template>
@@ -226,7 +138,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, recordPaperPractice, renamePaper, addQuestionGrammar, addQuestionVocab, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperVocab, practiceForQuestion, recordPaperPractice, renamePaper, type SimilarQuestion, type PaperVocabWord } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
@@ -236,138 +148,103 @@ const loading = ref(true)
 const paperId = ref('')
 let timer: ReturnType<typeof setTimeout> | null = null
 
-// M4 深化：知识点归集 + 错题筛选 + 练同类
-const kpItems = ref<PaperKpItem[]>([])
-const onlyWrong = ref(false)
-const wrongCount = computed(() => (paper.value?.questions || []).filter(q => q.is_wrong).length)
-
 // 语篇折叠态(完形/阅读短文)
 const collapsed = ref<Record<string, boolean>>({})
 function toggleBlock(k: string) { collapsed.value = { ...collapsed.value, [k]: !collapsed.value[k] } }
 
-// 按原卷大题分组 → 大题内按 block_key 归「短文+多小问」组;支持 全部/错题 过滤;
-// 兼容后端未返回 sections 的旧数据(退回单个「全部题目」组)
-const shownSections = computed(() => {
-  const filt = (qs: any[]) => onlyWrong.value ? qs.filter(q => q.is_wrong) : qs
-  const toBlocks = (qs: any[]) => {
-    const blocks: any[] = []
-    const idxByKey: Record<string, number> = {}
-    for (const q of qs) {
-      const bk = q.block_key || `__solo_${q.id}`
-      if (!(bk in idxByKey)) {
-        blocks.push({ key: bk, passage: q.block_key ? (q.passage || '') : '',
-                      blockLabel: q.block_key ? ` · ${q.block_key}` : '', questions: [] })
-        idxByKey[bk] = blocks.length - 1
-      }
-      blocks[idxByKey[bk]].questions.push(q)
+// 按 block_key 归「原文+多小问」组
+function toBlocks(qs: any[]) {
+  const blocks: any[] = []
+  const idxByKey: Record<string, number> = {}
+  for (const q of qs) {
+    const bk = q.block_key || `__solo_${q.id}`
+    if (!(bk in idxByKey)) {
+      blocks.push({ key: bk, passage: q.block_key ? (q.passage || '') : '',
+                    blockLabel: q.block_key ? ` · ${q.block_key}` : '', questions: [] })
+      idxByKey[bk] = blocks.length - 1
     }
-    return blocks
+    blocks[idxByKey[bk]].questions.push(q)
   }
-  const secs = paper.value?.sections || []
+  return blocks
+}
+// 每题型一块:全量题 + 错题数(兼容无 sections 的旧数据)
+const paperSections = computed(() => {
+  const build = (id: string, label: string, is_suggested: boolean, qs: any[]) =>
+    ({ id, label, is_suggested, questions: qs, total: qs.length, wrongCount: qs.filter((q: any) => q.is_wrong).length })
   const out: any[] = []
-  for (const sec of secs) {
-    const qs = filt(sec.questions || [])
-    if (!qs.length) continue
-    out.push({ id: sec.id, label: sec.label, is_suggested: !!sec.is_suggested, questions: qs, blocks: toBlocks(qs) })
+  for (const sec of (paper.value?.sections || [])) {
+    if ((sec.questions || []).length) out.push(build(sec.id, sec.label, !!sec.is_suggested, sec.questions))
   }
-  if (!out.length) {                          // 旧后端/旧数据:无 sections → 扁平兜底
-    const qs = filt(paper.value?.questions || [])
-    if (qs.length) out.push({ id: 'all', label: '全部题目', is_suggested: false, questions: qs, blocks: toBlocks(qs) })
-  }
+  if (!out.length && (paper.value?.questions || []).length) out.push(build('all', '全部题目', false, paper.value!.questions))
   return out
 })
-// 本题生词/长难句挂载点:优先「阅读理解」题型第一个语篇块;否则任意题型第一个语篇块;
-// 无语篇(如纯单选卷)则为 null → 回退显示在顶部。
-const embedKey = computed<string | null>(() => {
-  const secs = shownSections.value
-  const firstPassage = (list: any[]) => {
-    for (const sec of list) {
-      const b = (sec.blocks || []).find((x: any) => x.passage)
-      if (b) return b.key
-    }
-    return null
+// 本题型 全部|错题(默认:有错题→错题,无错题→全部)
+const secWrong = ref<Record<string, boolean>>({})
+function isWrongView(sec: any): boolean {
+  return sec.id in secWrong.value ? secWrong.value[sec.id] : sec.wrongCount > 0
+}
+function setWrong(sec: any, v: boolean) { secWrong.value = { ...secWrong.value, [sec.id]: v } }
+function blocksFor(sec: any) {
+  return toBlocks(isWrongView(sec) ? sec.questions.filter((q: any) => q.is_wrong) : sec.questions)
+}
+
+// —— 底部三功能(本题型级)——
+function goLearnNode2(g: any) {
+  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${g.node_id}&name=${encodeURIComponent(g.name)}&cat=grammar` })
+}
+const secGrammarOpen = ref<Record<string, boolean>>({})
+function toggleSecGrammar(sec: any) { secGrammarOpen.value = { ...secGrammarOpen.value, [sec.id]: !secGrammarOpen.value[sec.id] } }
+function secGrammar(sec: any) {
+  const seen = new Set<string>(); const out: any[] = []
+  for (const q of sec.questions) {
+    if (q.kp_kind !== 'grammar' || !q.kp_name) continue
+    const key = q.node_id || q.kp_name
+    if (seen.has(key)) continue
+    seen.add(key); out.push({ key, name: q.kp_name, node_id: q.node_id || null })
   }
-  return firstPassage(secs.filter(s => (s.label || '').includes('阅读'))) || firstPassage(secs)
-})
+  return out
+}
+const secVocab = ref<Record<string, PaperVocabWord[]>>({})
+const secVocabOpen = ref<Record<string, boolean>>({})
+const secVocabLoading = ref<Record<string, boolean>>({})
+const secPicked = ref<Record<string, Set<string>>>({})
+async function toggleSecVocab(sec: any) {
+  const open = !secVocabOpen.value[sec.id]
+  secVocabOpen.value = { ...secVocabOpen.value, [sec.id]: open }
+  if (open && !(sec.id in secVocab.value)) {
+    secVocabLoading.value = { ...secVocabLoading.value, [sec.id]: true }
+    try { secVocab.value = { ...secVocab.value, [sec.id]: (await getPaperVocab(paperId.value, sec.id)).words } }
+    catch { secVocab.value = { ...secVocab.value, [sec.id]: [] } }
+    finally { secVocabLoading.value = { ...secVocabLoading.value, [sec.id]: false } }
+  }
+}
+function secPickedHas(sec: any, w: PaperVocabWord) { return !!secPicked.value[sec.id]?.has(w.word_id) }
+function secPickCount(sec: any) { return secPicked.value[sec.id]?.size || 0 }
+function toggleSecWord(sec: any, w: PaperVocabWord) {
+  if (w.pinned) return
+  const s = new Set(secPicked.value[sec.id] || [])
+  s.has(w.word_id) ? s.delete(w.word_id) : s.add(w.word_id)
+  secPicked.value = { ...secPicked.value, [sec.id]: s }
+}
+async function addSecVocab(sec: any) {
+  const ids = [...(secPicked.value[sec.id] || [])]
+  if (!ids.length) return
+  try {
+    await addHomeworkWords(ids, paperId.value)
+    secVocab.value = { ...secVocab.value, [sec.id]: (secVocab.value[sec.id] || []).map(w => ids.includes(w.word_id) ? { ...w, pinned: true } : w) }
+    secPicked.value = { ...secPicked.value, [sec.id]: new Set() }
+    uni.showToast({ title: `已加入作业精讲 ${ids.length} 词`, icon: 'success' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
+function openSecSentences(sec: any) {
+  uni.navigateTo({ url: `/pages/user-papers/long-sentences?paperId=${paperId.value}&sectionId=${sec.id}` })
+}
+
 const similarOpen = ref(false)
 const similarLoading = ref(false)
 const similarKp = ref('')
 const similarQid = ref('')
 const similarList = ref<SimilarQuestion[]>([])
-
-async function loadKpSummary() {
-  try { kpItems.value = (await getPaperKpSummary(paperId.value)).items } catch { /* ignore */ }
-}
-
-// P1:本作业语法点 已学/薄弱/未学
-const grammar = ref<PaperGrammarStatus | null>(null)
-async function loadGrammar() {
-  try { grammar.value = await getPaperGrammarStatus(paperId.value) } catch { /* ignore */ }
-}
-function goLearnNode(n: GrammarNodeItem) {
-  uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${n.node_id}&name=${encodeURIComponent(n.name)}&cat=grammar` })
-}
-
-// P4 闭环:未学+薄弱语法一键加入学习计划
-const planBusy = ref(false)
-const planCount = computed(() => (grammar.value ? grammar.value.new.length + grammar.value.weak.length : 0))
-async function addToPlan() {
-  if (planBusy.value || !planCount.value) return
-  planBusy.value = true
-  try {
-    const r = await addPaperToPlan(paperId.value)
-    uni.showModal({
-      title: '已加入待学习',
-      content: `本作业未学 ${r.new} + 薄弱 ${r.weak} 个语法点已加入待学习,可在「作业精讲 → 语法精讲」按批次学。`,
-      confirmText: '去作业精讲', cancelText: '知道了',
-      success: (m) => { if (m.confirm) uni.navigateTo({ url: '/pages/intensive/homework' }) },
-    })
-  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
-  finally { planBusy.value = false }
-}
-
-// 先修增强:某未学语法点里「还没学的先修」
-function unlearnedPre(n: GrammarNodeItem) {
-  return (n.prereq || []).filter(p => !p.learned)
-}
-
-// P2:本题生词 → 加入词力通优先学
-const vocab = ref<PaperVocabWord[]>([])
-const picked = ref<Set<string>>(new Set())
-const vocabBusy = ref(false)
-const vocabOpen = ref(true)          // 本题生词可折叠
-const pickCount = computed(() => picked.value.size)
-async function loadVocab() {
-  try { vocab.value = (await getPaperVocab(paperId.value)).words } catch { /* ignore */ }
-}
-function toggleWord(w: PaperVocabWord) {
-  if (w.pinned) return
-  const s = new Set(picked.value)
-  s.has(w.word_id) ? s.delete(w.word_id) : s.add(w.word_id)
-  picked.value = s
-}
-async function addVocab() {
-  if (vocabBusy.value || !picked.value.size) return
-  vocabBusy.value = true
-  try {
-    const ids = [...picked.value]
-    await addHomeworkWords(ids, paperId.value)   // 作业精讲按批次归组(不进词力通优先学)
-    // 本地标记已加,清空选择
-    vocab.value = vocab.value.map(w => ids.includes(w.word_id) ? { ...w, pinned: true } : w)
-    picked.value = new Set()
-    uni.showToast({ title: `已加入作业精讲 ${ids.length} 词`, icon: 'success' })
-  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
-  finally { vocabBusy.value = false }
-}
-
-// P3:本题长难句 → 整块单开一页(作业页只留入口,不内嵌列表/解析)
-const sentences = ref<string[]>([])
-async function loadSentences() {
-  try { sentences.value = (await getPaperLongSentences(paperId.value)).sentences } catch { /* ignore */ }
-}
-function openLongSentences() {
-  uni.navigateTo({ url: `/pages/user-papers/long-sentences?paperId=${paperId.value}` })
-}
 
 // 学生改大题的题型分类(AI 建议不准时)
 const SECTION_LABELS = ['单项选择', '完形填空', '阅读理解', '任务型阅读', '词汇运用', '短文填空', '书面表达', '听力理解', '其它']
@@ -405,26 +282,6 @@ async function paperPracRecorder(total: number, correct: number): Promise<string
   return `本轮 ${correct}/${total} 正确`
 }
 
-// 单题:加入语法学习 / 加入作业精讲·单词
-const qGrammar = ref<Set<string>>(new Set())
-const qVocab = ref<Set<string>>(new Set())
-async function addGrammar(q: any) {
-  if (qGrammar.value.has(q.id)) return
-  try {
-    const r = await addQuestionGrammar(q.id)
-    qGrammar.value = new Set([...qGrammar.value, q.id])
-    uni.showToast({ title: r.personal ? '已加入语法学习（自建）' : '已加入作业精讲·语法', icon: 'none' })
-  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
-}
-async function addVocabQ(q: any) {
-  if (qVocab.value.has(q.id)) return
-  try {
-    const r = await addQuestionVocab(q.id)
-    qVocab.value = new Set([...qVocab.value, q.id])
-    uni.showToast({ title: r.added ? `已加入作业精讲·单词（${r.added}）` : '本题没识别到可加入的生词', icon: 'none' })
-  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
-}
-
 const isProcessing = computed(
   () => paper.value?.ocr_status === 'pending' || paper.value?.ocr_status === 'processing',
 )
@@ -457,11 +314,6 @@ async function load() {
   // 仍在处理中 → 轮询
   if (isProcessing.value) {
     timer = setTimeout(load, 2500)
-  } else if (paper.value?.ocr_status === 'completed') {
-    loadKpSummary()
-    loadGrammar()
-    loadVocab()
-    loadSentences()
   }
 }
 
@@ -604,6 +456,20 @@ function editTitle() {
 .filter-row { display: flex; gap: 16rpx; margin-bottom: 16rpx; }
 .fbtn { font-size: 26rpx; color: var(--c-text-second); padding: 8rpx 24rpx; border-radius: 999rpx; background: var(--c-bg-soft); }
 .fbtn.on { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
+/* 本题型 全部|错题 */
+.sec-filter { display: flex; gap: 12rpx; margin: 0 4rpx 14rpx; }
+/* 对/错标 */
+.q-flag.q-ok { color: #18a058; }
+.ans-x { color: var(--c-danger); }
+.ans-ok { color: #128a4c; }
+.sec-empty { text-align: center; color: var(--c-text-hint); font-size: 24rpx; padding: 24rpx 0; }
+/* 底部三功能 */
+.sec-tools { display: flex; gap: 14rpx; margin: 14rpx 4rpx 4rpx; }
+.tool-chip { flex: 1; text-align: center; font-size: 25rpx; color: var(--c-primary-deep); background: var(--c-bg-card); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 12rpx 0; font-weight: 600; }
+.tool-chip.on { background: var(--c-primary); color: var(--c-on-primary); }
+.tool-panel { margin-top: 12rpx; display: flex; flex-direction: column; gap: 10rpx; }
+.tool-row { display: flex; align-items: center; justify-content: space-between; font-size: 26rpx; color: var(--c-ink); padding: 10rpx 0; border-bottom: 1rpx solid var(--c-border); }
+.tool-row:last-child { border-bottom: none; }
 .btn-similar { margin-top: 16rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-btn); font-size: 26rpx; padding: 12rpx 0; }
 .q-acts { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 16rpx; }
 .q-act { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 24rpx; }

@@ -38,13 +38,15 @@ export interface PaperGrammarStatus { learned: GrammarNodeItem[]; weak: GrammarN
 
 // P2 生词:本卷原文里的生词(未学/接收度低),挑选加入词力通优先学
 export interface PaperVocabWord { word_id: string; word: string; phonetic: string | null; recep: number | null; pinned: boolean }
-export function getPaperVocab(paperId: string): Promise<{ words: PaperVocabWord[] }> {
-  return request<{ words: PaperVocabWord[] }>(`/api/v1/user-papers/${paperId}/vocab`, { method: 'GET' })
+export function getPaperVocab(paperId: string, sectionId?: string): Promise<{ words: PaperVocabWord[] }> {
+  const qs = sectionId ? `?section_id=${sectionId}` : ''
+  return request<{ words: PaperVocabWord[] }>(`/api/v1/user-papers/${paperId}/vocab${qs}`, { method: 'GET' })
 }
 
 // P3 长难句:从本卷短文拆出的长难句 + 按需解析
-export function getPaperLongSentences(paperId: string): Promise<{ sentences: string[] }> {
-  return request<{ sentences: string[] }>(`/api/v1/user-papers/${paperId}/long-sentences`, { method: 'GET' })
+export function getPaperLongSentences(paperId: string, sectionId?: string): Promise<{ sentences: string[] }> {
+  const qs = sectionId ? `?section_id=${sectionId}` : ''
+  return request<{ sentences: string[] }>(`/api/v1/user-papers/${paperId}/long-sentences${qs}`, { method: 'GET' })
 }
 // 重命名作业标题(改自动生成的名字)
 export function renamePaper(paperId: string, title: string): Promise<{ title: string }> {

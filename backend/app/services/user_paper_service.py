@@ -618,22 +618,27 @@ into than then them been over more most some such only very much many just like 
 """.split())
 
 
-async def _paper_texts(db: AsyncSession, paper_id: uuid.UUID) -> tuple[list[str], list[str]]:
-    """本卷原文素材:去重短文(passages)+ 题干(stems),供抽生词/拆长难句。"""
+async def _paper_texts(
+    db: AsyncSession, paper_id: uuid.UUID, section_id: uuid.UUID | None = None,
+) -> tuple[list[str], list[str]]:
+    """本卷原文素材:去重短文(passages)+ 题干(stems),供抽生词/拆长难句。
+    section_id 给定 → 只取该题型(大题)的素材(本题型级生词/长难句)。"""
+    pcond = [UserPaperQuestion.user_paper_id == paper_id, UserPaperQuestion.passage.isnot(None)]
+    scond = [UserPaperQuestion.user_paper_id == paper_id, UserPaperQuestion.stem.isnot(None)]
+    if section_id is not None:
+        pcond.append(UserPaperQuestion.section_id == section_id)
+        scond.append(UserPaperQuestion.section_id == section_id)
     prows = (await db.execute(
-        select(UserPaperQuestion.block_key, UserPaperQuestion.passage)
-        .where(UserPaperQuestion.user_paper_id == paper_id,
-               UserPaperQuestion.passage.isnot(None)))).all()
+        select(UserPaperQuestion.block_key, UserPaperQuestion.passage).where(*pcond))).all()
     passages = list({(bk or p): p for bk, p in prows if p}.values())   # 同篇按 block_key 去重
     stems = [s for (s,) in (await db.execute(
-        select(UserPaperQuestion.stem)
-        .where(UserPaperQuestion.user_paper_id == paper_id,
-               UserPaperQuestion.stem.isnot(None)))).all()]
+        select(UserPaperQuestion.stem).where(*scond))).all()]
     return passages, stems
 
 
 async def paper_vocab_candidates(
-    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID
+    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID,
+    section_id: uuid.UUID | None = None,
 ) -> dict | None:
     """P2:从本卷原文+题干抽词 → 词典命中 → 只留『生词(未学/接收度<0.6)』供挑选加入词力通优先学。
     复用 vocab_pin_service._words_from_text 抽词、词力通 pin 走 /vocabulary/pins。非本人 → None。"""
@@ -643,7 +648,7 @@ async def paper_vocab_candidates(
     paper = await db.get(UserUploadedPaper, paper_id)
     if paper is None or paper.student_id != student_id:
         return None
-    passages, stems = await _paper_texts(db, paper_id)
+    passages, stems = await _paper_texts(db, paper_id, section_id)
     words = [w for w in _words_from_text(" ".join(passages + stems))
              if len(w) >= 3 and w not in _VOCAB_STOP]
     if not words:
@@ -684,14 +689,16 @@ async def paper_vocab_candidates(
 
 
 async def paper_long_sentences(
-    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID
+    db: AsyncSession, *, paper_id: uuid.UUID, student_id: uuid.UUID,
+    section_id: uuid.UUID | None = None,
 ) -> dict | None:
-    """P3:从本卷短文拆长难句(复用 long_sentence_service 切句 + 长句判定),供逐句解析。非本人 → None。"""
+    """P3:从本卷短文拆长难句(复用 long_sentence_service 切句 + 长句判定),供逐句解析。非本人 → None。
+    section_id 给定 → 只取该题型的短文(本题型级)。"""
     from app.services import long_sentence_service as ls
     paper = await db.get(UserUploadedPaper, paper_id)
     if paper is None or paper.student_id != student_id:
         return None
-    passages, _ = await _paper_texts(db, paper_id)
+    passages, _ = await _paper_texts(db, paper_id, section_id)
     seen, out = set(), []
     for p in passages:
         for s in ls.split_sentences(p):

@@ -50,8 +50,9 @@ async function save(i: number) {
 
 onLoad(async (q: any) => {
   paperId.value = q.paperId || ''
+  const sectionId = q.sectionId || ''
   if (!paperId.value) { loading.value = false; return }
-  try { sentences.value = (await getPaperLongSentences(paperId.value)).sentences } catch { /* ignore */ }
+  try { sentences.value = (await getPaperLongSentences(paperId.value, sectionId || undefined)).sentences } catch { /* ignore */ }
   finally { loading.value = false }
 })
 </script>
