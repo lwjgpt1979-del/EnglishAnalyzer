@@ -192,27 +192,32 @@ async def generate_practice_questions(
         prompt = _USER_PROMPT_TEMPLATE.format(
             knowledge_point=kp_name, count=count, difficulty=difficulty
         )
-        try:
-            # 关思考+快档:出题是规格明确的结构化生成,主推理模型开思考会烧光 token→JSON 截断→
-            # 「格式异常」500(练同类仿真题报「服务器内部错误」的真因)。token 也给足防截断。
-            response = await chat_completion(
-                system_prompt=_SYSTEM_PROMPT,
-                user_prompt=prompt,
-                model=fast_model(),
-                disable_thinking=True,
-                max_tokens=3072,
-                feature="practice_gen",
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise AppError(code=502, message=f"AI出题服务暂时不可用，请稍后重试（{exc}）") from exc
-
-        raw_text = (response.choices[0].message.content or "").strip()
-        if raw_text.startswith("```"):
-            raw_text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", raw_text).strip()
-        try:
-            raw_questions = json.loads(raw_text)
-        except json.JSONDecodeError as exc:
-            raise AppError(code=500, message="AI出题返回格式异常") from exc
+        # 关思考+快档:出题是规格明确的结构化生成,主推理模型开思考会烧光 token→JSON 截断→
+        # 「格式异常」500(练同类报「服务器内部错误」的真因)。偶发空/格式异常再重试一次,
+        # 最终失败给 502 友好提示(不抛 500)。
+        raw_questions = None
+        last_exc = None
+        for _attempt in range(2):
+            try:
+                response = await chat_completion(
+                    system_prompt=_SYSTEM_PROMPT, user_prompt=prompt,
+                    model=fast_model(), disable_thinking=True, max_tokens=3072,
+                    feature="practice_gen")
+                raw_text = (response.choices[0].message.content or "").strip()
+                if raw_text.startswith("```"):
+                    raw_text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", raw_text).strip()
+                data = json.loads(raw_text or "[]")
+                if isinstance(data, dict):   # 容错:{questions:[...]} / 首个 list 值
+                    data = data.get("questions") or next(
+                        (v for v in data.values() if isinstance(v, list)), None)
+                if isinstance(data, list) and data:
+                    raw_questions = data
+                    break
+                last_exc = "empty"
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+        if not raw_questions:
+            raise AppError(code=502, message="AI出题暂时不可用，请稍后再试")
         if not isinstance(raw_questions, list) or not raw_questions:
             raise AppError(code=500, message="AI出题返回内容为空")
 
