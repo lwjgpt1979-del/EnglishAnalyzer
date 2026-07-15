@@ -56,6 +56,16 @@ def _suggest_section_label(question_type: str | None, has_passage: bool) -> str:
     return _SUGGEST_BY_TYPE.get(question_type or "", "其它")
 
 
+def kp_kind_of(kp_key: str | None, node_code: str | None) -> str | None:
+    """单题「考语法/考词汇」判定:语法=命中语法节点(cf/jf) 或 归类名是语法概念;
+    词汇=有归类名但不是语法。无归类名→None。整卷错题写入 / 详情 / 错题中心统一用它。"""
+    from app.services.grammar_progress_service import _grammar_anchor
+    from app.services.kp_lecture_service import kp_type_of
+    if (node_code and kp_type_of(node_code) == "grammar") or (kp_key and _grammar_anchor(kp_key)):
+        return "grammar"
+    return "vocab" if kp_key else None
+
+
 def _label_of(pq) -> tuple[str, bool]:
     """返回(大题名, 是否 AI 建议)。原卷有大题名→用它(非建议);否则按题型推(建议)。"""
     raw = (pq.section or "").strip()
@@ -282,6 +292,15 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                 except Exception:  # noqa: BLE001
                     match_cache[_key] = None
 
+            # 命中 node 的 code(判 grammar/vocab 用),一次性取,免逐题查
+            _code_by_node: dict[uuid.UUID, str | None] = {}
+            _mnids = [n for n in match_cache.values() if n]
+            if _mnids:
+                from app.models.d15_knowledge_graph import KnowledgeNode
+                _code_by_node = {nid: code for nid, code in (await db.execute(
+                    select(KnowledgeNode.id, KnowledgeNode.code).where(
+                        KnowledgeNode.id.in_(_mnids)))).all()}
+
             # Step 2.5: 还原原卷「大题/板块」结构——按 section 首次出现顺序建 user_paper_sections
             from app.models.d13_v2_user_papers import UserPaperSection
             sec_id_by_label: dict[str, uuid.UUID] = {}
@@ -340,9 +359,14 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                 if is_wrong:
                     try:
                         from app.services import wrong_center_service
+                        _kk = kp_kind_of(kp_key, _code_by_node.get(q.node_id))
                         await wrong_center_service.record_wrong(
                             db, student_id=paper.student_id, q_scope="uploaded",
-                            question_id=q.id, node_id=q.node_id)
+                            question_id=q.id, node_id=q.node_id,
+                            stem=pq.stem, student_answer=pq.student_answer,
+                            correct_answer=pq.correct_answer, explanation=pq.explanation,
+                            question_type=pq.question_type, kp_kind=_kk,
+                            kp_name=kp_key or None, source_label="整卷")
                     except Exception:  # noqa: BLE001
                         pass
 
@@ -452,13 +476,7 @@ async def get_paper_detail(
             select(KnowledgeNode.id, KnowledgeNode.code).where(KnowledgeNode.id.in_(node_ids)))).all()}
 
     def _kp_kind(q) -> str | None:
-        node_gram = bool(q.node_id and kp_type_of(codes.get(q.node_id)) == "grammar")
-        name_gram = bool(q.kp_key and _grammar_anchor(q.kp_key))
-        if node_gram or name_gram:
-            return "grammar"
-        if q.kp_key:
-            return "vocab"
-        return None
+        return kp_kind_of(q.kp_key, codes.get(q.node_id) if q.node_id else None)
 
     questions = [_q_out(q) for q in qs]            # 扁平列表(兼容旧展示)
     # 按大题分组;历史数据(section_id 为空)归到「未分组」保证不丢题

@@ -4,9 +4,10 @@
 """
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -16,12 +17,33 @@ from app.schemas.base import BaseResponse, make_ok
 from app.schemas.kp import (
     WrongReviewItem, WrongReviewQueueOut, WrongReviewSubmitIn, WrongReviewSubmitOut,
 )
-from app.services import wrong_review_service
+from app.services import wrong_center_service, wrong_review_service
 
 router = APIRouter(prefix="/wrong-center", tags=["wrong-center"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
+
+
+@router.get("/list", response_model=BaseResponse[dict])
+async def list_center(
+    db: DbDep, current_user: UserDep,
+    kind: str | None = Query(None, description="grammar|vocab;空=全部"),
+    skip: int = 0, limit: int = 20,
+):
+    """「我的错题」统一列表:只读 wrong_record(题面已冗余)。语法/词汇筛选 + 分页。"""
+    items, total = await wrong_center_service.list_center(
+        db, student_id=current_user.id, kind=kind, skip=skip, limit=limit)
+    return make_ok({"items": items, "total": total})
+
+
+@router.post("/practice/{wrong_record_id}", response_model=BaseResponse[dict])
+async def practice_wrong(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """错题「练同类仿真题」(统一入口,按 wrong_record 派发)。"""
+    r = await wrong_center_service.practice_for_wrong(
+        db, student_id=current_user.id, wrong_record_id=wrong_record_id)
+    await db.commit()
+    return make_ok(r)
 
 
 @router.get("/review-queue", response_model=BaseResponse[WrongReviewQueueOut])

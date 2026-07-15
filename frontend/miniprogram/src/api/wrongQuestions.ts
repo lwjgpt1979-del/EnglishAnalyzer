@@ -148,6 +148,34 @@ export function getReviewQueue(): Promise<ReviewQueueOut> {
   return request<ReviewQueueOut>('/api/v1/wrong-questions/review-queue', { method: 'GET' })
 }
 
+/** 统一错题中心:一份错题(wrong_record),按语法/词汇筛选。kind: ''|grammar|vocab */
+export interface WrongCenterItem {
+  id: string
+  question_id: string
+  q_scope: string
+  node_id: string | null
+  stem: string | null
+  student_answer: string | null
+  correct_answer: string | null
+  explanation: string | null
+  question_type: string | null
+  kp_kind: 'grammar' | 'vocab' | null
+  kp_name: string | null
+  source_label: string
+  is_mastered: boolean
+  created_at: string | null
+}
+export function listWrongCenter(kind = '', skip = 0, limit = 20): Promise<{ items: WrongCenterItem[]; total: number }> {
+  const params = new URLSearchParams({ skip: String(skip), limit: String(limit) })
+  if (kind) params.set('kind', kind)
+  return request(`/api/v1/wrong-center/list?${params.toString()}`)
+}
+
+/** 错题「练同类仿真题」(统一入口,按 wrong_record 派发) */
+export function practiceWrongCenter(wrongRecordId: string): Promise<{ knowledge_point: string; questions: any[] }> {
+  return request(`/api/v1/wrong-center/practice/${wrongRecordId}`, { method: 'POST' })
+}
+
 /** 复习队列：客观重做那道错题（答对推进 SM-2，答错归零重排） */
 export function submitReview(wqId: string, userAnswer: string): Promise<RedoResult> {
   return request<RedoResult>(`/api/v1/wrong-questions/${wqId}/review`, {

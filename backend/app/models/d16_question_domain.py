@@ -228,6 +228,15 @@ class WrongRecord(Base):
     question_id = mapped_column(UUID(as_uuid=True), nullable=False)
     node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=True)
     is_original = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    # 冗余题面(统一错题中枢自洽,「我的错题」只读本表):
+    stem = mapped_column(sa.Text, nullable=True)
+    student_answer = mapped_column(sa.Text, nullable=True)
+    correct_answer = mapped_column(sa.Text, nullable=True)
+    explanation = mapped_column(sa.Text, nullable=True)
+    question_type = mapped_column(sa.String(24), nullable=True)
+    kp_kind = mapped_column(sa.String(12), nullable=True)     # grammar|vocab
+    kp_name = mapped_column(sa.String(120), nullable=True)
+    source_label = mapped_column(sa.String(16), nullable=True)  # 整卷|平台|长难句|作业
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'open'"))  # open|mastered
     mastery_source = mapped_column(sa.String(10), nullable=True)        # review|manual|auto(N仿真)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

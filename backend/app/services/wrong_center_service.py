@@ -20,12 +20,17 @@ async def record_wrong(
     db: AsyncSession, *, student_id: uuid.UUID, q_scope: str, question_id: uuid.UUID,
     node_id: uuid.UUID | None = None, is_original: bool = True,
     today: _dt.date | None = None,
+    stem: str | None = None, student_answer: str | None = None,
+    correct_answer: str | None = None, explanation: str | None = None,
+    question_type: str | None = None, kp_kind: str | None = None,
+    kp_name: str | None = None, source_label: str | None = None,
 ) -> uuid.UUID:
     """收口:某题做错 → upsert wrong_record。
 
     新建:status=open,next_review_at=今日(立即入复习队列)。
     复发(已存在,含已 mastered):重置 status=open、清 mastered_at、SM-2 归零、今日重排。
     q_scope ∈ {platform, uploaded}。返回 wrong_record id。
+    冗余题面(stem/答案/解析/kp_kind/source_label 等)随写,「我的错题」只读本表即可自洽。
     """
     today = today or _dt.date.today()
     stmt = (
@@ -34,6 +39,9 @@ async def record_wrong(
             id=uuid.uuid4(), student_id=student_id, q_scope=q_scope,
             question_id=question_id, node_id=node_id, is_original=is_original,
             status="open", next_review_at=today,
+            stem=stem, student_answer=student_answer, correct_answer=correct_answer,
+            explanation=explanation, question_type=question_type, kp_kind=kp_kind,
+            kp_name=kp_name, source_label=source_label,
         )
         .on_conflict_do_update(
             constraint="uix_wrong_record_identity",
@@ -41,8 +49,16 @@ async def record_wrong(
                 "status": "open", "mastered_at": None, "mastery_source": None,
                 "review_count": 0, "review_interval_days": 1,
                 "next_review_at": today,
-                # node_id 命中更新(保留已有非空)
+                # node_id 及题面命中更新(保留已有非空)
                 "node_id": sa.func.coalesce(sa.text("EXCLUDED.node_id"), WrongRecord.node_id),
+                "stem": sa.func.coalesce(sa.text("EXCLUDED.stem"), WrongRecord.stem),
+                "student_answer": sa.func.coalesce(sa.text("EXCLUDED.student_answer"), WrongRecord.student_answer),
+                "correct_answer": sa.func.coalesce(sa.text("EXCLUDED.correct_answer"), WrongRecord.correct_answer),
+                "explanation": sa.func.coalesce(sa.text("EXCLUDED.explanation"), WrongRecord.explanation),
+                "question_type": sa.func.coalesce(sa.text("EXCLUDED.question_type"), WrongRecord.question_type),
+                "kp_kind": sa.func.coalesce(sa.text("EXCLUDED.kp_kind"), WrongRecord.kp_kind),
+                "kp_name": sa.func.coalesce(sa.text("EXCLUDED.kp_name"), WrongRecord.kp_name),
+                "source_label": sa.func.coalesce(sa.text("EXCLUDED.source_label"), WrongRecord.source_label),
             },
         )
         .returning(WrongRecord.id)
@@ -69,6 +85,67 @@ async def list_open_wrongs(
     return list((await db.execute(
         stmt.order_by(WrongRecord.created_at.desc()).limit(limit)
     )).scalars().all())
+
+
+async def list_center(
+    db: AsyncSession, *, student_id: uuid.UUID, kind: str | None = None,
+    skip: int = 0, limit: int = 20,
+) -> tuple[list[dict], int]:
+    """「我的错题」统一列表:只读 wrong_record(题面已冗余,自洽)。
+
+    kind ∈ {None(全部), grammar, vocab}。按 created_at 倒序分页。
+    返回卡片字典(id/题面/kp_kind/source_label/is_mastered/created_at)。
+    """
+    base = sa.select(WrongRecord).where(WrongRecord.student_id == student_id)
+    if kind in ("grammar", "vocab"):
+        base = base.where(WrongRecord.kp_kind == kind)
+    total = (await db.execute(
+        sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
+    rows = list((await db.execute(
+        base.order_by(WrongRecord.created_at.desc()).offset(skip).limit(limit)
+    )).scalars().all())
+    items = [{
+        "id": str(r.id), "question_id": str(r.question_id), "q_scope": r.q_scope,
+        "node_id": str(r.node_id) if r.node_id else None,
+        "stem": r.stem, "student_answer": r.student_answer,
+        "correct_answer": r.correct_answer, "explanation": r.explanation,
+        "question_type": r.question_type, "kp_kind": r.kp_kind, "kp_name": r.kp_name,
+        "source_label": r.source_label or "错题",
+        "is_mastered": r.status == "mastered",
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows]
+    return items, total
+
+
+async def practice_for_wrong(
+    db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
+    count: int = 5, difficulty: int = 3,
+) -> dict:
+    """错题「练同类」(统一):按 wrong_record 派发。
+
+    uploaded → 复用 user_paper_service.practice_for_question(三级兜底,含即时归类);
+    platform/其它 → 用 wrong_record 冗余的 kp_name 直接出题。
+    """
+    from app.core.exceptions import AppError
+    from app.services import practice_service, user_paper_service
+
+    wr = await db.get(WrongRecord, wrong_record_id)
+    if wr is None or wr.student_id != student_id:
+        raise AppError(code=404, message="错题不存在或无权访问")
+    if wr.q_scope == "uploaded":
+        return await user_paper_service.practice_for_question(
+            db, question_id=wr.question_id, student_id=student_id,
+            count=count, difficulty=difficulty)
+    kp_name = wr.kp_name
+    if not kp_name and wr.node_id:
+        from app.models.d15_knowledge_graph import KnowledgeNode
+        kp_name = await db.scalar(
+            sa.select(KnowledgeNode.name).where(KnowledgeNode.id == wr.node_id))
+    if not kp_name:
+        raise AppError(code=400, message="该题暂无关联知识点，无法生成同类练习")
+    questions = await practice_service.generate_practice_questions(
+        db, student_id=student_id, knowledge_point=kp_name, count=count, difficulty=difficulty)
+    return {"knowledge_point": kp_name, "questions": questions}
 
 
 async def list_by_node(
