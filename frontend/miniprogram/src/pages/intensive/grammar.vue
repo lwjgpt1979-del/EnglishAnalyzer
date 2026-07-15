@@ -41,22 +41,26 @@
             <text class="lec-title">{{ s.title }}</text>
             <rich-text :nodes="md2html(s.content_md)" class="lec-md" />
           </view>
-          <!-- 练习 -->
+          <!-- 练习:逐题作答判分统一走 PracticeQuiz -->
           <view class="prac-hd">
             <text class="prac-t">练一练</text>
-            <text v-if="!practiceList.length && !practiceLoading" class="prac-btn" @tap="genPractice">出题 ›</text>
           </view>
-          <view v-if="practiceLoading" class="tip">出题中…</view>
-          <view v-for="(q, i) in practiceList" :key="q.id" class="sq">
-            <text class="sq-stem">{{ i + 1 }}. {{ q.stem }}</text>
-            <view v-if="q.options && q.options.length" class="sq-opts">
-              <text v-for="(o, oi) in q.options" :key="oi" class="sq-opt">{{ o }}</text>
-            </view>
+          <view class="prac-start" :class="{ busy: practiceLoading }" @tap="startPractice">
+            <text>{{ practiceLoading ? '出题中…' : '开始练习（5 题）' }}</text>
           </view>
         </scroll-view>
         <view class="modal-close" @tap="practiceOpen = false"><text>关闭</text></view>
       </view>
     </view>
+
+    <!-- 练习作答(与我的错题练同类同一套组件) -->
+    <PracticeQuiz
+      v-if="quizOpen"
+      :kp="practiceKp"
+      :questions="quizQuestions"
+      :judge="quizJudge"
+      @close="quizOpen = false"
+    />
   </view>
 </template>
 
@@ -65,9 +69,10 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { grHwBatches, grHwPoints, grCourseUnits, grCoursePoints,
          type GrammarPoint, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
-import { generateQuestions } from '@/api/practice'
+import { generateQuestions, submitAnswer } from '@/api/practice'
 import { namedGrammarLecture, type GrammarLectureSection } from '@/api/curriculum'
-import type { PracticeQuestionOut } from '@/types/api'
+import PracticeQuiz from '@/components/PracticeQuiz.vue'
+import type { PracticeQuestion } from '@/api/wrongQuestions'
 import { md2html } from '@/utils/md'
 
 const mode = ref('homework')
@@ -95,12 +100,11 @@ async function openGroup(g: any) {
 const practiceOpen = ref(false)
 const practiceLoading = ref(false)
 const practiceKp = ref('')
-const practiceList = ref<PracticeQuestionOut[]>([])
 const lectureLoading = ref(false)
 const lectureSections = ref<GrammarLectureSection[]>([])
 async function goLearn(p: GrammarPoint) {
   if (p.personal || !p.node_id) {   // 个人语法(未入图谱)→ AI 讲解(缓存)+ 按名出题
-    practiceKp.value = p.name; practiceList.value = []; lectureSections.value = []
+    practiceKp.value = p.name; quizQuestions.value = []; lectureSections.value = []
     practiceOpen.value = true; lectureLoading.value = true
     try { lectureSections.value = (await namedGrammarLecture(p.name)).sections }
     catch { /* 讲解失败静默 */ }
@@ -109,11 +113,23 @@ async function goLearn(p: GrammarPoint) {
   }
   uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${p.node_id}&name=${encodeURIComponent(p.name)}&cat=grammar` })
 }
-async function genPractice() {
+// 练一练 → 生成题 → PracticeQuiz(服务端判分,题不含答案)
+const quizOpen = ref(false)
+const quizQuestions = ref<PracticeQuestion[]>([])
+async function startPractice() {
+  if (practiceLoading.value) return
   practiceLoading.value = true
-  try { practiceList.value = await generateQuestions(practiceKp.value, 5, 3) }
-  catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
+  try {
+    const qs = await generateQuestions(practiceKp.value, 5, 3)
+    if (!qs.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
+    quizQuestions.value = qs.map(q => ({ id: q.id, stem: q.stem, options: q.options, answer: null, explanation: null }))
+    quizOpen.value = true
+  } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { practiceLoading.value = false }
+}
+async function quizJudge(q: PracticeQuestion, chosen: string) {
+  const r = await submitAnswer(q.id, chosen)
+  return { correct: r.is_correct, correct_answer: r.correct_answer, explanation: r.explanation }
 }
 async function load() {
   loading.value = true
@@ -160,6 +176,8 @@ onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
 .prac-hd { display: flex; align-items: center; justify-content: space-between; border-top: 2rpx solid var(--c-line, #eef1f5); padding-top: 14rpx; margin-top: 6rpx; }
 .prac-t { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
 .prac-btn { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
+.prac-start { margin-top: 14rpx; text-align: center; background: var(--c-primary); color: #fff; font-size: 27rpx; font-weight: 700; border-radius: 999rpx; padding: 16rpx; }
+.prac-start.busy { opacity: .6; }
 .sq { padding: 14rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
 .sq:first-child { border-top: none; }
 .sq-stem { display: block; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }

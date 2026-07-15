@@ -1,9 +1,9 @@
-<!-- 练同类·逐题作答判分(我的错题 / 作业详情 共用) -->
+<!-- 多题练习·逐题作答判分(全项目练习作答统一组件) -->
 <template>
   <view class="modal" @tap="close">
     <view class="modal-card" @tap.stop>
       <view class="modal-head">
-        <text class="modal-title">同类练习 · {{ kp }}</text>
+        <text class="modal-title">{{ kp ? '同类练习 · ' + kp : '练习' }}</text>
         <view class="modal-x" @tap.stop="close"><text>✕</text></view>
       </view>
 
@@ -22,8 +22,8 @@
               v-for="(v, oi) in cur.options"
               :key="oi"
               class="pq-opt"
-              :class="optCls(cur, v)"
-              @tap.stop="pick(cur, v)"
+              :class="optCls(cur, oi)"
+              @tap.stop="pick(cur, oi)"
             >
               <text class="opt-badge">{{ letter(oi) }}</text>
               <text class="opt-txt">{{ optText(v) }}</text>
@@ -31,21 +31,22 @@
           </view>
           <view v-if="state[cur.id]" class="pq-fb">
             <text :class="state[cur.id].correct ? 'fb-ok' : 'fb-no'">
-              {{ state[cur.id].correct ? '✓ 答对' : '✗ 答错，正确：' + optText(cur.answer || '') }}
+              {{ state[cur.id].correct ? '✓ 答对' : '✗ 答错，正确：' + fbAnswer(cur) }}
             </text>
-            <text v-if="cur.explanation" class="pq-expl">{{ cur.explanation }}</text>
+            <text v-if="state[cur.id].explanation" class="pq-expl">{{ state[cur.id].explanation }}</text>
           </view>
+          <view v-else-if="judging" class="pq-judging">判分中…</view>
         </scroll-view>
         <view class="modal-actions">
           <view
             class="modal-btn primary"
             :class="{ disabled: !state[cur.id] || saving }"
             @tap.stop="next"
-          ><text>{{ isLast ? (saving ? '结算中…' : '查看结果') : '下一题 →' }}</text></view>
+          ><text>{{ isLast ? (saving ? '结算中…' : lastLabel) : '下一题 →' }}</text></view>
         </view>
       </block>
 
-      <!-- 结果阶段 -->
+      <!-- 结果阶段(hideResult 时由页面自渲染) -->
       <block v-else-if="done">
         <view class="pr-result">
           <text class="pr-score">{{ correctCount }}/{{ questions.length }}</text>
@@ -63,40 +64,74 @@
 import { computed, reactive, ref } from 'vue'
 import type { PracticeQuestion } from '@/api/wrongQuestions'
 
+type JudgeResult = { correct: boolean; correct_answer: string; explanation?: string }
 const props = defineProps<{
   kp: string
   questions: PracticeQuestion[]
-  // 结算器:回写成绩并返回结果文案。不传则只本地统计。
+  // 结算器:整轮做完回写成绩并返回结果文案。不传则只本地统计。
   recorder?: (total: number, correct: number) => Promise<string>
+  // 服务端判分钩子:传则每题点选走它(题目不含答案的场景,如练习/自适应);不传则本地按 q.answer 判。
+  judge?: (q: PracticeQuestion, chosen: string) => Promise<JudgeResult>
+  // 页面自渲染结果页(如自适应的按考点统计):做完 emit finish + close,不显组件内结果页。
+  hideResult?: boolean
+  lastLabel?: string
 }>()
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'finish', total: number, correct: number): void }>()
 
+interface St { pickedIdx: number; correct: boolean; correctIdx: number; correctText: string; explanation: string }
 const idx = ref(0)
 const done = ref(false)
 const saving = ref(false)
+const judging = ref(false)
 const recorded = ref(false)
 const resultMsg = ref('')
-const state = reactive<Record<string, { picked: string; correct: boolean }>>({})
+const state = reactive<Record<string, St>>({})
 
 const cur = computed<PracticeQuestion | undefined>(() => props.questions[idx.value])
 const isLast = computed(() => idx.value >= props.questions.length - 1)
 const answeredCount = computed(() => Object.keys(state).length)
 const correctCount = computed(() => Object.values(state).filter(s => s.correct).length)
+const lastLabel = computed(() => props.lastLabel || '查看结果')
 const letter = (i: number) => String.fromCharCode(65 + i)
-
 function optText(v: string): string {
   return (v || '').replace(/^\s*[A-Da-d][.、)]\s*/, '')
 }
-function pick(q: PracticeQuestion, opt: string) {
-  if (state[q.id]) return
-  state[q.id] = { picked: opt, correct: (q.answer || '').trim() === opt.trim() }
+// 把「正确答案」(字母或选项原文)解析成选项下标
+function answerToIdx(ans: string, q: PracticeQuestion): number {
+  const a = (ans || '').trim()
+  if (!a || !q.options) return -1
+  const byLetter = a.toUpperCase().charCodeAt(0) - 65
+  if (a.length === 1 && byLetter >= 0 && byLetter < q.options.length) return byLetter
+  return q.options.findIndex(o => optText(o).trim() === a || (o || '').trim() === a)
 }
-function optCls(q: PracticeQuestion, opt: string): string {
+async function pick(q: PracticeQuestion, oi: number) {
+  if (state[q.id] || judging.value) return
+  if (props.judge) {
+    judging.value = true
+    try {
+      const r = await props.judge(q, letter(oi))
+      const ci = answerToIdx(r.correct_answer, q)
+      state[q.id] = { pickedIdx: oi, correct: r.correct, correctIdx: ci,
+                      correctText: r.correct_answer, explanation: r.explanation || '' }
+    } catch (e: any) { uni.showToast({ title: e?.message || '判分失败', icon: 'none' }) }
+    finally { judging.value = false }
+  } else {
+    const ci = answerToIdx(q.answer || '', q)
+    state[q.id] = { pickedIdx: oi, correct: ci === oi, correctIdx: ci,
+                    correctText: q.answer || '', explanation: q.explanation || '' }
+  }
+}
+function optCls(q: PracticeQuestion, oi: number): string {
   const st = state[q.id]
   if (!st) return ''
-  if ((q.answer || '').trim() === opt.trim()) return 'opt-correct'
-  if (st.picked === opt) return 'opt-wrong'
+  if (oi === st.correctIdx) return 'opt-correct'
+  if (oi === st.pickedIdx) return 'opt-wrong'
   return 'opt-dim'
+}
+function fbAnswer(q: PracticeQuestion): string {
+  const st = state[q.id]
+  if (st && st.correctIdx >= 0 && q.options) return optText(q.options[st.correctIdx])
+  return st ? st.correctText : ''
 }
 function dotCls(q: PracticeQuestion, i: number): string {
   if (i === idx.value) return 'cur'
@@ -119,11 +154,13 @@ async function doRecord() {
 async function next() {
   if (!cur.value || !state[cur.value.id]) return
   if (!isLast.value) { idx.value += 1; return }
+  if (props.hideResult) { emit('finish', answeredCount.value, correctCount.value); emit('close'); return }
   await doRecord()
+  emit('finish', answeredCount.value, correctCount.value)
   done.value = true
 }
 async function close() {
-  if (answeredCount.value > 0 && !recorded.value) await doRecord()
+  if (!props.hideResult && answeredCount.value > 0 && !recorded.value) await doRecord()
   emit('close')
 }
 </script>
@@ -156,6 +193,7 @@ async function close() {
 .pq-fb .fb-ok { font-size: 24rpx; color: #128a4c; font-weight: 600; }
 .pq-fb .fb-no { font-size: 24rpx; color: #c33; font-weight: 600; }
 .pq-expl { display: block; margin-top: 8rpx; font-size: 23rpx; color: var(--c-text-second); line-height: 1.6; }
+.pq-judging { margin-top: 14rpx; font-size: 24rpx; color: var(--c-text-hint); }
 .pr-result { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60rpx 0; gap: 16rpx; }
 .pr-score { font-size: 72rpx; font-weight: 800; color: var(--c-primary); }
 .pr-msg { font-size: 27rpx; color: var(--c-text-second); text-align: center; padding: 0 24rpx; line-height: 1.6; }
