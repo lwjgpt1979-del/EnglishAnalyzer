@@ -345,6 +345,40 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, word_id: uu
             "mastered": _mastered(lr)}
 
 
+def dual_mastered(lr: VocabularyLearning) -> bool:
+    """双维达标(接收+产出),错题闭环用(不含迁移;比 _mastered 少一维)。"""
+    return (float(lr.mastery_recep or 0) >= RECEP_MASTERED
+            and float(lr.mastery_prod or 0) >= PROD_MASTERED)
+
+
+async def submit_spell(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID, answer: str) -> dict:
+    """提交拼写(产出维度·错题闭环):拼对=产出正确 → 产出掌握度 prod BKT。
+    返回 {correct, correct_answer, recep, prod, prod_mastered, recep_mastered, dual_mastered}。"""
+    from app.core.exceptions import AppError
+    word = (await db.execute(sa.select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if word is None:
+        raise AppError(code=404, message="单词不存在")
+    correct = (answer or "").strip().lower() == (word.word or "").strip().lower()
+    lr = await _get_or_create_learning(db, student_id, word_id)
+    lr.mastery_prod = mastery_judge_service.bkt_update(
+        None if lr.mastery_prod is None else float(lr.mastery_prod), correct)
+    if not correct:
+        lr.is_wrong = True
+        lr.wrong_count = (lr.wrong_count or 0) + 1
+    _schedule(lr)
+    qid = uuid.uuid5(uuid.NAMESPACE_OID, f"vocab-spell:{word_id}")
+    await mastery_judge_service.log_answer(db, student_id=student_id, q_scope="platform",
+                                           question_id=qid, node_id=None, is_correct=correct,
+                                           feature="vocab_spell")
+    await db.flush()
+    recep = float(lr.mastery_recep or 0)
+    prod = float(lr.mastery_prod or 0)
+    return {"correct": correct, "correct_answer": word.word,
+            "recep": round(recep, 4), "prod": round(prod, 4),
+            "recep_mastered": recep >= RECEP_MASTERED, "prod_mastered": prod >= PROD_MASTERED,
+            "dual_mastered": dual_mastered(lr)}
+
+
 # ── 迁移项(同词新语境,区分「记住这道题」vs「会这个词」)──────────────
 def _norm(s: str | None) -> str:
     return re.sub(r"\W+", "", (s or "")).lower()

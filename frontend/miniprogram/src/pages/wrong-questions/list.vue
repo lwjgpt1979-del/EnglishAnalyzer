@@ -73,10 +73,24 @@
           <text v-if="wq.question_type" class="mini-tag">{{ wq.question_type }}</text>
         </view>
 
-        <!-- 底部:进度 + 练同类 -->
+        <!-- 底部:进度 + 主动作(语法→练同类 / 词汇→学这个词) -->
         <view class="wq-foot">
           <text class="wq-progress">{{ progressText(wq) }}</text>
-          <view class="prac-btn" :class="{ loading: pracLoading === wq.id }" @tap.stop="practiceWrong(wq)">
+          <view
+            v-if="wq.kp_kind === 'vocab'"
+            class="prac-btn"
+            :class="{ loading: vlLoading === wq.id }"
+            @tap.stop="learnVocab(wq)"
+          >
+            <view class="ic ic-book prac-ic" />
+            <text>{{ vlLoading === wq.id ? '打开中…' : '学这个词' }}</text>
+          </view>
+          <view
+            v-else
+            class="prac-btn"
+            :class="{ loading: pracLoading === wq.id }"
+            @tap.stop="practiceWrong(wq)"
+          >
             <view class="ic ic-sparkle prac-ic" />
             <text>{{ pracLoading === wq.id ? '出题中…' : '练同类' }}</text>
           </view>
@@ -141,13 +155,88 @@
         </view>
       </view>
     </view>
+
+    <!-- 词汇错题「学这个词」词力通双维闭环 -->
+    <view v-if="vlOpen && vl" class="modal" @tap.self="vlOpen = false">
+      <view class="modal-card">
+        <view class="modal-head">
+          <text class="modal-title">学这个词</text>
+          <text class="modal-score">接收 {{ pct(vlRecep) }}% · 产出 {{ pct(vlProd) }}%</text>
+        </view>
+
+        <!-- 双维进度条 -->
+        <view class="vl-bars">
+          <view class="vl-bar">
+            <text class="vl-bar-l">接收</text>
+            <view class="vl-track"><view class="vl-fill recep" :style="{ width: pct(vlRecep) + '%' }" /></view>
+            <text class="vl-bar-n" :class="{ ok: vlRecep >= RECEP_θ }">{{ vlRecep >= RECEP_θ ? '达标' : pct(vlRecep) + '%' }}</text>
+          </view>
+          <view class="vl-bar">
+            <text class="vl-bar-l">产出</text>
+            <view class="vl-track"><view class="vl-fill prod" :style="{ width: pct(vlProd) + '%' }" /></view>
+            <text class="vl-bar-n" :class="{ ok: vlProd >= RECEP_θ }">{{ vlProd >= RECEP_θ ? '达标' : pct(vlProd) + '%' }}</text>
+          </view>
+        </view>
+
+        <scroll-view scroll-y class="modal-body">
+          <!-- 单词卡 -->
+          <view class="vl-card">
+            <view class="vl-word-row">
+              <text class="vl-word">{{ vl.word.word }}</text>
+              <text v-if="vl.word.phonetic" class="vl-phon">/{{ vl.word.phonetic }}/</text>
+              <view v-if="vl.word.audio_url" class="vl-audio" @tap="playWordAudio"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /></view>
+            </view>
+            <text v-if="defZh()" class="vl-def">{{ defZh() }}</text>
+            <text v-if="vl.word.examples && vl.word.examples.length" class="vl-eg">{{ vl.word.examples[0].en }}</text>
+          </view>
+
+          <!-- 接收探针 -->
+          <view v-for="probe in vl.recep_probes" :key="probe.key" class="pq">
+            <text class="pq-stem">{{ probe.prompt }}</text>
+            <view class="pq-opts">
+              <view
+                v-for="(opt, oi) in probe.options"
+                :key="oi"
+                class="pq-opt"
+                :class="receptCls(probe, opt)"
+                @tap="pickRecep(probe, opt)"
+              >{{ opt }}</view>
+            </view>
+          </view>
+
+          <!-- 拼写产出 -->
+          <view class="pq">
+            <text class="pq-stem">{{ vl.spell_prompt }}</text>
+            <input
+              class="vl-spell-input"
+              :value="vlSpellInput"
+              :disabled="!!vlSpellDone"
+              placeholder="拼出这个单词"
+              @input="vlSpellInput = $event.detail.value"
+            />
+            <view v-if="!vlSpellDone" class="vl-spell-btn" :class="{ disabled: !vlSpellInput.trim() || vlSaving }" @tap="submitSpell">
+              <text>{{ vlSaving ? '判分中…' : '提交拼写' }}</text>
+            </view>
+            <view v-else class="pq-fb">
+              <text :class="vlSpellDone.correct ? 'fb-ok' : 'fb-no'">
+                {{ vlSpellDone.correct ? '✓ 拼对' : '✗ 拼错，正确：' + vlSpellDone.answer }}
+              </text>
+            </view>
+          </view>
+        </scroll-view>
+
+        <view class="modal-actions">
+          <view class="modal-btn ghost" @tap="vlOpen = false"><text>完成</text></view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, recordPracticeResult, type WrongCenterItem, type WrongCenterCounts, type PracticeQuestion } from '@/api/wrongQuestions'
+import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabLearn, submitVocabRecep, submitVocabSpell, type WrongCenterItem, type WrongCenterCounts, type PracticeQuestion, type VocabLearnPayload, type VocabProbe } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -202,6 +291,78 @@ async function finishPractice() {
   } catch (e: any) {
     uni.showToast({ title: e?.message || '保存失败', icon: 'none' })
   } finally { pracSaving.value = false }
+}
+
+// ── 词汇错题「学这个词」词力通双维闭环(P3)──
+const vlOpen = ref(false)
+const vlLoading = ref('')
+const vlSaving = ref(false)
+const vl = ref<VocabLearnPayload | null>(null)
+const vlProbeState = reactive<Record<string, { picked: string; correct: boolean; answer: string }>>({})
+const vlSpellInput = ref('')
+const vlSpellDone = ref<{ correct: boolean; answer: string } | null>(null)
+const vlRecep = ref(0)
+const vlProd = ref(0)
+const RECEP_θ = 0.85
+const pct = (x: number) => Math.min(100, Math.round(x * 100))
+
+async function learnVocab(wq: WrongCenterItem) {
+  if (vlLoading.value) return
+  vlLoading.value = wq.id
+  try {
+    const p = await getVocabLearn(wq.id)
+    vl.value = p
+    vlRecep.value = p.recep; vlProd.value = p.prod
+    Object.keys(vlProbeState).forEach(k => delete vlProbeState[k])
+    vlSpellInput.value = ''; vlSpellDone.value = null
+    vlOpen.value = true
+  } catch (e: any) { uni.showToast({ title: e?.message || '打开失败', icon: 'none' }) }
+  finally { vlLoading.value = '' }
+}
+function defZh(): string {
+  const d = vl.value?.word.definitions
+  if (Array.isArray(d) && d.length && typeof d[0] === 'object') return d[0].zh || d[0].en || ''
+  return ''
+}
+async function pickRecep(probe: VocabProbe, opt: string) {
+  if (!vl.value || vlProbeState[probe.key]) return
+  try {
+    const r = await submitVocabRecep(vl.value.wrong_record_id, probe.key, opt)
+    vlProbeState[probe.key] = { picked: opt, correct: r.correct, answer: r.correct_answer }
+    vlRecep.value = r.recep; vlProd.value = r.prod
+    afterVocab(r.just_mastered)
+  } catch (e: any) { uni.showToast({ title: e?.message || '提交失败', icon: 'none' }) }
+}
+function receptCls(probe: VocabProbe, opt: string): string {
+  const st = vlProbeState[probe.key]
+  if (!st) return ''
+  if (opt === st.answer) return 'opt-correct'
+  if (st.picked === opt) return 'opt-wrong'
+  return ''
+}
+async function submitSpell() {
+  if (!vl.value || vlSaving.value || vlSpellDone.value || !vlSpellInput.value.trim()) return
+  vlSaving.value = true
+  try {
+    const r = await submitVocabSpell(vl.value.wrong_record_id, vlSpellInput.value.trim())
+    vlSpellDone.value = { correct: r.correct, answer: r.correct_answer }
+    vlRecep.value = r.recep; vlProd.value = r.prod
+    afterVocab(r.just_mastered)
+  } catch (e: any) { uni.showToast({ title: e?.message || '提交失败', icon: 'none' }) }
+  finally { vlSaving.value = false }
+}
+function afterVocab(justMastered: boolean) {
+  loadCounts()
+  if (justMastered) {
+    uni.showToast({ title: '🎉 这个词已掌握！', icon: 'none' })
+    setTimeout(() => { vlOpen.value = false; reload() }, 900)
+  }
+}
+function playWordAudio() {
+  const url = vl.value?.word.audio_url
+  if (!url) return
+  const ctx = uni.createInnerAudioContext()
+  ctx.src = url; ctx.play()
 }
 
 // 点击错题来源 → 回到来源(整卷详情/作业详情);navigateTo 入栈,原生返回即「立即回来」
@@ -456,6 +617,29 @@ async function loadMore() {
 .modal-btn.ghost { background: var(--c-bg-soft); color: var(--c-text-second); }
 .modal-btn.primary { background: var(--c-primary); color: #fff; }
 .modal-btn.disabled { opacity: 0.5; }
+
+/* 词汇学词双维进度 */
+.vl-bars { display: flex; flex-direction: column; gap: 10rpx; margin: 14rpx 0 4rpx; }
+.vl-bar { display: flex; align-items: center; gap: 12rpx; }
+.vl-bar-l { font-size: 22rpx; color: var(--c-text-second); width: 56rpx; }
+.vl-track { flex: 1; height: 14rpx; background: #eef1f5; border-radius: 999rpx; overflow: hidden; }
+.vl-fill { height: 100%; border-radius: 999rpx; }
+.vl-fill.recep { background: #3d8bf5; }
+.vl-fill.prod { background: #ff8a3d; }
+.vl-bar-n { font-size: 21rpx; color: var(--c-text-hint); width: 72rpx; text-align: right; }
+.vl-bar-n.ok { color: #18a058; font-weight: 700; }
+/* 单词卡 */
+.vl-card { background: var(--c-bg-page); border-radius: 16rpx; padding: 20rpx; margin-bottom: 8rpx; }
+.vl-word-row { display: flex; align-items: baseline; gap: 14rpx; }
+.vl-word { font-size: 40rpx; font-weight: 800; color: var(--c-ink); }
+.vl-phon { font-size: 24rpx; color: var(--c-text-second); }
+.vl-audio { margin-left: auto; }
+.vl-def { display: block; margin-top: 10rpx; font-size: 27rpx; color: var(--c-ink); }
+.vl-eg { display: block; margin-top: 8rpx; font-size: 24rpx; color: var(--c-text-second); line-height: 1.5; }
+/* 拼写 */
+.vl-spell-input { margin-top: 12rpx; height: 76rpx; background: var(--c-bg-page); border: 2rpx solid var(--c-border); border-radius: 12rpx; padding: 0 20rpx; font-size: 28rpx; }
+.vl-spell-btn { margin-top: 12rpx; text-align: center; background: var(--c-primary); color: #fff; font-size: 26rpx; font-weight: 700; border-radius: 999rpx; padding: 14rpx; }
+.vl-spell-btn.disabled { opacity: 0.5; }
 .src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0 10rpx; }
 .src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
 .src-tab.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }

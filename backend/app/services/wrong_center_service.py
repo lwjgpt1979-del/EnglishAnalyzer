@@ -219,6 +219,120 @@ async def record_practice_result(
     }
 
 
+# ── 词汇错题 → 词力通双维闭环(P3)────────────────────────────────────────────
+async def _resolve_vocab_word(db: AsyncSession, wr: "WrongRecord"):
+    """定位这道词汇错题考查的目标词:优先 correct_answer 命中词库,否则题干里首个命中词。
+    命中后缓存到 wr.vocab_word_id;进词力通统一错词本(is_wrong)。返回 VocabularyWord|None。"""
+    from app.models.d5_learning import VocabularyWord
+    from app.services.vocab_pin_service import _words_from_text
+    if wr.vocab_word_id:
+        return await db.get(VocabularyWord, wr.vocab_word_id)
+    cands: list[str] = []
+    if (wr.correct_answer or "").strip():
+        cands.append(wr.correct_answer.strip())
+    cands += _words_from_text(f"{wr.correct_answer or ''} {wr.stem or ''}")
+    for c in cands:
+        w = (await db.execute(sa.select(VocabularyWord).where(
+            sa.func.lower(VocabularyWord.word) == c.lower()))).scalar_one_or_none()
+        if w is not None:
+            wr.vocab_word_id = w.id
+            await db.flush()
+            return w
+    return None
+
+
+async def _sync_vocab_wrong_mastery(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID) -> bool:
+    """该词双维(接收+产出)达标 → 把该生指向此词的 open 词汇错题全部判掌握(source=vocab)。返回是否判掌握。"""
+    import datetime as _dt
+    from app.services.vocab_probe_service import dual_mastered, _get_or_create_learning
+    lr = await _get_or_create_learning(db, student_id, word_id)
+    if not dual_mastered(lr):
+        return False
+    await db.execute(
+        sa.update(WrongRecord)
+        .where(WrongRecord.student_id == student_id, WrongRecord.vocab_word_id == word_id,
+               WrongRecord.status == "open")
+        .values(status="mastered", mastered_at=_dt.datetime.now(_dt.timezone.utc),
+                mastery_source="vocab"))
+    await db.flush()
+    return True
+
+
+async def _vocab_wr_and_word(db, student_id, wrong_record_id):
+    from app.core.exceptions import AppError
+    wr = await db.get(WrongRecord, wrong_record_id)
+    if wr is None or wr.student_id != student_id:
+        raise AppError(code=404, message="错题不存在或无权访问")
+    if wr.kp_kind != "vocab":
+        raise AppError(code=400, message="非词汇错题")
+    word = await _resolve_vocab_word(db, wr)
+    if word is None:
+        raise AppError(code=400, message="未能定位到这道题考查的单词")
+    return wr, word
+
+
+async def vocab_learn_payload(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID) -> dict:
+    """词汇错题「学这个词」:单词卡(无媒体即时生成)+ 接收探针 + 拼写提示 + 当前双维进度。"""
+    from app.services import vocab_media_service, vocab_probe_service
+    wr, word = await _vocab_wr_and_word(db, student_id, wrong_record_id)
+    # 查看即生成媒体(幂等)+ 进词力通统一错词本
+    try:
+        await vocab_media_service.ensure_word_media(db, word_id=word.id)
+        word = await db.get(type(word), word.id)   # 取回可能被填充的媒体
+    except Exception:  # noqa: BLE001
+        pass
+    lr = await vocab_probe_service._get_or_create_learning(db, student_id, word.id)
+    lr.is_wrong = True
+    await db.flush()
+    probes = await vocab_probe_service.comprehension_probes(db, student_id=student_id, word=word)
+    defs = word.definitions if isinstance(word.definitions, list) else []
+    zh = (defs[0].get("zh") if defs and isinstance(defs[0], dict) else None) or ""
+    recep = float(lr.mastery_recep or 0)
+    prod = float(lr.mastery_prod or 0)
+    return {
+        "wrong_record_id": str(wr.id),
+        "word": {
+            "id": str(word.id), "word": word.word, "phonetic": word.phonetic,
+            "definitions": defs, "examples": word.examples or [],
+            "audio_url": word.word_audio_url, "image_urls": getattr(word, "image_urls", None),
+        },
+        "recep_probes": [p for p in probes.get("probes", []) if p.get("kind") == "sense"] or probes.get("probes", []),
+        "spell_prompt": f"根据释义拼出单词：{zh}" if zh else "根据发音/释义拼出这个单词",
+        "recep": round(recep, 4), "prod": round(prod, 4),
+        "recep_mastered": recep >= vocab_probe_service.RECEP_MASTERED,
+        "prod_mastered": prod >= vocab_probe_service.PROD_MASTERED,
+        "mastered": wr.status == "mastered",
+    }
+
+
+async def submit_vocab_recep(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
+                             key: str, answer: str) -> dict:
+    """接收探针作答 → 词力通 recep BKT;词汇错题进巩固中;双维达标则判掌握。"""
+    from app.services import vocab_probe_service
+    wr, word = await _vocab_wr_and_word(db, student_id, wrong_record_id)
+    res = await vocab_probe_service.submit_probe(db, student_id=student_id, word_id=word.id, key=key, answer=answer)
+    wr.practice_count = (wr.practice_count or 0) + 1
+    wr.practice_correct = (wr.practice_correct or 0) + (1 if res.get("correct") else 0)
+    mastered = await _sync_vocab_wrong_mastery(db, student_id=student_id, word_id=word.id)
+    await db.flush()
+    return {**res, "lifecycle": _lifecycle_of(wr), "wrong_mastered": wr.status == "mastered",
+            "just_mastered": mastered}
+
+
+async def submit_vocab_spell(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
+                             answer: str) -> dict:
+    """拼写作答(产出维度)→ 词力通 prod BKT;词汇错题进巩固中;双维达标则判掌握。"""
+    from app.services import vocab_probe_service
+    wr, word = await _vocab_wr_and_word(db, student_id, wrong_record_id)
+    res = await vocab_probe_service.submit_spell(db, student_id=student_id, word_id=word.id, answer=answer)
+    wr.practice_count = (wr.practice_count or 0) + 1
+    wr.practice_correct = (wr.practice_correct or 0) + (1 if res.get("correct") else 0)
+    mastered = await _sync_vocab_wrong_mastery(db, student_id=student_id, word_id=word.id)
+    await db.flush()
+    return {**res, "lifecycle": _lifecycle_of(wr), "wrong_mastered": wr.status == "mastered",
+            "just_mastered": mastered}
+
+
 async def practice_for_wrong(
     db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
     count: int = 5, difficulty: int = 3,

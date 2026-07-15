@@ -88,6 +88,35 @@ async def practice_result(
     return make_ok(r)
 
 
+@router.get("/vocab-learn/{wrong_record_id}", response_model=BaseResponse[dict])
+async def vocab_learn(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """词汇错题「学这个词」:单词卡 + 接收探针 + 拼写提示 + 双维进度。"""
+    r = await wrong_center_service.vocab_learn_payload(
+        db, student_id=current_user.id, wrong_record_id=wrong_record_id)
+    await db.commit()
+    return make_ok(r)
+
+
+@router.post("/vocab-recep/{wrong_record_id}", response_model=BaseResponse[dict])
+async def vocab_recep(wrong_record_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
+    """接收探针作答 → recep BKT。body: {key, answer}"""
+    r = await wrong_center_service.submit_vocab_recep(
+        db, student_id=current_user.id, wrong_record_id=wrong_record_id,
+        key=str(body.get("key", "")), answer=str(body.get("answer", "")))
+    await db.commit()
+    return make_ok(r)
+
+
+@router.post("/vocab-spell/{wrong_record_id}", response_model=BaseResponse[dict])
+async def vocab_spell(wrong_record_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
+    """拼写作答(产出)→ prod BKT;双维达标则判掌握。body: {answer}"""
+    r = await wrong_center_service.submit_vocab_spell(
+        db, student_id=current_user.id, wrong_record_id=wrong_record_id,
+        answer=str(body.get("answer", "")))
+    await db.commit()
+    return make_ok(r)
+
+
 @router.get("/review-queue", response_model=BaseResponse[WrongReviewQueueOut])
 async def review_queue(db: DbDep, current_user: UserDep):
     """今日待复习错题队列(KP-First / wrong_record)。"""

@@ -117,6 +117,26 @@ export function recordPracticeResult(wrongRecordId: string, total: number, corre
   return request(`/api/v1/wrong-center/practice-result/${wrongRecordId}`, { method: 'POST', data: { total, correct } })
 }
 
+/** 词汇错题「学这个词」词力通双维闭环(P3) */
+export interface VocabProbe { key: string; kind: string; prompt: string; options: string[] }
+export interface VocabLearnPayload {
+  wrong_record_id: string
+  word: { id: string; word: string; phonetic: string | null; definitions: any[]; examples: any[]; audio_url: string | null; image_urls: string[] | null }
+  recep_probes: VocabProbe[]
+  spell_prompt: string
+  recep: number; prod: number; recep_mastered: boolean; prod_mastered: boolean; mastered: boolean
+}
+export function getVocabLearn(wrongRecordId: string): Promise<VocabLearnPayload> {
+  return request(`/api/v1/wrong-center/vocab-learn/${wrongRecordId}`, { method: 'GET' })
+}
+export interface VocabProbeResult { correct: boolean; correct_answer: string; recep: number; prod: number; recep_mastered: boolean; prod_mastered: boolean; dual_mastered: boolean; lifecycle: string; wrong_mastered: boolean; just_mastered: boolean }
+export function submitVocabRecep(wrongRecordId: string, key: string, answer: string): Promise<VocabProbeResult> {
+  return request(`/api/v1/wrong-center/vocab-recep/${wrongRecordId}`, { method: 'POST', data: { key, answer } })
+}
+export function submitVocabSpell(wrongRecordId: string, answer: string): Promise<VocabProbeResult> {
+  return request(`/api/v1/wrong-center/vocab-spell/${wrongRecordId}`, { method: 'POST', data: { answer } })
+}
+
 /** 复习队列：客观重做那道错题（答对推进 SM-2，答错归零重排） */
 export function submitReview(wqId: string, userAnswer: string): Promise<RedoResult> {
   return request<RedoResult>(`/api/v1/wrong-questions/${wqId}/review`, {
