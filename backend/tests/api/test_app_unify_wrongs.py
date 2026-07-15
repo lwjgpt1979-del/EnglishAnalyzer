@@ -27,7 +27,6 @@ async def _cleanup(uid):
         await db.execute(text("DELETE FROM wrong_record WHERE student_id = :s"), {"s": str(uid)})
         await db.execute(text("DELETE FROM student_kp WHERE student_id = :s"), {"s": str(uid)})
         await db.execute(text("DELETE FROM listening_wrong_questions WHERE student_id = :s"), {"s": str(uid)})
-        await db.execute(text("DELETE FROM wrong_questions WHERE student_id = :s"), {"s": str(uid)})
         await db.execute(text("DELETE FROM users WHERE id = :s"), {"s": str(uid)})
         await db.commit()
 

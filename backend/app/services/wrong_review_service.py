@@ -1,6 +1,6 @@
 """R3.4 错题复习(KP-First):基于 wrong_record 的 SM-2 复习队列/提交。
 
-复用 review_service.sm2_update 纯算法;数据载体从旧 wrong_questions 切到 wrong_record。
+内置 SM-2 纯算法(sm2_update);数据载体为 wrong_record(旧 wrong_questions 已下线)。
 今日队列:status=open AND next_review_at <= today。复习提交按 SM-2 调度;
 quality≥4 且 review_count≥3 且 interval≥21 → 判掌握(mastery_source=review)。
 """
@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import uuid
+from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -15,10 +17,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d16_question_domain import WrongRecord
-from app.services.review_service import sm2_update
 
 _MAX_DAILY_QUEUE = 20
 _MASTER_MIN_INTERVAL = 21       # 连续高质量且间隔≥21天 → 判长期掌握
+_MIN_EASINESS = Decimal("1.30")
+
+
+# ── SM-2 纯算法(无 DB 依赖,便于单元测试;原 review_service.sm2_update,随旧表下线内联)──
+
+@dataclass
+class SM2Result:
+    review_count: int
+    easiness_factor: Decimal
+    review_interval_days: int
+    next_review_at: date
+
+
+def sm2_update(
+    *,
+    quality: int,                   # 0-5
+    review_count: int,
+    easiness_factor: Decimal,
+    review_interval_days: int,
+    today: date | None = None,
+) -> SM2Result:
+    """计算下一次复习参数。quality 必须在 0-5 之间。"""
+    if not (0 <= quality <= 5):
+        raise ValueError(f"quality must be 0-5, got {quality}")
+    today = today or date.today()
+    if quality < 3:
+        # 质量太低:重置复习轮次,明天再复习(遗忘不降低难度系数)
+        new_count, new_interval, new_ef = 0, 1, easiness_factor
+    else:
+        q = Decimal(str(quality))
+        delta = Decimal("0.1") - (Decimal("5") - q) * (
+            Decimal("0.08") + (Decimal("5") - q) * Decimal("0.02"))
+        new_ef = max(_MIN_EASINESS, easiness_factor + delta)
+        if review_count == 0:
+            new_interval = 1
+        elif review_count == 1:
+            new_interval = 6
+        else:
+            new_interval = max(1, round(float(review_interval_days) * float(new_ef)))
+        new_count = review_count + 1
+    return SM2Result(
+        review_count=new_count,
+        easiness_factor=new_ef,
+        review_interval_days=new_interval,
+        next_review_at=today + timedelta(days=new_interval),
+    )
 
 
 async def get_due_queue(

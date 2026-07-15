@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d1_users import Teacher, TeacherStudent
-from app.models.d3_wrong_questions import TeacherComment
 from app.models.d9_system import SystemConfig
 
 _KEY = "teacher_limits"
@@ -108,9 +107,8 @@ async def _paper_used(db: AsyncSession, teacher_id: uuid.UUID, since: dt.datetim
 
 
 async def _grading_used(db: AsyncSession, teacher_id: uuid.UUID, since: dt.datetime) -> int:
-    return int(await db.scalar(
-        select(func.count()).select_from(TeacherComment).where(
-            TeacherComment.teacher_id == teacher_id, TeacherComment.created_at >= since)) or 0)
+    # 错题批注(TeacherComment)功能已随拍照单题下线,批改额度不再消耗 → 0
+    return 0
 
 
 async def quota_overview(db: AsyncSession, *, teacher_id: uuid.UUID) -> dict:

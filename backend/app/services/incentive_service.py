@@ -13,7 +13,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d3_wrong_questions import WrongQuestion
+from app.models.d16_question_domain import WrongRecord
 from app.models.d5_learning import SpeakingSession, StudyCheckin
 import sqlalchemy as sa
 
@@ -56,9 +56,9 @@ async def get_summary(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
     )).scalar() or 0)
 
     wrong_mastered = int((await db.execute(
-        select(func.count()).select_from(WrongQuestion).where(
-            WrongQuestion.student_id == student_id,
-            WrongQuestion.is_mastered.is_(True),
+        select(func.count()).select_from(WrongRecord).where(
+            WrongRecord.student_id == student_id,
+            WrongRecord.status == "mastered",
         )
     )).scalar() or 0)
 

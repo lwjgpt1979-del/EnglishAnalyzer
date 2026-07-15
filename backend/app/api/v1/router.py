@@ -9,7 +9,6 @@ from app.api.v1.invoices import router as invoices_router
 from app.api.v1.upload import router as upload_router
 from app.api.v1.users import router as users_router
 from app.api.v1.webhooks import router as webhooks_router
-from app.api.v1.ocr import router as ocr_router
 from app.api.v1.practice import router as practice_router
 from app.api.v1.teacher import router as teacher_router
 from app.api.v1.wrong_questions import router as wrong_questions_router
@@ -66,7 +65,6 @@ v1_router.include_router(invoices_router)
 v1_router.include_router(webhooks_router)
 v1_router.include_router(diagnosis_router)
 v1_router.include_router(upload_router)
-v1_router.include_router(ocr_router)
 v1_router.include_router(teacher_router)
 v1_router.include_router(practice_router)
 v1_router.include_router(notifications_router)

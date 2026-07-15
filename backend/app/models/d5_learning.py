@@ -243,9 +243,8 @@ class Essay(Base):
     student_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
     )
-    wrong_question_id = mapped_column(
-        UUID(as_uuid=True), sa.ForeignKey("wrong_questions.id"), nullable=True
-    )
+    # 旧 wrong_questions 已下线;保留列(历史数据),去掉 FK
+    wrong_question_id = mapped_column(UUID(as_uuid=True), nullable=True)
     original_text = mapped_column(sa.Text, nullable=False)
     polished_text = mapped_column(sa.Text, nullable=True)
     dimensions = mapped_column(JSONB, nullable=True)

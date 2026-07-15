@@ -25,7 +25,6 @@ from .d2_payments import (  # noqa: F401
 )
 
 # 域3: 错题与 AI 诊断 (4 张表)
-from .d3_wrong_questions import WrongQuestion, OcrTask, AiAnalysis, TeacherComment  # noqa: F401
 
 # 域4: 知识体系(R8 Phase6c 退役 knowledge_points/unit_knowledge_points/wrong_question_knowledge_points)
 from .d4_knowledge import (  # noqa: F401

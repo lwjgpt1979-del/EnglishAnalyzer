@@ -16,7 +16,6 @@ from datetime import datetime, time, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d3_wrong_questions import WrongQuestion
 from app.models.d5_learning import StudyCheckin
 from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d16_question_domain import AnswerLog
@@ -135,8 +134,8 @@ async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPla
         ))
 
     # 待复习错题：按 SM-2 遗忘曲线取「今日到期 + 新错题」，而非全部未掌握（M12）
-    from app.services import review_service
-    rstats = await review_service.get_review_stats(db, student_id=student_id)
+    from app.services import wrong_review_service
+    rstats = await wrong_review_service.review_stats(db, student_id=student_id)
     review_pending = int(rstats["due_today"]) + int(rstats["new_unscheduled"])
     if review_pending > 0:
         tasks.append(PlanTask(

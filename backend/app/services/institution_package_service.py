@@ -141,11 +141,8 @@ async def _paper_used(db: AsyncSession, institution_id: uuid.UUID, since: dt.dat
 
 
 async def _grading_used(db: AsyncSession, institution_id: uuid.UUID, since: dt.datetime) -> int:
-    from app.models.d3_wrong_questions import TeacherComment
-    return int(await db.scalar(
-        select(func.count()).select_from(TeacherComment)
-        .join(Teacher, Teacher.id == TeacherComment.teacher_id)
-        .where(Teacher.institution_id == institution_id, TeacherComment.created_at >= since)) or 0)
+    # 错题批注(TeacherComment)已随拍照单题下线,机构批改池不再消耗 → 0
+    return 0
 
 
 async def usage_overview(db: AsyncSession, *, institution_id: uuid.UUID) -> dict:

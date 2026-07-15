@@ -51,38 +51,7 @@
       <view v-if="wq.question_text" class="wq-text">{{ wq.question_text }}</view>
       <view class="wq-meta">
         <text>{{ wq.question_type || '未知题型' }}</text>
-        <text v-if="wq.difficulty"> · 难度 {{ wq.difficulty }}</text>
         <text> · {{ wq.is_mastered ? '✅已掌握' : '⏳待掌握' }}</text>
-      </view>
-
-      <!-- 批注输入 -->
-      <view class="comment-section">
-        <textarea
-          v-model="commentDraft[wq.id]"
-          class="comment-input"
-          placeholder="为这道题添加批注…"
-          maxlength="500"
-        />
-        <button
-          size="mini"
-          class="btn-comment"
-          :disabled="submitting[wq.id]"
-          @tap="submitComment(wq.id)"
-        >
-          {{ submitting[wq.id] ? '提交中…' : '提交批注' }}
-        </button>
-      </view>
-
-      <!-- 已有批注 -->
-      <view v-if="existingComments[wq.id]?.length" class="existing-comments">
-        <view
-          v-for="c in existingComments[wq.id]"
-          :key="c.id"
-          class="comment-item"
-        >
-          <text class="comment-text">{{ c.comment_text }}</text>
-          <text class="comment-time">{{ c.created_at.slice(0, 16).replace('T', ' ') }}</text>
-        </view>
       </view>
     </view>
 
@@ -90,17 +59,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
-import { getStudentWrongQuestions, addComment, getComments, getStudentSpeakingStats, getStudentVocabOverview, type SpeakStats, type StudentVocabOverview } from '@/api/teacher'
-import type { WrongQuestionOut, TeacherCommentOut } from '@/types/api'
+import { ref, onMounted } from 'vue'
+import { getStudentWrongQuestions, getStudentSpeakingStats, getStudentVocabOverview, type SpeakStats, type StudentVocabOverview } from '@/api/teacher'
+import type { WrongQuestionOut } from '@/types/api'
 
 const wqs = ref<WrongQuestionOut[]>([])
 const speakStats = ref<SpeakStats | null>(null)
 const vocab = ref<StudentVocabOverview | null>(null)
 const loading = ref(true)
-const commentDraft = reactive<Record<string, string>>({})
-const submitting = reactive<Record<string, boolean>>({})
-const existingComments = reactive<Record<string, TeacherCommentOut[]>>({})
 const studentId = ref('')
 
 function goReport() { uni.navigateTo({ url: `/pages/teacher/student-diagnosis?studentId=${studentId.value}` }) }
@@ -120,37 +86,10 @@ onMounted(async () => {
   getStudentVocabOverview(sid).then(v => { vocab.value = v }).catch(() => { vocab.value = null })
   try {
     wqs.value = await getStudentWrongQuestions(sid)
-    await Promise.all(
-      wqs.value.map(async (wq) => {
-        try {
-          existingComments[wq.id] = await getComments(wq.id)
-        } catch { /* 忽略 */ }
-      })
-    )
   } finally {
     loading.value = false
   }
 })
-
-async function submitComment(wqId: string) {
-  const text = (commentDraft[wqId] || '').trim()
-  if (!text) {
-    uni.showToast({ title: '请输入批注内容', icon: 'none' })
-    return
-  }
-  submitting[wqId] = true
-  try {
-    const newComment = await addComment(wqId, text)
-    commentDraft[wqId] = ''
-    if (!existingComments[wqId]) existingComments[wqId] = []
-    existingComments[wqId].push(newComment)
-    uni.showToast({ title: '批注成功', icon: 'success' })
-  } catch (e: any) {
-    uni.showToast({ title: e?.message || '提交失败', icon: 'none' })
-  } finally {
-    submitting[wqId] = false
-  }
-}
 </script>
 
 <style scoped>

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AppError
 from app.models.d1_users import Institution, InviteCode, Student, Teacher, User
 from app.models.d2_payments import InstitutionPurchase, Membership
-from app.models.d3_wrong_questions import WrongQuestion
+from app.models.d16_question_domain import WrongRecord
 from app.models.d5_learning import StudyCheckin
 
 _CODE_CHARS = string.ascii_uppercase + string.digits
@@ -76,9 +76,9 @@ async def get_overview(db: AsyncSession, *, institution_id: uuid.UUID) -> dict:
         StudyCheckin.student_id.in_(student_ids),
         StudyCheckin.checkin_date >= since_date,
     )
-    active_wq = select(WrongQuestion.student_id.label("student_id")).where(
-        WrongQuestion.student_id.in_(student_ids),
-        WrongQuestion.created_at >= since,
+    active_wq = select(WrongRecord.student_id.label("student_id")).where(
+        WrongRecord.student_id.in_(student_ids),
+        WrongRecord.created_at >= since,
     )
     active_ids = active_checkin.union(active_wq).subquery()
     active_7d_count = (await db.execute(

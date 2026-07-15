@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.d3_wrong_questions import AiAnalysis, WrongQuestion
+from app.models.d16_question_domain import WrongRecord
 from app.schemas.diagnosis import (
     DailyActivity,
     DiagnosisReport,
@@ -80,36 +80,25 @@ async def get_diagnosis_report(
 ) -> DiagnosisReport:
     """聚合学生学情数据，返回诊断报告。只读，不修改数据库。"""
 
-    # ── 1. 加载数据 ──────────────────────────────────────────────────────────
-    wqs_result = await db.execute(
-        select(WrongQuestion).where(WrongQuestion.student_id == student_id)
+    # ── 1. 加载数据(统一错题中枢 wrong_record;拍照单题 AI 诊断已下线,不再读 AiAnalysis)──
+    wrs_result = await db.execute(
+        select(WrongRecord).where(WrongRecord.student_id == student_id)
     )
-    wqs: list[WrongQuestion] = list(wqs_result.scalars().all())
-
-    analyses_result = await db.execute(
-        select(AiAnalysis)
-        .where(AiAnalysis.student_id == student_id)
-        .order_by(AiAnalysis.created_at.desc())
-    )
-    analyses: list[AiAnalysis] = list(analyses_result.scalars().all())
+    wrs: list[WrongRecord] = list(wrs_result.scalars().all())
 
     # ── 2. 总览 ──────────────────────────────────────────────────────────────
-    total_questions = len(wqs)
-    mastered_count = sum(1 for wq in wqs if wq.is_mastered)
+    total_questions = len(wrs)
+    mastered_count = sum(1 for wr in wrs if wr.status == "mastered")
     mastery_rate = round(mastered_count / total_questions, 4) if total_questions > 0 else 0.0
 
-    analyzed_wq_ids = {a.wrong_question_id for a in analyses}
-    total_analyzed = len(analyzed_wq_ids)
+    total_analyzed = 0   # 旧 AI 逐题诊断已退休
 
-    # ── 3. 错误类型 & 知识点（Counter 聚合）──────────────────────────────────
+    # ── 3. 薄弱知识点(按错题的归类名聚合;错误类型旧诊断退休后无来源)──────────
     error_type_counter: Counter[str] = Counter()
     kp_counter: Counter[str] = Counter()
-
-    for a in analyses:
-        if a.error_types:
-            error_type_counter.update(a.error_types)
-        if a.knowledge_points:
-            kp_counter.update(a.knowledge_points)
+    for wr in wrs:
+        if wr.kp_name:
+            kp_counter.update([wr.kp_name])
 
     top_error_types = [
         ErrorTypeCount(error_type=et, count=c)
@@ -120,18 +109,14 @@ async def get_diagnosis_report(
         for kp, c in kp_counter.most_common(_TOP_N)
     ]
 
-    # ── 4. 题型 & 难度分布 ────────────────────────────────────────────────────
+    # ── 4. 题型分布(wrong_record 无难度分层,留空)──────────────────────────
     question_type_distribution: dict[str, int] = {}
     difficulty_distribution: dict[int, int] = {}
 
-    for wq in wqs:
-        if wq.question_type is not None:
-            question_type_distribution[wq.question_type] = (
-                question_type_distribution.get(wq.question_type, 0) + 1
-            )
-        if wq.difficulty is not None:
-            difficulty_distribution[wq.difficulty] = (
-                difficulty_distribution.get(wq.difficulty, 0) + 1
+    for wr in wrs:
+        if wr.question_type is not None:
+            question_type_distribution[wr.question_type] = (
+                question_type_distribution.get(wr.question_type, 0) + 1
             )
 
     # ── 5. 近30天每日活跃度 ──────────────────────────────────────────────────
@@ -139,8 +124,10 @@ async def get_diagnosis_report(
     start_date = today - timedelta(days=_ACTIVITY_DAYS - 1)
 
     daily_counts: dict[str, int] = {}
-    for wq in wqs:
-        wq_date = wq.created_at.astimezone(timezone.utc).date()
+    for wr in wrs:
+        if wr.created_at is None:
+            continue
+        wq_date = wr.created_at.astimezone(timezone.utc).date()
         if wq_date >= start_date:
             key = wq_date.isoformat()
             daily_counts[key] = daily_counts.get(key, 0) + 1
@@ -153,16 +140,8 @@ async def get_diagnosis_report(
         for i in range(_ACTIVITY_DAYS)
     ]
 
-    # ── 6. 综合建议（最近5条不重复）─────────────────────────────────────────
-    seen_suggestions: set[str] = set()
+    # ── 6. 综合建议:旧逐题 AI 诊断退休,建议改由下方掌握台账/退步预警承载 ──────
     top_suggestions: list[str] = []
-    for a in analyses:                           # 已按 created_at DESC 排序
-        s = (a.suggestions or "").strip()
-        if s and s not in seen_suggestions:
-            seen_suggestions.add(s)
-            top_suggestions.append(s)
-        if len(top_suggestions) >= _SUGGESTION_N:
-            break
 
     # ── 7. 结构化维度：按知识点 / 按学期（来自 sim_practice_records，M3/D-094）──
     kp_dimension, semester_dimension = await _aggregate_structured_dimensions(

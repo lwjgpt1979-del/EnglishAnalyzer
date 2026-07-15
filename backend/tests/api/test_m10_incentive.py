@@ -43,10 +43,11 @@ async def _seed(db):
         "INSERT INTO student_kp (student_id,node_id,practice_count,wrong_count,source_tags,last_practice_at) "
         "VALUES (:s,:n,10,0,ARRAY['practice'],:ts)"),
         {"s": uid, "n": nid, "ts": now})
-    # 1 道已掌握错题 → wrong XP 15
+    # 1 道已掌握错题 → wrong XP 15(统一错题中枢 wrong_record)
     await db.execute(text(
-        "INSERT INTO wrong_questions (id,student_id,source_image_url,is_mastered,created_at,mastered_at) "
-        "VALUES (:i,:s,'seed',true,:c,:c)"), {"i": uuid.uuid4(), "s": uid, "c": now})
+        "INSERT INTO wrong_record (id,student_id,q_scope,question_id,status,created_at,mastered_at) "
+        "VALUES (:i,:s,'platform',:q,'mastered',:c,:c)"),
+        {"i": uuid.uuid4(), "s": uid, "q": uuid.uuid4(), "c": now})
     # 1 场模拟考 acc=0.9 → exam XP 10 + exam_ace 解锁
     # KP-First:一场 = 同一 answered_at 的一批 exam 作答(10题9对);feature='exam' 不计练习 XP
     exam_ts = now - timedelta(hours=1)
@@ -65,7 +66,7 @@ async def _cleanup(db):
             f"DELETE FROM {t} WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"),
             {"p": f"{_TAG}_%"})
     await db.execute(text(
-        "DELETE FROM wrong_questions WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"),
+        "DELETE FROM wrong_record WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"),
         {"p": f"{_TAG}_%"})
     await db.execute(text("DELETE FROM student_kp WHERE student_id IN (SELECT id FROM users WHERE openid LIKE :p)"), {"p": f"{_TAG}_%"})
     await db.execute(text("DELETE FROM knowledge_nodes WHERE code LIKE :p"), {"p": f"{_TAG}_%"})

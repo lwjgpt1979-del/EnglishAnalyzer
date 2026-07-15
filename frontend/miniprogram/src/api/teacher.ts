@@ -3,7 +3,6 @@ import type {
   TeacherProfileOut,
   InviteCodeOut,
   TeacherStudentOut,
-  TeacherCommentOut,
   WrongQuestionOut,
   MyTeacherOut,
 } from '@/types/api'
@@ -32,17 +31,6 @@ export function getMyStudents(): Promise<TeacherStudentOut[]> {
 
 export function getStudentWrongQuestions(studentId: string): Promise<WrongQuestionOut[]> {
   return request<WrongQuestionOut[]>(`/api/v1/teacher/students/${studentId}/wrong-questions`)
-}
-
-export function addComment(wqId: string, commentText: string): Promise<TeacherCommentOut> {
-  return request<TeacherCommentOut>(`/api/v1/teacher/wrong-questions/${wqId}/comments`, {
-    method: 'POST',
-    data: { comment_text: commentText },
-  })
-}
-
-export function getComments(wqId: string): Promise<TeacherCommentOut[]> {
-  return request<TeacherCommentOut[]>(`/api/v1/teacher/wrong-questions/${wqId}/comments`)
 }
 
 export function submitCert(certDocUrl: string) {

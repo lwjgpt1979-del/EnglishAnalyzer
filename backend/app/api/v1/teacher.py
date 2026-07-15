@@ -21,8 +21,6 @@ from app.schemas.teacher import (
     QRCodeOut,
     SendInviteSmsRequest,
     SendInviteSmsOut,
-    TeacherCommentCreate,
-    TeacherCommentOut,
     TeacherProfileOut,
     TeacherStudentOut,
 )
@@ -208,54 +206,7 @@ async def get_student_wrong_questions(
     wqs = await teacher_service.get_student_wrong_questions(
         db, teacher_id=current_user.id, student_id=student_id
     )
-    return make_ok([WrongQuestionOut.model_validate(wq) for wq in wqs])
-
-
-@router.post(
-    "/wrong-questions/{wq_id}/comments",
-    response_model=BaseResponse[TeacherCommentOut],
-)
-async def add_comment(
-    wq_id: uuid.UUID,
-    body: TeacherCommentCreate,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """教师为错题添加批注。"""
-    if str(current_user.role) != "teacher":
-        raise AppError(code=403, message="仅教师可添加批注")
-    await get_rls_db(db, str(current_user.id))
-    # cert 认证 gate（D-075）
-    from sqlalchemy import select as _sel
-    from app.models.d1_users import Teacher as _T
-    _r = await db.execute(_sel(_T).where(_T.id == current_user.id))
-    teacher_service.ensure_certified(_r.scalar_one_or_none())
-    comment = await teacher_service.add_comment(
-        db, teacher_id=current_user.id, wq_id=wq_id, data=body
-    )
-    await db.commit()
-    return make_ok(TeacherCommentOut.model_validate(comment))
-
-
-@router.get(
-    "/wrong-questions/{wq_id}/comments",
-    response_model=BaseResponse[list[TeacherCommentOut]],
-)
-async def get_comments(
-    wq_id: uuid.UUID,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """查看错题上的所有老师批注。
-
-    学生（WQ 所有者）和绑定该学生的老师均可访问。
-    未授权则返回空列表（不报错，前端容错更友好）。
-    """
-    await get_rls_db(db, str(current_user.id))
-    comments = await teacher_service.get_comments_for_wq_authorized(
-        db, wq_id=wq_id, caller_id=current_user.id
-    )
-    return make_ok([TeacherCommentOut.model_validate(c) for c in comments])
+    return make_ok([WrongQuestionOut(**wq) for wq in wqs])
 
 
 @router.get(

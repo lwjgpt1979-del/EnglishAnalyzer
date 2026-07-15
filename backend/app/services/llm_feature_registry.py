@@ -16,8 +16,6 @@ from __future__ import annotations
 # 每条:feature(有=用量可单独统计;None=未打标签)、mode、surface(端)、module(模块)、service、purpose、why、locations
 LLM_FEATURES: list[dict] = [
     # ── 深度思考(reasoning / 推理档)──────────────────────────────────────────
-    {"feature": None, "mode": "reasoning", "surface": "小程序端", "module": "错题本", "service": "ai_service",
-     "purpose": "错题归因分析 + 讲解/订正建议", "why": "多步推断错因并生成结构化讲解,重推理", "locations": ["ai_service.py:92"]},
     {"feature": None, "mode": "reasoning", "surface": "运营后台", "module": "教材·课程生成", "service": "curriculum_ai_service",
      "purpose": "从单元原文抽取整理成多篇课文段落", "why": "长文篇章理解 + 结构化重组,需推理判断边界", "locations": ["curriculum_ai_service.py:42"]},
     {"feature": None, "mode": "reasoning", "surface": "运营后台", "module": "教材·课程生成", "service": "curriculum_ai_service",

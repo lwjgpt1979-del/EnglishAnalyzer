@@ -21,8 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.models.d1_users import InviteCode, Teacher, TeacherStudent, User
-from app.models.d3_wrong_questions import TeacherComment, WrongQuestion
-from app.schemas.teacher import BecomeTeacherRequest, TeacherCommentCreate
+from app.schemas.teacher import BecomeTeacherRequest
 
 _CODE_CHARS = string.ascii_uppercase + string.digits  # A-Z 0-9, 36 chars
 _CODE_LENGTH = 6
@@ -177,8 +176,9 @@ async def get_student_wrong_questions(
     *,
     teacher_id: uuid.UUID,
     student_id: uuid.UUID,
-) -> list[WrongQuestion]:
-    """教师查看指定学生的错题列表，先校验绑定关系。"""
+) -> list[dict]:
+    """教师查看指定学生的错题列表(统一错题中枢 wrong_record),先校验绑定关系。
+    返回 WrongQuestionOut 形状的 dict。"""
     binding = await db.execute(
         select(TeacherStudent).where(
             TeacherStudent.teacher_id == teacher_id,
@@ -189,110 +189,14 @@ async def get_student_wrong_questions(
     if binding.scalar_one_or_none() is None:
         raise AppError(code=403, message="无权查看该学生数据")
 
+    from app.models.d16_question_domain import WrongRecord
+    from app.services import wrong_review_service
     result = await db.execute(
-        select(WrongQuestion)
-        .where(WrongQuestion.student_id == student_id)
-        .order_by(WrongQuestion.created_at.desc())
+        select(WrongRecord)
+        .where(WrongRecord.student_id == student_id)
+        .order_by(WrongRecord.created_at.desc())
     )
-    return list(result.scalars().all())
-
-
-async def add_comment(
-    db: AsyncSession,
-    *,
-    teacher_id: uuid.UUID,
-    wq_id: uuid.UUID,
-    data: TeacherCommentCreate,
-) -> TeacherComment:
-    """教师为错题添加批注，先校验该错题归属学生是否为教师的绑定学生。"""
-    wq_result = await db.execute(
-        select(WrongQuestion).where(WrongQuestion.id == wq_id)
-    )
-    wq = wq_result.scalar_one_or_none()
-    if wq is None:
-        raise AppError(code=404, message="错题不存在")
-
-    binding = await db.execute(
-        select(TeacherStudent).where(
-            TeacherStudent.teacher_id == teacher_id,
-            TeacherStudent.student_id == wq.student_id,
-            TeacherStudent.status == "active",
-        )
-    )
-    if binding.scalar_one_or_none() is None:
-        raise AppError(code=403, message="无权批注该学生的错题")
-
-    # §5.6 月度批改/点评额度闸门 + 预警
-    from app.services import teacher_limit_service
-    await teacher_limit_service.check_grading_and_warn(db, teacher_id=teacher_id)
-
-    comment = TeacherComment(
-        id=uuid.uuid4(),
-        wrong_question_id=wq_id,
-        teacher_id=teacher_id,
-        comment_text=data.comment_text,
-    )
-    db.add(comment)
-    await db.flush()
-    # —— 发"老师批注"通知给学生（D-074 Module 7B）——
-    from app.services.notification_service import emit_teacher_comment
-    try:
-        await emit_teacher_comment(db, user_id=wq.student_id, wq_id=wq.id, teacher_id=teacher_id)
-    except Exception:
-        pass  # 通知失败不影响主链路
-    return comment
-
-
-async def get_comments_for_wq(
-    db: AsyncSession,
-    *,
-    wq_id: uuid.UUID,
-) -> list[TeacherComment]:
-    """查询某道错题所有批注（按创建时间升序）。"""
-    result = await db.execute(
-        select(TeacherComment)
-        .where(TeacherComment.wrong_question_id == wq_id)
-        .order_by(TeacherComment.created_at.asc())
-    )
-    return list(result.scalars().all())
-
-
-async def get_comments_for_wq_authorized(
-    db: AsyncSession,
-    *,
-    wq_id: uuid.UUID,
-    caller_id: uuid.UUID,
-) -> list[TeacherComment]:
-    """查询某道错题所有批注（按创建时间升序）。
-
-    仅允许：该错题所属学生 本人，或 与该学生有活跃绑定关系的教师。
-    其他用户返回空列表（不报错，前端容错更友好）。
-    """
-    # 查 WQ 的归属学生
-    wq_result = await db.execute(
-        select(WrongQuestion).where(WrongQuestion.id == wq_id)
-    )
-    wq = wq_result.scalar_one_or_none()
-    if wq is None:
-        return []
-
-    # 学生本人可读
-    if wq.student_id == caller_id:
-        return await get_comments_for_wq(db, wq_id=wq_id)
-
-    # 绑定该学生的老师可读
-    binding = await db.execute(
-        select(TeacherStudent).where(
-            TeacherStudent.teacher_id == caller_id,
-            TeacherStudent.student_id == wq.student_id,
-            TeacherStudent.status == "active",
-        )
-    )
-    if binding.scalar_one_or_none() is not None:
-        return await get_comments_for_wq(db, wq_id=wq_id)
-
-    # 其他用户返回空列表
-    return []
+    return [await wrong_review_service.to_wq_out_fields(db, wr) for wr in result.scalars().all()]
 
 
 # ─── cert 流程 + gate（D-075 / P0 老师端）────────────────────────────────────

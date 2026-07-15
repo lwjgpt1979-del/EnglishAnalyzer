@@ -343,42 +343,13 @@ async def _top_wrong_from_record(db: AsyncSession, student_id) -> dict | None:
 
 
 async def _top_due_wrong(db: AsyncSession, student_id) -> dict | None:
-    """取最该复习的一道错题（KP-First 中心优先，回退旧错题本），含题干/正确答案/知识点。"""
-    from datetime import date as _date
-    from app.models.d3_wrong_questions import WrongQuestion
-    # R7:口语错题复习先读 wrong_record 中心(有内容则用),否则回退旧 WrongQuestion
-    from_center = await _top_wrong_from_record(db, student_id)
-    if from_center is not None:
-        return from_center
-    today = _date.today()
-    wq = (await db.execute(
-        select(WrongQuestion).where(
-            WrongQuestion.student_id == student_id, WrongQuestion.is_mastered.is_(False),
-            WrongQuestion.next_review_at.is_not(None), WrongQuestion.next_review_at <= today,
-        ).order_by(WrongQuestion.next_review_at.asc()).limit(1)
-    )).scalar_one_or_none()
-    if wq is None:
-        wq = (await db.execute(
-            select(WrongQuestion).where(
-                WrongQuestion.student_id == student_id, WrongQuestion.is_mastered.is_(False),
-                WrongQuestion.next_review_at.is_(None),
-            ).order_by(WrongQuestion.created_at.asc()).limit(1)
-        )).scalar_one_or_none()
-    if wq is None:
-        return None
-    return {
-        "id": str(wq.id),
-        "stem": (wq.question_text or "").strip()[:300],
-        "answer": (wq.correct_answer or "").strip()[:200],
-        "student_answer": (wq.student_answer or "").strip()[:200],
-        # R8 Phase6b:旧 WrongQuestion 无 node,话题标签改用其 tags(不再读旧 KP 链)
-        "kps": [t for t in (wq.tags or []) if isinstance(t, str)][:4],
-    }
+    """取最该复习的一道错题(统一错题中枢 wrong_record),含题干/正确答案/知识点。"""
+    return await _top_wrong_from_record(db, student_id)
 
 
 async def _due_wrong_count(db: AsyncSession, student_id) -> int:
-    from app.services import review_service
-    stats = await review_service.get_review_stats(db, student_id=student_id)
+    from app.services import wrong_review_service
+    stats = await wrong_review_service.review_stats(db, student_id=student_id)
     return int(stats.get("due_today", 0)) + int(stats.get("new_unscheduled", 0))
 
 
@@ -739,9 +710,10 @@ async def reply(
     if wq_id and bool(data.get("mastered")):
         try:
             import uuid as _uuid
-            from app.services import review_service
-            await review_service.submit_review(
-                db, wq_id=_uuid.UUID(wq_id), student_id=student_id, quality=5)
+            from app.services import wrong_review_service
+            # 口语里复述订正成功 → 直接判该错题掌握(wrong_record 中枢)
+            await wrong_review_service.mark_mastered(
+                db, student_id=student_id, wrong_record_id=_uuid.UUID(wq_id), is_mastered=True)
             due_left = await _due_wrong_count(db, student_id)
             mastered_wrong = {
                 "kp": "、".join(sc.get("targets") or []) or "该知识点",

@@ -1,5 +1,6 @@
-"""错题 CRUD API。
+"""错题读取/复习 API(KP-First,统一读 wrong_record)。
 
+拍照单题上传/OCR/AI 诊断已下线;本路由只保留基于 wrong_record 的读取、掌握标记与 SM-2 复习。
 所有 endpoint 需要 Bearer JWT，并注入 RLS 变量。
 """
 from __future__ import annotations
@@ -7,7 +8,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
@@ -16,74 +17,18 @@ from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import BaseResponse, make_ok
 from app.schemas.wrong_questions import (
-    AiAnalysisOut,
     MarkMasteredRequest,
     RedoIn,
     RedoResultOut,
     ReviewQueueOut,
-    WrongQuestionCreate,
     WrongQuestionListOut,
     WrongQuestionOut,
 )
-from app.services import review_service, wrong_question_service
-from pydantic import BaseModel as _BaseModel
-
-
-class AutoTagOut(_BaseModel):
-    processed: int
 
 router = APIRouter(prefix="/wrong-questions", tags=["wrong-questions"])
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
-
-
-@router.post("/", response_model=BaseResponse[WrongQuestionOut])
-async def create_wrong_question(
-    body: WrongQuestionCreate,
-    background_tasks: BackgroundTasks,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """提交新错题（MVP：前端先上传图片到 OSS，再传 URL）。"""
-    await get_rls_db(db, str(current_user.id))
-    from app.services import entitlement_service
-    await entitlement_service.require_feature(db, user_id=current_user.id, key="wrong.upload")
-    wq = await wrong_question_service.create_wrong_question(
-        db, student_id=current_user.id, data=body
-    )
-    # 初始化 ocr_status = pending 并触发后台 OCR
-    wq.ocr_status = "pending"  # type: ignore[assignment]
-    await entitlement_service.consume(db, user_id=current_user.id, key="wrong.upload")
-    await db.commit()
-    await db.refresh(wq)
-
-    from app.api.v1.ocr import _run_ocr_pipeline
-    background_tasks.add_task(_run_ocr_pipeline, wq.id)
-
-    return make_ok(WrongQuestionOut.model_validate(wq))
-
-
-@router.get("/", response_model=BaseResponse[WrongQuestionListOut])
-async def list_wrong_questions(
-    db: DbDep,
-    current_user: UserDep,
-    skip: int = Query(0, ge=0, description="分页偏移"),
-    limit: int = Query(20, ge=1, le=100, description="每页条数"),
-    source: str | None = Query(None, description="来源筛选：assignment/upload，空=全部"),
-    tag: str | None = Query(None, description="知识点标签筛选，空=全部（M38）"),
-):
-    """获取当前学生的错题列表（分页，按创建时间倒序，可按来源/标签筛选）。"""
-    await get_rls_db(db, str(current_user.id))
-    items, total = await wrong_question_service.list_wrong_questions(
-        db, student_id=current_user.id, skip=skip, limit=limit, source=source, tag=tag
-    )
-    return make_ok(
-        WrongQuestionListOut(
-            items=[WrongQuestionOut.model_validate(wq) for wq in items],
-            total=total,
-        )
-    )
 
 
 @router.get("/by-kp/{kp_id}", response_model=BaseResponse[WrongQuestionListOut])
@@ -103,11 +48,11 @@ async def list_wrong_questions_by_kp(
     return make_ok(WrongQuestionListOut(items=items, total=total))
 
 
-# ── SM-2 复习计划（M36）— 必须在 /{wq_id} 之前定义，否则 FastAPI 路由被截获 ───────
+# ── SM-2 复习计划 ── 必须在 /{wq_id} 之前定义，否则被路由截获 ───────────────────
 
 @router.get("/review-queue", response_model=BaseResponse[ReviewQueueOut])
 async def get_review_queue(db: DbDep, current_user: UserDep):
-    """今日复习队列(KP-First:已直接切到 wrong_record 中心,系统未上线不桥接旧表)。"""
+    """今日复习队列(KP-First / wrong_record)。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import wrong_review_service
     items = await wrong_review_service.review_queue_items(db, student_id=current_user.id)
@@ -118,48 +63,25 @@ async def get_review_queue(db: DbDep, current_user: UserDep):
     ))
 
 
-@router.post("/auto-tag", response_model=BaseResponse[AutoTagOut])
-async def auto_tag_wrong_questions(db: DbDep, current_user: UserDep):
-    """批量补标：将有 AI 分析但缺 tags 的错题自动补全知识点标签（M38）。"""
-    await get_rls_db(db, str(current_user.id))
-    processed = await wrong_question_service.auto_tag_all(db, student_id=current_user.id)
-    await db.commit()
-    return make_ok(AutoTagOut(processed=processed))
-
-
 @router.get("/{wq_id}", response_model=BaseResponse[WrongQuestionOut])
-async def get_wrong_question(
-    wq_id: uuid.UUID,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """获取单条错题详情(只能查自己的)。KP-First:优先按 wrong_record id 查,回退老 WrongQuestion。"""
+async def get_wrong_question(wq_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """获取单条错题详情(wrong_record,只能查自己的)。"""
     await get_rls_db(db, str(current_user.id))
-    # KP-First:相关错题/复习队列返回的是 wrong_record id
     import sqlalchemy as _sa
     from app.models.d16_question_domain import WrongRecord
     from app.services import wrong_review_service
     wr = (await db.execute(_sa.select(WrongRecord).where(
         WrongRecord.id == wq_id, WrongRecord.student_id == current_user.id))).scalar_one_or_none()
-    if wr is not None:
-        return make_ok(WrongQuestionOut(**await wrong_review_service.to_wq_out_fields(db, wr)))
-    # 回退:老 WrongQuestion(拍照错题等旧数据)
-    wq = await wrong_question_service.get_wrong_question(
-        db, wq_id=wq_id, student_id=current_user.id
-    )
-    if wq is None:
+    if wr is None:
         raise AppError(code=404, message="错题不存在或无权访问")
-    return make_ok(WrongQuestionOut.model_validate(wq))
+    return make_ok(WrongQuestionOut(**await wrong_review_service.to_wq_out_fields(db, wr)))
 
 
 @router.patch("/{wq_id}/mastered", response_model=BaseResponse[WrongQuestionOut])
 async def mark_mastered(
-    wq_id: uuid.UUID,
-    body: MarkMasteredRequest,
-    db: DbDep,
-    current_user: UserDep,
+    wq_id: uuid.UUID, body: MarkMasteredRequest, db: DbDep, current_user: UserDep,
 ):
-    """标记/取消已掌握(KP-First:wq_id 为 wrong_record id,直读新表)。"""
+    """标记/取消已掌握(wq_id 为 wrong_record id)。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import wrong_review_service
     wr = await wrong_review_service.mark_mastered(
@@ -168,64 +90,9 @@ async def mark_mastered(
     return make_ok(WrongQuestionOut(**await wrong_review_service.to_wq_out_fields(db, wr)))
 
 
-@router.post("/{wq_id}/analyze", response_model=BaseResponse[AiAnalysisOut])
-async def analyze_wrong_question(
-    wq_id: uuid.UUID,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """触发 AI 分析（同步，约 3-8 秒）。每次调用生成新的分析记录。"""
-    await get_rls_db(db, str(current_user.id))
-    from app.services import entitlement_service
-    await entitlement_service.require_feature(db, user_id=current_user.id, key="wrong.analyze")
-    wq = await wrong_question_service.get_wrong_question(
-        db, wq_id=wq_id, student_id=current_user.id
-    )
-    if wq is None:
-        raise AppError(code=404, message="错题不存在或无权访问")
-
-    # OCR 尚未完成时拒绝触发 AI 分析
-    if wq.ocr_status not in ("completed", None):
-        raise AppError(
-            code=400,
-            message=f"OCR 识别尚未完成（当前状态：{wq.ocr_status}），请稍后再试",
-        )
-
-    from app.services import ai_service  # 延迟导入，避免启动时加载 openai
-
-    analysis = await ai_service.analyze_wrong_question(db, wq=wq, student_id=current_user.id)
-    await entitlement_service.consume(db, user_id=current_user.id, key="wrong.analyze")
-    await db.commit()
-    await db.refresh(analysis)
-    return make_ok(AiAnalysisOut.model_validate(analysis))
-
-
-@router.get("/{wq_id}/analyses", response_model=BaseResponse[list[AiAnalysisOut]])
-async def list_analyses(
-    wq_id: uuid.UUID,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """查询某道错题的全部 AI 分析历史。KP-First 的 wrong_record(练习/上传错题)无老式 AI 诊断,返回空。"""
-    await get_rls_db(db, str(current_user.id))
-    wq = await wrong_question_service.get_wrong_question(
-        db, wq_id=wq_id, student_id=current_user.id
-    )
-    if wq is None:
-        # 不是老 WrongQuestion → 可能是 wrong_record(KP-First),没有老 AI 诊断,优雅返回空(不 404 弹窗)
-        return make_ok([])
-    analyses = await wrong_question_service.list_analyses(db, wrong_question_id=wq_id)
-    return make_ok([AiAnalysisOut.model_validate(a) for a in analyses])
-
-
 @router.post("/{wq_id}/review", response_model=BaseResponse[RedoResultOut])
-async def submit_review(
-    wq_id: uuid.UUID,
-    body: RedoIn,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """复习队列客观重做判分：真正重新作答该错题 → 判分驱动 SM-2（答对推进、答错归零），连续达标判掌握。"""
+async def submit_review(wq_id: uuid.UUID, body: RedoIn, db: DbDep, current_user: UserDep):
+    """复习队列客观重做判分 → SM-2(答对推进、答错归零),连续达标判掌握。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import wrong_review_service
     result = await wrong_review_service.submit_review(
@@ -236,13 +103,8 @@ async def submit_review(
 
 
 @router.post("/{wq_id}/redo", response_model=BaseResponse[RedoResultOut])
-async def redo_wrong(
-    wq_id: uuid.UUID,
-    body: RedoIn,
-    db: DbDep,
-    current_user: UserDep,
-):
-    """错题主动重做订正（错题详情入口）：重做那道错题，答对 → 立即订正（掌握）；答错 → 保持未掌握、今日重排复习。"""
+async def redo_wrong(wq_id: uuid.UUID, body: RedoIn, db: DbDep, current_user: UserDep):
+    """错题主动重做订正(详情入口):答对→立即掌握;答错→今日重排复习。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import wrong_review_service
     result = await wrong_review_service.redo(

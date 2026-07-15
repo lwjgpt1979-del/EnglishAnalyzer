@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d1_users import StudentRelative, User
 from app.models.d16_question_domain import AnswerLog
 from app.models.d13_v2_user_papers import UserPaperQuestion, UserUploadedPaper
-from app.models.d3_wrong_questions import AiAnalysis
 from app.models.d5_learning import StudyCheckin
 from app.services import notification_service
 
@@ -116,19 +115,20 @@ async def generate_student_weekly_report(
     )
     wrong_paper_count = paper_q.scalar() or 0
 
-    # 近 30 天薄弱知识点（top-2）
+    # 近 30 天薄弱知识点（top-2）—— 统一错题中枢 wrong_record 的错题归类名
     thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
-    ai_rows = await db.execute(
-        select(AiAnalysis.knowledge_points).where(
-            AiAnalysis.student_id == student_id,
-            AiAnalysis.created_at >= thirty_days_ago,
+    from app.models.d16_question_domain import WrongRecord
+    kp_rows = await db.execute(
+        select(WrongRecord.kp_name).where(
+            WrongRecord.student_id == student_id,
+            WrongRecord.kp_name.isnot(None),
+            WrongRecord.created_at >= thirty_days_ago,
         )
     )
     kp_counter: dict[str, int] = {}
-    for (kp_list,) in ai_rows:
-        if isinstance(kp_list, list):
-            for kp in kp_list:
-                kp_counter[kp] = kp_counter.get(kp, 0) + 1
+    for (kp,) in kp_rows:
+        if kp:
+            kp_counter[kp] = kp_counter.get(kp, 0) + 1
     weak_kp_names = [k for k, _ in sorted(kp_counter.items(), key=lambda x: -x[1])][:2]
 
     return WeeklyReportData(

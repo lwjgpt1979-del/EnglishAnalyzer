@@ -171,13 +171,14 @@ async def relative_view_student_wqs(
         db, relative_id=current_user.id, student_id=student_id,
     )
     from sqlalchemy import select as _sel
-    from app.models.d3_wrong_questions import WrongQuestion
+    from app.models.d16_question_domain import WrongRecord
+    from app.services import wrong_review_service
     r = await db.execute(
-        _sel(WrongQuestion).where(WrongQuestion.student_id == student_id)
-        .order_by(WrongQuestion.created_at.desc())
+        _sel(WrongRecord).where(WrongRecord.student_id == student_id)
+        .order_by(WrongRecord.created_at.desc())
     )
-    items = list(r.scalars().all())
-    return make_ok([WrongQuestionOut.model_validate(wq) for wq in items])
+    items = [await wrong_review_service.to_wq_out_fields(db, wr) for wr in r.scalars().all()]
+    return make_ok([WrongQuestionOut(**it) for it in items])
 
 
 @router.get(

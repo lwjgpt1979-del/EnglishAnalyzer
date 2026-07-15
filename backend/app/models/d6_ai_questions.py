@@ -72,8 +72,7 @@ class PracticeRecord(Base):
     trigger_type = mapped_column(trigger_type_enum, nullable=False)
     student_answer = mapped_column(JSONB, nullable=False)
     is_correct = mapped_column(sa.Boolean, nullable=False)
-    wrong_question_id = mapped_column(
-        UUID(as_uuid=True), sa.ForeignKey("wrong_questions.id"), nullable=True
-    )
+    # 旧 wrong_questions 已下线;保留列(历史数据),去掉 FK
+    wrong_question_id = mapped_column(UUID(as_uuid=True), nullable=True)
     practiced_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
     time_spent_sec = mapped_column(sa.Integer, nullable=True)

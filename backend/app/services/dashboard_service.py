@@ -14,7 +14,7 @@ from app.models.d2_payments import Membership, Order, RefundRecord
 from app.models.d5_learning import Essay, StudyCheckin, ListeningWrongQuestion  # noqa: F401
 from app.models.d5_learning import VocabPronLog
 from app.models.d16_question_domain import AnswerLog
-from app.models.d3_wrong_questions import WrongQuestion
+from app.models.d16_question_domain import WrongRecord
 
 
 def _yuan(fen) -> float:
@@ -80,7 +80,7 @@ async def get_dashboard(db: AsyncSession) -> dict:
         "checkins": await _count(
             select(func.count()).select_from(StudyCheckin).where(StudyCheckin.checkin_date == now.date())),
         "practice": await _today(AnswerLog, AnswerLog.answered_at),
-        "wrong_upload": await _today(WrongQuestion, WrongQuestion.created_at),
+        "wrong_upload": await _today(WrongRecord, WrongRecord.created_at),
         "essays": await _today(Essay, Essay.created_at),
         "shadow": await _today(VocabPronLog, VocabPronLog.created_at),
     }
@@ -100,13 +100,13 @@ async def get_dashboard(db: AsyncSession) -> dict:
     arpu_month = round(gmv_month_fen / 100 / payers_month, 2) if payers_month else 0.0
 
     # —— 错题复盘率（§5.5，拆 验证通过 / 手动标记）——
-    wq_total = await _count(select(func.count()).select_from(WrongQuestion))
+    wq_total = await _count(select(func.count()).select_from(WrongRecord))
     wq_mastered = await _count(
-        select(func.count()).select_from(WrongQuestion).where(WrongQuestion.is_mastered.is_(True)))
+        select(func.count()).select_from(WrongRecord).where(WrongRecord.status == "mastered"))
     src_rows = (await db.execute(
-        select(WrongQuestion.mastery_source, func.count())
-        .where(WrongQuestion.is_mastered.is_(True))
-        .group_by(WrongQuestion.mastery_source))).all()
+        select(WrongRecord.mastery_source, func.count())
+        .where(WrongRecord.status == "mastered")
+        .group_by(WrongRecord.mastery_source))).all()
     src = {str(s): int(c) for s, c in src_rows}
     review_rate = {
         "total": wq_total, "mastered": wq_mastered,
@@ -122,19 +122,16 @@ async def get_dashboard(db: AsyncSession) -> dict:
         ok = await _count(select(func.count()).select_from(model).where(col == "completed"))
         return {"total": tot, "completed": ok,
                 "rate_pct": round(ok / tot * 100, 1) if tot else 0.0}
+    # 拍照单题已下线,OCR 指标仅保留整卷上传(uploaded_papers)
     ocr_success = {
-        "wrong_questions": await _ocr_rate(WrongQuestion, WrongQuestion.ocr_status),
         "uploaded_papers": await _ocr_rate(UserUploadedPaper, UserUploadedPaper.ocr_status),
     }
 
-    # —— OCR 手动修正率（§5.5）：实际改动过识别结果的占比 / 完成识别数 ——
+    # —— OCR 手动修正率(§5.5):拍照单题下线后无逐条修正标记,置零占位 ——
     ocr_completed_n = await _count(
-        select(func.count()).select_from(WrongQuestion).where(WrongQuestion.ocr_status == "completed"))
-    ocr_corrected_n = await _count(
-        select(func.count()).select_from(WrongQuestion).where(WrongQuestion.ocr_corrected.is_(True)))
+        select(func.count()).select_from(UserUploadedPaper).where(UserUploadedPaper.ocr_status == "completed"))
     ocr_correction = {
-        "completed": ocr_completed_n, "corrected": ocr_corrected_n,
-        "rate_pct": round(ocr_corrected_n / ocr_completed_n * 100, 1) if ocr_completed_n else 0.0,
+        "completed": ocr_completed_n, "corrected": 0, "rate_pct": 0.0,
     }
 
     # —— 题库练习来源拆分（§5.5）：独立入口 vs 复盘触发 ——

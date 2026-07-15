@@ -34,7 +34,6 @@ async def test_limits_config_override_and_gates():
                              {"i": uid, "o": f"{_TAG}_{role}_{uid.hex[:6]}", "r": role})
         await db.execute(text("INSERT INTO teachers (id,cert_status) VALUES (:i,'certified')"), {"i": tch})
         await db.flush()
-        wq_id = None
         try:
             # 全局配置：改默认
             saved = await tl.update_limits(db, fields={"max_students": 1, "monthly_grading_quota": 1,
@@ -66,29 +65,20 @@ async def test_limits_config_override_and_gates():
             with pytest.raises(AppError):
                 await tl.assert_can_bind_student(db, teacher_id=tch)
 
-            # 批改额度：limit=1，0 已用 → 通过且越线预警；插 1 条后再 check 被拦
+            # 批改额度：limit=1，0 已用 → 通过且越线预警。
+            # (错题批注 TeacherComment 已随拍照单题下线,grading 用量恒为 0、不再被拦)
             await tl.check_grading_and_warn(db, teacher_id=tch)   # used_after=1 越过 0.8 线 → 发预警
             warned = await db.scalar(text(
                 "SELECT count(*) FROM notifications WHERE user_id=:u AND title='额度预警'"), {"u": tch})
             assert warned >= 1
-            await db.execute(text("INSERT INTO wrong_questions (id,student_id,source_image_url,ocr_status) "
-                                  "VALUES (:i,:s,'http://x/a.png','completed')"),
-                             {"i": (wq_id := uuid.uuid4()), "s": stu})
-            await db.execute(text("INSERT INTO teacher_comments (id,wrong_question_id,teacher_id,comment_text,created_at) "
-                                  "VALUES (:i,:w,:t,'好',now())"),
-                             {"i": uuid.uuid4(), "w": wq_id, "t": tch})
-            await db.flush()
-            with pytest.raises(AppError):
-                await tl.check_grading_and_warn(db, teacher_id=tch)
+            # 批改用量恒 0 → 再次 check 仍放行(不 raise)
+            await tl.check_grading_and_warn(db, teacher_id=tch)
 
             # 自查
             ov = await tl.quota_overview(db, teacher_id=tch)
             assert ov["students"]["limit"] == 1 and ov["students"]["used"] == 1
-            assert ov["grading"]["used"] == 1 and "remaining_pct" in ov["paper"]
+            assert ov["grading"]["used"] == 0 and "remaining_pct" in ov["paper"]
         finally:
-            await db.execute(text("DELETE FROM teacher_comments WHERE teacher_id=:t"), {"t": tch})
-            if wq_id:
-                await db.execute(text("DELETE FROM wrong_questions WHERE id=:i"), {"i": wq_id})
             await db.execute(text("DELETE FROM teacher_students WHERE teacher_id=:t"), {"t": tch})
             await db.execute(text("DELETE FROM notifications WHERE user_id=:t"), {"t": tch})
             await db.execute(text("DELETE FROM teachers WHERE id=:t"), {"t": tch})

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import User
 from app.models.d2_payments import Membership, Order
-from app.models.d3_wrong_questions import WrongQuestion
+from app.models.d16_question_domain import WrongRecord
 from app.models.d9_system import FeatureUsage
 
 _PAID_STATUS = ("paid", "refunded", "partial_refunded")
@@ -123,7 +123,7 @@ async def funnel(db: AsyncSession) -> dict:
         select(func.count()).select_from(User).where(User.role == "student"))
 
     experienced = await _count(
-        select(func.count(func.distinct(WrongQuestion.student_id))))
+        select(func.count(func.distinct(WrongRecord.student_id))))
 
     limit = _min_quota_limit()
     hit_limit = await _count(
