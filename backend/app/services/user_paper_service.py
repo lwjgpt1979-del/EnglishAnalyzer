@@ -321,6 +321,7 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                 # 把 node 挂到题上(q.node_id)+ 掌握账补写(student_kp/node)+ 错题收口 wrong_record
                 qno = pq.question_no or ""
                 kp_key = kp_map.get(qno)
+                q.kp_key = kp_key or None               # 存单题归类名(判语法/词汇、加入按钮用)
                 if kp_key:
                     node_id = match_cache.get(kp_key)   # Step 2.4 已受控匹配,直接复用(不再逐题 LLM)
                     # 掌握账:传入已解析 node_id,免 upsert_mastery 内部再匹配
@@ -434,7 +435,28 @@ async def get_paper_detail(
             student_answer=q.student_answer, correct_answer=q.correct_answer,
             explanation=q.explanation, is_wrong=q.is_wrong,
             passage=q.passage, block_key=q.block_key,
+            node_id=q.node_id, kp_name=q.kp_key, kp_kind=_kp_kind(q),
         )
+
+    # 单题「考语法/考词汇」判定:语法=命中语法节点(cf/jf) 或 归类名是语法概念;
+    # 词汇=有归类名但不是语法(默认非语法归类当词汇考点)。供单题「加入语法学习/加入单词」按钮。
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.services.grammar_progress_service import _grammar_anchor
+    from app.services.kp_lecture_service import kp_type_of
+    node_ids = [q.node_id for q in qs if q.node_id]
+    codes = {}
+    if node_ids:
+        codes = {nid: code for nid, code in (await db.execute(
+            select(KnowledgeNode.id, KnowledgeNode.code).where(KnowledgeNode.id.in_(node_ids)))).all()}
+
+    def _kp_kind(q) -> str | None:
+        node_gram = bool(q.node_id and kp_type_of(codes.get(q.node_id)) == "grammar")
+        name_gram = bool(q.kp_key and _grammar_anchor(q.kp_key))
+        if node_gram or name_gram:
+            return "grammar"
+        if q.kp_key:
+            return "vocab"
+        return None
 
     questions = [_q_out(q) for q in qs]            # 扁平列表(兼容旧展示)
     # 按大题分组;历史数据(section_id 为空)归到「未分组」保证不丢题
@@ -717,6 +739,59 @@ async def paper_kp_summary(
     ]
     items.sort(key=lambda x: (not x["weak"], -x["wrong"], x["kp_name"]))
     return {"paper_id": str(paper_id), "items": items}
+
+
+async def add_question_grammar(db: AsyncSession, *, question_id: uuid.UUID,
+                               student_id: uuid.UUID) -> dict | None:
+    """单题「加入语法学习」:命中语法节点 → 加入作业精讲·语法(student_kp_target,按卷);
+    未命中但归类是语法 → 挂个人语法树(按卷)。非本人/非语法 → None。"""
+    from app.services.grammar_progress_service import _grammar_anchor
+    q = await db.get(UserPaperQuestion, question_id)
+    if q is None:
+        return None
+    paper = await db.get(UserUploadedPaper, q.user_paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    if q.node_id is not None:                       # 命中图谱语法 → 学习目标(按卷归组)
+        from app.services import learning_plan_service
+        n = await learning_plan_service.add_targets(
+            db, student_id=student_id, node_ids=[q.node_id],
+            source="paper_question", source_paper_id=q.user_paper_id)
+        await db.commit()
+        return {"kind": "grammar", "added": n}
+    if q.kp_key and _grammar_anchor(q.kp_key):       # 未入图谱的语法 → 个人语法树(按卷)
+        from app.services import grammar_progress_service
+        await grammar_progress_service.add_personal_if_grammar(
+            db, student_id=student_id, name=q.kp_key, source="upload_paper",
+            source_paper_id=q.user_paper_id)
+        await db.commit()
+        return {"kind": "grammar", "added": 1, "personal": True}
+    return {"kind": "grammar", "added": 0}
+
+
+async def add_question_vocab(db: AsyncSession, *, question_id: uuid.UUID,
+                             student_id: uuid.UUID) -> dict | None:
+    """单题「加入作业精讲·单词」:从题干抽词典命中的词 → 作业精讲·单词候选(按卷)。非本人 → None。"""
+    from app.models.d5_learning import VocabularyWord
+    from app.services.vocab_pin_service import _words_from_text, add_paper_candidates
+    q = await db.get(UserPaperQuestion, question_id)
+    if q is None:
+        return None
+    paper = await db.get(UserUploadedPaper, q.user_paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    words = [w for w in _words_from_text(f"{q.stem or ''} {q.correct_answer or ''}")
+             if len(w) >= 3 and w not in _VOCAB_STOP]
+    if not words:
+        return {"kind": "vocab", "added": 0}
+    ids = (await db.execute(select(VocabularyWord.id).where(
+        func.lower(VocabularyWord.word).in_([w.lower() for w in words])))).scalars().all()
+    if not ids:
+        return {"kind": "vocab", "added": 0}
+    r = await add_paper_candidates(db, student_id=student_id, word_ids=list(ids),
+                                   source_paper_id=q.user_paper_id)
+    await db.commit()
+    return {"kind": "vocab", "added": r.get("added", 0)}
 
 
 async def practice_for_question(

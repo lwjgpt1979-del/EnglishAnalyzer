@@ -54,6 +54,13 @@ export function renamePaper(paperId: string, title: string): Promise<{ title: st
 export function analyzePaperSentence(sentence: string): Promise<any> {
   return request<any>(`/api/v1/user-papers/analyze-sentence`, { method: 'POST', data: { sentence } })
 }
+// 单题:考语法 → 加入语法学习(作业精讲·语法/个人语法树);考词汇 → 加入作业精讲·单词
+export function addQuestionGrammar(qid: string): Promise<{ kind: string; added: number; personal?: boolean }> {
+  return request(`/api/v1/user-papers/questions/${qid}/add-grammar`, { method: 'POST' })
+}
+export function addQuestionVocab(qid: string): Promise<{ kind: string; added: number }> {
+  return request(`/api/v1/user-papers/questions/${qid}/add-vocab`, { method: 'POST' })
+}
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {

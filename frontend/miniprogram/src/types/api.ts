@@ -678,6 +678,9 @@ export interface UserPaperQuestionOut {
   is_wrong: boolean
   passage?: string | null       // 所属短文/语篇(完形/阅读;独立题为空)
   block_key?: string | null     // 同篇小问共享的分组键
+  node_id?: string | null
+  kp_name?: string | null
+  kp_kind?: 'grammar' | 'vocab' | null   // 考语法 / 考词汇
 }
 
 /** 原卷大题/板块(还原题型结构) */

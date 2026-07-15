@@ -25,6 +25,9 @@ class UserPaperQuestionOut(BaseModel):
     is_wrong: bool
     passage: str | None = None       # 所属短文/语篇(完形/阅读;独立题为空)
     block_key: str | None = None     # 同篇小问共享的分组键
+    node_id: uuid.UUID | None = None # 命中的知识节点(语法可加入作业精讲·语法)
+    kp_name: str | None = None       # 归类知识点名
+    kp_kind: str | None = None       # 'grammar'=考语法 / 'vocab'=考词汇 / 其它 None
 
 
 class UserPaperSectionOut(BaseModel):

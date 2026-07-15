@@ -191,7 +191,18 @@
                 <text class="ans-line">正确答案：{{ q.correct_answer || '（未提供）' }}</text>
               </view>
               <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
-              <button v-if="q.is_wrong" class="btn-similar" :disabled="similarLoading" @tap="practiceSimilar(q.id)">练同类仿真题</button>
+              <!-- 单题动作:考语法→加入语法学习;考词汇→加入单词;错题→练同类 -->
+              <view class="q-acts">
+                <view v-if="q.kp_kind === 'grammar'" class="q-act" :class="{ done: qGrammar.has(q.id) }" @tap="addGrammar(q)">
+                  <text>{{ qGrammar.has(q.id) ? '已加入语法' : '加入语法学习' }}</text>
+                </view>
+                <view v-if="q.kp_kind === 'vocab'" class="q-act" :class="{ done: qVocab.has(q.id) }" @tap="addVocabQ(q)">
+                  <text>{{ qVocab.has(q.id) ? '已加入单词' : '加入作业精讲·单词' }}</text>
+                </view>
+                <view v-if="q.is_wrong" class="q-act q-act-sim" @tap="practiceSimilar(q.id)">
+                  <text>{{ similarLoading ? '生成中…' : '练同类仿真题' }}</text>
+                </view>
+              </view>
             </view>
           </template>
         </view>
@@ -223,7 +234,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, renamePaper, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperKpSummary, getPaperGrammarStatus, addPaperToPlan, getPaperVocab, getPaperLongSentences, practiceForQuestion, renamePaper, addQuestionGrammar, addQuestionVocab, type PaperKpItem, type SimilarQuestion, type PaperGrammarStatus, type GrammarNodeItem, type PaperVocabWord } from '@/api/userPapers'
 import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
 
@@ -389,6 +400,26 @@ async function practiceSimilar(qid: string) {
   } catch (e: any) {
     uni.showToast({ title: e?.message || '生成失败', icon: 'none' })
   } finally { similarLoading.value = false }
+}
+
+// 单题:加入语法学习 / 加入作业精讲·单词
+const qGrammar = ref<Set<string>>(new Set())
+const qVocab = ref<Set<string>>(new Set())
+async function addGrammar(q: any) {
+  if (qGrammar.value.has(q.id)) return
+  try {
+    const r = await addQuestionGrammar(q.id)
+    qGrammar.value = new Set([...qGrammar.value, q.id])
+    uni.showToast({ title: r.personal ? '已加入语法学习（自建）' : '已加入作业精讲·语法', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
+async function addVocabQ(q: any) {
+  if (qVocab.value.has(q.id)) return
+  try {
+    const r = await addQuestionVocab(q.id)
+    qVocab.value = new Set([...qVocab.value, q.id])
+    uni.showToast({ title: r.added ? `已加入作业精讲·单词（${r.added}）` : '本题没识别到可加入的生词', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
 }
 
 const isProcessing = computed(
@@ -571,6 +602,10 @@ function editTitle() {
 .fbtn { font-size: 26rpx; color: var(--c-text-second); padding: 8rpx 24rpx; border-radius: 999rpx; background: var(--c-bg-soft); }
 .fbtn.on { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
 .btn-similar { margin-top: 16rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-btn); font-size: 26rpx; padding: 12rpx 0; }
+.q-acts { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 16rpx; }
+.q-act { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 24rpx; }
+.q-act.done { color: #2ecc71; border-color: #2ecc71; }
+.q-act-sim { color: var(--c-primary-deep); background: var(--c-primary-faint); border-color: transparent; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal-card { width: 86%; max-height: 76vh; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx; display: flex; flex-direction: column; gap: 16rpx; }
 .modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }

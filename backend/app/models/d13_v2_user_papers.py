@@ -60,6 +60,7 @@ class UserPaperQuestion(Base):
     # R8 Phase4:组卷 KP 链改走 KP-First 的 node(match_kp 命中挂节点,未命中留 NULL 并落候选)。
     # 取代旧 user_paper_question_knowledge_points(硬 FK→knowledge_points)。
     node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=True)
+    kp_key = mapped_column(sa.String(120), nullable=True)   # 归类知识点名(判语法/词汇、加入语法学习/单词用)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
