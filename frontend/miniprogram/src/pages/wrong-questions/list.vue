@@ -117,51 +117,68 @@
       <view v-else-if="items.length > 0" class="load-more gray">已加载全部</view>
     </view>
 
-    <!-- 练同类仿真题 弹层(可作答判分) -->
-    <view v-if="pracOpen" class="modal" @tap.self="pracOpen = false">
-      <view class="modal-card">
+    <!-- 练同类仿真题 弹层(逐题作答判分) -->
+    <view v-if="pracOpen" class="modal" @tap="closePractice">
+      <view class="modal-card" @tap.stop>
         <view class="modal-head">
           <text class="modal-title">同类练习 · {{ pracKp }}</text>
-          <text class="modal-score">已答 {{ answeredCount }}/{{ pracList.length }} · 对 {{ correctCount }}</text>
+          <view class="modal-x" @tap.stop="closePractice"><text>✕</text></view>
         </view>
-        <scroll-view scroll-y class="modal-body">
-          <view v-for="(q, i) in pracList" :key="q.id || i" class="pq">
-            <text class="pq-stem">{{ i + 1 }}. {{ q.stem }}</text>
-            <view v-if="q.options" class="pq-opts">
+
+        <!-- 答题阶段 -->
+        <block v-if="!pracDone && curQ">
+          <view class="pr-top">
+            <text class="pr-idx">第 {{ pracIdx + 1 }} / {{ pracList.length }} 题</text>
+            <view class="pr-dots">
+              <view v-for="(q, i) in pracList" :key="i" class="pr-dot" :class="dotCls(q, i)" />
+            </view>
+          </view>
+          <scroll-view scroll-y class="modal-body">
+            <text class="pq-stem">{{ curQ.stem }}</text>
+            <view v-if="curQ.options" class="pq-opts">
               <view
-                v-for="(v, oi) in q.options"
+                v-for="(v, oi) in curQ.options"
                 :key="oi"
                 class="pq-opt"
-                :class="optCls(q, v)"
-                @tap="pickOpt(q, v)"
+                :class="optCls(curQ, v)"
+                @tap.stop="pickOpt(curQ, v)"
               >
                 <text class="opt-badge">{{ letter(oi) }}</text>
                 <text class="opt-txt">{{ optText(v) }}</text>
               </view>
             </view>
-            <view v-if="pracState[q.id]" class="pq-fb">
-              <text :class="pracState[q.id].correct ? 'fb-ok' : 'fb-no'">
-                {{ pracState[q.id].correct ? '✓ 答对' : '✗ 答错，正确：' + q.answer }}
+            <view v-if="pracState[curQ.id]" class="pq-fb">
+              <text :class="pracState[curQ.id].correct ? 'fb-ok' : 'fb-no'">
+                {{ pracState[curQ.id].correct ? '✓ 答对' : '✗ 答错，正确：' + optText(curQ.answer || '') }}
               </text>
-              <text v-if="q.explanation" class="pq-expl">{{ q.explanation }}</text>
+              <text v-if="curQ.explanation" class="pq-expl">{{ curQ.explanation }}</text>
             </view>
+          </scroll-view>
+          <view class="modal-actions">
+            <view
+              class="modal-btn primary"
+              :class="{ disabled: !pracState[curQ.id] || pracSaving }"
+              @tap.stop="nextQ"
+            ><text>{{ isLast ? (pracSaving ? '结算中…' : '查看结果') : '下一题 →' }}</text></view>
           </view>
-          <text v-if="!pracList.length" class="muted">未生成题目</text>
-        </scroll-view>
-        <view class="modal-actions">
-          <view class="modal-btn ghost" @tap="pracOpen = false"><text>关闭</text></view>
-          <view
-            class="modal-btn primary"
-            :class="{ disabled: answeredCount === 0 || pracSaving }"
-            @tap="finishPractice"
-          ><text>{{ pracSaving ? '保存中…' : '完成练习' }}</text></view>
-        </view>
+        </block>
+
+        <!-- 结果阶段 -->
+        <block v-else-if="pracDone">
+          <view class="pr-result">
+            <text class="pr-score">{{ correctCount }}/{{ pracList.length }}</text>
+            <text class="pr-msg">{{ pracResultMsg }}</text>
+          </view>
+          <view class="modal-actions">
+            <view class="modal-btn ghost" @tap.stop="closePractice"><text>完成</text></view>
+          </view>
+        </block>
       </view>
     </view>
 
     <!-- 词汇错题「学这个词」词力通双维闭环 -->
-    <view v-if="vlOpen && vl" class="modal" @tap.self="vlOpen = false">
-      <view class="modal-card">
+    <view v-if="vlOpen && vl" class="modal" @tap="closeVocab">
+      <view class="modal-card" @tap.stop>
         <view class="modal-head">
           <text class="modal-title">学这个词</text>
           <text class="modal-score">接收 {{ pct(vlRecep) }}% · 产出 {{ pct(vlProd) }}%</text>
@@ -229,7 +246,7 @@
         </scroll-view>
 
         <view class="modal-actions">
-          <view class="modal-btn ghost" @tap="vlOpen = false"><text>完成</text></view>
+          <view class="modal-btn ghost" @tap.stop="closeVocab"><text>完成</text></view>
         </view>
       </view>
     </view>
@@ -252,8 +269,14 @@ const pracWid = ref('')
 const pracList = ref<PracticeQuestion[]>([])
 const pracState = reactive<Record<string, { picked: string; correct: boolean }>>({})
 const pracSaving = ref(false)
+const pracIdx = ref(0)            // 当前题(逐题作答)
+const pracDone = ref(false)       // 是否进入结果页
+const pracRecorded = ref(false)   // 是否已回写成绩(防重复)
+const pracResultMsg = ref('')
 const answeredCount = computed(() => Object.keys(pracState).length)
 const correctCount = computed(() => Object.values(pracState).filter(s => s.correct).length)
+const curQ = computed<PracticeQuestion | undefined>(() => pracList.value[pracIdx.value])
+const isLast = computed(() => pracIdx.value >= pracList.value.length - 1)
 const letter = (i: number) => String.fromCharCode(65 + i)
 
 async function practiceWrong(wq: WrongCenterItem) {
@@ -265,12 +288,14 @@ async function practiceWrong(wq: WrongCenterItem) {
     pracWid.value = wq.id
     pracList.value = r.questions
     Object.keys(pracState).forEach(k => delete pracState[k])
+    pracIdx.value = 0; pracDone.value = false; pracRecorded.value = false; pracResultMsg.value = ''
+    if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
     pracOpen.value = true
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { pracLoading.value = '' }
 }
 function pickOpt(q: PracticeQuestion, opt: string) {
-  if (pracState[q.id]) return   // 已作答锁定
+  if (pracState[q.id]) return   // 已作答锁定,再点无效
   pracState[q.id] = { picked: opt, correct: (q.answer || '').trim() === opt.trim() }
 }
 function optCls(q: PracticeQuestion, opt: string): string {
@@ -278,26 +303,43 @@ function optCls(q: PracticeQuestion, opt: string): string {
   if (!st) return ''
   if ((q.answer || '').trim() === opt.trim()) return 'opt-correct'
   if (st.picked === opt) return 'opt-wrong'
-  return ''
+  return 'opt-dim'
 }
 // 去掉选项自带的「A. 」前缀,统一用左侧字母徽章展示
 function optText(v: string): string {
   return (v || '').replace(/^\s*[A-Da-d][.、)]\s*/, '')
 }
-async function finishPractice() {
-  if (pracSaving.value || answeredCount.value === 0) return
+function dotCls(q: PracticeQuestion, i: number): string {
+  if (i === pracIdx.value) return 'cur'
+  const st = pracState[q.id]
+  if (!st) return ''
+  return st.correct ? 'ok' : 'no'
+}
+async function nextQ() {
+  if (!curQ.value || !pracState[curQ.value.id]) return   // 未作答不可推进
+  if (!isLast.value) { pracIdx.value += 1; return }
+  // 最后一题 → 结算(回写一次成绩)
+  await recordPractice()
+  pracDone.value = true
+}
+async function recordPractice() {
+  if (pracRecorded.value || pracSaving.value || answeredCount.value === 0) return
   pracSaving.value = true
   try {
     const r = await recordPracticeResult(pracWid.value, answeredCount.value, correctCount.value)
-    uni.showToast({
-      title: r.just_mastered ? '🎉 已掌握！' : `本轮 ${correctCount.value}/${answeredCount.value}，已进入巩固`,
-      icon: 'none',
-    })
-    pracOpen.value = false
-    reload()
+    pracRecorded.value = true
+    pracResultMsg.value = r.just_mastered
+      ? '🎉 恭喜，这道错题已掌握！'
+      : `已计入巩固：本轮 ${correctCount.value}/${answeredCount.value} 正确`
   } catch (e: any) {
-    uni.showToast({ title: e?.message || '保存失败', icon: 'none' })
+    uni.showToast({ title: e?.message || '结算失败', icon: 'none' })
   } finally { pracSaving.value = false }
+}
+async function closePractice() {
+  // 中途关闭也回写已作答的成绩,不丢进度
+  if (answeredCount.value > 0 && !pracRecorded.value) await recordPractice()
+  pracOpen.value = false
+  reload()
 }
 
 // ── 词汇错题「学这个词」词力通双维闭环(P3)──
@@ -364,6 +406,10 @@ function afterVocab(justMastered: boolean) {
     uni.showToast({ title: '🎉 这个词已掌握！', icon: 'none' })
     setTimeout(() => { vlOpen.value = false; reload() }, 900)
   }
+}
+function closeVocab() {
+  vlOpen.value = false
+  reload()   // 反映练习后状态(待巩固→巩固中)
 }
 function playWordAudio() {
   const url = vl.value?.word.audio_url
@@ -602,11 +648,25 @@ async function loadMore() {
 .prac-ic { width: 26rpx; height: 26rpx; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 40rpx; }
 .modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
-.modal-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12rpx; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
 .modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
 .modal-score { font-size: 22rpx; color: var(--c-text-second); white-space: nowrap; }
+.modal-x { width: 56rpx; height: 56rpx; display: flex; align-items: center; justify-content: center; font-size: 30rpx; color: var(--c-text-hint); flex-shrink: 0; }
 .modal-body { flex: 1; margin: 16rpx 0; }
 .muted { color: var(--c-text-hint); font-size: 24rpx; }
+/* 逐题:进度 */
+.pr-top { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-top: 8rpx; }
+.pr-idx { font-size: 24rpx; color: var(--c-text-second); font-weight: 600; white-space: nowrap; }
+.pr-dots { display: flex; gap: 10rpx; flex-wrap: wrap; }
+.pr-dot { width: 18rpx; height: 18rpx; border-radius: 50%; background: #dfe4ea; }
+.pr-dot.cur { background: var(--c-primary); transform: scale(1.15); }
+.pr-dot.ok { background: #18a058; }
+.pr-dot.no { background: #e35b5b; }
+/* 逐题:结果页 */
+.pr-result { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60rpx 0; gap: 16rpx; }
+.pr-score { font-size: 72rpx; font-weight: 800; color: var(--c-primary); }
+.pr-msg { font-size: 27rpx; color: var(--c-text-second); text-align: center; padding: 0 24rpx; line-height: 1.6; }
+.opt-dim { opacity: 0.5; }
 /* 练同类每题 */
 .pq { padding: 18rpx 0; border-top: 2rpx solid #eef1f5; }
 .pq:first-child { border-top: none; padding-top: 6rpx; }
