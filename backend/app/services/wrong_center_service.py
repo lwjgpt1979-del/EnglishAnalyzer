@@ -188,6 +188,37 @@ def _source_route(source_label: str | None, source_id: uuid.UUID | None) -> str 
     return None
 
 
+async def record_practice_result(
+    db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
+    total: int, correct: int,
+) -> dict:
+    """练同类一轮做完 → 记 practice_count/correct(待巩固→巩固中);
+    语法错题按正确率推进 SM-2(可达标判掌握);词汇仅记数(掌握判定留 P3 词力通)。"""
+    from app.core.exceptions import AppError
+    from app.services import wrong_review_service
+    wr = await db.get(WrongRecord, wrong_record_id)
+    if wr is None or wr.student_id != student_id:
+        raise AppError(code=404, message="错题不存在或无权访问")
+    total = max(0, int(total))
+    correct = max(0, min(int(correct), total))
+    wr.practice_count = (wr.practice_count or 0) + total
+    wr.practice_correct = (wr.practice_correct or 0) + correct
+    mastered = False
+    if total > 0 and wr.kp_kind == "grammar" and wr.status == "open":
+        mastered = await wrong_review_service.advance_by_practice(
+            db, wr=wr, accuracy=correct / total)
+    await db.flush()
+    return {
+        "lifecycle": _lifecycle_of(wr),
+        "is_mastered": wr.status == "mastered",
+        "just_mastered": mastered,
+        "practice_count": wr.practice_count,
+        "practice_correct": wr.practice_correct,
+        "review_count": wr.review_count or 0,
+        "next_review_at": wr.next_review_at.isoformat() if wr.next_review_at else None,
+    }
+
+
 async def practice_for_wrong(
     db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
     count: int = 5, difficulty: int = 3,

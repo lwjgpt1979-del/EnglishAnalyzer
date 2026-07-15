@@ -103,46 +103,105 @@
       <view v-else-if="items.length > 0" class="load-more gray">已加载全部</view>
     </view>
 
-    <!-- 练同类仿真题 弹层 -->
+    <!-- 练同类仿真题 弹层(可作答判分) -->
     <view v-if="pracOpen" class="modal" @tap.self="pracOpen = false">
       <view class="modal-card">
-        <text class="modal-title">同类练习 · {{ pracKp }}</text>
+        <view class="modal-head">
+          <text class="modal-title">同类练习 · {{ pracKp }}</text>
+          <text class="modal-score">已答 {{ answeredCount }}/{{ pracList.length }} · 对 {{ correctCount }}</text>
+        </view>
         <scroll-view scroll-y class="modal-body">
-          <view v-for="(q, i) in pracList" :key="q.id || i" class="sq">
-            <text class="sq-stem">{{ i + 1 }}. {{ q.stem }}</text>
-            <view v-if="q.options" class="sq-opts">
-              <text v-for="(v, kk) in q.options" :key="kk" class="sq-opt">{{ kk }}. {{ v }}</text>
+          <view v-for="(q, i) in pracList" :key="q.id || i" class="pq">
+            <text class="pq-stem">{{ i + 1 }}. {{ q.stem }}</text>
+            <view v-if="q.options" class="pq-opts">
+              <view
+                v-for="(v, oi) in q.options"
+                :key="oi"
+                class="pq-opt"
+                :class="optCls(q, v)"
+                @tap="pickOpt(q, v)"
+              >{{ letter(oi) }}. {{ v }}</view>
+            </view>
+            <view v-if="pracState[q.id]" class="pq-fb">
+              <text :class="pracState[q.id].correct ? 'fb-ok' : 'fb-no'">
+                {{ pracState[q.id].correct ? '✓ 答对' : '✗ 答错，正确：' + q.answer }}
+              </text>
+              <text v-if="q.explanation" class="pq-expl">{{ q.explanation }}</text>
             </view>
           </view>
           <text v-if="!pracList.length" class="muted">未生成题目</text>
         </scroll-view>
-        <view class="modal-close" @tap="pracOpen = false"><text>关闭</text></view>
+        <view class="modal-actions">
+          <view class="modal-btn ghost" @tap="pracOpen = false"><text>关闭</text></view>
+          <view
+            class="modal-btn primary"
+            :class="{ disabled: answeredCount === 0 || pracSaving }"
+            @tap="finishPractice"
+          ><text>{{ pracSaving ? '保存中…' : '完成练习' }}</text></view>
+        </view>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, type WrongCenterItem, type WrongCenterCounts } from '@/api/wrongQuestions'
+import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, recordPracticeResult, type WrongCenterItem, type WrongCenterCounts, type PracticeQuestion } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 
-// 练同类仿真题
+// 练同类仿真题(可作答判分)
 const pracOpen = ref(false)
 const pracLoading = ref('')
 const pracKp = ref('')
-const pracList = ref<any[]>([])
+const pracWid = ref('')
+const pracList = ref<PracticeQuestion[]>([])
+const pracState = reactive<Record<string, { picked: string; correct: boolean }>>({})
+const pracSaving = ref(false)
+const answeredCount = computed(() => Object.keys(pracState).length)
+const correctCount = computed(() => Object.values(pracState).filter(s => s.correct).length)
+const letter = (i: number) => String.fromCharCode(65 + i)
+
 async function practiceWrong(wq: WrongCenterItem) {
   if (pracLoading.value) return
   pracLoading.value = wq.id
   try {
     const r = await practiceWrongCenter(wq.id)
-    pracKp.value = r.knowledge_point; pracList.value = r.questions; pracOpen.value = true
+    pracKp.value = r.knowledge_point
+    pracWid.value = wq.id
+    pracList.value = r.questions
+    Object.keys(pracState).forEach(k => delete pracState[k])
+    pracOpen.value = true
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { pracLoading.value = '' }
+}
+function pickOpt(q: PracticeQuestion, opt: string) {
+  if (pracState[q.id]) return   // 已作答锁定
+  pracState[q.id] = { picked: opt, correct: (q.answer || '').trim() === opt.trim() }
+}
+function optCls(q: PracticeQuestion, opt: string): string {
+  const st = pracState[q.id]
+  if (!st) return ''
+  if ((q.answer || '').trim() === opt.trim()) return 'opt-correct'
+  if (st.picked === opt) return 'opt-wrong'
+  return ''
+}
+async function finishPractice() {
+  if (pracSaving.value || answeredCount.value === 0) return
+  pracSaving.value = true
+  try {
+    const r = await recordPracticeResult(pracWid.value, answeredCount.value, correctCount.value)
+    uni.showToast({
+      title: r.just_mastered ? '🎉 已掌握！' : `本轮 ${correctCount.value}/${answeredCount.value}，已进入巩固`,
+      icon: 'none',
+    })
+    pracOpen.value = false
+    reload()
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '保存失败', icon: 'none' })
+  } finally { pracSaving.value = false }
 }
 
 // 点击错题来源 → 回到来源(整卷详情/作业详情);navigateTo 入栈,原生返回即「立即回来」
@@ -375,15 +434,28 @@ async function loadMore() {
 .prac-ic { width: 26rpx; height: 26rpx; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 40rpx; }
 .modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
+.modal-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12rpx; }
 .modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.modal-score { font-size: 22rpx; color: var(--c-text-second); white-space: nowrap; }
 .modal-body { flex: 1; margin: 16rpx 0; }
-.sq { padding: 14rpx 0; border-top: 2rpx solid #eef1f5; }
-.sq:first-child { border-top: none; }
-.sq-stem { display: block; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
-.sq-opts { display: flex; flex-direction: column; gap: 4rpx; margin-top: 8rpx; }
-.sq-opt { font-size: 24rpx; color: var(--c-text-sub); }
 .muted { color: var(--c-text-hint); font-size: 24rpx; }
-.modal-close { text-align: center; font-size: 26rpx; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 14rpx; }
+/* 练同类每题 */
+.pq { padding: 18rpx 0; border-top: 2rpx solid #eef1f5; }
+.pq:first-child { border-top: none; padding-top: 6rpx; }
+.pq-stem { display: block; font-size: 27rpx; line-height: 1.6; color: var(--c-ink); font-weight: 600; }
+.pq-opts { display: flex; flex-direction: column; gap: 10rpx; margin-top: 12rpx; }
+.pq-opt { font-size: 25rpx; color: var(--c-ink); background: var(--c-bg-page); border: 2rpx solid var(--c-border); border-radius: 12rpx; padding: 14rpx 18rpx; line-height: 1.4; }
+.pq-opt.opt-correct { background: #e6f8ee; border-color: #18a058; color: #128a4c; font-weight: 600; }
+.pq-opt.opt-wrong { background: #fdecec; border-color: #e35b5b; color: #c33; }
+.pq-fb { margin-top: 10rpx; }
+.pq-fb .fb-ok { font-size: 24rpx; color: #128a4c; font-weight: 600; }
+.pq-fb .fb-no { font-size: 24rpx; color: #c33; font-weight: 600; }
+.pq-expl { display: block; margin-top: 8rpx; font-size: 23rpx; color: var(--c-text-second); line-height: 1.6; }
+.modal-actions { display: flex; gap: 16rpx; }
+.modal-btn { flex: 1; text-align: center; font-size: 27rpx; font-weight: 700; border-radius: 999rpx; padding: 16rpx; }
+.modal-btn.ghost { background: var(--c-bg-soft); color: var(--c-text-second); }
+.modal-btn.primary { background: var(--c-primary); color: #fff; }
+.modal-btn.disabled { opacity: 0.5; }
 .src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0 10rpx; }
 .src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
 .src-tab.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }

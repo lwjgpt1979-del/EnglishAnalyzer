@@ -349,3 +349,30 @@ async def submit_review(
         "explanation": payload["explanation"], "mastered": mastered,
         "next_review_at": wr.next_review_at, "review_count": wr.review_count,
     }
+
+
+async def advance_by_practice(
+    db: AsyncSession, *, wr: WrongRecord, accuracy: float, today: _dt.date | None = None,
+) -> bool:
+    """练同类一轮成绩 → 按正确率映射 SM-2 质量,推进该错题(语法用)。
+    accuracy≥0.8→q5, ≥0.6→q4, ≥0.4→q3, 否则 q2(归零重排)。
+    连续达标(q≥4 且 review_count≥3 且 interval≥21)→ 判掌握(source=practice)。返回是否判掌握。"""
+    today = today or _dt.date.today()
+    quality = 5 if accuracy >= 0.8 else 4 if accuracy >= 0.6 else 3 if accuracy >= 0.4 else 2
+    r = sm2_update(
+        quality=quality, review_count=wr.review_count,
+        easiness_factor=Decimal(str(wr.easiness_factor)),
+        review_interval_days=wr.review_interval_days, today=today,
+    )
+    wr.review_count = r.review_count
+    wr.easiness_factor = r.easiness_factor
+    wr.review_interval_days = r.review_interval_days
+    wr.next_review_at = r.next_review_at
+    wr.last_review_at = today
+    mastered = quality >= 4 and r.review_count >= 3 and r.review_interval_days >= _MASTER_MIN_INTERVAL
+    if mastered:
+        wr.status = "mastered"
+        wr.mastered_at = _dt.datetime.now(_dt.timezone.utc)
+        wr.mastery_source = "practice"
+    await db.flush()
+    return mastered

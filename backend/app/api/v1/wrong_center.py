@@ -56,7 +56,7 @@ async def practice_wrong(wrong_record_id: uuid.UUID, db: DbDep, current_user: Us
         db, student_id=current_user.id, wrong_record_id=wrong_record_id)
     await db.commit()
     kp_name = r["knowledge_point"]
-    # generate 返回 AiQuestion ORM 对象,手动序列化(否则 response_model=dict 无法序列化)
+    # generate 返回 AiQuestion ORM 对象,手动序列化(含 answer/explanation 供前端判分即时反馈)
     return make_ok({
         "knowledge_point": kp_name,
         "questions": [
@@ -68,9 +68,24 @@ async def practice_wrong(wrong_record_id: uuid.UUID, db: DbDep, current_user: Us
                 "difficulty": q.difficulty,
                 "stem": (q.content or {}).get("stem", ""),
                 "options": (q.content or {}).get("options"),
+                "answer": (q.content or {}).get("answer"),
+                "explanation": (q.content or {}).get("explanation"),
             } for q in r["questions"]
         ],
     })
+
+
+@router.post("/practice-result/{wrong_record_id}", response_model=BaseResponse[dict])
+async def practice_result(
+    wrong_record_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep,
+):
+    """练同类一轮做完回写成绩:记 practice_count/correct;语法据正确率推进 SM-2。
+    body: {total, correct}"""
+    r = await wrong_center_service.record_practice_result(
+        db, student_id=current_user.id, wrong_record_id=wrong_record_id,
+        total=int(body.get("total", 0)), correct=int(body.get("correct", 0)))
+    await db.commit()
+    return make_ok(r)
 
 
 @router.get("/review-queue", response_model=BaseResponse[WrongReviewQueueOut])

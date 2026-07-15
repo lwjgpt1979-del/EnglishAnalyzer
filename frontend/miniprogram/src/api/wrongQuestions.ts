@@ -105,9 +105,16 @@ export function getWrongCenterCounts(kind = ''): Promise<WrongCenterCounts> {
   return request(`/api/v1/wrong-center/counts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`)
 }
 
-/** 错题「练同类仿真题」(统一入口,按 wrong_record 派发) */
-export function practiceWrongCenter(wrongRecordId: string): Promise<{ knowledge_point: string; questions: any[] }> {
+/** 错题「练同类仿真题」(统一入口,按 wrong_record 派发)。questions 含 answer/explanation 供即时判分 */
+export interface PracticeQuestion { id: string; stem: string; options: string[] | null; answer: string | null; explanation: string | null }
+export function practiceWrongCenter(wrongRecordId: string): Promise<{ knowledge_point: string; questions: PracticeQuestion[] }> {
   return request(`/api/v1/wrong-center/practice/${wrongRecordId}`, { method: 'POST' })
+}
+
+/** 练同类一轮做完回写成绩(记 practice + 语法推进 SM-2) */
+export interface PracticeResult { lifecycle: string; is_mastered: boolean; just_mastered: boolean; practice_count: number; practice_correct: number; review_count: number; next_review_at: string | null }
+export function recordPracticeResult(wrongRecordId: string, total: number, correct: number): Promise<PracticeResult> {
+  return request(`/api/v1/wrong-center/practice-result/${wrongRecordId}`, { method: 'POST', data: { total, correct } })
 }
 
 /** 复习队列：客观重做那道错题（答对推进 SM-2，答错归零重排） */
