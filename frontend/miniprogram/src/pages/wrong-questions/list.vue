@@ -79,9 +79,15 @@
           <view class="wq-meta">
             <text v-if="wq.source_label === '整卷'" class="tag tag-paper">整卷</text>
             <text v-else-if="fromAssignment(wq)" class="tag tag-blue">来自作业</text>
+            <text v-if="wq.kp_kind === 'grammar'" class="tag tag-gram">语法</text>
+            <text v-else-if="wq.kp_kind === 'vocab'" class="tag tag-vocab">词汇</text>
             <text v-if="wq.question_type" class="tag">{{ wq.question_type }}</text>
             <text v-if="wq.difficulty" class="tag">{{ '★'.repeat(wq.difficulty) }}</text>
             <text v-if="wq.is_mastered" class="tag tag-green">已掌握</text>
+          </view>
+          <!-- 整卷错题:练同类仿真题 -->
+          <view v-if="wq.source_label === '整卷'" class="pw-prac" @tap.stop="practicePaperWrong(wq)">
+            <text>{{ pracLoading === wq.id ? '出题中…' : '练同类仿真题' }}</text>
           </view>
           <!-- 知识点标签 chips（M38） -->
           <view v-if="wq.tags && wq.tags.length > 0" class="kp-tags">
@@ -103,6 +109,23 @@
       </view>
       <view v-else-if="items.length > 0" class="load-more gray">已加载全部</view>
     </view>
+
+    <!-- 练同类仿真题 弹层 -->
+    <view v-if="pracOpen" class="modal" @tap.self="pracOpen = false">
+      <view class="modal-card">
+        <text class="modal-title">同类练习 · {{ pracKp }}</text>
+        <scroll-view scroll-y class="modal-body">
+          <view v-for="(q, i) in pracList" :key="q.id" class="sq">
+            <text class="sq-stem">{{ i + 1 }}. {{ q.stem }}</text>
+            <view v-if="q.options" class="sq-opts">
+              <text v-for="(v, kk) in q.options" :key="kk" class="sq-opt">{{ kk }}. {{ v }}</text>
+            </view>
+          </view>
+          <text v-if="!pracList.length" class="muted">未生成题目</text>
+        </scroll-view>
+        <view class="modal-close" @tap="pracOpen = false"><text>关闭</text></view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -110,10 +133,26 @@
 import { computed, onMounted, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { listWrongQuestions, listPaperWrongs, autoTagWrongQuestions, getReviewQueue } from '@/api/wrongQuestions'
+import { practiceForQuestion, type SimilarQuestion } from '@/api/userPapers'
 import { useAuthStore } from '@/stores/auth'
 import type { WrongQuestionOut } from '@/types/api'
 
 const auth = useAuthStore()
+
+// 整卷错题:练同类仿真题
+const pracOpen = ref(false)
+const pracLoading = ref('')
+const pracKp = ref('')
+const pracList = ref<SimilarQuestion[]>([])
+async function practicePaperWrong(wq: any) {
+  if (pracLoading.value) return
+  pracLoading.value = wq.id
+  try {
+    const r = await practiceForQuestion(wq.id)
+    pracKp.value = r.knowledge_point; pracList.value = r.questions; pracOpen.value = true
+  } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
+  finally { pracLoading.value = '' }
+}
 
 // 今日复习到期数（SM-2 遗忘曲线，M12）
 const reviewDue = ref(0)
@@ -309,6 +348,20 @@ function goDetail(id: string) {
 .tag-green { background: var(--c-success-bg); color: var(--c-success-dark); }
 .tag-blue { background: var(--c-primary-faint); color: var(--c-primary); }
 .tag-paper { background: #EDE9FE; color: #6D28D9; }
+.tag-gram { background: #e6f0ff; color: #3d8bf5; }
+.tag-vocab { background: #fff1e6; color: #ff8a3d; }
+.pw-prac { display: inline-block; margin-top: 12rpx; font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 40rpx; }
+.modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
+.modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.modal-body { flex: 1; margin: 16rpx 0; }
+.sq { padding: 14rpx 0; border-top: 2rpx solid #eef1f5; }
+.sq:first-child { border-top: none; }
+.sq-stem { display: block; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
+.sq-opts { display: flex; flex-direction: column; gap: 4rpx; margin-top: 8rpx; }
+.sq-opt { font-size: 24rpx; color: var(--c-text-sub); }
+.muted { color: var(--c-text-hint); font-size: 24rpx; }
+.modal-close { text-align: center; font-size: 26rpx; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 14rpx; }
 .src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0; }
 .src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
 .src-tab.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }

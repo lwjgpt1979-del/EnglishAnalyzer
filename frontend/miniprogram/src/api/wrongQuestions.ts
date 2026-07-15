@@ -88,6 +88,8 @@ export interface PaperWrongItem {
   question_type: string | null
   is_mastered: boolean
   source_label: string
+  kp_kind?: 'grammar' | 'vocab' | null   // 考语法 / 考词汇
+  kp_name?: string | null
 }
 
 export interface PaperWrongListOut {

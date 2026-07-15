@@ -223,6 +223,8 @@ async def list_paper_wrong_questions(
                 "question_type": i.question_type,
                 "is_mastered": i.is_mastered,
                 "source_label": i.source_label,
+                "kp_kind": i.kp_kind,
+                "kp_name": i.kp_name,
             }
             for i in items
         ],

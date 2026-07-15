@@ -334,15 +334,17 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                         source="paper_upload",
                     )
                     q.node_id = node_id   # 命中→挂 node;未命中→NULL(候选/个人节点已在 Step 2.4 处理)
-                    # 整卷错题收口进 wrong_record(失败不阻断整卷管线)
-                    if is_wrong:
-                        try:
-                            from app.services import wrong_center_service
-                            await wrong_center_service.record_wrong(
-                                db, student_id=paper.student_id, q_scope="uploaded",
-                                question_id=q.id, node_id=node_id)
-                        except Exception:  # noqa: BLE001
-                            pass
+
+                # 整卷错题**全部**收口进错题中心(不只归类命中的;无归类 node_id=None)
+                # → 立即进「我的错题」+ 复习队列。失败不阻断整卷管线。
+                if is_wrong:
+                    try:
+                        from app.services import wrong_center_service
+                        await wrong_center_service.record_wrong(
+                            db, student_id=paper.student_id, q_scope="uploaded",
+                            question_id=q.id, node_id=q.node_id)
+                    except Exception:  # noqa: BLE001
+                        pass
 
             # P2：整卷题干里命中词典的生词 → 该生词力通候选池（best-effort）
             try:

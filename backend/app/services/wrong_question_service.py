@@ -23,6 +23,8 @@ class PaperWrongItem:
     question_type: str | None
     is_mastered: bool = False
     source_label: str = "整卷"
+    kp_kind: str | None = None   # 'grammar'=考语法 / 'vocab'=考词汇
+    kp_name: str | None = None
 
 
 async def create_wrong_question(
@@ -180,11 +182,28 @@ async def list_paper_wrongs(
         .limit(limit)
     )).scalars().all()
 
+    # 语法/词汇标签:命中语法节点(cf/jf)或归类名是语法概念 → 语法;有归类名但非语法 → 词汇
+    from app.models.d15_knowledge_graph import KnowledgeNode
+    from app.services.grammar_progress_service import _grammar_anchor
+    from app.services.kp_lecture_service import kp_type_of
+    node_ids = [r.node_id for r in rows if r.node_id]
+    codes = {}
+    if node_ids:
+        codes = {nid: code for nid, code in (await db.execute(
+            select(KnowledgeNode.id, KnowledgeNode.code).where(KnowledgeNode.id.in_(node_ids)))).all()}
+
+    def _kind(r):
+        if (r.node_id and kp_type_of(codes.get(r.node_id)) == "grammar") or (r.kp_key and _grammar_anchor(r.kp_key)):
+            return "grammar"
+        return "vocab" if r.kp_key else None
+
     return [
         PaperWrongItem(
             id=r.id,
             stem=r.stem,
             question_type=r.question_type,
+            kp_kind=_kind(r),
+            kp_name=r.kp_key,
         )
         for r in rows
     ], total
