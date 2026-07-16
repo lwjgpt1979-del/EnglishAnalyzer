@@ -94,20 +94,17 @@ onMounted(load)
     </el-row>
 
     <!-- ── 内容与产品质量（§5.5）── -->
+    <!-- 错题收敛后错题不再走独立 OCR（并入上传作业/整卷），故移除「OCR成功率·错题」卡；余三卡 span=8 补位 -->
     <el-row v-if="dash" :gutter="16" style="margin-top: 16px">
-      <el-col :span="6"><el-card shadow="hover">
+      <el-col :span="8"><el-card shadow="hover">
         <el-statistic title="错题复盘率(%)" :value="dash.content_quality.review_rate.rate_pct" />
         <div class="muted">已掌握 {{ dash.content_quality.review_rate.mastered }} / {{ dash.content_quality.review_rate.total }} · 验证{{ dash.content_quality.review_rate.by_review }} 手动{{ dash.content_quality.review_rate.by_manual }}</div>
       </el-card></el-col>
-      <el-col :span="6"><el-card shadow="hover">
-        <el-statistic title="OCR成功率·错题(%)" :value="dash.content_quality.ocr_success.wrong_questions.rate_pct" />
-        <div class="muted">{{ dash.content_quality.ocr_success.wrong_questions.completed }} / {{ dash.content_quality.ocr_success.wrong_questions.total }}</div>
-      </el-card></el-col>
-      <el-col :span="6"><el-card shadow="hover">
+      <el-col :span="8"><el-card shadow="hover">
         <el-statistic title="OCR成功率·整卷(%)" :value="dash.content_quality.ocr_success.uploaded_papers.rate_pct" />
         <div class="muted">{{ dash.content_quality.ocr_success.uploaded_papers.completed }} / {{ dash.content_quality.ocr_success.uploaded_papers.total }}</div>
       </el-card></el-col>
-      <el-col :span="6"><el-card shadow="hover">
+      <el-col :span="8"><el-card shadow="hover">
         <el-statistic title="机构账号续费率(%)" :value="dash.institution.renewal.rate_pct" />
         <div class="muted">复购 {{ dash.institution.renewal.institutions_repurchased }} / {{ dash.institution.renewal.institutions_purchased }} 家（近似）</div>
       </el-card></el-col>
