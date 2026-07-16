@@ -57,16 +57,17 @@
               <view v-if="anaOpen[q.id] && ana[q.id]" class="ana">
                 <text v-if="ana[q.id].error" class="ana-err">{{ ana[q.id].error }}</text>
                 <template v-else>
-                  <view v-if="ana[q.id].rc_code" class="ana-row"><text class="ana-k">题型</text><text class="ana-v">{{ ana[q.id].rc_code }}</text></view>
-                  <view v-if="ana[q.id].evidence" class="ana-ev"><text class="ana-k">原文定位</text><text class="ana-quote">“{{ ana[q.id].evidence }}”</text></view>
-                  <view v-if="ana[q.id].answer_reason" class="ana-row2"><text class="ana-k">为什么对</text><text class="ana-t">{{ ana[q.id].answer_reason }}</text></view>
+                  <view v-if="ana[q.id].skill || ana[q.id].rc_code" class="ana-row"><text class="ana-k">题型</text><text class="ana-v">{{ ana[q.id].skill || ana[q.id].rc_code }}</text></view>
+                  <view v-if="ana[q.id].evidence" class="ana-ev"><text class="ana-k">① 回原文定位</text><text class="ana-quote">“{{ ana[q.id].evidence }}”</text></view>
+                  <view v-if="ana[q.id].answer_reason" class="ana-row2"><text class="ana-k">② 为什么对</text><text class="ana-t">{{ ana[q.id].answer_reason }}</text></view>
                   <view v-if="hasDistractors(q.id)" class="ana-dis">
-                    <text class="ana-k">干扰项</text>
+                    <text class="ana-k">③ 干扰项为什么错</text>
                     <view v-for="(d, key) in ana[q.id].distractors" :key="key" class="dis-row">
                       <text class="dis-key">{{ key }}</text>
                       <text class="dis-why">{{ d.why_wrong }}</text>
                     </view>
                   </view>
+                  <view v-if="ana[q.id].skill_tip" class="ana-tip"><text class="ana-k tip-k">④ 解题技巧</text><text class="ana-t">{{ ana[q.id].skill_tip }}</text></view>
                 </template>
               </view>
             </view>
@@ -211,4 +212,6 @@ onLoad(async () => {
 .dis-row { display: flex; gap: 12rpx; align-items: flex-start; }
 .dis-key { flex-shrink: 0; width: 40rpx; height: 40rpx; border-radius: 50%; background: #fdecec; color: #c33; font-size: 22rpx; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .dis-why { flex: 1; font-size: 23rpx; color: var(--c-text-second, var(--c-text-sub)); line-height: 1.55; }
+.ana-tip { display: flex; flex-direction: column; gap: 8rpx; background: #fff8ec; border-radius: 10rpx; padding: 12rpx 14rpx; }
+.tip-k { background: #ffe6bf; color: #92600d; }
 </style>

@@ -15,6 +15,19 @@ from app.models.d13_v2_user_papers import (
     UserUploadedPaper, UserPaperSection, UserPaperQuestion,
 )
 
+# 方案B 四件套:题型(中文)→定位证据→为什么对→干扰项为什么错→该题型通用技巧
+_READING_INTENSIVE_SYS = (
+    "你是中小学英语阅读理解精讲老师。对给定的阅读小题做「解题精讲」,只返回 JSON:"
+    '{"rc_code":"rc-x-x 阅读技能编码",'
+    '"skill":"该题的题型中文名(细节理解/主旨大意/推理判断/词义猜测/作者态度/指代关系/图表数字 之一或更贴切的)",'
+    '"evidence":"答案定位句(必须逐字摘自原文,不改写不翻译)",'
+    '"answer_reason":"由定位句到正确项的推理(1-2句)",'
+    '"distractors":{"A":{"meaning":"该选项的主张/义项(中文)","why_wrong":"为何是干扰项——与原文哪处冲突,点明错因类型"},...},'
+    '"skill_tip":"该题型的通用解题技巧(1-2句,可迁移到同类题;如『细节题先定位关键词回原文比对』)"}。'
+    "distractors 只列**非正确项**(正确项不出现),每项都要给 meaning + why_wrong。"
+    "evidence 会用程序在原文里做子串比对,凑不出原文子串会判幻觉,务必逐字摘抄。"
+)
+
 
 async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
     """学生上传作业里含阅读理解的卷,按卷(批次)归组。年月日倒序。"""
@@ -63,13 +76,14 @@ async def question_analysis(db: AsyncSession, *, student_id: uuid.UUID,
     user = (f"【原文】\n{context[:3500]}\n\n【题目】{q.stem}\n【选项】{opts}\n"
             f"【正确答案】{q.correct_answer or '未知'}")
     if is_llm_dev_mode():
-        ana = {"rc_code": "rc-detail", "evidence": context[:60],
-               "answer_reason": "(dev)据定位句得正确项", "distractors": {}}
+        ana = {"rc_code": "rc-detail", "skill": "细节理解", "evidence": context[:60],
+               "answer_reason": "(dev)据定位句得正确项", "distractors": {},
+               "skill_tip": "(dev)细节题先圈关键词回原文比对"}
     else:
         try:
             # 关思考+快档:结构化抽取(定位句+干扰项),开思考会烧 token 截断致空(见真题路径 46s 截断)
             ana = await complete_json(
-                system_prompt=qa._SYSTEM_PROMPT, user_prompt=user,
+                system_prompt=_READING_INTENSIVE_SYS, user_prompt=user,
                 model=fast_model(), disable_thinking=True, max_tokens=3072,
                 escalate_ceiling=4096, validate=lambda d: bool((d.get("evidence") or "").strip()),
                 feature="reading_analysis") or {}

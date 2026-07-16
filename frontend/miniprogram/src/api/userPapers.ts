@@ -73,9 +73,11 @@ export function addReadingIntensive(sectionId: string): Promise<{ added: boolean
 /** 阅读理解精讲·题目层解析(题型/定位句/为何对/干扰项),缓存复用 */
 export interface ReadingAnalysis {
   rc_code?: string
+  skill?: string          // 题型中文名(细节理解/推理判断/词义猜测…)
   evidence?: string
   answer_reason?: string
   distractors?: Record<string, { meaning?: string; why_wrong?: string }>
+  skill_tip?: string      // 该题型通用解题技巧
   _warnings?: string[]
   error?: string
 }
