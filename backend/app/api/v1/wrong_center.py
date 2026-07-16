@@ -87,31 +87,21 @@ async def practice_result(
     return make_ok(r)
 
 
-@router.get("/vocab-learn/{wrong_record_id}", response_model=BaseResponse[dict])
-async def vocab_learn(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep):
-    """词汇错题「学这个词」:单词卡 + 接收探针 + 拼写提示 + 双维进度。"""
-    r = await wrong_center_service.vocab_learn_payload(
+@router.get("/vocab-sim/{wrong_record_id}", response_model=BaseResponse[dict])
+async def vocab_sim(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """词汇错题「学这个词」:富词卡(配图/短语/发音)+ 仿真练习 5 题(纯选择,全局缓存复用)。"""
+    r = await wrong_center_service.vocab_sim_payload(
         db, student_id=current_user.id, wrong_record_id=wrong_record_id)
     await db.commit()
     return make_ok(r)
 
 
-@router.post("/vocab-recep/{wrong_record_id}", response_model=BaseResponse[dict])
-async def vocab_recep(wrong_record_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
-    """接收探针作答 → recep BKT。body: {key, answer}"""
-    r = await wrong_center_service.submit_vocab_recep(
+@router.post("/vocab-sim-result/{wrong_record_id}", response_model=BaseResponse[dict])
+async def vocab_sim_result(wrong_record_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
+    """仿真练习一轮结算:5 题全对 → 判掌握、进已掌握。body: {total, correct}"""
+    r = await wrong_center_service.submit_vocab_sim(
         db, student_id=current_user.id, wrong_record_id=wrong_record_id,
-        key=str(body.get("key", "")), answer=str(body.get("answer", "")))
-    await db.commit()
-    return make_ok(r)
-
-
-@router.post("/vocab-spell/{wrong_record_id}", response_model=BaseResponse[dict])
-async def vocab_spell(wrong_record_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
-    """拼写作答(产出)→ prod BKT;双维达标则判掌握。body: {answer}"""
-    r = await wrong_center_service.submit_vocab_spell(
-        db, student_id=current_user.id, wrong_record_id=wrong_record_id,
-        answer=str(body.get("answer", "")))
+        total=int(body.get("total", 0)), correct=int(body.get("correct", 0)))
     await db.commit()
     return make_ok(r)
 

@@ -126,91 +126,86 @@
       @close="onPracClose"
     />
 
-    <!-- 词汇错题「学这个词」词力通双维闭环 -->
-    <view v-if="vlOpen && vl" class="modal" @tap="closeVocab">
+    <!-- 词汇错题「学这个词」:富词卡(配图/短语/发音/跟读)-->
+    <view v-if="vlCardOpen && vlSim" class="modal" @tap="closeVocabCard">
       <view class="modal-card" @tap.stop>
         <view class="modal-head">
           <text class="modal-title">学这个词</text>
-          <text class="modal-score">接收 {{ pct(vlRecep) }}% · 产出 {{ pct(vlProd) }}%</text>
-        </view>
-
-        <!-- 双维进度条 -->
-        <view class="vl-bars">
-          <view class="vl-bar">
-            <text class="vl-bar-l">接收</text>
-            <view class="vl-track"><view class="vl-fill recep" :style="{ width: pct(vlRecep) + '%' }" /></view>
-            <text class="vl-bar-n" :class="{ ok: vlRecep >= RECEP_θ }">{{ vlRecep >= RECEP_θ ? '达标' : pct(vlRecep) + '%' }}</text>
-          </view>
-          <view class="vl-bar">
-            <text class="vl-bar-l">产出</text>
-            <view class="vl-track"><view class="vl-fill prod" :style="{ width: pct(vlProd) + '%' }" /></view>
-            <text class="vl-bar-n" :class="{ ok: vlProd >= RECEP_θ }">{{ vlProd >= RECEP_θ ? '达标' : pct(vlProd) + '%' }}</text>
-          </view>
+          <text v-if="vlSim.mastered" class="wl-done">已掌握</text>
         </view>
 
         <scroll-view scroll-y class="modal-body">
-          <!-- 单词卡 -->
-          <view class="vl-card">
-            <view class="vl-word-row">
-              <text class="vl-word">{{ vl.word.word }}</text>
-              <text v-if="vl.word.phonetic" class="vl-phon">/{{ vl.word.phonetic }}/</text>
-              <view v-if="vl.word.audio_url" class="vl-audio" @tap="playWordAudio"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /></view>
-            </view>
-            <text v-if="defZh()" class="vl-def">{{ defZh() }}</text>
-            <text v-if="vl.word.examples && vl.word.examples.length" class="vl-eg">{{ vl.word.examples[0].en }}</text>
-          </view>
-
-          <!-- 接收探针 -->
-          <view v-for="probe in vl.recep_probes" :key="probe.key" class="pq">
-            <text class="pq-stem">{{ probe.prompt }}</text>
-            <view class="pq-opts">
-              <view
-                v-for="(opt, oi) in probe.options"
-                :key="oi"
-                class="pq-opt"
-                :class="receptCls(probe, opt)"
-                @tap="pickRecep(probe, opt)"
-              >{{ opt }}</view>
+          <!-- 图左 + 词/音标/释义右 -->
+          <view class="wc-top">
+            <image v-if="cardImg" class="wc-img" :src="cardImg" mode="aspectFit" />
+            <view v-else class="wc-img wc-img-empty"><text>🖼️</text></view>
+            <view class="wc-info">
+              <text class="wc-word">{{ vlSim.card.word }}</text>
+              <text v-if="vlSim.card.phonetic" class="wc-phon">/{{ vlSim.card.phonetic }}/</text>
+              <text v-if="vlSim.card.def_zh" class="wc-mean">{{ vlSim.card.def_zh }}</text>
             </view>
           </view>
-
-          <!-- 拼写产出 -->
-          <view class="pq">
-            <text class="pq-stem">{{ vl.spell_prompt }}</text>
-            <input
-              class="vl-spell-input"
-              :value="vlSpellInput"
-              :disabled="!!vlSpellDone"
-              placeholder="拼出这个单词"
-              @input="vlSpellInput = $event.detail.value"
-            />
-            <view v-if="!vlSpellDone" class="vl-spell-btn" :class="{ disabled: !vlSpellInput.trim() || vlSaving }" @tap="submitSpell">
-              <text>{{ vlSaving ? '判分中…' : '提交拼写' }}</text>
+          <!-- 例句 -->
+          <view v-if="vlSim.card.example" class="wc-row">
+            <text class="wc-tag">例句</text>
+            <view class="wc-rowtext">
+              <text class="wc-en">{{ vlSim.card.example }}</text>
+              <text v-if="vlSim.card.example_zh" class="wc-zh">{{ vlSim.card.example_zh }}</text>
             </view>
-            <view v-else class="pq-fb">
-              <text :class="vlSpellDone.correct ? 'fb-ok' : 'fb-no'">
-                {{ vlSpellDone.correct ? '✓ 拼对' : '✗ 拼错，正确：' + vlSpellDone.answer }}
-              </text>
+          </view>
+          <!-- 短语 -->
+          <view v-if="vlSim.card.phrase" class="wc-row">
+            <text class="wc-tag">短语</text>
+            <view class="wc-rowtext">
+              <text class="wc-en">{{ vlSim.card.phrase.en }}</text>
+              <text v-if="vlSim.card.phrase.zh" class="wc-zh">{{ vlSim.card.phrase.zh }}</text>
             </view>
+          </view>
+          <!-- 单词发音 + 跟读:同一行 -->
+          <view class="wc-btns">
+            <view class="wc-btn" @tap="playVocabAudio" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>单词发音</text></view>
+            <view class="wc-btn primary" @tap="openVocabShadow" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-mic" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>跟读</text><view v-if="!ent.can('vocab.shadow')" class="ic ic-lock" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
           </view>
         </scroll-view>
 
         <view class="modal-actions">
-          <view class="modal-btn ghost" @tap.stop="closeVocab"><text>完成</text></view>
+          <view class="modal-btn primary" @tap.stop="startVocabQuiz"><text>开始仿真练习 · 5 题</text></view>
+          <view class="modal-btn ghost" @tap.stop="closeVocabCard"><text>完成</text></view>
         </view>
       </view>
     </view>
+
+    <!-- 仿真练习 5 题(纯选择,复用 PracticeQuiz;5 题全对→判掌握)-->
+    <PracticeQuiz
+      v-if="vlQuizOpen && vlSim"
+      :kp="vlSim.card.word"
+      :questions="vlSim.questions"
+      :recorder="vocabRecorder"
+      last-label="查看结果"
+      @close="onVocabQuizClose"
+    />
+
+    <!-- 跟读(会员专享)-->
+    <ShadowModal :open="shadowOpen" :text="shadowText" :scorer="shadowScore"
+      @close="shadowOpen = false" @paywall="onShadowPaywall" />
+    <Paywall :open="showPaywall" :feature="ent.feature('vocab.shadow')" emoji="🎤"
+      title="跟读评测是会员专享" @close="showPaywall = false" />
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabLearn, submitVocabRecep, submitVocabSpell, type WrongCenterItem, type WrongCenterCounts, type PracticeQuestion, type VocabLearnPayload, type VocabProbe } from '@/api/wrongQuestions'
+import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongCenterCounts, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
+import { shadowScore } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
+import ShadowModal from '@/components/ShadowModal.vue'
+import Paywall from '@/components/Paywall.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useEntitlementsStore } from '@/stores/entitlements'
 
 const auth = useAuthStore()
+const ent = useEntitlementsStore()
 
 // 练同类仿真题(可作答判分)
 const pracOpen = ref(false)
@@ -243,80 +238,66 @@ function onPracClose() {
   reload()
 }
 
-// ── 词汇错题「学这个词」词力通双维闭环(P3)──
-const vlOpen = ref(false)
+// ── 词汇错题「学这个词」:富词卡 + 仿真练习 5 题(纯选择,5 题全对→判掌握、进已掌握)──
 const vlLoading = ref('')
-const vlSaving = ref(false)
-const vl = ref<VocabLearnPayload | null>(null)
-const vlProbeState = reactive<Record<string, { picked: string; correct: boolean; answer: string }>>({})
-const vlSpellInput = ref('')
-const vlSpellDone = ref<{ correct: boolean; answer: string } | null>(null)
-const vlRecep = ref(0)
-const vlProd = ref(0)
-const RECEP_θ = 0.85
-const pct = (x: number) => Math.min(100, Math.round(x * 100))
+const vlSim = ref<VocabSimPayload | null>(null)
+const vlCardOpen = ref(false)     // 富词卡弹层
+const vlQuizOpen = ref(false)     // 仿真练习 5 题(PracticeQuiz)
+// 跟读(会员专享)
+const shadowOpen = ref(false)
+const shadowText = ref('')
+const showPaywall = ref(false)
+
+const cardImg = computed(() => {
+  const imgs = vlSim.value?.card.image_urls
+  return imgs && imgs.length ? imgs[0] : ''
+})
 
 async function learnVocab(wq: WrongCenterItem) {
   if (vlLoading.value) return
   vlLoading.value = wq.id
   try {
-    const p = await getVocabLearn(wq.id)
-    vl.value = p
-    vlRecep.value = p.recep; vlProd.value = p.prod
-    Object.keys(vlProbeState).forEach(k => delete vlProbeState[k])
-    vlSpellInput.value = ''; vlSpellDone.value = null
-    vlOpen.value = true
+    vlSim.value = await getVocabSim(wq.id)   // 富卡(无媒体即时生成)+ 5 题(全局缓存复用)
+    vlCardOpen.value = true
   } catch (e: any) { uni.showToast({ title: e?.message || '打开失败', icon: 'none' }) }
   finally { vlLoading.value = '' }
 }
-function defZh(): string {
-  const d = vl.value?.word.definitions
-  if (Array.isArray(d) && d.length && typeof d[0] === 'object') return d[0].zh || d[0].en || ''
-  return ''
+function closeVocabCard() {
+  vlCardOpen.value = false
+  reload()   // 反映练习后状态
 }
-async function pickRecep(probe: VocabProbe, opt: string) {
-  if (!vl.value || vlProbeState[probe.key]) return
-  try {
-    const r = await submitVocabRecep(vl.value.wrong_record_id, probe.key, opt)
-    vlProbeState[probe.key] = { picked: opt, correct: r.correct, answer: r.correct_answer }
-    vlRecep.value = r.recep; vlProd.value = r.prod
-    afterVocab(r.just_mastered)
-  } catch (e: any) { uni.showToast({ title: e?.message || '提交失败', icon: 'none' }) }
+function startVocabQuiz() {
+  if (!vlSim.value?.questions.length) { uni.showToast({ title: '暂无练习题', icon: 'none' }); return }
+  vlCardOpen.value = false
+  vlQuizOpen.value = true
 }
-function receptCls(probe: VocabProbe, opt: string): string {
-  const st = vlProbeState[probe.key]
-  if (!st) return ''
-  if (opt === st.answer) return 'opt-correct'
-  if (st.picked === opt) return 'opt-wrong'
-  return ''
-}
-async function submitSpell() {
-  if (!vl.value || vlSaving.value || vlSpellDone.value || !vlSpellInput.value.trim()) return
-  vlSaving.value = true
-  try {
-    const r = await submitVocabSpell(vl.value.wrong_record_id, vlSpellInput.value.trim())
-    vlSpellDone.value = { correct: r.correct, answer: r.correct_answer }
-    vlRecep.value = r.recep; vlProd.value = r.prod
-    afterVocab(r.just_mastered)
-  } catch (e: any) { uni.showToast({ title: e?.message || '提交失败', icon: 'none' }) }
-  finally { vlSaving.value = false }
-}
-function afterVocab(justMastered: boolean) {
+// 仿真练习一轮结算:5 题全对 → 判掌握、进已掌握;返回结果文案给组件
+async function vocabRecorder(total: number, correct: number): Promise<string> {
+  if (!vlSim.value) return ''
+  const r = await submitVocabSimResult(vlSim.value.wrong_record_id, total, correct)
   loadCounts()
-  if (justMastered) {
-    uni.showToast({ title: '🎉 这个词已掌握！', icon: 'none' })
-    setTimeout(() => { vlOpen.value = false; reload() }, 900)
-  }
+  if (r.mastered) return '🎉 5 题全对，这个词已掌握！'
+  return correct >= total ? '本轮全对，继续保持' : `本轮 ${correct}/${total} 正确，全对即掌握`
 }
-function closeVocab() {
-  vlOpen.value = false
-  reload()   // 反映练习后状态(待巩固→巩固中)
+function onVocabQuizClose() {
+  vlQuizOpen.value = false
+  reload()
 }
-function playWordAudio() {
-  const url = vl.value?.word.audio_url
+function playVocabAudio() {
+  const url = vlSim.value?.card.audio_url
   if (!url) return
   const ctx = uni.createInnerAudioContext()
   ctx.src = url; ctx.play()
+}
+function openVocabShadow() {
+  if (!ent.can('vocab.shadow')) { showPaywall.value = true; return }   // 跟读为会员专享
+  shadowText.value = vlSim.value?.card.example || vlSim.value?.card.word || ''
+  if (!shadowText.value) { uni.showToast({ title: '暂无可跟读内容', icon: 'none' }); return }
+  shadowOpen.value = true
+}
+function onShadowPaywall() {
+  shadowOpen.value = false
+  showPaywall.value = true
 }
 
 // 点击错题来源 → 回到来源(整卷详情/作业详情);navigateTo 入栈,原生返回即「立即回来」
@@ -650,4 +631,21 @@ async function loadMore() {
 .wq-date { color: var(--c-text-hint); font-size: 24rpx; }
 .load-more { text-align: center; padding: 32rpx; color: var(--c-text-second); font-size: 28rpx; }
 .gray { color: var(--c-text-hint); }
+/* 词汇错题「学这个词」富词卡(对齐词力通词卡) */
+.wl-done { font-size: 22rpx; font-weight: 700; color: #1b7a3d; background: #d8f3dc; padding: 4rpx 16rpx; border-radius: 999rpx; }
+.wc-top { display: flex; gap: 20rpx; padding-bottom: 20rpx; border-bottom: 1rpx solid var(--c-bg-soft); }
+.wc-img { width: 300rpx; height: 280rpx; border-radius: 16rpx; flex-shrink: 0; background: var(--c-bg-soft); }
+.wc-img-empty { display: flex; align-items: center; justify-content: center; font-size: 80rpx; opacity: .5; }
+.wc-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10rpx; min-width: 0; }
+.wc-word { font-size: 52rpx; font-weight: 900; color: var(--c-ink); }
+.wc-phon { font-size: 28rpx; color: var(--c-text-second); }
+.wc-mean { font-size: 32rpx; color: var(--c-text-body); font-weight: 600; }
+.wc-row { display: flex; gap: 16rpx; padding: 18rpx 0; border-bottom: 1rpx solid var(--c-bg-soft); }
+.wc-tag { flex-shrink: 0; font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 5rpx 16rpx; border-radius: var(--r-pill); height: 34rpx; line-height: 34rpx; }
+.wc-rowtext { flex: 1; display: flex; flex-direction: column; gap: 4rpx; min-width: 0; }
+.wc-en { font-size: 30rpx; color: var(--c-text-body); line-height: 1.5; }
+.wc-zh { font-size: 24rpx; color: var(--c-text-hint); }
+.wc-btns { display: flex; gap: 18rpx; margin: 24rpx 0 8rpx; }
+.wc-btn { flex: 1; text-align: center; font-size: 28rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 16rpx 0; border-radius: var(--r-pill); }
+.wc-btn.primary { background: var(--c-primary); color: var(--c-on-primary); }
 </style>

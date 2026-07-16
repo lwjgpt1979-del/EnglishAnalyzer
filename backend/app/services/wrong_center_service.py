@@ -241,21 +241,135 @@ async def _resolve_vocab_word(db: AsyncSession, wr: "WrongRecord"):
     return None
 
 
-async def _sync_vocab_wrong_mastery(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID) -> bool:
-    """该词双维(接收+产出)达标 → 把该生指向此词的 open 词汇错题全部判掌握(source=vocab)。返回是否判掌握。"""
+async def _mark_vocab_word_mastered(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID) -> bool:
+    """仿真练习 5 题全对 → 把该生指向此词的 open 词汇错题全部判掌握(source=vocab)、移出词力通错词本。返回是否有错题被判掌握。"""
     import datetime as _dt
-    from app.services.vocab_probe_service import dual_mastered, _get_or_create_learning
+    from app.services.vocab_probe_service import _get_or_create_learning
     lr = await _get_or_create_learning(db, student_id, word_id)
-    if not dual_mastered(lr):
-        return False
-    await db.execute(
+    lr.is_wrong = False   # 移出词力通统一错词本
+    res = await db.execute(
         sa.update(WrongRecord)
         .where(WrongRecord.student_id == student_id, WrongRecord.vocab_word_id == word_id,
                WrongRecord.status == "open")
         .values(status="mastered", mastered_at=_dt.datetime.now(_dt.timezone.utc),
                 mastery_source="vocab"))
     await db.flush()
-    return True
+    return (res.rowcount or 0) > 0
+
+
+# ── 仿真练习 5 题:从该词全局缓存 probes_json + 词条字段拼装(纯选择题)──────────────
+def _zh_of(word) -> str:
+    defs = word.definitions if isinstance(word.definitions, list) else []
+    for d in defs:
+        if isinstance(d, dict):
+            v = d.get("meaning") or d.get("zh") or d.get("en")   # 词条释义键为 meaning
+            if v:
+                return str(v)
+    return ""
+
+
+def _sentences_with(word, probes: dict) -> list[str]:
+    """取含该词、长度适中的句子(例句 + 缓存兜底例句),去重保序。"""
+    import re
+    W = word.word
+    pat = re.compile(rf"\b{re.escape(W)}\b", re.I)
+    out: list[str] = []
+    for ex in (word.examples or []):
+        s = ex.get("en") if isinstance(ex, dict) else None
+        if s and pat.search(s) and 3 <= len(s.split()) <= 40:
+            out.append(s.strip())
+    for c in (probes.get("cloze_fallback") or []):
+        s = c.get("sentence") if isinstance(c, dict) else None
+        if s and pat.search(s):
+            out.append(s.strip())
+    seen, res = set(), []
+    for s in out:
+        if s not in seen:
+            seen.add(s); res.append(s)
+    return res
+
+
+def _mc(stem: str, correct: str, wrongs: list[str], explanation: str = "") -> dict:
+    """组一道选择题:正确项 + 至多 3 个不重复干扰项,打乱。"""
+    import random
+    correct = (correct or "").strip()
+    opts = [correct]
+    for w in wrongs:
+        w = (w or "").strip()
+        if w and w.lower() != correct.lower() and w not in opts:
+            opts.append(w)
+        if len(opts) >= 4:
+            break
+    random.shuffle(opts)
+    return {"id": str(uuid.uuid4()), "stem": stem, "options": opts, "answer": correct,
+            "explanation": explanation or ""}
+
+
+def _build_vocab_sim_questions(word, probes: dict, siblings: list) -> list[dict]:
+    """拼 5 道纯选择题(义→词 / 语境挖空 / 词→义 / 搭配 / 多义 / 短语 / 例句译),不足 5 用变体补;全局缓存复用不额外付费。"""
+    import re
+    W = word.word
+    zh = _zh_of(word)
+    ex0 = next((e for e in (word.examples or []) if isinstance(e, dict) and e.get("en")), {}) or {}
+    example, example_zh = ex0.get("en") or "", ex0.get("zh") or ""
+    distractors = [str(x) for x in (probes.get("distractors") or [])
+                   if str(x).strip() and str(x).strip().lower() != W.lower()]
+    sib_words = [s.word for s in siblings if s.word and s.word.lower() != W.lower()]
+    sib_zh = [z for z in (_zh_of(s) for s in siblings) if z and z != zh]
+    word_wrongs = distractors + sib_words                 # 选「词」类题的干扰项
+
+    qs: list[dict] = []
+    if zh:                                                # 1) 义→词
+        qs.append(_mc(f"「{zh}」对应哪个单词?", W, word_wrongs, example or zh))
+    for s in _sentences_with(word, probes):               # 2) 语境挖空选词(每句一题)
+        blanked = re.sub(rf"\b{re.escape(W)}\b", "____", s, count=1, flags=re.I)
+        qs.append(_mc(f"选出填入空格的词:\n{blanked}", W, word_wrongs, zh))
+    if zh and sib_zh:                                     # 3) 词→义
+        qs.append(_mc(f"「{W}」的意思是?", zh, sib_zh, example))
+    for c in (probes.get("collocation") or []):           # 4) 搭配
+        if c.get("q") and c.get("options") and c.get("answer"):
+            qs.append({"id": str(uuid.uuid4()), "stem": str(c["q"]),
+                       "options": [str(o) for o in c["options"]], "answer": str(c["answer"]),
+                       "explanation": ""})
+    for s in (probes.get("sense") or []):                 # 5) 多义辨析
+        if s.get("sentence") and s.get("answer") and s.get("options"):
+            qs.append({"id": str(uuid.uuid4()), "stem": f"句中 {W} 的意思是?\n{s['sentence']}",
+                       "options": [str(o) for o in s["options"]], "answer": str(s["answer"]),
+                       "explanation": ""})
+    for ph in (word.phrases or []):                       # 6) 短语→义(词条无中文义时也可出题)
+        if isinstance(ph, dict) and ph.get("en") and ph.get("zh") and sib_zh:
+            qs.append(_mc(f"短语「{ph['en']}」的意思是?", str(ph["zh"]), sib_zh, ""))
+            break
+    if example_zh:                                        # 7) 例句译→词(整句中文,选目标英文词)
+        qs.append(_mc(f"「{example_zh}」这句话里的目标词是?", W, word_wrongs, example))
+
+    # 去重(按题干)+ 过滤选项不足 2 的
+    seen, uniq = set(), []
+    for q in qs:
+        if q["stem"] in seen or not q["options"] or len(q["options"]) < 2:
+            continue
+        seen.add(q["stem"]); uniq.append(q)
+    # 不足 5(极少数稀疏词)→ 用现有素材(义/例句译)出变体补足;都没有则返回已有(≥1)
+    guard = 0
+    while len(uniq) < 5 and word_wrongs and guard < 6:
+        guard += 1
+        if zh:
+            stem = f"选出「{zh}」的英文单词(第{guard}题):"
+        elif example_zh:
+            stem = f"「{example_zh}」对应的英文词是(第{guard}题)?"
+        else:
+            break
+        if stem not in seen:
+            seen.add(stem); uniq.append(_mc(stem, W, word_wrongs, example))
+    return uniq[:5]
+
+
+async def _sibling_words(db: AsyncSession, word, n: int = 8) -> list:
+    """随机取若干其它词,给「选词/选义」题当干扰项。"""
+    from app.models.d5_learning import VocabularyWord
+    return (await db.execute(
+        sa.select(VocabularyWord).where(VocabularyWord.id != word.id)
+        .order_by(sa.func.random()).limit(n))).scalars().all()
 
 
 async def _vocab_wr_and_word(db, student_id, wrong_record_id):
@@ -271,8 +385,8 @@ async def _vocab_wr_and_word(db, student_id, wrong_record_id):
     return wr, word
 
 
-async def vocab_learn_payload(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID) -> dict:
-    """词汇错题「学这个词」:单词卡(无媒体即时生成)+ 接收探针 + 拼写提示 + 当前双维进度。"""
+async def vocab_sim_payload(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID) -> dict:
+    """词汇错题「学这个词」:富词卡(配图/短语/发音,无媒体即时生成)+ 仿真练习 5 题(纯选择,全局缓存复用)。"""
     from app.services import vocab_media_service, vocab_probe_service
     wr, word = await _vocab_wr_and_word(db, student_id, wrong_record_id)
     # 查看即生成媒体(幂等)+ 进词力通统一错词本
@@ -284,53 +398,39 @@ async def vocab_learn_payload(db: AsyncSession, *, student_id: uuid.UUID, wrong_
     lr = await vocab_probe_service._get_or_create_learning(db, student_id, word.id)
     lr.is_wrong = True
     await db.flush()
-    probes = await vocab_probe_service.comprehension_probes(db, student_id=student_id, word=word)
-    defs = word.definitions if isinstance(word.definitions, list) else []
-    zh = (defs[0].get("zh") if defs and isinstance(defs[0], dict) else None) or ""
-    recep = float(lr.mastery_recep or 0)
-    prod = float(lr.mastery_prod or 0)
+    probes = await vocab_probe_service.ensure_probes(db, word)   # 词级全局缓存,命中不付费
+    siblings = await _sibling_words(db, word, 8)
+    questions = _build_vocab_sim_questions(word, probes, siblings)
+    example = next((e for e in (word.examples or []) if isinstance(e, dict) and e.get("en")), None)
+    phrase = next((p for p in (word.phrases or []) if isinstance(p, dict) and p.get("en")), None)
     return {
         "wrong_record_id": str(wr.id),
-        "word": {
+        "card": {
             "id": str(word.id), "word": word.word, "phonetic": word.phonetic,
-            "definitions": defs, "examples": word.examples or [],
-            "audio_url": word.word_audio_url, "image_urls": getattr(word, "image_urls", None),
+            "def_zh": _zh_of(word),
+            "example": (example or {}).get("en"), "example_zh": (example or {}).get("zh"),
+            "phrase": {"en": phrase["en"], "zh": phrase.get("zh")} if phrase else None,
+            "audio_url": word.word_audio_url,
+            "image_urls": getattr(word, "image_urls", None),
         },
-        "recep_probes": [p for p in probes.get("probes", []) if p.get("kind") == "sense"] or probes.get("probes", []),
-        "spell_prompt": f"根据释义拼出单词：{zh}" if zh else "根据发音/释义拼出这个单词",
-        "recep": round(recep, 4), "prod": round(prod, 4),
-        "recep_mastered": recep >= vocab_probe_service.RECEP_MASTERED,
-        "prod_mastered": prod >= vocab_probe_service.PROD_MASTERED,
+        "questions": questions,
         "mastered": wr.status == "mastered",
     }
 
 
-async def submit_vocab_recep(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
-                             key: str, answer: str) -> dict:
-    """接收探针作答 → 词力通 recep BKT;词汇错题进巩固中;双维达标则判掌握。"""
-    from app.services import vocab_probe_service
+async def submit_vocab_sim(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
+                           total: int, correct: int) -> dict:
+    """仿真练习一轮结算:记 practice_count;**5 题全对 → 判掌握、进已掌握**(source=vocab)。"""
     wr, word = await _vocab_wr_and_word(db, student_id, wrong_record_id)
-    res = await vocab_probe_service.submit_probe(db, student_id=student_id, word_id=word.id, key=key, answer=answer)
     wr.practice_count = (wr.practice_count or 0) + 1
-    wr.practice_correct = (wr.practice_correct or 0) + (1 if res.get("correct") else 0)
-    mastered = await _sync_vocab_wrong_mastery(db, student_id=student_id, word_id=word.id)
+    all_correct = total > 0 and correct >= total
+    wr.practice_correct = (wr.practice_correct or 0) + (1 if all_correct else 0)
+    mastered = False
+    if total >= 5 and all_correct:               # 恒 5 题,全对才判掌握
+        mastered = await _mark_vocab_word_mastered(db, student_id=student_id, word_id=word.id)
     await db.flush()
-    return {**res, "lifecycle": _lifecycle_of(wr), "wrong_mastered": wr.status == "mastered",
-            "just_mastered": mastered}
-
-
-async def submit_vocab_spell(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
-                             answer: str) -> dict:
-    """拼写作答(产出维度)→ 词力通 prod BKT;词汇错题进巩固中;双维达标则判掌握。"""
-    from app.services import vocab_probe_service
-    wr, word = await _vocab_wr_and_word(db, student_id, wrong_record_id)
-    res = await vocab_probe_service.submit_spell(db, student_id=student_id, word_id=word.id, answer=answer)
-    wr.practice_count = (wr.practice_count or 0) + 1
-    wr.practice_correct = (wr.practice_correct or 0) + (1 if res.get("correct") else 0)
-    mastered = await _sync_vocab_wrong_mastery(db, student_id=student_id, word_id=word.id)
-    await db.flush()
-    return {**res, "lifecycle": _lifecycle_of(wr), "wrong_mastered": wr.status == "mastered",
-            "just_mastered": mastered}
+    return {"mastered": mastered, "wrong_mastered": wr.status == "mastered",
+            "lifecycle": _lifecycle_of(wr)}
 
 
 async def record_practice_for_question(
