@@ -96,6 +96,67 @@ async def question_analysis(db: AsyncSession, *, student_id: uuid.UUID,
     return ana
 
 
+_READING_PRACTICE_SYS = (
+    "你是中小学英语阅读命题老师。根据给定【短文】出 {count} 道**阅读理解选择题**,"
+    "考查对**这篇文章**的理解(细节/推断/主旨/词义猜测/作者态度等,题型可多样),难度贴近中学。"
+    "每题 4 个选项。只返回 JSON 对象:"
+    '{{"questions":[{{"stem":"题干(英文)","options":["A. …","B. …","C. …","D. …"],'
+    '"answer":"正确选项字母(A/B/C/D)","explanation":"中文解析:回原文定位 + 为什么对"}}]}}。'
+    "★铁律:题目必须**能由短文本身回答**,不考查文章外的知识;选项含字母前缀;answer 为字母;干扰项要有迷惑性但可被原文排除。"
+)
+
+
+async def practice_similar(db: AsyncSession, *, student_id: uuid.UUID,
+                           question_id: uuid.UUID, count: int = 5) -> dict | None:
+    """阅读理解「练同类」:基于本题所在**短文**生成 count 道理解新题(非语法题)。
+    按(短文+数量)md5 全局缓存,同篇不二次付费。返回 {questions:[{id,stem,options,answer,explanation}]}。非本人 → None。"""
+    import hashlib
+    import json as _json
+    import uuid as _uuid
+    from app.models.d13_v2_user_papers import ReadingPracticeCache
+    from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
+
+    q = await db.get(UserPaperQuestion, question_id)
+    if q is None:
+        return None
+    paper = await db.get(UserUploadedPaper, q.user_paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    passage = (q.passage or "").strip()
+    if not passage:
+        return {"questions": []}
+    cache_md5 = hashlib.md5(f"{passage}||{count}".encode("utf-8")).hexdigest()   # noqa: S324
+    hit = await db.get(ReadingPracticeCache, cache_md5)
+    if hit is not None:
+        qs = hit.questions
+    else:
+        user = f"【短文】\n{passage[:3500]}"
+        if is_llm_dev_mode():
+            qs = [{"stem": f"According to the passage, statement {i+1}?",
+                   "options": ["A. mock1", "B. mock2", "C. mock3", "D. mock4"],
+                   "answer": "A", "explanation": "(dev)据原文定位"} for i in range(count)]
+        else:
+            try:
+                data = await complete_json(
+                    system_prompt=_READING_PRACTICE_SYS.format(count=count), user_prompt=user,
+                    model=fast_model(), disable_thinking=True, max_tokens=3072, escalate_ceiling=4096,
+                    validate=lambda d: isinstance(d.get("questions"), list) and len(d["questions"]) > 0,
+                    feature="reading_practice")
+            except Exception:  # noqa: BLE001
+                return {"questions": [], "error": "出题暂时不可用,请稍后再试"}
+            qs = (data or {}).get("questions") or []
+            qs = [x for x in qs if isinstance(x, dict) and x.get("stem") and x.get("options")][:count]
+            if qs:
+                db.add(ReadingPracticeCache(cache_md5=cache_md5, questions=qs))
+                await db.commit()
+    # 稳定 id(缓存命中也一致):按内容派生
+    out = [{"id": str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"{cache_md5}:{i}")),
+            "stem": x.get("stem"), "options": x.get("options"),
+            "answer": x.get("answer"), "explanation": x.get("explanation")}
+           for i, x in enumerate(qs)]
+    return {"questions": out}
+
+
 async def add_reading_intensive(db: AsyncSession, *, student_id: uuid.UUID,
                                 section_id: uuid.UUID) -> dict | None:
     """学生手动把某作业的阅读理解板块加入「作业精讲·阅读理解精讲」。非本人/非阅读 → None。幂等。"""

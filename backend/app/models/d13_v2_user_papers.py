@@ -110,3 +110,12 @@ class ReadingAnalysisCache(Base):
     q_md5 = mapped_column(sa.String(32), primary_key=True)
     analysis = mapped_column(JSONB, nullable=False)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class ReadingPracticeCache(Base):
+    """阅读理解练同类:按本篇短文生成的「理解新题」LLM 结果暂存,按(短文+题型+数量)md5 全局缓存。"""
+    __tablename__ = "reading_practice_cache"
+
+    cache_md5 = mapped_column(sa.String(32), primary_key=True)
+    questions = mapped_column(JSONB, nullable=False)   # [{stem,options,answer,explanation}]
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

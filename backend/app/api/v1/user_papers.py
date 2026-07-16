@@ -297,6 +297,17 @@ async def reading_analysis_api(question_id: uuid.UUID, db: DbDep, current_user: 
     return make_ok(r)
 
 
+@router.post("/questions/{question_id}/reading-practice")
+async def reading_practice_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """阅读理解「练同类」:基于本篇短文出理解新题(非语法题),缓存复用。"""
+    from app.services import reading_intensive_service
+    r = await reading_intensive_service.practice_similar(
+        db, student_id=current_user.id, question_id=question_id)
+    if r is None:
+        raise AppError(code=404, message="题目不存在或无权访问")
+    return make_ok(r)
+
+
 @router.post("/questions/{question_id}/practice")
 async def practice_for_question_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """错题「练同类」：按该题知识点生成同类仿真练习（计入 practice.generate 配额）。"""

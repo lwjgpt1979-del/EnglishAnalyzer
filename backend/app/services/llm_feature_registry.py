@@ -64,6 +64,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "阅读题解析(含定位句 evidence)", "why": "原文定位证据并推断答案依据", "locations": ["question_analysis_service.py:442"], "cache": "global", "store": "platform_question.meta.analysis_draft / meta.analysis(按题)"},
     {"feature": "reading_analysis", "mode": "chat", "surface": "小程序端", "module": "作业精讲·阅读理解精讲", "service": "reading_intensive_service",
      "purpose": "上传作业阅读题·题目层解析(题型/定位句/为何对/干扰项)", "why": "结构化抽取,关思考走快档(开思考会烧 token 截断致空,见真题路径 46s 截断)", "locations": ["reading_intensive_service.py:question_analysis"], "cache": "global", "store": "reading_analysis_cache(按题 md5)"},
+    {"feature": "reading_practice", "mode": "chat", "surface": "小程序端", "module": "作业精讲·阅读理解精讲", "service": "reading_intensive_service",
+     "purpose": "阅读练同类:按本篇短文出理解新题(细节/推断/主旨…,非语法题)", "why": "结构化生成选择题,规格明确,关思考走快档", "locations": ["reading_intensive_service.py:practice_similar"], "cache": "global", "store": "reading_practice_cache(按短文+数量 md5)"},
     {"feature": "cloze_analysis", "mode": "reasoning", "surface": "运营后台", "module": "真题·题目解析", "service": "question_analysis_service",
      "purpose": "完形填空解析(线索 clue/slot)", "why": "结合上下文推断选词线索", "locations": ["question_analysis_service.py:530"], "cache": "global", "store": "platform_question.meta.analysis_draft / meta.analysis"},
     {"feature": "writing_analysis", "mode": "reasoning", "surface": "运营后台", "module": "真题·题目解析", "service": "question_analysis_service",

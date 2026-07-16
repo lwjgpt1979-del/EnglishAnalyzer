@@ -91,7 +91,7 @@
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { rdHwBatches, rdHwPassages, type IntensiveBatch, type ReadingBlock } from '@/api/curriculum'
-import { getReadingAnalysis, practiceForQuestion, recordPaperPractice, type ReadingAnalysis, type SimilarQuestion } from '@/api/userPapers'
+import { getReadingAnalysis, readingPractice, recordPaperPractice, type ReadingAnalysis, type SimilarQuestion } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 
 const batches = ref<IntensiveBatch[]>([])
@@ -132,9 +132,10 @@ async function practice(qid: string) {
   if (pracLoading.value) return
   pracLoading.value = qid
   try {
-    const r = await practiceForQuestion(qid)
+    const r = await readingPractice(qid)   // 阅读理解练同类:本篇短文的理解新题(非语法题)
+    if (r.error) { uni.showToast({ title: r.error, icon: 'none' }); return }
     if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
-    pracKp.value = r.knowledge_point; pracList.value = r.questions; pracQid.value = qid; pracOpen.value = true
+    pracKp.value = '阅读理解'; pracList.value = r.questions; pracQid.value = qid; pracOpen.value = true
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { pracLoading.value = '' }
 }

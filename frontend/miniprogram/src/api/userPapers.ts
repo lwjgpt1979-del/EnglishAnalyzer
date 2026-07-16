@@ -84,6 +84,10 @@ export interface ReadingAnalysis {
 export function getReadingAnalysis(qid: string): Promise<ReadingAnalysis> {
   return request(`/api/v1/user-papers/questions/${qid}/reading-analysis`, { method: 'GET' })
 }
+/** 阅读理解「练同类」:基于本篇短文出理解新题(非语法题) */
+export function readingPractice(qid: string): Promise<{ questions: SimilarQuestion[]; error?: string }> {
+  return request(`/api/v1/user-papers/questions/${qid}/reading-practice`, { method: 'POST' })
+}
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {
