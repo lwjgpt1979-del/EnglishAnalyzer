@@ -100,3 +100,13 @@ class PaperSplitCache(Base):
     input_md5 = mapped_column(sa.String(32), primary_key=True)
     raw_json = mapped_column(sa.Text, nullable=False)   # 拆题 LLM 的原始 JSON 输出(命中后复用解析)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class ReadingAnalysisCache(Base):
+    """阅读理解精讲·题目层解析(题型/定位句/为何对/干扰项)LLM 结果暂存。
+    按(原文+题干+选项+答案)md5 全局缓存,与用户无关;同题不二次付费(第三方付费暂存铁律)。"""
+    __tablename__ = "reading_analysis_cache"
+
+    q_md5 = mapped_column(sa.String(32), primary_key=True)
+    analysis = mapped_column(JSONB, nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

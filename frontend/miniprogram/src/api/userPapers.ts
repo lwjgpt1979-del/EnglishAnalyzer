@@ -70,6 +70,18 @@ export function addQuestionToWrong(qid: string): Promise<{ added: boolean; kp_ki
 export function addReadingIntensive(sectionId: string): Promise<{ added: boolean; reason?: string }> {
   return request(`/api/v1/user-papers/sections/${sectionId}/add-reading-intensive`, { method: 'POST' })
 }
+/** 阅读理解精讲·题目层解析(题型/定位句/为何对/干扰项),缓存复用 */
+export interface ReadingAnalysis {
+  rc_code?: string
+  evidence?: string
+  answer_reason?: string
+  distractors?: Record<string, { meaning?: string; why_wrong?: string }>
+  _warnings?: string[]
+  error?: string
+}
+export function getReadingAnalysis(qid: string): Promise<ReadingAnalysis> {
+  return request(`/api/v1/user-papers/questions/${qid}/reading-analysis`, { method: 'GET' })
+}
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {
