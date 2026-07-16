@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import User
@@ -30,11 +30,18 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
     """学生作业里的语法点,按来源卷(批次)归组。年月日倒序。
     含两类:①匹配上图谱的语法(student_kp_target,cf/jf);②没匹配上的个人语法(挂个人树)。"""
     from app.models.d27_student_grammar import StudentGrammarNode
+    from app.models.d4_knowledge import StudentGrammarMastery
     kp = (await db.execute(
-        select(StudentKpTarget.source_paper_id, func.count(StudentKpTarget.id),
+        select(StudentKpTarget.source_paper_id, func.count(func.distinct(StudentKpTarget.node_id)),
+               # 已学过的点数(该生该点有 student_grammar_mastery 行)= studied
+               func.count(func.distinct(case(
+                   (StudentGrammarMastery.id.isnot(None), StudentKpTarget.node_id)))),
                UserUploadedPaper.title, UserUploadedPaper.created_at)
         .join(KnowledgeNode, KnowledgeNode.id == StudentKpTarget.node_id)
         .join(UserUploadedPaper, UserUploadedPaper.id == StudentKpTarget.source_paper_id)
+        .outerjoin(StudentGrammarMastery,
+                   (StudentGrammarMastery.kp_id == StudentKpTarget.node_id)
+                   & (StudentGrammarMastery.student_id == student_id))
         .where(StudentKpTarget.student_id == student_id,
                StudentKpTarget.source_paper_id.isnot(None), _GRAMMAR)
         .group_by(StudentKpTarget.source_paper_id, UserUploadedPaper.title, UserUploadedPaper.created_at))).all()
@@ -47,11 +54,15 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
                StudentGrammarNode.ref_node_id.is_(None))   # 未匹配图谱的个人语法
         .group_by(StudentGrammarNode.source_paper_id, UserUploadedPaper.title, UserUploadedPaper.created_at))).all()
     merged: dict = {}
-    for pid, cnt, title, ca in list(kp) + list(pers):
-        m = merged.setdefault(pid, {"title": title, "ca": ca, "count": 0})
+    for pid, cnt, studied, title, ca in kp:
+        m = merged.setdefault(pid, {"title": title, "ca": ca, "count": 0, "studied": 0})
+        m["count"] += int(cnt); m["studied"] += int(studied)
+    for pid, cnt, title, ca in pers:   # 个人语法只计入总数,不计已学
+        m = merged.setdefault(pid, {"title": title, "ca": ca, "count": 0, "studied": 0})
         m["count"] += int(cnt)
     out = [{"paper_id": str(pid), "title": m["title"] or "未命名作业",
-            "date": m["ca"].strftime("%Y-%m-%d") if m["ca"] else "", "count": m["count"]}
+            "date": m["ca"].strftime("%Y-%m-%d") if m["ca"] else "",
+            "count": m["count"], "studied": m["studied"]}
            for pid, m in merged.items()]
     out.sort(key=lambda x: x["date"], reverse=True)
     return out

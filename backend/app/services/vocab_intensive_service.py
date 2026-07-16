@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import User
 from app.models.d4_knowledge import CurriculumUnit, CurriculumWord
-from app.models.d5_learning import VocabularyWord, StudentVocabCandidate
+from app.models.d5_learning import VocabularyWord, StudentVocabCandidate, VocabularyLearning
 from app.models.d13_v2_user_papers import UserUploadedPaper
 
 
@@ -34,9 +34,15 @@ def _word_out(w: VocabularyWord) -> dict:
 async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
     """学生加入待学习的词,按来源卷(批次)归组;每批次带卷名/日期/词数。年月日倒序。"""
     rows = (await db.execute(
-        select(StudentVocabCandidate.source_paper_id, func.count(StudentVocabCandidate.id),
+        select(StudentVocabCandidate.source_paper_id, func.count(func.distinct(StudentVocabCandidate.word_id)),
+               # 已学过的词数(该生该词有 VocabularyLearning 行)= studied
+               func.count(func.distinct(case(
+                   (VocabularyLearning.id.isnot(None), StudentVocabCandidate.word_id)))),
                UserUploadedPaper.title, UserUploadedPaper.created_at)
         .join(UserUploadedPaper, UserUploadedPaper.id == StudentVocabCandidate.source_paper_id)
+        .outerjoin(VocabularyLearning,
+                   (VocabularyLearning.word_id == StudentVocabCandidate.word_id)
+                   & (VocabularyLearning.student_id == student_id))
         .where(StudentVocabCandidate.student_id == student_id,
                StudentVocabCandidate.source_paper_id.isnot(None))
         .group_by(StudentVocabCandidate.source_paper_id, UserUploadedPaper.title,
@@ -44,7 +50,8 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
         .order_by(UserUploadedPaper.created_at.desc()))).all()
     return [{"paper_id": str(pid), "title": title or "未命名试卷",
              "date": created_at.strftime("%Y-%m-%d") if created_at else "",
-             "word_count": int(cnt)} for pid, cnt, title, created_at in rows]
+             "word_count": int(cnt), "studied": int(st)}
+            for pid, cnt, st, title, created_at in rows]
 
 
 async def homework_words(db: AsyncSession, *, student_id: uuid.UUID,

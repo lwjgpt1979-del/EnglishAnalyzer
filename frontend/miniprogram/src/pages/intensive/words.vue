@@ -179,7 +179,7 @@ async function load() {
   try {
     if (mode.value === 'homework') {
       const bs: HwWordBatch[] = (await getHwWordBatches()).batches
-      groups.value = bs.map(b => ({ id: b.paper_id, title: b.title, sub: b.date, count: b.word_count }))
+      groups.value = bs.map(b => ({ id: b.paper_id, title: b.title, sub: b.date, count: b.word_count, studied: b.studied }))
     } else {
       const r = await getCourseWordUnits()
       groups.value = (r.units as CourseWordUnit[]).map(u => ({

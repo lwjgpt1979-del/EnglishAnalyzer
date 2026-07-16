@@ -30,7 +30,9 @@ _READING_INTENSIVE_SYS = (
 
 
 async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
-    """学生上传作业里含阅读理解的卷,按卷(批次)归组。年月日倒序。"""
+    """学生上传作业里含阅读理解的卷,按卷(批次)归组。年月日倒序。
+    带 studied(该卷已看解析/练过同类的题数)供前端算 未学/学习中/已学。"""
+    from app.models.d13_v2_user_papers import ReadingQuestionStudied
     rows = (await db.execute(
         select(UserUploadedPaper.id, UserUploadedPaper.title, UserUploadedPaper.created_at,
                func.count(UserPaperQuestion.id))
@@ -42,9 +44,36 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
                UserPaperSection.in_reading_intensive.is_(True))   # 仅手动加入的
         .group_by(UserUploadedPaper.id, UserUploadedPaper.title, UserUploadedPaper.created_at)
         .order_by(UserUploadedPaper.created_at.desc()))).all()
+    # 每卷已精讲题数(看解析/练同类记录)
+    st_rows = (await db.execute(
+        select(UserUploadedPaper.id,
+               func.count(func.distinct(ReadingQuestionStudied.question_id)))
+        .join(UserPaperSection, UserPaperSection.user_paper_id == UserUploadedPaper.id)
+        .join(UserPaperQuestion, UserPaperQuestion.section_id == UserPaperSection.id)
+        .join(ReadingQuestionStudied,
+              (ReadingQuestionStudied.question_id == UserPaperQuestion.id)
+              & (ReadingQuestionStudied.student_id == student_id))
+        .where(UserUploadedPaper.student_id == student_id,
+               UserPaperSection.section_type == "reading",
+               UserPaperSection.in_reading_intensive.is_(True))
+        .group_by(UserUploadedPaper.id))).all()
+    studied = {pid: int(c) for pid, c in st_rows}
     return [{"paper_id": str(pid), "title": title or "未命名作业",
-             "date": ca.strftime("%Y-%m-%d") if ca else "", "count": int(cnt)}
+             "date": ca.strftime("%Y-%m-%d") if ca else "", "count": int(cnt),
+             "studied": studied.get(pid, 0)}
             for pid, title, ca, cnt in rows]
+
+
+async def mark_question_studied(db: AsyncSession, *, student_id: uuid.UUID,
+                                question_id: uuid.UUID) -> None:
+    """标记某阅读题「已精讲」(看解析/练同类即算学过);(student,question) 幂等。
+    仅本人的题才记(调用方已校验归属)。"""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d13_v2_user_papers import ReadingQuestionStudied
+    await db.execute(pg_insert(ReadingQuestionStudied)
+                     .values(student_id=student_id, question_id=question_id)
+                     .on_conflict_do_nothing(index_elements=["student_id", "question_id"]))
+    await db.commit()
 
 
 async def question_analysis(db: AsyncSession, *, student_id: uuid.UUID,

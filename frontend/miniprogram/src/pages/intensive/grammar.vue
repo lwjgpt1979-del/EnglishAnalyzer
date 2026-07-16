@@ -143,7 +143,7 @@ async function load() {
   loading.value = true
   try {
     if (mode.value === 'homework') {
-      groups.value = (await grHwBatches()).batches.map((b: IntensiveBatch) => ({ id: b.paper_id, title: b.title, sub: b.date, count: b.count }))
+      groups.value = (await grHwBatches()).batches.map((b: IntensiveBatch) => ({ id: b.paper_id, title: b.title, sub: b.date, count: b.count, studied: b.studied }))
     } else {
       groups.value = ((await grCourseUnits()).units as IntensiveUnit[]).map(u => ({
         id: u.unit_id, title: u.unit_title, sub: `第${u.unit_no}单元`, count: u.count, header: `${u.grade} ${u.semester}册` }))

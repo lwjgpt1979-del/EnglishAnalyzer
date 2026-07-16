@@ -119,3 +119,13 @@ class ReadingPracticeCache(Base):
     cache_md5 = mapped_column(sa.String(32), primary_key=True)
     questions = mapped_column(JSONB, nullable=False)   # [{stem,options,answer,explanation}]
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class ReadingQuestionStudied(Base):
+    """阅读理解精讲「已精讲」记录:学生看过某阅读题解析 / 练过其同类即算学过。
+    作业精讲卷列表据此算 studied/未学·学习中·已学。(student, question) 唯一,幂等。"""
+    __tablename__ = "reading_question_studied"
+
+    student_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    question_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

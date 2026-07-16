@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import User
@@ -23,6 +23,9 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
     rows = (await db.execute(
         select(StudentLongSentence.source_paper_id,
                func.count(func.distinct(StudentLongSentence.text)),   # 同句只算一条(存量可能有重复行)
+               # 已看过解析(analysis_json 非空)的句数 = studied
+               func.count(func.distinct(case(
+                   (StudentLongSentence.analysis_json.isnot(None), StudentLongSentence.text)))),
                UserUploadedPaper.title, UserUploadedPaper.created_at)
         .join(UserUploadedPaper, UserUploadedPaper.id == StudentLongSentence.source_paper_id)
         .where(StudentLongSentence.owner_id == student_id,
@@ -32,7 +35,8 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
         .order_by(UserUploadedPaper.created_at.desc()))).all()
     return [{"paper_id": str(pid), "title": title or "未命名试卷",
              "date": created_at.strftime("%Y-%m-%d") if created_at else "",
-             "count": int(cnt)} for pid, cnt, title, created_at in rows]
+             "count": int(cnt), "studied": int(st)}
+            for pid, cnt, st, title, created_at in rows]
 
 
 async def homework_sentences(db: AsyncSession, *, student_id: uuid.UUID,

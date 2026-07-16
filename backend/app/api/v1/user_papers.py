@@ -305,6 +305,8 @@ async def reading_analysis_api(question_id: uuid.UUID, db: DbDep, current_user: 
         db, student_id=current_user.id, question_id=question_id)
     if r is None:
         raise AppError(code=404, message="题目不存在或无权访问")
+    await reading_intensive_service.mark_question_studied(
+        db, student_id=current_user.id, question_id=question_id)   # 看解析即算已精讲
     return make_ok(r)
 
 
@@ -316,6 +318,8 @@ async def reading_practice_api(question_id: uuid.UUID, db: DbDep, current_user: 
         db, student_id=current_user.id, question_id=question_id)
     if r is None:
         raise AppError(code=404, message="题目不存在或无权访问")
+    await reading_intensive_service.mark_question_studied(
+        db, student_id=current_user.id, question_id=question_id)   # 练同类即算已精讲
     return make_ok(r)
 
 
