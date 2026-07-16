@@ -689,6 +689,7 @@ export interface UserPaperSectionOut {
   label: string
   section_type: string | null
   is_suggested?: boolean        // AI 建议分类(原卷没识别到大题头);前端标「建议」、学生可改
+  in_reading_intensive?: boolean  // 阅读理解:是否已手动加入作业精讲·阅读理解精讲
   questions: UserPaperQuestionOut[]
 }
 

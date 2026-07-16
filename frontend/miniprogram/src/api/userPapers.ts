@@ -66,6 +66,10 @@ export function addQuestionVocab(qid: string): Promise<{ kind: string; added: nu
 export function addQuestionToWrong(qid: string): Promise<{ added: boolean; kp_kind: string | null }> {
   return request(`/api/v1/user-papers/questions/${qid}/add-wrong`, { method: 'POST' })
 }
+/** 手动把某作业阅读理解板块加入作业精讲·阅读理解精讲 */
+export function addReadingIntensive(sectionId: string): Promise<{ added: boolean; reason?: string }> {
+  return request(`/api/v1/user-papers/sections/${sectionId}/add-reading-intensive`, { method: 'POST' })
+}
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {

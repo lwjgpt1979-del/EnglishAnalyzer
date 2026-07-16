@@ -102,6 +102,17 @@
           </template>
           <view v-if="!blocksFor(sec).length" class="sec-empty">本题型该筛选下暂无题目</view>
 
+          <!-- 阅读理解:手动加入作业精讲·阅读理解精讲(不自动加入) -->
+          <view
+            v-if="sec.isReading"
+            class="reading-add"
+            :class="{ done: isReadingAdded(sec) }"
+            @tap="addReading(sec)"
+          >
+            <view class="ic ic-book" style="width:30rpx;height:30rpx" />
+            <text>{{ isReadingAdded(sec) ? '已加入阅读理解精讲' : '加入阅读理解精讲' }}</text>
+          </view>
+
           <!-- 底部功能:仅有原文的题型(阅读/完形)有 本题生词 + 长难句 -->
           <view v-if="sec.hasPassage" class="sec-tools">
             <text class="tool-chip" :class="{ on: secVocabOpen[sec.id] }" @tap="toggleSecVocab(sec)">本题生词</text>
@@ -149,7 +160,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperVocab, practiceForQuestion, recordPaperPractice, renamePaper, addQuestionGrammar, addQuestionVocab, addQuestionToWrong, type SimilarQuestion, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperVocab, practiceForQuestion, recordPaperPractice, renamePaper, addQuestionGrammar, addQuestionVocab, addQuestionToWrong, addReadingIntensive, type SimilarQuestion, type PaperVocabWord } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
@@ -180,17 +191,34 @@ function toBlocks(qs: any[]) {
 }
 // 每题型一块:全量题 + 错题数(兼容无 sections 的旧数据)
 const paperSections = computed(() => {
-  const build = (id: string, label: string, is_suggested: boolean, qs: any[]) =>
-    ({ id, label, is_suggested, questions: qs, total: qs.length,
+  const build = (id: string, label: string, is_suggested: boolean, qs: any[], section_type?: string | null, inReading?: boolean) =>
+    ({ id, label, is_suggested, section_type: section_type || null, questions: qs, total: qs.length,
        wrongCount: qs.filter((q: any) => q.is_wrong).length,
-       hasPassage: qs.some((q: any) => q.passage || q.block_key) })
+       hasPassage: qs.some((q: any) => q.passage || q.block_key),
+       isReading: section_type === 'reading' || (label || '').includes('阅读'),
+       inReading: !!inReading })
   const out: any[] = []
   for (const sec of (paper.value?.sections || [])) {
-    if ((sec.questions || []).length) out.push(build(sec.id, sec.label, !!sec.is_suggested, sec.questions))
+    if ((sec.questions || []).length) out.push(build(sec.id, sec.label, !!sec.is_suggested, sec.questions, sec.section_type, (sec as any).in_reading_intensive))
   }
   if (!out.length && (paper.value?.questions || []).length) out.push(build('all', '全部题目', false, paper.value!.questions))
   return out
 })
+// 本次会话内已加入阅读理解精讲的 section(叠加后端 inReading)
+const readingAdded = ref<Set<string>>(new Set())
+function isReadingAdded(sec: any): boolean { return sec.inReading || readingAdded.value.has(sec.id) }
+async function addReading(sec: any) {
+  if (isReadingAdded(sec)) return
+  try {
+    const r = await addReadingIntensive(sec.id)
+    if (r.added) {
+      readingAdded.value = new Set([...readingAdded.value, sec.id])
+      uni.showToast({ title: '已加入阅读理解精讲', icon: 'none' })
+    } else {
+      uni.showToast({ title: r.reason || '加入失败', icon: 'none' })
+    }
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
 // 本题型 全部|错题(默认:有错题→错题,无错题→全部)
 const secWrong = ref<Record<string, boolean>>({})
 function isWrongView(sec: any): boolean {
@@ -490,6 +518,11 @@ function editTitle() {
 .ans-x { color: var(--c-danger); }
 .ans-ok { color: #128a4c; }
 .sec-empty { text-align: center; color: var(--c-text-hint); font-size: 24rpx; padding: 24rpx 0; }
+/* 阅读理解:加入精讲 */
+.reading-add { display: flex; align-items: center; justify-content: center; gap: 10rpx; margin: 14rpx 4rpx 0; padding: 16rpx; border-radius: 16rpx; background: var(--c-primary); color: #fff; font-size: 27rpx; font-weight: 700; }
+.reading-add .ic-book { filter: brightness(0) invert(1); }
+.reading-add.done { background: var(--c-bg-soft); color: var(--c-text-second); }
+.reading-add.done .ic-book { filter: none; }
 /* 底部三功能 */
 .sec-tools { display: flex; gap: 14rpx; margin: 14rpx 4rpx 4rpx; }
 .tool-chip { flex: 1; text-align: center; font-size: 25rpx; color: var(--c-primary-deep); background: var(--c-bg-card); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 12rpx 0; font-weight: 600; }

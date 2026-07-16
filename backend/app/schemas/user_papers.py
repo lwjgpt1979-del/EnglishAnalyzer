@@ -36,6 +36,7 @@ class UserPaperSectionOut(BaseModel):
     label: str
     section_type: str | None = None
     is_suggested: bool = False       # True=AI 建议分类(原卷没识别到大题头),前端标「建议」、学生可改
+    in_reading_intensive: bool = False  # 阅读理解:是否已手动加入作业精讲·阅读理解精讲
     questions: list[UserPaperQuestionOut]
 
 

@@ -487,6 +487,7 @@ async def get_paper_detail(
     sections = [
         UserPaperSectionOut(id=s.id, label=s.label, section_type=s.section_type,
                             is_suggested=s.is_suggested,
+                            in_reading_intensive=bool(getattr(s, "in_reading_intensive", False)),
                             questions=[_q_out(q) for q in by_sec.get(s.id, [])])
         for s in secs
     ]

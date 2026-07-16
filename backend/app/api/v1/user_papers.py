@@ -275,6 +275,17 @@ async def add_question_to_wrong_api(question_id: uuid.UUID, db: DbDep, current_u
     return make_ok(r)
 
 
+@router.post("/sections/{section_id}/add-reading-intensive")
+async def add_reading_intensive_api(section_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """手动把某作业的阅读理解板块加入「作业精讲·阅读理解精讲」(不自动加入)。"""
+    from app.services import reading_intensive_service
+    r = await reading_intensive_service.add_reading_intensive(
+        db, student_id=current_user.id, section_id=section_id)
+    if r is None:
+        raise AppError(code=404, message="板块不存在或无权访问")
+    return make_ok(r)
+
+
 @router.post("/questions/{question_id}/practice")
 async def practice_for_question_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """错题「练同类」：按该题知识点生成同类仿真练习（计入 practice.generate 配额）。"""

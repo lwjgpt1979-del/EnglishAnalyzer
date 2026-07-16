@@ -38,6 +38,8 @@ class UserPaperSection(Base):
     # AI 建议的分类(原卷没识别到大题头时按题型推):前端标「建议」,学生可改;改后置 false
     is_suggested = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    # 阅读理解:是否已由学生手动加入「作业精讲·阅读理解精讲」(默认否,不自动加入)
+    in_reading_intensive = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
 
 
 class UserPaperQuestion(Base):
