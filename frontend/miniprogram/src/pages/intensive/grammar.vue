@@ -8,12 +8,15 @@
 
     <template v-else-if="!groupOpen">
       <view v-if="!groups.length" class="tip">{{ mode === 'homework' ? '还没有加入待学习的语法点——去试卷「加入学习计划」' : '未设教材或该教材暂无语法点' }}</view>
-      <template v-for="sec in sections" :key="sec.key">
-        <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
-        <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
-          <view class="grp-main"><text class="grp-title">{{ g.title }}</text><text class="grp-sub">{{ g.sub }}</text></view>
-          <text class="grp-cnt">{{ g.count }} 点 ›</text>
-        </view>
+      <IntensiveBatchList v-else-if="mode === 'homework'" :batches="hwItems" unit="点" @open="openById" />
+      <template v-else>
+        <template v-for="sec in sections" :key="sec.key">
+          <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
+          <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
+            <view class="grp-main"><text class="grp-title">{{ g.title }}</text><text class="grp-sub">{{ g.sub }}</text></view>
+            <text class="grp-cnt">{{ g.count }} 点 ›</text>
+          </view>
+        </template>
       </template>
     </template>
 
@@ -74,11 +77,16 @@ import { namedGrammarLecture, type GrammarLectureSection } from '@/api/curriculu
 import PracticeQuiz, { type ChosenAnswer } from '@/components/PracticeQuiz.vue'
 import type { PracticeQuestion } from '@/api/wrongQuestions'
 import { md2html } from '@/utils/md'
+import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
 
 const mode = ref('homework')
 const loading = ref(true)
 const groups = ref<any[]>([])
 const groupOpen = ref<any>(null)
+const hwItems = computed<BatchItem[]>(() => groups.value.map(g => ({
+  id: g.id, title: g.title, date: g.sub, count: g.count, studied: g.studied,
+})))
+function openById(id: string) { const g = groups.value.find(x => x.id === id); if (g) openGroup(g) }
 const points = ref<GrammarPoint[]>([])
 const itemsLoading = ref(false)
 const modeLabel = computed(() => (mode.value === 'homework' ? '作业精讲' : '课程精讲'))

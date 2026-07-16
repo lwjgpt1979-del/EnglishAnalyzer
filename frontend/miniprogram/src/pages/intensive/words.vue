@@ -10,15 +10,18 @@
     <!-- 一级:批次 / 单元 -->
     <template v-else-if="!groupOpen">
       <view v-if="!groups.length" class="tip">{{ mode === 'homework' ? '还没有加入待学习的单词——去上传的试卷里挑生词加入' : '未设教材或该教材暂无单元词' }}</view>
-      <template v-for="sec in sections" :key="sec.key">
-        <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
-        <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
-          <view class="grp-main">
-            <text class="grp-title">{{ g.title }}</text>
-            <text class="grp-sub">{{ g.sub }}</text>
+      <IntensiveBatchList v-else-if="mode === 'homework'" :batches="hwItems" unit="词" @open="openById" />
+      <template v-else>
+        <template v-for="sec in sections" :key="sec.key">
+          <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
+          <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
+            <view class="grp-main">
+              <text class="grp-title">{{ g.title }}</text>
+              <text class="grp-sub">{{ g.sub }}</text>
+            </view>
+            <text class="grp-cnt">{{ g.count }} 词 ›</text>
           </view>
-          <text class="grp-cnt">{{ g.count }} 词 ›</text>
-        </view>
+        </template>
       </template>
     </template>
 
@@ -78,6 +81,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords, ensureWordMedia,
          type IntensiveWord, type HwWordBatch, type CourseWordUnit } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
+import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
 
 const mode = ref('homework')
 // 点单个词 → 展开单词卡片弹层;无媒体的词点开即时生成配图/发音/信息(规则:见 CLAUDE.md)
@@ -121,6 +125,11 @@ const loading = ref(true)
 const groups = ref<any[]>([])          // {id, title, sub, count}
 const groupOpen = ref<any>(null)
 const groupTitle = computed(() => groupOpen.value?.title || '')
+// 作业批次 → 统一批次组件(状态/时间轴/进度);sub 即日期
+const hwItems = computed<BatchItem[]>(() => groups.value.map(g => ({
+  id: g.id, title: g.title, date: g.sub, count: g.count, studied: g.studied,
+})))
+function openById(id: string) { const g = groups.value.find(x => x.id === id); if (g) openGroup(g) }
 const words = ref<IntensiveWord[]>([])
 const wordsLoading = ref(false)
 const modeLabel = computed(() => (mode.value === 'homework' ? '作业精讲' : '课程精讲'))

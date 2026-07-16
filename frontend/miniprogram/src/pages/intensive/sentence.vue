@@ -8,12 +8,15 @@
 
     <template v-else-if="!groupOpen">
       <view v-if="!groups.length" class="tip">{{ mode === 'homework' ? '还没有加入待学习的长难句——去试卷「加入待学习」' : '未设教材或该教材暂无长难句' }}</view>
-      <template v-for="sec in sections" :key="sec.key">
-        <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
-        <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
-          <view class="grp-main"><text class="grp-title">{{ g.title }}</text><text class="grp-sub">{{ g.sub }}</text></view>
-          <text class="grp-cnt">{{ g.count }} 句 ›</text>
-        </view>
+      <IntensiveBatchList v-else-if="mode === 'homework'" :batches="hwItems" unit="句" @open="openById" />
+      <template v-else>
+        <template v-for="sec in sections" :key="sec.key">
+          <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
+          <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
+            <view class="grp-main"><text class="grp-title">{{ g.title }}</text><text class="grp-sub">{{ g.sub }}</text></view>
+            <text class="grp-cnt">{{ g.count }} 句 ›</text>
+          </view>
+        </template>
       </template>
     </template>
 
@@ -34,11 +37,16 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { seHwBatches, seHwSentences, seCourseUnits, seCourseSentences,
          type SentenceItem, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
+import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
 
 const mode = ref('homework')
 const loading = ref(true)
 const groups = ref<any[]>([])
 const groupOpen = ref<any>(null)
+const hwItems = computed<BatchItem[]>(() => groups.value.map(g => ({
+  id: g.id, title: g.title, date: g.sub, count: g.count, studied: g.studied,
+})))
+function openById(id: string) { const g = groups.value.find(x => x.id === id); if (g) openGroup(g) }
 const sentences = ref<SentenceItem[]>([])
 const itemsLoading = ref(false)
 const modeLabel = computed(() => (mode.value === 'homework' ? '作业精讲' : '课程精讲'))

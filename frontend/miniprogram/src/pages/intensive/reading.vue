@@ -10,13 +10,7 @@
 
     <!-- 批次列表 -->
     <template v-else>
-      <view v-for="b in batches" :key="b.paper_id" class="card batch" @tap="openBatch(b)">
-        <view class="batch-main">
-          <text class="batch-title">{{ b.title }}</text>
-          <text class="batch-sub">{{ b.date }} · {{ b.count }} 题</text>
-        </view>
-        <text class="batch-arrow">{{ openId === b.paper_id ? '▾' : '›' }}</text>
-      </view>
+      <IntensiveBatchList :batches="batchItems" unit="题" @open="openById" />
       <!-- 展开:该卷的短文 + 小题 -->
       <view v-if="openId" class="wrap">
         <view v-if="itemsLoading" class="tip">加载中…</view>
@@ -125,15 +119,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { rdHwBatches, rdHwPassages, type IntensiveBatch, type ReadingBlock } from '@/api/curriculum'
 import { getReadingAnalysis, readingPractice, recordPaperPractice, getPassageStudy,
          type ReadingAnalysis, type SimilarQuestion, type StudyWord } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import KeyWordsList from '@/components/KeyWordsList.vue'
+import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
 
 const batches = ref<IntensiveBatch[]>([])
+const batchItems = computed<BatchItem[]>(() => batches.value.map(b => ({
+  id: b.paper_id, title: b.title, date: b.date, count: b.count, studied: (b as any).studied,
+})))
+function openById(id: string) {
+  const b = batches.value.find(x => x.paper_id === id)
+  if (b) openBatch(b)
+}
 const loading = ref(true)
 const openId = ref('')
 const blocks = ref<ReadingBlock[]>([])
