@@ -23,12 +23,18 @@
         <view v-else-if="!blocks.length" class="tip">该卷没有阅读理解内容</view>
         <template v-else>
           <view v-for="(bk, bi) in blocks" :key="bi" class="block">
-            <view v-if="bk.passage" class="card passage" @tap="toggle(bi)">
+            <!-- 原文:吸顶常驻,读写对照 -->
+            <view v-if="bk.passage" class="passage" @tap="toggle(bi)">
               <view class="passage-head">
-                <text class="passage-title">短文{{ bk.block_label }}</text>
+                <view class="passage-brand">
+                  <view class="ic-book"></view>
+                  <text class="passage-title">原文 · 常驻对照</text>
+                </view>
                 <text class="passage-toggle">{{ collapsed[bi] ? '展开 ▾' : '收起 ▴' }}</text>
               </view>
-              <text v-if="!collapsed[bi]" class="passage-text">{{ bk.passage }}</text>
+              <view v-if="!collapsed[bi]" class="passage-text">
+                <text v-for="(seg, si) in passageSegs(bi, bk.passage)" :key="si" :class="{ 'ev-hl': seg.hl }">{{ seg.t }}</text>
+              </view>
             </view>
 
             <!-- 本篇短文:本地生词 + 长难句(懒加载,展开才请求) -->
@@ -38,9 +44,7 @@
             <template v-if="bk.passage && studyOpen[bi]">
               <view v-if="studyLoading[bi]" class="tip">加载中…</view>
               <template v-else-if="study[bi]">
-                <!-- 本地生词:与长难句页「重点词汇」同一组件、全功能一致 -->
                 <KeyWordsList :words="study[bi].words" :paper-id="openId" title="本地生词" />
-                <!-- 长难句:点句 → 逐句解析(结构·语法·重点词) -->
                 <view v-if="study[bi].sentences.length" class="card">
                   <text class="sec-t">长难句</text>
                   <text class="sec-sub">点句子看逐句解析(结构·语法·重点词)。</text>
@@ -53,22 +57,24 @@
               </template>
             </template>
 
-            <view v-for="(q, qi) in bk.questions" :key="qi" class="card q-card" :class="{ wrong: q.is_wrong }">
+            <!-- 讲义卡片:题型大标签 + 四件套 -->
+            <view v-for="(q, qi) in bk.questions" :key="qi" class="q-card">
               <view class="q-head">
-                <text class="q-no">{{ q.no ? `第 ${q.no} 题` : '题目' }}</text>
-                <text class="q-type">{{ q.type || '题目' }}</text>
-                <text v-if="q.is_wrong" class="q-flag">错</text>
+                <text class="q-type" :class="typeCls(q)">{{ typeLabel(q) }}</text>
+                <text v-if="q.is_wrong" class="st-chip st-bad">答错</text>
+                <text v-else class="st-chip st-ok">答对</text>
+                <text class="q-no">{{ q.no ? `第 ${q.no} 题` : '' }}</text>
               </view>
               <text class="q-stem">{{ q.stem || '（题干为空）' }}</text>
               <view class="q-ans">
-                <text class="ans-line" :class="{ 'ans-x': q.is_wrong }">你的答案：{{ q.student_answer || '（未识别）' }}</text>
-                <text class="ans-line ans-ok">正确答案：{{ q.correct_answer || '（未提供）' }}</text>
+                <text class="ans-chip" :class="q.is_wrong ? 'ac-bad' : 'ac-ok'">你选 {{ q.student_answer || '未识别' }} {{ q.is_wrong ? '✗' : '✓' }}</text>
+                <text class="ans-chip ac-ok">正确 {{ q.correct_answer || '未提供' }} ✓</text>
               </view>
               <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
 
               <!-- 解题精讲 + 练同类 -->
               <view class="q-acts">
-                <view class="q-act" :class="{ on: anaOpen[q.id] }" @tap="toggleAna(q)">
+                <view class="q-act" :class="{ on: anaOpen[q.id] }" @tap="toggleAna(q, bi)">
                   <text>{{ anaLoading[q.id] ? '解析中…' : (anaOpen[q.id] ? '收起解析' : '看解析') }}</text>
                 </view>
                 <view class="q-act q-act-sim" @tap="practice(q.id)">
@@ -76,21 +82,29 @@
                 </view>
               </view>
 
-              <!-- 解析面板:题型 + 定位句 + 为何对 + 干扰项 -->
+              <!-- 解析面板:四件套(左侧细色条分区) -->
               <view v-if="anaOpen[q.id] && ana[q.id]" class="ana">
                 <text v-if="ana[q.id].error" class="ana-err">{{ ana[q.id].error }}</text>
                 <template v-else>
-                  <view v-if="ana[q.id].skill || ana[q.id].rc_code" class="ana-row"><text class="ana-k">题型</text><text class="ana-v">{{ ana[q.id].skill || ana[q.id].rc_code }}</text></view>
-                  <view v-if="ana[q.id].evidence" class="ana-ev"><text class="ana-k">① 回原文定位</text><text class="ana-quote">“{{ ana[q.id].evidence }}”</text></view>
-                  <view v-if="ana[q.id].answer_reason" class="ana-row2"><text class="ana-k">② 为什么对</text><text class="ana-t">{{ ana[q.id].answer_reason }}</text></view>
-                  <view v-if="hasDistractors(q.id)" class="ana-dis">
-                    <text class="ana-k">③ 干扰项为什么错</text>
+                  <view v-if="ana[q.id].evidence" class="ab ab-loc">
+                    <text class="ab-k">① 回原文定位</text>
+                    <text class="ab-quote">“{{ ana[q.id].evidence }}”</text>
+                  </view>
+                  <view v-if="ana[q.id].answer_reason" class="ab ab-why">
+                    <text class="ab-k">② 为什么对</text>
+                    <text class="ab-t">{{ ana[q.id].answer_reason }}</text>
+                  </view>
+                  <view v-if="hasDistractors(q.id)" class="ab ab-dis">
+                    <text class="ab-k">③ 干扰项为什么错</text>
                     <view v-for="(d, key) in ana[q.id].distractors" :key="key" class="dis-row">
                       <text class="dis-key">{{ key }}</text>
                       <text class="dis-why">{{ d.why_wrong }}</text>
                     </view>
                   </view>
-                  <view v-if="ana[q.id].skill_tip" class="ana-tip"><text class="ana-k tip-k">④ 解题技巧</text><text class="ana-t">{{ ana[q.id].skill_tip }}</text></view>
+                  <view v-if="ana[q.id].skill_tip" class="ab ab-tip">
+                    <text class="ab-k">④ 解题技巧</text>
+                    <text class="ab-t">{{ ana[q.id].skill_tip }}</text>
+                  </view>
                 </template>
               </view>
             </view>
@@ -128,6 +142,34 @@ const collapsed = ref<Record<number, boolean>>({})
 
 function toggle(i: number) { collapsed.value = { ...collapsed.value, [i]: !collapsed.value[i] } }
 
+// 题型大标签:中文题型名(优先解析出的 skill)+ 同系配色
+function typeLabel(q: any): string {
+  return ana.value[q.id]?.skill || q.type || '阅读理解'
+}
+function typeCls(q: any): string {
+  const s = typeLabel(q)
+  if (s.includes('细节')) return 'tt-detail'
+  if (s.includes('推')) return 'tt-infer'
+  if (s.includes('主旨') || s.includes('大意') || s.includes('标题')) return 'tt-main'
+  if (s.includes('词义') || s.includes('猜')) return 'tt-word'
+  if (s.includes('态度') || s.includes('观点') || s.includes('情感')) return 'tt-att'
+  return 'tt-detail'
+}
+
+// 证据句在原文里高亮(按当前展开解析的题定位;匹配不到则不高亮)
+const activeEv = ref<Record<number, string>>({})
+function passageSegs(bi: number, passage: string): { t: string; hl: boolean }[] {
+  const ev = (activeEv.value[bi] || '').trim()
+  if (!ev || !passage) return [{ t: passage, hl: false }]
+  const idx = passage.toLowerCase().indexOf(ev.toLowerCase())
+  if (idx < 0) return [{ t: passage, hl: false }]
+  return [
+    { t: passage.slice(0, idx), hl: false },
+    { t: passage.slice(idx, idx + ev.length), hl: true },
+    { t: passage.slice(idx + ev.length), hl: false },
+  ].filter(s => s.t)
+}
+
 // 本篇短文:本地生词 + 长难句(懒加载,按 block 缓存)
 const studyOpen = ref<Record<number, boolean>>({})
 const studyLoading = ref<Record<number, boolean>>({})
@@ -154,15 +196,18 @@ function hasDistractors(id: string): boolean {
   const d = ana.value[id]?.distractors
   return !!d && Object.keys(d).length > 0
 }
-async function toggleAna(q: any) {
+async function toggleAna(q: any, bi: number) {
   const open = !anaOpen.value[q.id]
   anaOpen.value = { ...anaOpen.value, [q.id]: open }
-  if (open && !ana.value[q.id]) {
+  if (!open) { activeEv.value = { ...activeEv.value, [bi]: '' }; return }
+  if (!ana.value[q.id]) {
     anaLoading.value = { ...anaLoading.value, [q.id]: true }
     try { ana.value = { ...ana.value, [q.id]: await getReadingAnalysis(q.id) } }
     catch (e: any) { ana.value = { ...ana.value, [q.id]: { error: e?.message || '解析失败' } } }
     finally { anaLoading.value = { ...anaLoading.value, [q.id]: false } }
   }
+  // 展开后把证据句在原文里高亮(自动滚回原文吸顶处对照)
+  activeEv.value = { ...activeEv.value, [bi]: ana.value[q.id]?.evidence || '' }
 }
 
 // 练同类(统一 PracticeQuiz)
@@ -195,6 +240,7 @@ async function openBatch(b: IntensiveBatch) {
   itemsLoading.value = true
   blocks.value = []
   collapsed.value = {}
+  activeEv.value = {}
   studyOpen.value = {}; studyLoading.value = {}; study.value = {}
   try {
     blocks.value = (await rdHwPassages(b.paper_id)).blocks
@@ -209,64 +255,84 @@ onLoad(async () => {
 </script>
 
 <style scoped>
-.page { min-height: 100vh; background: var(--c-bg, #f5f7fa); padding: 24rpx; box-sizing: border-box; }
+/* 冷静蓝白:纯白卡 + 蓝灰分层 */
+.page { min-height: 100vh; background: #f4f6fa; padding: 24rpx; box-sizing: border-box; }
 .hd { padding: 8rpx 4rpx 20rpx; }
-.hd-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); display: block; }
-.hd-sub { font-size: 24rpx; color: var(--c-text-hint); margin-top: 8rpx; display: block; line-height: 1.5; }
-.tip { text-align: center; color: var(--c-text-hint); padding: 60rpx 0; }
-.card { background: #fff; border-radius: 20rpx; padding: 24rpx; margin-bottom: 16rpx; }
-.batch { display: flex; align-items: center; }
+.hd-title { font-size: 40rpx; font-weight: 800; color: #1f2733; display: block; }
+.hd-sub { font-size: 24rpx; color: #93a0b3; margin-top: 8rpx; display: block; line-height: 1.5; }
+.tip { text-align: center; color: #93a0b3; padding: 60rpx 0; }
+.card { background: #fff; border: 2rpx solid #eaeef4; border-radius: 20rpx; padding: 24rpx; margin-bottom: 16rpx; }
+.batch { display: flex; align-items: center; box-shadow: 0 4rpx 20rpx rgba(45, 80, 150, .05); }
 .batch-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6rpx; }
-.batch-title { font-size: 30rpx; font-weight: 700; color: var(--c-ink); }
-.batch-sub { font-size: 23rpx; color: var(--c-text-hint); }
-.batch-arrow { font-size: 30rpx; color: var(--c-primary); }
+.batch-title { font-size: 30rpx; font-weight: 700; color: #1f2733; }
+.batch-sub { font-size: 23rpx; color: #93a0b3; }
+.batch-arrow { font-size: 30rpx; color: #3d8bf5; }
 .wrap { margin-top: 6rpx; }
 .block { margin-bottom: 8rpx; }
-.passage { background: var(--c-primary-faint); }
+
+/* 原文:吸顶常驻 */
+.passage { position: sticky; top: 0; z-index: 5; background: #fff; border: 2rpx solid #e3e9f2; border-radius: 18rpx; padding: 20rpx 22rpx; margin-bottom: 16rpx; box-shadow: 0 6rpx 22rpx rgba(45, 80, 150, .08); }
 .passage-head { display: flex; align-items: center; justify-content: space-between; }
-.passage-title { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep, var(--c-primary)); }
-.passage-toggle { font-size: 22rpx; color: var(--c-primary); }
-.passage-text { display: block; font-size: 26rpx; color: var(--c-text-body, var(--c-ink)); line-height: 1.7; margin-top: 14rpx; white-space: pre-wrap; }
+.passage-brand { display: flex; align-items: center; gap: 10rpx; }
+.ic-book { width: 30rpx; height: 30rpx; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E"); background-size: contain; background-repeat: no-repeat; }
+.passage-title { font-size: 24rpx; font-weight: 700; color: #3d8bf5; letter-spacing: .5rpx; }
+.passage-toggle { font-size: 22rpx; color: #93a0b3; }
+.passage-text { display: block; font-size: 26rpx; color: #3a4353; line-height: 1.8; margin-top: 14rpx; max-height: 40vh; overflow-y: auto; white-space: pre-wrap; }
+.ev-hl { background: #e4eeff; color: #1f4c8f; border-radius: 4rpx; padding: 0 2rpx; box-shadow: inset 0 -4rpx 0 #7ca9f5; }
+
 /* 本地生词 · 长难句 */
 .study-tools { display: flex; gap: 12rpx; margin: 2rpx 0 12rpx; }
-.tool-chip { font-size: 22rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
-.tool-chip.on { background: var(--c-primary); color: #fff; }
-.sec-t { display: block; font-size: 24rpx; font-weight: 700; color: var(--c-text-second); margin-bottom: 6rpx; }
-.sec-sub { display: block; font-size: 21rpx; color: var(--c-text-hint); margin-bottom: 16rpx; line-height: 1.5; }
-.ls-row { display: flex; align-items: center; gap: 14rpx; padding: 14rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
+.tool-chip { font-size: 22rpx; color: #3d8bf5; border: 2rpx solid #3d8bf5; border-radius: 999rpx; padding: 6rpx 22rpx; }
+.tool-chip.on { background: #3d8bf5; color: #fff; }
+.sec-t { display: block; font-size: 24rpx; font-weight: 700; color: #46506a; margin-bottom: 6rpx; }
+.sec-sub { display: block; font-size: 21rpx; color: #93a0b3; margin-bottom: 16rpx; line-height: 1.5; }
+.ls-row { display: flex; align-items: center; gap: 14rpx; padding: 14rpx 0; border-top: 2rpx solid #eef1f5; }
 .ls-row:first-of-type { border-top: none; }
-.ls-text { flex: 1; min-width: 0; font-size: 25rpx; line-height: 1.6; color: var(--c-ink); }
-.ls-go { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); }
-.q-card.wrong { border: 2rpx solid #f5c2c7; }
-.q-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 10rpx; }
-.q-no { font-size: 24rpx; font-weight: 700; color: var(--c-ink); }
-.q-type { font-size: 21rpx; color: var(--c-primary); background: var(--c-primary-faint); border-radius: 8rpx; padding: 2rpx 12rpx; }
-.q-flag { font-size: 20rpx; color: #fff; background: #e5484d; border-radius: 6rpx; padding: 2rpx 10rpx; }
-.q-stem { display: block; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
-.q-ans { margin-top: 12rpx; display: flex; flex-direction: column; gap: 4rpx; }
-.ans-line { font-size: 24rpx; color: var(--c-text-sub); }
-.q-exp { display: block; font-size: 24rpx; color: var(--c-text-sub); line-height: 1.6; margin-top: 10rpx; background: var(--c-bg-soft, #f6f8fb); border-radius: 10rpx; padding: 12rpx 14rpx; }
-.ans-x { color: #e5484d; }
-.ans-ok { color: #128a4c; }
+.ls-text { flex: 1; min-width: 0; font-size: 25rpx; line-height: 1.6; color: #1f2733; }
+.ls-go { flex-shrink: 0; font-size: 22rpx; color: #3d8bf5; }
+
+/* 讲义卡片 */
+.q-card { background: #fff; border: 2rpx solid #eaeef4; border-radius: 18rpx; padding: 22rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 18rpx rgba(45, 80, 150, .05); }
+.q-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 14rpx; }
+.q-type { font-size: 22rpx; font-weight: 800; color: #fff; border-radius: 999rpx; padding: 4rpx 18rpx; letter-spacing: .5rpx; }
+.tt-detail { background: linear-gradient(135deg, #4c97f7, #3d7bf0); }
+.tt-infer { background: linear-gradient(135deg, #7c9bd8, #6480c4); }
+.tt-main { background: linear-gradient(135deg, #3fb0a4, #2e9a8e); }
+.tt-word { background: linear-gradient(135deg, #5aaee0, #3e92ce); }
+.tt-att { background: linear-gradient(135deg, #8e93c8, #7276b8); }
+.st-chip { font-size: 20rpx; font-weight: 600; border-radius: 8rpx; padding: 3rpx 12rpx; }
+.st-bad { color: #dc4c4c; background: #fdecec; }
+.st-ok { color: #1a9d63; background: #e8f6ef; }
+.q-no { margin-left: auto; font-size: 22rpx; color: #93a0b3; }
+.q-stem { display: block; font-size: 27rpx; font-weight: 600; line-height: 1.6; color: #1f2733; }
+.q-ans { margin-top: 14rpx; display: flex; flex-wrap: wrap; gap: 10rpx; }
+.ans-chip { font-size: 23rpx; border-radius: 10rpx; padding: 6rpx 16rpx; }
+.ac-bad { color: #dc4c4c; background: #fdecec; }
+.ac-ok { color: #1a9d63; background: #e8f6ef; }
+.q-exp { display: block; font-size: 24rpx; color: #55607a; line-height: 1.6; margin-top: 12rpx; background: #f5f8fc; border-radius: 12rpx; padding: 14rpx 16rpx; }
+
 /* 单题动作 */
-.q-acts { display: flex; gap: 12rpx; margin-top: 14rpx; }
-.q-act { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 24rpx; }
-.q-act.on { background: var(--c-primary); color: #fff; }
-.q-act-sim { color: var(--c-primary-deep, var(--c-primary)); background: var(--c-primary-faint); border-color: transparent; }
-/* 解析面板 */
-.ana { margin-top: 12rpx; background: #f6f8fb; border-radius: 14rpx; padding: 16rpx 18rpx; display: flex; flex-direction: column; gap: 12rpx; }
-.ana-err { font-size: 24rpx; color: var(--c-text-hint); }
-.ana-k { font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep, var(--c-primary)); background: #e8f1ff; border-radius: 8rpx; padding: 2rpx 12rpx; align-self: flex-start; }
-.ana-row { display: flex; align-items: center; gap: 12rpx; }
-.ana-v { font-size: 24rpx; color: var(--c-ink); }
-.ana-ev { display: flex; flex-direction: column; gap: 8rpx; }
-.ana-quote { font-size: 25rpx; color: var(--c-ink); line-height: 1.6; border-left: 6rpx solid #3d8bf5; padding-left: 14rpx; background: #eef4fb; border-radius: 0 8rpx 8rpx 0; padding: 10rpx 14rpx; }
-.ana-row2 { display: flex; flex-direction: column; gap: 8rpx; }
-.ana-t { font-size: 24rpx; color: var(--c-text-body, var(--c-ink)); line-height: 1.6; }
-.ana-dis { display: flex; flex-direction: column; gap: 8rpx; }
+.q-acts { display: flex; gap: 12rpx; margin-top: 16rpx; }
+.q-act { flex: 1; text-align: center; font-size: 24rpx; font-weight: 600; color: #2f74d6; border: 2rpx solid #d8e4f5; background: #f2f7fd; border-radius: 12rpx; padding: 12rpx 0; }
+.q-act.on { background: #e6f0fc; }
+.q-act-sim { color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border-color: transparent; }
+
+/* 解析面板:四件套左侧细色条分区 */
+.ana { margin-top: 14rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.ana-err { font-size: 24rpx; color: #93a0b3; }
+.ab { border-left: 6rpx solid #ccc; border-radius: 0 14rpx 14rpx 0; padding: 14rpx 18rpx; display: flex; flex-direction: column; gap: 8rpx; }
+.ab-k { font-size: 22rpx; font-weight: 800; align-self: flex-start; }
+.ab-t { font-size: 24rpx; color: #46506a; line-height: 1.6; }
+.ab-quote { font-size: 25rpx; color: #26466f; line-height: 1.6; }
+.ab-loc { border-left-color: #3d8bf5; background: #f3f8fe; }
+.ab-loc .ab-k { color: #2f74d6; }
+.ab-why { border-left-color: #22a76b; background: #f1faf5; }
+.ab-why .ab-k { color: #1a9059; }
+.ab-dis { border-left-color: #e08a4c; background: #fdf6ef; }
+.ab-dis .ab-k { color: #c06a2a; }
+.ab-tip { border-left-color: #8a6fd0; background: #f7f4fc; }
+.ab-tip .ab-k { color: #7057c0; }
 .dis-row { display: flex; gap: 12rpx; align-items: flex-start; }
-.dis-key { flex-shrink: 0; width: 40rpx; height: 40rpx; border-radius: 50%; background: #fdecec; color: #c33; font-size: 22rpx; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-.dis-why { flex: 1; font-size: 23rpx; color: var(--c-text-second, var(--c-text-sub)); line-height: 1.55; }
-.ana-tip { display: flex; flex-direction: column; gap: 8rpx; background: #fff8ec; border-radius: 10rpx; padding: 12rpx 14rpx; }
-.tip-k { background: #ffe6bf; color: #92600d; }
+.dis-key { flex-shrink: 0; width: 40rpx; height: 40rpx; border-radius: 50%; background: #fbe6d4; color: #c06a2a; font-size: 22rpx; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.dis-why { flex: 1; font-size: 23rpx; color: #55607a; line-height: 1.55; }
 </style>
