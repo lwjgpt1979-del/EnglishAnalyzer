@@ -65,25 +65,8 @@
         </view>
       </view>
 
-      <!-- 重点词汇:点词看卡片 / 加入作业精讲 -->
-      <view v-if="words.length" class="card">
-        <text class="sec-t">重点词汇</text>
-        <text class="sec-sub">点单词看卡片；「加入」进作业精讲·单词。</text>
-        <view class="kw-list">
-          <view v-for="(w, wi) in words" :key="wi" class="kw-row" @tap="openCard(w)">
-            <image v-if="w.image_url" :src="w.image_url" class="kw-img" mode="aspectFill" />
-            <view v-else-if="genWords.has(w.word_id)" class="kw-img kw-gen"><text class="kw-gen-t">生成中</text></view>
-            <view class="kw-main">
-              <text class="kw-w">{{ w.word }}</text>
-              <text class="kw-def">{{ genWords.has(w.word_id) ? '配图/发音生成中…' : defText(w.definitions) }}</text>
-            </view>
-            <view v-if="w.in_vocab" class="kw-add" :class="{ done: wordAdded.has(w.word_id) }"
-              @tap.stop="addWord(w)">
-              <text>{{ wordAdded.has(w.word_id) ? '已加入' : '加入' }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
+      <!-- 重点词汇:点词看卡片 / 加入作业精讲(共享组件,与阅读精讲·本地生词同一套) -->
+      <KeyWordsList :words="words" :paper-id="paperId" title="重点词汇" />
 
       <!-- 结构参考(可折叠) -->
       <view v-if="(a.segments && a.segments.length) || (a.explanations && a.explanations.length)" class="card">
@@ -105,29 +88,6 @@
     </template>
 
     <view v-else class="tip">解析失败,返回重试</view>
-
-    <!-- 单词卡片弹窗 -->
-    <view v-if="cardWord" class="card-mask" @tap="cardWord = null">
-      <view class="card-pop" @tap.stop>
-        <image v-if="cardWord.image_url" :src="cardWord.image_url" class="cp-img" mode="aspectFill" />
-        <view class="cp-head">
-          <text class="cp-word">{{ cardWord.word }}</text>
-          <view class="cp-play" :class="{ on: playingId === cardWord.word_id }" @tap="playWord(cardWord)">
-            <text>{{ playingId === cardWord.word_id ? '♪ 播放中' : '🔊 发音' }}</text>
-          </view>
-        </view>
-        <text v-if="cardWord.phonetic" class="cp-ph">/{{ cardWord.phonetic }}/</text>
-        <text class="cp-def">{{ defText(cardWord.definitions) }}</text>
-        <text v-if="cardWord.en_description" class="cp-en">{{ cardWord.en_description }}</text>
-        <view v-if="cardWord.example && cardWord.example.en" class="cp-ex">
-          <text class="cp-ex-en">{{ cardWord.example.en }}</text>
-          <text v-if="cardWord.example.zh" class="cp-ex-zh">{{ cardWord.example.zh }}</text>
-        </view>
-        <view v-if="cardWord.in_vocab" class="cp-add" :class="{ done: wordAdded.has(cardWord.word_id) }" @tap="addWord(cardWord)">
-          <text>{{ wordAdded.has(cardWord.word_id) ? '已加入作业精讲' : '加入作业精讲·单词' }}</text>
-        </view>
-      </view>
-    </view>
   </view>
 </template>
 
@@ -139,8 +99,7 @@ import {
   getSentenceStudyAids, addGrammarTarget, recordGrammarAnswer,
   type GrammarQuizItem, type StudyWord,
 } from '@/api/userPapers'
-import { addHomeworkWords, ensureWordMedia } from '@/api/vocabulary'
-import { resolveSpeakUrl } from '@/utils/tts'
+import KeyWordsList from '@/components/KeyWordsList.vue'
 
 const text = ref('')
 const a = ref<any>(null)
@@ -153,16 +112,6 @@ const quiz = ref<GrammarQuizItem[]>([])
 const words = ref<StudyWord[]>([])
 const picked = ref<Record<number, number | null>>({})
 const grammarAdded = ref<Set<string>>(new Set())
-const wordAdded = ref<Set<string>>(new Set())
-const cardWord = ref<StudyWord | null>(null)
-
-function defText(d: any): string {
-  if (!d) return ''
-  if (Array.isArray(d)) return d.map((x: any) => typeof x === 'string' ? x
-    : [x.pos || x.part_of_speech, x.meaning || x.zh || x.definition].filter(Boolean).join(' ')).join('；')
-  if (typeof d === 'string') return d
-  return ''
-}
 
 const answeredCount = computed(() => Object.keys(picked.value).length)
 // 有本次作答，或有任何历史累计，就展示正确率汇总(体现「以往至今」，不只当前)
@@ -200,53 +149,6 @@ async function viewGrammar(q: GrammarQuizItem) {
   uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${q.node_id}&name=${encodeURIComponent(q.node_name || '')}&cat=grammar` })
 }
 
-async function addWord(w: StudyWord) {
-  if (!w.word_id || wordAdded.value.has(w.word_id)) return
-  if (!paperId.value) { uni.showToast({ title: '请从作业里进入以归入批次', icon: 'none' }); return }
-  try {
-    await addHomeworkWords([w.word_id], paperId.value)
-    wordAdded.value = new Set([...wordAdded.value, w.word_id])
-    uni.showToast({ title: '已加入作业精讲·单词', icon: 'none' })
-    if (!w.image_url) genWordMedia(w)   // 无媒体 → 立即生成配图/发音/信息
-  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
-}
-
-// 无媒体的词即时生成媒体+信息,回来原地更新卡片
-const genWords = ref<Set<string>>(new Set())
-async function genWordMedia(w: StudyWord) {
-  if (!w.word_id || genWords.value.has(w.word_id)) return
-  genWords.value = new Set([...genWords.value, w.word_id])
-  try {
-    const m = await ensureWordMedia(w.word_id)
-    w.image_url = m.image_url ?? null
-    w.word_audio_url = m.word_audio_url ?? null
-    w.en_description = m.en_description ?? null
-    w.example = (m.example as any) ?? null
-    if (m.definitions) w.definitions = m.definitions
-  } catch { /* 生成失败静默,不影响已加入 */ }
-  finally {
-    const s = new Set(genWords.value); s.delete(w.word_id); genWords.value = s
-  }
-}
-
-function openCard(w: StudyWord) { cardWord.value = w }
-
-const playingId = ref('')
-let _audio: UniApp.InnerAudioContext | null = null
-async function playWord(w: StudyWord) {
-  if (!w.word) return
-  try {
-    const url = w.word_audio_url || (await resolveSpeakUrl(w.word))
-    if (_audio) { _audio.stop(); _audio.destroy() }
-    _audio = uni.createInnerAudioContext()
-    _audio.src = url
-    playingId.value = w.word_id || w.word
-    _audio.onEnded(() => { playingId.value = '' })
-    _audio.onError(() => { playingId.value = ''; uni.showToast({ title: '发音播放失败', icon: 'none' }) })
-    _audio.play()
-  } catch { playingId.value = ''; uni.showToast({ title: '发音获取失败', icon: 'none' }) }
-}
-
 async function save() {
   if (saved.value || !text.value) return
   try {
@@ -268,7 +170,6 @@ onLoad(async (q: any) => {
     words.value = aids.words || []
     saved.value = aids.sentence_added                                      // 已加入待学习回显
     grammarAdded.value = new Set(quiz.value.filter(x => x.grammar_added && x.node_id).map(x => x.node_id as string))
-    wordAdded.value = new Set(words.value.filter(x => x.word_added && x.word_id).map(x => x.word_id as string))
   } catch { /* 解析失败:a 为空,页面提示重试 */ }
   finally { loading.value = false }
 })

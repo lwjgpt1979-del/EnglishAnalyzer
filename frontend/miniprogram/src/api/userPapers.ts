@@ -48,6 +48,12 @@ export function getPaperLongSentences(paperId: string, sectionId?: string): Prom
   const qs = sectionId ? `?section_id=${sectionId}` : ''
   return request<{ sentences: string[] }>(`/api/v1/user-papers/${paperId}/long-sentences${qs}`, { method: 'GET' })
 }
+// 阅读精讲:按单篇短文取「本地生词(完整卡片媒体)+ 长难句」
+export function getPassageStudy(passage: string, paperId?: string): Promise<{ words: StudyWord[]; sentences: string[] }> {
+  return request<{ words: StudyWord[]; sentences: string[] }>(`/api/v1/user-papers/passage-study`, {
+    method: 'POST', data: { passage, paper_id: paperId },
+  })
+}
 // 重命名作业标题(改自动生成的名字)
 export function renamePaper(paperId: string, title: string): Promise<{ title: string }> {
   return request<{ title: string }>(`/api/v1/user-papers/${paperId}/title`, { method: 'PUT', data: { title } })

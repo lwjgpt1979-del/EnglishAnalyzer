@@ -51,6 +51,12 @@ class AnalyzeSentenceIn(BaseModel):
     paper_id: uuid.UUID | None = None
 
 
+class PassageStudyIn(BaseModel):
+    """阅读精讲:按单篇短文出「生词 + 长难句」。"""
+    passage: str = Field(..., min_length=1, max_length=8000)
+    paper_id: uuid.UUID | None = None
+
+
 class UserPaperOut(BaseModel):
     """试卷概要（列表用）。"""
     id: uuid.UUID

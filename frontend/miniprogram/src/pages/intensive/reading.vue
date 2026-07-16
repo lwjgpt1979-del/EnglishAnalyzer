@@ -30,6 +30,29 @@
               </view>
               <text v-if="!collapsed[bi]" class="passage-text">{{ bk.passage }}</text>
             </view>
+
+            <!-- 本篇短文:本地生词 + 长难句(懒加载,展开才请求) -->
+            <view v-if="bk.passage" class="study-tools">
+              <text class="tool-chip" :class="{ on: studyOpen[bi] }" @tap="toggleStudy(bi, bk)">本地生词 · 长难句</text>
+            </view>
+            <template v-if="bk.passage && studyOpen[bi]">
+              <view v-if="studyLoading[bi]" class="tip">加载中…</view>
+              <template v-else-if="study[bi]">
+                <!-- 本地生词:与长难句页「重点词汇」同一组件、全功能一致 -->
+                <KeyWordsList :words="study[bi].words" :paper-id="openId" title="本地生词" />
+                <!-- 长难句:点句 → 逐句解析(结构·语法·重点词) -->
+                <view v-if="study[bi].sentences.length" class="card">
+                  <text class="sec-t">长难句</text>
+                  <text class="sec-sub">点句子看逐句解析(结构·语法·重点词)。</text>
+                  <view v-for="(s, si) in study[bi].sentences" :key="si" class="ls-row" @tap="openSentence(s)">
+                    <text class="ls-text">{{ s }}</text>
+                    <text class="ls-go">解析 ›</text>
+                  </view>
+                </view>
+                <view v-if="!study[bi].words.length && !study[bi].sentences.length" class="tip">本篇没有生词或长难句</view>
+              </template>
+            </template>
+
             <view v-for="(q, qi) in bk.questions" :key="qi" class="card q-card" :class="{ wrong: q.is_wrong }">
               <view class="q-head">
                 <text class="q-no">{{ q.no ? `第 ${q.no} 题` : '题目' }}</text>
@@ -91,8 +114,10 @@
 import { ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { rdHwBatches, rdHwPassages, type IntensiveBatch, type ReadingBlock } from '@/api/curriculum'
-import { getReadingAnalysis, readingPractice, recordPaperPractice, type ReadingAnalysis, type SimilarQuestion } from '@/api/userPapers'
+import { getReadingAnalysis, readingPractice, recordPaperPractice, getPassageStudy,
+         type ReadingAnalysis, type SimilarQuestion, type StudyWord } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
+import KeyWordsList from '@/components/KeyWordsList.vue'
 
 const batches = ref<IntensiveBatch[]>([])
 const loading = ref(true)
@@ -102,6 +127,24 @@ const itemsLoading = ref(false)
 const collapsed = ref<Record<number, boolean>>({})
 
 function toggle(i: number) { collapsed.value = { ...collapsed.value, [i]: !collapsed.value[i] } }
+
+// 本篇短文:本地生词 + 长难句(懒加载,按 block 缓存)
+const studyOpen = ref<Record<number, boolean>>({})
+const studyLoading = ref<Record<number, boolean>>({})
+const study = ref<Record<number, { words: StudyWord[]; sentences: string[] }>>({})
+async function toggleStudy(bi: number, bk: ReadingBlock) {
+  const open = !studyOpen.value[bi]
+  studyOpen.value = { ...studyOpen.value, [bi]: open }
+  if (open && !study.value[bi]) {
+    studyLoading.value = { ...studyLoading.value, [bi]: true }
+    try { study.value = { ...study.value, [bi]: await getPassageStudy(bk.passage, openId.value || undefined) } }
+    catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }); studyOpen.value = { ...studyOpen.value, [bi]: false } }
+    finally { studyLoading.value = { ...studyLoading.value, [bi]: false } }
+  }
+}
+function openSentence(s: string) {
+  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(s)}&paperId=${openId.value}` })
+}
 
 // 解题精讲(缓存·懒加载)
 const ana = ref<Record<string, ReadingAnalysis>>({})
@@ -152,6 +195,7 @@ async function openBatch(b: IntensiveBatch) {
   itemsLoading.value = true
   blocks.value = []
   collapsed.value = {}
+  studyOpen.value = {}; studyLoading.value = {}; study.value = {}
   try {
     blocks.value = (await rdHwPassages(b.paper_id)).blocks
   } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
@@ -183,6 +227,16 @@ onLoad(async () => {
 .passage-title { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep, var(--c-primary)); }
 .passage-toggle { font-size: 22rpx; color: var(--c-primary); }
 .passage-text { display: block; font-size: 26rpx; color: var(--c-text-body, var(--c-ink)); line-height: 1.7; margin-top: 14rpx; white-space: pre-wrap; }
+/* 本地生词 · 长难句 */
+.study-tools { display: flex; gap: 12rpx; margin: 2rpx 0 12rpx; }
+.tool-chip { font-size: 22rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
+.tool-chip.on { background: var(--c-primary); color: #fff; }
+.sec-t { display: block; font-size: 24rpx; font-weight: 700; color: var(--c-text-second); margin-bottom: 6rpx; }
+.sec-sub { display: block; font-size: 21rpx; color: var(--c-text-hint); margin-bottom: 16rpx; line-height: 1.5; }
+.ls-row { display: flex; align-items: center; gap: 14rpx; padding: 14rpx 0; border-top: 2rpx solid var(--c-line, #eef1f5); }
+.ls-row:first-of-type { border-top: none; }
+.ls-text { flex: 1; min-width: 0; font-size: 25rpx; line-height: 1.6; color: var(--c-ink); }
+.ls-go { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); }
 .q-card.wrong { border: 2rpx solid #f5c2c7; }
 .q-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 10rpx; }
 .q-no { font-size: 24rpx; font-weight: 700; color: var(--c-ink); }

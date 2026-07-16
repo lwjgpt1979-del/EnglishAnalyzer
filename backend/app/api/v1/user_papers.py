@@ -17,7 +17,7 @@ from app.core.exceptions import AppError
 from app.core.security import get_current_user
 from app.models.d1_users import User
 from app.schemas.base import make_ok
-from app.schemas.user_papers import UserPaperCreate, UserPaperListOut, SectionUpdateIn, AnalyzeSentenceIn
+from app.schemas.user_papers import UserPaperCreate, UserPaperListOut, SectionUpdateIn, AnalyzeSentenceIn, PassageStudyIn
 from app.services import user_paper_service
 
 router = APIRouter(prefix="/user-papers", tags=["user-papers"])
@@ -141,6 +141,17 @@ async def analyze_sentence(
 ):
     """P3:按需解析一句长难句(结构切分 + 释义),带暂存复用。"""
     return make_ok(await user_paper_service.analyze_paper_sentence(db, body.sentence))
+
+
+@router.post("/passage-study")
+async def passage_study(
+    body: PassageStudyIn,
+    db: DbDep,
+    current_user: UserDep,
+):
+    """阅读精讲:按单篇短文一次给出「生词(完整卡片媒体)+ 长难句」。抽词不调 LLM、零成本。"""
+    return make_ok(await user_paper_service.passage_study(
+        db, passage=body.passage, student_id=current_user.id))
 
 
 @router.post("/save-sentence")

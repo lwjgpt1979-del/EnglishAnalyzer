@@ -710,6 +710,72 @@ async def paper_long_sentences(
     return {"sentences": out[:15]}
 
 
+async def passage_study(
+    db: AsyncSession, *, passage: str, student_id: uuid.UUID,
+) -> dict:
+    """阅读精讲·单篇短文的学习素材(一次给全):
+    - words:该短文里的『生词』(未学/接收度<0.6),带完整卡片媒体(配图/发音/例句/英文释义),
+      结构与长难句页「重点词汇」完全一致(前端同一组件渲染)。
+    - sentences:该短文拆出的长难句(供逐句解析)。
+    抽词走正则(不调 LLM、零成本);缺词落审核队列(best-effort)。"""
+    from app.models.d5_learning import (
+        VocabularyWord, VocabularyLearning, StudentVocabCandidate)
+    from app.services.vocab_pin_service import _words_from_text
+    from app.services import vocab_intensive_service as vis
+    from app.services import long_sentence_service as ls
+
+    text = (passage or "").strip()
+    if not text:
+        return {"words": [], "sentences": []}
+
+    # ① 长难句:切句 + 长句判定(去重、限量)
+    seen, sentences = set(), []
+    for s in ls.split_sentences(text):
+        key = (s or "").strip()
+        if key and key not in seen and ls.is_long_sentence(s):
+            seen.add(key)
+            sentences.append(key)
+
+    # ② 生词:正则抽词 → 词库命中 → 只留生词(接收度<0.6),出完整卡片媒体
+    tokens = [w for w in _words_from_text(text) if len(w) >= 3 and w not in _VOCAB_STOP]
+    words: list[dict] = []
+    if tokens:
+        hit = {w.word.lower(): w for w in (await db.execute(
+            select(VocabularyWord).where(func.lower(VocabularyWord.word).in_(tokens)))).scalars().all()}
+        missing = [w for w in tokens if w not in hit]
+        if missing:
+            try:
+                await vis.report_missing_words(db, words=missing, source="paper")
+            except Exception:  # noqa: BLE001  缺词审核失败不影响生词返回
+                pass
+        if hit:
+            ids = [w.id for w in hit.values()]
+            recep = {r.word_id: r.mastery_recep for r in (await db.execute(
+                select(VocabularyLearning).where(
+                    VocabularyLearning.student_id == student_id,
+                    VocabularyLearning.word_id.in_(ids)))).scalars().all()}
+            added_words = {str(x) for x in (await db.execute(
+                select(StudentVocabCandidate.word_id).where(
+                    StudentVocabCandidate.student_id == student_id,
+                    StudentVocabCandidate.word_id.in_(ids)))).scalars().all()}
+            picked: set = set()
+            for w in tokens:                                  # 保持短文出现顺序
+                vw = hit.get(w)
+                if vw is None or vw.id in picked:
+                    continue
+                rc = recep.get(vw.id)
+                if rc is not None and float(rc) >= 0.6:       # 接收度够 → 已掌握,不算生词
+                    continue
+                picked.add(vw.id)
+                item = vis._word_out(vw)
+                item["in_vocab"] = True
+                item["word_added"] = str(vw.id) in added_words
+                words.append(item)
+                if len(words) >= 40:
+                    break
+    return {"words": words, "sentences": sentences[:15]}
+
+
 async def analyze_paper_sentence(db: AsyncSession, sentence: str) -> dict:
     """P3:按需解析一句长难句(带暂存,命中缓存不重复调 LLM)。"""
     from app.services import long_sentence_service as ls
