@@ -71,8 +71,14 @@
               </view>
               <text class="q-stem">{{ q.stem || '（题干为空）' }}</text>
               <view class="q-ans">
-                <text class="ans-chip" :class="q.is_wrong ? 'ac-bad' : 'ac-ok'">你选 {{ q.student_answer || '未识别' }} {{ q.is_wrong ? '✗' : '✓' }}</text>
-                <text class="ans-chip ac-ok">正确 {{ q.correct_answer || '未提供' }} ✓</text>
+                <view class="ans-chip" :class="q.is_wrong ? 'ac-bad' : 'ac-ok'">
+                  <text>你选 {{ q.student_answer || '未识别' }}</text>
+                  <view class="ic ans-ic" :class="q.is_wrong ? 'ic-x-circle' : 'ic-check-circle'"></view>
+                </view>
+                <view class="ans-chip ac-ok">
+                  <text>正确 {{ q.correct_answer || '未提供' }}</text>
+                  <view class="ic ans-ic ic-check-circle"></view>
+                </view>
               </view>
               <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
 
@@ -351,7 +357,8 @@ onLoad(async () => {
 .q-no { margin-left: auto; font-size: 22rpx; color: #93a0b3; }
 .q-stem { display: block; font-size: 27rpx; font-weight: 600; line-height: 1.6; color: #1f2733; }
 .q-ans { margin-top: 14rpx; display: flex; flex-wrap: wrap; gap: 10rpx; }
-.ans-chip { font-size: 23rpx; border-radius: 10rpx; padding: 6rpx 16rpx; }
+.ans-chip { display: inline-flex; align-items: center; gap: 6rpx; font-size: 23rpx; border-radius: 10rpx; padding: 6rpx 16rpx; }
+.ans-ic { width: 26rpx; height: 26rpx; flex-shrink: 0; }
 .ac-bad { color: #dc4c4c; background: #fdecec; }
 .ac-ok { color: #1a9d63; background: #e8f6ef; }
 .q-exp { display: block; font-size: 24rpx; color: #55607a; line-height: 1.6; margin-top: 12rpx; background: #f5f8fc; border-radius: 12rpx; padding: 14rpx 16rpx; }
