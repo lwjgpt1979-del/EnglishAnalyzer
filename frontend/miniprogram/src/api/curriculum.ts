@@ -113,7 +113,10 @@ export function grHwPoints(paperId: string): Promise<{ points: GrammarPoint[] }>
   return request('/api/v1/curriculum/intensive/grammar/homework/points', { method: 'GET', data: { paper_id: paperId } })
 }
 export function grCourseUnits(grade?: string, semester?: string): Promise<CourseUnitsResp> {
-  return request('/api/v1/curriculum/intensive/grammar/course/units', { method: 'GET', data: { grade, semester } })
+  const data: Record<string, string> = {}
+  if (grade) data.grade = grade
+  if (semester) data.semester = semester
+  return request('/api/v1/curriculum/intensive/grammar/course/units', { method: 'GET', data })
 }
 export function grCoursePoints(unitId: string): Promise<{ points: GrammarPoint[] }> {
   return request('/api/v1/curriculum/intensive/grammar/course/points', { method: 'GET', data: { unit_id: unitId } })
@@ -134,7 +137,10 @@ export function rdHwPassages(paperId: string): Promise<{ blocks: ReadingBlock[] 
   return request('/api/v1/curriculum/intensive/reading/homework/passages', { method: 'GET', data: { paper_id: paperId } })
 }
 export function seCourseUnits(grade?: string, semester?: string): Promise<CourseUnitsResp> {
-  return request('/api/v1/curriculum/intensive/sentence/course/units', { method: 'GET', data: { grade, semester } })
+  const data: Record<string, string> = {}
+  if (grade) data.grade = grade
+  if (semester) data.semester = semester
+  return request('/api/v1/curriculum/intensive/sentence/course/units', { method: 'GET', data })
 }
 export function seCourseSentences(unitId: string): Promise<{ sentences: SentenceItem[] }> {
   return request('/api/v1/curriculum/intensive/sentence/course/sentences', { method: 'GET', data: { unit_id: unitId } })

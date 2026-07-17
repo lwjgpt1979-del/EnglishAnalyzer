@@ -22,8 +22,15 @@ async def _semesters(db: AsyncSession, tv: str) -> list[tuple]:
     return [(g, s) for g, s in rows]
 
 
+def _clean(v):
+    """挡掉前端可能传来的字符串 'undefined'/'null'/空,避免 enum/查询报错。"""
+    v = (v or "").strip() if isinstance(v, str) else v
+    return v if v and v not in ("undefined", "null") else None
+
+
 async def resolve_semester(db: AsyncSession, tv: str, student, grade, semester):
     """入参优先;否则用学生 preferred_grade/preferred_semester;都无则回退教材第一个学期。"""
+    grade, semester = _clean(grade), _clean(semester)
     g = grade or (getattr(student, "preferred_grade", None) if student else None)
     s = semester or (getattr(student, "preferred_semester", None) if student else None)
     if not g or not s:

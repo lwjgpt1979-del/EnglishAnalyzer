@@ -195,7 +195,10 @@ export function getHwWords(paperId: string): Promise<{ words: IntensiveWord[] }>
   return request<{ words: IntensiveWord[] }>('/api/v1/vocabulary/intensive/homework/words', { method: 'GET', data: { paper_id: paperId } })
 }
 export function getCourseWordUnits(grade?: string, semester?: string): Promise<CourseWordUnitsResp> {
-  return request<CourseWordUnitsResp>('/api/v1/vocabulary/intensive/course/units', { method: 'GET', data: { grade, semester } })
+  const data: Record<string, string> = {}
+  if (grade) data.grade = grade
+  if (semester) data.semester = semester
+  return request<CourseWordUnitsResp>('/api/v1/vocabulary/intensive/course/units', { method: 'GET', data })
 }
 export function getCourseWords(unitId: string): Promise<{ words: IntensiveWord[] }> {
   return request<{ words: IntensiveWord[] }>('/api/v1/vocabulary/intensive/course/words', { method: 'GET', data: { unit_id: unitId } })
