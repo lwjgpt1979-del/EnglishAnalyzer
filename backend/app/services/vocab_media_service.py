@@ -785,6 +785,43 @@ async def start_refresh_low_quality_images(db: AsyncSession) -> dict:
     return {"started": True, "total": len(ids)}
 
 
+async def reverify_and_regen_batch(db: AsyncSession, *, limit: int = 200, offset: int = 0) -> dict:
+    """存量坏图清理(离线):VLM 复核已发布配图,只对**不达标**(词不达意 / 含文字)的按新管线(P1+P2)重刷,
+    达标的保留。复核结果按图 md5 缓存 → 重复跑跳过已复核好图,天然收敛(不二次付费)。
+    供 crontab 每晚低峰分批清理存量;offset 递增可全量扫。"""
+    threshold = float((await get_image_config(db)).get("verify_min", 0.6))
+    cfg = await get_image_config(db)
+    rows = (await db.execute(
+        select(VocabularyWord)
+        .where(VocabularyWord.media_status == "published",
+               VocabularyWord.image_urls.isnot(None),
+               func.jsonb_array_length(VocabularyWord.image_urls) > 0)
+        .order_by(VocabularyWord.id).offset(offset).limit(limit))).scalars().all()
+    scanned = bad = regen_ok = regen_degraded = 0
+    for w in rows:
+        scanned += 1
+        url = next((u for u in (w.image_urls or []) if u), None)
+        if not url:
+            continue
+        meaning = _primary_meaning(w)
+        res = await _verify_cached(db, url, w.word, meaning)   # 命中缓存不再调 VLM
+        if not (res.get("has_text") or float(res.get("score", 1) or 0) < threshold):
+            continue                                            # 达标 → 保留
+        bad += 1
+        imgs = await _gen_images_for(db, w, cfg)                # 走 P1 闸门 + P2 复核选优
+        if imgs:
+            w.image_urls = imgs
+            w.media_status = "published"
+            regen_ok += 1
+        else:
+            w.image_urls = None                                 # 仍拿不到好图 → 降级词义卡(⑦E)
+            w.media_status = "draft"
+            regen_degraded += 1
+        await db.commit()
+    return {"scanned": scanned, "bad": bad, "regen_ok": regen_ok,
+            "regen_degraded": regen_degraded, "next_offset": offset + scanned}
+
+
 async def backfill_audio(db: AsyncSession, *, limit: int = 500) -> dict:
     """给已生成 例句/短语/单词 但缺音频的词补预生成语音(火山→COS)，写回 JSONB / word_audio_url。
 
