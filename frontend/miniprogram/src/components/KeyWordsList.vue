@@ -163,7 +163,7 @@ async function playWord(w: StudyWord) {
 .kw-add { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
 .kw-add.done { color: #2ecc71; border-color: #2ecc71; }
 /* 单词卡片弹窗 */
-.card-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 40rpx; }
+.card-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 40rpx; }
 .card-pop { width: 100%; max-width: 620rpx; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; }
 .cp-img { width: 100%; height: 300rpx; border-radius: 16rpx; background: #eef1f5; }
 .cp-head { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
