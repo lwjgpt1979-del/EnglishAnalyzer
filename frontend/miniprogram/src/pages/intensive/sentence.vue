@@ -7,37 +7,28 @@
     <view v-if="loading" class="tip">加载中…</view>
 
     <template v-else-if="!groupOpen">
-      <view v-if="!groups.length" class="tip">{{ mode === 'homework' ? '还没有加入待学习的长难句——去试卷「加入待学习」' : '未设教材或该教材暂无长难句' }}</view>
-      <IntensiveBatchList v-else-if="mode === 'homework'" :batches="hwItems" unit="句" @open="openById" />
-      <template v-else>
-        <template v-for="sec in sections" :key="sec.key">
-          <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
-          <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
-            <view class="grp-main"><text class="grp-title">{{ g.title }}</text><text class="grp-sub">{{ g.sub }}</text></view>
-            <text class="grp-cnt">{{ g.count }} 句 ›</text>
-          </view>
-        </template>
+      <template v-if="mode === 'homework'">
+        <view v-if="!groups.length" class="tip">还没有加入待学习的长难句——去试卷「加入待学习」</view>
+        <IntensiveBatchList v-else :batches="hwItems" unit="句" @open="openById" />
       </template>
+      <UnitLevelMap v-else :units="courseUnits" unit="句" :title="semLabel" :next-hint="nextHint" @open="openCourseUnit" />
     </template>
 
     <template v-else>
       <view class="back" @tap="groupOpen = null"><text>‹ 返回{{ mode === 'homework' ? '批次' : '单元' }}</text></view>
       <view v-if="itemsLoading" class="tip">加载中…</view>
-      <!-- 作业:B+H 卷学习页(卷头进度 + 待学清单);点句进逐句解析(看过即算学过) -->
-      <PaperChecklist v-else-if="mode === 'homework'" :items="sentences" :date="groupOpen && groupOpen.sub" unit="句"
+      <!-- 卷学习页(卷头进度即底色 + 待学清单);点句进逐句解析(看过即算学过),作业/课程同一套 -->
+      <PaperChecklist v-else :items="sentences" :date="groupOpen && groupOpen.sub" unit="句"
           @open="(s) => goAnalyze(s.text)" @start="(i) => goAnalyze(sentences[i] && sentences[i].text)">
         <template #item="{ item }"><text class="se-text">{{ item.text }}</text></template>
-        <template #empty>该批次没有长难句</template>
+        <template #empty>该{{ mode === 'homework' ? '批次' : '单元' }}没有长难句</template>
       </PaperChecklist>
-      <!-- 课程:句列表 -->
-      <template v-else>
-        <view v-if="!sentences.length" class="tip">该单元没有长难句</view>
-        <view v-for="(s, i) in sentences" :key="i" class="card se" @tap="goAnalyze(s.text)">
-          <text class="se-text">{{ s.text }}</text>
-          <text class="se-go">解析 ›</text>
-        </view>
-      </template>
     </template>
+
+    <!-- 学完当前学期:庆祝弹层 -->
+    <SemesterDoneModal :visible="showDone" :semester-label="semLabel" unit-label="长难句"
+      :unit-total="courseUnits.length" :content-total="courseSeTotal" :next-semester="nextSemester"
+      @quiz="onSemesterQuiz" @preview="onPreviewNext" @review="showDone = false" @close="showDone = false" />
   </view>
 </template>
 
@@ -48,6 +39,8 @@ import PaperChecklist from '@/components/PaperChecklist.vue'
 import { seHwBatches, seHwSentences, seCourseUnits, seCourseSentences,
          type SentenceItem, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
 import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
+import UnitLevelMap from '@/components/UnitLevelMap.vue'
+import SemesterDoneModal from '@/components/SemesterDoneModal.vue'
 
 const mode = ref('homework')
 const loading = ref(true)
@@ -60,6 +53,29 @@ function openById(id: string) { const g = groups.value.find(x => x.id === id); i
 const sentences = ref<SentenceItem[]>([])
 const itemsLoading = ref(false)
 const modeLabel = computed(() => (mode.value === 'homework' ? '作业精讲' : '课程精讲'))
+
+// 课程精讲·闯关地图 + 学完庆祝弹层
+const courseUnits = ref<IntensiveUnit[]>([])
+const courseGrade = ref<string | undefined>(undefined)
+const courseSem = ref<string | undefined>(undefined)
+const semLabel = ref('课程')
+const nextSemester = ref<{ grade: string; semester: string } | null>(null)
+const showDone = ref(false)
+const courseSeTotal = computed(() => courseUnits.value.reduce((a, u) => a + (u.count || 0), 0))
+const nextHint = computed(() => nextSemester.value
+  ? `闯完本册接入 ${nextSemester.value.grade}${nextSemester.value.semester}册` : '')
+function openCourseUnit(unitId: string) {
+  const u = courseUnits.value.find(x => x.unit_id === unitId)
+  if (u) openGroup({ id: u.unit_id, title: u.unit_title, sub: `第${u.unit_no}单元`, count: u.count })
+}
+function onPreviewNext() {
+  if (!nextSemester.value) return
+  courseGrade.value = nextSemester.value.grade
+  courseSem.value = nextSemester.value.semester
+  showDone.value = false
+  load()
+}
+function onSemesterQuiz() { uni.showToast({ title: '学期测验即将上线', icon: 'none' }) }
 
 const sections = computed(() => {
   if (mode.value === 'homework') return [{ key: 'all', header: '', items: groups.value }]
@@ -86,8 +102,11 @@ async function load() {
     if (mode.value === 'homework') {
       groups.value = (await seHwBatches()).batches.map((b: IntensiveBatch) => ({ id: b.paper_id, title: b.title, sub: b.date, count: b.count, studied: b.studied }))
     } else {
-      groups.value = ((await seCourseUnits()).units as IntensiveUnit[]).map(u => ({
-        id: u.unit_id, title: u.unit_title, sub: `第${u.unit_no}单元`, count: u.count, header: `${u.grade} ${u.semester}册` }))
+      const r = await seCourseUnits(courseGrade.value, courseSem.value)
+      courseUnits.value = r.units
+      semLabel.value = r.grade && r.semester ? `${r.grade}${r.semester}册` : '课程'
+      nextSemester.value = r.next_semester
+      showDone.value = r.semester_done
     }
   } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
   finally { loading.value = false }

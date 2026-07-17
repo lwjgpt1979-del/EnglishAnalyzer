@@ -7,30 +7,20 @@
 
     <view v-if="loading" class="tip">加载中…</view>
 
-    <!-- 一级:批次 / 单元 -->
+    <!-- 一级:作业=批次列表 / 课程=闯关地图 -->
     <template v-else-if="!groupOpen">
-      <view v-if="!groups.length" class="tip">{{ mode === 'homework' ? '还没有加入待学习的单词——去上传的试卷里挑生词加入' : '未设教材或该教材暂无单元词' }}</view>
-      <IntensiveBatchList v-else-if="mode === 'homework'" :batches="hwItems" unit="词" @open="openById" />
-      <template v-else>
-        <template v-for="sec in sections" :key="sec.key">
-          <text v-if="sec.header" class="sec-h">{{ sec.header }}</text>
-          <view v-for="g in sec.items" :key="g.id" class="card grp" @tap="openGroup(g)">
-            <view class="grp-main">
-              <text class="grp-title">{{ g.title }}</text>
-              <text class="grp-sub">{{ g.sub }}</text>
-            </view>
-            <text class="grp-cnt">{{ g.count }} 词 ›</text>
-          </view>
-        </template>
+      <template v-if="mode === 'homework'">
+        <view v-if="!groups.length" class="tip">还没有加入待学习的单词——去上传的试卷里挑生词加入</view>
+        <IntensiveBatchList v-else :batches="hwItems" unit="词" @open="openById" />
       </template>
+      <UnitLevelMap v-else :units="courseUnits" unit="词" :title="semLabel" :next-hint="nextHint" @open="openCourseUnit" />
     </template>
 
-    <!-- 二级:词表 -->
+    <!-- 二级:单元/批次词清单(卷头进度即底色 + 勾选圈),作业/课程同一套 -->
     <template v-else>
       <view class="back" @tap="groupOpen = null"><text>‹ 返回{{ mode === 'homework' ? '批次' : '单元' }}</text></view>
       <view v-if="wordsLoading" class="tip">加载中…</view>
-      <!-- 作业:B+H 卷学习页(卷头进度 + 待学清单);「开始学习」走整卷词力通检测流 -->
-      <PaperChecklist v-else-if="mode === 'homework'" :items="words" :date="groupOpen && groupOpen.sub" unit="词"
+      <PaperChecklist v-else :items="words" :date="groupOpen && groupOpen.sub" unit="词"
           @open="openCard" @start="startStudy">
         <template #item="{ item }">
           <view class="wrow">
@@ -41,29 +31,14 @@
             <view class="w-play" :class="{ on: playingId === item.word_id }" @tap.stop="playWord(item)"><view class="ic ic-volume w-play-ic"></view></view>
           </view>
         </template>
-        <template #empty>该批次没有单词</template>
+        <template #empty>该{{ mode === 'homework' ? '批次' : '单元' }}没有单词</template>
       </PaperChecklist>
-      <!-- 课程:词表预览 -->
-      <template v-else>
-        <view v-if="words.length" class="start-btn" @tap="startStudy"><view class="ic ic-play-w start-ic"></view><text>开始学习(配图·发音·例句·检测)</text></view>
-        <view v-if="!words.length" class="tip">该单元没有单词</view>
-        <text v-else class="list-hint">共 {{ words.length }} 词 · 下方为词表预览,点上方按钮进入卡片学习</text>
-        <view v-for="w in words" :key="w.word_id" class="card word-row" @tap="openCard(w)">
-          <image v-if="w.image_url" :src="w.image_url" class="w-img" mode="aspectFill" />
-          <view v-else class="w-img w-img-ph"><text>词</text></view>
-          <view class="w-main">
-            <view class="word-top">
-              <text class="word-w">{{ w.word }}</text>
-              <text v-if="w.phonetic" class="word-ph">/{{ w.phonetic }}/</text>
-            </view>
-            <text class="word-def">{{ defText(w.definitions) }}</text>
-          </view>
-          <view class="w-play" :class="{ on: playingId === w.word_id }" @tap.stop="playWord(w)">
-            <view class="ic ic-volume w-play-ic"></view>
-          </view>
-        </view>
-      </template>
     </template>
+
+    <!-- 学完当前学期:庆祝弹层(测验 / 预习下册 / 复习)-->
+    <SemesterDoneModal :visible="showDone" :semester-label="semLabel" unit-label="单词"
+      :unit-total="courseUnits.length" :content-total="courseWordTotal" :next-semester="nextSemester"
+      @quiz="onSemesterQuiz" @preview="onPreviewNext" @review="showDone = false" @close="showDone = false" />
 
     <!-- 单词卡片弹层:点单个词展开 -->
     <view v-if="cardWord" class="card-mask" @tap="cardWord = null">
@@ -110,6 +85,8 @@ import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords, ensur
 import PaperChecklist from '@/components/PaperChecklist.vue'
 import { resolveSpeakUrl } from '@/utils/tts'
 import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
+import UnitLevelMap from '@/components/UnitLevelMap.vue'
+import SemesterDoneModal from '@/components/SemesterDoneModal.vue'
 
 const mode = ref('homework')
 // 点单个词 → 展开单词卡片弹层;无媒体的词点开即时生成配图/发音/信息(规则:见 CLAUDE.md)
@@ -178,6 +155,29 @@ const words = ref<IntensiveWord[]>([])
 const wordsLoading = ref(false)
 const modeLabel = computed(() => (mode.value === 'homework' ? '作业精讲' : '课程精讲'))
 
+// 课程精讲·闯关地图 + 学完庆祝弹层
+const courseUnits = ref<CourseWordUnit[]>([])
+const courseGrade = ref<string | undefined>(undefined)   // 空=后端默认当前学期;切学期时赋值
+const courseSem = ref<string | undefined>(undefined)
+const semLabel = ref('课程')
+const nextSemester = ref<{ grade: string; semester: string } | null>(null)
+const showDone = ref(false)
+const courseWordTotal = computed(() => courseUnits.value.reduce((a, u) => a + (u.word_count || 0), 0))
+const nextHint = computed(() => nextSemester.value
+  ? `闯完本册接入 ${nextSemester.value.grade}${nextSemester.value.semester}册` : '')
+function openCourseUnit(unitId: string) {
+  const u = courseUnits.value.find(x => x.unit_id === unitId)
+  if (u) openGroup({ id: u.unit_id, title: u.unit_title, sub: `第${u.unit_no}单元`, count: u.word_count })
+}
+function onPreviewNext() {   // 预习下学期:切 grade/semester 重新加载
+  if (!nextSemester.value) return
+  courseGrade.value = nextSemester.value.grade
+  courseSem.value = nextSemester.value.semester
+  showDone.value = false
+  load()
+}
+function onSemesterQuiz() { uni.showToast({ title: '学期测验即将上线', icon: 'none' }) }
+
 // 课程侧按「年级 学期」分节;作业侧不分节
 const sections = computed(() => {
   if (mode.value === 'homework') return [{ key: 'all', header: '', items: groups.value }]
@@ -225,11 +225,11 @@ async function load() {
       const bs: HwWordBatch[] = (await getHwWordBatches()).batches
       groups.value = bs.map(b => ({ id: b.paper_id, title: b.title, sub: b.date, count: b.word_count, studied: b.studied }))
     } else {
-      const r = await getCourseWordUnits()
-      groups.value = (r.units as CourseWordUnit[]).map(u => ({
-        id: u.unit_id, title: `${u.unit_title}`, sub: `第${u.unit_no}单元`, count: u.word_count,
-        header: `${u.grade} ${u.semester}册`,
-      }))
+      const r = await getCourseWordUnits(courseGrade.value, courseSem.value)
+      courseUnits.value = r.units
+      semLabel.value = r.grade && r.semester ? `${r.grade}${r.semester}册` : '课程'
+      nextSemester.value = r.next_semester
+      showDone.value = r.semester_done
     }
   } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
   finally { loading.value = false }
