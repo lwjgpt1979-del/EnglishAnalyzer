@@ -27,26 +27,6 @@
           </view>
         </view>
 
-        <!-- 本篇短文:本地生词 + 长难句(懒加载,展开才请求) -->
-        <view v-if="bk.passage" class="study-tools">
-          <text class="tool-chip" :class="{ on: studyOpen[bi] }" @tap="toggleStudy(bi, bk)">本地生词 · 长难句</text>
-        </view>
-        <template v-if="bk.passage && studyOpen[bi]">
-          <view v-if="studyLoading[bi]" class="tip">加载中…</view>
-          <template v-else-if="study[bi]">
-            <KeyWordsList :words="study[bi].words" :paper-id="paperId" title="本地生词" />
-            <view v-if="study[bi].sentences.length" class="card">
-              <text class="sec-t">长难句</text>
-              <text class="sec-sub">点句子看逐句解析(结构·语法·重点词)。</text>
-              <view v-for="(s, si) in study[bi].sentences" :key="si" class="ls-row" @tap="openSentence(s)">
-                <text class="ls-text">{{ s }}</text>
-                <text class="ls-go">解析 ›</text>
-              </view>
-            </view>
-            <view v-if="!study[bi].words.length && !study[bi].sentences.length" class="tip">本篇没有生词或长难句</view>
-          </template>
-        </template>
-
         <!-- 讲义卡片:题型大标签 + 四件套 -->
         <view v-for="(q, qi) in bk.questions" :key="qi" class="q-card">
           <view class="q-head">
@@ -106,7 +86,47 @@
           </view>
         </view>
       </view>
+      <view class="foot-pad"></view>
     </template>
+
+    <!-- 底部常驻:本篇精讲(生词 + 长难句)→ 点开上拉面板 -->
+    <view v-if="!loading && (allWords.length || allSentences.length)" class="study-bar" @tap="sheetOpen = true">
+      <view class="ic ic-idea sb-ic"></view>
+      <text class="sb-t">本篇精讲</text>
+      <text class="sb-cnt">生词 <text class="sb-n">{{ allWords.length }}</text> · 长难句 <text class="sb-n">{{ allSentences.length }}</text></text>
+      <view class="ic ic-chevrons-down sb-up"></view>
+    </view>
+
+    <!-- 上拉面板 -->
+    <view v-if="sheetOpen" class="sheet-mask" @tap="sheetOpen = false">
+      <view class="sheet" @tap.stop>
+        <view class="grab"></view>
+        <view class="sheet-hd">
+          <view class="ic ic-idea sh-ic"></view>
+          <text class="sh-t">本篇精讲</text>
+          <view class="ic ic-close sh-x" @tap="sheetOpen = false"></view>
+        </view>
+        <view class="seg">
+          <text class="seg-i" :class="{ on: studyTab === 'word' }" @tap="studyTab = 'word'">生词 {{ allWords.length }}</text>
+          <text class="seg-i" :class="{ on: studyTab === 'ls' }" @tap="studyTab = 'ls'">长难句 {{ allSentences.length }}</text>
+        </view>
+        <scroll-view scroll-y class="sheet-body">
+          <template v-if="studyTab === 'word'">
+            <KeyWordsList v-if="allWords.length" :words="allWords" :paper-id="paperId" title="本篇生词" />
+            <view v-else class="tip">本篇没有生词</view>
+          </template>
+          <template v-else>
+            <view v-if="!allSentences.length" class="tip">本篇没有长难句</view>
+            <view v-else class="ls-hint">点句子看逐句解析(结构 · 语法 · 重点词)</view>
+            <view v-for="(s, si) in allSentences" :key="si" class="ls-card" @tap="openSentence(s)">
+              <text class="ls-no">{{ si + 1 }}</text>
+              <text class="ls-text">{{ s }}</text>
+              <text class="ls-go">拆解 ›</text>
+            </view>
+          </template>
+        </scroll-view>
+      </view>
+    </view>
 
     <!-- 练同类(统一 PracticeQuiz) -->
     <PracticeQuiz
@@ -172,19 +192,25 @@ function passageSegs(bi: number, passage: string): { t: string; hl: boolean }[] 
   ].filter(s => s.t)
 }
 
-// 本篇短文:本地生词 + 长难句(懒加载,按 block 缓存)
-const studyOpen = ref<Record<number, boolean>>({})
-const studyLoading = ref<Record<number, boolean>>({})
-const study = ref<Record<number, { words: StudyWord[]; sentences: string[] }>>({})
-async function toggleStudy(bi: number, bk: ReadingBlock) {
-  const open = !studyOpen.value[bi]
-  studyOpen.value = { ...studyOpen.value, [bi]: open }
-  if (open && !study.value[bi]) {
-    studyLoading.value = { ...studyLoading.value, [bi]: true }
-    try { study.value = { ...study.value, [bi]: await getPassageStudy(bk.passage, paperId.value || undefined) } }
-    catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }); studyOpen.value = { ...studyOpen.value, [bi]: false } }
-    finally { studyLoading.value = { ...studyLoading.value, [bi]: false } }
+// 本篇精讲:整卷生词 + 长难句,汇总所有短文(零成本正则),供底部上拉面板
+const allWords = ref<StudyWord[]>([])
+const allSentences = ref<string[]>([])
+const sheetOpen = ref(false)
+const studyTab = ref<'word' | 'ls'>('word')
+async function loadStudy() {
+  const wordMap = new Map<string, StudyWord>()
+  const sentSet = new Set<string>()
+  const sents: string[] = []
+  for (const bk of blocks.value) {
+    if (!bk.passage) continue
+    try {
+      const r = await getPassageStudy(bk.passage, paperId.value || undefined)
+      for (const w of r.words) { const k = w.word_id || w.word; if (!wordMap.has(k)) wordMap.set(k, w) }
+      for (const s of r.sentences) { if (s && !sentSet.has(s)) { sentSet.add(s); sents.push(s) } }
+    } catch { /* 单篇失败不影响其它 */ }
   }
+  allWords.value = [...wordMap.values()]
+  allSentences.value = sents
 }
 function openSentence(s: string) {
   uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(s)}&paperId=${paperId.value}` })
@@ -240,8 +266,10 @@ async function pracRecorder(total: number, correct: number): Promise<string> {
 onLoad(async (q: any) => {
   paperId.value = q.paperId || ''
   if (q.title) uni.setNavigationBarTitle({ title: decodeURIComponent(q.title) })
-  try { blocks.value = (await rdHwPassages(paperId.value)).blocks }
-  catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
+  try {
+    blocks.value = (await rdHwPassages(paperId.value)).blocks
+    await loadStudy()
+  } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
   finally { loading.value = false }
 })
 </script>
@@ -249,8 +277,8 @@ onLoad(async (q: any) => {
 <style scoped>
 .page { min-height: 100vh; background: #f4f6fa; padding: 24rpx; box-sizing: border-box; }
 .tip { text-align: center; color: #93a0b3; padding: 60rpx 0; }
-.card { background: #fff; border: 2rpx solid #eaeef4; border-radius: 20rpx; padding: 24rpx; margin-bottom: 16rpx; }
 .block { margin-bottom: 8rpx; }
+.foot-pad { height: 120rpx; }
 
 /* 原文:吸顶常驻 */
 .passage { position: sticky; top: 0; z-index: 5; background: #fff; border: 2rpx solid #e3e9f2; border-radius: 18rpx; padding: 20rpx 22rpx; margin-bottom: 16rpx; box-shadow: 0 6rpx 22rpx rgba(45, 80, 150, .08); }
@@ -261,17 +289,6 @@ onLoad(async (q: any) => {
 .passage-toggle { font-size: 22rpx; color: #93a0b3; }
 .passage-text { display: block; font-size: 26rpx; color: #3a4353; line-height: 1.8; margin-top: 14rpx; max-height: 40vh; overflow-y: auto; white-space: pre-wrap; }
 .ev-hl { background: #e4eeff; color: #1f4c8f; border-radius: 4rpx; padding: 0 2rpx; box-shadow: inset 0 -4rpx 0 #7ca9f5; }
-
-/* 本地生词 · 长难句 */
-.study-tools { display: flex; gap: 12rpx; margin: 2rpx 0 12rpx; }
-.tool-chip { font-size: 22rpx; color: #3d8bf5; border: 2rpx solid #3d8bf5; border-radius: 999rpx; padding: 6rpx 22rpx; }
-.tool-chip.on { background: #3d8bf5; color: #fff; }
-.sec-t { display: block; font-size: 24rpx; font-weight: 700; color: #46506a; margin-bottom: 6rpx; }
-.sec-sub { display: block; font-size: 21rpx; color: #93a0b3; margin-bottom: 16rpx; line-height: 1.5; }
-.ls-row { display: flex; align-items: center; gap: 14rpx; padding: 14rpx 0; border-top: 2rpx solid #eef1f5; }
-.ls-row:first-of-type { border-top: none; }
-.ls-text { flex: 1; min-width: 0; font-size: 25rpx; line-height: 1.6; color: #1f2733; }
-.ls-go { flex-shrink: 0; font-size: 22rpx; color: #3d8bf5; }
 
 /* 卷头进度:进度即底色(背景填充式,全项目统一) */
 .rd-head { position: relative; overflow: hidden; display: flex; align-items: center; gap: 16rpx; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 18rpx 20rpx; margin-bottom: 18rpx; box-shadow: 0 6rpx 20rpx rgba(45, 80, 150, .06); }
@@ -339,4 +356,30 @@ onLoad(async (q: any) => {
 .dis-row { display: flex; gap: 12rpx; align-items: flex-start; }
 .dis-key { flex-shrink: 0; width: 40rpx; height: 40rpx; border-radius: 50%; background: #fbe6d4; color: #c06a2a; font-size: 22rpx; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .dis-why { flex: 1; font-size: 23rpx; color: #55607a; line-height: 1.55; }
+
+/* 底部常驻:本篇精讲条 */
+.study-bar { position: fixed; left: 24rpx; right: 24rpx; bottom: 24rpx; z-index: 40; display: flex; align-items: center; gap: 12rpx; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 20rpx 22rpx; box-shadow: 0 -2rpx 24rpx rgba(45, 80, 150, .12), 0 8rpx 24rpx rgba(45, 80, 150, .1); }
+.sb-ic { width: 34rpx; height: 34rpx; flex: none; }
+.sb-t { font-size: 28rpx; font-weight: 700; color: #1f2733; }
+.sb-cnt { margin-left: auto; font-size: 24rpx; color: #8a95a5; }
+.sb-n { color: #3d8bf5; font-weight: 700; }
+.sb-up { width: 32rpx; height: 32rpx; flex: none; transform: rotate(180deg); }
+
+/* 上拉面板 */
+.sheet-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; z-index: 60; background: rgba(20, 28, 40, .45); display: flex; align-items: flex-end; }
+.sheet { width: 100%; max-height: 78vh; background: #f4f6fa; border-radius: 26rpx 26rpx 0 0; padding: 12rpx 24rpx 32rpx; box-sizing: border-box; display: flex; flex-direction: column; }
+.grab { width: 72rpx; height: 8rpx; border-radius: 4rpx; background: #dce3ec; margin: 8rpx auto 14rpx; }
+.sheet-hd { display: flex; align-items: center; gap: 12rpx; padding: 0 2rpx 16rpx; }
+.sh-ic { width: 34rpx; height: 34rpx; flex: none; }
+.sh-t { font-size: 30rpx; font-weight: 800; color: #1f2733; }
+.sh-x { width: 34rpx; height: 34rpx; flex: none; margin-left: auto; }
+.seg { display: flex; gap: 10rpx; background: #e8edf4; border-radius: 16rpx; padding: 6rpx; margin-bottom: 16rpx; }
+.seg-i { flex: 1; text-align: center; font-size: 26rpx; color: #6b7688; padding: 14rpx 0; border-radius: 12rpx; }
+.seg-i.on { color: #3d8bf5; font-weight: 700; background: #fff; box-shadow: 0 3rpx 10rpx rgba(45, 80, 150, .12); }
+.sheet-body { max-height: 58vh; }
+.ls-hint { font-size: 22rpx; color: #93a0b3; margin: 2rpx 4rpx 12rpx; }
+.ls-card { display: flex; align-items: flex-start; gap: 14rpx; background: #fff; border: 2rpx solid #e9edf3; border-radius: 16rpx; padding: 18rpx 18rpx; margin-bottom: 14rpx; box-shadow: 0 4rpx 16rpx rgba(45, 80, 150, .04); }
+.ls-no { flex: none; width: 40rpx; height: 40rpx; border-radius: 50%; background: #eaf2fe; color: #3d8bf5; font-size: 24rpx; font-weight: 700; text-align: center; line-height: 40rpx; }
+.ls-text { flex: 1; min-width: 0; font-size: 25rpx; line-height: 1.6; color: #1f2733; }
+.ls-go { flex: none; font-size: 22rpx; font-weight: 600; color: #3d8bf5; margin-top: 6rpx; }
 </style>
