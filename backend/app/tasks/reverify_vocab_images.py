@@ -18,13 +18,12 @@ from app.services import vocab_media_service as vms
 async def _main(batch: int, max_scan: int) -> None:
     async def _work(s):
         total = {"scanned": 0, "bad": 0, "regen_ok": 0, "regen_degraded": 0}
-        offset = 0
-        while offset < max_scan:
-            r = await vms.reverify_and_regen_batch(s, limit=batch, offset=offset)
+        # 游标式:从上次位置接着扫;本次最多扫 max_scan 词,或扫到底(wrapped)即止
+        while total["scanned"] < max_scan:
+            r = await vms.reverify_and_regen_batch(s, limit=batch)
             for k in total:
                 total[k] += int(r.get(k, 0))
-            offset = int(r.get("next_offset", offset + batch))
-            if int(r.get("scanned", 0)) < batch:   # 扫到底
+            if r.get("wrapped"):        # 全库扫完一轮,游标已归零
                 break
         return total
 

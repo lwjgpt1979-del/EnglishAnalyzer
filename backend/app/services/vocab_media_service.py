@@ -130,8 +130,8 @@ def _default_img_config() -> dict:
     # style: 固定风格(为空=每张从 styles 随机);voice: 固定音色(为空=按词哈希选男/女)
     return {"batch_size": 20, "images_per_word": 1, "use_ai_prompt": True,
             "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES), "style": "", "voice": "",
-            # P2:图文一致复核(⑥C)+ 多图选优(⑤G)
-            "verify": True, "verify_min": 0.6, "verify_candidates": 3}
+            # P2:图文一致复核(⑥C)+ 多图选优(⑤G);候选 2 张(择优足够,省 t2i)
+            "verify": True, "verify_min": 0.6, "verify_candidates": 2}
 
 
 def _merge_img_config(saved: dict | None) -> dict:
@@ -785,21 +785,54 @@ async def start_refresh_low_quality_images(db: AsyncSession) -> dict:
     return {"started": True, "total": len(ids)}
 
 
-async def reverify_and_regen_batch(db: AsyncSession, *, limit: int = 200, offset: int = 0) -> dict:
+_REVERIFY_CURSOR_KEY = "vocab_image_reverify_cursor"
+
+
+async def _get_reverify_cursor(db: AsyncSession) -> uuid.UUID | None:
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _REVERIFY_CURSOR_KEY))).scalar_one_or_none()
+    lid = (row.value or {}).get("last_id") if (row and isinstance(row.value, dict)) else None
+    try:
+        return uuid.UUID(lid) if lid else None
+    except (ValueError, TypeError):
+        return None
+
+
+async def _set_reverify_cursor(db: AsyncSession, last_id) -> None:
+    val = {"last_id": str(last_id) if last_id else None}
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _REVERIFY_CURSOR_KEY))).scalar_one_or_none()
+    if row is None:
+        db.add(SystemConfig(id=uuid.uuid4(), key=_REVERIFY_CURSOR_KEY, value=val,
+                            description="存量配图 VLM 复核清理游标(按 id 顺序,到底归零重扫)"))
+    else:
+        row.value = val
+    await db.flush()
+
+
+async def reverify_and_regen_batch(db: AsyncSession, *, limit: int = 200) -> dict:
     """存量坏图清理(离线):VLM 复核已发布配图,只对**不达标**(词不达意 / 含文字)的按新管线(P1+P2)重刷,
-    达标的保留。复核结果按图 md5 缓存 → 重复跑跳过已复核好图,天然收敛(不二次付费)。
-    供 crontab 每晚低峰分批清理存量;offset 递增可全量扫。"""
-    threshold = float((await get_image_config(db)).get("verify_min", 0.6))
+    达标的保留。**游标式**:按 id 顺序,从上次位置接着扫(不每晚从头空扫);扫到底 → 游标归零、返回 wrapped。
+    复核结果按图 md5 缓存 → 好图不再调 VLM/不再出图(不二次付费);降级词坏词掉出过滤不再处理。"""
     cfg = await get_image_config(db)
-    rows = (await db.execute(
-        select(VocabularyWord)
-        .where(VocabularyWord.media_status == "published",
-               VocabularyWord.image_urls.isnot(None),
-               func.jsonb_array_length(VocabularyWord.image_urls) > 0)
-        .order_by(VocabularyWord.id).offset(offset).limit(limit))).scalars().all()
+    threshold = float(cfg.get("verify_min", 0.6))
+    cursor = await _get_reverify_cursor(db)
+    base = (select(VocabularyWord)
+            .where(VocabularyWord.media_status == "published",
+                   VocabularyWord.image_urls.isnot(None),
+                   func.jsonb_array_length(VocabularyWord.image_urls) > 0))
+    if cursor is not None:
+        base = base.where(VocabularyWord.id > cursor)
+    rows = (await db.execute(base.order_by(VocabularyWord.id).limit(limit))).scalars().all()
+    if not rows:                                   # 扫到底 → 游标归零,下轮重新全扫(md5 缓存保好图不付费)
+        await _set_reverify_cursor(db, None)
+        await db.commit()
+        return {"scanned": 0, "bad": 0, "regen_ok": 0, "regen_degraded": 0, "wrapped": True}
     scanned = bad = regen_ok = regen_degraded = 0
+    last_id = cursor
     for w in rows:
         scanned += 1
+        last_id = w.id
         url = next((u for u in (w.image_urls or []) if u), None)
         if not url:
             continue
@@ -818,8 +851,10 @@ async def reverify_and_regen_batch(db: AsyncSession, *, limit: int = 200, offset
             w.media_status = "draft"
             regen_degraded += 1
         await db.commit()
+    await _set_reverify_cursor(db, last_id)                     # 记进度:下次从这之后接着扫
+    await db.commit()
     return {"scanned": scanned, "bad": bad, "regen_ok": regen_ok,
-            "regen_degraded": regen_degraded, "next_offset": offset + scanned}
+            "regen_degraded": regen_degraded, "wrapped": False}
 
 
 async def backfill_audio(db: AsyncSession, *, limit: int = 500) -> dict:
