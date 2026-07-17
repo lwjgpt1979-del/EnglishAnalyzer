@@ -21,10 +21,17 @@
     <view v-if="cardWord" class="card-mask" @tap="cardWord = null">
       <view class="card-pop" @tap.stop>
         <image v-if="cardWord.image_url" :src="cardWord.image_url" class="cp-img" mode="aspectFill" />
+        <!-- P3 图不对/换一张:撤图重刷(全学生共享) -->
+        <view v-if="cardWord.image_url && !genWords.has(cardWord.word_id || '')" class="cp-report"
+              :class="{ busy: regenId === (cardWord.word_id || '') }" @tap.stop="reportImage(cardWord)">
+          <view class="ic ic-refresh cp-report-ic"></view>
+          <text>{{ regenId === (cardWord.word_id || '') ? '重新生成中…' : '图不对 · 换一张' }}</text>
+        </view>
         <view class="cp-head">
           <text class="cp-word">{{ cardWord.word }}</text>
           <view class="cp-play" :class="{ on: playingId === (cardWord.word_id || cardWord.word) }" @tap="playWord(cardWord)">
-            <text>{{ playingId === (cardWord.word_id || cardWord.word) ? '♪ 播放中' : '🔊 发音' }}</text>
+            <view class="ic ic-volume cp-play-ic"></view>
+            <text>{{ playingId === (cardWord.word_id || cardWord.word) ? '播放中' : '发音' }}</text>
           </view>
         </view>
         <text v-if="cardWord.phonetic" class="cp-ph">/{{ cardWord.phonetic }}/</text>
@@ -45,7 +52,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { StudyWord } from '@/api/userPapers'
-import { addHomeworkWords, ensureWordMedia } from '@/api/vocabulary'
+import { addHomeworkWords, ensureWordMedia, reportWordImage } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
 
 const props = withDefaults(defineProps<{
@@ -101,6 +108,23 @@ async function genWordMedia(w: StudyWord) {
   }
 }
 
+// P3 图不对/换一张:撤下当前图并按新管线重生成(全学生共享),原地更新卡片
+const regenId = ref('')
+async function reportImage(w: StudyWord) {
+  if (!w.word_id || regenId.value) return
+  regenId.value = w.word_id
+  try {
+    const m = await reportWordImage(w.word_id)
+    w.image_url = m.image_url ?? null
+    w.word_audio_url = m.word_audio_url ?? null
+    w.en_description = m.en_description ?? null
+    w.example = (m.example as any) ?? null
+    if (m.definitions) w.definitions = m.definitions
+    uni.showToast({ title: m.image_url ? '已换新图' : '暂无合适配图,已用词义卡', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '重刷失败', icon: 'none' }) }
+  finally { regenId.value = '' }
+}
+
 const playingId = ref('')
 let _audio: UniApp.InnerAudioContext | null = null
 async function playWord(w: StudyWord) {
@@ -139,8 +163,13 @@ async function playWord(w: StudyWord) {
 .cp-img { width: 100%; height: 300rpx; border-radius: 16rpx; background: #eef1f5; }
 .cp-head { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
 .cp-word { font-size: 40rpx; font-weight: 800; color: var(--c-ink); }
-.cp-play { font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
+.cp-play { display: flex; align-items: center; gap: 8rpx; font-size: 23rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
 .cp-play.on { color: #2ecc71; border-color: #2ecc71; }
+.cp-play-ic { width: 26rpx; height: 26rpx; }
+/* P3 图不对/换一张 */
+.cp-report { display: flex; align-items: center; justify-content: center; gap: 8rpx; margin-top: 12rpx; font-size: 22rpx; color: #93a0b3; }
+.cp-report.busy { color: var(--c-primary); }
+.cp-report-ic { width: 26rpx; height: 26rpx; opacity: .75; }
 .cp-ph { display: block; font-size: 24rpx; color: var(--c-text-hint); margin-top: 8rpx; }
 .cp-def { display: block; font-size: 27rpx; color: var(--c-ink); margin-top: 14rpx; line-height: 1.6; }
 .cp-en { display: block; font-size: 24rpx; color: var(--c-text-sub); margin-top: 12rpx; line-height: 1.6; }
