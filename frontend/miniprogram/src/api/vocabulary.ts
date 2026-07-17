@@ -142,6 +142,10 @@ export function addHomeworkWords(wordIds: string[], paperId: string): Promise<{ 
 export function ensureWordMedia(wordId: string): Promise<IntensiveWord> {
   return request<IntensiveWord>(`/api/v1/vocabulary/${wordId}/ensure-media`, { method: 'POST' })
 }
+// 缺词「查看即生成」:词库没有的词 → 有效性闸门 → 通过即时入库可学(并加入待学习);不通过落人工审核
+export function ensureMissingWord(word: string, paperId?: string): Promise<{ status: 'created' | 'exists' | 'queued'; word: any | null }> {
+  return request(`/api/v1/vocabulary/intensive/ensure-missing`, { method: 'POST', data: { word, paper_id: paperId } })
+}
 // P3 学生「图不对/换一张」:撤下当前配图并按新管线重生成(自评→多图→VLM复核选优→择优/降级),全学生共享
 export function reportWordImage(wordId: string): Promise<IntensiveWord> {
   return request<IntensiveWord>(`/api/v1/vocabulary/${wordId}/report-image`, { method: 'POST' })

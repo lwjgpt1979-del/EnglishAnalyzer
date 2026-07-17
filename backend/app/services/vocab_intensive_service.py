@@ -217,6 +217,97 @@ async def _enrich_word_text(word: str) -> dict:
             "definitions": defs, "examples": exs, "phrases": phr}
 
 
+import re as _re
+
+# 免费粗筛:必须字母开头、可含空格/连字符/撇号、长度 2-40(挡住 OCR 乱码/纯符号/超长残片)
+_WORD_SHAPE = _re.compile(r"[A-Za-z][A-Za-z '\-]{1,39}")
+
+
+async def _word_validity_gate(word: str) -> bool:
+    """有效性闸门:判定是否**真实、适合中学生学习的英文单词/词组**(排除 OCR 乱码、专有名词、残片)。
+    先免费正则粗筛,再 LLM(fast 档)判定;dev-mock 放行(便于本地跑)。"""
+    from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
+    w = (word or "").strip()
+    if not w or not _WORD_SHAPE.fullmatch(w):
+        return False
+    if is_llm_dev_mode():
+        return True
+    d = await complete_json(
+        system_prompt=(
+            "你是英语词典编纂助手。判断给定字符串是否是一个**真实、适合中学生学习的英文单词或常用词组**。"
+            "判 false 的情形:拼写错误/OCR 乱码、专有名词(人名/地名/品牌/机构)、无意义字母组合、句子残片。"
+            '只返回 JSON:{"valid": true|false, "reason":"简短理由"}。'),
+        user_prompt=f"字符串:{w}\n返回 JSON:",
+        max_tokens=100, model=fast_model(), feature="vocab_validity_gate",
+        validate=lambda x: "valid" in x)
+    return bool(d and d.get("valid"))
+
+
+async def ensure_missing_word(db: AsyncSession, *, word: str, student_id: uuid.UUID,
+                              paper_id: uuid.UUID | None = None,
+                              add_to_study: bool = True) -> dict:
+    """缺词「查看即生成」:学生在作业里点开一个词库没有的词 → 有效性闸门 → 通过则**即时**建词条
+    (source='auto',media_origin='student' 供后台复核)+ 补文本要素 + 出媒体(双闸门)+ published
+    直接可学;不通过 → 落人工审核队列(pending),不建词。可选加入学生待学习(按来源卷归批次)。
+    返回 {status:'created'|'exists'|'queued', word: StudyWord|None}。第三方付费天然落库,同词不二次付费。"""
+    from app.services import vocab_media_service, vocab_probe_service, vocab_pin_service
+    from app.models.d28_vocab_review import VocabReview
+    norm = (word or "").strip().lower()
+    disp = (word or "").strip()
+    if not norm:
+        return {"status": "queued", "word": None}
+    existing = (await db.execute(
+        select(VocabularyWord).where(func.lower(VocabularyWord.word) == norm).limit(1))).scalar_one_or_none()
+    created = False
+    if existing is None:
+        # 有效性闸门:不过 → 落人工审核,不建词(避免 OCR 乱码/专有名词污染词库)
+        if not await _word_validity_gate(disp):
+            await report_missing_words(db, words=[norm], source="paper")
+            return {"status": "queued", "word": None}
+        # 建词条(source='auto')+ 同步补文本要素(卡片展示 + 媒体词意闸门都需 definitions)
+        t = await _enrich_word_text(disp)
+        w = VocabularyWord(id=uuid.uuid4(), word=disp,
+                           definitions=(t["definitions"] or []),
+                           phonetic=(t["phonetic"] or None),
+                           examples=(t["examples"] or None),
+                           phrases=(t["phrases"] or None),
+                           difficulty=t["difficulty"], source="auto",
+                           media_origin="student")
+        db.add(w)
+        await db.flush()
+        existing = w
+        created = True
+        # 媒体(双闸门,有真图才 published;失败降级词义卡,不阻断可学)
+        try:
+            await vocab_media_service.generate_for_word(db, word_id=w.id)
+            w.media_status = "published" if (isinstance(w.image_urls, list) and w.image_urls) else "draft"
+        except Exception:  # noqa: BLE001
+            w.media_status = "draft"
+        # 接收探针(供 BKT),best-effort
+        try:
+            await vocab_probe_service.ensure_probes(db, w)
+        except Exception:  # noqa: BLE001
+            pass
+        # 缺词审核行:标 status='auto'(已自动入库待复核,区别于 pending 未入库)
+        rev = (await db.execute(
+            select(VocabReview).where(VocabReview.word_norm == norm).limit(1))).scalar_one_or_none()
+        if rev is not None:
+            rev.status = "auto"
+        else:
+            db.add(VocabReview(id=uuid.uuid4(), word_norm=norm, word=disp, source="paper", status="auto"))
+        await db.commit()
+        await db.refresh(existing)
+    # 加入学生待学习(按来源卷归批次)——复用 add_paper_candidates 幂等 upsert
+    if add_to_study and paper_id is not None:
+        await vocab_pin_service.add_paper_candidates(
+            db, student_id=student_id, word_ids=[existing.id], source_paper_id=paper_id)
+        await db.commit()
+    out = _word_out(existing)
+    out["in_vocab"] = True
+    out["word_added"] = bool(add_to_study and paper_id is not None)
+    return {"status": "created" if created else "exists", "word": out}
+
+
 _gen_state: dict = {"running": False, "total": 0, "done": 0, "ok": 0, "failed": 0}
 
 

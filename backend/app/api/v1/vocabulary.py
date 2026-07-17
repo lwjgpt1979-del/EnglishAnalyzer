@@ -289,6 +289,19 @@ async def course_word_list(db: DbDep, current_user: UserDep, unit_id: uuid.UUID 
         db, unit_id=unit_id, student_id=current_user.id)})
 
 
+@router.post("/intensive/ensure-missing", response_model=BaseResponse[dict])
+async def ensure_missing_word_api(
+    db: DbDep, current_user: UserDep,
+    word: Annotated[str, Body(..., min_length=1, max_length=80, embed=True)],
+    paper_id: Annotated[uuid.UUID | None, Body(embed=True)] = None,
+):
+    """缺词「查看即生成」:学生点开作业里一个词库没有的词 → 有效性闸门 → 通过则即时入库+出媒体+
+    可学(并加入待学习);不通过 → 落人工审核。返回 {status, word}。"""
+    from app.services import vocab_intensive_service
+    return make_ok(await vocab_intensive_service.ensure_missing_word(
+        db, word=word, student_id=current_user.id, paper_id=paper_id))
+
+
 @router.get("/intensive/course/task", response_model=BaseResponse[DailyTaskOut])
 async def course_intensive_task(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
     """课程精讲·单词「完整词力通流程」:限定在该单元词范围内的一组任务(结构同 daily-task)。"""

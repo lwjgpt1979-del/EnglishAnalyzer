@@ -743,11 +743,6 @@ async def passage_study(
         hit = {w.word.lower(): w for w in (await db.execute(
             select(VocabularyWord).where(func.lower(VocabularyWord.word).in_(tokens)))).scalars().all()}
         missing = [w for w in tokens if w not in hit]
-        if missing:
-            try:
-                await vis.report_missing_words(db, words=missing, source="paper")
-            except Exception:  # noqa: BLE001  缺词审核失败不影响生词返回
-                pass
         if hit:
             ids = [w.id for w in hit.values()]
             recep = {r.word_id: r.mastery_recep for r in (await db.execute(
@@ -773,6 +768,18 @@ async def passage_study(
                 words.append(item)
                 if len(words) >= 40:
                     break
+        # ③ 缺词占位卡:词库没有、但形态可信(免费正则粗筛)的词 → placeholder,点开触发
+        #    「查看即生成」:有效性闸门通过则即时入库可学,不通过落人工审核(方案 A)。
+        for w in missing:
+            if len(words) >= 40:
+                break
+            if vis._WORD_SHAPE.fullmatch(w):
+                words.append({
+                    "word_id": None, "word": w, "phonetic": None, "definitions": None,
+                    "image_url": None, "word_audio_url": None, "en_description": None,
+                    "example": None, "in_vocab": False, "word_added": False,
+                    "pending_create": True,
+                })
     return {"words": words, "sentences": sentences[:15]}
 
 

@@ -109,6 +109,7 @@ export interface StudyWord {
   image_url: string | null; word_audio_url: string | null
   en_description: string | null; example: { en?: string; zh?: string; audio?: string } | null
   in_vocab: boolean; word_added: boolean
+  pending_create?: boolean   // 缺词占位卡:词库没有,点开触发「查看即生成」入库
 }
 export interface SentenceStudyAids {
   analysis: any; sentence_added: boolean
