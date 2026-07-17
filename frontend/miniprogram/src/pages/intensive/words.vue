@@ -24,6 +24,8 @@
           @open="openCard" @start="startStudy">
         <template #item="{ item }">
           <view class="wrow">
+            <image v-if="item.image_url" :src="item.image_url" class="w-img" mode="aspectFill" />
+            <view v-else class="w-img w-img-ph"><view class="ic ic-image w-img-ic"></view></view>
             <view class="wrow-main">
               <view class="word-top"><text class="word-w">{{ item.word }}</text><text v-if="item.phonetic" class="word-ph">/{{ item.phonetic }}/</text></view>
               <text class="word-def">{{ defText(item.definitions) }}</text>
@@ -264,14 +266,15 @@ onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.valu
 .start-ic { width: 30rpx; height: 30rpx; }
 .list-hint { display: block; color: var(--c-text-hint, #999); font-size: 24rpx; margin-bottom: 12rpx; }
 .word-top { display: flex; align-items: baseline; gap: 16rpx; }
-.word-w { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
+.word-w { font-size: 34rpx; font-weight: 700; color: var(--c-ink); }
 .word-ph { font-size: 24rpx; color: var(--c-text-hint); }
 .word-def { display: block; font-size: 26rpx; color: var(--c-text-sub); margin-top: 8rpx; line-height: 1.6; }
 .word-row { display: flex; align-items: center; gap: 18rpx; }
-.wrow { display: flex; align-items: center; gap: 14rpx; }
+.wrow { display: flex; align-items: center; gap: 18rpx; }
 .wrow-main { flex: 1; min-width: 0; }
-.w-img { width: 96rpx; height: 96rpx; border-radius: 12rpx; flex-shrink: 0; background: var(--c-bg-page, #f5f6f8); }
-.w-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); font-size: 24rpx; }
+.w-img { width: 104rpx; height: 104rpx; border-radius: 16rpx; flex-shrink: 0; background: var(--c-bg-page, #eef3fa); }
+.w-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); }
+.w-img-ic { width: 44rpx; height: 44rpx; opacity: .55; }
 .w-main { flex: 1; min-width: 0; }
 .w-play { width: 64rpx; height: 64rpx; border-radius: 50%; background: var(--c-bg-page, #f2f4f7); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .w-play.on { background: #eaf2fe; }
