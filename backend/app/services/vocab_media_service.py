@@ -559,6 +559,36 @@ async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
     return w
 
 
+_REPORT_REGEN_CAP = 5   # P3:同词学生反馈超此次数不再自动重刷(防刷钱),转后台复核
+
+
+async def report_and_regen(db: AsyncSession, *, word_id: uuid.UUID) -> VocabularyWord | None:
+    """P3 学生「图不对/换一张」:撤下当前图 → 重生成(走 P1+P2 新管线:自评→多图→复核选优→择优/降级)。
+    只重图不重音(省 TTS);累计反馈计数;超阈值停止自动重刷,留后台复核。全学生共享。"""
+    w = (await db.execute(select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+    if w is None:
+        return None
+    w.media_report_count = int(w.media_report_count or 0) + 1
+    w.image_urls = None            # 立即撤下疑似不对的图,避免继续误导全体学生
+    w.media_status = "draft"
+    w.media_origin = "student"
+    await db.flush()
+    if w.media_report_count > _REPORT_REGEN_CAP:
+        logger.warning("[配图反馈] %s 第 %d 次反馈,超阈值停止自动重刷 → 转后台复核",
+                       w.word, w.media_report_count)
+        await db.commit()
+        await db.refresh(w)
+        return w
+    await generate_for_word(db, word_id=word_id, do_images=True, do_audio=False)
+    if isinstance(w.image_urls, list) and w.image_urls:
+        w.media_status = "published"   # 复核选出的新图 → 直接可见(全学生共享)
+    else:
+        w.media_status = "draft"        # 仍拿不到好图 → 降级词义卡(⑦E),不钉坏图
+    await db.commit()
+    await db.refresh(w)
+    return w
+
+
 async def generate_i2i_for_word(db: AsyncSession, *, word_id: uuid.UUID,
                                 source_url: str | None = None, source_b64: str | None = None,
                                 prompt: str = "", strength: float = 0.6) -> VocabularyWord:

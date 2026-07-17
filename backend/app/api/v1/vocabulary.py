@@ -347,6 +347,19 @@ async def ensure_word_media_api(word_id: uuid.UUID, db: DbDep, current_user: Use
     return make_ok(_word_out(w))
 
 
+@router.post("/{word_id}/report-image", response_model=BaseResponse[dict])
+async def report_word_image_api(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """P3 学生「图不对/换一张」:撤下当前配图并按新管线重生成(自评→多图→VLM复核选优→择优/降级),
+    全学生共享;超阈值转后台复核。返回更新后的单词卡片(可能是新图,也可能降级为词义卡)。"""
+    from app.core.exceptions import AppError
+    from app.services import vocab_media_service
+    from app.services.vocab_intensive_service import _word_out
+    w = await vocab_media_service.report_and_regen(db, word_id=word_id)
+    if w is None:
+        raise AppError(code=404, message="单词不存在")
+    return make_ok(_word_out(w))
+
+
 @router.put("/pins/{word_id}", response_model=BaseResponse[dict])
 async def update_pin(word_id: uuid.UUID, db: DbDep, current_user: UserDep, priority: int = Body(..., embed=True)):
     """调整某词优先级别(≤0 即移出优先学)。"""

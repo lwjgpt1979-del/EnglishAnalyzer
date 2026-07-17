@@ -142,6 +142,10 @@ export function addHomeworkWords(wordIds: string[], paperId: string): Promise<{ 
 export function ensureWordMedia(wordId: string): Promise<IntensiveWord> {
   return request<IntensiveWord>(`/api/v1/vocabulary/${wordId}/ensure-media`, { method: 'POST' })
 }
+// P3 学生「图不对/换一张」:撤下当前配图并按新管线重生成(自评→多图→VLM复核选优→择优/降级),全学生共享
+export function reportWordImage(wordId: string): Promise<IntensiveWord> {
+  return request<IntensiveWord>(`/api/v1/vocabulary/${wordId}/report-image`, { method: 'POST' })
+}
 export function setPinPriority(wordId: string, priority: number): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/api/v1/vocabulary/pins/${wordId}`, { method: 'PUT', data: { priority } })
 }

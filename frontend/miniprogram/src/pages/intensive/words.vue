@@ -76,6 +76,12 @@
           <text class="cp-card-w">{{ cardWord.word }}</text>
           <text class="cp-card-m">{{ defText(cardWord.definitions) }}</text>
         </view>
+        <!-- P3 图不对/换一张:撤图重刷(全学生共享),重生成中禁用 -->
+        <view v-if="cardWord.image_url && !genWords.has(cardWord.word_id)" class="cp-report"
+              :class="{ busy: regenId === cardWord.word_id }" @tap.stop="reportImage(cardWord)">
+          <view class="ic ic-refresh cp-report-ic"></view>
+          <text>{{ regenId === cardWord.word_id ? '重新生成中…' : '图不对 · 换一张' }}</text>
+        </view>
         <view class="cp-head">
           <text class="cp-word">{{ cardWord.word }}</text>
           <view class="cp-play" :class="{ on: playingId === cardWord.word_id }" @tap="playWord(cardWord)">
@@ -100,7 +106,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords, ensureWordMedia,
-         type IntensiveWord, type HwWordBatch, type CourseWordUnit } from '@/api/vocabulary'
+         reportWordImage, type IntensiveWord, type HwWordBatch, type CourseWordUnit } from '@/api/vocabulary'
 import PaperChecklist from '@/components/PaperChecklist.vue'
 import { resolveSpeakUrl } from '@/utils/tts'
 import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
@@ -127,6 +133,22 @@ async function genWordMedia(w: IntensiveWord) {
   finally {
     const s = new Set(genWords.value); s.delete(w.word_id); genWords.value = s
   }
+}
+// P3 图不对/换一张:撤下当前图并按新管线重生成(全学生共享),原地更新卡片(可能换新图,也可能降级词义卡)
+const regenId = ref('')
+async function reportImage(w: IntensiveWord) {
+  if (!w.word_id || regenId.value) return
+  regenId.value = w.word_id
+  try {
+    const m = await reportWordImage(w.word_id)
+    w.image_url = m.image_url ?? null
+    w.word_audio_url = m.word_audio_url ?? null
+    w.en_description = m.en_description ?? null
+    w.example = (m.example as any) ?? null
+    if (m.definitions) w.definitions = m.definitions
+    uni.showToast({ title: m.image_url ? '已换新图' : '暂无合适配图,已用词义卡', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '重刷失败', icon: 'none' }) }
+  finally { regenId.value = '' }
 }
 // 单词发音:优先用已生成的 word_audio_url,否则走 TTS
 const playingId = ref('')
@@ -258,6 +280,10 @@ onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.valu
 .cp-card-ic { width: 64rpx; height: 64rpx; opacity: .7; }
 .cp-card-w { font-size: 36rpx; font-weight: 800; color: #2f74d6; }
 .cp-card-m { font-size: 24rpx; color: #6b7688; max-width: 84%; text-align: center; }
+/* P3 图不对/换一张 */
+.cp-report { display: flex; align-items: center; justify-content: center; gap: 8rpx; margin-top: 12rpx; font-size: 22rpx; color: #93a0b3; }
+.cp-report.busy { color: #3d8bf5; }
+.cp-report-ic { width: 26rpx; height: 26rpx; opacity: .75; }
 .cp-head { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
 .cp-word { font-size: 44rpx; font-weight: 800; color: var(--c-ink); }
 .cp-play { background: var(--c-primary); color: #fff; display: flex; align-items: center; gap: 8rpx; padding: 10rpx 22rpx; border-radius: 999rpx; font-size: 26rpx; }

@@ -55,6 +55,8 @@ class VocabularyWord(Base):
     media_status = mapped_column(sa.String, nullable=False, server_default=sa.text("'draft'"))
     # 媒体来源:'student'=学生端「加入学习」即时生成(自动发布,待后台复核) / 空=后台生成或历史
     media_origin = mapped_column(sa.String(16), nullable=True)
+    # P3:学生「图不对/换一张」反馈累计次数;供后台按反馈过滤复核,超阈值停止自动重刷(防刷钱)
+    media_report_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     # R9.1 理解探针库(词级公共复用):{distractors, misconceptions, cloze_fallback, sense}
     probes_json = mapped_column(JSONB, nullable=True)
 
