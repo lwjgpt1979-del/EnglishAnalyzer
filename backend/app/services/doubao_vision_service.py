@@ -176,7 +176,10 @@ async def verify_image(image_url: str, word: str, meaning: str) -> dict:
     user = (
         f'目标单词: "{word}"\n中文义: {meaning}\n'
         '评估这张插图:1) score(0-1):画面内容与该词义的契合度(1=一看就懂该词义,'
-        '0=完全无关/画错义);2) has_text:图中是否出现任何文字/字母/数字/乱码(true/false)。'
+        '0=完全无关/画错义);评分只看画面主体是否表达词义,**忽略角落的「AI生成 / AI Generated」自动水印**,'
+        '不要因该水印扣分。2) has_text:图的**主体/画面内**是否出现文字/字母/数字/乱码'
+        '(如把单词硬渲染成图案、印在物体上的乱码字);**AI 出图强制在角落打的标准「AI生成」水印不算**,'
+        '若图里只有该角落水印、无其它文字,则 has_text=false。'
         '只返回 JSON:{"score":0.0-1.0, "has_text":true/false, "reason":"简短中文理由"}。'
     )
     try:

@@ -423,18 +423,19 @@ async def _verify_cached(db: AsyncSession, url: str, word: str, meaning: str) ->
 
 async def _verify_and_pick(db: AsyncSession, cands: list[str], word: str,
                            meaning: str, threshold: float) -> str | None:
-    """⑤G 多图选优 + ⑥C 复核:淘汰含文字的,选契合度最高且≥阈值的一张;都不达标→None。"""
+    """⑤G 多图选优 + ⑥C 复核:主判据=契合度 score,选 score 最高且≥阈值的一张;都不达标→None。
+    has_text 仅作轻微降权(标准 AI 水印已在复核 prompt 里排除,剩下多是真·画面内乱码文字),
+    不再因 has_text 硬淘汰——否则混元强制水印会把所有候选全毙。"""
     best_url, best_score = None, -1.0
     for u in cands:
         res = await _verify_cached(db, u, word, meaning)
-        if res.get("has_text"):
-            continue   # 图里有文字/乱码 → 直接淘汰
         try:
             s = float(res.get("score", 0) or 0)
         except (TypeError, ValueError):
             s = 0.0
-        if s > best_score:
-            best_url, best_score = u, s
+        eff = s - (0.1 if res.get("has_text") else 0.0)   # 有真·文字 → 轻微降权,不硬毙
+        if eff > best_score:
+            best_url, best_score = u, eff
     return best_url if (best_url and best_score >= threshold) else None
 
 
@@ -920,8 +921,10 @@ async def reverify_and_regen_batch(db: AsyncSession, *, limit: int = 200) -> dic
             continue
         meaning = _primary_meaning(w)
         res = await _verify_cached(db, url, w.word, meaning)   # 命中缓存不再调 VLM
-        if not (res.get("has_text") or float(res.get("score", 1) or 0) < threshold):
-            continue                                            # 达标 → 保留
+        # 主判据=契合度 score:score≥阈值即保留(标准 AI 水印不算坏图,score 才是「是否表意」真信号)。
+        # 不再因 has_text 硬判坏——否则混元强制水印会把全库好图误清成词义卡。
+        if float(res.get("score", 1) or 0) >= threshold:
+            continue                                            # 语义达标 → 保留
         bad += 1
         imgs = await _gen_images_for(db, w, cfg)                # 走 P1 闸门 + P2 复核选优
         if imgs:
