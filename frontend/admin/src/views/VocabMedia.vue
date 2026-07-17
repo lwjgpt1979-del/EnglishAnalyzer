@@ -16,6 +16,8 @@ const selected = ref<AdminVocabMediaItem[]>([])
 const filterStatus = ref('draft')
 const filterOrigin = ref('')      // ''=全部来源 / 'student'=学生端即时生成(待复核)
 const searchWord = ref('')
+const reportedOnly = ref(false)   // 只看被学生「图不对」举报过的词(P3)
+const sortByReport = ref(false)   // 按反馈次数倒序
 const fTextbook = ref('')
 const fGrade = ref('')
 const fSemester = ref('')
@@ -51,6 +53,8 @@ async function load() {
       media_origin: filterOrigin.value || undefined,
       textbook: fTextbook.value || undefined, grade: fGrade.value || undefined,
       semester: fSemester.value || undefined, unit_id: fUnit.value || undefined,
+      reported_only: reportedOnly.value || undefined,
+      sort: sortByReport.value ? 'report' : undefined,
       skip: (page.value - 1) * limit, limit,
     })
     rows.value = result.items
@@ -450,6 +454,8 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
         <el-option label="全部来源" value="" />
         <el-option label="学生端生成(待复核)" value="student" />
       </el-select>
+      <el-checkbox v-model="reportedOnly" border style="margin:0" @change="reload">只看被举报</el-checkbox>
+      <el-checkbox v-model="sortByReport" border style="margin:0" @change="reload">按反馈排序</el-checkbox>
       <el-select v-model="fTextbook" placeholder="教材版本" clearable style="width: 130px" @change="onScopeChange">
         <el-option v-for="t in opts.textbook_versions" :key="t" :label="t" :value="t" />
       </el-select>
@@ -498,11 +504,13 @@ onMounted(() => { loadOptions(); loadUnitOptions(); load() })
           <span v-else class="muted">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="130" align="center">
+      <el-table-column label="状态" width="150" align="center">
         <template #default="{ row }">
           <el-tag :type="statusTag(row.media_status)" size="small">{{ statusLabel(row.media_status) }}</el-tag>
           <el-tag v-if="row.media_origin === 'student'" type="warning" size="small" effect="dark"
             style="margin-left:4px" title="学生端「加入学习」即时生成,待复核">学生</el-tag>
+          <el-tag v-if="row.media_report_count" type="danger" size="small" effect="dark"
+            style="margin-left:4px" :title="`学生「图不对」反馈 ${row.media_report_count} 次`">举报 {{ row.media_report_count }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="配图 / 动图" width="160" align="center">

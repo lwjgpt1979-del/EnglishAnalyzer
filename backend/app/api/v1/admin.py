@@ -879,6 +879,7 @@ def _to_vocab_media_item(w: VocabularyWord) -> AdminVocabMediaItem:
         en_desc_audio_url=w.en_desc_audio_url,
         media_status=str(w.media_status),
         media_origin=(w.media_origin or None),
+        media_report_count=int(w.media_report_count or 0),
     )
 
 
@@ -1101,12 +1102,15 @@ async def list_vocab_media(
     q: str | None = None, media_origin: str | None = None,
     textbook: str | None = None, grade: str | None = None, semester: str | None = None,
     unit_id: uuid.UUID | None = None,
+    reported_only: bool = False, sort: str | None = None,
 ):
     """按媒体状态分页查单词。默认看待审草稿。media_origin='student' 只看学生端即时生成的(待复核)。
-    q 全库模糊搜;textbook/grade/semester/unit_id 按教材归属筛。"""
+    q 全库模糊搜;textbook/grade/semester/unit_id 按教材归属筛。
+    reported_only=只看被学生举报「图不对」的词;sort='report' 按反馈次数倒序。"""
     rows, total = await vocab_media_service.list_words_for_media_review(
         db, media_status=media_status, skip=skip, limit=limit, q=q, media_origin=media_origin,
         textbook=textbook, grade=grade, semester=semester, unit_id=unit_id,
+        reported_only=reported_only, sort=sort,
     )
     return make_ok(AdminVocabMediaListOut(
         total=total, items=[_to_vocab_media_item(w) for w in rows],

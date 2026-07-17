@@ -61,6 +61,7 @@ class AdminVocabMediaItem(BaseModel):
     en_desc_audio_url: str | None = None
     media_status: str
     media_origin: str | None = None   # 'student'=学生端加入学习即时生成(待复核) / 空=后台/历史
+    media_report_count: int = 0       # 学生「图不对」反馈累计次数(P3),供按反馈过滤复核
 
 
 class AdminVocabMediaListOut(BaseModel):

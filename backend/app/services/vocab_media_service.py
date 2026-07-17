@@ -975,13 +975,15 @@ async def list_words_for_media_review(
     db: AsyncSession, *, media_status: str = "draft", skip: int = 0, limit: int = 20,
     q: str | None = None, media_origin: str | None = None,
     textbook: str | None = None, grade: str | None = None, semester: str | None = None,
-    unit_id=None,
+    unit_id=None, reported_only: bool = False, sort: str | None = None,
 ) -> tuple[list[VocabularyWord], int]:
     base = select(VocabularyWord)
     if media_status:                       # 空=全部状态(不过滤)
         base = base.where(VocabularyWord.media_status == media_status)
     if media_origin:                       # 'student'=学生端即时生成(待复核)
         base = base.where(VocabularyWord.media_origin == media_origin)
+    if reported_only:                      # 只看被学生「图不对」举报过的(P3)
+        base = base.where(VocabularyWord.media_report_count > 0)
     if q:                                  # 全库按单词模糊搜
         base = base.where(VocabularyWord.word.ilike(f"%{q}%"))
     # 教材版本/年级/上下册/单元:经 curriculum_words → curriculum_units 归属(EXISTS)
@@ -1002,7 +1004,9 @@ async def list_words_for_media_review(
     total = (await db.execute(
         select(func.count()).select_from(base.subquery())
     )).scalar_one()
+    order = (VocabularyWord.media_report_count.desc(), VocabularyWord.word) \
+        if sort == "report" else (VocabularyWord.word,)   # 按反馈次数倒序
     rows = (await db.execute(
-        base.order_by(VocabularyWord.word).offset(skip).limit(limit)
+        base.order_by(*order).offset(skip).limit(limit)
     )).scalars().all()
     return list(rows), total

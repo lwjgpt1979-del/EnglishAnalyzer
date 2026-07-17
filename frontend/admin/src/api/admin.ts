@@ -326,6 +326,8 @@ export function listVocabMedia(params: {
   grade?: string
   semester?: string
   unit_id?: string
+  reported_only?: boolean
+  sort?: string
 }): Promise<AdminVocabMediaListOut> {
   return unwrap<AdminVocabMediaListOut>(request.get('/admin/vocab', { params }))
 }
