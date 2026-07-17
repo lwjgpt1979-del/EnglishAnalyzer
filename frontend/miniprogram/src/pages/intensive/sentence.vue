@@ -23,18 +23,28 @@
     <template v-else>
       <view class="back" @tap="groupOpen = null"><text>‹ 返回{{ mode === 'homework' ? '批次' : '单元' }}</text></view>
       <view v-if="itemsLoading" class="tip">加载中…</view>
-      <view v-else-if="!sentences.length" class="tip">该{{ mode === 'homework' ? '批次' : '单元' }}没有长难句</view>
-      <view v-for="(s, i) in sentences" :key="i" class="card se" @tap="goAnalyze(s.text)">
-        <text class="se-text">{{ s.text }}</text>
-        <text class="se-go">解析 ›</text>
-      </view>
+      <!-- 作业:B+H 卷学习页(卷头进度 + 待学清单);点句进逐句解析(看过即算学过) -->
+      <PaperChecklist v-else-if="mode === 'homework'" :items="sentences" :date="groupOpen && groupOpen.sub" unit="句"
+          @open="(s) => goAnalyze(s.text)" @start="(i) => goAnalyze(sentences[i] && sentences[i].text)">
+        <template #item="{ item }"><text class="se-text">{{ item.text }}</text></template>
+        <template #empty>该批次没有长难句</template>
+      </PaperChecklist>
+      <!-- 课程:句列表 -->
+      <template v-else>
+        <view v-if="!sentences.length" class="tip">该单元没有长难句</view>
+        <view v-for="(s, i) in sentences" :key="i" class="card se" @tap="goAnalyze(s.text)">
+          <text class="se-text">{{ s.text }}</text>
+          <text class="se-go">解析 ›</text>
+        </view>
+      </template>
     </template>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import PaperChecklist from '@/components/PaperChecklist.vue'
 import { seHwBatches, seHwSentences, seCourseUnits, seCourseSentences,
          type SentenceItem, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
 import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
@@ -83,6 +93,9 @@ async function load() {
   finally { loading.value = false }
 }
 onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
+// 从逐句解析返回 → 刷新进度与打勾(跳过 onLoad 后首次)
+let _shown = false
+onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.value) openGroup(groupOpen.value) })
 </script>
 
 <style scoped>

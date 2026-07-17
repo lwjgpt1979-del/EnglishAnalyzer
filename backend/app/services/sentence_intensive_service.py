@@ -41,15 +41,17 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
 
 async def homework_sentences(db: AsyncSession, *, student_id: uuid.UUID,
                              paper_id: uuid.UUID) -> list[dict]:
-    """某批次(卷)里加入待学习的长难句(按文本去重,存量可能有重复行)。"""
+    """某批次(卷)里加入待学习的长难句(按文本去重,存量可能有重复行);
+    带 studied(该句是否已学=有过解析 analysis_json)。"""
     rows = (await db.execute(
-        select(StudentLongSentence.text, func.min(StudentLongSentence.created_at).label("ca"))
+        select(StudentLongSentence.text, func.min(StudentLongSentence.created_at).label("ca"),
+               func.bool_or(StudentLongSentence.analysis_json.isnot(None)))
         .where(StudentLongSentence.owner_id == student_id,
                StudentLongSentence.source_paper_id == paper_id,
                StudentLongSentence.status == "published")
         .group_by(StudentLongSentence.text)
         .order_by(func.min(StudentLongSentence.created_at).desc()))).all()
-    return [{"text": t} for t, _ in rows]
+    return [{"text": t, "studied": bool(st)} for t, _, st in rows]
 
 
 # ── 课程精讲 · 长难句:按教材单元 ──────────────────────────────────────────────

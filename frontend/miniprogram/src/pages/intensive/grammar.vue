@@ -23,14 +23,25 @@
     <template v-else>
       <view class="back" @tap="groupOpen = null"><text>‹ 返回{{ mode === 'homework' ? '批次' : '单元' }}</text></view>
       <view v-if="itemsLoading" class="tip">加载中…</view>
-      <view v-else-if="!points.length" class="tip">该{{ mode === 'homework' ? '批次' : '单元' }}没有语法点</view>
-      <view v-for="(p, pi) in points" :key="p.node_id || p.sgn_id || pi" class="card pt" @tap="goLearn(p)">
-        <view class="pt-main">
-          <text class="pt-name">{{ p.name }}</text>
-          <text v-if="p.personal" class="pt-tag">自建</text>
+      <!-- 作业:B+H 卷学习页(卷头进度 + 待学清单);点点看讲解/练习(学过即算) -->
+      <PaperChecklist v-else-if="mode === 'homework'" :items="points" :date="groupOpen && groupOpen.sub" unit="点"
+          @open="(p) => goLearn(p)" @start="(i) => goLearn(points[i])">
+        <template #item="{ item }">
+          <view class="pt-main"><text class="pt-name">{{ item.name }}</text><text v-if="item.personal" class="pt-tag">自建</text></view>
+        </template>
+        <template #empty>该批次没有语法点</template>
+      </PaperChecklist>
+      <!-- 课程:语法点列表 -->
+      <template v-else>
+        <view v-if="!points.length" class="tip">该单元没有语法点</view>
+        <view v-for="(p, pi) in points" :key="p.node_id || p.sgn_id || pi" class="card pt" @tap="goLearn(p)">
+          <view class="pt-main">
+            <text class="pt-name">{{ p.name }}</text>
+            <text v-if="p.personal" class="pt-tag">自建</text>
+          </view>
+          <text class="pt-go">{{ p.personal ? '练习 ›' : '看讲解 ›' }}</text>
         </view>
-        <text class="pt-go">{{ p.personal ? '练习 ›' : '看讲解 ›' }}</text>
-      </view>
+      </template>
     </template>
 
     <!-- 个人语法点(未入图谱):AI 讲解(缓存)+ 按语法名出题练习 -->
@@ -69,7 +80,8 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import PaperChecklist from '@/components/PaperChecklist.vue'
 import { grHwBatches, grHwPoints, grCourseUnits, grCoursePoints,
          type GrammarPoint, type IntensiveBatch, type IntensiveUnit } from '@/api/curriculum'
 import { generateQuestions, submitAnswer } from '@/api/practice'
@@ -152,6 +164,9 @@ async function load() {
   finally { loading.value = false }
 }
 onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
+// 从讲解/练习返回 → 刷新进度与打勾(跳过 onLoad 后首次)
+let _shown = false
+onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.value) openGroup(groupOpen.value) })
 </script>
 
 <style scoped>

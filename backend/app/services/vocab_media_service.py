@@ -370,34 +370,48 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
         voice = _auto_voice(w.word, await _curated_voice_ids(db))
     urls: list[str] = []
     if do_images:
+        # ── 出图「双闸门」(全项目铁律:配图必须词意+可画场景双落实,任一缺失即止)──
+        #  ① 词意闸门:meaning(取 definitions)必须有 —— 裸词无法画出可表意的图;
+        #  ② 场景闸门:开 use_ai_prompt 时必须成功拿到「可画场景」brief —— 生成失败也不退化。
+        #  任一不满足 → 中止出图,不产出/不落库「裸词兜底图」(乱码文字图/语义乱配的根因)。
         brief = ""
         if brief_override is not None:
             brief = brief_override.strip()
         elif cfg.get("use_ai_prompt"):
             sysp = (await get_brief_prompt(db))["current"]
-            brief = await _ai_visual_brief(w.word, meaning, pos, system=sysp)
-        prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
-                                 n=int(cfg.get("images_per_word", 1)), brief=brief)
-        for p in prompts:
-            u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
-            if u:
-                urls.append(u)
-        if urls:   # 记为新图片版本(不覆盖历史),带当时风格+提示词,自动选用
-            await vocab_media_asset_service.record_assets(
-                db, word_id=w.id, kind="image", urls=urls,
-                style=(cfg.get("style") or "随机"), prompt=(brief or None))
-        # 例句(先贴合图片意思) + 短语；语音仅在 do_audio 时预生成(火山→COS缓存)
-        ep = await _ai_example_phrase(w.word, meaning, pos, brief)
-        if ep["example"]["en"]:
-            ex = dict(ep["example"])
-            if do_audio:
-                ex["audio"] = await _tts_cos(ex["en"], voice)
-            w.examples = [ex]
-        if ep["phrase"]["en"]:
-            ph = dict(ep["phrase"])
-            if do_audio:
-                ph["audio"] = await _tts_cos(ph["en"], voice)
-            w.phrases = [ph]
+            try:
+                brief = (await _ai_visual_brief(w.word, meaning, pos, system=sysp) or "").strip()
+            except Exception as e:  # noqa: BLE001  brief 失败 → 不退化,交由闸门中止
+                brief = ""
+                logger.warning("[配图] %s 生成画面描述(brief)失败: %s", w.word, e)
+        need_brief = (brief_override is None) and bool(cfg.get("use_ai_prompt"))
+        gate_ok = bool(meaning.strip()) and not (need_brief and not brief)
+        if not gate_ok:
+            reason = "无词意(definitions 缺失)" if not meaning.strip() else "画面描述(brief)生成失败"
+            logger.warning("[配图闸门] %s 中止出图:%s —— 不产出裸词兜底图,交由「查看即生成」重试", w.word, reason)
+        else:
+            prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
+                                     n=int(cfg.get("images_per_word", 1)), brief=brief)
+            for p in prompts:
+                u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
+                if u:
+                    urls.append(u)
+            if urls:   # 记为新图片版本(不覆盖历史),带当时风格+提示词,自动选用
+                await vocab_media_asset_service.record_assets(
+                    db, word_id=w.id, kind="image", urls=urls,
+                    style=(cfg.get("style") or "随机"), prompt=(brief or None))
+            # 例句(先贴合图片意思) + 短语；语音仅在 do_audio 时预生成(火山→COS缓存)
+            ep = await _ai_example_phrase(w.word, meaning, pos, brief)
+            if ep["example"]["en"]:
+                ex = dict(ep["example"])
+                if do_audio:
+                    ex["audio"] = await _tts_cos(ex["en"], voice)
+                w.examples = [ex]
+            if ep["phrase"]["en"]:
+                ph = dict(ep["phrase"])
+                if do_audio:
+                    ph["audio"] = await _tts_cos(ph["en"], voice)
+                w.phrases = [ph]
     # 单词发音：do_audio 时(重)生成，记为新音频版本(不覆盖历史,自动选用→同步 word_audio_url)
     if do_audio:
         wa = await _tts_cos(w.word, voice)
@@ -440,8 +454,12 @@ async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
     if str(w.media_status) == "published" and isinstance(w.image_urls, list) and w.image_urls:
         return w                                  # 已有媒体,不重复生成
     await generate_for_word(db, word_id=word_id, do_images=True, do_audio=True)
-    w.media_status = "published"                  # 学生即时生成 → 直接可见(素材已记版本,admin 仍可复核)
-    w.media_origin = "student"                    # 标记来源:学生端「加入学习」即时生成,供后台过滤复核
+    if isinstance(w.image_urls, list) and w.image_urls:
+        w.media_status = "published"              # 有真图才发布 → 直接可见(素材已记版本,admin 仍可复核)
+        w.media_origin = "student"                # 标记来源:学生端「加入学习」即时生成,供后台过滤复核
+    else:
+        # 出图被「双闸门」中止(无词意/场景) → 不发布空图坏图;保持 draft,下次查看再试(不缓存坏结果)
+        w.media_status = "draft"
     await db.commit()
     await db.refresh(w)
     return w
@@ -556,7 +574,9 @@ def batch_status() -> dict:
     return dict(_batch_state)
 
 
-async def _run_batch(word_ids: list, cfg: dict) -> None:
+async def _run_batch(word_ids: list, cfg: dict, *, publish: bool = False) -> None:
+    """批量出图。publish=True(重刷劣质图场景):出图成功直接发布可见;否则落 draft 待复核。
+    出图被「双闸门」中止(imgs 为空)→ 计 failed,绝不用空图覆盖原图。"""
     from app.core.database import _async_session_factory
     _batch_state.update(running=True, total=len(word_ids), done=0, ok=0, failed=0)
     try:
@@ -570,7 +590,7 @@ async def _run_batch(word_ids: list, cfg: dict) -> None:
                         imgs = await _gen_images_for(db, w, cfg)
                         if imgs:
                             w.image_urls = imgs
-                            w.media_status = "draft"
+                            w.media_status = "published" if publish else "draft"
                             await db.commit()
                             _batch_state["ok"] += 1
                         else:
@@ -601,6 +621,43 @@ async def start_batch_image_gen(db: AsyncSession) -> dict:
     if not ids:
         return {"started": False, "reason": "没有待配图的单词", "total": 0}
     asyncio.create_task(_run_batch(ids, cfg))
+    return {"started": True, "total": len(ids)}
+
+
+async def count_low_quality_images(db: AsyncSession) -> int:
+    """统计「有图但从未用 brief(可画场景)生成过」的历史劣质图词数——即所有 image 资产 prompt 均为空。"""
+    from sqlalchemy import text as _text
+    row = (await db.execute(_text(
+        "SELECT count(*) FROM vocabulary_words w "
+        "WHERE w.image_urls IS NOT NULL AND jsonb_array_length(w.image_urls) > 0 "
+        "AND NOT EXISTS (SELECT 1 FROM vocab_media_asset a "
+        "                WHERE a.word_id = w.id AND a.kind='image' "
+        "                AND a.prompt IS NOT NULL AND btrim(a.prompt) <> '')"
+    ))).scalar()
+    return int(row or 0)
+
+
+async def start_refresh_low_quality_images(db: AsyncSession) -> dict:
+    """重刷「劣质配图」:选出「有图但无 brief 记录」的历史词(截图里那类裸词乱码图),按 batch_size
+    取一批,经「双闸门」重新生成场景化配图;成功直接发布替换。绝不用空图覆盖(闸门失败计 failed)。"""
+    import asyncio
+    from sqlalchemy import text as _text
+    if _batch_state["running"]:
+        return {"started": False, "reason": "已有批量任务进行中", **batch_status()}
+    cfg = await get_image_config(db)
+    n = int(cfg.get("batch_size", 20))
+    rows = (await db.execute(_text(
+        "SELECT w.id FROM vocabulary_words w "
+        "WHERE w.image_urls IS NOT NULL AND jsonb_array_length(w.image_urls) > 0 "
+        "AND NOT EXISTS (SELECT 1 FROM vocab_media_asset a "
+        "                WHERE a.word_id = w.id AND a.kind='image' "
+        "                AND a.prompt IS NOT NULL AND btrim(a.prompt) <> '') "
+        "LIMIT :n"
+    ), {"n": n})).all()
+    ids = [r[0] for r in rows]
+    if not ids:
+        return {"started": False, "reason": "没有需重刷的劣质配图", "total": 0}
+    asyncio.create_task(_run_batch(ids, cfg, publish=True))
     return {"started": True, "total": len(ids)}
 
 

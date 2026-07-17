@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import {
   getVocabImageConfig, updateVocabImageConfig,
   startVocabImageBatch, getVocabImageBatchStatus,
+  getVocabImageLowQualityCount, refreshVocabImageLowQuality,
   type VocabImageBatchStatus,
 } from '../api/admin'
 
@@ -12,6 +13,8 @@ const loading = ref(false)
 const saving = ref(false)
 const batch = ref<VocabImageBatchStatus | null>(null)
 const starting = ref(false)
+const lowQualityCount = ref<number | null>(null)
+const refreshing = ref(false)
 let timer: any = null
 
 async function load() {
@@ -25,8 +28,26 @@ async function load() {
     form.stylesText = (c.styles || []).join('\n')
     batch.value = await getVocabImageBatchStatus()
     if (batch.value.running) startPolling()
+    loadLowQualityCount()
   } finally {
     loading.value = false
+  }
+}
+
+async function loadLowQualityCount() {
+  try { lowQualityCount.value = (await getVocabImageLowQualityCount()).count } catch { /* 忽略 */ }
+}
+
+async function runRefresh() {
+  refreshing.value = true
+  try {
+    const r = await refreshVocabImageLowQuality()
+    if (!r.started) { ElMessage.warning(r.reason || '没有需重刷的劣质配图'); return }
+    ElMessage.success(`已开始重刷劣质配图（${r.total} 个词）`)
+    batch.value = await getVocabImageBatchStatus()
+    startPolling()
+  } finally {
+    refreshing.value = false
   }
 }
 
@@ -53,6 +74,7 @@ function startPolling() {
     if (!batch.value.running) {
       stopPolling()
       ElMessage.success(`批量完成：成功 ${batch.value.ok} / ${batch.value.total}，失败 ${batch.value.failed}`)
+      loadLowQualityCount()
     }
   }, 3000)
 }
@@ -125,6 +147,25 @@ onUnmounted(stopPolling)
         </div>
         <el-progress :percentage="pct()" :status="batch.running ? '' : 'success'" />
       </div>
+    </el-card>
+
+    <el-card>
+      <template #header>重刷劣质配图</template>
+      <p style="color:#909399;font-size:13px;margin:0 0 14px">
+        修复历史「有图但没有场景描述(brief)」的配图——这类图当年缺词意/场景直接生成,常是乱码文字图或语义乱配。
+        重刷会经「词意+场景双闸门」重新场景化出图,成功即发布替换(失败不覆盖原图)。
+      </p>
+      <div style="margin-bottom:12px;font-size:13px;color:#606266">
+        待重刷:
+        <b :style="{ color: (lowQualityCount || 0) > 0 ? '#e6a23c' : '#67c23a' }">
+          {{ lowQualityCount === null ? '统计中…' : lowQualityCount }}
+        </b>
+        个词（每次按上面「批量数量」取一批）
+      </div>
+      <el-button type="warning" :loading="refreshing" :disabled="batch?.running || (lowQualityCount || 0) === 0"
+                 @click="runRefresh">
+        {{ batch?.running ? '生成中…' : '重刷一批劣质配图' }}
+      </el-button>
     </el-card>
   </div>
 </template>

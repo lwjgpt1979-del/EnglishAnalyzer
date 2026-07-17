@@ -70,15 +70,21 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
 
 async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
                           paper_id: uuid.UUID) -> list[dict]:
-    """某批次(卷)里的语法点:匹配上图谱的(可跳讲解)+ 未匹配的个人语法(personal,按名练习)。"""
+    """某批次(卷)里的语法点:匹配上图谱的(可跳讲解)+ 未匹配的个人语法(personal,按名练习)。
+    带 studied(该点是否已学=有 student_grammar_mastery 行;个人语法暂计未学)。"""
     from app.models.d27_student_grammar import StudentGrammarNode
+    from app.models.d4_knowledge import StudentGrammarMastery
     rows = (await db.execute(
-        select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
+        select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
+               StudentGrammarMastery.id.isnot(None))
         .join(StudentKpTarget, StudentKpTarget.node_id == KnowledgeNode.id)
+        .outerjoin(StudentGrammarMastery,
+                   (StudentGrammarMastery.kp_id == KnowledgeNode.id)
+                   & (StudentGrammarMastery.student_id == student_id))
         .where(StudentKpTarget.student_id == student_id,
                StudentKpTarget.source_paper_id == paper_id, _GRAMMAR)
         .order_by(KnowledgeNode.code))).all()
-    out = [_pt(nid, name, code) for nid, name, code in rows]
+    out = [{**_pt(nid, name, code), "studied": bool(st)} for nid, name, code, st in rows]
     pers = (await db.execute(
         select(StudentGrammarNode.id, StudentGrammarNode.name)
         .where(StudentGrammarNode.student_id == student_id,
@@ -87,7 +93,7 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
         .order_by(StudentGrammarNode.name))).all()
     for sgn_id, pname in pers:
         out.append({"node_id": None, "name": pname, "code": None,
-                    "personal": True, "sgn_id": str(sgn_id)})
+                    "personal": True, "sgn_id": str(sgn_id), "studied": False})
     return out
 
 

@@ -16,6 +16,14 @@
         <view v-if="itemsLoading" class="tip">加载中…</view>
         <view v-else-if="!blocks.length" class="tip">该卷没有阅读理解内容</view>
         <template v-else>
+          <!-- 卷头:整卷精讲进度(已看解析/练同类的题数) -->
+          <view class="rd-head">
+            <view class="rd-num"><text class="rd-s">{{ readStudied }}</text><text class="rd-t">/{{ readTotal }}</text></view>
+            <view class="rd-info">
+              <view class="rd-status" :class="'rs-' + readStatus">{{ readStatusLabel }}<text class="rd-pct">{{ readPct }}%</text></view>
+              <view class="rd-bar"><view class="rd-fill" :style="{ width: readPct + '%' }"></view></view>
+            </view>
+          </view>
           <view v-for="(bk, bi) in blocks" :key="bi" class="block">
             <!-- 原文:吸顶常驻,读写对照 -->
             <view v-if="bk.passage" class="passage" @tap="toggle(bi)">
@@ -54,6 +62,7 @@
             <!-- 讲义卡片:题型大标签 + 四件套 -->
             <view v-for="(q, qi) in bk.questions" :key="qi" class="q-card">
               <view class="q-head">
+                <view class="q-tick" :class="q.studied ? 'q-tick-done' : 'q-tick-todo'"></view>
                 <text class="q-type" :class="typeCls(q)">{{ typeLabel(q) }}</text>
                 <text v-if="q.is_wrong" class="st-chip st-bad">答错</text>
                 <text v-else class="st-chip st-ok">答对</text>
@@ -136,6 +145,16 @@ function openById(id: string) {
   const b = batches.value.find(x => x.paper_id === id)
   if (b) openBatch(b)
 }
+// 卷头:整卷精讲进度(已看解析/练同类的题数)
+const allQs = computed(() => blocks.value.flatMap(b => b.questions))
+const readTotal = computed(() => allQs.value.length)
+const readStudied = computed(() => allQs.value.filter(q => (q as any).studied).length)
+const readPct = computed(() => (readTotal.value ? Math.round((readStudied.value / readTotal.value) * 100) : 0))
+const readStatus = computed(() => (readStudied.value <= 0 ? 'todo' : readStudied.value >= readTotal.value ? 'done' : 'doing'))
+const readStatusLabel = computed(() => ({ todo: '未学', doing: '学习中', done: '已学' }[readStatus.value]))
+function markStudiedLocal(qid: string) {
+  for (const b of blocks.value) for (const q of b.questions) if ((q as any).id === qid) (q as any).studied = true
+}
 const loading = ref(true)
 const openId = ref('')
 const blocks = ref<ReadingBlock[]>([])
@@ -210,6 +229,7 @@ async function toggleAna(q: any, bi: number) {
   }
   // 展开后把证据句在原文里高亮(自动滚回原文吸顶处对照)
   activeEv.value = { ...activeEv.value, [bi]: ana.value[q.id]?.evidence || '' }
+  if (!ana.value[q.id]?.error) markStudiedLocal(q.id)   // 看解析即算已精讲(后端已写),本地打勾
 }
 
 // 练同类(统一 PracticeQuiz)
@@ -226,6 +246,7 @@ async function practice(qid: string) {
     if (r.error) { uni.showToast({ title: r.error, icon: 'none' }); return }
     if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
     pracKp.value = '阅读理解'; pracList.value = r.questions; pracQid.value = qid; pracOpen.value = true
+    markStudiedLocal(qid)   // 练同类即算已精讲(后端已写),本地打勾
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { pracLoading.value = '' }
 }
@@ -295,6 +316,24 @@ onLoad(async () => {
 
 /* 讲义卡片 */
 .q-card { background: #fff; border: 2rpx solid #eaeef4; border-radius: 18rpx; padding: 22rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 18rpx rgba(45, 80, 150, .05); }
+/* 卷头进度 */
+.rd-head { display: flex; align-items: center; gap: 16rpx; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 18rpx 20rpx; margin-bottom: 18rpx; box-shadow: 0 6rpx 20rpx rgba(45, 80, 150, .06); }
+.rd-num { flex: none; min-width: 92rpx; text-align: center; }
+.rd-s { font-size: 42rpx; font-weight: 800; color: #3d7bf0; line-height: 1; }
+.rd-t { font-size: 24rpx; font-weight: 700; color: #b7c2d4; }
+.rd-info { flex: 1; min-width: 0; }
+.rd-status { font-size: 26rpx; font-weight: 800; display: flex; align-items: center; gap: 10rpx; }
+.rs-todo { color: #94a3b8; }
+.rs-doing { color: #3d8bf5; }
+.rs-done { color: #2fa98a; }
+.rd-pct { font-size: 20rpx; font-weight: 700; color: #3d8bf5; background: #eaf2fe; border-radius: 6rpx; padding: 2rpx 10rpx; }
+.rs-done .rd-pct { color: #2fa98a; background: #e8f6ef; }
+.rd-bar { height: 12rpx; background: #eef2f7; border-radius: 999rpx; margin-top: 12rpx; overflow: hidden; }
+.rd-fill { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, #4c97f7, #3d7bf0); }
+/* 每题勾选圈 */
+.q-tick { width: 34rpx; height: 34rpx; border-radius: 50%; flex: none; box-sizing: border-box; }
+.q-tick-todo { border: 4rpx solid #cbd3e0; }
+.q-tick-done { background: #2fa98a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/20rpx no-repeat; }
 .q-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 14rpx; }
 .q-type { font-size: 22rpx; font-weight: 800; color: #fff; border-radius: 999rpx; padding: 4rpx 18rpx; letter-spacing: .5rpx; }
 .tt-detail { background: linear-gradient(135deg, #4c97f7, #3d7bf0); }

@@ -28,26 +28,41 @@
     <!-- 二级:词表 -->
     <template v-else>
       <view class="back" @tap="groupOpen = null"><text>‹ 返回{{ mode === 'homework' ? '批次' : '单元' }}</text></view>
-      <view v-if="!wordsLoading && words.length" class="start-btn" @tap="startStudy">
-        <text>▶ 开始学习(配图·发音·例句·检测)</text>
-      </view>
       <view v-if="wordsLoading" class="tip">加载中…</view>
-      <view v-else-if="!words.length" class="tip">该{{ mode === 'homework' ? '批次' : '单元' }}没有单词</view>
-      <text v-else class="list-hint">共 {{ words.length }} 词 · 下方为词表预览,点上方按钮进入卡片学习</text>
-      <view v-for="w in words" :key="w.word_id" class="card word-row" @tap="openCard(w)">
-        <image v-if="w.image_url" :src="w.image_url" class="w-img" mode="aspectFill" />
-        <view v-else class="w-img w-img-ph"><text>词</text></view>
-        <view class="w-main">
-          <view class="word-top">
-            <text class="word-w">{{ w.word }}</text>
-            <text v-if="w.phonetic" class="word-ph">/{{ w.phonetic }}/</text>
+      <!-- 作业:B+H 卷学习页(卷头进度 + 待学清单);「开始学习」走整卷词力通检测流 -->
+      <PaperChecklist v-else-if="mode === 'homework'" :items="words" :date="groupOpen && groupOpen.sub" unit="词"
+          @open="openCard" @start="startStudy">
+        <template #item="{ item }">
+          <view class="wrow">
+            <view class="wrow-main">
+              <view class="word-top"><text class="word-w">{{ item.word }}</text><text v-if="item.phonetic" class="word-ph">/{{ item.phonetic }}/</text></view>
+              <text class="word-def">{{ defText(item.definitions) }}</text>
+            </view>
+            <view class="w-play" :class="{ on: playingId === item.word_id }" @tap.stop="playWord(item)"><text>{{ playingId === item.word_id ? '♪' : '🔊' }}</text></view>
           </view>
-          <text class="word-def">{{ defText(w.definitions) }}</text>
+        </template>
+        <template #empty>该批次没有单词</template>
+      </PaperChecklist>
+      <!-- 课程:词表预览 -->
+      <template v-else>
+        <view v-if="words.length" class="start-btn" @tap="startStudy"><text>▶ 开始学习(配图·发音·例句·检测)</text></view>
+        <view v-if="!words.length" class="tip">该单元没有单词</view>
+        <text v-else class="list-hint">共 {{ words.length }} 词 · 下方为词表预览,点上方按钮进入卡片学习</text>
+        <view v-for="w in words" :key="w.word_id" class="card word-row" @tap="openCard(w)">
+          <image v-if="w.image_url" :src="w.image_url" class="w-img" mode="aspectFill" />
+          <view v-else class="w-img w-img-ph"><text>词</text></view>
+          <view class="w-main">
+            <view class="word-top">
+              <text class="word-w">{{ w.word }}</text>
+              <text v-if="w.phonetic" class="word-ph">/{{ w.phonetic }}/</text>
+            </view>
+            <text class="word-def">{{ defText(w.definitions) }}</text>
+          </view>
+          <view class="w-play" :class="{ on: playingId === w.word_id }" @tap.stop="playWord(w)">
+            <text>{{ playingId === w.word_id ? '♪' : '🔊' }}</text>
+          </view>
         </view>
-        <view class="w-play" :class="{ on: playingId === w.word_id }" @tap.stop="playWord(w)">
-          <text>{{ playingId === w.word_id ? '♪' : '🔊' }}</text>
-        </view>
-      </view>
+      </template>
     </template>
 
     <!-- 单词卡片弹层:点单个词展开 -->
@@ -77,9 +92,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import { getHwWordBatches, getHwWords, getCourseWordUnits, getCourseWords, ensureWordMedia,
          type IntensiveWord, type HwWordBatch, type CourseWordUnit } from '@/api/vocabulary'
+import PaperChecklist from '@/components/PaperChecklist.vue'
 import { resolveSpeakUrl } from '@/utils/tts'
 import IntensiveBatchList, { type BatchItem } from '@/components/IntensiveBatchList.vue'
 
@@ -192,6 +208,9 @@ async function load() {
 }
 
 onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
+// 从词力通学习流返回 → 刷新批次进度与当前卷词表的已学打勾(跳过 onLoad 后的首次)
+let _shown = false
+onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.value) openGroup(groupOpen.value) })
 </script>
 
 <style scoped>
@@ -215,6 +234,8 @@ onLoad((q: any) => { mode.value = q.mode || 'homework'; load() })
 .word-ph { font-size: 24rpx; color: var(--c-text-hint); }
 .word-def { display: block; font-size: 26rpx; color: var(--c-text-sub); margin-top: 8rpx; line-height: 1.6; }
 .word-row { display: flex; align-items: center; gap: 18rpx; }
+.wrow { display: flex; align-items: center; gap: 14rpx; }
+.wrow-main { flex: 1; min-width: 0; }
 .w-img { width: 96rpx; height: 96rpx; border-radius: 12rpx; flex-shrink: 0; background: var(--c-bg-page, #f5f6f8); }
 .w-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); font-size: 24rpx; }
 .w-main { flex: 1; min-width: 0; }

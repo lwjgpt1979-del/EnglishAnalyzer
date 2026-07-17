@@ -214,6 +214,13 @@ export function startVocabImageBatch() {
 export function getVocabImageBatchStatus() {
   return unwrap<VocabImageBatchStatus>(request.get('/admin/vocab-image/batch/status'))
 }
+// 重刷「劣质配图」(有图但无场景描述 brief 的历史图):计数 + 触发重生成(共用 batch 状态)
+export function getVocabImageLowQualityCount() {
+  return unwrap<{ count: number }>(request.get('/admin/vocab-image/low-quality-count'))
+}
+export function refreshVocabImageLowQuality() {
+  return unwrap<{ started: boolean; total?: number; reason?: string }>(request.post('/admin/vocab-image/refresh-low-quality'))
+}
 
 export interface TtsCosUsage { available: boolean; object_count: number; total_bytes: number; total_mb: number }
 export interface TtsPrewarmStatus { running: boolean; label: string; total: number; done: number; ok: number; failed: number }

@@ -56,14 +56,18 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
 
 async def homework_words(db: AsyncSession, *, student_id: uuid.UUID,
                          paper_id: uuid.UUID) -> list[dict]:
-    """某批次(卷)里加入待学习的词 + 词库详解。"""
+    """某批次(卷)里加入待学习的词 + 词库详解;带 studied(该词是否已学=有 VocabularyLearning 行)。"""
     rows = (await db.execute(
         select(VocabularyWord)
         .join(StudentVocabCandidate, StudentVocabCandidate.word_id == VocabularyWord.id)
         .where(StudentVocabCandidate.student_id == student_id,
                StudentVocabCandidate.source_paper_id == paper_id)
         .order_by(StudentVocabCandidate.created_at.desc()))).scalars().all()
-    return [_word_out(w) for w in rows]
+    studied_ids = set((await db.execute(
+        select(VocabularyLearning.word_id)
+        .where(VocabularyLearning.student_id == student_id,
+               VocabularyLearning.word_id.in_([w.id for w in rows] or [None])))).scalars().all())
+    return [{**_word_out(w), "studied": w.id in studied_ids} for w in rows]
 
 
 # ── 课程精讲 · 单词:按教材单元 ────────────────────────────────────────────────

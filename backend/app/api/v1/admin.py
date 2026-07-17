@@ -1016,6 +1016,18 @@ async def vocab_image_batch_status(db: DbDep, admin: AdminDep):
     return make_ok(vocab_media_service.batch_status())
 
 
+@router.get("/vocab-image/low-quality-count", response_model=BaseResponse[dict])
+async def vocab_image_low_quality_count(db: DbDep, admin: AdminDep):
+    """统计「有图但无场景描述(brief)」的历史劣质配图词数——供后台判断是否需重刷。"""
+    return make_ok({"count": await vocab_media_service.count_low_quality_images(db)})
+
+
+@router.post("/vocab-image/refresh-low-quality", response_model=BaseResponse[dict])
+async def refresh_low_quality_images(db: DbDep, admin: AdminDep):
+    """重刷「劣质配图」:对「有图但无 brief(可画场景)」的历史词,经双闸门重新场景化出图并发布替换。"""
+    return make_ok(await vocab_media_service.start_refresh_low_quality_images(db))
+
+
 @router.post("/vocab-audio/backfill", response_model=BaseResponse[dict])
 async def backfill_vocab_audio(db: DbDep, admin: AdminDep):
     """给已有例句/短语/单词但缺音频的词补预生成语音(火山→COS缓存)，写回词库。"""

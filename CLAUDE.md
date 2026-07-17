@@ -33,6 +33,17 @@
 - **标记来源、可后台复核**:学生端即时生成的内容打来源标记(如 `vocabulary_words.media_origin='student'`、`kp_lecture.source='ai'`),后台管理页提供「按来源过滤」入口,运营可复核/改写/驳回;是对默认「AI 只出草稿、人工确认后发布」的**受控例外**(产品要求即时可见)。
 - **新增「会展示生成内容」的页面**一律照此办理:先想「没有时怎么即时补齐」,不允许出现「点开一片空白、要等运营手动生成」。
 
+## 生成配图/媒体:必须「词意 + 可画场景」双落实,失败即止不出兜底图(全项目强制)
+
+**凡为「表意」而生成的图像——单词配图、考点/例句配图等——出图前必须同时落实「词意」和「可画场景描述」两个前提;任一缺失就中止出图,严禁退化成「只拿裸词/空描述」直接喂文生图。** 缺场景描述直接生成的典型事故:文生图模型把单词当装饰文字渲染 → 乱码文字图(exams→"exams"、skilled→"Skd")或语义乱配(cooking 配香水瓶)。
+
+铁律:
+- **双闸门**:① 词意闸门——必须有 `meaning`(取 `definitions`,缺则先补;裸词无法画出可表意的图);② 场景闸门——开 `use_ai_prompt` 时必须成功拿到「一句可画场景」`brief`(`_ai_visual_brief`)。任一不满足 → **中止出图,不产出/不落库/不发布**。参考 `vocab_media_service._gen_images_for` 的闸门实现。
+- **失败即止,不缓存坏结果**:出图被闸门中止 → 不写 `image_urls`、`media_status` 不置 `published`(保持 `draft`),交由「查看即生成」下次重试;**绝不用空图/坏图覆盖已有好图**(批量出图 `imgs` 为空即计 failed、跳过写回)。这样「暂存」缓存的永远是合格图,不会把坏图钉死成 published。
+- **brief 生成失败不退化**:`_ai_visual_brief` 抛错/返回空 → 按场景闸门中止,**不得**退回「只有 word+meaning 的模板 prompt」硬出图。
+- **存量坏图可后台重刷**:发现历史「有图但无 brief 记录(`vocab_media_asset.prompt` 为空)」的劣质图,走 admin `/vocab-image/refresh-low-quality`(配图页「重刷劣质配图」)经双闸门重生成、成功才发布替换。
+- **新接「为表意生成图/媒体」的能力**一律照此办理:先想清楚「词意从哪来、可画场景怎么产出、拿不到时如何优雅中止」,不允许「缺描述也硬生成」。
+
 ## 新增 LLM 调用:必须登记到清单 + 打 feature 标签(全项目强制)
 
 **凡新增/改动一处调 DeepSeek LLM 的地方(`chat_completion` / `complete_json`),必须同步登记到 `backend/app/services/llm_feature_registry.py` 的 `LLM_FEATURES`,并给调用传 `feature="..."` 标签。** 该表是「LLM 调用清单」维护页(admin `/llm-features`,GET `/admin/llm-features`)的单一真源,标注 深度思考/对话 分档、需要该档的原因、消费端、功能模块,并合并真实用量与成本。漏登记 = 维护页看不到、用量算不清。

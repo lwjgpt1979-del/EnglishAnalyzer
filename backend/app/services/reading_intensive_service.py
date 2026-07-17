@@ -208,12 +208,17 @@ async def homework_passages(db: AsyncSession, *, student_id: uuid.UUID,
     paper = await db.get(UserUploadedPaper, paper_id)
     if paper is None or paper.student_id != student_id:
         return []
+    from app.models.d13_v2_user_papers import ReadingQuestionStudied
     rows = (await db.execute(
         select(UserPaperQuestion)
         .join(UserPaperSection, UserPaperSection.id == UserPaperQuestion.section_id)
         .where(UserPaperQuestion.user_paper_id == paper_id,
                UserPaperSection.section_type == "reading")
         .order_by(UserPaperQuestion.sort_order))).scalars().all()
+    studied_ids = set((await db.execute(
+        select(ReadingQuestionStudied.question_id)
+        .where(ReadingQuestionStudied.student_id == student_id,
+               ReadingQuestionStudied.question_id.in_([q.id for q in rows] or [None])))).scalars().all())
     blocks: dict[str, dict] = {}
     order: list[str] = []
     for qq in rows:
@@ -227,5 +232,6 @@ async def homework_passages(db: AsyncSession, *, student_id: uuid.UUID,
             "no": qq.question_no, "type": qq.question_type, "stem": qq.stem,
             "options": qq.options if isinstance(getattr(qq, "options", None), list) else None,
             "student_answer": qq.student_answer, "correct_answer": qq.correct_answer,
-            "explanation": qq.explanation, "is_wrong": bool(qq.is_wrong)})
+            "explanation": qq.explanation, "is_wrong": bool(qq.is_wrong),
+            "studied": qq.id in studied_ids})
     return [blocks[k] for k in order]
