@@ -131,7 +131,9 @@ def _default_img_config() -> dict:
     return {"batch_size": 20, "images_per_word": 1, "use_ai_prompt": True,
             "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES), "style": "", "voice": "",
             # P2:图文一致复核(⑥C)+ 多图选优(⑤G);候选 2 张(择优足够,省 t2i)
-            "verify": True, "verify_min": 0.6, "verify_candidates": 2}
+            "verify": True, "verify_min": 0.6, "verify_candidates": 2,
+            # P3 学生反馈:②攒够 report_vote 个不同学生才全局撤换;①每人每日最多举报 report_daily 张
+            "report_vote": 2, "report_daily": 5}
 
 
 def _merge_img_config(saved: dict | None) -> dict:
@@ -167,6 +169,14 @@ def _merge_img_config(saved: dict | None) -> dict:
             pass
         try:
             cfg["verify_candidates"] = max(1, min(int(saved.get("verify_candidates", cfg["verify_candidates"])), 4))
+        except (TypeError, ValueError):
+            pass
+        try:
+            cfg["report_vote"] = max(1, min(int(saved.get("report_vote", cfg["report_vote"])), 10))
+        except (TypeError, ValueError):
+            pass
+        try:
+            cfg["report_daily"] = max(1, min(int(saved.get("report_daily", cfg["report_daily"])), 50))
         except (TypeError, ValueError):
             pass
     return cfg
@@ -559,34 +569,75 @@ async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
     return w
 
 
-_REPORT_REGEN_CAP = 5   # P3:同词学生反馈超此次数不再自动重刷(防刷钱),转后台复核
+_REPORT_REGEN_CAP = 5   # P3:同词累计反馈超此次数不再自动重刷(防刷钱),转后台复核
 
 
-async def report_and_regen(db: AsyncSession, *, word_id: uuid.UUID) -> VocabularyWord | None:
-    """P3 学生「图不对/换一张」:撤下当前图 → 重生成(走 P1+P2 新管线:自评→多图→复核选优→择优/降级)。
-    只重图不重音(省 TTS);累计反馈计数;超阈值停止自动重刷,留后台复核。全学生共享。"""
+async def report_image_vote(db: AsyncSession, *, word_id: uuid.UUID,
+                            student_id: uuid.UUID) -> tuple[VocabularyWord | None, dict]:
+    """P3 学生「图不对」投票(②多人同意才全局撤换 + ①每人每日限流):
+    - ① 每人每日最多举报 report_daily 张(超限直接回,不记票、不出图);
+    - ② 按(词,学生)去重计票,攒够 report_vote 个不同学生 → 才撤图重刷(走 P1+P2);重刷后清空该词票;
+    - 超 _REPORT_REGEN_CAP 次(词生命周期)→ 停止自动重刷,转后台复核。全学生共享。
+    返回 (word, meta);meta={limited, regenerated, votes, need}。"""
+    from datetime import datetime, timezone
+    from sqlalchemy import func as _func
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.models.d5_learning import VocabImageReport
+
     w = (await db.execute(select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
     if w is None:
-        return None
+        return None, {}
+    cfg = await get_image_config(db)
+    need = int(cfg.get("report_vote", 2))
+    daily = int(cfg.get("report_daily", 5))
+
+    # ① 每人每日限流:今日该生已举报的不同词数
+    today = datetime.now(timezone.utc).date()
+    today_cnt = (await db.execute(
+        select(_func.count()).select_from(VocabImageReport)
+        .where(VocabImageReport.student_id == student_id,
+               _func.date(VocabImageReport.created_at) == today))).scalar_one()
+    # 若本词今天已投过,则不算新增(允许重复点但不重复计数/不占额度)
+    already = (await db.execute(
+        select(VocabImageReport).where(VocabImageReport.word_id == word_id,
+                                       VocabImageReport.student_id == student_id))).scalar_one_or_none()
+    if already is None and int(today_cnt or 0) >= daily:
+        return w, {"limited": True, "regenerated": False,
+                   "votes": 0, "need": need, "daily": daily}
+
+    # ② 记一票(按词+学生去重)
+    await db.execute(pg_insert(VocabImageReport)
+                     .values(word_id=word_id, student_id=student_id)
+                     .on_conflict_do_nothing(index_elements=["word_id", "student_id"]))
+    await db.flush()
+    votes = (await db.execute(
+        select(_func.count()).select_from(VocabImageReport)
+        .where(VocabImageReport.word_id == word_id))).scalar_one()
+    votes = int(votes or 0)
+
+    if votes < need:
+        # 未达阈值:只记票,图先不动(不撤、不出图),等更多同学确认
+        await db.commit()
+        await db.refresh(w)
+        return w, {"limited": False, "regenerated": False, "votes": votes, "need": need}
+
+    # 达阈值 → 全局撤图重刷
     w.media_report_count = int(w.media_report_count or 0) + 1
-    w.image_urls = None            # 立即撤下疑似不对的图,避免继续误导全体学生
+    w.image_urls = None
     w.media_status = "draft"
     w.media_origin = "student"
     await db.flush()
-    if w.media_report_count > _REPORT_REGEN_CAP:
-        logger.warning("[配图反馈] %s 第 %d 次反馈,超阈值停止自动重刷 → 转后台复核",
-                       w.word, w.media_report_count)
-        await db.commit()
-        await db.refresh(w)
-        return w
-    await generate_for_word(db, word_id=word_id, do_images=True, do_audio=False)
-    if isinstance(w.image_urls, list) and w.image_urls:
-        w.media_status = "published"   # 复核选出的新图 → 直接可见(全学生共享)
+    if w.media_report_count <= _REPORT_REGEN_CAP:
+        await generate_for_word(db, word_id=word_id, do_images=True, do_audio=False)
+        w.media_status = "published" if (isinstance(w.image_urls, list) and w.image_urls) else "draft"
     else:
-        w.media_status = "draft"        # 仍拿不到好图 → 降级词义卡(⑦E),不钉坏图
+        logger.warning("[配图反馈] %s 生命周期第 %d 次撤换,超阈值停止自动重刷 → 转后台复核",
+                       w.word, w.media_report_count)
+    # 清空该词的票(进入下一轮:换出的新图若仍坏,可重新攒票)
+    await db.execute(VocabImageReport.__table__.delete().where(VocabImageReport.word_id == word_id))
     await db.commit()
     await db.refresh(w)
-    return w
+    return w, {"limited": False, "regenerated": True, "votes": votes, "need": need}
 
 
 async def generate_i2i_for_word(db: AsyncSession, *, word_id: uuid.UUID,

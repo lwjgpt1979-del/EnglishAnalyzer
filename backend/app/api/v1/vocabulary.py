@@ -349,15 +349,16 @@ async def ensure_word_media_api(word_id: uuid.UUID, db: DbDep, current_user: Use
 
 @router.post("/{word_id}/report-image", response_model=BaseResponse[dict])
 async def report_word_image_api(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
-    """P3 学生「图不对/换一张」:撤下当前配图并按新管线重生成(自评→多图→VLM复核选优→择优/降级),
-    全学生共享;超阈值转后台复核。返回更新后的单词卡片(可能是新图,也可能降级为词义卡)。"""
+    """P3 学生「图不对」:投票制——①每人每日限流;②攒够 N 个不同学生才全局撤图重刷(走新管线,
+    择优/降级),全学生共享。返回单词卡片 + report{limited,regenerated,votes,need}。"""
     from app.core.exceptions import AppError
     from app.services import vocab_media_service
     from app.services.vocab_intensive_service import _word_out
-    w = await vocab_media_service.report_and_regen(db, word_id=word_id)
+    w, meta = await vocab_media_service.report_image_vote(
+        db, word_id=word_id, student_id=current_user.id)
     if w is None:
         raise AppError(code=404, message="单词不存在")
-    return make_ok(_word_out(w))
+    return make_ok({**_word_out(w), "report": meta})
 
 
 @router.put("/pins/{word_id}", response_model=BaseResponse[dict])

@@ -118,6 +118,11 @@ async function reportImage(w: IntensiveWord) {
   regenId.value = w.word_id
   try {
     const m = await reportWordImage(w.word_id)
+    const r = m.report
+    if (r?.limited) { uni.showToast({ title: '今日反馈已达上限', icon: 'none' }); return }
+    if (r && !r.regenerated) {   // ② 仅记票,图不动,等更多同学确认
+      uni.showToast({ title: `已反馈,还需 ${Math.max(0, r.need - r.votes)} 人确认`, icon: 'none' }); return
+    }
     w.image_url = m.image_url ?? null
     w.word_audio_url = m.word_audio_url ?? null
     w.en_description = m.en_description ?? null

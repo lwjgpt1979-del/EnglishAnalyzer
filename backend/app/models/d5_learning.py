@@ -396,3 +396,15 @@ class VocabImageVerifyCache(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class VocabImageReport(Base):
+    """P3 学生「图不对」投票:按(词,学生)去重计一票;攒够阈值才全局撤图重刷,重刷后清空该词的票。
+    另用于「每人每日限流」(按 student_id + created_at 当天计数)。"""
+    __tablename__ = "vocab_image_report"
+
+    word_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    student_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
