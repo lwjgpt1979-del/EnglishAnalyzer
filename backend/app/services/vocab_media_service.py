@@ -836,6 +836,37 @@ async def start_refresh_low_quality_images(db: AsyncSession) -> dict:
     return {"started": True, "total": len(ids)}
 
 
+async def start_reverify_images(db: AsyncSession) -> dict:
+    """一键触发:后台 VLM 复核存量已发布配图,只对不达标(词不达意/含文字)的按新管线(P1+P2)重刷。
+    游标式——反复点接着上次扫;复用 _batch_state 进度(与批量出图/重刷劣质互斥)。"""
+    import asyncio
+    if _batch_state["running"]:
+        return {"started": False, "reason": "已有批量任务进行中", **batch_status()}
+    asyncio.create_task(_run_reverify_loop(max_scan=2000))
+    return {"started": True}
+
+
+async def _run_reverify_loop(*, max_scan: int = 2000) -> None:
+    from app.core.database import _async_session_factory
+    _batch_state.update(running=True, total=max_scan, done=0, ok=0, failed=0)
+    try:
+        scanned = 0
+        while scanned < max_scan:
+            async with _async_session_factory() as db:
+                r = await reverify_and_regen_batch(db, limit=100)
+            scanned += int(r.get("scanned", 0))
+            _batch_state["done"] = scanned
+            _batch_state["ok"] += int(r.get("regen_ok", 0))       # 重刷出好图
+            _batch_state["failed"] += int(r.get("regen_degraded", 0))  # 坏图降级词义卡
+            if r.get("wrapped"):          # 全库扫完一轮,游标已归零
+                _batch_state["total"] = scanned
+                break
+    except Exception as e:  # noqa: BLE001
+        logger.error("[配图复核清理] 批量失败: %s", e)
+    finally:
+        _batch_state["running"] = False
+
+
 _REVERIFY_CURSOR_KEY = "vocab_image_reverify_cursor"
 
 

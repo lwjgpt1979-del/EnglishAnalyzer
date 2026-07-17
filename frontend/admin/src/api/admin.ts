@@ -223,6 +223,10 @@ export function getVocabImageLowQualityCount() {
 export function refreshVocabImageLowQuality() {
   return unwrap<{ started: boolean; total?: number; reason?: string }>(request.post('/admin/vocab-image/refresh-low-quality'))
 }
+// 一键复核存量配图:VLM 检出词不达意/乱码图(含有 brief 但仍坏的)并按新管线重刷/降级(游标式,共用 batch 状态)
+export function reverifyVocabImages() {
+  return unwrap<{ started: boolean; reason?: string }>(request.post('/admin/vocab-image/reverify'))
+}
 
 export interface TtsCosUsage { available: boolean; object_count: number; total_bytes: number; total_mb: number }
 export interface TtsPrewarmStatus { running: boolean; label: string; total: number; done: number; ok: number; failed: number }

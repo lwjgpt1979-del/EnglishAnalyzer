@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import {
   getVocabImageConfig, updateVocabImageConfig,
   startVocabImageBatch, getVocabImageBatchStatus,
-  getVocabImageLowQualityCount, refreshVocabImageLowQuality,
+  getVocabImageLowQualityCount, refreshVocabImageLowQuality, reverifyVocabImages,
   type VocabImageBatchStatus,
 } from '../api/admin'
 
@@ -15,6 +15,7 @@ const batch = ref<VocabImageBatchStatus | null>(null)
 const starting = ref(false)
 const lowQualityCount = ref<number | null>(null)
 const refreshing = ref(false)
+const reverifying = ref(false)
 let timer: any = null
 
 async function load() {
@@ -48,6 +49,19 @@ async function runRefresh() {
     startPolling()
   } finally {
     refreshing.value = false
+  }
+}
+
+async function runReverify() {
+  reverifying.value = true
+  try {
+    const r = await reverifyVocabImages()
+    if (!r.started) { ElMessage.warning(r.reason || '已有批量任务进行中'); return }
+    ElMessage.success('已开始复核存量配图(VLM),坏图将自动重刷/降级')
+    batch.value = await getVocabImageBatchStatus()
+    startPolling()
+  } finally {
+    reverifying.value = false
   }
 }
 
@@ -165,6 +179,18 @@ onUnmounted(stopPolling)
       <el-button type="warning" :loading="refreshing" :disabled="batch?.running || (lowQualityCount || 0) === 0"
                  @click="runRefresh">
         {{ batch?.running ? '生成中…' : '重刷一批劣质配图' }}
+      </el-button>
+    </el-card>
+
+    <el-card>
+      <template #header>复核存量配图(VLM)</template>
+      <p style="color:#909399;font-size:13px;margin:0 0 14px">
+        用视觉模型复核<b>已发布</b>配图,检出「词不达意 / 含文字乱码」的图——包括「有 brief 但仍坏」的
+        (上面「重刷劣质」按 brief 有无筛选,覆盖不到这类)。不达标的按新管线(生成前自评→负向约束多图→VLM复核选优)
+        重刷,拿不到好图则降级词义卡。<b>游标式</b>:反复点接着上次扫,一轮扫完自动归零;好图按图指纹缓存不二次付费。
+      </p>
+      <el-button type="primary" :loading="reverifying" :disabled="batch?.running" @click="runReverify">
+        {{ batch?.running ? '处理中…' : '复核一批存量配图' }}
       </el-button>
     </el-card>
   </div>

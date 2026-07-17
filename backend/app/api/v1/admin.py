@@ -1065,6 +1065,14 @@ async def refresh_low_quality_images(db: DbDep, admin: AdminDep):
     return make_ok(await vocab_media_service.start_refresh_low_quality_images(db))
 
 
+@router.post("/vocab-image/reverify", response_model=BaseResponse[dict])
+async def reverify_vocab_images(db: DbDep, admin: AdminDep):
+    """一键复核存量配图:VLM 检出「词不达意/含文字乱码」的已发布图(含有 brief 但仍坏的),
+    按新管线(生成前自评→负向约束多图→VLM复核选优)重刷/降级。游标式,可反复点接着扫;
+    进度走 /vocab-image/batch/status。"""
+    return make_ok(await vocab_media_service.start_reverify_images(db))
+
+
 @router.post("/vocab-audio/backfill", response_model=BaseResponse[dict])
 async def backfill_vocab_audio(db: DbDep, admin: AdminDep):
     """给已有例句/短语/单词但缺音频的词补预生成语音(火山→COS缓存)，写回词库。"""
