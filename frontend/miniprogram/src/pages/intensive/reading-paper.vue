@@ -112,7 +112,7 @@
         </view>
         <scroll-view scroll-y class="sheet-body">
           <template v-if="studyTab === 'word'">
-            <KeyWordsList v-if="allWords.length" :words="allWords" :paper-id="paperId" title="本篇生词" />
+            <KeyWordsList v-if="allWords.length" :words="allWords" :paper-id="paperId" title="本篇生词" no-card @pick="sheetCard = $event" />
             <view v-else class="tip">本篇没有生词</view>
           </template>
           <template v-else>
@@ -127,6 +127,9 @@
         </scroll-view>
       </view>
     </view>
+
+    <!-- 单词卡:根层渲染(在 sheet/scroll-view 外),避免被面板压住 -->
+    <WordCard :word="sheetCard" :paper-id="paperId" @close="sheetCard = null" />
 
     <!-- 练同类(统一 PracticeQuiz) -->
     <PracticeQuiz
@@ -147,8 +150,10 @@ import { getReadingAnalysis, readingPractice, recordPaperPractice, getPassageStu
          type ReadingAnalysis, type SimilarQuestion, type StudyWord } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import KeyWordsList from '@/components/KeyWordsList.vue'
+import WordCard from '@/components/WordCard.vue'
 
 const paperId = ref('')
+const sheetCard = ref<StudyWord | null>(null)   // 面板里点词 → 根层弹卡(避免困在 scroll-view)
 const loading = ref(true)
 const blocks = ref<ReadingBlock[]>([])
 const collapsed = ref<Record<number, boolean>>({})

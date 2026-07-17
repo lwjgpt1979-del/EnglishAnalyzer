@@ -3,22 +3,29 @@
     <text class="sec-t">{{ title }}</text>
     <text class="sec-sub">点单词看卡片；「加入」进作业精讲·单词。</text>
     <view class="kw-list">
-      <view v-for="(w, wi) in words" :key="wi" class="kw-row" @tap="openCard(w)">
+      <view v-for="(w, wi) in words" :key="wi" class="kw-row"
+        @tap="w.pending_create ? learnMissing(w) : openCard(w)">
         <image v-if="w.image_url" :src="w.image_url" class="kw-img" mode="aspectFill" />
-        <view v-else-if="genWords.has(w.word_id || '')" class="kw-img kw-gen"><text class="kw-gen-t">生成中</text></view>
+        <view v-else-if="genWords.has(w.word_id || '') || learningWord === w.word" class="kw-img kw-gen">
+          <text class="kw-gen-t">{{ learningWord === w.word ? '收录中' : '生成中' }}</text>
+        </view>
         <view class="kw-main">
           <text class="kw-w">{{ w.word }}</text>
-          <text class="kw-def">{{ genWords.has(w.word_id || '') ? '配图/发音生成中…' : defText(w.definitions) }}</text>
+          <text class="kw-def">{{ kwSub(w) }}</text>
         </view>
-        <view v-if="w.in_vocab" class="kw-add" :class="{ done: wordAdded.has(w.word_id || '') }"
+        <!-- 缺词占位:学这个词(触发有效性闸门→即时入库) -->
+        <view v-if="w.pending_create" class="kw-add kw-new" @tap.stop="learnMissing(w)">
+          <text>{{ learningWord === w.word ? '收录中…' : '学这个词' }}</text>
+        </view>
+        <view v-else-if="w.in_vocab" class="kw-add" :class="{ done: wordAdded.has(w.word_id || '') }"
           @tap.stop="addWord(w)">
           <text>{{ wordAdded.has(w.word_id || '') ? '已加入' : '加入' }}</text>
         </view>
       </view>
     </view>
 
-    <!-- 单词卡片弹窗 -->
-    <view v-if="cardWord" class="card-mask" @tap="cardWord = null">
+    <!-- 单词卡片弹窗(noCard 时不渲染,交父级根层弹) -->
+    <view v-if="!noCard && cardWord" class="card-mask" @tap="cardWord = null">
       <view class="card-pop" @tap.stop>
         <image v-if="cardWord.image_url" :src="cardWord.image_url" class="cp-img" mode="aspectFill" />
         <!-- P3 图不对/换一张:撤图重刷(全学生共享) -->
@@ -52,14 +59,16 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { StudyWord } from '@/api/userPapers'
-import { addHomeworkWords, ensureWordMedia, reportWordImage } from '@/api/vocabulary'
+import { addHomeworkWords, ensureWordMedia, reportWordImage, ensureMissingWord } from '@/api/vocabulary'
 import { resolveSpeakUrl } from '@/utils/tts'
 
 const props = withDefaults(defineProps<{
   words: StudyWord[]
   paperId?: string
   title?: string
-}>(), { title: '重点词汇' })
+  noCard?: boolean          // true=不渲染内置卡片,只 emit('pick') 由父级在根层渲染(避免困在 scroll-view)
+}>(), { title: '重点词汇', noCard: false })
+const emit = defineEmits<{ (e: 'pick', word: StudyWord): void }>()
 
 const cardWord = ref<StudyWord | null>(null)
 const wordAdded = ref<Set<string>>(new Set())
@@ -78,7 +87,35 @@ function defText(d: any): string {
   return ''
 }
 
-function openCard(w: StudyWord) { cardWord.value = w }
+function openCard(w: StudyWord) {
+  if (props.noCard) { emit('pick', w); return }   // 交给父级在根层弹卡
+  cardWord.value = w
+}
+
+// 列表行副标题:收录中 / 缺词占位 / 媒体生成中 / 释义
+function kwSub(w: StudyWord): string {
+  if (learningWord.value === w.word) return '收录中…'
+  if (w.pending_create) return '词库暂无 · 点「学这个词」即时收录'
+  if (genWords.value.has(w.word_id || '')) return '配图/发音生成中…'
+  return defText(w.definitions)
+}
+
+// 缺词「查看即生成」:点开占位词 → 有效性闸门 → 通过即时入库,原地替换为真词卡;不通过提示人工收录
+const learningWord = ref('')
+async function learnMissing(w: StudyWord) {
+  if (learningWord.value || !w.word) return
+  learningWord.value = w.word
+  try {
+    const r = await ensureMissingWord(w.word, props.paperId)
+    if (r.status === 'queued' || !r.word) {
+      uni.showToast({ title: '该词已提交人工收录', icon: 'none' }); return
+    }
+    Object.assign(w, r.word, { pending_create: false })   // 原地变真词卡
+    if (w.word_id && w.word_added) wordAdded.value = new Set([...wordAdded.value, w.word_id])
+    uni.showToast({ title: r.status === 'created' ? '已收录,可以学啦' : '已加入', icon: 'none' })
+  } catch (e: any) { uni.showToast({ title: e?.message || '收录失败', icon: 'none' }) }
+  finally { learningWord.value = '' }
+}
 
 async function addWord(w: StudyWord) {
   if (!w.word_id || wordAdded.value.has(w.word_id)) return
@@ -162,6 +199,7 @@ async function playWord(w: StudyWord) {
 .kw-def { font-size: 23rpx; color: var(--c-text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kw-add { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
 .kw-add.done { color: #2ecc71; border-color: #2ecc71; }
+.kw-add.kw-new { color: #ff8a3d; border-color: #ffd8bd; }
 /* 单词卡片弹窗 */
 .card-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 40rpx; }
 .card-pop { width: 100%; max-width: 620rpx; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; }
