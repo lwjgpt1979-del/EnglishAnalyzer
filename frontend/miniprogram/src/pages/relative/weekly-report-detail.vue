@@ -32,13 +32,11 @@
 
       <!-- 打卡进度条 -->
       <view class="checkin-bar-wrap">
-        <view class="checkin-bar">
-          <view
-            class="checkin-fill"
-            :style="{ width: (report.checkin_days / 7 * 100) + '%' }"
-            :class="checkinClass"
-          />
-        </view>
+        <view
+          class="checkin-fill"
+          :style="{ width: (report.checkin_days / 7 * 100) + '%' }"
+          :class="checkinClass"
+        />
         <text class="checkin-hint">{{ checkinHint }}</text>
       </view>
     </view>
@@ -260,29 +258,29 @@ function goStudentDiag() {
 }
 
 /* 打卡进度条 */
+/* 进度即底色:打卡进度铺背景(保留质量色义,用浅色) */
 .checkin-bar-wrap {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 20rpx;
-}
-.checkin-bar {
-  flex: 1;
-  height: 16rpx;
-  background: #f0f0f0;
-  border-radius: 999rpx;
-  overflow: hidden;
+  padding: 14rpx 18rpx;
+  border-radius: 14rpx;
+  background: #f5f6f8;
 }
 .checkin-fill {
-  height: 100%;
-  border-radius: 999rpx;
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0;
   transition: width 0.4s;
-  background: #ccc;
+  background: #eceef1;
 }
-.checkin-fill.excellent { background: #22c55e; }
-.checkin-fill.good      { background: #ffb020; }
-.checkin-fill.fair      { background: #f97316; }
-.checkin-fill.poor      { background: #ef4444; }
+.checkin-fill.excellent { background: #e4f7ec; }
+.checkin-fill.good      { background: #fff2d9; }
+.checkin-fill.fair      { background: #ffe8d6; }
+.checkin-fill.poor      { background: #fde4e4; }
 .checkin-hint {
+  position: relative;
   font-size: 22rpx;
   color: #888;
   white-space: nowrap;

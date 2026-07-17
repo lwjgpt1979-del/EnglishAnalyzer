@@ -21,9 +21,7 @@
             <text class="kp-name">{{ kp.name }}</text>
             <text class="kp-cat">{{ catLabel(kp.category) }}</text>
             <view class="kp-progress-wrap" v-if="masteryMap[kp.id]?.total > 0">
-              <view class="kp-progress-bar">
-                <view class="kp-progress-fill" :style="{ width: Math.round((masteryMap[kp.id]?.mastery ?? 0) * 100) + '%' }" />
-              </view>
+              <view class="kp-progress-fill-bg" :style="{ width: Math.round((masteryMap[kp.id]?.mastery ?? 0) * 100) + '%' }" />
               <text class="kp-acc">{{ Math.round((masteryMap[kp.id]?.mastery ?? 0) * 100) }}%</text>
             </view>
             <text class="kp-no-data" v-else>未练习</text>
@@ -141,9 +139,10 @@ function definitionText(defs: WordOut['definitions']): string {
 .word-ph { font-size: 22rpx; color: var(--c-text-hint); }
 .word-cn { flex: 1; font-size: 24rpx; color: var(--c-text-body); }
 .meta.accent { color: var(--c-primary); font-weight: 700; }
-.kp-progress-wrap { display: flex; align-items: center; gap: 10rpx; margin-top: 6rpx; }
-.kp-progress-bar { flex: 1; height: 8rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; }
-.kp-progress-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; }
+/* 进度即底色:掌握度铺背景 */
+.kp-progress-wrap { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: flex-end; padding: 6rpx 14rpx; border-radius: 999rpx; background: var(--c-bg-soft); margin-top: 6rpx; }
+.kp-progress-fill-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width .3s; }
+.kp-acc { position: relative; }
 .kp-acc { font-size: 22rpx; color: var(--c-primary); font-weight: 700; min-width: 60rpx; }
 .kp-no-data { font-size: 22rpx; color: var(--c-text-hint); margin-top: 4rpx; }
 .adaptive-bar { padding: 0 0 20rpx; }

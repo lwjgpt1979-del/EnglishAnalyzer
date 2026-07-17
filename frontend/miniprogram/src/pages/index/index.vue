@@ -28,17 +28,12 @@
       <!-- 今日学习计划（M9）-->
       <view v-if="auth.isLoggedIn() && plan && plan.tasks.length" class="plan-card">
         <view class="plan-head">
+          <view class="plan-head-fill" :style="{ width: (plan.total_count ? plan.completed_count / plan.total_count * 100 : 0) + '%' }" />
           <view class="plan-title-wrap">
             <view class="plan-title-icon" />
             <text class="plan-title">今日学习计划</text>
           </view>
           <text class="plan-progress">{{ plan.completed_count }}/{{ plan.total_count }} 完成</text>
-        </view>
-        <view class="plan-bar-track">
-          <view
-            class="plan-bar-fill"
-            :style="{ width: (plan.total_count ? plan.completed_count / plan.total_count * 100 : 0) + '%' }"
-          />
         </view>
         <view
           v-for="(t, i) in plan.tasks"
@@ -388,17 +383,17 @@ onMounted(() => {
   padding: 28rpx 28rpx 20rpx; margin-bottom: 24rpx;
   box-shadow: var(--shadow-md);
 }
-.plan-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }
-.plan-title-wrap { display: flex; align-items: center; gap: 12rpx; }
+/* 进度即底色:计划完成度铺 plan-head 背景 */
+.plan-head { position: relative; overflow: hidden; display: flex; justify-content: space-between; align-items: center; padding: 14rpx 18rpx; border-radius: 14rpx; margin-bottom: 16rpx; }
+.plan-head-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width .3s; }
+.plan-title-wrap { position: relative; display: flex; align-items: center; gap: 12rpx; }
 .plan-title-icon {
   width: 40rpx; height: 40rpx; flex-shrink: 0;
   background-repeat: no-repeat; background-position: center; background-size: contain;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
 }
 .plan-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-ink); }
-.plan-progress { font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
-.plan-bar-track { height: 12rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; margin-bottom: 16rpx; }
-.plan-bar-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width .3s; }
+.plan-progress { position: relative; font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
 .plan-task {
   position: relative;
   display: flex; align-items: center; gap: 20rpx;

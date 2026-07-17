@@ -19,8 +19,8 @@
         { label: '本月出卷', d: quota.paper },
         { label: '本月批改/点评', d: quota.grading },
       ]" :key="q.label">
+        <view class="quota-fill" :class="{ low: q.d.remaining_pct < quota.warn_threshold_pct }" :style="{ width: Math.min(100, q.d.limit ? q.d.used / q.d.limit * 100 : 0) + '%' }" />
         <text class="quota-label">{{ q.label }}</text>
-        <view class="quota-bar"><view class="quota-fill" :class="{ low: q.d.remaining_pct < quota.warn_threshold_pct }" :style="{ width: Math.min(100, q.d.limit ? q.d.used / q.d.limit * 100 : 0) + '%' }" /></view>
         <text class="quota-num">{{ q.d.used }}/{{ q.d.limit }}</text>
       </view>
       <text class="quota-tip">每月 {{ quota.reset_day }} 号重置；剩余低于 {{ quota.warn_threshold_pct }}% 将提醒</text>
@@ -391,11 +391,11 @@ onLoad((options) => {
 .become-intro-title { font-size: 26rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 4rpx; }
 .become-feat { font-size: 25rpx; color: var(--c-text-body); line-height: 1.5; display: flex; align-items: center; gap: 8rpx; }
 .become-divider-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 16rpx; line-height: 1.5; }
-.quota-row { display: flex; align-items: center; gap: 12rpx; margin: 12rpx 0; }
-.quota-label { width: 180rpx; font-size: 24rpx; color: var(--c-text-body); }
-.quota-bar { flex: 1; height: 14rpx; background: #f0f2f5; border-radius: 7rpx; overflow: hidden; }
-.quota-fill { height: 100%; background: #67c23a; border-radius: 7rpx; }
-.quota-fill.low { background: #e6a23c; }
-.quota-num { width: 110rpx; text-align: right; font-size: 24rpx; color: var(--c-text-hint); }
+/* 进度即底色:配额用量铺背景(保留预警色义,用浅色) */
+.quota-row { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; padding: 12rpx 16rpx; border-radius: 12rpx; background: #f5f6f8; margin: 12rpx 0; }
+.quota-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #e4f5df; transition: width .3s; }
+.quota-fill.low { background: #fbe6cf; }
+.quota-label { position: relative; font-size: 24rpx; color: var(--c-text-body); }
+.quota-num { position: relative; font-size: 24rpx; color: var(--c-text-hint); }
 .quota-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; }
 </style>

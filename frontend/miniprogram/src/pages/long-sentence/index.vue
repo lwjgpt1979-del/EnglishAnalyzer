@@ -8,8 +8,8 @@
       <!-- 顶部:今日学习进度 + 打卡 -->
       <view class="header">
         <view class="prog">
+          <view class="prog-fill-bg" :style="{ width: pct + '%' }" />
           <text class="prog-label">今日学会 <text class="prog-num">{{ learnedCount }}</text> 句<text v-if="recTarget" class="prog-hint"> · 为你匹配难度 ~{{ recTarget }}</text></text>
-          <view class="prog-bar"><view class="prog-fill" :style="{ width: pct + '%' }" /></view>
         </view>
         <view class="streak" @tap="openCalendar"><view class="ic ic-flame streak-ic" />{{ checkinStatus ? '连续 ' + checkinStatus.current_streak + ' 天' : '打卡' }}</view>
       </view>
@@ -844,8 +844,9 @@ onLoad(async () => {
 
 /* 顶部进度 */
 .header { display: flex; align-items: center; gap: 18rpx; margin-bottom: 20rpx; }
-.prog { flex: 1; }
-.prog-label { font-size: 26rpx; color: #666; }
+.prog { flex: 1; position: relative; overflow: hidden; padding: 14rpx 18rpx; border-radius: 14rpx; }
+.prog-fill-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width .3s; }
+.prog-label { position: relative; font-size: 26rpx; color: #666; }
 .prog-hint { font-size: 22rpx; color: var(--c-primary); }
 
 /* 脚手架引导条 */
@@ -961,8 +962,7 @@ onLoad(async () => {
 .tf-result.memorized .tf-rtitle { color: #d0860f; }
 .tf-rdesc { display: block; font-size: 22rpx; color: #6b7178; line-height: 1.6; margin-bottom: 8rpx; }
 .prog-num { color: var(--c-primary); font-weight: 700; }
-.prog-bar { height: 10rpx; background: #e5e9f0; border-radius: 8rpx; margin-top: 12rpx; overflow: hidden; }
-.prog-fill { height: 100%; background: var(--c-primary); border-radius: 8rpx; transition: width .3s; }
+.prog-num { position: relative; }
 .streak { display: flex; align-items: center; gap: 6rpx; background: #fff; border: 1rpx solid #e8ebf1; border-radius: 28rpx; padding: 8rpx 20rpx; font-size: 23rpx; color: #666; }
 .streak-ic.ic { width: 28rpx; height: 28rpx; margin-right: 4rpx; }
 

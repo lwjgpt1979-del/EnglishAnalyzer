@@ -39,9 +39,7 @@
     <view v-else>
       <!-- 进度条 -->
       <view class="progress-wrap">
-        <view class="progress-bar">
-          <view class="progress-fill" :style="{ width: progressPct + '%' }" />
-        </view>
+        <view class="progress-fill-bg" :style="{ width: progressPct + '%' }" />
         <text class="progress-text">{{ currentIdx + 1 }} / {{ queue.length }}</text>
       </view>
 
@@ -226,10 +224,10 @@ function goBack() {
 .stat-l { font-size: 22rpx; color: var(--c-text-hint); }
 
 /* 进度条 */
-.progress-wrap { display: flex; align-items: center; gap: 16rpx; margin-bottom: 20rpx; }
-.progress-bar { flex: 1; height: 14rpx; background: #e3edf5; border-radius: 999rpx; overflow: hidden; }
-.progress-fill { height: 100%; background: #7bbde8; border-radius: 999rpx; transition: width 0.3s; }
-.progress-text { font-size: 24rpx; font-weight: 800; color: #3f87b8; white-space: nowrap; }
+/* 进度即底色 */
+.progress-wrap { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12rpx 18rpx; border-radius: 999rpx; background: #eef3f8; margin-bottom: 20rpx; }
+.progress-fill-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width 0.3s; }
+.progress-text { position: relative; font-size: 24rpx; font-weight: 800; color: #3f87b8; white-space: nowrap; }
 
 /* 题目卡片 */
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }

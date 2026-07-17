@@ -17,8 +17,8 @@
       </view>
       <view class="g4-dims">
         <view class="g4-dim" v-for="d in G_DIMS" :key="d.key">
+          <view class="g4-fill-bg" :style="{ width: Math.round(((gStatus as any)[d.key] || 0) * 100) + '%' }" />
           <text class="g4-dim-label">{{ d.label }}</text>
-          <view class="g4-bar"><view class="g4-fill" :style="{ width: Math.round(((gStatus as any)[d.key] || 0) * 100) + '%' }" /></view>
           <text class="g4-dim-val">{{ Math.round(((gStatus as any)[d.key] || 0) * 100) }}%</text>
         </view>
         <view class="g4-dim">
@@ -475,11 +475,11 @@ function goWrongDetail(id: string) {
   border-radius: 999rpx; padding: 8rpx 28rpx; font-weight: 600;
 }
 .g4-dims { display: flex; gap: 24rpx; }
-.g4-dim { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6rpx; }
-.g4-dim-label { font-size: 22rpx; color: var(--c-text-hint); }
-.g4-bar { width: 100%; height: 10rpx; background: var(--c-bg-soft); border-radius: 999rpx; overflow: hidden; }
-.g4-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; }
-.g4-dim-val { font-size: 22rpx; color: var(--c-text-second); font-weight: 600; }
+/* 进度即底色:四维掌握铺 tile 背景 */
+.g4-dim { flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 6rpx; padding: 14rpx 8rpx; border-radius: 12rpx; background: var(--c-bg-soft); }
+.g4-fill-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width .3s; }
+.g4-dim-label { position: relative; font-size: 22rpx; color: var(--c-text-hint); }
+.g4-dim-val { position: relative; font-size: 22rpx; color: var(--c-text-second); font-weight: 600; }
 .g4-dim-val.ok { color: #2E8B57; }
 .g4-evidence { display: block; margin-top: 12rpx; font-size: 22rpx; color: var(--c-text-hint); }
 

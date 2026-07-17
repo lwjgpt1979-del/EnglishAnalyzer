@@ -12,9 +12,7 @@
             <text class="level-xp">{{ s.xp }} XP</text>
             <text class="level-next">距下一级 {{ s.xp_to_next }} XP</text>
           </view>
-          <view class="xp-track">
-            <view class="xp-fill" :style="{ width: Math.round(s.xp_in_level) + '%' }" />
-          </view>
+          <view class="level-fill" :style="{ width: Math.round(s.xp_in_level) + '%' }" />
         </view>
       </view>
 
@@ -64,12 +62,10 @@
             class="ach-item"
             :class="{ locked: !a.unlocked }"
           >
+            <view v-if="!a.unlocked" class="ach-fill" :style="{ width: Math.round(a.progress * 100) + '%' }" />
             <text class="ach-icon">{{ a.icon }}</text>
             <text class="ach-name">{{ a.name }}</text>
             <text class="ach-desc">{{ a.desc }}</text>
-            <view v-if="!a.unlocked" class="ach-prog-track">
-              <view class="ach-prog-fill" :style="{ width: Math.round(a.progress * 100) + '%' }" />
-            </view>
             <text class="ach-meta">{{ a.unlocked ? '已达成' : a.current + ' / ' + a.target }}</text>
           </view>
         </view>
@@ -113,12 +109,12 @@ onShow(load)
 /* 等级 */
 .level-card { display: flex; align-items: center; gap: 28rpx; background: linear-gradient(135deg, #fff7e0, #ffeec0); }
 .level-badge { width: 110rpx; height: 110rpx; border-radius: 50%; background: var(--c-primary); color: var(--c-on-primary); font-size: 34rpx; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4rpx 16rpx rgba(0,0,0,.12); }
-.level-info { flex: 1; }
-.level-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12rpx; }
+/* 进度即底色:XP 进度铺 level-info 背景(暖卡上用半透明白) */
+.level-info { flex: 1; position: relative; overflow: hidden; padding: 12rpx 16rpx; border-radius: 14rpx; }
+.level-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; z-index: 0; background: rgba(255, 255, 255, .5); transition: width .4s; }
+.level-row { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: baseline; }
 .level-xp { font-size: 32rpx; font-weight: 800; color: var(--c-ink); }
 .level-next { font-size: 22rpx; color: var(--c-text-second); }
-.xp-track { height: 16rpx; background: rgba(0,0,0,.08); border-radius: 999rpx; overflow: hidden; }
-.xp-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; transition: width .4s; }
 
 /* 连续打卡 */
 .streak-main { display: flex; align-items: center; gap: 16rpx; }
@@ -147,13 +143,14 @@ onShow(load)
 .card-title { font-size: var(--fs-h2); font-weight: 700; color: var(--c-ink); }
 .card-sub { font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
 .ach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; }
-.ach-item { background: var(--c-bg-soft); border-radius: 16rpx; padding: 24rpx 16rpx; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6rpx; }
+.ach-item { position: relative; overflow: hidden; background: var(--c-bg-soft); border-radius: 16rpx; padding: 24rpx 16rpx; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6rpx; }
 .ach-item.locked { opacity: .55; filter: grayscale(.8); }
+/* 进度即底色:未解锁成就进度铺卡背景 */
+.ach-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width .3s; }
+.ach-item text { position: relative; z-index: 1; }
 .ach-icon { font-size: 56rpx; }
 .ach-name { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
 .ach-desc { font-size: 20rpx; color: var(--c-text-hint); line-height: 1.4; }
-.ach-prog-track { width: 100%; height: 8rpx; background: rgba(0,0,0,.08); border-radius: 999rpx; overflow: hidden; margin-top: 6rpx; }
-.ach-prog-fill { height: 100%; background: var(--c-primary); border-radius: 999rpx; }
 .ach-meta { font-size: 20rpx; color: var(--c-text-second); margin-top: 2rpx; }
 
 /* 数据小结 */
