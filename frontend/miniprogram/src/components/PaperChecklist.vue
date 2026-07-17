@@ -10,7 +10,7 @@
         </view>
       </view>
       <view class="bar"><view class="bar-fill" :style="{ width: pct + '%' }"></view></view>
-      <view v-if="total" class="cta" @tap="onStart"><text>{{ ctaLabel }}</text></view>
+      <view v-if="total" class="cta" @tap="onStart"><view class="ic ic-play-w cta-ic"></view><text>{{ ctaLabel }}</text></view>
     </view>
 
     <view v-if="total" class="list-h">本卷清单</view>
@@ -45,9 +45,9 @@ const statusLabel = computed(() => ({ todo: '未学', doing: '学习中', done: 
 const firstUnstudied = computed(() => props.items.findIndex(i => !i.studied))
 const subText = computed(() => `${props.date ? props.date + ' · ' : ''}共 ${total.value} ${props.unit}`)
 const ctaLabel = computed(() => {
-  if (status.value === 'done') return '▶ 复习本卷'
-  if (status.value === 'todo') return `▶ 开始学习`
-  return `▶ 继续学习 · 从第 ${firstUnstudied.value + 1} ${props.unit}`
+  if (status.value === 'done') return '复习本卷'
+  if (status.value === 'todo') return '开始学习'
+  return `继续学习 · 从第 ${firstUnstudied.value + 1} ${props.unit}`
 })
 function onStart() {
   const idx = firstUnstudied.value >= 0 ? firstUnstudied.value : 0
@@ -74,7 +74,8 @@ function onStart() {
 .hd-sub { display: block; font-size: 21rpx; color: #93a0b3; margin-top: 8rpx; }
 .bar { height: 12rpx; background: #eef2f7; border-radius: 999rpx; margin-top: 16rpx; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, #4c97f7, #3d7bf0); transition: width .3s; }
-.cta { margin-top: 18rpx; text-align: center; font-size: 27rpx; font-weight: 700; color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border-radius: 14rpx; padding: 20rpx 0; box-shadow: 0 6rpx 16rpx rgba(61, 123, 240, .28); }
+.cta { margin-top: 18rpx; display: flex; align-items: center; justify-content: center; gap: 12rpx; font-size: 27rpx; font-weight: 700; color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border-radius: 14rpx; padding: 20rpx 0; box-shadow: 0 6rpx 16rpx rgba(61, 123, 240, .28); }
+.cta-ic { width: 28rpx; height: 28rpx; }
 
 .list-h { font-size: 21rpx; font-weight: 700; color: #93a0b3; letter-spacing: 2rpx; margin: 4rpx 0 14rpx 4rpx; }
 .empty { text-align: center; color: #93a0b3; font-size: 24rpx; padding: 50rpx 0; }

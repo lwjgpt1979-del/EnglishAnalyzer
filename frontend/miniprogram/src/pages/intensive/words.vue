@@ -38,14 +38,14 @@
               <view class="word-top"><text class="word-w">{{ item.word }}</text><text v-if="item.phonetic" class="word-ph">/{{ item.phonetic }}/</text></view>
               <text class="word-def">{{ defText(item.definitions) }}</text>
             </view>
-            <view class="w-play" :class="{ on: playingId === item.word_id }" @tap.stop="playWord(item)"><text>{{ playingId === item.word_id ? '♪' : '🔊' }}</text></view>
+            <view class="w-play" :class="{ on: playingId === item.word_id }" @tap.stop="playWord(item)"><view class="ic ic-volume w-play-ic"></view></view>
           </view>
         </template>
         <template #empty>该批次没有单词</template>
       </PaperChecklist>
       <!-- 课程:词表预览 -->
       <template v-else>
-        <view v-if="words.length" class="start-btn" @tap="startStudy"><text>▶ 开始学习(配图·发音·例句·检测)</text></view>
+        <view v-if="words.length" class="start-btn" @tap="startStudy"><view class="ic ic-play-w start-ic"></view><text>开始学习(配图·发音·例句·检测)</text></view>
         <view v-if="!words.length" class="tip">该单元没有单词</view>
         <text v-else class="list-hint">共 {{ words.length }} 词 · 下方为词表预览,点上方按钮进入卡片学习</text>
         <view v-for="w in words" :key="w.word_id" class="card word-row" @tap="openCard(w)">
@@ -59,7 +59,7 @@
             <text class="word-def">{{ defText(w.definitions) }}</text>
           </view>
           <view class="w-play" :class="{ on: playingId === w.word_id }" @tap.stop="playWord(w)">
-            <text>{{ playingId === w.word_id ? '♪' : '🔊' }}</text>
+            <view class="ic ic-volume w-play-ic"></view>
           </view>
         </view>
       </template>
@@ -74,7 +74,8 @@
         <view class="cp-head">
           <text class="cp-word">{{ cardWord.word }}</text>
           <view class="cp-play" :class="{ on: playingId === cardWord.word_id }" @tap="playWord(cardWord)">
-            <text>{{ playingId === cardWord.word_id ? '♪ 播放中' : '🔊 发音' }}</text>
+            <view class="ic ic-volume-w cp-play-ic"></view>
+            <text>{{ playingId === cardWord.word_id ? '播放中' : '发音' }}</text>
           </view>
         </view>
         <text v-if="cardWord.phonetic" class="cp-ph">/{{ cardWord.phonetic }}/</text>
@@ -227,7 +228,8 @@ onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.valu
 .grp-sub { font-size: 22rpx; color: var(--c-text-hint); }
 .grp-cnt { font-size: 24rpx; color: var(--c-primary); flex-shrink: 0; }
 .back { padding: 8rpx 4rpx 16rpx; font-size: 26rpx; color: var(--c-primary); }
-.start-btn { background: var(--c-primary); color: #fff; text-align: center; padding: 24rpx; border-radius: 16rpx; font-size: 30rpx; font-weight: 600; margin-bottom: 16rpx; }
+.start-btn { background: var(--c-primary); color: #fff; display: flex; align-items: center; justify-content: center; gap: 12rpx; padding: 24rpx; border-radius: 16rpx; font-size: 30rpx; font-weight: 600; margin-bottom: 16rpx; }
+.start-ic { width: 30rpx; height: 30rpx; }
 .list-hint { display: block; color: var(--c-text-hint, #999); font-size: 24rpx; margin-bottom: 12rpx; }
 .word-top { display: flex; align-items: baseline; gap: 16rpx; }
 .word-w { font-size: 32rpx; font-weight: 700; color: var(--c-ink); }
@@ -239,16 +241,18 @@ onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.valu
 .w-img { width: 96rpx; height: 96rpx; border-radius: 12rpx; flex-shrink: 0; background: var(--c-bg-page, #f5f6f8); }
 .w-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); font-size: 24rpx; }
 .w-main { flex: 1; min-width: 0; }
-.w-play { width: 64rpx; height: 64rpx; border-radius: 50%; background: var(--c-bg-page, #f2f4f7); display: flex; align-items: center; justify-content: center; font-size: 30rpx; flex-shrink: 0; }
-.w-play.on { background: var(--c-primary); color: #fff; }
+.w-play { width: 64rpx; height: 64rpx; border-radius: 50%; background: var(--c-bg-page, #f2f4f7); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.w-play.on { background: #eaf2fe; }
+.w-play-ic { width: 34rpx; height: 34rpx; }
 .card-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 40rpx; }
 .card-pop { width: 100%; max-width: 620rpx; background: #fff; border-radius: 24rpx; padding: 24rpx; max-height: 84vh; overflow-y: auto; }
 .cp-img { width: 100%; height: 300rpx; border-radius: 16rpx; background: var(--c-bg-page, #f5f6f8); }
 .cp-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); font-size: 26rpx; }
 .cp-head { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
 .cp-word { font-size: 44rpx; font-weight: 800; color: var(--c-ink); }
-.cp-play { background: var(--c-primary); color: #fff; padding: 10rpx 22rpx; border-radius: 999rpx; font-size: 26rpx; }
+.cp-play { background: var(--c-primary); color: #fff; display: flex; align-items: center; gap: 8rpx; padding: 10rpx 22rpx; border-radius: 999rpx; font-size: 26rpx; }
 .cp-play.on { opacity: 0.7; }
+.cp-play-ic { width: 28rpx; height: 28rpx; }
 .cp-ph { display: block; font-size: 26rpx; color: var(--c-text-hint); margin-top: 6rpx; }
 .cp-def { display: block; font-size: 30rpx; color: var(--c-ink); margin-top: 14rpx; line-height: 1.6; }
 .cp-ex { margin-top: 16rpx; padding: 16rpx; background: var(--c-bg-page, #f5f6f8); border-radius: 12rpx; }
