@@ -89,7 +89,15 @@ export function getUnitMasterySummary(unitId: string): Promise<KpMasterySummaryI
 
 // 语法精讲 / 长难句精讲(作业按批次 / 课程按单元)
 export interface IntensiveBatch { paper_id: string; title: string; date: string; count: number; studied?: number }
-export interface IntensiveUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; count: number }
+// 课程精讲单元(闯关地图):total/studied 进度、unlocked 顺序解锁
+export interface IntensiveUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; count: number; total?: number; studied?: number; unlocked?: boolean }
+// 课程精讲单元列表响应:聚焦当前学期 + 学期通关 + 下学期(供学完庆祝弹层「预习下册」)
+export interface CourseUnitsResp {
+  version: string | null; grade: string | null; semester: string | null
+  units: IntensiveUnit[]
+  semester_done: boolean
+  next_semester: { grade: string; semester: string } | null
+}
 export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string; studied?: boolean }
 export interface GrammarLectureSection { section_key: string; title: string; content_md: string }
 // 个人语法(未入图谱)按语法名即时生成 AI 讲解(全局缓存,同名不二次付费)
@@ -104,8 +112,8 @@ export function grHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
 export function grHwPoints(paperId: string): Promise<{ points: GrammarPoint[] }> {
   return request('/api/v1/curriculum/intensive/grammar/homework/points', { method: 'GET', data: { paper_id: paperId } })
 }
-export function grCourseUnits(): Promise<{ version: string | null; units: IntensiveUnit[] }> {
-  return request('/api/v1/curriculum/intensive/grammar/course/units', { method: 'GET' })
+export function grCourseUnits(grade?: string, semester?: string): Promise<CourseUnitsResp> {
+  return request('/api/v1/curriculum/intensive/grammar/course/units', { method: 'GET', data: { grade, semester } })
 }
 export function grCoursePoints(unitId: string): Promise<{ points: GrammarPoint[] }> {
   return request('/api/v1/curriculum/intensive/grammar/course/points', { method: 'GET', data: { unit_id: unitId } })
@@ -125,8 +133,8 @@ export function rdHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
 export function rdHwPassages(paperId: string): Promise<{ blocks: ReadingBlock[] }> {
   return request('/api/v1/curriculum/intensive/reading/homework/passages', { method: 'GET', data: { paper_id: paperId } })
 }
-export function seCourseUnits(): Promise<{ version: string | null; units: IntensiveUnit[] }> {
-  return request('/api/v1/curriculum/intensive/sentence/course/units', { method: 'GET' })
+export function seCourseUnits(grade?: string, semester?: string): Promise<CourseUnitsResp> {
+  return request('/api/v1/curriculum/intensive/sentence/course/units', { method: 'GET', data: { grade, semester } })
 }
 export function seCourseSentences(unitId: string): Promise<{ sentences: SentenceItem[] }> {
   return request('/api/v1/curriculum/intensive/sentence/course/sentences', { method: 'GET', data: { unit_id: unitId } })

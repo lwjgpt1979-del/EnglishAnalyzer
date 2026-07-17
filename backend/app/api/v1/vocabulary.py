@@ -273,17 +273,20 @@ async def hw_word_list(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Q
 
 
 @router.get("/intensive/course/units", response_model=BaseResponse[dict])
-async def course_word_units(db: DbDep, current_user: UserDep):
-    """课程精讲·单词:当前教材单元(年级→册→单元)+ 每单元词数。"""
+async def course_word_units(db: DbDep, current_user: UserDep,
+                            grade: str | None = Query(None), semester: str | None = Query(None)):
+    """课程精讲·单词:某学期单元(默认当前学期)+ 每单元词数/已学数 + 闯关解锁/学期通关。"""
     from app.services import vocab_intensive_service
-    return make_ok(await vocab_intensive_service.course_units(db, student_id=current_user.id))
+    return make_ok(await vocab_intensive_service.course_units(
+        db, student_id=current_user.id, grade=grade, semester=semester))
 
 
 @router.get("/intensive/course/words", response_model=BaseResponse[dict])
 async def course_word_list(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
-    """课程精讲·单词:某教材单元的词 + 词库详解。"""
+    """课程精讲·单词:某教材单元的词 + 词库详解(带 studied)。"""
     from app.services import vocab_intensive_service
-    return make_ok({"words": await vocab_intensive_service.course_words(db, unit_id=unit_id)})
+    return make_ok({"words": await vocab_intensive_service.course_words(
+        db, unit_id=unit_id, student_id=current_user.id)})
 
 
 @router.get("/intensive/course/task", response_model=BaseResponse[DailyTaskOut])

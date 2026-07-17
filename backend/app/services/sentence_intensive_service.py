@@ -55,33 +55,57 @@ async def homework_sentences(db: AsyncSession, *, student_id: uuid.UUID,
 
 
 # ── 课程精讲 · 长难句:按教材单元 ──────────────────────────────────────────────
-async def course_units(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
-    """学生当前教材的长难句单元 + 每单元句数,供【年级→册→单元】下钻。
-    教材长难句 = long_sentence(source_kind=textbook,有 unit_id)。"""
+async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
+                       grade: str | None = None, semester: str | None = None) -> dict:
+    """学生当前教材某学期的长难句单元(默认聚焦 preferred 当前学期)+ 每单元句数/已学数,
+    含闯关顺序解锁 + 本学期通关 + 下学期。教材长难句 = long_sentence(source_kind=textbook,有 unit_id)。"""
+    from app.services.course_intensive_util import decorate_units, next_semester, resolve_semester
     student = await db.get(User, student_id)
     tv = student.preferred_textbook_version if student else None
     if not tv:
-        return {"version": None, "units": []}
+        return {"version": None, "grade": None, "semester": None, "units": [],
+                "semester_done": False, "next_semester": None}
+    g, s = await resolve_semester(db, tv, student, grade, semester)
     rows = (await db.execute(
         select(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
-               CurriculumUnit.unit_no, CurriculumUnit.unit_title, func.count(LongSentence.id))
+               CurriculumUnit.unit_no, CurriculumUnit.unit_title,
+               func.count(func.distinct(LongSentence.id)),
+               # 已学句数 = 该生对该句文本有过解析(student_long_sentence.analysis_json 非空)
+               func.count(func.distinct(case(
+                   (StudentLongSentence.analysis_json.isnot(None), LongSentence.id)))))
         .join(LongSentence, LongSentence.unit_id == CurriculumUnit.id)
+        .outerjoin(StudentLongSentence,
+                   (StudentLongSentence.text == LongSentence.text)
+                   & (StudentLongSentence.owner_id == student_id))
         .where(CurriculumUnit.textbook_version == tv,
                LongSentence.source_kind == "textbook",
-               LongSentence.status == "published")
+               LongSentence.status == "published",
+               CurriculumUnit.grade == g, CurriculumUnit.semester == s)
         .group_by(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                   CurriculumUnit.unit_no, CurriculumUnit.unit_title)
-        .order_by(CurriculumUnit.grade, CurriculumUnit.semester, CurriculumUnit.unit_no))).all()
-    units = [{"unit_id": str(uid), "grade": grade, "semester": sem, "unit_no": uno,
-              "unit_title": title or f"Unit {uno}", "count": int(cnt)}
-             for uid, grade, sem, uno, title, cnt in rows]
-    return {"version": tv, "units": units}
+        .order_by(CurriculumUnit.unit_no))).all()
+    units = [{"unit_id": str(uid), "grade": gr, "semester": sem, "unit_no": uno,
+              "unit_title": title or f"Unit {uno}", "count": int(cnt),
+              "total": int(cnt), "studied": int(st)}
+             for uid, gr, sem, uno, title, cnt, st in rows]
+    done = decorate_units(units)
+    return {"version": tv, "grade": g, "semester": s, "units": units,
+            "semester_done": done,
+            "next_semester": await next_semester(db, tv, g, s) if done else None}
 
 
-async def course_sentences(db: AsyncSession, *, unit_id: uuid.UUID) -> list[dict]:
-    """某教材单元的长难句。"""
+async def course_sentences(db: AsyncSession, *, unit_id: uuid.UUID,
+                          student_id: uuid.UUID | None = None) -> list[dict]:
+    """某教材单元的长难句;传 student_id 则每句带 studied(该生对该句文本有过解析)。"""
     rows = (await db.execute(
         select(LongSentence.text).where(
             LongSentence.unit_id == unit_id, LongSentence.source_kind == "textbook",
             LongSentence.status == "published").order_by(LongSentence.difficulty.desc()))).scalars().all()
-    return [{"text": t} for t in rows]
+    studied_texts: set = set()
+    if student_id is not None and rows:
+        studied_texts = set((await db.execute(
+            select(StudentLongSentence.text).where(
+                StudentLongSentence.owner_id == student_id,
+                StudentLongSentence.analysis_json.isnot(None),
+                StudentLongSentence.text.in_(list(rows))))).scalars().all())
+    return [{"text": t, "studied": t in studied_texts} for t in rows]

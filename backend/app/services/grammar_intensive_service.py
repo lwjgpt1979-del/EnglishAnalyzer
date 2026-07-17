@@ -98,33 +98,59 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
 
 
 # ── 课程精讲 · 语法:按教材单元 ────────────────────────────────────────────────
-async def course_units(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
-    """学生当前教材单元 + 每单元语法点数,供【年级→册→单元】下钻。"""
+async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
+                       grade: str | None = None, semester: str | None = None) -> dict:
+    """学生当前教材某学期的单元(默认聚焦 preferred 当前学期)+ 每单元语法点数/已学数,
+    含闯关顺序解锁 + 本学期通关 + 下学期。"""
+    from app.models.d4_knowledge import StudentGrammarMastery
+    from app.services.course_intensive_util import decorate_units, next_semester, resolve_semester
     student = await db.get(User, student_id)
     tv = student.preferred_textbook_version if student else None
     if not tv:
-        return {"version": None, "units": []}
+        return {"version": None, "grade": None, "semester": None, "units": [],
+                "semester_done": False, "next_semester": None}
+    g, s = await resolve_semester(db, tv, student, grade, semester)
     rows = (await db.execute(
         select(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                CurriculumUnit.unit_no, CurriculumUnit.unit_title,
-               func.count(func.distinct(UnitNode.node_id)))
+               func.count(func.distinct(UnitNode.node_id)),
+               # 已学点数 = 该生该点有 student_grammar_mastery 行
+               func.count(func.distinct(case(
+                   (StudentGrammarMastery.id.isnot(None), UnitNode.node_id)))))
         .join(UnitNode, UnitNode.unit_id == CurriculumUnit.id)
         .join(KnowledgeNode, KnowledgeNode.id == UnitNode.node_id)
-        .where(CurriculumUnit.textbook_version == tv, _GRAMMAR)
+        .outerjoin(StudentGrammarMastery,
+                   (StudentGrammarMastery.kp_id == UnitNode.node_id)
+                   & (StudentGrammarMastery.student_id == student_id))
+        .where(CurriculumUnit.textbook_version == tv, _GRAMMAR,
+               CurriculumUnit.grade == g, CurriculumUnit.semester == s)
         .group_by(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                   CurriculumUnit.unit_no, CurriculumUnit.unit_title)
-        .order_by(CurriculumUnit.grade, CurriculumUnit.semester, CurriculumUnit.unit_no))).all()
-    units = [{"unit_id": str(uid), "grade": grade, "semester": sem, "unit_no": uno,
-              "unit_title": title or f"Unit {uno}", "count": int(cnt)}
-             for uid, grade, sem, uno, title, cnt in rows]
-    return {"version": tv, "units": units}
+        .order_by(CurriculumUnit.unit_no))).all()
+    units = [{"unit_id": str(uid), "grade": gr, "semester": sem, "unit_no": uno,
+              "unit_title": title or f"Unit {uno}", "count": int(cnt),
+              "total": int(cnt), "studied": int(st)}
+             for uid, gr, sem, uno, title, cnt, st in rows]
+    done = decorate_units(units)
+    return {"version": tv, "grade": g, "semester": s, "units": units,
+            "semester_done": done,
+            "next_semester": await next_semester(db, tv, g, s) if done else None}
 
 
-async def course_points(db: AsyncSession, *, unit_id: uuid.UUID) -> list[dict]:
-    """某教材单元的语法点。"""
+async def course_points(db: AsyncSession, *, unit_id: uuid.UUID,
+                        student_id: uuid.UUID | None = None) -> list[dict]:
+    """某教材单元的语法点;传 student_id 则每点带 studied(有无 student_grammar_mastery)。"""
     rows = (await db.execute(
         select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
         .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
         .where(UnitNode.unit_id == unit_id, _GRAMMAR)
         .order_by(KnowledgeNode.code).distinct())).all()
-    return [_pt(nid, name, code) for nid, name, code in rows]
+    studied_ids: set = set()
+    if student_id is not None and rows:
+        from app.models.d4_knowledge import StudentGrammarMastery
+        studied_ids = set(str(x) for x in (await db.execute(
+            select(StudentGrammarMastery.kp_id).where(
+                StudentGrammarMastery.student_id == student_id,
+                StudentGrammarMastery.kp_id.in_([nid for nid, _, _ in rows])))).scalars().all())
+    return [{**_pt(nid, name, code), "studied": str(nid) in studied_ids}
+            for nid, name, code in rows]

@@ -176,15 +176,22 @@ export function makeUpCheckin(date: string): Promise<VocabMakeUpResult> {
 // 单词精讲(作业按批次 / 课程按单元;详解取词库)
 export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any; image_url?: string | null; word_audio_url?: string | null; en_description?: string | null; example?: { en?: string; zh?: string; audio?: string } | null; studied?: boolean }
 export interface HwWordBatch { paper_id: string; title: string; date: string; word_count: number; studied?: number }
-export interface CourseWordUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; word_count: number }
+export interface CourseWordUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; word_count: number; total?: number; studied?: number; unlocked?: boolean }
+// 课程精讲·单词 单元列表响应:聚焦当前学期 + 学期通关 + 下学期(供学完庆祝弹层)
+export interface CourseWordUnitsResp {
+  version: string | null; grade: string | null; semester: string | null
+  units: CourseWordUnit[]
+  semester_done: boolean
+  next_semester: { grade: string; semester: string } | null
+}
 export function getHwWordBatches(): Promise<{ batches: HwWordBatch[] }> {
   return request<{ batches: HwWordBatch[] }>('/api/v1/vocabulary/intensive/homework/batches', { method: 'GET' })
 }
 export function getHwWords(paperId: string): Promise<{ words: IntensiveWord[] }> {
   return request<{ words: IntensiveWord[] }>('/api/v1/vocabulary/intensive/homework/words', { method: 'GET', data: { paper_id: paperId } })
 }
-export function getCourseWordUnits(): Promise<{ version: string | null; units: CourseWordUnit[] }> {
-  return request<{ version: string | null; units: CourseWordUnit[] }>('/api/v1/vocabulary/intensive/course/units', { method: 'GET' })
+export function getCourseWordUnits(grade?: string, semester?: string): Promise<CourseWordUnitsResp> {
+  return request<CourseWordUnitsResp>('/api/v1/vocabulary/intensive/course/units', { method: 'GET', data: { grade, semester } })
 }
 export function getCourseWords(unitId: string): Promise<{ words: IntensiveWord[] }> {
   return request<{ words: IntensiveWord[] }>('/api/v1/vocabulary/intensive/course/words', { method: 'GET', data: { unit_id: unitId } })

@@ -264,15 +264,17 @@ async def gr_hw_points(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Q
 
 
 @router.get("/intensive/grammar/course/units")
-async def gr_course_units(db: DbDep, current_user: UserDep):
+async def gr_course_units(db: DbDep, current_user: UserDep,
+                          grade: str | None = Query(None), semester: str | None = Query(None)):
     from app.services import grammar_intensive_service as gi
-    return make_ok(await gi.course_units(db, student_id=current_user.id))
+    return make_ok(await gi.course_units(
+        db, student_id=current_user.id, grade=grade, semester=semester))
 
 
 @router.get("/intensive/grammar/course/points")
 async def gr_course_points(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
     from app.services import grammar_intensive_service as gi
-    return make_ok({"points": await gi.course_points(db, unit_id=unit_id)})
+    return make_ok({"points": await gi.course_points(db, unit_id=unit_id, student_id=current_user.id)})
 
 
 @router.get("/intensive/sentence/homework/batches")
@@ -311,12 +313,14 @@ async def rd_hw_passages(db: DbDep, current_user: UserDep, paper_id: uuid.UUID =
 
 
 @router.get("/intensive/sentence/course/units")
-async def se_course_units(db: DbDep, current_user: UserDep):
+async def se_course_units(db: DbDep, current_user: UserDep,
+                          grade: str | None = Query(None), semester: str | None = Query(None)):
     from app.services import sentence_intensive_service as si
-    return make_ok(await si.course_units(db, student_id=current_user.id))
+    return make_ok(await si.course_units(
+        db, student_id=current_user.id, grade=grade, semester=semester))
 
 
 @router.get("/intensive/sentence/course/sentences")
 async def se_course_sentences(db: DbDep, current_user: UserDep, unit_id: uuid.UUID = Query(...)):
     from app.services import sentence_intensive_service as si
-    return make_ok({"sentences": await si.course_sentences(db, unit_id=unit_id)})
+    return make_ok({"sentences": await si.course_sentences(db, unit_id=unit_id, student_id=current_user.id)})

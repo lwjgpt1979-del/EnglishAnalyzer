@@ -71,35 +71,59 @@ async def homework_words(db: AsyncSession, *, student_id: uuid.UUID,
 
 
 # ── 课程精讲 · 单词:按教材单元 ────────────────────────────────────────────────
-async def course_units(db: AsyncSession, *, student_id: uuid.UUID) -> dict:
-    """学生当前教材(preferred_textbook_version)的单元 + 每单元词数,供【年级→册→单元】下钻。
-    未设教材版本 → {version:None, units:[]}。"""
+async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
+                       grade: str | None = None, semester: str | None = None) -> dict:
+    """学生当前教材某学期的单元(默认聚焦 preferred 当前学期)+ 每单元词数/已学数,
+    含闯关顺序解锁(unlocked)+ 本学期通关(semester_done)+ 下学期(next_semester)。
+    未设教材版本 → 空。"""
+    from app.services.course_intensive_util import decorate_units, next_semester, resolve_semester
     student = await db.get(User, student_id)
     tv = student.preferred_textbook_version if student else None
     if not tv:
-        return {"version": None, "units": []}
+        return {"version": None, "grade": None, "semester": None, "units": [],
+                "semester_done": False, "next_semester": None}
+    g, s = await resolve_semester(db, tv, student, grade, semester)
     rows = (await db.execute(
         select(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
-               CurriculumUnit.unit_no, CurriculumUnit.unit_title, func.count(CurriculumWord.word_id))
+               CurriculumUnit.unit_no, CurriculumUnit.unit_title,
+               func.count(func.distinct(CurriculumWord.word_id)),
+               # 已学词数 = 该生该词有 VocabularyLearning 行
+               func.count(func.distinct(case(
+                   (VocabularyLearning.id.isnot(None), CurriculumWord.word_id)))))
         .join(CurriculumWord, CurriculumWord.unit_id == CurriculumUnit.id)
-        .where(CurriculumUnit.textbook_version == tv)
+        .outerjoin(VocabularyLearning,
+                   (VocabularyLearning.word_id == CurriculumWord.word_id)
+                   & (VocabularyLearning.student_id == student_id))
+        .where(CurriculumUnit.textbook_version == tv,
+               CurriculumUnit.grade == g, CurriculumUnit.semester == s)
         .group_by(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                   CurriculumUnit.unit_no, CurriculumUnit.unit_title)
-        .order_by(CurriculumUnit.grade, CurriculumUnit.semester, CurriculumUnit.unit_no))).all()
-    units = [{"unit_id": str(uid), "grade": grade, "semester": sem, "unit_no": uno,
-              "unit_title": title or f"Unit {uno}", "word_count": int(cnt)}
-             for uid, grade, sem, uno, title, cnt in rows]
-    return {"version": tv, "units": units}
+        .order_by(CurriculumUnit.unit_no))).all()
+    units = [{"unit_id": str(uid), "grade": gr, "semester": sem, "unit_no": uno,
+              "unit_title": title or f"Unit {uno}", "word_count": int(cnt),
+              "total": int(cnt), "studied": int(st)}
+             for uid, gr, sem, uno, title, cnt, st in rows]
+    done = decorate_units(units)
+    return {"version": tv, "grade": g, "semester": s, "units": units,
+            "semester_done": done,
+            "next_semester": await next_semester(db, tv, g, s) if done else None}
 
 
-async def course_words(db: AsyncSession, *, unit_id: uuid.UUID) -> list[dict]:
-    """某教材单元的词 + 词库详解。"""
+async def course_words(db: AsyncSession, *, unit_id: uuid.UUID,
+                       student_id: uuid.UUID | None = None) -> list[dict]:
+    """某教材单元的词 + 词库详解;传 student_id 则每词带 studied(有无 VocabularyLearning)。"""
     rows = (await db.execute(
         select(VocabularyWord)
         .join(CurriculumWord, CurriculumWord.word_id == VocabularyWord.id)
         .where(CurriculumWord.unit_id == unit_id)
         .order_by(VocabularyWord.word))).scalars().all()
-    return [_word_out(w) for w in rows]
+    studied_ids: set = set()
+    if student_id is not None and rows:
+        studied_ids = set((await db.execute(
+            select(VocabularyLearning.word_id).where(
+                VocabularyLearning.student_id == student_id,
+                VocabularyLearning.word_id.in_([w.id for w in rows])))).scalars().all())
+    return [{**_word_out(w), "studied": w.id in studied_ids} for w in rows]
 
 
 # ── 精讲「完整词力通流程」:某单元/批次的 word_id 列表(供限定词集版 daily-task)──────
