@@ -383,3 +383,14 @@ class SpeakingSession(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class VocabImageVerifyCache(Base):
+    """配图图文一致复核(P2·⑥C)结果缓存:按图片指纹(md5)缓存 VLM 复核结果,同图不二次付费。"""
+    __tablename__ = "vocab_image_verify_cache"
+
+    img_md5 = mapped_column(sa.String(32), primary_key=True)
+    result = mapped_column(JSONB, nullable=False)   # {score, has_text, reason}
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )

@@ -129,7 +129,9 @@ _DEF_STYLES = [
 def _default_img_config() -> dict:
     # style: 固定风格(为空=每张从 styles 随机);voice: 固定音色(为空=按词哈希选男/女)
     return {"batch_size": 20, "images_per_word": 1, "use_ai_prompt": True,
-            "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES), "style": "", "voice": ""}
+            "primary": _DEF_PRIMARY, "styles": list(_DEF_STYLES), "style": "", "voice": "",
+            # P2:图文一致复核(⑥C)+ 多图选优(⑤G)
+            "verify": True, "verify_min": 0.6, "verify_candidates": 3}
 
 
 def _merge_img_config(saved: dict | None) -> dict:
@@ -157,6 +159,16 @@ def _merge_img_config(saved: dict | None) -> dict:
             cfg["style"] = str(saved.get("style") or "").strip()
         if "voice" in saved:
             cfg["voice"] = str(saved.get("voice") or "").strip()
+        if "verify" in saved:
+            cfg["verify"] = bool(saved["verify"])
+        try:
+            cfg["verify_min"] = max(0.0, min(float(saved.get("verify_min", cfg["verify_min"])), 1.0))
+        except (TypeError, ValueError):
+            pass
+        try:
+            cfg["verify_candidates"] = max(1, min(int(saved.get("verify_candidates", cfg["verify_candidates"])), 4))
+        except (TypeError, ValueError):
+            pass
     return cfg
 
 
@@ -385,6 +397,37 @@ async def suggest_image_brief(db: AsyncSession, *, word_id: uuid.UUID,
     return scene
 
 
+async def _verify_cached(db: AsyncSession, url: str, word: str, meaning: str) -> dict:
+    """图文一致复核(⑥C),按图 md5 缓存(付费缓存铁律):同图不二次调 VLM。"""
+    from app.models.d5_learning import VocabImageVerifyCache
+    from app.services import doubao_vision_service
+    md5 = hashlib.md5(url.encode("utf-8")).hexdigest()   # noqa: S324
+    hit = await db.get(VocabImageVerifyCache, md5)
+    if hit is not None:
+        return hit.result
+    res = await doubao_vision_service.verify_image(url, word, meaning)
+    db.add(VocabImageVerifyCache(img_md5=md5, result=res))
+    await db.flush()
+    return res
+
+
+async def _verify_and_pick(db: AsyncSession, cands: list[str], word: str,
+                           meaning: str, threshold: float) -> str | None:
+    """⑤G 多图选优 + ⑥C 复核:淘汰含文字的,选契合度最高且≥阈值的一张;都不达标→None。"""
+    best_url, best_score = None, -1.0
+    for u in cands:
+        res = await _verify_cached(db, u, word, meaning)
+        if res.get("has_text"):
+            continue   # 图里有文字/乱码 → 直接淘汰
+        try:
+            s = float(res.get("score", 0) or 0)
+        except (TypeError, ValueError):
+            s = 0.0
+        if s > best_score:
+            best_url, best_score = u, s
+    return best_url if (best_url and best_score >= threshold) else None
+
+
 async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None = None,
                           brief_override: str | None = None,
                           do_images: bool = True, do_audio: bool = True) -> list[str]:
@@ -428,12 +471,25 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
                       else f"可画性过低({drawable:.2f}<{_DRAWABLE_MIN})→降级词义卡")
             logger.warning("[配图闸门] %s 中止出图:%s —— 不产出裸词兜底图,交由「查看即生成」重试", w.word, reason)
         else:
-            prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
-                                     n=int(cfg.get("images_per_word", 1)), brief=brief)
+            # ⑤G:开复核时多出几张候选供择优;不开则按 images_per_word
+            verify_on = bool(cfg.get("verify", True)) and not llm_provider.is_llm_dev_mode()
+            n = int(cfg.get("verify_candidates", 3)) if verify_on else int(cfg.get("images_per_word", 1))
+            prompts = _build_prompts(cfg, word=w.word, meaning=meaning, n=n, brief=brief)
+            cands: list[str] = []
             for p in prompts:
                 u = await vocab_media_provider.t2i_to_cos(p, label=w.word)
                 if u:
-                    urls.append(u)
+                    cands.append(u)
+            if verify_on and cands:
+                # ⑥C 图文一致复核:选契合度最高且无文字的一张;都不达标 → 降级词义卡(⑦E)
+                best = await _verify_and_pick(
+                    db, cands, w.word, meaning, float(cfg.get("verify_min", 0.6)))
+                urls = [best] if best else []
+                if not best:
+                    logger.warning("[配图复核] %s 候选 %d 张均未过图文一致复核 → 降级词义卡",
+                                   w.word, len(cands))
+            else:
+                urls = cands
             if urls:   # 记为新图片版本(不覆盖历史),带当时风格+提示词,自动选用
                 await vocab_media_asset_service.record_assets(
                     db, word_id=w.id, kind="image", urls=urls,

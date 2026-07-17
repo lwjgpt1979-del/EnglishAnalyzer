@@ -160,6 +160,50 @@ async def recognize_page_text(image_url: str) -> str:
         return ""
 
 
+_VERIFY_SYS = (
+    "你是儿童英语单词配图的质检员。会给你一张插图和一个目标英文单词及其中文义,"
+    "判断这张图是否**准确、无歧义地表达该词义**,以及图中是否出现文字。严格按 JSON 输出。"
+)
+
+
+async def verify_image(image_url: str, word: str, meaning: str) -> dict:
+    """图文一致复核(P2·⑥C):判插图是否表达 word=meaning + 是否含文字/乱码。
+    返回 {score:0-1, has_text:bool, reason:str}。dev/失败 → 视为通过(score=1)不误杀。"""
+    import json as _json
+    if _is_doubao_dev_mode():
+        return {"score": 1.0, "has_text": False, "reason": "dev"}
+    client = AsyncOpenAI(api_key=settings.doubao_api_key, base_url=settings.doubao_base_url)
+    user = (
+        f'目标单词: "{word}"\n中文义: {meaning}\n'
+        '评估这张插图:1) score(0-1):画面内容与该词义的契合度(1=一看就懂该词义,'
+        '0=完全无关/画错义);2) has_text:图中是否出现任何文字/字母/数字/乱码(true/false)。'
+        '只返回 JSON:{"score":0.0-1.0, "has_text":true/false, "reason":"简短中文理由"}。'
+    )
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.doubao_vision_model,
+            messages=[
+                {"role": "system", "content": _VERIFY_SYS},
+                {"role": "user", "content": [
+                    {"type": "text", "text": user},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ]},
+            ],
+            max_tokens=200,
+            response_format={"type": "json_object"},
+        )
+        data = _json.loads(resp.choices[0].message.content or "{}")
+        try:
+            score = max(0.0, min(1.0, float(data.get("score", 0))))
+        except (TypeError, ValueError):
+            score = 0.0
+        return {"score": score, "has_text": bool(data.get("has_text")),
+                "reason": str(data.get("reason") or "")}
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("doubao image verify failed (%s): %s", word, exc)
+        return {"score": 1.0, "has_text": False, "reason": "verify_error"}
+
+
 class DoubaoVisionProvider:
     """豆包 Vision 实现的 OcrProvider。
 
