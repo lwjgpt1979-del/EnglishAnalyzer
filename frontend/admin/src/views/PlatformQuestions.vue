@@ -438,7 +438,7 @@ function analyzableSection(sec: { name: string }): boolean {
 }
 // 单题是否可做题目层解析:类型即完型/阅读/写作;语法单选(单选·非阅读/听力段);
 // 填空词形类(填空·词形段);或阅读理解题机械形式常为「单选/填空」但段名表明是阅读/完形。
-function isAnalyzableQuestion(q: { question_type: string }, sectionName: string): boolean {
+function isAnalyzableQuestion(q: { question_type?: string | null }, sectionName: string): boolean {
   const sec = sectionName || ''
   if (q.question_type === '完型' || q.question_type === '阅读' || q.question_type === '写作') return true
   if (q.question_type === '单选' && !/阅读|听力/.test(sec)) return true   // 语法单选

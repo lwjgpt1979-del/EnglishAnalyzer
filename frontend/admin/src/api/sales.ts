@@ -13,6 +13,7 @@ export interface SalesLead {
   biz_tags: string[] | null
   source: string
   source_note: string | null
+  tags: string[] | null
   status: string
   intent_score: number | null
   intent_grade: string | null

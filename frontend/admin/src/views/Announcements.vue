@@ -23,7 +23,6 @@ async function load() {
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { loading.value = false }
 }
-function reload() { page.value = 1; load() }
 
 const dialog = ref(false)
 const form = reactive({

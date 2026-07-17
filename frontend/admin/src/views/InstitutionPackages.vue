@@ -41,7 +41,7 @@ const ovGrading = ref<number | null>(null)
 const usage = ref<PackageUsage | null>(null)
 
 async function loadInsts() {
-  try { institutions.value = await listInstitutions('active') } catch { /* ignore */ }
+  try { institutions.value = (await listInstitutions({ status: 'active' })).items } catch { /* ignore */ }
 }
 async function loadUsage() {
   usage.value = null

@@ -42,7 +42,7 @@ const fQ = ref('')
 const phoneParam = () => (fPhone.value === 'yes' ? true : fPhone.value === 'no' ? false : undefined)
 const cfg = ref<SalesConfig>({ public_pool_recycle_days: 7, sla_overdue_hours: 48, seat_only_admin_ids: [], tag_catalog: [] })
 async function loadCfg() { try { cfg.value = await getSalesConfig() } catch { /* ignore */ } }
-const board = ref<SalesBoard>({ total: 0, by_status: {}, by_pool: {}, today_new: 0, today_calls: 0, today_connected: 0, connect_rate: 0, my_due: 0 })
+const board = ref<SalesBoard>({ total: 0, by_status: {}, by_pool: {}, today_new: 0, today_calls: 0, today_connected: 0, connect_rate: 0, my_due: 0, sla_breach: 0, sla_overdue_hours: 0 })
 
 // 地区级联(省→市),code 与 user.city_code 同源
 const regionPath = ref<string[]>([])
@@ -439,7 +439,7 @@ onMounted(() => { load(); loadBoard(); loadCfg(); loadScripts() })
     </div>
 
     <el-table ref="tableRef" :data="rows" v-loading="loading" stripe
-      :row-class-name="({ row }) => row.dnc ? 'dnc-row' : ''" @selection-change="onSelectionChange">
+      :row-class-name="({ row }: { row: SalesLead }) => row.dnc ? 'dnc-row' : ''" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="42" />
       <el-table-column label="商家 / 联系人" min-width="200">
         <template #default="{ row }">

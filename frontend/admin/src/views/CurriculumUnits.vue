@@ -535,7 +535,7 @@ const grammarFlat = computed(() => flatten(subtreeByCodes(['cf', 'jf'])))
 const listenFlat = computed(() => flatten(subtreeByCodes(['lt'])))
 
 const relinkOpen = ref<Record<string, boolean>>({})   // section_id → 是否处于「改挂」编辑态
-async function onManualLink(kind: string, sec: { id: string; node_code: string | null; node_name?: string | null }) {
+async function onManualLink(_kind: string, sec: { id: string; node_code: string | null; node_name?: string | null }) {
   const nid = pickNode.value[sec.id]
   if (!nid) { ElMessage.warning('请先在目录里选一个节点'); return }
   try {
@@ -547,7 +547,7 @@ async function onManualLink(kind: string, sec: { id: string; node_code: string |
     ElMessage.success(`已挂靠到「${r.name}」(${r.node_code})`)
   } catch (e: any) { ElMessage.error(e?.message || '挂靠失败') }
 }
-async function onNewNode(kind: string, sec: { id: string; point_name: string | null; node_code: string | null; node_name?: string | null }) {
+async function onNewNode(_kind: string, sec: { id: string; point_name: string | null; node_code: string | null; node_name?: string | null }) {
   const parent = pickNode.value[sec.id]
   if (!parent) { ElMessage.warning('请先选一个父分类(在其下新建)'); return }
   try {
@@ -710,17 +710,17 @@ async function openPdfDialog() {
   // 重开时:有在跑的任务 → 挂回进度;否则最近有失败的任务 → 显示结果供「重试失败单元」
   try {
     const running = await listGenJobs({ status: 'running', limit: 1 })
-    if (running.length) {
+    if (running.items.length) {
       pdfStep.value = 3
       pdfGenerating.value = true
-      pollJob(running[0].job_id)
+      pollJob(running.items[0].job_id)
       return
     }
     const failed = await listGenJobs({ status: 'failed', limit: 1 })
-    if (failed.length) {
+    if (failed.items.length) {
       pdfStep.value = 3
       pdfGenerating.value = false
-      pdfJob.value = await getGenJob(failed[0].job_id)
+      pdfJob.value = await getGenJob(failed.items[0].job_id)
     }
   } catch { /* 忽略 */ }
 }

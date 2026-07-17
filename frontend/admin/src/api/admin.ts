@@ -521,7 +521,7 @@ export function generateUnitStructured(unitId: string): Promise<UnitStructured> 
   return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/generate`, {}, { timeout: 180000 }))
 }
 // 第二步:语法点→词法/句法、听力考点→听力,一键关联(命中关联,未命中留待人工)
-export function linkUnitStructured(unitId: string): Promise<UnitStructured & { link_counts?: { linked: number; unmatched: number; skipped: number } }> {
+export function linkUnitStructured(unitId: string): Promise<UnitStructured & { link_counts?: { linked?: number; candidate?: number; unmatched?: number; skipped?: number } }> {
   return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/link`, {}, { timeout: 120000 }))
 }
 // 人工挂靠:把某板块关联到图谱里已存在的节点
