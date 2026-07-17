@@ -106,6 +106,8 @@ export interface LlmFeatureItem {
   mode: 'reasoning' | 'chat'
   surface: string          // 消费端(前端项目):小程序端 / 运营后台
   module: string           // 功能模块
+  cache?: 'global' | 'per_user' | 'none'   // 结果缓存/落库作用域(防重复付费)
+  store?: string           // 缓存/落库位置(表.字段),none 时为"无"
   service: string          // 后端 service(代码所在)
   purpose: string
   why: string
@@ -119,7 +121,7 @@ export interface LlmFeatureItem {
 }
 export interface LlmFeatures {
   days: number
-  counts: { total: number; reasoning: number; chat: number; untagged: number; mini: number; admin: number }
+  counts: { total: number; reasoning: number; chat: number; untagged: number; mini: number; admin: number; cache_global: number; cache_user: number; cache_none: number }
   reasoning_model: string
   chat_model: string
   items: LlmFeatureItem[]
@@ -657,6 +659,39 @@ export function getTextbookWordStats(textbook?: string, grade?: string): Promise
   if (textbook) params.textbook = textbook
   if (grade) params.grade = grade
   return unwrap(request.get('/admin/textbook-word-stats', { params }))
+}
+
+// 语法使用统计(未匹配语法 vs 图谱语法 + 人工收编)
+export interface UnmatchedGrammarRow {
+  name: string; name_norm: string; anchor_code: string | null
+  student_count: number; paper_count: number; last_seen: string | null
+}
+export interface KgGrammarRow {
+  node_id: string; name: string; code: string
+  ref_student_count: number; learner_count: number
+}
+export interface GrammarParentOption { id: string; name: string; code: string }
+export function getUnmatchedGrammarUsage(p: { q?: string; skip?: number; limit?: number } = {}): Promise<{ items: UnmatchedGrammarRow[]; total: number }> {
+  const params: Record<string, unknown> = {}
+  if (p.q) params.q = p.q
+  if (p.skip != null) params.skip = p.skip
+  if (p.limit != null) params.limit = p.limit
+  return unwrap(request.get('/admin/grammar-usage/unmatched', { params }))
+}
+export function getKgGrammarUsage(p: { q?: string; skip?: number; limit?: number } = {}): Promise<{ items: KgGrammarRow[]; total: number }> {
+  const params: Record<string, unknown> = {}
+  if (p.q) params.q = p.q
+  if (p.skip != null) params.skip = p.skip
+  if (p.limit != null) params.limit = p.limit
+  return unwrap(request.get('/admin/grammar-usage/nodes', { params }))
+}
+export function getGrammarParentOptions(q?: string): Promise<GrammarParentOption[]> {
+  const params: Record<string, string> = {}
+  if (q) params.q = q
+  return unwrap(request.get('/admin/grammar-usage/parents', { params }))
+}
+export function promoteGrammar(body: { name: string; name_norm: string; parent_id: string }): Promise<{ node_id: string; code: string; name: string; backfilled: number }> {
+  return unwrap(request.post('/admin/grammar-usage/promote', body))
 }
 
 // 考试类型统计

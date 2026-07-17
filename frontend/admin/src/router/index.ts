@@ -22,6 +22,7 @@ const router = createRouter({
         { path: 'third-party', name: 'third-party', component: () => import('../views/ThirdPartyResources.vue') },
         { path: 'exam-type-stats', name: 'exam-type-stats', component: () => import('../views/ExamTypeStats.vue') },
         { path: 'grammar-calibration', name: 'grammar-calibration', component: () => import('../views/GrammarCalibration.vue') },
+        { path: 'grammar-usage', name: 'grammar-usage', component: () => import('../views/GrammarUsage.vue') },
         { path: 'baidu-leads', name: 'baidu-leads', component: () => import('../views/BaiduLeads.vue') },
         { path: 'textbook-map', name: 'textbook-map', component: () => import('../views/TextbookMap.vue') },
         { path: 'audit-logs', name: 'audit-logs', component: () => import('../views/AuditLogs.vue') },

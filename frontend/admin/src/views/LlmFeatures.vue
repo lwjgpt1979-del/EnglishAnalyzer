@@ -12,6 +12,7 @@ const kw = ref('')
 const modeFilter = ref<'all' | 'reasoning' | 'chat'>('all')
 const surfaceFilter = ref<'all' | '小程序端' | '运营后台'>('all')
 const taggedFilter = ref<'all' | 'tagged' | 'untagged'>('all')
+const cacheFilter = ref<'all' | 'global' | 'per_user' | 'none'>('all')
 // 排序
 const sortKey = ref<'default' | 'cost' | 'calls'>('default')
 // 分页
@@ -19,6 +20,13 @@ const page = ref(1)
 const pageSize = ref(20)
 
 const fmtTok = (n: number | null) => n == null ? '—' : n >= 10000 ? (n / 10000).toFixed(1) + '万' : String(n)
+// 缓存维度展示
+const CACHE_META: Record<string, { label: string; type: 'success' | 'primary' | 'info' }> = {
+  global: { label: '全局缓存', type: 'success' },
+  per_user: { label: '按用户落库', type: 'primary' },
+  none: { label: '实时', type: 'info' },
+}
+const cacheMeta = (c?: string) => CACHE_META[c || ''] || { label: c || '待核', type: 'info' as const }
 
 async function load() {
   loading.value = true
@@ -32,6 +40,7 @@ const filtered = computed<LlmFeatureItem[]>(() => {
   let rows = data.value?.items || []
   if (modeFilter.value !== 'all') rows = rows.filter(r => r.mode === modeFilter.value)
   if (surfaceFilter.value !== 'all') rows = rows.filter(r => r.surface === surfaceFilter.value)
+  if (cacheFilter.value !== 'all') rows = rows.filter(r => (r.cache || '') === cacheFilter.value)
   if (taggedFilter.value === 'tagged') rows = rows.filter(r => r.tagged)
   else if (taggedFilter.value === 'untagged') rows = rows.filter(r => !r.tagged)
   const q = kw.value.trim().toLowerCase()
@@ -83,7 +92,8 @@ onMounted(load)
       <span>深度思考模型 <b class="mono">{{ data?.reasoning_model || '—' }}</b>(不传 model → 主模型/推理档,thinking 开)</span>
       <span>对话模型 <b class="mono">{{ data?.chat_model || '—' }}</b>(走快档 <code>fast_model()</code> 或 <code>disable_thinking=True</code>)</span>
       <span>端分布:小程序端 <b>{{ data?.counts.mini ?? 0 }}</b> · 运营后台 <b>{{ data?.counts.admin ?? 0 }}</b></span>
-      <span class="muted">LLM 代码均在<b>后端</b> backend/app/services;下表「端」= 消费该能力的前端项目,「位置」= 后端 service 文件。</span>
+      <span>缓存分布:全局 <b style="color:#67c23a">{{ data?.counts.cache_global ?? 0 }}</b> · 按用户 <b style="color:#409eff">{{ data?.counts.cache_user ?? 0 }}</b> · 实时 <b>{{ data?.counts.cache_none ?? 0 }}</b></span>
+      <span class="muted">LLM 代码均在<b>后端</b> backend/app/services;下表「端」= 消费该能力的前端项目,「位置」= 后端 service 文件;「缓存」对应第三方付费暂存铁律(全局=跨用户同输入不二次付费)。</span>
     </div>
 
     <el-alert v-if="data?.counts.untagged" type="info" :closable="false" show-icon style="margin-bottom:10px"
@@ -110,6 +120,12 @@ onMounted(load)
         <el-radio-button value="all">标签不限</el-radio-button>
         <el-radio-button value="tagged">已打标签</el-radio-button>
         <el-radio-button value="untagged">未打标签</el-radio-button>
+      </el-radio-group>
+      <el-radio-group v-model="cacheFilter" size="small" @change="page = 1">
+        <el-radio-button value="all">缓存不限</el-radio-button>
+        <el-radio-button value="global">全局缓存</el-radio-button>
+        <el-radio-button value="per_user">按用户落库</el-radio-button>
+        <el-radio-button value="none">实时</el-radio-button>
       </el-radio-group>
       <el-select v-model="sortKey" size="small" style="width:150px">
         <el-option value="default" label="排序:分档" />
@@ -139,6 +155,13 @@ onMounted(load)
           <el-tag :type="row.mode === 'reasoning' ? 'danger' : 'info'" effect="plain" size="small">
             {{ row.mode === 'reasoning' ? '深度思考' : '对话' }}
           </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="缓存 / 落库" width="150">
+        <template #default="{ row }">
+          <el-tag :type="cacheMeta(row.cache).type" effect="plain" size="small">{{ cacheMeta(row.cache).label }}</el-tag>
+          <div v-if="row.store && row.store !== '无'" class="mono sm store">{{ row.store }}</div>
+          <div v-else-if="row.cache === 'none'" class="muted sm">每次真调,不复用</div>
         </template>
       </el-table-column>
       <el-table-column label="原因(为何需要该档)" min-width="240">
@@ -196,6 +219,7 @@ onMounted(load)
 .feat { margin-top:2px; }
 .feat code, .filters code, .hint code, .models code { background:#f4f4f5; padding:1px 5px; border-radius:3px; font-size:12px; color:#606266; }
 .loc { color:#909399; }
+.store { margin-top:4px; color:#67c23a; word-break:break-all; }
 .cost { color:#e6a23c; font-weight:600; }
 .pager { margin-top:14px; display:flex; justify-content:flex-end; }
 </style>

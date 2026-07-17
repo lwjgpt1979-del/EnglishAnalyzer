@@ -348,6 +348,42 @@ async def create_knowledge_node_api(body: CreateNodeIn, db: DbDep, admin: AdminD
     return make_ok({"id": str(n.id), "code": n.code, "name": n.name})
 
 
+@router.get("/grammar-usage/unmatched", response_model=BaseResponse[dict])
+async def grammar_usage_unmatched_api(db: DbDep, admin: AdminDep, q: str | None = None,
+                                      skip: int = 0, limit: int = 30):
+    """未匹配上图谱的语法(独立题等)使用统计:按语法名聚合、命中学生数高频优先、分页。"""
+    from app.services import grammar_usage_service as gus
+    return make_ok(await gus.unmatched_grammar_usage(db, q=q, skip=skip, limit=limit))
+
+
+@router.get("/grammar-usage/nodes", response_model=BaseResponse[dict])
+async def grammar_usage_nodes_api(db: DbDep, admin: AdminDep, q: str | None = None,
+                                  skip: int = 0, limit: int = 30):
+    """图谱语法节点(词法/句法)使用统计:引用学生数 + 学习人数,高频优先、分页。"""
+    from app.services import grammar_usage_service as gus
+    return make_ok(await gus.kg_grammar_usage(db, q=q, skip=skip, limit=limit))
+
+
+@router.get("/grammar-usage/parents", response_model=BaseResponse[list])
+async def grammar_usage_parents_api(db: DbDep, admin: AdminDep, q: str | None = None):
+    """收编未匹配语法时的父节点选择器:语法子树(词法/句法)下 active 节点。"""
+    from app.services import grammar_usage_service as gus
+    return make_ok(await gus.grammar_parent_options(db, q=q))
+
+
+@router.post("/grammar-usage/promote", response_model=BaseResponse[dict])
+async def grammar_usage_promote_api(
+    db: DbDep, admin: AdminDep,
+    name: Annotated[str, Body(..., min_length=1, max_length=120)],
+    name_norm: Annotated[str, Body(..., min_length=1, max_length=120)],
+    parent_id: Annotated[uuid.UUID, Body(...)],
+):
+    """把某未匹配语法人工加入知识图谱:在所选父节点下建/复用节点,并回填所有同名个人语法的 ref_node_id。"""
+    from app.services import grammar_usage_service as gus
+    return make_ok(await gus.promote_unmatched_grammar(
+        db, name=name, name_norm=name_norm, parent_id=parent_id))
+
+
 @router.get("/textbook-word-stats", response_model=BaseResponse[dict])
 async def textbook_word_stats_api(db: DbDep, admin: AdminDep,
                                   textbook: str | None = None, grade: str | None = None):
