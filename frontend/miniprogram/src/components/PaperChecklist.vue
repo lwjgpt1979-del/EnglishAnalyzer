@@ -1,7 +1,8 @@
 <template>
   <view class="pcl">
-    <!-- 卷头:进度 + 状态 + CTA -->
+    <!-- 卷头:进度即底色(背景填充式,全项目统一) + 状态 -->
     <view class="hd-card">
+      <view class="hd-fill" :class="'hf-' + status" :style="{ width: pct + '%' }"></view>
       <view class="hd-top">
         <view class="hd-num"><text class="hd-studied">{{ studied }}</text><text class="hd-total">/{{ total }}</text></view>
         <view class="hd-info">
@@ -9,9 +10,8 @@
           <text class="hd-sub">{{ subText }}</text>
         </view>
       </view>
-      <view class="bar"><view class="bar-fill" :style="{ width: pct + '%' }"></view></view>
-      <view v-if="total" class="cta" @tap="onStart"><view class="ic ic-play-w cta-ic"></view><text>{{ ctaLabel }}</text></view>
     </view>
+    <view v-if="total" class="cta" @tap="onStart"><view class="ic ic-play-w cta-ic"></view><text>{{ ctaLabel }}</text></view>
 
     <view v-if="total" class="list-h">本卷清单</view>
     <view v-if="!total" class="empty"><slot name="empty">本卷暂无内容</slot></view>
@@ -58,8 +58,13 @@ function onStart() {
 <style scoped>
 .pcl { width: 100%; }
 /* 卷头 */
-.hd-card { background: #fff; border: 2rpx solid #e6ebf2; border-radius: 20rpx; padding: 22rpx 22rpx 20rpx; margin-bottom: 20rpx; box-shadow: 0 6rpx 22rpx rgba(45, 80, 150, .06); }
-.hd-top { display: flex; align-items: center; gap: 18rpx; }
+.hd-card { position: relative; overflow: hidden; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 20rpx; padding: 22rpx; margin-bottom: 16rpx; box-shadow: 0 6rpx 22rpx rgba(45, 80, 150, .06); }
+/* 进度即底色:背景左→右填充(全项目统一进度样式) */
+.hd-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; transition: width .3s; }
+.hf-todo { background: transparent; }
+.hf-doing { background: linear-gradient(90deg, #e8f2ff, #f4f9ff); }
+.hf-done { background: linear-gradient(90deg, #e9f6f1, #f4fbf8); }
+.hd-top { position: relative; display: flex; align-items: center; gap: 18rpx; }
 .hd-num { flex: none; min-width: 96rpx; text-align: center; }
 .hd-studied { font-size: 46rpx; font-weight: 800; color: #3d7bf0; line-height: 1; }
 .hd-total { font-size: 26rpx; font-weight: 700; color: #b7c2d4; }
@@ -72,9 +77,7 @@ function onStart() {
 .st-done .hd-pct { color: #2fa98a; background: #e8f6ef; }
 .st-todo .hd-pct { color: #94a3b8; background: #eef1f6; }
 .hd-sub { display: block; font-size: 21rpx; color: #93a0b3; margin-top: 8rpx; }
-.bar { height: 12rpx; background: #eef2f7; border-radius: 999rpx; margin-top: 16rpx; overflow: hidden; }
-.bar-fill { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, #4c97f7, #3d7bf0); transition: width .3s; }
-.cta { margin-top: 18rpx; display: flex; align-items: center; justify-content: center; gap: 12rpx; font-size: 27rpx; font-weight: 700; color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border-radius: 14rpx; padding: 20rpx 0; box-shadow: 0 6rpx 16rpx rgba(61, 123, 240, .28); }
+.cta { display: flex; align-items: center; justify-content: center; gap: 12rpx; font-size: 27rpx; font-weight: 700; color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border-radius: 14rpx; padding: 20rpx 0; box-shadow: 0 6rpx 16rpx rgba(61, 123, 240, .28); }
 .cta-ic { width: 28rpx; height: 28rpx; }
 
 .list-h { font-size: 21rpx; font-weight: 700; color: #93a0b3; letter-spacing: 2rpx; margin: 4rpx 0 14rpx 4rpx; }

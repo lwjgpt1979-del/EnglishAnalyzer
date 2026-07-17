@@ -132,6 +132,25 @@ admin / institution 端(Vue + Element Plus):优先用 Element Plus 自带的线�
 - **例外(交互模型不同,不套此组件)**:①**考试 / 自测 / 模拟考**(交卷式、无即时反馈,如 `practice/v2-exam`、`self-exam`)——保持一次性交卷;②**词力通 / 长难句 / 语法探针**(BKT 检测:接收 / 产出 / 迁移,单探针非选择题练习);③**机构作业答题**(提交老师判分)。
 - **新增「多题练习」一律用 `PracticeQuiz`**;发现历史自写答题弹层 / 列表的练习页,收敛过来。
 
+## 进度条统一样式:进度即底色(背景填充式,全项目优先)
+
+**凡展示「完成度 / 学习进度」的进度——卷学习进度、批次列表进度、任务完成度等——一律优先用「背景填充式(进度即底色)」:容器背景本身从左到右按百分比填充浅色,而不是在卡片下方另加一条独立进度条。参考 `miniprogram/src/components/IntensiveBatchList.vue`(卷列表卡)、`PaperChecklist.vue`(卷头)。**
+
+铁律:
+- **进度即底色**:进度容器 `position: relative; overflow: hidden`,内放一个绝对定位的 `.fill`(`left:0; top:0; bottom:0; width: <pct>%`,`transition: width .3s`),内容层 `position: relative` 压其上。**禁止**再另放一条 `height:12rpx` 的裸进度条。
+- **状态配色(冷调梯度,与卷状态统一)**:未学=无填充(透明);学习中=浅蓝 `linear-gradient(90deg,#e8f2ff,#f4f9ff)`;已学=浅青绿 `linear-gradient(90deg,#e9f6f1,#f4fbf8)`。百分比 / 数字用对应状态色(灰 `#94a3b8` / 蓝 `#3d8bf5` / 青绿 `#2fa98a`)。
+- **新增进度展示**一律用背景填充式;发现历史「独立进度条」的,收敛过来。
+
+## 作业精讲「卷→内容」:统一用 PaperChecklist 组件(全项目强制)
+
+**作业精讲四模块(单词 / 长难句 / 语法 / 阅读理解)从「卷」进入「具体内容」一律用 `miniprogram/src/components/PaperChecklist.vue`:卷头进度(进度即底色)+ CTA(开始 / 继续 / 复习)+ 待学清单(每项勾选圈:已学绿勾划线 · 未学空圈 · 下一个待学蓝框高亮)。**
+
+铁律:
+- **单一组件**:props `items:[{studied?, ...}]` / `unit`(词 / 句 / 点 / 题) / `date`;slot `#item` 放各模块 item 主体;emit `open(item)`(学该项)/ `start(index)`(从第一个未学项开始)。卷头状态 未学 / 学习中 / 已学 由 `studied/total` 汇总。
+- **studied 单一口径「有学习痕迹即算已学」**:后端各内容接口按 item 返回 `studied`——词=有 `VocabularyLearning`、句=`analysis_json` 非空、点=有 `student_grammar_mastery`、题=在 `reading_question_studied`;卷列表 `homework_batches` 同源返回 `studied` 汇总数。
+- **例外**:阅读理解含短文、结构特殊,不套通用组件外壳,但卷头进度 + 每题勾选圈遵循同一「进度即底色 + 状态色」规范。
+- **新增「卷→内容」页**一律照此;学习动作复用各模块既有流程(词力通检测流 / 逐句解析 / 讲解练习 / 题卡精讲),学完回 `onShow` 刷新打勾。
+
 ## 其它
 
 - 中文字体:全局已设字体栈 + 抗锯齿(miniprogram 在 `App.vue` 的 `page`/`uni-page-body`;admin/institution 在 `index.html`),新页面无需重复设置。

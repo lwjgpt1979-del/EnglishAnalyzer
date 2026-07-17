@@ -16,12 +16,13 @@
         <view v-if="itemsLoading" class="tip">加载中…</view>
         <view v-else-if="!blocks.length" class="tip">该卷没有阅读理解内容</view>
         <template v-else>
-          <!-- 卷头:整卷精讲进度(已看解析/练同类的题数) -->
+          <!-- 卷头:整卷精讲进度(进度即底色,背景填充式,全项目统一) -->
           <view class="rd-head">
+            <view class="rd-fill" :class="'rhf-' + readStatus" :style="{ width: readPct + '%' }"></view>
             <view class="rd-num"><text class="rd-s">{{ readStudied }}</text><text class="rd-t">/{{ readTotal }}</text></view>
             <view class="rd-info">
               <view class="rd-status" :class="'rs-' + readStatus">{{ readStatusLabel }}<text class="rd-pct">{{ readPct }}%</text></view>
-              <view class="rd-bar"><view class="rd-fill" :style="{ width: readPct + '%' }"></view></view>
+              <text class="rd-sub">已精讲 {{ readStudied }} / {{ readTotal }} 题</text>
             </view>
           </view>
           <view v-for="(bk, bi) in blocks" :key="bi" class="block">
@@ -316,20 +317,23 @@ onLoad(async () => {
 
 /* 讲义卡片 */
 .q-card { background: #fff; border: 2rpx solid #eaeef4; border-radius: 18rpx; padding: 22rpx; margin-bottom: 16rpx; box-shadow: 0 4rpx 18rpx rgba(45, 80, 150, .05); }
-/* 卷头进度 */
-.rd-head { display: flex; align-items: center; gap: 16rpx; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 18rpx 20rpx; margin-bottom: 18rpx; box-shadow: 0 6rpx 20rpx rgba(45, 80, 150, .06); }
-.rd-num { flex: none; min-width: 92rpx; text-align: center; }
+/* 卷头进度:进度即底色(背景填充式,全项目统一) */
+.rd-head { position: relative; overflow: hidden; display: flex; align-items: center; gap: 16rpx; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 18rpx 20rpx; margin-bottom: 18rpx; box-shadow: 0 6rpx 20rpx rgba(45, 80, 150, .06); }
+.rd-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; transition: width .3s; }
+.rhf-todo { background: transparent; }
+.rhf-doing { background: linear-gradient(90deg, #e8f2ff, #f4f9ff); }
+.rhf-done { background: linear-gradient(90deg, #e9f6f1, #f4fbf8); }
+.rd-num { position: relative; flex: none; min-width: 92rpx; text-align: center; }
 .rd-s { font-size: 42rpx; font-weight: 800; color: #3d7bf0; line-height: 1; }
 .rd-t { font-size: 24rpx; font-weight: 700; color: #b7c2d4; }
-.rd-info { flex: 1; min-width: 0; }
+.rd-info { position: relative; flex: 1; min-width: 0; }
 .rd-status { font-size: 26rpx; font-weight: 800; display: flex; align-items: center; gap: 10rpx; }
 .rs-todo { color: #94a3b8; }
 .rs-doing { color: #3d8bf5; }
 .rs-done { color: #2fa98a; }
 .rd-pct { font-size: 20rpx; font-weight: 700; color: #3d8bf5; background: #eaf2fe; border-radius: 6rpx; padding: 2rpx 10rpx; }
 .rs-done .rd-pct { color: #2fa98a; background: #e8f6ef; }
-.rd-bar { height: 12rpx; background: #eef2f7; border-radius: 999rpx; margin-top: 12rpx; overflow: hidden; }
-.rd-fill { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, #4c97f7, #3d7bf0); }
+.rd-sub { display: block; font-size: 21rpx; color: #93a0b3; margin-top: 8rpx; }
 /* 每题勾选圈 */
 .q-tick { width: 34rpx; height: 34rpx; border-radius: 50%; flex: none; box-sizing: border-box; }
 .q-tick-todo { border: 4rpx solid #cbd3e0; }
