@@ -65,6 +65,14 @@ def _get_cos_client():
     return _cos_client
 
 
+# ③M 负向约束(全项目配图铁律):禁一切文字/乱码、禁把词渲染成装饰字、禁无关人物 —— 词不达意的高发根因
+_NEG_PROMPT = (
+    "text, letters, words, numbers, caption, subtitle, watermark, signage, label, "
+    "typography, writing on image, gibberish text, "
+    "random unrelated person, extra people, crowd, deformed, blurry, low quality"
+)
+
+
 def _tencent_t2i(prompt: str) -> str | None:
     """腾讯混元生图极速版 TextToImageLite（同步，在 to_thread 中执行）：返回临时图 URL。"""
     from tencentcloud.common import credential
@@ -74,6 +82,10 @@ def _tencent_t2i(prompt: str) -> str | None:
     client = aiart_client.AiartClient(cred, settings.tencent_aiart_region)
     req = models.TextToImageLiteRequest()
     req.Prompt = prompt[:1024]
+    try:
+        req.NegativePrompt = _NEG_PROMPT   # SDK/接口若不支持则忽略(下方 setattr 容错)
+    except Exception:  # noqa: BLE001
+        pass
     req.Resolution = settings.tencent_aiart_resolution
     req.RspImgType = "url"
     req.LogoAdd = 0   # 不加水印

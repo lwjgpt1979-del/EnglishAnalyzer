@@ -69,8 +69,13 @@
     <view v-if="cardWord" class="card-mask" @tap="cardWord = null">
       <view class="card-pop" @tap.stop>
         <image v-if="cardWord.image_url" :src="cardWord.image_url" class="cp-img" mode="aspectFill" />
-        <view v-else-if="genWords.has(cardWord.word_id)" class="cp-img cp-img-ph"><text>配图/发音生成中…</text></view>
-        <view v-else class="cp-img cp-img-ph"><text>暂无配图</text></view>
+        <view v-else-if="genWords.has(cardWord.word_id)" class="cp-img cp-img-ph"><text>配图生成中…</text></view>
+        <!-- ⑦E 无好图降级词义卡:不出误导图,以词义为主(线性图标占位) -->
+        <view v-else class="cp-img cp-card-ph">
+          <view class="ic ic-book cp-card-ic"></view>
+          <text class="cp-card-w">{{ cardWord.word }}</text>
+          <text class="cp-card-m">{{ defText(cardWord.definitions) }}</text>
+        </view>
         <view class="cp-head">
           <text class="cp-word">{{ cardWord.word }}</text>
           <view class="cp-play" :class="{ on: playingId === cardWord.word_id }" @tap="playWord(cardWord)">
@@ -248,6 +253,11 @@ onShow(() => { if (!_shown) { _shown = true; return } load(); if (groupOpen.valu
 .card-pop { width: 100%; max-width: 620rpx; background: #fff; border-radius: 24rpx; padding: 24rpx; max-height: 84vh; overflow-y: auto; }
 .cp-img { width: 100%; height: 300rpx; border-radius: 16rpx; background: var(--c-bg-page, #f5f6f8); }
 .cp-img-ph { display: flex; align-items: center; justify-content: center; color: var(--c-text-hint); font-size: 26rpx; }
+/* ⑦E 无好图降级词义卡 */
+.cp-card-ph { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10rpx; background: linear-gradient(135deg, #f3f8ff, #eef4fb); }
+.cp-card-ic { width: 64rpx; height: 64rpx; opacity: .7; }
+.cp-card-w { font-size: 36rpx; font-weight: 800; color: #2f74d6; }
+.cp-card-m { font-size: 24rpx; color: #6b7688; max-width: 84%; text-align: center; }
 .cp-head { display: flex; align-items: center; justify-content: space-between; margin-top: 18rpx; }
 .cp-word { font-size: 44rpx; font-weight: 800; color: var(--c-ink); }
 .cp-play { background: var(--c-primary); color: #fff; display: flex; align-items: center; gap: 8rpx; padding: 10rpx 22rpx; border-radius: 999rpx; font-size: 26rpx; }

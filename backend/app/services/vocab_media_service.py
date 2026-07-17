@@ -168,6 +168,14 @@ _DEF_BRIEF_SYSTEM = (
     "quantities, places and things show only the thing (make any amount obvious) with NO people. "
     "No text or numbers in the image, no style words, no explanation."
 )
+# ④Q 生成前可画性闸门:低于此分不出图(降级词义卡),不浪费文生图额度、不出词不达意图
+_DRAWABLE_MIN = 0.45
+# 追加到 brief 系统指令末尾:强制 JSON 输出(场景 + 可画性自评),不改动运营可编辑的语义部分
+_BRIEF_JSON_HINT = (
+    ' Return ONLY a JSON object: {"drawable": <0.0-1.0 float, how concretely depictable THIS exact '
+    'meaning is; abstract notions, emotions with no clear scene, and grammar/function words score low>, '
+    '"scene": "<one short English sentence describing only what is visible, specific to this meaning>"}.'
+)
 _BRIEF_KEY = "vocab_image_brief_prompt"
 
 
@@ -204,27 +212,46 @@ async def set_brief_prompt(db: AsyncSession, *, prompt: str, updated_by, at: str
     return value
 
 
-async def _ai_visual_brief(word: str, meaning: str, pos: str, system: str | None = None) -> str:
-    """用 LLM 把词(尤其抽象词/虚词/短语)转成一句"可画的具体视觉场景",提升图片可理解性。
-    system=生成指令(不传则用默认);由调用方从后台配置取当前版本传入。空/过短则重试一次。"""
+def _all_meanings(w: VocabularyWord) -> str:
+    """多义合并(供 brief 消歧,①义项/②语境):把 definitions 各义拼一串。"""
+    d = w.definitions
+    if isinstance(d, list):
+        parts = [str(x.get("meaning") or x.get("zh") or "") for x in d if isinstance(x, dict)]
+        return "；".join(p for p in parts if p)[:200]
+    return ""
+
+
+async def _ai_visual_brief(word: str, meaning: str, pos: str, system: str | None = None,
+                           *, en_desc: str = "", all_defs: str = "") -> tuple[str, float]:
+    """用 LLM 把词转成「可画的具体视觉场景 scene + 可画性自评 drawable(0-1)」。
+    ①/②:喂中文义 + 英英释义 + 多义合并,消歧到可画的常用义、场景更具体;
+    ④:同一次调用返回 drawable,供出图前闸门判断(不加付费点)。
+    返回 (scene, drawable);dev-mock 返回 ('', 1.0) 走原有主模板路径。"""
     if llm_provider.is_llm_dev_mode():
-        return ""   # dev-mock:不增强,走主模板
-    system = system or _DEF_BRIEF_SYSTEM
-    up = f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}"
+        return "", 1.0
+    system = (system or _DEF_BRIEF_SYSTEM) + _BRIEF_JSON_HINT
+    up = (f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}"
+          + (f"\nEnglish gloss: {en_desc}" if en_desc else "")
+          + (f"\nAll senses: {all_defs}" if all_defs else ""))
     for _ in range(2):
         try:
-            # 关推理(disable_thinking):brief 是"一句话画面描述"的简单任务,v4-flash 若开推理会对
-            # 抽象词想十几秒甚至吃满 token 返回空(慢且失败)。关思考后 ~1s 稳定出结果,256 token 足够。
-            resp = await llm_provider.chat_completion(
-                system_prompt=system, user_prompt=up, max_tokens=256,
+            # 关推理:brief 是简单任务,v4-flash 开推理会对抽象词想很久甚至吃满 token 返回空。
+            data = await llm_provider.complete_json(
+                system_prompt=system, user_prompt=up, max_tokens=320,
                 model=llm_provider.fast_model(), feature="vocab_image_brief",
                 disable_thinking=True)
-            brief = (resp.choices[0].message.content or "").strip().replace("\n", " ")
-            if len(brief) >= 12:      # 太短/空视为无效 → 重试一次
-                return brief
+            if not data:
+                continue
+            scene = str(data.get("scene") or "").strip().replace("\n", " ")
+            try:
+                drawable = float(data.get("drawable", 0.6))
+            except (TypeError, ValueError):
+                drawable = 0.6
+            if len(scene) >= 12:      # 太短/空视为无效 → 重试一次
+                return scene, max(0.0, min(1.0, drawable))
         except Exception as e:  # noqa: BLE001
             logger.warning("[配图AI提示词] %s 失败: %s", word, e)
-    return ""
+    return "", 0.0
 
 
 async def get_image_config(db: AsyncSession) -> dict:
@@ -352,7 +379,10 @@ async def suggest_image_brief(db: AsyncSession, *, word_id: uuid.UUID,
     if w is None:
         raise AppError(code=404, message="单词不存在")
     sysp = system if (system and system.strip()) else (await get_brief_prompt(db))["current"]
-    return await _ai_visual_brief(w.word, _primary_meaning(w), _pos_of(w), system=sysp)
+    scene, _drawable = await _ai_visual_brief(
+        w.word, _primary_meaning(w), _pos_of(w), system=sysp,
+        en_desc=(w.en_description or ""), all_defs=_all_meanings(w))
+    return scene
 
 
 async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None = None,
@@ -375,19 +405,27 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
         #  ② 场景闸门:开 use_ai_prompt 时必须成功拿到「可画场景」brief —— 生成失败也不退化。
         #  任一不满足 → 中止出图,不产出/不落库「裸词兜底图」(乱码文字图/语义乱配的根因)。
         brief = ""
+        drawable = 1.0
         if brief_override is not None:
-            brief = brief_override.strip()
+            brief = brief_override.strip()   # 人工编辑的场景默认可画
         elif cfg.get("use_ai_prompt"):
             sysp = (await get_brief_prompt(db))["current"]
             try:
-                brief = (await _ai_visual_brief(w.word, meaning, pos, system=sysp) or "").strip()
+                brief, drawable = await _ai_visual_brief(
+                    w.word, meaning, pos, system=sysp,
+                    en_desc=(w.en_description or ""), all_defs=_all_meanings(w))
+                brief = (brief or "").strip()
             except Exception as e:  # noqa: BLE001  brief 失败 → 不退化,交由闸门中止
-                brief = ""
+                brief, drawable = "", 0.0
                 logger.warning("[配图] %s 生成画面描述(brief)失败: %s", w.word, e)
         need_brief = (brief_override is None) and bool(cfg.get("use_ai_prompt"))
-        gate_ok = bool(meaning.strip()) and not (need_brief and not brief)
+        # ④Q 生成前可画性闸门:抽象/虚词可画性过低 → 不出图,降级词义卡(⑦E)
+        low_draw = need_brief and drawable < _DRAWABLE_MIN
+        gate_ok = bool(meaning.strip()) and not (need_brief and not brief) and not low_draw
         if not gate_ok:
-            reason = "无词意(definitions 缺失)" if not meaning.strip() else "画面描述(brief)生成失败"
+            reason = ("无词意(definitions 缺失)" if not meaning.strip()
+                      else "画面描述(brief)生成失败" if not brief
+                      else f"可画性过低({drawable:.2f}<{_DRAWABLE_MIN})→降级词义卡")
             logger.warning("[配图闸门] %s 中止出图:%s —— 不产出裸词兜底图,交由「查看即生成」重试", w.word, reason)
         else:
             prompts = _build_prompts(cfg, word=w.word, meaning=meaning,
