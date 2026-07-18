@@ -88,6 +88,8 @@ function defText(d: any): string {
 }
 
 function openCard(w: StudyWord) {
+  // C 查看即生成:在库但无图的词,点开即补媒体(触发点=消费点,不必等「加入」)
+  if (!w.image_url && w.word_id) genWordMedia(w)
   if (props.noCard) { emit('pick', w); return }   // 交给父级在根层弹卡
   cardWord.value = w
 }

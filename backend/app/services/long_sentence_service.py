@@ -1424,7 +1424,10 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
             item = {"word_id": None, "word": w, "phonetic": k.get("pos") or None,
                     "definitions": ([{"zh": k.get("meaning")}] if k.get("meaning") else None),
                     "image_url": None, "word_audio_url": None, "en_description": None,
-                    "example": None, "in_vocab": False, "word_added": False}
+                    "example": None, "in_vocab": False, "word_added": False,
+                    # 缺词/词组「查看即生成」:形状合格(含常用词组)→ 显示「学这个词」,
+                    # 走 ensure_missing_word(有效性闸门 + 建词条 + 出媒体;词组亦支持)
+                    "pending_create": bool(vis._WORD_SHAPE.fullmatch(w))}
         words.append(item)
     analysis_out = {
         "translation": analysis.get("translation"), "sentence_type": analysis.get("sentence_type"),
