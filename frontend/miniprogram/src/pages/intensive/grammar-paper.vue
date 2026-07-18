@@ -25,20 +25,23 @@
       <view class="modal-card">
         <text class="modal-title">{{ practiceKp }}<text class="modal-tag">自建语法</text></text>
         <scroll-view scroll-y class="modal-body">
-          <!-- 讲解 -->
+          <!-- 讲解:折叠手风琴(图标 header + 展开正文),按 section 映射图标/配色 -->
           <view v-if="lectureLoading" class="tip">AI 讲解生成中…</view>
-          <view v-for="s in lectureSections" :key="s.section_key" class="lec">
-            <text class="lec-title">{{ s.title }}</text>
-            <rich-text :nodes="md2html(s.content_md)" class="lec-md" />
-          </view>
-          <!-- 练习:逐题作答判分统一走 PracticeQuiz -->
-          <view class="prac-hd">
-            <text class="prac-t">练一练</text>
-          </view>
-          <view class="prac-start" :class="{ busy: practiceLoading }" @tap="startPractice">
-            <text>{{ practiceLoading ? '出题中…' : '开始练习（5 题）' }}</text>
+          <view v-for="(s, i) in lectureSections" :key="s.section_key" class="acc">
+            <view class="acc-hd" :class="'acc-' + secMeta(s.section_key).kind" @tap="toggle(i)">
+              <view class="ic acc-ic" :class="secMeta(s.section_key).icon"></view>
+              <text class="acc-title">{{ s.title }}</text>
+              <view class="ic acc-chev" :class="openSet.has(i) ? 'ic-chevron-up' : 'ic-chevron-down'"></view>
+            </view>
+            <view v-if="openSet.has(i)" class="acc-body">
+              <rich-text :nodes="md2html(s.content_md)" class="lec-md" />
+            </view>
           </view>
         </scroll-view>
+        <!-- 开始练习:主按钮(关闭走底部次级) -->
+        <view class="prac-start" :class="{ busy: practiceLoading }" @tap="startPractice">
+          <text>{{ practiceLoading ? '出题中…' : '开始练习 · 5 题' }}</text>
+        </view>
         <view class="modal-close" @tap="practiceOpen = false"><text>关闭</text></view>
       </view>
     </view>
@@ -95,11 +98,28 @@ const practiceLoading = ref(false)
 const practiceKp = ref('')
 const lectureLoading = ref(false)
 const lectureSections = ref<GrammarLectureSection[]>([])
+// 讲解手风琴:按 section_key 映射图标/配色(idea 一句话搞懂 / examples 看例句 / pitfall 别踩坑),未知走默认
+const SEC_META: Record<string, { icon: string; kind: string }> = {
+  idea: { icon: 'ic-idea', kind: 'idea' },
+  examples: { icon: 'ic-quote', kind: 'examples' },
+  pitfall: { icon: 'ic-warning', kind: 'pitfall' },
+}
+function secMeta(k: string) { return SEC_META[k] || { icon: 'ic-idea', kind: 'idea' } }
+const openSet = ref<Set<number>>(new Set())
+function toggle(i: number) {
+  const s = new Set(openSet.value)
+  s.has(i) ? s.delete(i) : s.add(i)
+  openSet.value = s
+}
 async function goLearn(p: GrammarPoint) {
   if (p.personal || !p.node_id) {   // 个人语法(未入图谱)→ AI 讲解(缓存)+ 按名出题
     practiceKp.value = p.name; quizQuestions.value = []; lectureSections.value = []
+    openSet.value = new Set()
     practiceOpen.value = true; lectureLoading.value = true
-    try { lectureSections.value = (await namedGrammarLecture(p.name)).sections }
+    try {
+      lectureSections.value = (await namedGrammarLecture(p.name)).sections
+      openSet.value = new Set(lectureSections.value.length ? [0] : [])   // 默认展开第一段
+    }
     catch { /* 讲解失败静默 */ }
     finally { lectureLoading.value = false }
     return
@@ -170,12 +190,22 @@ onShow(() => { if (!_shown) { _shown = true; return } load() })
 .modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
 .modal-tag { font-size: 19rpx; color: #ff8a3d; border: 2rpx solid #ffd8bd; border-radius: 6rpx; padding: 1rpx 8rpx; margin-left: 10rpx; font-weight: 400; }
 .modal-body { flex: 1; margin: 16rpx 0; }
-.lec { padding: 8rpx 0 16rpx; }
-.lec-title { display: block; font-size: 24rpx; font-weight: 700; color: var(--c-primary); margin-bottom: 8rpx; }
 .lec-md { font-size: 25rpx; line-height: 1.7; color: var(--c-ink); }
-.prac-hd { display: flex; align-items: center; justify-content: space-between; border-top: 2rpx solid var(--c-line, #eef1f5); padding-top: 14rpx; margin-top: 6rpx; }
-.prac-t { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
-.prac-start { margin-top: 14rpx; text-align: center; background: var(--c-primary); color: #fff; font-size: 27rpx; font-weight: 700; border-radius: 999rpx; padding: 16rpx; }
+/* 讲解手风琴:图标 header(按 section 染色)+ 展开正文 */
+.acc { border: 2rpx solid #e3e8f0; border-radius: 14rpx; overflow: hidden; margin-bottom: 14rpx; }
+.acc-hd { display: flex; align-items: center; gap: 12rpx; padding: 18rpx 18rpx; }
+.acc-idea { background: #f3f8fe; }
+.acc-examples { background: #f1faf5; }
+.acc-pitfall { background: #fdf6ef; }
+.acc-ic { width: 30rpx; height: 30rpx; flex: none; }
+.acc-title { flex: 1; min-width: 0; font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
+.acc-idea .acc-title { color: #2f74d6; }
+.acc-examples .acc-title { color: #1a9059; }
+.acc-pitfall .acc-title { color: #c06a2a; }
+.acc-chev { width: 28rpx; height: 28rpx; flex: none; }
+.acc-body { padding: 16rpx 18rpx 20rpx; }
+.acc-body .lec-md { display: block; }
+.prac-start { margin-top: 4rpx; text-align: center; background: linear-gradient(135deg, #4c97f7, #3d7bf0); color: #fff; font-size: 28rpx; font-weight: 700; border-radius: 16rpx; padding: 22rpx 0; box-shadow: 0 6rpx 16rpx rgba(61,123,240,.28); }
 .prac-start.busy { opacity: .6; }
-.modal-close { text-align: center; font-size: 26rpx; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 14rpx; }
+.modal-close { text-align: center; font-size: 26rpx; color: #93a0b3; padding: 18rpx 0 6rpx; margin-top: 4rpx; }
 </style>
