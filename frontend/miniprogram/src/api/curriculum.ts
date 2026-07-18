@@ -98,13 +98,18 @@ export interface CourseUnitsResp {
   semester_done: boolean
   next_semester: { grade: string; semester: string } | null
 }
-export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string; studied?: boolean }
+export interface GrammarMastery { recognize: number; detect: number; produce: number; transfer: boolean }
+export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string; studied?: boolean; mastery?: GrammarMastery | null }
 export interface GrammarLectureSection { section_key: string; title: string; content_md: string }
 // 个人语法(未入图谱)按语法名即时生成 AI 讲解(全局缓存,同名不二次付费)
 export function namedGrammarLecture(name: string): Promise<{ sections: GrammarLectureSection[] }> {
   return request('/api/v1/curriculum/grammar-lecture', { method: 'POST', data: { name } })
 }
-export interface SentenceItem { text: string; studied?: boolean }
+export interface SentenceItem { text: string; studied?: boolean; ring?: number }
+// 蓝-4 徽章环:标记某句三态之一(comp/gram/word),返回新 ring
+export function markSentenceProgress(sentence: string, kind: 'comp' | 'gram' | 'word'): Promise<{ ring: number }> {
+  return request('/api/v1/curriculum/intensive/sentence/mark-progress', { method: 'POST', data: { sentence, kind } })
+}
 
 export function grHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
   return request('/api/v1/curriculum/intensive/grammar/homework/batches', { method: 'GET' })

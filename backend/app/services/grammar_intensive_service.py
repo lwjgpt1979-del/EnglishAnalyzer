@@ -25,6 +25,14 @@ def _pt(nid, name, code) -> dict:
     return {"node_id": str(nid), "name": name, "code": code, "personal": False}
 
 
+def _mastery(has_row, recog, det, prod, transfer) -> dict | None:
+    """四维掌握度(识别/纠错/产出 各 0–1 + 迁移布尔);无 student_grammar_mastery 行(未学)返回 None。"""
+    if not has_row:
+        return None
+    return {"recognize": float(recog or 0), "detect": float(det or 0),
+            "produce": float(prod or 0), "transfer": bool(transfer)}
+
+
 # ── 作业精讲 · 语法:按卷(批次)──────────────────────────────────────────────
 async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
     """学生作业里的语法点,按来源卷(批次)归组。年月日倒序。
@@ -76,7 +84,9 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
     from app.models.d4_knowledge import StudentGrammarMastery
     rows = (await db.execute(
         select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
-               StudentGrammarMastery.id.isnot(None))
+               StudentGrammarMastery.id.isnot(None),
+               StudentGrammarMastery.mastery_recognize, StudentGrammarMastery.mastery_detect,
+               StudentGrammarMastery.mastery_produce, StudentGrammarMastery.transfer_ok)
         .join(StudentKpTarget, StudentKpTarget.node_id == KnowledgeNode.id)
         .outerjoin(StudentGrammarMastery,
                    (StudentGrammarMastery.kp_id == KnowledgeNode.id)
@@ -84,7 +94,9 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
         .where(StudentKpTarget.student_id == student_id,
                StudentKpTarget.source_paper_id == paper_id, _GRAMMAR)
         .order_by(KnowledgeNode.code))).all()
-    out = [{**_pt(nid, name, code), "studied": bool(st)} for nid, name, code, st in rows]
+    out = [{**_pt(nid, name, code), "studied": bool(st),
+            "mastery": _mastery(st, recog, det, prod, tr)}
+           for nid, name, code, st, recog, det, prod, tr in rows]
     pers = (await db.execute(
         select(StudentGrammarNode.id, StudentGrammarNode.name)
         .where(StudentGrammarNode.student_id == student_id,
@@ -92,8 +104,8 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
                StudentGrammarNode.ref_node_id.is_(None))
         .order_by(StudentGrammarNode.name))).all()
     for sgn_id, pname in pers:
-        out.append({"node_id": None, "name": pname, "code": None,
-                    "personal": True, "sgn_id": str(sgn_id), "studied": False})
+        out.append({"node_id": None, "name": pname, "code": None, "personal": True,
+                    "sgn_id": str(sgn_id), "studied": False, "mastery": None})
     return out
 
 
@@ -145,12 +157,16 @@ async def course_points(db: AsyncSession, *, unit_id: uuid.UUID,
         .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
         .where(UnitNode.unit_id == unit_id, _GRAMMAR)
         .order_by(KnowledgeNode.code).distinct())).all()
-    studied_ids: set = set()
+    mastery_map: dict = {}   # kp_id → (recognize, detect, produce, transfer)
     if student_id is not None and rows:
         from app.models.d4_knowledge import StudentGrammarMastery
-        studied_ids = set(str(x) for x in (await db.execute(
-            select(StudentGrammarMastery.kp_id).where(
+        mrows = (await db.execute(
+            select(StudentGrammarMastery.kp_id, StudentGrammarMastery.mastery_recognize,
+                   StudentGrammarMastery.mastery_detect, StudentGrammarMastery.mastery_produce,
+                   StudentGrammarMastery.transfer_ok).where(
                 StudentGrammarMastery.student_id == student_id,
-                StudentGrammarMastery.kp_id.in_([nid for nid, _, _ in rows])))).scalars().all())
-    return [{**_pt(nid, name, code), "studied": str(nid) in studied_ids}
+                StudentGrammarMastery.kp_id.in_([nid for nid, _, _ in rows])))).all()
+        mastery_map = {str(k): (r, d, p, t) for k, r, d, p, t in mrows}
+    return [{**_pt(nid, name, code), "studied": str(nid) in mastery_map,
+             "mastery": _mastery(str(nid) in mastery_map, *mastery_map.get(str(nid), (None, None, None, None)))}
             for nid, name, code in rows]

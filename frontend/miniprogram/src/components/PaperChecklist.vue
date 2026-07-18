@@ -1,5 +1,5 @@
 <template>
-  <view class="pcl">
+  <view class="pcl" :class="{ flat }">
     <!-- 卷头:进度即底色(背景填充式,全项目统一) + 状态 -->
     <view class="hd-card">
       <view class="hd-fill" :class="'hf-' + status" :style="{ width: pct + '%' }"></view>
@@ -18,9 +18,11 @@
 
     <!-- 待学清单 -->
     <view v-for="(it, i) in items" :key="i"
-          class="row" :class="{ done: it.studied, next: i === firstUnstudied }"
+          class="row" :class="{ done: it.studied, next: i === firstUnstudied, first: i === 0, last: i === items.length - 1 }"
           @tap="emit('open', it, i)">
-      <view class="tick" :class="it.studied ? 'tick-done' : (i === firstUnstudied ? 'tick-next' : 'tick-todo')"></view>
+      <slot name="tick" :item="it" :index="i" :done="!!it.studied">
+        <view class="tick" :class="it.studied ? 'tick-done' : (i === firstUnstudied ? 'tick-next' : 'tick-todo')"></view>
+      </slot>
       <view class="row-body"><slot name="item" :item="it" :index="i" :done="!!it.studied" /></view>
       <text class="row-act" :class="{ 'act-next': i === firstUnstudied && !it.studied }">{{ it.studied ? '复看 ›' : '去学 ›' }}</text>
     </view>
@@ -34,7 +36,8 @@ const props = withDefaults(defineProps<{
   items: Array<{ studied?: boolean; [k: string]: any }>
   date?: string
   unit?: string
-}>(), { unit: '项', date: '' })
+  flat?: boolean   // 清单从「每项独立卡」→「一卡内连续行 + 细线分隔」(单词模块用,还原 H 大图行)
+}>(), { unit: '项', date: '', flat: false })
 const emit = defineEmits<{ (e: 'open', item: any, index: number): void; (e: 'start', index: number): void }>()
 
 const total = computed(() => props.items.length)
@@ -94,4 +97,11 @@ function onStart() {
 .row-body { flex: 1; min-width: 0; }
 .row-act { flex: none; font-size: 22rpx; color: #93a0b3; }
 .act-next { color: #3d8bf5; font-weight: 700; }
+
+/* flat 变体:一卡内连续行 + 细线分隔(单词模块,还原 H 大图行);默认关,不影响其它模块 */
+.flat .row { margin: 0; border: 2rpx solid #e9edf3; border-top: none; border-radius: 0; box-shadow: none; background: #fff; }
+.flat .row.first { border-top: 2rpx solid #e9edf3; border-top-left-radius: 18rpx; border-top-right-radius: 18rpx; }
+.flat .row.last { border-bottom-left-radius: 18rpx; border-bottom-right-radius: 18rpx; }
+.flat .row.done { background: #fbfdfc; }
+.flat .row.next { background: linear-gradient(90deg, #eef6ff, #f6fbff); }
 </style>
