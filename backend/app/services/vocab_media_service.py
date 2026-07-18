@@ -528,8 +528,10 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
 
 async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
                             brief_override: str | None = None,
-                            do_images: bool = True, do_audio: bool = True) -> VocabularyWord:
-    """生成词条媒体。do_images/do_audio 控制是否(重)生成图片/音频——批量时对已有资源可跳过。"""
+                            do_images: bool = True, do_audio: bool = True,
+                            candidates: int | None = None) -> VocabularyWord:
+    """生成词条媒体。do_images/do_audio 控制是否(重)生成图片/音频——批量时对已有资源可跳过。
+    candidates:临时覆盖本次出图候选数(如缺词按需收录用 1 张省 t2i)。"""
     w = (await db.execute(
         select(VocabularyWord).where(VocabularyWord.id == word_id)
     )).scalar_one_or_none()
@@ -537,10 +539,13 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
         raise AppError(code=404, message="单词不存在")
     if not (do_images or do_audio):
         return w                              # 图片、音频都跳过 → 无事可做
+    cfg = await get_image_config(db)
+    if candidates is not None:
+        cfg = {**cfg, "verify_candidates": max(1, int(candidates))}
     if do_images:
         meaning = _primary_meaning(w)
         w.en_description = await _gen_en_description(w.word, meaning)
-    imgs = await _gen_images_for(db, w, brief_override=brief_override,
+    imgs = await _gen_images_for(db, w, cfg=cfg, brief_override=brief_override,
                                  do_images=do_images, do_audio=do_audio)
     if do_images and imgs:
         w.image_urls = imgs
@@ -549,25 +554,35 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
     return w
 
 
+# 正在生成媒体的 word_id:防并发重复出图(缺词收录的后台补图 与 查看即生成 撞车)
+_media_inflight: set = set()
+
+
 async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> VocabularyWord | None:
     """单词媒体「即时兜底」:该词若没有已发布媒体(配图),即时生成图/音/英文释义/例句并
     **直接发布**(学生触发,全学生共享;结果落词条,同词后续命中不再付费——暂存铁律)。
-    已有已发布配图 → 幂等跳过。供长难句/作业里「加入学习」时对无媒体的词即时补齐。"""
+    已有已发布配图 → 幂等跳过;正在生成中(如后台补图)→ 跳过避免并发重复出图。"""
     w = (await db.execute(select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
     if w is None:
         return None
     if str(w.media_status) == "published" and isinstance(w.image_urls, list) and w.image_urls:
         return w                                  # 已有媒体,不重复生成
-    await generate_for_word(db, word_id=word_id, do_images=True, do_audio=True)
-    if isinstance(w.image_urls, list) and w.image_urls:
-        w.media_status = "published"              # 有真图才发布 → 直接可见(素材已记版本,admin 仍可复核)
-        w.media_origin = "student"                # 标记来源:学生端「加入学习」即时生成,供后台过滤复核
-    else:
-        # 出图被「双闸门」中止(无词意/场景) → 不发布空图坏图;保持 draft,下次查看再试(不缓存坏结果)
-        w.media_status = "draft"
-    await db.commit()
-    await db.refresh(w)
-    return w
+    if word_id in _media_inflight:
+        return w                                  # 正在生成中(后台/别处),跳过防重复付费
+    _media_inflight.add(word_id)
+    try:
+        await generate_for_word(db, word_id=word_id, do_images=True, do_audio=True)
+        if isinstance(w.image_urls, list) and w.image_urls:
+            w.media_status = "published"          # 有真图才发布 → 直接可见(素材已记版本,admin 仍可复核)
+            w.media_origin = "student"            # 标记来源:学生端即时生成,供后台过滤复核
+        else:
+            # 出图被闸门中止(无词意/场景/可画性不足) → 不发布空图坏图;保持 draft,下次再试
+            w.media_status = "draft"
+        await db.commit()
+        await db.refresh(w)
+        return w
+    finally:
+        _media_inflight.discard(word_id)
 
 
 _REPORT_REGEN_CAP = 5   # P3:同词累计反馈超此次数不再自动重刷(防刷钱),转后台复核

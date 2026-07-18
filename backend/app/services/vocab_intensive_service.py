@@ -243,6 +243,41 @@ async def _word_validity_gate(word: str) -> bool:
     return bool(d and d.get("valid"))
 
 
+async def _bg_gen_media_missing(word_id: uuid.UUID) -> None:
+    """缺词收录后台补媒体(②仅 1 张候选省 t2i)+ 接收探针;独立 session,失败不阻断。
+    与 ensure_word_media 共用 vocab_media_service._media_inflight 闸,防并发重复出图。"""
+    import logging
+    from app.core.database import _async_session_factory
+    from app.services import vocab_media_service as vms, vocab_probe_service
+    if word_id in vms._media_inflight:
+        return
+    vms._media_inflight.add(word_id)
+    try:
+        async with _async_session_factory() as db:
+            w = (await db.execute(
+                select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+            if w is None:
+                return
+            try:
+                await vms.generate_for_word(db, word_id=word_id, candidates=1)   # ② 单张候选
+                w.media_status = ("published" if (isinstance(w.image_urls, list) and w.image_urls)
+                                  else "draft")
+                await db.commit()
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                logging.getLogger(__name__).exception("bg media gen failed wid=%s", word_id)
+            try:
+                w2 = (await db.execute(
+                    select(VocabularyWord).where(VocabularyWord.id == word_id))).scalar_one_or_none()
+                if w2 is not None:
+                    await vocab_probe_service.ensure_probes(db, w2)
+                    await db.commit()
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+    finally:
+        vms._media_inflight.discard(word_id)
+
+
 async def ensure_missing_word(db: AsyncSession, *, word: str, student_id: uuid.UUID,
                               paper_id: uuid.UUID | None = None,
                               add_to_study: bool = True) -> dict:
@@ -277,17 +312,6 @@ async def ensure_missing_word(db: AsyncSession, *, word: str, student_id: uuid.U
         await db.flush()
         existing = w
         created = True
-        # 媒体(双闸门,有真图才 published;失败降级词义卡,不阻断可学)
-        try:
-            await vocab_media_service.generate_for_word(db, word_id=w.id)
-            w.media_status = "published" if (isinstance(w.image_urls, list) and w.image_urls) else "draft"
-        except Exception:  # noqa: BLE001
-            w.media_status = "draft"
-        # 接收探针(供 BKT),best-effort
-        try:
-            await vocab_probe_service.ensure_probes(db, w)
-        except Exception:  # noqa: BLE001
-            pass
         # 缺词审核行:标 status='auto'(已自动入库待复核,区别于 pending 未入库)
         rev = (await db.execute(
             select(VocabReview).where(VocabReview.word_norm == norm).limit(1))).scalar_one_or_none()
@@ -297,6 +321,10 @@ async def ensure_missing_word(db: AsyncSession, *, word: str, student_id: uuid.U
             db.add(VocabReview(id=uuid.uuid4(), word_norm=norm, word=disp, source="paper", status="auto"))
         await db.commit()
         await db.refresh(existing)
+        # ① 媒体(配图/发音)+ 接收探针 后台异步生成 → 词条秒回可学(有释义/音标);图随后补。
+        #   ②按需路径出图只 1 张候选省 t2i;与「查看即生成」共用 inflight 闸防并发重复出图。
+        import asyncio
+        asyncio.create_task(_bg_gen_media_missing(existing.id))
     # 加入学生待学习(按来源卷归批次)——复用 add_paper_candidates 幂等 upsert
     if add_to_study and paper_id is not None:
         await vocab_pin_service.add_paper_candidates(
