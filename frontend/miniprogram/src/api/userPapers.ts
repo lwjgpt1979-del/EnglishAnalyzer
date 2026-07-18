@@ -17,6 +17,17 @@ export function createUserPaper(
 }
 
 /** 列出本人整卷 */
+// 「我的作业」列表(C-a):每卷四模块聚合进度 + 综合环 + 状态
+export interface HomeworkModule { studied: number; total: number }
+export interface HomeworkPaper {
+  paper_id: string; title: string; date: string; ocr_status: string | null
+  modules: { word: HomeworkModule; grammar: HomeworkModule; sentence: HomeworkModule; reading: HomeworkModule }
+  studied: number; total: number; overall_pct: number
+  status: 'todo' | 'doing' | 'done'
+}
+export function getHomeworkProgress(): Promise<{ papers: HomeworkPaper[] }> {
+  return request<{ papers: HomeworkPaper[] }>('/api/v1/user-papers/homework-progress', { method: 'GET' })
+}
 export function listUserPapers(): Promise<UserPaperListOut> {
   return request<UserPaperListOut>('/api/v1/user-papers', { method: 'GET' })
 }

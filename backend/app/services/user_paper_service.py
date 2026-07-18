@@ -710,6 +710,57 @@ async def paper_long_sentences(
     return {"sentences": out[:15]}
 
 
+_HW_MODULES = ("word", "grammar", "sentence", "reading")
+
+
+async def homework_progress(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
+    """「我的作业」列表(C-a):以本人所有上传卷为底,合并四模块(单词/语法/长难句/阅读)进度。
+    每卷返回:综合进度环 overall_pct + 状态 status(todo/doing/done)+ 四模块 {studied,total}。
+    复用各模块 homework_batches(按 source_paper_id 归组),按 paper_id 合并;无内容的模块记 0/0。"""
+    from app.services import (vocab_intensive_service as vi, grammar_intensive_service as gi,
+                              sentence_intensive_service as si, reading_intensive_service as ri)
+    svcs = {"word": vi, "grammar": gi, "sentence": si, "reading": ri}
+    mod_maps: dict[str, dict] = {}
+    for kind, svc in svcs.items():
+        try:
+            lst = await svc.homework_batches(db, student_id=student_id)
+        except Exception:  # noqa: BLE001  某模块取数失败不拖垮整表
+            await db.rollback()   # DB 报错会污染事务 → 回滚恢复,坏模块记空,继续其它模块
+            lst = []
+        mod_maps[kind] = {
+            b["paper_id"]: (int(b.get("count") or b.get("word_count") or 0), int(b.get("studied") or 0))
+            for b in lst}
+    # 底表:本人所有上传卷(含未开始学的)
+    prows = (await db.execute(
+        select(UserUploadedPaper.id, UserUploadedPaper.title,
+               UserUploadedPaper.created_at, UserUploadedPaper.ocr_status)
+        .where(UserUploadedPaper.student_id == student_id)
+        .order_by(UserUploadedPaper.created_at.desc()))).all()
+    out: list[dict] = []
+    for pid, title, ca, ocr in prows:
+        spid = str(pid)
+        modules = {k: {"studied": mod_maps[k].get(spid, (0, 0))[1],
+                       "total": mod_maps[k].get(spid, (0, 0))[0]} for k in _HW_MODULES}
+        tot = sum(m["total"] for m in modules.values())
+        std = sum(m["studied"] for m in modules.values())
+        active = [m for m in modules.values() if m["total"] > 0]
+        if not active or std == 0:
+            status = "todo"
+        elif all(m["studied"] >= m["total"] for m in active):
+            status = "done"
+        else:
+            status = "doing"
+        out.append({
+            "paper_id": spid, "title": title or "未命名作业",
+            "date": ca.strftime("%Y-%m-%d") if ca else "",
+            "ocr_status": ocr, "modules": modules,
+            "studied": std, "total": tot,
+            "overall_pct": round(std / tot * 100) if tot else 0,
+            "status": status,
+        })
+    return out
+
+
 async def passage_study(
     db: AsyncSession, *, passage: str, student_id: uuid.UUID,
 ) -> dict:

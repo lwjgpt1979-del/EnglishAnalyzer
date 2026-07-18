@@ -74,6 +74,12 @@ async def list_user_papers(
     return make_ok(out.model_dump(mode="json"))
 
 
+@router.get("/homework-progress")
+async def homework_progress(db: DbDep, current_user: UserDep):
+    """「我的作业」列表(C-a):每卷四模块(单词/语法/长难句/阅读)聚合进度 + 综合环 + 状态。"""
+    return make_ok({"papers": await user_paper_service.homework_progress(db, student_id=current_user.id)})
+
+
 @router.get("/{paper_id}")
 async def get_user_paper(
     paper_id: uuid.UUID,
