@@ -6,8 +6,8 @@
         @open="(p) => goLearn(p)" @start="(i) => goLearn(points[i])">
       <template #item="{ item }">
         <view class="pt-main"><text class="pt-name">{{ item.name }}</text><text v-if="item.personal" class="pt-tag">自建</text></view>
-        <!-- 四维掌握度:识别/纠错/产出(0–1 填充)+ 迁移(满/空);未学=空条 -->
-        <view class="mst">
+        <!-- 图谱语法点:四维掌握度(识别/纠错/产出 0–1 + 迁移满/空);未学=空条 -->
+        <view v-if="!item.personal" class="mst">
           <text class="mst-cap">掌握</text>
           <view class="mst-bars">
             <view v-for="(seg, i) in masteryBars(item)" :key="i" class="mst-seg">
@@ -16,13 +16,18 @@
           </view>
           <text class="mst-word" :class="masteryStatus(item).cls">{{ masteryStatus(item).label }}</text>
         </view>
+        <!-- 自建语法:无图谱四维,用「练一练」痕迹反馈 -->
+        <view v-else class="mst">
+          <text class="mst-cap">练习</text>
+          <text class="mst-word" :class="item.practice ? 'st-doing' : 'st-todo'">{{ item.practice ? item.practice.correct + ' / ' + item.practice.total + ' 正确' : '未练习' }}</text>
+        </view>
       </template>
       <template #empty>该{{ mode === 'homework' ? '批次' : '单元' }}没有语法点</template>
     </PaperChecklist>
 
     <!-- 个人语法点(未入图谱):AI 讲解(缓存)+ 按语法名出题练习 -->
-    <view v-if="practiceOpen" class="modal" @tap.self="practiceOpen = false">
-      <view class="modal-card">
+    <view v-if="practiceOpen" class="modal" @tap="practiceOpen = false">
+      <view class="modal-card" @tap.stop>
         <text class="modal-title">{{ practiceKp }}<text class="modal-tag">自建语法</text></text>
         <scroll-view scroll-y class="modal-body">
           <!-- 讲解:折叠手风琴(图标 header + 展开正文),按 section 映射图标/配色 -->
@@ -52,7 +57,8 @@
       :kp="practiceKp"
       :questions="quizQuestions"
       :judge="quizJudge"
-      @close="quizOpen = false"
+      :recorder="quizRecorder"
+      @close="onQuizClose"
     />
   </view>
 </template>
@@ -61,7 +67,7 @@
 import { ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import PaperChecklist from '@/components/PaperChecklist.vue'
-import { grHwPoints, grCoursePoints, namedGrammarLecture,
+import { grHwPoints, grCoursePoints, namedGrammarLecture, markPersonalGrammarPracticed,
          type GrammarPoint, type GrammarLectureSection } from '@/api/curriculum'
 import { generateQuestions, submitAnswer } from '@/api/practice'
 import PracticeQuiz, { type ChosenAnswer } from '@/components/PracticeQuiz.vue'
@@ -96,6 +102,7 @@ function masteryStatus(p: GrammarPoint): { label: string; cls: string } {
 const practiceOpen = ref(false)
 const practiceLoading = ref(false)
 const practiceKp = ref('')
+const practiceSgnId = ref('')   // 当前练习的自建语法节点 id(做完标记已学 + 记成绩)
 const lectureLoading = ref(false)
 const lectureSections = ref<GrammarLectureSection[]>([])
 // 讲解手风琴:按 section_key 映射图标/配色(idea 一句话搞懂 / examples 看例句 / pitfall 别踩坑),未知走默认
@@ -113,7 +120,8 @@ function toggle(i: number) {
 }
 async function goLearn(p: GrammarPoint) {
   if (p.personal || !p.node_id) {   // 个人语法(未入图谱)→ AI 讲解(缓存)+ 按名出题
-    practiceKp.value = p.name; quizQuestions.value = []; lectureSections.value = []
+    practiceKp.value = p.name; practiceSgnId.value = p.sgn_id || ''
+    quizQuestions.value = []; lectureSections.value = []
     openSet.value = new Set()
     practiceOpen.value = true; lectureLoading.value = true
     try {
@@ -141,9 +149,17 @@ async function startPractice() {
   finally { practiceLoading.value = false }
 }
 async function quizJudge(q: PracticeQuestion, ans: ChosenAnswer) {
-  const r = await submitAnswer(q.id, ans.letter || ans.input)   // 语法练习为单选,用字母
+  const r = await submitAnswer(q.id, ans.text || ans.input)   // 后端按「选项完整文本」判分(见 practice_service),传文本非字母
   return { correct: r.is_correct, correct_answer: r.correct_answer, explanation: r.explanation }
 }
+// 自建语法练完:标记该节点已学 + 记最近成绩(无图谱 node、无四维)
+async function quizRecorder(total: number, correct: number): Promise<string> {
+  if (practiceSgnId.value) {
+    try { await markPersonalGrammarPracticed(practiceSgnId.value, correct, total) } catch { /* 静默,不阻断结算 */ }
+  }
+  return `本轮 ${correct}/${total} 正确`
+}
+function onQuizClose() { quizOpen.value = false; load() }   // 关练习 → 重载 points,反映已学/练习分
 
 async function load() {
   loading.value = true
@@ -186,10 +202,11 @@ onShow(() => { if (!_shown) { _shown = true; return } load() })
 .mst-word.st-doing { color: #3d8bf5; }
 .mst-word.st-done { color: #2fa98a; }
 .modal { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 40rpx; }
-.modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
-.modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.modal-card { width: 100%; max-width: 640rpx; max-height: 84vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+.modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); flex: none; }
 .modal-tag { font-size: 19rpx; color: #ff8a3d; border: 2rpx solid #ffd8bd; border-radius: 6rpx; padding: 1rpx 8rpx; margin-left: 10rpx; font-weight: 400; }
-.modal-body { flex: 1; margin: 16rpx 0; }
+/* scroll-view 在 mp-weixin 需明确 max-height 才滚动;上限内滚,底部按钮常驻卡内 */
+.modal-body { flex: 1; min-height: 0; max-height: 56vh; margin: 16rpx 0; }
 .lec-md { font-size: 25rpx; line-height: 1.7; color: var(--c-ink); }
 /* 讲解手风琴:图标 header(按 section 染色)+ 展开正文 */
 .acc { border: 2rpx solid #e3e8f0; border-radius: 14rpx; overflow: hidden; margin-bottom: 14rpx; }

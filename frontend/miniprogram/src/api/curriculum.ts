@@ -99,7 +99,12 @@ export interface CourseUnitsResp {
   next_semester: { grade: string; semester: string } | null
 }
 export interface GrammarMastery { recognize: number; detect: number; produce: number; transfer: boolean }
-export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string; studied?: boolean; mastery?: GrammarMastery | null }
+export interface GrammarPractice { correct: number; total: number }
+export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string; studied?: boolean; mastery?: GrammarMastery | null; practice?: GrammarPractice | null }
+// 自建语法「练一练」做完 → 标记该个人节点已学 + 记最近一轮成绩(无图谱 node、无四维掌握)
+export function markPersonalGrammarPracticed(sgnId: string, correct: number, total: number): Promise<{ studied: boolean; correct: number; total: number }> {
+  return request('/api/v1/curriculum/intensive/grammar/personal/practiced', { method: 'POST', data: { sgn_id: sgnId, correct, total } })
+}
 export interface GrammarLectureSection { section_key: string; title: string; content_md: string }
 // 个人语法(未入图谱)按语法名即时生成 AI 讲解(全局缓存,同名不二次付费)
 export function namedGrammarLecture(name: string): Promise<{ sections: GrammarLectureSection[] }> {

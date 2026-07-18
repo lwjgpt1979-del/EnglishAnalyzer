@@ -55,6 +55,7 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
         .group_by(StudentKpTarget.source_paper_id, UserUploadedPaper.title, UserUploadedPaper.created_at))).all()
     pers = (await db.execute(
         select(StudentGrammarNode.source_paper_id, func.count(StudentGrammarNode.id),
+               func.count(StudentGrammarNode.studied_at),   # 已练(studied_at 非空)= 已学
                UserUploadedPaper.title, UserUploadedPaper.created_at)
         .join(UserUploadedPaper, UserUploadedPaper.id == StudentGrammarNode.source_paper_id)
         .where(StudentGrammarNode.student_id == student_id,
@@ -65,9 +66,9 @@ async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[d
     for pid, cnt, studied, title, ca in kp:
         m = merged.setdefault(pid, {"title": title, "ca": ca, "count": 0, "studied": 0})
         m["count"] += int(cnt); m["studied"] += int(studied)
-    for pid, cnt, title, ca in pers:   # 个人语法只计入总数,不计已学
+    for pid, cnt, studied, title, ca in pers:   # 个人语法:练过(studied_at)才计已学
         m = merged.setdefault(pid, {"title": title, "ca": ca, "count": 0, "studied": 0})
-        m["count"] += int(cnt)
+        m["count"] += int(cnt); m["studied"] += int(studied)
     out = [{"paper_id": str(pid), "title": m["title"] or "未命名作业",
             "date": m["ca"].strftime("%Y-%m-%d") if m["ca"] else "",
             "count": m["count"], "studied": m["studied"]}
@@ -98,14 +99,17 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
             "mastery": _mastery(st, recog, det, prod, tr)}
            for nid, name, code, st, recog, det, prod, tr in rows]
     pers = (await db.execute(
-        select(StudentGrammarNode.id, StudentGrammarNode.name)
+        select(StudentGrammarNode.id, StudentGrammarNode.name,
+               StudentGrammarNode.studied_at, StudentGrammarNode.last_correct, StudentGrammarNode.last_total)
         .where(StudentGrammarNode.student_id == student_id,
                StudentGrammarNode.source_paper_id == paper_id,
                StudentGrammarNode.ref_node_id.is_(None))
         .order_by(StudentGrammarNode.name))).all()
-    for sgn_id, pname in pers:
+    for sgn_id, pname, st_at, lc, lt in pers:
+        # 自建语法无四维掌握,用「练一练痕迹」记 studied + 最近成绩(practice)
         out.append({"node_id": None, "name": pname, "code": None, "personal": True,
-                    "sgn_id": str(sgn_id), "studied": False, "mastery": None})
+                    "sgn_id": str(sgn_id), "studied": st_at is not None, "mastery": None,
+                    "practice": ({"correct": int(lc or 0), "total": int(lt or 0)} if st_at is not None else None)})
     return out
 
 
@@ -170,3 +174,20 @@ async def course_points(db: AsyncSession, *, unit_id: uuid.UUID,
     return [{**_pt(nid, name, code), "studied": str(nid) in mastery_map,
              "mastery": _mastery(str(nid) in mastery_map, *mastery_map.get(str(nid), (None, None, None, None)))}
             for nid, name, code in rows]
+
+
+# ── 自建语法「练一练」痕迹:标记已学 + 最近成绩(无图谱 node、无四维,用此反馈)──────────
+async def mark_personal_practiced(db: AsyncSession, *, student_id: uuid.UUID,
+                                  sgn_id: uuid.UUID, correct: int, total: int) -> dict:
+    """自建语法练一练做完 → 该个人节点置 studied_at(已学)+ 记最近一轮 correct/total。"""
+    import datetime as _dt
+    from app.core.exceptions import AppError
+    from app.models.d27_student_grammar import StudentGrammarNode
+    node = await db.get(StudentGrammarNode, sgn_id)
+    if node is None or node.student_id != student_id:
+        raise AppError(code=404, message="个人语法不存在")
+    node.studied_at = _dt.datetime.now(_dt.timezone.utc)
+    node.last_correct = int(max(0, correct))
+    node.last_total = int(max(0, total))
+    await db.flush()
+    return {"studied": True, "correct": node.last_correct, "total": node.last_total}

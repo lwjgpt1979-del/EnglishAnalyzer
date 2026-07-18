@@ -277,6 +277,21 @@ async def gr_course_points(db: DbDep, current_user: UserDep, unit_id: uuid.UUID 
     return make_ok({"points": await gi.course_points(db, unit_id=unit_id, student_id=current_user.id)})
 
 
+@router.post("/intensive/grammar/personal/practiced")
+async def gr_personal_practiced(
+    db: DbDep, current_user: UserDep,
+    sgn_id: Annotated[uuid.UUID, Body(..., embed=True)],
+    correct: Annotated[int, Body(..., embed=True)],
+    total: Annotated[int, Body(..., embed=True)],
+):
+    """自建语法「练一练」做完 → 标记该个人节点已学 + 记最近一轮成绩(无图谱 node、无四维)。"""
+    from app.services import grammar_intensive_service as gi
+    r = await gi.mark_personal_practiced(
+        db, student_id=current_user.id, sgn_id=sgn_id, correct=correct, total=total)
+    await db.commit()
+    return make_ok(r)
+
+
 @router.get("/intensive/sentence/homework/batches")
 async def se_hw_batches(db: DbDep, current_user: UserDep):
     from app.services import sentence_intensive_service as si
