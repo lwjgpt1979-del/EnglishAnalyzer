@@ -242,7 +242,7 @@ function pickErr(k: ErrKey) {
   if (current.value) setErrorType(current.value.id, k).catch(() => { /* 静默 */ })
 }
 // 粗心=直接下一题;记混/不会=练同类巩固
-const ctaLabel = computed(() => (errType.value === 'careless' ? '下一题' : '练 3 道同类巩固'))
+const ctaLabel = computed(() => (errType.value === 'careless' ? '下一题' : '练同类'))
 function onCta() {
   if (errType.value === 'careless') { next(); return }
   openPractice()
