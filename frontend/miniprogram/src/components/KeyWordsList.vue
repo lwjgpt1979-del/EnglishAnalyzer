@@ -28,6 +28,8 @@
     <view v-if="!noCard && cardWord" class="card-mask" @tap="cardWord = null">
       <view class="card-pop" @tap.stop>
         <image v-if="cardWord.image_url" :src="cardWord.image_url" class="cp-img" mode="aspectFill" />
+        <!-- 刚收录:配图后台生成中,轻占位 -->
+        <view v-else-if="genWords.has(cardWord.word_id || '')" class="cp-img cp-gen"><text>配图生成中…</text></view>
         <!-- P3 图不对/换一张:撤图重刷(全学生共享) -->
         <view v-if="cardWord.image_url && !genWords.has(cardWord.word_id || '')" class="cp-report"
               :class="{ busy: regenId === (cardWord.word_id || '') }" @tap.stop="reportImage(cardWord)">
@@ -115,8 +117,31 @@ async function learnMissing(w: StudyWord) {
     Object.assign(w, r.word, { pending_create: false })   // 原地变真词卡
     if (w.word_id && w.word_added) wordAdded.value = new Set([...wordAdded.value, w.word_id])
     uni.showToast({ title: r.status === 'created' ? '已收录,可以学啦' : '已加入', icon: 'none' })
+    // ① 配图后台异步生成中 → 显示「配图生成中…」占位,轻量轮询到图就地补上
+    if (r.status === 'created' && w.word_id && !w.image_url) pollMissingMedia(w)
   } catch (e: any) { uni.showToast({ title: e?.message || '收录失败', icon: 'none' }) }
   finally { learningWord.value = '' }
+}
+
+// 刚收录的词:配图在后台生成,轮询(只读命中/inflight 跳过,不重复付费)到图就地补;超时静默(下次看到)
+async function pollMissingMedia(w: StudyWord) {
+  const id = w.word_id
+  if (!id) return
+  genWords.value = new Set([...genWords.value, id])   // 列表行 + 卡片显示「配图生成中…」
+  try {
+    for (let i = 0; i < 6; i++) {
+      await new Promise(res => setTimeout(res, 3000))
+      const m = await ensureWordMedia(id)
+      if (m.image_url) {
+        w.image_url = m.image_url
+        w.word_audio_url = m.word_audio_url ?? w.word_audio_url
+        w.en_description = m.en_description ?? w.en_description
+        w.example = (m.example as any) ?? w.example
+        break
+      }
+    }
+  } catch { /* 静默:图下次看到 */ }
+  finally { const s = new Set(genWords.value); s.delete(id); genWords.value = s }
 }
 
 async function addWord(w: StudyWord) {
@@ -212,6 +237,7 @@ async function playWord(w: StudyWord) {
 .cp-play.on { color: #2ecc71; border-color: #2ecc71; }
 .cp-play-ic { width: 26rpx; height: 26rpx; }
 /* P3 图不对/换一张 */
+.cp-gen { display: flex; align-items: center; justify-content: center; background: var(--c-primary-faint, #eaf2ff); color: var(--c-primary); font-size: 24rpx; }
 .cp-report { display: flex; align-items: center; justify-content: center; gap: 8rpx; margin-top: 12rpx; font-size: 22rpx; color: #93a0b3; }
 .cp-report.busy { color: var(--c-primary); }
 .cp-report-ic { width: 26rpx; height: 26rpx; opacity: .75; }
