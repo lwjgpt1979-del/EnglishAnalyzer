@@ -63,6 +63,17 @@ async def get_review_queue(db: DbDep, current_user: UserDep):
     ))
 
 
+@router.post("/{wq_id}/error-type", response_model=BaseResponse[dict])
+async def set_error_type_api(wq_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
+    """复习时标注错因类型(记混/粗心/不会):confused|careless|unknown,落库供错因画像。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import wrong_review_service
+    ok = await wrong_review_service.set_error_type(
+        db, student_id=current_user.id, wrong_record_id=wq_id,
+        error_type=str(body.get("error_type") or ""))
+    return make_ok({"ok": ok})
+
+
 @router.get("/{wq_id}", response_model=BaseResponse[WrongQuestionOut])
 async def get_wrong_question(wq_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """获取单条错题详情(wrong_record,只能查自己的)。"""

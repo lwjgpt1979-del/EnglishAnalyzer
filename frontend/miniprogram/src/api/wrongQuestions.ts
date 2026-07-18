@@ -46,6 +46,13 @@ export interface WrongQuestionReviewItem {
   next_review_at: string | null
   last_review_at: string | null
   is_mastered: boolean
+  source_label?: string | null
+  source_route?: string | null
+  error_type?: string | null
+}
+// 复习标注错因类型(记混/粗心/不会)→ 落库供错因画像
+export function setErrorType(wqId: string, errorType: 'confused' | 'careless' | 'unknown'): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/v1/wrong-questions/${wqId}/error-type`, { method: 'POST', data: { error_type: errorType } })
 }
 
 export interface ReviewQueueOut {

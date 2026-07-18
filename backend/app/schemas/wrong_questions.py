@@ -60,6 +60,10 @@ class WrongQuestionOut(BaseModel):
     review_interval_days: int = 1
     next_review_at: date | None = None
     last_review_at: date | None = None
+    # 错题来源 + 回到来源路由 + 已标错因类型(复习卡)
+    source_label: str | None = None
+    source_route: str | None = None
+    error_type: str | None = None
 
     model_config = {"from_attributes": True}
 

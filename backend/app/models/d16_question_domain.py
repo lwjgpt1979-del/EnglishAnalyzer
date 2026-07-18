@@ -239,6 +239,7 @@ class WrongRecord(Base):
     source_label = mapped_column(sa.String(16), nullable=True)  # 整卷|平台|长难句|作业
     source_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 来源实体id(卷/作业),供「回到错题来源」跳转
     vocab_word_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 词汇错题定位到的目标词(词力通闭环,P3)
+    error_type = mapped_column(sa.String(12), nullable=True)  # 复习标注的错因类型:confused记混|careless粗心|unknown不会(错因画像)
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'open'"))  # open|mastered
     mastery_source = mapped_column(sa.String(10), nullable=True)        # review|manual|auto(N仿真)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

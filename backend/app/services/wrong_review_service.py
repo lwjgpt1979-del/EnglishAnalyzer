@@ -178,7 +178,34 @@ async def to_wq_out_fields(db: AsyncSession, wr: WrongRecord) -> dict:
         "review_count": wr.review_count, "easiness_factor": wr.easiness_factor,
         "review_interval_days": wr.review_interval_days,
         "next_review_at": wr.next_review_at, "last_review_at": wr.last_review_at,
+        # 错题来源 + 回到来源路由(复习卡展示;数据在 wrong_record 上)+ 已标错因类型
+        "source_label": wr.source_label or None,
+        "source_route": _source_route_of(wr.source_label, wr.source_id),
+        "error_type": getattr(wr, "error_type", None),
     }
+
+
+def _source_route_of(source_label, source_id):
+    from app.services.wrong_center_service import _source_route
+    return _source_route(source_label, source_id)
+
+
+_ERROR_TYPES = {"confused", "careless", "unknown"}   # 记混 / 粗心 / 不会
+
+
+async def set_error_type(db: AsyncSession, *, student_id: uuid.UUID,
+                         wrong_record_id: uuid.UUID, error_type: str) -> bool:
+    """复习时标注错因类型(记混/粗心/不会),落 wrong_record 供错因画像。非本人/非法类型 → False。"""
+    et = (error_type or "").strip()
+    if et not in _ERROR_TYPES:
+        return False
+    wr = (await db.execute(sa.select(WrongRecord).where(
+        WrongRecord.id == wrong_record_id, WrongRecord.student_id == student_id))).scalar_one_or_none()
+    if wr is None:
+        return False
+    wr.error_type = et
+    await db.commit()
+    return True
 
 
 async def advance_due_wrongs_on_node(

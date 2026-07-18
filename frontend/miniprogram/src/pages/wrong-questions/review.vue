@@ -44,10 +44,14 @@
       </view>
 
       <view class="card">
-        <!-- 题目信息 -->
+        <!-- 题目信息 + 来源 -->
         <view class="meta-row">
-          <text class="meta-tag">{{ current!.question_type || '题目' }}</text>
-          <text class="meta-review">第 {{ (current!.review_count || 0) + 1 }} 次复习</text>
+          <view class="meta-left">
+            <text class="meta-tag">{{ current!.question_type || '题目' }}</text>
+            <text v-if="current!.source_label" class="src-badge">{{ current!.source_label }}</text>
+          </view>
+          <text v-if="current!.source_route" class="src-back" @tap="goSource">回到来源 ›</text>
+          <text v-else class="meta-review">第 {{ (current!.review_count || 0) + 1 }} 次复习</text>
         </view>
 
         <!-- 题干 -->
@@ -83,32 +87,52 @@
           @tap="submit"
         >{{ submitting ? '判分中…' : '提交' }}</button>
 
-        <!-- 提交后：客观反馈 + 正确答案 + 解析 -->
+        <!-- 提交后 -->
         <view v-else class="fb-wrap">
-          <text class="fb-line" :class="result!.is_correct ? 'fb-ok' : 'fb-no'">
-            {{ result!.is_correct ? (result!.mastered ? '✓ 答对，已订正掌握' : '✓ 答对，继续巩固') : '✗ 答错了' }}
-          </text>
-          <view class="ans-item">
-            <text class="ans-k">正确答案</text>
-            <text class="ans-v ans-right">{{ current!.correct_answer || '—' }}</text>
-          </view>
-          <view v-if="result!.explanation" class="expl-box">
-            <text class="expl-text">{{ result!.explanation }}</text>
-          </view>
-          <button class="btn-primary submit-btn" @tap="next">
-            {{ currentIdx + 1 >= queue.length ? '完成' : '下一题' }}
-          </button>
+          <!-- 答对:秒过 -->
+          <template v-if="result!.is_correct">
+            <text class="fb-line fb-ok">{{ result!.mastered ? '✓ 答对，已订正掌握' : '✓ 答对，继续巩固' }}</text>
+            <button class="btn-primary submit-btn" @tap="next">{{ currentIdx + 1 >= queue.length ? '完成' : '下一题' }}</button>
+          </template>
+          <!-- 答错:错答对照(讲义两段) + 错因类型 + chip 驱动 CTA -->
+          <template v-else>
+            <view class="seg seg-wrong">
+              <text class="seg-k">你当时</text>
+              <text class="seg-old">{{ current!.student_answer || '—' }}</text>
+            </view>
+            <view class="seg seg-ok">
+              <text class="seg-k">正确</text>
+              <text class="seg-new">{{ current!.correct_answer || '—' }}</text>
+            </view>
+            <text v-if="result!.explanation" class="seg-note">{{ result!.explanation }}</text>
+            <text class="q-lab">这次为什么错？</text>
+            <view class="chips">
+              <text v-for="c in ERR_TYPES" :key="c.key" class="chip" :class="{ on: errType === c.key }" @tap="pickErr(c.key)">{{ c.label }}</text>
+            </view>
+            <button class="btn-primary cta-main" :disabled="pracLoading" @tap="onCta">{{ pracLoading ? '出题中…' : ctaLabel }}</button>
+            <text class="next-link" @tap="next">下一题</text>
+          </template>
         </view>
       </view>
     </view>
+
+    <!-- 练同类(逐题作答判分,与错题本/作业详情共用组件) -->
+    <PracticeQuiz
+      v-if="pracOpen"
+      :kp="pracKp"
+      :questions="pracList"
+      :recorder="pracRecorder"
+      @close="onPracClose"
+    />
 
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { getReviewQueue, submitReview } from '@/api/wrongQuestions'
-import type { WrongQuestionReviewItem, ReviewStats, RedoResult } from '@/api/wrongQuestions'
+import { getReviewQueue, submitReview, setErrorType, practiceWrongCenter, recordPracticeResult } from '@/api/wrongQuestions'
+import type { WrongQuestionReviewItem, ReviewStats, RedoResult, PracticeQuestion } from '@/api/wrongQuestions'
+import PracticeQuiz from '@/components/PracticeQuiz.vue'
 
 const loading = ref(true)
 const finished = ref(false)
@@ -202,6 +226,53 @@ function next() {
   textAnswer.value = ''
   answered.value = false
   result.value = null
+  errType.value = ''
+}
+
+// ── 错因类型(记混/粗心/不会) → 落库 + 驱动 CTA ────────────────────────────
+type ErrKey = 'confused' | 'careless' | 'unknown'
+const ERR_TYPES = [
+  { key: 'confused' as ErrKey, label: '记混' },
+  { key: 'careless' as ErrKey, label: '粗心' },
+  { key: 'unknown' as ErrKey, label: '不会' },
+]
+const errType = ref<ErrKey | ''>('')
+function pickErr(k: ErrKey) {
+  errType.value = k
+  if (current.value) setErrorType(current.value.id, k).catch(() => { /* 静默 */ })
+}
+// 粗心=直接下一题;记混/不会=练同类巩固
+const ctaLabel = computed(() => (errType.value === 'careless' ? '下一题' : '练 3 道同类巩固'))
+function onCta() {
+  if (errType.value === 'careless') { next(); return }
+  openPractice()
+}
+
+// ── 练同类(PracticeQuiz,与错题本共用) ──────────────────────────────────
+const pracOpen = ref(false)
+const pracLoading = ref(false)
+const pracKp = ref('')
+const pracList = ref<PracticeQuestion[]>([])
+async function openPractice() {
+  if (!current.value || pracLoading.value) return
+  pracLoading.value = true
+  try {
+    const r = await practiceWrongCenter(current.value.id)
+    if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
+    pracKp.value = r.knowledge_point; pracList.value = r.questions; pracOpen.value = true
+  } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
+  finally { pracLoading.value = false }
+}
+async function pracRecorder(total: number, correct: number): Promise<string> {
+  if (!current.value) return `本轮 ${correct}/${total} 正确`
+  const r = await recordPracticeResult(current.value.id, total, correct)
+  return r.just_mastered ? '🎉 恭喜，这道错题已掌握！' : `已计入巩固：本轮 ${correct}/${total} 正确`
+}
+function onPracClose() { pracOpen.value = false; next() }   // 练完自动下一题
+
+function goSource() {
+  const route = current.value?.source_route
+  if (route) uni.navigateTo({ url: route })
 }
 
 function goBack() {
@@ -234,6 +305,26 @@ function goBack() {
 .meta-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18rpx; }
 .meta-tag { font-size: 22rpx; font-weight: 700; color: #3f87b8; background: #e9f4fb; padding: 5rpx 18rpx; border-radius: 999rpx; }
 .meta-review { font-size: 22rpx; color: var(--c-text-hint); }
+.meta-left { display: flex; align-items: center; gap: 10rpx; }
+.src-badge { font-size: 20rpx; font-weight: 700; color: #2f74d6; background: #eaf2fe; padding: 4rpx 14rpx; border-radius: 999rpx; }
+.src-back { font-size: 22rpx; color: #3d8bf5; }
+/* ④ 错答对照(讲义两段) */
+.seg { border-left: 6rpx solid; border-radius: 0 12rpx 12rpx 0; padding: 12rpx 16rpx; margin-bottom: 10rpx; display: flex; align-items: baseline; gap: 14rpx; }
+.seg-wrong { border-color: #e0564f; background: #fdecec; }
+.seg-ok { border-color: #2fa98a; background: #eef8f3; }
+.seg-k { font-size: 22rpx; font-weight: 800; flex: none; }
+.seg-wrong .seg-k { color: #c33; }
+.seg-ok .seg-k { color: #1a9d63; }
+.seg-old { font-size: 28rpx; color: #c33; text-decoration: line-through; }
+.seg-new { font-size: 28rpx; font-weight: 800; color: #1a9d63; }
+.seg-note { display: block; font-size: 24rpx; color: #7a8698; line-height: 1.6; margin: 2rpx 0 12rpx; padding-left: 10rpx; }
+/* 错因 chips + CTA */
+.q-lab { display: block; text-align: center; font-size: 24rpx; color: #7a8698; margin: 16rpx 0 12rpx; }
+.chips { display: flex; justify-content: center; gap: 16rpx; margin-bottom: 22rpx; }
+.chip { font-size: 26rpx; color: #55607a; background: #eef1f6; border: 2rpx solid #e2e6ee; border-radius: 999rpx; padding: 10rpx 32rpx; }
+.chip.on { color: #fff; background: #3d8bf5; border-color: transparent; box-shadow: 0 4rpx 12rpx rgba(61,139,245,.28); }
+.cta-main { margin-top: 0; }
+.next-link { display: block; text-align: center; font-size: 26rpx; color: #93a0b3; margin-top: 16rpx; }
 .question-text { display: block; font-size: 32rpx; color: var(--c-ink); line-height: 1.6; font-weight: 700; margin-bottom: 28rpx; }
 
 /* 客观重做作答区 */
