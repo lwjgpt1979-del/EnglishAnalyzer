@@ -83,6 +83,10 @@ class StudentLongSentence(Base):
     difficulty = mapped_column(sa.Integer, nullable=True)
     status = mapped_column(sa.String(12), nullable=False, server_default=sa.text("'published'"))  # 默认本人可见
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    # 蓝-4 徽章环 n/3:该句三态是否完成(认成分 / 认语法 / 重点词)。环满 3/3 = 全过。
+    did_comp = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    did_gram = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    did_word = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
 
     __table_args__ = (
         sa.Index("ix_student_long_sentence_owner", "owner_id", "status"),

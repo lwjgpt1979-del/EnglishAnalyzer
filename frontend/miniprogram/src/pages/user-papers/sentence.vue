@@ -93,13 +93,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   savePaperSentence,
   getSentenceStudyAids, addGrammarTarget, recordGrammarAnswer,
   type GrammarQuizItem, type StudyWord,
 } from '@/api/userPapers'
+import { markSentenceProgress } from '@/api/curriculum'
 import KeyWordsList from '@/components/KeyWordsList.vue'
 
 const text = ref('')
@@ -123,11 +124,19 @@ const gramQuiz = computed(() => quiz.value.map((q, i) => ({ q, i })).filter(x =>
 const curQuiz = computed(() => (tab.value === 'component' ? compQuiz.value : gramQuiz.value))
 function isSub(type: string): boolean { return /从句|状语|定语|插入|补语|同位|不定式|分词|介词|表语/.test(type || '') }
 
+// 蓝-4 徽章环:答成分/语法题、看重点词 tab 时标记该句三态(仅对已加入待学习的句生效)
+function markProgress(kind: 'comp' | 'gram' | 'word') {
+  if (!text.value) return
+  markSentenceProgress(text.value, kind).catch(() => { /* 标记失败静默 */ })
+}
+watch(tab, (t) => { if (t === 'word') markProgress('word') })
+
 async function pick(qi: number, oi: number) {
   if (picked.value[qi] != null) return   // 已答不改
   picked.value = { ...picked.value, [qi]: oi }
   const q = quiz.value[qi]
   const ok = oi === q.answer
+  markProgress(q.kind === 'component' ? 'comp' : 'gram')   // 答题即标记该句成分/语法态
   try {   // 记录作答 → 累计正确率(以往至今)
     const st = await recordGrammarAnswer(q.gp_key, q.options[q.answer], ok, q.node_id)
     q.stat_correct = st.correct; q.stat_total = st.total

@@ -304,6 +304,18 @@ async def se_hw_sentences(db: DbDep, current_user: UserDep, paper_id: uuid.UUID 
     return make_ok({"sentences": await si.homework_sentences(db, student_id=current_user.id, paper_id=paper_id)})
 
 
+@router.post("/intensive/sentence/mark-progress")
+async def se_mark_progress(
+    db: DbDep, current_user: UserDep,
+    sentence: Annotated[str, Body(..., embed=True, min_length=1, max_length=600)],
+    kind: Annotated[str, Body(..., embed=True)],
+):
+    """蓝-4 徽章环:学生在解析页答成分/语法题、看重点词时标记该句三态(kind ∈ comp/gram/word)。返回新 ring。"""
+    from app.services import sentence_intensive_service as si
+    return make_ok(await si.mark_sentence_progress(
+        db, student_id=current_user.id, text=sentence, kind=kind))
+
+
 @router.post("/grammar-lecture")
 async def named_grammar_lecture(
     db: DbDep, current_user: UserDep,

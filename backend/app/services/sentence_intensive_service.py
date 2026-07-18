@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d1_users import User
@@ -45,13 +45,18 @@ async def homework_sentences(db: AsyncSession, *, student_id: uuid.UUID,
     带 studied(该句是否已学=有过解析 analysis_json)。"""
     rows = (await db.execute(
         select(StudentLongSentence.text, func.min(StudentLongSentence.created_at).label("ca"),
-               func.bool_or(StudentLongSentence.analysis_json.isnot(None)))
+               func.bool_or(StudentLongSentence.analysis_json.isnot(None)),
+               func.bool_or(StudentLongSentence.did_comp),
+               func.bool_or(StudentLongSentence.did_gram),
+               func.bool_or(StudentLongSentence.did_word))
         .where(StudentLongSentence.owner_id == student_id,
                StudentLongSentence.source_paper_id == paper_id,
                StudentLongSentence.status == "published")
         .group_by(StudentLongSentence.text)
         .order_by(func.min(StudentLongSentence.created_at).desc()))).all()
-    return [{"text": t, "studied": bool(st)} for t, _, st in rows]
+    # ring 0-3 = 认成分 + 认语法 + 重点词 三态之和(蓝-4 徽章环)
+    return [{"text": t, "studied": bool(st), "ring": int(bool(c)) + int(bool(g)) + int(bool(w))}
+            for t, _, st, c, g, w in rows]
 
 
 # ── 课程精讲 · 长难句:按教材单元 ──────────────────────────────────────────────
@@ -102,10 +107,44 @@ async def course_sentences(db: AsyncSession, *, unit_id: uuid.UUID,
             LongSentence.unit_id == unit_id, LongSentence.source_kind == "textbook",
             LongSentence.status == "published").order_by(LongSentence.difficulty.desc()))).scalars().all()
     studied_texts: set = set()
+    ring_map: dict = {}
     if student_id is not None and rows:
-        studied_texts = set((await db.execute(
-            select(StudentLongSentence.text).where(
-                StudentLongSentence.owner_id == student_id,
-                StudentLongSentence.analysis_json.isnot(None),
-                StudentLongSentence.text.in_(list(rows))))).scalars().all())
-    return [{"text": t, "studied": t in studied_texts} for t in rows]
+        srows = (await db.execute(
+            select(StudentLongSentence.text,
+                   func.bool_or(StudentLongSentence.analysis_json.isnot(None)),
+                   func.bool_or(StudentLongSentence.did_comp),
+                   func.bool_or(StudentLongSentence.did_gram),
+                   func.bool_or(StudentLongSentence.did_word))
+            .where(StudentLongSentence.owner_id == student_id,
+                   StudentLongSentence.text.in_(list(rows)))
+            .group_by(StudentLongSentence.text))).all()
+        for t, st, c, g, w in srows:
+            if st:
+                studied_texts.add(t)
+            ring_map[t] = int(bool(c)) + int(bool(g)) + int(bool(w))
+    return [{"text": t, "studied": t in studied_texts, "ring": ring_map.get(t, 0)} for t in rows]
+
+
+async def mark_sentence_progress(db: AsyncSession, *, student_id: uuid.UUID,
+                                 text: str, kind: str) -> dict:
+    """标记某句三态之一(蓝-4 徽章环):kind ∈ {comp, gram, word}——学生在解析页答成分/语法题、
+    看重点词时置位。按 (owner, text) 更新学生个人长难句行;未加入待学习(无行)则忽略。返回新 ring。"""
+    col = {"comp": StudentLongSentence.did_comp,
+           "gram": StudentLongSentence.did_gram,
+           "word": StudentLongSentence.did_word}.get(kind)
+    text = (text or "").strip()
+    if col is None or not text:
+        return {"ring": 0}
+    await db.execute(
+        sa_update(StudentLongSentence)
+        .where(StudentLongSentence.owner_id == student_id, StudentLongSentence.text == text)
+        .values({col: True}))
+    await db.commit()
+    row = (await db.execute(
+        select(func.bool_or(StudentLongSentence.did_comp),
+               func.bool_or(StudentLongSentence.did_gram),
+               func.bool_or(StudentLongSentence.did_word))
+        .where(StudentLongSentence.owner_id == student_id,
+               StudentLongSentence.text == text))).first()
+    ring = (int(bool(row[0])) + int(bool(row[1])) + int(bool(row[2]))) if row else 0
+    return {"ring": ring}
