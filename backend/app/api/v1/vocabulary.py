@@ -99,6 +99,23 @@ async def daily_task(db: DbDep, current_user: UserDep):
     return make_ok(task)
 
 
+@router.get("/exam-overview", response_model=BaseResponse[dict])
+async def exam_overview(db: DbDep, current_user: UserDep):
+    """词力通考试页概览：按 exam_target（中考/高考）出 单词/短语 两轨 × 高/中/低频 的 total/studied。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await vocabulary_service.exam_vocab_overview(db, student=current_user))
+
+
+@router.post("/exam-daily", response_model=BaseResponse[DailyTaskOut])
+async def exam_daily(body: dict, db: DbDep, current_user: UserDep):
+    """某轨×频档 的今日一组任务。body: {type: word|phrase, band: high|mid|low}。"""
+    await get_rls_db(db, str(current_user.id))
+    wtype = str(body.get("type") or "word")
+    band = str(body.get("band") or "high")
+    task = await vocabulary_service.exam_daily_task(db, student=current_user, wtype=wtype, band=band)
+    return make_ok(task)
+
+
 @router.post("/shadow-score", response_model=BaseResponse[ShadowScoreResult])
 async def shadow_score(body: ShadowScoreIn, db: DbDep, current_user: UserDep):
     """跟读发音评分（会员专享）：对单词/例句的跟读录音评分（腾讯 SOE）。

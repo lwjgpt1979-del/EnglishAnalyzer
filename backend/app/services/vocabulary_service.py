@@ -724,3 +724,54 @@ async def list_wrong_words(
         base.order_by(VocabularyLearning.wrong_count.desc()).offset(skip).limit(limit)
     )).all()
     return list(rows), total
+
+
+# ── 词力通·考试出词(中考/高考 考纲词+短语 × 频档;P2)─────────────────────────────
+def resolve_exam_target(user: "User") -> str:
+    """学生考试目标:显式 exam_target 优先;否则按年级派生(含「高」→senior,否则 junior)。"""
+    t = getattr(user, "exam_target", None)
+    if t in ("junior", "senior"):
+        return t
+    return "senior" if "高" in (user.preferred_grade or "") else "junior"
+
+
+_TRACK_TITLE = {"word": "单词", "phrase": "短语"}
+_BAND_LABEL = {"high": "高频", "mid": "中频", "low": "低频"}
+
+
+async def exam_vocab_overview(db: AsyncSession, *, student: "User") -> dict:
+    """词力通考试页概览:两轨(单词/短语)× 频档(高/中/低)的 total/studied。
+    未上架对应考纲词库 → available=False(前端提示词库未上架)。"""
+    from app.services import vocab_list_service
+    target = resolve_exam_target(student)
+    label = "高考" if target == "senior" else "中考"
+    list_id = await vocab_list_service.resolve_published_list(db, exam_level=target)
+    if list_id is None:
+        return {"exam_target": target, "exam_label": label, "available": False, "tracks": []}
+    ov = await vocab_list_service.exam_band_overview(db, list_id=list_id, student_id=student.id)
+    tracks = []
+    for wtype in ("word", "phrase"):
+        bands = [{"band": b, "label": _BAND_LABEL[b],
+                  "total": ov[wtype][b]["total"], "studied": ov[wtype][b]["studied"]}
+                 for b in ("high", "mid", "low")]
+        tracks.append({
+            "type": wtype, "title": _TRACK_TITLE[wtype],
+            "total": sum(x["total"] for x in bands),
+            "studied": sum(x["studied"] for x in bands),
+            "bands": bands,
+        })
+    return {"exam_target": target, "exam_label": label, "available": True, "tracks": tracks}
+
+
+async def exam_daily_task(db: AsyncSession, *, student: "User", wtype: str, band: str) -> DailyTaskOut:
+    """某轨×频档 的今日一组任务:限定在该考纲词库该档词集内(复用 scoped 流,媒体走查看即生成)。"""
+    from app.core.exceptions import AppError
+    from app.services import vocab_list_service
+    target = resolve_exam_target(student)
+    list_id = await vocab_list_service.resolve_published_list(db, exam_level=target)
+    if list_id is None:
+        raise AppError(code=400, message="该考试目标的考纲词库尚未上架")
+    word_ids = await vocab_list_service.band_word_ids(db, list_id=list_id, wtype=wtype, band=band)
+    if not word_ids:
+        raise AppError(code=404, message="该档暂无词条")
+    return await get_daily_task_scoped(db, student_id=student.id, word_ids=word_ids)
