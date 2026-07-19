@@ -36,6 +36,10 @@ export interface QuizMcq { word_id: string; mcq_type: string; stem: string; opti
 export function getQuizMcqs(wordIds: string[]): Promise<Array<{ word_id: string; mcq: QuizMcq | null }>> {
   return request(`/api/v1/vocabulary/quiz-mcqs`, { method: 'POST', data: { word_ids: wordIds } })
 }
+// 学习即预热:一组词后台备好成组检测探针 + 测试题库(fire-and-forget)
+export function prewarmWords(wordIds: string[]): Promise<{ queued: number }> {
+  return request(`/api/v1/vocabulary/prewarm`, { method: 'POST', data: { word_ids: wordIds } })
+}
 
 export interface VocabPronSummary {
   count: number; avg: number | null

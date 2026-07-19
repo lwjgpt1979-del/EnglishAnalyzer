@@ -604,7 +604,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily, getQuizMcqs, ensureWordMedia } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
 import type { ExamOverview, WordFamily, QuizMcq } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
@@ -1308,6 +1308,9 @@ function _applyTask(task: { new_words: VocabWordCard[]; review_words: VocabWordC
   newCards.value = task.new_words
   reviewCards.value = [...task.review_words, ...extra]
   pool.value = [...newCards.value, ...reviewCards.value]
+  // 学习即预热:后台备好这组词的成组检测探针 + 测试题库(不阻塞,学完进检测/测试就秒出)
+  const _pwIds = [...new Set(pool.value.map(c => c.word_id))]
+  if (_pwIds.length) prewarmWords(_pwIds).catch(() => { /* 静默 */ })
   studyIndex.value = 0
   reviewIndex.value = 0
   shadowLog.value = []

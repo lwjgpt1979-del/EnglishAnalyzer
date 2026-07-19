@@ -12,6 +12,7 @@ from app.models.d5_learning import VocabularyWord
 from app.models.d18_vocab_kg import VocabMcq
 
 _MCQ_INFLIGHT: set = set()   # 后台生成中的 word_id,防并发重复调 LLM
+_PREWARM_INFLIGHT: set = set()   # 预热中的 word_id
 
 
 def _meaning_of(w: VocabularyWord) -> str:
@@ -102,6 +103,48 @@ async def _bg_gen_mcqs(word_id: uuid.UUID) -> None:
                 logging.getLogger(__name__).exception("bg mcq gen failed wid=%s", word_id)
     finally:
         _MCQ_INFLIGHT.discard(word_id)
+
+
+async def _bg_prewarm(word_id: uuid.UUID) -> None:
+    """后台预热该词题料:grecep 探针(probes_json)+ MCQ 题库。独立 session,失败不阻断。
+    在学生学一组词时提前落地,等进成组检测/测试就秒出题。inflight 防并发重复。"""
+    import logging
+    from app.core.database import _async_session_factory
+    from app.services import vocab_probe_service
+    if word_id in _PREWARM_INFLIGHT:
+        return
+    _PREWARM_INFLIGHT.add(word_id)
+    try:
+        async with _async_session_factory() as db:
+            try:
+                w = await db.get(VocabularyWord, word_id)
+                if w is not None:
+                    await vocab_probe_service.ensure_probes(db, w)   # grecep 用
+                    await db.commit()
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                logging.getLogger(__name__).exception("prewarm probes failed wid=%s", word_id)
+            try:
+                await ensure_word_mcqs(db, word_id=word_id)          # 测试用(内部 commit)
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                logging.getLogger(__name__).exception("prewarm mcq failed wid=%s", word_id)
+    finally:
+        _PREWARM_INFLIGHT.discard(word_id)
+
+
+def prewarm_words(word_ids: list) -> int:
+    """学习即预热:为一组词后台异步生成探针 + 题库(fire-and-forget,不阻塞)。返回排入预热的词数。"""
+    import asyncio
+    n = 0
+    for w in word_ids:
+        try:
+            wid = uuid.UUID(str(w))
+        except (ValueError, TypeError):
+            continue
+        asyncio.create_task(_bg_prewarm(wid))
+        n += 1
+    return n
 
 
 async def random_mcqs_batch(db: AsyncSession, *, word_ids: list) -> list[dict]:

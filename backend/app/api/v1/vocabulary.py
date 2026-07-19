@@ -106,6 +106,16 @@ async def exam_overview(db: DbDep, current_user: UserDep):
     return make_ok(await vocabulary_service.exam_vocab_overview(db, student=current_user))
 
 
+@router.post("/prewarm", response_model=BaseResponse[dict])
+async def prewarm(body: dict, db: DbDep, current_user: UserDep):
+    """学习即预热:一组词后台异步生成 grecep 探针 + 测试题库(fire-and-forget,秒回)。
+    学完一组进检测/测试时数据已就绪,不再「出题中…」卡顿。body: {word_ids}。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import vocab_mcq_service
+    n = vocab_mcq_service.prewarm_words(body.get("word_ids") or [])
+    return make_ok({"queued": n})
+
+
 @router.post("/quiz-mcqs", response_model=BaseResponse[list])
 async def quiz_mcqs(body: dict, db: DbDep, current_user: UserDep):
     """测试出题:每词随机取一道缓存选择题;未缓存的后台异步生成、当次返回 mcq=null
