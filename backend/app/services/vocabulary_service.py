@@ -629,7 +629,10 @@ async def get_daily_task_scoped(db: AsyncSession, *, student_id: uuid.UUID,
         return DailyTaskOut(new_words=[], review_words=[], new_count=0, review_count=0, new_limit=0)
     now = datetime.now(timezone.utc)
     wids = list(dict.fromkeys(word_ids))
-    # 复习:这些词里到期的学习记录(错词优先,同 daily-task)
+    settings = await get_vocab_settings(db, student_id=student_id)
+    new_limit = settings["words_per_group"]
+    # 复习:这些词里到期的学习记录(错词优先,同 daily-task);限「每组词数」——
+    # 范围内没排上的到期词下一组 reload 再来(逐组推进,避免一组把整个范围的到期词全上)。
     review_rows = (await db.execute(
         select(VocabularyLearning, VocabularyWord)
         .join(VocabularyWord, VocabularyWord.id == VocabularyLearning.word_id)
@@ -637,15 +640,14 @@ async def get_daily_task_scoped(db: AsyncSession, *, student_id: uuid.UUID,
                VocabularyLearning.word_id.in_(wids),
                VocabularyLearning.next_review_at <= now)
         .order_by(VocabularyLearning.is_wrong.desc(), VocabularyLearning.wrong_count.desc(),
-                  VocabularyLearning.next_review_at))).all()
+                  VocabularyLearning.next_review_at)
+        .limit(new_limit))).all()
     review_words = [_to_card(w, level=str(lr.level), is_new=False, lr=lr) for lr, w in review_rows]
     # 新词:这些词里尚无学习记录的,按传入顺序取前「每组词数」个
     learned = set((await db.execute(
         select(VocabularyLearning.word_id).where(
             VocabularyLearning.student_id == student_id,
             VocabularyLearning.word_id.in_(wids)))).scalars().all())
-    settings = await get_vocab_settings(db, student_id=student_id)
-    new_limit = settings["words_per_group"]
     new_ids = [wid for wid in wids if wid not in learned][:new_limit]
     new_map = {w.id: w for w in (await db.execute(
         select(VocabularyWord).where(VocabularyWord.id.in_(new_ids)))).scalars().all()} if new_ids else {}
