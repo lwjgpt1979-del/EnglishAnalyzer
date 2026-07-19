@@ -39,7 +39,7 @@
                 @tap="b.total ? loadExamBand(examTrackSel, b.band) : null">
             <view class="eh-band-fill" :style="{ width: (b.total ? b.studied / b.total * 100 : 0) + '%' }" />
             <view class="eh-band-inner">
-              <text class="eh-dots" :class="'d-' + b.band">{{ b.band === 'high' ? '●●●' : b.band === 'mid' ? '●●' : '●' }}</text>
+              <text class="eh-dots" :class="'d-' + b.band">{{ b.band === 'high' ? '●●●' : b.band === 'mid' ? '●●' : b.band === 'low' ? '●' : '◯' }}</text>
               <view class="eh-band-text">
                 <text class="eh-band-t">{{ b.label }}{{ examTrack?.title }}<text v-if="isActiveBand(b)" class="eh-tag"> · 进行中</text></text>
                 <text class="eh-band-n">{{ b.total ? (b.studied + ' / ' + b.total) : '暂无词条' }}</text>
@@ -563,7 +563,7 @@ const phase = ref<'home' | 'empty' | 'study' | 'review' | 'grecep' | 'quiz' | 'd
 // 考试模式(词力通首屏两轨×频档;非 scope 进入时)
 const examOverview = ref<ExamOverview | null>(null)
 const examTrackSel = ref<'word' | 'phrase'>('word')
-const examBand = ref<{ type: 'word' | 'phrase'; band: 'high' | 'mid' | 'low' } | null>(null)
+const examBand = ref<{ type: 'word' | 'phrase'; band: 'high' | 'mid' | 'low' | 'none' } | null>(null)
 const examTrack = computed(() =>
   examOverview.value?.tracks.find(t => t.type === examTrackSel.value) || null)
 // 进行中的档 = 高→低 第一个「有词且未学完」的档(高频优先)
@@ -1174,7 +1174,7 @@ async function enterHome() {
 }
 
 // 学某轨×频档:限定考纲词集,进词卡流
-async function loadExamBand(type: 'word' | 'phrase', band: 'high' | 'mid' | 'low') {
+async function loadExamBand(type: 'word' | 'phrase', band: 'high' | 'mid' | 'low' | 'none') {
   examBand.value = { type, band }
   loading.value = true
   try {
@@ -1835,6 +1835,7 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .eh-dots.d-high { color: #2b6fd6; }
 .eh-dots.d-mid { color: #5b8fd6; }
 .eh-dots.d-low { color: #aab6c8; }
+.eh-dots.d-none { color: #c4ccd6; }
 .eh-band-text { flex: 1; display: flex; flex-direction: column; gap: 4rpx; min-width: 0; }
 .eh-band-t { font-size: 30rpx; font-weight: 700; color: var(--c-ink); }
 .eh-band.active .eh-band-t { color: #0C447C; }

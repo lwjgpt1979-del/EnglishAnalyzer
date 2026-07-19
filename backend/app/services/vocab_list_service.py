@@ -112,16 +112,25 @@ async def resolve_published_list(db: AsyncSession, *, exam_level: str) -> uuid.U
 
 
 def _band_case():
-    """VocabListItem.star → 频档标签(与 _BAND_STAR 同口径:3/2/1=高/中/低;其余不入档)。"""
+    """VocabListItem.star → 频档标签(3/2/1=高/中/低;其余=none 未分档兜底,防未反哺词库空屏)。"""
     return sa.case(
         (VocabListItem.star == 3, "high"),
         (VocabListItem.star == 2, "mid"),
         (VocabListItem.star == 1, "low"),
-        else_=None)
+        else_="none")
+
+
+def _band_star_cond(band: str):
+    """频档 → star 条件。none=未分档(star 不在 1/2/3 或为空,含高考未反哺的 star0 词)。"""
+    if band == "none":
+        return sa.or_(VocabListItem.star.notin_([1, 2, 3]), VocabListItem.star.is_(None))
+    if band in _BAND_STAR:
+        return VocabListItem.star == _BAND_STAR[band]
+    return None
 
 
 async def exam_band_overview(db: AsyncSession, *, list_id: uuid.UUID, student_id: uuid.UUID) -> dict:
-    """某词库下,按 type(word/phrase) × 频档(high/mid/low) 汇总 {total, studied}。
+    """某词库下,按 type(word/phrase) × 频档(high/mid/low/none) 汇总 {total, studied}。
     studied = 该生该词有 VocabularyLearning 行(与课程/作业同口径)。"""
     from app.models.d5_learning import VocabularyLearning
     band = _band_case()
@@ -134,10 +143,10 @@ async def exam_band_overview(db: AsyncSession, *, list_id: uuid.UUID, student_id
         .outerjoin(VocabularyLearning,
                    (VocabularyLearning.word_id == VocabListItem.word_id)
                    & (VocabularyLearning.student_id == student_id))
-        .where(VocabListItem.list_id == list_id, band.isnot(None))
+        .where(VocabListItem.list_id == list_id)
         .group_by(VocabularyWord.type, band))).all()
-    # {word: {high:{total,studied},...}, phrase:{...}}
-    out: dict = {t: {b: {"total": 0, "studied": 0} for b in ("high", "mid", "low")}
+    # {word: {high:{total,studied},...,none:{...}}, phrase:{...}}
+    out: dict = {t: {b: {"total": 0, "studied": 0} for b in ("high", "mid", "low", "none")}
                  for t in ("word", "phrase")}
     for wtype, b, total, studied in rows:
         if wtype in out and b in out[wtype]:
@@ -147,14 +156,14 @@ async def exam_band_overview(db: AsyncSession, *, list_id: uuid.UUID, student_id
 
 async def band_word_ids(db: AsyncSession, *, list_id: uuid.UUID, wtype: str, band: str) -> list[uuid.UUID]:
     """某词库 × type × 频档 的 word_id 列表(供 daily-task 限定词集)。"""
-    if band not in _BAND_STAR:
+    cond = _band_star_cond(band)
+    if cond is None:
         return []
     rows = (await db.execute(
         sa.select(VocabListItem.word_id)
         .join(VocabularyWord, VocabularyWord.id == VocabListItem.word_id)
         .where(VocabListItem.list_id == list_id,
-               VocabularyWord.type == wtype,
-               VocabListItem.star == _BAND_STAR[band]))).scalars().all()
+               VocabularyWord.type == wtype, cond))).scalars().all()
     return list(rows)
 
 

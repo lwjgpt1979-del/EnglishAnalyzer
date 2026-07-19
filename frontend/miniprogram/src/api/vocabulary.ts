@@ -13,13 +13,14 @@ export function getDailyTask(): Promise<VocabDailyTask> {
 }
 
 // 词力通·考试模式(中考/高考 考纲词+短语 × 频档)
-export interface ExamBand { band: 'high' | 'mid' | 'low'; label: string; total: number; studied: number }
+export type ExamBandKey = 'high' | 'mid' | 'low' | 'none'
+export interface ExamBand { band: ExamBandKey; label: string; total: number; studied: number }
 export interface ExamTrack { type: 'word' | 'phrase'; title: string; total: number; studied: number; bands: ExamBand[] }
 export interface ExamOverview { exam_target: 'junior' | 'senior'; exam_label: string; available: boolean; tracks: ExamTrack[] }
 export function getExamOverview(): Promise<ExamOverview> {
   return request<ExamOverview>('/api/v1/vocabulary/exam-overview', { method: 'GET' })
 }
-export function getExamDaily(type: 'word' | 'phrase', band: 'high' | 'mid' | 'low'): Promise<VocabDailyTask> {
+export function getExamDaily(type: 'word' | 'phrase', band: ExamBandKey): Promise<VocabDailyTask> {
   return request<VocabDailyTask>('/api/v1/vocabulary/exam-daily', { method: 'POST', data: { type, band } })
 }
 

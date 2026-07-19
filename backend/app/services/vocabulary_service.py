@@ -736,7 +736,7 @@ def resolve_exam_target(user: "User") -> str:
 
 
 _TRACK_TITLE = {"word": "单词", "phrase": "短语"}
-_BAND_LABEL = {"high": "高频", "mid": "中频", "low": "低频"}
+_BAND_LABEL = {"high": "高频", "mid": "中频", "low": "低频", "none": "未分档"}
 
 
 async def exam_vocab_overview(db: AsyncSession, *, student: "User") -> dict:
@@ -754,6 +754,11 @@ async def exam_vocab_overview(db: AsyncSession, *, student: "User") -> dict:
         bands = [{"band": b, "label": _BAND_LABEL[b],
                   "total": ov[wtype][b]["total"], "studied": ov[wtype][b]["studied"]}
                  for b in ("high", "mid", "low")]
+        # 未分档兜底档:仅当有词时追加(高考未反哺 → star0 全落此,防空屏)
+        nb = ov[wtype].get("none") or {"total": 0, "studied": 0}
+        if nb["total"] > 0:
+            bands.append({"band": "none", "label": _BAND_LABEL["none"],
+                          "total": nb["total"], "studied": nb["studied"]})
         tracks.append({
             "type": wtype, "title": _TRACK_TITLE[wtype],
             "total": sum(x["total"] for x in bands),
