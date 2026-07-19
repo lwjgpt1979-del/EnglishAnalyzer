@@ -486,23 +486,28 @@
             <text class="step-btn" @tap="adjustWPG(1)">＋</text>
           </view>
         </view>
-        <view class="set-row">
-          <text class="set-label">每组遍数</text>
-          <view class="stepper">
-            <text class="step-btn" @tap="adjustRep(-1)">−</text>
-            <text class="step-val">{{ settingDraft.reps_per_group }}</text>
-            <text class="step-btn" @tap="adjustRep(1)">＋</text>
-          </view>
+        <view class="set-more" @tap="showAdvanced = !showAdvanced">
+          <text>高级设置</text><text class="set-more-ar">{{ showAdvanced ? '▴' : '▾' }}</text>
         </view>
-        <view class="set-row">
-          <text class="set-label">错几次带入下组</text>
-          <view class="stepper">
-            <text class="step-btn" @tap="adjustThr(-1)">−</text>
-            <text class="step-val">{{ settingDraft.wrong_carry_threshold }}</text>
-            <text class="step-btn" @tap="adjustThr(1)">＋</text>
+        <block v-if="showAdvanced">
+          <view class="set-row">
+            <text class="set-label">每组遍数</text>
+            <view class="stepper">
+              <text class="step-btn" @tap="adjustRep(-1)">−</text>
+              <text class="step-val">{{ settingDraft.reps_per_group }}</text>
+              <text class="step-btn" @tap="adjustRep(1)">＋</text>
+            </view>
           </view>
-        </view>
-        <text class="set-hint">每组学几个词、重复学几遍由你定；学完可一直「再来一组」。一个词在本组错够「带入下组」的次数，就会自动滚入下一组继续考察（不超过遍数）。</text>
+          <view class="set-row">
+            <text class="set-label">错几次带入下组</text>
+            <view class="stepper">
+              <text class="step-btn" @tap="adjustThr(-1)">−</text>
+              <text class="step-val">{{ settingDraft.wrong_carry_threshold }}</text>
+              <text class="step-btn" @tap="adjustThr(1)">＋</text>
+            </view>
+          </view>
+          <text class="set-hint">同一组重复学几遍加深记忆(默认 1);一个词在本组错够「带入下组」次数,就自动滚入下一组继续考察。</text>
+        </block>
         <button class="btn-primary" @tap="saveSettings">保存</button>
         <text class="paywall-close" @tap="showSettings = false">取消</text>
       </view>
@@ -1402,7 +1407,9 @@ function reload() {
 // ── 学习设置 ──
 // 设置里的考试目标草稿(中考/高考)
 const examTargetDraft = ref<'junior' | 'senior'>('junior')
+const showAdvanced = ref(false)   // 高级设置(每组遍数/带入下组)默认收起
 function openSettings() {
+  showAdvanced.value = false
   settingDraft.words_per_group = wordsPerGroup.value
   settingDraft.reps_per_group = repsPerGroup.value
   settingDraft.wrong_carry_threshold = wrongCarryThreshold.value
@@ -1933,6 +1940,8 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .set-card { width: 580rpx; background: var(--c-bg-card); border-radius: var(--r-lg); padding: 36rpx 32rpx; display: flex; flex-direction: column; gap: 22rpx; }
 .set-title { font-size: 34rpx; font-weight: 800; color: var(--c-ink); text-align: center; }
 .set-row { display: flex; align-items: center; justify-content: space-between; }
+.set-more { display: flex; align-items: center; justify-content: center; gap: 6rpx; font-size: 24rpx; color: #185FA5; padding: 8rpx 0; }
+.set-more-ar { font-size: 22rpx; }
 .set-label { font-size: 30rpx; color: var(--c-text-body); font-weight: 600; }
 .stepper { display: flex; align-items: center; gap: 0; background: var(--c-bg-soft); border-radius: var(--r-pill); overflow: hidden; }
 .step-btn { width: 72rpx; height: 64rpx; line-height: 64rpx; text-align: center; font-size: 40rpx; color: var(--c-primary-deep); }
