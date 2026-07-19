@@ -117,7 +117,7 @@ async def lifecycle_counts(
     db: AsyncSession, *, student_id: uuid.UUID, kind: str | None = None,
 ) -> dict:
     """状态 chip 计数(不受分页/状态筛选影响,仅受 kind 影响)。"""
-    conds = [WrongRecord.student_id == student_id]
+    conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped"]
     if kind in ("grammar", "vocab"):
         conds.append(WrongRecord.kp_kind == kind)
     rows = (await db.execute(
@@ -144,7 +144,8 @@ async def list_center(
     排序:未掌握在前、已掌握沉底(灰显折叠),各按 created_at 倒序。
     返回卡片字典(含 lifecycle/进度)。
     """
-    base = sa.select(WrongRecord).where(WrongRecord.student_id == student_id)
+    base = sa.select(WrongRecord).where(
+        WrongRecord.student_id == student_id, WrongRecord.status != "skipped")
     if kind in ("grammar", "vocab"):
         base = base.where(WrongRecord.kp_kind == kind)
     for c in _status_filter(status):
@@ -190,10 +191,13 @@ def _source_route(source_label: str | None, source_id: uuid.UUID | None) -> str 
 
 async def record_practice_result(
     db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID,
-    total: int, correct: int,
+    total: int, correct: int, advance_review: bool = False,
 ) -> dict:
     """练同类一轮做完 → 记 practice_count/correct(待巩固→巩固中);
-    语法错题按正确率推进 SM-2(可达标判掌握);词汇仅记数(掌握判定留 P3 词力通)。"""
+    语法错题按正确率推进 SM-2(可达标判掌握);词汇仅记数(掌握判定留 P3 词力通)。
+
+    advance_review=True(复习页对「无选项原卷题」以练同类代替客观重做时传)→ 不限 grammar,
+    一律按本轮正确率推进 SM-2,让该错题离开今日复习队列。"""
     from app.core.exceptions import AppError
     from app.services import wrong_review_service
     wr = await db.get(WrongRecord, wrong_record_id)
@@ -204,7 +208,7 @@ async def record_practice_result(
     wr.practice_count = (wr.practice_count or 0) + total
     wr.practice_correct = (wr.practice_correct or 0) + correct
     mastered = False
-    if total > 0 and wr.kp_kind == "grammar" and wr.status == "open":
+    if total > 0 and wr.status == "open" and (advance_review or wr.kp_kind == "grammar"):
         mastered = await wrong_review_service.advance_by_practice(
             db, wr=wr, accuracy=correct / total)
     await db.flush()

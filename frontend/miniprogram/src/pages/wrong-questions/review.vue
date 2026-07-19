@@ -57,62 +57,72 @@
         <!-- 题干 -->
         <text class="question-text">{{ current!.question_text || '（无题干，请查看原图）' }}</text>
 
-        <!-- 作答区：有选项→单选重做；无选项→文本作答（客观判分，取代旧自评） -->
-        <view v-if="current!.options && current!.options.length" class="opt-list">
-          <view
-            v-for="(opt, i) in current!.options"
-            :key="i"
-            class="opt-item"
-            :class="optClass(i, opt)"
-            @tap="onPick(i)"
-          >
-            <text class="opt-text">{{ opt }}</text>
-            <view v-if="answered && isCorrectOption(opt)" class="ic ic-check-circle opt-ok" />
+        <!-- 有选项:客观单选重做(点选项即时判分) -->
+        <template v-if="hasOptions">
+          <view class="opt-list">
+            <view
+              v-for="(opt, i) in current!.options"
+              :key="i"
+              class="opt-item"
+              :class="optClass(i, opt)"
+              @tap="onPick(i)"
+            >
+              <text class="opt-text">{{ opt }}</text>
+              <view v-if="answered && isCorrectOption(opt)" class="ic ic-check-circle opt-ok" />
+            </view>
           </view>
-        </view>
-        <input
-          v-else
-          class="text-input"
-          :disabled="answered"
-          :value="textAnswer"
-          placeholder="输入你的答案"
-          @input="textAnswer = $event.detail.value"
-        />
 
-        <!-- 提交前 -->
-        <button
-          v-if="!answered"
-          class="btn-primary submit-btn"
-          :disabled="!canSubmit || submitting"
-          @tap="submit"
-        >{{ submitting ? '判分中…' : '提交' }}</button>
+          <!-- 提交前 -->
+          <button
+            v-if="!answered"
+            class="btn-primary submit-btn"
+            :disabled="!canSubmit || submitting"
+            @tap="submit"
+          >{{ submitting ? '判分中…' : '提交' }}</button>
 
-        <!-- 提交后 -->
-        <view v-else class="fb-wrap">
-          <!-- 答对:秒过 -->
-          <template v-if="result!.is_correct">
-            <text class="fb-line fb-ok">{{ result!.mastered ? '✓ 答对，已订正掌握' : '✓ 答对，继续巩固' }}</text>
-            <button class="btn-primary submit-btn" @tap="next">{{ currentIdx + 1 >= queue.length ? '完成' : '下一题' }}</button>
-          </template>
-          <!-- 答错:错答对照(讲义两段) + 错因类型 + chip 驱动 CTA -->
-          <template v-else>
-            <view class="seg seg-wrong">
-              <text class="seg-k">你当时</text>
-              <text class="seg-old">{{ current!.student_answer || '—' }}</text>
-            </view>
-            <view class="seg seg-ok">
-              <text class="seg-k">正确</text>
-              <text class="seg-new">{{ current!.correct_answer || '—' }}</text>
-            </view>
-            <text v-if="result!.explanation" class="seg-note">{{ result!.explanation }}</text>
-            <text class="q-lab">这次为什么错？</text>
-            <view class="chips">
-              <text v-for="c in ERR_TYPES" :key="c.key" class="chip" :class="{ on: errType === c.key }" @tap="pickErr(c.key)">{{ c.label }}</text>
-            </view>
-            <button class="btn-primary cta-main" :disabled="pracLoading" @tap="onCta">{{ pracLoading ? '出题中…' : ctaLabel }}</button>
-            <text class="next-link" @tap="next">下一题</text>
-          </template>
-        </view>
+          <!-- 提交后 -->
+          <view v-else class="fb-wrap">
+            <!-- 答对:秒过 -->
+            <template v-if="result!.is_correct">
+              <text class="fb-line fb-ok">{{ result!.mastered ? '✓ 答对，已订正掌握' : '✓ 答对，继续巩固' }}</text>
+              <button class="btn-primary submit-btn" @tap="next">{{ currentIdx + 1 >= queue.length ? '完成' : '下一题' }}</button>
+            </template>
+            <!-- 答错:错答对照(讲义两段) + 错因类型 + chip 驱动 CTA -->
+            <template v-else>
+              <view class="seg seg-wrong">
+                <text class="seg-k">你当时</text>
+                <text class="seg-old">{{ current!.student_answer || '—' }}</text>
+              </view>
+              <view class="seg seg-ok">
+                <text class="seg-k">正确</text>
+                <text class="seg-new">{{ current!.correct_answer || '—' }}</text>
+              </view>
+              <text v-if="result!.explanation" class="seg-note">{{ result!.explanation }}</text>
+              <text class="q-lab">这次为什么错？</text>
+              <view class="chips">
+                <text v-for="c in ERR_TYPES" :key="c.key" class="chip" :class="{ on: errType === c.key }" @tap="pickErr(c.key)">{{ c.label }}</text>
+              </view>
+              <button class="btn-primary cta-main" :disabled="pracLoading" @tap="onCta">{{ pracLoading ? '出题中…' : ctaLabel }}</button>
+              <text class="next-link" @tap="next">下一题</text>
+            </template>
+          </view>
+        </template>
+
+        <!-- 无选项(原卷题,不便客观单选重做):看错答对照 → 练同类(选择题)巩固 -->
+        <template v-else>
+          <view class="seg seg-wrong">
+            <text class="seg-k">你当时</text>
+            <text class="seg-old">{{ current!.student_answer || '—' }}</text>
+          </view>
+          <view class="seg seg-ok">
+            <text class="seg-k">正确</text>
+            <text class="seg-new">{{ current!.correct_answer || '—' }}</text>
+          </view>
+          <text v-if="current!.explanation" class="seg-note">{{ current!.explanation }}</text>
+          <text class="q-lab">原卷题不便重做，练几道同类选择题巩固</text>
+          <button class="btn-primary cta-main" :disabled="pracLoading" @tap="openPractice(true)">{{ pracLoading ? '出题中…' : '练同类' }}</button>
+          <text class="next-link" @tap="next">下一题</text>
+        </template>
       </view>
     </view>
 
@@ -253,19 +263,26 @@ const pracOpen = ref(false)
 const pracLoading = ref(false)
 const pracKp = ref('')
 const pracList = ref<PracticeQuestion[]>([])
-async function openPractice() {
+// 无选项原卷题:练同类即「复习」,需按正确率推进 SM-2(advanceReview);有选项题的答错后练同类只作巩固,不重复推进
+const pracAdvance = ref(false)
+async function openPractice(advanceReview = false) {
   if (!current.value || pracLoading.value) return
   pracLoading.value = true
   try {
     const r = await practiceWrongCenter(current.value.id)
     if (!r.questions.length) { uni.showToast({ title: '未生成题目', icon: 'none' }); return }
+    pracAdvance.value = advanceReview
     pracKp.value = r.knowledge_point; pracList.value = r.questions; pracOpen.value = true
   } catch (e: any) { uni.showToast({ title: e?.message || '出题失败', icon: 'none' }) }
   finally { pracLoading.value = false }
 }
 async function pracRecorder(total: number, correct: number): Promise<string> {
   if (!current.value) return `本轮 ${correct}/${total} 正确`
-  const r = await recordPracticeResult(current.value.id, total, correct)
+  const r = await recordPracticeResult(current.value.id, total, correct, pracAdvance.value)
+  if (pracAdvance.value) {   // 无选项原卷题:这轮练同类计入复习统计
+    reviewedCount.value++
+    if (r.just_mastered) masteredCount.value++
+  }
   return r.just_mastered ? '🎉 恭喜，这道错题已掌握！' : `已计入巩固：本轮 ${correct}/${total} 正确`
 }
 function onPracClose() { pracOpen.value = false; next() }   // 练完自动下一题
@@ -296,42 +313,42 @@ function goBack() {
 
 /* 进度条 */
 /* 进度即底色 */
-.progress-wrap { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12rpx 18rpx; border-radius: 999rpx; background: #eef3f8; margin-bottom: 20rpx; }
+.progress-wrap { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 12rpx 18rpx; border-radius: 999rpx; background: var(--c-bg-soft); margin-bottom: 20rpx; }
 .progress-fill-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width 0.3s; }
-.progress-text { position: relative; font-size: 24rpx; font-weight: 800; color: #3f87b8; white-space: nowrap; }
+.progress-text { position: relative; font-size: 24rpx; font-weight: 800; color: var(--c-primary-deep); white-space: nowrap; }
 
 /* 题目卡片 */
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); }
 .meta-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18rpx; }
-.meta-tag { font-size: 22rpx; font-weight: 700; color: #3f87b8; background: #e9f4fb; padding: 5rpx 18rpx; border-radius: 999rpx; }
+.meta-tag { font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 5rpx 18rpx; border-radius: 999rpx; }
 .meta-review { font-size: 22rpx; color: var(--c-text-hint); }
 .meta-left { display: flex; align-items: center; gap: 10rpx; }
-.src-badge { font-size: 20rpx; font-weight: 700; color: #2f74d6; background: #eaf2fe; padding: 4rpx 14rpx; border-radius: 999rpx; }
-.src-back { font-size: 22rpx; color: #3d8bf5; }
+.src-badge { font-size: 20rpx; font-weight: 700; color: var(--c-text-second); background: var(--c-bg-soft); padding: 4rpx 14rpx; border-radius: 999rpx; }
+.src-back { font-size: 22rpx; color: #6D28D9; }
 /* ④ 错答对照(讲义两段) */
 .seg { border-left: 6rpx solid; border-radius: 0 12rpx 12rpx 0; padding: 12rpx 16rpx; margin-bottom: 10rpx; display: flex; align-items: baseline; gap: 14rpx; }
-.seg-wrong { border-color: #e0564f; background: #fdecec; }
-.seg-ok { border-color: #2fa98a; background: #eef8f3; }
+.seg-wrong { border-color: #e35b5b; background: #fdecec; }
+.seg-ok { border-color: #18a058; background: #e6f8ee; }
 .seg-k { font-size: 22rpx; font-weight: 800; flex: none; }
 .seg-wrong .seg-k { color: #c33; }
-.seg-ok .seg-k { color: #1a9d63; }
+.seg-ok .seg-k { color: #18a058; }
 .seg-old { font-size: 28rpx; color: #c33; text-decoration: line-through; }
-.seg-new { font-size: 28rpx; font-weight: 800; color: #1a9d63; }
-.seg-note { display: block; font-size: 24rpx; color: #7a8698; line-height: 1.6; margin: 2rpx 0 12rpx; padding-left: 10rpx; }
+.seg-new { font-size: 28rpx; font-weight: 800; color: #18a058; }
+.seg-note { display: block; font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; margin: 2rpx 0 12rpx; padding-left: 10rpx; }
 /* 错因 chips + CTA */
-.q-lab { display: block; text-align: center; font-size: 24rpx; color: #7a8698; margin: 16rpx 0 12rpx; }
+.q-lab { display: block; text-align: center; font-size: 24rpx; color: var(--c-text-second); margin: 16rpx 0 12rpx; }
 .chips { display: flex; justify-content: center; gap: 16rpx; margin-bottom: 22rpx; }
-.chip { font-size: 26rpx; color: #55607a; background: #eef1f6; border: 2rpx solid #e2e6ee; border-radius: 999rpx; padding: 10rpx 32rpx; }
-.chip.on { color: #fff; background: #3d8bf5; border-color: transparent; box-shadow: 0 4rpx 12rpx rgba(61,139,245,.28); }
+.chip { font-size: 26rpx; color: var(--c-text-second); background: var(--c-bg-soft); border: 2rpx solid transparent; border-radius: 999rpx; padding: 10rpx 32rpx; }
+.chip.on { color: #fff; background: var(--c-primary); border-color: transparent; box-shadow: 0 4rpx 12rpx rgba(61,139,245,.28); }
 .cta-main { margin-top: 0; }
-.next-link { display: block; text-align: center; font-size: 26rpx; color: #93a0b3; margin-top: 16rpx; }
+.next-link { display: block; text-align: center; font-size: 26rpx; color: var(--c-text-hint); margin-top: 16rpx; }
 .question-text { display: block; font-size: 32rpx; color: var(--c-ink); line-height: 1.6; font-weight: 700; margin-bottom: 28rpx; }
 
 /* 客观重做作答区 */
 .opt-list { display: flex; flex-direction: column; gap: 12rpx; margin-bottom: 24rpx; }
 .opt-item { display: flex; align-items: center; gap: 14rpx; padding: 20rpx 22rpx; border-radius: var(--r-md); background: var(--c-bg-page); border: 2rpx solid var(--c-border); }
-.opt-item.opt-selected { background: #eaf4fb; border-color: #7bbde8; }
-.opt-item.opt-correct { background: #eafaf1; border-color: #2ecc71; }
+.opt-item.opt-selected { background: var(--c-primary-faint); border-color: var(--c-primary); }
+.opt-item.opt-correct { background: #e6f8ee; border-color: #18a058; }
 .opt-item.opt-wrong { background: #fdecec; border-color: #e35b5b; }
 .opt-text { flex: 1; color: var(--c-ink); font-size: 28rpx; line-height: 1.5; }
 .opt-ok { width: 32rpx; height: 32rpx; flex-shrink: 0; }
@@ -386,6 +403,6 @@ function goBack() {
 .q-btn.selected .q-label { font-weight: 800; color: var(--c-ink); }
 .submit-btn { margin-top: 0; }
 
-.btn-primary { background: #7bbde8; color: #fff; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; width: 100%; }
-.btn-primary[disabled] { background: #d4e7f5; color: #97b8cf; }
+.btn-primary { background: var(--c-primary); color: #fff; border-radius: var(--r-btn); padding: 20rpx; font-weight: 700; font-size: 28rpx; width: 100%; }
+.btn-primary[disabled] { background: #bcd6f7; color: #eaf2ff; }
 </style>

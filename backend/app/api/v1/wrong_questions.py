@@ -57,6 +57,7 @@ async def get_review_queue(db: DbDep, current_user: UserDep):
     from app.services import wrong_review_service
     items = await wrong_review_service.review_queue_items(db, student_id=current_user.id)
     stats = await wrong_review_service.review_stats(db, student_id=current_user.id)
+    await db.commit()   # review_queue_items 会把不可复做的孤儿置 skipped,需落库
     return make_ok(ReviewQueueOut(
         due_items=[WrongQuestionOut(**it) for it in items],
         stats=stats,

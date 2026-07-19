@@ -82,7 +82,8 @@ async def practice_result(
     body: {total, correct}"""
     r = await wrong_center_service.record_practice_result(
         db, student_id=current_user.id, wrong_record_id=wrong_record_id,
-        total=int(body.get("total", 0)), correct=int(body.get("correct", 0)))
+        total=int(body.get("total", 0)), correct=int(body.get("correct", 0)),
+        advance_review=bool(body.get("advance_review", False)))
     await db.commit()
     return make_ok(r)
 

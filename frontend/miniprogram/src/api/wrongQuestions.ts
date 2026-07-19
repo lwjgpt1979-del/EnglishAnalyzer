@@ -120,8 +120,8 @@ export function practiceWrongCenter(wrongRecordId: string): Promise<{ knowledge_
 
 /** 练同类一轮做完回写成绩(记 practice + 语法推进 SM-2) */
 export interface PracticeResult { lifecycle: string; is_mastered: boolean; just_mastered: boolean; practice_count: number; practice_correct: number; review_count: number; next_review_at: string | null }
-export function recordPracticeResult(wrongRecordId: string, total: number, correct: number): Promise<PracticeResult> {
-  return request(`/api/v1/wrong-center/practice-result/${wrongRecordId}`, { method: 'POST', data: { total, correct } })
+export function recordPracticeResult(wrongRecordId: string, total: number, correct: number, advanceReview = false): Promise<PracticeResult> {
+  return request(`/api/v1/wrong-center/practice-result/${wrongRecordId}`, { method: 'POST', data: { total, correct, advance_review: advanceReview } })
 }
 
 /** 词汇错题「学这个词」:富词卡 + 仿真练习 5 题(纯选择,全局缓存)。5 题全对 → 判掌握。 */

@@ -99,7 +99,12 @@ async def review_queue_items(
         .order_by(WrongRecord.next_review_at).limit(limit)
     )).scalars().all())
     out = []
+    orphan_ids: list[uuid.UUID] = []
     for wr in wrs:
+        # 不可复做的孤儿(原题已删且无冗余正确答案)→ 移出队列并置终态 skipped(治存量,不再复现、不占统计)
+        if await _resolve_question(db, wr) is None:
+            orphan_ids.append(wr.id)
+            continue
         fields = await to_wq_out_fields(db, wr)
         if wr.node_id:
             name = (await db.execute(
@@ -108,6 +113,10 @@ async def review_queue_items(
             if name:
                 fields["tags"] = [name]
         out.append(fields)
+    if orphan_ids:
+        await db.execute(
+            sa.update(WrongRecord).where(WrongRecord.id.in_(orphan_ids)).values(status="skipped"))
+        await db.flush()
     return out
 
 
@@ -165,6 +174,12 @@ async def to_wq_out_fields(db: AsyncSession, wr: WrongRecord) -> dict:
             stem, correct, qtype, difficulty = pq.stem, pq.answer, str(pq.question_type or ""), pq.difficulty
             explanation = pq.explanation
             options = pq.options if isinstance(pq.options, list) else None
+    # 活表缺失(原题被删)或字段空 → 回落 wrong_record 冗余题面(与「我的错题」列表同源,复习卡不再空白)
+    stem = stem or wr.stem
+    correct = correct or wr.correct_answer
+    student_ans = student_ans or wr.student_answer
+    qtype = qtype or wr.question_type
+    explanation = explanation or wr.explanation
     return {
         "options": options, "explanation": explanation, "source": source,
         "id": wr.id, "student_id": wr.student_id, "source_image_url": "",
@@ -241,24 +256,34 @@ async def advance_due_wrongs_on_node(
 
 
 async def _resolve_question(db: AsyncSession, wr: WrongRecord) -> dict | None:
-    """取错题底层题面(客观判分/重做展示用):correct/coarse_type/options/explanation。题被删返回 None。"""
+    """取错题底层题面(客观判分/重做展示用):correct/coarse_type/options/explanation。
+    活表(平台/上传题)缺失 → 回落 wrong_record 冗余字段;连正确答案都没有(无从判分)才返回 None。"""
     from app.models.d16_question_domain import PlatformQuestion, UploadedQuestion
+    correct = explanation = ""
+    coarse: str | None = None
+    options = None
     if wr.q_scope == "platform":
         pq = (await db.execute(
             sa.select(PlatformQuestion).where(PlatformQuestion.id == wr.question_id)
         )).scalar_one_or_none()
-        if pq is None:
-            return None
-        opts = pq.options if isinstance(pq.options, list) else None
-        return {"correct": pq.answer or "", "coarse": "单选" if opts else "填空",
-                "options": opts, "explanation": pq.explanation or ""}
-    uq = (await db.execute(
-        sa.select(UploadedQuestion).where(UploadedQuestion.id == wr.question_id)
-    )).scalar_one_or_none()
-    if uq is None:
-        return None
-    return {"correct": uq.correct_answer or "", "coarse": uq.question_type or "填空",
-            "options": None, "explanation": uq.explanation or ""}
+        if pq is not None:
+            options = pq.options if isinstance(pq.options, list) else None
+            correct, explanation = pq.answer or "", pq.explanation or ""
+            coarse = "单选" if options else "填空"
+    else:
+        uq = (await db.execute(
+            sa.select(UploadedQuestion).where(UploadedQuestion.id == wr.question_id)
+        )).scalar_one_or_none()
+        if uq is not None:
+            correct, explanation = uq.correct_answer or "", uq.explanation or ""
+            coarse = uq.question_type or "填空"
+    # 活表缺失/字段空 → 冗余兜底
+    correct = correct or (wr.correct_answer or "")
+    explanation = explanation or (wr.explanation or "")
+    coarse = coarse or (wr.question_type or ("单选" if options else "填空"))
+    if not correct:
+        return None   # 连正确答案都没有 → 无从客观判分,视为不可复做
+    return {"correct": correct, "coarse": coarse, "options": options, "explanation": explanation}
 
 
 async def _grade_and_log(
