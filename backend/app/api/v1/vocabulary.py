@@ -106,6 +106,15 @@ async def exam_overview(db: DbDep, current_user: UserDep):
     return make_ok(await vocabulary_service.exam_vocab_overview(db, student=current_user))
 
 
+@router.get("/word-family/{word_id}", response_model=BaseResponse[dict])
+async def word_family(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """词族(G 构词法):词根 + 同族词(查看即生成+全局缓存);在库同族词先验进本生队列。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import word_family_service
+    return make_ok(await word_family_service.word_family_out(
+        db, word_id=word_id, student_id=current_user.id))
+
+
 @router.post("/exam-daily", response_model=BaseResponse[DailyTaskOut])
 async def exam_daily(body: dict, db: DbDep, current_user: UserDep):
     """某轨×频档 的今日一组任务。body: {type: word|phrase, band: high|mid|low}。"""

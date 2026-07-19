@@ -128,6 +128,14 @@
         </view>
       </view>
 
+      <!-- 词族(G 构词法):义关起,词根 + 同族词,认一串 -->
+      <view v-if="gateStep !== 'form' && wordFamily && wordFamily.members.length" class="wf-box">
+        <text class="wf-head">词根 {{ wordFamily.root || '同族' }} · 认一串</text>
+        <view class="wf-chips">
+          <text v-for="m in wordFamily.members" :key="m.word" class="wf-chip">{{ m.word }} {{ m.meaning }}</text>
+        </view>
+      </view>
+
       <!-- 单词发音 + 跟读：同一行 -->
       <view class="wc-btns">
         <view class="wc-btn" @tap="playCard(curStudy)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>单词发音</text></view>
@@ -552,8 +560,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily } from '@/api/vocabulary'
-import type { ExamOverview } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily } from '@/api/vocabulary'
+import type { ExamOverview, WordFamily } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
@@ -661,14 +669,26 @@ const curStudy = computed(() => cardList.value[cardIdx.value] || ({} as VocabWor
 
 // ── 三关(A):form(先形音,遮义) → learn(义+用,现有流程)。新词从 form 起;复习词直接 learn ──
 const gateStep = ref<'form' | 'learn'>('learn')
+// 词族(G):义/用关展示;进 learn 关即拉取(查看即生成)
+const wordFamily = ref<WordFamily | null>(null)
+async function loadFamily() {
+  const wid = curStudy.value?.word_id
+  if (!wid) { wordFamily.value = null; return }
+  wordFamily.value = null
+  try { wordFamily.value = await getWordFamily(wid) } catch { wordFamily.value = null }
+}
 watch(() => curStudy.value?.word_id, () => {
-  gateStep.value = curStudy.value?.gate === 'form' ? 'form' : 'learn'
+  const g: 'form' | 'learn' = curStudy.value?.gate === 'form' ? 'form' : 'learn'
+  gateStep.value = g
+  wordFamily.value = null
+  if (g === 'learn') loadFamily()   // 复习词直接进 learn → 拉词族
 }, { immediate: true })
 // stepper 高亮:形(遮义) / 义(检测中) / 用(造句中)
 const displayGate = computed<'form' | 'meaning' | 'use'>(() =>
   gateStep.value === 'form' ? 'form' : (produceTask.value ? 'use' : 'meaning'))
 function toMeaning() {
   gateStep.value = 'learn'
+  loadFamily()                                  // 形→义:拉词族
   if (readSeq.value) playCard(curStudy.value)   // 翻出词义时连读
 }
 
@@ -1597,6 +1617,11 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .gate-line.done { background: #B5D4F4; }
 .wc-mean-hidden { font-size: 26rpx; color: #94a3b8; }
 .gate-next { margin-top: 8rpx; }
+/* 词族(G) */
+.wf-box { background: #EEF5FF; border: 1rpx solid #B5D4F4; border-radius: 16rpx; padding: 16rpx 18rpx; margin: 8rpx 0 20rpx; }
+.wf-head { font-size: 24rpx; color: #185FA5; }
+.wf-chips { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 10rpx; }
+.wf-chip { font-size: 24rpx; color: #0C447C; background: #D6E6FA; padding: 6rpx 16rpx; border-radius: 10rpx; }
 .study-hd .progress-hint { margin-bottom: 0; }
 .seq-toggle { font-size: 24rpx; color: var(--c-text-hint); }
 .seq-toggle.on { color: var(--c-primary-deep); font-weight: 600; }

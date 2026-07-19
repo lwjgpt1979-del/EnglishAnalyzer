@@ -116,6 +116,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "销售通话转写→意向分析打分", "why": "抽取 + 固定打分规格,有 validate 兜底", "locations": ["sales_analysis_service.py:88"], "cache": "none", "store": "无(不落库,失败走启发式兜底)"},
     {"feature": "vocab_enrich", "mode": "chat", "surface": "小程序端", "module": "词力通", "service": "vocab_intensive_service",
      "purpose": "补全单词释义/例句/短语", "why": "词典式抽取、固定字段", "locations": ["vocab_intensive_service.py:165"], "cache": "global", "store": "vocabulary_words(definitions/examples/phrases 等,词级公共)"},
+    {"feature": "vocab_word_family", "mode": "chat", "surface": "小程序端", "module": "词力通·词族(G)", "service": "word_family_service",
+     "purpose": "生成单词的词根 + 同族词(构词法·义/用关展示)", "why": "构词法抽取、规格明确、fast 档", "locations": ["word_family_service.py:42"], "cache": "global", "store": "vocab_word_family.members(按 word_id,查看即生成)"},
     {"feature": "vocab_validity_gate", "mode": "chat", "surface": "小程序端", "module": "词力通·缺词", "service": "vocab_intensive_service",
      "purpose": "缺词自动入库前的有效性闸门(是否真实可教学英文词/词组)", "why": "二元判定、规格明确、fast 档 + 免费正则粗筛前置", "locations": ["vocab_intensive_service.py:225"], "cache": "none", "store": "无(判定结果不落库;通过则建 vocabulary_words,不通过落 vocab_review)"},
     {"feature": "vocab_image_brief", "mode": "chat", "surface": "运营后台", "module": "词力通·媒体", "service": "vocab_media_service",

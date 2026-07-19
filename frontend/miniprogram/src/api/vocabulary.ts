@@ -24,6 +24,13 @@ export function getExamDaily(type: 'word' | 'phrase', band: ExamBandKey): Promis
   return request<VocabDailyTask>('/api/v1/vocabulary/exam-daily', { method: 'POST', data: { type, band } })
 }
 
+// 词族(G 构词法):词根 + 同族词(查看即生成缓存;在库同族词先验进队列)
+export interface WordFamilyMember { word: string; pos: string; meaning: string; in_dict: boolean }
+export interface WordFamily { root: string; members: WordFamilyMember[] }
+export function getWordFamily(wordId: string): Promise<WordFamily> {
+  return request<WordFamily>(`/api/v1/vocabulary/word-family/${wordId}`, { method: 'GET' })
+}
+
 export interface VocabPronSummary {
   count: number; avg: number | null
   accuracy: number | null; fluency: number | null; completion: number | null

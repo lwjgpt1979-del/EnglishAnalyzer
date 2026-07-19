@@ -7,10 +7,22 @@
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import mapped_column
 
 from .base import Base
+
+
+class VocabWordFamily(Base):
+    """词族缓存(全局共享,G 构词法):词 → 词根 + 同族词。LLM 生成一次即缓存,查看即生成。"""
+
+    __tablename__ = "vocab_word_family"
+
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), primary_key=True)
+    root = mapped_column(sa.String(64), nullable=True)          # 词根/词干(无明显则空)
+    members = mapped_column(JSONB, nullable=False)              # [{word, pos, meaning}] 同族词(不含原词)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
 class VocabNode(Base):
