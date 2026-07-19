@@ -26,37 +26,61 @@
     <!-- ───────── 学生身份 ───────── -->
     <template v-if="activeRole === 'student'">
       <!-- 今日学习计划（M9）-->
-      <view v-if="auth.isLoggedIn() && plan && plan.tasks.length" class="plan-card">
-        <view class="plan-head">
-          <view class="plan-head-fill" :style="{ width: (plan.total_count ? plan.completed_count / plan.total_count * 100 : 0) + '%' }" />
+      <view v-if="auth.isLoggedIn() && plan && planHasContent" class="plan-card">
+        <!-- 折叠标题栏(进度即底色) -->
+        <view class="plan-head" @tap="togglePlan">
+          <view class="plan-head-fill" :style="{ width: planPct + '%' }" />
           <view class="plan-title-wrap">
-            <view class="plan-title-icon" />
+            <view class="ic ic-calendar plan-title-icon" />
             <text class="plan-title">今日学习计划</text>
           </view>
-          <text class="plan-progress">{{ plan.completed_count }}/{{ plan.total_count }} 完成</text>
-        </view>
-        <view
-          v-for="(t, i) in plan.tasks"
-          :key="i"
-          class="plan-task"
-          :class="[`lv-${t.level || 'none'}`, { done: t.done }]"
-          @tap="() => goTask(t)"
-        >
-          <view class="task-badge" :class="[`badge-${t.type}`, { done: t.done }]" />
-          <view class="plan-task-body">
-            <text class="plan-task-title" :class="{ done: t.done }">{{ taskTitle(t) }}</text>
-            <view class="plan-task-meta">
-              <text
-                v-if="t.accuracy != null"
-                class="acc-pill"
-                :class="`pill-${t.level}`"
-              >{{ (t.accuracy * 100).toFixed(0) }}%</text>
-              <text class="plan-task-sub">{{ taskSub(t) }}</text>
-            </view>
+          <view class="plan-head-right">
+            <text class="plan-progress">{{ plan.completed_count }}/{{ plan.total_count }} 完成</text>
+            <view class="ic plan-chev" :class="planFolded ? 'ic-chevron-down' : 'ic-chevron-up'" />
           </view>
-          <text class="plan-task-arrow">›</text>
         </view>
-        <text v-if="!plan.checkin_done" class="plan-checkin-tip">完成学习后别忘了去「词力通」打卡 →</text>
+
+        <!-- 折叠态:一行摘要 -->
+        <text v-if="planFolded" class="plan-summary">{{ planSummary }}</text>
+
+        <!-- 展开态:两来源便当 + 复习条 -->
+        <view v-else class="plan-body">
+          <block v-for="src in plan.sources" :key="src.source">
+            <view v-if="src.available" class="src-head">
+              <view class="ic src-head-ic" :class="src.source === 'homework' ? 'ic-file' : 'ic-book'" />
+              <text class="src-head-title">{{ src.title }}</text>
+              <text class="src-head-sub">{{ src.subtitle }}</text>
+            </view>
+            <view v-if="src.available" class="tile-grid">
+              <view
+                v-for="t in src.tiles"
+                :key="t.module"
+                class="tile"
+                :class="src.source === 'homework' ? 'tile-hw' : 'tile-course'"
+                @tap="() => goTile(t)"
+              >
+                <view class="tile-fill" :style="{ width: tilePct(t) + '%' }" />
+                <view class="tile-inner">
+                  <view class="tile-row1">
+                    <view class="tile-ic" :class="'mic-' + t.module" />
+                    <text class="tile-num">{{ t.count }}</text>
+                  </view>
+                  <text class="tile-cap">{{ t.title }} · {{ tileCap(t) }}</text>
+                </view>
+              </view>
+            </view>
+          </block>
+
+          <!-- 今日复习条(虚线描边,蓝 C) -->
+          <view class="review-bar" @tap="goReview">
+            <view class="ic ic-refresh review-ic" />
+            <text class="review-title">今日复习</text>
+            <text class="review-sub">{{ plan.review.subtitle }}</text>
+            <text class="review-arrow">›</text>
+          </view>
+
+          <text v-if="!plan.checkin_done" class="plan-checkin-tip">完成学习后别忘了去「词力通」打卡 →</text>
+        </view>
       </view>
 
       <!-- 开始学习主卡片 -->
@@ -217,7 +241,7 @@ import { getUnreadCount } from '@/api/notifications'
 import { getMyStudentsAsRelative } from '@/api/relative'
 import { getTodayPlan } from '@/api/learningPlan'
 import { request } from '@/utils/request'
-import type { BoundStudent, TodayPlanOut, PlanTask } from '@/types/api'
+import type { BoundStudent, TodayPlanOut, PlanTile } from '@/types/api'
 
 const auth = useAuthStore()
 const branding = useBrandingStore()
@@ -242,33 +266,34 @@ async function loadPlan() {
   try { plan.value = await getTodayPlan() } catch { plan.value = null }
 }
 
-function goTask(t: PlanTask) {
-  if (t.action === 'review') {
-    uni.navigateTo({ url: '/pages/wrong-questions/review' })
-  } else if (t.action === 'learn') {
-    // 学习目标(上传试卷带来的未学语法)带 kp_id → 直达该考点讲解页;否则通用学习入口
-    if (t.kp_id) {
-      uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${t.kp_id}${t.kp_key ? `&name=${encodeURIComponent(t.kp_key)}` : ''}&cat=grammar` })
-    } else {
-      goLearn()
-    }
-  } else { // practice
-    if (t.kp_id) {
-      uni.navigateTo({ url: `/pages/curriculum/kp-content?id=${t.kp_id}` })
-    } else {
-      uni.navigateTo({ url: '/pages/practice/adaptive' })
-    }
-  }
+// ── 折叠态(记住用户偏好)──
+const PLAN_FOLD_KEY = 'planFolded'
+const planFolded = ref(false)
+try { planFolded.value = !!uni.getStorageSync(PLAN_FOLD_KEY) } catch { /* ignore */ }
+function togglePlan() {
+  planFolded.value = !planFolded.value
+  try { uni.setStorageSync(PLAN_FOLD_KEY, planFolded.value) } catch { /* ignore */ }
 }
 
-// 任务卡视觉辅助
-function taskTitle(t: PlanTask) {
-  return t.title.replace(/^攻克薄弱点：/, '')
-}
-function taskSub(t: PlanTask) {
-  // 去掉与正确率胶囊重复的「正确率 X% ·」前缀
-  return t.subtitle.replace(/^正确率\s*\d+%\s*[·•・]\s*/, '')
-}
+// ── 计划视觉派生 ──
+const planHasContent = computed(() => {
+  if (!plan.value) return false
+  if (plan.value.review.count > 0) return true
+  return plan.value.sources.some(s => s.available && s.tiles.some(t => t.total > 0))
+})
+const planPct = computed(() =>
+  plan.value && plan.value.total_count
+    ? Math.round(plan.value.completed_count / plan.value.total_count * 100) : 0)
+const planSummary = computed(() => {
+  if (!plan.value) return ''
+  const sum = (src: string) =>
+    plan.value!.sources.find(s => s.source === src)?.tiles.reduce((a, t) => a + t.count, 0) || 0
+  return `作业 ${sum('homework')} · 课程 ${sum('course')} · 复习 ${plan.value.review.count}`
+})
+function tilePct(t: PlanTile) { return t.total > 0 ? Math.round(t.studied / t.total * 100) : 0 }
+function tileCap(t: PlanTile) { return t.total > 0 ? `已 ${t.studied}/${t.total}` : '暂无' }
+function goTile(t: PlanTile) { if (t.route) uni.navigateTo({ url: t.route }) }
+function goReview() { uni.navigateTo({ url: plan.value?.review.route || '/pages/wrong-questions/review' }) }
 
 const isTeacher = computed(() => (auth.user as any)?.role === 'teacher')
 const isRelative = computed(() => children.value.length > 0)
@@ -380,78 +405,61 @@ onMounted(() => {
 /* 今日学习计划（M9）*/
 .plan-card {
   background: var(--c-bg-card); border-radius: var(--r-lg);
-  padding: 28rpx 28rpx 20rpx; margin-bottom: 24rpx;
+  padding: 20rpx 20rpx 16rpx; margin-bottom: 24rpx;
   box-shadow: var(--shadow-md);
 }
-/* 进度即底色:计划完成度铺 plan-head 背景 */
-.plan-head { position: relative; overflow: hidden; display: flex; justify-content: space-between; align-items: center; padding: 14rpx 18rpx; border-radius: 14rpx; margin-bottom: 16rpx; }
-.plan-head-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); transition: width .3s; }
-.plan-title-wrap { position: relative; display: flex; align-items: center; gap: 12rpx; }
-.plan-title-icon {
-  width: 40rpx; height: 40rpx; flex-shrink: 0;
-  background-repeat: no-repeat; background-position: center; background-size: contain;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cline x1='16' y1='2' x2='16' y2='6'/%3E%3Cline x1='8' y1='2' x2='8' y2='6'/%3E%3Cline x1='3' y1='10' x2='21' y2='10'/%3E%3C/svg%3E");
-}
+/* 进度即底色:完成度铺标题栏背景 */
+.plan-head { position: relative; overflow: hidden; display: flex; justify-content: space-between; align-items: center; padding: 16rpx 18rpx; border-radius: 14rpx; }
+.plan-head-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #e8f2ff; transition: width .3s; }
+.plan-title-wrap { position: relative; display: flex; align-items: center; gap: 10rpx; }
+.plan-title-icon { width: 36rpx; height: 36rpx; flex-shrink: 0; }
 .plan-title { font-size: var(--fs-h2); font-weight: 800; color: var(--c-ink); }
-.plan-progress { position: relative; font-size: 24rpx; color: var(--c-primary); font-weight: 700; }
-.plan-task {
-  position: relative;
-  display: flex; align-items: center; gap: 20rpx;
-  padding: 22rpx 24rpx; margin-top: 14rpx;
-  background: #fff;
-  border: 1rpx solid var(--c-border);
-  border-radius: var(--r-md);
-  overflow: hidden;
-  transition: transform .12s, box-shadow .12s;
-}
-.plan-task:active { transform: scale(0.985); box-shadow: 0 6rpx 20rpx rgba(61,139,245,.12); }
-/* 左侧优先级色条 */
-.plan-task::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8rpx;
-  background: var(--c-primary);
-}
-.plan-task.lv-none::before   { background: #7bbde8; }
-.plan-task.lv-weak::before   { background: #bdd8e9; }
-.plan-task.lv-medium::before { background: #ffb020; }
-.plan-task.lv-good::before   { background: #18a058; }
-.plan-task.done { background: var(--c-bg-soft); border-color: transparent; opacity: .7; }
-.plan-task.done::before { background: var(--c-success); }
+.plan-head-right { position: relative; display: flex; align-items: center; gap: 10rpx; }
+.plan-progress { font-size: 24rpx; color: #185FA5; font-weight: 700; }
+.plan-chev { width: 30rpx; height: 30rpx; }
+.plan-summary { display: block; font-size: 24rpx; color: var(--c-text-second); padding: 12rpx 18rpx 4rpx; }
+.plan-body { padding-top: 4rpx; }
+/* 来源分区标题 */
+.src-head { display: flex; align-items: center; gap: 8rpx; margin: 16rpx 4rpx 10rpx; }
+.src-head-ic { width: 28rpx; height: 28rpx; }
+.src-head-title { font-size: 24rpx; font-weight: 700; color: #0C447C; }
+.src-head-sub { font-size: 22rpx; color: #185FA5; background: #E6F1FB; padding: 2rpx 14rpx; border-radius: 999rpx; }
 
-/* 类型图标徽章（线性 SVG，统一描边风格）*/
-.task-badge {
-  width: 64rpx; height: 64rpx; border-radius: 18rpx; flex-shrink: 0;
-  background-repeat: no-repeat; background-position: center; background-size: 36rpx 36rpx;
-}
-.badge-weak_kp {
-  background-color: #e7f0f8;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237ba6c9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='5'/%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%237ba6c9'/%3E%3C/svg%3E");
-}
-.badge-review {
-  background-color: #e9f4fb;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237bbde8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 0 1 15-6.7L21 8'/%3E%3Cpath d='M21 3v5h-5'/%3E%3Cpath d='M21 12a9 9 0 0 1-15 6.7L3 16'/%3E%3Cpath d='M3 21v-5h5'/%3E%3C/svg%3E");
-}
-.badge-learn {
-  background-color: #e9f7ef;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2318a058' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z'/%3E%3Cpath d='M4 19a2 2 0 0 1 2-2h13'/%3E%3C/svg%3E");
-}
-.task-badge.done {
-  background-color: var(--c-success);
-  background-size: 34rpx 34rpx;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
-}
+/* 模块便当网格 */
+.tile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; }
+.tile { position: relative; overflow: hidden; border-radius: 16rpx; padding: 16rpx; transition: transform .12s; }
+.tile:active { transform: scale(0.98); }
+.tile-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; transition: width .3s; }
+.tile-inner { position: relative; }
+.tile-row1 { display: flex; justify-content: space-between; align-items: center; }
+.tile-ic { width: 34rpx; height: 34rpx; background-repeat: no-repeat; background-position: center; background-size: contain; }
+.tile-num { font-size: 34rpx; font-weight: 800; }
+.tile-cap { display: block; font-size: 22rpx; margin-top: 4rpx; }
+/* 作业:实心蓝块 */
+.tile-hw { background: #EEF5FF; border: 1rpx solid #B5D4F4; }
+.tile-hw .tile-fill { background: #B5D4F4; }
+.tile-hw .tile-num, .tile-hw .tile-cap { color: #0C447C; }
+/* 课程:白底蓝描边 */
+.tile-course { background: var(--c-bg-card); border: 2rpx solid #85B7EB; }
+.tile-course .tile-fill { background: #E6F1FB; }
+.tile-course .tile-num { color: #0C447C; }
+.tile-course .tile-cap { color: #185FA5; }
 
-/* 文本区 */
-.plan-task-body { flex: 1; display: flex; flex-direction: column; gap: 8rpx; min-width: 0; }
-.plan-task-title { font-size: 29rpx; font-weight: 700; color: var(--c-ink); line-height: 1.35; }
-.plan-task-title.done { color: var(--c-text-hint); text-decoration: line-through; }
-.plan-task-meta { display: flex; align-items: center; gap: 12rpx; flex-wrap: wrap; }
-.acc-pill { font-size: 20rpx; font-weight: 700; padding: 3rpx 14rpx; border-radius: var(--r-pill); }
-.acc-pill.pill-weak   { background: #dfeaf3; color: #527d9e; }
-.acc-pill.pill-medium { background: #fff0d6; color: #b9780f; }
-.acc-pill.pill-good   { background: #d8f5e6; color: #128048; }
-.plan-task-sub { font-size: 22rpx; color: var(--c-text-hint); }
-.plan-task-arrow { font-size: 40rpx; color: var(--c-text-disabled, #c4ccd6); font-weight: 700; flex-shrink: 0; }
-.plan-checkin-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; }
+/* 今日复习条(虚线描边) */
+.review-bar { display: flex; align-items: center; gap: 10rpx; border: 2rpx dashed #85B7EB; border-radius: 16rpx; padding: 16rpx 18rpx; margin-top: 12rpx; }
+.review-bar:active { background: #f4f9ff; }
+.review-ic { width: 32rpx; height: 32rpx; flex-shrink: 0; }
+.review-title { font-size: 26rpx; font-weight: 700; color: #0C447C; }
+.review-sub { flex: 1; font-size: 22rpx; color: #185FA5; }
+.review-arrow { font-size: 34rpx; color: #85B7EB; }
+
+.plan-checkin-tip { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 12rpx; text-align: center; }
+
+/* 模块图标(线性 SVG,主色蓝 #185FA5) */
+.mic-word { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E"); }
+.mic-grammar { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E"); }
+.mic-sentence { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='7' x2='20' y2='7'/%3E%3Cline x1='4' y1='12' x2='16' y2='12'/%3E%3Cline x1='4' y1='17' x2='11' y2='17'/%3E%3C/svg%3E"); }
+.mic-reading { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z'/%3E%3Cpath d='M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z'/%3E%3C/svg%3E"); }
 
 .learn-card {
   background: var(--g-hero);

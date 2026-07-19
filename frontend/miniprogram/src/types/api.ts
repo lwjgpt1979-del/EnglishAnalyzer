@@ -172,23 +172,31 @@ export interface DiagnosisReport {
   regression_alerts: RegressionAlert[]
 }
 
-// ── 每日学习计划（M9）────────────────────────────────────────────────────────
-export interface PlanTask {
-  type: 'weak_kp' | 'review' | 'learn'
+// ── 每日学习计划（M9 / 两来源重构）─────────────────────────────────────────────
+export interface PlanTile {
+  module: 'word' | 'grammar' | 'sentence' | 'reading'
+  title: string
+  count: number          // 今日待做（剩余未学）
+  studied: number
+  total: number
+  route: string | null
+}
+export interface PlanSource {
+  source: 'homework' | 'course'
   title: string
   subtitle: string
-  action: 'practice' | 'review' | 'learn'
-  done: boolean
-  kp_id: string | null
-  kp_key: string | null
-  accuracy: number | null
-  level: 'weak' | 'medium' | 'good' | null
-  count: number | null
+  available: boolean
+  tiles: PlanTile[]
 }
-
+export interface PlanReview {
+  count: number
+  subtitle: string
+  route: string
+}
 export interface TodayPlanOut {
   date: string
-  tasks: PlanTask[]
+  sources: PlanSource[]
+  review: PlanReview
   completed_count: number
   total_count: number
   checkin_done: boolean

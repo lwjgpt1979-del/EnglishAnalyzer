@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d5_learning import StudyCheckin
 from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d16_question_domain import AnswerLog
-from app.schemas.learning_plan import PlanTask, TodayPlanOut
+from app.schemas.learning_plan import TodayPlanOut
 from app.services import kp_mastery_service
 
 _MAX_WEAK_TASKS = 3
@@ -72,92 +72,89 @@ async def _active_targets(db: AsyncSession, *, student_id: uuid.UUID, limit: int
     return out[:limit]
 
 
+def _sum_batches(batches: list[dict], total_key: str) -> tuple[int, int]:
+    """按批次汇总 (total, studied)。total_key 因模块而异(单词=word_count,其余=count)。"""
+    total = sum(int(b.get(total_key, 0)) for b in batches)
+    studied = sum(int(b.get("studied", 0)) for b in batches)
+    return total, studied
+
+
+def _current_unit(units: list[dict]) -> dict | None:
+    """课程精讲当前聚焦单元:第一关「已解锁且未学完」;全学完/无解锁则取最后一单元。"""
+    for u in units:
+        if (u.get("total") or 0) > 0 and (u.get("studied") or 0) < u["total"] and u.get("unlocked", True):
+            return u
+    return units[-1] if units else None
+
+
 async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPlanOut:
-    today = datetime.now(timezone.utc).date()
-    today_start = datetime.combine(today, time.min, tzinfo=timezone.utc)
-
-    # 今日练过的知识点**名称**集合(KP-First:answer_log 命中 node → node 名;与台账 kp_key 按名匹配)
-    practiced_names: set[str] = set(
-        (await db.execute(
-            select(KnowledgeNode.name)
-            .join(AnswerLog, AnswerLog.node_id == KnowledgeNode.id)
-            .where(AnswerLog.student_id == student_id,
-                   AnswerLog.answered_at >= today_start)
-        )).scalars().all()
+    """今日学习计划:两来源(作业精讲 / 课程精讲)× 各模块今日待做 + 今日复习(仅错题)。
+    数字/进度复用各精讲模块既有 studied 口径(homework_batches / course_units),不新造数据。"""
+    from app.schemas.learning_plan import PlanReview, PlanSource, PlanTile
+    from app.services import (
+        grammar_intensive_service as gis,
+        reading_intensive_service as ris,
+        sentence_intensive_service as sis,
+        vocab_intensive_service as vis,
+        wrong_review_service,
     )
-    practiced_any_today = len(practiced_names) > 0
+    today = datetime.now(timezone.utc).date()
 
-    # 掌握台账（弱项在前）
-    ledger = await kp_mastery_service.get_mastery_tree(db, student_id=student_id)
+    # ── 作业精讲:四模块按批次(卷)汇总 total/studied ──
+    hw_defs = [
+        ("word", "单词", "word_count", "/pages/intensive/words?mode=homework",
+         await vis.homework_batches(db, student_id=student_id)),
+        ("grammar", "语法", "count", "/pages/intensive/grammar?mode=homework",
+         await gis.homework_batches(db, student_id=student_id)),
+        ("sentence", "长难句", "count", "/pages/intensive/sentence?mode=homework",
+         await sis.homework_batches(db, student_id=student_id)),
+        ("reading", "阅读", "count", "/pages/intensive/reading?mode=homework",
+         await ris.homework_batches(db, student_id=student_id)),
+    ]
+    hw_tiles = []
+    for mod, title, key, route, batches in hw_defs:
+        total, studied = _sum_batches(batches, key)
+        hw_tiles.append(PlanTile(module=mod, title=title, count=max(0, total - studied),
+                                 studied=studied, total=total, route=route))
 
-    tasks: list[PlanTask] = []
-    for r in ledger:
-        if len(tasks) >= _MAX_WEAK_TASKS:
-            break
-        total = r.correct_count + r.wrong_count
-        if total == 0:
-            continue
-        acc = r.correct_count / total
-        if acc >= _WEAK_ACC_CEILING:
-            continue
-        level, _suggestion = kp_mastery_service.review_suggestion(
-            accuracy=acc, total=total, days_since=None
-        )
-        done = r.kp_key in practiced_names
-        tasks.append(PlanTask(
-            type="weak_kp",
-            title=f"攻克薄弱点：{r.kp_key}",
-            subtitle=f"正确率 {round(acc * 100)}% · 建议练 5 题",
-            action="practice",
-            done=done,
-            kp_id=str(r.kp_id) if r.kp_id else None,
-            kp_key=r.kp_key,
-            accuracy=round(acc, 4),
-            level=level,
-        ))
+    # ── 课程精讲:三模块按当前教材单元 ──
+    def _course_tile(mod: str, title: str, route: str, data: dict) -> "PlanTile":
+        cur = _current_unit(data.get("units") or [])
+        total = int(cur.get("total") or 0) if cur else 0
+        studied = int(cur.get("studied") or 0) if cur else 0
+        return PlanTile(module=mod, title=title, count=max(0, total - studied),
+                        studied=studied, total=total, route=route)
 
-    # 学习目标(上传试卷等加进来的『未学/薄弱』语法)——台账里没记录的未学考点靠它进计划;
-    # 已在弱项任务里的按名去重,避免重复;已掌握的 _active_targets 已过滤淡出。
-    seen_names = {t.kp_key for t in tasks if t.kp_key}
-    for nid, name in await _active_targets(db, student_id=student_id):
-        if name in seen_names:
-            continue
-        seen_names.add(name)
-        tasks.append(PlanTask(
-            type="learn",
-            title=f"学新语法：{name}",
-            subtitle="来自你上传的试卷 · 先看讲解再练",
-            action="learn",
-            done=name in practiced_names,
-            kp_id=str(nid),
-            kp_key=name,
-        ))
+    vc = await vis.course_units(db, student_id=student_id)
+    gc = await gis.course_units(db, student_id=student_id)
+    sc = await sis.course_units(db, student_id=student_id)
+    course_tiles = [
+        _course_tile("word", "单词", "/pages/intensive/words?mode=course", vc),
+        _course_tile("grammar", "语法", "/pages/intensive/grammar?mode=course", gc),
+        _course_tile("sentence", "长难句", "/pages/intensive/sentence?mode=course", sc),
+    ]
+    g, s = vc.get("grade"), vc.get("semester")
+    course_sub = f"{g}{s}册" if (g and s) else "按教材学"
 
-    # 待复习错题：按 SM-2 遗忘曲线取「今日到期 + 新错题」，而非全部未掌握（M12）
-    from app.services import wrong_review_service
+    # ── 今日复习:仅错题(遗忘曲线;词/句后续再并)──
     rstats = await wrong_review_service.review_stats(db, student_id=student_id)
-    review_pending = int(rstats["due_today"]) + int(rstats["new_unscheduled"])
-    if review_pending > 0:
-        tasks.append(PlanTask(
-            type="review",
-            title="复习错题",
-            subtitle=f"今日待复习 {review_pending} 道（遗忘曲线）",
-            action="review",
-            done=False,
-            count=review_pending,
-        ))
+    review_count = int(rstats["due_today"]) + int(rstats["new_unscheduled"])
+    review = PlanReview(
+        count=review_count,
+        subtitle=f"错题 {review_count} 道 · 遗忘曲线" if review_count else "今日无到期错题",
+        route="/pages/wrong-questions/review")
 
-    # 任务过少时补"学习新内容"引导
-    if len(tasks) < 2:
-        tasks.append(PlanTask(
-            type="learn",
-            title="学习新内容",
-            subtitle="继续按教材学习知识点",
-            action="learn",
-            done=practiced_any_today,
-        ))
+    sources = [
+        PlanSource(source="homework", title="作业精讲", subtitle="优先", available=True, tiles=hw_tiles),
+        PlanSource(source="course", title="课程精讲", subtitle=course_sub,
+                   available=bool(vc.get("version")), tiles=course_tiles),
+    ]
 
-    # 今日打卡状态
+    # 进度:有内容的模块格(total>0)里已学完的比例;复习不计入分母
+    graded = [t for t in hw_tiles + course_tiles if t.total > 0]
+    total_count = len(graded) + (1 if review_count > 0 else 0)
+    completed_count = sum(1 for t in graded if t.studied >= t.total)
+
     checkin_done = (await db.execute(
         select(StudyCheckin.id).where(
             StudyCheckin.student_id == student_id,
@@ -165,12 +162,8 @@ async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPla
         )
     )).first() is not None
 
-    completed = sum(1 for t in tasks if t.done)
     return TodayPlanOut(
-        date=str(today),
-        tasks=tasks,
-        completed_count=completed,
-        total_count=len(tasks),
-        checkin_done=checkin_done,
-        review_pending=review_pending,
+        date=str(today), sources=sources, review=review,
+        completed_count=completed_count, total_count=total_count,
+        checkin_done=checkin_done, review_pending=review_count,
     )
