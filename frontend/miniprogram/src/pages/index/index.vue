@@ -83,38 +83,31 @@
         </view>
       </view>
 
-      <!-- 开始学习主卡片 -->
-      <view class="learn-card" @tap="goLearn">
+      <!-- 课程精讲主卡片(接替原「开始学习」) -->
+      <view class="learn-card" @tap="() => uni.navigateTo({ url: '/pages/intensive/course' })">
         <view class="learn-left">
           <view class="learn-icon" />
           <view class="learn-text">
-            <text class="learn-title">开始学习</text>
-            <text class="learn-sub">{{ preferredLabel || '选择教材开始' }}</text>
+            <text class="learn-title">课程精讲</text>
+            <text class="learn-sub">{{ courseSub }}</text>
           </view>
         </view>
         <text class="learn-arrow">›</text>
       </view>
 
-      <!-- 两大精讲入口:作业(上传作业/试卷,优先)/ 课程(教材课程) -->
-      <view class="jj-row">
-        <view class="jj-card jj-hw" @tap="() => uni.navigateTo({ url: '/pages/intensive/homework' })">
-          <view class="qi qi-file" />
-          <view class="jj-text"><text class="jj-title">作业精讲</text><text class="jj-sub">你上传的作业</text></view>
-        </view>
-        <view class="jj-card jj-course" @tap="() => uni.navigateTo({ url: '/pages/intensive/course' })">
-          <view class="qi qi-book" />
-          <view class="jj-text"><text class="jj-title">课程精讲</text><text class="jj-sub">按教材课程学</text></view>
-        </view>
-      </view>
-
       <view class="quick-grid">
-        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })">
-          <view class="qi qi-ai" />
-          <text class="quick-label">智能出题</text>
-        </view>
+        <!-- 作业流:上传作业 + 作业精讲 同一行(quick-card 同款) -->
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">
           <view class="qi qi-file" />
           <text class="quick-label">上传作业</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/intensive/homework' })">
+          <view class="qi qi-book" />
+          <text class="quick-label">作业精讲</text>
+        </view>
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })">
+          <view class="qi qi-ai" />
+          <text class="quick-label">智能出题</text>
         </view>
         <view class="quick-card" @tap="() => uni.switchTab({ url: '/pages/wrong-questions/list' })">
           <view class="qi qi-book" />
@@ -346,19 +339,13 @@ const heroSub = computed(() => (
   { student: '英语 AI 知识学习', teacher: '班级 · 学生 · 作业', relative: '关注孩子的学习' }[activeRole.value]
 ))
 
-const preferredLabel = computed(() => {
+// 课程精讲主卡副标题:带当前学期(8上册),未设教材则引导选教材
+const courseSub = computed(() => {
   const u = auth.user as any
-  if (!u?.preferred_textbook_version) return ''
-  return `${u.preferred_textbook_version} ${u.preferred_grade} ${u.preferred_semester}学期`
+  if (!u?.preferred_textbook_version) return '选择教材开始'
+  const sem = (u.preferred_grade && u.preferred_semester) ? ` · ${u.preferred_grade}${u.preferred_semester}册` : ''
+  return `按教材课程学${sem}`
 })
-
-function goLearn() {
-  const t = (auth.user as any)?.preferred_textbook_version || '译林版'
-  const g = (auth.user as any)?.preferred_grade || '小学5年级'
-  const s = (auth.user as any)?.preferred_semester || '上'
-  const url = `/pages/curriculum/units?textbook=${encodeURIComponent(t)}&grade=${encodeURIComponent(g)}&semester=${encodeURIComponent(s)}`
-  uni.navigateTo({ url })
-}
 
 function goChild(studentId: string) {
   uni.navigateTo({ url: `/pages/relative/student-view?studentId=${studentId}` })
@@ -485,14 +472,6 @@ onMounted(() => {
 .learn-title { font-size: var(--fs-h1); font-weight: 800; color: var(--c-on-primary); }
 .learn-sub { font-size: var(--fs-body); color: var(--c-on-primary); opacity: 0.85; }
 .learn-arrow { font-size: 48rpx; color: var(--c-on-primary); opacity: 0.8; font-weight: 700; }
-.jj-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-bottom: 20rpx; }
-.jj-card { display: flex; align-items: center; gap: 16rpx; padding: 28rpx 24rpx; border-radius: 20rpx; }
-.jj-card .qi { width: 56rpx; height: 56rpx; flex-shrink: 0; }
-.jj-hw { background: linear-gradient(135deg, #e9f2ff, #d7e8ff); }
-.jj-course { background: linear-gradient(135deg, #eafaf1, #d9f5e5); }
-.jj-text { display: flex; flex-direction: column; gap: 4rpx; }
-.jj-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
-.jj-sub { font-size: 21rpx; color: var(--c-text-hint); }
 .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; margin-bottom: 32rpx; }
 .quick-card {
   background: var(--c-bg-card);
