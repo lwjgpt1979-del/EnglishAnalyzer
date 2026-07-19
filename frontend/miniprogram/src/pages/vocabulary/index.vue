@@ -3,6 +3,62 @@
   <view class="vocab-page">
     <view v-if="loading" class="center-tip">加载今日任务…</view>
 
+    <!-- 考试模式首屏:打卡 + 两轨 + 频档闯关(词力通=中考/高考考纲词+短语)-->
+    <view v-else-if="phase === 'home'" class="exam-home">
+      <view class="eh-top">
+        <text class="eh-title">词力通</text>
+        <text v-if="cal" class="eh-streak">连续 {{ cal.current_streak }} 天</text>
+      </view>
+      <view class="eh-target" @tap="() => uni.switchTab({ url: '/pages/profile/index' })">
+        <text class="eh-target-l">考试目标：<text class="eh-target-v">{{ examOverview?.exam_label || '中考' }}</text></text>
+        <text class="eh-target-edit">设置里改 ›</text>
+      </view>
+
+      <view v-if="examOverview && !examOverview.available" class="eh-empty">
+        该{{ examOverview.exam_label }}考纲词库尚未上架，请联系运营后再来
+      </view>
+
+      <template v-else-if="examOverview">
+        <!-- 两轨卡 -->
+        <view class="eh-tracks">
+          <view v-for="t in examOverview.tracks" :key="t.type" class="eh-track" :class="{ on: examTrackSel === t.type }" @tap="examTrackSel = t.type">
+            <view class="eh-track-ic" :class="t.type === 'word' ? 'mic-word' : 'mic-phrase'" />
+            <text class="eh-track-t">{{ t.title }}</text>
+            <text class="eh-track-s">{{ t.studied }} / {{ t.total }}</text>
+          </view>
+        </view>
+
+        <!-- 频档闯关 -->
+        <view class="eh-band-head">
+          <text>{{ examOverview.exam_label }}{{ examTrack?.title }} · 按考频闯关</text>
+          <text class="eh-band-hint">高频优先</text>
+        </view>
+        <view class="eh-bands">
+          <view v-for="b in (examTrack?.bands || [])" :key="b.band" class="eh-band"
+                :class="{ active: isActiveBand(b), done: b.total > 0 && b.studied >= b.total, empty: b.total === 0 }"
+                @tap="b.total ? loadExamBand(examTrackSel, b.band) : null">
+            <view class="eh-band-fill" :style="{ width: (b.total ? b.studied / b.total * 100 : 0) + '%' }" />
+            <view class="eh-band-inner">
+              <text class="eh-dots" :class="'d-' + b.band">{{ b.band === 'high' ? '●●●' : b.band === 'mid' ? '●●' : '●' }}</text>
+              <view class="eh-band-text">
+                <text class="eh-band-t">{{ b.label }}{{ examTrack?.title }}<text v-if="isActiveBand(b)" class="eh-tag"> · 进行中</text></text>
+                <text class="eh-band-n">{{ b.total ? (b.studied + ' / ' + b.total) : '暂无词条' }}</text>
+              </view>
+              <text v-if="b.total === 0 || b.studied >= b.total" class="eh-band-act off">{{ b.total === 0 ? '—' : '已学完' }}</text>
+              <text v-else class="eh-band-act" :class="{ primary: isActiveBand(b) }">{{ b.studied > 0 ? '继续' : '去背' }}</text>
+            </view>
+          </view>
+        </view>
+      </template>
+      <view v-else class="center-tip">加载中…</view>
+
+      <view class="eh-tools">
+        <view class="gear-inline" @tap="openSettings"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view>
+        <view class="gear-inline" @tap="openAddWord"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view>
+        <view class="gear-inline" @tap="openPins"><view class="ic ic-pin" style="width:26rpx;height:26rpx" /><text>优先学</text></view>
+      </view>
+    </view>
+
     <view v-else-if="phase === 'empty'">
       <view v-if="cal" class="checkin-panel">
         <view class="cp-summary">连续 {{ cal.current_streak }} 天 · 最高 {{ cal.longest_streak }} 天</view>
@@ -300,6 +356,7 @@
       <view class="done-set">每组 {{ wordsPerGroup }} 词 · 每组 {{ repsPerGroup }} 遍 <view class="gear-inline" @tap="openSettings" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view><view class="gear-inline" @tap="openAddWord" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view><view class="gear-inline" @tap="openPins" style="display:inline-flex;align-items:center;gap:4rpx"><view class="ic ic-pin" style="width:26rpx;height:26rpx" /><text>优先学</text></view></view>
       <button class="btn-primary" @tap="reload">再来一组</button>
       <view class="done-links">
+        <view v-if="examBand" class="done-link" @tap="enterHome" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-book" style="width:30rpx;height:30rpx" /><text>返回词力通</text></view>
         <view class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/report' })" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-chart" style="width:30rpx;height:30rpx" /><text>学情报表</text></view>
         <view class="done-link" @tap="() => uni.navigateTo({ url: '/pages/vocabulary/wrong-book' })" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-book" style="width:30rpx;height:30rpx" /><text>错词本</text></view>
       </view>
@@ -480,7 +537,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily } from '@/api/vocabulary'
+import type { ExamOverview } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
@@ -501,7 +559,20 @@ interface Quiz {
 
 const auth = useAuthStore()
 const loading = ref(true)
-const phase = ref<'empty' | 'study' | 'review' | 'grecep' | 'quiz' | 'done'>('study')
+const phase = ref<'home' | 'empty' | 'study' | 'review' | 'grecep' | 'quiz' | 'done'>('study')
+// 考试模式(词力通首屏两轨×频档;非 scope 进入时)
+const examOverview = ref<ExamOverview | null>(null)
+const examTrackSel = ref<'word' | 'phrase'>('word')
+const examBand = ref<{ type: 'word' | 'phrase'; band: 'high' | 'mid' | 'low' } | null>(null)
+const examTrack = computed(() =>
+  examOverview.value?.tracks.find(t => t.type === examTrackSel.value) || null)
+// 进行中的档 = 高→低 第一个「有词且未学完」的档(高频优先)
+function isActiveBand(b: { band: string }): boolean {
+  const t = examTrack.value
+  if (!t) return false
+  const first = t.bands.find(x => x.total > 0 && x.studied < x.total)
+  return !!first && first.band === b.band
+}
 const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
 const ent = useEntitlementsStore()
 const showPaywall = ref(false)    // 跟读会员引导弹窗
@@ -1038,47 +1109,79 @@ async function load(fromReload = false) {
   if (!auth.isLoggedIn()) await auth.login()
   loading.value = true
   ent.ensure()
-  getVocabSettings().then((s) => {
-    wordsPerGroup.value = s.words_per_group; repsPerGroup.value = s.reps_per_group
-    wrongCarryThreshold.value = s.wrong_carry_threshold ?? 2
-    settingDraft.words_per_group = s.words_per_group; settingDraft.reps_per_group = s.reps_per_group
-    settingDraft.wrong_carry_threshold = s.wrong_carry_threshold ?? 2
-  }).catch(() => { /* 用默认 */ })
+  _loadSettings()
   try {
     const task = scope.value
       ? (scope.value.source === 'course'
           ? await getCourseIntensiveTask(scope.value.id)
           : await getHomeworkIntensiveTask(scope.value.id))
       : await getDailyTask()
-    // 错词滚入：把上一组错得多的词并入本组复习（去重，且不与本组新词重复）
-    const carried = carryWords.value; carryWords.value = []
-    const newIds = new Set(task.new_words.map((w) => w.word_id))
-    const reviewIds = new Set(task.review_words.map((w) => w.word_id))
-    const extra = carried.filter((w) => !newIds.has(w.word_id) && !reviewIds.has(w.word_id))
-    newCards.value = task.new_words
-    reviewCards.value = [...task.review_words, ...extra]
-    pool.value = [...newCards.value, ...reviewCards.value]
-    studyIndex.value = 0
-    reviewIndex.value = 0
-    shadowLog.value = []
-    currentRep.value = 1
-    groupWrong.clear()
-    if (newCards.value.length === 0 && reviewCards.value.length === 0) {
-      // 「再来一组」时已无可练的词：友好提示并停留在完成页，不跳日历
-      if (fromReload) {
-        uni.showToast({ title: '今天的词都练完啦 🎉', icon: 'none' })
-        return
-      }
-      phase.value = 'empty'
-      loadCalendar()
-    } else if (newCards.value.length > 0) {
-      phase.value = 'study'
-      nextTick(() => playCard(curStudy.value))   // 首张词卡自动发声
-    } else {
-      enterReview()                              // 只有复习词：先过带图词卡再测
-    }
+    _applyTask(task, fromReload)
   } catch (e) {
     uni.showToast({ title: (e as Error).message, icon: 'none' })
+  } finally {
+    loading.value = false
+  }
+}
+
+function _loadSettings() {
+  getVocabSettings().then((s) => {
+    wordsPerGroup.value = s.words_per_group; repsPerGroup.value = s.reps_per_group
+    wrongCarryThreshold.value = s.wrong_carry_threshold ?? 2
+    settingDraft.words_per_group = s.words_per_group; settingDraft.reps_per_group = s.reps_per_group
+    settingDraft.wrong_carry_threshold = s.wrong_carry_threshold ?? 2
+  }).catch(() => { /* 用默认 */ })
+}
+
+// 把一组任务铺进词卡流(load / 考试出词共用)
+function _applyTask(task: { new_words: VocabWordCard[]; review_words: VocabWordCard[] }, fromReload: boolean) {
+  // 错词滚入：把上一组错得多的词并入本组复习（去重，且不与本组新词重复）
+  const carried = carryWords.value; carryWords.value = []
+  const newIds = new Set(task.new_words.map((w) => w.word_id))
+  const reviewIds = new Set(task.review_words.map((w) => w.word_id))
+  const extra = carried.filter((w) => !newIds.has(w.word_id) && !reviewIds.has(w.word_id))
+  newCards.value = task.new_words
+  reviewCards.value = [...task.review_words, ...extra]
+  pool.value = [...newCards.value, ...reviewCards.value]
+  studyIndex.value = 0
+  reviewIndex.value = 0
+  shadowLog.value = []
+  currentRep.value = 1
+  groupWrong.clear()
+  if (newCards.value.length === 0 && reviewCards.value.length === 0) {
+    if (fromReload) { uni.showToast({ title: '这组词都练完啦 🎉', icon: 'none' }); return }
+    if (examBand.value) { uni.showToast({ title: '这档暂时没有待学/待复习 🎉', icon: 'none' }); phase.value = 'home'; return }
+    phase.value = 'empty'
+    loadCalendar()
+  } else if (newCards.value.length > 0) {
+    phase.value = 'study'
+    nextTick(() => playCard(curStudy.value))   // 首张词卡自动发声
+  } else {
+    enterReview()                              // 只有复习词：先过带图词卡再测
+  }
+}
+
+// 考试模式首屏:两轨×频档概览
+async function enterHome() {
+  examBand.value = null
+  phase.value = 'home'
+  loading.value = true
+  _loadSettings()
+  try { examOverview.value = await getExamOverview() }
+  catch { examOverview.value = null }
+  finally { loading.value = false }
+  loadCalendar()
+}
+
+// 学某轨×频档:限定考纲词集,进词卡流
+async function loadExamBand(type: 'word' | 'phrase', band: 'high' | 'mid' | 'low') {
+  examBand.value = { type, band }
+  loading.value = true
+  try {
+    _applyTask(await getExamDaily(type, band), false)
+  } catch (e) {
+    uni.showToast({ title: (e as Error).message, icon: 'none' })
+    phase.value = 'home'
   } finally {
     loading.value = false
   }
@@ -1149,6 +1252,8 @@ function announceQuiz() {
 }
 
 function reload() {
+  // 考试模式:再来一组接着同轨同档;否则走原 daily/scoped
+  if (examBand.value) { loadExamBand(examBand.value.type, examBand.value.band); return }
   load(true)   // 「再来一组」：没词时不跳日历
 }
 
@@ -1431,7 +1536,8 @@ function playMyRecord() {
   if (shadow.recordPath) playAudio(shadow.recordPath)
 }
 
-onMounted(load)
+// 从课程/作业精讲带 scope 进来 → 直接进对应词集学习;否则 → 考试两轨首屏
+onMounted(() => { if (scope.value) load(); else enterHome() })
 </script>
 
 <style scoped>
@@ -1694,4 +1800,53 @@ onMounted(load)
 .shadow-actions { display: flex; gap: 16rpx; width: 100%; }
 .shadow-actions .half { flex: 1; margin-top: 0; }
 .shadow-close { margin-top: 24rpx; font-size: 26rpx; color: var(--c-text-hint); }
+
+/* ── 考试模式首屏(纯蓝:两轨 + 频档闯关)────────────────────────────────── */
+.exam-home { padding: 8rpx 4rpx 24rpx; }
+.eh-top { display: flex; align-items: center; margin-bottom: 16rpx; }
+.eh-title { font-size: 38rpx; font-weight: 800; color: #0C447C; }
+.eh-streak { margin-left: auto; font-size: 24rpx; font-weight: 600; color: #185FA5; background: #E6F1FB; padding: 6rpx 18rpx; border-radius: 999rpx; }
+.eh-target { display: flex; align-items: center; margin-bottom: 20rpx; font-size: 24rpx; color: #185FA5; }
+.eh-target-v { color: #0C447C; font-weight: 700; }
+.eh-target-edit { margin-left: auto; color: #185FA5; }
+.eh-empty { text-align: center; padding: 80rpx 40rpx; color: var(--c-text-hint); font-size: 26rpx; line-height: 1.8; }
+/* 两轨卡 */
+.eh-tracks { display: flex; gap: 20rpx; margin-bottom: 24rpx; }
+.eh-track { flex: 1; background: var(--c-bg-card); border: 3rpx solid var(--c-border); border-radius: 26rpx; padding: 24rpx; display: flex; flex-direction: column; gap: 6rpx; }
+.eh-track.on { background: #EEF5FF; border-color: var(--c-primary); }
+.eh-track-ic { width: 46rpx; height: 46rpx; background-repeat: no-repeat; background-position: center; background-size: contain; }
+.eh-track-t { font-size: 32rpx; font-weight: 800; color: var(--c-ink); }
+.eh-track.on .eh-track-t { color: #0C447C; }
+.eh-track-s { font-size: 24rpx; color: var(--c-text-hint); }
+.eh-track.on .eh-track-s { color: #185FA5; }
+/* 频档闯关 */
+.eh-band-head { display: flex; align-items: center; margin-bottom: 16rpx; font-size: 26rpx; font-weight: 700; color: #0C447C; }
+.eh-band-hint { margin-left: auto; font-size: 22rpx; font-weight: 400; color: #185FA5; }
+.eh-bands { display: flex; flex-direction: column; gap: 18rpx; }
+.eh-band { position: relative; overflow: hidden; display: flex; align-items: center; background: var(--c-bg-card); border: 1rpx solid var(--c-border); border-radius: 24rpx; padding: 26rpx 24rpx; }
+.eh-band.active { background: #EEF5FF; border: 3rpx solid var(--c-primary); }
+.eh-band.empty { opacity: .6; }
+.eh-band.done { opacity: .8; }
+.eh-band-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #B5D4F4; transition: width .3s; }
+.eh-band.active .eh-band-fill { background: #B5D4F4; }
+.eh-band:not(.active) .eh-band-fill { background: #E6F1FB; }
+.eh-band-inner { position: relative; display: flex; align-items: center; gap: 20rpx; width: 100%; }
+.eh-dots { font-size: 26rpx; letter-spacing: 3rpx; flex: none; }
+.eh-dots.d-high { color: #2b6fd6; }
+.eh-dots.d-mid { color: #5b8fd6; }
+.eh-dots.d-low { color: #aab6c8; }
+.eh-band-text { flex: 1; display: flex; flex-direction: column; gap: 4rpx; min-width: 0; }
+.eh-band-t { font-size: 30rpx; font-weight: 700; color: var(--c-ink); }
+.eh-band.active .eh-band-t { color: #0C447C; }
+.eh-tag { font-size: 22rpx; color: #185FA5; font-weight: 600; }
+.eh-band-n { font-size: 24rpx; color: var(--c-text-hint); }
+.eh-band.active .eh-band-n { color: #185FA5; }
+.eh-band-act { flex: none; font-size: 24rpx; color: #185FA5; }
+.eh-band-act.primary { color: #fff; background: var(--c-primary); padding: 10rpx 28rpx; border-radius: 999rpx; font-weight: 600; }
+.eh-band-act.off { color: var(--c-text-hint); }
+.eh-tools { display: flex; align-items: center; gap: 24rpx; margin-top: 28rpx; padding-top: 20rpx; border-top: 1rpx solid var(--c-border); }
+.eh-tools .gear-inline { margin-left: 0; font-size: 24rpx; color: #185FA5; }
+/* 两轨图标(线性 SVG,主色蓝 #185FA5) */
+.mic-word { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E"); }
+.mic-phrase { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
 </style>
