@@ -247,25 +247,61 @@
 
     <!-- 成组混合检测(R9.5 防经验主义)：N 句挖空 + 共享词库，答案逐句不同 -->
     <view v-else-if="phase === 'grecep'" class="card">
-      <view class="progress-hint">成组检测 · 把词填进句子</view>
       <view v-if="grecepLoading" class="grecep-tip">出题中…</view>
-      <template v-else>
-        <view class="grecep-bank">
-          <text class="grecep-bank-lb">词库</text>
-          <text v-for="o in grecepOptions" :key="o" class="grecep-bankword">{{ o }}</text>
+
+      <!-- 逐句即判(闯关) -->
+      <template v-else-if="grecepSub === 'quiz'">
+        <view class="gg-progress">
+          <view v-for="(g, gi) in grecepGroups" :key="gi" class="gg-seg" :class="{ done: gi < grecepGIdx, cur: gi === grecepGIdx }" />
         </view>
-        <view v-for="(it, idx) in grecepItems" :key="it.word_id" class="grecep-item">
-          <text class="grecep-sent">{{ idx + 1 }}. {{ it.sentence }}</text>
-          <view class="grecep-opts">
-            <text v-for="o in grecepOptions" :key="o" class="grecep-opt"
-              :class="{ on: grecepPick[it.word_id] === o,
-                        ok: grecepResults && grecepCorrectWord(it.word_id) && o === grecepCorrectWord(it.word_id).word,
-                        no: grecepResults && grecepPick[it.word_id] === o && !grecepCorrectWord(it.word_id)?.correct && o !== grecepCorrectWord(it.word_id)?.word }"
-              @tap="!grecepResults && (grecepPick = { ...grecepPick, [it.word_id]: o })">{{ o }}</text>
+        <view class="gg-head">
+          <text class="gg-grp">第 {{ grecepGIdx + 1 }} / {{ grecepGroups.length }} 组 · 把词填进句子</text>
+          <view class="gg-dots">
+            <view v-for="(it, si) in grecepCurGroup" :key="it.word_id" class="gg-dot"
+              :class="{ ok: grecepPick[it.word_id] && grecepJudged[it.word_id],
+                        no: grecepPick[it.word_id] && !grecepJudged[it.word_id],
+                        cur: si === grecepSIdx && !grecepPick[it.word_id] }" />
           </view>
         </view>
-        <button v-if="!grecepResults" class="btn-primary" :disabled="!grecepAllPicked" @tap="submitGrecep">提交检测</button>
-        <button v-else class="btn-primary" @tap="startQuiz">继续 →</button>
+        <text class="gg-sent">{{ grecepCurItem && grecepCurItem.sentence }}</text>
+        <view class="gg-opts">
+          <view v-for="o in grecepCurOpts" :key="o" class="gg-opt"
+            :class="{ ok: grecepCurItem && grecepPick[grecepCurItem.word_id] && o === grecepWordText[grecepCurItem.word_id],
+                      no: grecepCurItem && grecepPick[grecepCurItem.word_id] === o && o !== grecepWordText[grecepCurItem.word_id] }"
+            @tap="grecepPickAnswer(o)">
+            <text class="gg-opt-t">{{ o }}</text>
+            <text v-if="grecepCurItem && grecepPick[grecepCurItem.word_id] && o === grecepWordText[grecepCurItem.word_id]" class="gg-bdg ok">✓</text>
+            <text v-else-if="grecepCurItem && grecepPick[grecepCurItem.word_id] === o" class="gg-bdg no">✗</text>
+          </view>
+        </view>
+        <button v-if="grecepCurItem && grecepPick[grecepCurItem.word_id]" class="btn-primary" @tap="grecepNext">{{ grecepSIdx < grecepCurGroup.length - 1 ? '下一句' : '本组小结 →' }}</button>
+      </template>
+
+      <!-- 组小结 -->
+      <template v-else-if="grecepSub === 'groupsummary'">
+        <view class="gsum">
+          <text class="gsum-t">第 {{ grecepGIdx + 1 }} 组完成</text>
+          <text class="gsum-score">{{ grecepGroupCorrect }}<text class="gsum-tot">/{{ grecepCurGroup.length }}</text></text>
+          <view class="gg-dots big">
+            <view v-for="it in grecepCurGroup" :key="it.word_id" class="gg-dot" :class="{ ok: grecepJudged[it.word_id], no: !grecepJudged[it.word_id] }" />
+          </view>
+        </view>
+        <view v-for="it in grecepWrongItems(grecepCurGroup)" :key="it.word_id" class="gsum-wrong">✗ {{ it.sentence }} → <text class="gsum-ans">{{ grecepWordText[it.word_id] }}</text></view>
+        <button class="btn-primary" @tap="grecepNextGroup">{{ grecepGIdx < grecepGroups.length - 1 ? ('开始第 ' + (grecepGIdx + 2) + ' 组 →') : '看总结果 →' }}</button>
+      </template>
+
+      <!-- 总结果 -->
+      <template v-else>
+        <view class="gsum">
+          <text class="gsum-score">{{ grecepTotalCorrect }}<text class="gsum-tot">/{{ grecepTotal }}</text></text>
+          <text class="gsum-t">{{ grecepGroups.length }} 组闯关完成</text>
+        </view>
+        <view v-for="(g, gi) in grecepGroups" :key="gi" class="gfin-row">
+          <text class="gfin-lb">组{{ gi + 1 }}</text>
+          <view class="gfin-bars"><view v-for="it in g" :key="it.word_id" class="gfin-bar" :class="{ ok: grecepJudged[it.word_id], no: !grecepJudged[it.word_id] }" /></view>
+          <text class="gfin-n">{{ g.filter(it => grecepJudged[it.word_id]).length }}/{{ g.length }}</text>
+        </view>
+        <button class="btn-primary" @tap="startQuiz">完成 · 进测试</button>
       </template>
     </view>
 
@@ -977,33 +1013,67 @@ function buildQuiz(card: VocabWordCard, mode: 'w2m' | 'm2w' | 'pic'): Quiz {
 /* ── R9.5 成组混合接收检测(防经验主义,先于测试)── */
 const grecepLoading = ref(false)
 const grecepItems = ref<GroupRecepItem[]>([])
-const grecepOptions = ref<string[]>([])
 const grecepPick = ref<Record<string, string>>({})
-const grecepResults = ref<GroupRecepResult[] | null>(null)
-const grecepAllPicked = computed(() => grecepItems.value.length > 0 && grecepItems.value.every(it => !!grecepPick.value[it.word_id]))
+// 闯关版(版本2):5 句一组 · 逐句即判 · 组小结 · 总结果
+const grecepGroups = ref<GroupRecepItem[][]>([])        // 每 5 句一组
+const grecepGroupOpts = ref<string[][]>([])             // 每组 5 词选项(打乱)
+const grecepWordText = ref<Record<string, string>>({})  // word_id → 词文本(本地即判)
+const grecepJudged = ref<Record<string, boolean>>({})   // word_id → 对错
+const grecepGIdx = ref(0)                               // 当前组
+const grecepSIdx = ref(0)                               // 组内当前句
+const grecepSub = ref<'quiz' | 'groupsummary' | 'final'>('quiz')
+const grecepCurGroup = computed(() => grecepGroups.value[grecepGIdx.value] || [])
+const grecepCurItem = computed(() => grecepCurGroup.value[grecepSIdx.value] || null)
+const grecepCurOpts = computed(() => grecepGroupOpts.value[grecepGIdx.value] || [])
+const grecepGroupCorrect = computed(() => grecepCurGroup.value.filter(it => grecepJudged.value[it.word_id]).length)
+const grecepTotalCorrect = computed(() => Object.values(grecepJudged.value).filter(Boolean).length)
+const grecepTotal = computed(() => grecepItems.value.length)
+function _shuffle<T>(a: T[]): T[] {
+  const b = a.slice()
+  for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]] }
+  return b
+}
 async function startGrecep() {
   const ids = [...new Set([...newCards.value, ...reviewCards.value].map(c => c.word_id))]
   if (!ids.length) { startQuiz(); return }
-  grecepLoading.value = true; grecepItems.value = []; grecepOptions.value = []; grecepPick.value = {}; grecepResults.value = null
+  grecepLoading.value = true; grecepItems.value = []; grecepPick.value = {}; grecepJudged.value = {}
+  grecepGroups.value = []; grecepGroupOpts.value = []; grecepGIdx.value = 0; grecepSIdx.value = 0; grecepSub.value = 'quiz'
   phase.value = 'grecep'
   try {
     const r = await groupRecepProbes(ids)
-    grecepItems.value = r.items; grecepOptions.value = r.options
-    // 少于 2 题时词库会退化成"单词+其变形"→仍可被无脑选,直接跳过进测试(只有≥2 不同答案才防作弊)
-    if (r.items.length < 2) { startQuiz() }
+    grecepItems.value = r.items
+    // 少于 2 题时词库会退化 → 直接跳过进测试(≥2 不同答案才防经验主义)
+    if (r.items.length < 2) { startQuiz(); return }
+    const map: Record<string, string> = {}
+    for (const c of [...newCards.value, ...reviewCards.value]) map[c.word_id] = c.word
+    grecepWordText.value = map
+    // 5 句一组;每组选项 = 组内 5 词(去重打乱)
+    const groups: GroupRecepItem[][] = []
+    for (let i = 0; i < r.items.length; i += 5) groups.push(r.items.slice(i, i + 5))
+    grecepGroups.value = groups
+    grecepGroupOpts.value = groups.map(g => _shuffle([...new Set(g.map(it => map[it.word_id]).filter(Boolean))]))
   } catch { startQuiz() }
   finally { grecepLoading.value = false }
 }
-async function submitGrecep() {
-  if (!grecepAllPicked.value) return
-  try {
-    const r = await submitGroupRecep(grecepPick.value)
-    grecepResults.value = r.results
-    const ok = r.results.filter(x => x.correct).length
-    uni.showToast({ title: `配对正确 ${ok}/${r.results.length}`, icon: 'none' })
-  } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
+function grecepPickAnswer(opt: string) {
+  const it = grecepCurItem.value
+  if (!it || grecepPick.value[it.word_id]) return   // 已答不可改
+  grecepPick.value = { ...grecepPick.value, [it.word_id]: opt }
+  grecepJudged.value = { ...grecepJudged.value, [it.word_id]: opt === grecepWordText.value[it.word_id] }
 }
-function grecepCorrectWord(wid: string) { return grecepResults.value?.find(x => x.word_id === wid) }
+function grecepNext() {   // 下一句 / 组末 → 组小结
+  if (grecepSIdx.value < grecepCurGroup.value.length - 1) grecepSIdx.value++
+  else grecepSub.value = 'groupsummary'
+}
+async function grecepNextGroup() {   // 组小结 → 下一组 / 最后组 → 提交(记 BKT)+ 总结果
+  if (grecepGIdx.value < grecepGroups.value.length - 1) {
+    grecepGIdx.value++; grecepSIdx.value = 0; grecepSub.value = 'quiz'
+  } else {
+    try { await submitGroupRecep(grecepPick.value) } catch { /* 记录失败不阻断结算 */ }
+    grecepSub.value = 'final'
+  }
+}
+function grecepWrongItems(g: GroupRecepItem[]) { return g.filter(it => !grecepJudged.value[it.word_id]) }
 
 function startQuiz() {
   const all = [...newCards.value, ...reviewCards.value]
@@ -1713,16 +1783,43 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); border-radius: var(--r-btn); padding: 22rpx; font-size: 30rpx; font-weight: 700; text-align: center; margin-top: 24rpx; }
 /* R9.5 成组混合检测 */
 .grecep-tip { text-align: center; color: #9aa3b0; font-size: 26rpx; padding: 30rpx 0; }
-.grecep-bank { display: flex; align-items: center; flex-wrap: wrap; gap: 10rpx; padding: 14rpx; background: var(--c-primary-faint); border-radius: 14rpx; margin: 8rpx 0 18rpx; }
-.grecep-bank-lb { font-size: 22rpx; color: #8a93a3; }
-.grecep-bankword { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); font-family: Georgia, 'Times New Roman', serif; }
-.grecep-item { margin-bottom: 18rpx; }
-.grecep-sent { display: block; font-size: 27rpx; color: #2a3138; line-height: 1.6; margin-bottom: 10rpx; font-family: Georgia, 'Times New Roman', serif; }
-.grecep-opts { display: flex; flex-wrap: wrap; gap: 10rpx; }
-.grecep-opt { font-size: 25rpx; color: #4a5057; background: #f5f7fa; border: 2rpx solid transparent; border-radius: 12rpx; padding: 10rpx 22rpx; font-family: Georgia, 'Times New Roman', serif; }
-.grecep-opt.on { background: var(--c-primary-faint); border-color: var(--c-primary); color: var(--c-primary-deep); }
-.grecep-opt.ok { background: #e9f7ef; border-color: #1f9d6b; color: #1f9d6b; }
-.grecep-opt.no { background: #fdecea; border-color: #e2504a; color: #e2504a; }
+/* 成组检测·闯关版(版本2:5词/组 + 逐句即判 + 组小结 + 总结果) */
+.gg-progress { display: flex; gap: 8rpx; margin-bottom: 12rpx; }
+.gg-seg { flex: 1; height: 10rpx; border-radius: 5rpx; background: #E3ECF7; }
+.gg-seg.cur { background: #3d8bf5; }
+.gg-seg.done { background: #18a058; }
+.gg-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22rpx; }
+.gg-grp { font-size: 24rpx; color: #94a3b8; }
+.gg-dots { display: flex; gap: 12rpx; }
+.gg-dot { width: 20rpx; height: 20rpx; border-radius: 50%; background: #dfe4ea; }
+.gg-dot.cur { background: #3d8bf5; transform: scale(1.15); }
+.gg-dot.ok { background: #18a058; }
+.gg-dot.no { background: #e35b5b; }
+.gg-dots.big .gg-dot { width: 28rpx; height: 28rpx; }
+.gg-sent { display: block; font-size: 34rpx; color: #0C447C; line-height: 1.5; font-weight: 600; margin-bottom: 26rpx; }
+.gg-opts { display: flex; flex-direction: column; gap: 14rpx; margin-bottom: 24rpx; }
+.gg-opt { display: flex; align-items: center; justify-content: space-between; background: #fff; border: 2rpx solid #E6EEF7; border-radius: 16rpx; padding: 22rpx 26rpx; }
+.gg-opt.ok { background: #E6F8EE; border-color: #18a058; }
+.gg-opt.no { background: #FBEAEC; border-color: #e35b5b; }
+.gg-opt-t { font-size: 30rpx; color: #0C447C; }
+.gg-opt.ok .gg-opt-t { color: #0F6E56; font-weight: 700; }
+.gg-opt.no .gg-opt-t { color: #c0392b; }
+.gg-bdg { font-size: 30rpx; }
+.gg-bdg.ok { color: #18a058; }
+.gg-bdg.no { color: #e35b5b; }
+/* 组小结 / 总结果 */
+.gsum { text-align: center; margin: 20rpx 0 16rpx; }
+.gsum-t { display: block; font-size: 30rpx; font-weight: 700; color: #0C447C; }
+.gsum-score { display: block; font-size: 84rpx; font-weight: 900; color: #3d8bf5; line-height: 1.1; margin: 8rpx 0; }
+.gsum-tot { font-size: 40rpx; color: #94a3b8; }
+.gsum-wrong { font-size: 24rpx; color: #c0392b; background: #FBEAEC66; border-radius: 12rpx; padding: 12rpx 16rpx; margin-bottom: 10rpx; line-height: 1.5; }
+.gsum-ans { font-weight: 700; }
+.gfin-row { display: flex; align-items: center; gap: 14rpx; margin-bottom: 12rpx; }
+.gfin-lb { font-size: 24rpx; color: #94a3b8; width: 56rpx; }
+.gfin-bars { flex: 1; display: flex; gap: 6rpx; }
+.gfin-bar { flex: 1; height: 14rpx; border-radius: 7rpx; background: #18a058; }
+.gfin-bar.no { background: #e35b5b; }
+.gfin-n { font-size: 24rpx; color: #0C447C; }
 /* R9.1 理解检测·语境填空 */
 .probe-box { margin-top: 22rpx; padding-top: 18rpx; border-top: 1rpx solid #f0f2f5; }
 .probe-cta { display: flex; align-items: center; justify-content: center; gap: 10rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-pill); padding: 16rpx 0; font-size: 26rpx; font-weight: 700; }
