@@ -101,7 +101,8 @@
       <!-- 图左 + 词/音标/释义右(形关先遮义)-->
       <view class="wc-top">
         <image v-if="firstImage(curStudy)" class="wc-img" :src="firstImage(curStudy)!" mode="aspectFit" />
-        <view v-else class="wc-img wc-img-empty"><text>🖼️</text></view>
+        <view v-else-if="curStudy.word_id && mediaGen.has(curStudy.word_id)" class="wc-img wc-img-gen"><text>配图生成中…</text></view>
+        <view v-else class="wc-img wc-img-mean"><text class="wcm-aa">{{ curStudy.word ? curStudy.word.charAt(0).toUpperCase() : 'A' }}</text></view>
         <view class="wc-info">
           <text class="wc-word">{{ curStudy.word }}</text>
           <text v-if="curStudy.phonetic" class="wc-phon">/{{ cleanPhon(curStudy.phonetic) }}/</text>
@@ -603,7 +604,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily, getQuizMcqs } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily, getQuizMcqs, ensureWordMedia } from '@/api/vocabulary'
 import type { ExamOverview, WordFamily, QuizMcq } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
@@ -729,6 +730,7 @@ watch(() => curStudy.value?.word_id, () => {
   gateStep.value = g
   wordFamily.value = null
   if (g === 'learn') loadFamily()   // 复习词直接进 learn → 拉词族
+  ensureCardMedia(curStudy.value)   // 查看即生成:无图则触发后端补图(可画的词)
 }, { immediate: true })
 // stepper 高亮:形(遮义) / 义(检测中) / 用(造句中)
 const displayGate = computed<'form' | 'meaning' | 'use'>(() =>
@@ -990,8 +992,25 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
+// 查看即生成:进卡无图 → 触发后端生成;生成中/已补图分别用 mediaGen/mediaMap
+const mediaMap = ref<Record<string, string>>({})   // word_id → 补生成的图
+const mediaGen = ref<Set<string>>(new Set())       // 正在生成的 word_id
+const mediaTried = new Set<string>()               // 本会话已试过(不出图=抽象词,不再重试)
 function firstImage(w: VocabWordCard): string | null {
+  if (w.word_id && mediaMap.value[w.word_id]) return mediaMap.value[w.word_id]
   return w.image_urls && w.image_urls.length ? w.image_urls[0] : null
+}
+async function ensureCardMedia(w?: VocabWordCard | null) {
+  const id = w && w.word_id
+  if (!id || firstImage(w!) || mediaTried.has(id)) return   // 有图 / 已试过 → 不动
+  mediaTried.add(id)
+  mediaGen.value = new Set([...mediaGen.value, id])          // 显示「配图生成中…」
+  try {
+    const m: any = await ensureWordMedia(id)
+    const img = m && (m.image_url || (Array.isArray(m.image_urls) && m.image_urls[0]))
+    if (img) mediaMap.value = { ...mediaMap.value, [id]: img }
+  } catch { /* 抽象词/失败 → 保持无图,前端降级词义卡 */ }
+  finally { const s = new Set(mediaGen.value); s.delete(id); mediaGen.value = s }
 }
 
 function buildQuiz(card: VocabWordCard, mode: 'w2m' | 'm2w' | 'pic'): Quiz {
@@ -1728,6 +1747,9 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .wc-top { display: flex; gap: 20rpx; padding-bottom: 20rpx; border-bottom: 1rpx solid var(--c-bg-soft); }
 .wc-img { width: 300rpx; height: 280rpx; border-radius: 16rpx; flex-shrink: 0; background: var(--c-bg-soft); }
 .wc-img-empty { display: flex; align-items: center; justify-content: center; font-size: 80rpx; opacity: .5; }
+.wc-img-gen { display: flex; align-items: center; justify-content: center; font-size: 24rpx; color: #185FA5; background: #EEF5FF; }
+.wc-img-mean { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #EEF5FF, #E6F1FB); }
+.wcm-aa { font-size: 96rpx; font-weight: 900; color: #B5D4F4; font-family: Georgia, 'Times New Roman', serif; }
 .wc-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10rpx; min-width: 0; }
 .wc-word { font-size: 52rpx; font-weight: 900; color: var(--c-ink); }
 .wc-phon { font-size: 28rpx; color: var(--c-text-second); }
