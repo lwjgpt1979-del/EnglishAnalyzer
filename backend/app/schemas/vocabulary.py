@@ -17,6 +17,9 @@ class WordCardOut(BaseModel):
     difficulty: int
     level: str = Field(..., description="new/learning/review/mastered")
     is_new: bool = Field(..., description="今日新词 True / 复习词 False")
+    # 三关(A):当前该学/考的关 —— form(形+音)|meaning(义)|use(用)|done。新词=form 走满阶梯;
+    # 复习词=首个未达标维度(recep<0.85→meaning;prod<0.85 或未迁移→use)。前端据此三关化。
+    gate: str = Field("form", description="form|meaning|use|done")
     # —— 图背单词媒体（仅 media_status='published' 时填充，D-101）——
     image_urls: list[str] | None = None
     en_description: str | None = None

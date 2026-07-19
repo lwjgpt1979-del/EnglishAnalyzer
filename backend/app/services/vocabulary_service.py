@@ -496,7 +496,20 @@ async def compute_today_progress(db: AsyncSession, *, student_id: uuid.UUID) -> 
     }
 
 
-def _to_card(w: VocabularyWord, *, level: str, is_new: bool) -> WordCardOut:
+def _derive_gate(is_new: bool, lr=None) -> str:
+    """三关(A)派生:新词=form(走满形→义→用);复习词=首个未达标维度。
+    义关=接收(mastery_recep),用关=产出(mastery_prod)+迁移(transfer_ok);阈值复用 vocab_probe。"""
+    if is_new or lr is None:
+        return "form"
+    from app.services.vocab_probe_service import PROD_MASTERED, RECEP_MASTERED
+    if float(lr.mastery_recep or 0) < RECEP_MASTERED:
+        return "meaning"
+    if float(lr.mastery_prod or 0) < PROD_MASTERED or not bool(lr.transfer_ok):
+        return "use"
+    return "done"
+
+
+def _to_card(w: VocabularyWord, *, level: str, is_new: bool, lr=None) -> WordCardOut:
     pub = str(getattr(w, "media_status", "draft")) == "published"
     return WordCardOut(
         word_id=w.id,
@@ -508,6 +521,7 @@ def _to_card(w: VocabularyWord, *, level: str, is_new: bool) -> WordCardOut:
         difficulty=w.difficulty,
         level=level,
         is_new=is_new,
+        gate=_derive_gate(is_new, lr),
         image_urls=(w.image_urls if pub else None),
         en_description=(w.en_description if pub else None),
         word_audio_url=(w.word_audio_url if pub else None),
@@ -585,7 +599,7 @@ async def get_daily_task(db: AsyncSession, *, student_id: uuid.UUID) -> DailyTas
             VocabularyLearning.next_review_at,
         )
     )).all()
-    review_words = [_to_card(w, level=str(lr.level), is_new=False) for lr, w in review_rows]
+    review_words = [_to_card(w, level=str(lr.level), is_new=False, lr=lr) for lr, w in review_rows]
 
     # 新词：按优先级（当前学期教材 > 其他来源 > 过往学期）选取、跨来源去重，
     # limit = 用户设置的「每组词数」（不再绑定会员档位）
@@ -624,7 +638,7 @@ async def get_daily_task_scoped(db: AsyncSession, *, student_id: uuid.UUID,
                VocabularyLearning.next_review_at <= now)
         .order_by(VocabularyLearning.is_wrong.desc(), VocabularyLearning.wrong_count.desc(),
                   VocabularyLearning.next_review_at))).all()
-    review_words = [_to_card(w, level=str(lr.level), is_new=False) for lr, w in review_rows]
+    review_words = [_to_card(w, level=str(lr.level), is_new=False, lr=lr) for lr, w in review_rows]
     # 新词:这些词里尚无学习记录的,按传入顺序取前「每组词数」个
     learned = set((await db.execute(
         select(VocabularyLearning.word_id).where(
