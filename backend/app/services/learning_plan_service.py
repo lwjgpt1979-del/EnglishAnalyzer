@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, time, timezone
 
@@ -17,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import StudyCheckin
+from app.models.d9_system import SystemConfig
 from app.models.d15_knowledge_graph import KnowledgeNode
 from app.models.d16_question_domain import AnswerLog
 from app.schemas.learning_plan import TodayPlanOut
@@ -24,6 +26,54 @@ from app.services import kp_mastery_service
 
 _MAX_WEAK_TASKS = 3
 _WEAK_ACC_CEILING = 0.7  # 仅正确率 < 0.7 的 KP 进入"攻克薄弱点"
+
+# ── 课程精讲「每日上限」(运营可配置 · system_configs)─────────────────────────────
+# 今日计划课程格 count = min(当前单元剩余, 每日上限);作业格不封顶(应尽快清完)。
+# 本常量仅作缺配置时的兜底默认,实际值见 get_daily_caps()/后台配置页。
+_DAILY_CAPS_KEY = "learning_plan_daily_caps"
+_DEFAULT_DAILY_CAPS: dict[str, int] = {"word": 10, "grammar": 3, "sentence": 3}
+
+
+async def get_daily_caps(db: AsyncSession) -> dict[str, int]:
+    """读 system_configs.learning_plan_daily_caps(课程每日上限,条/天)。缺失/越界回落默认。"""
+    cfg = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _DAILY_CAPS_KEY))).scalar_one_or_none()
+    if cfg is None:
+        return dict(_DEFAULT_DAILY_CAPS)
+    data = cfg.value if isinstance(cfg.value, dict) else json.loads(cfg.value)
+    out = dict(_DEFAULT_DAILY_CAPS)
+    for k in out:
+        try:
+            v = int(data.get(k, out[k]))
+            if v > 0:
+                out[k] = v
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+async def update_daily_caps(db: AsyncSession, *, caps: dict, updated_by: uuid.UUID) -> dict[str, int]:
+    """运营改课程每日上限:upsert system_configs.learning_plan_daily_caps(key 唯一)。仅收白名单键、正整数。"""
+    merged = dict(_DEFAULT_DAILY_CAPS)
+    for k in merged:
+        try:
+            v = int(caps.get(k, merged[k]))
+            if v > 0:
+                merged[k] = v
+        except (TypeError, ValueError):
+            pass
+    cfg = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _DAILY_CAPS_KEY))).scalar_one_or_none()
+    if cfg is None:
+        db.add(SystemConfig(
+            id=uuid.uuid4(), key=_DAILY_CAPS_KEY, value=merged,
+            description="今日学习计划·课程每日上限(word/grammar/sentence,条/天)",
+            updated_by=updated_by))
+    else:
+        cfg.value = merged
+        cfg.updated_by = updated_by
+    await db.flush()
+    return merged
 
 
 async def add_targets(db: AsyncSession, *, student_id: uuid.UUID,
@@ -117,12 +167,16 @@ async def get_today_plan(db: AsyncSession, *, student_id: uuid.UUID) -> TodayPla
         hw_tiles.append(PlanTile(module=mod, title=title, count=max(0, total - studied),
                                  studied=studied, total=total, route=route))
 
-    # ── 课程精讲:三模块按当前教材单元 ──
+    # ── 课程精讲:三模块按当前教材单元,count 按每日上限封顶(单元剩余 = total-studied)──
+    caps = await get_daily_caps(db)
+
     def _course_tile(mod: str, title: str, route: str, data: dict) -> "PlanTile":
         cur = _current_unit(data.get("units") or [])
         total = int(cur.get("total") or 0) if cur else 0
         studied = int(cur.get("studied") or 0) if cur else 0
-        return PlanTile(module=mod, title=title, count=max(0, total - studied),
+        remaining = max(0, total - studied)
+        cap = caps.get(mod) or remaining
+        return PlanTile(module=mod, title=title, count=min(remaining, cap),
                         studied=studied, total=total, route=route)
 
     vc = await vis.course_units(db, student_id=student_id)

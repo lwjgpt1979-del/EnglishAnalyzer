@@ -559,6 +559,23 @@ async def institution_code_pricing_history(db: DbDep, admin: AdminDep, limit: in
     return make_ok(await pricing_service.institution_code_pricing_history(db, limit=limit))
 
 
+# ─── 今日学习计划·课程每日上限（条 / 天）────────────────────────────────────────
+@router.get("/learning-plan-caps", response_model=BaseResponse[dict])
+async def get_learning_plan_caps(db: DbDep, admin: AdminDep):
+    """读今日学习计划·课程每日上限（word/grammar/sentence，条 / 天）。"""
+    from app.services import learning_plan_service
+    return make_ok(await learning_plan_service.get_daily_caps(db))
+
+
+@router.put("/learning-plan-caps", response_model=BaseResponse[dict])
+async def update_learning_plan_caps(body: dict, db: DbDep, admin: AdminDep):
+    """运营改今日学习计划·课程每日上限（仅 word/grammar/sentence，正整数，条 / 天）。"""
+    from app.services import learning_plan_service
+    caps = await learning_plan_service.update_daily_caps(db, caps=body, updated_by=admin.id)
+    await db.commit()
+    return make_ok(caps)
+
+
 # ─── 听力语速三档（小学/初中/高中，speed_ratio）────────────────────────────
 class TtsSpeedConfig(BaseModel):
     primary: float

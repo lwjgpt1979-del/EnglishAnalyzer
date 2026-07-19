@@ -153,6 +153,14 @@ export function updateTtsSpeed(body: TtsSpeed) {
   return unwrap<TtsSpeed>(request.put('/admin/tts-speed', body))
 }
 
+export interface LearningPlanCaps { word: number; grammar: number; sentence: number }
+export function getLearningPlanCaps() {
+  return unwrap<LearningPlanCaps>(request.get('/admin/learning-plan-caps'))
+}
+export function updateLearningPlanCaps(body: LearningPlanCaps) {
+  return unwrap<LearningPlanCaps>(request.put('/admin/learning-plan-caps', body))
+}
+
 export interface TtsVoices { male: string[]; female: string[] }
 export function getTtsVoices() {
   return unwrap<TtsVoices>(request.get('/admin/tts-voices'))

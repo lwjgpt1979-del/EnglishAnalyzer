@@ -65,7 +65,7 @@
                     <view class="tile-ic" :class="'mic-' + t.module" />
                     <text class="tile-num">{{ t.count }}</text>
                   </view>
-                  <text class="tile-cap">{{ t.title }} · {{ tileCap(t) }}</text>
+                  <text class="tile-cap">{{ t.title }} · {{ tileCap(t, src.source) }}</text>
                 </view>
               </view>
             </view>
@@ -291,7 +291,11 @@ const planSummary = computed(() => {
   return `作业 ${sum('homework')} · 课程 ${sum('course')} · 复习 ${plan.value.review.count}`
 })
 function tilePct(t: PlanTile) { return t.total > 0 ? Math.round(t.studied / t.total * 100) : 0 }
-function tileCap(t: PlanTile) { return t.total > 0 ? `已 ${t.studied}/${t.total}` : '暂无' }
+function tileCap(t: PlanTile, source: string) {
+  if (t.total <= 0) return source === 'course' ? '未开始' : '暂无'
+  // 课程:当前单元制,数字=今日封顶量,另标单元剩余;作业:全部积压,标已学/总
+  return source === 'course' ? `今日 ${t.count} · 单元剩 ${t.total - t.studied}` : `已 ${t.studied}/${t.total}`
+}
 function goTile(t: PlanTile) { if (t.route) uni.navigateTo({ url: t.route }) }
 function goReview() { uni.navigateTo({ url: plan.value?.review.route || '/pages/wrong-questions/review' }) }
 
