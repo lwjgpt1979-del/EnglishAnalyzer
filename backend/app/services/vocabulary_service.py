@@ -742,41 +742,40 @@ _BAND_LABEL = {"high": "高频", "mid": "中频", "low": "低频", "none": "未�
 async def exam_vocab_overview(db: AsyncSession, *, student: "User") -> dict:
     """词力通考试页概览:两轨(单词/短语)× 频档(高/中/低)的 total/studied。
     未上架对应考纲词库 → available=False(前端提示词库未上架)。"""
-    from app.services import vocab_list_service
+    from app.services import vocab_list_service as vls
     target = resolve_exam_target(student)
     label = "高考" if target == "senior" else "中考"
-    list_id = await vocab_list_service.resolve_published_list(db, exam_level=target)
-    if list_id is None:
+    word_list = await vls.resolve_word_list(db, exam_level=target)
+    phrase_list = await vls.resolve_phrase_list(db, exam_level=target)
+    if word_list is None and phrase_list is None:
         return {"exam_target": target, "exam_label": label, "available": False, "tracks": []}
-    ov = await vocab_list_service.exam_band_overview(db, list_id=list_id, student_id=student.id)
-    tracks = []
-    for wtype in ("word", "phrase"):
-        bands = [{"band": b, "label": _BAND_LABEL[b],
-                  "total": ov[wtype][b]["total"], "studied": ov[wtype][b]["studied"]}
-                 for b in ("high", "mid", "low")]
-        # 未分档兜底档:仅当有词时追加(高考未反哺 → star0 全落此,防空屏)
-        nb = ov[wtype].get("none") or {"total": 0, "studied": 0}
-        if nb["total"] > 0:
-            bands.append({"band": "none", "label": _BAND_LABEL["none"],
-                          "total": nb["total"], "studied": nb["studied"]})
-        tracks.append({
-            "type": wtype, "title": _TRACK_TITLE[wtype],
-            "total": sum(x["total"] for x in bands),
-            "studied": sum(x["studied"] for x in bands),
-            "bands": bands,
-        })
+
+    async def _track(wtype: str, list_id):
+        if list_id is None:
+            return None
+        ov = await vls.exam_band_overview(db, list_id=list_id, student_id=student.id)
+        # 只显示有词的档(未反哺库/短语库全落未分档;避免一堆「暂无」的空频档行)
+        order = ("high", "mid", "low", "none")
+        bands = [{"band": b, "label": _BAND_LABEL[b], "total": ov[b]["total"], "studied": ov[b]["studied"]}
+                 for b in order if ov[b]["total"] > 0]
+        return {"type": wtype, "title": _TRACK_TITLE[wtype],
+                "total": sum(x["total"] for x in bands),
+                "studied": sum(x["studied"] for x in bands), "bands": bands}
+
+    tracks = [t for t in (await _track("word", word_list), await _track("phrase", phrase_list)) if t]
     return {"exam_target": target, "exam_label": label, "available": True, "tracks": tracks}
 
 
 async def exam_daily_task(db: AsyncSession, *, student: "User", wtype: str, band: str) -> DailyTaskOut:
-    """某轨×频档 的今日一组任务:限定在该考纲词库该档词集内(复用 scoped 流,媒体走查看即生成)。"""
+    """某轨×频档 的今日一组任务:单词轨→考纲词库、短语轨→短语库,限定该档词集(复用 scoped 流)。"""
     from app.core.exceptions import AppError
-    from app.services import vocab_list_service
+    from app.services import vocab_list_service as vls
     target = resolve_exam_target(student)
-    list_id = await vocab_list_service.resolve_published_list(db, exam_level=target)
+    list_id = (await vls.resolve_phrase_list(db, exam_level=target)) if wtype == "phrase" \
+        else (await vls.resolve_word_list(db, exam_level=target))
     if list_id is None:
-        raise AppError(code=400, message="该考试目标的考纲词库尚未上架")
-    word_ids = await vocab_list_service.band_word_ids(db, list_id=list_id, wtype=wtype, band=band)
+        raise AppError(code=400, message="该轨的词库尚未上架")
+    word_ids = await vls.band_word_ids(db, list_id=list_id, band=band)
     if not word_ids:
         raise AppError(code=404, message="该档暂无词条")
     return await get_daily_task_scoped(db, student_id=student.id, word_ids=word_ids)
