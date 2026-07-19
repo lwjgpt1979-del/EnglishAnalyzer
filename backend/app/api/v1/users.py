@@ -106,6 +106,7 @@ async def get_me(
             is_active=current_user.is_active,
             phone=current_user.phone,
             preferred_grade=current_user.preferred_grade,
+            exam_target=current_user.exam_target,
             profile_completed=current_user.profile_completed,
             birth_year=current_user.birth_year,
             deactivation_scheduled_at=current_user.deactivation_scheduled_at,

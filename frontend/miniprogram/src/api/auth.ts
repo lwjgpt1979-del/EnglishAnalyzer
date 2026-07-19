@@ -21,6 +21,7 @@ export interface UpdateProfileData {
   preferred_grade?: string | null
   preferred_semester?: string | null
   preferred_unit_no?: number | null
+  exam_target?: 'junior' | 'senior' | null   // 考试目标:中考/高考(词力通按此出考纲词/短语)
   city_code?: string | null
 }
 
@@ -29,6 +30,7 @@ export function updateProfile(data: UpdateProfileData): Promise<{
   preferred_grade: string | null
   preferred_semester: string | null
   preferred_unit_no: number | null
+  exam_target: string | null
   city_code: string | null
 }> {
   return request('/api/v1/auth/profile', {

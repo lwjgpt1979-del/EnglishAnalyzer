@@ -118,6 +118,7 @@ class User(Base):
     preferred_grade = mapped_column(sa.String, nullable=True)
     preferred_semester = mapped_column(semester_enum, nullable=True)
     preferred_unit_no = mapped_column(sa.Integer, nullable=True)   # 学到第几单元(教材进度;算未学池的细粒度位置)
+    exam_target = mapped_column(sa.String(8), nullable=True)   # 考试目标 junior(中考)|senior(高考);null=按年级派生(词力通按此出考纲词/短语)
 
     updated_at = mapped_column(
         sa.TIMESTAMP(timezone=True),

@@ -61,6 +61,10 @@
         <text class="pref-val">{{ (auth.user as any)?.preferred_semester || '未设置' }}</text>
       </view>
       <view class="pref-row">
+        <text class="pref-label">考试目标</text>
+        <text class="pref-val">{{ examTargetLabel }}</text>
+      </view>
+      <view class="pref-row">
         <text class="pref-label">学习进度</text>
         <text class="pref-val">{{ (auth.user as any)?.preferred_unit_no ? `第${(auth.user as any).preferred_unit_no}单元` : '按整学期' }}</text>
       </view>
@@ -109,6 +113,17 @@
           <picker :range="currentCityNames" :value="prefForm.cityIdx" @change="(e: any) => prefForm.cityIdx = +e.detail.value">
             <view class="picker-row">{{ currentCityNames[prefForm.cityIdx] || '—' }} ›</view>
           </picker>
+
+          <text class="pref-label" style="margin-top:20rpx;margin-bottom:8rpx;display:block">考试目标</text>
+          <view class="exam-cards">
+            <view class="exam-card" :class="{ on: prefForm.examTarget === 'junior' }" @tap="prefForm.examTarget = 'junior'">
+              <text class="exam-t">中考</text><text class="exam-s">面向初中 · 约 1600 词</text>
+            </view>
+            <view class="exam-card" :class="{ on: prefForm.examTarget === 'senior' }" @tap="prefForm.examTarget = 'senior'">
+              <text class="exam-t">高考</text><text class="exam-s">面向高中 · 约 3500 词</text>
+            </view>
+          </view>
+          <text class="pref-hint">词力通按此聚焦考纲单词 + 短语。不计入月度修改次数。</text>
 
           <button class="btn-primary" style="margin-top:24rpx" :disabled="prefSaving" @tap="onSavePref">
             {{ prefSaving ? '保存中…' : '保存' }}
@@ -336,8 +351,18 @@ const prefForm = reactive({
   gradeIdx: 0,
   semIdx: 0,
   unitIdx: 0,          // 0 = 未指定(按整学期);≥1 → prefUnits[unitIdx-1]
+  examTarget: 'junior' as 'junior' | 'senior',
   provIdx: 0,
   cityIdx: 0,
+})
+
+// 考试目标:未显式设置时按年级派生(含「高」→高考,否则中考)
+function deriveExamTarget(grade?: string | null): 'junior' | 'senior' {
+  return (grade || '').includes('高') ? 'senior' : 'junior'
+}
+const examTargetLabel = computed(() => {
+  const u: any = auth.user
+  return ((u?.exam_target as string) || deriveExamTarget(u?.preferred_grade)) === 'senior' ? '高考' : '中考'
 })
 
 // 学习进度:当前教材/年级/学期下的单元清单(供「学到第几单元」选择)
@@ -401,6 +426,7 @@ async function openPrefEdit() {
   prefForm.textbookIdx = Math.max(0, TEXTBOOK_VERSIONS.value.indexOf(u?.preferred_textbook_version || ''))
   prefForm.gradeIdx = Math.max(0, GRADES.value.indexOf(u?.preferred_grade || ''))
   prefForm.semIdx = Math.max(0, SEMESTERS.value.indexOf(u?.preferred_semester || ''))
+  prefForm.examTarget = (u?.exam_target as 'junior' | 'senior') || deriveExamTarget(u?.preferred_grade)
   await reloadPrefUnits()   // 载入当前教材/年级/学期的单元清单 + 回选已存进度
   showPrefEdit.value = true
   getInfoChangeQuota().then(q => { infoChangeRemaining.value = q.remaining; infoChangeLimit.value = q.limit }).catch(() => {})
@@ -425,6 +451,7 @@ async function onSavePref() {
       preferred_grade: GRADES.value[prefForm.gradeIdx],
       preferred_semester: SEMESTERS.value[prefForm.semIdx],
       preferred_unit_no: unitNo,
+      exam_target: prefForm.examTarget,
       city_code: cityCode,
     })
     const u: any = auth.user
@@ -433,6 +460,7 @@ async function onSavePref() {
       u.preferred_grade = GRADES.value[prefForm.gradeIdx]
       u.preferred_semester = SEMESTERS.value[prefForm.semIdx]
       u.preferred_unit_no = unitNo
+      u.exam_target = prefForm.examTarget
       u.city_code = cityCode
     }
     await resolveCityDisplay()
@@ -749,5 +777,12 @@ function goBuySemester() {
 .pref-hint { display: block; font-size: 22rpx; color: var(--c-text-hint); margin-top: 8rpx; line-height: 1.5; }
 .info-quota-tip { display: block; font-size: 22rpx; color: var(--c-gold, #e6a23c); background: #fff7e6; padding: 12rpx 16rpx; border-radius: 8rpx; margin-bottom: 16rpx; }
 .pref-val { font-size: 28rpx; color: var(--c-ink); font-weight: 600; }
+/* 考试目标:二选一卡片(方案B) */
+.exam-cards { display: flex; gap: 16rpx; }
+.exam-card { flex: 1; background: var(--c-bg-page); border: 3rpx solid var(--c-border); border-radius: 16rpx; padding: 20rpx; display: flex; flex-direction: column; gap: 6rpx; }
+.exam-card.on { background: var(--c-primary-faint); border-color: var(--c-primary); }
+.exam-t { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.exam-card.on .exam-t { color: var(--c-primary-deep); }
+.exam-s { font-size: 22rpx; color: var(--c-text-hint); }
 .picker-row { background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx 20rpx; font-size: 28rpx; color: var(--c-ink); }
 </style>

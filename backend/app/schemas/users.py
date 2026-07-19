@@ -16,6 +16,7 @@ class UserMeOut(BaseModel):
     is_active: bool
     phone: str | None = None
     preferred_grade: str | None = None
+    exam_target: str | None = None  # junior(中考)|senior(高考);null=未设(前端按年级推荐)
 
     # 合规字段（默认值保持向后兼容）
     profile_completed: bool = False

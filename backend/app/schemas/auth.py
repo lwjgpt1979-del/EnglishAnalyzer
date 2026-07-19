@@ -45,4 +45,5 @@ class UpdateProfileRequest(BaseModel):
     preferred_grade: str | None = None
     preferred_semester: str | None = None
     preferred_unit_no: int | None = None  # 学到第几单元(教材进度;算未学池)
+    exam_target: str | None = None  # 考试目标 junior(中考)|senior(高考);词力通按此出考纲词/短语
     city_code: str | None = None  # V2 M27 预留

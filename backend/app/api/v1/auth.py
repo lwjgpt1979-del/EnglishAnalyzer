@@ -188,6 +188,9 @@ async def update_profile_api(body: UpdateProfileRequest, db: DbDep, current_user
         current_user.preferred_semester = body.preferred_semester
     if body.preferred_unit_no is not None:
         current_user.preferred_unit_no = body.preferred_unit_no
+    # 考试目标:仅 junior|senior;不计入月度信息变更配额(派生自年级、切换成本低)
+    if body.exam_target is not None:
+        current_user.exam_target = body.exam_target if body.exam_target in ("junior", "senior") else None
     if body.city_code is not None:
         current_user.city_code = body.city_code
         current_user.city_source = "manual"
@@ -198,5 +201,6 @@ async def update_profile_api(body: UpdateProfileRequest, db: DbDep, current_user
         "preferred_grade": current_user.preferred_grade,
         "preferred_semester": str(current_user.preferred_semester) if current_user.preferred_semester else None,
         "preferred_unit_no": current_user.preferred_unit_no,
+        "exam_target": current_user.exam_target,
         "city_code": current_user.city_code,
     })
