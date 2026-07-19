@@ -118,6 +118,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "补全单词释义/例句/短语", "why": "词典式抽取、固定字段", "locations": ["vocab_intensive_service.py:165"], "cache": "global", "store": "vocabulary_words(definitions/examples/phrases 等,词级公共)"},
     {"feature": "vocab_word_family", "mode": "chat", "surface": "小程序端", "module": "词力通·词族(G)", "service": "word_family_service",
      "purpose": "生成单词的词根 + 同族词(构词法·义/用关展示)", "why": "构词法抽取、规格明确、fast 档", "locations": ["word_family_service.py:42"], "cache": "global", "store": "vocab_word_family.members(按 word_id,查看即生成)"},
+    {"feature": "vocab_mcq", "mode": "chat", "surface": "小程序端", "module": "词力通·测试题库", "service": "vocab_mcq_service",
+     "purpose": "每词生成 3-5 道混合单选题(词→义/义→词/语境填空),测试随机取用", "why": "结构化出题、规格明确、fast 档", "locations": ["vocab_mcq_service.py:31"], "cache": "global", "store": "vocab_mcq(按 word_id,每词一次生成 3-5 道、随机取,秒回后台异步补)"},
     {"feature": "vocab_validity_gate", "mode": "chat", "surface": "小程序端", "module": "词力通·缺词", "service": "vocab_intensive_service",
      "purpose": "缺词自动入库前的有效性闸门(是否真实可教学英文词/词组)", "why": "二元判定、规格明确、fast 档 + 免费正则粗筛前置", "locations": ["vocab_intensive_service.py:225"], "cache": "none", "store": "无(判定结果不落库;通过则建 vocabulary_words,不通过落 vocab_review)"},
     {"feature": "vocab_image_brief", "mode": "chat", "surface": "运营后台", "module": "词力通·媒体", "service": "vocab_media_service",

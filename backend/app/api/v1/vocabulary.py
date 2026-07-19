@@ -106,6 +106,16 @@ async def exam_overview(db: DbDep, current_user: UserDep):
     return make_ok(await vocabulary_service.exam_vocab_overview(db, student=current_user))
 
 
+@router.post("/quiz-mcqs", response_model=BaseResponse[list])
+async def quiz_mcqs(body: dict, db: DbDep, current_user: UserDep):
+    """测试出题:每词随机取一道缓存选择题;未缓存的后台异步生成、当次返回 mcq=null
+    (前端回退客户端模板题)。body: {word_ids: [uuid]}。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import vocab_mcq_service
+    ids = body.get("word_ids") or []
+    return make_ok(await vocab_mcq_service.random_mcqs_batch(db, word_ids=ids))
+
+
 @router.get("/word-family/{word_id}", response_model=BaseResponse[dict])
 async def word_family(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """词族(G 构词法):词根 + 同族词(查看即生成+全局缓存);在库同族词先验进本生队列。"""

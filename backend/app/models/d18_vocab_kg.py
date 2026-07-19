@@ -25,6 +25,25 @@ class VocabWordFamily(Base):
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
+class VocabMcq(Base):
+    """词汇测试题库(每词 3-5 道混合单选题,LLM 生成一次全局缓存,测试时随机取 1)。
+    词义丰富的词出到 5 道、简单单义词 3 道;类型 w2m(词→义)/m2w(义→词)/cloze(语境填空)。"""
+
+    __tablename__ = "vocab_mcq"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    mcq_type = mapped_column(sa.String(12), nullable=False)     # w2m|m2w|cloze
+    stem = mapped_column(sa.Text, nullable=False)               # 题干(中文问法或英文挖空句)
+    options = mapped_column(JSONB, nullable=False)              # [str] 4 选项
+    answer = mapped_column(sa.Text, nullable=False)            # 正确项(与 options 之一完全一致)
+    explanation = mapped_column(sa.Text, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_vocab_mcq_word", "word_id"),)
+
+
 class VocabNode(Base):
     """词 ↔ 知识节点(R5)。一词多 KP、一 KP 多词。"""
 
