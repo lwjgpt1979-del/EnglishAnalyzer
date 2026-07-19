@@ -741,6 +741,7 @@ export interface VocabWordCard {
   difficulty: number
   level: string
   is_new: boolean
+  gate?: 'form' | 'meaning' | 'use' | 'done'   // 三关(A):新词=form 走满;复习词=当前关
   image_urls?: string[] | null
   en_description?: string | null
   word_audio_url?: string | null

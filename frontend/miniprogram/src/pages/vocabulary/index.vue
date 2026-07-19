@@ -89,27 +89,38 @@
         </view>
       </view>
 
-      <!-- 图左 + 词/音标/释义右 -->
+      <!-- 三关 stepper(A:形→义→用)-->
+      <view class="gate-steps">
+        <text class="gate-step" :class="{ on: displayGate === 'form', done: displayGate !== 'form' }">形</text>
+        <view class="gate-line" :class="{ done: displayGate !== 'form' }" />
+        <text class="gate-step" :class="{ on: displayGate === 'meaning', done: displayGate === 'use' }">义</text>
+        <view class="gate-line" :class="{ done: displayGate === 'use' }" />
+        <text class="gate-step" :class="{ on: displayGate === 'use' }">用</text>
+      </view>
+
+      <!-- 图左 + 词/音标/释义右(形关先遮义)-->
       <view class="wc-top">
         <image v-if="firstImage(curStudy)" class="wc-img" :src="firstImage(curStudy)!" mode="aspectFit" />
         <view v-else class="wc-img wc-img-empty"><text>🖼️</text></view>
         <view class="wc-info">
           <text class="wc-word">{{ curStudy.word }}</text>
           <text v-if="curStudy.phonetic" class="wc-phon">/{{ cleanPhon(curStudy.phonetic) }}/</text>
-          <text v-for="(d, i) in defList(curStudy)" :key="i" class="wc-mean">{{ d }}</text>
+          <block v-if="gateStep !== 'form'">
+            <text v-for="(d, i) in defList(curStudy)" :key="i" class="wc-mean">{{ d }}</text>
+          </block>
+          <text v-else class="wc-mean-hidden">先记形音,点下方翻出词义</text>
         </view>
       </view>
 
-      <!-- 例句 -->
-      <view v-if="firstExample(curStudy)" class="wc-row">
+      <!-- 例句 / 短语(义关起显示)-->
+      <view v-if="gateStep !== 'form' && firstExample(curStudy)" class="wc-row">
         <text class="wc-tag">例句</text>
         <view class="wc-rowtext">
           <text class="wc-en">{{ firstExample(curStudy)!.en }}</text>
           <text v-if="firstExample(curStudy)!.zh" class="wc-zh">{{ firstExample(curStudy)!.zh }}</text>
         </view>
       </view>
-      <!-- 短语 -->
-      <view v-if="firstPhrase(curStudy)" class="wc-row">
+      <view v-if="gateStep !== 'form' && firstPhrase(curStudy)" class="wc-row">
         <text class="wc-tag">短语</text>
         <view class="wc-rowtext">
           <text class="wc-en">{{ firstPhrase(curStudy)!.en }}</text>
@@ -123,8 +134,11 @@
         <view class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-mic" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>跟读</text><view v-if="!ent.can('vocab.shadow')" class="ic ic-lock" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
       </view>
 
-      <!-- R9.1 理解检测·语境填空(接收:语境里认得出吗)-->
-      <view class="probe-box">
+      <!-- 形关推进:翻出词义(A:形→义)-->
+      <button v-if="gateStep === 'form'" class="btn-primary gate-next" @tap="toMeaning">认了形音 → 学词义</button>
+
+      <!-- R9.1 理解检测·语境填空(接收:语境里认得出吗)· 义关起 -->
+      <view v-if="gateStep !== 'form'" class="probe-box">
         <view v-if="!probeOpen" class="probe-cta" @tap="openProbe">
           <view class="ic ic-brain" style="width:30rpx;height:30rpx" /><text>检测理解 · 语境里认得出吗</text>
         </view>
@@ -220,7 +234,7 @@
         </view>
       </view>
 
-      <button class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
+      <button v-if="gateStep !== 'form'" class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
     </view>
 
     <!-- 成组混合检测(R9.5 防经验主义)：N 句挖空 + 共享词库，答案逐句不同 -->
@@ -644,6 +658,19 @@ const isReview = computed(() => phase.value === 'review')
 const cardList = computed(() => (isReview.value ? reviewCards.value : newCards.value))
 const cardIdx = computed(() => (isReview.value ? reviewIndex.value : studyIndex.value))
 const curStudy = computed(() => cardList.value[cardIdx.value] || ({} as VocabWordCard))
+
+// ── 三关(A):form(先形音,遮义) → learn(义+用,现有流程)。新词从 form 起;复习词直接 learn ──
+const gateStep = ref<'form' | 'learn'>('learn')
+watch(() => curStudy.value?.word_id, () => {
+  gateStep.value = curStudy.value?.gate === 'form' ? 'form' : 'learn'
+}, { immediate: true })
+// stepper 高亮:形(遮义) / 义(检测中) / 用(造句中)
+const displayGate = computed<'form' | 'meaning' | 'use'>(() =>
+  gateStep.value === 'form' ? 'form' : (produceTask.value ? 'use' : 'meaning'))
+function toMeaning() {
+  gateStep.value = 'learn'
+  if (readSeq.value) playCard(curStudy.value)   // 翻出词义时连读
+}
 
 // R9.1 理解检测·语境填空(接收探针)
 const probeOpen = ref(false)
@@ -1561,6 +1588,15 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .progress-hint { font-size: 24rpx; color: var(--c-text-hint); margin-bottom: 24rpx; }
 /* 学新词词卡（图左+词右）*/
 .study-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
+/* 三关 stepper(A) */
+.gate-steps { display: flex; align-items: center; justify-content: center; gap: 10rpx; margin-bottom: 22rpx; }
+.gate-step { width: 46rpx; height: 46rpx; border-radius: 50%; text-align: center; line-height: 46rpx; font-size: 24rpx; font-weight: 700; color: #94a3b8; background: #F1F4F8; }
+.gate-step.on { color: #fff; background: #3d8bf5; }
+.gate-step.done { color: #185FA5; background: #E6F1FB; }
+.gate-line { width: 44rpx; height: 4rpx; border-radius: 2rpx; background: #E3ECF7; }
+.gate-line.done { background: #B5D4F4; }
+.wc-mean-hidden { font-size: 26rpx; color: #94a3b8; }
+.gate-next { margin-top: 8rpx; }
 .study-hd .progress-hint { margin-bottom: 0; }
 .seq-toggle { font-size: 24rpx; color: var(--c-text-hint); }
 .seq-toggle.on { color: var(--c-primary-deep); font-weight: 600; }
