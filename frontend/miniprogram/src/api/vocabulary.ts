@@ -31,6 +31,12 @@ export function getWordFamily(wordId: string): Promise<WordFamily> {
   return request<WordFamily>(`/api/v1/vocabulary/word-family/${wordId}`, { method: 'GET' })
 }
 
+// 测试题库:每词随机取一道 LLM 缓存选择题(未缓存返回 mcq=null,后台异步生成)
+export interface QuizMcq { word_id: string; mcq_type: string; stem: string; options: string[]; answer: string; explanation: string }
+export function getQuizMcqs(wordIds: string[]): Promise<Array<{ word_id: string; mcq: QuizMcq | null }>> {
+  return request(`/api/v1/vocabulary/quiz-mcqs`, { method: 'POST', data: { word_ids: wordIds } })
+}
+
 export interface VocabPronSummary {
   count: number; avg: number | null
   accuracy: number | null; fluency: number | null; completion: number | null

@@ -311,7 +311,7 @@
       <view class="quiz-type">{{ quizTypeLabel }}</view>
       <view class="quiz-prompt">
         <text>{{ curQuiz.prompt }}</text>
-        <view v-if="curQuiz.mode !== 'm2w'" class="qp-play" @tap="playWordAudio(curQuiz.prompt)"><view class="ic ic-volume" style="width:36rpx;height:36rpx" /></view>
+        <view v-if="curQuiz.mode !== 'm2w' && curQuiz.mode !== 'mcq'" class="qp-play" @tap="playWordAudio(curQuiz.prompt)"><view class="ic ic-volume" style="width:36rpx;height:36rpx" /></view>
       </view>
 
       <!-- 看图选词：4 张图选 1 -->
@@ -351,6 +351,7 @@
         </view>
       </view>
 
+      <view v-if="answered && curQuiz.explanation" class="quiz-expl">{{ curQuiz.explanation }}</view>
       <button v-if="answered" class="btn-primary" @tap="nextQuiz">下一题</button>
     </view>
 
@@ -597,8 +598,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily } from '@/api/vocabulary'
-import type { ExamOverview, WordFamily } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily, getQuizMcqs } from '@/api/vocabulary'
+import type { ExamOverview, WordFamily, QuizMcq } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
@@ -612,10 +613,11 @@ import type { VocabWordCard } from '@/types/api'
 
 interface Quiz {
   word_id: string
-  mode: 'w2m' | 'm2w' | 'pic'   // 看词选义 / 看义选词 / 看图选词
+  mode: 'w2m' | 'm2w' | 'pic' | 'mcq'   // 看词选义 / 看义选词 / 看图选词 / LLM题库选择题
   prompt: string
   options: string[]   // 文本选项；mode==='pic' 时为图片 URL
   answerIndex: number
+  explanation?: string   // mcq 模式的解析
 }
 
 const auth = useAuthStore()
@@ -946,7 +948,7 @@ function barLevel(b: number) {
 }
 const quizTypeLabel = computed(() => {
   const m = curQuiz.value.mode
-  return m === 'w2m' ? '看词选义' : m === 'm2w' ? '看义选词' : '看图选词'
+  return m === 'w2m' ? '看词选义' : m === 'm2w' ? '看义选词' : m === 'pic' ? '看图选词' : '选择题'
 })
 
 function defList(card: VocabWordCard): string[] {
@@ -1075,10 +1077,24 @@ async function grecepNextGroup() {   // 组小结 → 下一组 / 最后组 → 
 }
 function grecepWrongItems(g: GroupRecepItem[]) { return g.filter(it => !grecepJudged.value[it.word_id]) }
 
-function startQuiz() {
+async function startQuiz() {
   const all = [...newCards.value, ...reviewCards.value]
+  if (!all.length) { finishSession(); return }
   const modes: Array<'w2m' | 'm2w' | 'pic'> = ['w2m', 'm2w', 'pic']
-  quizQueue.value = all.map((card, i) => buildQuiz(card, modes[i % 3]))
+  // 优先用后端 LLM 题库(每词随机 1 道,变异性好);未缓存的当次回退客户端模板题(下次即有)
+  const mcqMap: Record<string, QuizMcq | null> = {}
+  try {
+    const res = await getQuizMcqs(all.map(c => c.word_id))
+    for (const r of res) mcqMap[r.word_id] = r.mcq
+  } catch { /* 全回退模板 */ }
+  quizQueue.value = all.map((card, i) => {
+    const m = mcqMap[card.word_id]
+    if (m && m.options && m.options.length >= 2 && m.options.includes(m.answer)) {
+      return { word_id: card.word_id, mode: 'mcq' as const, prompt: m.stem, options: m.options,
+               answerIndex: m.options.indexOf(m.answer), explanation: m.explanation }
+    }
+    return buildQuiz(card, modes[i % 3])
+  })
   quizIndex.value = 0
   correctCount.value = 0
   answered.value = false
@@ -1733,6 +1749,7 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .ex-line { flex: 1; font-size: 28rpx; color: var(--c-text-second); line-height: 1.7; }
 .ex-shadow-btn { flex-shrink: 0; font-size: 22rpx; font-weight: 600; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 6rpx 16rpx; border-radius: var(--r-pill); }
 .quiz-type { font-size: 24rpx; color: var(--c-gold); font-weight: 600; }
+.quiz-expl { font-size: 24rpx; color: #185FA5; background: #EEF5FF; border-radius: 12rpx; padding: 14rpx 18rpx; margin: 6rpx 0 14rpx; line-height: 1.6; }
 .quiz-prompt { font-size: 44rpx; font-weight: 700; color: var(--c-ink); text-align: center; margin: 32rpx 0 40rpx; }
 .option { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 28rpx 24rpx; font-size: 30rpx; color: var(--c-text-body); margin-bottom: 20rpx; }
 .opt-text { flex: 1; }
