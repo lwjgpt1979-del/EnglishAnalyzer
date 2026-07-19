@@ -8,10 +8,10 @@
       <view class="eh-top">
         <text class="eh-title">词力通</text>
         <text v-if="cal" class="eh-streak">连续 {{ cal.current_streak }} 天</text>
+        <view class="eh-gear ic ic-settings" @tap="openSettings" />
       </view>
-      <view class="eh-target" @tap="() => uni.switchTab({ url: '/pages/profile/index' })">
+      <view class="eh-target">
         <text class="eh-target-l">考试目标：<text class="eh-target-v">{{ examOverview?.exam_label || '中考' }}</text></text>
-        <text class="eh-target-edit">设置里改 ›</text>
       </view>
 
       <view v-if="examOverview && !examOverview.available" class="eh-empty">
@@ -51,12 +51,6 @@
         </view>
       </template>
       <view v-else class="center-tip">加载中…</view>
-
-      <view class="eh-tools">
-        <view class="gear-inline" @tap="openSettings"><view class="ic ic-settings" style="width:26rpx;height:26rpx" /><text>设置</text></view>
-        <view class="gear-inline" @tap="openAddWord"><view class="ic ic-plus" style="width:26rpx;height:26rpx" /><text>添加生词</text></view>
-        <view class="gear-inline" @tap="openPins"><view class="ic ic-pin" style="width:26rpx;height:26rpx" /><text>优先学</text></view>
-      </view>
     </view>
 
     <view v-else-if="phase === 'empty'">
@@ -417,6 +411,13 @@
     <view v-if="showSettings" class="shadow-modal" @tap.self="showSettings = false">
       <view class="set-card">
         <view class="set-title" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-settings" style="width:32rpx;height:32rpx" /><text>学习设置</text></view>
+        <view class="set-row" style="flex-direction:column;align-items:stretch;gap:14rpx">
+          <text class="set-label">考试目标（词力通按此出考纲词/短语）</text>
+          <view class="exam-seg">
+            <text class="exam-seg-btn" :class="{ on: examTargetDraft === 'junior' }" @tap="examTargetDraft = 'junior'">中考</text>
+            <text class="exam-seg-btn" :class="{ on: examTargetDraft === 'senior' }" @tap="examTargetDraft = 'senior'">高考</text>
+          </view>
+        </view>
         <view class="set-row">
           <text class="set-label">每组词数</text>
           <view class="stepper">
@@ -545,6 +546,7 @@ import { uploadOneImage } from '@/composables/useUpload'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
 import { useAuthStore } from '@/stores/auth'
+import { updateProfile } from '@/api/auth'
 import { useEntitlementsStore } from '@/stores/entitlements'
 import Paywall from '@/components/Paywall.vue'
 import type { VocabWordCard } from '@/types/api'
@@ -1258,10 +1260,14 @@ function reload() {
 }
 
 // ── 学习设置 ──
+// 设置里的考试目标草稿(中考/高考)
+const examTargetDraft = ref<'junior' | 'senior'>('junior')
 function openSettings() {
   settingDraft.words_per_group = wordsPerGroup.value
   settingDraft.reps_per_group = repsPerGroup.value
   settingDraft.wrong_carry_threshold = wrongCarryThreshold.value
+  examTargetDraft.value = examOverview.value?.exam_target
+    || ((auth.user as any)?.exam_target as 'junior' | 'senior') || 'junior'
   showSettings.value = true
 }
 function adjustWPG(d: number) {
@@ -1281,8 +1287,16 @@ async function saveSettings() {
     wordsPerGroup.value = s.words_per_group
     repsPerGroup.value = s.reps_per_group
     wrongCarryThreshold.value = s.wrong_carry_threshold ?? 2
+    // 考试目标变更 → 落库偏好并刷新词力通首屏(换词库)
+    const curTarget = examOverview.value?.exam_target || (auth.user as any)?.exam_target || 'junior'
+    const targetChanged = examTargetDraft.value !== curTarget
+    if (targetChanged) {
+      await updateProfile({ exam_target: examTargetDraft.value })
+      const u: any = auth.user; if (u) u.exam_target = examTargetDraft.value
+    }
     showSettings.value = false
     uni.showToast({ title: '已保存', icon: 'success' })
+    if (targetChanged && phase.value === 'home') { examTrackSel.value = 'word'; enterHome() }
   } catch (e) {
     uni.showToast({ title: (e as Error).message || '保存失败', icon: 'none' })
   }
@@ -1806,9 +1820,13 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .eh-top { display: flex; align-items: center; margin-bottom: 16rpx; }
 .eh-title { font-size: 38rpx; font-weight: 800; color: #0C447C; }
 .eh-streak { margin-left: auto; font-size: 24rpx; font-weight: 600; color: #185FA5; background: #E6F1FB; padding: 6rpx 18rpx; border-radius: 999rpx; }
+.eh-gear { width: 44rpx; height: 44rpx; margin-left: 16rpx; flex-shrink: 0; }
+/* 考试目标段选(设置弹窗内) */
+.exam-seg { display: flex; gap: 12rpx; }
+.exam-seg-btn { flex: 1; text-align: center; font-size: 28rpx; font-weight: 600; color: #185FA5; background: #EEF5FF; padding: 16rpx 0; border-radius: 12rpx; }
+.exam-seg-btn.on { color: #fff; background: var(--c-primary); }
 .eh-target { display: flex; align-items: center; margin-bottom: 20rpx; font-size: 24rpx; color: #185FA5; }
 .eh-target-v { color: #0C447C; font-weight: 700; }
-.eh-target-edit { margin-left: auto; color: #185FA5; }
 .eh-empty { text-align: center; padding: 80rpx 40rpx; color: var(--c-text-hint); font-size: 26rpx; line-height: 1.8; }
 /* 两轨卡 */
 .eh-tracks { display: flex; gap: 20rpx; margin-bottom: 24rpx; }
@@ -1845,8 +1863,6 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .eh-band-act { flex: none; font-size: 24rpx; color: #185FA5; }
 .eh-band-act.primary { color: #fff; background: var(--c-primary); padding: 10rpx 28rpx; border-radius: 999rpx; font-weight: 600; }
 .eh-band-act.off { color: var(--c-text-hint); }
-.eh-tools { display: flex; align-items: center; gap: 24rpx; margin-top: 28rpx; padding-top: 20rpx; border-top: 1rpx solid var(--c-border); }
-.eh-tools .gear-inline { margin-left: 0; font-size: 24rpx; color: #185FA5; }
 /* 两轨图标(线性 SVG,主色蓝 #185FA5) */
 .mic-word { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E"); }
 .mic-phrase { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23185FA5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
