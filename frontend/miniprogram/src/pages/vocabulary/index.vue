@@ -323,6 +323,7 @@
       <view class="done-emoji" style="display:flex;justify-content:center"><view class="ic ic-check-circle" style="width:80rpx;height:80rpx" /></view>
       <view class="done-title">今日完成！</view>
       <view class="done-stat">新学 {{ newCards.length }} 词 · 复习 {{ reviewCards.length }} 词</view>
+      <view v-if="gateMeaningWords.size || gateUseWords.size" class="done-stat">义关通过 {{ gateMeaningWords.size }} · 用关通过 {{ gateUseWords.size }}</view>
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
       <view v-if="checkinDone" class="done-streak">今日已记录学习 · 连续 {{ streakDays }} 天 🔥</view>
 
@@ -613,6 +614,9 @@ const addingWord = ref(false)
 const currentRep = ref(1)                                  // 当前组的第几遍
 const carryWords = ref<VocabWordCard[]>([])                // 上一组错得多、滚入本组的词
 const groupWrong = reactive(new Map<string, number>())     // 本组各词错次数
+// P3 结算三关统计:本组通过 义/用 关的词(去重)
+const gateMeaningWords = reactive(new Set<string>())
+const gateUseWords = reactive(new Set<string>())
 
 const newCards = ref<VocabWordCard[]>([])
 const reviewCards = ref<VocabWordCard[]>([])
@@ -744,6 +748,7 @@ async function submitProbe(key: string) {
   try {
     const r = await submitWordProbe(id, key, ans)
     probeResults.value = { ...probeResults.value, [key]: r }
+    if (r.correct) gateMeaningWords.add(id)   // 义关通过(结算统计)
     recep.value = r.recep; prod.value = r.prod; mastered.value = r.mastered
     uni.showToast({ title: r.correct ? '答对了！' : '再看看语境', icon: 'none' })
   } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
@@ -756,6 +761,7 @@ async function submitProduce() {
   try {
     const r = await submitWordProduce(id, s)
     produceResult.value = r; prod.value = r.prod; mastered.value = r.mastered
+    if (r.passed) gateUseWords.add(id)        // 用关通过(结算统计)
     uni.showToast({ title: r.passed ? '输出达标 ✓' : '再打磨一下', icon: 'none' })
   } catch { uni.showToast({ title: '评分失败', icon: 'none' }) }
   finally { produceSubmitting.value = false }
@@ -1197,6 +1203,7 @@ function _applyTask(task: { new_words: VocabWordCard[]; review_words: VocabWordC
   shadowLog.value = []
   currentRep.value = 1
   groupWrong.clear()
+  gateMeaningWords.clear(); gateUseWords.clear()
   if (newCards.value.length === 0 && reviewCards.value.length === 0) {
     if (fromReload) { uni.showToast({ title: '这组词都练完啦 🎉', icon: 'none' }); return }
     if (examBand.value) { uni.showToast({ title: '这档暂时没有待学/待复习 🎉', icon: 'none' }); phase.value = 'home'; return }
