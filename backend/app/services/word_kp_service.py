@@ -272,16 +272,24 @@ async def _gen_kp_mcqs(word: str, meaning: str, kp: dict, is_phrase: bool = Fals
     return (d or {}).get("items") or []
 
 
-async def ensure_kp_mcqs(db: AsyncSession, *, word_id: uuid.UUID) -> None:
-    """确保考点测试题已生成:已有(≥1 题)直接返回;否则先保证考点存在,再按维度 LLM 出题落库。"""
-    exists = (await db.execute(
-        sa.select(VocabKpMcq.id).where(VocabKpMcq.word_id == word_id).limit(1))).first()
-    if exists:
-        return
+def _eff_sense(kp: dict) -> uuid.UUID | None:
+    """word_kp_out 结果里的选定义项 id(sense_id 或主义项);None=无义项(综合)。"""
+    ss = kp.get("senses") or []
+    sid = ss[0]["sense_id"] if ss else None
+    return uuid.UUID(sid) if sid else None
+
+
+async def ensure_kp_mcqs(db: AsyncSession, *, word_id: uuid.UUID, sense_id: uuid.UUID | None = None) -> None:
+    """确保某义项的考点测试题已生成:该义项已有题直接返回;否则按该义项维度 LLM 出题落库(带 sense_id)。"""
     await ensure_word_kp(db, word_id=word_id)          # FK 依赖 vocab_word_kp 行 + 需考点内容出题
     if await db.get(VocabWordKp, word_id) is None:
-        return                                          # 无考点(生成失败)→ 不出题
-    kp = await word_kp_out(db, word_id=word_id)         # 六维内容(不传 student_id 不入队)
+        return
+    kp = await word_kp_out(db, word_id=word_id, sense_id=sense_id)   # 选定义项的维度
+    eff = _eff_sense(kp)
+    q = sa.select(VocabKpMcq.id).where(VocabKpMcq.word_id == word_id)
+    q = q.where(VocabKpMcq.sense_id == eff) if eff else q.where(VocabKpMcq.sense_id.is_(None))
+    if (await db.execute(q.limit(1))).first():
+        return
     w = await db.get(VocabularyWord, word_id)
     if w is None:
         return
@@ -296,18 +304,20 @@ async def ensure_kp_mcqs(db: AsyncSession, *, word_id: uuid.UUID) -> None:
         stem = str(g.get("stem") or "").strip()
         if dim not in _DIM_REGISTRY or len(opts) < 2 or ans not in opts or not stem:
             continue                                    # 缺项/维度非法即丢弃,不硬塞
-        objs.append(VocabKpMcq(id=uuid.uuid4(), word_id=word_id, dimension=dim, stem=stem,
+        objs.append(VocabKpMcq(id=uuid.uuid4(), word_id=word_id, sense_id=eff, dimension=dim, stem=stem,
                                options=opts, answer=ans, explanation=g.get("explanation") or None))
     if objs:
         db.add_all(objs)
         await db.commit()
 
 
-async def kp_mcq_test(db: AsyncSession, *, word_id: uuid.UUID) -> list[dict]:
-    """考点扩展测试:确保题库 → 每个有题的维度随机取 1 道 → 按固定维度顺序组合返回。"""
-    await ensure_kp_mcqs(db, word_id=word_id)
-    rows = (await db.execute(
-        sa.select(VocabKpMcq).where(VocabKpMcq.word_id == word_id))).scalars().all()
+async def kp_mcq_test(db: AsyncSession, *, word_id: uuid.UUID, sense_id: uuid.UUID | None = None) -> list[dict]:
+    """考点扩展测试(限定义项):确保该义项题库 → 每个有题的维度随机取 1 道 → 按维度顺序组合返回。"""
+    await ensure_kp_mcqs(db, word_id=word_id, sense_id=sense_id)
+    eff = _eff_sense(await word_kp_out(db, word_id=word_id, sense_id=sense_id))
+    q = sa.select(VocabKpMcq).where(VocabKpMcq.word_id == word_id)
+    q = q.where(VocabKpMcq.sense_id == eff) if eff else q.where(VocabKpMcq.sense_id.is_(None))
+    rows = (await db.execute(q)).scalars().all()
     by_dim: dict = {}
     for r in rows:
         by_dim.setdefault(r.dimension, []).append(r)

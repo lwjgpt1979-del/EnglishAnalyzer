@@ -18,7 +18,7 @@
         </view>
         <view class="wrn-center" :style="{ left: (CX - 56) + 'rpx', top: (CY - 56) + 'rpx' }" @tap="activeTab = 'main'">
           <text class="wrn-cword">{{ net.word }}</text>
-          <text v-if="net.zh" class="wrn-czh">{{ net.zh }}</text>
+          <text v-if="net.gloss" class="wrn-czh">{{ net.gloss }}</text>
         </view>
       </view>
 
@@ -83,6 +83,7 @@ const REL: Record<string, { c: string; bg: string; fg: string; label: string }> 
   tense: { c: '#1D9E75', bg: '#E1F5EE', fg: '#0F6E56', label: '时态' },
   plural: { c: '#1D9E75', bg: '#E1F5EE', fg: '#0F6E56', label: '单复数' },
   comparative: { c: '#1D9E75', bg: '#E1F5EE', fg: '#0F6E56', label: '比较级' },
+  collocation: { c: '#6A8CB5', bg: '#EEF3F9', fg: '#3A5A7D', label: '搭配' },
 }
 const relLabel = (k: string) => REL[k]?.label || '相关'
 const relBg = (k: string) => REL[k]?.bg || '#E6F1FB'
@@ -109,7 +110,7 @@ async function load() {
 }
 watch(() => props.wrongRecordId, (v) => { if (v) { centerId.value = null; load() } }, { immediate: true })
 
-// 关系词(辐射图卫星):取可链词维的项(最多 6),优先有 word_id 的
+// 关系词(辐射图卫星):可链词维项(可切换中心)+ 固定搭配短语(2A,点跳搭配 tab);最多 6,优先有 word_id 的
 const satellites = computed(() => {
   const n = net.value
   if (!n) return [] as Array<{ text: string; word_id: string | null; rel: string; x: number; y: number }>
@@ -118,6 +119,9 @@ const satellites = computed(() => {
     if (!d.relational) continue
     for (const it of d.items) items.push({ text: it.text, word_id: it.word_id, rel: d.key })
   }
+  // 2A:功能词等可链词少时,补固定搭配短语作节点(不可切换,点=跳搭配 tab)
+  const colloc = n.dims.find(d => d.key === 'collocation')
+  if (colloc) for (const it of colloc.items) items.push({ text: it.text, word_id: null, rel: 'collocation' })
   items.sort((a, b) => (a.word_id ? 0 : 1) - (b.word_id ? 0 : 1))
   const top = items.slice(0, 6)
   const m = top.length
@@ -137,7 +141,8 @@ const activeErrs = computed<WordNetErr[]>(() =>
   activeTab.value === 'main' ? (net.value?.main || []) : (net.value?.secondary || []))
 const activeDim = computed(() => net.value?.dims.find(d => d.key === activeTab.value) || null)
 
-function switchCenter(s: { word_id: string | null }) {
+function switchCenter(s: { word_id: string | null; rel?: string }) {
+  if (s.rel === 'collocation') { activeTab.value = 'collocation'; return }   // 搭配节点→跳搭配 tab
   if (!s.word_id || s.word_id === net.value?.word_id) return
   centerId.value = s.word_id
   load()
@@ -150,7 +155,7 @@ async function openTest() {
   if (!wid || testLoading.value) return
   testLoading.value = true
   try {
-    const qs: KpTestQuestion[] = await getKpTest(wid)
+    const qs: KpTestQuestion[] = await getKpTest(wid, net.value?.sense_id || undefined)   // 限定当前义项
     if (!qs.length) { uni.showToast({ title: '该词暂无考点题', icon: 'none' }); return }
     testQs.value = qs.map(q => ({ id: q.id, stem: `【${q.dimension_label}】${q.stem}`, options: q.options, answer: q.answer, explanation: q.explanation }))
     testOpen.value = true

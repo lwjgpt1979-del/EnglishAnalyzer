@@ -154,6 +154,8 @@ export interface WordNetErr {
 }
 export interface WordNet {
   word_id: string | null; word: string; zh: string; is_phrase: boolean
+  sense_id: string | null; gloss: string
+  senses: Array<{ sense_id: string | null; gloss: string; pos: string }>
   dims: WordNetDim[]; main: WordNetErr[]; secondary: WordNetErr[]
 }
 export function getWordNetOfRecord(wrongRecordId: string): Promise<WordNet> {

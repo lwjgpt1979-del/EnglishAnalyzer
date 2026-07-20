@@ -137,20 +137,25 @@
           <text class="kp-arrow" :class="{ open: kpOpen }">▾</text>
         </view>
         <view v-if="kpOpen" class="kp-body">
-          <view v-for="dim in wordKp!.dims" :key="dim.key" class="kp-sec">
-            <text class="kp-sec-h">{{ dim.label }}</text>
-            <!-- 可链词维:胶囊,命中词库可点去学 -->
-            <view v-if="dim.relational" class="kp-chips">
-              <text v-for="(it, i) in dim.items" :key="i" class="kp-chip"
-                :class="{ link: !!it.word_id }" @tap="learnRelated(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text></text>
+          <!-- 按义项分组:每义项 gloss·词性 + 该义项的动态维度 -->
+          <view v-for="(sense, si) in wordKp!.senses" :key="sense.sense_id || si" class="kp-sense">
+            <view v-if="wordKp!.senses.length > 1" class="kp-sense-h">
+              <text class="kp-sense-gloss">{{ sense.gloss }}</text>
+              <text v-if="sense.pos" class="kp-sense-pos">{{ sense.pos }}</text>
             </view>
-            <!-- 文本维:逐条说明 -->
-            <template v-else>
-              <view v-for="(it, i) in dim.items" :key="i" class="kp-line">
-                <text class="kp-en">{{ it.text }}</text>
-                <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+            <view v-for="dim in sense.dims" :key="dim.key" class="kp-sec">
+              <text class="kp-sec-h">{{ dim.label }}</text>
+              <view v-if="dim.relational" class="kp-chips">
+                <text v-for="(it, i) in dim.items" :key="i" class="kp-chip"
+                  :class="{ link: !!it.word_id }" @tap="learnRelated(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text></text>
               </view>
-            </template>
+              <template v-else>
+                <view v-for="(it, i) in dim.items" :key="i" class="kp-line">
+                  <text class="kp-en">{{ it.text }}</text>
+                  <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+                </view>
+              </template>
+            </view>
           </view>
         </view>
       </view>
@@ -645,7 +650,7 @@ async function loadKp() {
 }
 const kpHasContent = computed(() => {
   const k = wordKp.value
-  return !!k && Array.isArray(k.dims) && k.dims.length > 0
+  return !!k && Array.isArray(k.senses) && k.senses.some(s => s.dims && s.dims.length > 0)
 })
 // 点关联词(可链词维的项):已入库(有 word_id)的后端已随考点自动排入学习队列,轻提示即可
 function learnRelated(it: { text: string; word_id: string | null }) {
@@ -1539,6 +1544,10 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .kp-arrow { font-size: 24rpx; color: #6A9BD8; transition: transform .2s; }
 .kp-arrow.open { transform: rotate(180deg); }
 .kp-body { padding: 0 18rpx 16rpx; }
+.kp-sense + .kp-sense { margin-top: 16rpx; border-top: 2rpx solid #C9DEF7; padding-top: 14rpx; }
+.kp-sense-h { display: flex; align-items: baseline; gap: 10rpx; padding-top: 6rpx; }
+.kp-sense-gloss { font-size: 26rpx; font-weight: 700; color: #0C447C; }
+.kp-sense-pos { font-size: 20rpx; color: #185FA5; background: #E6F1FB; padding: 2rpx 12rpx; border-radius: 8rpx; }
 .kp-sec { padding-top: 14rpx; margin-top: 14rpx; border-top: 1rpx solid #DCEAFB; }
 .kp-sec:first-child { border-top: none; margin-top: 0; padding-top: 4rpx; }
 .kp-sec-h { display: block; font-size: 22rpx; color: #6A8CB5; margin-bottom: 8rpx; }

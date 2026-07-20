@@ -146,12 +146,12 @@ async def word_kp(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
 
 
 @router.get("/kp-test/{word_id}", response_model=BaseResponse[list])
-async def kp_test(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
+async def kp_test(word_id: uuid.UUID, db: DbDep, current_user: UserDep, sense_id: uuid.UUID | None = None):
     """考点扩展测试:按考点维度出题(每维 3 道、随机取 1 组合成一套)。查看即生成+全局缓存。
-    纯练习(前端 PracticeQuiz 本地判分),不进 BKT。"""
+    传 sense_id 只测该义项(多义词);纯练习(前端 PracticeQuiz 本地判分),不进 BKT。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import word_kp_service
-    return make_ok(await word_kp_service.kp_mcq_test(db, word_id=word_id))
+    return make_ok(await word_kp_service.kp_mcq_test(db, word_id=word_id, sense_id=sense_id))
 
 
 @router.post("/exam-daily", response_model=BaseResponse[DailyTaskOut])

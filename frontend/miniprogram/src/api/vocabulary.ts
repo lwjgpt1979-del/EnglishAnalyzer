@@ -31,13 +31,16 @@ export function getWordFamily(wordId: string): Promise<WordFamily> {
   return request<WordFamily>(`/api/v1/vocabulary/word-family/${wordId}`, { method: 'GET' })
 }
 
-// 单词/词组考点(动态维度,按词性/特点):dims 每维 {key,label,relational,items}
+// 单词/词组考点(动态维度按义项分组):senses 每义项 {sense_id,gloss,pos,dims},dims 每维 {key,label,relational,items}
 export interface KpItem { text: string; zh: string; note: string; word_id: string | null }
 export interface KpDim { key: string; label: string; relational: boolean; items: KpItem[] }
+export interface KpSense { sense_id: string | null; gloss: string; pos: string; dims: KpDim[] }
 export interface WordKp {
-  pos: string
   root: string
-  dims: KpDim[]
+  gloss: string
+  pos: string
+  senses: KpSense[]
+  dims: KpDim[]   // 兼容:选定/主义项的维度
 }
 export function getWordKp(wordId: string): Promise<WordKp> {
   return request<WordKp>(`/api/v1/vocabulary/word-kp/${wordId}`, { method: 'GET' })
@@ -53,8 +56,9 @@ export interface KpTestQuestion {
   answer: string
   explanation: string
 }
-export function getKpTest(wordId: string): Promise<KpTestQuestion[]> {
-  return request<KpTestQuestion[]>(`/api/v1/vocabulary/kp-test/${wordId}`, { method: 'GET' })
+export function getKpTest(wordId: string, senseId?: string | null): Promise<KpTestQuestion[]> {
+  const q = senseId ? `?sense_id=${senseId}` : ''
+  return request<KpTestQuestion[]>(`/api/v1/vocabulary/kp-test/${wordId}${q}`, { method: 'GET' })
 }
 
 // 测试题库:每词随机取一道 LLM 缓存选择题(未缓存返回 mcq=null,后台异步生成)
