@@ -124,7 +124,7 @@ class VocabKpMcq(Base):
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     word_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("vocab_word_kp.word_id", ondelete="CASCADE"), nullable=False)
-    dimension = mapped_column(sa.String(16), nullable=False)    # collocation|synonym|antonym|derivation|confusion|exam_tip
+    dimension = mapped_column(sa.String(32), nullable=False)    # 动态维度键 dim_key(见 word_kp_service._DIM_REGISTRY)
     stem = mapped_column(sa.Text, nullable=False)               # 题干
     options = mapped_column(JSONB, nullable=False)              # [str] 选项
     answer = mapped_column(sa.Text, nullable=False)            # 正确项(与 options 之一完全一致)
