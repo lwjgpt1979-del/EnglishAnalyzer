@@ -312,7 +312,7 @@
       <view class="done-emoji" style="display:flex;justify-content:center"><view class="ic ic-check-circle" style="width:80rpx;height:80rpx" /></view>
       <view class="done-title">今日完成！</view>
       <view class="done-stat">新学 {{ newCards.length }} 词 · 复习 {{ reviewCards.length }} 词</view>
-      <view v-if="gateMeaningWords.size || gateUseWords.size" class="done-stat">义关通过 {{ gateMeaningWords.size }} · 用关通过 {{ gateUseWords.size }}</view>
+      <view v-if="gateUseWords.size" class="done-stat">用关通过(考点测试) {{ gateUseWords.size }}</view>
       <view class="done-stat">答对率 {{ quizQueue.length ? Math.round((correctCount / quizQueue.length) * 100) : 0 }}%</view>
       <view v-if="checkinDone" class="done-streak">今日已记录学习 · 连续 {{ streakDays }} 天 🔥</view>
 
@@ -532,36 +532,22 @@
       </view>
     </view>
 
-    <!-- #ifdef MP-WEIXIN -->
-    <!-- 造句·微信式「按住说话」录音浮层 -->
-    <view v-if="pvRecording" class="rec-mask">
-      <view class="rec-panel" :class="{ cancel: pvCancelZone }">
-        <view v-if="!pvCancelZone" class="rec-wave">
-          <view v-for="i in 5" :key="i" class="wbar" :style="{ animationDelay: (i * 0.12) + 's' }" />
-        </view>
-        <text v-else class="rec-cancel-ico">✕</text>
-      </view>
-      <text class="rec-tip" :class="{ cancel: pvCancelZone }">
-        {{ pvCancelZone ? '松开手指，取消' : '正在聆听… 上滑取消' }}
-      </text>
-    </view>
-    <!-- #endif -->
 
     <!-- 跟读会员引导（统一会员墙）-->
     <Paywall :open="showPaywall" :feature="ent.feature('vocab.shadow')" emoji="🎤"
       title="跟读评测是会员专享" @close="showPaywall = false" />
 
-    <!-- 考点扩展测试(PracticeQuiz 逐题即时判分,本地按 answer 判,纯练习不进 BKT) -->
-    <PracticeQuiz v-if="kpTestOpen" kp="考点扩展" :questions="kpTestQs" @close="kpTestOpen = false" />
+    <!-- 考点扩展测试(PracticeQuiz 逐题即时判分,本地按 answer 判,纯练习不进 BKT;完成即过用关) -->
+    <PracticeQuiz v-if="kpTestOpen" kp="考点扩展" :questions="kpTestQs" @finish="onKpTestFinish" @close="kpTestOpen = false" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
 import type { ExamOverview, WordKp, KpTestQuestion, QuizMcq } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
-import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
+import type { ShadowScoreResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
 import type { VocabStudentCalendar } from '@/types/api'
 import { resolveSpeakUrl } from '@/utils/tts'
@@ -613,8 +599,7 @@ const addingWord = ref(false)
 const currentRep = ref(1)                                  // 当前组的第几遍
 const carryWords = ref<VocabWordCard[]>([])                // 上一组错得多、滚入本组的词
 const groupWrong = reactive(new Map<string, number>())     // 本组各词错次数
-// P3 结算三关统计:本组通过 义/用 关的词(去重)
-const gateMeaningWords = reactive(new Set<string>())
+// 结算统计:本组通过「用关」(= 完成考点扩展测试)的词(去重)
 const gateUseWords = reactive(new Set<string>())
 
 const newCards = ref<VocabWordCard[]>([])
@@ -714,6 +699,11 @@ async function openKpTest() {
     kpTestLoading.value = false
   }
 }
+// 考点测试做完 → 该词过「用关」(纯练习粗判,记入结算统计)
+function onKpTestFinish() {
+  const wid = curStudy.value?.word_id
+  if (wid) gateUseWords.add(wid)
+}
 watch(() => curStudy.value?.word_id, () => {
   const g: 'form' | 'learn' = curStudy.value?.gate === 'form' ? 'form' : 'learn'
   gateStep.value = g
@@ -721,178 +711,16 @@ watch(() => curStudy.value?.word_id, () => {
   if (g === 'learn') loadKp()       // 复习词直接进 learn → 拉考点
   ensureCardMedia(curStudy.value)   // 查看即生成:无图则触发后端补图(可画的词)
 }, { immediate: true })
-// stepper 高亮:形(遮义) / 义(检测中) / 用(造句中)
+// stepper 高亮:形(遮义) / 义(学词义·考点) / 用(考点扩展测试完成)
 const displayGate = computed<'form' | 'meaning' | 'use'>(() =>
-  gateStep.value === 'form' ? 'form' : (produceTask.value ? 'use' : 'meaning'))
+  gateStep.value === 'form' ? 'form'
+    : (curStudy.value?.word_id && gateUseWords.has(curStudy.value.word_id) ? 'use' : 'meaning'))
 function toMeaning() {
   gateStep.value = 'learn'
   loadKp()                                      // 形→义:拉考点
   if (readSeq.value) playCard(curStudy.value)   // 翻出词义时连读
 }
 
-// R9.1 理解检测·语境填空(接收探针)
-const probeOpen = ref(false)
-const probeLoading = ref(false)
-const probeCtx = ref<{ text: string; source: string } | null>(null)
-const probes = ref<WordProbe[]>([])
-const probePick = ref<Record<string, string>>({})
-const probeResults = ref<Record<string, WordProbeResult>>({})
-const recep = ref(0)
-const prod = ref(0)
-const mastered = ref(false)
-// 产出·造句
-const produceTask = ref<WordProduceTask | null>(null)
-const produceInput = ref('')
-const produceResult = ref<WordProduceResult | null>(null)
-const produceSubmitting = ref(false)
-// 迁移挑战(同词新语境)
-const tfStarted = ref(false)
-const tfLoading = ref(false)
-const tfCtx = ref<{ text: string; source: string } | null>(null)
-const tfProbe = ref<WordProbe | null>(null)
-const tfPick = ref('')
-const tfResult = ref<WordTransferResult | null>(null)
-function resetProbe() {
-  probeOpen.value = false; probeLoading.value = false; probeCtx.value = null
-  probes.value = []; probePick.value = {}; probeResults.value = {}; recep.value = 0; prod.value = 0; mastered.value = false
-  produceTask.value = null; produceInput.value = ''; produceResult.value = null; produceSubmitting.value = false
-  tfStarted.value = false; tfLoading.value = false; tfCtx.value = null; tfProbe.value = null; tfPick.value = ''; tfResult.value = null
-}
-watch(() => curStudy.value.word_id, resetProbe)   // 换词即重置检测
-async function openProbe() {
-  const id = curStudy.value.word_id
-  if (!id) return
-  probeOpen.value = true; probes.value = []; probePick.value = {}; probeResults.value = {}; probeLoading.value = true
-  try {
-    const r = await getWordProbes(id)
-    probeCtx.value = r.context; probes.value = r.probes; recep.value = r.recep
-    prod.value = r.prod; mastered.value = r.mastered; produceTask.value = r.produce
-    if (!r.probes.length && !r.produce) uni.showToast({ title: '该词暂无语境检测', icon: 'none' })
-  } catch { uni.showToast({ title: '加载检测失败', icon: 'none' }) }
-  finally { probeLoading.value = false }
-}
-function pickProbe(key: string, opt: string) {
-  if (probeResults.value[key]) return
-  probePick.value = { ...probePick.value, [key]: opt }
-}
-async function submitProbe(key: string) {
-  const id = curStudy.value.word_id
-  const ans = probePick.value[key]
-  if (!id || !ans) return
-  try {
-    const r = await submitWordProbe(id, key, ans)
-    probeResults.value = { ...probeResults.value, [key]: r }
-    if (r.correct) gateMeaningWords.add(id)   // 义关通过(结算统计)
-    recep.value = r.recep; prod.value = r.prod; mastered.value = r.mastered
-    uni.showToast({ title: r.correct ? '答对了！' : '再看看语境', icon: 'none' })
-  } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
-}
-async function submitProduce() {
-  const id = curStudy.value.word_id
-  const s = produceInput.value.trim()
-  if (!id || !s || produceSubmitting.value) return
-  produceSubmitting.value = true
-  try {
-    const r = await submitWordProduce(id, s)
-    produceResult.value = r; prod.value = r.prod; mastered.value = r.mastered
-    if (r.passed) gateUseWords.add(id)        // 用关通过(结算统计)
-    uni.showToast({ title: r.passed ? '输出达标 ✓' : '再打磨一下', icon: 'none' })
-  } catch { uni.showToast({ title: '评分失败', icon: 'none' }) }
-  finally { produceSubmitting.value = false }
-}
-function redoProduce() { produceResult.value = null }
-
-// ── 造句·语音输入(微信同声传译插件,仅微信端;默认语音,可切键盘)──────────────
-const pvMode = ref<'voice' | 'text'>('text')
-const pvRecording = ref(false)
-const pvCancelZone = ref(false)
-// #ifdef MP-WEIXIN
-pvMode.value = 'voice'   // 微信端默认语音
-function togglePvMode() { pvMode.value = pvMode.value === 'voice' ? 'text' : 'voice' }
-let _pvMgr: any = null
-let _pvStartAt = 0
-let _pvStartY = 0
-let _pvBusy = false       // 上一句识别处理中
-let _pvCanceled = false   // 本次上滑取消
-const PV_CANCEL_DY = 80   // 上滑超过此距离(px)进入取消区
-function getPvMgr() {
-  if (_pvMgr) return _pvMgr
-  try {
-    const plugin: any = requirePlugin('WechatSI')
-    _pvMgr = plugin.getRecordRecognitionManager()
-    _pvMgr.onRecognize = () => { /* 中间结果忽略 */ }
-    _pvMgr.onStop = (res: any) => {
-      pvRecording.value = false; _pvBusy = false
-      if (_pvCanceled) { _pvCanceled = false; return }   // 上滑取消:丢弃
-      const text = ((res && res.result) || '').trim()
-      if (!text) { uni.showToast({ title: '没听清,再说一次或打字', icon: 'none' }); return }
-      // 输入法式:把识别文本填进造句框(不自动提交),用户可改可提交
-      produceInput.value = produceInput.value ? `${produceInput.value} ${text}` : text
-    }
-    _pvMgr.onError = (res: any) => {
-      pvRecording.value = false; _pvBusy = false
-      if (_pvCanceled) { _pvCanceled = false; return }
-      const raw = (res && (res.msg || res.errMsg)) || ''
-      uni.showToast({ title: /finish|忙|wait/i.test(raw) ? '识别还在处理,请稍候' : '语音识别失败,请打字', icon: 'none', duration: 2000 })
-    }
-    return _pvMgr
-  } catch (e) { console.warn('[WechatSI requirePlugin 失败]', e); return null }
-}
-function pvStart(e: any) {
-  if (_pvBusy) { uni.showToast({ title: '上一句还在识别,请稍候', icon: 'none' }); return }
-  const mgr = getPvMgr()
-  if (!mgr) { uni.showToast({ title: '未启用语音插件,请打字', icon: 'none' }); return }
-  _pvStartY = e?.touches?.[0]?.clientY ?? e?.changedTouches?.[0]?.clientY ?? 0
-  pvCancelZone.value = false; _pvCanceled = false
-  pvRecording.value = true; _pvStartAt = Date.now()
-  try { mgr.start({ lang: 'en_US', duration: 30000 }) }
-  catch (e2) { pvRecording.value = false; console.warn('[WechatSI start 失败]', e2); uni.showToast({ title: '无法开始录音,请打字', icon: 'none' }) }
-}
-function pvMove(e: any) {
-  if (!pvRecording.value) return
-  const y = e?.touches?.[0]?.clientY ?? 0
-  pvCancelZone.value = (_pvStartY - y) > PV_CANCEL_DY
-}
-function pvEnd() {
-  if (!pvRecording.value) return
-  pvRecording.value = false
-  const wasCancel = pvCancelZone.value
-  pvCancelZone.value = false
-  if (Date.now() - _pvStartAt < 400) {
-    _pvCanceled = true
-    try { getPvMgr()?.stop() } catch { /* ignore */ }
-    uni.showToast({ title: '按住说话时间太短', icon: 'none' }); return
-  }
-  if (wasCancel) {
-    _pvCanceled = true
-    try { getPvMgr()?.stop() } catch { /* ignore */ }
-    uni.showToast({ title: '已取消', icon: 'none' }); return
-  }
-  _pvBusy = true
-  const mgr = getPvMgr()
-  if (mgr) mgr.stop()
-}
-// #endif
-async function startTransfer() {
-  const id = curStudy.value.word_id
-  if (!id) return
-  tfStarted.value = true; tfLoading.value = true; tfResult.value = null; tfPick.value = ''
-  try {
-    const r = await getWordTransfer(id, probeCtx.value?.text || '')
-    tfCtx.value = r.context; tfProbe.value = r.probe
-    if (!r.probe) uni.showToast({ title: '暂无同结构新句', icon: 'none' })
-  } catch { uni.showToast({ title: '加载迁移题失败', icon: 'none' }) }
-  finally { tfLoading.value = false }
-}
-async function submitTransfer() {
-  const id = curStudy.value.word_id
-  if (!id || !tfPick.value || tfResult.value) return
-  try {
-    const r = await submitWordTransfer(id, tfPick.value)
-    tfResult.value = r; recep.value = r.recep; prod.value = r.prod; mastered.value = r.mastered
-    uni.showToast({ title: r.verdict === 'transferred' ? '真懂这个词 ✓' : '换句卡住了', icon: 'none' })
-  } catch { uni.showToast({ title: '提交失败', icon: 'none' }) }
-}
 const studyBtnLabel = computed(() => {
   if (isReview.value) {
     return reviewIndex.value >= reviewCards.value.length - 1 ? '开始测试 →' : '记住了，下一个'
@@ -1305,7 +1133,7 @@ function _applyTask(task: { new_words: VocabWordCard[]; review_words: VocabWordC
   shadowLog.value = []
   currentRep.value = 1
   groupWrong.clear()
-  gateMeaningWords.clear(); gateUseWords.clear()
+  gateUseWords.clear()
   if (newCards.value.length === 0 && reviewCards.value.length === 0) {
     if (fromReload) { uni.showToast({ title: '这组词都练完啦 🎉', icon: 'none' }); return }
     if (examBand.value) { uni.showToast({ title: '这档暂时没有待学/待复习 🎉', icon: 'none' }); phase.value = 'home'; return }
@@ -1876,62 +1704,6 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .probe-box { margin-top: 22rpx; padding-top: 18rpx; border-top: 1rpx solid #f0f2f5; }
 .probe-cta { display: flex; align-items: center; justify-content: center; gap: 10rpx; background: var(--c-primary-faint); color: var(--c-primary-deep); border-radius: var(--r-pill); padding: 16rpx 0; font-size: 26rpx; font-weight: 700; }
 .probe-cta:active { opacity: .85; }
-.probe-tip { text-align: center; color: #9aa3b0; font-size: 24rpx; padding: 14rpx 0; }
-.probe-item { margin-bottom: 14rpx; }
-.probe-q { display: block; font-size: 26rpx; color: #2a3138; font-weight: 600; line-height: 1.6; margin-bottom: 12rpx; }
-.probe-opts { display: flex; flex-direction: column; gap: 10rpx; }
-.probe-opt { font-size: 26rpx; color: #4a5057; background: #f5f7fa; border: 2rpx solid transparent; border-radius: 14rpx; padding: 14rpx 18rpx; font-family: Georgia, 'Times New Roman', serif; }
-.probe-opt.on { background: var(--c-primary-faint); border-color: var(--c-primary); color: var(--c-primary-deep); }
-.probe-opt.ok { background: #e9f7ef; border-color: #1f9d6b; color: #1f9d6b; }
-.probe-opt.no { background: #fdecea; border-color: #e2504a; color: #e2504a; }
-.probe-submit { margin-top: 12rpx; text-align: center; background: var(--c-primary); color: var(--c-on-primary); font-size: 26rpx; font-weight: 700; padding: 14rpx 0; border-radius: var(--r-pill); }
-.probe-submit.dis { background: #d7dde6; }
-.probe-fb { margin-top: 10rpx; font-size: 24rpx; display: flex; flex-direction: column; gap: 4rpx; }
-.probe-fb.ok { color: #1f9d6b; }
-.probe-fb.no { color: #e2504a; }
-.probe-mis { color: #c0792a; font-size: 22rpx; line-height: 1.5; }
-.probe-recep { display: flex; align-items: center; justify-content: flex-end; gap: 12rpx; font-size: 22rpx; color: #8a93a3; margin-top: 10rpx; }
-.probe-mastered { color: #1f9d6b; font-weight: 700; }
-/* 产出·造句 */
-.produce-box { margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx dashed #e6e9ef; }
-.produce-q { display: block; font-size: 25rpx; color: #2a3138; font-weight: 600; line-height: 1.6; margin-bottom: 10rpx; }
-.produce-input { width: 100%; box-sizing: border-box; min-height: 96rpx; background: #f5f7fa; border-radius: 14rpx; padding: 14rpx 16rpx; font-size: 26rpx; line-height: 1.6; font-family: Georgia, 'Times New Roman', serif; }
-/* 造句·语音输入(微信端) */
-.pv-row { display: flex; align-items: flex-start; gap: 12rpx; }
-.pv-toggle { flex-shrink: 0; width: 72rpx; height: 72rpx; border-radius: 50%; background: var(--c-bg-soft); display: flex; align-items: center; justify-content: center; }
-.pv-hold { flex: 1; height: 88rpx; line-height: 88rpx; text-align: center; border-radius: var(--r-pill); background: #fff; border: 2rpx solid var(--c-border); font-size: 28rpx; font-weight: 700; color: var(--c-text-body); }
-.pv-hold.holding { background: var(--c-primary-faint); border-color: var(--c-primary); color: var(--c-primary-deep); }
-.pv-grow { flex: 1; min-height: 88rpx; margin-top: 0; }
-.rec-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28rpx; z-index: 60; }
-.rec-panel { width: 240rpx; height: 240rpx; border-radius: 36rpx; background: rgba(40,44,52,.92); display: flex; align-items: center; justify-content: center; box-shadow: 0 12rpx 48rpx rgba(0,0,0,.3); }
-.rec-panel.cancel { background: rgba(214,69,69,.95); }
-.rec-wave { display: flex; align-items: center; gap: 10rpx; height: 90rpx; }
-.wbar { width: 12rpx; height: 28rpx; border-radius: 6rpx; background: #7ee0a8; animation: wave .8s ease-in-out infinite; }
-@keyframes wave { 0%,100% { height: 24rpx; opacity:.6 } 50% { height: 84rpx; opacity:1 } }
-.rec-cancel-ico { color: #fff; font-size: 96rpx; font-weight: 800; }
-.rec-tip { font-size: 26rpx; color: #fff; background: rgba(0,0,0,.4); padding: 10rpx 28rpx; border-radius: var(--r-pill); }
-.rec-tip.cancel { background: rgba(214,69,69,.9); }
-.produce-result { background: #f7f9fc; border-radius: 14rpx; padding: 14rpx; margin-top: 6rpx; }
-.pr-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 8rpx; }
-.pr-score { font-size: 30rpx; font-weight: 800; color: #d0860f; }
-.pr-score.ok { color: #1f9d6b; }
-.pr-verdict { font-size: 24rpx; font-weight: 700; color: #d0860f; }
-.pr-verdict.ok { color: #1f9d6b; }
-.pr-redo { margin-left: auto; font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); border-radius: var(--r-pill); padding: 4rpx 18rpx; }
-.pr-dim { display: flex; align-items: center; gap: 10rpx; flex-wrap: wrap; padding: 5rpx 0; }
-.pr-dim-label { font-size: 23rpx; color: #3a414a; font-weight: 600; }
-.pr-dots { display: flex; gap: 6rpx; }
-.pr-dot { width: 16rpx; height: 16rpx; border-radius: 50%; background: #e2e6ee; }
-.pr-dot.on { background: #1f9d6b; }
-.pr-dim-note { flex-basis: 100%; font-size: 21rpx; color: #8a93a3; line-height: 1.5; }
-.pr-fb { display: block; margin-top: 8rpx; font-size: 22rpx; color: #6b7178; line-height: 1.6; }
-/* 迁移挑战 */
-.tf-box { margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx dashed #e6e9ef; }
-.tf-cta { display: flex; align-items: center; justify-content: center; gap: 8rpx; background: #eef0fe; color: #5a5cf0; border-radius: var(--r-pill); padding: 14rpx 0; font-size: 25rpx; font-weight: 700; }
-.tf-cta:active { opacity: .85; }
-.tf-verdict { margin-top: 10rpx; padding: 12rpx 14rpx; border-radius: 12rpx; font-size: 23rpx; line-height: 1.6; }
-.tf-verdict.transferred { background: #e9f7ef; color: #1f9d6b; }
-.tf-verdict.memorized { background: #fdf2e3; color: #d0860f; }
 .done { text-align: center; }
 .done-emoji { font-size: 80rpx; }
 .done-title { font-size: 40rpx; font-weight: 800; color: var(--c-ink); margin: 16rpx 0; }
