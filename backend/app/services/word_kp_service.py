@@ -41,6 +41,7 @@ _DIM_REGISTRY: dict[str, tuple[str, bool, str]] = {
 _DIM_ORDER = list(_DIM_REGISTRY.keys())            # 展示顺序
 _DIM_INDEX = {k: i for i, k in enumerate(_DIM_ORDER)}
 _RELATIONAL_DIMS = {k for k, v in _DIM_REGISTRY.items() if v[1]}
+_MAX_TEST_DIMS = 8   # 考点扩展测试最多覆盖的维度数(控 LLM 输出/测试长度)
 
 
 def _dim_label(key: str) -> str:
@@ -202,61 +203,47 @@ async def _seed_queue(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list
 
 # ---------------- 考点扩展测试(每维 3 题,随机取 1 组合) ----------------
 
-def _kp_content_lines(kp: dict) -> list[tuple[str, str]]:
-    """把六维考点内容整理成 (dimension, 供出题的文本) —— 只保留有内容的维度。"""
-    lines: list[tuple[str, str]] = []
-    if kp.get("collocations"):
-        lines.append(("collocation", "; ".join(f"{c['en']}({c.get('zh', '')})" for c in kp["collocations"])))
-    if kp.get("synonyms"):
-        lines.append(("synonym", "; ".join(f"{w['word']}({w.get('zh', '')})" for w in kp["synonyms"])))
-    if kp.get("antonyms"):
-        lines.append(("antonym", "; ".join(f"{w['word']}({w.get('zh', '')})" for w in kp["antonyms"])))
-    if kp.get("derivations"):
-        lines.append(("derivation", "; ".join(f"{w['word']}({w.get('zh', '')})" for w in kp["derivations"])))
-    if kp.get("confusions"):
-        lines.append(("confusion", "; ".join(
-            f"{w['word']}({w.get('zh', '')};{w.get('note', '')})" for w in kp["confusions"])))
-    if kp.get("ambiguities"):
-        lines.append(("ambiguity", "; ".join(
-            f"{w['word']}({w.get('zh', '')};{w.get('note', '')})" for w in kp["ambiguities"])))
-    if kp.get("relateds"):
-        lines.append(("related", "; ".join(
-            f"{w['word']}({w.get('zh', '')};{w.get('note', '')})" for w in kp["relateds"])))
-    if kp.get("exam_tips"):
-        lines.append(("exam_tip", kp["exam_tips"]))
+def _kp_content_lines(kp: dict) -> list[tuple[str, str, str]]:
+    """从动态维度 kp['dims'] 整理成 (dim_key, dim_label, 供出题的内容文本) —— 只保留有项的维度。"""
+    lines: list[tuple[str, str, str]] = []
+    for dim in (kp.get("dims") or []):
+        items = dim.get("items") or []
+        if not items:
+            continue
+        txt = "; ".join(
+            it["text"] + (f"({it['zh']})" if it.get("zh") else "") + (f"[{it['note']}]" if it.get("note") else "")
+            for it in items)
+        lines.append((dim["key"], dim.get("label") or _dim_label(dim["key"]), txt))
     return lines
 
 
 async def _gen_kp_mcqs(word: str, meaning: str, kp: dict, is_phrase: bool = False) -> list[dict]:
-    """LLM 一次为每个「有内容的考点维度」出 3 道单选(fast 档);目标可为单词或词组。dev-mock 返回空。"""
+    """LLM 一次为每个「有内容的动态考点维度」各出 3 道单选(fast 档);目标可为单词或词组。dev-mock 返回空。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
     if is_llm_dev_mode():
         return []
-    lines = _kp_content_lines(kp)
+    lines = _kp_content_lines(kp)[:_MAX_TEST_DIMS]   # 上限维度数:控输出/测试长度(按 registry 序取核心维)
     if not lines:
         return []
     tgt = "词组" if is_phrase else "单词"
-    dims_desc = "\n".join(f"- {d}({_dim_label(d)}): {txt}" for d, txt in lines)
+    dims_desc = "\n".join(f"- {key}({label}): {txt}" for key, label, txt in lines)
     system = (
-        f"你是英语词汇考点命题专家。给定目标{tgt}及其各考点维度的内容,**为下面列出的每个维度各出 3 道单选题**,\n"
-        f"题要真正考该维度的知识点(不是重复问{tgt}义):\n"
-        f"- collocation 固定搭配:挖空句选正确搭配词/介词,或选出与该{tgt}正确搭配的项;\n"
-        f"- synonym 近义:语境中选与该{tgt}意思最接近的词/词组;\n"
-        f"- antonym 反义:选该{tgt}的反义词/词组;\n"
-        "- derivation 派生:挖空句按词性选正确词形(如名词/形容词形式);\n"
-        f"- confusion 易混辨析:给语境,在该{tgt}与易混项之间选正确的;\n"
-        f"- ambiguity 歧义:给语境,考该{tgt}与易混淆多义项的区分;\n"
-        f"- related 其他关联:考该{tgt}与相关词/词组的关系或用法。\n"
-        "- exam_tip 常见考法:结合高频考法出一道综合运用题。\n"
-        "严格输出 JSON:{\"items\":[{\"dimension\":\"上面的英文维度名\",\"stem\":\"题干\",\n"
+        f"你是英语词汇考点命题专家。给定目标{tgt}及其**各动态考点维度**的内容,**为下面列出的每个维度各出 3 道单选题**。\n"
+        "每道题要**真正考该维度指向的知识点**(维度名点明考什么),例如:\n"
+        "- 时态变化/单复数/比较级/派生 → 挖空句选正确的词形/时态/单复数/级/派生形式;\n"
+        "- 可数性/所有格 → 考冠词、单复数、of/'s 所有格的正确用法;\n"
+        "- 及物性/语态/常见句型 → 给句子选是否接宾语/主被动/句型正确的一项;\n"
+        "- 固定搭配 → 挖空选正确搭配词/介词;近义/易混/歧义 → 语境中选最贴切/区分易混项;\n"
+        "- 介词辨析/用法·位置/语义侧重/常见考法 → 结合语境考该维度的具体用法。\n"
+        "严格输出 JSON:{\"items\":[{\"dimension\":\"上面给的维度 key(英文)\",\"stem\":\"题干\",\n"
         "\"options\":[\"4个选项\"],\"answer\":\"正确项(必须与 options 之一完全一致)\",\"explanation\":\"一句中文解析\"}]}\n"
-        "每维恰好 3 题、每题 4 个选项单选;干扰项合理不等于正确项;只出所列维度,不臆造内容。\n"
+        "每维恰好 3 题、每题 4 个选项单选;干扰项合理不等于正确项;dimension 只用上面给的 key,不臆造。\n"
         f"【用词要简单】题干句里除目标{tgt}与考点词(选项中的词)外,其余单词一律用简单常见词、"
         f"难度不高于目标{tgt},不要用更生僻的词做句子载体——避免学生被句中难词绊住、学不到考点。")
     d = await complete_json(
         system_prompt=system,
         user_prompt=f"目标{tgt}:{word}\n释义:{meaning}\n各维度内容:\n{dims_desc}\n返回 JSON:",
-        max_tokens=2400, model=fast_model(), feature="vocab_kp_mcq",
+        max_tokens=3000, model=fast_model(), feature="vocab_kp_mcq",
         validate=lambda x: isinstance(x.get("items"), list) and len(x.get("items")) >= 1)
     return (d or {}).get("items") or []
 
