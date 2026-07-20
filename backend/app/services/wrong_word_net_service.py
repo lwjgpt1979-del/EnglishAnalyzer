@@ -222,29 +222,49 @@ async def word_wrong_net(db: AsyncSession, *, student_id: uuid.UUID, word_id: uu
 
 
 async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID) -> dict:
-    """从一道错题进入:中心 = 该题第一个答案词;返回本题全部答案词(多空/多正确点供前端切换),
-    考点限定为该题命中的义项。"""
+    """从一道错题进入:中心 = 该题第一个正确值;返回本题各选项的值 chip(供前端切换):
+    correct(正确选项值·蓝)/ wrong(学生错选值·红)/ other(其他干扰值·灰),逐级去重。考点限定该题命中义项。"""
     await index_wrong_record(db, student_id=student_id, wrong_record_id=wrong_record_id)
     ans_ids = (await db.execute(
         sa.select(StudentWrongWord.word_id).where(
             StudentWrongWord.student_id == student_id,
             StudentWrongWord.wrong_record_id == wrong_record_id,
             StudentWrongWord.role == "answer").order_by(StudentWrongWord.created_at))).scalars().all()
-    center = ans_ids[0] if ans_ids else None
-    if center is None:
-        wr = await db.get(WrongRecord, wrong_record_id)
-        center = wr.vocab_word_id if wr else None
+    wr = await db.get(WrongRecord, wrong_record_id)
+    center = ans_ids[0] if ans_ids else (wr.vocab_word_id if wr else None)
     if center is None:
         return {"word_id": None, "word": "", "zh": "", "is_phrase": False, "sense_id": None,
                 "gloss": "", "senses": [], "dims": [], "main": [], "secondary": [], "answers": []}
     sid = await _ensure_record_sense(db, student_id=student_id, wrong_record_id=wrong_record_id, word_id=center)
     net = await word_wrong_net(db, student_id=student_id, word_id=center, sense_id=sid)
-    # 本题全部答案词(供前端 chip 切换;单答案则一个)
-    answers = []
-    if ans_ids:
-        ws = (await db.execute(sa.select(VocabularyWord).where(VocabularyWord.id.in_(ans_ids)))).scalars().all()
-        wmap = {w.id: w for w in ws}
-        answers = [{"word_id": str(wid), "word": wmap[wid].word, "zh": _zh(wmap.get(wid))}
-                   for wid in ans_ids if wid in wmap]
+
+    # 各选项值分档:correct(蓝)/ wrong(学生错选·红)/ other(其他干扰·灰)
+    _stem, opts = await _wrong_options(db, wr)
+    ca, stu = (wr.correct_answer or "").strip(), (wr.student_answer or "").strip()
+    correct_txts, wrong_txts, other_txts = [], [], []
+    if opts:
+        ai = _answer_index(opts, ca)
+        si = _answer_index(opts, stu) if stu else -1
+        for i, o in enumerate(opts):
+            pts = _split_points(o)
+            (correct_txts if i == ai else wrong_txts if i == si else other_txts).extend(pts)
+    else:   # 填空:正确答案=蓝;学生答案=红(答错时)
+        correct_txts = _split_points(ca)
+        if stu and stu.lower() != ca.lower():
+            wrong_txts = _split_points(stu)
+    seen: set = set()
+    answers: list[dict] = []
+
+    async def _cat(txts, kind):
+        for t in txts:
+            wid = await _word_id_of(db, t, create=True)   # 每个选项值都成 chip 且可 tap(缺则入库)
+            if wid and wid not in seen:
+                seen.add(wid)
+                w = await db.get(VocabularyWord, wid)
+                answers.append({"word_id": str(wid), "word": w.word if w else t, "zh": _zh(w), "kind": kind})
+
+    await _cat(correct_txts, "correct")
+    await _cat(wrong_txts, "wrong")
+    await _cat(other_txts, "other")
     net["answers"] = answers
     return net

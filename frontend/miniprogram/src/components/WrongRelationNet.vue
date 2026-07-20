@@ -9,9 +9,9 @@
     <template v-else-if="net && net.word_id">
       <!-- 多个正确点(多空):答案词 chip,点一个切到它的关系网 -->
       <view v-if="answers.length > 1" class="wrn-ans">
-        <text class="wrn-ans-lb">本题答案</text>
-        <text v-for="a in answers" :key="a.word_id" class="wrn-ans-chip"
-          :class="{ on: a.word_id === net.word_id }" @tap="switchCenter({ word_id: a.word_id })">{{ a.word }}</text>
+        <text class="wrn-ans-lb">本题选项</text>
+        <text v-for="a in answers" :key="a.word_id" class="wrn-ans-chip" :class="[a.kind, { on: a.word_id === net.word_id }]"
+          @tap="switchCenter({ word_id: a.word_id })">{{ a.word }}</text>
       </view>
       <!-- 辐射图:中心=当前词,周围=考点关系词(可点切换中心) -->
       <view class="wrn-canvas" :style="{ height: BOXH + 'rpx' }">
@@ -181,8 +181,11 @@ async function openTest() {
 .wrn-tip, .wrn-empty { text-align: center; color: #9aa3b0; font-size: 26rpx; padding: 40rpx 0; }
 .wrn-ans { display: flex; align-items: center; flex-wrap: wrap; gap: 12rpx; padding: 6rpx 0 12rpx; }
 .wrn-ans-lb { font-size: 22rpx; color: #9aa3b0; }
-.wrn-ans-chip { font-size: 25rpx; padding: 8rpx 22rpx; border-radius: 26rpx; border: 1rpx solid #E3E8EF; color: #6b7178; background: #F7F9FC; }
-.wrn-ans-chip.on { background: #E1F5EE; border-color: #1D9E75; color: #0F6E56; font-weight: 700; }
+.wrn-ans-chip { font-size: 25rpx; padding: 8rpx 22rpx; border-radius: 26rpx; border: 1rpx solid #E3E8EF; }
+.wrn-ans-chip.correct { background: #E6F1FB; border-color: #85B7EB; color: #185FA5; }   /* 正确值·蓝 */
+.wrn-ans-chip.wrong { background: #FCEBEB; border-color: #E88; color: #A32D2D; }        /* 学生错选·红 */
+.wrn-ans-chip.other { background: #F1EFE8; border-color: #D3D1C7; color: #6b665e; }     /* 其他干扰·灰 */
+.wrn-ans-chip.on { background: #E1F5EE; border-color: #1D9E75; color: #0F6E56; font-weight: 700; }   /* 当前中心 */
 .wrn-canvas { position: relative; width: 690rpx; }
 .wrn-edge { position: absolute; height: 4rpx; border-radius: 2rpx; }
 .wrn-elabel { position: absolute; width: 52rpx; height: 28rpx; line-height: 28rpx; text-align: center; font-size: 20rpx; font-weight: 500; border-radius: 8rpx; }
