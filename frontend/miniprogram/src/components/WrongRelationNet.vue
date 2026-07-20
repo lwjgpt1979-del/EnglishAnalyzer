@@ -19,7 +19,7 @@
         <view v-for="(s, i) in satellites" :key="'l'+i" class="wrn-elabel"
           :style="{ left: (CX + (s.x - CX) * 0.62 - 26) + 'rpx', top: (CY + (s.y - CY) * 0.62 - 14) + 'rpx', background: relBg(s.rel), color: relFg(s.rel) }">{{ relLabel(s.rel) }}</view>
         <view v-for="(s, i) in satellites" :key="'n'+i" class="wrn-node" :class="{ link: !!s.word_id }"
-          :style="{ left: (s.x - 72) + 'rpx', top: (s.y - 26) + 'rpx' }" @tap="switchCenter(s)">
+          :style="{ left: (s.x - 72) + 'rpx', top: (s.y - 26) + 'rpx' }" @tap="tapNode(s)">
           <text class="wrn-word">{{ s.text }}</text>
         </view>
         <view class="wrn-center" :style="{ left: (CX - 104) + 'rpx', top: (CY - 48) + 'rpx' }" @tap="activeTab = 'main'">
@@ -53,11 +53,7 @@
       <!-- 考点维度内容 -->
       <template v-else>
         <view v-if="activeDim" class="wrn-kp">
-          <view v-if="activeDim.relational" class="kp-chips">
-            <text v-for="(it, i) in activeDim.items" :key="i" class="kp-chip" :class="{ link: !!it.word_id }"
-              @tap="switchCenter({ text: it.text, word_id: it.word_id, rel: activeDim.key })">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text></text>
-          </view>
-          <view v-else v-for="(it, i) in activeDim.items" :key="i" class="kp-line">
+          <view v-for="(it, i) in activeDim.items" :key="i" class="kp-line">
             <text class="kp-en">{{ it.text }}</text>
             <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
           </view>
@@ -150,8 +146,12 @@ const activeErrs = computed<WordNetErr[]>(() =>
   activeTab.value === 'main' ? (net.value?.main || []) : (net.value?.secondary || []))
 const activeDim = computed(() => net.value?.dims.find(d => d.key === activeTab.value) || null)
 
-function switchCenter(s: { word_id: string | null; rel?: string }) {
-  if (s.rel === 'collocation') { activeTab.value = 'collocation'; return }   // 搭配节点→跳搭配 tab
+// 叶子节点:不下钻,点它跳到对应考点维度 tab 看解释
+function tapNode(s: { rel?: string }) {
+  if (s.rel) activeTab.value = s.rel
+}
+// 顶部答案 chip:在本题多个正确点之间切换中心
+function switchCenter(s: { word_id: string | null }) {
   if (!s.word_id || s.word_id === net.value?.word_id) return
   centerId.value = s.word_id
   load()
