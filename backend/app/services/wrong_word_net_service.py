@@ -24,6 +24,21 @@ def _norm_opt(text: str) -> str:
     return _PREFIX.sub("", str(text or "")).strip().strip(".;,、。 ").strip()
 
 
+_SEP = re.compile(r'[;,、；，/|]|\s{2,}')
+
+
+def _split_points(text: str) -> list[str]:
+    """把一个答案/选项拆成多个「正确点/考点」(按 ; , 、 / | 或多空格分隔);
+    如 'May; can't'→['May',"can't"]、'more cheerful, funnier'→['more cheerful','funnier']。
+    去空、去过长(>40 字符或 >4 词,像句子答案)。"""
+    out = []
+    for part in _SEP.split(_norm_opt(text)):
+        p = _norm_opt(part)
+        if p and len(p) <= 40 and len(p.split()) <= 4:
+            out.append(p)
+    return out
+
+
 def _answer_index(options: list[str], correct_answer: str) -> int:
     """判断正确答案是第几个选项。correct_answer 可能是字母(B)或选项文本。找不到→-1。"""
     ca = (correct_answer or "").strip()
@@ -73,40 +88,36 @@ async def index_wrong_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_r
     if wr is None or wr.student_id != student_id:
         return
     _stem, opts = await _wrong_options(db, wr)
-    if not opts:
-        # 填空题(无选项):正确答案本身即"主"词;多空按分隔符拆(每个都算 answer,无干扰项)
-        parts = re.split(r'[;,、/，；|]|\s{2,}', wr.correct_answer or "")
-        rows: list[dict] = []
-        seen: set = set()
-        for p in parts:
-            a = _norm_opt(p)
-            if not a or len(a) > 40 or len(a.split()) > 4:   # 太长/太多词→像句子答案,跳过
-                continue
-            wid = await _word_id_of(db, a, create=True)
-            if wid and wid not in seen:
-                seen.add(wid)
-                rows.append({"id": uuid.uuid4(), "student_id": student_id, "word_id": wid,
-                             "wrong_record_id": wrong_record_id, "role": "answer"})
-        if rows:
-            await db.execute(pg_insert(StudentWrongWord).values(rows)
-                             .on_conflict_do_nothing(index_elements=["student_id", "word_id", "wrong_record_id"]))
-            await db.commit()
-        return
-    ai = _answer_index(opts, wr.correct_answer or "")
     rows: list[dict] = []
     seen: set = set()
-    for i, o in enumerate(opts):
-        role = "answer" if i == ai else "distractor"
-        wid = await _word_id_of(db, _norm_opt(o), create=(role == "answer"))
-        if wid is None or wid in seen:
-            continue
-        seen.add(wid)
-        rows.append({"id": uuid.uuid4(), "student_id": student_id, "word_id": wid,
-                     "wrong_record_id": wrong_record_id, "role": role})
+
+    async def _add(text: str, role: str):
+        wid = await _word_id_of(db, text, create=(role == "answer"))
+        if wid is not None and wid not in seen:
+            seen.add(wid)
+            rows.append({"id": uuid.uuid4(), "student_id": student_id, "word_id": wid,
+                         "wrong_record_id": wrong_record_id, "role": role})
+
+    if not opts:
+        # 填空题:正确答案的每个「正确点」= 主(多空/多值各成一词,无干扰项)
+        for p in _split_points(wr.correct_answer or ""):
+            await _add(p, "answer")
+    else:
+        ai = _answer_index(opts, wr.correct_answer or "")
+        # 先答案选项的各正确点(May; can't → May + can't,均 answer,优先占坑)
+        if 0 <= ai < len(opts):
+            for p in _split_points(opts[ai]):
+                await _add(p, "answer")
+        # 再干扰选项的各点(拆成 distractor)
+        for i, o in enumerate(opts):
+            if i == ai:
+                continue
+            for p in _split_points(o):
+                await _add(p, "distractor")
     if rows:
         await db.execute(pg_insert(StudentWrongWord).values(rows)
                          .on_conflict_do_nothing(index_elements=["student_id", "word_id", "wrong_record_id"]))
-    await db.commit()
+        await db.commit()
 
 
 async def ensure_indexed(db: AsyncSession, *, student_id: uuid.UUID) -> None:
