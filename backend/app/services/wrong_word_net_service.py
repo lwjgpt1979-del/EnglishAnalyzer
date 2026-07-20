@@ -74,6 +74,23 @@ async def index_wrong_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_r
         return
     _stem, opts = await _wrong_options(db, wr)
     if not opts:
+        # 填空题(无选项):正确答案本身即"主"词;多空按分隔符拆(每个都算 answer,无干扰项)
+        parts = re.split(r'[;,、/，；|]|\s{2,}', wr.correct_answer or "")
+        rows: list[dict] = []
+        seen: set = set()
+        for p in parts:
+            a = _norm_opt(p)
+            if not a or len(a) > 40 or len(a.split()) > 4:   # 太长/太多词→像句子答案,跳过
+                continue
+            wid = await _word_id_of(db, a, create=True)
+            if wid and wid not in seen:
+                seen.add(wid)
+                rows.append({"id": uuid.uuid4(), "student_id": student_id, "word_id": wid,
+                             "wrong_record_id": wrong_record_id, "role": "answer"})
+        if rows:
+            await db.execute(pg_insert(StudentWrongWord).values(rows)
+                             .on_conflict_do_nothing(index_elements=["student_id", "word_id", "wrong_record_id"]))
+            await db.commit()
         return
     ai = _answer_index(opts, wr.correct_answer or "")
     rows: list[dict] = []
