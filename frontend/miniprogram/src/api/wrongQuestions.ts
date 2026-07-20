@@ -145,6 +145,14 @@ export function submitVocabSimResult(wrongRecordId: string, total: number, corre
   return request(`/api/v1/wrong-center/vocab-sim-result/${wrongRecordId}`, { method: 'POST', data: { total, correct } })
 }
 
+// 错题关系网(每学生私有):节点=选项词/词组块,边=两两关系(近义/反义/易混/歧义/其他/共现)
+export interface WrongRelNode { word_id: string; word: string; zh: string; is_phrase: boolean }
+export interface WrongRelEdge { a_word_id: string; b_word_id: string; relation: string; source: string }
+export interface WrongRelationNet { nodes: WrongRelNode[]; edges: WrongRelEdge[] }
+export function getWrongRelations(wrongRecordId: string): Promise<WrongRelationNet> {
+  return request(`/api/v1/wrong-center/${wrongRecordId}/relations`, { method: 'GET' })
+}
+
 /** 复习队列：客观重做那道错题（答对推进 SM-2，答错归零重排） */
 export function submitReview(wqId: string, userAnswer: string): Promise<RedoResult> {
   return request<RedoResult>(`/api/v1/wrong-questions/${wqId}/review`, {

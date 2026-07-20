@@ -59,6 +59,10 @@
         </view>
       </view>
 
+      <!-- 错题关系网(选项词/词组两两关系;点词看考点 + 考点扩展测试) -->
+      <WrongRelationNet v-if="wqId" :wrong-record-id="wqId"
+        :correct-answer="wq.correct_answer || ''" :student-answer="wq.student_answer || ''" />
+
       <!-- 元信息卡 -->
       <view class="card meta-card">
         <view class="meta-chips">
@@ -81,6 +85,7 @@ import { getWrongQuestion, markMastered, redoWrong } from '@/api/wrongQuestions'
 import type { RedoResult } from '@/api/wrongQuestions'
 import { useAuthStore } from '@/stores/auth'
 import type { WrongQuestionOut } from '@/types/api'
+import WrongRelationNet from '@/components/WrongRelationNet.vue'
 
 const auth = useAuthStore()
 
