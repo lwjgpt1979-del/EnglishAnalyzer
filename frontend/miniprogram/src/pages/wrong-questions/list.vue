@@ -51,7 +51,8 @@
 
     <!-- 列表 -->
     <view v-else class="wq-list">
-      <view v-for="wq in activeItems" :key="wq.id" class="wq-card" :class="{ 'is-done': wq.lifecycle === 'mastered' }">
+      <view v-for="wq in activeItems" :key="wq.id" class="wq-card" :class="{ 'is-done': wq.lifecycle === 'mastered' }"
+        @tap="() => uni.navigateTo({ url: '/pages/wrong-questions/detail?id=' + wq.id })">
         <!-- 顶部:状态 pill + 来源 -->
         <view class="wq-top">
           <view class="status-pill" :class="statusClass(wq)">{{ statusLabel(wq) }}</view>
