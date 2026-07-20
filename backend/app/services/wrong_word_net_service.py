@@ -211,19 +211,29 @@ async def word_wrong_net(db: AsyncSession, *, student_id: uuid.UUID, word_id: uu
 
 
 async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID) -> dict:
-    """从一道错题进入:中心 = 该题答案词,考点限定为该题命中的义项。"""
+    """从一道错题进入:中心 = 该题第一个答案词;返回本题全部答案词(多空/多正确点供前端切换),
+    考点限定为该题命中的义项。"""
     await index_wrong_record(db, student_id=student_id, wrong_record_id=wrong_record_id)
-    ans = (await db.execute(
+    ans_ids = (await db.execute(
         sa.select(StudentWrongWord.word_id).where(
             StudentWrongWord.student_id == student_id,
             StudentWrongWord.wrong_record_id == wrong_record_id,
-            StudentWrongWord.role == "answer").limit(1))).first()
-    center = ans[0] if ans else None
+            StudentWrongWord.role == "answer").order_by(StudentWrongWord.created_at))).scalars().all()
+    center = ans_ids[0] if ans_ids else None
     if center is None:
         wr = await db.get(WrongRecord, wrong_record_id)
         center = wr.vocab_word_id if wr else None
     if center is None:
-        return {"word_id": None, "word": "", "zh": "", "is_phrase": False,
-                "sense_id": None, "gloss": "", "senses": [], "dims": [], "main": [], "secondary": []}
+        return {"word_id": None, "word": "", "zh": "", "is_phrase": False, "sense_id": None,
+                "gloss": "", "senses": [], "dims": [], "main": [], "secondary": [], "answers": []}
     sid = await _ensure_record_sense(db, student_id=student_id, wrong_record_id=wrong_record_id, word_id=center)
-    return await word_wrong_net(db, student_id=student_id, word_id=center, sense_id=sid)
+    net = await word_wrong_net(db, student_id=student_id, word_id=center, sense_id=sid)
+    # 本题全部答案词(供前端 chip 切换;单答案则一个)
+    answers = []
+    if ans_ids:
+        ws = (await db.execute(sa.select(VocabularyWord).where(VocabularyWord.id.in_(ans_ids)))).scalars().all()
+        wmap = {w.id: w for w in ws}
+        answers = [{"word_id": str(wid), "word": wmap[wid].word, "zh": _zh(wmap.get(wid))}
+                   for wid in ans_ids if wid in wmap]
+    net["answers"] = answers
+    return net

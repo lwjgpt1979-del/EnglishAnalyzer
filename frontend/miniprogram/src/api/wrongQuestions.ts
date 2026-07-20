@@ -156,6 +156,7 @@ export interface WordNet {
   word_id: string | null; word: string; zh: string; is_phrase: boolean
   sense_id: string | null; gloss: string
   senses: Array<{ sense_id: string | null; gloss: string; pos: string }>
+  answers?: Array<{ word_id: string; word: string; zh: string }>   // 本题全部答案词(多空/多正确点)
   dims: WordNetDim[]; main: WordNetErr[]; secondary: WordNetErr[]
 }
 export function getWordNetOfRecord(wrongRecordId: string): Promise<WordNet> {

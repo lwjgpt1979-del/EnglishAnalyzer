@@ -7,6 +7,12 @@
 
     <view v-if="loading" class="wrn-tip">整理关系网中…</view>
     <template v-else-if="net && net.word_id">
+      <!-- 多个正确点(多空):答案词 chip,点一个切到它的关系网 -->
+      <view v-if="answers.length > 1" class="wrn-ans">
+        <text class="wrn-ans-lb">本题答案</text>
+        <text v-for="a in answers" :key="a.word_id" class="wrn-ans-chip"
+          :class="{ on: a.word_id === net.word_id }" @tap="switchCenter({ word_id: a.word_id })">{{ a.word }}</text>
+      </view>
       <!-- 辐射图:中心=当前词,周围=考点关系词(可点切换中心) -->
       <view class="wrn-canvas" :style="{ height: BOXH + 'rpx' }">
         <view v-for="(s, i) in satellites" :key="'e'+i" class="wrn-edge" :style="edgeStyle(s)" />
@@ -96,6 +102,7 @@ const net = ref<WordNet | null>(null)
 const loading = ref(true)
 const centerId = ref<string | null>(null)   // 切换中心用;null=按错题入口
 const activeTab = ref<string>('main')
+const answers = ref<Array<{ word_id: string; word: string; zh: string }>>([])   // 本题答案词(切换中心时保持)
 const testOpen = ref(false)
 const testLoading = ref(false)
 const testQs = ref<Array<{ id: string; stem: string; options: string[]; answer: string; explanation: string }>>([])
@@ -103,12 +110,14 @@ const testQs = ref<Array<{ id: string; stem: string; options: string[]; answer: 
 async function load() {
   loading.value = true
   try {
-    net.value = centerId.value ? await getWordNet(centerId.value) : await getWordNetOfRecord(props.wrongRecordId)
+    const r = centerId.value ? await getWordNet(centerId.value) : await getWordNetOfRecord(props.wrongRecordId)
+    net.value = r
+    if (r.answers && r.answers.length) answers.value = r.answers   // 仅错题入口带答案列表,切换中心不覆盖
     activeTab.value = 'main'
   } catch { net.value = null }
   finally { loading.value = false }
 }
-watch(() => props.wrongRecordId, (v) => { if (v) { centerId.value = null; load() } }, { immediate: true })
+watch(() => props.wrongRecordId, (v) => { if (v) { centerId.value = null; answers.value = []; load() } }, { immediate: true })
 
 // 关系词(辐射图卫星):可链词维项(可切换中心)+ 固定搭配短语(2A,点跳搭配 tab);最多 6,优先有 word_id 的
 const satellites = computed(() => {
@@ -170,6 +179,10 @@ async function openTest() {
 .wrn-title { display: flex; align-items: center; gap: 8rpx; font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
 .wrn-sub { font-size: 22rpx; color: #9aa3b0; }
 .wrn-tip, .wrn-empty { text-align: center; color: #9aa3b0; font-size: 26rpx; padding: 40rpx 0; }
+.wrn-ans { display: flex; align-items: center; flex-wrap: wrap; gap: 12rpx; padding: 6rpx 0 12rpx; }
+.wrn-ans-lb { font-size: 22rpx; color: #9aa3b0; }
+.wrn-ans-chip { font-size: 25rpx; padding: 8rpx 22rpx; border-radius: 26rpx; border: 1rpx solid #E3E8EF; color: #6b7178; background: #F7F9FC; }
+.wrn-ans-chip.on { background: #E1F5EE; border-color: #1D9E75; color: #0F6E56; font-weight: 700; }
 .wrn-canvas { position: relative; width: 690rpx; }
 .wrn-edge { position: absolute; height: 4rpx; border-radius: 2rpx; }
 .wrn-elabel { position: absolute; width: 52rpx; height: 28rpx; line-height: 28rpx; text-align: center; font-size: 20rpx; font-weight: 500; border-radius: 8rpx; }
