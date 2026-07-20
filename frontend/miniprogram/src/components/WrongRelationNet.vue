@@ -51,15 +51,21 @@ import WordKpCard from '@/components/WordKpCard.vue'
 
 const props = defineProps<{ wrongRecordId: string; correctAnswer?: string; studentAnswer?: string }>()
 
+const WORDFORM = { c: '#1D9E75', bg: '#E1F5EE', fg: '#0F6E56' }   // 词形族共用色
 const REL: Record<string, { c: string; bg: string; fg: string; label: string }> = {
   synonym: { c: '#639922', bg: '#EAF3DE', fg: '#3B6D11', label: '近义' },
   antonym: { c: '#E24B4A', bg: '#FCEBEB', fg: '#A32D2D', label: '反义' },
   confusion: { c: '#EF9F27', bg: '#FAEEDA', fg: '#854F0B', label: '易混' },
   ambiguity: { c: '#7F77DD', bg: '#EEEDFE', fg: '#534AB7', label: '歧义' },
   related: { c: '#378ADD', bg: '#E6F1FB', fg: '#185FA5', label: '其他' },
+  derivation: { ...WORDFORM, label: '派生' },
+  tense: { ...WORDFORM, label: '时态' },
+  plural: { ...WORDFORM, label: '单复数' },
+  comparative: { ...WORDFORM, label: '比较级' },
   cooccur: { c: '#B4B2A9', bg: '#F1EFE8', fg: '#5F5E5A', label: '共现' },
 }
-const REL_ORDER = ['synonym', 'antonym', 'confusion', 'ambiguity', 'related']
+const REL_ORDER = ['synonym', 'antonym', 'confusion', 'ambiguity', 'related',
+  'derivation', 'tense', 'plural', 'comparative']
 
 const BOXW = 690, CX = 345, CY = 300, R = 200, BOXH = 600
 const MAX_NODES = 8

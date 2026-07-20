@@ -164,15 +164,16 @@ async def build_wrong_relations(db: AsyncSession, *, student_id: uuid.UUID, wron
     vblocks = [blocks[i] for i, _ in valid]
     vids = [wid for _, wid in valid]
 
-    # 全局已有关系(该对在 vocab_word_relation 有语义边)→ frozenset(word_id 对) → relation
+    # 全局已有关系:该对在 vocab_word_relation **任意维度键**下有链接(可链词维:近义/反义/派生/时态/单复数…)
+    # 即算有边 → frozenset(word_id 对) → 维度键
     grows = (await db.execute(
         sa.select(VocabWordRelation.word_id, VocabWordRelation.related_word_id, VocabWordRelation.relation)
         .where(VocabWordRelation.word_id.in_(vids),
                VocabWordRelation.related_word_id.in_(vids)))).all()
     global_rel: dict = {}
     for a, b, rel in grows:
-        if b is not None and rel in _SEMANTIC:
-            global_rel[frozenset((a, b))] = rel
+        if b is not None:
+            global_rel.setdefault(frozenset((a, b)), rel)   # 任意维度键即算边(首个命中)
 
     judged = await _judge_pairs(vblocks, stem)   # (p,q) 位置索引 → relation
 
@@ -198,10 +199,12 @@ async def build_wrong_relations(db: AsyncSession, *, student_id: uuid.UUID, wron
         await db.execute(pg_insert(StudentWrongRelation).values(rows)
                          .on_conflict_do_nothing(
                              index_elements=["student_id", "a_word_id", "b_word_id", "relation"]))
-    # 决策③:LLM 判定的语义关系反哺全局考点(vocab_word_relation)
+    # 决策③:LLM 判定的语义关系反哺全局考点(vocab_word_relation),带上维度元信息
+    from app.services.word_kp_service import _DIM_INDEX, _dim_label
     for a_id, b_id, rel, bblock in writeback:
         await db.execute(pg_insert(VocabWordRelation).values(
-            id=uuid.uuid4(), word_id=a_id, relation=rel, related_word_id=b_id,
+            id=uuid.uuid4(), word_id=a_id, relation=rel, dim_label=_dim_label(rel),
+            sort=_DIM_INDEX.get(rel, 99), related_word_id=b_id,
             related_text=bblock["text"], related_zh=(bblock.get("zh") or None), note=None)
             .on_conflict_do_nothing(index_elements=["word_id", "relation", "related_text"]))
     await db.commit()
