@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import StudentVocabCandidate, VocabularyLearning, VocabularyWord
-from app.models.d18_vocab_kg import VocabKpMcq, VocabWordKp, VocabWordRelation
+from app.models.d18_vocab_kg import VocabKpMcq, VocabWordKp, VocabWordRelation, VocabWordSense
 
 # 受控可扩维度清单(动态考点):dim_key → (中文名, relational=项是否可链词, 适用词性提示)
 # LLM 按词/词组的词性与特点,从中挑适用维度填充;新维度往这里加即可。
@@ -55,28 +55,30 @@ def _meaning_of(w: VocabularyWord) -> str:
 
 
 async def _gen_kp(word: str, meaning: str, examples, is_phrase: bool = False) -> dict:
-    """LLM 按词性/特点从受控维度清单动态挑维度出考点(fast 档)。dev-mock 返回空。
-    返回 {pos, root, dims:[{key, items:[{text, zh, note}]}]}。"""
+    """LLM 先枚举该词/词组的主要义项,再为每个义项按词性/特点从受控清单动态挑维度出考点(fast 档)。
+    dev-mock 返回空。返回 {root, senses:[{gloss, pos, dims:[{key, items:[{text, zh, note}]}]}]}。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
     if is_llm_dev_mode():
-        return {"pos": "", "root": "", "dims": []}
+        return {"root": "", "senses": []}
     tgt = "词组" if is_phrase else "单词"
     menu = "\n".join(f"- {k}({lbl},{'可链词' if rel else '文本'},适用:{pos})"
                      for k, (lbl, rel, pos) in _DIM_REGISTRY.items())
     system = (
-        f"你是英语词汇考点专家。给定{tgt}+释义+例句:先判断其词性(pos),再从下面【维度清单】里挑出"
-        f"**真正适用于该{tgt}词性与特点**的维度(只挑适用的,不适用不出;数量不限),每个维度给 1-4 个考点项。\n"
+        f"你是英语词汇考点专家。给定{tgt}+释义+例句:\n"
+        f"1) 先枚举该{tgt}的**主要义项**(每个义项:中文义 gloss + 该义项词性 pos)。"
+        "**给定释义仅供参考、可能不全**——请基于该词真实的常用义项列全,尤其功能词的**高频义项**"
+        "(如 but 必须含『但是·转折·conj』,还有『除…外·prep』『只有·adv』;as / since / that 等同理);单义词就一个义项。\n"
+        f"2) **为每个义项**,从下面【维度清单】里挑出真正适用于该义项词性与特点的维度(只挑适用的,数量不限),每维给 1-4 个考点项。\n"
         "【维度清单】dim_key(维度名,类型,适用词性):\n" + menu + "\n"
-        "可链词维:项 text 填英文词/词形(时态→went/gone、单复数→复数形、比较级→更级形、近义→近义词等);\n"
-        "文本维:项 text 填该用法/考点的简明说明(中文为主,可含英文例)。\n"
-        '严格输出 JSON:{"pos":"verb|noun|adj|adv|prep|phrase|其他","root":"词根/词干或空",'
-        '"dims":[{"key":"清单里的dim_key","items":[{"text":"词/词形 或 说明","zh":"中文(可空)","note":"备注(可空)"}]}]}\n'
-        f"只用清单里的 dim_key;项要真实、确与该{tgt}相关,不臆造;例句/说明用词简单、不高于目标{tgt}难度。")
+        "可链词维:项 text 填英文词/词形(时态→went/gone、单复数→复数形、近义→近义词等);文本维:项 text 填该用法/考点的简明说明。\n"
+        '严格输出 JSON:{"root":"词根/词干或空","senses":[{"gloss":"该义项中文义","pos":"verb|noun|adj|adv|prep|conj|phrase|其他",'
+        '"dims":[{"key":"清单里的dim_key","items":[{"text":"词/词形 或 说明","zh":"中文(可空)","note":"备注(可空)"}]}]}]}\n'
+        f"只用清单里的 dim_key;考点须按义项归属正确(转折义项不要混入除外义项的搭配);项要真实不臆造;用词简单、不高于目标{tgt}难度。")
     d = await complete_json(
         system_prompt=system, user_prompt=f"{tgt}:{word}\n释义:{meaning}\n参考例句:{examples}\n返回 JSON:",
-        max_tokens=1800, model=fast_model(), feature="vocab_word_kp",
-        validate=lambda x: isinstance(x.get("dims"), list))
-    return d or {"pos": "", "root": "", "dims": []}
+        max_tokens=2600, model=fast_model(), feature="vocab_word_kp",
+        validate=lambda x: isinstance(x.get("senses"), list))
+    return d or {"root": "", "senses": []}
 
 
 def _clean_items(arr) -> list[dict]:
@@ -100,17 +102,25 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
     if w is None:
         return
     d = await _gen_kp(w.word, _meaning_of(w), w.examples or [], is_phrase=(w.type == "phrase"))
-    # 规整维度:只留清单内 dim_key
-    dims = []
-    for dim in (d.get("dims") or []):
-        if not isinstance(dim, dict):
+    # 规整义项 → 每义项的维度(只留清单内 dim_key)
+    senses = []   # [(gloss, pos, sort, [(dim_key, items)])]
+    for si, sense in enumerate(d.get("senses") or []):
+        if not isinstance(sense, dict):
             continue
-        key = str(dim.get("key") or "").strip()
-        items = _clean_items(dim.get("items"))
-        if key in _DIM_REGISTRY and items:
-            dims.append((key, items))
+        gloss = str(sense.get("gloss") or "").strip()[:120]
+        sdims = []
+        for dim in (sense.get("dims") or []):
+            if not isinstance(dim, dict):
+                continue
+            key = str(dim.get("key") or "").strip()
+            items = _clean_items(dim.get("items"))
+            if key in _DIM_REGISTRY and items:
+                sdims.append((key, items))
+        if gloss and sdims:
+            senses.append((gloss, str(sense.get("pos") or "").strip()[:16] or None, si, sdims))
     # 可链词维:批量查 related_text 是否在词库,填 related_word_id
-    link_texts = [it["text"] for key, items in dims if key in _RELATIONAL_DIMS for it in items]
+    link_texts = [it["text"] for _g, _p, _s, sdims in senses
+                  for key, items in sdims if key in _RELATIONAL_DIMS for it in items]
     id_by_text: dict = {}
     lows = list({t.lower() for t in link_texts if t})
     if lows:
@@ -119,16 +129,20 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
             .where(sa.func.lower(VocabularyWord.word).in_(lows)))).all()
         id_by_text = {ww.lower(): wid for wid, ww in rows}
     vals: list[dict] = []
-    for key, items in dims:
-        relational = key in _RELATIONAL_DIMS
-        for it in items:
-            t = it["text"]
-            if relational and t.lower() == w.word.lower():
-                continue   # 不自指
-            vals.append({"id": uuid.uuid4(), "word_id": word_id, "relation": key,
-                         "dim_label": _dim_label(key), "sort": _DIM_INDEX.get(key, 99),
-                         "related_word_id": id_by_text.get(t.lower()) if relational else None,
-                         "related_text": t, "related_zh": it.get("zh") or None, "note": it.get("note") or None})
+    for gloss, pos, sort, sdims in senses:
+        sense_id = uuid.uuid4()
+        db.add(VocabWordSense(id=sense_id, word_id=word_id, gloss_zh=gloss, pos=pos, sort=sort))
+        for key, items in sdims:
+            relational = key in _RELATIONAL_DIMS
+            for it in items:
+                t = it["text"]
+                if relational and t.lower() == w.word.lower():
+                    continue   # 不自指
+                vals.append({"id": uuid.uuid4(), "word_id": word_id, "sense_id": sense_id, "relation": key,
+                             "dim_label": _dim_label(key), "sort": _DIM_INDEX.get(key, 99),
+                             "related_word_id": id_by_text.get(t.lower()) if relational else None,
+                             "related_text": t, "related_zh": it.get("zh") or None, "note": it.get("note") or None})
+    await db.flush()   # 落 sense 行(供 relation FK)
     if vals:
         await db.execute(pg_insert(VocabWordRelation).values(vals)
                          .on_conflict_do_nothing(index_elements=["word_id", "relation", "related_text"]))
@@ -138,17 +152,11 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
     await db.commit()
 
 
-async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, student_id: uuid.UUID | None = None) -> dict:
-    """考点全套:动态维度 `dims:[{key,label,relational,items:[{text,zh,note,word_id}]}]`(按 registry 顺序);
-    可链词维的项命中词库带 word_id(可点去学)。传 student_id 则把在库未学的相关词加入候选池(先验进队列)。"""
-    await ensure_word_kp(db, word_id=word_id)
-    kp = await db.get(VocabWordKp, word_id)
-    rows = (await db.execute(
-        sa.select(VocabWordRelation).where(VocabWordRelation.word_id == word_id))).scalars().all()
+def _dims_from_rows(rows: list, seed_ids: list) -> list[dict]:
+    """一组 relation 行 → 动态维度 dims_out(按 registry 顺序);收集可链词 seed_ids。"""
     by_dim: dict = {}
     for r in rows:
         by_dim.setdefault(r.relation, []).append(r)
-    seed_ids: list = []
     dims_out = []
     for key in sorted(by_dim.keys(), key=lambda k: _DIM_INDEX.get(k, 99)):
         relational = key in _RELATIONAL_DIMS
@@ -160,9 +168,45 @@ async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, student_id: uuid.
                 seed_ids.append(r.related_word_id)
         dims_out.append({"key": key, "label": (by_dim[key][0].dim_label or _dim_label(key)),
                          "relational": relational, "items": items})
+    return dims_out
+
+
+async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, sense_id: uuid.UUID | None = None,
+                      student_id: uuid.UUID | None = None) -> dict:
+    """考点全套(按义项分组):`senses:[{sense_id,gloss,pos,dims:[...]}]`;可链词维的项命中词库带 word_id(可点去学)。
+    传 sense_id 只返回该义项;兼容字段 `dims` = 选定义项(或主义项)的维度(供未升级前端/考点测试)。
+    传 student_id 则把在库未学的相关词加入候选池。"""
+    await ensure_word_kp(db, word_id=word_id)
+    kp = await db.get(VocabWordKp, word_id)
+    senses = (await db.execute(
+        sa.select(VocabWordSense).where(VocabWordSense.word_id == word_id)
+        .order_by(VocabWordSense.sort))).scalars().all()
+    rows = (await db.execute(
+        sa.select(VocabWordRelation).where(VocabWordRelation.word_id == word_id))).scalars().all()
+    by_sense: dict = {}
+    for r in rows:
+        by_sense.setdefault(r.sense_id, []).append(r)
+    seed_ids: list = []
+    senses_out = []
+    for s in senses:
+        senses_out.append({"sense_id": str(s.id), "gloss": s.gloss_zh, "pos": s.pos or "",
+                           "dims": _dims_from_rows(by_sense.get(s.id, []), seed_ids)})
+    # 存量/无义项 relation(sense_id=None)→ 归到"综合"义项兜底
+    if by_sense.get(None):
+        senses_out.append({"sense_id": None, "gloss": "综合", "pos": "",
+                           "dims": _dims_from_rows(by_sense[None], seed_ids)})
     if student_id is not None and seed_ids:
         await _seed_queue(db, student_id=student_id, word_ids=list(set(seed_ids)))
-    return {"pos": "", "root": (kp.root if kp else "") or "", "dims": dims_out}
+
+    # 选定义项(sense_id 命中,否则主义项)→ 兼容 dims
+    chosen = None
+    if sense_id is not None:
+        chosen = next((s for s in senses_out if s["sense_id"] == str(sense_id)), None)
+    chosen = chosen or (senses_out[0] if senses_out else None)
+    out_senses = [chosen] if sense_id is not None and chosen else senses_out
+    return {"root": (kp.root if kp else "") or "", "senses": out_senses,
+            "gloss": chosen["gloss"] if chosen else "", "pos": chosen["pos"] if chosen else "",
+            "dims": chosen["dims"] if chosen else []}
 
 
 async def _seed_queue(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list) -> None:

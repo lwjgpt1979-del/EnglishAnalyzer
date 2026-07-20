@@ -25,6 +25,23 @@ class VocabWordFamily(Base):
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
+class VocabWordSense(Base):
+    """单词/词组义项(1B 词义消歧):一个词的各义项(but:①转折·但是·conj ②除…外·prep)。
+    考点(vocab_word_relation)与考点测试(vocab_kp_mcq)按 sense_id 归属义项;错题按上下文命中义项。"""
+
+    __tablename__ = "vocab_word_sense"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    gloss_zh = mapped_column(sa.String(120), nullable=False)   # 中文义(义项标签)
+    pos = mapped_column(sa.String(16), nullable=True)          # 该义项词性
+    sort = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_vocab_word_sense_word", "word_id"),)
+
+
 class VocabWordKp(Base):
     """单词考点·词级属性 + 「已生成」标记(存在即表示 word_kp 已 LLM 生成过,不重复付费)。
     关系型考点在 VocabWordRelation;此表只放非关系属性(词根)。"""
@@ -47,6 +64,8 @@ class VocabWordRelation(Base):
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     word_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    sense_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocab_word_sense.id", ondelete="SET NULL"), nullable=True)  # 归属义项(1B)
     relation = mapped_column(sa.String(32), nullable=False)    # 维度键 dim_key(动态,取自受控清单)
     dim_label = mapped_column(sa.String(32), nullable=True)    # 维度中文名(写入时的快照;读取回退 registry)
     sort = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))  # 维度展示顺序(registry 序)
@@ -105,6 +124,8 @@ class StudentWrongWord(Base):
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
     wrong_record_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("wrong_record.id", ondelete="CASCADE"), nullable=False)
+    sense_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocab_word_sense.id", ondelete="SET NULL"), nullable=True)  # 该错题命中的义项(S2 填)
     role = mapped_column(sa.String(10), nullable=False)   # answer(主) | distractor(次)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
@@ -124,6 +145,8 @@ class VocabKpMcq(Base):
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     word_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("vocab_word_kp.word_id", ondelete="CASCADE"), nullable=False)
+    sense_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocab_word_sense.id", ondelete="SET NULL"), nullable=True)  # 归属义项(1B)
     dimension = mapped_column(sa.String(32), nullable=False)    # 动态维度键 dim_key(见 word_kp_service._DIM_REGISTRY)
     stem = mapped_column(sa.Text, nullable=False)               # 题干
     options = mapped_column(JSONB, nullable=False)              # [str] 选项
