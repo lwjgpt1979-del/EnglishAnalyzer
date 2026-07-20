@@ -145,12 +145,22 @@ export function submitVocabSimResult(wrongRecordId: string, total: number, corre
   return request(`/api/v1/wrong-center/vocab-sim-result/${wrongRecordId}`, { method: 'POST', data: { total, correct } })
 }
 
-// 错题关系网(每学生私有):节点=选项词/词组块,边=两两关系(近义/反义/易混/歧义/其他/共现)
-export interface WrongRelNode { word_id: string; word: string; zh: string; is_phrase: boolean }
-export interface WrongRelEdge { a_word_id: string; b_word_id: string; relation: string; source: string }
-export interface WrongRelationNet { nodes: WrongRelNode[]; edges: WrongRelEdge[] }
-export function getWrongRelations(wrongRecordId: string): Promise<WrongRelationNet> {
-  return request(`/api/v1/wrong-center/${wrongRecordId}/relations`, { method: 'GET' })
+// 错题关系网(以词为中心):某词的全局考点(dims,含关系词)+ 主错题(考它)/次错题(它当干扰)
+export interface WordNetKpItem { text: string; zh: string; note: string; word_id: string | null }
+export interface WordNetDim { key: string; label: string; relational: boolean; items: WordNetKpItem[] }
+export interface WordNetErr {
+  wrong_record_id: string; stem: string; student_answer: string
+  correct_answer: string; source: string; question_type: string
+}
+export interface WordNet {
+  word_id: string | null; word: string; zh: string; is_phrase: boolean
+  dims: WordNetDim[]; main: WordNetErr[]; secondary: WordNetErr[]
+}
+export function getWordNetOfRecord(wrongRecordId: string): Promise<WordNet> {
+  return request(`/api/v1/wrong-center/${wrongRecordId}/word-net`, { method: 'GET' })
+}
+export function getWordNet(wordId: string): Promise<WordNet> {
+  return request(`/api/v1/wrong-center/word-net/${wordId}`, { method: 'GET' })
 }
 
 /** 复习队列：客观重做那道错题（答对推进 SM-2，答错归零重排） */

@@ -59,9 +59,8 @@
         </view>
       </view>
 
-      <!-- 错题关系网(选项词/词组两两关系;点词看考点 + 考点扩展测试) -->
-      <WrongRelationNet v-if="wqId" :wrong-record-id="wqId"
-        :correct-answer="wq.correct_answer || ''" :student-answer="wq.student_answer || ''" />
+      <!-- 错题关系网(以词为中心:答案词居中 + 主/次错题 + 考点维度) -->
+      <WrongRelationNet v-if="wqId" :wrong-record-id="wqId" />
 
       <!-- 元信息卡 -->
       <view class="card meta-card">
