@@ -91,6 +91,30 @@ class StudentWrongRelation(Base):
     )
 
 
+class StudentWrongWord(Base):
+    """错题关系网(以词为中心,每学生私有):某词/词组在某道错题里扮演的角色。
+    role=answer(主关系:该词是正确答案,'考的就是它')/ distractor(次关系:该词只是干扰项)。
+    支持"从任一词拉出它的全部错题,区分主/次"。"""
+
+    __tablename__ = "student_wrong_word"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    wrong_record_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("wrong_record.id", ondelete="CASCADE"), nullable=False)
+    role = mapped_column(sa.String(10), nullable=False)   # answer(主) | distractor(次)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_student_wrong_word_sw", "student_id", "word_id"),
+        sa.Index("ix_student_wrong_word_rec", "wrong_record_id"),
+        sa.UniqueConstraint("student_id", "word_id", "wrong_record_id", name="uq_student_wrong_word"),
+    )
+
+
 class VocabKpMcq(Base):
     """考点扩展测试题库:按考点维度出题(每维 3 道单选),LLM 一次全生成缓存,测试时每维随机取 1。
     word_id 外键指向 vocab_word_kp(与「单词考点」强关联:有考点才有考点题);dimension 标该题测哪一维。"""
