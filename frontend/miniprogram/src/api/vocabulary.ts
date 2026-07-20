@@ -31,18 +31,13 @@ export function getWordFamily(wordId: string): Promise<WordFamily> {
   return request<WordFamily>(`/api/v1/vocabulary/word-family/${wordId}`, { method: 'GET' })
 }
 
-// 单词考点深挖(义关折叠卡):固定搭配/近义/反义/派生/易混/考法 + 词根(合并词族)
-export interface KpRelWord { word: string; zh: string; word_id: string | null; note?: string }
+// 单词/词组考点(动态维度,按词性/特点):dims 每维 {key,label,relational,items}
+export interface KpItem { text: string; zh: string; note: string; word_id: string | null }
+export interface KpDim { key: string; label: string; relational: boolean; items: KpItem[] }
 export interface WordKp {
+  pos: string
   root: string
-  collocations: Array<{ en: string; zh: string }>
-  synonyms: KpRelWord[]
-  antonyms: KpRelWord[]
-  derivations: KpRelWord[]
-  confusions: KpRelWord[]
-  ambiguities: KpRelWord[]
-  relateds: KpRelWord[]
-  exam_tips: string
+  dims: KpDim[]
 }
 export function getWordKp(wordId: string): Promise<WordKp> {
   return request<WordKp>(`/api/v1/vocabulary/word-kp/${wordId}`, { method: 'GET' })

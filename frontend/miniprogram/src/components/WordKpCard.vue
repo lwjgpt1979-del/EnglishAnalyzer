@@ -13,39 +13,17 @@
         <view v-if="loading" class="kp-tip">考点生成中…</view>
         <view v-else-if="!hasContent" class="kp-tip">该词暂无考点</view>
         <template v-else>
-          <view v-if="kp!.collocations.length" class="kp-sec">
-            <text class="kp-sec-h">固定搭配</text>
-            <view v-for="(c, i) in kp!.collocations" :key="'c'+i" class="kp-line">
-              <text class="kp-en">{{ c.en }}</text><text class="kp-zh">{{ c.zh }}</text>
+          <view v-for="dim in kp!.dims" :key="dim.key" class="kp-sec">
+            <text class="kp-sec-h">{{ dim.label }}</text>
+            <view v-if="dim.relational" class="kp-chips">
+              <text v-for="(it, i) in dim.items" :key="i" class="kp-chip">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text></text>
             </view>
-          </view>
-          <view v-if="kp!.synonyms.length" class="kp-sec">
-            <text class="kp-sec-h">近义词</text>
-            <view class="kp-chips"><text v-for="(w, i) in kp!.synonyms" :key="'s'+i" class="kp-chip">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text></view>
-          </view>
-          <view v-if="kp!.antonyms.length" class="kp-sec">
-            <text class="kp-sec-h">反义词</text>
-            <view class="kp-chips"><text v-for="(w, i) in kp!.antonyms" :key="'a'+i" class="kp-chip">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text></view>
-          </view>
-          <view v-if="kp!.derivations.length" class="kp-sec">
-            <text class="kp-sec-h">派生·词族</text>
-            <view class="kp-chips"><text v-for="(w, i) in kp!.derivations" :key="'d'+i" class="kp-chip">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text></view>
-          </view>
-          <view v-if="kp!.confusions.length" class="kp-sec">
-            <text class="kp-sec-h">易混辨析</text>
-            <view v-for="(w, i) in kp!.confusions" :key="'x'+i" class="kp-line"><text class="kp-en">{{ w.word }}</text><text class="kp-zh">{{ w.note || w.zh }}</text></view>
-          </view>
-          <view v-if="kp!.ambiguities.length" class="kp-sec">
-            <text class="kp-sec-h">歧义</text>
-            <view v-for="(w, i) in kp!.ambiguities" :key="'g'+i" class="kp-line"><text class="kp-en">{{ w.word }}</text><text class="kp-zh">{{ w.note || w.zh }}</text></view>
-          </view>
-          <view v-if="kp!.relateds.length" class="kp-sec">
-            <text class="kp-sec-h">其他关联</text>
-            <view v-for="(w, i) in kp!.relateds" :key="'r'+i" class="kp-line"><text class="kp-en">{{ w.word }}</text><text class="kp-zh">{{ w.note || w.zh }}</text></view>
-          </view>
-          <view v-if="kp!.exam_tips" class="kp-sec">
-            <text class="kp-sec-h">常见考法</text>
-            <text class="kp-tips">{{ kp!.exam_tips }}</text>
+            <template v-else>
+              <view v-for="(it, i) in dim.items" :key="i" class="kp-line">
+                <text class="kp-en">{{ it.text }}</text>
+                <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+              </view>
+            </template>
           </view>
         </template>
       </scroll-view>
@@ -72,8 +50,7 @@ const kp = ref<WordKp | null>(null)
 const loading = ref(true)
 const hasContent = computed(() => {
   const k = kp.value
-  return !!k && !!(k.collocations.length || k.synonyms.length || k.antonyms.length || k.derivations.length
-    || k.confusions.length || k.ambiguities.length || k.relateds.length || k.exam_tips)
+  return !!k && Array.isArray(k.dims) && k.dims.length > 0
 })
 
 onMounted(async () => {

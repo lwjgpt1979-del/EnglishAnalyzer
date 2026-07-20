@@ -137,57 +137,20 @@
           <text class="kp-arrow" :class="{ open: kpOpen }">▾</text>
         </view>
         <view v-if="kpOpen" class="kp-body">
-          <view v-if="wordKp!.collocations.length" class="kp-sec">
-            <text class="kp-sec-h">固定搭配</text>
-            <view v-for="(c, i) in wordKp!.collocations" :key="'c'+i" class="kp-line">
-              <text class="kp-en">{{ c.en }}</text><text class="kp-zh">{{ c.zh }}</text>
+          <view v-for="dim in wordKp!.dims" :key="dim.key" class="kp-sec">
+            <text class="kp-sec-h">{{ dim.label }}</text>
+            <!-- 可链词维:胶囊,命中词库可点去学 -->
+            <view v-if="dim.relational" class="kp-chips">
+              <text v-for="(it, i) in dim.items" :key="i" class="kp-chip"
+                :class="{ link: !!it.word_id }" @tap="learnRelated(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text></text>
             </view>
-          </view>
-          <view v-if="wordKp!.synonyms.length" class="kp-sec">
-            <text class="kp-sec-h">近义词</text>
-            <view class="kp-chips">
-              <text v-for="(w, i) in wordKp!.synonyms" :key="'s'+i" class="kp-chip"
-                :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text>
-            </view>
-          </view>
-          <view v-if="wordKp!.antonyms.length" class="kp-sec">
-            <text class="kp-sec-h">反义词</text>
-            <view class="kp-chips">
-              <text v-for="(w, i) in wordKp!.antonyms" :key="'a'+i" class="kp-chip"
-                :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text>
-            </view>
-          </view>
-          <view v-if="wordKp!.derivations.length" class="kp-sec">
-            <text class="kp-sec-h">派生·词族</text>
-            <view class="kp-chips">
-              <text v-for="(w, i) in wordKp!.derivations" :key="'d'+i" class="kp-chip"
-                :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text>
-            </view>
-          </view>
-          <view v-if="wordKp!.confusions.length" class="kp-sec">
-            <text class="kp-sec-h">易混辨析</text>
-            <view v-for="(w, i) in wordKp!.confusions" :key="'x'+i" class="kp-line">
-              <text class="kp-en" :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}</text>
-              <text class="kp-zh">{{ w.note || w.zh }}</text>
-            </view>
-          </view>
-          <view v-if="wordKp!.ambiguities.length" class="kp-sec">
-            <text class="kp-sec-h">歧义</text>
-            <view v-for="(w, i) in wordKp!.ambiguities" :key="'g'+i" class="kp-line">
-              <text class="kp-en" :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}</text>
-              <text class="kp-zh">{{ w.note || w.zh }}</text>
-            </view>
-          </view>
-          <view v-if="wordKp!.relateds.length" class="kp-sec">
-            <text class="kp-sec-h">其他关联</text>
-            <view v-for="(w, i) in wordKp!.relateds" :key="'r'+i" class="kp-line">
-              <text class="kp-en" :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}</text>
-              <text class="kp-zh">{{ w.note || w.zh }}</text>
-            </view>
-          </view>
-          <view v-if="wordKp!.exam_tips" class="kp-sec">
-            <text class="kp-sec-h">常见考法</text>
-            <text class="kp-tips">{{ wordKp!.exam_tips }}</text>
+            <!-- 文本维:逐条说明 -->
+            <template v-else>
+              <view v-for="(it, i) in dim.items" :key="i" class="kp-line">
+                <text class="kp-en">{{ it.text }}</text>
+                <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+              </view>
+            </template>
           </view>
         </view>
       </view>
@@ -682,14 +645,12 @@ async function loadKp() {
 }
 const kpHasContent = computed(() => {
   const k = wordKp.value
-  return !!k && !!(k.root || k.collocations.length || k.synonyms.length || k.antonyms.length
-    || k.derivations.length || k.confusions.length || k.ambiguities.length
-    || k.relateds.length || k.exam_tips)
+  return !!k && Array.isArray(k.dims) && k.dims.length > 0
 })
-// 点关联词:已入库(有 word_id)的后端已随考点自动排入学习队列,轻提示即可
-function learnRelated(w: { word: string; word_id: string | null }) {
-  if (!w.word_id) return
-  uni.showToast({ title: `${w.word} 已加入学习`, icon: 'none' })
+// 点关联词(可链词维的项):已入库(有 word_id)的后端已随考点自动排入学习队列,轻提示即可
+function learnRelated(it: { text: string; word_id: string | null }) {
+  if (!it.word_id) return
+  uni.showToast({ title: `${it.text} 已加入学习`, icon: 'none' })
 }
 
 // 考点扩展测试:取每维随机 1 道 → PracticeQuiz 逐题即时判分(纯练习,不进 BKT)

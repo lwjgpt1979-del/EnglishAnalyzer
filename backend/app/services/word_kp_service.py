@@ -138,15 +138,9 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
     await db.commit()
 
 
-# 过渡期:动态维度键 → 现有前端读的固定 legacy 键(R3 前端动态化后可删)
-_LEGACY_KEY = {"synonym": "synonyms", "antonym": "antonyms", "derivation": "derivations",
-               "confusion": "confusions", "ambiguity": "ambiguities", "related": "relateds"}
-
-
 async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, student_id: uuid.UUID | None = None) -> dict:
     """考点全套:动态维度 `dims:[{key,label,relational,items:[{text,zh,note,word_id}]}]`(按 registry 顺序);
-    可链词维的项命中词库带 word_id(可点去学)。传 student_id 则把在库未学的相关词加入候选池(先验进队列)。
-    过渡期同时返回旧固定键(synonyms/collocations/exam_tips…)供未升级的前端读。"""
+    可链词维的项命中词库带 word_id(可点去学)。传 student_id 则把在库未学的相关词加入候选池(先验进队列)。"""
     await ensure_word_kp(db, word_id=word_id)
     kp = await db.get(VocabWordKp, word_id)
     rows = (await db.execute(
@@ -168,21 +162,7 @@ async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, student_id: uuid.
                          "relational": relational, "items": items})
     if student_id is not None and seed_ids:
         await _seed_queue(db, student_id=student_id, word_ids=list(set(seed_ids)))
-
-    out: dict = {"pos": "", "root": (kp.root if kp else "") or "", "dims": dims_out}
-    # —— 过渡期 legacy 键(现前端读)——
-    out.update({"collocations": [], "synonyms": [], "antonyms": [], "derivations": [],
-                "confusions": [], "ambiguities": [], "relateds": [], "exam_tips": ""})
-    for dim in dims_out:
-        k = dim["key"]
-        if k == "exam_tip":
-            out["exam_tips"] = dim["items"][0]["text"] if dim["items"] else ""
-        elif k == "collocation":
-            out["collocations"] = [{"en": it["text"], "zh": it["zh"]} for it in dim["items"]]
-        elif k in _LEGACY_KEY:
-            out[_LEGACY_KEY[k]] = [{"word": it["text"], "zh": it["zh"], "word_id": it["word_id"],
-                                    "note": it["note"]} for it in dim["items"]]
-    return out
+    return {"pos": "", "root": (kp.root if kp else "") or "", "dims": dims_out}
 
 
 async def _seed_queue(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list) -> None:
