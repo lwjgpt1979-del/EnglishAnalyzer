@@ -25,6 +25,41 @@ class VocabWordFamily(Base):
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
+class VocabWordKp(Base):
+    """单词考点·词级属性 + 「已生成」标记(存在即表示 word_kp 已 LLM 生成过,不重复付费)。
+    关系型考点在 VocabWordRelation;此表只放非关系属性(词根)。"""
+
+    __tablename__ = "vocab_word_kp"
+
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), primary_key=True)
+    root = mapped_column(sa.String(64), nullable=True)          # 词根/词干(无则空)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class VocabWordRelation(Base):
+    """单词考点·词-词/词-短语/词-文本 关系(词汇关系图):近义/反义/易混/搭配/派生/考法。
+    related_word_id 命中词库时填(可点击去学);未命中只留 related_text。全关系型,无 JSONB。"""
+
+    __tablename__ = "vocab_word_relation"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    relation = mapped_column(sa.String(16), nullable=False)    # synonym|antonym|confusion|collocation|derivation|exam_tip
+    related_word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="SET NULL"), nullable=True)
+    related_text = mapped_column(sa.Text, nullable=False)      # 相关词/短语/考法文本(总有)
+    related_zh = mapped_column(sa.Text, nullable=True)         # 中文
+    note = mapped_column(sa.Text, nullable=True)              # 辨析要点/备注
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_vocab_word_relation_word", "word_id"),
+        sa.UniqueConstraint("word_id", "relation", "related_text", name="uq_vocab_word_relation"),
+    )
+
+
 class VocabMcq(Base):
     """词汇测试题库(每词 3-5 道混合单选题,LLM 生成一次全局缓存,测试时随机取 1)。
     词义丰富的词出到 5 道、简单单义词 3 道;类型 w2m(词→义)/m2w(义→词)/cloze(语境填空)。"""

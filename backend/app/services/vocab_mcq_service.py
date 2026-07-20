@@ -129,6 +129,12 @@ async def _bg_prewarm(word_id: uuid.UUID) -> None:
             except Exception:  # noqa: BLE001
                 await db.rollback()
                 logging.getLogger(__name__).exception("prewarm mcq failed wid=%s", word_id)
+            try:
+                from app.services import word_kp_service
+                await word_kp_service.ensure_word_kp(db, word_id=word_id)   # 考点深挖(义关折叠卡)
+            except Exception:  # noqa: BLE001
+                await db.rollback()
+                logging.getLogger(__name__).exception("prewarm kp failed wid=%s", word_id)
     finally:
         _PREWARM_INFLIGHT.discard(word_id)
 

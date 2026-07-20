@@ -135,6 +135,16 @@ async def word_family(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
         db, word_id=word_id, student_id=current_user.id))
 
 
+@router.get("/word-kp/{word_id}", response_model=BaseResponse[dict])
+async def word_kp(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """单词考点深挖(义关折叠卡):固定搭配/近义/反义/派生/易混/考法 + 词根。查看即生成+全局缓存;
+    近义/派生等命中词库带 word_id(可点去学),在库相关词先验进队列。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import word_kp_service
+    return make_ok(await word_kp_service.word_kp_out(
+        db, word_id=word_id, student_id=current_user.id))
+
+
 @router.post("/exam-daily", response_model=BaseResponse[DailyTaskOut])
 async def exam_daily(body: dict, db: DbDep, current_user: UserDep):
     """某轨×频档 的今日一组任务。body: {type: word|phrase, band: high|mid|low}。"""
