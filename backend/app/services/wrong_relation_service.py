@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 import uuid
 
 import sqlalchemy as sa
@@ -19,11 +20,34 @@ from app.models.d18_vocab_kg import StudentWrongRelation, VocabWordRelation
 
 # 会回写全局考点的语义关系(cooccur 不回写)
 _SEMANTIC = ("synonym", "antonym", "confusion", "ambiguity", "related")
-_MAX_BLOCKS = 12   # 单题参与建网的块上限(约束两两规模/成本)
+_MAX_BLOCKS = 8   # 单题参与建网的块上限(与前端 >8 折叠对齐,压缩两两规模/避免 LLM 输出截断)
+
+
+_MARK = re.compile(r'(?:(?<=\s)|^)([A-D])[.、)．]\s*')
+
+
+def _parse_inline_options(text: str) -> tuple[str, list[str]]:
+    """从题干文本内联解析「A. .. B. .. C. .. D. ..」式选项(uploaded 题选项常混在题干里)。
+    需至少 A/B/C 依序出现才认定,避免误判;返回 (去选项后的题干, 选项文本列表)。"""
+    if not text:
+        return "", []
+    ms = list(_MARK.finditer(text))
+    letters = [m.group(1) for m in ms]
+    if len(letters) < 3 or letters[:3] != ["A", "B", "C"]:
+        return text, []
+    stem = text[:ms[0].start()].strip()
+    opts: list[str] = []
+    for i, m in enumerate(ms):
+        end = ms[i + 1].start() if i + 1 < len(ms) else len(text)
+        opt = text[m.end():end].strip().rstrip(".;,、。")
+        if opt:
+            opts.append(opt)
+    return (stem or text), opts
 
 
 async def _wrong_options(db: AsyncSession, wr: WrongRecord) -> tuple[str, list[str]]:
-    """取错题的题干 + 选项文本列表。platform 从 platform_question.options;uploaded 无结构选项→[](靠题干)。"""
+    """取错题的题干 + 选项文本列表。platform 用 platform_question.options;
+    无结构化选项则从题干内联正则解析(A./B./C./D.);仍无 → [](不猜,交由上层空网)。"""
     stem = wr.stem or ""
     opts: list[str] = []
     if wr.q_scope == "platform":
@@ -33,23 +57,27 @@ async def _wrong_options(db: AsyncSession, wr: WrongRecord) -> tuple[str, list[s
                 opts = [str(o).strip() for o in pq.options if str(o).strip()]
             if pq.stem and not stem:
                 stem = pq.stem
+    if not opts:
+        s2, inline = _parse_inline_options(stem)
+        if inline:
+            stem, opts = s2, inline
     return stem, opts
 
 
 async def _extract_blocks(stem: str, options: list[str]) -> list[dict]:
     """LLM 把选项拆成独立语义块(词/词组)。返回 [{text, is_phrase, zh}]。dev-mock 空。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
-    if is_llm_dev_mode():
+    if is_llm_dev_mode() or not options:
         return []
-    opt_txt = "\n".join(f"- {o}" for o in options) if options else "(选项在题干中)"
+    opt_txt = "\n".join(f"- {o}" for o in options)
     system = (
         "你是英语题目分析专家。给定一道选择题的题干和各选项,把**每个选项**拆成其中的独立语义块"
         "(一个块=一个考点单位:单词或固定词组;去掉 A./B. 等选项编号与多余标点)。同一选项可能含多个块。\n"
         "严格输出 JSON:{\"blocks\":[{\"text\":\"英文词或词组(原形/小写)\",\"is_phrase\":true或false,\"zh\":\"中文\"}]}\n"
-        "只保留有考查价值的英文实义词/词组;同义合并去重;不臆造。")
+        "只保留有考查价值的英文实义词/词组;同义合并去重;**最多 8 个块**;不臆造,不要输出解释文字。")
     d = await complete_json(
         system_prompt=system, user_prompt=f"题干:{stem}\n选项:\n{opt_txt}\n返回 JSON:",
-        max_tokens=900, model=fast_model(), feature="wrong_option_split",
+        max_tokens=1400, model=fast_model(), feature="wrong_option_split",
         validate=lambda x: isinstance(x.get("blocks"), list))
     blocks = []
     seen = set()
@@ -93,10 +121,10 @@ async def _judge_pairs(blocks: list[dict], stem: str) -> dict:
         "你是英语词汇关系分析专家。下面是同一道题选项里的若干词/词组(带编号)。判断**每一对**之间的语义关系,"
         "只用这些标签:synonym(近义)/antonym(反义)/confusion(易混:形近或义近易错)/"
         "ambiguity(歧义:多义混淆)/related(其他相关)/none(无明显语义关系)。\n"
-        "严格输出 JSON:{\"pairs\":[{\"a\":编号,\"b\":编号,\"relation\":\"标签\"}]},只列有关系(非 none)的对,不臆造。")
+        "严格输出 JSON:{\"pairs\":[{\"a\":编号,\"b\":编号,\"relation\":\"标签\"}]},**只列有关系(非 none)的对**,不臆造,不要输出解释文字。")
     d = await complete_json(
         system_prompt=system, user_prompt=f"题干:{stem}\n词表:\n{listing}\n返回 JSON:",
-        max_tokens=900, model=fast_model(), feature="wrong_pair_relation",
+        max_tokens=1400, model=fast_model(), feature="wrong_pair_relation",
         validate=lambda x: isinstance(x.get("pairs"), list))
     out: dict = {}
     n = len(blocks)
@@ -125,6 +153,8 @@ async def build_wrong_relations(db: AsyncSession, *, student_id: uuid.UUID, wron
     if wr is None or wr.student_id != student_id:
         return
     stem, opts = await _wrong_options(db, wr)
+    if not opts:
+        return   # 无选项(uploaded 未存/题干无内联选项)→ 不猜、不调 LLM,交由上层空网隐藏
     blocks = await _extract_blocks(stem, opts)
     ids = [await _ensure_word_id(db, b["text"], b["is_phrase"], b["zh"]) for b in blocks]
     valid = [(i, wid) for i, wid in enumerate(ids) if wid is not None]
