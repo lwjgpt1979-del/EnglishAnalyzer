@@ -126,6 +126,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "按考点维度出题:每个有内容的维度(搭配/近义/反义/派生/易混/歧义/其他/考法)各 3 道单选,测试每维随机取 1(词与词组共用)", "why": "结构化按维出题、规格明确、fast 档", "locations": ["word_kp_service.py:_gen_kp_mcqs"], "cache": "global", "store": "vocab_kp_mcq(FK vocab_word_kp,按 word_id 一次生成、每维随机取,查看即生成+预热)"},
     {"feature": "wrong_option_split", "mode": "chat", "surface": "小程序端", "module": "错题关系网·选项拆块", "service": "wrong_relation_service",
      "purpose": "把一道错题的各选项拆成独立语义块(词/词组),去编号去重,供建关系网", "why": "结构化抽取、规格明确、fast 档", "locations": ["wrong_relation_service.py:_extract_blocks"], "cache": "per-user", "store": "块归一进 vocabulary_words(source=wrong);关系落 student_wrong_relation(按 student+wrong_record,查看即生成)"},
+    {"feature": "wrong_sense_match", "mode": "chat", "surface": "小程序端", "module": "错题关系网·义项匹配", "service": "wrong_word_net_service",
+     "purpose": "判一道错题考目标词的哪个义项(多义词考点消歧,如 but 转折/除…外),结果缓存 student_wrong_word.sense_id", "why": "结构化单选判定、规格明确、fast 档", "locations": ["wrong_word_net_service.py:_classify_sense"], "cache": "per-user", "store": "student_wrong_word.sense_id(每错题+词缓存一次)"},
     {"feature": "wrong_pair_relation", "mode": "chat", "surface": "小程序端", "module": "错题关系网·两两判关系", "service": "wrong_relation_service",
      "purpose": "对同题选项块两两判语义关系(近义/反义/易混/歧义/其他/无),建个人错题网并回写全局考点", "why": "结构化关系判定、规格明确、fast 档", "locations": ["wrong_relation_service.py:_judge_pairs"], "cache": "per-user", "store": "student_wrong_relation(私有边)+ 语义关系反哺 vocab_word_relation(全局)"},
     {"feature": "vocab_validity_gate", "mode": "chat", "surface": "小程序端", "module": "词力通·缺词", "service": "vocab_intensive_service",

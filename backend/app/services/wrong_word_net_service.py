@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import VocabularyWord
 from app.models.d16_question_domain import WrongRecord
-from app.models.d18_vocab_kg import StudentWrongWord
+from app.models.d18_vocab_kg import StudentWrongWord, VocabWordSense
 from app.services.wrong_relation_service import _wrong_options   # 复用选项解析(结构化/题干内联)
 
 _LETTER = "ABCD"
@@ -137,8 +137,55 @@ def _brief(w: WrongRecord) -> dict:
             "source": w.source_label or "", "question_type": w.question_type or ""}
 
 
-async def word_wrong_net(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID) -> dict:
-    """以词为中心的错题网:该词全局考点(dims,含关系词供辐射图)+ 主错题(role=answer)+ 次错题(role=distractor)。"""
+async def _classify_sense(db: AsyncSession, *, word: str, senses: list[VocabWordSense], wr: WrongRecord) -> uuid.UUID | None:
+    """LLM 判该错题考目标词的哪个义项。senses 已按 sort 排;单义/dev-mock→首义项。"""
+    if not senses:
+        return None
+    if len(senses) == 1:
+        return senses[0].id
+    from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
+    if is_llm_dev_mode():
+        return senses[0].id
+    listing = "\n".join(f"{i}. {s.gloss_zh}({s.pos or ''})" for i, s in enumerate(senses))
+    system = ("给定一道英语题的题干/正确答案/解析,和目标词的若干义项(带编号),判断**这道题考的是目标词的哪个义项**。"
+              "只输出 JSON:{\"sense\": 编号}。")
+    d = await complete_json(
+        system_prompt=system,
+        user_prompt=f"目标词:{word}\n题干:{(wr.stem or '')[:200]}\n正确答案:{wr.correct_answer or ''}\n"
+                    f"解析:{(wr.explanation or '')[:200]}\n义项:\n{listing}\n返回 JSON:",
+        max_tokens=100, model=fast_model(), feature="wrong_sense_match",
+        validate=lambda x: isinstance(x.get("sense"), int))
+    if d and isinstance(d.get("sense"), int) and 0 <= d["sense"] < len(senses):
+        return senses[d["sense"]].id
+    return senses[0].id
+
+
+async def _ensure_record_sense(db: AsyncSession, *, student_id: uuid.UUID,
+                               wrong_record_id: uuid.UUID, word_id: uuid.UUID) -> uuid.UUID | None:
+    """定位并缓存该错题考中心词的哪个义项(student_wrong_word.sense_id);已缓存直接返回。"""
+    row = (await db.execute(
+        sa.select(StudentWrongWord).where(
+            StudentWrongWord.student_id == student_id,
+            StudentWrongWord.word_id == word_id,
+            StudentWrongWord.wrong_record_id == wrong_record_id).limit(1))).scalar_one_or_none()
+    if row is not None and row.sense_id is not None:
+        return row.sense_id
+    from app.services import word_kp_service
+    await word_kp_service.ensure_word_kp(db, word_id=word_id)   # 保证义项已生成
+    senses = (await db.execute(
+        sa.select(VocabWordSense).where(VocabWordSense.word_id == word_id)
+        .order_by(VocabWordSense.sort))).scalars().all()
+    wr = await db.get(WrongRecord, wrong_record_id)
+    sid = await _classify_sense(db, word=(wr.correct_answer or "").strip() or "", senses=senses, wr=wr) if wr else None
+    if sid is not None and row is not None:
+        row.sense_id = sid
+        await db.commit()
+    return sid
+
+
+async def word_wrong_net(db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID,
+                         sense_id: uuid.UUID | None = None) -> dict:
+    """以词为中心的错题网:该词考点(按 sense_id 定的义项,缺则主义项)+ 主错题(role=answer)+ 次错题(role=distractor)。"""
     await ensure_indexed(db, student_id=student_id)
     rows = (await db.execute(
         sa.select(StudentWrongWord).where(
@@ -155,14 +202,16 @@ async def word_wrong_net(db: AsyncSession, *, student_id: uuid.UUID, word_id: uu
 
     w = await db.get(VocabularyWord, word_id)
     from app.services import word_kp_service
-    kp = await word_kp_service.word_kp_out(db, word_id=word_id, student_id=student_id)
+    kp = await word_kp_service.word_kp_out(db, word_id=word_id, sense_id=sense_id, student_id=student_id)
     return {"word_id": str(word_id), "word": w.word if w else "", "zh": _zh(w),
             "is_phrase": (w.type == "phrase") if w else False,
+            "sense_id": kp["senses"][0]["sense_id"] if kp.get("senses") else None,
+            "gloss": kp.get("gloss", ""), "senses": [{"sense_id": s["sense_id"], "gloss": s["gloss"], "pos": s["pos"]} for s in kp.get("senses", [])],
             "dims": kp.get("dims", []), "main": main, "secondary": secondary}
 
 
 async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID) -> dict:
-    """从一道错题进入:中心 = 该题答案词。索引本题 → 定位答案词 → 出以词为中心的网。"""
+    """从一道错题进入:中心 = 该题答案词,考点限定为该题命中的义项。"""
     await index_wrong_record(db, student_id=student_id, wrong_record_id=wrong_record_id)
     ans = (await db.execute(
         sa.select(StudentWrongWord.word_id).where(
@@ -175,5 +224,6 @@ async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_
         center = wr.vocab_word_id if wr else None
     if center is None:
         return {"word_id": None, "word": "", "zh": "", "is_phrase": False,
-                "dims": [], "main": [], "secondary": []}
-    return await word_wrong_net(db, student_id=student_id, word_id=center)
+                "sense_id": None, "gloss": "", "senses": [], "dims": [], "main": [], "secondary": []}
+    sid = await _ensure_record_sense(db, student_id=student_id, wrong_record_id=wrong_record_id, word_id=center)
+    return await word_wrong_net(db, student_id=student_id, word_id=center, sense_id=sid)
