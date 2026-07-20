@@ -11,12 +11,12 @@
       <view class="wrn-canvas" :style="{ height: BOXH + 'rpx' }">
         <view v-for="(s, i) in satellites" :key="'e'+i" class="wrn-edge" :style="edgeStyle(s)" />
         <view v-for="(s, i) in satellites" :key="'l'+i" class="wrn-elabel"
-          :style="{ left: ((s.x + CX)/2 - 26) + 'rpx', top: ((s.y + CY)/2 - 14) + 'rpx', background: relBg(s.rel), color: relFg(s.rel) }">{{ relLabel(s.rel) }}</view>
+          :style="{ left: (CX + (s.x - CX) * 0.62 - 26) + 'rpx', top: (CY + (s.y - CY) * 0.62 - 14) + 'rpx', background: relBg(s.rel), color: relFg(s.rel) }">{{ relLabel(s.rel) }}</view>
         <view v-for="(s, i) in satellites" :key="'n'+i" class="wrn-node" :class="{ link: !!s.word_id }"
           :style="{ left: (s.x - 72) + 'rpx', top: (s.y - 26) + 'rpx' }" @tap="switchCenter(s)">
           <text class="wrn-word">{{ s.text }}</text>
         </view>
-        <view class="wrn-center" :style="{ left: (CX - 56) + 'rpx', top: (CY - 56) + 'rpx' }" @tap="activeTab = 'main'">
+        <view class="wrn-center" :style="{ left: (CX - 104) + 'rpx', top: (CY - 48) + 'rpx' }" @tap="activeTab = 'main'">
           <text class="wrn-cword">{{ net.word }}</text>
           <text v-if="net.gloss" class="wrn-czh">{{ net.gloss }}</text>
         </view>
@@ -90,7 +90,7 @@ const relBg = (k: string) => REL[k]?.bg || '#E6F1FB'
 const relFg = (k: string) => REL[k]?.fg || '#185FA5'
 const relC = (k: string) => REL[k]?.c || '#85B7EB'
 
-const BOXW = 690, CX = 345, CY = 210, R = 168, BOXH = 420
+const BOXW = 690, CX = 345, CY = 222, R = 188, BOXH = 456
 
 const net = ref<WordNet | null>(null)
 const loading = ref(true)
@@ -176,9 +176,9 @@ async function openTest() {
 .wrn-node { position: absolute; width: 144rpx; box-sizing: border-box; height: 52rpx; display: flex; align-items: center; justify-content: center; padding: 0 8rpx; background: #E6F1FB; border: 2rpx solid #85B7EB; border-radius: 14rpx; }
 .wrn-node.link { background: #E6F1FB; border-color: #5B9BE8; }
 .wrn-word { font-size: 24rpx; font-weight: 600; color: #0C447C; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.wrn-center { position: absolute; width: 112rpx; height: 112rpx; border-radius: 56rpx; background: #E1F5EE; border: 3rpx solid #1D9E75; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.wrn-cword { font-size: 30rpx; font-weight: 700; color: #0F6E56; }
-.wrn-czh { font-size: 20rpx; color: #0F6E56; margin-top: 2rpx; }
+.wrn-center { position: absolute; width: 208rpx; box-sizing: border-box; height: 96rpx; border-radius: 20rpx; background: #E1F5EE; border: 3rpx solid #1D9E75; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6rpx 14rpx; }
+.wrn-cword { max-width: 180rpx; font-size: 30rpx; font-weight: 700; color: #0F6E56; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wrn-czh { max-width: 180rpx; font-size: 20rpx; color: #0F6E56; margin-top: 2rpx; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .wrn-tabs { margin-top: 8rpx; padding-top: 12rpx; border-top: 1rpx solid #EEF2F7; }
 .wrn-tabrow { white-space: nowrap; }
 .wrn-tab { display: inline-block; font-size: 24rpx; padding: 10rpx 22rpx; margin-right: 12rpx; border-radius: 26rpx; border: 1rpx solid #E3E8EF; color: #6b7178; background: #F7F9FC; }
