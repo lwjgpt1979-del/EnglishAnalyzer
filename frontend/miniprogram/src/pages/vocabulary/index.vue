@@ -129,11 +129,52 @@
         </view>
       </view>
 
-      <!-- 词族(G 构词法):义关起,词根 + 同族词,认一串 -->
-      <view v-if="gateStep !== 'form' && wordFamily && wordFamily.members.length" class="wf-box">
-        <text class="wf-head">词根 {{ wordFamily.root || '同族' }} · 认一串</text>
-        <view class="wf-chips">
-          <text v-for="m in wordFamily.members" :key="m.word" class="wf-chip">{{ m.word }} {{ m.meaning }}</text>
+      <!-- 考点深挖(义关起):固定搭配/近义/反义/派生·词族/易混/常见考法,折叠展开 -->
+      <view v-if="gateStep !== 'form' && kpHasContent" class="kp-box">
+        <view class="kp-toggle" @tap="kpOpen = !kpOpen">
+          <view class="ic ic-target" style="width:28rpx;height:28rpx" />
+          <text class="kp-toggle-t">考点拓展{{ wordKp!.root ? ' · 词根 ' + wordKp!.root : '' }}</text>
+          <text class="kp-arrow" :class="{ open: kpOpen }">▾</text>
+        </view>
+        <view v-if="kpOpen" class="kp-body">
+          <view v-if="wordKp!.collocations.length" class="kp-sec">
+            <text class="kp-sec-h">固定搭配</text>
+            <view v-for="(c, i) in wordKp!.collocations" :key="'c'+i" class="kp-line">
+              <text class="kp-en">{{ c.en }}</text><text class="kp-zh">{{ c.zh }}</text>
+            </view>
+          </view>
+          <view v-if="wordKp!.synonyms.length" class="kp-sec">
+            <text class="kp-sec-h">近义词</text>
+            <view class="kp-chips">
+              <text v-for="(w, i) in wordKp!.synonyms" :key="'s'+i" class="kp-chip"
+                :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text>
+            </view>
+          </view>
+          <view v-if="wordKp!.antonyms.length" class="kp-sec">
+            <text class="kp-sec-h">反义词</text>
+            <view class="kp-chips">
+              <text v-for="(w, i) in wordKp!.antonyms" :key="'a'+i" class="kp-chip"
+                :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text>
+            </view>
+          </view>
+          <view v-if="wordKp!.derivations.length" class="kp-sec">
+            <text class="kp-sec-h">派生·词族</text>
+            <view class="kp-chips">
+              <text v-for="(w, i) in wordKp!.derivations" :key="'d'+i" class="kp-chip"
+                :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}<text v-if="w.zh" class="kp-chip-zh"> {{ w.zh }}</text></text>
+            </view>
+          </view>
+          <view v-if="wordKp!.confusions.length" class="kp-sec">
+            <text class="kp-sec-h">易混辨析</text>
+            <view v-for="(w, i) in wordKp!.confusions" :key="'x'+i" class="kp-line">
+              <text class="kp-en" :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}</text>
+              <text class="kp-zh">{{ w.note || w.zh }}</text>
+            </view>
+          </view>
+          <view v-if="wordKp!.exam_tips" class="kp-sec">
+            <text class="kp-sec-h">常见考法</text>
+            <text class="kp-tips">{{ wordKp!.exam_tips }}</text>
+          </view>
         </view>
       </view>
 
@@ -604,8 +645,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordFamily, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
-import type { ExamOverview, WordFamily, QuizMcq } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
+import type { ExamOverview, WordKp, QuizMcq } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
@@ -717,19 +758,30 @@ const curStudy = computed(() => cardList.value[cardIdx.value] || ({} as VocabWor
 
 // ── 三关(A):form(先形音,遮义) → learn(义+用,现有流程)。新词从 form 起;复习词直接 learn ──
 const gateStep = ref<'form' | 'learn'>('learn')
-// 词族(G):义/用关展示;进 learn 关即拉取(查看即生成)
-const wordFamily = ref<WordFamily | null>(null)
-async function loadFamily() {
+// 考点深挖(义关折叠卡,含词族):进 learn 关即拉取(查看即生成),点开才展开
+const wordKp = ref<WordKp | null>(null)
+const kpOpen = ref(false)
+async function loadKp() {
   const wid = curStudy.value?.word_id
-  if (!wid) { wordFamily.value = null; return }
-  wordFamily.value = null
-  try { wordFamily.value = await getWordFamily(wid) } catch { wordFamily.value = null }
+  if (!wid) { wordKp.value = null; return }
+  wordKp.value = null
+  try { wordKp.value = await getWordKp(wid) } catch { wordKp.value = null }
+}
+const kpHasContent = computed(() => {
+  const k = wordKp.value
+  return !!k && !!(k.root || k.collocations.length || k.synonyms.length || k.antonyms.length
+    || k.derivations.length || k.confusions.length || k.exam_tips)
+})
+// 点关联词:已入库(有 word_id)的后端已随考点自动排入学习队列,轻提示即可
+function learnRelated(w: { word: string; word_id: string | null }) {
+  if (!w.word_id) return
+  uni.showToast({ title: `${w.word} 已加入学习`, icon: 'none' })
 }
 watch(() => curStudy.value?.word_id, () => {
   const g: 'form' | 'learn' = curStudy.value?.gate === 'form' ? 'form' : 'learn'
   gateStep.value = g
-  wordFamily.value = null
-  if (g === 'learn') loadFamily()   // 复习词直接进 learn → 拉词族
+  wordKp.value = null; kpOpen.value = false
+  if (g === 'learn') loadKp()       // 复习词直接进 learn → 拉考点
   ensureCardMedia(curStudy.value)   // 查看即生成:无图则触发后端补图(可画的词)
 }, { immediate: true })
 // stepper 高亮:形(遮义) / 义(检测中) / 用(造句中)
@@ -737,7 +789,7 @@ const displayGate = computed<'form' | 'meaning' | 'use'>(() =>
   gateStep.value === 'form' ? 'form' : (produceTask.value ? 'use' : 'meaning'))
 function toMeaning() {
   gateStep.value = 'learn'
-  loadFamily()                                  // 形→义:拉词族
+  loadKp()                                      // 形→义:拉考点
   if (readSeq.value) playCard(curStudy.value)   // 翻出词义时连读
 }
 
@@ -1740,10 +1792,24 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .wc-mean-hidden { font-size: 26rpx; color: #94a3b8; }
 .gate-next { margin-top: 8rpx; }
 /* 词族(G) */
-.wf-box { background: #EEF5FF; border: 1rpx solid #B5D4F4; border-radius: 16rpx; padding: 16rpx 18rpx; margin: 8rpx 0 20rpx; }
-.wf-head { font-size: 24rpx; color: #185FA5; }
-.wf-chips { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 10rpx; }
-.wf-chip { font-size: 24rpx; color: #0C447C; background: #D6E6FA; padding: 6rpx 16rpx; border-radius: 10rpx; }
+.kp-box { background: #EEF5FF; border: 1rpx solid #B5D4F4; border-radius: 16rpx; margin: 8rpx 0 20rpx; overflow: hidden; }
+.kp-toggle { display: flex; align-items: center; gap: 8rpx; padding: 16rpx 18rpx; }
+.kp-toggle-t { flex: 1; font-size: 26rpx; color: #185FA5; font-weight: 600; }
+.kp-arrow { font-size: 24rpx; color: #6A9BD8; transition: transform .2s; }
+.kp-arrow.open { transform: rotate(180deg); }
+.kp-body { padding: 0 18rpx 16rpx; }
+.kp-sec { padding-top: 14rpx; margin-top: 14rpx; border-top: 1rpx solid #DCEAFB; }
+.kp-sec:first-child { border-top: none; margin-top: 0; padding-top: 4rpx; }
+.kp-sec-h { display: block; font-size: 22rpx; color: #6A8CB5; margin-bottom: 8rpx; }
+.kp-line { display: flex; align-items: baseline; gap: 12rpx; margin: 4rpx 0; }
+.kp-en { font-size: 26rpx; color: #0C447C; font-weight: 500; }
+.kp-zh { flex: 1; font-size: 24rpx; color: #4A6785; }
+.kp-chips { display: flex; flex-wrap: wrap; gap: 10rpx; }
+.kp-chip { font-size: 24rpx; color: #0C447C; background: #D6E6FA; padding: 6rpx 16rpx; border-radius: 10rpx; }
+.kp-chip.link { background: #C3DEFA; border: 1rpx solid #8FBDEF; }
+.kp-chip-zh { color: #4A6785; font-size: 22rpx; }
+.kp-en.link { color: #2F7BDB; text-decoration: underline; }
+.kp-tips { display: block; font-size: 24rpx; color: #4A6785; line-height: 1.6; }
 .study-hd .progress-hint { margin-bottom: 0; }
 .seq-toggle { font-size: 24rpx; color: var(--c-text-hint); }
 .seq-toggle.on { color: var(--c-primary-deep); font-weight: 600; }

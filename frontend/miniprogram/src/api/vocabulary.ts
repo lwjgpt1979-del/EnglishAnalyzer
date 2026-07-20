@@ -31,6 +31,21 @@ export function getWordFamily(wordId: string): Promise<WordFamily> {
   return request<WordFamily>(`/api/v1/vocabulary/word-family/${wordId}`, { method: 'GET' })
 }
 
+// 单词考点深挖(义关折叠卡):固定搭配/近义/反义/派生/易混/考法 + 词根(合并词族)
+export interface KpRelWord { word: string; zh: string; word_id: string | null; note?: string }
+export interface WordKp {
+  root: string
+  collocations: Array<{ en: string; zh: string }>
+  synonyms: KpRelWord[]
+  antonyms: KpRelWord[]
+  derivations: KpRelWord[]
+  confusions: KpRelWord[]
+  exam_tips: string
+}
+export function getWordKp(wordId: string): Promise<WordKp> {
+  return request<WordKp>(`/api/v1/vocabulary/word-kp/${wordId}`, { method: 'GET' })
+}
+
 // 测试题库:每词随机取一道 LLM 缓存选择题(未缓存返回 mcq=null,后台异步生成)
 export interface QuizMcq { word_id: string; mcq_type: string; stem: string; options: string[]; answer: string; explanation: string }
 export function getQuizMcqs(wordIds: string[]): Promise<Array<{ word_id: string; mcq: QuizMcq | null }>> {
