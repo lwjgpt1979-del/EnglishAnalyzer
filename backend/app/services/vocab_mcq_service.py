@@ -35,7 +35,8 @@ async def _gen_mcqs(word: str, meaning: str, examples) -> list[dict]:
         "词义丰富/多义/搭配多的词出到 5 道,简单单义词只出 3 道。严格输出 JSON:\n"
         '{"items":[{"type":"w2m|m2w|cloze","stem":"题干","options":["4个选项"],'
         '"answer":"正确项(必须与 options 之一完全一致)","explanation":"一句中文解析"}]}\n'
-        "每题 4 个选项、单选;干扰项像「读半懂的人会选的」(形近/近义/他义),不得等于正确项;不臆造。")
+        "每题 4 个选项、单选;干扰项像「读半懂的人会选的」(形近/近义/他义),不得等于正确项;不臆造。\n"
+        "cloze 挖空句里除目标词与选项词外,其余单词用简单常见词、难度不高于目标词,不要用更生僻的词做句子载体。")
     d = await complete_json(
         system_prompt=system, user_prompt=f"单词:{word}\n释义:{meaning}\n参考例句:{examples}\n返回 JSON:",
         max_tokens=1200, model=fast_model(), feature="vocab_mcq",

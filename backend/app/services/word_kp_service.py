@@ -192,7 +192,9 @@ async def _gen_kp_mcqs(word: str, meaning: str, kp: dict) -> list[dict]:
         "- exam_tip 常见考法:结合该词高频考法出一道综合运用题。\n"
         "严格输出 JSON:{\"items\":[{\"dimension\":\"上面的英文维度名\",\"stem\":\"题干\",\n"
         "\"options\":[\"4个选项\"],\"answer\":\"正确项(必须与 options 之一完全一致)\",\"explanation\":\"一句中文解析\"}]}\n"
-        "每维恰好 3 题、每题 4 个选项单选;干扰项合理不等于正确项;只出所列维度,不臆造内容。")
+        "每维恰好 3 题、每题 4 个选项单选;干扰项合理不等于正确项;只出所列维度,不臆造内容。\n"
+        "【用词要简单】题干句里除目标词与考点词(选项中的词)外,其余单词一律用简单常见词、"
+        "难度不高于目标词,不要用比目标词更生僻的词做句子载体——避免学生被句中难词绊住、学不到考点。")
     d = await complete_json(
         system_prompt=system,
         user_prompt=f"单词:{word}\n释义:{meaning}\n各维度内容:\n{dims_desc}\n返回 JSON:",
