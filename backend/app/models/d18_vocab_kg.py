@@ -38,18 +38,21 @@ class VocabWordKp(Base):
 
 
 class VocabWordRelation(Base):
-    """单词考点·词-词/词-短语/词-文本 关系(词汇关系图):近义/反义/易混/搭配/派生/考法。
-    related_word_id 命中词库时填(可点击去学);未命中只留 related_text。全关系型,无 JSONB。"""
+    """单词/词组考点·动态维度关系图(受控可扩维度清单,按词性/特点动态):
+    relation = 维度键(dim_key,见 word_kp_service._DIM_REGISTRY:时态/可数性/近义/搭配/考法…);
+    relational 维的项命中词库填 related_word_id(可点去学),文本维只留 related_text。全关系型,无 JSONB。"""
 
     __tablename__ = "vocab_word_relation"
 
     id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     word_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
-    relation = mapped_column(sa.String(16), nullable=False)    # synonym|antonym|confusion|collocation|derivation|exam_tip
+    relation = mapped_column(sa.String(32), nullable=False)    # 维度键 dim_key(动态,取自受控清单)
+    dim_label = mapped_column(sa.String(32), nullable=True)    # 维度中文名(写入时的快照;读取回退 registry)
+    sort = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))  # 维度展示顺序(registry 序)
     related_word_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="SET NULL"), nullable=True)
-    related_text = mapped_column(sa.Text, nullable=False)      # 相关词/短语/考法文本(总有)
+    related_text = mapped_column(sa.Text, nullable=False)      # 相关词/词形/短语/文本内容(总有)
     related_zh = mapped_column(sa.Text, nullable=True)         # 中文
     note = mapped_column(sa.Text, nullable=True)              # 辨析要点/备注
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

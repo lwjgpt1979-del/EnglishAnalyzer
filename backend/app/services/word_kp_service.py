@@ -13,18 +13,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d5_learning import StudentVocabCandidate, VocabularyLearning, VocabularyWord
 from app.models.d18_vocab_kg import VocabKpMcq, VocabWordKp, VocabWordRelation
 
-# 词-词类关系(可链 related_word_id、可点去学);collocation/exam_tip 为文本类
-_WORD_RELATIONS = ("synonym", "antonym", "derivation", "confusion", "ambiguity", "related")
-# 关系 → LLM 输出/组装用的键名(避免裸 rel+"s" 拼错;歧义/其他新增)
-_REL_KEY = {"synonym": "synonyms", "antonym": "antonyms", "derivation": "derivations",
-            "confusion": "confusions", "ambiguity": "ambiguities", "related": "relateds"}
-# 带辨析要点(note)的词-词关系
-_NOTE_RELATIONS = ("confusion", "ambiguity", "related")
-# 考点扩展测试维度(固定顺序;各维有内容才出题)
-_KP_DIMS = ("collocation", "synonym", "antonym", "derivation", "confusion", "ambiguity", "related", "exam_tip")
-_DIM_LABEL = {"collocation": "固定搭配", "synonym": "近义", "antonym": "反义",
-              "derivation": "派生·词族", "confusion": "易混辨析", "ambiguity": "歧义",
-              "related": "其他关联", "exam_tip": "常见考法"}
+# 受控可扩维度清单(动态考点):dim_key → (中文名, relational=项是否可链词, 适用词性提示)
+# LLM 按词/词组的词性与特点,从中挑适用维度填充;新维度往这里加即可。
+_DIM_REGISTRY: dict[str, tuple[str, bool, str]] = {
+    # —— 可链词维(relational:项是英文词/词形,命中词库→可点去学)——
+    "synonym": ("近义", True, "通用"),
+    "antonym": ("反义", True, "通用"),
+    "confusion": ("易混", True, "通用"),
+    "ambiguity": ("歧义", True, "通用"),
+    "derivation": ("派生·词族", True, "通用"),
+    "tense": ("时态变化", True, "动词"),
+    "plural": ("单复数", True, "名词"),
+    "comparative": ("比较级·最高级", True, "形容词/副词"),
+    # —— 文本维(text:项是用法/说明内容,不链词)——
+    "collocation": ("固定搭配", False, "通用"),
+    "transitivity": ("及物性", False, "动词"),
+    "voice": ("语态", False, "动词"),
+    "sentence_pattern": ("常见句型", False, "动词"),
+    "countability": ("可数性", False, "名词"),
+    "possessive": ("所有格", False, "名词"),
+    "ed_ing": ("-ed/-ing 辨析", False, "形容词"),
+    "prep_discrimination": ("介词辨析", False, "介词"),
+    "usage": ("用法·位置", False, "词组/副词"),
+    "semantic_focus": ("语义侧重", False, "词组/近义组"),
+    "exam_tip": ("常见考法", False, "通用"),
+}
+_DIM_ORDER = list(_DIM_REGISTRY.keys())            # 展示顺序
+_DIM_INDEX = {k: i for i, k in enumerate(_DIM_ORDER)}
+_RELATIONAL_DIMS = {k for k, v in _DIM_REGISTRY.items() if v[1]}
+
+
+def _dim_label(key: str) -> str:
+    return _DIM_REGISTRY.get(key, (key, False, ""))[0]
 
 
 def _meaning_of(w: VocabularyWord) -> str:
@@ -34,78 +54,80 @@ def _meaning_of(w: VocabularyWord) -> str:
 
 
 async def _gen_kp(word: str, meaning: str, examples, is_phrase: bool = False) -> dict:
-    """LLM 一次挖全考点(fast 档);目标可为单词或词组。dev-mock 返回空。"""
+    """LLM 按词性/特点从受控维度清单动态挑维度出考点(fast 档)。dev-mock 返回空。
+    返回 {pos, root, dims:[{key, items:[{text, zh, note}]}]}。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
     if is_llm_dev_mode():
-        return {"root": "", "synonyms": [], "antonyms": [], "derivations": [], "collocations": [],
-                "confusions": [], "ambiguities": [], "relateds": [], "exam_tips": ""}
+        return {"pos": "", "root": "", "dims": []}
     tgt = "词组" if is_phrase else "单词"
+    menu = "\n".join(f"- {k}({lbl},{'可链词' if rel else '文本'},适用:{pos})"
+                     for k, (lbl, rel, pos) in _DIM_REGISTRY.items())
     system = (
-        f"你是英语词汇考点专家。给定{tgt}+释义+例句,挖掘它的考点,严格输出 JSON:\n"
-        '{"root":"词根/词干(词组或无明显则空)",'
-        '"synonyms":[{"word":"近义英文词/词组","zh":"中文"}],'
-        '"antonyms":[{"word":"反义英文词/词组","zh":"中文"}],'
-        '"derivations":[{"word":"同族/派生词(英文;词组可为其变体)","zh":"中文(含词性,如 n. 庆典)"}],'
-        '"collocations":[{"en":"固定搭配(含该目标)","zh":"中文"}],'
-        '"confusions":[{"word":"易混英文词/词组","zh":"中文","note":"一句辨析要点"}],'
-        '"ambiguities":[{"word":"与该目标有歧义/多义混淆的英文词/词组","zh":"中文","note":"歧义点"}],'
-        '"relateds":[{"word":"其他相关英文词/词组(同话题/搭配伙伴/常一起考等)","zh":"中文","note":"关系"}],'
-        '"exam_tips":"一句常见考法/考点提示(中文)"}\n'
-        f"各数组 0-4 条,无则空;近义/反义/派生/易混/歧义/其他必须是真实存在、确与该{tgt}相关的英文词或词组,不臆造。")
+        f"你是英语词汇考点专家。给定{tgt}+释义+例句:先判断其词性(pos),再从下面【维度清单】里挑出"
+        f"**真正适用于该{tgt}词性与特点**的维度(只挑适用的,不适用不出;数量不限),每个维度给 1-4 个考点项。\n"
+        "【维度清单】dim_key(维度名,类型,适用词性):\n" + menu + "\n"
+        "可链词维:项 text 填英文词/词形(时态→went/gone、单复数→复数形、比较级→更级形、近义→近义词等);\n"
+        "文本维:项 text 填该用法/考点的简明说明(中文为主,可含英文例)。\n"
+        '严格输出 JSON:{"pos":"verb|noun|adj|adv|prep|phrase|其他","root":"词根/词干或空",'
+        '"dims":[{"key":"清单里的dim_key","items":[{"text":"词/词形 或 说明","zh":"中文(可空)","note":"备注(可空)"}]}]}\n'
+        f"只用清单里的 dim_key;项要真实、确与该{tgt}相关,不臆造;例句/说明用词简单、不高于目标{tgt}难度。")
     d = await complete_json(
         system_prompt=system, user_prompt=f"{tgt}:{word}\n释义:{meaning}\n参考例句:{examples}\n返回 JSON:",
-        max_tokens=1200, model=fast_model(), feature="vocab_word_kp",
-        validate=lambda x: isinstance(x, dict))
-    return d or {}
+        max_tokens=1800, model=fast_model(), feature="vocab_word_kp",
+        validate=lambda x: isinstance(x.get("dims"), list))
+    return d or {"pos": "", "root": "", "dims": []}
 
 
-def _clean_word_items(arr, keys=("word", "zh")) -> list[dict]:
+def _clean_items(arr) -> list[dict]:
+    """规整一个维度下的项:{text, zh, note}。text 必填。"""
     out = []
-    for it in (arr or [])[:4]:
-        if isinstance(it, dict) and str(it.get(keys[0]) or "").strip():
-            out.append({k: str(it.get(k) or "").strip() for k in ("word", "zh", "note", "en")})
+    for it in (arr or [])[:5]:
+        if not isinstance(it, dict):
+            continue
+        text = str(it.get("text") or it.get("word") or it.get("en") or "").strip()
+        if text:
+            out.append({"text": text, "zh": str(it.get("zh") or "").strip(),
+                        "note": str(it.get("note") or "").strip()})
     return out
 
 
 async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
-    """确保该词考点已生成:vocab_word_kp 有行=已生成直接返回;否则 LLM 生成 → 落 kp(词根)+ relation(六维)。"""
+    """确保该词/词组考点已生成:vocab_word_kp 有行=已生成直接返回;否则 LLM 动态挖维度 → 落 relation(每维每项一行)+ kp(词根)。"""
     if await db.get(VocabWordKp, word_id) is not None:
         return
     w = await db.get(VocabularyWord, word_id)
     if w is None:
         return
     d = await _gen_kp(w.word, _meaning_of(w), w.examples or [], is_phrase=(w.type == "phrase"))
-    # 词-词类:批量查 related_text 是否在词库,填 related_word_id
-    word_texts = []
-    for rel in _WORD_RELATIONS:
-        src = _REL_KEY[rel]
-        word_texts += [str(x.get("word") or "").strip() for x in (d.get(src) or []) if isinstance(x, dict)]
+    # 规整维度:只留清单内 dim_key
+    dims = []
+    for dim in (d.get("dims") or []):
+        if not isinstance(dim, dict):
+            continue
+        key = str(dim.get("key") or "").strip()
+        items = _clean_items(dim.get("items"))
+        if key in _DIM_REGISTRY and items:
+            dims.append((key, items))
+    # 可链词维:批量查 related_text 是否在词库,填 related_word_id
+    link_texts = [it["text"] for key, items in dims if key in _RELATIONAL_DIMS for it in items]
     id_by_text: dict = {}
-    lows = list({t.lower() for t in word_texts if t})
+    lows = list({t.lower() for t in link_texts if t})
     if lows:
         rows = (await db.execute(
             sa.select(VocabularyWord.id, VocabularyWord.word)
             .where(sa.func.lower(VocabularyWord.word).in_(lows)))).all()
         id_by_text = {ww.lower(): wid for wid, ww in rows}
     vals: list[dict] = []
-    for rel in _WORD_RELATIONS:
-        src = _REL_KEY[rel]
-        for it in _clean_word_items(d.get(src)):
-            t = it["word"]
-            if t.lower() == w.word.lower():
-                continue
-            vals.append({"id": uuid.uuid4(), "word_id": word_id, "relation": rel,
-                         "related_word_id": id_by_text.get(t.lower()), "related_text": t,
-                         "related_zh": it.get("zh") or None, "note": it.get("note") or None})
-    for c in _clean_word_items(d.get("collocations")):
-        en = c.get("en") or c.get("word")
-        if en:
-            vals.append({"id": uuid.uuid4(), "word_id": word_id, "relation": "collocation",
-                         "related_word_id": None, "related_text": en, "related_zh": c.get("zh") or None, "note": None})
-    tip = str(d.get("exam_tips") or "").strip()
-    if tip:
-        vals.append({"id": uuid.uuid4(), "word_id": word_id, "relation": "exam_tip",
-                     "related_word_id": None, "related_text": tip, "related_zh": None, "note": None})
+    for key, items in dims:
+        relational = key in _RELATIONAL_DIMS
+        for it in items:
+            t = it["text"]
+            if relational and t.lower() == w.word.lower():
+                continue   # 不自指
+            vals.append({"id": uuid.uuid4(), "word_id": word_id, "relation": key,
+                         "dim_label": _dim_label(key), "sort": _DIM_INDEX.get(key, 99),
+                         "related_word_id": id_by_text.get(t.lower()) if relational else None,
+                         "related_text": t, "related_zh": it.get("zh") or None, "note": it.get("note") or None})
     if vals:
         await db.execute(pg_insert(VocabWordRelation).values(vals)
                          .on_conflict_do_nothing(index_elements=["word_id", "relation", "related_text"]))
@@ -115,33 +137,50 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
     await db.commit()
 
 
+# 过渡期:动态维度键 → 现有前端读的固定 legacy 键(R3 前端动态化后可删)
+_LEGACY_KEY = {"synonym": "synonyms", "antonym": "antonyms", "derivation": "derivations",
+               "confusion": "confusions", "ambiguity": "ambiguities", "related": "relateds"}
+
+
 async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, student_id: uuid.UUID | None = None) -> dict:
-    """考点全套(六维 + 词根);近义/反义/派生/易混带 word_id(命中词库→可点去学)。
-    传 student_id 则把在库未学的派生/近义词加入候选池(先验进队列,合并原词族行为)。"""
+    """考点全套:动态维度 `dims:[{key,label,relational,items:[{text,zh,note,word_id}]}]`(按 registry 顺序);
+    可链词维的项命中词库带 word_id(可点去学)。传 student_id 则把在库未学的相关词加入候选池(先验进队列)。
+    过渡期同时返回旧固定键(synonyms/collocations/exam_tips…)供未升级的前端读。"""
     await ensure_word_kp(db, word_id=word_id)
     kp = await db.get(VocabWordKp, word_id)
     rows = (await db.execute(
         sa.select(VocabWordRelation).where(VocabWordRelation.word_id == word_id))).scalars().all()
-    out: dict = {"root": (kp.root if kp else "") or "", "collocations": [], "synonyms": [],
-                 "antonyms": [], "derivations": [], "confusions": [], "ambiguities": [],
-                 "relateds": [], "exam_tips": ""}
-    seed_ids: list = []
+    by_dim: dict = {}
     for r in rows:
-        if r.relation == "exam_tip":
-            out["exam_tips"] = r.related_text
-        elif r.relation == "collocation":
-            out["collocations"].append({"en": r.related_text, "zh": r.related_zh or ""})
-        elif r.relation in _WORD_RELATIONS:
-            key = _REL_KEY[r.relation]
-            item = {"word": r.related_text, "zh": r.related_zh or "",
-                    "word_id": str(r.related_word_id) if r.related_word_id else None}
-            if r.relation in _NOTE_RELATIONS:
-                item["note"] = r.note or ""
-            out[key].append(item)
-            if r.related_word_id and r.relation in ("derivation", "synonym"):
+        by_dim.setdefault(r.relation, []).append(r)
+    seed_ids: list = []
+    dims_out = []
+    for key in sorted(by_dim.keys(), key=lambda k: _DIM_INDEX.get(k, 99)):
+        relational = key in _RELATIONAL_DIMS
+        items = []
+        for r in by_dim[key]:
+            wid = str(r.related_word_id) if r.related_word_id else None
+            items.append({"text": r.related_text, "zh": r.related_zh or "", "note": r.note or "", "word_id": wid})
+            if relational and r.related_word_id:
                 seed_ids.append(r.related_word_id)
+        dims_out.append({"key": key, "label": (by_dim[key][0].dim_label or _dim_label(key)),
+                         "relational": relational, "items": items})
     if student_id is not None and seed_ids:
         await _seed_queue(db, student_id=student_id, word_ids=list(set(seed_ids)))
+
+    out: dict = {"pos": "", "root": (kp.root if kp else "") or "", "dims": dims_out}
+    # —— 过渡期 legacy 键(现前端读)——
+    out.update({"collocations": [], "synonyms": [], "antonyms": [], "derivations": [],
+                "confusions": [], "ambiguities": [], "relateds": [], "exam_tips": ""})
+    for dim in dims_out:
+        k = dim["key"]
+        if k == "exam_tip":
+            out["exam_tips"] = dim["items"][0]["text"] if dim["items"] else ""
+        elif k == "collocation":
+            out["collocations"] = [{"en": it["text"], "zh": it["zh"]} for it in dim["items"]]
+        elif k in _LEGACY_KEY:
+            out[_LEGACY_KEY[k]] = [{"word": it["text"], "zh": it["zh"], "word_id": it["word_id"],
+                                    "note": it["note"]} for it in dim["items"]]
     return out
 
 
@@ -197,7 +236,7 @@ async def _gen_kp_mcqs(word: str, meaning: str, kp: dict, is_phrase: bool = Fals
     if not lines:
         return []
     tgt = "词组" if is_phrase else "单词"
-    dims_desc = "\n".join(f"- {d}({_DIM_LABEL[d]}): {txt}" for d, txt in lines)
+    dims_desc = "\n".join(f"- {d}({_dim_label(d)}): {txt}" for d, txt in lines)
     system = (
         f"你是英语词汇考点命题专家。给定目标{tgt}及其各考点维度的内容,**为下面列出的每个维度各出 3 道单选题**,\n"
         f"题要真正考该维度的知识点(不是重复问{tgt}义):\n"
@@ -244,7 +283,7 @@ async def ensure_kp_mcqs(db: AsyncSession, *, word_id: uuid.UUID) -> None:
         ans = str(g.get("answer") or "").strip()
         dim = str(g.get("dimension") or "").strip()
         stem = str(g.get("stem") or "").strip()
-        if dim not in _KP_DIMS or len(opts) < 2 or ans not in opts or not stem:
+        if dim not in _DIM_REGISTRY or len(opts) < 2 or ans not in opts or not stem:
             continue                                    # 缺项/维度非法即丢弃,不硬塞
         objs.append(VocabKpMcq(id=uuid.uuid4(), word_id=word_id, dimension=dim, stem=stem,
                                options=opts, answer=ans, explanation=g.get("explanation") or None))
@@ -262,11 +301,11 @@ async def kp_mcq_test(db: AsyncSession, *, word_id: uuid.UUID) -> list[dict]:
     for r in rows:
         by_dim.setdefault(r.dimension, []).append(r)
     out = []
-    for dim in _KP_DIMS:
+    for dim in sorted(by_dim.keys(), key=lambda k: _DIM_INDEX.get(k, 99)):
         rs = by_dim.get(dim)
         if rs:
             m = random.choice(rs)
-            out.append({"id": str(m.id), "dimension": dim, "dimension_label": _DIM_LABEL[dim],
+            out.append({"id": str(m.id), "dimension": dim, "dimension_label": _dim_label(dim),
                         "stem": m.stem, "options": m.options, "answer": m.answer,
                         "explanation": m.explanation or ""})
     return out
