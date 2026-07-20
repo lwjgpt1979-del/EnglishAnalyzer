@@ -40,6 +40,8 @@ export interface WordKp {
   antonyms: KpRelWord[]
   derivations: KpRelWord[]
   confusions: KpRelWord[]
+  ambiguities: KpRelWord[]
+  relateds: KpRelWord[]
   exam_tips: string
 }
 export function getWordKp(wordId: string): Promise<WordKp> {

@@ -60,6 +60,34 @@ class VocabWordRelation(Base):
     )
 
 
+class StudentWrongRelation(Base):
+    """错题关系网(每个学生私有):节点 = 错题选项里的词/词组(a/b_word_id 指向 vocabulary_words);
+    边 = 同一道错题的多个选项两两之间的关系。全局考点是共享的,但「谁和谁在这道错题里放一起」是私有的。
+    source:global(全局考点已有该关系)/ llm(同题共现经 LLM 判定,会回写全局)/ cooccur(仅共现、无语义关系)。
+    a_word_id/b_word_id 按 id 归一(a<b)防同边反向重复。"""
+
+    __tablename__ = "student_wrong_relation"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    a_word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    b_word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    relation = mapped_column(sa.String(16), nullable=False)   # synonym|antonym|confusion|ambiguity|related|cooccur
+    source = mapped_column(sa.String(8), nullable=False)      # global|llm|cooccur
+    wrong_record_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("wrong_record.id", ondelete="CASCADE"), nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_student_wrong_relation_student", "student_id"),
+        sa.UniqueConstraint("student_id", "a_word_id", "b_word_id", "relation",
+                            name="uq_student_wrong_relation"),
+    )
+
+
 class VocabKpMcq(Base):
     """考点扩展测试题库:按考点维度出题(每维 3 道单选),LLM 一次全生成缓存,测试时每维随机取 1。
     word_id 外键指向 vocab_word_kp(与「单词考点」强关联:有考点才有考点题);dimension 标该题测哪一维。"""

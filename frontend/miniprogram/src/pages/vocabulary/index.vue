@@ -171,6 +171,20 @@
               <text class="kp-zh">{{ w.note || w.zh }}</text>
             </view>
           </view>
+          <view v-if="wordKp!.ambiguities.length" class="kp-sec">
+            <text class="kp-sec-h">歧义</text>
+            <view v-for="(w, i) in wordKp!.ambiguities" :key="'g'+i" class="kp-line">
+              <text class="kp-en" :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}</text>
+              <text class="kp-zh">{{ w.note || w.zh }}</text>
+            </view>
+          </view>
+          <view v-if="wordKp!.relateds.length" class="kp-sec">
+            <text class="kp-sec-h">其他关联</text>
+            <view v-for="(w, i) in wordKp!.relateds" :key="'r'+i" class="kp-line">
+              <text class="kp-en" :class="{ link: !!w.word_id }" @tap="learnRelated(w)">{{ w.word }}</text>
+              <text class="kp-zh">{{ w.note || w.zh }}</text>
+            </view>
+          </view>
           <view v-if="wordKp!.exam_tips" class="kp-sec">
             <text class="kp-sec-h">常见考法</text>
             <text class="kp-tips">{{ wordKp!.exam_tips }}</text>
@@ -669,7 +683,8 @@ async function loadKp() {
 const kpHasContent = computed(() => {
   const k = wordKp.value
   return !!k && !!(k.root || k.collocations.length || k.synonyms.length || k.antonyms.length
-    || k.derivations.length || k.confusions.length || k.exam_tips)
+    || k.derivations.length || k.confusions.length || k.ambiguities.length
+    || k.relateds.length || k.exam_tips)
 })
 // 点关联词:已入库(有 word_id)的后端已随考点自动排入学习队列,轻提示即可
 function learnRelated(w: { word: string; word_id: string | null }) {

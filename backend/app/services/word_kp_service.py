@@ -14,11 +14,17 @@ from app.models.d5_learning import StudentVocabCandidate, VocabularyLearning, Vo
 from app.models.d18_vocab_kg import VocabKpMcq, VocabWordKp, VocabWordRelation
 
 # 词-词类关系(可链 related_word_id、可点去学);collocation/exam_tip 为文本类
-_WORD_RELATIONS = ("synonym", "antonym", "derivation", "confusion")
+_WORD_RELATIONS = ("synonym", "antonym", "derivation", "confusion", "ambiguity", "related")
+# 关系 → LLM 输出/组装用的键名(避免裸 rel+"s" 拼错;歧义/其他新增)
+_REL_KEY = {"synonym": "synonyms", "antonym": "antonyms", "derivation": "derivations",
+            "confusion": "confusions", "ambiguity": "ambiguities", "related": "relateds"}
+# 带辨析要点(note)的词-词关系
+_NOTE_RELATIONS = ("confusion", "ambiguity", "related")
 # 考点扩展测试维度(固定顺序;各维有内容才出题)
-_KP_DIMS = ("collocation", "synonym", "antonym", "derivation", "confusion", "exam_tip")
+_KP_DIMS = ("collocation", "synonym", "antonym", "derivation", "confusion", "ambiguity", "related", "exam_tip")
 _DIM_LABEL = {"collocation": "固定搭配", "synonym": "近义", "antonym": "反义",
-              "derivation": "派生·词族", "confusion": "易混辨析", "exam_tip": "常见考法"}
+              "derivation": "派生·词族", "confusion": "易混辨析", "ambiguity": "歧义",
+              "related": "其他关联", "exam_tip": "常见考法"}
 
 
 def _meaning_of(w: VocabularyWord) -> str:
@@ -27,25 +33,28 @@ def _meaning_of(w: VocabularyWord) -> str:
                       if isinstance(d, dict) and d.get("meaning"))[:120]
 
 
-async def _gen_kp(word: str, meaning: str, examples) -> dict:
-    """LLM 一次挖全六维(fast 档)。dev-mock 返回空。"""
+async def _gen_kp(word: str, meaning: str, examples, is_phrase: bool = False) -> dict:
+    """LLM 一次挖全考点(fast 档);目标可为单词或词组。dev-mock 返回空。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
     if is_llm_dev_mode():
-        return {"root": "", "synonyms": [], "antonyms": [], "derivations": [],
-                "collocations": [], "confusions": [], "exam_tips": ""}
+        return {"root": "", "synonyms": [], "antonyms": [], "derivations": [], "collocations": [],
+                "confusions": [], "ambiguities": [], "relateds": [], "exam_tips": ""}
+    tgt = "词组" if is_phrase else "单词"
     system = (
-        "你是英语词汇考点专家。给定单词+释义+例句,挖掘它的考点,严格输出 JSON:\n"
-        '{"root":"词根/词干(如 poe-;无明显则空)",'
-        '"synonyms":[{"word":"近义英文词","zh":"中文"}],'
-        '"antonyms":[{"word":"反义英文词","zh":"中文"}],'
-        '"derivations":[{"word":"同族/派生词(英文)","zh":"中文(含词性,如 n. 庆典)"}],'
-        '"collocations":[{"en":"固定搭配(含该词)","zh":"中文"}],'
-        '"confusions":[{"word":"易混英文词","zh":"中文","note":"一句辨析要点"}],'
+        f"你是英语词汇考点专家。给定{tgt}+释义+例句,挖掘它的考点,严格输出 JSON:\n"
+        '{"root":"词根/词干(词组或无明显则空)",'
+        '"synonyms":[{"word":"近义英文词/词组","zh":"中文"}],'
+        '"antonyms":[{"word":"反义英文词/词组","zh":"中文"}],'
+        '"derivations":[{"word":"同族/派生词(英文;词组可为其变体)","zh":"中文(含词性,如 n. 庆典)"}],'
+        '"collocations":[{"en":"固定搭配(含该目标)","zh":"中文"}],'
+        '"confusions":[{"word":"易混英文词/词组","zh":"中文","note":"一句辨析要点"}],'
+        '"ambiguities":[{"word":"与该目标有歧义/多义混淆的英文词/词组","zh":"中文","note":"歧义点"}],'
+        '"relateds":[{"word":"其他相关英文词/词组(同话题/搭配伙伴/常一起考等)","zh":"中文","note":"关系"}],'
         '"exam_tips":"一句常见考法/考点提示(中文)"}\n'
-        "各数组 0-4 条,无则空;近义/反义/派生/易混必须是真实存在、确与该词相关的英文词,不臆造。")
+        f"各数组 0-4 条,无则空;近义/反义/派生/易混/歧义/其他必须是真实存在、确与该{tgt}相关的英文词或词组,不臆造。")
     d = await complete_json(
-        system_prompt=system, user_prompt=f"单词:{word}\n释义:{meaning}\n参考例句:{examples}\n返回 JSON:",
-        max_tokens=1000, model=fast_model(), feature="vocab_word_kp",
+        system_prompt=system, user_prompt=f"{tgt}:{word}\n释义:{meaning}\n参考例句:{examples}\n返回 JSON:",
+        max_tokens=1200, model=fast_model(), feature="vocab_word_kp",
         validate=lambda x: isinstance(x, dict))
     return d or {}
 
@@ -65,11 +74,11 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
     w = await db.get(VocabularyWord, word_id)
     if w is None:
         return
-    d = await _gen_kp(w.word, _meaning_of(w), w.examples or [])
+    d = await _gen_kp(w.word, _meaning_of(w), w.examples or [], is_phrase=(w.type == "phrase"))
     # 词-词类:批量查 related_text 是否在词库,填 related_word_id
     word_texts = []
     for rel in _WORD_RELATIONS:
-        src = "derivations" if rel == "derivation" else (rel + "s")
+        src = _REL_KEY[rel]
         word_texts += [str(x.get("word") or "").strip() for x in (d.get(src) or []) if isinstance(x, dict)]
     id_by_text: dict = {}
     lows = list({t.lower() for t in word_texts if t})
@@ -80,7 +89,7 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
         id_by_text = {ww.lower(): wid for wid, ww in rows}
     vals: list[dict] = []
     for rel in _WORD_RELATIONS:
-        src = "derivations" if rel == "derivation" else (rel + "s")
+        src = _REL_KEY[rel]
         for it in _clean_word_items(d.get(src)):
             t = it["word"]
             if t.lower() == w.word.lower():
@@ -114,7 +123,8 @@ async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, student_id: uuid.
     rows = (await db.execute(
         sa.select(VocabWordRelation).where(VocabWordRelation.word_id == word_id))).scalars().all()
     out: dict = {"root": (kp.root if kp else "") or "", "collocations": [], "synonyms": [],
-                 "antonyms": [], "derivations": [], "confusions": [], "exam_tips": ""}
+                 "antonyms": [], "derivations": [], "confusions": [], "ambiguities": [],
+                 "relateds": [], "exam_tips": ""}
     seed_ids: list = []
     for r in rows:
         if r.relation == "exam_tip":
@@ -122,10 +132,10 @@ async def word_kp_out(db: AsyncSession, *, word_id: uuid.UUID, student_id: uuid.
         elif r.relation == "collocation":
             out["collocations"].append({"en": r.related_text, "zh": r.related_zh or ""})
         elif r.relation in _WORD_RELATIONS:
-            key = "derivations" if r.relation == "derivation" else (r.relation + "s")
+            key = _REL_KEY[r.relation]
             item = {"word": r.related_text, "zh": r.related_zh or "",
                     "word_id": str(r.related_word_id) if r.related_word_id else None}
-            if r.relation == "confusion":
+            if r.relation in _NOTE_RELATIONS:
                 item["note"] = r.note or ""
             out[key].append(item)
             if r.related_word_id and r.relation in ("derivation", "synonym"):
@@ -167,37 +177,46 @@ def _kp_content_lines(kp: dict) -> list[tuple[str, str]]:
     if kp.get("confusions"):
         lines.append(("confusion", "; ".join(
             f"{w['word']}({w.get('zh', '')};{w.get('note', '')})" for w in kp["confusions"])))
+    if kp.get("ambiguities"):
+        lines.append(("ambiguity", "; ".join(
+            f"{w['word']}({w.get('zh', '')};{w.get('note', '')})" for w in kp["ambiguities"])))
+    if kp.get("relateds"):
+        lines.append(("related", "; ".join(
+            f"{w['word']}({w.get('zh', '')};{w.get('note', '')})" for w in kp["relateds"])))
     if kp.get("exam_tips"):
         lines.append(("exam_tip", kp["exam_tips"]))
     return lines
 
 
-async def _gen_kp_mcqs(word: str, meaning: str, kp: dict) -> list[dict]:
-    """LLM 一次为每个「有内容的考点维度」出 3 道单选(fast 档)。dev-mock 返回空。"""
+async def _gen_kp_mcqs(word: str, meaning: str, kp: dict, is_phrase: bool = False) -> list[dict]:
+    """LLM 一次为每个「有内容的考点维度」出 3 道单选(fast 档);目标可为单词或词组。dev-mock 返回空。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
     if is_llm_dev_mode():
         return []
     lines = _kp_content_lines(kp)
     if not lines:
         return []
+    tgt = "词组" if is_phrase else "单词"
     dims_desc = "\n".join(f"- {d}({_DIM_LABEL[d]}): {txt}" for d, txt in lines)
     system = (
-        "你是英语词汇考点命题专家。给定单词及其各考点维度的内容,**为下面列出的每个维度各出 3 道单选题**,\n"
-        "题要真正考该维度的知识点(不是重复问词义):\n"
-        "- collocation 固定搭配:挖空句选正确搭配词/介词,或选出与该词正确搭配的项;\n"
-        "- synonym 近义:语境中选与该词意思最接近的词;\n"
-        "- antonym 反义:选该词的反义词;\n"
+        f"你是英语词汇考点命题专家。给定目标{tgt}及其各考点维度的内容,**为下面列出的每个维度各出 3 道单选题**,\n"
+        f"题要真正考该维度的知识点(不是重复问{tgt}义):\n"
+        f"- collocation 固定搭配:挖空句选正确搭配词/介词,或选出与该{tgt}正确搭配的项;\n"
+        f"- synonym 近义:语境中选与该{tgt}意思最接近的词/词组;\n"
+        f"- antonym 反义:选该{tgt}的反义词/词组;\n"
         "- derivation 派生:挖空句按词性选正确词形(如名词/形容词形式);\n"
-        "- confusion 易混辨析:给语境,在该词与易混词之间选正确的;\n"
-        "- exam_tip 常见考法:结合该词高频考法出一道综合运用题。\n"
+        f"- confusion 易混辨析:给语境,在该{tgt}与易混项之间选正确的;\n"
+        f"- ambiguity 歧义:给语境,考该{tgt}与易混淆多义项的区分;\n"
+        f"- related 其他关联:考该{tgt}与相关词/词组的关系或用法。\n"
+        "- exam_tip 常见考法:结合高频考法出一道综合运用题。\n"
         "严格输出 JSON:{\"items\":[{\"dimension\":\"上面的英文维度名\",\"stem\":\"题干\",\n"
         "\"options\":[\"4个选项\"],\"answer\":\"正确项(必须与 options 之一完全一致)\",\"explanation\":\"一句中文解析\"}]}\n"
         "每维恰好 3 题、每题 4 个选项单选;干扰项合理不等于正确项;只出所列维度,不臆造内容。\n"
-        "【用词要简单】题干句里除目标词与考点词(选项中的词)外,其余单词一律用简单常见词、"
-        "难度不高于目标词,不要用比目标词更生僻的词做句子载体——避免学生被句中难词绊住、学不到考点。")
+        f"【用词要简单】题干句里除目标{tgt}与考点词(选项中的词)外,其余单词一律用简单常见词、"
+        f"难度不高于目标{tgt},不要用更生僻的词做句子载体——避免学生被句中难词绊住、学不到考点。")
     d = await complete_json(
         system_prompt=system,
-        user_prompt=f"单词:{word}\n释义:{meaning}\n各维度内容:\n{dims_desc}\n返回 JSON:",
+        user_prompt=f"目标{tgt}:{word}\n释义:{meaning}\n各维度内容:\n{dims_desc}\n返回 JSON:",
         max_tokens=2400, model=fast_model(), feature="vocab_kp_mcq",
         validate=lambda x: isinstance(x.get("items"), list) and len(x.get("items")) >= 1)
     return (d or {}).get("items") or []
@@ -216,7 +235,7 @@ async def ensure_kp_mcqs(db: AsyncSession, *, word_id: uuid.UUID) -> None:
     w = await db.get(VocabularyWord, word_id)
     if w is None:
         return
-    gen = await _gen_kp_mcqs(w.word, _meaning_of(w), kp)
+    gen = await _gen_kp_mcqs(w.word, _meaning_of(w), kp, is_phrase=(w.type == "phrase"))
     objs = []
     for g in gen:
         if not isinstance(g, dict):
