@@ -248,10 +248,8 @@ async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_
         for i, o in enumerate(opts):
             pts = _split_points(o)
             (correct_txts if i == ai else wrong_txts if i == si else other_txts).extend(pts)
-    else:   # 填空:正确答案=蓝;学生答案=红(答错时)
+    else:   # 填空/手写题:只留正确答案=蓝;学生手写答案常是笔误(如 culturd),不可靠→不做红 chip
         correct_txts = _split_points(ca)
-        if stu and stu.lower() != ca.lower():
-            wrong_txts = _split_points(stu)
     seen: set = set()
     answers: list[dict] = []
 
