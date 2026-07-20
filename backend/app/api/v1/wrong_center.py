@@ -97,6 +97,16 @@ async def vocab_sim(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep
     return make_ok(r)
 
 
+@router.get("/{wrong_record_id}/relations", response_model=BaseResponse[dict])
+async def wrong_relations(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """错题关系网(每学生私有):选项拆成词/词组块 → 两两建边(近义/反义/易混/歧义/其他/共现)。
+    查看即生成 + 幂等缓存;节点可点看全局考点(word-kp)+ 发起考点测试(kp-test)。"""
+    from app.services import wrong_relation_service
+    r = await wrong_relation_service.wrong_relation_net(
+        db, student_id=current_user.id, wrong_record_id=wrong_record_id)
+    return make_ok(r)
+
+
 @router.post("/vocab-sim-result/{wrong_record_id}", response_model=BaseResponse[dict])
 async def vocab_sim_result(wrong_record_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
     """仿真练习一轮结算:5 题全对 → 判掌握、进已掌握。body: {total, correct}"""
