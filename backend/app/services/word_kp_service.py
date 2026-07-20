@@ -3,6 +3,7 @@
 时链 related_word_id(可点去学)。LLM 一次生成全局缓存,查看即生成 + prewarm。合并原词族。"""
 from __future__ import annotations
 
+import random
 import uuid
 
 import sqlalchemy as sa
@@ -10,10 +11,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import StudentVocabCandidate, VocabularyLearning, VocabularyWord
-from app.models.d18_vocab_kg import VocabWordKp, VocabWordRelation
+from app.models.d18_vocab_kg import VocabKpMcq, VocabWordKp, VocabWordRelation
 
 # 词-词类关系(可链 related_word_id、可点去学);collocation/exam_tip 为文本类
 _WORD_RELATIONS = ("synonym", "antonym", "derivation", "confusion")
+# 考点扩展测试维度(固定顺序;各维有内容才出题)
+_KP_DIMS = ("collocation", "synonym", "antonym", "derivation", "confusion", "exam_tip")
+_DIM_LABEL = {"collocation": "固定搭配", "synonym": "近义", "antonym": "反义",
+              "derivation": "派生·词族", "confusion": "易混辨析", "exam_tip": "常见考法"}
 
 
 def _meaning_of(w: VocabularyWord) -> str:
@@ -144,3 +149,103 @@ async def _seed_queue(db: AsyncSession, *, student_id: uuid.UUID, word_ids: list
                  for wid in todo])
         .on_conflict_do_nothing(index_elements=["student_id", "word_id"]))
     await db.commit()
+
+
+# ---------------- 考点扩展测试(每维 3 题,随机取 1 组合) ----------------
+
+def _kp_content_lines(kp: dict) -> list[tuple[str, str]]:
+    """把六维考点内容整理成 (dimension, 供出题的文本) —— 只保留有内容的维度。"""
+    lines: list[tuple[str, str]] = []
+    if kp.get("collocations"):
+        lines.append(("collocation", "; ".join(f"{c['en']}({c.get('zh', '')})" for c in kp["collocations"])))
+    if kp.get("synonyms"):
+        lines.append(("synonym", "; ".join(f"{w['word']}({w.get('zh', '')})" for w in kp["synonyms"])))
+    if kp.get("antonyms"):
+        lines.append(("antonym", "; ".join(f"{w['word']}({w.get('zh', '')})" for w in kp["antonyms"])))
+    if kp.get("derivations"):
+        lines.append(("derivation", "; ".join(f"{w['word']}({w.get('zh', '')})" for w in kp["derivations"])))
+    if kp.get("confusions"):
+        lines.append(("confusion", "; ".join(
+            f"{w['word']}({w.get('zh', '')};{w.get('note', '')})" for w in kp["confusions"])))
+    if kp.get("exam_tips"):
+        lines.append(("exam_tip", kp["exam_tips"]))
+    return lines
+
+
+async def _gen_kp_mcqs(word: str, meaning: str, kp: dict) -> list[dict]:
+    """LLM 一次为每个「有内容的考点维度」出 3 道单选(fast 档)。dev-mock 返回空。"""
+    from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
+    if is_llm_dev_mode():
+        return []
+    lines = _kp_content_lines(kp)
+    if not lines:
+        return []
+    dims_desc = "\n".join(f"- {d}({_DIM_LABEL[d]}): {txt}" for d, txt in lines)
+    system = (
+        "你是英语词汇考点命题专家。给定单词及其各考点维度的内容,**为下面列出的每个维度各出 3 道单选题**,\n"
+        "题要真正考该维度的知识点(不是重复问词义):\n"
+        "- collocation 固定搭配:挖空句选正确搭配词/介词,或选出与该词正确搭配的项;\n"
+        "- synonym 近义:语境中选与该词意思最接近的词;\n"
+        "- antonym 反义:选该词的反义词;\n"
+        "- derivation 派生:挖空句按词性选正确词形(如名词/形容词形式);\n"
+        "- confusion 易混辨析:给语境,在该词与易混词之间选正确的;\n"
+        "- exam_tip 常见考法:结合该词高频考法出一道综合运用题。\n"
+        "严格输出 JSON:{\"items\":[{\"dimension\":\"上面的英文维度名\",\"stem\":\"题干\",\n"
+        "\"options\":[\"4个选项\"],\"answer\":\"正确项(必须与 options 之一完全一致)\",\"explanation\":\"一句中文解析\"}]}\n"
+        "每维恰好 3 题、每题 4 个选项单选;干扰项合理不等于正确项;只出所列维度,不臆造内容。")
+    d = await complete_json(
+        system_prompt=system,
+        user_prompt=f"单词:{word}\n释义:{meaning}\n各维度内容:\n{dims_desc}\n返回 JSON:",
+        max_tokens=2400, model=fast_model(), feature="vocab_kp_mcq",
+        validate=lambda x: isinstance(x.get("items"), list) and len(x.get("items")) >= 1)
+    return (d or {}).get("items") or []
+
+
+async def ensure_kp_mcqs(db: AsyncSession, *, word_id: uuid.UUID) -> None:
+    """确保考点测试题已生成:已有(≥1 题)直接返回;否则先保证考点存在,再按维度 LLM 出题落库。"""
+    exists = (await db.execute(
+        sa.select(VocabKpMcq.id).where(VocabKpMcq.word_id == word_id).limit(1))).first()
+    if exists:
+        return
+    await ensure_word_kp(db, word_id=word_id)          # FK 依赖 vocab_word_kp 行 + 需考点内容出题
+    if await db.get(VocabWordKp, word_id) is None:
+        return                                          # 无考点(生成失败)→ 不出题
+    kp = await word_kp_out(db, word_id=word_id)         # 六维内容(不传 student_id 不入队)
+    w = await db.get(VocabularyWord, word_id)
+    if w is None:
+        return
+    gen = await _gen_kp_mcqs(w.word, _meaning_of(w), kp)
+    objs = []
+    for g in gen:
+        if not isinstance(g, dict):
+            continue
+        opts = [str(o).strip() for o in (g.get("options") or []) if str(o).strip()]
+        ans = str(g.get("answer") or "").strip()
+        dim = str(g.get("dimension") or "").strip()
+        stem = str(g.get("stem") or "").strip()
+        if dim not in _KP_DIMS or len(opts) < 2 or ans not in opts or not stem:
+            continue                                    # 缺项/维度非法即丢弃,不硬塞
+        objs.append(VocabKpMcq(id=uuid.uuid4(), word_id=word_id, dimension=dim, stem=stem,
+                               options=opts, answer=ans, explanation=g.get("explanation") or None))
+    if objs:
+        db.add_all(objs)
+        await db.commit()
+
+
+async def kp_mcq_test(db: AsyncSession, *, word_id: uuid.UUID) -> list[dict]:
+    """考点扩展测试:确保题库 → 每个有题的维度随机取 1 道 → 按固定维度顺序组合返回。"""
+    await ensure_kp_mcqs(db, word_id=word_id)
+    rows = (await db.execute(
+        sa.select(VocabKpMcq).where(VocabKpMcq.word_id == word_id))).scalars().all()
+    by_dim: dict = {}
+    for r in rows:
+        by_dim.setdefault(r.dimension, []).append(r)
+    out = []
+    for dim in _KP_DIMS:
+        rs = by_dim.get(dim)
+        if rs:
+            m = random.choice(rs)
+            out.append({"id": str(m.id), "dimension": dim, "dimension_label": _DIM_LABEL[dim],
+                        "stem": m.stem, "options": m.options, "answer": m.answer,
+                        "explanation": m.explanation or ""})
+    return out

@@ -187,10 +187,10 @@
       <!-- 形关推进:翻出词义(A:形→义)-->
       <button v-if="gateStep === 'form'" class="btn-primary gate-next" @tap="toMeaning">认了形音 → 学词义</button>
 
-      <!-- R9.1 理解检测·语境填空(接收:语境里认得出吗)· 义关起 -->
+      <!-- 考点扩展测试:按考点维度出题(每维随机 1 道)· PracticeQuiz 逐题即时判分(纯练习,不进 BKT)· 义关起 -->
       <view v-if="gateStep !== 'form'" class="probe-box">
-        <view v-if="!probeOpen" class="probe-cta" @tap="openProbe">
-          <view class="ic ic-brain" style="width:30rpx;height:30rpx" /><text>检测理解 · 语境里认得出吗</text>
+        <view v-if="!probeOpen" class="probe-cta" @tap="openKpTest">
+          <view class="ic ic-target" style="width:30rpx;height:30rpx" /><text>{{ kpTestLoading ? '出题中…' : '考点扩展测试' }}</text>
         </view>
         <view v-else>
           <view v-if="probeLoading" class="probe-tip">加载中…</view>
@@ -640,13 +640,16 @@
     <!-- 跟读会员引导（统一会员墙）-->
     <Paywall :open="showPaywall" :feature="ent.feature('vocab.shadow')" emoji="🎤"
       title="跟读评测是会员专享" @close="showPaywall = false" />
+
+    <!-- 考点扩展测试(PracticeQuiz 逐题即时判分,本地按 answer 判,纯练习不进 BKT) -->
+    <PracticeQuiz v-if="kpTestOpen" kp="考点扩展" :questions="kpTestQs" @close="kpTestOpen = false" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
-import type { ExamOverview, WordKp, QuizMcq } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, getWordProbes, submitWordProbe, submitWordProduce, getWordTransfer, submitWordTransfer, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
+import type { ExamOverview, WordKp, KpTestQuestion, QuizMcq } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, WordProbe, WordProbeResult, WordProduceTask, WordProduceResult, WordTransferResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
@@ -656,6 +659,7 @@ import { useAuthStore } from '@/stores/auth'
 import { updateProfile } from '@/api/auth'
 import { useEntitlementsStore } from '@/stores/entitlements'
 import Paywall from '@/components/Paywall.vue'
+import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import type { VocabWordCard } from '@/types/api'
 
 interface Quiz {
@@ -776,6 +780,29 @@ const kpHasContent = computed(() => {
 function learnRelated(w: { word: string; word_id: string | null }) {
   if (!w.word_id) return
   uni.showToast({ title: `${w.word} 已加入学习`, icon: 'none' })
+}
+
+// 考点扩展测试:取每维随机 1 道 → PracticeQuiz 逐题即时判分(纯练习,不进 BKT)
+const kpTestOpen = ref(false)
+const kpTestLoading = ref(false)
+const kpTestQs = ref<Array<{ id: string; stem: string; options: string[]; answer: string; explanation: string }>>([])
+async function openKpTest() {
+  const wid = curStudy.value?.word_id
+  if (!wid || kpTestLoading.value) return
+  kpTestLoading.value = true
+  try {
+    const qs: KpTestQuestion[] = await getKpTest(wid)
+    if (!qs.length) { uni.showToast({ title: '该词暂无考点题', icon: 'none' }); return }
+    kpTestQs.value = qs.map(q => ({
+      id: q.id, stem: `【${q.dimension_label}】${q.stem}`,
+      options: q.options, answer: q.answer, explanation: q.explanation,
+    }))
+    kpTestOpen.value = true
+  } catch {
+    uni.showToast({ title: '出题失败,稍后重试', icon: 'none' })
+  } finally {
+    kpTestLoading.value = false
+  }
 }
 watch(() => curStudy.value?.word_id, () => {
   const g: 'form' | 'learn' = curStudy.value?.gate === 'form' ? 'form' : 'learn'

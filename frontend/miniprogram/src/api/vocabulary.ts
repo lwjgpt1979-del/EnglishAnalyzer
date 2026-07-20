@@ -46,6 +46,20 @@ export function getWordKp(wordId: string): Promise<WordKp> {
   return request<WordKp>(`/api/v1/vocabulary/word-kp/${wordId}`, { method: 'GET' })
 }
 
+// 考点扩展测试:按考点维度出题,每维随机 1 道组合成一套(PracticeQuiz 本地判分)
+export interface KpTestQuestion {
+  id: string
+  dimension: string
+  dimension_label: string
+  stem: string
+  options: string[]
+  answer: string
+  explanation: string
+}
+export function getKpTest(wordId: string): Promise<KpTestQuestion[]> {
+  return request<KpTestQuestion[]>(`/api/v1/vocabulary/kp-test/${wordId}`, { method: 'GET' })
+}
+
 // 测试题库:每词随机取一道 LLM 缓存选择题(未缓存返回 mcq=null,后台异步生成)
 export interface QuizMcq { word_id: string; mcq_type: string; stem: string; options: string[]; answer: string; explanation: string }
 export function getQuizMcqs(wordIds: string[]): Promise<Array<{ word_id: string; mcq: QuizMcq | null }>> {

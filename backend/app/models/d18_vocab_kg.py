@@ -60,6 +60,25 @@ class VocabWordRelation(Base):
     )
 
 
+class VocabKpMcq(Base):
+    """考点扩展测试题库:按考点维度出题(每维 3 道单选),LLM 一次全生成缓存,测试时每维随机取 1。
+    word_id 外键指向 vocab_word_kp(与「单词考点」强关联:有考点才有考点题);dimension 标该题测哪一维。"""
+
+    __tablename__ = "vocab_kp_mcq"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocab_word_kp.word_id", ondelete="CASCADE"), nullable=False)
+    dimension = mapped_column(sa.String(16), nullable=False)    # collocation|synonym|antonym|derivation|confusion|exam_tip
+    stem = mapped_column(sa.Text, nullable=False)               # 题干
+    options = mapped_column(JSONB, nullable=False)              # [str] 选项
+    answer = mapped_column(sa.Text, nullable=False)            # 正确项(与 options 之一完全一致)
+    explanation = mapped_column(sa.Text, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_vocab_kp_mcq_word", "word_id"),)
+
+
 class VocabMcq(Base):
     """词汇测试题库(每词 3-5 道混合单选题,LLM 生成一次全局缓存,测试时随机取 1)。
     词义丰富的词出到 5 道、简单单义词 3 道;类型 w2m(词→义)/m2w(义→词)/cloze(语境填空)。"""
