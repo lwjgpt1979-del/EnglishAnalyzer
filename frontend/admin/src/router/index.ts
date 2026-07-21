@@ -17,6 +17,7 @@ const router = createRouter({
         { path: 'vocab-reviews', name: 'vocab-reviews', component: () => import('../views/VocabReviews.vue') },
         { path: 'knowledge-graph', name: 'knowledge-graph', component: () => import('../views/KnowledgeGraph.vue') },
         { path: 'kp-prompts', name: 'kp-prompts', component: () => import('../views/KpPrompts.vue') },
+        { path: 'kp-mcq-review', name: 'kp-mcq-review', component: () => import('../views/KpMcqReview.vue') },
         { path: 'llm-config', name: 'llm-config', component: () => import('../views/LlmConfig.vue') },
         { path: 'llm-features', name: 'llm-features', component: () => import('../views/LlmFeatures.vue') },
         { path: 'third-party', name: 'third-party', component: () => import('../views/ThirdPartyResources.vue') },

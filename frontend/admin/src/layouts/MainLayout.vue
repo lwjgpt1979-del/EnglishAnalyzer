@@ -51,6 +51,7 @@ const navGroups: NavGroup[] = [
     { path: '/textbook-word-stats', label: '教材高频词统计' },
     { path: '/vocab-media', label: '词力通媒体' },
     { path: '/vocab-image-gen', label: '词力通配图' },
+    { path: '/kp-mcq-review', label: '考点题复核' },
   ] },
   { key: 'g-speak', title: '口语 / 听力 / 主题', icon: Headset, items: [
     { path: '/speaking-scenarios', label: '口语场景' },
