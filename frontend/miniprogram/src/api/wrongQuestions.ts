@@ -156,7 +156,7 @@ export interface WordNet {
   word_id: string | null; word: string; zh: string; is_phrase: boolean
   sense_id: string | null; gloss: string
   senses: Array<{ sense_id: string | null; gloss: string; pos: string }>
-  answers?: Array<{ word_id: string; word: string; zh: string; kind: 'correct' | 'wrong' | 'other' }>   // 各选项值:蓝正确/红错选/灰其他
+  answers?: Array<{ word_id: string; word: string; zh: string; kind: 'correct' | 'wrong' | 'other'; switchable?: boolean }>   // 各选项值:蓝正确/红错选/灰其他;switchable=有错题记录才可切
   dims: WordNetDim[]; main: WordNetErr[]; secondary: WordNetErr[]
 }
 export function getWordNetOfRecord(wrongRecordId: string): Promise<WordNet> {

@@ -10,8 +10,9 @@
       <!-- 多个正确点(多空):答案词 chip,点一个切到它的关系网 -->
       <view v-if="answers.length > 1" class="wrn-ans">
         <text class="wrn-ans-lb">本题选项</text>
-        <text v-for="a in answers" :key="a.word_id" class="wrn-ans-chip" :class="[a.kind, { on: a.word_id === net.word_id }]"
-          @tap="switchCenter({ word_id: a.word_id })">{{ a.word }}</text>
+        <text v-for="a in answers" :key="a.word_id" class="wrn-ans-chip"
+          :class="[a.kind, { on: a.word_id === net.word_id, off: a.switchable === false }]"
+          @tap="tapAns(a)">{{ a.word }}</text>
       </view>
       <!-- 辐射图:中心=当前词,周围=考点关系词(可点切换中心) -->
       <view class="wrn-canvas" :style="{ height: BOXH + 'rpx' }">
@@ -26,6 +27,7 @@
           <text class="wrn-cword">{{ net.word }}</text>
           <text v-if="net.gloss" class="wrn-czh">{{ net.gloss }}</text>
         </view>
+        <text v-if="!satellites.length" class="wrn-gen" :style="{ top: (CY + 64) + 'rpx' }">考点生成中…</text>
       </view>
 
       <!-- 联动 tab:主/次错题 + 考点维度 -->
@@ -150,7 +152,11 @@ const activeDim = computed(() => net.value?.dims.find(d => d.key === activeTab.v
 function tapNode(s: { rel?: string }) {
   if (s.rel) activeTab.value = s.rel
 }
-// 顶部答案 chip:在本题多个正确点之间切换中心
+// 顶部答案 chip:有错题记录(switchable)才切中心;空壳(如缩写只当 chip)只标色不可切
+function tapAns(a: { word_id: string; switchable?: boolean }) {
+  if (a.switchable === false) { uni.showToast({ title: '该词暂无关联错题', icon: 'none' }); return }
+  switchCenter({ word_id: a.word_id })
+}
 function switchCenter(s: { word_id: string | null }) {
   if (!s.word_id || s.word_id === net.value?.word_id) return
   centerId.value = s.word_id
@@ -186,12 +192,14 @@ async function openTest() {
 .wrn-ans-chip.wrong { background: #FCEBEB; border-color: #E88; color: #A32D2D; }        /* 学生错选·红 */
 .wrn-ans-chip.other { background: #F1EFE8; border-color: #D3D1C7; color: #6b665e; }     /* 其他干扰·灰 */
 .wrn-ans-chip.on { background: #E1F5EE; border-color: #1D9E75; color: #0F6E56; font-weight: 700; }   /* 当前中心 */
+.wrn-ans-chip.off { opacity: .5; }   /* 无错题记录·不可切 */
 .wrn-canvas { position: relative; width: 690rpx; }
 .wrn-edge { position: absolute; height: 4rpx; border-radius: 2rpx; }
 .wrn-elabel { position: absolute; width: 52rpx; height: 28rpx; line-height: 28rpx; text-align: center; font-size: 20rpx; font-weight: 500; border-radius: 8rpx; }
 .wrn-node { position: absolute; width: 144rpx; box-sizing: border-box; height: 52rpx; display: flex; align-items: center; justify-content: center; padding: 0 8rpx; background: #E6F1FB; border: 2rpx solid #85B7EB; border-radius: 14rpx; }
 .wrn-node.link { background: #E6F1FB; border-color: #5B9BE8; }
 .wrn-word { font-size: 24rpx; font-weight: 600; color: #0C447C; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wrn-gen { position: absolute; left: 0; width: 690rpx; text-align: center; font-size: 22rpx; color: #9aa3b0; }
 .wrn-center { position: absolute; width: 208rpx; box-sizing: border-box; height: 96rpx; border-radius: 20rpx; background: #E1F5EE; border: 3rpx solid #1D9E75; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6rpx 14rpx; }
 .wrn-cword { max-width: 180rpx; font-size: 30rpx; font-weight: 700; color: #0F6E56; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .wrn-czh { max-width: 180rpx; font-size: 20rpx; color: #0F6E56; margin-top: 2rpx; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

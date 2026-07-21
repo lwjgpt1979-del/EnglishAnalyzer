@@ -264,5 +264,14 @@ async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_
     await _cat(correct_txts, "correct")
     await _cat(wrong_txts, "wrong")
     await _cat(other_txts, "other")
+    # switchable:该词在本生错题里有记录(主或次≥1)才可 tap 切中心;纯空壳(如缩写 couldn't 只当 chip)不可切
+    if answers:
+        aids = [uuid.UUID(a["word_id"]) for a in answers]
+        has = set((await db.execute(
+            sa.select(StudentWrongWord.word_id).where(
+                StudentWrongWord.student_id == student_id,
+                StudentWrongWord.word_id.in_(aids)).distinct())).scalars().all())
+        for a in answers:
+            a["switchable"] = uuid.UUID(a["word_id"]) in has
     net["answers"] = answers
     return net
