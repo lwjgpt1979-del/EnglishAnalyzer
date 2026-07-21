@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import random
+import re
 import uuid
 
 import sqlalchemy as sa
@@ -101,6 +102,53 @@ def _clean_items(arr) -> list[dict]:
     return out
 
 
+# P3 语料印证:固定搭配以该词的 examples + phrases(源自教材/真题词频的真实内容)为准
+_COLLOC_STOP = {"a", "an", "the", "to", "of", "in", "on", "at", "with", "for", "and", "or", "by",
+                "sb", "sth", "one", "ones", "oneself", "do", "be", "is", "are", "have", "has",
+                "that", "this", "your", "his", "her", "its", "not", "no"}
+
+
+def _corpus_text(w) -> str:
+    parts: list[str] = []
+    for arr in (w.examples, w.phrases):
+        if isinstance(arr, list):
+            parts += [str(x.get("en") or "") for x in arr if isinstance(x, dict)]
+    return " ".join(parts).lower()
+
+
+def _collocate_words(colloc_en: str, word: str) -> list[str]:
+    toks = re.findall(r"[a-z']+", (colloc_en or "").lower())
+    return [t for t in toks if t != word.lower() and t not in _COLLOC_STOP and len(t) > 2]
+
+
+def _corpus_grounding(w, senses: list) -> None:
+    """① 词条 phrases 直接作高置信固定搭配(加到主义项);② LLM 搭配在 examples/phrases 语料里印证的升 source=corpus。"""
+    corpus = _corpus_text(w)
+    for _g, _p, _s, sdims in senses:
+        for key, items in sdims:
+            if key != "collocation":
+                continue
+            for it in items:
+                if it.get("source"):
+                    continue
+                cw = _collocate_words(it["text"], w.word)
+                if cw and any(t in corpus for t in cw):
+                    it["source"] = "corpus"
+    phrases = [x for x in (w.phrases or []) if isinstance(x, dict) and str(x.get("en") or "").strip()]
+    if phrases and senses:
+        sdims = senses[0][3]
+        col = next((its for k, its in sdims if k == "collocation"), None)
+        if col is None:
+            col = []
+            sdims.append(("collocation", col))
+        have = {str(it["text"]).lower() for it in col}
+        for ph in phrases[:4]:
+            en = str(ph["en"]).strip()
+            if en.lower() not in have:
+                col.append({"text": en, "zh": str(ph.get("zh") or "").strip(), "note": "", "source": "corpus"})
+                have.add(en.lower())
+
+
 async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
     """确保该词/词组考点已生成:有 kp 标记**且有考点**才跳过;有标记但零考点(旧版/生成失败残留)则重新生成。
     否则 LLM 动态挖义项+维度 → 落 vocab_word_sense + relation(每维每项一行)+ kp(词根)。"""
@@ -151,6 +199,8 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
             for it in items:
                 if not it.get("source") and lexical.confirm(w.word, pos or "", key, it["text"]):
                     it["source"] = "wordnet"
+    # P3 语料印证固定搭配:词条 phrases 直接作高置信搭配;LLM 搭配能在 examples/phrases 语料里印证的升高
+    _corpus_grounding(w, senses)
     # 可链词维:批量查 related_text 是否在词库,填 related_word_id
     link_texts = [it["text"] for _g, _p, _s, sdims in senses
                   for key, items in sdims if key in _RELATIONAL_DIMS for it in items]
@@ -197,10 +247,17 @@ def _dims_from_rows(rows: list, seed_ids: list) -> list[dict]:
         items = []
         for r in by_dim[key]:
             wid = str(r.related_word_id) if r.related_word_id else None
-            # 置信度:权威来源(morph 形态学 / wordnet 词库确认)=高;可链词维命中词库(有 word_id)=高;
-            # 纯 LLM 造词(无 word_id)=低;文本维=高
-            confidence = "low" if (relational and not wid
-                                   and getattr(r, "source", "llm") not in ("morph", "wordnet")) else "high"
+            src = getattr(r, "source", "llm")
+            # 置信度:
+            # · 可链词维:morph/wordnet 权威来源 或 命中词库(有 word_id)= 高;纯 LLM 造词 = 低
+            # · 固定搭配:语料印证(source=corpus)= 高;纯 LLM = 低(P3)
+            # · 其它文本维(考法/用法/…):高
+            if relational:
+                confidence = "high" if (wid or src in ("morph", "wordnet")) else "low"
+            elif key == "collocation":
+                confidence = "high" if src == "corpus" else "low"
+            else:
+                confidence = "high"
             items.append({"text": r.related_text, "zh": r.related_zh or "", "note": r.note or "",
                           "word_id": wid, "confidence": confidence})
             if relational and r.related_word_id:
