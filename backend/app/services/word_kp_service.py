@@ -12,8 +12,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import StudentVocabCandidate, VocabularyLearning, VocabularyWord
+from datetime import datetime, timezone
+
 from app.models.d18_vocab_kg import (
-    VocabKpMcq, VocabKpMcqRevision, VocabWordKp, VocabWordRelation, VocabWordSense,
+    VocabKpMcq, VocabKpMcqRevision, VocabWordKp, VocabWordKpReview, VocabWordRelation, VocabWordSense,
 )
 
 # 受控可扩维度清单(动态考点):dim_key → (中文名, relational=项是否可链词, 适用词性提示)
@@ -569,4 +571,93 @@ async def fix_pending_kp_mcqs(db: AsyncSession, *, limit: int = 100) -> dict:
             await db.rollback()
             stat["failed"] += 1
             logging.getLogger(__name__).exception("auto fix kp_mcq failed id=%s", mid)
+    return stat
+
+
+# ---------------- 考点 AI 自审校(P5·推理档·低峰批量) ----------------
+
+# 只审"LLM 写的用法/考法类文本维"(可链维已 morph/wordnet/词库背书、搭配已 P3 语料印证,不重审)
+_REVIEW_DIMS = ("transitivity", "voice", "sentence_pattern", "countability", "possessive",
+                "ed_ing", "prep_discrimination", "usage", "semantic_focus", "exam_tip")
+
+
+async def _review_kp_rows(word: str, rows: list, sense_gloss: dict) -> dict | None:
+    """推理档审校:逐条判断考点是否正确/准确/归属义项无误 → {delete:[id], fix:[{id,text,zh,note}]}。dev-mock 返回 None。"""
+    from app.services.llm_provider import complete_json, is_llm_dev_mode
+    if is_llm_dev_mode():
+        return None
+    listing = "\n".join(
+        f"[{r.id}] 义项:{sense_gloss.get(r.sense_id, '')} 【{_dim_label(r.relation)}】{r.related_text}"
+        + (f"({r.related_zh})" if r.related_zh else "") + (f" 备注:{r.note}" if r.note else "")
+        for r in rows)
+    system = (
+        f"你是英语词汇考点审校专家(请用推理仔细判断)。下面是单词『{word}』各义项下的『用法/考法类』考点(带 id)。"
+        "**逐条**审校每条是否正确、准确、归属义项无误:\n"
+        "① 明显错误 / 张冠李戴 / 与该义项不符 → 放入 delete;\n"
+        "② 基本对但表述不准 / 中文有误 → 放入 fix,给出修正后的 text/zh/note;\n"
+        "③ 正确无误的不用列。\n"
+        '严格输出 JSON:{"delete":["id",...],"fix":[{"id":"要改的id","text":"修正题面","zh":"修正中文","note":"备注(可空)"}]}')
+    d = await complete_json(
+        system_prompt=system, user_prompt=f"考点条目:\n{listing}\n返回 JSON:",
+        max_tokens=4000, feature="vocab_kp_review",   # 不传 model → 主推理模型(留足推理+JSON)
+        validate=lambda x: isinstance(x, dict))
+    return d
+
+
+async def review_kp(db: AsyncSession, *, word_id: uuid.UUID) -> dict:
+    """AI 审校一个词的用法/考法类考点:删错项 / 改正 → 置 reviewed_at + 记 review(before/after)。"""
+    kprow = await db.get(VocabWordKp, word_id)
+    if kprow is None:
+        return {"reviewed": False}
+    rows = (await db.execute(
+        sa.select(VocabWordRelation).where(
+            VocabWordRelation.word_id == word_id,
+            VocabWordRelation.relation.in_(_REVIEW_DIMS)))).scalars().all()
+    if not rows:
+        kprow.reviewed_at = datetime.now(timezone.utc)
+        await db.commit()
+        return {"reviewed": True, "no_content": True}
+    w = await db.get(VocabularyWord, word_id)
+    sense_gloss = {s.id: s.gloss_zh for s in (await db.execute(
+        sa.select(VocabWordSense).where(VocabWordSense.word_id == word_id))).scalars().all()}
+    result = await _review_kp_rows(w.word if w else "", rows, sense_gloss)
+    if result is None:
+        return {"reviewed": False}   # LLM 失败/dev-mock:不标记,下轮再审
+    before = [{"id": str(r.id), "dim": _dim_label(r.relation), "text": r.related_text,
+               "zh": r.related_zh, "note": r.note} for r in rows]
+    del_ids = {str(x) for x in (result.get("delete") or [])}
+    fixes = {str(f.get("id")): f for f in (result.get("fix") or []) if isinstance(f, dict) and f.get("id")}
+    deleted, fixed = [], []
+    for r in rows:
+        rid = str(r.id)
+        if rid in del_ids:
+            await db.delete(r)
+            deleted.append(rid)
+        elif rid in fixes:
+            f = fixes[rid]
+            r.related_text = (str(f.get("text") or "").strip() or r.related_text)
+            r.related_zh = str(f.get("zh") or "").strip() or None
+            r.note = str(f.get("note") or "").strip() or None
+            fixed.append(rid)
+    kprow.reviewed_at = datetime.now(timezone.utc)
+    db.add(VocabWordKpReview(id=uuid.uuid4(), word_id=word_id, before=before,
+                             after={"deleted": deleted, "fixed": fixed}))
+    await db.commit()
+    return {"reviewed": True, "deleted": len(deleted), "fixed": len(fixed)}
+
+
+async def review_pending_kp(db: AsyncSession, *, limit: int = 100) -> dict:
+    """低峰批量:扫未审校(reviewed_at 为空)的词考点,逐词 AI 审校。供 crontab 低峰调用。"""
+    import logging
+    ids = (await db.execute(
+        sa.select(VocabWordKp.word_id).where(VocabWordKp.reviewed_at.is_(None)).limit(limit))).scalars().all()
+    stat = {"pending": len(ids), "reviewed": 0, "failed": 0}
+    for wid in ids:
+        try:
+            r = await review_kp(db, word_id=wid)
+            stat["reviewed" if r.get("reviewed") else "failed"] += 1
+        except Exception:  # noqa: BLE001
+            await db.rollback()
+            stat["failed"] += 1
+            logging.getLogger(__name__).exception("review kp failed wid=%s", wid)
     return stat

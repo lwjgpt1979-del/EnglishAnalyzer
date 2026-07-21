@@ -51,6 +51,18 @@ VLM 复核选优)重刷,拿不到好图则降级词义卡。
 > 阈值在 admin **「考点题复核」页** 可配(`system_configs.kp_mcq_report_threshold`,默认 3);
 > 运营也可在该页对单题**手动点「AI 修正」**即时修(不必等低峰)。
 
+## 考点 AI 自审校(低峰批量)
+
+未审校(`vocab_word_kp.reviewed_at` 为空)的词,由此任务在 **DeepSeek 低峰时段**用**推理档**逐词审校其
+「用法/考法类文本维」考点(及物性/语态/句型/可数性/所有格/-ed-ing/介词辨析/用法/语义侧重/考法):删明显错项、
+改表述不准。可链维(近义/反义/派生/易混/时态…)已 morph/WordNet/命中词库背书、固定搭配已语料印证,不重审。
+审后置 `reviewed_at`、记 `vocab_word_kp_review`(before/after),同词不重复审。
+
+```cron
+# 每晚 02:00(北京时间低峰)审校未审校词的用法/考法类考点
+0 2 * * *  cd /path/to/backend && DATABASE_URL=<prod> python -m app.tasks.review_kp --limit 200 >> /var/log/enggramer/review_kp.log 2>&1
+```
+
 ## 其它已有离线任务
 
 排期见各任务模块 docstring(`backend/app/tasks/*.py`),例如:

@@ -51,6 +51,7 @@ class VocabWordKp(Base):
     word_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), primary_key=True)
     root = mapped_column(sa.String(64), nullable=True)          # 词根/词干(无则空)
+    reviewed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)  # AI 自审校时间(P5;空=未审→低峰 cron 扫)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
@@ -177,6 +178,21 @@ class VocabMcq(Base):
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (sa.Index("ix_vocab_mcq_word", "word_id"),)
+
+
+class VocabWordKpReview(Base):
+    """考点 AI 自审校记录(P5):每次审校存 before/after 快照(删/改了哪些文本维考点),供后台追溯。"""
+
+    __tablename__ = "vocab_word_kp_review"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    word_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), nullable=False)
+    before = mapped_column(JSONB, nullable=True)   # [{id, dim, text, zh, note}] 审前
+    after = mapped_column(JSONB, nullable=True)    # {deleted:[...], fixed:[...]} 审后动作
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_vocab_word_kp_review_word", "word_id"),)
 
 
 class VocabKpMcqRevision(Base):
