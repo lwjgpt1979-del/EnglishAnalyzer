@@ -38,6 +38,19 @@ VLM 复核选优)重刷,拿不到好图则降级词义卡。
 > 运营也可在 admin **配图页 →「复核存量配图(VLM)」** 按钮一键触发(同源逻辑,进度走配图页进度条);
 > 二者用其一即可。学生端「图不对·换一张」(投票制)是另一条即时补边角的路。
 
+## 考点题 AI 审校修正(低峰批量)
+
+学生「换一题」= 报错的考点题(report_count++)。报错数 ≥ 阈值的题,由此任务在 **DeepSeek 低峰时段**
+用**推理档**批量审校修正(答案唯一/干扰项明确错/无歧义),更省钱。修好即 report_count 归 0、记修改记录。
+
+```cron
+# 每晚 01:30(北京时间低峰,DeepSeek 低峰约 00:30–08:30)批量修被报错的考点题
+30 1 * * *  cd /path/to/backend && DATABASE_URL=<prod> python -m app.tasks.fix_kp_mcqs --limit 200 >> /var/log/enggramer/fix_kp_mcqs.log 2>&1
+```
+
+> 阈值在 admin **「考点题复核」页** 可配(`system_configs.kp_mcq_report_threshold`,默认 3);
+> 运营也可在该页对单题**手动点「AI 修正」**即时修(不必等低峰)。
+
 ## 其它已有离线任务
 
 排期见各任务模块 docstring(`backend/app/tasks/*.py`),例如:

@@ -349,12 +349,8 @@ async def swap_kp_mcq(db: AsyncSession, *, mcq_id: uuid.UUID) -> dict | None:
     m = await db.get(VocabKpMcq, mcq_id)
     if m is None:
         return None
-    m.report_count = (m.report_count or 0) + 1
+    m.report_count = (m.report_count or 0) + 1   # ≥阈值即"待修";AI 审校修正由低峰 cron 批量做(fix_kp_mcqs 任务)
     await db.commit()
-    # 跨阈值 → 后台自动 AI 修正该题(fire-and-forget,不卡学生换题)
-    if m.report_count >= await get_report_threshold(db):
-        import asyncio
-        asyncio.create_task(_bg_fix_kp_mcq(m.id))
 
     async def _others():
         cond = [VocabKpMcq.word_id == m.word_id, VocabKpMcq.dimension == m.dimension, VocabKpMcq.id != m.id]
@@ -414,8 +410,9 @@ def _mcq_snapshot(m: VocabKpMcq) -> dict:
 
 
 async def _gen_fix_mcq(word: str, meaning: str, dim_key: str, mcq: dict) -> dict | None:
-    """LLM 审校并修正一道被学生反馈有问题的考点题(改正答案/解析/必要干扰项;维度不变)。fast 档。"""
-    from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
+    """LLM 审校并修正一道被学生反馈有问题的考点题(改正答案/解析/必要干扰项;维度不变)。
+    用**推理档**(审校要多步判断答案唯一性/干扰项是否也成立);由低峰 cron 批量调用省钱。"""
+    from app.services.llm_provider import complete_json, is_llm_dev_mode
     if is_llm_dev_mode():
         return None
     system = (
@@ -428,7 +425,7 @@ async def _gen_fix_mcq(word: str, meaning: str, dim_key: str, mcq: dict) -> dict
     d = await complete_json(
         system_prompt=system,
         user_prompt=f"目标词:{word}({meaning})\n原题:{_json.dumps(mcq, ensure_ascii=False)}\n返回修正后 JSON:",
-        max_tokens=900, model=fast_model(), feature="vocab_kp_mcq_fix",
+        max_tokens=3000, feature="vocab_kp_mcq_fix",   # 不传 model → 主推理模型(深度思考);推理需更大 token
         validate=lambda x: isinstance(x.get("options"), list) and str(x.get("answer") or "").strip())
     if not d:
         return None
@@ -460,13 +457,21 @@ async def fix_kp_mcq(db: AsyncSession, *, mcq_id: uuid.UUID, trigger: str = "man
     return _mcq_out(m)
 
 
-async def _bg_fix_kp_mcq(mcq_id: uuid.UUID) -> None:
-    """后台自动修正(跨阈值触发,独立 session,失败不阻断)。"""
+async def fix_pending_kp_mcqs(db: AsyncSession, *, limit: int = 100) -> dict:
+    """低峰批量:扫报错数 ≥ 阈值的考点题,逐题 AI 审校修正(推理档)。供 crontab 低峰调用。
+    修好即 report_count 归 0(下轮不再扫);逐题独立 try,失败不阻断其余。"""
     import logging
-    from app.core.database import _async_session_factory
-    async with _async_session_factory() as db:
+    threshold = await get_report_threshold(db)
+    ids = (await db.execute(
+        sa.select(VocabKpMcq.id).where(VocabKpMcq.report_count >= threshold)
+        .order_by(VocabKpMcq.report_count.desc()).limit(limit))).scalars().all()
+    stat = {"pending": len(ids), "fixed": 0, "failed": 0}
+    for mid in ids:
         try:
-            await fix_kp_mcq(db, mcq_id=mcq_id, trigger="auto")
+            r = await fix_kp_mcq(db, mcq_id=mid, trigger="auto")
+            stat["fixed" if r else "failed"] += 1
         except Exception:  # noqa: BLE001
             await db.rollback()
-            logging.getLogger(__name__).exception("auto fix kp_mcq failed id=%s", mcq_id)
+            stat["failed"] += 1
+            logging.getLogger(__name__).exception("auto fix kp_mcq failed id=%s", mid)
+    return stat

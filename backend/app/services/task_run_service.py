@@ -29,6 +29,7 @@ TASKS: dict[str, tuple[str, int]] = {
     "vocab_probes_backfill": ("词汇探针预生成", 24),
     "grammar_probes_backfill": ("语法探针预生成", 24),
     "map_crawl": ("地图获客按区县采集", 24),
+    "kp_mcq_autofix": ("考点题AI审校修正(低峰)", 24),
 }
 
 
