@@ -129,42 +129,7 @@
         </view>
       </view>
 
-      <!-- 考点深挖(义关起):固定搭配/近义/反义/派生·词族/易混/常见考法,折叠展开 -->
-      <view v-if="gateStep !== 'form' && kpHasContent" class="kp-box">
-        <view class="kp-toggle" @tap="kpOpen = !kpOpen">
-          <view class="ic ic-target" style="width:28rpx;height:28rpx" />
-          <text class="kp-toggle-t">考点拓展{{ wordKp!.root ? ' · 词根 ' + wordKp!.root : '' }}</text>
-          <text class="kp-arrow" :class="{ open: kpOpen }">▾</text>
-        </view>
-        <view v-if="kpOpen" class="kp-body">
-          <!-- 按义项分组:每义项 gloss·词性 + 该义项的动态维度 -->
-          <view v-for="(sense, si) in wordKp!.senses" :key="sense.sense_id || si" class="kp-sense">
-            <view v-if="wordKp!.senses.length > 1" class="kp-sense-h">
-              <text class="kp-sense-gloss">{{ sense.gloss }}</text>
-              <text v-if="sense.pos" class="kp-sense-pos">{{ sense.pos }}</text>
-            </view>
-            <view v-for="dim in sense.dims" :key="dim.key" class="kp-sec">
-              <text class="kp-sec-h">{{ dim.label }}</text>
-              <view v-if="dim.relational" class="kp-chips">
-                <text v-for="(it, i) in dim.items" :key="i" class="kp-chip"
-                  :class="{ link: !!it.word_id, low: it.confidence === 'low', reported: it.id && kpReported[it.id] }"
-                  @tap="learnRelated(it)" @longpress="reportKp(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text><text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
-              </view>
-              <template v-else>
-                <view v-for="(it, i) in dim.items" :key="i" class="kp-line" :class="{ reported: it.id && kpReported[it.id] }">
-                  <view class="kp-line-body">
-                    <text class="kp-en">{{ it.text }}</text>
-                    <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
-                  </view>
-                  <view v-if="it.id" class="ic ic-flag kp-report" :class="{ done: kpReported[it.id] }" @tap.stop="reportKp(it)" />
-                </view>
-              </template>
-            </view>
-          </view>
-        </view>
-      </view>
-
-      <!-- 单词发音 + 跟读：同一行 -->
+      <!-- 单词发音 + 跟读：同一行(上移到考点拓展之前)-->
       <view class="wc-btns">
         <view class="wc-btn" @tap="playCard(curStudy)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>单词发音</text></view>
         <view class="wc-btn primary" @tap="openShadow(firstExample(curStudy)?.en || curStudy.word)" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-mic" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>跟读</text><view v-if="!ent.can('vocab.shadow')" class="ic ic-lock" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
@@ -173,12 +138,11 @@
       <!-- 形关推进:翻出词义(A:形→义)-->
       <button v-if="gateStep === 'form'" class="btn-primary gate-next" @tap="toMeaning">认了形音 → 学词义</button>
 
-      <!-- 考点扩展测试:按考点维度出题(每维随机 1 道)· PracticeQuiz 逐题即时判分(纯练习,不进 BKT)· 义关起 -->
-      <view v-if="gateStep !== 'form'" class="probe-box">
-        <view class="probe-cta" @tap="openKpTest">
-          <view class="ic ic-target" style="width:30rpx;height:30rpx" /><text>{{ kpTestLoading ? '出题中…' : '考点扩展测试' }}</text>
-        </view>
-      </view>
+      <!-- 考点拓展(脑图 + 维度Tab + 词条列表 + 考点扩展测试,下移;点脑图叶子联动列表)-->
+      <WordKpExplore v-if="gateStep !== 'form' && kpHasContent"
+        :word-kp="wordKp!" :center-text="curStudy.word" :center-zh="wordKp?.gloss || ''"
+        :reported="kpReported" :test-loading="kpTestLoading"
+        @report="reportKp" @test="openKpTest" />
 
       <button v-if="gateStep !== 'form'" class="btn-primary" @tap="nextStudy">{{ studyBtnLabel }}</button>
     </view>
@@ -542,6 +506,7 @@ import { updateProfile } from '@/api/auth'
 import { useEntitlementsStore } from '@/stores/entitlements'
 import Paywall from '@/components/Paywall.vue'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
+import WordKpExplore from '@/components/WordKpExplore.vue'
 import type { VocabWordCard } from '@/types/api'
 
 interface Quiz {
