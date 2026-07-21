@@ -13,109 +13,64 @@
       <text class="rb-arrow">开始 ›</text>
     </view>
 
-    <!-- 语法 / 词汇 筛选 -->
-    <view class="src-tabs">
-      <text v-for="t in KIND_TABS" :key="t.value" class="src-tab" :class="{ active: kind === t.value }" @tap="switchKind(t.value)">{{ t.label }}</text>
-    </view>
-
-    <!-- 状态子筛选:待巩固 / 巩固中 / 已掌握（带计数） -->
-    <scroll-view class="status-scroll" scroll-x enhanced>
-      <view class="status-row">
-        <view
-          v-for="s in STATUS_TABS"
-          :key="s.value"
-          class="status-chip"
-          :class="{ active: status === s.value, [s.value || 'all']: true }"
-          @tap="switchStatus(s.value)"
-        >
-          <text>{{ s.label }}</text>
-          <text class="chip-n">{{ s.n }}</text>
-        </view>
+    <!-- 来源 tab(纯按来源) -->
+    <scroll-view class="src-scroll" scroll-x enhanced>
+      <view class="src-row">
+        <text v-for="t in SOURCE_TABS" :key="t.value" class="src-tab" :class="{ active: source === t.value }" @tap="switchSource(t.value)">{{ t.label }}</text>
       </view>
     </scroll-view>
 
-    <!-- 加载态 -->
-    <view v-if="loading && items.length === 0" class="center-tip">加载中…</view>
-
-    <!-- 空状态 -->
-    <view v-else-if="!loading && items.length === 0" class="center-tip">
-      <text>{{ status ? '这个状态下暂无错题' : '还没有错题，去上传作业吧 📄' }}</text>
-      <button
-        v-if="!status"
-        class="btn-sm"
-        @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })"
-      >
-        上传作业
-      </button>
+    <!-- 副筛选(语法/词汇)+ 视图切换(按考点/按批次) -->
+    <view class="ctrl-row">
+      <view class="kind-chips">
+        <text v-for="k in KIND_TABS" :key="k.value" class="kind-chip" :class="{ active: kind === k.value }" @tap="switchKind(k.value)">{{ k.label }}</text>
+      </view>
+      <view class="view-seg">
+        <text class="view-t" :class="{ on: view === 'kp' }" @tap="switchView('kp')">按考点</text>
+        <text class="view-t" :class="{ on: view === 'batch' }" @tap="switchView('batch')">按批次</text>
+      </view>
     </view>
 
-    <!-- 列表 -->
-    <view v-else class="wq-list">
-      <view v-for="wq in activeItems" :key="wq.id" class="wq-card" :class="{ 'is-done': wq.lifecycle === 'mastered' }"
-        @tap="() => uni.navigateTo({ url: '/pages/wrong-questions/detail?id=' + wq.id })">
-        <!-- 顶部:状态 pill + 来源 -->
-        <view class="wq-top">
-          <view class="status-pill" :class="statusClass(wq)">{{ statusLabel(wq) }}</view>
-          <text
-            v-if="wq.source_route"
-            class="src-chip src-link"
-            @tap.stop="goSource(wq)"
-          >{{ sourceText(wq) }} ›</text>
-          <text v-else class="src-chip">{{ sourceText(wq) }}</text>
-        </view>
+    <!-- 加载 / 空 -->
+    <view v-if="groupsLoading && !groups.length" class="center-tip">加载中…</view>
+    <view v-else-if="!groupsLoading && !groups.length" class="center-tip">
+      <text>该来源下暂无错题</text>
+      <button class="btn-sm" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">上传作业</button>
+    </view>
 
-        <!-- 题干 -->
-        <text class="wq-stem">{{ cardText(wq) }}</text>
-
-        <!-- 标签行:考点类型 + 考点名 + 题型 -->
-        <view class="wq-tags">
-          <text class="mini-tag" :class="kindClass(wq)">{{ kindLabel(wq) }}</text>
-          <text v-if="wq.kp_name" class="mini-tag mini-kp">{{ wq.kp_name }}</text>
-          <text v-if="wq.question_type" class="mini-tag">{{ wq.question_type }}</text>
-        </view>
-
-        <!-- 底部:进度 + 主动作(语法→练同类 / 词汇→学这个词) -->
-        <view class="wq-foot">
-          <text class="wq-progress">{{ progressText(wq) }}</text>
-          <view
-            v-if="wq.kp_kind === 'vocab'"
-            class="prac-btn"
-            :class="{ loading: vlLoading === wq.id }"
-            @tap.stop="learnVocab(wq)"
-          >
-            <view class="ic ic-book prac-ic" />
-            <text>{{ vlLoading === wq.id ? '打开中…' : '学这个词' }}</text>
-          </view>
-          <view
-            v-else
-            class="prac-btn"
-            :class="{ loading: pracLoading === wq.id }"
-            @tap.stop="practiceWrong(wq)"
-          >
-            <view class="ic ic-sparkle prac-ic" />
-            <text>{{ pracLoading === wq.id ? '出题中…' : '练同类' }}</text>
+    <!-- 折叠分组卡(进度即底色) -->
+    <view v-else class="grp-list">
+      <view v-for="g in groups" :key="groupKey(g)" class="grp">
+        <view class="grp-head" @tap="toggleGroup(g)">
+          <view class="grp-fill" :style="{ width: (g.rate * 100) + '%' }" />
+          <view class="grp-in">
+            <text class="grp-name">{{ groupTitle(g) }}</text>
+            <text class="grp-cnt">错{{ g.count }}</text>
+            <text class="grp-rate">{{ g.mastered }}/{{ g.count }} 掌握</text>
+            <text class="grp-chev">{{ openGroups[groupKey(g)] ? '▾' : '›' }}</text>
           </view>
         </view>
-      </view>
 
-      <!-- 已掌握折叠区（仅「全部」视图）-->
-      <view v-if="showFold" class="fold-bar" @tap="doneOpen = !doneOpen">
-        <text>✓ 已掌握 {{ counts.mastered }}</text>
-        <text class="fold-arrow">{{ doneOpen ? '收起 ▴' : '展开 ▾' }}</text>
-      </view>
-      <view v-if="showFold && doneOpen" class="done-list">
-        <view v-for="wq in doneItems" :key="wq.id" class="done-row">
-          <view class="status-pill s-done">已掌握</view>
-          <text class="done-stem">{{ cardText(wq) }}</text>
+        <!-- 展开:该组错题(点行进详情;快捷练同类/学词) -->
+        <view v-if="openGroups[groupKey(g)]" class="grp-sub">
+          <view v-if="!groupItems[groupKey(g)]" class="sub-tip">加载中…</view>
+          <template v-else>
+            <view v-for="wq in groupItems[groupKey(g)]" :key="wq.id" class="qrow" :class="{ done: wq.lifecycle === 'mastered' }"
+              @tap="() => uni.navigateTo({ url: '/pages/wrong-questions/detail?id=' + wq.id })">
+              <view class="qdot" :class="statusClass(wq)" />
+              <view class="qbody">
+                <text class="qstem">{{ cardText(wq) }}</text>
+                <view class="qtags">
+                  <text class="mini-tag" :class="kindClass(wq)">{{ kindLabel(wq) }}</text>
+                  <text v-if="wq.kp_name" class="mini-tag mini-kp">{{ wq.kp_name }}</text>
+                </view>
+              </view>
+              <view v-if="wq.kp_kind === 'vocab'" class="qgo" :class="{ loading: vlLoading === wq.id }" @tap.stop="learnVocab(wq)">{{ vlLoading === wq.id ? '…' : '学词' }}</view>
+              <view v-else class="qgo" :class="{ loading: pracLoading === wq.id }" @tap.stop="practiceWrong(wq)">{{ pracLoading === wq.id ? '…' : '练同类' }}</view>
+            </view>
+          </template>
         </view>
-        <text v-if="doneItems.length < counts.mastered" class="done-hint">继续下拉「加载更多」可看到全部已掌握</text>
       </view>
-
-      <!-- 加载更多 -->
-      <view v-if="hasMore" class="load-more" @tap="loadMore">
-        {{ loading ? '加载中…' : '加载更多' }}
-      </view>
-      <view v-else-if="items.length > 0" class="load-more gray">已加载全部</view>
     </view>
 
     <!-- 练同类仿真题(逐题作答判分,与作业详情共用组件) -->
@@ -195,9 +150,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getReviewQueue, getWrongCenterCounts, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongCenterCounts, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
+import { getReviewQueue, getWrongGrouped, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongGroup, type WrongListQuery, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
 import { shadowScore } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import ShadowModal from '@/components/ShadowModal.vue'
@@ -231,7 +186,6 @@ async function practiceWrong(wq: WrongCenterItem) {
 // 结算器:回写成绩(记 practice + 语法推进 SM-2),返回结果文案给组件展示
 async function pracRecorder(total: number, correct: number): Promise<string> {
   const r = await recordPracticeResult(pracWid.value, total, correct)
-  loadCounts()
   return r.just_mastered ? '🎉 恭喜，这道错题已掌握！' : `已计入巩固：本轮 ${correct}/${total} 正确`
 }
 function onPracClose() {
@@ -276,7 +230,6 @@ function startVocabQuiz() {
 async function vocabRecorder(total: number, correct: number): Promise<string> {
   if (!vlSim.value) return ''
   const r = await submitVocabSimResult(vlSim.value.wrong_record_id, total, correct)
-  loadCounts()
   if (r.mastered) return '🎉 5 题全对，这个词已掌握！'
   return correct >= total ? '本轮全对，继续保持' : `本轮 ${correct}/${total} 正确，全对即掌握`
 }
@@ -301,16 +254,7 @@ function onShadowPaywall() {
   showPaywall.value = true
 }
 
-// 点击错题来源 → 回到来源(整卷详情/作业详情);navigateTo 入栈,原生返回即「立即回来」
-function goSource(wq: WrongCenterItem) {
-  if (!wq.source_route) return
-  uni.navigateTo({
-    url: wq.source_route,
-    fail: () => uni.showToast({ title: '来源已不可用', icon: 'none' }),
-  })
-}
-
-// 今日复习到期数
+// 今日复习到期数(待复习优先条)
 const reviewDue = ref(0)
 async function loadReviewDue() {
   try {
@@ -318,139 +262,75 @@ async function loadReviewDue() {
     reviewDue.value = (r.stats?.due_today || 0) + (r.stats?.new_unscheduled || 0)
   } catch { reviewDue.value = 0 }
 }
-function goReview() {
-  uni.navigateTo({ url: '/pages/wrong-questions/review' })
-}
-onShow(() => { loadReviewDue(); if (items.value.length) reload() })
+function goReview() { uni.navigateTo({ url: '/pages/wrong-questions/review' }) }
 
-const items = ref<WrongCenterItem[]>([])
-function cardText(wq: WrongCenterItem): string {
-  return wq.stem || '错题（点击查看）'
-}
-function kindLabel(wq: WrongCenterItem): string {
-  return wq.kp_kind === 'grammar' ? '语法' : wq.kp_kind === 'vocab' ? '词汇' : '错题'
-}
-function kindClass(wq: WrongCenterItem): string {
-  return wq.kp_kind === 'grammar' ? 'k-gram' : wq.kp_kind === 'vocab' ? 'k-vocab' : 'k-none'
-}
-function kindIcon(wq: WrongCenterItem): string {
-  return wq.kp_kind === 'grammar' ? 'ic-edit' : wq.kp_kind === 'vocab' ? 'ic-book' : 'ic-file'
-}
-// 来源展示名:整卷 → 我的作业
-function sourceText(wq: WrongCenterItem): string {
-  return wq.source_label === '整卷' ? '我的作业' : (wq.source_label || '错题')
-}
-// 状态 pill(三态)
-function statusLabel(wq: WrongCenterItem): string {
-  return wq.lifecycle === 'mastered' ? '已掌握' : wq.lifecycle === 'reviewing' ? '巩固中' : '待巩固'
-}
-function statusClass(wq: WrongCenterItem): string {
-  return wq.lifecycle === 'mastered' ? 's-done' : wq.lifecycle === 'reviewing' ? 's-review' : 's-pending'
-}
-// 进度小字
-function progressText(wq: WrongCenterItem): string {
-  if (wq.lifecycle === 'mastered') return '已过关'
-  if (wq.lifecycle === 'pending') return '还没开始巩固'
-  if (wq.next_review_at) return `下次复习 ${dueText(wq.next_review_at)}`
-  if (wq.practice_count > 0) return `已练 ${wq.practice_correct}/${wq.practice_count}`
-  return '巩固中'
-}
-function dueText(d: string): string {
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const t = new Date(d + 'T00:00:00')
-  const diff = Math.round((t.getTime() - today.getTime()) / 86400000)
-  if (diff <= 0) return '今天'
-  if (diff === 1) return '明天'
-  return d.slice(5)
-}
+// 卡片文案助手
+function cardText(wq: WrongCenterItem): string { return wq.stem || '错题（点击查看）' }
+function kindLabel(wq: WrongCenterItem): string { return wq.kp_kind === 'grammar' ? '语法' : wq.kp_kind === 'vocab' ? '词汇' : '错题' }
+function kindClass(wq: WrongCenterItem): string { return wq.kp_kind === 'grammar' ? 'k-gram' : wq.kp_kind === 'vocab' ? 'k-vocab' : 'k-none' }
+function statusClass(wq: WrongCenterItem): string { return wq.lifecycle === 'mastered' ? 's-done' : wq.lifecycle === 'reviewing' ? 's-review' : 's-pending' }
 
-const total = ref(0)
-const loading = ref(false)
-const skip = ref(0)
-const LIMIT = 20
-const hasMore = ref(true)
-const kind = ref('')
-const status = ref('')
-const doneOpen = ref(false)
-const counts = ref<WrongCenterCounts>({ all: 0, pending: 0, reviewing: 0, mastered: 0 })
+// —— 来源 tab(纯按来源)+ 副筛选(语法/词汇)+ 视图(按考点/按批次) ——
+const SOURCE_TABS = [
+  { label: '作业错题', value: '作业' },
+  { label: '真题错题', value: '整卷' },
+  { label: '长难句', value: '长难句' },
+  { label: '平台错题', value: '平台' },
+]
 const KIND_TABS = [
   { label: '全部', value: '' },
   { label: '语法', value: 'grammar' },
   { label: '词汇', value: 'vocab' },
 ]
-const STATUS_TABS = computed(() => [
-  { label: '全部', value: '', n: counts.value.all },
-  { label: '待巩固', value: 'pending', n: counts.value.pending },
-  { label: '巩固中', value: 'reviewing', n: counts.value.reviewing },
-  { label: '已掌握', value: 'mastered', n: counts.value.mastered },
-])
-// 全部视图:未掌握正常列,已掌握折叠沉底
-const activeItems = computed(() =>
-  status.value === '' ? items.value.filter(i => i.lifecycle !== 'mastered') : items.value)
-const doneItems = computed(() => items.value.filter(i => i.lifecycle === 'mastered'))
-const showFold = computed(() => status.value === '' && counts.value.mastered > 0)
+const source = ref('作业')
+const kind = ref('')
+const view = ref<'kp' | 'batch'>('kp')
 
-async function loadCounts() {
-  try { counts.value = await getWrongCenterCounts(kind.value) } catch { /* 忽略 */ }
+const groups = ref<WrongGroup[]>([])
+const groupsLoading = ref(false)
+const openGroups = reactive<Record<string, boolean>>({})
+const groupItems = reactive<Record<string, WrongCenterItem[]>>({})
+
+function groupKey(g: WrongGroup): string { return view.value === 'kp' ? (g.kp || '未分类') : (g.source_id || '') }
+function groupTitle(g: WrongGroup): string {
+  if (view.value === 'kp') return g.kp || '未分类'
+  const d = g.last_at ? g.last_at.slice(5, 10).replace('-', '月') + '日' : ''
+  return `${d} ${source.value === '整卷' ? '作业卷' : source.value}`.trim()
 }
 
-function reload() {
-  items.value = []
-  skip.value = 0
-  hasMore.value = true
-  doneOpen.value = false
-  loadCounts()
-  loadItems()
+async function loadGroups() {
+  groupsLoading.value = true
+  try {
+    const r = await getWrongGrouped(view.value, source.value, kind.value)
+    groups.value = r.groups
+  } catch { groups.value = [] } finally { groupsLoading.value = false }
+  for (const k in openGroups) delete openGroups[k]   // 折叠态清空,重新展开再拉
+  for (const k in groupItems) delete groupItems[k]
 }
+async function toggleGroup(g: WrongGroup) {
+  const key = groupKey(g)
+  openGroups[key] = !openGroups[key]
+  if (openGroups[key] && !groupItems[key]) {
+    try {
+      const q: WrongListQuery = { sourceLabel: source.value, kind: kind.value, limit: 100 }
+      if (view.value === 'kp') q.kpName = g.kp
+      else q.sourceId = g.source_id
+      const res = await listWrongCenter(q)
+      groupItems[key] = res.items
+    } catch { groupItems[key] = [] }
+  }
+}
+function switchSource(v: string) { if (source.value === v) return; source.value = v; loadGroups() }
+function switchKind(v: string) { if (kind.value === v) return; kind.value = v; loadGroups() }
+function switchView(v: 'kp' | 'batch') { if (view.value === v) return; view.value = v; loadGroups() }
+function reload() { loadGroups() }   // 练同类/学词后回刷(供 modal 关闭回调复用)
 
-function switchKind(v: string) {
-  if (kind.value === v) return
-  kind.value = v
-  status.value = ''
-  reload()
-}
-function switchStatus(v: string) {
-  if (status.value === v) return
-  status.value = v
-  items.value = []
-  skip.value = 0
-  hasMore.value = true
-  loadItems()
-}
-
+onShow(() => { loadReviewDue(); if (groups.value.length) loadGroups() })
 onMounted(async () => {
-  if (!auth.isLoggedIn()) {
-    await auth.login()
-  }
-  await loadCounts()
-  await loadItems()
+  if (!auth.isLoggedIn()) await auth.login()
+  await loadReviewDue()
+  await loadGroups()
 })
-
-async function loadItems() {
-  if (loading.value) return
-  loading.value = true
-  try {
-    const res = await listWrongCenter(kind.value, status.value, skip.value, LIMIT)
-    items.value.push(...res.items)
-    total.value = res.total
-    hasMore.value = items.value.length < res.total
-  } catch (e) {
-    uni.showToast({ title: (e as Error).message, icon: 'error' })
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadMore() {
-  if (loading.value || !hasMore.value) return
-  const nextSkip = skip.value + LIMIT
-  skip.value = nextSkip
-  try {
-    await loadItems()
-  } catch {
-    skip.value = nextSkip - LIMIT
-  }
-}
 </script>
 
 <style scoped>
@@ -597,6 +477,45 @@ async function loadMore() {
 .src-tabs { display: flex; gap: 16rpx; padding: 16rpx 0 10rpx; }
 .src-tab { padding: 10rpx 28rpx; background: var(--c-bg-card); border-radius: var(--r-pill); font-size: 26rpx; color: var(--c-text-second); }
 .src-tab.active { background: var(--c-primary); color: var(--c-on-primary); font-weight: 700; }
+
+/* P2 来源 tab(横滑)+ 副筛选 + 视图切换 */
+.src-scroll { width: 100%; white-space: nowrap; margin-bottom: 4rpx; }
+.src-row { display: flex; flex-direction: row; gap: 16rpx; padding: 12rpx 0 10rpx; }
+.src-row .src-tab { flex-shrink: 0; }
+.ctrl-row { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; margin-bottom: 16rpx; }
+.kind-chips { display: flex; gap: 10rpx; }
+.kind-chip { font-size: 23rpx; padding: 6rpx 20rpx; border-radius: var(--r-pill); background: var(--c-bg-card); color: var(--c-text-second); }
+.kind-chip.active { background: var(--c-primary-faint); color: var(--c-primary-deep); font-weight: 700; }
+.view-seg { display: flex; background: var(--c-bg-soft); border-radius: var(--r-pill); padding: 4rpx; }
+.view-t { font-size: 23rpx; padding: 6rpx 20rpx; border-radius: var(--r-pill); color: var(--c-text-second); }
+.view-t.on { background: var(--c-bg-card); color: var(--c-primary-deep); font-weight: 700; }
+
+/* 折叠分组卡:进度即底色 */
+.grp-list { display: flex; flex-direction: column; gap: 16rpx; }
+.grp { background: var(--c-bg-card); border-radius: 20rpx; overflow: hidden; box-shadow: 0 4rpx 20rpx rgba(17, 24, 39, 0.04); }
+.grp-head { position: relative; overflow: hidden; }
+.grp-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #e9f6f1, #f4fbf8); transition: width .3s; }
+.grp-in { position: relative; display: flex; align-items: center; gap: 14rpx; padding: 26rpx 26rpx; }
+.grp-name { font-size: 30rpx; font-weight: 800; color: var(--c-ink); flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-cnt { font-size: 21rpx; font-weight: 700; color: #c33; background: #fdecec; padding: 3rpx 14rpx; border-radius: 999rpx; flex-shrink: 0; }
+.grp-rate { margin-left: auto; font-size: 24rpx; font-weight: 800; color: #2fa98a; flex-shrink: 0; }
+.grp-chev { font-size: 26rpx; color: var(--c-text-hint); flex-shrink: 0; }
+
+/* 展开:该组错题行 */
+.grp-sub { padding: 4rpx 20rpx 12rpx; border-top: 2rpx dashed var(--c-bg-soft); }
+.sub-tip { text-align: center; color: var(--c-text-hint); font-size: 24rpx; padding: 20rpx 0; }
+.qrow { display: flex; align-items: center; gap: 14rpx; padding: 18rpx 6rpx; border-bottom: 2rpx solid #f4f6f9; }
+.qrow:last-child { border-bottom: none; }
+.qrow.done { opacity: 0.55; }
+.qdot { width: 14rpx; height: 14rpx; border-radius: 50%; flex-shrink: 0; }
+.qdot.s-pending { background: #f0821e; }
+.qdot.s-review { background: #3d8bf5; }
+.qdot.s-done { background: #18a058; }
+.qbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
+.qstem { font-size: 26rpx; color: var(--c-ink); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qtags { display: flex; gap: 8rpx; }
+.qgo { flex-shrink: 0; font-size: 23rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 20rpx; }
+.qgo.loading { opacity: 0.6; }
 
 /* 状态子筛选 chip */
 .status-scroll { width: 100%; margin-bottom: 8rpx; white-space: nowrap; }

@@ -31,12 +31,15 @@ async def list_center(
     kind: str | None = Query(None, description="grammar|vocab 副筛选;空=全部"),
     status: str | None = Query(None, description="pending|reviewing|mastered;空=全部"),
     source_label: str | None = Query(None, description="来源 tab:作业|整卷|长难句|平台;空=全部真实错题"),
+    kp_name: str | None = Query(None, description="展开某考点组时过滤"),
+    source_id: uuid.UUID | None = Query(None, description="展开某批次组时过滤"),
     skip: int = 0, limit: int = 20,
 ):
-    """「我的错题」统一列表:只读 wrong_record。来源 tab + 语法/词汇副筛选 + 三态 + 分页。默认只列真实错题。"""
+    """「我的错题」统一列表:只读 wrong_record。来源 tab + 语法/词汇副筛选 + 折叠展开 + 三态 + 分页。默认只列真实错题。"""
     items, total = await wrong_center_service.list_center(
         db, student_id=current_user.id, kind=kind, status=status,
-        source_label=source_label, is_original=True, skip=skip, limit=limit)
+        source_label=source_label, kp_name=kp_name, source_id=source_id,
+        is_original=True, skip=skip, limit=limit)
     return make_ok({"items": items, "total": total})
 
 

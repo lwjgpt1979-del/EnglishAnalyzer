@@ -98,18 +98,34 @@ export interface WrongCenterItem {
   next_review_at: string | null
   created_at: string | null
 }
-export function listWrongCenter(kind = '', status = '', skip = 0, limit = 20): Promise<{ items: WrongCenterItem[]; total: number }> {
+export interface WrongListQuery { kind?: string; status?: string; sourceLabel?: string; kpName?: string; sourceId?: string; skip?: number; limit?: number }
+export function listWrongCenter(q: WrongListQuery = {}): Promise<{ items: WrongCenterItem[]; total: number }> {
   // 小程序运行时无 URLSearchParams,手拼 query
-  let qs = `skip=${skip}&limit=${limit}`
-  if (kind) qs += `&kind=${encodeURIComponent(kind)}`
-  if (status) qs += `&status=${encodeURIComponent(status)}`
+  let qs = `skip=${q.skip ?? 0}&limit=${q.limit ?? 20}`
+  if (q.kind) qs += `&kind=${encodeURIComponent(q.kind)}`
+  if (q.status) qs += `&status=${encodeURIComponent(q.status)}`
+  if (q.sourceLabel) qs += `&source_label=${encodeURIComponent(q.sourceLabel)}`
+  if (q.kpName) qs += `&kp_name=${encodeURIComponent(q.kpName)}`
+  if (q.sourceId) qs += `&source_id=${encodeURIComponent(q.sourceId)}`
   return request(`/api/v1/wrong-center/list?${qs}`)
 }
 
-/** 状态 chip 计数(全部/待巩固/巩固中/已掌握),随 kind 变 */
+/** 状态 chip 计数(全部/待巩固/巩固中/已掌握),随 kind/来源 变 */
 export interface WrongCenterCounts { all: number; pending: number; reviewing: number; mastered: number }
-export function getWrongCenterCounts(kind = ''): Promise<WrongCenterCounts> {
-  return request(`/api/v1/wrong-center/counts${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`)
+export function getWrongCenterCounts(kind = '', sourceLabel = ''): Promise<WrongCenterCounts> {
+  let qs = ''
+  if (kind) qs += `${qs ? '&' : '?'}kind=${encodeURIComponent(kind)}`
+  if (sourceLabel) qs += `${qs ? '&' : '?'}source_label=${encodeURIComponent(sourceLabel)}`
+  return request(`/api/v1/wrong-center/counts${qs}`)
+}
+
+/** 类目内聚合折叠(A 按考点 / B 按批次)*/
+export interface WrongGroup { kp?: string; source_id?: string; source_label?: string | null; count: number; mastered: number; rate: number; last_at?: string | null }
+export function getWrongGrouped(view: 'kp' | 'batch', sourceLabel = '', kind = ''): Promise<{ view: string; groups: WrongGroup[] }> {
+  let qs = `?view=${view}`
+  if (sourceLabel) qs += `&source_label=${encodeURIComponent(sourceLabel)}`
+  if (kind) qs += `&kind=${encodeURIComponent(kind)}`
+  return request(`/api/v1/wrong-center/grouped${qs}`)
 }
 
 /** 错题「练同类仿真题」(统一入口,按 wrong_record 派发)。questions 含 answer/explanation 供即时判分 */

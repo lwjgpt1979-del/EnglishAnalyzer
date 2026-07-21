@@ -210,11 +210,13 @@ async def lifecycle_counts(
 async def list_center(
     db: AsyncSession, *, student_id: uuid.UUID, kind: str | None = None,
     status: str | None = None, source_label: str | None = None,
+    kp_name: str | None = None, source_id: uuid.UUID | None = None,
     is_original: bool | None = True, skip: int = 0, limit: int = 20,
 ) -> tuple[list[dict], int]:
     """「我的错题」统一列表:只读 wrong_record(题面已冗余,自洽)。
 
     kind ∈ {None(全部), grammar, vocab}(副筛选);source_label = 来源 tab(作业|整卷|长难句|平台…);
+    kp_name/source_id = 折叠卡展开某组时按考点名/批次过滤;
     is_original 默认 True(只列真实错题,练习衍生走 list_practice_consolidation);
     status ∈ {None(全部), pending, reviewing, mastered}。
     排序:未掌握在前、已掌握沉底(灰显折叠),各按 created_at 倒序。
@@ -225,6 +227,10 @@ async def list_center(
         base = base.where(WrongRecord.is_original.is_(is_original))
     if source_label:
         base = base.where(WrongRecord.source_label == source_label)
+    if kp_name:
+        base = base.where(sa.func.coalesce(WrongRecord.kp_name, "未分类") == kp_name)
+    if source_id is not None:
+        base = base.where(WrongRecord.source_id == source_id)
     if kind in ("grammar", "vocab"):
         base = base.where(WrongRecord.kp_kind == kind)
     for c in _status_filter(status):
