@@ -154,6 +154,15 @@ async def kp_mcq_swap(mcq_id: uuid.UUID, db: DbDep, current_user: UserDep):
     return make_ok(r or {})
 
 
+@router.post("/word-relation/{relation_id}/report", response_model=BaseResponse[dict])
+async def report_relation(relation_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """报错某条考点(考点项右侧「报错」):report_count++,供后台复核 / 低峰 AI 修正(不即时付费)。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import word_kp_service
+    r = await word_kp_service.report_relation(db, relation_id=relation_id)
+    return make_ok(r or {})
+
+
 @router.get("/kp-test/{word_id}", response_model=BaseResponse[list])
 async def kp_test(word_id: uuid.UUID, db: DbDep, current_user: UserDep, sense_id: uuid.UUID | None = None):
     """考点扩展测试:按考点维度出题(每维 3 道、随机取 1 组合成一套)。查看即生成+全局缓存。

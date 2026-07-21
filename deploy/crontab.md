@@ -51,17 +51,20 @@ VLM 复核选优)重刷,拿不到好图则降级词义卡。
 > 阈值在 admin **「考点题复核」页** 可配(`system_configs.kp_mcq_report_threshold`,默认 3);
 > 运营也可在该页对单题**手动点「AI 修正」**即时修(不必等低峰)。
 
-## 考点 AI 自审校(低峰批量)
+## 考点 AI 审校(报错修正 P6 + 巡检自审 P5·低峰批量)
 
-未审校(`vocab_word_kp.reviewed_at` 为空)的词,由此任务在 **DeepSeek 低峰时段**用**推理档**逐词审校其
-「用法/考法类文本维」考点(及物性/语态/句型/可数性/所有格/-ed-ing/介词辨析/用法/语义侧重/考法):删明显错项、
-改表述不准。可链维(近义/反义/派生/易混/时态…)已 morph/WordNet/命中词库背书、固定搭配已语料印证,不重审。
-审后置 `reviewed_at`、记 `vocab_word_kp_review`(before/after),同词不重复审。
+由此任务在 **DeepSeek 低峰时段**用**推理档**分两步(报错优先):
+1) **P6 报错修正**:扫被学生报错达阈值(`report_count ≥ kp_report_threshold`,默认 3、后台「考点复核」页可配)的词,逐词审校报错项、删错/改表述、`report_count` 归 0;
+2) **P5 巡检自审**:扫未审校(`vocab_word_kp.reviewed_at` 为空)的词,审其「用法/考法类文本维」考点(及物性/语态/句型/可数性/所有格/-ed-ing/介词辨析/用法/语义侧重/考法),置 `reviewed_at`。
+
+可链维(近义/反义/派生/易混/时态…)已 morph/WordNet/命中词库背书、固定搭配已语料印证,不重审。审校均记 `vocab_word_kp_review`(before/after)。
 
 ```cron
-# 每晚 02:00(北京时间低峰)审校未审校词的用法/考法类考点
+# 每晚 02:00(北京时间低峰)先修被报错的考点、再巡检自审未审校词
 0 2 * * *  cd /path/to/backend && DATABASE_URL=<prod> python -m app.tasks.review_kp --limit 200 >> /var/log/enggramer/review_kp.log 2>&1
 ```
+
+> 学生在词力通/错题网点考点「报错」→ `report_count++`;运营也可在 admin **「考点复核」页**对单词**手动 AI 修正**(不必等低峰),或编辑/删除单条考点。阈值在该页可配(`system_configs.kp_report_threshold`)。
 
 ## 其它已有离线任务
 

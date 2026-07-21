@@ -147,12 +147,16 @@
               <text class="kp-sec-h">{{ dim.label }}</text>
               <view v-if="dim.relational" class="kp-chips">
                 <text v-for="(it, i) in dim.items" :key="i" class="kp-chip"
-                  :class="{ link: !!it.word_id, low: it.confidence === 'low' }" @tap="learnRelated(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text><text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
+                  :class="{ link: !!it.word_id, low: it.confidence === 'low', reported: it.id && kpReported[it.id] }"
+                  @tap="learnRelated(it)" @longpress="reportKp(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text><text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
               </view>
               <template v-else>
-                <view v-for="(it, i) in dim.items" :key="i" class="kp-line">
-                  <text class="kp-en">{{ it.text }}</text>
-                  <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+                <view v-for="(it, i) in dim.items" :key="i" class="kp-line" :class="{ reported: it.id && kpReported[it.id] }">
+                  <view class="kp-line-body">
+                    <text class="kp-en">{{ it.text }}</text>
+                    <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+                  </view>
+                  <view v-if="it.id" class="ic ic-flag kp-report" :class="{ done: kpReported[it.id] }" @tap.stop="reportKp(it)" />
                 </view>
               </template>
             </view>
@@ -526,8 +530,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, swapKpMcq, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
-import type { ExamOverview, WordKp, KpTestQuestion, QuizMcq } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, swapKpMcq, reportRelation, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
+import type { ExamOverview, WordKp, KpTestQuestion, QuizMcq, KpItem } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
@@ -685,6 +689,19 @@ async function kpSwapper(q: { id: string }) {
   const nq = await swapKpMcq(q.id) as KpTestQuestion
   if (!nq || !nq.id) return null
   return { id: nq.id, stem: `【${nq.dimension_label}】${nq.stem}`, options: nq.options, answer: nq.answer, explanation: nq.explanation }
+}
+// 报错某条考点(点旗标 or 长按 chip):report_count++,即时灰掉,待后台复核/低峰 AI 修正
+const kpReported = reactive<Record<string, boolean>>({})
+async function reportKp(it: KpItem) {
+  if (!it.id || kpReported[it.id]) return
+  kpReported[it.id] = true
+  try {
+    await reportRelation(it.id)
+    uni.showToast({ title: '已反馈,待复核', icon: 'none' })
+  } catch {
+    kpReported[it.id] = false
+    uni.showToast({ title: '反馈失败,请重试', icon: 'none' })
+  }
 }
 // 考点测试做完 → 该词过「用关」(纯练习粗判,记入结算统计)
 function onKpTestFinish() {
@@ -1566,6 +1583,12 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .kp-low { font-size: 18rpx; color: #b0a99e; }
 .kp-chip.link { background: #C3DEFA; border: 1rpx solid #8FBDEF; }
 .kp-chip-zh { color: #4A6785; font-size: 22rpx; }
+.kp-chip.reported { opacity: .4; text-decoration: line-through; }
+.kp-line { display: flex; align-items: flex-start; justify-content: space-between; gap: 12rpx; }
+.kp-line-body { flex: 1; min-width: 0; }
+.kp-line.reported { opacity: .4; text-decoration: line-through; }
+.kp-report.ic { width: 30rpx; height: 30rpx; flex-shrink: 0; margin-top: 4rpx; opacity: .5; }
+.kp-report.ic.done { opacity: .25; }
 .kp-en.link { color: #2F7BDB; text-decoration: underline; }
 .kp-tips { display: block; font-size: 24rpx; color: #4A6785; line-height: 1.6; }
 .study-hd .progress-hint { margin-bottom: 0; }

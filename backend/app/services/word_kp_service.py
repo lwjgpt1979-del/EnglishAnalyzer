@@ -260,7 +260,7 @@ def _dims_from_rows(rows: list, seed_ids: list) -> list[dict]:
                 confidence = "high" if src == "corpus" else "low"
             else:
                 confidence = "high"
-            items.append({"text": r.related_text, "zh": r.related_zh or "", "note": r.note or "",
+            items.append({"id": str(r.id), "text": r.related_text, "zh": r.related_zh or "", "note": r.note or "",
                           "word_id": wid, "confidence": confidence})
             if relational and r.related_word_id:
                 seed_ids.append(r.related_word_id)
@@ -660,4 +660,108 @@ async def review_pending_kp(db: AsyncSession, *, limit: int = 100) -> dict:
             await db.rollback()
             stat["failed"] += 1
             logging.getLogger(__name__).exception("review kp failed wid=%s", wid)
+    return stat
+
+
+# ---------------- 考点报错闭环(P6·学生报错 + 后台复核,复用 P5 审校管线) ----------------
+
+_KP_REPORT_THRESHOLD_KEY = "kp_report_threshold"
+_KP_REPORT_THRESHOLD_DEFAULT = 3
+
+
+async def get_kp_report_threshold(db: AsyncSession) -> int:
+    """考点报错阈值(≥该值进复核/AI 修正)。运营可配 system_configs.kp_report_threshold,缺省 3。"""
+    from app.models.d9_system import SystemConfig
+    cfg = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _KP_REPORT_THRESHOLD_KEY))).scalar_one_or_none()
+    if cfg is not None and isinstance(cfg.value, dict):
+        try:
+            return max(1, int(cfg.value.get("threshold", _KP_REPORT_THRESHOLD_DEFAULT)))
+        except (ValueError, TypeError):
+            pass
+    return _KP_REPORT_THRESHOLD_DEFAULT
+
+
+async def set_kp_report_threshold(db: AsyncSession, *, threshold: int, updated_by: uuid.UUID | None = None) -> int:
+    from app.models.d9_system import SystemConfig
+    t = max(1, int(threshold))
+    cfg = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _KP_REPORT_THRESHOLD_KEY))).scalar_one_or_none()
+    if cfg is None:
+        db.add(SystemConfig(id=uuid.uuid4(), key=_KP_REPORT_THRESHOLD_KEY, value={"threshold": t},
+                            description="考点报错阈值(≥该值进复核/AI 修正)", updated_by=updated_by))
+    else:
+        cfg.value = {"threshold": t}
+        cfg.updated_by = updated_by
+    await db.commit()
+    return t
+
+
+async def report_relation(db: AsyncSession, *, relation_id: uuid.UUID) -> dict:
+    """学生报错某条考点:report_count++。≥阈值即"待复核",AI 修正由低峰 cron 批量(或后台手动)做,不即时付费。"""
+    r = await db.get(VocabWordRelation, relation_id)
+    if r is None:
+        return {"reported": False}
+    r.report_count = (r.report_count or 0) + 1
+    await db.commit()
+    th = await get_kp_report_threshold(db)
+    return {"reported": True, "count": r.report_count, "threshold": th, "pending": r.report_count >= th}
+
+
+async def fix_reported_kp(db: AsyncSession, *, word_id: uuid.UUID) -> dict:
+    """针对某词被报错达阈值的考点行,推理档审校(复用 _review_kp_rows,带义项上下文)→ 删/改。
+    审后被报错行 report_count 一律归 0(已复核),删除的即移除;记 VocabWordKpReview。LLM 失败则保留报错数、下轮再修。"""
+    th = await get_kp_report_threshold(db)
+    rows = (await db.execute(
+        sa.select(VocabWordRelation).where(
+            VocabWordRelation.word_id == word_id,
+            VocabWordRelation.report_count >= th))).scalars().all()
+    if not rows:
+        return {"fixed": False, "no_reported": True}
+    w = await db.get(VocabularyWord, word_id)
+    sense_gloss = {s.id: s.gloss_zh for s in (await db.execute(
+        sa.select(VocabWordSense).where(VocabWordSense.word_id == word_id))).scalars().all()}
+    result = await _review_kp_rows(w.word if w else "", rows, sense_gloss)
+    if result is None:
+        return {"fixed": False}   # LLM 失败/dev-mock:保留报错数,下轮再修
+    before = [{"id": str(r.id), "dim": _dim_label(r.relation), "text": r.related_text,
+               "zh": r.related_zh, "note": r.note, "report_count": r.report_count} for r in rows]
+    del_ids = {str(x) for x in (result.get("delete") or [])}
+    fixes = {str(f.get("id")): f for f in (result.get("fix") or []) if isinstance(f, dict) and f.get("id")}
+    deleted, fixed = [], []
+    for r in rows:
+        rid = str(r.id)
+        if rid in del_ids:
+            await db.delete(r)
+            deleted.append(rid)
+            continue
+        if rid in fixes:
+            f = fixes[rid]
+            r.related_text = (str(f.get("text") or "").strip() or r.related_text)
+            r.related_zh = str(f.get("zh") or "").strip() or None
+            r.note = str(f.get("note") or "").strip() or None
+            fixed.append(rid)
+        r.report_count = 0   # 已复核(改过 or 判定正确)→ 清报错数
+    db.add(VocabWordKpReview(id=uuid.uuid4(), word_id=word_id, before=before,
+                             after={"deleted": deleted, "fixed": fixed, "trigger": "reported"}))
+    await db.commit()
+    return {"fixed": True, "deleted": len(deleted), "fixed_n": len(fixed)}
+
+
+async def fix_pending_reported_kp(db: AsyncSession, *, limit: int = 100) -> dict:
+    """低峰批量:扫有考点被报错达阈值的词,逐词 fix_reported_kp(报错优先于 P5 巡检自审)。"""
+    import logging
+    th = await get_kp_report_threshold(db)
+    word_ids = (await db.execute(
+        sa.select(VocabWordRelation.word_id).where(VocabWordRelation.report_count >= th)
+        .group_by(VocabWordRelation.word_id).limit(limit))).scalars().all()
+    stat = {"pending_words": len(word_ids), "fixed": 0, "failed": 0}
+    for wid in word_ids:
+        try:
+            r = await fix_reported_kp(db, word_id=wid)
+            stat["fixed" if r.get("fixed") else "failed"] += 1
+        except Exception:  # noqa: BLE001
+            await db.rollback()
+            stat["failed"] += 1
+            logging.getLogger(__name__).exception("fix reported kp failed wid=%s", wid)
     return stat

@@ -32,7 +32,7 @@ export function getWordFamily(wordId: string): Promise<WordFamily> {
 }
 
 // 单词/词组考点(动态维度按义项分组):senses 每义项 {sense_id,gloss,pos,dims},dims 每维 {key,label,relational,items}
-export interface KpItem { text: string; zh: string; note: string; word_id: string | null; confidence?: 'high' | 'low' }
+export interface KpItem { id?: string; text: string; zh: string; note: string; word_id: string | null; confidence?: 'high' | 'low' }
 export interface KpDim { key: string; label: string; relational: boolean; items: KpItem[] }
 export interface KpSense { sense_id: string | null; gloss: string; pos: string; dims: KpDim[] }
 export interface WordKp {
@@ -63,6 +63,10 @@ export function getKpTest(wordId: string, senseId?: string | null): Promise<KpTe
 // 换一题:报错该考点题 + 换同维度另一道(返回空对象=没有可换的)
 export function swapKpMcq(mcqId: string): Promise<KpTestQuestion | Record<string, never>> {
   return request(`/api/v1/vocabulary/kp-mcq/${mcqId}/swap`, { method: 'POST' })
+}
+// 报错某条考点(考点项右侧「报错」):report_count++,供后台复核 / 低峰 AI 修正
+export function reportRelation(relationId: string): Promise<{ reported: boolean; count?: number; threshold?: number; pending?: boolean }> {
+  return request(`/api/v1/vocabulary/word-relation/${relationId}/report`, { method: 'POST' })
 }
 
 // 测试题库:每词随机取一道 LLM 缓存选择题(未缓存返回 mcq=null,后台异步生成)

@@ -55,9 +55,12 @@
       <!-- 考点维度内容 -->
       <template v-else>
         <view v-if="activeDim" class="wrn-kp">
-          <view v-for="(it, i) in activeDim.items" :key="i" class="kp-line" :class="{ low: it.confidence === 'low' }">
-            <text class="kp-en">{{ it.text }}<text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
-            <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+          <view v-for="(it, i) in activeDim.items" :key="i" class="kp-line" :class="{ low: it.confidence === 'low', reported: it.id && kpReported[it.id] }">
+            <view class="kp-line-body">
+              <text class="kp-en">{{ it.text }}<text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
+              <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
+            </view>
+            <view v-if="it.id" class="ic ic-flag kp-report" :class="{ done: kpReported[it.id] }" @tap.stop="reportKp(it)" />
           </view>
         </view>
         <button class="wrn-test" :class="{ dis: testLoading }" @tap="openTest">{{ testLoading ? '出题中…' : '考点扩展测试' }}</button>
@@ -69,14 +72,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { getWordNetOfRecord, getWordNet } from '@/api/wrongQuestions'
-import type { WordNet, WordNetErr } from '@/api/wrongQuestions'
-import { getKpTest, swapKpMcq } from '@/api/vocabulary'
+import type { WordNet, WordNetErr, WordNetKpItem } from '@/api/wrongQuestions'
+import { getKpTest, swapKpMcq, reportRelation } from '@/api/vocabulary'
 import type { KpTestQuestion } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 
 const props = defineProps<{ wrongRecordId: string }>()
+
+// 报错某条考点(点旗标):report_count++,即时灰掉,待后台复核/低峰 AI 修正
+const kpReported = reactive<Record<string, boolean>>({})
+async function reportKp(it: WordNetKpItem) {
+  if (!it.id || kpReported[it.id]) return
+  kpReported[it.id] = true
+  try {
+    await reportRelation(it.id)
+    uni.showToast({ title: '已反馈,待复核', icon: 'none' })
+  } catch {
+    kpReported[it.id] = false
+    uni.showToast({ title: '反馈失败,请重试', icon: 'none' })
+  }
+}
 
 const REL: Record<string, { c: string; bg: string; fg: string; label: string }> = {
   synonym: { c: '#639922', bg: '#EAF3DE', fg: '#3B6D11', label: '近义' },
@@ -227,9 +244,13 @@ async function kpSwapper(q: { id: string }) {
 .kp-chip { font-size: 24rpx; color: #0C447C; background: #D6E6FA; padding: 6rpx 16rpx; border-radius: 10rpx; }
 .kp-chip.link { background: #C3DEFA; border: 1rpx solid #8FBDEF; }
 .kp-chip-zh { color: #4A6785; font-size: 22rpx; }
-.kp-line { display: flex; align-items: baseline; gap: 12rpx; margin: 6rpx 0; }
+.kp-line { display: flex; align-items: flex-start; justify-content: space-between; gap: 12rpx; margin: 6rpx 0; }
+.kp-line-body { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 12rpx; }
 .kp-en { font-size: 26rpx; color: #0C447C; font-weight: 500; }
 .kp-line.low .kp-en { color: #8a857c; }
+.kp-line.reported { opacity: .4; text-decoration: line-through; }
+.kp-report.ic { width: 30rpx; height: 30rpx; flex-shrink: 0; margin-top: 4rpx; opacity: .5; }
+.kp-report.ic.done { opacity: .25; }
 .kp-low { font-size: 18rpx; color: #b0a99e; }
 .kp-zh { flex: 1; font-size: 24rpx; color: #4A6785; }
 .wrn-test { margin-top: 14rpx; background: var(--c-primary); color: #fff; font-size: 28rpx; font-weight: 700; border-radius: var(--r-pill); padding: 16rpx 0; }

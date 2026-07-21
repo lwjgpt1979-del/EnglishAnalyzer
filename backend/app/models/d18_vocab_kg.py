@@ -76,6 +76,7 @@ class VocabWordRelation(Base):
     related_text = mapped_column(sa.Text, nullable=False)      # 相关词/词形/短语/文本内容(总有)
     related_zh = mapped_column(sa.Text, nullable=True)         # 中文
     note = mapped_column(sa.Text, nullable=True)              # 辨析要点/备注
+    report_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))  # 学生报错数(P6;≥阈值→复核/AI修正)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (
