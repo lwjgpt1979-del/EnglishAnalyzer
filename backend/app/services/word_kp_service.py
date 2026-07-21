@@ -97,9 +97,14 @@ def _clean_items(arr) -> list[dict]:
 
 
 async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
-    """确保该词/词组考点已生成:vocab_word_kp 有行=已生成直接返回;否则 LLM 动态挖维度 → 落 relation(每维每项一行)+ kp(词根)。"""
+    """确保该词/词组考点已生成:有 kp 标记**且有考点**才跳过;有标记但零考点(旧版/生成失败残留)则重新生成。
+    否则 LLM 动态挖义项+维度 → 落 vocab_word_sense + relation(每维每项一行)+ kp(词根)。"""
     if await db.get(VocabWordKp, word_id) is not None:
-        return
+        has_content = (await db.execute(
+            sa.select(VocabWordRelation.id).where(VocabWordRelation.word_id == word_id).limit(1))).first()
+        if has_content:
+            return   # 已生成且有考点
+        # 有 kp 行但零考点 → 空壳,继续往下重新生成(kp 行 on_conflict 保留,补 sense/relation)
     w = await db.get(VocabularyWord, word_id)
     if w is None:
         return
