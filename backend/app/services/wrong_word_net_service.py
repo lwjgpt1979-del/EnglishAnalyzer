@@ -92,7 +92,8 @@ async def index_wrong_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_r
     seen: set = set()
 
     async def _add(text: str, role: str):
-        wid = await _word_id_of(db, text, create=(role == "answer"))
+        # 答案值与干扰值均建词条+索引(couldn't/needn't 等缩写也成正常节点:有次关系、可切、可生成考点)
+        wid = await _word_id_of(db, text, create=True)
         if wid is not None and wid not in seen:
             seen.add(wid)
             rows.append({"id": uuid.uuid4(), "student_id": student_id, "word_id": wid,
