@@ -128,6 +128,12 @@ export function getWrongGrouped(view: 'kp' | 'batch', sourceLabel = '', kind = '
   return request(`/api/v1/wrong-center/grouped${qs}`)
 }
 
+/** 练习巩固 tab:练习衍生薄弱项(词·维聚合),连对 master_n 次即掌握清除 */
+export interface ConsolidationItem { id: string; word_id: string | null; dim: string; dim_label: string; kp_name: string | null; stem: string | null; miss_count: number; streak: number; master_n: number }
+export function getConsolidation(): Promise<{ items: ConsolidationItem[]; total: number }> {
+  return request(`/api/v1/wrong-center/consolidation`)
+}
+
 /** 错题「练同类仿真题」(统一入口,按 wrong_record 派发)。questions 含 answer/explanation 供即时判分 */
 export interface PracticeQuestion { id: string; stem: string; options: string[] | null; answer: string | null; explanation: string | null }
 export function practiceWrongCenter(wrongRecordId: string): Promise<{ knowledge_point: string; questions: PracticeQuestion[] }> {

@@ -20,58 +20,84 @@
       </view>
     </scroll-view>
 
-    <!-- 副筛选(语法/词汇)+ 视图切换(按考点/按批次) -->
-    <view class="ctrl-row">
-      <view class="kind-chips">
-        <text v-for="k in KIND_TABS" :key="k.value" class="kind-chip" :class="{ active: kind === k.value }" @tap="switchKind(k.value)">{{ k.label }}</text>
+    <!-- 真实错题侧:副筛选 + 视图切换 + 折叠分组卡 -->
+    <template v-if="source !== 'practice'">
+      <view class="ctrl-row">
+        <view class="kind-chips">
+          <text v-for="k in KIND_TABS" :key="k.value" class="kind-chip" :class="{ active: kind === k.value }" @tap="switchKind(k.value)">{{ k.label }}</text>
+        </view>
+        <view class="view-seg">
+          <text class="view-t" :class="{ on: view === 'kp' }" @tap="switchView('kp')">按考点</text>
+          <text class="view-t" :class="{ on: view === 'batch' }" @tap="switchView('batch')">按批次</text>
+        </view>
       </view>
-      <view class="view-seg">
-        <text class="view-t" :class="{ on: view === 'kp' }" @tap="switchView('kp')">按考点</text>
-        <text class="view-t" :class="{ on: view === 'batch' }" @tap="switchView('batch')">按批次</text>
+
+      <view v-if="groupsLoading && !groups.length" class="center-tip">加载中…</view>
+      <view v-else-if="!groupsLoading && !groups.length" class="center-tip">
+        <text>该来源下暂无错题</text>
+        <button class="btn-sm" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">上传作业</button>
       </view>
-    </view>
 
-    <!-- 加载 / 空 -->
-    <view v-if="groupsLoading && !groups.length" class="center-tip">加载中…</view>
-    <view v-else-if="!groupsLoading && !groups.length" class="center-tip">
-      <text>该来源下暂无错题</text>
-      <button class="btn-sm" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">上传作业</button>
-    </view>
-
-    <!-- 折叠分组卡(进度即底色) -->
-    <view v-else class="grp-list">
-      <view v-for="g in groups" :key="groupKey(g)" class="grp">
-        <view class="grp-head" @tap="toggleGroup(g)">
-          <view class="grp-fill" :style="{ width: (g.rate * 100) + '%' }" />
-          <view class="grp-in">
-            <text class="grp-name">{{ groupTitle(g) }}</text>
-            <text class="grp-cnt">错{{ g.count }}</text>
-            <text class="grp-rate">{{ g.mastered }}/{{ g.count }} 掌握</text>
-            <text class="grp-chev">{{ openGroups[groupKey(g)] ? '▾' : '›' }}</text>
+      <!-- 折叠分组卡(进度即底色) -->
+      <view v-else class="grp-list">
+        <view v-for="g in groups" :key="groupKey(g)" class="grp">
+          <view class="grp-head" @tap="toggleGroup(g)">
+            <view class="grp-fill" :style="{ width: (g.rate * 100) + '%' }" />
+            <view class="grp-in">
+              <text class="grp-name">{{ groupTitle(g) }}</text>
+              <text class="grp-cnt">错{{ g.count }}</text>
+              <text class="grp-rate">{{ g.mastered }}/{{ g.count }} 掌握</text>
+              <text class="grp-chev">{{ openGroups[groupKey(g)] ? '▾' : '›' }}</text>
+            </view>
+          </view>
+          <!-- 展开:该组错题(点行进详情;快捷练同类/学词) -->
+          <view v-if="openGroups[groupKey(g)]" class="grp-sub">
+            <view v-if="!groupItems[groupKey(g)]" class="sub-tip">加载中…</view>
+            <template v-else>
+              <view v-for="wq in groupItems[groupKey(g)]" :key="wq.id" class="qrow" :class="{ done: wq.lifecycle === 'mastered' }"
+                @tap="() => uni.navigateTo({ url: '/pages/wrong-questions/detail?id=' + wq.id })">
+                <view class="qdot" :class="statusClass(wq)" />
+                <view class="qbody">
+                  <text class="qstem">{{ cardText(wq) }}</text>
+                  <view class="qtags">
+                    <text class="mini-tag" :class="kindClass(wq)">{{ kindLabel(wq) }}</text>
+                    <text v-if="wq.kp_name" class="mini-tag mini-kp">{{ wq.kp_name }}</text>
+                  </view>
+                </view>
+                <view v-if="wq.kp_kind === 'vocab'" class="qgo" :class="{ loading: vlLoading === wq.id }" @tap.stop="learnVocab(wq)">{{ vlLoading === wq.id ? '…' : '学词' }}</view>
+                <view v-else class="qgo" :class="{ loading: pracLoading === wq.id }" @tap.stop="practiceWrong(wq)">{{ pracLoading === wq.id ? '…' : '练同类' }}</view>
+              </view>
+            </template>
           </view>
         </view>
+      </view>
+    </template>
 
-        <!-- 展开:该组错题(点行进详情;快捷练同类/学词) -->
-        <view v-if="openGroups[groupKey(g)]" class="grp-sub">
-          <view v-if="!groupItems[groupKey(g)]" class="sub-tip">加载中…</view>
-          <template v-else>
-            <view v-for="wq in groupItems[groupKey(g)]" :key="wq.id" class="qrow" :class="{ done: wq.lifecycle === 'mastered' }"
-              @tap="() => uni.navigateTo({ url: '/pages/wrong-questions/detail?id=' + wq.id })">
-              <view class="qdot" :class="statusClass(wq)" />
-              <view class="qbody">
-                <text class="qstem">{{ cardText(wq) }}</text>
-                <view class="qtags">
-                  <text class="mini-tag" :class="kindClass(wq)">{{ kindLabel(wq) }}</text>
-                  <text v-if="wq.kp_name" class="mini-tag mini-kp">{{ wq.kp_name }}</text>
-                </view>
-              </view>
-              <view v-if="wq.kp_kind === 'vocab'" class="qgo" :class="{ loading: vlLoading === wq.id }" @tap.stop="learnVocab(wq)">{{ vlLoading === wq.id ? '…' : '学词' }}</view>
-              <view v-else class="qgo" :class="{ loading: pracLoading === wq.id }" @tap.stop="practiceWrong(wq)">{{ pracLoading === wq.id ? '…' : '练同类' }}</view>
-            </view>
-          </template>
+    <!-- 练习巩固侧:练习衍生薄弱项(词·维聚合,连对 N 次清除) -->
+    <template v-else>
+      <view class="prac-banner"><text>来自「考点扩展测试」里答错的薄弱考点,单独存放、不计入真实错题。连对练熟即消失。</text></view>
+      <view v-if="consolLoading && !consol.length" class="center-tip">加载中…</view>
+      <view v-else-if="!consol.length" class="center-tip"><text>暂无练习巩固项 🎯</text></view>
+      <view v-else class="grp-list">
+        <view v-for="it in consol" :key="it.id" class="pcard">
+          <view class="pc-top">
+            <text class="pc-tag">练习衍生</text>
+            <text class="pc-dim">{{ it.dim_label }}</text>
+            <text class="pc-cnt">错{{ it.miss_count }}</text>
+          </view>
+          <text class="pc-name">{{ it.kp_name }}</text>
+          <view class="pc-streak">
+            <text class="pc-lbl">练熟</text>
+            <view v-for="n in it.master_n" :key="n" class="pc-dot" :class="{ on: n <= it.streak }" />
+            <text class="pc-lbl">连对 {{ it.streak }}/{{ it.master_n }}</text>
+          </view>
+          <view class="pc-cta" :class="{ loading: rpLoading === it.id }" @tap="retrain(it)">{{ rpLoading === it.id ? '出题中…' : '重练 · ' + it.dim_label }}</view>
         </view>
       </view>
-    </view>
+    </template>
+
+    <!-- 重练该维(逐题回传:错→回增本条/对→连对+1达2清除) -->
+    <PracticeQuiz v-if="rpOpen" kp="重练该维" :questions="rpQs" @finishDetail="onRpDetail" @close="onRpClose" />
 
     <!-- 练同类仿真题(逐题作答判分,与作业详情共用组件) -->
     <PracticeQuiz
@@ -152,8 +178,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getReviewQueue, getWrongGrouped, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongGroup, type WrongListQuery, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
-import { shadowScore } from '@/api/vocabulary'
+import { getReviewQueue, getWrongGrouped, getConsolidation, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongGroup, type WrongListQuery, type ConsolidationItem, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
+import { shadowScore, getKpTest, recordKpPractice } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import ShadowModal from '@/components/ShadowModal.vue'
 import Paywall from '@/components/Paywall.vue'
@@ -276,6 +302,7 @@ const SOURCE_TABS = [
   { label: '真题错题', value: '整卷' },
   { label: '长难句', value: '长难句' },
   { label: '平台错题', value: '平台' },
+  { label: '练习巩固', value: 'practice' },
 ]
 const KIND_TABS = [
   { label: '全部', value: '' },
@@ -320,12 +347,47 @@ async function toggleGroup(g: WrongGroup) {
     } catch { groupItems[key] = [] }
   }
 }
-function switchSource(v: string) { if (source.value === v) return; source.value = v; loadGroups() }
+function switchSource(v: string) { if (source.value === v) return; source.value = v; v === 'practice' ? loadConsolidation() : loadGroups() }
 function switchKind(v: string) { if (kind.value === v) return; kind.value = v; loadGroups() }
 function switchView(v: 'kp' | 'batch') { if (view.value === v) return; view.value = v; loadGroups() }
-function reload() { loadGroups() }   // 练同类/学词后回刷(供 modal 关闭回调复用)
+function reload() { source.value === 'practice' ? loadConsolidation() : loadGroups() }   // 练同类/学词后回刷
 
-onShow(() => { loadReviewDue(); if (groups.value.length) loadGroups() })
+// —— 练习巩固 tab(练习衍生薄弱项,词·维聚合,连对 N 次清除)——
+const consol = ref<ConsolidationItem[]>([])
+const consolLoading = ref(false)
+async function loadConsolidation() {
+  consolLoading.value = true
+  try { consol.value = (await getConsolidation()).items } catch { consol.value = [] } finally { consolLoading.value = false }
+}
+// 重练该维:只出该维一套 → 逐题回传(错→回增本条/对→连对+1达2清除)
+const rpOpen = ref(false)
+const rpLoading = ref('')
+const rpWid = ref('')
+const rpQs = ref<Array<{ id: string; stem: string; options: string[]; answer: string; explanation: string }>>([])
+const rpDimMap = new Map<string, { dim: string; stem: string }>()
+async function retrain(it: ConsolidationItem) {
+  if (!it.word_id || rpLoading.value) return
+  rpLoading.value = it.id
+  try {
+    const qs = await getKpTest(it.word_id, undefined, it.dim)
+    if (!qs.length) { uni.showToast({ title: '暂无该维题目', icon: 'none' }); return }
+    rpWid.value = it.word_id
+    rpDimMap.clear()
+    qs.forEach(q => rpDimMap.set(q.id, { dim: q.dimension, stem: q.stem }))
+    rpQs.value = qs.map(q => ({ id: q.id, stem: `【${q.dimension_label}】${q.stem}`, options: q.options, answer: q.answer, explanation: q.explanation }))
+    rpOpen.value = true
+  } catch { uni.showToast({ title: '出题失败,稍后重试', icon: 'none' }) } finally { rpLoading.value = '' }
+}
+async function onRpDetail(results: Array<{ id: string; correct: boolean }>) {
+  const payload = results
+    .map(r => ({ ...rpDimMap.get(r.id), correct: r.correct }))
+    .filter((p): p is { dim: string; stem: string; correct: boolean } => !!p.dim)
+    .map(p => ({ dim: p.dim, correct: p.correct, stem: p.stem }))
+  if (payload.length && rpWid.value) { try { await recordKpPractice(rpWid.value, payload) } catch { /* 静默 */ } }
+}
+function onRpClose() { rpOpen.value = false; loadConsolidation() }
+
+onShow(() => { loadReviewDue(); if (source.value === 'practice') { if (consol.value.length) loadConsolidation() } else if (groups.value.length) loadGroups() })
 onMounted(async () => {
   if (!auth.isLoggedIn()) await auth.login()
   await loadReviewDue()
@@ -516,6 +578,22 @@ onMounted(async () => {
 .qtags { display: flex; gap: 8rpx; }
 .qgo { flex-shrink: 0; font-size: 23rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 20rpx; }
 .qgo.loading { opacity: 0.6; }
+
+/* 练习巩固卡(练习衍生·隔离) */
+.prac-banner { background: #f4f2ec; border: 2rpx solid #e4ddca; border-radius: 14rpx; padding: 16rpx 20rpx; margin-bottom: 16rpx; }
+.prac-banner text { font-size: 23rpx; color: #8a7b52; line-height: 1.55; }
+.pcard { background: #fff; border: 2rpx solid #e4ddca; border-left: 8rpx solid #d8c88f; border-radius: 18rpx; padding: 22rpx 24rpx; display: flex; flex-direction: column; gap: 12rpx; }
+.pc-top { display: flex; align-items: center; gap: 12rpx; }
+.pc-tag { font-size: 20rpx; font-weight: 700; color: #8a7b52; background: #efe9d8; padding: 3rpx 14rpx; border-radius: 999rpx; }
+.pc-dim { font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 3rpx 14rpx; border-radius: 999rpx; }
+.pc-cnt { margin-left: auto; font-size: 21rpx; font-weight: 700; color: #c33; background: #fdecec; padding: 3rpx 14rpx; border-radius: 999rpx; }
+.pc-name { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.pc-streak { display: flex; align-items: center; gap: 10rpx; }
+.pc-lbl { font-size: 21rpx; color: var(--c-text-hint); }
+.pc-dot { width: 22rpx; height: 22rpx; border-radius: 50%; border: 3rpx solid #cbb96f; box-sizing: border-box; }
+.pc-dot.on { background: #2fa98a; border-color: #2fa98a; }
+.pc-cta { margin-top: 4rpx; text-align: center; font-size: 26rpx; font-weight: 700; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 14rpx 0; }
+.pc-cta.loading { opacity: 0.6; }
 
 /* 状态子筛选 chip */
 .status-scroll { width: 100%; margin-bottom: 8rpx; white-space: nowrap; }

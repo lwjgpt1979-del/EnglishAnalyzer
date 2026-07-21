@@ -414,22 +414,31 @@ async def ensure_kp_mcqs(db: AsyncSession, *, word_id: uuid.UUID, sense_id: uuid
         await db.commit()
 
 
-async def kp_mcq_test(db: AsyncSession, *, word_id: uuid.UUID, sense_id: uuid.UUID | None = None) -> list[dict]:
-    """考点扩展测试(限定义项):确保该义项题库 → 每个有题的维度随机取 1 道 → 按维度顺序组合返回。"""
+async def kp_mcq_test(db: AsyncSession, *, word_id: uuid.UUID, sense_id: uuid.UUID | None = None,
+                      dim: str | None = None) -> list[dict]:
+    """考点扩展测试(限定义项):确保该义项题库 → 每个有题的维度随机取 1 道 → 按维度顺序组合返回。
+    传 dim 则「重练该维」:只出该维的一套题(最多 4 道,优先未被报错)。"""
     await ensure_kp_mcqs(db, word_id=word_id, sense_id=sense_id)
     eff = _eff_sense(await word_kp_out(db, word_id=word_id, sense_id=sense_id))
     q = sa.select(VocabKpMcq).where(VocabKpMcq.word_id == word_id)
     q = q.where(VocabKpMcq.sense_id == eff) if eff else q.where(VocabKpMcq.sense_id.is_(None))
+    if dim:
+        q = q.where(VocabKpMcq.dimension == dim)
     rows = (await db.execute(q)).scalars().all()
     by_dim: dict = {}
     for r in rows:
         by_dim.setdefault(r.dimension, []).append(r)
     out = []
-    for dim in sorted(by_dim.keys(), key=lambda k: _DIM_INDEX.get(k, 99)):
-        rs = by_dim.get(dim)
+    if dim:   # 重练该维:出该维一套(优先未报错)
+        rs = sorted(by_dim.get(dim, []), key=lambda r: r.report_count)[:4]
+        return [{"id": str(m.id), "dimension": dim, "dimension_label": _dim_label(dim),
+                 "stem": m.stem, "options": m.options, "answer": m.answer,
+                 "explanation": m.explanation or ""} for m in rs]
+    for d in sorted(by_dim.keys(), key=lambda k: _DIM_INDEX.get(k, 99)):
+        rs = by_dim.get(d)
         if rs:
             m = random.choice([r for r in rs if r.report_count == 0] or rs)   # 优先未被报错的题
-            out.append({"id": str(m.id), "dimension": dim, "dimension_label": _dim_label(dim),
+            out.append({"id": str(m.id), "dimension": d, "dimension_label": _dim_label(d),
                         "stem": m.stem, "options": m.options, "answer": m.answer,
                         "explanation": m.explanation or ""})
     return out

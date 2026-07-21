@@ -524,13 +524,13 @@
       title="跟读评测是会员专享" @close="showPaywall = false" />
 
     <!-- 考点扩展测试(PracticeQuiz 逐题即时判分,本地按 answer 判,纯练习不进 BKT;完成即过用关) -->
-    <PracticeQuiz v-if="kpTestOpen" kp="考点扩展" :questions="kpTestQs" :swapper="kpSwapper" @finish="onKpTestFinish" @close="kpTestOpen = false" />
+    <PracticeQuiz v-if="kpTestOpen" kp="考点扩展" :questions="kpTestQs" :swapper="kpSwapper" @finish="onKpTestFinish" @finishDetail="onKpDetail" @close="kpTestOpen = false" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, swapKpMcq, reportRelation, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, swapKpMcq, reportRelation, recordKpPractice, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
 import type { ExamOverview, WordKp, KpTestQuestion, QuizMcq, KpItem } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
@@ -666,6 +666,9 @@ function learnRelated(it: { text: string; word_id: string | null }) {
 const kpTestOpen = ref(false)
 const kpTestLoading = ref(false)
 const kpTestQs = ref<Array<{ id: string; stem: string; options: string[]; answer: string; explanation: string }>>([])
+// 考点扩展测试逐题维度映射(id→{dim,stem}),供做完把错误维回传成练习衍生错题
+const kpDimMap = new Map<string, { dim: string; stem: string }>()
+const kpTestWid = ref('')
 async function openKpTest() {
   const wid = curStudy.value?.word_id
   if (!wid || kpTestLoading.value) return
@@ -673,6 +676,9 @@ async function openKpTest() {
   try {
     const qs: KpTestQuestion[] = await getKpTest(wid)
     if (!qs.length) { uni.showToast({ title: '该词暂无考点题', icon: 'none' }); return }
+    kpTestWid.value = wid
+    kpDimMap.clear()
+    qs.forEach(q => kpDimMap.set(q.id, { dim: q.dimension, stem: q.stem }))
     kpTestQs.value = qs.map(q => ({
       id: q.id, stem: `【${q.dimension_label}】${q.stem}`,
       options: q.options, answer: q.answer, explanation: q.explanation,
@@ -688,7 +694,18 @@ async function openKpTest() {
 async function kpSwapper(q: { id: string }) {
   const nq = await swapKpMcq(q.id) as KpTestQuestion
   if (!nq || !nq.id) return null
+  kpDimMap.set(nq.id, { dim: nq.dimension, stem: nq.stem })
   return { id: nq.id, stem: `【${nq.dimension_label}】${nq.stem}`, options: nq.options, answer: nq.answer, explanation: nq.explanation }
+}
+// 逐题结果回传:错误维 → 练习衍生错题(隔离,不进真实错题);对 → 连对+1达2掌握清除
+async function onKpDetail(results: Array<{ id: string; correct: boolean }>) {
+  const payload = results
+    .map(r => ({ ...kpDimMap.get(r.id), correct: r.correct }))
+    .filter((p): p is { dim: string; stem: string; correct: boolean } => !!p.dim)
+    .map(p => ({ dim: p.dim, correct: p.correct, stem: p.stem }))
+  if (payload.length && kpTestWid.value) {
+    try { await recordKpPractice(kpTestWid.value, payload) } catch { /* 静默,不打断学习 */ }
+  }
 }
 // 报错某条考点(点旗标 or 长按 chip):report_count++,即时灰掉,待后台复核/低峰 AI 修正
 const kpReported = reactive<Record<string, boolean>>({})

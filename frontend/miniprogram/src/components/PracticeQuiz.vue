@@ -103,7 +103,18 @@ const props = defineProps<{
   // 「换一题」钩子(如考点测试:报错该题+换同维度另一道);传则显示按钮,返回新题即就地替换。
   swapper?: (q: PracticeQuestion) => Promise<PracticeQuestion | null>
 }>()
-const emit = defineEmits<{ (e: 'close'): void; (e: 'finish', total: number, correct: number): void }>()
+const emit = defineEmits<{
+  (e: 'close'): void
+  (e: 'finish', total: number, correct: number): void
+  // 逐题明细(供①③考点扩展测试回传每维对错):作答过的题 [{id, correct}]。只触发一次。
+  (e: 'finishDetail', results: { id: string; correct: boolean }[]): void
+}>()
+const detailEmitted = ref(false)
+function emitDetail() {
+  if (detailEmitted.value) return
+  detailEmitted.value = true
+  emit('finishDetail', Object.keys(state).map(id => ({ id, correct: state[id].correct })))
+}
 
 interface St { pickedIdx: number; correct: boolean; correctIdx: number; correctText: string; explanation: string }
 const idx = ref(0)
@@ -220,13 +231,15 @@ async function doRecord() {
 async function next() {
   if (!cur.value || !state[cur.value.id]) return
   if (!isLast.value) { idx.value += 1; return }
-  if (props.hideResult) { emit('finish', answeredCount.value, correctCount.value); emit('close'); return }
+  if (props.hideResult) { emitDetail(); emit('finish', answeredCount.value, correctCount.value); emit('close'); return }
   await doRecord()
+  emitDetail()
   emit('finish', answeredCount.value, correctCount.value)
   done.value = true
 }
 async function close() {
   if (!props.hideResult && answeredCount.value > 0 && !recorded.value) await doRecord()
+  if (answeredCount.value > 0) emitDetail()   // 中途关闭也回传已作答明细
   emit('close')
 }
 </script>

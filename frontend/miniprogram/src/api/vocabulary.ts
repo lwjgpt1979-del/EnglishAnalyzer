@@ -56,9 +56,16 @@ export interface KpTestQuestion {
   answer: string
   explanation: string
 }
-export function getKpTest(wordId: string, senseId?: string | null): Promise<KpTestQuestion[]> {
-  const q = senseId ? `?sense_id=${senseId}` : ''
+export function getKpTest(wordId: string, senseId?: string | null, dim?: string): Promise<KpTestQuestion[]> {
+  let q = ''
+  if (senseId) q += `${q ? '&' : '?'}sense_id=${senseId}`
+  if (dim) q += `${q ? '&' : '?'}dim=${encodeURIComponent(dim)}`
   return request<KpTestQuestion[]>(`/api/v1/vocabulary/kp-test/${wordId}${q}`, { method: 'GET' })
+}
+// 考点扩展测试逐维结果回传(练习闭环):错→(word,dim)练习衍生错题;对→连对+1达2掌握清除
+export interface KpPracticeResult { dim: string; correct: boolean; stem?: string }
+export function recordKpPractice(wordId: string, results: KpPracticeResult[]): Promise<{ recorded: number }> {
+  return request(`/api/v1/vocabulary/kp-practice/record`, { method: 'POST', data: { word_id: wordId, results } })
 }
 // 换一题:报错该考点题 + 换同维度另一道(返回空对象=没有可换的)
 export function swapKpMcq(mcqId: string): Promise<KpTestQuestion | Record<string, never>> {

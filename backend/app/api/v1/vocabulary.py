@@ -164,12 +164,38 @@ async def report_relation(relation_id: uuid.UUID, db: DbDep, current_user: UserD
 
 
 @router.get("/kp-test/{word_id}", response_model=BaseResponse[list])
-async def kp_test(word_id: uuid.UUID, db: DbDep, current_user: UserDep, sense_id: uuid.UUID | None = None):
+async def kp_test(word_id: uuid.UUID, db: DbDep, current_user: UserDep,
+                  sense_id: uuid.UUID | None = None, dim: str | None = None):
     """考点扩展测试:按考点维度出题(每维 3 道、随机取 1 组合成一套)。查看即生成+全局缓存。
-    传 sense_id 只测该义项(多义词);纯练习(前端 PracticeQuiz 本地判分),不进 BKT。"""
+    传 sense_id 只测该义项(多义词);传 dim=「重练该维」只出该维一套;纯练习(前端 PracticeQuiz 本地判分),不进 BKT。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import word_kp_service
-    return make_ok(await word_kp_service.kp_mcq_test(db, word_id=word_id, sense_id=sense_id))
+    return make_ok(await word_kp_service.kp_mcq_test(db, word_id=word_id, sense_id=sense_id, dim=dim))
+
+
+@router.post("/kp-practice/record", response_model=BaseResponse[dict])
+async def kp_practice_record(body: dict, db: DbDep, current_user: UserDep):
+    """考点扩展测试逐维结果回传(练习闭环):错→(word,dim)练习衍生错题;对→连对+1,达2掌握清除。
+    body: {word_id, results:[{dim, correct, stem?}]}。判分在前端,这里只记薄弱/连对(不进 SM-2)。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.models.d5_learning import VocabularyWord
+    from app.services import word_kp_service, wrong_center_service
+    word_id = uuid.UUID(str(body.get("word_id")))
+    w = await db.get(VocabularyWord, word_id)
+    if w is None:
+        return make_ok({"recorded": 0})
+    n = 0
+    for it in (body.get("results") or []):
+        dim = str(it.get("dim") or "").strip()
+        if not dim:
+            continue
+        await wrong_center_service.record_kp_practice(
+            db, student_id=current_user.id, word_id=word_id, word=w.word,
+            dim=dim, dim_label=word_kp_service._dim_label(dim),
+            correct=bool(it.get("correct")), missed_desc=str(it.get("stem") or "") or None)
+        n += 1
+    await db.commit()
+    return make_ok({"recorded": n})
 
 
 @router.post("/exam-daily", response_model=BaseResponse[DailyTaskOut])

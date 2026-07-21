@@ -67,7 +67,7 @@
       </template>
     </template>
 
-    <PracticeQuiz v-if="testOpen" kp="考点扩展" :questions="testQs" :swapper="kpSwapper" @close="testOpen = false" />
+    <PracticeQuiz v-if="testOpen" kp="考点扩展" :questions="testQs" :swapper="kpSwapper" @finishDetail="onKpDetail" @close="testOpen = false" />
   </view>
 </template>
 
@@ -75,7 +75,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { getWordNetOfRecord, getWordNet } from '@/api/wrongQuestions'
 import type { WordNet, WordNetErr, WordNetKpItem } from '@/api/wrongQuestions'
-import { getKpTest, swapKpMcq, reportRelation } from '@/api/vocabulary'
+import { getKpTest, swapKpMcq, reportRelation, recordKpPractice } from '@/api/vocabulary'
 import type { KpTestQuestion } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 
@@ -182,6 +182,9 @@ function switchCenter(s: { word_id: string | null }) {
 function openErr(e: WordNetErr) {
   uni.navigateTo({ url: '/pages/wrong-questions/detail?id=' + e.wrong_record_id })
 }
+// 考点扩展测试逐题维度映射(id→{dim,stem}),做完把错误维回传成练习衍生错题
+const kpDimMap = new Map<string, { dim: string; stem: string }>()
+const kpTestWid = ref('')
 async function openTest() {
   const wid = net.value?.word_id
   if (!wid || testLoading.value) return
@@ -189,6 +192,9 @@ async function openTest() {
   try {
     const qs: KpTestQuestion[] = await getKpTest(wid, net.value?.sense_id || undefined)   // 限定当前义项
     if (!qs.length) { uni.showToast({ title: '该词暂无考点题', icon: 'none' }); return }
+    kpTestWid.value = wid
+    kpDimMap.clear()
+    qs.forEach(q => kpDimMap.set(q.id, { dim: q.dimension, stem: q.stem }))
     testQs.value = qs.map(q => ({ id: q.id, stem: `【${q.dimension_label}】${q.stem}`, options: q.options, answer: q.answer, explanation: q.explanation }))
     testOpen.value = true
   } catch { uni.showToast({ title: '出题失败,稍后重试', icon: 'none' }) }
@@ -198,7 +204,18 @@ async function openTest() {
 async function kpSwapper(q: { id: string }) {
   const nq = await swapKpMcq(q.id) as KpTestQuestion
   if (!nq || !nq.id) return null
+  kpDimMap.set(nq.id, { dim: nq.dimension, stem: nq.stem })
   return { id: nq.id, stem: `【${nq.dimension_label}】${nq.stem}`, options: nq.options, answer: nq.answer, explanation: nq.explanation }
+}
+// 逐题结果回传:错误维 → 练习衍生错题(隔离);对 → 连对+1达2掌握清除
+async function onKpDetail(results: Array<{ id: string; correct: boolean }>) {
+  const payload = results
+    .map(r => ({ ...kpDimMap.get(r.id), correct: r.correct }))
+    .filter((p): p is { dim: string; stem: string; correct: boolean } => !!p.dim)
+    .map(p => ({ dim: p.dim, correct: p.correct, stem: p.stem }))
+  if (payload.length && kpTestWid.value) {
+    try { await recordKpPractice(kpTestWid.value, payload) } catch { /* 静默 */ }
+  }
 }
 </script>
 
