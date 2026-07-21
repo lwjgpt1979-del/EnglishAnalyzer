@@ -178,6 +178,24 @@ class VocabMcq(Base):
     __table_args__ = (sa.Index("ix_vocab_mcq_word", "word_id"),)
 
 
+class VocabKpMcqRevision(Base):
+    """考点题修改记录:每次 AI 自动修正/人工编辑存一份 before/after 快照(后台可看修改历史)。"""
+
+    __tablename__ = "vocab_kp_mcq_revision"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    mcq_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocab_kp_mcq.id", ondelete="CASCADE"), nullable=False)
+    before = mapped_column(JSONB, nullable=True)   # {stem, options, answer, explanation, report_count}
+    after = mapped_column(JSONB, nullable=True)
+    trigger = mapped_column(sa.String(8), nullable=False)   # auto(跨阈值自动) | manual(后台点)
+    by_admin_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    reason = mapped_column(sa.Text, nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (sa.Index("ix_vocab_kp_mcq_revision_mcq", "mcq_id"),)
+
+
 class VocabNode(Base):
     """词 ↔ 知识节点(R5)。一词多 KP、一 KP 多词。"""
 

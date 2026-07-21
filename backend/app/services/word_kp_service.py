@@ -11,7 +11,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d5_learning import StudentVocabCandidate, VocabularyLearning, VocabularyWord
-from app.models.d18_vocab_kg import VocabKpMcq, VocabWordKp, VocabWordRelation, VocabWordSense
+from app.models.d18_vocab_kg import (
+    VocabKpMcq, VocabKpMcqRevision, VocabWordKp, VocabWordRelation, VocabWordSense,
+)
 
 # 受控可扩维度清单(动态考点):dim_key → (中文名, relational=项是否可链词, 适用词性提示)
 # LLM 按词/词组的词性与特点,从中挑适用维度填充;新维度往这里加即可。
@@ -349,6 +351,10 @@ async def swap_kp_mcq(db: AsyncSession, *, mcq_id: uuid.UUID) -> dict | None:
         return None
     m.report_count = (m.report_count or 0) + 1
     await db.commit()
+    # 跨阈值 → 后台自动 AI 修正该题(fire-and-forget,不卡学生换题)
+    if m.report_count >= await get_report_threshold(db):
+        import asyncio
+        asyncio.create_task(_bg_fix_kp_mcq(m.id))
 
     async def _others():
         cond = [VocabKpMcq.word_id == m.word_id, VocabKpMcq.dimension == m.dimension, VocabKpMcq.id != m.id]
@@ -366,3 +372,101 @@ async def swap_kp_mcq(db: AsyncSession, *, mcq_id: uuid.UUID) -> dict | None:
         await ensure_kp_mcqs(db, word_id=m.word_id, sense_id=m.sense_id)
         pool = await _others()
     return _mcq_out(random.choice(pool)) if pool else None
+
+
+# ---------------- 考点题·AI 修正 + 复核(阈值可配 + 修改记录) ----------------
+
+_REPORT_THRESHOLD_KEY = "kp_mcq_report_threshold"
+_REPORT_THRESHOLD_DEFAULT = 3
+
+
+async def get_report_threshold(db: AsyncSession) -> int:
+    """报错阈值(≥该值触发 AI 自动修正)。运营可配 system_configs.kp_mcq_report_threshold,缺省 3。"""
+    from app.models.d9_system import SystemConfig
+    cfg = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _REPORT_THRESHOLD_KEY))).scalar_one_or_none()
+    if cfg is not None and isinstance(cfg.value, dict):
+        try:
+            return max(1, int(cfg.value.get("threshold", _REPORT_THRESHOLD_DEFAULT)))
+        except (ValueError, TypeError):
+            pass
+    return _REPORT_THRESHOLD_DEFAULT
+
+
+async def set_report_threshold(db: AsyncSession, *, threshold: int, updated_by: uuid.UUID | None = None) -> int:
+    from app.models.d9_system import SystemConfig
+    t = max(1, int(threshold))
+    cfg = (await db.execute(
+        sa.select(SystemConfig).where(SystemConfig.key == _REPORT_THRESHOLD_KEY))).scalar_one_or_none()
+    if cfg is None:
+        db.add(SystemConfig(id=uuid.uuid4(), key=_REPORT_THRESHOLD_KEY, value={"threshold": t},
+                            description="考点题报错阈值(≥该值 AI 自动修正)", updated_by=updated_by))
+    else:
+        cfg.value = {"threshold": t}
+        cfg.updated_by = updated_by
+    await db.commit()
+    return t
+
+
+def _mcq_snapshot(m: VocabKpMcq) -> dict:
+    return {"stem": m.stem, "options": m.options, "answer": m.answer,
+            "explanation": m.explanation, "report_count": m.report_count}
+
+
+async def _gen_fix_mcq(word: str, meaning: str, dim_key: str, mcq: dict) -> dict | None:
+    """LLM 审校并修正一道被学生反馈有问题的考点题(改正答案/解析/必要干扰项;维度不变)。fast 档。"""
+    from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
+    if is_llm_dev_mode():
+        return None
+    system = (
+        f"你是英语考点命题审校专家。下面这道单选题(维度:{_dim_label(dim_key)},目标词:{word})被学生反馈**有问题**"
+        "(可能:答案不唯一/题干有歧义/某个干扰项也讲得通/答案或解析本身错)。请**审校并修正**:\n"
+        "① 确保答案唯一正确;② 每个干扰项都明确是错的(不能也成立/同义);③ 题干无歧义、信息足以锁定唯一答案;"
+        "④ 维度不变、仍真考该维;⑤ 解析说清为什么对、其它为什么错。若原题基本可用只需微调,大问题可重写题干/选项。\n"
+        '严格输出 JSON:{"stem":"题干","options":["4个选项"],"answer":"正确项(必须与 options 之一完全一致)","explanation":"中文解析"}')
+    import json as _json
+    d = await complete_json(
+        system_prompt=system,
+        user_prompt=f"目标词:{word}({meaning})\n原题:{_json.dumps(mcq, ensure_ascii=False)}\n返回修正后 JSON:",
+        max_tokens=900, model=fast_model(), feature="vocab_kp_mcq_fix",
+        validate=lambda x: isinstance(x.get("options"), list) and str(x.get("answer") or "").strip())
+    if not d:
+        return None
+    opts = [str(o).strip() for o in (d.get("options") or []) if str(o).strip()]
+    ans = str(d.get("answer") or "").strip()
+    stem = str(d.get("stem") or "").strip()
+    if len(opts) < 2 or ans not in opts or not stem:
+        return None
+    return {"stem": stem, "options": opts, "answer": ans, "explanation": str(d.get("explanation") or "").strip() or None}
+
+
+async def fix_kp_mcq(db: AsyncSession, *, mcq_id: uuid.UUID, trigger: str = "manual",
+                     by_admin_id: uuid.UUID | None = None) -> dict | None:
+    """AI 修正一道考点题:审校改正 → 更新题 + report_count 归 0 + 记 revision(before/after)。返回修正后题或 None。"""
+    m = await db.get(VocabKpMcq, mcq_id)
+    if m is None:
+        return None
+    w = await db.get(VocabularyWord, m.word_id)
+    before = _mcq_snapshot(m)
+    fixed = await _gen_fix_mcq(w.word if w else "", _meaning_of(w) if w else "", m.dimension,
+                               {k: before[k] for k in ("stem", "options", "answer", "explanation")})
+    if not fixed:
+        return None
+    m.stem, m.options, m.answer, m.explanation = fixed["stem"], fixed["options"], fixed["answer"], fixed["explanation"]
+    m.report_count = 0   # 已修正,清报错计数
+    db.add(VocabKpMcqRevision(id=uuid.uuid4(), mcq_id=m.id, before=before, after=_mcq_snapshot(m),
+                              trigger=trigger, by_admin_id=by_admin_id, reason="AI 审校修正"))
+    await db.commit()
+    return _mcq_out(m)
+
+
+async def _bg_fix_kp_mcq(mcq_id: uuid.UUID) -> None:
+    """后台自动修正(跨阈值触发,独立 session,失败不阻断)。"""
+    import logging
+    from app.core.database import _async_session_factory
+    async with _async_session_factory() as db:
+        try:
+            await fix_kp_mcq(db, mcq_id=mcq_id, trigger="auto")
+        except Exception:  # noqa: BLE001
+            await db.rollback()
+            logging.getLogger(__name__).exception("auto fix kp_mcq failed id=%s", mcq_id)
