@@ -142,6 +142,15 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
                 sdims.append((dim_key, [{"text": f, "zh": z, "note": "", "source": "morph"} for f, z in forms]))
             rebuilt.append((gloss, pos, sort, sdims))
         senses = rebuilt
+    # P2 WordNet 校验:LLM 出的近义/反义被 WordNet 确认的升为高置信(source=wordnet;不覆盖 morph)
+    from app.services import lexical
+    for _g, pos, _s, sdims in senses:
+        for key, items in sdims:
+            if key not in ("synonym", "antonym"):
+                continue
+            for it in items:
+                if not it.get("source") and lexical.confirm(w.word, pos or "", key, it["text"]):
+                    it["source"] = "wordnet"
     # 可链词维:批量查 related_text 是否在词库,填 related_word_id
     link_texts = [it["text"] for _g, _p, _s, sdims in senses
                   for key, items in sdims if key in _RELATIONAL_DIMS for it in items]
@@ -188,8 +197,10 @@ def _dims_from_rows(rows: list, seed_ids: list) -> list[dict]:
         items = []
         for r in by_dim[key]:
             wid = str(r.related_word_id) if r.related_word_id else None
-            # 置信度:形态学生成(source=morph)=高;可链词维命中词库(有 word_id)=高;纯 LLM 造词(无)=低;文本维=高
-            confidence = "low" if (relational and not wid and getattr(r, "source", "llm") != "morph") else "high"
+            # 置信度:权威来源(morph 形态学 / wordnet 词库确认)=高;可链词维命中词库(有 word_id)=高;
+            # 纯 LLM 造词(无 word_id)=低;文本维=高
+            confidence = "low" if (relational and not wid
+                                   and getattr(r, "source", "llm") not in ("morph", "wordnet")) else "high"
             items.append({"text": r.related_text, "zh": r.related_zh or "", "note": r.note or "",
                           "word_id": wid, "confidence": confidence})
             if relational and r.related_word_id:
