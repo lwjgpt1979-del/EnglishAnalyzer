@@ -14,6 +14,7 @@
           <view class="pr-dots">
             <view v-for="(q, i) in questions" :key="i" class="pr-dot" :class="dotCls(q, i)" />
           </view>
+          <text v-if="swapper" class="pr-swap" @tap.stop="swapCur">{{ swapping ? '换题中…' : '换一题' }}</text>
         </view>
         <scroll-view scroll-y class="modal-body">
           <text class="pq-stem">{{ cur.stem }}</text>
@@ -99,6 +100,8 @@ const props = defineProps<{
   // 页面自渲染结果页(如自适应按考点统计):做完 emit finish + close,不显组件内结果页。
   hideResult?: boolean
   lastLabel?: string
+  // 「换一题」钩子(如考点测试:报错该题+换同维度另一道);传则显示按钮,返回新题即就地替换。
+  swapper?: (q: PracticeQuestion) => Promise<PracticeQuestion | null>
 }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'finish', total: number, correct: number): void }>()
 
@@ -111,6 +114,24 @@ const recorded = ref(false)
 const resultMsg = ref('')
 const fillInput = ref('')
 const state = reactive<Record<string, St>>({})
+
+const swapping = ref(false)
+async function swapCur() {
+  if (!props.swapper || swapping.value || !cur.value) return
+  swapping.value = true
+  try {
+    const old = cur.value
+    const nq = await props.swapper(old)
+    if (nq && nq.id) {
+      props.questions.splice(idx.value, 1, nq)   // 就地替换(父组件 reactive 数组)
+      if (state[old.id]) delete state[old.id]     // 清旧作答态 → 新题从未答开始
+      fillInput.value = ''
+    } else {
+      uni.showToast({ title: '暂无可换的题', icon: 'none' })
+    }
+  } catch { uni.showToast({ title: '换题失败,稍后重试', icon: 'none' }) }
+  finally { swapping.value = false }
+}
 
 const cur = computed<PracticeQuestion | undefined>(() => props.questions[idx.value])
 const isLast = computed(() => idx.value >= props.questions.length - 1)
@@ -219,7 +240,9 @@ async function close() {
 .modal-body { flex: 1; margin: 16rpx 0; }
 .pr-top { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-top: 8rpx; }
 .pr-idx { font-size: 24rpx; color: var(--c-text-second); font-weight: 600; white-space: nowrap; }
-.pr-dots { display: flex; gap: 10rpx; flex-wrap: wrap; }
+.pr-dots { display: flex; gap: 10rpx; flex-wrap: wrap; flex: 1; }
+.pr-swap { font-size: 22rpx; color: var(--c-primary); background: var(--c-primary-faint); padding: 6rpx 18rpx; border-radius: 20rpx; white-space: nowrap; }
+.pr-swap:active { opacity: .7; }
 .pr-dot { width: 18rpx; height: 18rpx; border-radius: 50%; background: #dfe4ea; }
 .pr-dot.cur { background: var(--c-primary); transform: scale(1.15); }
 .pr-dot.ok { background: #18a058; }

@@ -64,7 +64,7 @@
       </template>
     </template>
 
-    <PracticeQuiz v-if="testOpen" kp="考点扩展" :questions="testQs" @close="testOpen = false" />
+    <PracticeQuiz v-if="testOpen" kp="考点扩展" :questions="testQs" :swapper="kpSwapper" @close="testOpen = false" />
   </view>
 </template>
 
@@ -72,7 +72,7 @@
 import { ref, computed, watch } from 'vue'
 import { getWordNetOfRecord, getWordNet } from '@/api/wrongQuestions'
 import type { WordNet, WordNetErr } from '@/api/wrongQuestions'
-import { getKpTest } from '@/api/vocabulary'
+import { getKpTest, swapKpMcq } from '@/api/vocabulary'
 import type { KpTestQuestion } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 
@@ -176,6 +176,12 @@ async function openTest() {
     testOpen.value = true
   } catch { uni.showToast({ title: '出题失败,稍后重试', icon: 'none' }) }
   finally { testLoading.value = false }
+}
+// 换一题:报错该题 + 换同维度另一道
+async function kpSwapper(q: { id: string }) {
+  const nq = await swapKpMcq(q.id) as KpTestQuestion
+  if (!nq || !nq.id) return null
+  return { id: nq.id, stem: `【${nq.dimension_label}】${nq.stem}`, options: nq.options, answer: nq.answer, explanation: nq.explanation }
 }
 </script>
 

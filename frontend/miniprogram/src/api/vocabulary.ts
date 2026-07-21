@@ -60,6 +60,10 @@ export function getKpTest(wordId: string, senseId?: string | null): Promise<KpTe
   const q = senseId ? `?sense_id=${senseId}` : ''
   return request<KpTestQuestion[]>(`/api/v1/vocabulary/kp-test/${wordId}${q}`, { method: 'GET' })
 }
+// 换一题:报错该考点题 + 换同维度另一道(返回空对象=没有可换的)
+export function swapKpMcq(mcqId: string): Promise<KpTestQuestion | Record<string, never>> {
+  return request(`/api/v1/vocabulary/kp-mcq/${mcqId}/swap`, { method: 'POST' })
+}
 
 // 测试题库:每词随机取一道 LLM 缓存选择题(未缓存返回 mcq=null,后台异步生成)
 export interface QuizMcq { word_id: string; mcq_type: string; stem: string; options: string[]; answer: string; explanation: string }

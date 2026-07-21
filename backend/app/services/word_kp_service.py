@@ -261,7 +261,11 @@ async def _gen_kp_mcqs(word: str, meaning: str, kp: dict, is_phrase: bool = Fals
         "- 介词辨析/用法·位置/语义侧重/常见考法 → 结合语境考该维度的具体用法。\n"
         "严格输出 JSON:{\"items\":[{\"dimension\":\"上面给的维度 key(英文)\",\"stem\":\"题干\",\n"
         "\"options\":[\"4个选项\"],\"answer\":\"正确项(必须与 options 之一完全一致)\",\"explanation\":\"一句中文解析\"}]}\n"
-        "每维恰好 3 题、每题 4 个选项单选;干扰项合理不等于正确项;dimension 只用上面给的 key,不臆造。\n"
+        "每维恰好 3 题、每题 4 个选项单选;dimension 只用上面给的 key,不臆造。\n"
+        "【质量硬规则·必须遵守】① **答案唯一**:题干在语境下只有一个正确项;② **每个干扰项都要明确是错的**——"
+        "不能也讲得通、不能与正确答案同义或都成立(如考『过去能够』时,别把『was unable to』这种相反却也合语法的项当干扰);"
+        "③ 题干无歧义、信息足以锁定唯一答案;④ 维度名要真考该维关系(反义题就考反义区分,不要退化成普通填空);"
+        "⑤ explanation 说清为什么这个对、其它为什么错。\n"
         f"【用词要简单】题干句里除目标{tgt}与考点词(选项中的词)外,其余单词一律用简单常见词、"
         f"难度不高于目标{tgt},不要用更生僻的词做句子载体——避免学生被句中难词绊住、学不到考点。")
     d = await complete_json(
@@ -325,8 +329,40 @@ async def kp_mcq_test(db: AsyncSession, *, word_id: uuid.UUID, sense_id: uuid.UU
     for dim in sorted(by_dim.keys(), key=lambda k: _DIM_INDEX.get(k, 99)):
         rs = by_dim.get(dim)
         if rs:
-            m = random.choice(rs)
+            m = random.choice([r for r in rs if r.report_count == 0] or rs)   # 优先未被报错的题
             out.append({"id": str(m.id), "dimension": dim, "dimension_label": _dim_label(dim),
                         "stem": m.stem, "options": m.options, "answer": m.answer,
                         "explanation": m.explanation or ""})
     return out
+
+
+def _mcq_out(m: VocabKpMcq) -> dict:
+    return {"id": str(m.id), "dimension": m.dimension, "dimension_label": _dim_label(m.dimension),
+            "stem": m.stem, "options": m.options, "answer": m.answer, "explanation": m.explanation or ""}
+
+
+async def swap_kp_mcq(db: AsyncSession, *, mcq_id: uuid.UUID) -> dict | None:
+    """学生「换一题」= 报错该题(report_count++,供后台复核)+ 返回同 词/义项/维度 的另一道
+    (优先未报错;该维仅此一道则重生成该词该义项题库)。"""
+    m = await db.get(VocabKpMcq, mcq_id)
+    if m is None:
+        return None
+    m.report_count = (m.report_count or 0) + 1
+    await db.commit()
+
+    async def _others():
+        cond = [VocabKpMcq.word_id == m.word_id, VocabKpMcq.dimension == m.dimension, VocabKpMcq.id != m.id]
+        cond.append(VocabKpMcq.sense_id == m.sense_id if m.sense_id else VocabKpMcq.sense_id.is_(None))
+        return (await db.execute(sa.select(VocabKpMcq).where(*cond))).scalars().all()
+
+    others = await _others()
+    pool = [o for o in others if o.report_count == 0] or others
+    if not pool:
+        # 该维仅此一道(且已报错)→ 重生成该词该义项题库(先删,绕过 ensure 幂等)
+        cond = [VocabKpMcq.word_id == m.word_id]
+        cond.append(VocabKpMcq.sense_id == m.sense_id if m.sense_id else VocabKpMcq.sense_id.is_(None))
+        await db.execute(sa.delete(VocabKpMcq).where(*cond))
+        await db.commit()
+        await ensure_kp_mcqs(db, word_id=m.word_id, sense_id=m.sense_id)
+        pool = await _others()
+    return _mcq_out(random.choice(pool)) if pool else None

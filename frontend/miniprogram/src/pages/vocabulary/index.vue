@@ -520,13 +520,13 @@
       title="跟读评测是会员专享" @close="showPaywall = false" />
 
     <!-- 考点扩展测试(PracticeQuiz 逐题即时判分,本地按 answer 判,纯练习不进 BKT;完成即过用关) -->
-    <PracticeQuiz v-if="kpTestOpen" kp="考点扩展" :questions="kpTestQs" @finish="onKpTestFinish" @close="kpTestOpen = false" />
+    <PracticeQuiz v-if="kpTestOpen" kp="考点扩展" :questions="kpTestQs" :swapper="kpSwapper" @finish="onKpTestFinish" @close="kpTestOpen = false" />
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, swapKpMcq, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
 import type { ExamOverview, WordKp, KpTestQuestion, QuizMcq } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
@@ -679,6 +679,12 @@ async function openKpTest() {
   } finally {
     kpTestLoading.value = false
   }
+}
+// 换一题:报错该题 + 换同维度另一道
+async function kpSwapper(q: { id: string }) {
+  const nq = await swapKpMcq(q.id) as KpTestQuestion
+  if (!nq || !nq.id) return null
+  return { id: nq.id, stem: `【${nq.dimension_label}】${nq.stem}`, options: nq.options, answer: nq.answer, explanation: nq.explanation }
 }
 // 考点测试做完 → 该词过「用关」(纯练习粗判,记入结算统计)
 function onKpTestFinish() {

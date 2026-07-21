@@ -152,6 +152,8 @@ class VocabKpMcq(Base):
     options = mapped_column(JSONB, nullable=False)              # [str] 选项
     answer = mapped_column(sa.Text, nullable=False)            # 正确项(与 options 之一完全一致)
     explanation = mapped_column(sa.Text, nullable=True)
+    # 学生「换一题」= 报错标记:被换/报错次数(>0 出题时优先避开,后台按此复核 AI 出错题)
+    report_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (sa.Index("ix_vocab_kp_mcq_word", "word_id"),)

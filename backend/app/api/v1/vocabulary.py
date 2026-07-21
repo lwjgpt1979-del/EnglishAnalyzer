@@ -145,6 +145,15 @@ async def word_kp(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
         db, word_id=word_id, student_id=current_user.id))
 
 
+@router.post("/kp-mcq/{mcq_id}/swap", response_model=BaseResponse[dict])
+async def kp_mcq_swap(mcq_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """考点测试「换一题」:报错该题(report_count++,供后台复核)+ 返回同维度另一道(优先未报错)。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import word_kp_service
+    r = await word_kp_service.swap_kp_mcq(db, mcq_id=mcq_id)
+    return make_ok(r or {})
+
+
 @router.get("/kp-test/{word_id}", response_model=BaseResponse[list])
 async def kp_test(word_id: uuid.UUID, db: DbDep, current_user: UserDep, sense_id: uuid.UUID | None = None):
     """考点扩展测试:按考点维度出题(每维 3 道、随机取 1 组合成一套)。查看即生成+全局缓存。
