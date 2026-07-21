@@ -8,3 +8,6 @@ sentry-sdk[fastapi]>=2.0.0
 # 需另装英文模型: python -m spacy download en_core_web_sm
 # spaCy 不可用时服务自动降级到信号词规则,不影响启动
 spacy>=3.8.0
+
+# 词形生成(考点·形态学打底 P1):时态/单复数/比较级确定性生成(离线自带数据);缺库时服务降级到规则表
+lemminflect>=0.2.3

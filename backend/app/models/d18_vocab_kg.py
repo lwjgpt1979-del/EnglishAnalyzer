@@ -69,6 +69,7 @@ class VocabWordRelation(Base):
     relation = mapped_column(sa.String(32), nullable=False)    # 维度键 dim_key(动态,取自受控清单)
     dim_label = mapped_column(sa.String(32), nullable=True)    # 维度中文名(写入时的快照;读取回退 registry)
     sort = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))  # 维度展示顺序(registry 序)
+    source = mapped_column(sa.String(8), nullable=False, server_default=sa.text("'llm'"))  # 来源:llm | morph(形态学·确定性→高置信)
     related_word_id = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="SET NULL"), nullable=True)
     related_text = mapped_column(sa.Text, nullable=False)      # 相关词/词形/短语/文本内容(总有)

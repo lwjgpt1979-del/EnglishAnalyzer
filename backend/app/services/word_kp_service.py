@@ -130,6 +130,18 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
                 sdims.append((key, items))
         if gloss and sdims:
             senses.append((gloss, str(sense.get("pos") or "").strip()[:16] or None, si, sdims))
+    # P1 形态学打底:动词/名词/形容词义项的 时态/单复数/比较级 用确定性词形覆盖(source=morph→高置信),不让 LLM 猜
+    if w.type != "phrase":
+        from app.services import morphology
+        rebuilt = []
+        for gloss, pos, sort, sdims in senses:
+            mp = morphology.forms_for_pos(w.word, pos or "")
+            if mp and mp[1]:
+                dim_key, forms = mp
+                sdims = [(k, its) for (k, its) in sdims if k != dim_key]   # 去掉 LLM 的该维
+                sdims.append((dim_key, [{"text": f, "zh": z, "note": "", "source": "morph"} for f, z in forms]))
+            rebuilt.append((gloss, pos, sort, sdims))
+        senses = rebuilt
     # 可链词维:批量查 related_text 是否在词库,填 related_word_id
     link_texts = [it["text"] for _g, _p, _s, sdims in senses
                   for key, items in sdims if key in _RELATIONAL_DIMS for it in items]
@@ -153,7 +165,8 @@ async def ensure_word_kp(db: AsyncSession, *, word_id: uuid.UUID) -> None:
                 vals.append({"id": uuid.uuid4(), "word_id": word_id, "sense_id": sense_id, "relation": key,
                              "dim_label": _dim_label(key), "sort": _DIM_INDEX.get(key, 99),
                              "related_word_id": id_by_text.get(t.lower()) if relational else None,
-                             "related_text": t, "related_zh": it.get("zh") or None, "note": it.get("note") or None})
+                             "related_text": t, "related_zh": it.get("zh") or None,
+                             "note": it.get("note") or None, "source": it.get("source") or "llm"})
     await db.flush()   # 落 sense 行(供 relation FK)
     if vals:
         await db.execute(pg_insert(VocabWordRelation).values(vals)
@@ -175,8 +188,8 @@ def _dims_from_rows(rows: list, seed_ids: list) -> list[dict]:
         items = []
         for r in by_dim[key]:
             wid = str(r.related_word_id) if r.related_word_id else None
-            # 置信度(P4):可链词维命中词库(有 word_id)=高;纯 LLM 造词(无)=低;文本维=高(解释性)
-            confidence = "low" if (relational and not wid) else "high"
+            # 置信度:形态学生成(source=morph)=高;可链词维命中词库(有 word_id)=高;纯 LLM 造词(无)=低;文本维=高
+            confidence = "low" if (relational and not wid and getattr(r, "source", "llm") != "morph") else "high"
             items.append({"text": r.related_text, "zh": r.related_zh or "", "note": r.note or "",
                           "word_id": wid, "confidence": confidence})
             if relational and r.related_word_id:
