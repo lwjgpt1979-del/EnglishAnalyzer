@@ -28,13 +28,15 @@ UserDep = Annotated[User, Depends(get_current_user)]
 @router.get("/list", response_model=BaseResponse[dict])
 async def list_center(
     db: DbDep, current_user: UserDep,
-    kind: str | None = Query(None, description="grammar|vocab;空=全部"),
+    kind: str | None = Query(None, description="grammar|vocab 副筛选;空=全部"),
     status: str | None = Query(None, description="pending|reviewing|mastered;空=全部"),
+    source_label: str | None = Query(None, description="来源 tab:作业|整卷|长难句|平台;空=全部真实错题"),
     skip: int = 0, limit: int = 20,
 ):
-    """「我的错题」统一列表:只读 wrong_record(题面已冗余)。语法/词汇 + 三态筛选 + 分页。"""
+    """「我的错题」统一列表:只读 wrong_record。来源 tab + 语法/词汇副筛选 + 三态 + 分页。默认只列真实错题。"""
     items, total = await wrong_center_service.list_center(
-        db, student_id=current_user.id, kind=kind, status=status, skip=skip, limit=limit)
+        db, student_id=current_user.id, kind=kind, status=status,
+        source_label=source_label, is_original=True, skip=skip, limit=limit)
     return make_ok({"items": items, "total": total})
 
 
@@ -42,11 +44,36 @@ async def list_center(
 async def lifecycle_counts(
     db: DbDep, current_user: UserDep,
     kind: str | None = Query(None, description="grammar|vocab;空=全部"),
+    source_label: str | None = Query(None, description="来源 tab;空=全部真实错题"),
 ):
-    """状态 chip 计数(全部/待巩固/巩固中/已掌握),随 kind 变。"""
+    """状态 chip 计数(全部/待巩固/巩固中/已掌握),随 kind/来源 变(仅真实错题)。"""
     counts = await wrong_center_service.lifecycle_counts(
-        db, student_id=current_user.id, kind=kind)
+        db, student_id=current_user.id, kind=kind, source_label=source_label, is_original=True)
     return make_ok(counts)
+
+
+@router.get("/grouped", response_model=BaseResponse[dict])
+async def grouped(
+    db: DbDep, current_user: UserDep,
+    view: str = Query("kp", description="kp=按考点 | batch=按批次"),
+    source_label: str | None = Query(None, description="来源 tab;空=全部真实错题"),
+    kind: str | None = Query(None, description="grammar|vocab 副筛选"),
+):
+    """类目内聚合(真实错题):view=kp 按考点、view=batch 按批次。供折叠卡。"""
+    if view == "batch":
+        groups = await wrong_center_service.group_by_batch(
+            db, student_id=current_user.id, source_label=source_label, kind=kind)
+    else:
+        groups = await wrong_center_service.group_by_kp(
+            db, student_id=current_user.id, source_label=source_label, kind=kind)
+    return make_ok({"view": view, "groups": groups})
+
+
+@router.get("/consolidation", response_model=BaseResponse[dict])
+async def consolidation(db: DbDep, current_user: UserDep):
+    """「练习巩固」tab:练习衍生薄弱项(is_original=false),按 (词·维) 聚合。"""
+    items = await wrong_center_service.list_practice_consolidation(db, student_id=current_user.id)
+    return make_ok({"items": items, "total": len(items)})
 
 
 @router.post("/practice/{wrong_record_id}", response_model=BaseResponse[dict])

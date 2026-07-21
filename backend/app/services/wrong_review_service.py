@@ -78,6 +78,7 @@ async def get_due_queue(
         sa.select(WrongRecord).where(
             WrongRecord.student_id == student_id,
             WrongRecord.status == "open",
+            WrongRecord.is_original.is_(True),   # 练习衍生(is_original=false)不进 SM-2 复习队列
             WrongRecord.next_review_at.isnot(None),
             WrongRecord.next_review_at <= today,
         ).order_by(WrongRecord.next_review_at).limit(limit)

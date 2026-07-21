@@ -74,6 +74,74 @@ async def record_wrong(
     return wid
 
 
+# ============ 练习衍生错题(打标隔离,is_original=false,q_scope='kp')============
+# ①错题网·考点扩展测试 + ③词力通·考点扩展测试的逐维错误。按 (word, dim) 去重,连对 N 次即掌握清除。
+# ②练同类仿真题不走这里(维持 record_practice_result 推父错题 SM-2)。
+
+_KP_PRACTICE_NS = uuid.UUID("a7f1e2c3-4b5d-4e6f-8a90-112233445566")  # (word,dim) → 确定性 question_id 的命名空间
+_KP_PRACTICE_SOURCE = "练习巩固"
+_KP_PRACTICE_MASTER_N = 2   # 连对达标 → status=mastered,移出「练习巩固」(决策3)
+
+
+def kp_practice_qid(word_id: uuid.UUID, dim: str) -> uuid.UUID:
+    """(word, dim) 的确定性 question_id(决策1b):命中现有唯一键 (student,q_scope,question_id) 天然去重。"""
+    return uuid.uuid5(_KP_PRACTICE_NS, f"{word_id}:{dim}")
+
+
+async def record_kp_practice(
+    db: AsyncSession, *, student_id: uuid.UUID, word_id: uuid.UUID, word: str,
+    dim: str, dim_label: str, correct: bool, missed_desc: str | None = None,
+) -> dict:
+    """考点扩展测试逐维结果落库(练习衍生):
+    错 → upsert 一条 (word,dim) 练习衍生错题、practice_streak 归 0、practice_count(错次)+1、status=open;
+    对 → 命中 open 记录则 practice_streak+1,≥N 置 mastered(移出练习巩固);无记录则忽略(不为"对"建记录)。
+    """
+    qid = kp_practice_qid(word_id, dim)
+    existing = (await db.execute(sa.select(WrongRecord).where(
+        WrongRecord.student_id == student_id, WrongRecord.q_scope == "kp",
+        WrongRecord.question_id == qid))).scalar_one_or_none()
+
+    if correct:
+        if existing is None or existing.status != "open":
+            return {"changed": False}
+        existing.practice_streak = (existing.practice_streak or 0) + 1
+        mastered = existing.practice_streak >= _KP_PRACTICE_MASTER_N
+        if mastered:
+            existing.status = "mastered"
+            existing.mastered_at = _dt.datetime.now(_dt.timezone.utc)
+            existing.mastery_source = "auto"
+        await db.flush()
+        return {"changed": True, "streak": existing.practice_streak, "mastered": mastered}
+
+    # 答错:upsert 练习衍生错题(不进 SM-2 队列 → next_review_at 保持 NULL)
+    kp_name = f"{word}·{dim_label}"
+    stmt = (
+        pg_insert(WrongRecord)
+        .values(
+            id=uuid.uuid4(), student_id=student_id, q_scope="kp", question_id=qid,
+            is_original=False, status="open", next_review_at=None,
+            vocab_word_id=word_id, dim=dim, kp_kind="vocab", kp_name=kp_name,
+            source_label=_KP_PRACTICE_SOURCE, stem=missed_desc,
+            practice_count=1, practice_streak=0,
+        )
+        .on_conflict_do_update(
+            constraint="uix_wrong_record_identity",
+            set_={
+                "status": "open", "mastered_at": None, "mastery_source": None,
+                "practice_streak": 0,
+                "practice_count": WrongRecord.practice_count + 1,
+                "dim": dim, "vocab_word_id": word_id, "kp_kind": "vocab",
+                "kp_name": kp_name, "source_label": _KP_PRACTICE_SOURCE,
+                "stem": sa.func.coalesce(sa.text("EXCLUDED.stem"), WrongRecord.stem),
+            },
+        )
+        .returning(WrongRecord.id)
+    )
+    wid = (await db.execute(stmt)).scalar_one()
+    await db.flush()
+    return {"changed": True, "wrong_record_id": str(wid), "streak": 0, "mastered": False}
+
+
 async def list_open_wrongs(
     db: AsyncSession, *, student_id: uuid.UUID, node_id: uuid.UUID | None = None,
     limit: int = 100,
@@ -115,9 +183,14 @@ def _status_filter(status: str | None):
 
 async def lifecycle_counts(
     db: AsyncSession, *, student_id: uuid.UUID, kind: str | None = None,
+    source_label: str | None = None, is_original: bool | None = True,
 ) -> dict:
-    """状态 chip 计数(不受分页/状态筛选影响,仅受 kind 影响)。"""
+    """状态 chip 计数(不受分页/状态筛选影响;受 kind/来源/is_original 影响)。"""
     conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped"]
+    if is_original is not None:
+        conds.append(WrongRecord.is_original.is_(is_original))
+    if source_label:
+        conds.append(WrongRecord.source_label == source_label)
     if kind in ("grammar", "vocab"):
         conds.append(WrongRecord.kp_kind == kind)
     rows = (await db.execute(
@@ -136,16 +209,22 @@ async def lifecycle_counts(
 
 async def list_center(
     db: AsyncSession, *, student_id: uuid.UUID, kind: str | None = None,
-    status: str | None = None, skip: int = 0, limit: int = 20,
+    status: str | None = None, source_label: str | None = None,
+    is_original: bool | None = True, skip: int = 0, limit: int = 20,
 ) -> tuple[list[dict], int]:
     """「我的错题」统一列表:只读 wrong_record(题面已冗余,自洽)。
 
-    kind ∈ {None(全部), grammar, vocab};status ∈ {None(全部), pending, reviewing, mastered}。
+    kind ∈ {None(全部), grammar, vocab}(副筛选);source_label = 来源 tab(作业|整卷|长难句|平台…);
+    is_original 默认 True(只列真实错题,练习衍生走 list_practice_consolidation);
+    status ∈ {None(全部), pending, reviewing, mastered}。
     排序:未掌握在前、已掌握沉底(灰显折叠),各按 created_at 倒序。
-    返回卡片字典(含 lifecycle/进度)。
     """
     base = sa.select(WrongRecord).where(
         WrongRecord.student_id == student_id, WrongRecord.status != "skipped")
+    if is_original is not None:
+        base = base.where(WrongRecord.is_original.is_(is_original))
+    if source_label:
+        base = base.where(WrongRecord.source_label == source_label)
     if kind in ("grammar", "vocab"):
         base = base.where(WrongRecord.kp_kind == kind)
     for c in _status_filter(status):
@@ -176,6 +255,75 @@ async def list_center(
         "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]
     return items, total
+
+
+async def group_by_kp(
+    db: AsyncSession, *, student_id: uuid.UUID, source_label: str | None = None,
+    kind: str | None = None,
+) -> list[dict]:
+    """真实错题按考点(kp_name)聚合(A 视图):[{kp, node_id, count, mastered, rate}],错多的在前。"""
+    grp = sa.func.coalesce(WrongRecord.kp_name, "未分类")
+    mastered = sa.func.sum(sa.case((WrongRecord.status == "mastered", 1), else_=0))
+    conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped",
+             WrongRecord.is_original.is_(True)]
+    if source_label:
+        conds.append(WrongRecord.source_label == source_label)
+    if kind in ("grammar", "vocab"):
+        conds.append(WrongRecord.kp_kind == kind)
+    rows = (await db.execute(
+        sa.select(grp.label("kp"), sa.func.count().label("cnt"), mastered.label("m"))
+        .where(*conds).group_by(grp).order_by(sa.func.count().desc()))).all()
+    return [{"kp": kp, "count": int(cnt), "mastered": int(m or 0),
+             "rate": round((m or 0) / cnt, 2) if cnt else 0}
+            for kp, cnt, m in rows]
+
+
+async def group_by_batch(
+    db: AsyncSession, *, student_id: uuid.UUID, source_label: str | None = None,
+    kind: str | None = None,
+) -> list[dict]:
+    """真实错题按来源批次(source_id)聚合(B 视图):[{source_id, count, mastered, rate, last_at}],新批次在前。"""
+    mastered = sa.func.sum(sa.case((WrongRecord.status == "mastered", 1), else_=0))
+    conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped",
+             WrongRecord.is_original.is_(True), WrongRecord.source_id.isnot(None)]
+    if source_label:
+        conds.append(WrongRecord.source_label == source_label)
+    if kind in ("grammar", "vocab"):
+        conds.append(WrongRecord.kp_kind == kind)
+    last_at = sa.func.max(WrongRecord.created_at)
+    rows = (await db.execute(
+        sa.select(WrongRecord.source_id, sa.func.count().label("cnt"), mastered.label("m"),
+                  last_at.label("last_at"))
+        .where(*conds).group_by(WrongRecord.source_id).order_by(last_at.desc()))).all()
+    return [{"source_id": str(sid), "source_label": source_label, "count": int(cnt),
+             "mastered": int(m or 0), "rate": round((m or 0) / cnt, 2) if cnt else 0,
+             "last_at": la.isoformat() if la else None}
+            for sid, cnt, m, la in rows]
+
+
+async def list_practice_consolidation(
+    db: AsyncSession, *, student_id: uuid.UUID,
+) -> list[dict]:
+    """「练习巩固」tab:练习衍生薄弱项(is_original=false, open),按 (词·维) 聚合(每 (word,dim) 一行)。
+    含 词/维/错次(practice_count)/连对(practice_streak)。"""
+    from app.services import word_kp_service
+    rows = list((await db.execute(
+        sa.select(WrongRecord).where(
+            WrongRecord.student_id == student_id, WrongRecord.q_scope == "kp",
+            WrongRecord.status == "open")
+        .order_by(WrongRecord.practice_count.desc(), WrongRecord.created_at.desc()))).scalars().all())
+    out = []
+    for r in rows:
+        dim = r.dim or ""
+        out.append({
+            "id": str(r.id), "word_id": str(r.vocab_word_id) if r.vocab_word_id else None,
+            "dim": dim, "dim_label": word_kp_service._dim_label(dim) if dim else "",
+            "kp_name": r.kp_name, "stem": r.stem,
+            "miss_count": r.practice_count or 0, "streak": r.practice_streak or 0,
+            "master_n": _KP_PRACTICE_MASTER_N,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+    return out
 
 
 def _source_route(source_label: str | None, source_id: uuid.UUID | None) -> str | None:
