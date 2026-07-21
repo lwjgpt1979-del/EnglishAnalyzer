@@ -32,7 +32,7 @@ export function getWordFamily(wordId: string): Promise<WordFamily> {
 }
 
 // 单词/词组考点(动态维度按义项分组):senses 每义项 {sense_id,gloss,pos,dims},dims 每维 {key,label,relational,items}
-export interface KpItem { text: string; zh: string; note: string; word_id: string | null }
+export interface KpItem { text: string; zh: string; note: string; word_id: string | null; confidence?: 'high' | 'low' }
 export interface KpDim { key: string; label: string; relational: boolean; items: KpItem[] }
 export interface KpSense { sense_id: string | null; gloss: string; pos: string; dims: KpDim[] }
 export interface WordKp {

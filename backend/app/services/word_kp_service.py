@@ -75,10 +75,15 @@ async def _gen_kp(word: str, meaning: str, examples, is_phrase: bool = False) ->
         "可链词维:项 text 填英文词/词形(时态→went/gone、单复数→复数形、近义→近义词等);文本维:项 text 填该用法/考点的简明说明。\n"
         '严格输出 JSON:{"root":"词根/词干或空","senses":[{"gloss":"该义项中文义","pos":"verb|noun|adj|adv|prep|conj|phrase|其他",'
         '"dims":[{"key":"清单里的dim_key","items":[{"text":"词/词形 或 说明","zh":"中文(可空)","note":"备注(可空)"}]}]}]}\n'
-        f"只用清单里的 dim_key;考点须按义项归属正确(转折义项不要混入除外义项的搭配);项要真实不臆造;用词简单、不高于目标{tgt}难度。")
+        "【质量硬规则·必须遵守】\n"
+        f"① **可链词维的项必须是真实存在的英文词/词形、且确与该义项相关**(近义/反义/派生/易混/时态/单复数/比较级);"
+        "不确定、生僻、或不常见的词**宁可不出**,绝不臆造英文词;\n"
+        "② **维度必须匹配该义项词性**:名词别出时态/及物性/语态,动词别出可数性/单复数,介词别出比较级,不适用的维不出;\n"
+        "③ **宁缺毋滥**:某维想不出可靠的项,就不出该维、也不硬凑到 4 项;\n"
+        f"④ 考点按义项归属正确(转折义项不要混入除外义项的搭配);中文义准确;用词简单、不高于目标{tgt}难度。")
     d = await complete_json(
         system_prompt=system, user_prompt=f"{tgt}:{word}\n释义:{meaning}\n参考例句:{examples}\n返回 JSON:",
-        max_tokens=2600, model=fast_model(), feature="vocab_word_kp",
+        max_tokens=3600, model=fast_model(), feature="vocab_word_kp",
         validate=lambda x: isinstance(x.get("senses"), list))
     return d or {"root": "", "senses": []}
 
@@ -170,7 +175,10 @@ def _dims_from_rows(rows: list, seed_ids: list) -> list[dict]:
         items = []
         for r in by_dim[key]:
             wid = str(r.related_word_id) if r.related_word_id else None
-            items.append({"text": r.related_text, "zh": r.related_zh or "", "note": r.note or "", "word_id": wid})
+            # 置信度(P4):可链词维命中词库(有 word_id)=高;纯 LLM 造词(无)=低;文本维=高(解释性)
+            confidence = "low" if (relational and not wid) else "high"
+            items.append({"text": r.related_text, "zh": r.related_zh or "", "note": r.note or "",
+                          "word_id": wid, "confidence": confidence})
             if relational and r.related_word_id:
                 seed_ids.append(r.related_word_id)
         dims_out.append({"key": key, "label": (by_dim[key][0].dim_label or _dim_label(key)),
@@ -238,9 +246,10 @@ def _kp_content_lines(kp: dict) -> list[tuple[str, str, str]]:
     """从动态维度 kp['dims'] 整理成 (dim_key, dim_label, 供出题的内容文本) —— 只保留有项的维度。"""
     lines: list[tuple[str, str, str]] = []
     for dim in (kp.get("dims") or []):
-        items = dim.get("items") or []
+        # P4:只用高置信项出题(过滤掉 LLM 造的、没命中词库的可疑关系词)→ 学生做的题都基于真实内容
+        items = [it for it in (dim.get("items") or []) if it.get("confidence") != "low"]
         if not items:
-            continue
+            continue   # 该维过滤后无高置信项 → 不为该维出题
         txt = "; ".join(
             it["text"] + (f"({it['zh']})" if it.get("zh") else "") + (f"[{it['note']}]" if it.get("note") else "")
             for it in items)

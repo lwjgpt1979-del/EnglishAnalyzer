@@ -55,8 +55,8 @@
       <!-- 考点维度内容 -->
       <template v-else>
         <view v-if="activeDim" class="wrn-kp">
-          <view v-for="(it, i) in activeDim.items" :key="i" class="kp-line">
-            <text class="kp-en">{{ it.text }}</text>
+          <view v-for="(it, i) in activeDim.items" :key="i" class="kp-line" :class="{ low: it.confidence === 'low' }">
+            <text class="kp-en">{{ it.text }}<text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
             <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
           </view>
         </view>
@@ -229,6 +229,8 @@ async function kpSwapper(q: { id: string }) {
 .kp-chip-zh { color: #4A6785; font-size: 22rpx; }
 .kp-line { display: flex; align-items: baseline; gap: 12rpx; margin: 6rpx 0; }
 .kp-en { font-size: 26rpx; color: #0C447C; font-weight: 500; }
+.kp-line.low .kp-en { color: #8a857c; }
+.kp-low { font-size: 18rpx; color: #b0a99e; }
 .kp-zh { flex: 1; font-size: 24rpx; color: #4A6785; }
 .wrn-test { margin-top: 14rpx; background: var(--c-primary); color: #fff; font-size: 28rpx; font-weight: 700; border-radius: var(--r-pill); padding: 16rpx 0; }
 .wrn-test.dis { opacity: .6; }

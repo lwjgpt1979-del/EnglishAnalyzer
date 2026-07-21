@@ -147,7 +147,7 @@
               <text class="kp-sec-h">{{ dim.label }}</text>
               <view v-if="dim.relational" class="kp-chips">
                 <text v-for="(it, i) in dim.items" :key="i" class="kp-chip"
-                  :class="{ link: !!it.word_id }" @tap="learnRelated(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text></text>
+                  :class="{ link: !!it.word_id, low: it.confidence === 'low' }" @tap="learnRelated(it)">{{ it.text }}<text v-if="it.zh" class="kp-chip-zh"> {{ it.zh }}</text><text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
               </view>
               <template v-else>
                 <view v-for="(it, i) in dim.items" :key="i" class="kp-line">
@@ -1562,6 +1562,8 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .kp-zh { flex: 1; font-size: 24rpx; color: #4A6785; }
 .kp-chips { display: flex; flex-wrap: wrap; gap: 10rpx; }
 .kp-chip { font-size: 24rpx; color: #0C447C; background: #D6E6FA; padding: 6rpx 16rpx; border-radius: 10rpx; }
+.kp-chip.low { background: #F1EFE8; color: #8a857c; }
+.kp-low { font-size: 18rpx; color: #b0a99e; }
 .kp-chip.link { background: #C3DEFA; border: 1rpx solid #8FBDEF; }
 .kp-chip-zh { color: #4A6785; font-size: 22rpx; }
 .kp-en.link { color: #2F7BDB; text-decoration: underline; }

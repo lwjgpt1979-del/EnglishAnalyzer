@@ -146,7 +146,7 @@ export function submitVocabSimResult(wrongRecordId: string, total: number, corre
 }
 
 // 错题关系网(以词为中心):某词的全局考点(dims,含关系词)+ 主错题(考它)/次错题(它当干扰)
-export interface WordNetKpItem { text: string; zh: string; note: string; word_id: string | null }
+export interface WordNetKpItem { text: string; zh: string; note: string; word_id: string | null; confidence?: 'high' | 'low' }
 export interface WordNetDim { key: string; label: string; relational: boolean; items: WordNetKpItem[] }
 export interface WordNetErr {
   wrong_record_id: string; stem: string; student_answer: string
