@@ -61,14 +61,15 @@ async def grouped(
     view: str = Query("kp", description="kp=按考点 | batch=按批次"),
     source_label: str | None = Query(None, description="来源 tab;空=全部真实错题"),
     kind: str | None = Query(None, description="grammar|vocab 副筛选"),
+    status: str | None = Query(None, description="pending|reviewing|mastered 状态筛选(未/中/已巩固)"),
 ):
-    """类目内聚合(真实错题):view=kp 按考点、view=batch 按批次。供折叠卡。"""
+    """类目内聚合(真实错题):view=kp 按考点、view=batch 按批次;status 按 SM-2 生命周期筛。供折叠卡+时间分段。"""
     if view == "batch":
         groups = await wrong_center_service.group_by_batch(
-            db, student_id=current_user.id, source_label=source_label, kind=kind)
+            db, student_id=current_user.id, source_label=source_label, kind=kind, status=status)
     else:
         groups = await wrong_center_service.group_by_kp(
-            db, student_id=current_user.id, source_label=source_label, kind=kind)
+            db, student_id=current_user.id, source_label=source_label, kind=kind, status=status)
     return make_ok({"view": view, "groups": groups})
 
 

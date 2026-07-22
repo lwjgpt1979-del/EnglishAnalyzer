@@ -22,6 +22,10 @@
 
     <!-- 真实错题侧:副筛选 + 视图切换 + 折叠分组卡 -->
     <template v-if="source !== 'practice' && source !== 'ls'">
+      <!-- 状态筛选(未/巩固中/已巩固,复用 SM-2 生命周期) -->
+      <view class="ls2-tabs">
+        <text v-for="t in RSTATUS_TABS" :key="t.v" class="ls2-tab" :class="{ on: rstatus === t.v }" @tap="switchRStatus(t.v)">{{ t.label }}</text>
+      </view>
       <view class="ctrl-row">
         <view class="kind-chips">
           <text v-for="k in KIND_TABS" :key="k.value" class="kind-chip" :class="{ active: kind === k.value }" @tap="switchKind(k.value)">{{ k.label }}</text>
@@ -34,13 +38,17 @@
 
       <view v-if="groupsLoading && !groups.length" class="center-tip">加载中…</view>
       <view v-else-if="!groupsLoading && !groups.length" class="center-tip">
-        <text>该来源下暂无错题</text>
-        <button class="btn-sm" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">上传作业</button>
+        <text>该状态下暂无错题</text>
+        <button v-if="!rstatus" class="btn-sm" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">上传作业</button>
       </view>
 
-      <!-- 折叠分组卡(进度即底色) -->
-      <view v-else class="grp-list">
-        <view v-for="g in groups" :key="groupKey(g)" class="grp">
+      <!-- 时间分段(本周/2-4周/更早)→ 折叠分组卡(进度即底色) -->
+      <template v-else>
+      <block v-for="b in LS_BUCKETS" :key="b.v">
+      <template v-if="groupsInBucket(b.v).length">
+      <view class="ls2-sec" :class="b.v">{{ b.label }}<text v-if="b.v === 'old'" class="ls2-badge">超1周未巩固</text></view>
+      <view class="grp-list">
+        <view v-for="g in groupsInBucket(b.v)" :key="groupKey(g)" class="grp">
           <view class="grp-head" @tap="toggleGroup(g)">
             <view class="grp-fill" :style="{ width: (g.rate * 100) + '%' }" />
             <view class="grp-in">
@@ -71,6 +79,9 @@
           </view>
         </view>
       </view>
+      </template>
+      </block>
+      </template>
     </template>
 
     <!-- 长难句薄弱侧:时间线诊断(本周/2-4周/更早 · 状态tab · 四类错误徽章 · 展开四分区)-->
@@ -372,6 +383,11 @@ const groups = ref<WrongGroup[]>([])
 const groupsLoading = ref(false)
 const openGroups = reactive<Record<string, boolean>>({})
 const groupItems = reactive<Record<string, WrongCenterItem[]>>({})
+// 状态筛选(未/巩固中/已巩固,复用 SM-2)+ 时间分段(本周/2-4周/更早)
+const RSTATUS_TABS = [{ v: '', label: '全部' }, { v: 'pending', label: '未巩固' }, { v: 'reviewing', label: '巩固中' }, { v: 'mastered', label: '已巩固' }] as const
+const rstatus = ref<'' | 'pending' | 'reviewing' | 'mastered'>('')
+function switchRStatus(v: string) { if (rstatus.value === v) return; rstatus.value = v as any; loadGroups() }
+function groupsInBucket(b: string) { return groups.value.filter(g => (g.bucket || 'old') === b) }
 
 function groupKey(g: WrongGroup): string { return view.value === 'kp' ? (g.kp || '未分类') : (g.source_id || '') }
 function groupTitle(g: WrongGroup): string {
@@ -383,7 +399,7 @@ function groupTitle(g: WrongGroup): string {
 async function loadGroups() {
   groupsLoading.value = true
   try {
-    const r = await getWrongGrouped(view.value, source.value, kind.value)
+    const r = await getWrongGrouped(view.value, source.value, kind.value, rstatus.value)
     groups.value = r.groups
   } catch { groups.value = [] } finally { groupsLoading.value = false }
   for (const k in openGroups) delete openGroups[k]   // 折叠态清空,重新展开再拉
@@ -394,7 +410,7 @@ async function toggleGroup(g: WrongGroup) {
   openGroups[key] = !openGroups[key]
   if (openGroups[key] && !groupItems[key]) {
     try {
-      const q: WrongListQuery = { sourceLabel: source.value, kind: kind.value, limit: 100 }
+      const q: WrongListQuery = { sourceLabel: source.value, kind: kind.value, status: rstatus.value, limit: 100 }
       if (view.value === 'kp') q.kpName = g.kp
       else q.sourceId = g.source_id
       const res = await listWrongCenter(q)

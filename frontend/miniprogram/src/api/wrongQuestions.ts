@@ -120,11 +120,12 @@ export function getWrongCenterCounts(kind = '', sourceLabel = ''): Promise<Wrong
 }
 
 /** 类目内聚合折叠(A 按考点 / B 按批次)*/
-export interface WrongGroup { kp?: string; source_id?: string; source_label?: string | null; count: number; mastered: number; rate: number; last_at?: string | null }
-export function getWrongGrouped(view: 'kp' | 'batch', sourceLabel = '', kind = ''): Promise<{ view: string; groups: WrongGroup[] }> {
+export interface WrongGroup { kp?: string; source_id?: string; source_label?: string | null; count: number; mastered: number; rate: number; last_at?: string | null; bucket?: 'week' | 'mid' | 'old' }
+export function getWrongGrouped(view: 'kp' | 'batch', sourceLabel = '', kind = '', status = ''): Promise<{ view: string; groups: WrongGroup[] }> {
   let qs = `?view=${view}`
   if (sourceLabel) qs += `&source_label=${encodeURIComponent(sourceLabel)}`
   if (kind) qs += `&kind=${encodeURIComponent(kind)}`
+  if (status) qs += `&status=${encodeURIComponent(status)}`
   return request(`/api/v1/wrong-center/grouped${qs}`)
 }
 

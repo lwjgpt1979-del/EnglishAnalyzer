@@ -496,36 +496,47 @@ async def list_center(
     return items, total
 
 
+def _time_bucket(dt) -> str:
+    """错题时间桶:本周(≤7d)/2-4周(8-28d)/更早(>28d)。"""
+    if dt is None:
+        return "old"
+    days = (_dt.datetime.now(_dt.timezone.utc) - dt).days
+    return "week" if days <= 7 else ("mid" if days <= 28 else "old")
+
+
 async def group_by_kp(
     db: AsyncSession, *, student_id: uuid.UUID, source_label: str | None = None,
-    kind: str | None = None,
+    kind: str | None = None, status: str | None = None,
 ) -> list[dict]:
-    """真实错题按考点(kp_name)聚合(A 视图):[{kp, node_id, count, mastered, rate}],错多的在前。"""
+    """真实错题按考点(kp_name)聚合(A 视图):[{kp, count, mastered, rate, last_at, bucket}],错多的在前。
+    status(pending/reviewing/mastered)按 SM-2 生命周期过滤组内错题。"""
     grp = sa.func.coalesce(WrongRecord.kp_name, "未分类")
     mastered = sa.func.sum(sa.case((WrongRecord.status == "mastered", 1), else_=0))
     conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped",
-             WrongRecord.is_original.is_(True)]
+             WrongRecord.is_original.is_(True), *_status_filter(status)]
     _sc = _source_cond(source_label)
     if _sc is not None:
         conds.append(_sc)
     if kind in ("grammar", "vocab"):
         conds.append(WrongRecord.kp_kind == kind)
+    last_at = sa.func.max(WrongRecord.created_at)
     rows = (await db.execute(
-        sa.select(grp.label("kp"), sa.func.count().label("cnt"), mastered.label("m"))
-        .where(*conds).group_by(grp).order_by(sa.func.count().desc()))).all()
+        sa.select(grp.label("kp"), sa.func.count().label("cnt"), mastered.label("m"), last_at.label("last_at"))
+        .where(*conds).group_by(grp).order_by(last_at.desc()))).all()
     return [{"kp": kp, "count": int(cnt), "mastered": int(m or 0),
-             "rate": round((m or 0) / cnt, 2) if cnt else 0}
-            for kp, cnt, m in rows]
+             "rate": round((m or 0) / cnt, 2) if cnt else 0,
+             "last_at": la.isoformat() if la else None, "bucket": _time_bucket(la)}
+            for kp, cnt, m, la in rows]
 
 
 async def group_by_batch(
     db: AsyncSession, *, student_id: uuid.UUID, source_label: str | None = None,
-    kind: str | None = None,
+    kind: str | None = None, status: str | None = None,
 ) -> list[dict]:
-    """真实错题按来源批次(source_id)聚合(B 视图):[{source_id, count, mastered, rate, last_at}],新批次在前。"""
+    """真实错题按来源批次(source_id)聚合(B 视图):[{source_id, count, mastered, rate, last_at, bucket}],新批次在前。"""
     mastered = sa.func.sum(sa.case((WrongRecord.status == "mastered", 1), else_=0))
     conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped",
-             WrongRecord.is_original.is_(True), WrongRecord.source_id.isnot(None)]
+             WrongRecord.is_original.is_(True), WrongRecord.source_id.isnot(None), *_status_filter(status)]
     _sc = _source_cond(source_label)
     if _sc is not None:
         conds.append(_sc)
@@ -538,7 +549,7 @@ async def group_by_batch(
         .where(*conds).group_by(WrongRecord.source_id).order_by(last_at.desc()))).all()
     return [{"source_id": str(sid), "source_label": source_label, "count": int(cnt),
              "mastered": int(m or 0), "rate": round((m or 0) / cnt, 2) if cnt else 0,
-             "last_at": la.isoformat() if la else None}
+             "last_at": la.isoformat() if la else None, "bucket": _time_bucket(la)}
             for sid, cnt, m, la in rows]
 
 
