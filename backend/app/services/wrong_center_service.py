@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.d16_question_domain import WrongRecord
+from app.models.d20_long_sentence import LsComponentError
 
 
 def _source_cond(source_label: str | list[str] | None):
@@ -255,6 +256,120 @@ async def list_ls_consolidation(db: AsyncSession, *, student_id: uuid.UUID) -> l
         g["dims"].sort(key=lambda d: _order.get(d["dim"], 9))
         g["miss_total"] = sum(d["miss_count"] for d in g["dims"])
         out.append(g)
+    return out
+
+
+# ============ 句子成分理解·细分错误(方案B,ls_component_error tally)============
+# 精读闯关 关1找主干/关3拆修饰/关4合成 每次对错 → (句,技能,角色) 累计;诊断到细类角色,连对 N 清除。
+
+_LS_COMP_MASTER_N = 2
+_LS_SKILL_LABEL = {"trunk": "抓主干", "modifier": "辨修饰", "relation": "理关系"}
+_LS_SKILL_DESC = {"trunk": "识别主/谓/宾", "modifier": "识别状语/定语/同位", "relation": "修饰挂靠/归位"}
+_LS_SKILL_ORDER = {"trunk": 0, "modifier": 1, "relation": 2}
+
+
+async def record_component_error(
+    db: AsyncSession, *, student_id: uuid.UUID, sentence: str, skill: str, role: str, correct: bool,
+) -> dict:
+    """精读闯关细分对错 → (句,技能,角色) tally。错→wrong_count+1、streak=0;对→streak+1,≥N 清除(wrong_count归0)。"""
+    md5 = _sent_md5(sentence)
+    role = (role or "").strip()[:24] or "未知"
+    now = _dt.datetime.now(_dt.timezone.utc)
+    row = (await db.execute(sa.select(LsComponentError).where(
+        LsComponentError.student_id == student_id, LsComponentError.sentence_md5 == md5,
+        LsComponentError.skill == skill, LsComponentError.role == role))).scalar_one_or_none()
+    if row is None:
+        row = LsComponentError(
+            id=uuid.uuid4(), student_id=student_id, sentence_md5=md5,
+            sentence=(sentence or "").strip()[:600], skill=skill, role=role,
+            attempt_count=1, wrong_count=(0 if correct else 1), streak=(1 if correct else 0), last_at=now)
+        db.add(row)
+    else:
+        row.attempt_count += 1
+        row.last_at = now
+        if correct:
+            row.streak += 1
+            if row.streak >= _LS_COMP_MASTER_N:
+                row.wrong_count = 0   # 练熟清除,不再显示
+        else:
+            row.wrong_count += 1
+            row.streak = 0
+    await db.flush()
+    return {"wrong_count": row.wrong_count, "streak": row.streak}
+
+
+async def component_understanding(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
+    """「句子成分理解」块:按三技能聚合 → [{skill, skill_label, desc, rate, err_total, items:[{role,sentence,wrong_count}]}]。
+    items 只列当前仍薄弱(wrong_count>0)的角色·句;rate 用全量(含已清除)算,err 用当前。"""
+    rows = list((await db.execute(sa.select(LsComponentError).where(
+        LsComponentError.student_id == student_id))).scalars().all())
+    by: dict = {}
+    for r in rows:
+        g = by.setdefault(r.skill, {"attempt": 0, "wrong_now": 0, "items": []})
+        g["attempt"] += r.attempt_count or 0
+        g["wrong_now"] += r.wrong_count or 0
+        if (r.wrong_count or 0) > 0:
+            g["items"].append({"role": r.role, "sentence": r.sentence or "", "wrong_count": r.wrong_count})
+    out = []
+    for skill in sorted(by.keys(), key=lambda k: _LS_SKILL_ORDER.get(k, 9)):
+        g = by[skill]
+        att = g["attempt"]
+        # 正确率:近似 = (attempt - 当前错次)/attempt(已清除的按已掌握计入分子)
+        rate = round(max(0, att - g["wrong_now"]) / att * 100) if att else 100
+        g["items"].sort(key=lambda x: -x["wrong_count"])
+        out.append({"skill": skill, "skill_label": _LS_SKILL_LABEL.get(skill, skill),
+                    "desc": _LS_SKILL_DESC.get(skill, ""), "rate": rate,
+                    "err_total": g["wrong_now"], "items": g["items"]})
+    return out
+
+
+# 技能 → 展示类目(成分=找主干+拆修饰,合成=归位,语法/重点词各自)
+_LS_CAT_OF_SKILL = {"trunk": "成分", "modifier": "成分", "relation": "合成", "grammar": "语法", "keyword": "重点词"}
+_LS_CAT_ORDER = ["成分", "合成", "语法", "重点词"]
+
+
+async def ls_sentence_diagnostics(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
+    """变体2·长难句时间线诊断:按句聚合 ls_component_error → 每句
+    {sentence, status(no/ing/done), mastery, days, bucket(week/mid/old), date, cats:[{cat,count,items:[{role,wrong,ok}]}]}。"""
+    rows = list((await db.execute(sa.select(LsComponentError).where(
+        LsComponentError.student_id == student_id))).scalars().all())
+    by: dict = {}
+    for r in rows:
+        g = by.setdefault(r.sentence_md5, {"sentence": r.sentence or "", "rows": [], "last_at": r.last_at})
+        g["rows"].append(r)
+        if r.last_at and (g["last_at"] is None or r.last_at > g["last_at"]):
+            g["last_at"] = r.last_at
+    now = _dt.datetime.now(_dt.timezone.utc)
+    out = []
+    for g in by.values():
+        cats = {c: {"count": 0, "items": []} for c in _LS_CAT_ORDER}
+        att = wrong_now = 0
+        any_streak = False
+        for r in g["rows"]:
+            cat = _LS_CAT_OF_SKILL.get(r.skill)
+            if cat is None:
+                continue
+            wc = r.wrong_count or 0
+            att += r.attempt_count or 0
+            wrong_now += wc
+            if (r.streak or 0) > 0:
+                any_streak = True
+            cats[cat]["items"].append({"role": r.role, "wrong": wc, "ok": wc == 0})
+            cats[cat]["count"] += wc
+        status = "done" if wrong_now == 0 else ("ing" if any_streak else "no")
+        last = g["last_at"]
+        days = (now - last).days if last else 999
+        bucket = "week" if days <= 7 else ("mid" if days <= 28 else "old")
+        for c in cats:
+            cats[c]["items"].sort(key=lambda x: (x["ok"], -x["wrong"]))
+        out.append({
+            "sentence": g["sentence"], "status": status,
+            "mastery": round(max(0, att - wrong_now) / att * 100) if att else 0,
+            "days": days, "bucket": bucket,
+            "date": last.strftime("%m-%d") if last else "",
+            "cats": [{"cat": c, "count": cats[c]["count"], "items": cats[c]["items"]} for c in _LS_CAT_ORDER],
+        })
+    out.sort(key=lambda x: x["days"])
     return out
 
 

@@ -86,6 +86,20 @@ async def ls_consolidation(db: DbDep, current_user: UserDep):
     return make_ok({"items": items, "total": len(items)})
 
 
+@router.get("/component-understanding", response_model=BaseResponse[dict])
+async def component_understanding(db: DbDep, current_user: UserDep):
+    """「句子成分理解」块(方案B):精读闯关细分错误按三技能(抓主干/辨修饰/理关系)聚合,下钻到角色·句。"""
+    skills = await wrong_center_service.component_understanding(db, student_id=current_user.id)
+    return make_ok({"skills": skills})
+
+
+@router.get("/ls-diagnostics", response_model=BaseResponse[dict])
+async def ls_diagnostics(db: DbDep, current_user: UserDep):
+    """长难句时间线诊断(变体2):按句聚合成分/合成/语法/重点词四类错误 + 状态 + 时间桶,供时间线句卡+展开四分区。"""
+    items = await wrong_center_service.ls_sentence_diagnostics(db, student_id=current_user.id)
+    return make_ok({"items": items})
+
+
 @router.post("/practice/{wrong_record_id}", response_model=BaseResponse[dict])
 async def practice_wrong(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """错题「练同类仿真题」(统一入口,按 wrong_record 派发)。"""

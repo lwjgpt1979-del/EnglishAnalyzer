@@ -73,35 +73,48 @@
       </view>
     </template>
 
-    <!-- 长难句薄弱侧:探针练习衍生句卡(成分/理解=整句重做,语法/词=单项;连对 N 次清除) -->
+    <!-- 长难句薄弱侧:时间线诊断(本周/2-4周/更早 · 状态tab · 四类错误徽章 · 展开四分区)-->
     <template v-else-if="source === 'ls'">
-      <view class="prac-banner"><text>长难句探针答错的薄弱句。成分/理解=整句重做;语法/重点词可单练。连对 2 次练熟消失。</text></view>
-      <view v-if="lsLoading && !lsItems.length" class="center-tip">加载中…</view>
-      <view v-else-if="!lsItems.length" class="center-tip"><text>暂无长难句薄弱项 🎯</text></view>
-      <view v-else class="grp-list">
-        <view v-for="g in lsItems" :key="g.source_id" class="pfold ls">
-          <!-- 句折叠头(底色=整体练熟度) -->
-          <view class="pf-head" @tap="toggleSent(g.source_id)">
-            <view class="pf-fill" :style="{ width: lsRate(g) + '%' }" />
-            <view class="pf-in ls-in">
-              <view class="ls-htop"><text class="ls-badge">长难句</text><text class="pf-meta">{{ g.dims.length }} 维待练 · 错{{ g.miss_total }}</text><text class="pf-chev">{{ openSents[g.source_id] ? '▾' : '›' }}</text></view>
-              <text class="ls-sent">{{ g.sentence }}</text>
-              <view class="ls-all" @tap.stop="lsRetrain(g)"><text>整句通练 · {{ g.dims.length }} 项</text></view>
-            </view>
-          </view>
-          <template v-if="openSents[g.source_id]">
-            <view v-for="it in g.dims" :key="it.id" class="pf-row">
-              <text class="pf-tag" :class="{ whole: it.whole }">{{ it.whole ? '整句' : '单项' }}</text>
-              <text class="pf-dim" :class="'lsd-' + it.dim">{{ it.dim_label }}</text>
-              <text class="pf-cnt">错{{ it.miss_count }}</text>
-              <view class="pf-dots">
-                <view v-for="n in it.master_n" :key="n" class="pc-dot" :class="{ on: n <= it.streak }" />
+      <view class="ls2-tabs">
+        <text v-for="t in LS_STATUS" :key="t.v" class="ls2-tab" :class="{ on: lsStatus === t.v }" @tap="lsStatus = t.v">{{ t.label }} {{ lsCount(t.v) }}</text>
+      </view>
+      <view v-if="lsLoading && !lsDiag.length" class="center-tip">加载中…</view>
+      <view v-else-if="!lsFiltered.length" class="center-tip"><text>暂无长难句诊断 🎯</text></view>
+      <template v-else>
+        <block v-for="b in LS_BUCKETS" :key="b.v">
+          <template v-if="bucketItems(b.v).length">
+            <view class="ls2-sec" :class="b.v">{{ b.label }}<text v-if="b.v === 'old'" class="ls2-badge">超1周未巩固</text></view>
+            <view class="ls2-tl">
+              <view v-for="(d, di) in bucketItems(b.v)" :key="di" class="ls2-node">
+                <view class="ls2-dot" :class="d.status" />
+                <view class="ls2-card" :class="d.status" @tap="toggleDiag(d)">
+                  <view class="ls2-fill" :style="{ width: (d.status === 'done' ? 100 : d.mastery) + '%' }" />
+                  <view class="ls2-in">
+                    <view class="ls2-top">
+                      <text class="ls2-sent">{{ d.sentence }}</text>
+                      <text v-if="d.status === 'done'" class="ls2-ck">✓</text>
+                      <text v-else class="ls2-pct" :class="d.status">{{ d.mastery }}%</text>
+                    </view>
+                    <view class="ls2-kinds">
+                      <text v-for="c in d.cats" :key="c.cat" class="ls2-kb" :class="[catCls(c.cat), { zero: !c.count }]">{{ c.cat }} {{ c.count ? '错' + c.count : '✓' }}</text>
+                    </view>
+                    <view class="ls2-meta"><text class="ls2-st" :class="d.status">{{ statusLabel2(d.status) }}</text> · {{ d.date }}</view>
+                    <template v-if="openDiag[diagKey(d)]">
+                      <view v-for="c in d.cats" :key="'e' + c.cat" class="ls2-grp">
+                        <view class="ls2-gh"><text class="ls2-gt" :class="catCls(c.cat)">{{ c.cat }}</text><text class="ls2-gs">{{ c.count ? '错' + c.count : '全对 ✓' }}</text><text class="ls2-grp-rp" @tap.stop="diagRetrain(d, c.cat)">重练 ›</text></view>
+                        <view v-if="c.items.length" class="ls2-items">
+                          <text v-for="(it, ii) in c.items" :key="ii" class="ls2-it" :class="it.ok ? 'ok' : 'err'">{{ it.role }}{{ it.ok ? '✓' : ' 错' + it.wrong }}</text>
+                        </view>
+                        <text v-else class="ls2-empty">暂无记录</text>
+                      </view>
+                    </template>
+                  </view>
+                </view>
               </view>
-              <text class="pf-rp" @tap.stop="lsRetrain(g, it)">{{ it.whole ? '重做整句 ›' : '重练 ›' }}</text>
             </view>
           </template>
-        </view>
-      </view>
+        </block>
+      </template>
     </template>
 
     <!-- 练习巩固侧:练习衍生薄弱项(词·维聚合,连对 N 次清除) -->
@@ -219,6 +232,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { getReviewQueue, getWrongGrouped, getConsolidation, getLsConsolidation, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongGroup, type WrongListQuery, type ConsolidationItem, type LsConsolItem, type LsDim, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
+import { getLsDiagnostics, type LsDiag } from '@/api/longSentence'
 import { shadowScore, getKpTest, recordKpPractice } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import ShadowModal from '@/components/ShadowModal.vue'
@@ -398,35 +412,31 @@ function switchKind(v: string) { if (kind.value === v) return; kind.value = v; l
 function switchView(v: 'kp' | 'batch') { if (view.value === v) return; view.value = v; loadGroups() }
 function reload() { loadForSource() }   // 练同类/学词/重练后回刷
 
-// —— 长难句薄弱 tab(探针练习衍生句卡,按句聚合;成分/理解=整句重做,语法/词=单项)——
-const lsItems = ref<LsConsolItem[]>([])
+// —— 长难句薄弱 tab(时间线诊断:状态tab + 本周/2-4周/更早 + 四类徽章卡 + 展开四分区)——
+const LS_STATUS = [{ v: 'all', label: '全部' }, { v: 'no', label: '未巩固' }, { v: 'ing', label: '巩固中' }, { v: 'done', label: '已巩固' }] as const
+const LS_BUCKETS = [{ v: 'week', label: '本周' }, { v: 'mid', label: '2-4周' }, { v: 'old', label: '更早' }] as const
+const lsDiag = ref<LsDiag[]>([])
 const lsLoading = ref(false)
-const openSents = reactive<Record<string, boolean>>({})
-function toggleSent(sid: string) { openSents[sid] = !openSents[sid] }
-function lsRate(g: LsConsolItem): number {
-  const denom = g.dims.length * (g.dims[0]?.master_n || 2)
-  const streak = g.dims.reduce((s, d) => s + d.streak, 0)
-  return denom ? Math.round((streak / denom) * 100) : 0
-}
+const lsStatus = ref<'all' | 'no' | 'ing' | 'done'>('all')
+const openDiag = reactive<Record<string, boolean>>({})
+function diagKey(d: LsDiag) { return d.sentence }
+function toggleDiag(d: LsDiag) { const k = diagKey(d); openDiag[k] = !openDiag[k] }
+const lsFiltered = computed(() => lsStatus.value === 'all' ? lsDiag.value : lsDiag.value.filter(d => d.status === lsStatus.value))
+function bucketItems(b: string) { return lsFiltered.value.filter(d => d.bucket === b) }
+function lsCount(v: string) { return v === 'all' ? lsDiag.value.length : lsDiag.value.filter(d => d.status === v).length }
+function statusLabel2(s: string) { return s === 'done' ? '已巩固' : s === 'ing' ? '巩固中' : '未巩固' }
+function catCls(cat: string) { return cat === '成分' ? 'kc-comp' : cat === '合成' ? 'kc-asm' : cat === '语法' ? 'kc-gram' : 'kc-word' }
 async function loadLsConsol() {
   lsLoading.value = true
-  try {
-    lsItems.value = (await getLsConsolidation()).items
-    const first = lsItems.value[0]?.source_id
-    if (first && Object.keys(openSents).length === 0) openSents[first] = true
-  } catch { lsItems.value = [] } finally { lsLoading.value = false }
+  try { lsDiag.value = (await getLsDiagnostics()).items } catch { lsDiag.value = [] } finally { lsLoading.value = false }
 }
-// 重练/整句重做:成分/语法→深链长难句解析页对应 tab;理解→深链理解检测页(按 ref_id=句id)
-// 整句通练(it 缺省)→ 解析页成分 tab(答成分/语法即回写)。答题即经 hook 回写练习衍生。
-function lsRetrain(g: LsConsolItem, it?: LsDim) {
-  const dim = it?.dim
-  if (dim === 'comprehension') {
-    if (!it?.ref_id) { uni.showToast({ title: '重做入口暂不可用', icon: 'none' }); return }
-    uni.navigateTo({ url: `/pages/long-sentence/index?id=${it.ref_id}` })
-    return
-  }
-  const t = dim === 'grammar' ? 'grammar' : dim === 'keyword' ? 'word' : 'component'
-  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(g.sentence)}&tab=${t}` })
+// 重练:成分/合成/语法 → 精读闯关(答题即经 hook 回写细分诊断);重点词 → 学本句词(词力通式)
+function diagRetrain(d: LsDiag, cat: string) {
+  if (!d.sentence) return
+  const url = cat === '重点词'
+    ? `/pages/vocabulary/index?source=sentence&text=${encodeURIComponent(d.sentence)}`
+    : `/pages/user-papers/sentence?text=${encodeURIComponent(d.sentence)}`
+  uni.navigateTo({ url })
 }
 
 // —— 练习巩固 tab(练习衍生薄弱项,按词折叠 + 逐维行,连对 N 次清除)——
@@ -724,6 +734,76 @@ onMounted(async () => {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .ls-all { text-align: center; background: #5b8def; color: #fff; font-size: 24rpx; font-weight: 700; border-radius: 12rpx; padding: 16rpx 0; }
 .pf-tag.whole { color: #3a6bc0; background: #e7effc; }
+/* 句子成分理解块(方案B) */
+.cu-sec { background: #fff; border: 2rpx solid #cfe0fa; border-radius: 18rpx; padding: 20rpx; margin-bottom: 18rpx; }
+.cu-h { display: flex; align-items: baseline; gap: 12rpx; margin-bottom: 14rpx; }
+.cu-t { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
+.cu-subt { font-size: 21rpx; color: var(--c-text-hint); }
+.cu-skill { position: relative; overflow: hidden; border: 2rpx solid var(--c-border); border-radius: 14rpx; margin-bottom: 12rpx; }
+.cu-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #e9f6f1, #f4fbf8); transition: width .3s; }
+.cu-in { position: relative; display: flex; align-items: center; gap: 12rpx; padding: 20rpx 22rpx; }
+.cu-nm { display: flex; flex-direction: column; gap: 2rpx; }
+.cu-n { font-size: 27rpx; font-weight: 800; color: var(--c-ink); }
+.cu-d { font-size: 20rpx; color: var(--c-text-hint); }
+.cu-err { font-size: 20rpx; font-weight: 700; color: #c33; background: #fdecec; padding: 2rpx 14rpx; border-radius: 999rpx; margin-left: auto; }
+.cu-rate { font-size: 27rpx; font-weight: 900; color: #2fa98a; }
+.cu-cv { font-size: 24rpx; color: var(--c-text-hint); width: 24rpx; text-align: center; }
+.cu-row { display: flex; align-items: center; gap: 12rpx; padding: 14rpx 22rpx; border-top: 2rpx dashed var(--c-border); }
+.cu-role { font-size: 20rpx; font-weight: 700; color: #b5651a; background: #fcf1e6; padding: 2rpx 14rpx; border-radius: 8rpx; flex-shrink: 0; }
+.cu-sent { flex: 1; min-width: 0; font-size: 23rpx; color: var(--c-text-second); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cu-wc { font-size: 20rpx; color: #c33; flex-shrink: 0; }
+.cu-rp { font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); flex-shrink: 0; }
+/* 长难句时间线诊断(变体2) */
+.ls2-tabs { display: flex; gap: 24rpx; padding: 6rpx 0 14rpx; overflow-x: auto; white-space: nowrap; }
+.ls2-tab { font-size: 26rpx; color: var(--c-text-second); padding: 6rpx 0; flex-shrink: 0; }
+.ls2-tab.on { color: var(--c-primary); font-weight: 800; border-bottom: 4rpx solid var(--c-primary); }
+.ls2-sec { font-size: 25rpx; font-weight: 800; color: var(--c-text-second); margin: 14rpx 0 12rpx 4rpx; display: flex; align-items: center; gap: 12rpx; }
+.ls2-sec.old { color: #e0863a; }
+.ls2-badge { font-size: 19rpx; font-weight: 700; color: #e0863a; background: #fcf1e6; padding: 2rpx 12rpx; border-radius: 8rpx; }
+.ls2-tl { position: relative; padding-left: 40rpx; }
+.ls2-tl::before { content: ''; position: absolute; left: 12rpx; top: 10rpx; bottom: 10rpx; width: 3rpx; background: var(--c-border); }
+.ls2-node { position: relative; margin-bottom: 16rpx; }
+.ls2-dot { position: absolute; left: -34rpx; top: 28rpx; width: 22rpx; height: 22rpx; border-radius: 50%; border: 5rpx solid var(--c-bg-page); box-sizing: border-box; }
+.ls2-dot.no { background: #b7c0cc; }
+.ls2-dot.ing { background: var(--c-primary); }
+.ls2-dot.done { background: #2fa98a; }
+.ls2-card { position: relative; overflow: hidden; background: var(--c-bg-card); border: 2rpx solid var(--c-border); border-radius: 18rpx; }
+.ls2-fill { position: absolute; left: 0; top: 0; bottom: 0; }
+.ls2-card.ing .ls2-fill { background: linear-gradient(90deg, #e8f2ff, #f4f9ff); }
+.ls2-card.done .ls2-fill { background: linear-gradient(90deg, #e9f6f1, #f4fbf8); }
+.ls2-in { position: relative; padding: 20rpx 22rpx; }
+.ls2-top { display: flex; align-items: flex-start; gap: 12rpx; }
+.ls2-sent { flex: 1; font-size: 27rpx; font-weight: 700; color: var(--c-ink); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ls2-pct { font-size: 32rpx; font-weight: 900; flex-shrink: 0; }
+.ls2-pct.no { color: #94a3b8; }
+.ls2-pct.ing { color: var(--c-primary); }
+.ls2-pct.done { color: #2fa98a; }
+.ls2-ck { font-size: 34rpx; font-weight: 900; color: #2fa98a; flex-shrink: 0; }
+.ls2-kinds { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 12rpx; }
+.ls2-kb { font-size: 20rpx; font-weight: 700; padding: 4rpx 14rpx; border-radius: 8rpx; }
+.ls2-kb.kc-comp { background: #f2edfb; color: #7a5cd0; }
+.ls2-kb.kc-asm { background: #fcf1e6; color: #e0863a; }
+.ls2-kb.kc-gram { background: #eaf2fe; color: #3d8bf5; }
+.ls2-kb.kc-word { background: #fbf0e4; color: #c77d2e; }
+.ls2-kb.zero { opacity: .4; }
+.ls2-meta { font-size: 21rpx; color: var(--c-text-hint); margin-top: 10rpx; }
+.ls2-st { font-weight: 700; }
+.ls2-st.ing { color: var(--c-primary); }
+.ls2-st.done { color: #2fa98a; }
+.ls2-grp { border-top: 2rpx dashed var(--c-border); margin-top: 12rpx; padding-top: 12rpx; }
+.ls2-gh { display: flex; align-items: center; gap: 10rpx; margin-bottom: 8rpx; }
+.ls2-gt { font-size: 24rpx; font-weight: 800; }
+.ls2-gt.kc-comp { color: #7a5cd0; }
+.ls2-gt.kc-asm { color: #e0863a; }
+.ls2-gt.kc-gram { color: #3d8bf5; }
+.ls2-gt.kc-word { color: #c77d2e; }
+.ls2-gs { font-size: 20rpx; color: var(--c-text-hint); }
+.ls2-grp-rp { margin-left: auto; font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); }
+.ls2-items { display: flex; flex-wrap: wrap; gap: 10rpx; }
+.ls2-it { font-size: 21rpx; padding: 4rpx 12rpx; border-radius: 8rpx; border: 2rpx solid var(--c-border); }
+.ls2-it.ok { background: #f4fbf8; border-color: #cfeee1; color: #2fa98a; }
+.ls2-it.err { background: #fdf0ec; border-color: #f2cabd; color: #d9573f; }
+.ls2-empty { font-size: 20rpx; color: var(--c-text-hint); }
 .lsd-component { color: #3a6bc0; }
 .lsd-comprehension { color: #2fa98a; }
 .lsd-grammar { color: #7a5cd0; }

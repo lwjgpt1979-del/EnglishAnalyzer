@@ -108,6 +108,11 @@ async def grammar_answer(
     if sentence and kind in ("component", "grammar"):
         await wcs.record_ls_practice(
             db, student_id=current_user.id, sentence=sentence, dim=kind, correct=correct)
+        # 语法也并入句子成分诊断(skill=grammar, role=该语法点)
+        if kind == "grammar":
+            await wcs.record_component_error(
+                db, student_id=current_user.id, sentence=sentence, skill="grammar",
+                role=(label or "语法点"), correct=correct)
         await db.commit()
     return make_ok(r)
 
@@ -125,6 +130,25 @@ async def intensive_core(
         db, student_id=current_user.id, sentence=sentence, dim="component", correct=perfect)
     await db.commit()
     return make_ok({"recorded": True})
+
+
+@router.post("/component-error", response_model=BaseResponse[dict])
+async def component_error(
+    db: DbDep, current_user: UserDep,
+    sentence: Annotated[str, Body(..., embed=True, max_length=600)],
+    skill: Annotated[str, Body(..., embed=True)],      # trunk|modifier|relation
+    role: Annotated[str, Body(..., embed=True, max_length=24)],
+    correct: Annotated[bool, Body(..., embed=True)],
+):
+    """精读闯关·细分对错回传(方案B·句子成分理解):关1找主干/关3拆修饰/关4合成 每次点选,
+    按 (句,技能,角色) 累计。错→计错;对→连对+1达2清除。"""
+    if skill not in ("trunk", "modifier", "relation", "grammar", "keyword"):
+        raise AppError(code=400, message="skill 非法")
+    from app.services import wrong_center_service as wcs
+    r = await wcs.record_component_error(
+        db, student_id=current_user.id, sentence=sentence, skill=skill, role=role, correct=correct)
+    await db.commit()
+    return make_ok(r)
 
 
 @router.get("/next", response_model=BaseResponse[dict])

@@ -136,7 +136,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { recordIntensiveCore } from '@/api/longSentence'
+import { recordIntensiveCore, recordComponentError } from '@/api/longSentence'
 
 const props = defineProps<{ a: any; text?: string }>()
 
@@ -200,6 +200,11 @@ const coreAccuracy = computed(() => {
   const t = coreCorrect.value + coreWrong.value
   return t ? Math.round((coreCorrect.value / t) * 100) : 100
 })
+// 方案B·句子成分理解:每次细分对错回传 (句,技能,角色);fire-and-forget 不阻塞
+function recComp(skill: 'trunk' | 'modifier' | 'relation', role: string, correct: boolean) {
+  if (!props.text || !role) return
+  recordComponentError(props.text, skill, role, correct).catch(() => { /* 静默 */ })
+}
 function tapCore(s: any) {
   if (corePassed.value || foundColor.value[s.__idx]) return
   const tgt = curTarget.value
@@ -207,11 +212,13 @@ function tapCore(s: any) {
   if (s.__idx === tgt.seg.__idx) {   // 点对当前目标成分 → 分色下划线 + 进下一步
     foundColor.value = { ...foundColor.value, [s.__idx]: compColor(tgt.seg.type) }
     coreCorrect.value++
+    recComp('trunk', shortType(tgt.seg.type), true)
     wrongIdx.value = null
     curStep.value++
     if (curStep.value >= coreTargets.value.length) { corePassedRaw.value = true; recordCore() }
   } else {   // 点错 → 计一次错、闪红、可继续
     coreWrong.value++
+    recComp('trunk', shortType(tgt.seg.type), false)
     wrongIdx.value = s.__idx
     setTimeout(() => { if (wrongIdx.value === s.__idx) wrongIdx.value = null }, 600)
   }
@@ -281,9 +288,11 @@ function tapMod2(s: any) {
   if (!tgt) return
   if (s.__idx === tgt.__idx) {   // 点对当前层修饰成分 → 分色下划线 + 进下一层
     modFound.value = { ...modFound.value, [s.__idx]: compColor(tgt.type) }
+    recComp('modifier', shortType(tgt.type), true)
     modHit.value++; modWrong.value = null; modStep.value++
     if (modStep.value >= mods.value.length) { modsPassedRaw.value = true; recordMods() }
   } else {   // 点错 → 计一次错、闪红、可继续
+    recComp('modifier', shortType(tgt.type), false)
     modMiss.value++; modWrong.value = s.__idx
     setTimeout(() => { if (modWrong.value === s.__idx) modWrong.value = null }, 600)
   }
@@ -331,9 +340,11 @@ function tapSlot(k: number) {
     const arr = [...placed.value]; arr.splice(k, 0, m.__idx); placed.value = arr
     const p = parentOf.value[m.__idx]
     if (p != null && byIdx.value[p]) checked.value = { ...checked.value, [p]: true }
+    recComp('relation', shortType(m.type), true)
     asmHit.value++; asmWrongSlot.value = null; asmStep.value++
     if (asmStep.value >= asmMods.value.length) { asmPassedRaw.value = true; recordAsm() }
   } else {   // 点错 → 计一次错、闪红、可继续
+    recComp('relation', shortType(m.type), false)
     asmMiss.value++; asmWrongSlot.value = k
     setTimeout(() => { if (asmWrongSlot.value === k) asmWrongSlot.value = null }, 600)
   }

@@ -96,6 +96,25 @@ export function recordIntensiveCore(sentence: string, perfect: boolean): Promise
   return request('/api/v1/long-sentences/intensive-core', { method: 'POST', data: { sentence, perfect } })
 }
 
+/** 精读闯关·细分对错(方案B·句子成分理解):skill=trunk|modifier|relation, role=成分角色。错→计错;对→连对+1达2清除。 */
+export function recordComponentError(sentence: string, skill: 'trunk' | 'modifier' | 'relation', role: string, correct: boolean): Promise<{ wrong_count: number; streak: number }> {
+  return request('/api/v1/long-sentences/component-error', { method: 'POST', data: { sentence, skill, role, correct } })
+}
+
+/** 「句子成分理解」块:三技能聚合 + 下钻角色·句。 */
+export interface ComponentSkill { skill: string; skill_label: string; desc: string; rate: number; err_total: number; items: { role: string; sentence: string; wrong_count: number }[] }
+export function getComponentUnderstanding(): Promise<{ skills: ComponentSkill[] }> {
+  return request('/api/v1/wrong-center/component-understanding', { method: 'GET' })
+}
+
+/** 长难句时间线诊断(变体2):按句四类错误(成分/合成/语法/重点词)+ 状态 + 时间桶。 */
+export interface LsCatItem { role: string; wrong: number; ok: boolean }
+export interface LsCat { cat: string; count: number; items: LsCatItem[] }
+export interface LsDiag { sentence: string; status: 'no' | 'ing' | 'done'; mastery: number; days: number; bucket: 'week' | 'mid' | 'old'; date: string; cats: LsCat[] }
+export function getLsDiagnostics(): Promise<{ items: LsDiag[] }> {
+  return request('/api/v1/wrong-center/ls-diagnostics', { method: 'GET' })
+}
+
 /** 提交迁移句的理解检测:返回结论(transferred=真掌握 / memorized=疑似记住原题)。 */
 export function submitTransfer(originId: string, transferId: string, answers: Record<string, string>): Promise<TransferResult> {
   return request<TransferResult>(`/api/v1/long-sentences/${originId}/transfer-submit`, { method: 'POST', data: { transfer_id: transferId, answers } })

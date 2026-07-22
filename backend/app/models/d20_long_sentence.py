@@ -173,3 +173,28 @@ class StudentGrammarQuizStat(Base):
     __table_args__ = (
         sa.UniqueConstraint("student_id", "gp_key", name="uq_grammar_quiz_stat_student_gp"),
     )
+
+
+class LsComponentError(Base):
+    """句子成分理解·细分错误 tally(方案B):精读闯关 关1找主干/关3拆修饰/关4合成 每次对错按
+    (学生, 句, 技能, 成分角色) 累计。诊断到具体角色(结果状语/后置定语…),连对 N 次清除。"""
+
+    __tablename__ = "ls_component_error"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), nullable=False)
+    sentence_md5 = mapped_column(sa.String(32), nullable=False)
+    sentence = mapped_column(sa.Text, nullable=True)                 # 冗余题面(展示)
+    skill = mapped_column(sa.String(12), nullable=False)             # trunk|modifier|relation
+    role = mapped_column(sa.String(24), nullable=False)              # 成分角色(细类:结果状语/后置定语/主语…)
+    attempt_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    wrong_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    streak = mapped_column(sa.SmallInteger, nullable=False, server_default=sa.text("0"))  # 连对,达N清除
+    last_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint("student_id", "sentence_md5", "skill", "role",
+                            name="uix_ls_component_error"),
+        sa.Index("ix_ls_component_error_student", "student_id"),
+    )
