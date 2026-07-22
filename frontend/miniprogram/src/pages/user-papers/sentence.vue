@@ -94,8 +94,8 @@
       </view>
       </template>
 
-      <!-- 精读闯关(乙版):找主干 → 读主干 → 拆修饰 → 句型迁移(纯用分析 JSON) -->
-      <SentenceIntensive v-else :a="a" :text="text" @migrate="onMigrate" />
+      <!-- 精读闯关(乙版):找主干 → 读主干 → 拆修饰 → 句型迁移(纯用分析 JSON;练同型句接迁移探针) -->
+      <SentenceIntensive v-else :a="a" :text="text" />
     </template>
 
     <view v-else class="tip">解析失败,返回重试</view>
@@ -121,8 +121,6 @@ const saved = ref(false)
 const paperId = ref('')
 const refOpen = ref(false)
 const mode = ref<'tree' | 'intensive'>('tree')   // 快速看树 / 精读闯关(并存)
-// 精读闯关·句型迁移「练同型句」入口(接现有长难句迁移探针,暂占位)
-function onMigrate() { uni.showToast({ title: '同型句练习即将上线', icon: 'none' }) }
 
 const quiz = ref<GrammarQuizItem[]>([])
 const words = ref<StudyWord[]>([])

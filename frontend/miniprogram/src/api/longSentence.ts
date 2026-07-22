@@ -86,6 +86,11 @@ export function getTransfer(id: string, exclude: string[] = []): Promise<Transfe
   return request<TransferOut>(`/api/v1/long-sentences/${id}/transfer`, { method: 'GET', data: { exclude: exclude.join(',') } })
 }
 
+/** 精读闯关·练同型句:用任意句子的结构找一句同结构新句 + 探针(原句不必在池内)。判分复用 submitComprehension(迁移句 id)。 */
+export function getTransferForText(sentence: string, exclude: string[] = []): Promise<TransferOut> {
+  return request<TransferOut>('/api/v1/long-sentences/transfer-for-text', { method: 'POST', data: { sentence, exclude } })
+}
+
 /** 提交迁移句的理解检测:返回结论(transferred=真掌握 / memorized=疑似记住原题)。 */
 export function submitTransfer(originId: string, transferId: string, answers: Record<string, string>): Promise<TransferResult> {
   return request<TransferResult>(`/api/v1/long-sentences/${originId}/transfer-submit`, { method: 'POST', data: { transfer_id: transferId, answers } })

@@ -223,6 +223,37 @@ async def get_transfer(ls_id: uuid.UUID, db: DbDep, current_user: UserDep, exclu
                 for p in probes]))
 
 
+@router.post("/transfer-for-text", response_model=BaseResponse[TransferOut])
+async def transfer_for_text(
+    db: DbDep, current_user: UserDep,
+    sentence: Annotated[str, Body(..., embed=True, min_length=1, max_length=600)],
+    exclude: Annotated[list[str] | None, Body(embed=True)] = None,
+):
+    """精读闯关·练同型句:用**任意句子**(不必在已发布池内)的结构,找一句同结构的已发布新句 + 理解探针。
+    原句只作结构种子(合成 origin,不落库);判分复用现有 comprehension(迁移句本身是已发布 ls)。"""
+    from app.models.d20_long_sentence import LongSentence
+    analysis = await lss.analyze_sentence_cached(db, sentence, with_paraphrase=False)
+    if not analysis or not analysis.get("syntax_points"):
+        return make_ok(TransferOut(item=None, shared=[], probes=[]))
+    ex: list[uuid.UUID] = []
+    for x in (exclude or []):
+        try:
+            ex.append(uuid.UUID(str(x)))
+        except (ValueError, TypeError):
+            pass
+    origin = LongSentence(id=uuid.uuid4(), text=sentence, analysis_json=analysis, difficulty=None)
+    found = await lss.find_transfer_sentence(db, origin=origin, user=current_user, exclude_ids=ex)
+    if found is None:
+        return make_ok(TransferOut(item=None, shared=[], probes=[]))
+    t, shared = found
+    probes = lss.comprehension_probes(t)
+    return make_ok(TransferOut(
+        item=TransferItem(id=t.id, text=t.text, difficulty=t.difficulty),
+        shared=shared,
+        probes=[ComprehensionProbe(key=p["key"], type=p["type"], prompt=p["prompt"], options=p["options"])
+                for p in probes]))
+
+
 @router.post("/{ls_id}/transfer-submit", response_model=BaseResponse[TransferResultOut])
 async def submit_transfer_api(ls_id: uuid.UUID, body: TransferSubmitIn, db: DbDep, current_user: UserDep):
     """提交迁移句的理解检测:判分→结论(真掌握/疑似记住原题)。原句=ls_id,迁移句=body.transfer_id。"""
