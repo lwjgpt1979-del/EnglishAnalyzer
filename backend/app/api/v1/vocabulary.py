@@ -432,6 +432,18 @@ async def homework_intensive_task(db: DbDep, current_user: UserDep, paper_id: uu
         db, student_id=current_user.id, word_ids=wids))
 
 
+@router.get("/intensive/sentence/task", response_model=BaseResponse[DailyTaskOut])
+async def sentence_keywords_task(db: DbDep, current_user: UserDep,
+                                 sentence: str = Query(..., min_length=1, max_length=600)):
+    """长难句「重点词·本句」完整词力通流程:词集=本句重点词(缓存解析→ensure 词条),结构同 daily-task。"""
+    await get_rls_db(db, str(current_user.id))
+    from app.services import vocab_intensive_service
+    wids = await vocab_intensive_service.sentence_keyword_word_ids(
+        db, sentence=sentence, student_id=current_user.id)
+    return make_ok(await vocabulary_service.get_daily_task_scoped(
+        db, student_id=current_user.id, word_ids=wids))
+
+
 @router.post("/pins", response_model=BaseResponse[dict])
 async def add_pins(db: DbDep, current_user: UserDep,
                    word_ids: list[uuid.UUID] = Body(..., embed=True), priority: int = Body(1),

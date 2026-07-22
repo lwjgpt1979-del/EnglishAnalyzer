@@ -21,15 +21,36 @@
         </template>
       </view>
 
-      <!-- 关1:找主干 -->
+      <!-- 关1:找主干(按次序点成分 · 分色下划线 · 记正确率)-->
       <view v-if="stage === 0" class="stage">
-        <view class="stitle"><text class="snum">1</text>先找主干:点出主句的「主语」和「谓语」</view>
+        <view class="stitle"><text class="snum">1</text>先找主干:按提示<text class="em">依次</text>点出成分</view>
+        <!-- 步骤条:按次序识别成分 -->
+        <view class="cstep">
+          <block v-for="(t, i) in coreTargets" :key="i">
+            <view class="cs">
+              <text class="cs-d" :class="{ done: i < curStep, cur: i === curStep && !corePassed }"
+                :style="i < curStep ? { background: compColor(t.seg.type) } : {}">{{ i < curStep ? '✓' : i + 1 }}</text>
+              <text class="cs-l" :style="{ color: i <= curStep ? compColor(t.seg.type) : '' }">{{ t.role }}</text>
+            </view>
+            <view v-if="i < coreTargets.length - 1" class="cs-line" />
+          </block>
+        </view>
+        <view v-if="!corePassed" class="cprompt">第 {{ curStep + 1 }} 步 · 点出主句的「<text class="cp-role" :style="{ color: compColor(curTarget && curTarget.seg.type || '') }">{{ curTarget && curTarget.role }}</text>」</view>
+        <!-- 句子 token:点对=该成分色下划线+✓,点错闪红 -->
         <view class="q-sent">
           <text v-for="(s, i) in segList" :key="i" class="tk"
-            :class="{ pick: picked.has(idxOf(s)), done: corePassed }" @tap="tapCore(s)">{{ s.text }} </text>
+            :class="{ found: !!foundColor[idxOf(s)], wrong: wrongIdx === idxOf(s), done: corePassed }"
+            :style="foundColor[idxOf(s)] ? { color: foundColor[idxOf(s)] } : {}"
+            @tap="tapCore(s)">{{ s.text }}<text v-if="foundColor[idxOf(s)]" class="tk-chk">✓</text> </text>
         </view>
-        <text v-if="!corePassed" class="hint">先别看解析——自己找。抓住主干,长句就塌成一句简单句。</text>
-        <view v-else class="ok"><text>✓ 找对了!主干 = 主语 + 谓语,先抓它。</text></view>
+        <!-- 图例 + 选中正确率 -->
+        <view class="cfoot">
+          <view class="clegend">
+            <text v-for="(t, i) in coreTargets" :key="i" class="clg"><text class="clgc" :style="{ background: compColor(t.seg.type) }" />{{ t.role }}</text>
+          </view>
+          <view class="crate"><text class="crate-n">{{ coreAccuracy }}%</text><text class="crate-l">选中正确率 {{ coreCorrect }}/{{ coreCorrect + coreWrong }}</text></view>
+        </view>
+        <view v-if="corePassed" class="ok"><text>✓ 主干找齐了!主干 = {{ coreTargets.map(t => t.role).join(' + ') }},先抓它。</text></view>
       </view>
 
       <!-- 关2:读主干 -->
@@ -44,67 +65,61 @@
         <text class="hint">工作记忆先装下这几个组块(谁 → 做了什么 → 得到什么),再往上加修饰。</text>
       </view>
 
-      <!-- 关3:拆修饰(先状语后定语),每层一道微测 -->
+      <!-- 关3:拆修饰(按次序点修饰成分 · 分色下划线 · 记正确率,先状语后定语)-->
       <view v-else-if="stage === 2" class="stage">
-        <view class="stitle"><text class="snum">3</text>拆修饰:一次一层 · {{ modDone }}/{{ mods.length }}</view>
-        <view v-if="curMod" class="qbox" :class="'lv-' + curMod.grp">
-          <text class="qh">{{ curMod.grpLabel }} · 先状语后定语</text>
-          <text class="qs">{{ curMod.text }}</text>
-          <text class="q-ask">{{ curMod.ask }}</text>
-          <view class="opt" v-for="(o, oi) in curMod.options" :key="oi"
-            :class="optCls(oi)" @tap="tapMod(oi)">
-            <text>{{ o }}</text>
-          </view>
-          <view v-if="modAnswered" class="mfeed">
-            <text class="mfeed-r" :class="{ ok: modCorrect }">{{ modCorrect ? '✓ 对' : '✗ 再看一眼' }}</text>
-            <text class="mfeed-a">{{ curMod.answerNote }}</text>
-            <text class="mfeed-next" @tap="nextMod">{{ modDone + 1 >= mods.length ? '拆完 → 看句型' : '下一层 ›' }}</text>
-          </view>
+        <view class="stitle"><text class="snum">3</text>拆修饰:按提示<text class="em">依次</text>点出修饰成分(先状语后定语)</view>
+        <!-- 步骤条:逐层 -->
+        <view class="cstep">
+          <block v-for="(m, i) in mods" :key="i">
+            <view class="cs">
+              <text class="cs-d" :class="{ done: i < modStep, cur: i === modStep && !modsPassed }"
+                :style="i < modStep ? { background: compColor(m.type) } : {}">{{ i < modStep ? '✓' : i + 1 }}</text>
+            </view>
+            <view v-if="i < mods.length - 1" class="cs-line" />
+          </block>
         </view>
+        <view v-if="!modsPassed && curModT" class="cprompt">第 {{ modStep + 1 }} 层 · 点出「<text class="cp-role" :style="{ color: compColor(curModT.type) }">{{ shortType(curModT.type) }}</text>」<text class="cp-hint"> · {{ curModT.grpLabel }}</text></view>
+        <view class="q-sent">
+          <text v-for="(s, i) in segList" :key="i" class="tk"
+            :class="{ found: !!modFound[idxOf(s)], wrong: modWrong === idxOf(s), done: modsPassed }"
+            :style="modFound[idxOf(s)] ? { color: modFound[idxOf(s)] } : {}"
+            @tap="tapMod2(s)">{{ s.text }}<text v-if="modFound[idxOf(s)]" class="tk-chk">✓</text> </text>
+        </view>
+        <view class="cfoot">
+          <view class="clegend">
+            <text v-for="(l, i) in modLegend" :key="i" class="clg"><text class="clgc" :style="{ background: l.color }" />{{ l.label }}</text>
+          </view>
+          <view class="crate"><text class="crate-n">{{ modAccuracy }}%</text><text class="crate-l">选中正确率 {{ modHit }}/{{ modHit + modMiss }}</text></view>
+        </view>
+        <view v-if="modsPassed" class="ok"><text>✓ 修饰全拆开了!主干 + 各层修饰 = 完整长句。</text></view>
       </view>
 
-      <!-- 关4:句型 + 练同型句(接迁移探针:同结构新句 + 理解检测) -->
+      <!-- 关4:合成长句(主干起手,逐层插修饰 · 插对→被修饰成分打✓ · 记归位正确率) -->
       <view v-else class="stage">
-        <view class="stitle"><text class="snum">4</text>抽成句型:下次遇同型能套</view>
-        <view class="patc">
-          <text v-for="(p, i) in patternParts" :key="i" class="pp" :class="{ core: p.core }">{{ p.label }}<text v-if="i < patternParts.length - 1" class="pp-plus"> + </text></text>
-        </view>
-
-        <!-- 默认:入口 -->
-        <template v-if="t4 === 'pattern'">
-          <text class="hint">学的不是"这一句",是"这类句子"。练一句同型新句,验证你真会这个句法。</text>
-          <view class="mig" @tap="startTransfer"><text>练同型长句 ›</text></view>
-        </template>
-
-        <view v-else-if="t4 === 'loading'" class="tp-tip">找同型新句中…</view>
-        <view v-else-if="t4 === 'none'" class="tp-tip">
-          <text>暂无同结构的新句(该句法较少见),晚点再试。</text>
-          <view class="mig ghost" @tap="t4 = 'pattern'"><text>返回</text></view>
-        </view>
-
-        <!-- 同型新句 + 理解检测 -->
-        <template v-else-if="t4 === 'quiz' && tfItem">
-          <view class="tf-sent"><text class="tf-lb">同型新句(同结构 · 新内容)</text><text class="tf-text">{{ tfItem.text }}</text></view>
-          <view v-if="tfShared.length" class="tf-shared"><text v-for="(s, i) in tfShared" :key="i" class="tf-chip">{{ s }}</text></view>
-          <view v-for="p in tfProbes" :key="p.key" class="tf-probe">
-            <text class="tf-q">{{ p.prompt }}</text>
-            <view v-for="(o, oi) in p.options" :key="oi" class="opt" :class="{ 'opt-sel': tfAnswers[p.key] === o }" @tap="pickTf(p.key, o)"><text>{{ o }}</text></view>
+        <view class="stitle"><text class="snum">4</text>合成长句:主干 + 逐层修饰</view>
+        <view v-if="asmMods.length === 0" class="hint">本句无额外修饰,主干即整句。</view>
+        <template v-else>
+          <view class="prog2">已加 {{ asmStep }} / {{ asmMods.length }} 层修饰 · 插对一层,它说明的成分打 ✓</view>
+          <!-- 当前句:主干 + 已插修饰 + ＋槽 -->
+          <view class="asm-zone" :class="{ done: asmPassed }">
+            <text class="zlb2" :class="{ ok: asmPassed }">{{ asmPassed ? '✓ 完整长句' : '当前句' }}</text>
+            <view class="asm-sent">
+              <block v-for="(seg, k) in placedSegs" :key="seg.__idx">
+                <text v-if="!asmPassed" class="ins2" :class="{ wrong: asmWrongSlot === k }" @tap="tapSlot(k)">＋</text>
+                <text class="asm-w" :class="{ chk: checked[seg.__idx] }" :style="{ color: compColor(seg.type) }">{{ seg.text }}<text v-if="checked[seg.__idx]" class="asm-ck">✓</text> </text>
+              </block>
+              <text v-if="!asmPassed" class="ins2" :class="{ wrong: asmWrongSlot === placedSegs.length }" @tap="tapSlot(placedSegs.length)">＋</text>
+            </view>
           </view>
-          <view class="mig" :class="{ ghost: !allTfAnswered || tfSubmitting }" @tap="submitTf"><text>{{ tfSubmitting ? '判分中…' : '提交' }}</text></view>
-        </template>
-
-        <!-- 结论:真会 vs 疑似记住 -->
-        <template v-else-if="t4 === 'result' && tfResult">
-          <view class="tf-res" :class="{ ok: tfResult.passed }">
-            <text class="tf-res-t">{{ tfResult.passed ? '✓ 同型新句也读懂了 —— 你真掌握了这个句法' : '✗ 换句就卡了 —— 像是记住了原句,再练几句' }}</text>
+          <template v-if="!asmPassed">
+            <view class="cprompt">把「<text class="cp-role" :style="{ color: compColor(asmCur && asmCur.type || '') }">{{ asmCur && shortType(asmCur.type) }}</text>」插到正确 ＋ 处 —— 它说明谁,谁就打 ✓</view>
+            <view class="pool2"><text class="zlb2">待放修饰</text><text class="asm-chip" :style="{ color: compColor(asmCur && asmCur.type || ''), 'border-color': compColor(asmCur && asmCur.type || '') }">{{ asmCur && asmCur.text }}</text></view>
+          </template>
+          <view class="cfoot">
+            <view class="clegend"><text v-for="(l, i) in coreLegend" :key="i" class="clg"><text class="clgc" :style="{ background: l.color }" />{{ l.label }}</text></view>
+            <view class="crate"><text class="crate-n">{{ asmAccuracy }}%</text><text class="crate-l">归位正确率 {{ asmHit }}/{{ asmHit + asmMiss }}</text></view>
           </view>
-          <view v-for="pr in (tfResult.probes || [])" :key="pr.key" class="tf-pr" :class="{ ok: pr.correct }">
-            <text>{{ pr.correct ? '✓' : '✗' }} 正确:{{ pr.correct_answer }}</text>
-          </view>
-          <view class="tf-btns">
-            <view class="mig ghost" @tap="t4 = 'pattern'"><text>完成</text></view>
-            <view class="mig" @tap="startTransfer"><text>再来一句 ›</text></view>
-          </view>
+          <view v-if="asmPassed" class="ok"><text>✓ 主干 + 各层修饰 = 这句长句。下次遇同型能拆能装。</text></view>
         </template>
       </view>
 
@@ -121,11 +136,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { getTransferForText, submitComprehension, type ComprehensionProbe, type TransferItem } from '@/api/longSentence'
+import { recordIntensiveCore } from '@/api/longSentence'
 
 const props = defineProps<{ a: any; text?: string }>()
 
-const stages = ['找主干', '读主干', '拆修饰', '句型迁移']
+const stages = ['找主干', '读主干', '拆修饰', '合成长句']
 const stage = ref(0)
 
 // ── 从分析 JSON 派生(纯规则,无 LLM):segments + structure(parent) + components ──
@@ -141,9 +156,9 @@ const byIdx = computed<Record<number, any>>(() => {
   const m: Record<number, any> = {}; segList.value.forEach(s => { m[s.__idx] = s }); return m
 })
 // 主干 = structure.parent 为 null 的成分;缺 structure 时按 type 兜底(主/谓/宾/表)
+// 主干 = 主谓宾表(按成分类型判,不依赖 parent 树);parent 树只用于「被修饰成分打勾」。
+// (依存树里 宾语/表语 parent=谓语,若按 parent===null 会掉出主干,故按类型判)
 function isCoreSeg(s: any): boolean {
-  const p = parentOf.value[s.__idx]
-  if (p !== undefined) return p === null
   return /主语|谓语|宾语|表语|主句|主干/.test(s.type || '')
 }
 const cores = computed(() => segList.value.filter(isCoreSeg))
@@ -151,21 +166,59 @@ const comps = computed(() => props.a?.components || {})
 const dataOk = computed(() =>
   segList.value.length > 0 && (cores.value.length > 0 || comps.value.subject || comps.value.predicate))
 
-// 主语/谓语 段(关1 正确答案)
-const subjSeg = computed(() => cores.value.find(s => /主语/.test(s.type || '')))
-const predSeg = computed(() => cores.value.find(s => /谓语/.test(s.type || '')))
-
-// ── 关1:点主干 ──
-const picked = ref<Set<number>>(new Set())
-const corePassed = ref(false)
+// ── 关1:按次序点主干成分(主语→谓语→[宾/表])· 分色下划线 · 记正确率 ──
+function compColor(type: string): string {
+  const t = type || ''
+  if (/主语/.test(t)) return '#2fa98a'
+  if (/谓语/.test(t)) return '#3d8bf5'
+  if (/宾语/.test(t)) return '#c77d2e'
+  if (/表语/.test(t)) return '#d98a3a'
+  if (/定语/.test(t)) return '#7a5cd0'   // 定语/定语从句 紫
+  if (/状语/.test(t)) return '#e0863a'   // 状语 橙
+  if (/同位/.test(t)) return '#d17ba8'   // 同位语 品红
+  if (/从句|非谓语|插入|补语/.test(t)) return '#5a9e6f'   // 其它修饰/从句 绿
+  return '#8a94a6'
+}
+// 主干目标成分:按语法序 主→谓→宾/表,仅取本句存在的(去重)
+const coreTargets = computed<any[]>(() => {
+  const out: any[] = []
+  for (const role of ['主语', '谓语', '宾语', '表语']) {
+    const seg = cores.value.find(s => new RegExp(role).test(s.type || ''))
+    if (seg && !out.some(o => o.seg.__idx === seg.__idx)) out.push({ seg, role })
+  }
+  return out
+})
+const curStep = ref(0)
+const foundColor = ref<Record<number, string>>({})   // __idx → 成分色(已点对)
+const wrongIdx = ref<number | null>(null)             // 刚点错的段(闪红)
+const coreCorrect = ref(0)
+const coreWrong = ref(0)
+const corePassedRaw = ref(false)
+const corePassed = computed(() => corePassedRaw.value || coreTargets.value.length === 0)
+const curTarget = computed(() => coreTargets.value[curStep.value] || null)
+const coreAccuracy = computed(() => {
+  const t = coreCorrect.value + coreWrong.value
+  return t ? Math.round((coreCorrect.value / t) * 100) : 100
+})
 function tapCore(s: any) {
-  if (corePassed.value) return
-  const set = new Set(picked.value)
-  set.has(s.__idx) ? set.delete(s.__idx) : set.add(s.__idx)
-  picked.value = set
-  const needS = subjSeg.value ? set.has(subjSeg.value.__idx) : true
-  const needP = predSeg.value ? set.has(predSeg.value.__idx) : true
-  if (needS && needP && (subjSeg.value || predSeg.value)) corePassed.value = true
+  if (corePassed.value || foundColor.value[s.__idx]) return
+  const tgt = curTarget.value
+  if (!tgt) return
+  if (s.__idx === tgt.seg.__idx) {   // 点对当前目标成分 → 分色下划线 + 进下一步
+    foundColor.value = { ...foundColor.value, [s.__idx]: compColor(tgt.seg.type) }
+    coreCorrect.value++
+    wrongIdx.value = null
+    curStep.value++
+    if (curStep.value >= coreTargets.value.length) { corePassedRaw.value = true; recordCore() }
+  } else {   // 点错 → 计一次错、闪红、可继续
+    coreWrong.value++
+    wrongIdx.value = s.__idx
+    setTimeout(() => { if (wrongIdx.value === s.__idx) wrongIdx.value = null }, 600)
+  }
+}
+async function recordCore() {   // 选中正确率回传;全对推进、有错反哺「长难句薄弱·成分维」
+  if (!props.text) return
+  try { await recordIntensiveCore(props.text, coreWrong.value === 0) } catch { /* 静默 */ }
 }
 
 // ── 关2:主干各成分带角色标 ──
@@ -204,70 +257,113 @@ const mods = computed(() => {
       answerNote: head ? `${ct} · 修饰/隶属:${head.text}` : ct }
   })
 })
-const modDone = ref(0)
-const modPick = ref<number | null>(null)
-const curMod = computed(() => mods.value[modDone.value] || null)
-const modAnswered = computed(() => modPick.value != null)
-const modCorrect = computed(() => curMod.value && modPick.value === curMod.value.correct)
-function tapMod(oi: number) { if (modPick.value == null) modPick.value = oi }
-function nextMod() {
-  if (modDone.value + 1 >= mods.value.length) { stage.value = 3; return }
-  modDone.value += 1; modPick.value = null
+// ── 关3:按次序点修饰成分(先状语后定语)· 分色下划线 · 记正确率(同关1机制)──
+const modStep = ref(0)
+const modFound = ref<Record<number, string>>({})   // __idx → 成分色(已点对)
+const modWrong = ref<number | null>(null)           // 刚点错(闪红)
+const modHit = ref(0)
+const modMiss = ref(0)
+const modsPassedRaw = ref(false)
+const modsPassed = computed(() => modsPassedRaw.value || mods.value.length === 0)
+const curModT = computed(() => mods.value[modStep.value] || null)
+const modAccuracy = computed(() => {
+  const t = modHit.value + modMiss.value
+  return t ? Math.round((modHit.value / t) * 100) : 100
+})
+const modLegend = computed(() => {
+  const seen = new Map<string, string>()
+  mods.value.forEach(m => { const l = shortType(m.type); if (l && !seen.has(l)) seen.set(l, compColor(m.type)) })
+  return [...seen].map(([label, color]) => ({ label, color }))
+})
+function tapMod2(s: any) {
+  if (modsPassed.value || modFound.value[s.__idx]) return
+  const tgt = curModT.value
+  if (!tgt) return
+  if (s.__idx === tgt.__idx) {   // 点对当前层修饰成分 → 分色下划线 + 进下一层
+    modFound.value = { ...modFound.value, [s.__idx]: compColor(tgt.type) }
+    modHit.value++; modWrong.value = null; modStep.value++
+    if (modStep.value >= mods.value.length) { modsPassedRaw.value = true; recordMods() }
+  } else {   // 点错 → 计一次错、闪红、可继续
+    modMiss.value++; modWrong.value = s.__idx
+    setTimeout(() => { if (modWrong.value === s.__idx) modWrong.value = null }, 600)
+  }
 }
-function optCls(oi: number) {
-  if (modPick.value == null) return ''
-  if (curMod.value && oi === curMod.value.correct) return 'opt-ok'
-  if (oi === modPick.value) return 'opt-no'
-  return 'opt-dim'
+async function recordMods() {   // 拆修饰也归「成分」维:全对推进、有错反哺长难句薄弱·成分维
+  if (!props.text) return
+  try { await recordIntensiveCore(props.text, modMiss.value === 0) } catch { /* 静默 */ }
 }
 
-// ── 关4:句型卡(按原文顺序把每段映射成角色标,主干加粗)──
-const patternParts = computed(() =>
-  segList.value.map(s => ({ label: shortType(s.type), core: isCoreSeg(s) })))
+// ── 关4:合成长句(主干起手,逐层插修饰 · 插对→被修饰成分打✓ · 记归位正确率)──
+const asmMods = computed<any[]>(() => mods.value)   // 修饰序列(状语→定语,同关3)
+const asmStep = ref(0)
+const placed = ref<number[]>([])                     // 已在句中的 seg __idx(初始=主干按原文序)
+const checked = ref<Record<number, boolean>>({})     // 被修饰成分打勾(用 structure.parent)
+const asmHit = ref(0)
+const asmMiss = ref(0)
+const asmWrongSlot = ref<number | null>(null)
+const asmPassedRaw = ref(false)
+const asmPassed = computed(() => asmPassedRaw.value || asmMods.value.length === 0)
+const asmCur = computed(() => asmMods.value[asmStep.value] || null)
+const placedSegs = computed<any[]>(() => placed.value.map(i => byIdx.value[i]).filter(Boolean))
+const asmAccuracy = computed(() => {
+  const t = asmHit.value + asmMiss.value
+  return t ? Math.round((asmHit.value / t) * 100) : 100
+})
+const coreLegend = computed(() => {
+  const seen = new Map<string, string>()
+  segList.value.forEach(s => { const l = shortType(s.type); if (l && !seen.has(l)) seen.set(l, compColor(s.type)) })
+  return [...seen].map(([label, color]) => ({ label, color }))
+})
+function initAsm() {   // 主干起手:按原文序排好主干成分
+  placed.value = cores.value.map(c => c.__idx).sort((a, b) => a - b)
+  asmStep.value = 0; checked.value = {}; asmHit.value = 0; asmMiss.value = 0
+  asmWrongSlot.value = null; asmPassedRaw.value = false
+}
+// 当前修饰的正确槽 = 已放成分里 idx 小于它的个数(插入后仍按原文序)
+const asmCorrectSlot = computed(() => {
+  const m = asmCur.value; if (!m) return -1
+  return placed.value.filter(i => i < m.__idx).length
+})
+function tapSlot(k: number) {
+  if (asmPassed.value) return
+  const m = asmCur.value; if (!m) return
+  if (k === asmCorrectSlot.value) {   // 插对 → 入句 + 被修饰成分打✓
+    const arr = [...placed.value]; arr.splice(k, 0, m.__idx); placed.value = arr
+    const p = parentOf.value[m.__idx]
+    if (p != null && byIdx.value[p]) checked.value = { ...checked.value, [p]: true }
+    asmHit.value++; asmWrongSlot.value = null; asmStep.value++
+    if (asmStep.value >= asmMods.value.length) { asmPassedRaw.value = true; recordAsm() }
+  } else {   // 点错 → 计一次错、闪红、可继续
+    asmMiss.value++; asmWrongSlot.value = k
+    setTimeout(() => { if (asmWrongSlot.value === k) asmWrongSlot.value = null }, 600)
+  }
+}
+async function recordAsm() {   // 合成归「成分」维:全对推进、有错反哺长难句薄弱·成分维
+  if (!props.text) return
+  try { await recordIntensiveCore(props.text, asmMiss.value === 0) } catch { /* 静默 */ }
+}
 
 // ── 关卡推进 ──
 const canNext = computed(() => {
   if (stage.value === 0) return corePassed.value
-  if (stage.value === 2) return modDone.value >= mods.value.length - 1 && modAnswered.value
-  return true
+  if (stage.value === 2) return modsPassed.value
+  return true   // 关4 为末关,按钮=「重来」,始终可点
 })
 function next() {
   if (stage.value >= stages.length - 1) { reset(); return }
   if (!canNext.value) return
   stage.value += 1
+  if (stage.value === 3 && placed.value.length === 0) initAsm()   // 进关4 → 主干起手
 }
 function prev() { if (stage.value > 0) stage.value -= 1 }
 function reset() {
-  stage.value = 0; picked.value = new Set(); corePassed.value = false
-  modDone.value = 0; modPick.value = null
-  t4.value = 'pattern'; tfItem.value = null; tfResult.value = null; tfAnswers.value = {}
-}
-
-// ── 关4:练同型句(接迁移探针:同结构新句 + 理解检测,判分复用 submitComprehension)──
-const t4 = ref<'pattern' | 'loading' | 'quiz' | 'none' | 'result'>('pattern')
-const tfItem = ref<TransferItem | null>(null)
-const tfProbes = ref<ComprehensionProbe[]>([])
-const tfShared = ref<string[]>([])
-const tfAnswers = ref<Record<string, string>>({})
-const tfResult = ref<any>(null)
-const tfSubmitting = ref(false)
-const allTfAnswered = computed(() => tfProbes.value.length > 0 && tfProbes.value.every(p => !!tfAnswers.value[p.key]))
-async function startTransfer() {
-  t4.value = 'loading'; tfResult.value = null; tfAnswers.value = {}
-  try {
-    const r = await getTransferForText(props.text || '', tfItem.value ? [tfItem.value.id] : [])
-    if (!r.item) { t4.value = 'none'; return }
-    tfItem.value = r.item; tfProbes.value = r.probes || []; tfShared.value = r.shared || []
-    t4.value = 'quiz'
-  } catch (e: any) { t4.value = 'pattern'; uni.showToast({ title: e?.message || '取同型句失败', icon: 'none' }) }
-}
-function pickTf(key: string, o: string) { tfAnswers.value = { ...tfAnswers.value, [key]: o } }
-async function submitTf() {
-  if (!allTfAnswered.value || tfSubmitting.value || !tfItem.value) return
-  tfSubmitting.value = true
-  try { tfResult.value = await submitComprehension(tfItem.value.id, tfAnswers.value); t4.value = 'result' }
-  catch (e: any) { uni.showToast({ title: e?.message || '判分失败', icon: 'none' }) }
-  finally { tfSubmitting.value = false }
+  stage.value = 0
+  curStep.value = 0; foundColor.value = {}; wrongIdx.value = null
+  coreCorrect.value = 0; coreWrong.value = 0; corePassedRaw.value = false
+  modStep.value = 0; modFound.value = {}; modWrong.value = null
+  modHit.value = 0; modMiss.value = 0; modsPassedRaw.value = false
+  asmStep.value = 0; placed.value = []; checked.value = {}
+  asmHit.value = 0; asmMiss.value = 0; asmWrongSlot.value = null; asmPassedRaw.value = false
 }
 
 function shortType(t: string): string { return (t || '成分').replace(/（.*?）|\(.*?\)/g, '').trim() }
@@ -292,10 +388,45 @@ function uniq(arr: string[]): string[] { return [...new Set(arr.filter(Boolean))
 .stage { }
 .stitle { display: flex; align-items: center; gap: 10rpx; font-size: 27rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 18rpx; line-height: 1.5; }
 .snum { width: 38rpx; height: 38rpx; border-radius: 50%; background: #eaf2fe; color: #2f74d6; font-size: 22rpx; display: flex; align-items: center; justify-content: center; flex: none; }
-.q-sent { font-size: 30rpx; line-height: 2; color: var(--c-ink); }
-.tk { border-radius: 6rpx; padding: 2rpx 4rpx; }
-.tk.pick { background: #e6f1fb; color: #185fa5; box-shadow: inset 0 -4rpx 0 #3d8bf5; }
-.tk.done { background: #eaf4fb; color: #185fa5; }
+.q-sent { font-size: 30rpx; line-height: 2.2; color: var(--c-ink); }
+.tk { border-radius: 6rpx; padding: 2rpx 4rpx 4rpx; }
+.tk.found { border-bottom: 5rpx solid; border-radius: 6rpx 6rpx 0 0; font-weight: 600; }
+.tk.wrong { background: #fdecec; color: #d9573f; }
+.tk.done { opacity: 0.92; }
+.tk-chk { font-size: 18rpx; vertical-align: super; margin-left: 2rpx; }
+.stitle .em { color: #3d8bf5; }
+/* 步骤条(按次序识别成分) */
+.cstep { display: flex; align-items: center; gap: 6rpx; margin-bottom: 16rpx; }
+.cs { display: flex; align-items: center; gap: 8rpx; }
+.cs-d { width: 40rpx; height: 40rpx; border-radius: 50%; background: #cfd6df; color: #fff; font-size: 22rpx; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
+.cs-d.cur { box-shadow: 0 0 0 6rpx #d5e6fb; }
+.cs-l { font-size: 24rpx; font-weight: 700; color: #93a0b3; }
+.cs-line { flex: 1; height: 3rpx; background: #e0e5ec; }
+.cprompt { font-size: 27rpx; font-weight: 700; color: var(--c-ink); margin-bottom: 16rpx; }
+.cp-role { font-weight: 800; }
+.cp-hint { font-size: 22rpx; font-weight: 400; color: #93a0b3; }
+/* 图例 + 正确率 */
+.cfoot { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 22rpx; padding-top: 16rpx; border-top: 2rpx solid #eef1f5; }
+.clegend { display: flex; flex-wrap: wrap; gap: 16rpx; }
+.clg { display: flex; align-items: center; gap: 8rpx; font-size: 21rpx; color: #6b7684; }
+.clgc { width: 26rpx; height: 6rpx; border-radius: 3rpx; }
+.crate { text-align: right; flex: none; }
+.crate-n { display: block; font-size: 34rpx; font-weight: 900; color: #2fa98a; line-height: 1; }
+.crate-l { font-size: 19rpx; color: #93a0b3; }
+/* 关4 合成长句 */
+.prog2 { font-size: 21rpx; color: #93a0b3; margin-bottom: 14rpx; }
+.asm-zone { background: #fff; border: 2rpx dashed #cfd8e3; border-radius: 16rpx; padding: 20rpx 18rpx; margin-bottom: 16rpx; }
+.asm-zone.done { border-style: solid; border-color: #bfe5d6; background: #f4fbf8; }
+.zlb2 { display: block; font-size: 20rpx; color: #93a0b3; font-weight: 700; margin-bottom: 14rpx; }
+.zlb2.ok { color: #2fa98a; }
+.asm-sent { font-size: 30rpx; line-height: 2.6; }
+.asm-w { font-weight: 600; padding: 2rpx 4rpx; }
+.asm-w.chk { border-bottom: 4rpx solid currentColor; border-radius: 6rpx 6rpx 0 0; }
+.asm-ck { font-size: 20rpx; font-weight: 900; color: #2fa98a; vertical-align: super; margin-left: 2rpx; }
+.ins2 { display: inline-flex; align-items: center; justify-content: center; min-width: 56rpx; height: 52rpx; padding: 0 12rpx; border-radius: 26rpx; border: 3rpx dashed #e0863a; color: #e0863a; font-size: 24rpx; margin: 0 6rpx; vertical-align: middle; }
+.ins2.wrong { background: #fdecec; border-color: #d9573f; color: #d9573f; }
+.pool2 { background: #f6f8fb; border-radius: 16rpx; padding: 18rpx; margin-bottom: 4rpx; }
+.asm-chip { display: inline-block; margin-top: 10rpx; border: 3rpx solid; border-radius: 12rpx; padding: 12rpx 16rpx; font-size: 26rpx; font-weight: 600; line-height: 1.5; }
 .hint { display: block; font-size: 23rpx; color: #93a0b3; margin-top: 18rpx; line-height: 1.6; }
 .ok { margin-top: 16rpx; }
 .ok text { font-size: 24rpx; color: #1a9059; font-weight: 600; }

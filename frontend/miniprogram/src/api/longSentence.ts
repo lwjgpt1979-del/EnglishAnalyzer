@@ -91,6 +91,11 @@ export function getTransferForText(sentence: string, exclude: string[] = []): Pr
   return request<TransferOut>('/api/v1/long-sentences/transfer-for-text', { method: 'POST', data: { sentence, exclude } })
 }
 
+/** 精读闯关·关1 结算:选中正确率(perfect=全对)。全对推进成分维、有错反哺长难句薄弱·成分维。 */
+export function recordIntensiveCore(sentence: string, perfect: boolean): Promise<{ recorded: boolean }> {
+  return request('/api/v1/long-sentences/intensive-core', { method: 'POST', data: { sentence, perfect } })
+}
+
 /** 提交迁移句的理解检测:返回结论(transferred=真掌握 / memorized=疑似记住原题)。 */
 export function submitTransfer(originId: string, transferId: string, answers: Record<string, string>): Promise<TransferResult> {
   return request<TransferResult>(`/api/v1/long-sentences/${originId}/transfer-submit`, { method: 'POST', data: { transfer_id: transferId, answers } })

@@ -289,3 +289,7 @@ export function getCourseIntensiveTask(unitId: string): Promise<VocabDailyTask> 
 export function getHomeworkIntensiveTask(paperId: string): Promise<VocabDailyTask> {
   return request<VocabDailyTask>('/api/v1/vocabulary/intensive/homework/task', { method: 'GET', data: { paper_id: paperId } })
 }
+// 长难句「重点词·本句」:词集=本句重点词(缓存解析→ensure 词条),结构同 daily-task
+export function getSentenceKeywordsTask(sentence: string): Promise<VocabDailyTask> {
+  return request<VocabDailyTask>('/api/v1/vocabulary/intensive/sentence/task', { method: 'GET', data: { sentence } })
+}

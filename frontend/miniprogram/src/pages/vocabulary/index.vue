@@ -78,8 +78,10 @@
 
     <!-- 学习/复习阶段：词卡（图左+词右，例句/短语，跟读·发音一行）-->
     <view v-else-if="phase === 'study' || phase === 'review'" class="card">
+      <!-- 长难句「重点词·本句」语境条 -->
+      <view v-if="sentenceCtx" class="kw-ctx"><text class="kw-ctx-lb">来自本句</text><text class="kw-ctx-s">{{ sentenceCtx }}</text></view>
       <view class="study-hd">
-        <text class="progress-hint">{{ isReview ? '复习词' : '学新词' }} {{ cardIdx + 1 }} / {{ cardList.length }}<text v-if="repsPerGroup > 1" class="rep-tag"> · 第{{ currentRep }}/{{ repsPerGroup }}遍</text></text>
+        <text class="progress-hint">{{ sentenceCtx ? '本句重点词' : (isReview ? '复习词' : '学新词') }} {{ cardIdx + 1 }} / {{ cardList.length }}<text v-if="repsPerGroup > 1" class="rep-tag"> · 第{{ currentRep }}/{{ repsPerGroup }}遍</text></text>
         <view class="hd-right">
           <view class="seq-toggle" :class="{ on: readSeq }" @tap="readSeq = !readSeq" style="display:flex;align-items:center;gap:6rpx">
             <view class="ic ic-volume" style="width:28rpx;height:28rpx" /><text>连读</text>
@@ -494,7 +496,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, swapKpMcq, reportRelation, recordKpPractice, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
+import { getDailyTask, getCourseIntensiveTask, getHomeworkIntensiveTask, getSentenceKeywordsTask, submitVocabAnswer, checkin, getCheckinCalendar, makeUpCheckin, shadowScore, getVocabSettings, setVocabSettings, addVocabWord, groupRecepProbes, submitGroupRecep, getPins, getPinnable, addPins, setPinPriority, removePin, pinFromPhoto, getExamOverview, getExamDaily, getWordKp, getKpTest, swapKpMcq, reportRelation, recordKpPractice, getQuizMcqs, ensureWordMedia, prewarmWords } from '@/api/vocabulary'
 import type { ExamOverview, WordKp, KpTestQuestion, QuizMcq, KpItem } from '@/api/vocabulary'
 import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
@@ -1066,12 +1068,17 @@ function optionClass(i: number): string {
   return ''
 }
 
-// 精讲「完整词力通流程」:query 带 source=course|homework + unit_id/paper_id → 词集限定在该单元/批次
-const scope = ref<{ source: 'course' | 'homework'; id: string } | null>(null)
+// 精讲「完整词力通流程」:query 带 source=course|homework|sentence → 词集限定单元/批次/本句重点词
+const scope = ref<{ source: 'course' | 'homework' | 'sentence'; id: string } | null>(null)
 onLoad((q: Record<string, string> = {}) => {
   if (q.source === 'course' && q.unit_id) scope.value = { source: 'course', id: q.unit_id }
   else if (q.source === 'homework' && q.paper_id) scope.value = { source: 'homework', id: q.paper_id }
+  else if (q.source === 'sentence' && q.text) {   // 长难句「重点词·本句」:id 存句子文本
+    scope.value = { source: 'sentence', id: decodeURIComponent(q.text) }
+    uni.setNavigationBarTitle({ title: '重点词' })
+  }
 })
+const sentenceCtx = computed(() => (scope.value?.source === 'sentence' ? scope.value.id : ''))
 
 async function load(fromReload = false) {
   if (!auth.isLoggedIn()) await auth.login()
@@ -1082,7 +1089,9 @@ async function load(fromReload = false) {
     const task = scope.value
       ? (scope.value.source === 'course'
           ? await getCourseIntensiveTask(scope.value.id)
-          : await getHomeworkIntensiveTask(scope.value.id))
+          : scope.value.source === 'sentence'
+              ? await getSentenceKeywordsTask(scope.value.id)
+              : await getHomeworkIntensiveTask(scope.value.id))
       : await getDailyTask()
     _applyTask(task, fromReload)
   } catch (e) {
@@ -1532,6 +1541,10 @@ onMounted(() => { if (scope.value) load(); else enterHome() })
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 40rpx 32rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,0.04); }
 .progress-hint { font-size: 24rpx; color: var(--c-text-hint); margin-bottom: 24rpx; }
 /* 学新词词卡（图左+词右）*/
+/* 长难句「重点词·本句」语境条 */
+.kw-ctx { background: #e7effc; border: 1rpx solid #cfe0fa; border-radius: 12rpx; padding: 14rpx 18rpx; margin-bottom: 18rpx; }
+.kw-ctx-lb { display: block; font-size: 20rpx; font-weight: 700; color: #3a6bc0; margin-bottom: 4rpx; }
+.kw-ctx-s { font-size: 24rpx; color: var(--c-ink); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .study-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
 /* 三关 stepper(A) */
 .gate-steps { display: flex; align-items: center; justify-content: center; gap: 10rpx; margin-bottom: 22rpx; }

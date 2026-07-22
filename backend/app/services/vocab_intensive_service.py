@@ -139,6 +139,29 @@ async def homework_word_ids(db: AsyncSession, *, student_id: uuid.UUID,
             for w in await homework_words(db, student_id=student_id, paper_id=paper_id)]
 
 
+async def sentence_keyword_word_ids(db: AsyncSession, *, sentence: str,
+                                    student_id: uuid.UUID) -> list[uuid.UUID]:
+    """本句重点词(analysis.key_words)→ ensure 词条(缺词即时建,不二次付费:解析走缓存)→ word_ids(按序去重)。
+    供「重点词·本句」学习流(词力通页 source=sentence)取词集。"""
+    from app.services import long_sentence_service as lss
+    analysis = await lss.analyze_sentence_cached(db, sentence)   # 命中缓存,无额外成本
+    kw = [str(x.get("word") or "").strip() for x in (analysis.get("key_words") or [])
+          if isinstance(x, dict) and str(x.get("word") or "").strip()]
+    if not kw:
+        return []
+    for w in kw:   # 逐个 ensure(词库没有的即时建词条,含媒体双闸门;已有幂等跳过)
+        await ensure_missing_word(db, word=w, student_id=student_id, add_to_study=False)
+    rows = (await db.execute(select(VocabularyWord.id, VocabularyWord.word).where(
+        func.lower(VocabularyWord.word).in_([w.lower() for w in kw])))).all()
+    by = {word.lower(): wid for wid, word in rows}
+    ids: list[uuid.UUID] = []
+    for w in kw:   # 保持 key_words 顺序、去重
+        wid = by.get(w.lower())
+        if wid is not None and wid not in ids:
+            ids.append(wid)
+    return ids
+
+
 # ── 缺词审核:词库没有的词 → 队列 → admin 审核入库 ────────────────────────────
 async def report_missing_words(db: AsyncSession, *, words: list[str], source: str = "paper") -> int:
     """作业/课程里出现、但词库没有的词 → 落审核队列(按归一化词形去重累加)。返回新增/累加条数。"""

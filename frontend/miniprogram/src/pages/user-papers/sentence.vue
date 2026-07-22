@@ -11,91 +11,91 @@
     <view v-if="loading" class="tip">解析中…</view>
 
     <template v-else-if="a">
-      <!-- 模式切换:快速看树(结构树) / 精读闯关(逐关拆句),并存 -->
+      <!-- 一排四 tab:精读闯关 | 快速看树 | 认语法 | 重点词 -->
       <view class="si-seg">
-        <text class="si-seg-i" :class="{ on: mode === 'tree' }" @tap="mode = 'tree'">快速看树</text>
-        <text class="si-seg-i" :class="{ on: mode === 'intensive' }" @tap="mode = 'intensive'">精读闯关</text>
-      </view>
-      <template v-if="mode === 'tree'">
-      <view v-if="a.translation" class="card">
-        <text class="sec-t">意思</text>
-        <text class="trans">{{ a.translation }}</text>
-        <text v-if="a.sentence_type" class="stype">{{ a.sentence_type }}</text>
+        <text class="si-seg-i" :class="{ on: view === 'intensive' }" @tap="view = 'intensive'">精读闯关</text>
+        <text class="si-seg-i" :class="{ on: view === 'tree' }" @tap="view = 'tree'">快速看树</text>
+        <text class="si-seg-i" :class="{ on: view === 'grammar' }" @tap="view = 'grammar'">认语法</text>
+        <text class="si-seg-i" :class="{ on: view === 'word' }" @tap="view = 'word'">重点词</text>
       </view>
 
-      <!-- 结构一览:先看句子骨架(主干 + 各修饰成分)-->
-      <view v-if="a.segments && a.segments.length" class="card">
-        <text class="sec-t">结构一览</text>
-        <text class="sec-sub">先看句子骨架:主干 + 各修饰成分,读长句先抓主干。</text>
-        <view v-for="(s, i) in a.segments" :key="'s'+i" class="tree-row" :class="{ sub: isSub(s.type) }">
-          <view class="tree-bar" :style="{ background: s.color || 'var(--c-primary)' }"></view>
-          <view class="tree-body">
-            <text class="tree-type" :style="{ color: s.color || 'var(--c-primary)' }">{{ s.type }}</text>
-            <text class="tree-text">{{ s.text }}</text>
+      <!-- 精读闯关:找主干 → 读主干 → 拆修饰 → 合成长句(成分/结构在此闯关) -->
+      <SentenceIntensive v-if="view === 'intensive'" :a="a" :text="text" />
+
+      <!-- 认语法:提问式选择(答对答错都能看讲解) -->
+      <view v-else-if="view === 'grammar'" class="card">
+        <text class="sec-sub">选一下,答对答错都能看讲解;历史正确率累计。</text>
+        <view v-if="!gramQuiz.length" class="tip sm">暂无语法点题</view>
+        <view v-for="x in gramQuiz" :key="x.i" class="quiz">
+          <view class="q-stem-row">
+            <text class="q-tag" :class="x.q.kind">{{ x.q.tag }}</text>
+            <text class="q-stem">{{ x.q.clause || text }}</text>
+            <text v-if="x.q.answered_before && picked[x.i] == null" class="q-done">已练 {{ x.q.stat_correct }}/{{ x.q.stat_total }}</text>
           </view>
-        </view>
-        <view v-if="a.explanations && a.explanations.length" class="ref-hd" @tap="refOpen = !refOpen">
-          <text class="ref-more">{{ refOpen ? '收起结构讲解 ▴' : '看结构讲解 ▾' }}</text>
-        </view>
-        <template v-if="refOpen">
-          <view v-for="(e, i) in a.explanations" :key="'e'+i" class="expl">
-            <text class="expl-idx">{{ e.idx }}</text>
-            <text class="expl-text">{{ e.text }}</text>
-          </view>
-        </template>
-      </view>
-
-      <!-- 三 Tab:认成分 / 认语法 / 重点词 -->
-      <view class="card">
-        <view class="tabbar">
-          <text class="tab-i" :class="{ on: tab === 'component' }" @tap="tab = 'component'">认成分</text>
-          <text class="tab-i" :class="{ on: tab === 'grammar' }" @tap="tab = 'grammar'">认语法</text>
-          <text class="tab-i" :class="{ on: tab === 'word' }" @tap="tab = 'word'">重点词</text>
-        </view>
-
-        <!-- 认成分 / 认语法:提问式选择(答对答错都能看讲解)-->
-        <template v-if="tab !== 'word'">
-          <text class="sec-sub">选一下,答对答错都能看讲解;历史正确率累计。</text>
-          <view v-if="!curQuiz.length" class="tip sm">暂无{{ tab === 'component' ? '成分' : '语法点' }}题</view>
-          <view v-for="x in curQuiz" :key="x.i" class="quiz">
-            <view class="q-stem-row">
-              <text class="q-tag" :class="x.q.kind">{{ x.q.tag }}</text>
-              <text class="q-stem">{{ x.q.clause || text }}</text>
-              <text v-if="x.q.answered_before && picked[x.i] == null" class="q-done">已练 {{ x.q.stat_correct }}/{{ x.q.stat_total }}</text>
+          <text class="q-ask">{{ x.q.question }}</text>
+          <view class="q-opts">
+            <view v-for="(o, oi) in x.q.options" :key="oi" class="q-opt"
+              :class="optClass(x.i, oi)" @tap="pick(x.i, oi)">
+              <text>{{ o }}</text>
             </view>
-            <text class="q-ask">{{ x.q.question }}</text>
-            <view class="q-opts">
-              <view v-for="(o, oi) in x.q.options" :key="oi" class="q-opt"
-                :class="optClass(x.i, oi)" @tap="pick(x.i, oi)">
-                <text>{{ o }}</text>
+          </view>
+          <view v-if="picked[x.i] != null" class="q-feed-wrap">
+            <view class="q-feed">
+              <text class="q-res" :class="{ ok: picked[x.i] === x.q.answer }">
+                {{ picked[x.i] === x.q.answer ? '✓ 答对了' : '✗ 答错了' }}
+              </text>
+              <view v-if="x.q.node_id" class="q-view" :class="{ done: grammarAdded.has(x.q.node_id) }" @tap="viewGrammar(x.q)">
+                <text>{{ grammarAdded.has(x.q.node_id) ? '已加入 · 看讲解 →' : '查看讲解 →' }}</text>
               </view>
             </view>
-            <view v-if="picked[x.i] != null" class="q-feed-wrap">
-              <view class="q-feed">
-                <text class="q-res" :class="{ ok: picked[x.i] === x.q.answer }">
-                  {{ picked[x.i] === x.q.answer ? '✓ 答对了' : '✗ 答错了' }}
-                </text>
-                <view v-if="x.q.node_id" class="q-view" :class="{ done: grammarAdded.has(x.q.node_id) }" @tap="viewGrammar(x.q)">
-                  <text>{{ grammarAdded.has(x.q.node_id) ? '已加入 · 看讲解 →' : '查看讲解 →' }}</text>
-                </view>
-              </view>
-              <text class="q-ans">正确答案：{{ x.q.options[x.q.answer] }}</text>
-              <text v-if="x.q.explanation" class="q-exp">{{ x.q.explanation }}</text>
-              <text v-if="x.q.stat_total" class="q-rate">历史正确率 {{ rate(x.q) }}%（{{ x.q.stat_correct }}/{{ x.q.stat_total }}）</text>
+            <text class="q-ans">正确答案：{{ x.q.options[x.q.answer] }}</text>
+            <text v-if="x.q.explanation" class="q-exp">{{ x.q.explanation }}</text>
+            <text v-if="x.q.stat_total" class="q-rate">历史正确率 {{ rate(x.q) }}%（{{ x.q.stat_correct }}/{{ x.q.stat_total }}）</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 重点词:「学本句重点词」总入口(词力通式 形-义-用)+ 词卡 -->
+      <view v-else-if="view === 'word'" class="card">
+        <view v-if="words.length" class="kw-enter" @tap="learnKeywords">
+          <view class="kw-enter-l">
+            <text class="kw-enter-t">学本句重点词 · {{ words.length }} 词</text>
+            <text class="kw-enter-s">形-义-用 · 配图/发音/跟读 · 考点扩展</text>
+          </view>
+          <text class="kw-enter-go">开始 ›</text>
+        </view>
+        <view v-if="!words.length" class="tip sm">本句暂无重点词</view>
+        <KeyWordsList v-else :words="words" :paper-id="paperId" title="重点词汇" />
+      </view>
+
+      <!-- 快速看树:意思 + 结构一览 -->
+      <template v-else>
+        <view v-if="a.translation" class="card">
+          <text class="sec-t">意思</text>
+          <text class="trans">{{ a.translation }}</text>
+          <text v-if="a.sentence_type" class="stype">{{ a.sentence_type }}</text>
+        </view>
+        <view v-if="a.segments && a.segments.length" class="card">
+          <text class="sec-t">结构一览</text>
+          <text class="sec-sub">先看句子骨架:主干 + 各修饰成分,读长句先抓主干。</text>
+          <view v-for="(s, i) in a.segments" :key="'s'+i" class="tree-row" :class="{ sub: isSub(s.type) }">
+            <view class="tree-bar" :style="{ background: s.color || 'var(--c-primary)' }"></view>
+            <view class="tree-body">
+              <text class="tree-type" :style="{ color: s.color || 'var(--c-primary)' }">{{ s.type }}</text>
+              <text class="tree-text">{{ s.text }}</text>
             </view>
           </view>
-        </template>
-
-        <!-- 重点词:复用 KeyWordsList(点词看卡片/加入)-->
-        <template v-else>
-          <view v-if="!words.length" class="tip sm">本句暂无重点词</view>
-          <KeyWordsList v-else :words="words" :paper-id="paperId" title="重点词汇" />
-        </template>
-      </view>
+          <view v-if="a.explanations && a.explanations.length" class="ref-hd" @tap="refOpen = !refOpen">
+            <text class="ref-more">{{ refOpen ? '收起结构讲解 ▴' : '看结构讲解 ▾' }}</text>
+          </view>
+          <template v-if="refOpen">
+            <view v-for="(e, i) in a.explanations" :key="'e'+i" class="expl">
+              <text class="expl-idx">{{ e.idx }}</text>
+              <text class="expl-text">{{ e.text }}</text>
+            </view>
+          </template>
+        </view>
       </template>
-
-      <!-- 精读闯关(乙版):找主干 → 读主干 → 拆修饰 → 句型迁移(纯用分析 JSON;练同型句接迁移探针) -->
-      <SentenceIntensive v-else :a="a" :text="text" />
     </template>
 
     <view v-else class="tip">解析失败,返回重试</view>
@@ -120,7 +120,7 @@ const loading = ref(true)
 const saved = ref(false)
 const paperId = ref('')
 const refOpen = ref(false)
-const mode = ref<'tree' | 'intensive'>('tree')   // 快速看树 / 精读闯关(并存)
+const view = ref<'intensive' | 'grammar' | 'word' | 'tree'>('intensive')   // 精读闯关 | 认语法 | 重点词 | 快速看树
 
 const quiz = ref<GrammarQuizItem[]>([])
 const words = ref<StudyWord[]>([])
@@ -129,11 +129,8 @@ const grammarAdded = ref<Set<string>>(new Set())
 
 function rate(q: GrammarQuizItem) { return q.stat_total ? Math.round(q.stat_correct / q.stat_total * 100) : 0 }
 
-// F+B 三 tab:认成分 / 认语法 / 重点词;quiz 按 kind 拆两 tab,保留原 index 供判分/正确率
-const tab = ref<'component' | 'grammar' | 'word'>('component')
-const compQuiz = computed(() => quiz.value.map((q, i) => ({ q, i })).filter(x => x.q.kind === 'component'))
+// 认语法题(保留原 index 供判分/正确率);认成分已并入「精读闯关」找主干/拆修饰,不再单列
 const gramQuiz = computed(() => quiz.value.map((q, i) => ({ q, i })).filter(x => x.q.kind === 'grammar'))
-const curQuiz = computed(() => (tab.value === 'component' ? compQuiz.value : gramQuiz.value))
 function isSub(type: string): boolean { return /从句|状语|定语|插入|补语|同位|不定式|分词|介词|表语/.test(type || '') }
 
 // 蓝-4 徽章环:答成分/语法题、看重点词 tab 时标记该句三态(仅对已加入待学习的句生效)
@@ -141,14 +138,14 @@ function markProgress(kind: 'comp' | 'gram' | 'word') {
   if (!text.value) return
   markSentenceProgress(text.value, kind).catch(() => { /* 标记失败静默 */ })
 }
-watch(tab, (t) => { if (t === 'word') markProgress('word') })
+watch(view, (t) => { if (t === 'word') markProgress('word') })
 
 async function pick(qi: number, oi: number) {
   if (picked.value[qi] != null) return   // 已答不改
   picked.value = { ...picked.value, [qi]: oi }
   const q = quiz.value[qi]
   const ok = oi === q.answer
-  markProgress(q.kind === 'component' ? 'comp' : 'gram')   // 答题即标记该句成分/语法态
+  markProgress('gram')   // 认语法答题即标记该句语法态
   try {   // 记录作答 → 累计正确率(以往至今)+ 落「长难句薄弱」练习衍生(句·维)
     const st = await recordGrammarAnswer(q.gp_key, q.options[q.answer], ok, q.node_id, text.value, q.kind)
     q.stat_correct = st.correct; q.stat_total = st.total
@@ -161,6 +158,12 @@ function optClass(qi: number, oi: number) {
   if (oi === ans) return 'right'
   if (oi === p) return 'wrong'
   return 'dim'
+}
+
+// 学本句重点词:进入词力通「重点词·本句」流(形-义-用,词集=本句重点词)
+function learnKeywords() {
+  if (!text.value) return
+  uni.navigateTo({ url: `/pages/vocabulary/index?source=sentence&text=${encodeURIComponent(text.value)}` })
 }
 
 async function viewGrammar(q: GrammarQuizItem) {
@@ -187,7 +190,10 @@ async function save() {
 onLoad(async (q: any) => {
   text.value = decodeURIComponent(q.text || '')
   paperId.value = q.paperId || ''
-  if (q.tab === 'component' || q.tab === 'grammar' || q.tab === 'word') tab.value = q.tab   // 长难句薄弱「重练」深链定位 tab
+  // 长难句薄弱「重练」深链定位:成分→精读闯关(找主干/拆修饰)、语法→认语法、词→重点词
+  if (q.tab === 'component') view.value = 'intensive'
+  else if (q.tab === 'grammar') view.value = 'grammar'
+  else if (q.tab === 'word') view.value = 'word'
   if (!text.value) { loading.value = false; return }
   try {
     // 一次请求全给(解析 + 选择题 + 词 + 各项已加入/已练回显),避免二次解析、更快更稳
@@ -205,6 +211,12 @@ onLoad(async (q: any) => {
 <style scoped>
 .page { min-height: 100vh; background: var(--c-bg, #f5f7fa); padding: 24rpx 24rpx 60rpx; box-sizing: border-box; }
 .card { background: #fff; border-radius: 20rpx; padding: 26rpx 24rpx; margin-bottom: 20rpx; }
+/* 学本句重点词 总入口 */
+.kw-enter { display: flex; align-items: center; gap: 16rpx; background: linear-gradient(90deg, #3d8bf5, #5b9ef7); border-radius: 16rpx; padding: 22rpx 24rpx; margin-bottom: 20rpx; }
+.kw-enter-l { flex: 1; display: flex; flex-direction: column; gap: 6rpx; }
+.kw-enter-t { font-size: 28rpx; font-weight: 800; color: #fff; }
+.kw-enter-s { font-size: 21rpx; color: #eaf2ff; }
+.kw-enter-go { font-size: 26rpx; font-weight: 700; color: #fff; white-space: nowrap; }
 .tip { text-align: center; color: var(--c-text-hint); padding: 60rpx 0; }
 .src-card { display: flex; flex-direction: column; gap: 14rpx; }
 .src-label { font-size: 22rpx; color: var(--c-primary); }
@@ -226,6 +238,7 @@ onLoad(async (q: any) => {
 .q-done { flex-shrink: 0; font-size: 19rpx; color: #ff8a3d; margin-top: 4rpx; }
 .q-stem { flex: 1; font-size: 26rpx; line-height: 1.6; color: var(--c-ink); }
 .q-ask { display: block; font-size: 23rpx; color: var(--c-text-sub); margin: 14rpx 0 10rpx; }
+.q-word { font-size: 28rpx; font-weight: 800; color: var(--c-primary-deep); }
 .q-opts { display: flex; flex-direction: column; gap: 12rpx; }
 .q-opt { font-size: 25rpx; color: var(--c-ink); border: 2rpx solid var(--c-line, #e6eaf0); border-radius: 12rpx; padding: 14rpx 18rpx; }
 .q-opt.right { color: #12a150; border-color: #12a150; background: rgba(46,204,113,.08); }
@@ -275,7 +288,7 @@ onLoad(async (q: any) => {
 
 /* 模式切换段(快速看树 / 精读闯关)*/
 .si-seg { display: flex; background: #f2f4f7; border-radius: 14rpx; padding: 6rpx; margin-bottom: 20rpx; }
-.si-seg-i { flex: 1; text-align: center; font-size: 26rpx; padding: 14rpx 0; border-radius: 10rpx; color: #8a95a5; }
+.si-seg-i { flex: 1; text-align: center; font-size: 24rpx; padding: 14rpx 0; border-radius: 10rpx; color: #8a95a5; white-space: nowrap; }
 .si-seg-i.on { background: #fff; color: #2f74d6; font-weight: 700; box-shadow: 0 2rpx 6rpx rgba(45,80,150,.12); }
 /* 结构一览:层级缩进(修饰成分缩进 + 左色条)*/
 .tree-row { display: flex; gap: 14rpx; padding: 12rpx 0; }

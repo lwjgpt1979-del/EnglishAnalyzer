@@ -425,8 +425,7 @@ function lsRetrain(g: LsConsolItem, it?: LsDim) {
     uni.navigateTo({ url: `/pages/long-sentence/index?id=${it.ref_id}` })
     return
   }
-  if (dim === 'keyword') { uni.showToast({ title: '该维重练暂未开放', icon: 'none' }); return }
-  const t = dim === 'grammar' ? 'grammar' : 'component'
+  const t = dim === 'grammar' ? 'grammar' : dim === 'keyword' ? 'word' : 'component'
   uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(g.sentence)}&tab=${t}` })
 }
 

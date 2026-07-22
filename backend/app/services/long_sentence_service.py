@@ -1432,6 +1432,9 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
     analysis_out = {
         "translation": analysis.get("translation"), "sentence_type": analysis.get("sentence_type"),
         "segments": segs, "explanations": analysis.get("explanations") or [],
+        # 精读闯关(找主干/拆修饰/合成)需成分层级:structure(parent 树)+ components(主干)
+        "structure": analysis.get("structure") or [],
+        "components": analysis.get("components") or {},
     }
     return {"analysis": analysis_out, "sentence_added": sentence_added,
             "grammar_quiz": quiz, "words": words}

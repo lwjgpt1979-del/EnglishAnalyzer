@@ -112,6 +112,21 @@ async def grammar_answer(
     return make_ok(r)
 
 
+@router.post("/intensive-core", response_model=BaseResponse[dict])
+async def intensive_core(
+    db: DbDep, current_user: UserDep,
+    sentence: Annotated[str, Body(..., embed=True, max_length=600)],
+    perfect: Annotated[bool, Body(..., embed=True)],
+):
+    """精读闯关·关1「按序点主干成分」结算:选中正确率回传。
+    全对(perfect)→ 推进「成分」维连对;有点错 → 反哺「长难句薄弱·成分」维练习衍生。"""
+    from app.services import wrong_center_service as wcs
+    await wcs.record_ls_practice(
+        db, student_id=current_user.id, sentence=sentence, dim="component", correct=perfect)
+    await db.commit()
+    return make_ok({"recorded": True})
+
+
 @router.get("/next", response_model=BaseResponse[dict])
 async def next_sentence(db: DbDep, current_user: UserDep, exclude: str = ""):
     """自适应推荐下一句:按学生水平 θ(年级估)选难度贴近的、优先薄弱句法点 + 课程对齐 + 个人材料。
