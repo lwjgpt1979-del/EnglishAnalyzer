@@ -26,6 +26,7 @@ _READING_INTENSIVE_SYS = (
     '"skill_tip":"该题型的通用解题技巧(1-2句,可迁移到同类题;如『细节题先定位关键词回原文比对』)"}。'
     "distractors 只列**非正确项**(正确项不出现),每项都要给 meaning + why_wrong。"
     "evidence 会用程序在原文里做子串比对,凑不出原文子串会判幻觉,务必逐字摘抄。"
+    "**除 evidence(逐字原文)外,所有解析文字(answer_reason/meaning/why_wrong/skill_tip)一律用中文。**"
 )
 
 

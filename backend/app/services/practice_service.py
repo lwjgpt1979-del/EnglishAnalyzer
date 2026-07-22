@@ -32,6 +32,7 @@ from app.services.llm_provider import chat_completion, is_llm_dev_mode, fast_mod
 _SYSTEM_PROMPT = (
     "你是专业的英语出题老师，擅长围绕指定知识点生成高质量单选练习题。"
     "请严格按 JSON 数组格式输出，不要任何额外文字或 markdown 代码块。"
+    "**explanation（解析）一律用中文**——即使题干、选项是英文，解析也必须用中文写，讲清正确项为什么对、其它为什么错。"
 )
 
 _USER_PROMPT_TEMPLATE = """请围绕英语知识点"{knowledge_point}"，生成 {count} 道难度为 {difficulty}（1最易5最难）的单选题。

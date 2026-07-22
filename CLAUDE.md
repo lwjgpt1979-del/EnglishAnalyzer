@@ -153,6 +153,15 @@ admin / institution 端(Vue + Element Plus):优先用 Element Plus 自带的线�
 - **只约束系统生成题**:不约束学生原始错题 / 真题原题(按原样展示)。
 - **新接「为学词 / 学考点出题」能力**一律照此,先在 prompt 里把"载体词要简单"钉死。
 
+## 系统出题的解析一律用中文(全项目强制)
+
+**凡 LLM 生成的、给中小学生看的题目「解析 / 讲解」(explanation / answer_reason / why_wrong / 精讲等),一律用中文——即使题干、选项、单词是英文,解析也必须是中文,讲清正确项为什么对、其它选项为什么错。** 否则模型会跟着英文题干输出英文解析,学生看不懂(典型事故:考点扩展题解析出成 "academic education is theoretical and often contrasted with vocational…" 一串英文)。
+
+铁律:
+- **强指令写进每个出题 prompt**:光在 JSON 占位写「一句中文解析」不够(模型会跟英文题干跑),system prompt 必须显式钉死「**explanation 一律用中文,即使题干/选项是英文**」。参考已改:`word_kp_service._gen_kp_mcqs`/`_gen_fix_mcq`、`vocab_mcq_service`、`practice_service`、`platform_question_service`、`reading_intensive_service`。
+- **例外**:①**逐字原文类字段**(阅读定位句 evidence、母题题干原样)保留英文原文,不翻译;②学生原始错题 / 真题原卷自带的解析按原样展示(不是 LLM 现生成的不强改)。
+- **新接「系统出题 / 出解析」的 LLM 能力**一律照此,先在 system prompt 里把"解析用中文"钉死。
+
 ## 进度条统一样式:进度即底色(背景填充式,全项目优先)
 
 **凡展示「完成度 / 学习进度」的进度——卷学习进度、批次列表进度、任务完成度等——一律优先用「背景填充式(进度即底色)」:容器背景本身从左到右按百分比填充浅色,而不是在卡片下方另加一条独立进度条。参考 `miniprogram/src/components/IntensiveBatchList.vue`(卷列表卡)、`PaperChecklist.vue`(卷头)。**

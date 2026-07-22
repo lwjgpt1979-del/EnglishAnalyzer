@@ -797,6 +797,7 @@ async def _rewrite_variants(real: PlatformQuestion, count: int, kp_names: list[s
     system = (
         "你是英语命题专家。基于给定母题改写出**同考点、同题型、同难度**的新题,"
         "保持考查点不变、情境/数据不同。严格输出 JSON。"
+        "**explanation(解析)一律用中文**——即使题干/选项是英文,解析也必须用中文,讲清正确项为什么对、其它为什么错。"
     )
     user = (
         f"{kp_line}母题题干:{real.stem}\n题型:{real.question_type}\n选项:{json.dumps(real.options, ensure_ascii=False)}\n"
