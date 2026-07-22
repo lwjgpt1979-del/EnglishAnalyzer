@@ -11,6 +11,12 @@
     <view v-if="loading" class="tip">解析中…</view>
 
     <template v-else-if="a">
+      <!-- 模式切换:快速看树(结构树) / 精读闯关(逐关拆句),并存 -->
+      <view class="si-seg">
+        <text class="si-seg-i" :class="{ on: mode === 'tree' }" @tap="mode = 'tree'">快速看树</text>
+        <text class="si-seg-i" :class="{ on: mode === 'intensive' }" @tap="mode = 'intensive'">精读闯关</text>
+      </view>
+      <template v-if="mode === 'tree'">
       <view v-if="a.translation" class="card">
         <text class="sec-t">意思</text>
         <text class="trans">{{ a.translation }}</text>
@@ -86,6 +92,10 @@
           <KeyWordsList v-else :words="words" :paper-id="paperId" title="重点词汇" />
         </template>
       </view>
+      </template>
+
+      <!-- 精读闯关(乙版):找主干 → 读主干 → 拆修饰 → 句型迁移(纯用分析 JSON) -->
+      <SentenceIntensive v-else :a="a" :text="text" @migrate="onMigrate" />
     </template>
 
     <view v-else class="tip">解析失败,返回重试</view>
@@ -102,6 +112,7 @@ import {
 } from '@/api/userPapers'
 import { markSentenceProgress } from '@/api/curriculum'
 import KeyWordsList from '@/components/KeyWordsList.vue'
+import SentenceIntensive from '@/components/SentenceIntensive.vue'
 
 const text = ref('')
 const a = ref<any>(null)
@@ -109,6 +120,9 @@ const loading = ref(true)
 const saved = ref(false)
 const paperId = ref('')
 const refOpen = ref(false)
+const mode = ref<'tree' | 'intensive'>('tree')   // 快速看树 / 精读闯关(并存)
+// 精读闯关·句型迁移「练同型句」入口(接现有长难句迁移探针,暂占位)
+function onMigrate() { uni.showToast({ title: '同型句练习即将上线', icon: 'none' }) }
 
 const quiz = ref<GrammarQuizItem[]>([])
 const words = ref<StudyWord[]>([])
@@ -137,8 +151,8 @@ async function pick(qi: number, oi: number) {
   const q = quiz.value[qi]
   const ok = oi === q.answer
   markProgress(q.kind === 'component' ? 'comp' : 'gram')   // 答题即标记该句成分/语法态
-  try {   // 记录作答 → 累计正确率(以往至今)
-    const st = await recordGrammarAnswer(q.gp_key, q.options[q.answer], ok, q.node_id)
+  try {   // 记录作答 → 累计正确率(以往至今)+ 落「长难句薄弱」练习衍生(句·维)
+    const st = await recordGrammarAnswer(q.gp_key, q.options[q.answer], ok, q.node_id, text.value, q.kind)
     q.stat_correct = st.correct; q.stat_total = st.total
   } catch { /* 记录失败不影响答题 */ }
 }
@@ -175,6 +189,7 @@ async function save() {
 onLoad(async (q: any) => {
   text.value = decodeURIComponent(q.text || '')
   paperId.value = q.paperId || ''
+  if (q.tab === 'component' || q.tab === 'grammar' || q.tab === 'word') tab.value = q.tab   // 长难句薄弱「重练」深链定位 tab
   if (!text.value) { loading.value = false; return }
   try {
     // 一次请求全给(解析 + 选择题 + 词 + 各项已加入/已练回显),避免二次解析、更快更稳
@@ -260,6 +275,10 @@ onLoad(async (q: any) => {
 .expl-idx { flex-shrink: 0; width: 34rpx; height: 34rpx; text-align: center; line-height: 34rpx; font-size: 20rpx; color: #fff; background: var(--c-primary); border-radius: 50%; }
 .expl-text { flex: 1; font-size: 25rpx; line-height: 1.6; color: var(--c-text-sub); }
 
+/* 模式切换段(快速看树 / 精读闯关)*/
+.si-seg { display: flex; background: #f2f4f7; border-radius: 14rpx; padding: 6rpx; margin-bottom: 20rpx; }
+.si-seg-i { flex: 1; text-align: center; font-size: 26rpx; padding: 14rpx 0; border-radius: 10rpx; color: #8a95a5; }
+.si-seg-i.on { background: #fff; color: #2f74d6; font-weight: 700; box-shadow: 0 2rpx 6rpx rgba(45,80,150,.12); }
 /* 结构一览:层级缩进(修饰成分缩进 + 左色条)*/
 .tree-row { display: flex; gap: 14rpx; padding: 12rpx 0; }
 .tree-row.sub { padding-left: 40rpx; }

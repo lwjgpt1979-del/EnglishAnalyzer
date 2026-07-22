@@ -29,6 +29,22 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
 
+async def _record_ls_comprehension(db: AsyncSession, student_id: uuid.UUID,
+                                   ls_id: uuid.UUID, passed) -> None:
+    """理解探针(释义/短翻译)passed 即句级「≥半数」聚合信号 → 落该句「理解」维练习衍生。
+    未过=记薄弱(错次+1、连对归0);过=推进连对(达2清除)。"""
+    if passed is None:
+        return
+    from app.services import wrong_center_service as wcs
+    ls, _ = await lss.get_detail(db, ls_id=ls_id)
+    if ls is None or not getattr(ls, "text", None):
+        return
+    await wcs.record_ls_practice(
+        db, student_id=student_id, sentence=ls.text, dim="comprehension",
+        correct=bool(passed), ref_id=ls_id)
+    await db.commit()
+
+
 @router.get("", response_model=BaseResponse[LongSentenceListOut])
 async def list_long_sentences(
     db: DbDep, current_user: UserDep, node_id: uuid.UUID | None = None, limit: int = 50,
@@ -81,11 +97,18 @@ async def grammar_answer(
     label: Annotated[str, Body(..., embed=True, max_length=120)],
     correct: Annotated[bool, Body(..., embed=True)],
     node_id: Annotated[uuid.UUID | None, Body(embed=True)] = None,
+    sentence: Annotated[str | None, Body(embed=True)] = None,
+    kind: Annotated[str | None, Body(embed=True)] = None,
 ):
-    """记一次语法选择题作答(累计正确率,以往至今)。返回该语法点 {correct,total}。"""
-    from app.services import grammar_quiz_stat_service as gqs
+    """记一次成分/语法选择题作答(累计正确率)。传 sentence+kind(component|grammar)则同时落
+    「长难句薄弱」练习衍生(错→句·维;对→连对+1达2清除)。返回该语法点 {correct,total}。"""
+    from app.services import grammar_quiz_stat_service as gqs, wrong_center_service as wcs
     r = await gqs.record(db, student_id=current_user.id, gp_key=gp_key,
                          label=label, correct=correct, node_id=node_id)
+    if sentence and kind in ("component", "grammar"):
+        await wcs.record_ls_practice(
+            db, student_id=current_user.id, sentence=sentence, dim=kind, correct=correct)
+        await db.commit()
     return make_ok(r)
 
 
@@ -154,6 +177,7 @@ async def submit_comprehension(ls_id: uuid.UUID, body: ComprehensionSubmitIn,
     passed=True 才算「学会这句」;否则进复习盒,稍后再推。"""
     res = await lss.submit_comprehension(db, user=current_user, ls_id=ls_id,
                                          answers=body.answers, self_rating=body.self_rating)
+    await _record_ls_comprehension(db, current_user.id, ls_id, res.get("passed"))
     return make_ok(ComprehensionResultOut(
         passed=res["passed"],
         probes=[ComprehensionProbeResult(**p) for p in res["probes"]],
@@ -165,6 +189,7 @@ async def submit_translate_check(ls_id: uuid.UUID, body: TranslateCheckIn,
                                  db: DbDep, current_user: UserDep):
     """短翻译产出项(进阶·检验输出):维度 rubric 评分(命题/逻辑/修饰/主干 各 0-2)+ 达标 θ 上调。"""
     res = await lss.submit_translation(db, user=current_user, ls_id=ls_id, answer=body.answer)
+    await _record_ls_comprehension(db, current_user.id, ls_id, res.get("passed"))
     return make_ok(TranslateCheckOut(
         dimensions=[TranslateDim(**d) for d in res["dimensions"]],
         total=res["total"], max=res["max"], passed=res["passed"], feedback=res.get("feedback"),

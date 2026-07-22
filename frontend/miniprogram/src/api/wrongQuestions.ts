@@ -129,9 +129,16 @@ export function getWrongGrouped(view: 'kp' | 'batch', sourceLabel = '', kind = '
 }
 
 /** 练习巩固 tab:练习衍生薄弱项(词·维聚合),连对 master_n 次即掌握清除 */
-export interface ConsolidationItem { id: string; word_id: string | null; dim: string; dim_label: string; kp_name: string | null; stem: string | null; miss_count: number; streak: number; master_n: number }
+export interface ConsolidationItem { id: string; word_id: string | null; word: string; dim: string; dim_label: string; kp_name: string | null; stem: string | null; miss_count: number; streak: number; master_n: number }
 export function getConsolidation(): Promise<{ items: ConsolidationItem[]; total: number }> {
   return request(`/api/v1/wrong-center/consolidation`)
+}
+
+// 长难句薄弱:句卡(按句·维聚合;成分/理解=整句维 whole=true)
+export interface LsDim { id: string; dim: string; dim_label: string; whole: boolean; miss_count: number; streak: number; master_n: number; ref_id: string | null }
+export interface LsConsolItem { source_id: string; sentence: string; dims: LsDim[]; miss_total: number }
+export function getLsConsolidation(): Promise<{ items: LsConsolItem[]; total: number }> {
+  return request(`/api/v1/wrong-center/ls-consolidation`)
 }
 
 /** 错题「练同类仿真题」(统一入口,按 wrong_record 派发)。questions 含 answer/explanation 供即时判分 */

@@ -21,7 +21,7 @@
     </scroll-view>
 
     <!-- 真实错题侧:副筛选 + 视图切换 + 折叠分组卡 -->
-    <template v-if="source !== 'practice'">
+    <template v-if="source !== 'practice' && source !== 'ls'">
       <view class="ctrl-row">
         <view class="kind-chips">
           <text v-for="k in KIND_TABS" :key="k.value" class="kind-chip" :class="{ active: kind === k.value }" @tap="switchKind(k.value)">{{ k.label }}</text>
@@ -73,25 +73,65 @@
       </view>
     </template>
 
+    <!-- 长难句薄弱侧:探针练习衍生句卡(成分/理解=整句重做,语法/词=单项;连对 N 次清除) -->
+    <template v-else-if="source === 'ls'">
+      <view class="prac-banner"><text>长难句探针答错的薄弱句。成分/理解=整句重做;语法/重点词可单练。连对 2 次练熟消失。</text></view>
+      <view v-if="lsLoading && !lsItems.length" class="center-tip">加载中…</view>
+      <view v-else-if="!lsItems.length" class="center-tip"><text>暂无长难句薄弱项 🎯</text></view>
+      <view v-else class="grp-list">
+        <view v-for="g in lsItems" :key="g.source_id" class="pfold ls">
+          <!-- 句折叠头(底色=整体练熟度) -->
+          <view class="pf-head" @tap="toggleSent(g.source_id)">
+            <view class="pf-fill" :style="{ width: lsRate(g) + '%' }" />
+            <view class="pf-in ls-in">
+              <view class="ls-htop"><text class="ls-badge">长难句</text><text class="pf-meta">{{ g.dims.length }} 维待练 · 错{{ g.miss_total }}</text><text class="pf-chev">{{ openSents[g.source_id] ? '▾' : '›' }}</text></view>
+              <text class="ls-sent">{{ g.sentence }}</text>
+              <view class="ls-all" @tap.stop="lsRetrain(g)"><text>整句通练 · {{ g.dims.length }} 项</text></view>
+            </view>
+          </view>
+          <template v-if="openSents[g.source_id]">
+            <view v-for="it in g.dims" :key="it.id" class="pf-row">
+              <text class="pf-tag" :class="{ whole: it.whole }">{{ it.whole ? '整句' : '单项' }}</text>
+              <text class="pf-dim" :class="'lsd-' + it.dim">{{ it.dim_label }}</text>
+              <text class="pf-cnt">错{{ it.miss_count }}</text>
+              <view class="pf-dots">
+                <view v-for="n in it.master_n" :key="n" class="pc-dot" :class="{ on: n <= it.streak }" />
+              </view>
+              <text class="pf-rp" @tap.stop="lsRetrain(g, it)">{{ it.whole ? '重做整句 ›' : '重练 ›' }}</text>
+            </view>
+          </template>
+        </view>
+      </view>
+    </template>
+
     <!-- 练习巩固侧:练习衍生薄弱项(词·维聚合,连对 N 次清除) -->
     <template v-else>
       <view class="prac-banner"><text>来自「考点扩展测试」里答错的薄弱考点,单独存放、不计入真实错题。连对练熟即消失。</text></view>
       <view v-if="consolLoading && !consol.length" class="center-tip">加载中…</view>
-      <view v-else-if="!consol.length" class="center-tip"><text>暂无练习巩固项 🎯</text></view>
+      <view v-else-if="!consolGroups.length" class="center-tip"><text>暂无练习巩固项 🎯</text></view>
       <view v-else class="grp-list">
-        <view v-for="it in consol" :key="it.id" class="pcard">
-          <view class="pc-top">
-            <text class="pc-tag">练习衍生</text>
-            <text class="pc-dim">{{ it.dim_label }}</text>
-            <text class="pc-cnt">错{{ it.miss_count }}</text>
+        <!-- 词折叠头(底色=整体练熟度)+ 逐维行 -->
+        <view v-for="g in consolGroups" :key="g.word_id" class="pfold">
+          <view class="pf-head" @tap="toggleWord(g.word_id)">
+            <view class="pf-fill" :style="{ width: g.rate + '%' }" />
+            <view class="pf-in">
+              <text class="pf-word">{{ g.word }}</text>
+              <text class="pf-meta">{{ g.dims.length }} 维待练 · 错{{ g.miss }}</text>
+              <view class="pf-retrain" :class="{ loading: rpLoading === g.word_id }" @tap.stop="retrainAll(g)">{{ rpLoading === g.word_id ? '出题中…' : '重练全部 · ' + g.dims.length + '题' }}</view>
+              <text class="pf-chev">{{ openWords[g.word_id] ? '▾' : '›' }}</text>
+            </view>
           </view>
-          <text class="pc-name">{{ it.kp_name }}</text>
-          <view class="pc-streak">
-            <text class="pc-lbl">练熟</text>
-            <view v-for="n in it.master_n" :key="n" class="pc-dot" :class="{ on: n <= it.streak }" />
-            <text class="pc-lbl">连对 {{ it.streak }}/{{ it.master_n }}</text>
-          </view>
-          <view class="pc-cta" :class="{ loading: rpLoading === it.id }" @tap="retrain(it)">{{ rpLoading === it.id ? '出题中…' : '重练 · ' + it.dim_label }}</view>
+          <template v-if="openWords[g.word_id]">
+            <view v-for="it in g.dims" :key="it.id" class="pf-row">
+              <text class="pf-tag">练习衍生</text>
+              <text class="pf-dim">{{ it.dim_label }}</text>
+              <text class="pf-cnt">错{{ it.miss_count }}</text>
+              <view class="pf-dots">
+                <view v-for="n in it.master_n" :key="n" class="pc-dot" :class="{ on: n <= it.streak }" />
+              </view>
+              <text class="pf-rp" :class="{ loading: rpLoading === it.id }" @tap.stop="retrain(it)">{{ rpLoading === it.id ? '…' : '重练 ›' }}</text>
+            </view>
+          </template>
         </view>
       </view>
     </template>
@@ -178,7 +218,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { getReviewQueue, getWrongGrouped, getConsolidation, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongGroup, type WrongListQuery, type ConsolidationItem, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
+import { getReviewQueue, getWrongGrouped, getConsolidation, getLsConsolidation, listWrongCenter, practiceWrongCenter, recordPracticeResult, getVocabSim, submitVocabSimResult, type WrongCenterItem, type WrongGroup, type WrongListQuery, type ConsolidationItem, type LsConsolItem, type LsDim, type PracticeQuestion, type VocabSimPayload } from '@/api/wrongQuestions'
 import { shadowScore, getKpTest, recordKpPractice } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import ShadowModal from '@/components/ShadowModal.vue'
@@ -297,12 +337,13 @@ function kindClass(wq: WrongCenterItem): string { return wq.kp_kind === 'grammar
 function statusClass(wq: WrongCenterItem): string { return wq.lifecycle === 'mastered' ? 's-done' : wq.lifecycle === 'reviewing' ? 's-review' : 's-pending' }
 
 // —— 来源 tab(纯按来源)+ 副筛选(语法/词汇)+ 视图(按考点/按批次) ——
+// 上传的一律是作业(已无真题上传;历史「整卷」已洗为「作业」)
+// 长难句薄弱(value=ls)= 探针练习衍生句卡;练习巩固(词)= 考点扩展练习衍生词卡
 const SOURCE_TABS = [
   { label: '作业错题', value: '作业' },
-  { label: '真题错题', value: '整卷' },
-  { label: '长难句', value: '长难句' },
+  { label: '长难句薄弱', value: 'ls' },
   { label: '平台错题', value: '平台' },
-  { label: '练习巩固', value: 'practice' },
+  { label: '练习巩固(词)', value: 'practice' },
 ]
 const KIND_TABS = [
   { label: '全部', value: '' },
@@ -322,7 +363,7 @@ function groupKey(g: WrongGroup): string { return view.value === 'kp' ? (g.kp ||
 function groupTitle(g: WrongGroup): string {
   if (view.value === 'kp') return g.kp || '未分类'
   const d = g.last_at ? g.last_at.slice(5, 10).replace('-', '月') + '日' : ''
-  return `${d} ${source.value === '整卷' ? '作业卷' : source.value}`.trim()
+  return `${d} ${source.value === '作业' ? '作业卷' : source.value}`.trim()
 }
 
 async function loadGroups() {
@@ -347,19 +388,75 @@ async function toggleGroup(g: WrongGroup) {
     } catch { groupItems[key] = [] }
   }
 }
-function switchSource(v: string) { if (source.value === v) return; source.value = v; v === 'practice' ? loadConsolidation() : loadGroups() }
+function loadForSource() {
+  if (source.value === 'practice') loadConsolidation()
+  else if (source.value === 'ls') loadLsConsol()
+  else loadGroups()
+}
+function switchSource(v: string) { if (source.value === v) return; source.value = v; loadForSource() }
 function switchKind(v: string) { if (kind.value === v) return; kind.value = v; loadGroups() }
 function switchView(v: 'kp' | 'batch') { if (view.value === v) return; view.value = v; loadGroups() }
-function reload() { source.value === 'practice' ? loadConsolidation() : loadGroups() }   // 练同类/学词后回刷
+function reload() { loadForSource() }   // 练同类/学词/重练后回刷
 
-// —— 练习巩固 tab(练习衍生薄弱项,词·维聚合,连对 N 次清除)——
+// —— 长难句薄弱 tab(探针练习衍生句卡,按句聚合;成分/理解=整句重做,语法/词=单项)——
+const lsItems = ref<LsConsolItem[]>([])
+const lsLoading = ref(false)
+const openSents = reactive<Record<string, boolean>>({})
+function toggleSent(sid: string) { openSents[sid] = !openSents[sid] }
+function lsRate(g: LsConsolItem): number {
+  const denom = g.dims.length * (g.dims[0]?.master_n || 2)
+  const streak = g.dims.reduce((s, d) => s + d.streak, 0)
+  return denom ? Math.round((streak / denom) * 100) : 0
+}
+async function loadLsConsol() {
+  lsLoading.value = true
+  try {
+    lsItems.value = (await getLsConsolidation()).items
+    const first = lsItems.value[0]?.source_id
+    if (first && Object.keys(openSents).length === 0) openSents[first] = true
+  } catch { lsItems.value = [] } finally { lsLoading.value = false }
+}
+// 重练/整句重做:成分/语法→深链长难句解析页对应 tab;理解→深链理解检测页(按 ref_id=句id)
+// 整句通练(it 缺省)→ 解析页成分 tab(答成分/语法即回写)。答题即经 hook 回写练习衍生。
+function lsRetrain(g: LsConsolItem, it?: LsDim) {
+  const dim = it?.dim
+  if (dim === 'comprehension') {
+    if (!it?.ref_id) { uni.showToast({ title: '重做入口暂不可用', icon: 'none' }); return }
+    uni.navigateTo({ url: `/pages/long-sentence/index?id=${it.ref_id}` })
+    return
+  }
+  if (dim === 'keyword') { uni.showToast({ title: '该维重练暂未开放', icon: 'none' }); return }
+  const t = dim === 'grammar' ? 'grammar' : 'component'
+  uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(g.sentence)}&tab=${t}` })
+}
+
+// —— 练习巩固 tab(练习衍生薄弱项,按词折叠 + 逐维行,连对 N 次清除)——
 const consol = ref<ConsolidationItem[]>([])
 const consolLoading = ref(false)
+const openWords = reactive<Record<string, boolean>>({})
+function toggleWord(wid: string) { openWords[wid] = !openWords[wid] }
+// 按词聚合:每词一折叠块,底色=整体练熟度(总连对 / (维数×N))
+interface ConsolGroup { word_id: string; word: string; dims: ConsolidationItem[]; miss: number; streak: number; master_n: number; rate: number }
+const consolGroups = computed<ConsolGroup[]>(() => {
+  const m = new Map<string, ConsolGroup>()
+  for (const it of consol.value) {
+    const key = it.word_id || it.kp_name || it.id
+    if (!m.has(key)) m.set(key, { word_id: key, word: it.word || (it.kp_name || '').split('·')[0] || '词', dims: [], miss: 0, streak: 0, master_n: it.master_n, rate: 0 })
+    const g = m.get(key)!; g.dims.push(it); g.miss += it.miss_count; g.streak += it.streak
+  }
+  const arr = [...m.values()]
+  arr.forEach(g => { const denom = g.dims.length * (g.master_n || 2); g.rate = denom ? Math.round((g.streak / denom) * 100) : 0 })
+  return arr
+})
 async function loadConsolidation() {
   consolLoading.value = true
-  try { consol.value = (await getConsolidation()).items } catch { consol.value = [] } finally { consolLoading.value = false }
+  try {
+    consol.value = (await getConsolidation()).items
+    const first = consol.value[0]?.word_id   // 默认展开第一个词(不覆盖用户手动折叠)
+    if (first && Object.keys(openWords).length === 0) openWords[first] = true
+  } catch { consol.value = [] } finally { consolLoading.value = false }
 }
-// 重练该维:只出该维一套 → 逐题回传(错→回增本条/对→连对+1达2清除)
+// 重练(该维一套 / 全部薄弱维各一题)→ 逐题回传(错→回增本条/对→连对+1达2清除)
 const rpOpen = ref(false)
 const rpLoading = ref('')
 const rpWid = ref('')
@@ -378,6 +475,22 @@ async function retrain(it: ConsolidationItem) {
     rpOpen.value = true
   } catch { uni.showToast({ title: '出题失败,稍后重试', icon: 'none' }) } finally { rpLoading.value = '' }
 }
+// 重练全部薄弱维:该词各薄弱维各抽 1 题混成一套(逐题按 dimension 回传,各维连对独立累计)
+async function retrainAll(g: ConsolGroup) {
+  if (!g.word_id || rpLoading.value) return
+  rpLoading.value = g.word_id
+  try {
+    const qs = await getKpTest(g.word_id)   // 每维一题(全维)
+    const weak = new Set(g.dims.map(d => d.dim))
+    const pick = qs.filter(q => weak.has(q.dimension))
+    if (!pick.length) { uni.showToast({ title: '暂无题目', icon: 'none' }); return }
+    rpWid.value = g.word_id
+    rpDimMap.clear()
+    pick.forEach(q => rpDimMap.set(q.id, { dim: q.dimension, stem: q.stem }))
+    rpQs.value = pick.map(q => ({ id: q.id, stem: `【${q.dimension_label}】${q.stem}`, options: q.options, answer: q.answer, explanation: q.explanation }))
+    rpOpen.value = true
+  } catch { uni.showToast({ title: '出题失败,稍后重试', icon: 'none' }) } finally { rpLoading.value = '' }
+}
 async function onRpDetail(results: Array<{ id: string; correct: boolean }>) {
   const payload = results
     .map(r => ({ ...rpDimMap.get(r.id), correct: r.correct }))
@@ -387,7 +500,7 @@ async function onRpDetail(results: Array<{ id: string; correct: boolean }>) {
 }
 function onRpClose() { rpOpen.value = false; loadConsolidation() }
 
-onShow(() => { loadReviewDue(); if (source.value === 'practice') { if (consol.value.length) loadConsolidation() } else if (groups.value.length) loadGroups() })
+onShow(() => { loadReviewDue(); if (source.value === 'practice') { if (consol.value.length) loadConsolidation() } else if (source.value === 'ls') { loadLsConsol() } else if (groups.value.length) loadGroups() })
 onMounted(async () => {
   if (!auth.isLoggedIn()) await auth.login()
   await loadReviewDue()
@@ -582,18 +695,40 @@ onMounted(async () => {
 /* 练习巩固卡(练习衍生·隔离) */
 .prac-banner { background: #f4f2ec; border: 2rpx solid #e4ddca; border-radius: 14rpx; padding: 16rpx 20rpx; margin-bottom: 16rpx; }
 .prac-banner text { font-size: 23rpx; color: #8a7b52; line-height: 1.55; }
-.pcard { background: #fff; border: 2rpx solid #e4ddca; border-left: 8rpx solid #d8c88f; border-radius: 18rpx; padding: 22rpx 24rpx; display: flex; flex-direction: column; gap: 12rpx; }
-.pc-top { display: flex; align-items: center; gap: 12rpx; }
-.pc-tag { font-size: 20rpx; font-weight: 700; color: #8a7b52; background: #efe9d8; padding: 3rpx 14rpx; border-radius: 999rpx; }
-.pc-dim { font-size: 22rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 3rpx 14rpx; border-radius: 999rpx; }
-.pc-cnt { margin-left: auto; font-size: 21rpx; font-weight: 700; color: #c33; background: #fdecec; padding: 3rpx 14rpx; border-radius: 999rpx; }
-.pc-name { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
-.pc-streak { display: flex; align-items: center; gap: 10rpx; }
-.pc-lbl { font-size: 21rpx; color: var(--c-text-hint); }
-.pc-dot { width: 22rpx; height: 22rpx; border-radius: 50%; border: 3rpx solid #cbb96f; box-sizing: border-box; }
+/* 练习巩固:词折叠头(底色=整体练熟度)+ 逐维行 */
+.pfold { background: #fff; border: 2rpx solid #e4ddca; border-left: 8rpx solid #d8c88f; border-radius: 18rpx; overflow: hidden; }
+.pf-head { position: relative; overflow: hidden; }
+.pf-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #f2ecd8, #faf7ee); transition: width .3s; }
+.pf-in { position: relative; display: flex; align-items: center; gap: 12rpx; padding: 22rpx 24rpx; }
+.pf-word { font-size: 32rpx; font-weight: 800; color: var(--c-ink); flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-meta { font-size: 21rpx; color: #8a7b52; flex-shrink: 0; }
+.pf-retrain { margin-left: auto; flex-shrink: 0; font-size: 23rpx; font-weight: 700; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 10rpx 22rpx; }
+.pf-retrain.loading { opacity: 0.6; }
+.pf-chev { font-size: 26rpx; color: #b0a680; flex-shrink: 0; }
+.pf-row { display: flex; align-items: center; gap: 12rpx; padding: 18rpx 24rpx; border-top: 2rpx dashed #ece4cf; }
+.pf-tag { font-size: 19rpx; font-weight: 700; color: #8a7b52; background: #efe9d8; padding: 2rpx 12rpx; border-radius: 999rpx; }
+.pf-dim { font-size: 24rpx; font-weight: 700; color: var(--c-ink); }
+.pf-cnt { font-size: 20rpx; font-weight: 700; color: #c33; background: #fdecec; padding: 2rpx 12rpx; border-radius: 999rpx; }
+.pf-dots { display: flex; align-items: center; gap: 8rpx; margin-left: auto; }
+.pf-rp { flex-shrink: 0; font-size: 23rpx; font-weight: 700; color: var(--c-primary-deep); }
+.pf-rp.loading { opacity: 0.6; }
+.pc-dot { width: 20rpx; height: 20rpx; border-radius: 50%; border: 3rpx solid #cbb96f; box-sizing: border-box; }
 .pc-dot.on { background: #2fa98a; border-color: #2fa98a; }
-.pc-cta { margin-top: 4rpx; text-align: center; font-size: 26rpx; font-weight: 700; color: #fff; background: var(--c-primary); border-radius: 999rpx; padding: 14rpx 0; }
-.pc-cta.loading { opacity: 0.6; }
+
+/* 长难句薄弱 句卡(蓝调,区别于词卡金调) */
+.pfold.ls { border-color: #cfe0fa; border-left-color: #5b8def; }
+.pfold.ls .pf-fill { background: linear-gradient(90deg, #eaf1fc, #f6f9ff); }
+.pf-in.ls-in { flex-direction: column; align-items: stretch; gap: 12rpx; }
+.ls-htop { display: flex; align-items: center; gap: 12rpx; }
+.ls-badge { font-size: 19rpx; font-weight: 700; color: #3a6bc0; background: #e7effc; padding: 2rpx 14rpx; border-radius: 999rpx; }
+.ls-sent { font-size: 25rpx; font-weight: 600; color: var(--c-ink); line-height: 1.5;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ls-all { text-align: center; background: #5b8def; color: #fff; font-size: 24rpx; font-weight: 700; border-radius: 12rpx; padding: 16rpx 0; }
+.pf-tag.whole { color: #3a6bc0; background: #e7effc; }
+.lsd-component { color: #3a6bc0; }
+.lsd-comprehension { color: #2fa98a; }
+.lsd-grammar { color: #7a5cd0; }
+.lsd-keyword { color: #c77d2e; }
 
 /* 状态子筛选 chip */
 .status-scroll { width: 100%; margin-bottom: 8rpx; white-space: nowrap; }

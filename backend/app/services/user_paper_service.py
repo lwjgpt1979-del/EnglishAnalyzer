@@ -366,7 +366,7 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                             stem=pq.stem, student_answer=pq.student_answer,
                             correct_answer=pq.correct_answer, explanation=pq.explanation,
                             question_type=pq.question_type, kp_kind=_kk,
-                            kp_name=kp_key or None, source_label="整卷",
+                            kp_name=kp_key or None, source_label="作业",
                             source_id=paper.id)
                     except Exception:  # noqa: BLE001
                         pass
@@ -967,7 +967,7 @@ async def add_question_to_wrong(db: AsyncSession, *, question_id: uuid.UUID,
         db, student_id=student_id, q_scope="uploaded", question_id=q.id, node_id=q.node_id,
         stem=q.stem, student_answer=q.student_answer, correct_answer=q.correct_answer,
         explanation=q.explanation, question_type=q.question_type, kp_kind=kk,
-        kp_name=q.kp_key or None, source_label="整卷", source_id=q.user_paper_id)
+        kp_name=q.kp_key or None, source_label="作业", source_id=q.user_paper_id)
     await db.commit()
     return {"added": True, "kp_kind": kk}
 

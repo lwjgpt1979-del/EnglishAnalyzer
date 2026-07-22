@@ -828,10 +828,16 @@ async function next() {
   finally { recing.value = false }
 }
 
-onLoad(async () => {
+onLoad(async (q: any) => {
   try {
-    const r = await nextLongSentence([])
-    if (r.item) { items.value = [r.item]; index.value = 0; recTarget.value = r.target; tier.value = r.tier; isReview.value = r.review; await loadDetail() }
+    if (q?.id) {   // 「重做整句理解」深链:直接定位该句(取详情 → 复用列表项外壳)
+      const d = await getLongSentence(q.id)
+      items.value = [{ id: q.id, text: d.text, difficulty: d.difficulty } as any]
+      index.value = 0; await loadDetail()
+    } else {
+      const r = await nextLongSentence([])
+      if (r.item) { items.value = [r.item]; index.value = 0; recTarget.value = r.target; tier.value = r.tier; isReview.value = r.review; await loadDetail() }
+    }
   } finally { loading.value = false }
   try { checkinStatus.value = await getCheckinStatus() } catch { /* ignore */ }
 })

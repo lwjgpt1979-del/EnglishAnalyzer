@@ -16,6 +16,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d16_question_domain import WrongRecord
 
 
+def _source_cond(source_label: str | list[str] | None):
+    """来源过滤:支持单值 / 逗号分隔 / 列表(一个 tab 可合并多来源,如「作业错题」= 整卷 + 作业)。"""
+    if not source_label:
+        return None
+    labels = source_label if isinstance(source_label, list) else [s for s in str(source_label).split(",") if s]
+    if not labels:
+        return None
+    return WrongRecord.source_label == labels[0] if len(labels) == 1 else WrongRecord.source_label.in_(labels)
+
+
 async def record_wrong(
     db: AsyncSession, *, student_id: uuid.UUID, q_scope: str, question_id: uuid.UUID,
     node_id: uuid.UUID | None = None, is_original: bool = True,
@@ -142,6 +152,112 @@ async def record_kp_practice(
     return {"changed": True, "wrong_record_id": str(wid), "streak": 0, "mastered": False}
 
 
+# ============ 长难句练习衍生错题(句·维,is_original=false,q_scope='ls')============
+# 认成分/认语法/重点词/理解 探针答错 → 按 (句, 维) 落库。成分/理解=整句维,语法/重点词=单项维(展示层区分)。
+# 连对 N 次清除,规则同词·维。source_label='长难句薄弱' 独占「长难句薄弱」tab。
+
+_LS_PRACTICE_NS = uuid.UUID("b8e2f3d4-5c6e-4f70-9b01-223344556677")   # (sentence_md5,dim) → question_id
+_LS_SENT_NS = uuid.UUID("c9f3a4e5-6d7f-4081-ac12-334455667788")       # sentence_md5 → 句分组键 source_id
+_LS_SOURCE = "长难句薄弱"
+_LS_DIM_LABEL = {"component": "成分", "comprehension": "理解", "grammar": "语法", "keyword": "重点词"}
+
+
+def _sent_md5(sentence: str) -> str:
+    import hashlib
+    return hashlib.md5((sentence or "").strip().encode("utf-8")).hexdigest()
+
+
+def ls_practice_qid(sentence_md5: str, dim: str) -> uuid.UUID:
+    return uuid.uuid5(_LS_PRACTICE_NS, f"{sentence_md5}:{dim}")
+
+
+def ls_sentence_key(sentence_md5: str) -> uuid.UUID:
+    return uuid.uuid5(_LS_SENT_NS, sentence_md5)
+
+
+async def record_ls_practice(
+    db: AsyncSession, *, student_id: uuid.UUID, sentence: str, dim: str,
+    correct: bool, missed_desc: str | None = None, ref_id: uuid.UUID | None = None,
+) -> dict:
+    """长难句探针逐维结果落库(练习衍生):dim ∈ {component,comprehension,grammar,keyword}。
+    错 → upsert 一条 (句,维);对 → 命中 open 记录 streak+1,≥N 掌握清除。句分组键存 source_id。
+    ref_id(理解维=LongSentence.id)存 vocab_word_id,供「重做整句理解」深链回理解检测页。"""
+    md5 = _sent_md5(sentence)
+    qid = ls_practice_qid(md5, dim)
+    existing = (await db.execute(sa.select(WrongRecord).where(
+        WrongRecord.student_id == student_id, WrongRecord.q_scope == "ls",
+        WrongRecord.question_id == qid))).scalar_one_or_none()
+
+    if correct:
+        if existing is None or existing.status != "open":
+            return {"changed": False}
+        existing.practice_streak = (existing.practice_streak or 0) + 1
+        mastered = existing.practice_streak >= _KP_PRACTICE_MASTER_N
+        if mastered:
+            existing.status = "mastered"
+            existing.mastered_at = _dt.datetime.now(_dt.timezone.utc)
+            existing.mastery_source = "auto"
+        await db.flush()
+        return {"changed": True, "streak": existing.practice_streak, "mastered": mastered}
+
+    kp_name = f"{_LS_DIM_LABEL.get(dim, dim)}"
+    stmt = (
+        pg_insert(WrongRecord)
+        .values(
+            id=uuid.uuid4(), student_id=student_id, q_scope="ls", question_id=qid,
+            is_original=False, status="open", next_review_at=None,
+            source_id=ls_sentence_key(md5), dim=dim, kp_name=kp_name,
+            source_label=_LS_SOURCE, stem=(sentence or "").strip()[:600],
+            vocab_word_id=ref_id, practice_count=1, practice_streak=0,
+        )
+        .on_conflict_do_update(
+            constraint="uix_wrong_record_identity",
+            set_={
+                "status": "open", "mastered_at": None, "mastery_source": None,
+                "practice_streak": 0,
+                "practice_count": WrongRecord.practice_count + 1,
+                "dim": dim, "kp_name": kp_name, "source_label": _LS_SOURCE,
+                "source_id": ls_sentence_key(md5),
+                "vocab_word_id": sa.func.coalesce(sa.text("EXCLUDED.vocab_word_id"), WrongRecord.vocab_word_id),
+                "stem": sa.func.coalesce(WrongRecord.stem, sa.text("EXCLUDED.stem")),
+            },
+        )
+        .returning(WrongRecord.id)
+    )
+    wid = (await db.execute(stmt)).scalar_one()
+    await db.flush()
+    return {"changed": True, "wrong_record_id": str(wid), "streak": 0, "mastered": False}
+
+
+# 维展示分区:整句维(整体判断,重做整句) vs 单项维(可单练)
+_LS_WHOLE_DIMS = ("component", "comprehension")
+
+
+async def list_ls_consolidation(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
+    """「长难句薄弱」tab:练习衍生句卡,按句(source_id)聚合 → [{sentence, dims:[{dim,dim_label,whole,miss,streak}]}]。"""
+    rows = list((await db.execute(
+        sa.select(WrongRecord).where(
+            WrongRecord.student_id == student_id, WrongRecord.q_scope == "ls",
+            WrongRecord.status == "open")
+        .order_by(WrongRecord.created_at.desc()))).scalars().all())
+    by_sent: dict = {}
+    for r in rows:
+        g = by_sent.setdefault(str(r.source_id), {"source_id": str(r.source_id), "sentence": r.stem or "", "dims": []})
+        dim = r.dim or ""
+        g["dims"].append({
+            "id": str(r.id), "dim": dim, "dim_label": _LS_DIM_LABEL.get(dim, dim),
+            "whole": dim in _LS_WHOLE_DIMS, "miss_count": r.practice_count or 0,
+            "streak": r.practice_streak or 0, "master_n": _KP_PRACTICE_MASTER_N,
+            "ref_id": str(r.vocab_word_id) if r.vocab_word_id else None})
+    _order = {"component": 0, "comprehension": 1, "grammar": 2, "keyword": 3}
+    out = []
+    for g in by_sent.values():
+        g["dims"].sort(key=lambda d: _order.get(d["dim"], 9))
+        g["miss_total"] = sum(d["miss_count"] for d in g["dims"])
+        out.append(g)
+    return out
+
+
 async def list_open_wrongs(
     db: AsyncSession, *, student_id: uuid.UUID, node_id: uuid.UUID | None = None,
     limit: int = 100,
@@ -189,8 +305,9 @@ async def lifecycle_counts(
     conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped"]
     if is_original is not None:
         conds.append(WrongRecord.is_original.is_(is_original))
-    if source_label:
-        conds.append(WrongRecord.source_label == source_label)
+    _sc = _source_cond(source_label)
+    if _sc is not None:
+        conds.append(_sc)
     if kind in ("grammar", "vocab"):
         conds.append(WrongRecord.kp_kind == kind)
     rows = (await db.execute(
@@ -225,8 +342,9 @@ async def list_center(
         WrongRecord.student_id == student_id, WrongRecord.status != "skipped")
     if is_original is not None:
         base = base.where(WrongRecord.is_original.is_(is_original))
-    if source_label:
-        base = base.where(WrongRecord.source_label == source_label)
+    _sc = _source_cond(source_label)
+    if _sc is not None:
+        base = base.where(_sc)
     if kp_name:
         base = base.where(sa.func.coalesce(WrongRecord.kp_name, "未分类") == kp_name)
     if source_id is not None:
@@ -272,8 +390,9 @@ async def group_by_kp(
     mastered = sa.func.sum(sa.case((WrongRecord.status == "mastered", 1), else_=0))
     conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped",
              WrongRecord.is_original.is_(True)]
-    if source_label:
-        conds.append(WrongRecord.source_label == source_label)
+    _sc = _source_cond(source_label)
+    if _sc is not None:
+        conds.append(_sc)
     if kind in ("grammar", "vocab"):
         conds.append(WrongRecord.kp_kind == kind)
     rows = (await db.execute(
@@ -292,8 +411,9 @@ async def group_by_batch(
     mastered = sa.func.sum(sa.case((WrongRecord.status == "mastered", 1), else_=0))
     conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped",
              WrongRecord.is_original.is_(True), WrongRecord.source_id.isnot(None)]
-    if source_label:
-        conds.append(WrongRecord.source_label == source_label)
+    _sc = _source_cond(source_label)
+    if _sc is not None:
+        conds.append(_sc)
     if kind in ("grammar", "vocab"):
         conds.append(WrongRecord.kp_kind == kind)
     last_at = sa.func.max(WrongRecord.created_at)
@@ -312,17 +432,25 @@ async def list_practice_consolidation(
 ) -> list[dict]:
     """「练习巩固」tab:练习衍生薄弱项(is_original=false, open),按 (词·维) 聚合(每 (word,dim) 一行)。
     含 词/维/错次(practice_count)/连对(practice_streak)。"""
+    from app.models.d5_learning import VocabularyWord
     from app.services import word_kp_service
     rows = list((await db.execute(
         sa.select(WrongRecord).where(
             WrongRecord.student_id == student_id, WrongRecord.q_scope == "kp",
             WrongRecord.status == "open")
         .order_by(WrongRecord.practice_count.desc(), WrongRecord.created_at.desc()))).scalars().all())
+    wmap: dict = {}
+    wids = [r.vocab_word_id for r in rows if r.vocab_word_id]
+    if wids:
+        wmap = {wid: w for wid, w in (await db.execute(
+            sa.select(VocabularyWord.id, VocabularyWord.word).where(VocabularyWord.id.in_(wids)))).all()}
     out = []
     for r in rows:
         dim = r.dim or ""
+        word = wmap.get(r.vocab_word_id) or (r.kp_name or "").split("·")[0]
         out.append({
             "id": str(r.id), "word_id": str(r.vocab_word_id) if r.vocab_word_id else None,
+            "word": word,
             "dim": dim, "dim_label": word_kp_service._dim_label(dim) if dim else "",
             "kp_name": r.kp_name, "stem": r.stem,
             "miss_count": r.practice_count or 0, "streak": r.practice_streak or 0,
@@ -336,10 +464,9 @@ def _source_route(source_label: str | None, source_id: uuid.UUID | None) -> str 
     """错题来源实体的小程序路由(供「点来源→回到来源→再返回」)。无可跳目标返回 None。"""
     if source_id is None:
         return None
-    if source_label == "整卷":
+    # 学生上传的卷子(user_paper)= 「作业错题」,回卷详情;"整卷" 为历史别名(已洗为"作业",保留兜底)
+    if source_label in ("作业", "整卷"):
         return f"/pages/user-papers/detail?id={source_id}"
-    if source_label == "作业":
-        return f"/pages/assignments/detail?id={source_id}"
     return None
 
 

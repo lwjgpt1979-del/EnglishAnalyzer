@@ -30,7 +30,7 @@ async def list_center(
     db: DbDep, current_user: UserDep,
     kind: str | None = Query(None, description="grammar|vocab 副筛选;空=全部"),
     status: str | None = Query(None, description="pending|reviewing|mastered;空=全部"),
-    source_label: str | None = Query(None, description="来源 tab:作业|整卷|长难句|平台;空=全部真实错题"),
+    source_label: str | None = Query(None, description="来源 tab:作业|长难句|平台;空=全部真实错题"),
     kp_name: str | None = Query(None, description="展开某考点组时过滤"),
     source_id: uuid.UUID | None = Query(None, description="展开某批次组时过滤"),
     skip: int = 0, limit: int = 20,
@@ -76,6 +76,13 @@ async def grouped(
 async def consolidation(db: DbDep, current_user: UserDep):
     """「练习巩固」tab:练习衍生薄弱项(is_original=false),按 (词·维) 聚合。"""
     items = await wrong_center_service.list_practice_consolidation(db, student_id=current_user.id)
+    return make_ok({"items": items, "total": len(items)})
+
+
+@router.get("/ls-consolidation", response_model=BaseResponse[dict])
+async def ls_consolidation(db: DbDep, current_user: UserDep):
+    """「长难句薄弱」tab:长难句探针答错的练习衍生句卡(按句·维聚合;成分/理解=整句维)。"""
+    items = await wrong_center_service.list_ls_consolidation(db, student_id=current_user.id)
     return make_ok({"items": items, "total": len(items)})
 
 
