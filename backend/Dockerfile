@@ -5,7 +5,7 @@ ARG APT_MIRROR=mirrors.tencentyun.com
 ARG PIP_INDEX=https://mirrors.tencentyun.com/pypi/simple
 RUN if [ -n "$APT_MIRROR" ]; then \
       for f in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list; do \
-        [ -f "$f" ] && sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" "$f"; \
+        if [ -f "$f" ]; then sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" "$f"; fi; \
       done; \
     fi
 
