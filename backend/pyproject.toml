@@ -21,6 +21,7 @@ dependencies = [
     "tencentcloud-sdk-python-asr>=3.0.0",
     "cos-python-sdk-v5>=1.9.30",
     "passlib[bcrypt]>=1.7.4",
+    "bcrypt<4.1",  # passlib 1.7.4 与 bcrypt 4.1+/5.x 不兼容(初始化自检抛 72字节错),锁到 4.0.x
     "fpdf2>=2.7.0",
     "pdfplumber>=0.11.0",
     "python-docx>=1.1.0",
