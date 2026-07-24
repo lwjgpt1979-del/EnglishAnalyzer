@@ -13,7 +13,7 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -805,7 +805,7 @@ async def start_batch_image_gen(db: AsyncSession) -> dict:
     rows = (await db.execute(
         select(VocabularyWord.id).where(
             (VocabularyWord.image_urls.is_(None))
-            | (func.jsonb_array_length(VocabularyWord.image_urls) == 0)
+            | (_img_url_len(VocabularyWord.image_urls) == 0)   # JSONB null/非数组也算未配图
         ).limit(n)
     )).all()
     ids = [r[0] for r in rows]
@@ -815,12 +815,22 @@ async def start_batch_image_gen(db: AsyncSession) -> dict:
     return {"started": True, "total": len(ids)}
 
 
+def _img_url_len(col):
+    """安全取 image_urls 数组长度:仅当值确为 JSON array 才算长度,否则(SQL null/JSONB null/非数组)记 0。
+    防 jsonb_array_length 遇到标量(如 image_urls 存了 JSONB null)报「cannot get array length of a scalar」。"""
+    return case((func.jsonb_typeof(col) == "array", func.jsonb_array_length(col)), else_=0)
+
+
+# 有图判定(供 raw SQL 复用):同样用 jsonb_typeof 守卫
+_HAS_IMG_SQL = "(CASE WHEN jsonb_typeof(w.image_urls)='array' THEN jsonb_array_length(w.image_urls) ELSE 0 END) > 0"
+
+
 async def count_low_quality_images(db: AsyncSession) -> int:
     """统计「有图但从未用 brief(可画场景)生成过」的历史劣质图词数——即所有 image 资产 prompt 均为空。"""
     from sqlalchemy import text as _text
     row = (await db.execute(_text(
         "SELECT count(*) FROM vocabulary_words w "
-        "WHERE w.image_urls IS NOT NULL AND jsonb_array_length(w.image_urls) > 0 "
+        "WHERE " + _HAS_IMG_SQL + " "
         "AND NOT EXISTS (SELECT 1 FROM vocab_media_asset a "
         "                WHERE a.word_id = w.id AND a.kind='image' "
         "                AND a.prompt IS NOT NULL AND btrim(a.prompt) <> '')"
@@ -839,7 +849,7 @@ async def start_refresh_low_quality_images(db: AsyncSession) -> dict:
     n = int(cfg.get("batch_size", 20))
     rows = (await db.execute(_text(
         "SELECT w.id FROM vocabulary_words w "
-        "WHERE w.image_urls IS NOT NULL AND jsonb_array_length(w.image_urls) > 0 "
+        "WHERE " + _HAS_IMG_SQL + " "
         "AND NOT EXISTS (SELECT 1 FROM vocab_media_asset a "
         "                WHERE a.word_id = w.id AND a.kind='image' "
         "                AND a.prompt IS NOT NULL AND btrim(a.prompt) <> '') "
@@ -918,7 +928,7 @@ async def reverify_and_regen_batch(db: AsyncSession, *, limit: int = 200) -> dic
     base = (select(VocabularyWord)
             .where(VocabularyWord.media_status == "published",
                    VocabularyWord.image_urls.isnot(None),
-                   func.jsonb_array_length(VocabularyWord.image_urls) > 0))
+                   _img_url_len(VocabularyWord.image_urls) > 0))
     if cursor is not None:
         base = base.where(VocabularyWord.id > cursor)
     rows = (await db.execute(base.order_by(VocabularyWord.id).limit(limit))).scalars().all()
