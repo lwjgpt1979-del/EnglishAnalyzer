@@ -10,6 +10,10 @@ ENV_FILE="${ENV_FILE:-/opt/enggramer/.env}"
 PG="${PG_CONTAINER:-enggramer_postgres}"
 NET="${DOCKER_NET:-deploy_internal}"
 IMG="${BACKEND_IMAGE:-enggramer-backend:latest}"
+# pgdata 首次 init 决定角色。本次生产实为默认超级用户 postgres(非 enggramer),故默认 postgres;
+# 若某环境库角色是 enggramer,用 PG_USER=enggramer 覆盖即可。
+PG_USER="${PG_USER:-postgres}"
+PG_DB="${PG_DB:-enggramer}"
 SEED="${1:-$(dirname "$0")/content_seed.sql}"
 
 [ -f "$ENV_FILE" ] || { echo "ERROR: 缺 $ENV_FILE"; exit 1; }
@@ -20,12 +24,13 @@ echo "=== [1/4] 迁移到 head(幂等)==="
 docker run --rm --network "$NET" --env-file "$ENV_FILE" "$IMG" alembic upgrade head
 
 echo "=== [2/4] 灌内容种子(防重复:已有内容则跳过)==="
-CNT=$(docker exec "$PG" psql -U enggramer -d enggramer -tAc \
+CNT=$(docker exec "$PG" psql -U "$PG_USER" -d "$PG_DB" -tAc \
   "SELECT count(*) FROM vocabulary_words" 2>/dev/null || echo 0)
 if [ "${CNT:-0}" -gt 0 ]; then
   echo "  vocabulary_words 已有 $CNT 行 → 判定已灌过,跳过(避免主键冲突/重复)。如需强灌请人工清库后重来。"
 else
-  docker exec -i "$PG" psql -U enggramer -d enggramer -v ON_ERROR_STOP=1 < "$SEED"
+  # --single-transaction:seed 里 TRUNCATE+COPY 整体原子;schema 不匹配(缺表/缺列)即整体回滚,不留半灌
+  docker exec -i "$PG" psql -U "$PG_USER" -d "$PG_DB" --single-transaction -v ON_ERROR_STOP=1 < "$SEED"
   echo "  内容种子灌入完成。"
 fi
 
@@ -34,7 +39,7 @@ docker run --rm --network "$NET" --env-file "$ENV_FILE" \
   -e ADMIN_USERNAME -e ADMIN_PASSWORD "$IMG" python scripts/create_admin.py
 
 echo "=== [4/4] 冒烟:关键表计数 ==="
-docker exec "$PG" psql -U enggramer -d enggramer -c "
+docker exec "$PG" psql -U "$PG_USER" -d "$PG_DB" -c "
   SELECT 'vocabulary_words' AS t, count(*) FROM vocabulary_words
   UNION ALL SELECT 'knowledge_nodes', count(*) FROM knowledge_nodes
   UNION ALL SELECT 'platform_question', count(*) FROM platform_question
