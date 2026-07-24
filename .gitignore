@@ -32,3 +32,6 @@ docs/*_副本.md
 .claude/settings.local.json
 # 微信私有配置（含本地设置）
 frontend/miniprogram/project.private.config.json
+
+# 生产内容种子(真实内容数据,禁提交/外传;走 scp 单独传)
+deploy/content_seed.sql
