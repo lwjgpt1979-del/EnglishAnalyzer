@@ -358,6 +358,43 @@ def get_templates(essay_type: str | None) -> dict:
     return _TEMPLATES_BY_TYPE.get(essay_type or "", _DEFAULT_TEMPLATE)
 
 
+# —— 搭建式写作:多模版 × 分段 × 候选句(内置默认;运营可在 essay_templates[体裁].templates 覆盖)——
+_COMPOSE_TEMPLATES: dict[str, list] = {
+    "邀请信": [
+        {"id": "formal", "name": "正式版", "tag": "稳·得分保险", "slots": [
+            {"key": "greeting", "label": "称呼", "hint": "Dear …,", "sentences": ["Dear Mr. Smith,", "Dear Sir or Madam,"]},
+            {"key": "open", "label": "开头·自我介绍+目的", "hint": "", "sentences": ["I'm writing to invite you to …", "I am writing to sincerely invite you to …"]},
+            {"key": "body", "label": "主体·时间地点+活动", "hint": "", "sentences": ["The activity will be held at … on …, including …", "It will take place at …, where we will …"]},
+            {"key": "close", "label": "结尾·期待+落款", "hint": "", "sentences": ["We would be honored if you could join us. Yours, Li Hua", "Looking forward to your reply. Yours, Li Hua"]},
+        ]},
+        {"id": "warm", "name": "热情版", "tag": "高分冲刺", "slots": [
+            {"key": "greeting", "label": "称呼", "hint": "", "sentences": ["Dear Mr. Smith,"]},
+            {"key": "open", "label": "开头·热情+邀请", "hint": "", "sentences": ["How time flies! We would be delighted to invite you to …"]},
+            {"key": "body", "label": "主体·亮点活动", "hint": "", "sentences": ["Not only will there be …, but you will also …"]},
+            {"key": "close", "label": "结尾·强烈期待", "hint": "", "sentences": ["Your presence would mean a lot to us. Yours, Li Hua"]},
+        ]},
+    ],
+    "_default": [
+        {"id": "std", "name": "标准三段", "tag": "通用", "slots": [
+            {"key": "open", "label": "开头·点题", "hint": "", "sentences": ["In my opinion, …", "As is known to all, …"]},
+            {"key": "body", "label": "主体·分点+例证", "hint": "", "sentences": ["Firstly, … Secondly, … For example, …", "On the one hand, … On the other hand, …"]},
+            {"key": "close", "label": "结尾·总结", "hint": "", "sentences": ["In conclusion, …", "Therefore, …"]},
+        ]},
+    ],
+}
+
+
+async def compose_templates(db: AsyncSession, *, genre: str | None) -> list:
+    """搭作文:某体裁的模版列表(多模版×分段×候选句)。运营配 essay_templates[体裁].templates 优先,否则内置。"""
+    r = await db.execute(select(SystemConfig).where(SystemConfig.key == _ESSAY_TEMPLATES_KEY))
+    cfg = r.scalar_one_or_none()
+    if cfg is not None and isinstance(cfg.value, dict) and genre:
+        g = cfg.value.get(genre)
+        if isinstance(g, dict) and isinstance(g.get("templates"), list) and g["templates"]:
+            return g["templates"]
+    return _COMPOSE_TEMPLATES.get(genre or "", _COMPOSE_TEMPLATES["_default"])
+
+
 async def get_configured_templates(
     db: AsyncSession, essay_type: str | None, tier: str | None = None,
 ) -> dict:
@@ -432,6 +469,50 @@ async def upgrade_sentences(
             ups.append({"original": o, "upgraded": up, "note": str(u.get("note") or "").strip(),
                         "from_mine": bool(u.get("from_mine"))})
     return {"upgrades": ups}
+
+
+async def adapt_sentences(
+    db: AsyncSession, *, student_id: uuid.UUID, genre: str | None, scenario: str, slots: list,
+) -> dict:
+    """把学生已学长难句**适配到各段功能**:每段返回 0-2 条'改写后适合本作文'的句(保留原句式亮点)。
+    按 (学生, 体裁+段+已学句集 的 md5) 缓存,同输入不二次付费。返回 {by_slot:{段key:[{text,from}]}}。"""
+    import hashlib
+    from app.models.d5_learning import EssayAdaptCache
+    sc = await writing_scaffold(db, student_id=student_id, essay_type=genre, tier="promax")
+    mine = [m["text"] for m in sc.get("my_sentences", []) if m.get("text")]
+    slot_keys = [{"key": s.get("key"), "label": s.get("label")} for s in (slots or []) if s.get("key")]
+    if not mine or not slot_keys:
+        return {"by_slot": {}}
+    sig = hashlib.md5((str(genre) + "|" + json.dumps(slot_keys, ensure_ascii=False) + "||" + "|".join(mine)).encode("utf-8")).hexdigest()
+    hit = (await db.execute(select(EssayAdaptCache).where(
+        EssayAdaptCache.student_id == student_id, EssayAdaptCache.cache_key == sig))).scalar_one_or_none()
+    if hit is not None:
+        return hit.result or {"by_slot": {}}
+    if is_llm_dev_mode():
+        return {"by_slot": {}}
+    from app.services.llm_provider import fast_model
+    sys = (
+        "你是英语写作教练。给定学生已学过的高分长难句 + 本作文各段功能,把这些句式**改写/套用**到合适的段:"
+        "每段给 0-2 条『改写后、内容贴合本题、保留原句式亮点』的英文句。不合适的段留空。"
+        '只返回 JSON:{"by_slot":{"段key":[{"text":"改写后的英文句","from":"取自哪句原句(前20字)"}]}}。段 key 用给定的 key。')
+    usr = (f"体裁:{genre}\n题目/情景:{scenario}\n各段:{json.dumps(slot_keys, ensure_ascii=False)}\n"
+           "学生已学过的长难句:\n" + "\n".join(f"- {s}" for s in mine[:6]))
+    try:
+        resp = await chat_completion(system_prompt=sys, user_prompt=usr, max_tokens=1200,
+                                     model=fast_model(), response_format={"type": "json_object"},
+                                     feature="essay_adapt_sentence")
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001
+        return {"by_slot": {}}
+    by = data.get("by_slot") if isinstance(data.get("by_slot"), dict) else {}
+    result = {"by_slot": {k: [x for x in (v or []) if isinstance(x, dict) and x.get("text")][:2]
+                          for k, v in by.items()}}
+    try:
+        db.add(EssayAdaptCache(id=uuid.uuid4(), student_id=student_id, cache_key=sig, result=result))
+        await db.commit()
+    except Exception:  # noqa: BLE001
+        await db.rollback()
+    return result
 
 
 async def get_all_templates_config(db: AsyncSession) -> dict:

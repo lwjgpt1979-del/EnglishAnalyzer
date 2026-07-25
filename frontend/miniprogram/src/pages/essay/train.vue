@@ -73,6 +73,11 @@
         <view class="w-timer" style="display:flex;align-items:center;gap:6rpx"><view class="ic ic-clock" style="width:30rpx;height:30rpx"/><text>{{ timerText }}</text></view>
         <text class="w-count" :class="wordRange.cls">{{ wordRange.txt }}</text>
       </view>
+      <!-- 模式:自由写 / 搭作文 -->
+      <view class="wm-seg">
+        <text class="wm-i" :class="{ on: writeMode === 'free' }" @tap="writeMode = 'free'">✍ 自由写</text>
+        <text class="wm-i" :class="{ on: writeMode === 'compose' }" @tap="writeMode = 'compose'">🧩 搭作文</text>
+      </view>
       <!-- 要点覆盖自检 -->
       <view class="w-cover">
         <text class="wc-h">要点覆盖 {{ coveredPts.length }}/{{ (analysis?.required_points || []).length }} · 写到就点亮</text>
@@ -80,14 +85,40 @@
           <text v-for="(pt, i) in (analysis?.required_points || [])" :key="i" class="wc-chip" :class="{ on: coveredPts.includes(pt) }" @tap="togglePt(pt)">{{ coveredPts.includes(pt) ? '✓ ' : '' }}{{ pt }}</text>
         </view>
       </view>
-      <textarea v-model="draft" class="ta ta-write" placeholder="在这里限时写作…（点下方支架可插入句子）" />
+
+      <!-- 搭作文:选模版 → 逐段选句 → 实时拼装 -->
+      <template v-if="writeMode === 'compose'">
+        <view v-if="!chosenTplId">
+          <view class="cmp-sec">① 选一个作文模版</view>
+          <view v-for="t in composeTpls" :key="t.id" class="cmp-tpl" @tap="selectTpl(t.id)">
+            <view class="cmp-th"><text class="cmp-tt">{{ t.name }}</text><text v-if="t.tag" class="cmp-tag">{{ t.tag }}</text></view>
+            <text class="cmp-tbody">{{ t.slots.map(s => s.label).join(' → ') }}</text>
+          </view>
+          <view v-if="!composeTpls.length" class="cmp-empty">该体裁暂无模版,用自由写吧</view>
+        </view>
+        <template v-else>
+          <view class="cmp-sec">② 逐段选句 · <text class="cmp-chg" @tap="chosenTplId = ''">换模版</text></view>
+          <view v-for="slot in (chosenTpl?.slots || [])" :key="slot.key" class="cmp-slot">
+            <text class="cmp-sl">{{ slot.label }}</text>
+            <view v-for="(c, ci) in slotCands(slot)" :key="ci" class="cmp-opt" :class="{ on: slotPick[slot.key] === c.text, mine: c.mine }" @tap="pickSlot(slot.key, c.text)">{{ c.mine ? '✦ ' : '' }}{{ c.text }}</view>
+            <view v-if="slotWriting[slot.key]"><textarea v-model="slotCustom[slot.key]" class="cmp-write" placeholder="自己写这段…" /></view>
+            <text v-else class="cmp-own" @tap="writeSlot(slot.key)">✎ 自己写这段</text>
+          </view>
+          <view class="cmp-preview">
+            <view class="cmp-pvh"><text>实时作文</text><text class="cmp-pvc" :class="wordRange.cls">{{ wordRange.txt }}</text></view>
+            <text class="cmp-pvt">{{ composeText || '（逐段选句后这里实时拼出作文）' }}</text>
+          </view>
+        </template>
+      </template>
+
+      <textarea v-else v-model="draft" class="ta ta-write" placeholder="在这里限时写作…（点下方支架可插入句子）" />
       <button class="btn-primary" :disabled="!draft.trim() || diagnosing" @tap="openSelfCheck" style="display:flex;align-items:center;justify-content:center;gap:8rpx">
         <text>{{ diagnosing ? 'AI 诊断中…' : (ent.can('essay.diagnose') ? '提交诊断' + quotaHint : '提交诊断') }}</text>
         <view v-if="!diagnosing && !ent.can('essay.diagnose')" class="ic ic-lock" style="width:30rpx;height:30rpx"/>
       </button>
 
-      <!-- 写作支架抽屉 -->
-      <view class="drawer" :class="{ closed: !drawerOpen }">
+      <!-- 写作支架抽屉(仅自由写)-->
+      <view v-if="writeMode === 'free'" class="drawer" :class="{ closed: !drawerOpen }">
         <view class="dw-h" @tap="drawerOpen = !drawerOpen"><text class="dw-t">写作支架</text><text class="dw-c">点句即插入 · {{ drawerOpen ? '收起 ⌄' : '展开 ⌃' }}</text></view>
         <template v-if="drawerOpen">
           <view class="dw-tabs">
@@ -208,8 +239,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { getEssayPrompts, analyzeEssayPrompt, diagnoseEssay, getWritingScaffold, upgradeEssay, type EssayPrompt, type PromptAnalysis, type EssayDiagnosis, type WritingScaffold, type SentenceUpgrade } from '@/api/essay'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { getEssayPrompts, analyzeEssayPrompt, diagnoseEssay, getWritingScaffold, upgradeEssay, getComposeTemplates, adaptSentences, type EssayPrompt, type PromptAnalysis, type EssayDiagnosis, type WritingScaffold, type SentenceUpgrade, type ComposeTemplate } from '@/api/essay'
 import { useAuthStore } from '@/stores/auth'
 import { useEntitlementsStore } from '@/stores/entitlements'
 import Paywall from '@/components/Paywall.vue'
@@ -386,12 +417,51 @@ const improvedText = computed(() => {
 function copyImproved() {
   uni.setClipboardData({ data: improvedText.value, success: () => uni.showToast({ title: '改进版已复制', icon: 'none' }) })
 }
+// —— 搭作文(选模版 → 逐段选句 → 拼装)——
+const writeMode = ref<'free' | 'compose'>('free')
+const composeTpls = ref<ComposeTemplate[]>([])
+const chosenTplId = ref('')
+const chosenTpl = computed(() => composeTpls.value.find(t => t.id === chosenTplId.value) || null)
+const adaptBySlot = ref<Record<string, { text: string; from?: string }[]>>({})
+const slotPick = reactive<Record<string, string>>({})
+const slotCustom = reactive<Record<string, string>>({})
+const slotWriting = reactive<Record<string, boolean>>({})
+function slotCands(slot: { key: string; sentences: string[] }) {
+  return [...(slot.sentences || []).map(t => ({ text: t, mine: false })),
+          ...((adaptBySlot.value[slot.key] || []).map(a => ({ text: a.text, mine: true })))]
+}
+function pickSlot(key: string, text: string) { slotPick[key] = text; slotWriting[key] = false }
+function writeSlot(key: string) { slotWriting[key] = true; if (slotPick[key]) slotPick[key] = '' }
+const composeText = computed(() => {
+  const t = chosenTpl.value; if (!t) return ''
+  return t.slots.map(s => (slotWriting[s.key] ? (slotCustom[s.key] || '') : (slotPick[s.key] || '')).trim()).filter(Boolean).join(' ')
+})
+const composeFilled = computed(() => {
+  const t = chosenTpl.value; if (!t) return 0
+  return t.slots.filter(s => (slotWriting[s.key] ? slotCustom[s.key] : slotPick[s.key])).length
+})
+async function selectTpl(id: string) {
+  chosenTplId.value = id
+  for (const k in slotPick) delete slotPick[k]
+  for (const k in slotWriting) delete slotWriting[k]
+  const t = chosenTpl.value; if (!t) return
+  try {
+    const r = await adaptSentences(analysis.value?.genre || undefined, analysis.value?.scenario || '', t.slots.map(s => ({ key: s.key, label: s.label })))
+    adaptBySlot.value = r.by_slot || {}
+  } catch { adaptBySlot.value = {} }
+}
+// 搭作文时把拼出的全文同步进 draft(复用词数/覆盖/提交)
+watch(composeText, (v) => { if (writeMode.value === 'compose') draft.value = v })
+watch(writeMode, (m) => { if (m === 'compose') draft.value = composeText.value })
+
 function startWrite() {
   if (!gateOk.value) return
   draft.value = ''; seconds.value = 0; coveredPts.value = []; phase.value = 'write'
+  writeMode.value = 'free'; chosenTplId.value = ''; adaptBySlot.value = {}
   if (_timer) clearInterval(_timer)
   _timer = setInterval(() => { seconds.value++ }, 1000)
   getWritingScaffold(analysis.value?.genre || undefined).then(r => { scaffold.value = r }).catch(() => { scaffold.value = null })
+  getComposeTemplates(analysis.value?.genre || undefined).then(r => { composeTpls.value = r.templates || [] }).catch(() => { composeTpls.value = [] })
 }
 async function submitDiagnose() {
   if (!ent.can('essay.diagnose')) { showPaywall.value = true; return }   // 点前拦截
@@ -564,4 +634,27 @@ onUnmounted(() => { if (_timer) clearInterval(_timer) })
 .up-note { display: block; font-size: 21rpx; color: var(--c-text-second); margin-top: 6rpx; line-height: 1.5; }
 .up-act { margin-top: 10rpx; align-self: flex-start; display: inline-block; font-size: 23rpx; font-weight: 700; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
 .up-act.on { background: #2fa98a; border-color: #2fa98a; color: #fff; }
+/* C2 搭作文 */
+.wm-seg { display: flex; background: #e9eef4; border-radius: 14rpx; padding: 6rpx; margin-bottom: 14rpx; }
+.wm-i { flex: 1; text-align: center; font-size: 26rpx; padding: 12rpx 0; border-radius: 10rpx; color: var(--c-text-second); }
+.wm-i.on { background: #fff; color: var(--c-primary); font-weight: 800; box-shadow: 0 2rpx 6rpx rgba(0,0,0,.06); }
+.cmp-sec { font-size: 26rpx; font-weight: 800; color: var(--c-ink); margin: 6rpx 2rpx 12rpx; }
+.cmp-chg { font-size: 22rpx; color: var(--c-primary); font-weight: 600; }
+.cmp-tpl { background: var(--c-bg-card); border: 3rpx solid var(--c-border); border-radius: 16rpx; padding: 20rpx; margin-bottom: 14rpx; }
+.cmp-th { display: flex; align-items: center; gap: 12rpx; margin-bottom: 8rpx; }
+.cmp-tt { font-size: 28rpx; font-weight: 800; color: var(--c-ink); }
+.cmp-tag { font-size: 19rpx; font-weight: 700; padding: 2rpx 12rpx; border-radius: 999rpx; background: #eaf2fe; color: var(--c-primary); }
+.cmp-tbody { font-size: 22rpx; color: var(--c-text-hint); line-height: 1.6; }
+.cmp-empty { font-size: 24rpx; color: var(--c-text-hint); padding: 30rpx 0; text-align: center; }
+.cmp-slot { background: var(--c-bg-card); border-radius: 14rpx; padding: 18rpx; margin-bottom: 12rpx; }
+.cmp-sl { font-size: 23rpx; font-weight: 800; color: #185FA5; display: block; margin-bottom: 12rpx; }
+.cmp-opt { font-size: 24rpx; line-height: 1.5; border: 3rpx solid var(--c-border); border-radius: 12rpx; padding: 14rpx; margin-bottom: 10rpx; color: var(--c-text-body); }
+.cmp-opt.on { border-color: #2fa98a; background: #f4fbf8; }
+.cmp-opt.mine { color: #128a4c; }
+.cmp-write { width: 100%; min-height: 100rpx; font-size: 24rpx; border: 3rpx dashed var(--c-border); border-radius: 12rpx; padding: 12rpx; box-sizing: border-box; }
+.cmp-own { display: inline-block; font-size: 22rpx; color: var(--c-text-second); border: 2rpx dashed var(--c-border); border-radius: 999rpx; padding: 8rpx 22rpx; }
+.cmp-preview { background: #eef4fd; border: 2rpx solid #d6e5fb; border-radius: 14rpx; padding: 16rpx; margin: 6rpx 0 14rpx; }
+.cmp-pvh { display: flex; font-size: 22rpx; font-weight: 800; color: var(--c-primary); margin-bottom: 8rpx; }
+.cmp-pvc { margin-left: auto; font-weight: 500; }
+.cmp-pvt { font-size: 25rpx; line-height: 1.7; color: var(--c-ink); }
 </style>

@@ -38,6 +38,15 @@ export interface WritingScaffold { template: string; high_sentences: string[]; m
 export function getWritingScaffold(genre?: string): Promise<WritingScaffold> {
   return request<WritingScaffold>('/api/v1/essays/scaffold', { method: 'GET', data: { genre: genre || undefined } })
 }
+// 搭作文:多模版 × 分段 × 候选句
+export interface ComposeSlot { key: string; label: string; hint?: string; sentences: string[] }
+export interface ComposeTemplate { id: string; name: string; tag?: string; slots: ComposeSlot[] }
+export function getComposeTemplates(genre?: string): Promise<{ templates: ComposeTemplate[] }> {
+  return request('/api/v1/essays/compose-templates', { method: 'GET', data: { genre: genre || undefined } })
+}
+export function adaptSentences(genre: string | undefined, scenario: string, slots: { key: string; label: string }[]): Promise<{ by_slot: Record<string, { text: string; from?: string }[]> }> {
+  return request('/api/v1/essays/adapt-sentences', { method: 'POST', data: { genre: genre || undefined, scenario, slots } })
+}
 // 逐句升级:平句→高分句,优先套用你学过的长难句
 export interface SentenceUpgrade { original: string; upgraded: string; note: string; from_mine: boolean }
 export function upgradeEssay(draftText: string, genre?: string): Promise<{ upgrades: SentenceUpgrade[] }> {

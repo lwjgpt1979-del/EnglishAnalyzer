@@ -135,6 +135,22 @@ async def essay_templates(db: DbDep, current_user: UserDep, essay_type: str | No
     return make_ok(EssayTemplatesOut(essay_type=essay_type, template=t["template"], samples=t["samples"]))
 
 
+@router.get("/compose-templates", response_model=BaseResponse[dict])
+async def compose_templates_api(db: DbDep, current_user: UserDep, genre: str | None = None):
+    """搭作文:某体裁的模版列表(多模版×分段×候选句)。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok({"templates": await essay_service.compose_templates(db, genre=genre)})
+
+
+@router.post("/adapt-sentences", response_model=BaseResponse[dict])
+async def adapt_sentences_api(body: dict, db: DbDep, current_user: UserDep):
+    """把你学过的长难句适配到各段功能(LLM,结果缓存)。body: {genre, scenario, slots:[{key,label}]}。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await essay_service.adapt_sentences(
+        db, student_id=current_user.id, genre=body.get("genre"),
+        scenario=str(body.get("scenario") or ""), slots=body.get("slots") or []))
+
+
 @router.post("/upgrade", response_model=BaseResponse[dict])
 async def upgrade_sentences_api(body: dict, db: DbDep, current_user: UserDep):
     """逐句升级:平句→高分句,优先套用你学过的长难句。body: {draft_text, genre?}。"""

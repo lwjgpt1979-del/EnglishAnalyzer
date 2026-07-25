@@ -408,3 +408,20 @@ class VocabImageReport(Base):
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class EssayAdaptCache(Base):
+    """搭作文·自学长难句适配到各段的 LLM 结果缓存(第三方付费必缓存):
+    cache_key = md5(体裁 + 段签名 + 学生已学句集);同输入不二次付费。"""
+
+    __tablename__ = "essay_adapt_cache"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), nullable=False)
+    cache_key = mapped_column(sa.String(64), nullable=False)      # md5 指纹
+    result = mapped_column(JSONB, nullable=True)                  # {by_slot: {key: [{text, from}]}}
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint("student_id", "cache_key", name="uix_essay_adapt_cache"),
+    )

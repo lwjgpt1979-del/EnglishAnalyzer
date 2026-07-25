@@ -32,6 +32,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "作文审题(体裁/要点/人称时态/词数)+ 四卡审题的干扰项与体裁讲解", "why": "理解题干意图、推断隐含写作要求、造似是而非干扰项", "locations": ["essay_service.py:analyze_prompt"], "cache": "none", "store": "无"},
     {"feature": "essay_upgrade", "mode": "chat", "surface": "小程序端", "module": "作文·逐句升级", "service": "essay_service",
      "purpose": "挑 3-5 句平句升成高分句,优先套用学生已学过的长难句句式(from_mine 标注)", "why": "受控改写、规格明确(给定原句+可套句式清单)、fast 档即可", "locations": ["essay_service.py:upgrade_sentences"], "cache": "none", "store": "无"},
+    {"feature": "essay_adapt_sentence", "mode": "chat", "surface": "小程序端", "module": "作文·搭作文(自学句适配)", "service": "essay_service",
+     "purpose": "搭作文时把学生已学长难句改写/适配到各段功能(称呼/开头/主体/结尾),每段给贴合本题的候选句", "why": "受控改写、给定句式+段功能、fast 档即可", "locations": ["essay_service.py:adapt_sentences"], "cache": "per-user", "store": "essay_adapt_cache(按 学生+体裁段句集md5 缓存,同输入不二次付费)"},
     {"feature": None, "mode": "reasoning", "surface": "小程序端", "module": "作文", "service": "essay_service",
      "purpose": "作文分阶段诊断 + 改写范文", "why": "诊断 + 改写范文需多步推理与质量判断", "locations": ["essay_service.py:244"], "cache": "per_user", "store": "essay.dimensions(kind=exam_diagnose)"},
     {"feature": "kp_classify", "mode": "chat", "surface": "小程序端", "module": "作业上传·题目归类", "service": "kp_classifier_service",
