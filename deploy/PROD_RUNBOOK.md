@@ -68,4 +68,4 @@ nginx.conf 增加 admin server 块(admin.goodgrammar.top → root /opt/enggramer
 ## ⚠️ 注意
 - `content_seed.sql` 含真实内容数据,**别提交进 git、别外传**;传完可删。
 - `build_prod_db.sh` 灌数据幂等(已有内容则跳过),不会重复灌。
-- `alembic_version` 不在内容种子里——生产版本由 `upgrade head` 决定(当前 head = `m196_media_asset_ls_progress`)。
+- `alembic_version` 不在内容种子里——生产版本由 `upgrade head` 决定(当前 head = `m197_reading_skill`)。

@@ -30,6 +30,16 @@ _READING_INTENSIVE_SYS = (
 )
 
 
+def _tag_reading_skill(q, analysis) -> bool:
+    """P1:把精讲产出的题型 skill 归一后落到题上(仅当尚未标)。返回是否改动。
+    不 commit——由调用处随其事务提交。"""
+    if getattr(q, "reading_skill", None):
+        return False
+    from app.services.reading_qtype_service import normalize_skill
+    q.reading_skill = normalize_skill((analysis or {}).get("skill"))
+    return True
+
+
 async def homework_batches(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
     """学生上传作业里含阅读理解的卷,按卷(批次)归组。年月日倒序。
     带 studied(该卷已看解析/练过同类的题数)供前端算 未学/学习中/已学。"""
@@ -100,6 +110,8 @@ async def question_analysis(db: AsyncSession, *, student_id: uuid.UUID,
     q_md5 = hashlib.md5(key.encode("utf-8")).hexdigest()   # noqa: S324
     hit = await db.get(ReadingAnalysisCache, q_md5)
     if hit is not None:
+        if _tag_reading_skill(q, hit.analysis):   # P1:顺手把题型落到题上
+            await db.commit()
         return hit.analysis
     # 生成(复用真题阅读解析 prompt/校验;定位句必须逐字原文,防幻觉)
     opts = _json.dumps(q_options, ensure_ascii=False) if q_options else "(选项见题干)"
@@ -122,6 +134,7 @@ async def question_analysis(db: AsyncSession, *, student_id: uuid.UUID,
     errs = qa.validate_reading_analysis(ana, context_text=context)
     ana["_warnings"] = errs        # 定位句非原文子串等,前端可弱提示(不阻断展示)
     db.add(ReadingAnalysisCache(q_md5=q_md5, analysis=ana))
+    _tag_reading_skill(q, ana)   # P1:顺手把题型落到题上(随下方 commit 一并持久)
     await db.commit()
     return ana
 

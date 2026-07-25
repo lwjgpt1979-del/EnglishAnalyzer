@@ -43,6 +43,7 @@ const navGroups: NavGroup[] = [
     { title: '句子 / 写作', items: [
       { path: '/long-sentences', label: '长难句管理' },
       { path: '/essay-templates', label: '作文模板' },
+      { path: '/reading-qtype', label: '作业阅读题型归类' },
     ] },
   ] },
   { key: 'g-vocab', title: '词汇 / 词力通', icon: Document, items: [

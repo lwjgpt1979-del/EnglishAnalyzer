@@ -63,6 +63,9 @@ class UserPaperQuestion(Base):
     # 取代旧 user_paper_question_knowledge_points(硬 FK→knowledge_points)。
     node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=True)
     kp_key = mapped_column(sa.String(120), nullable=True)   # 归类知识点名(判语法/词汇、加入语法学习/单词用)
+    # P1 阅读学情:阅读小题的题型细标(细节理解/主旨大意/推理判断/词义猜测/作者态度/指代关系/图表数字/其他)。
+    # 精讲顺手写 + 存量回填 + 补跑归类;对错用现成 is_wrong。见 reading_qtype_service。
+    reading_skill = mapped_column(sa.String(16), nullable=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 

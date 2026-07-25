@@ -4558,3 +4558,57 @@ async def admin_third_party_status(admin: AdminDep):
     """所有第三方付费能力的配置状态清单(已配/占位),按类别分组。用量/余额见 /llm-usage、/llm-balance。"""
     from app.services import third_party_service
     return make_ok(third_party_service.status_inventory())
+
+
+# ── 作业阅读题·题型归类(P1 阅读理解学情统计)──────────────────────────────
+@router.get("/reading-qtype/stats")
+async def admin_reading_qtype_stats(db: DbDep, admin: AdminDep):
+    """概况:阅读题总数 / 已标 / 未标 + 按题型分布。"""
+    from app.services import reading_qtype_service as svc
+    return make_ok(await svc.stats(db))
+
+
+@router.get("/reading-qtype/questions")
+async def admin_reading_qtype_questions(
+    db: DbDep, admin: AdminDep,
+    skill: str | None = Query(None, description="按题型筛,空=全部"),
+    only_untagged: bool = Query(False, description="只看未标"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """逐题列表(分页),供复核/改题型。"""
+    from app.services import reading_qtype_service as svc
+    items, total = await svc.list_admin(
+        db, skill=skill, only_untagged=only_untagged, skip=skip, limit=limit)
+    return make_ok({"items": items, "total": total, "skills": svc.SKILLS})
+
+
+@router.post("/reading-qtype/backfill")
+async def admin_reading_qtype_backfill(db: DbDep, admin: AdminDep):
+    """存量回填(不花钱):从精讲缓存 + 同内容邻题复制题型。"""
+    from app.services import reading_qtype_service as svc
+    return make_ok(await svc.backfill(db))
+
+
+@router.post("/reading-qtype/classify")
+async def admin_reading_qtype_classify(
+    db: DbDep, admin: AdminDep,
+    limit: int = Body(100, embed=True, ge=1, le=1000,
+                      description="本次最多归类的不同内容数(成本闸)"),
+):
+    """补跑归类(调 LLM):回填后仍未标的按内容去重后逐一分类。"""
+    from app.services import reading_qtype_service as svc
+    return make_ok(await svc.classify_missing(db, limit=limit))
+
+
+@router.put("/reading-qtype/questions/{question_id}")
+async def admin_reading_qtype_set(
+    question_id: uuid.UUID, db: DbDep, admin: AdminDep,
+    skill: str = Body(..., embed=True),
+):
+    """人工改某题题型(复核)。"""
+    from app.services import reading_qtype_service as svc
+    ok = await svc.set_skill(db, question_id=question_id, skill=skill)
+    if not ok:
+        raise AppError(code=400, message="题不存在或题型非法(须为固定 8 类之一)")
+    return make_ok({"updated": True})
