@@ -125,7 +125,7 @@
     { "path": "pages/practice/v2-session", "style": { "navigationBarTitleText": "练习" } },
     { "path": "pages/practice/v2-exam", "style": { "navigationBarTitleText": "模拟考" } },
     { "path": "pages/practice/adaptive", "style": { "navigationBarTitleText": "智能出题" } },
-    { "path": "pages/user-papers/list", "style": { "navigationBarTitleText": "我的作业" } },
+    { "path": "pages/user-papers/list", "style": { "navigationBarTitleText": "作业" } },
     { "path": "pages/user-papers/upload", "style": { "navigationBarTitleText": "上传作业" } },
     { "path": "pages/user-papers/detail", "style": { "navigationBarTitleText": "作业详情" } },
     { "path": "pages/kp-mastery/index", "style": { "navigationBarTitleText": "知识点图谱" } },

@@ -96,14 +96,10 @@
       </view>
 
       <view class="quick-grid">
-        <!-- 作业流:上传作业 + 作业精讲 同一行(quick-card 同款) -->
-        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/user-papers/upload' })">
+        <!-- 作业:上传作业 + 作业精讲 已合并为一个入口(内含 拍整份作业 + 按作业/按模块)-->
+        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/user-papers/list' })">
           <view class="qi qi-file" />
-          <text class="quick-label">上传作业</text>
-        </view>
-        <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/intensive/homework' })">
-          <view class="qi qi-book" />
-          <text class="quick-label">作业精讲</text>
+          <text class="quick-label">作业</text>
         </view>
         <view class="quick-card" @tap="() => uni.navigateTo({ url: '/pages/practice/adaptive' })">
           <view class="qi qi-ai" />
