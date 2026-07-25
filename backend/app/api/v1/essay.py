@@ -135,6 +135,25 @@ async def essay_templates(db: DbDep, current_user: UserDep, essay_type: str | No
     return make_ok(EssayTemplatesOut(essay_type=essay_type, template=t["template"], samples=t["samples"]))
 
 
+@router.post("/upgrade", response_model=BaseResponse[dict])
+async def upgrade_sentences_api(body: dict, db: DbDep, current_user: UserDep):
+    """逐句升级:平句→高分句,优先套用你学过的长难句。body: {draft_text, genre?}。"""
+    await get_rls_db(db, str(current_user.id))
+    return make_ok(await essay_service.upgrade_sentences(
+        db, student_id=current_user.id,
+        draft_text=str(body.get("draft_text") or ""), essay_type=body.get("genre")))
+
+
+@router.get("/scaffold", response_model=BaseResponse[dict])
+async def writing_scaffold(db: DbDep, current_user: UserDep, genre: str | None = None):
+    """写作页支架:模版骨架 + 高分句 + 你学过的长难句(按体裁取)。"""
+    await get_rls_db(db, str(current_user.id))
+    m = await membership_service.get_active_membership(db, user_id=current_user.id)
+    tier = str(m.tier) if m else "free"
+    return make_ok(await essay_service.writing_scaffold(
+        db, student_id=current_user.id, essay_type=genre, tier=tier))
+
+
 @router.get("/progress", response_model=BaseResponse[EssayProgressOut])
 async def my_progress(db: DbDep, current_user: UserDep):
     await get_rls_db(db, str(current_user.id))

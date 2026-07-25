@@ -14,6 +14,8 @@ export interface EssayPrompt {
 export interface PromptAnalysis {
   title: string; genre: string; scenario: string; required_points: string[]
   person?: string | null; tense?: string | null; word_min?: number | null; word_max?: number | null
+  // 提问式审题(四卡)干扰项 + 讲解
+  audience?: string | null; genre_distractors?: string[]; point_distractors?: string[]; genre_explain?: string
 }
 export interface EssayDiagnosis {
   id: string; title?: string; genre?: string; overall_band?: string
@@ -30,6 +32,16 @@ export function getEssayPrompts(stage?: string, genre?: string): Promise<EssayPr
   if (genre) parts.push(`genre=${encodeURIComponent(genre)}`)
   const qs = parts.join('&')
   return request<EssayPrompt[]>(`/api/v1/essays/prompts${qs ? '?' + qs : ''}`, { method: 'GET' })
+}
+// 写作页支架:模版骨架 + 高分句 + 你学过的长难句
+export interface WritingScaffold { template: string; high_sentences: string[]; my_sentences: { text: string; date?: string }[] }
+export function getWritingScaffold(genre?: string): Promise<WritingScaffold> {
+  return request<WritingScaffold>('/api/v1/essays/scaffold', { method: 'GET', data: { genre: genre || undefined } })
+}
+// 逐句升级:平句→高分句,优先套用你学过的长难句
+export interface SentenceUpgrade { original: string; upgraded: string; note: string; from_mine: boolean }
+export function upgradeEssay(draftText: string, genre?: string): Promise<{ upgrades: SentenceUpgrade[] }> {
+  return request('/api/v1/essays/upgrade', { method: 'POST', data: { draft_text: draftText, genre: genre || undefined } })
 }
 export function analyzeEssayPrompt(p: { prompt_id?: string; text?: string }): Promise<PromptAnalysis> {
   return request<PromptAnalysis>('/api/v1/essays/analyze-prompt', { method: 'POST', data: p })

@@ -164,22 +164,31 @@ async def analyze_prompt(
             "required_points": p.required_points or [],
             "person": p.person, "tense": p.tense,
             "word_min": p.word_min, "word_max": p.word_max,
+            # 题库题无 AI 干扰项/讲解:前端用通用兜底出四卡
+            "audience": None, "genre_distractors": [], "point_distractors": [], "genre_explain": "",
         }
     scenario = (text or "").strip()
     if not scenario:
         raise AppError(code=400, message="请输入作文题目或情景")
     if is_llm_dev_mode():
-        return {"title": scenario[:20], "genre": "未指定", "scenario": scenario,
+        return {"title": scenario[:20], "genre": "邀请信", "scenario": scenario,
                 "required_points": ["要点1", "要点2", "要点3"],
-                "person": "第一人称", "tense": "一般现在时", "word_min": 80, "word_max": 120}
+                "person": "第一人称", "tense": "一般现在时", "word_min": 80, "word_max": 120,
+                "audience": "对方", "genre_distractors": ["建议信", "记叙文"],
+                "point_distractors": ["你的成绩"], "genre_explain": "(dev)体裁讲解"}
     sys = (
-        "你是英语写作审题助手。根据给定的作文题目/情景，提取写作要点清单与写作规范。"
-        "只返回 JSON，键：genre(体裁,中文)、required_points(必答要点,中文字符串数组)、"
-        "person(人称)、tense(主要时态)、word_min(int)、word_max(int)。要点要覆盖题目所有得分点，简洁。"
+        "你是英语写作审题助手。根据作文题目/情景，提取写作要点与规范,并为「提问式审题」准备干扰项与讲解。"
+        "只返回 JSON,键:genre(体裁,中文)、required_points(必答要点,中文数组,覆盖所有得分点)、"
+        "person(人称)、tense(主要时态)、word_min(int)、word_max(int)、"
+        "audience(收信人/写给谁;非书信类填 null)、"
+        "genre_distractors(2 个似是而非的其它体裁,中文数组)、"
+        "point_distractors(1-2 个**不属于**本题的干扰要点,中文数组)、"
+        "genre_explain(一句中文:该体裁的开头/结尾特点 + 默认人称时态,给学生看)。"
     )
     try:
         resp = await chat_completion(system_prompt=sys, user_prompt=f"题目/情景：\n{scenario}",
-                                     max_tokens=600, response_format={"type": "json_object"})
+                                     max_tokens=800, response_format={"type": "json_object"},
+                                     feature="essay_analyze")
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception as exc:  # noqa: BLE001
         raise AppError(code=502, message=f"AI 审题失败：{exc}") from exc
@@ -188,6 +197,10 @@ async def analyze_prompt(
         "required_points": [str(x) for x in (data.get("required_points") or [])],
         "person": data.get("person"), "tense": data.get("tense"),
         "word_min": data.get("word_min"), "word_max": data.get("word_max"),
+        "audience": (str(data.get("audience")) if data.get("audience") else None),
+        "genre_distractors": [str(x) for x in (data.get("genre_distractors") or [])][:2],
+        "point_distractors": [str(x) for x in (data.get("point_distractors") or [])][:2],
+        "genre_explain": str(data.get("genre_explain") or ""),
     }
 
 
@@ -364,6 +377,61 @@ async def get_configured_templates(
     if tier is not None and tier != "promax":
         return {**data, "samples": list(data.get("samples", []))[:_PRO_SAMPLE_LIMIT]}
     return data
+
+
+async def writing_scaffold(
+    db: AsyncSession, *, student_id: uuid.UUID, essay_type: str | None, tier: str | None = None,
+) -> dict:
+    """写作页支架:体裁模版骨架 + 高分句(samples)+ 你学过的长难句(student_long_sentence 本人已发布,近 6 条)。"""
+    from app.models.d20_long_sentence import StudentLongSentence
+    t = await get_configured_templates(db, essay_type, tier=tier)
+    rows = (await db.execute(
+        select(StudentLongSentence.text, StudentLongSentence.created_at, StudentLongSentence.source_paper_id)
+        .where(StudentLongSentence.owner_id == student_id, StudentLongSentence.status == "published")
+        .order_by(StudentLongSentence.created_at.desc()).limit(6))).all()
+    my = [{"text": txt, "date": (ca.strftime("%m-%d") if ca else "")}
+          for txt, ca, _ in rows if txt and txt.strip()]
+    return {"template": t.get("template", ""), "high_sentences": list(t.get("samples") or []), "my_sentences": my}
+
+
+async def upgrade_sentences(
+    db: AsyncSession, *, student_id: uuid.UUID, draft_text: str, essay_type: str | None = None,
+) -> dict:
+    """逐句升级:挑 3-5 句可升级句 → 高档表达;**优先套用学生已学过的长难句句式**,注明来源。fast 档。"""
+    from app.services.llm_provider import fast_model
+    text = (draft_text or "").strip()
+    if not text:
+        return {"upgrades": []}
+    sc = await writing_scaffold(db, student_id=student_id, essay_type=essay_type, tier="promax")
+    mine = [m["text"] for m in sc.get("my_sentences", []) if m.get("text")]
+    if is_llm_dev_mode():
+        return {"upgrades": [{"original": "I hope you can come.",
+                              "upgraded": "We would be honored if you could join us.",
+                              "note": "(dev)更正式的邀请表达", "from_mine": False}]}
+    mine_block = ("\n学生已学过的高分长难句(可套用其句式):\n" + "\n".join(f"- {s}" for s in mine[:6])) if mine else ""
+    sys = (
+        "你是英语作文提升教练。给定学生作文,挑 3-5 个**可升级**的句子,升成更高档、更地道的表达。"
+        "**优先**:若某句能用学生学过的某个句式(如倒装 Not only…but also…、定语从句等)改写,就用它并把 from_mine 置 true。"
+        "只返回 JSON:{\"upgrades\":[{\"original\":\"原文里的句子(尽量与原文一致)\",\"upgraded\":\"升级后的英文句\","
+        "\"note\":\"一句中文:为什么更好/用了什么结构\",\"from_mine\":true/false}]}。note 一律中文。")
+    try:
+        resp = await chat_completion(
+            system_prompt=sys, user_prompt=f"作文原文:\n{text}{mine_block}",
+            max_tokens=1500, model=fast_model(), response_format={"type": "json_object"},
+            feature="essay_upgrade")
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001
+        return {"upgrades": []}
+    ups = []
+    for u in (data.get("upgrades") or [])[:6]:
+        if not isinstance(u, dict):
+            continue
+        o = str(u.get("original") or "").strip()
+        up = str(u.get("upgraded") or "").strip()
+        if o and up:
+            ups.append({"original": o, "upgraded": up, "note": str(u.get("note") or "").strip(),
+                        "from_mine": bool(u.get("from_mine"))})
+    return {"upgrades": ups}
 
 
 async def get_all_templates_config(db: AsyncSession) -> dict:
