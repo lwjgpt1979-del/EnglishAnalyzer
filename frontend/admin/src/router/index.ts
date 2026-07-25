@@ -32,7 +32,6 @@ const router = createRouter({
         { path: 'task-runs', name: 'task-runs', component: () => import('../views/TaskRuns.vue') },
         { path: 'textbook-word-stats', name: 'textbook-word-stats', component: () => import('../views/TextbookWordStats.vue') },
         { path: 'long-sentences', name: 'long-sentences', component: () => import('../views/LongSentences.vue') },
-        { path: 'reading-qtype', name: 'reading-qtype', component: () => import('../views/ReadingQtype.vue') },
         { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },
         { path: 'regions', name: 'regions', component: () => import('../views/RegionAdmin.vue') },
         { path: 'textbook-catalog', name: 'textbook-catalog', component: () => import('../views/TextbookCatalog.vue') },

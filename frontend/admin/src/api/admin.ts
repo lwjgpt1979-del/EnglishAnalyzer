@@ -2007,33 +2007,3 @@ export interface ThirdPartyStatus {
 export function getThirdPartyStatus() {
   return unwrap<ThirdPartyStatus>(request.get('/admin/third-party/status'))
 }
-
-// ── 作业阅读题·题型归类(P1 阅读理解学情统计)──────────────────────────────
-export interface ReadingQtypeStats {
-  total: number; tagged: number; untagged: number
-  distribution: Record<string, number>
-}
-export interface ReadingQtypeItem {
-  id: string; stem: string; skill: string | null; is_wrong: boolean; has_passage: boolean
-}
-export function getReadingQtypeStats() {
-  return unwrap<ReadingQtypeStats>(request.get('/admin/reading-qtype/stats'))
-}
-export function listReadingQtype(params: {
-  skill?: string; only_untagged?: boolean; skip?: number; limit?: number
-}) {
-  return unwrap<{ items: ReadingQtypeItem[]; total: number; skills: string[] }>(
-    request.get('/admin/reading-qtype/questions', { params }))
-}
-export function backfillReadingQtype() {
-  return unwrap<{ scanned: number; filled: number; still_missing: number }>(
-    request.post('/admin/reading-qtype/backfill'))
-}
-export function classifyReadingQtype(limit: number) {
-  return unwrap<{ classified_contents: number; tagged_questions: number; remaining: number }>(
-    request.post('/admin/reading-qtype/classify', { limit }))
-}
-export function setReadingQtype(questionId: string, skill: string) {
-  return unwrap<{ updated: boolean }>(
-    request.put(`/admin/reading-qtype/questions/${questionId}`, { skill }))
-}

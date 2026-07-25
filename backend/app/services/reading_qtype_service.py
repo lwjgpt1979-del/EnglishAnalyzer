@@ -1,12 +1,14 @@
 """作业阅读题·题型细标(reading_skill)服务 —— P1「阅读理解学情统计」。
 
 目标表:user_paper_questions(学生上传作业题,section_type='reading' 的阅读小题)。
-题型细标固定 8 类。产出路径:
-  ① 精讲顺手写 —— reading_intensive_service.question_analysis 里落 reading_skill;
-  ② 回填 backfill —— 存量从 reading_analysis_cache 按题 md5 命中,或同内容邻题已标则复制;
-  ③ 补跑 classify —— 仍未标的按内容去重后调 LLM 归类(feature=reading_qtype_classify,快档);
-  ④ admin 复核 set_skill 人工改。
+题型细标固定 8 类。**这些是学生私有内容的派生标注,一律走学生端自动/按需生成,
+不进后台运营维护**(遵 CLAUDE.md「学生私人内容不进后台运营维护」铁律)。产出路径:
+  ① 精讲顺手写 —— reading_intensive_service.question_analysis 里落 reading_skill(自动,已接);
+  ② 回填 backfill —— 存量从 reading_analysis_cache 按题 md5 命中,或同内容邻题已标则复制(不花钱);
+  ③ 补跑 classify —— 仍未标的按内容去重后调 LLM 归类(feature=reading_qtype_classify,快档)。
+②③ 供后续「学情页」在**学生自己打开时**按需补齐(查看即生成),不做后台批量维护、无逐题人工改。
 对错用现成 is_wrong,不建表。第三方付费暂存:同内容(md5)只归类一次(回填/邻题/批内去重)。
+stats 仅作**只读聚合监控**(匿名分布,判分类器质量),不落到个人。
 """
 from __future__ import annotations
 
@@ -167,39 +169,3 @@ async def stats(db: AsyncSession) -> dict:
     tagged = sum(c for sk, c in dist.items() if sk != "未标")
     return {"total": int(total), "tagged": tagged, "untagged": int(total) - tagged,
             "distribution": dist}
-
-
-async def list_admin(db: AsyncSession, *, skill: str | None = None,
-                     only_untagged: bool = False, skip: int = 0,
-                     limit: int = 50) -> tuple[list[dict], int]:
-    """admin 归类页逐题列表(分页)。skill 筛某题型;only_untagged 只看未标。"""
-    stmt = _reading_q_stmt()
-    if only_untagged:
-        stmt = stmt.where(UserPaperQuestion.reading_skill.is_(None))
-    elif skill:
-        stmt = stmt.where(UserPaperQuestion.reading_skill == skill)
-    total = (await db.execute(
-        select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-    rows = (await db.execute(
-        stmt.order_by(UserPaperQuestion.created_at.desc())
-        .offset(skip).limit(limit))).scalars().all()
-    items = [{
-        "id": str(q.id),
-        "stem": (q.stem or "")[:160],
-        "skill": q.reading_skill,
-        "is_wrong": bool(q.is_wrong),
-        "has_passage": bool(q.passage),
-    } for q in rows]
-    return items, int(total)
-
-
-async def set_skill(db: AsyncSession, *, question_id: uuid.UUID, skill: str) -> bool:
-    """admin 人工改题型(复核)。skill 必须是固定 8 类之一。"""
-    if skill not in SKILLS:
-        return False
-    q = await db.get(UserPaperQuestion, question_id)
-    if q is None:
-        return False
-    q.reading_skill = skill
-    await db.commit()
-    return True
