@@ -1,5 +1,34 @@
 # engGramer 项目约定
 
+## 编码行为准则(减少常见 LLM 编码错误 · 全项目强制)
+
+> 来源:Andrej Karpathy skills。与本项目其它约定并存;琐碎任务可自行权衡。取舍:这些准则偏"稳"而非"快"。
+> Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions. Tradeoff: bias toward caution over speed; for trivial tasks, use judgment.
+
+**1. 先想后写 · Think Before Coding** —— 别假设、别藏困惑、把取舍摊开。
+- 明确说出你的假设;不确定就问。/ State assumptions explicitly; if uncertain, ask.
+- 有多种解读就都列出来,不要默默选一个。/ If multiple interpretations exist, present them — don't pick silently.
+- 有更简单的做法就说出来,该反对就反对。/ If a simpler approach exists, say so. Push back when warranted.
+- 有不清楚的就停下,指出困惑点,发问。/ If something is unclear, stop. Name what's confusing. Ask.
+
+**2. 简单优先 · Simplicity First** —— 用解决问题的最少代码,不做投机性设计。
+- 不加没要求的功能;不为一次性代码造抽象。/ No features beyond what was asked; no abstractions for single-use code.
+- 不做没要求的"灵活/可配置";不为不可能的场景写错误处理。/ No unrequested "flexibility/configurability"; no error handling for impossible scenarios.
+- 200 行能压到 50 行就重写。自问:"资深工程师会不会嫌这过度复杂?"是→简化。/ If 200 lines could be 50, rewrite. Ask: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+**3. 外科手术式改动 · Surgical Changes** —— 只碰必须碰的,只清自己制造的乱。
+- 不"顺手改进"相邻代码/注释/格式;不重构没坏的东西;沿用现有风格(哪怕你不认同)。/ Don't "improve" adjacent code/comments/formatting; don't refactor what isn't broken; match existing style even if you'd do it differently.
+- 发现无关的死代码→**提出来,别删**(除非被要求)。/ Notice unrelated dead code → mention it, don't delete it (unless asked).
+- 只清理**你的改动**造成的孤儿(用不到的 import/变量/函数);不动既有死代码。/ Remove orphans YOUR changes created; don't remove pre-existing dead code.
+- 检验:每一处改动行都能直接追溯到用户的需求。/ Test: every changed line traces directly to the user's request.
+
+**4. 目标驱动执行 · Goal-Driven Execution** —— 先定"验收标准",循环到验证通过。
+- 把任务转成可验证目标:"加校验"→"先写非法输入的测试,再让它通过";"修 bug"→"先写复现测试,再修";"重构 X"→"改动前后测试都过"。/ "Add validation" → "write tests for invalid inputs, then pass them"; "Fix the bug" → "write a reproducing test, then fix"; "Refactor X" → "tests pass before and after".
+- 多步任务先给一句话计划:每步 → 验证点。/ For multi-step tasks, state a brief plan: each step → its verify check.
+- 强验收标准能让你独立循环;弱标准("能跑就行")会导致反复澄清。/ Strong success criteria let you loop independently; weak ones require constant clarification.
+
+**准则奏效的标志**:diff 里无关改动更少、因过度复杂返工更少、澄清发问出现在实现之前而非犯错之后。/ Working if: fewer unnecessary changes in diffs, fewer rewrites from overcomplication, clarifying questions come before implementation rather than after mistakes.
+
 ## 工作流:先设计、多方案、我选了再开发(全项目强制)
 
 **任何新需求或改错,一律先出「详细设计」——给出多个(≥2)可选方案供我选择,并说明各自取舍;在我明确选定之前,不要写代码、不要改文件、不要开发。**
@@ -101,6 +130,18 @@ admin / institution 端(Vue + Element Plus):优先用 Element Plus 自带的线�
 - **统一控制页**:每类主数据配一个 admin 管理页做「编辑 + 上架/下架」(参照课程单元发布闸门 `curriculum_units.status` draft/published);状态切换走后端 service,不在前端本地态糊弄。
 - **数量天然对齐**:C 端可选项 = 后台已上架项,不做「规范全量 ∪ distinct」这类会显示空壳版本的合并;需要「学生可填自身属性(如真实年级)」的例外,单独说明并尽量按所选版本已上架内容动态收敛。
 - **遇到新的「版本/清单」类功能一律照此办理**;发现历史写死清单的,收敛到主数据 + 上下架 + 角色可见。
+
+## 学生私人内容不进后台运营维护(全项目强制)
+
+**凡「学生私人上传 / 私有」的内容——上传的作业(卷 / 短文 / 题干 / 作答 / 图片 / OCR)、个人错题、学习记录、个人作文等——一律不得作为「运营 / 后台可维护(增删改 / 复核 / 逐条台账)」的对象。运营只策展平台公共内容,不碰任何一个学生的私人数据。** 这类内容的派生信号(如作业阅读题的题型细标、错因、掌握度)必须在**学生端消费点自动 / 按需生成**(「查看即生成」),不是靠后台人工维护。
+
+铁律:
+- **私有数据不进 admin 维护台账**:`user_uploaded_papers` / `user_paper_sections` / `user_paper_questions`、学生作答、`wrong_record`、个人学习 / 作文等,admin 端**不做逐条编辑 / 复核 / 归类的维护页**。判断标准:该内容是否「按学生一份、私有、非全体共享」——是,则不给运营维护。
+- **派生信号走学生端自动 / 按需**:给学生自己功能用的派生标注(题型、错因、掌握判定等),在**精讲 / 学情等消费点**自动落库或按需补齐(参考「查看即生成」铁律、`reading_intensive_service._tag_reading_skill`),**零运营参与**;标错顶多是该生一条统计噪声,不值当人工精修。
+- **运营正当诉求只给「只读聚合 / 管线质量监控」**:运营要看的是**匿名聚合统计**或**自动管线的质量抽查**(如分类器准确率采样,用于判断要不要调 prompt),**只读、不落到个人**;绝不做「逐个学生的私有内容维护」。
+- **边界:平台策展内容不受此限**:平台公共 / 共享内容(真题库 `platform_question`、词库、课程单元、平台生成题等)是策展对象,admin 增删改 / 上下架 / 复核**正当**——区别就在「私有 vs 公共共享」。
+- **受控例外(反应式、按案、最小范围)**:内容安全审核、客服工单处理被举报的**具体一条**、合规 / 法务调取等,属**按案反应式**处置,非常态维护台账,且限最小必要范围——不等于开放私有内容给运营日常维护。
+- **新接「学生上传 / 私有内容 + 其派生标注」的能力**一律照此:先想清楚「派生信号怎么在学生端自动 / 按需生成」,不允许建「运营逐条维护学生私有内容」的后台页。发现历史有的(如 P1 误建的 admin「作业阅读题型对应」页),收敛 / 下线。
 
 ## 列表页必须分页(admin / institution 全项目强制)
 
