@@ -160,11 +160,13 @@ async function addWord(w: StudyWord) {
 
 // 无媒体的词即时生成媒体+信息,回来原地更新卡片
 async function genWordMedia(w: StudyWord) {
-  if (!w.word_id || genWords.value.has(w.word_id)) return
+  // text_only=确定无图(纯虚词/复核降级),已解决 → 不再触发生成、不闪「生成中」,直接当无图词义卡
+  if (!w.word_id || w.image_status === 'text_only' || genWords.value.has(w.word_id)) return
   genWords.value = new Set([...genWords.value, w.word_id])
   try {
     const m = await ensureWordMedia(w.word_id)
     w.image_url = m.image_url ?? null
+    w.image_status = m.image_status ?? w.image_status   // 回写:本会话变 text_only 后不再触发
     w.word_audio_url = m.word_audio_url ?? null
     w.en_description = m.en_description ?? null
     w.example = (m.example as any) ?? null

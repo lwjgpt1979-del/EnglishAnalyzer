@@ -257,7 +257,7 @@ export function makeUpCheckin(date: string): Promise<VocabMakeUpResult> {
 
 // 单词精讲(作业按批次 / 课程按单元;详解取词库)
 export interface WordReportMeta { limited: boolean; regenerated: boolean; votes: number; need: number; daily?: number }
-export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any; image_url?: string | null; word_audio_url?: string | null; en_description?: string | null; example?: { en?: string; zh?: string; audio?: string } | null; studied?: boolean; report?: WordReportMeta }
+export interface IntensiveWord { word_id: string; word: string; phonetic: string | null; definitions: any; image_url?: string | null; image_status?: string; word_audio_url?: string | null; en_description?: string | null; example?: { en?: string; zh?: string; audio?: string } | null; studied?: boolean; report?: WordReportMeta }
 export interface HwWordBatch { paper_id: string; title: string; date: string; word_count: number; studied?: number }
 export interface CourseWordUnit { unit_id: string; grade: string; semester: string; unit_no: number; unit_title: string; word_count: number; total?: number; studied?: number; unlocked?: boolean }
 // 课程精讲·单词 单元列表响应:聚焦当前学期 + 学期通关 + 下学期(供学完庆祝弹层)

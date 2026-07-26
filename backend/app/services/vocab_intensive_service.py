@@ -25,6 +25,8 @@ def _word_out(w: VocabularyWord) -> dict:
     return {"word_id": str(w.id), "word": w.word, "phonetic": w.phonetic,
             "definitions": w.definitions,
             "image_url": (imgs[0] if imgs else None),
+            # 前端显式区分:published(有图)/ text_only(确定无图·别再触发生成)/ draft(可生成)
+            "image_status": str(w.media_status or "draft"),
             "word_audio_url": (w.word_audio_url if pub else None),
             "en_description": (w.en_description if pub else None),
             "example": (exs[0] if exs else None)}

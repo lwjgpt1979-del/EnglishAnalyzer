@@ -152,6 +152,7 @@ export interface StudyWord {
   in_vocab: boolean; word_added: boolean
   pending_create?: boolean   // 缺词占位卡:词库没有,点开触发「查看即生成」入库
   exam_tag?: string | null   // P4:按学生学段标考纲词(初中→中考 / 高中→高考;非该学段考纲词为空)
+  image_status?: string      // published(有图)/ text_only(确定无图·别再触发生成)/ draft(可生成)
 }
 export interface SentenceStudyAids {
   analysis: any; sentence_added: boolean
