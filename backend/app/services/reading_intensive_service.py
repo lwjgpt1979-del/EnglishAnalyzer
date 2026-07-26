@@ -406,3 +406,124 @@ async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
     return {"total": len(rows), "answered": answered, "unanswered": len(rows) - answered,
             "wrong": wrong, "by_skill": by_skill, "diagnosis": diagnosis,
             "vocab": vocab, "sentences": sentences}
+
+
+# ── P5 阶段薄弱点聚合(跨卷 + 时间窗)─────────────────────────────────────────
+_ANALYTICS_KEY = "reading_analytics"
+# 判弱阈值·运营可配置(system_configs.reading_analytics);此常量仅兜底,实际值见 _analytics_thresholds
+_ANALYTICS_DEFAULTS: dict = {
+    "weak_word_min_papers": 2,   # 考纲薄弱词出现 ≥N 卷 → 高频薄弱词
+    "skill_min_sample": 3,       # 题型样本 ≥M 才判弱(样本太小不判)
+    "skill_weak_rate": 60,       # 题型正确率 <X% 判弱
+    "struct_min_stuck": 3,       # 某句法结构累计卡 ≥K 次 判弱
+}
+
+
+async def _analytics_thresholds(db: AsyncSession) -> dict:
+    """判弱阈值:后台可配(system_configs),缺失走默认。"""
+    from app.models.d9_system import SystemConfig
+    cfg = dict(_ANALYTICS_DEFAULTS)
+    row = (await db.execute(
+        select(SystemConfig).where(SystemConfig.key == _ANALYTICS_KEY))).scalar_one_or_none()
+    if row is not None and isinstance(row.value, dict):
+        cfg.update({k: v for k, v in row.value.items() if k in _ANALYTICS_DEFAULTS})
+    return cfg
+
+
+async def reading_analytics(db: AsyncSession, *, student_id: uuid.UUID,
+                            days: int = 14, paper_cap: int = 20) -> dict:
+    """P5 阶段薄弱点:近 days 天(days<=0=全部)多卷聚合 → 高频薄弱考纲词 / 反复卡句法 /
+    弱题型正确率 + 一句话诊断。纯阈值判弱(可配)。全部复用现成信号,零新增采集。"""
+    from datetime import datetime, timezone, timedelta
+    from collections import Counter, defaultdict
+    from app.models.d13_v2_user_papers import ReadingAnswerLog
+    from app.models.d20_long_sentence import StudentLongSentence
+
+    th = await _analytics_thresholds(db)
+    pq = (select(UserUploadedPaper.id)
+          .where(UserUploadedPaper.student_id == student_id)
+          .order_by(UserUploadedPaper.created_at.desc()))
+    if days and days > 0:
+        pq = pq.where(UserUploadedPaper.created_at >= datetime.now(timezone.utc) - timedelta(days=days))
+    papers = (await db.execute(pq)).scalars().all()
+    if not papers:
+        return {"days": days, "papers": 0, "skills": [], "weak_skills": [],
+                "weak_structures": [], "weak_words": [], "diagnosis": "这段时间还没有阅读作业。"}
+
+    # ① 题型正确率(对错口径同单篇:主动作答 > OCR is_wrong > 未答不计)
+    q_rows = (await db.execute(
+        select(UserPaperQuestion.id, UserPaperQuestion.reading_skill,
+               UserPaperQuestion.is_wrong, UserPaperQuestion.student_answer)
+        .join(UserPaperSection, UserPaperSection.id == UserPaperQuestion.section_id)
+        .where(UserPaperSection.section_type == "reading",
+               UserPaperQuestion.user_paper_id.in_(papers)))).all()
+    fresh: dict = {}
+    qids = [r.id for r in q_rows]
+    if qids:
+        for qid, ic in (await db.execute(
+            select(ReadingAnswerLog.question_id, ReadingAnswerLog.is_correct)
+            .where(ReadingAnswerLog.student_id == student_id,
+                   ReadingAnswerLog.question_id.in_(qids))
+            .order_by(ReadingAnswerLog.created_at))).all():
+            if ic is not None:
+                fresh[qid] = bool(ic)
+    sk_agg: dict = defaultdict(lambda: {"total": 0, "wrong": 0})
+    for qid, sk, is_wrong, stu in q_rows:
+        if qid in fresh:
+            correct = fresh[qid]
+        elif stu:
+            correct = not is_wrong
+        else:
+            continue
+        c = sk_agg[sk or "其他"]
+        c["total"] += 1
+        if not correct:
+            c["wrong"] += 1
+    skills = sorted(
+        ({"skill": k, "total": v["total"], "wrong": v["wrong"],
+          "rate": round((v["total"] - v["wrong"]) / v["total"] * 100) if v["total"] else 0}
+         for k, v in sk_agg.items()),
+        key=lambda x: (x["rate"], -x["total"]))
+    weak_skills = [s for s in skills
+                   if s["total"] >= th["skill_min_sample"] and s["rate"] < th["skill_weak_rate"]]
+
+    # ② 高频薄弱考纲词(出现 ≥N 卷;复用单篇词汇探头,paper_cap 兜住成本)
+    word_papers: dict = defaultdict(set)
+    word_tag: dict = {}
+    for pid in papers[:paper_cap]:
+        vb = await _paper_weak_exam_vocab(db, student_id=student_id, paper_id=pid)
+        for w in vb["weak"]:
+            word_papers[w["word"]].add(pid)
+            word_tag[w["word"]] = w["tag"]
+    weak_words = sorted(
+        ({"word": w, "tag": word_tag[w], "papers": len(ps)}
+         for w, ps in word_papers.items() if len(ps) >= th["weak_word_min_papers"]),
+        key=lambda x: (-("频" in x["tag"]), -x["papers"]))[:12]   # 真题频档词优先,裸常见考纲词沉底
+
+    # ③ 反复卡的句法结构(卡 ≥K 次;卡口径同单篇:已起学但 did_gram=false)
+    struct: Counter = Counter()
+    for dc, dg, dw, ana in (await db.execute(
+        select(StudentLongSentence.did_comp, StudentLongSentence.did_gram,
+               StudentLongSentence.did_word, StudentLongSentence.analysis_json)
+        .where(StudentLongSentence.owner_id == student_id,
+               StudentLongSentence.source_paper_id.in_(papers)))).all():
+        if (dc or dw) and not dg:
+            for gp in ((ana or {}).get("grammar_points") or []):
+                nm = (gp or {}).get("name")
+                if nm:
+                    struct[nm] += 1
+    weak_structures = [{"name": n, "count": c} for n, c in struct.most_common()
+                       if c >= th["struct_min_stuck"]][:8]
+
+    bits = []
+    if weak_skills:
+        bits.append(weak_skills[0]["skill"] + "题")
+    if weak_structures:
+        bits.append(weak_structures[0]["name"])
+    if weak_words:
+        bits.append(weak_words[0]["word"] + " 类考纲词")
+    diagnosis = ("近期薄弱:" + " + ".join(bits) + ",建议优先攻这几块。") if bits \
+        else "近期没有明显薄弱点,继续保持。"
+    return {"days": days, "papers": len(papers), "skills": skills,
+            "weak_skills": weak_skills, "weak_structures": weak_structures,
+            "weak_words": weak_words, "diagnosis": diagnosis}

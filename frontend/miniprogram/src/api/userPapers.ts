@@ -122,6 +122,21 @@ export function getReadingSummary(paperId: string): Promise<ReadingSummary> {
 export function recordReadingAnswer(qid: string, chosen: string): Promise<{ chosen: string | null; correct_answer: string | null; is_correct: boolean | null }> {
   return request(`/api/v1/user-papers/questions/${qid}/reading-answer`, { method: 'POST', data: { chosen } })
 }
+export interface ReadingAnalyticsSkill { skill: string; total: number; wrong: number; rate: number }
+export interface ReadingAnalyticsWord { word: string; tag: string; papers: number }
+export interface ReadingAnalyticsStruct { name: string; count: number }
+export interface ReadingAnalytics {
+  days: number; papers: number
+  skills: ReadingAnalyticsSkill[]
+  weak_skills: ReadingAnalyticsSkill[]
+  weak_structures: ReadingAnalyticsStruct[]
+  weak_words: ReadingAnalyticsWord[]
+  diagnosis: string
+}
+/** P5 阶段薄弱点:近 days 天多卷聚合(days=0 全部) */
+export function getReadingAnalytics(days = 14): Promise<ReadingAnalytics> {
+  return request(`/api/v1/user-papers/reading-analytics?days=${days}`, { method: 'GET' })
+}
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片
 export interface GrammarQuizItem {

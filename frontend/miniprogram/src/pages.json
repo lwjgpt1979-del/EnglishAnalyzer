@@ -122,6 +122,7 @@
     { "path": "pages/intensive/sentence-paper", "style": { "navigationBarTitleText": "长难句精讲" } },
     { "path": "pages/intensive/reading", "style": { "navigationBarTitleText": "阅读理解精讲" } },
     { "path": "pages/intensive/reading-paper", "style": { "navigationBarTitleText": "阅读理解精讲" } },
+    { "path": "pages/intensive/reading-analytics", "style": { "navigationBarTitleText": "阅读学情" } },
     { "path": "pages/practice/v2-session", "style": { "navigationBarTitleText": "练习" } },
     { "path": "pages/practice/v2-exam", "style": { "navigationBarTitleText": "模拟考" } },
     { "path": "pages/practice/adaptive", "style": { "navigationBarTitleText": "智能出题" } },

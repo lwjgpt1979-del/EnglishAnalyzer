@@ -340,6 +340,16 @@ async def reading_summary_api(paper_id: uuid.UUID, db: DbDep, current_user: User
     return make_ok(r)
 
 
+@router.get("/reading-analytics")
+async def reading_analytics_api(db: DbDep, current_user: UserDep,
+                                days: int = Query(14, ge=0, le=365, description="时间窗天数,0=全部")):
+    """P5 阶段薄弱点:近 days 天多卷聚合 → 高频薄弱考纲词 / 反复卡句法 / 弱题型 + 诊断。"""
+    from app.services import reading_intensive_service
+    r = await reading_intensive_service.reading_analytics(
+        db, student_id=current_user.id, days=days)
+    return make_ok(r)
+
+
 @router.post("/questions/{question_id}/reading-answer")
 async def reading_answer_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep,
                              chosen: str = Body(..., embed=True, description="A/B/C/D")):
