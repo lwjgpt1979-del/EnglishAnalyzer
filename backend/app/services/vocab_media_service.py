@@ -412,7 +412,7 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
         # ── 表意出图:唯一入口 visual_brief_service.plan_visual(L1 路由 + L2 造场景)──
         #  词意闸门:无 meaning → 暂不出图(draft 重试);
         #  plan_visual 决定 draw(出图)/ text_only(纯语法虚词·无图词义卡·不重试)/ retry(造场景失败·重试)。
-        brief, outcome = "", "draw"
+        brief, outcome, category = "", "draw", ""
         if not meaning.strip():
             outcome = "retry"
             logger.warning("[配图闸门] %s 无词意(definitions 缺失)→ 暂不出图,查看即生成重试", w.word)
@@ -423,7 +423,7 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
             plan = await visual_brief_service.plan_visual(
                 w.word, meaning, pos=pos, system=(await get_brief_prompt(db))["current"],
                 en_desc=(w.en_description or ""), all_defs=_all_meanings(w))
-            brief, outcome = plan["scene"], plan["outcome"]
+            brief, outcome, category = plan["scene"], plan["outcome"], plan.get("category", "")
         # else:use_ai_prompt 关 → brief="",outcome="draw"(模板出图,遗留路径)
         if outcome == "text_only":
             no_image_final = True                   # 决策B:纯语法虚词 → 无图词义卡,不重试
@@ -442,8 +442,12 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
                     cands.append(u)
             if verify_on and cands:
                 # ⑥C 图文一致复核:选契合度最高且无文字的一张;都不达标 → 降级词义卡(⑦E)
-                best = await _verify_and_pick(
-                    db, cands, w.word, meaning, float(cfg.get("verify_min", 0.6)))
+                # 例句/隐喻类词(场景非字面表达该词,如 because→打伞因果场景)放宽阈值:
+                # 仍拦真乱图(极低分),但让"合理但不字面"的图过,免被误杀成 text_only。
+                vmin = float(cfg.get("verify_min", 0.6))
+                if category in ("abstract", "spatial", "metaphor"):
+                    vmin = min(vmin, 0.4)
+                best = await _verify_and_pick(db, cands, w.word, meaning, vmin)
                 urls = [best] if best else []
                 if not best:
                     no_image_final = True           # 复核连续不过 → 降级 text_only,别再烧钱重试
