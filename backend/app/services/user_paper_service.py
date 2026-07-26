@@ -831,6 +831,16 @@ async def passage_study(
                     "example": None, "in_vocab": False, "word_added": False,
                     "pending_create": True,
                 })
+    # P4:按学生学段给生词打考纲标(初中→中考 / 高中→高考;仅该学段已上架考纲词)
+    if words:
+        from app.models.d1_users import User
+        from app.services import vocabulary_service as vsvc
+        stu = await db.get(User, student_id)
+        level = vsvc.resolve_exam_target(stu) if stu else None
+        labels = await vsvc.exam_syllabus_labels(
+            db, level=level, word_ids=[w.get("word_id") for w in words if w.get("word_id")]) if level else {}
+        for w in words:
+            w["exam_tag"] = labels.get(str(w.get("word_id"))) if w.get("word_id") else None
     return {"words": words, "sentences": sentences[:15]}
 
 

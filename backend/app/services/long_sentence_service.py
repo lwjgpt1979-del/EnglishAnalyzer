@@ -1429,6 +1429,16 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
                     # 走 ensure_missing_word(有效性闸门 + 建词条 + 出媒体;词组亦支持)
                     "pending_create": bool(vis._WORD_SHAPE.fullmatch(w))}
         words.append(item)
+    # P4:按学生学段给重点词打考纲标(初中→中考 / 高中→高考;仅该学段已上架考纲词)
+    if words:
+        from app.models.d1_users import User
+        from app.services import vocabulary_service as vsvc
+        stu = await db.get(User, student_id)
+        level = vsvc.resolve_exam_target(stu) if stu else None
+        vlabels = await vsvc.exam_syllabus_labels(
+            db, level=level, word_ids=[w.get("word_id") for w in words if w.get("word_id")]) if level else {}
+        for w in words:
+            w["exam_tag"] = vlabels.get(str(w.get("word_id"))) if w.get("word_id") else None
     analysis_out = {
         "translation": analysis.get("translation"), "sentence_type": analysis.get("sentence_type"),
         "segments": segs, "explanations": analysis.get("explanations") or [],

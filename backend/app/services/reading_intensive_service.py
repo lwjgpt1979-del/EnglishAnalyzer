@@ -401,11 +401,10 @@ async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
         diagnosis = f"本篇薄弱题型:{worst['skill']}(错 {worst['wrong']}/{worst['total']})"
     else:
         diagnosis = "本篇全对,读得不错。"
-    vocab = await _paper_weak_exam_vocab(db, student_id=student_id, paper_id=paper_id)
     sentences = await _paper_stuck_sentences(db, student_id=student_id, paper_id=paper_id)
     return {"total": len(rows), "answered": answered, "unanswered": len(rows) - answered,
             "wrong": wrong, "by_skill": by_skill, "diagnosis": diagnosis,
-            "vocab": vocab, "sentences": sentences}
+            "sentences": sentences}
 
 
 # ── P5 阶段薄弱点聚合(跨卷 + 时间窗)─────────────────────────────────────────

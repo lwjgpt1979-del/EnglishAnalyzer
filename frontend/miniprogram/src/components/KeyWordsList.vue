@@ -10,7 +10,10 @@
           <text class="kw-gen-t">{{ learningWord === w.word ? '收录中' : '生成中' }}</text>
         </view>
         <view class="kw-main">
-          <text class="kw-w">{{ w.word }}</text>
+          <view class="kw-wrow">
+            <text class="kw-w">{{ w.word }}</text>
+            <text v-if="w.exam_tag" class="kw-exam">{{ w.exam_tag }}</text>
+          </view>
           <text class="kw-def">{{ kwSub(w) }}</text>
         </view>
         <!-- 缺词占位:学这个词(触发有效性闸门→即时入库) -->
@@ -222,7 +225,9 @@ async function playWord(w: StudyWord) {
 .kw-gen { display: flex; align-items: center; justify-content: center; background: var(--c-primary-faint, #eaf2ff); }
 .kw-gen-t { font-size: 19rpx; color: var(--c-primary); }
 .kw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
+.kw-wrow { display: flex; align-items: center; gap: 8rpx; }
 .kw-w { font-size: 27rpx; font-weight: 700; color: var(--c-primary); }
+.kw-exam { flex: none; font-size: 18rpx; color: #c2670c; background: #fff3e0; border-radius: 6rpx; padding: 1rpx 8rpx; }
 .kw-def { font-size: 23rpx; color: var(--c-text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kw-add { flex-shrink: 0; font-size: 22rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 6rpx 22rpx; }
 .kw-add.done { color: #2ecc71; border-color: #2ecc71; }

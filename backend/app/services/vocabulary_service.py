@@ -751,6 +751,36 @@ def resolve_exam_target(user: "User") -> str:
     return "senior" if "高" in (user.preferred_grade or "") else "junior"
 
 
+_LEVEL_LABEL = {"junior": "中考", "senior": "高考"}
+
+
+async def exam_syllabus_labels(db: AsyncSession, *, level: str, word_ids: list) -> dict:
+    """按学生学段给词打考纲标:返回 {word_id(str): '中考'|'高考'}。
+    仅含属于该学段【已上架】考纲词库的词(不属于的不返回);初中段→中考、高中段→高考。
+    学生私有派生(按学段),供精讲生词 / 长难句重点词标注。"""
+    label = _LEVEL_LABEL.get(level)
+    if not label or not word_ids:
+        return {}
+    from app.models.d18_vocab_kg import VocabList, VocabListItem
+    ids = []
+    for x in word_ids:
+        if not x:
+            continue
+        try:
+            ids.append(x if isinstance(x, uuid.UUID) else uuid.UUID(str(x)))
+        except (ValueError, AttributeError):
+            continue
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(VocabListItem.word_id).distinct()
+        .join(VocabList, VocabList.id == VocabListItem.list_id)
+        .where(VocabListItem.word_id.in_(ids),
+               VocabList.exam_level == level,
+               VocabList.status == "published"))).all()
+    return {str(wid): label for (wid,) in rows}
+
+
 _TRACK_TITLE = {"word": "单词", "phrase": "短语"}
 _BAND_LABEL = {"high": "高频", "mid": "中频", "low": "低频", "none": "未分档"}
 

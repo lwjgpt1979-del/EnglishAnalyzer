@@ -106,12 +106,10 @@ export function readingPractice(qid: string): Promise<{ questions: SimilarQuesti
   return request(`/api/v1/user-papers/questions/${qid}/reading-practice`, { method: 'POST' })
 }
 export interface ReadingSummarySkill { skill: string; total: number; wrong: number }
-export interface ReadingSummaryVocab { word: string; tag: string }
 export interface ReadingSummaryStruct { name: string; count: number }
 export interface ReadingSummary {
   total: number; answered: number; unanswered: number; wrong: number
   by_skill: ReadingSummarySkill[]; diagnosis: string
-  vocab: { weak_count: number; weak: ReadingSummaryVocab[] }
   sentences: { total: number; stuck: number; structures: ReadingSummaryStruct[] }
 }
 /** P2 单篇读后小结·提问块:该卷阅读题按题型的对错 + 一句话诊断(题型按需补标) */
@@ -153,6 +151,7 @@ export interface StudyWord {
   en_description: string | null; example: { en?: string; zh?: string; audio?: string } | null
   in_vocab: boolean; word_added: boolean
   pending_create?: boolean   // 缺词占位卡:词库没有,点开触发「查看即生成」入库
+  exam_tag?: string | null   // P4:按学生学段标考纲词(初中→中考 / 高中→高考;非该学段考纲词为空)
 }
 export interface SentenceStudyAids {
   analysis: any; sentence_added: boolean
