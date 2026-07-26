@@ -64,14 +64,15 @@
 
 ## 生成配图/媒体:必须「词意 + 可画场景」双落实,失败即止不出兜底图(全项目强制)
 
-**凡为「表意」而生成的图像——单词配图、考点/例句配图等——出图前必须同时落实「词意」和「可画场景描述」两个前提;任一缺失就中止出图,严禁退化成「只拿裸词/空描述」直接喂文生图。** 缺场景描述直接生成的典型事故:文生图模型把单词当装饰文字渲染 → 乱码文字图(exams→"exams"、skilled→"Skd")或语义乱配(cooking 配香水瓶)。
+**凡为「表意」而生成的图像——单词配图、考点/例句配图等——必须经唯一入口 `visual_brief_service.plan_visual` 落实「词意」和「可画场景」两前提;严禁各处内嵌 brief/闸门、严禁拿裸词/空描述直接喂文生图。** 缺场景直接生成的典型事故:文生图把单词当装饰文字渲染 → 乱码文字图(exams→"exams")或语义乱配(cooking 配香水瓶)。
 
 铁律:
-- **双闸门**:① 词意闸门——必须有 `meaning`(取 `definitions`,缺则先补;裸词无法画出可表意的图);② 场景闸门——开 `use_ai_prompt` 时必须成功拿到「一句可画场景」`brief`(`_ai_visual_brief`)。任一不满足 → **中止出图,不产出/不落库/不发布**。参考 `vocab_media_service._gen_images_for` 的闸门实现。
-- **失败即止,不缓存坏结果**:出图被闸门中止 → 不写 `image_urls`、`media_status` 不置 `published`(保持 `draft`),交由「查看即生成」下次重试;**绝不用空图/坏图覆盖已有好图**(批量出图 `imgs` 为空即计 failed、跳过写回)。这样「暂存」缓存的永远是合格图,不会把坏图钉死成 published。
-- **brief 生成失败不退化**:`_ai_visual_brief` 抛错/返回空 → 按场景闸门中止,**不得**退回「只有 word+meaning 的模板 prompt」硬出图。
-- **存量坏图可后台重刷**:发现历史「有图但无 brief 记录(`vocab_media_asset.prompt` 为空)」的劣质图,走 admin `/vocab-image/refresh-low-quality`(配图页「重刷劣质配图」)经双闸门重生成、成功才发布替换。
-- **新接「为表意生成图/媒体」的能力**一律照此办理:先想清楚「词意从哪来、可画场景怎么产出、拿不到时如何优雅中止」,不允许「缺描述也硬生成」。
+- **唯一强制入口**:表意出图一律调 `visual_brief_service.plan_visual(term, meaning, kind=…)` → `{category, scene, outcome}`;不允许内嵌 brief/可画性阈值。默认画面指令在 `visual_brief_service.DEFAULT_BRIEF_SYSTEM`(后台可编辑/回滚,经 `system=` 覆盖)。
+- **双闸门(升级)**:① 词意闸门——必须有 `meaning`(取 `definitions`,缺则先补);② 场景闸门——**任何词(含抽象/虚词)都先经分类 + 造场景策略(具象直接画 / 情感·心理画人物 / 隐喻 / 其余走「含该词的例句场景」)尝试造出可画场景**,拿到才出图。**不再按「可画性自评低分」预拒抽象词**;「缺场景就止」= 穷尽造场景策略后仍无场景才止。
+- **三态结局(`media_status`)**:「有合格图 → `published`」/「纯语法虚词(a/an/the/of)或复核连续不过 → `text_only`(无图词义卡·可见·不再重试)」/「造场景或服务暂时失败 → `draft`(下次查看即生成重试)」。`text_only` 已解决,`ensure_word_media` 幂等跳过、不重跑 brief(暂存铁律)。
+- **失败即止,不缓存坏结果**:被闸门中止 → 不写 `image_urls`、不置 `published`;**绝不用空图/坏图覆盖已有好图**。L3 图文一致复核(`doubao_vision_service`,`verify_min`)是放宽前置闸门的安全垫——复核不过即降级 `text_only`,不硬塞坏图。
+- **存量坏图可后台重刷**:历史劣质图走 admin `/vocab-image/refresh-low-quality`(配图页「重刷劣质配图」)经 plan_visual + 复核重生成、成功才发布替换。
+- **新接「为表意生成图/媒体」的能力**(考点/例句配图等)一律**经 plan_visual**(传 `kind` 区分对象类型),不允许「缺描述也硬生成」、不允许绕过唯一入口。
 
 ## 新增 LLM 调用:必须登记到清单 + 打 feature 标签(全项目强制)
 

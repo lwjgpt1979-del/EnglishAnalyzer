@@ -21,7 +21,8 @@ from app.core.exceptions import AppError
 from app.models.d5_learning import VocabularyWord
 from app.models.d9_system import SystemConfig
 from app.services import (
-    llm_provider, tts_service, vocab_media_asset_service, vocab_media_provider)
+    llm_provider, tts_service, visual_brief_service,
+    vocab_media_asset_service, vocab_media_provider)
 
 
 async def _tts_cos(text: str, voice: str | None = None) -> str:
@@ -182,22 +183,8 @@ def _merge_img_config(saved: dict | None) -> dict:
     return cfg
 
 
-# 「生成画面描述提示词」用的系统指令(meta-prompt)默认值。后台可编辑/保存/回滚(见 get/set_brief_prompt)。
-_DEF_BRIEF_SYSTEM = (
-    "Design ONE concrete scene for a text-to-image model so a learner instantly grasps the word's MEANING. "
-    "Output exactly ONE short English sentence, describing only what is visible, specific to this meaning. "
-    "Show a person ONLY if the word is about a person, a feeling, or a human action; for objects, food, "
-    "quantities, places and things show only the thing (make any amount obvious) with NO people. "
-    "No text or numbers in the image, no style words, no explanation."
-)
-# ④Q 生成前可画性闸门:低于此分不出图(降级词义卡),不浪费文生图额度、不出词不达意图
-_DRAWABLE_MIN = 0.45
-# 追加到 brief 系统指令末尾:强制 JSON 输出(场景 + 可画性自评),不改动运营可编辑的语义部分
-_BRIEF_JSON_HINT = (
-    ' Return ONLY a JSON object: {"drawable": <0.0-1.0 float, how concretely depictable THIS exact '
-    'meaning is; abstract notions, emotions with no clear scene, and grammar/function words score low>, '
-    '"scene": "<one short English sentence describing only what is visible, specific to this meaning>"}.'
-)
+# 「画面描述指令」默认值已搬到 visual_brief_service.DEFAULT_BRIEF_SYSTEM(全项目唯一入口);
+# 此处仅保留后台配置键(后台可编辑/保存/回滚见 get/set_brief_prompt,覆盖值经 plan_visual 的 system= 生效)。
 _BRIEF_KEY = "vocab_image_brief_prompt"
 
 
@@ -207,15 +194,15 @@ async def get_brief_prompt(db: AsyncSession) -> dict:
         select(SystemConfig).where(SystemConfig.key == _BRIEF_KEY))).scalar_one_or_none()
     v = row.value if row is not None else None
     if not isinstance(v, dict):
-        return {"current": _DEF_BRIEF_SYSTEM, "history": []}
-    cur = (str(v.get("current") or "").strip()) or _DEF_BRIEF_SYSTEM
+        return {"current": visual_brief_service.DEFAULT_BRIEF_SYSTEM, "history": []}
+    cur = (str(v.get("current") or "").strip()) or visual_brief_service.DEFAULT_BRIEF_SYSTEM
     hist = v.get("history") if isinstance(v.get("history"), list) else []
     return {"current": cur, "history": hist}
 
 
 async def set_brief_prompt(db: AsyncSession, *, prompt: str, updated_by, at: str) -> dict:
     """保存新指令:旧版压入 history(去重、最多留 20 条)。空则回默认。"""
-    prompt = (prompt or "").strip() or _DEF_BRIEF_SYSTEM
+    prompt = (prompt or "").strip() or visual_brief_service.DEFAULT_BRIEF_SYSTEM
     row = (await db.execute(
         select(SystemConfig).where(SystemConfig.key == _BRIEF_KEY))).scalar_one_or_none()
     old, hist = None, []
@@ -241,39 +228,6 @@ def _all_meanings(w: VocabularyWord) -> str:
         parts = [str(x.get("meaning") or x.get("zh") or "") for x in d if isinstance(x, dict)]
         return "；".join(p for p in parts if p)[:200]
     return ""
-
-
-async def _ai_visual_brief(word: str, meaning: str, pos: str, system: str | None = None,
-                           *, en_desc: str = "", all_defs: str = "") -> tuple[str, float]:
-    """用 LLM 把词转成「可画的具体视觉场景 scene + 可画性自评 drawable(0-1)」。
-    ①/②:喂中文义 + 英英释义 + 多义合并,消歧到可画的常用义、场景更具体;
-    ④:同一次调用返回 drawable,供出图前闸门判断(不加付费点)。
-    返回 (scene, drawable);dev-mock 返回 ('', 1.0) 走原有主模板路径。"""
-    if llm_provider.is_llm_dev_mode():
-        return "", 1.0
-    system = (system or _DEF_BRIEF_SYSTEM) + _BRIEF_JSON_HINT
-    up = (f"Word/phrase: {word}\nPart of speech: {pos}\nMeaning (Chinese): {meaning}"
-          + (f"\nEnglish gloss: {en_desc}" if en_desc else "")
-          + (f"\nAll senses: {all_defs}" if all_defs else ""))
-    for _ in range(2):
-        try:
-            # 关推理:brief 是简单任务,v4-flash 开推理会对抽象词想很久甚至吃满 token 返回空。
-            data = await llm_provider.complete_json(
-                system_prompt=system, user_prompt=up, max_tokens=320,
-                model=llm_provider.fast_model(), feature="vocab_image_brief",
-                disable_thinking=True)
-            if not data:
-                continue
-            scene = str(data.get("scene") or "").strip().replace("\n", " ")
-            try:
-                drawable = float(data.get("drawable", 0.6))
-            except (TypeError, ValueError):
-                drawable = 0.6
-            if len(scene) >= 12:      # 太短/空视为无效 → 重试一次
-                return scene, max(0.0, min(1.0, drawable))
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[配图AI提示词] %s 失败: %s", word, e)
-    return "", 0.0
 
 
 async def get_image_config(db: AsyncSession) -> dict:
@@ -401,10 +355,10 @@ async def suggest_image_brief(db: AsyncSession, *, word_id: uuid.UUID,
     if w is None:
         raise AppError(code=404, message="单词不存在")
     sysp = system if (system and system.strip()) else (await get_brief_prompt(db))["current"]
-    scene, _drawable = await _ai_visual_brief(
-        w.word, _primary_meaning(w), _pos_of(w), system=sysp,
+    plan = await visual_brief_service.plan_visual(
+        w.word, _primary_meaning(w), pos=_pos_of(w), system=sysp,
         en_desc=(w.en_description or ""), all_defs=_all_meanings(w))
-    return scene
+    return plan["scene"]
 
 
 async def _verify_cached(db: AsyncSession, url: str, word: str, meaning: str) -> dict:
@@ -453,34 +407,29 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
     if not voice and do_audio:
         voice = _auto_voice(w.word, await _curated_voice_ids(db))
     urls: list[str] = []
+    no_image_final = False       # True=确定无图(纯语法虚词/复核降级)→ text_only;False=暂时失败可重试(draft)
     if do_images:
-        # ── 出图「双闸门」(全项目铁律:配图必须词意+可画场景双落实,任一缺失即止)──
-        #  ① 词意闸门:meaning(取 definitions)必须有 —— 裸词无法画出可表意的图;
-        #  ② 场景闸门:开 use_ai_prompt 时必须成功拿到「可画场景」brief —— 生成失败也不退化。
-        #  任一不满足 → 中止出图,不产出/不落库「裸词兜底图」(乱码文字图/语义乱配的根因)。
-        brief = ""
-        drawable = 1.0
-        if brief_override is not None:
-            brief = brief_override.strip()   # 人工编辑的场景默认可画
+        # ── 表意出图:唯一入口 visual_brief_service.plan_visual(L1 路由 + L2 造场景)──
+        #  词意闸门:无 meaning → 暂不出图(draft 重试);
+        #  plan_visual 决定 draw(出图)/ text_only(纯语法虚词·无图词义卡·不重试)/ retry(造场景失败·重试)。
+        brief, outcome = "", "draw"
+        if not meaning.strip():
+            outcome = "retry"
+            logger.warning("[配图闸门] %s 无词意(definitions 缺失)→ 暂不出图,查看即生成重试", w.word)
+        elif brief_override is not None:
+            brief = brief_override.strip()          # 人工编辑场景,直接出图
+            outcome = "draw" if brief else "retry"
         elif cfg.get("use_ai_prompt"):
-            sysp = (await get_brief_prompt(db))["current"]
-            try:
-                brief, drawable = await _ai_visual_brief(
-                    w.word, meaning, pos, system=sysp,
-                    en_desc=(w.en_description or ""), all_defs=_all_meanings(w))
-                brief = (brief or "").strip()
-            except Exception as e:  # noqa: BLE001  brief 失败 → 不退化,交由闸门中止
-                brief, drawable = "", 0.0
-                logger.warning("[配图] %s 生成画面描述(brief)失败: %s", w.word, e)
-        need_brief = (brief_override is None) and bool(cfg.get("use_ai_prompt"))
-        # ④Q 生成前可画性闸门:抽象/虚词可画性过低 → 不出图,降级词义卡(⑦E)
-        low_draw = need_brief and drawable < _DRAWABLE_MIN
-        gate_ok = bool(meaning.strip()) and not (need_brief and not brief) and not low_draw
-        if not gate_ok:
-            reason = ("无词意(definitions 缺失)" if not meaning.strip()
-                      else "画面描述(brief)生成失败" if not brief
-                      else f"可画性过低({drawable:.2f}<{_DRAWABLE_MIN})→降级词义卡")
-            logger.warning("[配图闸门] %s 中止出图:%s —— 不产出裸词兜底图,交由「查看即生成」重试", w.word, reason)
+            plan = await visual_brief_service.plan_visual(
+                w.word, meaning, pos=pos, system=(await get_brief_prompt(db))["current"],
+                en_desc=(w.en_description or ""), all_defs=_all_meanings(w))
+            brief, outcome = plan["scene"], plan["outcome"]
+        # else:use_ai_prompt 关 → brief="",outcome="draw"(模板出图,遗留路径)
+        if outcome == "text_only":
+            no_image_final = True                   # 决策B:纯语法虚词 → 无图词义卡,不重试
+            logger.info("[配图] %s 纯语法虚词 → 无图词义卡(text_only)", w.word)
+        elif outcome == "retry":
+            logger.warning("[配图] %s 造场景失败 → 暂不出图,下次重试(draft)", w.word)
         else:
             # ⑤G:开复核时多出几张候选供择优;不开则按 images_per_word
             verify_on = bool(cfg.get("verify", True)) and not llm_provider.is_llm_dev_mode()
@@ -497,7 +446,8 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
                     db, cands, w.word, meaning, float(cfg.get("verify_min", 0.6)))
                 urls = [best] if best else []
                 if not best:
-                    logger.warning("[配图复核] %s 候选 %d 张均未过图文一致复核 → 降级词义卡",
+                    no_image_final = True           # 复核连续不过 → 降级 text_only,别再烧钱重试
+                    logger.warning("[配图复核] %s 候选 %d 张均未过图文一致复核 → 降级 text_only",
                                    w.word, len(cands))
             else:
                 urls = cands
@@ -523,7 +473,7 @@ async def _gen_images_for(db: AsyncSession, w: VocabularyWord, cfg: dict | None 
         if wa:
             await vocab_media_asset_service.record_assets(
                 db, word_id=w.id, kind="audio", urls=[wa])
-    return urls
+    return urls, no_image_final
 
 
 async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
@@ -545,11 +495,12 @@ async def generate_for_word(db: AsyncSession, *, word_id: uuid.UUID,
     if do_images:
         meaning = _primary_meaning(w)
         w.en_description = await _gen_en_description(w.word, meaning)
-    imgs = await _gen_images_for(db, w, cfg=cfg, brief_override=brief_override,
-                                 do_images=do_images, do_audio=do_audio)
+    imgs, no_img_final = await _gen_images_for(db, w, cfg=cfg, brief_override=brief_override,
+                                               do_images=do_images, do_audio=do_audio)
     if do_images and imgs:
         w.image_urls = imgs
-    w.media_status = "draft"
+    # 确定无图(纯语法虚词/复核降级)→ text_only(可见·不重试);否则 draft(有图待审 / 暂时失败重试)
+    w.media_status = "text_only" if (do_images and no_img_final and not imgs) else "draft"
     await db.flush()
     return w
 
@@ -567,6 +518,8 @@ async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
         return None
     if str(w.media_status) == "published" and isinstance(w.image_urls, list) and w.image_urls:
         return w                                  # 已有媒体,不重复生成
+    if str(w.media_status) == "text_only":
+        return w                                  # 确定无图(纯语法虚词/复核降级),已解决 → 不重跑 brief(暂存铁律)
     if word_id in _media_inflight:
         return w                                  # 正在生成中(后台/别处),跳过防重复付费
     _media_inflight.add(word_id)
@@ -575,8 +528,10 @@ async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
         if isinstance(w.image_urls, list) and w.image_urls:
             w.media_status = "published"          # 有真图才发布 → 直接可见(素材已记版本,admin 仍可复核)
             w.media_origin = "student"            # 标记来源:学生端即时生成,供后台过滤复核
+        elif str(w.media_status) == "text_only":
+            w.media_origin = "student"            # 确定无图(纯语法虚词/复核降级)→ 保持 text_only:可见·不再重试
         else:
-            # 出图被闸门中止(无词意/场景/可画性不足) → 不发布空图坏图;保持 draft,下次再试
+            # 造场景/服务暂时失败 → 保持 draft,下次查看即生成再试
             w.media_status = "draft"
         await db.commit()
         await db.refresh(w)
@@ -778,10 +733,14 @@ async def _run_batch(word_ids: list, cfg: dict, *, publish: bool = False) -> Non
                         select(VocabularyWord).where(VocabularyWord.id == wid)
                     )).scalar_one_or_none()
                     if w is not None:
-                        imgs = await _gen_images_for(db, w, cfg)
+                        imgs, no_img_final = await _gen_images_for(db, w, cfg)
                         if imgs:
                             w.image_urls = imgs
                             w.media_status = "published" if publish else "draft"
+                            await db.commit()
+                            _batch_state["ok"] += 1
+                        elif no_img_final:
+                            w.media_status = "text_only"    # 确定无图(纯虚词/复核降级)→ 无图卡,不再入批
                             await db.commit()
                             _batch_state["ok"] += 1
                         else:
@@ -951,14 +910,14 @@ async def reverify_and_regen_batch(db: AsyncSession, *, limit: int = 200) -> dic
         if float(res.get("score", 1) or 0) >= threshold:
             continue                                            # 语义达标 → 保留
         bad += 1
-        imgs = await _gen_images_for(db, w, cfg)                # 走 P1 闸门 + P2 复核选优
+        imgs, no_img_final = await _gen_images_for(db, w, cfg)  # 走 plan_visual 闸门 + 复核选优
         if imgs:
             w.image_urls = imgs
             w.media_status = "published"
             regen_ok += 1
         else:
             w.image_urls = None                                 # 仍拿不到好图 → 降级词义卡(⑦E)
-            w.media_status = "draft"
+            w.media_status = "text_only" if no_img_final else "draft"
             regen_degraded += 1
         await db.commit()
     await _set_reverify_cursor(db, last_id)                     # 记进度:下次从这之后接着扫
