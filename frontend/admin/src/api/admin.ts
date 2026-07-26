@@ -161,6 +161,14 @@ export function updateLearningPlanCaps(body: LearningPlanCaps) {
   return unwrap<LearningPlanCaps>(request.put('/admin/learning-plan-caps', body))
 }
 
+export interface ReadingAnalyticsConfig { weak_word_min_papers: number; skill_min_sample: number; skill_weak_rate: number; struct_min_stuck: number }
+export function getReadingAnalyticsConfig() {
+  return unwrap<{ config: ReadingAnalyticsConfig; defaults: ReadingAnalyticsConfig }>(request.get('/admin/reading-analytics-config'))
+}
+export function updateReadingAnalyticsConfig(body: Partial<ReadingAnalyticsConfig>) {
+  return unwrap<{ config: ReadingAnalyticsConfig }>(request.put('/admin/reading-analytics-config', body))
+}
+
 export interface TtsVoices { male: string[]; female: string[] }
 export function getTtsVoices() {
   return unwrap<TtsVoices>(request.get('/admin/tts-voices'))

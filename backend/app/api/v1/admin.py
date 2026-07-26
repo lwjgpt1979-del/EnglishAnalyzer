@@ -4558,3 +4558,18 @@ async def admin_third_party_status(admin: AdminDep):
     """所有第三方付费能力的配置状态清单(已配/占位),按类别分组。用量/余额见 /llm-usage、/llm-balance。"""
     from app.services import third_party_service
     return make_ok(third_party_service.status_inventory())
+
+
+# ── 阅读学情·判弱阈值(system_configs.reading_analytics)──────────────────────
+@router.get("/reading-analytics-config")
+async def get_reading_analytics_config(db: DbDep, admin: AdminDep):
+    """当前阈值 + 默认(高频词卷数 / 题型样本+正确率 / 句法卡次数)。"""
+    from app.services import reading_analytics_config_service as svc
+    return make_ok({"config": await svc.get_config(db), "defaults": svc.DEFAULTS})
+
+
+@router.put("/reading-analytics-config")
+async def update_reading_analytics_config(db: DbDep, admin: AdminDep, body: dict = Body(...)):
+    """改阈值(仅已知键、正整数)。"""
+    from app.services import reading_analytics_config_service as svc
+    return make_ok({"config": await svc.update_config(db, patch=body, updated_by=admin.id)})

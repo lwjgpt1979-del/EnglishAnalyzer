@@ -409,25 +409,7 @@ async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
 
 
 # ── P5 阶段薄弱点聚合(跨卷 + 时间窗)─────────────────────────────────────────
-_ANALYTICS_KEY = "reading_analytics"
-# 判弱阈值·运营可配置(system_configs.reading_analytics);此常量仅兜底,实际值见 _analytics_thresholds
-_ANALYTICS_DEFAULTS: dict = {
-    "weak_word_min_papers": 2,   # 考纲薄弱词出现 ≥N 卷 → 高频薄弱词
-    "skill_min_sample": 3,       # 题型样本 ≥M 才判弱(样本太小不判)
-    "skill_weak_rate": 60,       # 题型正确率 <X% 判弱
-    "struct_min_stuck": 3,       # 某句法结构累计卡 ≥K 次 判弱
-}
-
-
-async def _analytics_thresholds(db: AsyncSession) -> dict:
-    """判弱阈值:后台可配(system_configs),缺失走默认。"""
-    from app.models.d9_system import SystemConfig
-    cfg = dict(_ANALYTICS_DEFAULTS)
-    row = (await db.execute(
-        select(SystemConfig).where(SystemConfig.key == _ANALYTICS_KEY))).scalar_one_or_none()
-    if row is not None and isinstance(row.value, dict):
-        cfg.update({k: v for k, v in row.value.items() if k in _ANALYTICS_DEFAULTS})
-    return cfg
+# 判弱阈值走 reading_analytics_config_service(system_configs,运营可配 + 后台入口)
 
 
 async def reading_analytics(db: AsyncSession, *, student_id: uuid.UUID,
@@ -438,8 +420,9 @@ async def reading_analytics(db: AsyncSession, *, student_id: uuid.UUID,
     from collections import Counter, defaultdict
     from app.models.d13_v2_user_papers import ReadingAnswerLog
     from app.models.d20_long_sentence import StudentLongSentence
+    from app.services import reading_analytics_config_service
 
-    th = await _analytics_thresholds(db)
+    th = await reading_analytics_config_service.get_config(db)
     pq = (select(UserUploadedPaper.id)
           .where(UserUploadedPaper.student_id == student_id)
           .order_by(UserUploadedPaper.created_at.desc()))
