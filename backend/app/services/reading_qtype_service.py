@@ -62,18 +62,22 @@ def _content_md5(q: UserPaperQuestion) -> str:
     return hashlib.md5(key.encode("utf-8")).hexdigest()  # noqa: S324
 
 
-def _reading_q_stmt():
-    """所有「作业阅读小题」:归属 section_type='reading' 的题。"""
-    return (select(UserPaperQuestion)
+def _reading_q_stmt(paper_id: uuid.UUID | None = None):
+    """「作业阅读小题」:归属 section_type='reading' 的题;给 paper_id 则限定该卷。"""
+    stmt = (select(UserPaperQuestion)
             .join(UserPaperSection,
                   UserPaperSection.id == UserPaperQuestion.section_id)
             .where(UserPaperSection.section_type == "reading"))
+    if paper_id is not None:
+        stmt = stmt.where(UserPaperQuestion.user_paper_id == paper_id)
+    return stmt
 
 
-async def backfill(db: AsyncSession) -> dict:
+async def backfill(db: AsyncSession, *, paper_id: uuid.UUID | None = None) -> dict:
     """存量回填:未标题型的阅读题,先从 reading_analysis_cache(精讲已算)按 md5 命中,
-    再从同内容已标邻题复制。不调 LLM、不花钱。返回 {scanned, filled, still_missing}。"""
-    rows = (await db.execute(_reading_q_stmt())).scalars().all()
+    再从同内容已标邻题复制。不调 LLM、不花钱。给 paper_id 则只处理该卷。
+    返回 {scanned, filled, still_missing}。"""
+    rows = (await db.execute(_reading_q_stmt(paper_id))).scalars().all()
     if not rows:
         return {"scanned": 0, "filled": 0, "still_missing": 0}
     # 内容 md5 → 已知题型(来自已标邻题)
@@ -111,13 +115,15 @@ _CLASSIFY_SYS = (
 )
 
 
-async def classify_missing(db: AsyncSession, *, limit: int = 100) -> dict:
+async def classify_missing(db: AsyncSession, *, limit: int = 100,
+                           paper_id: uuid.UUID | None = None) -> dict:
     """补跑归类:回填后仍未标的阅读题,按内容 md5 去重(同内容只调一次)后调 LLM。
-    limit = 本次最多归类的「不同内容」数(成本闸)。返回 {classified_contents, tagged_questions, remaining}。"""
+    limit = 本次最多归类的「不同内容」数(成本闸);给 paper_id 则只处理该卷。
+    返回 {classified_contents, tagged_questions, remaining}。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
 
     rows = (await db.execute(
-        _reading_q_stmt().where(UserPaperQuestion.reading_skill.is_(None)))
+        _reading_q_stmt(paper_id).where(UserPaperQuestion.reading_skill.is_(None)))
     ).scalars().all()
     if not rows:
         return {"classified_contents": 0, "tagged_questions": 0, "remaining": 0}
@@ -154,6 +160,14 @@ async def classify_missing(db: AsyncSession, *, limit: int = 100) -> dict:
         await db.commit()
     return {"classified_contents": classified, "tagged_questions": tagged,
             "remaining": len(md5s) - len(todo)}
+
+
+async def ensure_paper_tagged(db: AsyncSession, *, paper_id: uuid.UUID,
+                              classify_limit: int = 30) -> None:
+    """按卷补标题型(查看即生成):学生打开该卷读后小结时调。
+    先回填(不花钱),仍缺的少量补跑(成本闸 classify_limit)。调用方须先校验卷归属。"""
+    await backfill(db, paper_id=paper_id)
+    await classify_missing(db, paper_id=paper_id, limit=classify_limit)
 
 
 async def stats(db: AsyncSession) -> dict:

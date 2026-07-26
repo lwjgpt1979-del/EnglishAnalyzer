@@ -329,6 +329,17 @@ async def reading_practice_api(question_id: uuid.UUID, db: DbDep, current_user: 
     return make_ok(r)
 
 
+@router.get("/papers/{paper_id}/reading-summary")
+async def reading_summary_api(paper_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """P2 单篇读后小结·提问块:该卷阅读题按题型的对错 + 一句话诊断。题型按需补标(查看即生成)。"""
+    from app.services import reading_intensive_service
+    r = await reading_intensive_service.paper_reading_summary(
+        db, student_id=current_user.id, paper_id=paper_id)
+    if r is None:
+        raise AppError(code=404, message="作业不存在或无权访问")
+    return make_ok(r)
+
+
 @router.post("/questions/{question_id}/practice")
 async def practice_for_question_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """错题「练同类」：按该题知识点生成同类仿真练习（计入 practice.generate 配额）。"""

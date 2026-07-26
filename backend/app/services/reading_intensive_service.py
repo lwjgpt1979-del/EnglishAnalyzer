@@ -249,3 +249,41 @@ async def homework_passages(db: AsyncSession, *, student_id: uuid.UUID,
             "explanation": qq.explanation, "is_wrong": bool(qq.is_wrong),
             "studied": qq.id in studied_ids})
     return [blocks[k] for k in order]
+
+
+async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
+                                paper_id: uuid.UUID) -> dict | None:
+    """P2 单篇读后小结·提问块:该卷阅读题按「题型」聚合对错 + 一句话诊断。
+    题型先按需补标(查看即生成),对错用现成 is_wrong(不建表)。非本人卷 → None。"""
+    from collections import defaultdict
+    from app.services import reading_qtype_service as qsvc
+
+    paper = await db.get(UserUploadedPaper, paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    await qsvc.ensure_paper_tagged(db, paper_id=paper_id)   # 回填+少量补跑,零运营
+    rows = (await db.execute(
+        select(UserPaperQuestion.reading_skill, UserPaperQuestion.is_wrong)
+        .join(UserPaperSection, UserPaperSection.id == UserPaperQuestion.section_id)
+        .where(UserPaperSection.section_type == "reading",
+               UserPaperQuestion.user_paper_id == paper_id))).all()
+    agg: dict[str, dict] = defaultdict(lambda: {"total": 0, "wrong": 0})
+    total = wrong = 0
+    for sk, is_wrong in rows:
+        cell = agg[sk or "其他"]
+        cell["total"] += 1
+        total += 1
+        if is_wrong:
+            cell["wrong"] += 1
+            wrong += 1
+    by_skill = sorted(
+        ({"skill": k, "total": v["total"], "wrong": v["wrong"]} for k, v in agg.items()),
+        key=lambda x: (-x["wrong"], -x["total"]))
+    worst = next((s for s in by_skill if s["wrong"] > 0), None)
+    if not total:
+        diagnosis = ""
+    elif worst:
+        diagnosis = f"本篇薄弱题型:{worst['skill']}(错 {worst['wrong']}/{worst['total']})"
+    else:
+        diagnosis = "本篇全对,读得不错。"
+    return {"total": total, "wrong": wrong, "by_skill": by_skill, "diagnosis": diagnosis}

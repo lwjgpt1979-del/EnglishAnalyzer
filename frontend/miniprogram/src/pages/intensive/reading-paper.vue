@@ -86,6 +86,25 @@
           </view>
         </view>
       </view>
+
+      <!-- P2 读后小结·提问块:该卷阅读题按题型对错 + 一句话诊断(进度即底色) -->
+      <view v-if="summary && summary.total" class="rs-card">
+        <view class="rs-hd">
+          <view class="ic-clipboard rs-ic"></view>
+          <text class="rs-tt">读后小结</text>
+          <text class="rs-meta">共 {{ summary.total }} 题 · 错 {{ summary.wrong }}</text>
+        </view>
+        <view v-for="(s, i) in summary.by_skill" :key="i" class="rs-row">
+          <view class="rs-fill" :class="rateCls(s)" :style="{ width: ratePct(s) + '%' }"></view>
+          <text class="rs-sk">{{ s.skill }}</text>
+          <text class="rs-rt" :class="rateTxtCls(s)">{{ s.total - s.wrong }}/{{ s.total }} 对</text>
+        </view>
+        <view v-if="summary.diagnosis" class="rs-diag">
+          <view class="ic-stethoscope rs-dic"></view>
+          <text>{{ summary.diagnosis }}</text>
+        </view>
+      </view>
+
       <view class="foot-pad"></view>
     </template>
 
@@ -146,8 +165,9 @@
 import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { rdHwPassages, type ReadingBlock } from '@/api/curriculum'
-import { getReadingAnalysis, readingPractice, recordPaperPractice, getPassageStudy,
-         type ReadingAnalysis, type SimilarQuestion, type StudyWord } from '@/api/userPapers'
+import { getReadingAnalysis, readingPractice, recordPaperPractice, getPassageStudy, getReadingSummary,
+         type ReadingAnalysis, type SimilarQuestion, type StudyWord,
+         type ReadingSummary, type ReadingSummarySkill } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import KeyWordsList from '@/components/KeyWordsList.vue'
 import WordCard from '@/components/WordCard.vue'
@@ -170,6 +190,12 @@ function markStudiedLocal(qid: string) {
 }
 
 function toggle(i: number) { collapsed.value = { ...collapsed.value, [i]: !collapsed.value[i] } }
+
+// P2 读后小结·提问块(题型正确率 → 进度即底色 + 状态色)
+const summary = ref<ReadingSummary | null>(null)
+function ratePct(s: ReadingSummarySkill): number { return s.total ? Math.round(((s.total - s.wrong) / s.total) * 100) : 0 }
+function rateCls(s: ReadingSummarySkill): string { const p = ratePct(s); return p >= 80 ? 'rsf-good' : p >= 60 ? 'rsf-mid' : 'rsf-weak' }
+function rateTxtCls(s: ReadingSummarySkill): string { const p = ratePct(s); return p >= 80 ? 'rst-good' : p >= 60 ? 'rst-mid' : 'rst-weak' }
 
 // 题型大标签:中文题型名(优先解析出的 skill)+ 同系配色
 function typeLabel(q: any): string { return ana.value[q.id]?.skill || q.type || '阅读理解' }
@@ -276,6 +302,8 @@ onLoad(async (q: any) => {
     await loadStudy()
   } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
   finally { loading.value = false }
+  // 读后小结:题型按需补标 + 对错聚合(不阻塞页面渲染,失败静默)
+  try { summary.value = await getReadingSummary(paperId.value) } catch { /* 小结失败不影响精讲 */ }
 })
 </script>
 
@@ -387,4 +415,23 @@ onLoad(async (q: any) => {
 .ls-no { flex: none; width: 40rpx; height: 40rpx; border-radius: 50%; background: #eaf2fe; color: #3d8bf5; font-size: 24rpx; font-weight: 700; text-align: center; line-height: 40rpx; }
 .ls-text { flex: 1; min-width: 0; font-size: 25rpx; line-height: 1.6; color: #1f2733; }
 .ls-go { flex: none; font-size: 22rpx; font-weight: 600; color: #3d8bf5; margin-top: 6rpx; }
+
+/* P2 读后小结·提问块(题型对错;进度即底色 + 状态色) */
+.rs-card { background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 20rpx 22rpx; margin: 4rpx 0 16rpx; box-shadow: 0 4rpx 18rpx rgba(45, 80, 150, .05); }
+.rs-hd { display: flex; align-items: center; gap: 10rpx; margin-bottom: 16rpx; }
+.rs-ic { width: 32rpx; height: 32rpx; flex: none; background-size: contain; background-repeat: no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2'/%3E%3Crect x='9' y='3' width='6' height='4' rx='1'/%3E%3Cpath d='m9 14 2 2 4-4'/%3E%3C/svg%3E"); }
+.rs-tt { font-size: 28rpx; font-weight: 800; color: #1f2733; }
+.rs-meta { margin-left: auto; font-size: 23rpx; color: #8a95a5; }
+.rs-row { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12rpx; background: #f6f8fb; border-radius: 12rpx; padding: 14rpx 16rpx; margin-bottom: 10rpx; }
+.rs-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; transition: width .3s; }
+.rsf-good { background: linear-gradient(90deg, #e9f6f1, #f4fbf8); }
+.rsf-mid { background: linear-gradient(90deg, #e8f2ff, #f4f9ff); }
+.rsf-weak { background: linear-gradient(90deg, #fdecec, #fef5f5); }
+.rs-sk { position: relative; font-size: 25rpx; font-weight: 700; color: #2b3546; }
+.rs-rt { position: relative; margin-left: auto; font-size: 23rpx; font-weight: 700; }
+.rst-good { color: #2fa98a; }
+.rst-mid { color: #3d8bf5; }
+.rst-weak { color: #dc4c4c; }
+.rs-diag { display: flex; align-items: flex-start; gap: 10rpx; margin-top: 6rpx; background: #eef4ff; border-radius: 12rpx; padding: 14rpx 16rpx; font-size: 23rpx; color: #2f74d6; line-height: 1.55; }
+.rs-dic { width: 30rpx; height: 30rpx; flex: none; margin-top: 2rpx; background-size: contain; background-repeat: no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 12 18 12 15 21 9 3 6 12 2 12'/%3E%3C/svg%3E"); }
 </style>
