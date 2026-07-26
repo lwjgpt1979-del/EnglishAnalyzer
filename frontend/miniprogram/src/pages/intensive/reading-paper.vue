@@ -332,10 +332,11 @@ onLoad(async (q: any) => {
   if (q.title) uni.setNavigationBarTitle({ title: decodeURIComponent(q.title) })
   try {
     blocks.value = (await rdHwPassages(paperId.value)).blocks
-    await loadStudy()
   } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
-  finally { loading.value = false }
-  // 读后小结:题型按需补标 + 对错聚合(不阻塞页面渲染,失败静默)
+  finally { loading.value = false }   // 原文+题目就绪即渲染首屏,不等生词抽取
+  // 本篇精讲(72 生词/长难句抽取较重)异步加载,不阻塞首屏;study-bar 就绪后自动出现
+  loadStudy()
+  // 读后小结:题型按需补标 + 对错聚合(异步,失败静默)
   try { summary.value = await getReadingSummary(paperId.value) } catch { /* 小结失败不影响精讲 */ }
 })
 </script>
