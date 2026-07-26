@@ -279,9 +279,74 @@ async def record_reading_answer(db: AsyncSession, *, student_id: uuid.UUID,
     return {"chosen": pick, "correct_answer": correct, "is_correct": is_correct}
 
 
+_EXAM_LABEL = {"junior": (1, "中考"), "senior": (2, "高考")}
+_FREQ_TIER = {3: "高频", 2: "中频", 1: "低频"}
+
+
+async def _paper_weak_exam_vocab(db: AsyncSession, *, student_id: uuid.UUID,
+                                 paper_id: uuid.UUID) -> dict:
+    """P4 词汇探头:本卷短文里的「考纲薄弱词」= 命中词库 ∩ 接收度<0.6(复用 paper_vocab_candidates)
+    ∩ 属中考/高考已上架词库。带频档(高/中频)。"""
+    from app.models.d18_vocab_kg import VocabList, VocabListItem
+    from app.services import user_paper_service
+    cand = await user_paper_service.paper_vocab_candidates(
+        db, paper_id=paper_id, student_id=student_id)
+    words = (cand or {}).get("words") or []
+    if not words:
+        return {"weak_count": 0, "weak": []}
+    ids = [uuid.UUID(w["word_id"]) for w in words]
+    rows = (await db.execute(
+        select(VocabListItem.word_id, VocabList.exam_level, VocabListItem.star)
+        .join(VocabList, VocabList.id == VocabListItem.list_id)
+        .where(VocabListItem.word_id.in_(ids),
+               VocabList.exam_level.in_(("junior", "senior")),
+               VocabList.status == "published"))).all()
+    best: dict = {}   # word_id → (学段权重, 学段名, star)
+    for wid, lvl, star in rows:
+        er, el = _EXAM_LABEL.get(lvl, (0, ""))
+        cur = best.get(wid)
+        if cur is None or er > cur[0] or (er == cur[0] and (star or 0) > cur[2]):
+            best[wid] = (er, el, star or 0)
+    weak = []
+    for w in words:
+        b = best.get(uuid.UUID(w["word_id"]))
+        if not b:
+            continue
+        tier = _FREQ_TIER.get(b[2])
+        weak.append({"word": w["word"], "tag": f"{b[1]}·{tier}" if tier else b[1], "_star": b[2]})
+    weak.sort(key=lambda x: -x["_star"])              # 真题高频档优先露出,不被 total/people 挤掉
+    for x in weak:
+        x.pop("_star", None)
+    return {"weak_count": len(weak), "weak": weak[:12]}
+
+
+async def _paper_stuck_sentences(db: AsyncSession, *, student_id: uuid.UUID,
+                                 paper_id: uuid.UUID) -> dict:
+    """P4 长难句探头:本卷长难句(source_paper_id)里「卡」= 已起学(认成分/重点词)但语法未掌握
+    (did_gram=false);不含未学句。卡句的语法结构名(analysis_json.grammar_points)聚合计数。"""
+    from collections import Counter
+    from app.models.d20_long_sentence import StudentLongSentence
+    rows = (await db.execute(
+        select(StudentLongSentence.did_comp, StudentLongSentence.did_gram,
+               StudentLongSentence.did_word, StudentLongSentence.analysis_json)
+        .where(StudentLongSentence.owner_id == student_id,
+               StudentLongSentence.source_paper_id == paper_id))).all()
+    struct: Counter = Counter()
+    stuck = 0
+    for did_comp, did_gram, did_word, ana in rows:
+        if (did_comp or did_word) and not did_gram:   # 起了学、语法没掌握 = 卡(排除未学)
+            stuck += 1
+            for gp in ((ana or {}).get("grammar_points") or []):
+                nm = (gp or {}).get("name")
+                if nm:
+                    struct[nm] += 1
+    return {"total": len(rows), "stuck": stuck,
+            "structures": [{"name": n, "count": c} for n, c in struct.most_common(6)]}
+
+
 async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
                                 paper_id: uuid.UUID) -> dict | None:
-    """单篇读后小结·提问块:该卷阅读题按「题型」聚合对错 + 一句话诊断。
+    """单篇读后小结·三块(提问/词汇/长难句):该卷阅读题按「题型」聚合对错 + 一句话诊断。
     题型先按需补标(P1,查看即生成)。对错口径:优先取学生「精讲里主动作答」的最新一次
     (P3 reading_answer_log,治 OCR 抓不到卷面圈选),回落 OCR is_wrong;都没有 → 未作答。
     非本人卷 → None。"""
@@ -336,5 +401,8 @@ async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
         diagnosis = f"本篇薄弱题型:{worst['skill']}(错 {worst['wrong']}/{worst['total']})"
     else:
         diagnosis = "本篇全对,读得不错。"
+    vocab = await _paper_weak_exam_vocab(db, student_id=student_id, paper_id=paper_id)
+    sentences = await _paper_stuck_sentences(db, student_id=student_id, paper_id=paper_id)
     return {"total": len(rows), "answered": answered, "unanswered": len(rows) - answered,
-            "wrong": wrong, "by_skill": by_skill, "diagnosis": diagnosis}
+            "wrong": wrong, "by_skill": by_skill, "diagnosis": diagnosis,
+            "vocab": vocab, "sentences": sentences}

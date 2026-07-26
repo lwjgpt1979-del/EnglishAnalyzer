@@ -112,6 +112,22 @@
           <text class="rs-sk">{{ s.skill }}</text>
           <text class="rs-rt" :class="rateTxtCls(s)">{{ s.total - s.wrong }}/{{ s.total }} 对</text>
         </view>
+        <!-- 词汇块:考纲薄弱词(接收度<0.6 ∩ 中/高考词库) -->
+        <view v-if="summary.vocab && summary.vocab.weak_count" class="rs-sub">
+          <text class="rs-sub-t">考纲薄弱词 {{ summary.vocab.weak_count }}</text>
+          <view class="rs-chips">
+            <text v-for="(w, i) in summary.vocab.weak" :key="i" class="rs-chip rs-chip-v">{{ w.word }}<text class="rs-chip-tag"> {{ w.tag }}</text></text>
+          </view>
+        </view>
+
+        <!-- 长难句块:解析/卡 + 卡在哪些结构 -->
+        <view v-if="summary.sentences && summary.sentences.total" class="rs-sub">
+          <text class="rs-sub-t">长难句 解析 {{ summary.sentences.total }} · 卡 {{ summary.sentences.stuck }}</text>
+          <view v-if="summary.sentences.structures.length" class="rs-chips">
+            <text v-for="(s, i) in summary.sentences.structures" :key="i" class="rs-chip rs-chip-s">{{ s.name }} · {{ s.count }}</text>
+          </view>
+        </view>
+
         <view v-if="summary.diagnosis" class="rs-diag">
           <view class="ic-stethoscope rs-dic"></view>
           <text>{{ summary.diagnosis }}</text>
@@ -467,6 +483,14 @@ onLoad(async (q: any) => {
 .rst-good { color: #2fa98a; }
 .rst-mid { color: #3d8bf5; }
 .rst-weak { color: #dc4c4c; }
+/* P4 词汇 / 长难句子块 */
+.rs-sub { margin-top: 12rpx; }
+.rs-sub-t { display: block; font-size: 23rpx; font-weight: 700; color: #55607a; margin-bottom: 8rpx; }
+.rs-chips { display: flex; flex-wrap: wrap; gap: 8rpx; }
+.rs-chip { font-size: 22rpx; font-weight: 600; border-radius: 8rpx; padding: 5rpx 12rpx; }
+.rs-chip-v { color: #c0662a; background: #fdf1e7; }
+.rs-chip-tag { font-size: 18rpx; color: #d89a6a; }
+.rs-chip-s { color: #7057c0; background: #f2eefb; }
 .rs-diag { display: flex; align-items: flex-start; gap: 10rpx; margin-top: 6rpx; background: #eef4ff; border-radius: 12rpx; padding: 14rpx 16rpx; font-size: 23rpx; color: #2f74d6; line-height: 1.55; }
 .rs-dic { width: 30rpx; height: 30rpx; flex: none; margin-top: 2rpx; background-size: contain; background-repeat: no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 12 18 12 15 21 9 3 6 12 2 12'/%3E%3C/svg%3E"); }
 </style>
