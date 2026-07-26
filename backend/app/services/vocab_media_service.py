@@ -524,6 +524,9 @@ async def ensure_word_media(db: AsyncSession, *, word_id: uuid.UUID) -> Vocabula
         return w                                  # 正在生成中(后台/别处),跳过防重复付费
     _media_inflight.add(word_id)
     try:
+        # 查看即生成:先补释义(dict_ecdict 优先 → LLM 兜底),有词意才画得出图(治「无词意」空转)
+        from app.services import vocab_definition_service
+        await vocab_definition_service.ensure_word_definition(db, w)
         await generate_for_word(db, word_id=word_id, do_images=True, do_audio=True)
         if isinstance(w.image_urls, list) and w.image_urls:
             w.media_status = "published"          # 有真图才发布 → 直接可见(素材已记版本,admin 仍可复核)

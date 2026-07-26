@@ -142,6 +142,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "对同题选项块两两判语义关系(近义/反义/易混/歧义/其他/无),建个人错题网并回写全局考点", "why": "结构化关系判定、规格明确、fast 档", "locations": ["wrong_relation_service.py:_judge_pairs"], "cache": "per-user", "store": "student_wrong_relation(私有边)+ 语义关系反哺 vocab_word_relation(全局)"},
     {"feature": "vocab_validity_gate", "mode": "chat", "surface": "小程序端", "module": "词力通·缺词", "service": "vocab_intensive_service",
      "purpose": "缺词自动入库前的有效性闸门(是否真实可教学英文词/词组)", "why": "二元判定、规格明确、fast 档 + 免费正则粗筛前置", "locations": ["vocab_intensive_service.py:225"], "cache": "none", "store": "无(判定结果不落库;通过则建 vocabulary_words,不通过落 vocab_review)"},
+    {"feature": "vocab_definition_gen", "mode": "chat", "surface": "小程序端", "module": "词力通·释义补全(dict兜底)", "service": "vocab_definition_service",
+     "purpose": "词典(ECDICT)没有的词,快档生成中文释义(1-2义)", "why": "结构化短释义、规格明确,关思考走快档;仅兜 dict_ecdict 未命中,量少", "locations": ["vocab_definition_service.py:_gen_definition_llm"], "cache": "per_user", "store": "vocabulary_words.definitions(落库即缓存,同词不二次)"},
     {"feature": "vocab_image_brief", "mode": "chat", "surface": "运营后台", "module": "表意配图·唯一入口", "service": "visual_brief_service",
      "purpose": "表意配图:词/考点→分类(具象/情感/心理/隐喻/抽象/空间/纯虚词)+ 一句可画场景;纯语法虚词判 text_only", "why": "结构化分类+造场景、关思考提速;是全项目表意出图的唯一 brief 入口", "locations": ["visual_brief_service.py:plan_visual"], "cache": "global", "store": "vocabulary_words 媒体字段(ensure_word_media 幂等守卫)"},
     {"feature": "vocab_en_desc", "mode": "chat", "surface": "运营后台", "module": "词力通·媒体", "service": "vocab_media_service",
