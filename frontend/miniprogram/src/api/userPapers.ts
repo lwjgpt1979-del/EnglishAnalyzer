@@ -106,10 +106,14 @@ export function readingPractice(qid: string): Promise<{ questions: SimilarQuesti
   return request(`/api/v1/user-papers/questions/${qid}/reading-practice`, { method: 'POST' })
 }
 export interface ReadingSummarySkill { skill: string; total: number; wrong: number }
-export interface ReadingSummary { total: number; wrong: number; by_skill: ReadingSummarySkill[]; diagnosis: string }
+export interface ReadingSummary { total: number; answered: number; unanswered: number; wrong: number; by_skill: ReadingSummarySkill[]; diagnosis: string }
 /** P2 单篇读后小结·提问块:该卷阅读题按题型的对错 + 一句话诊断(题型按需补标) */
 export function getReadingSummary(paperId: string): Promise<ReadingSummary> {
   return request(`/api/v1/user-papers/papers/${paperId}/reading-summary`, { method: 'GET' })
+}
+/** P3 精讲里主动作答某阅读题 → 记 is_correct(治 OCR 抓不到卷面圈选) */
+export function recordReadingAnswer(qid: string, chosen: string): Promise<{ chosen: string | null; correct_answer: string | null; is_correct: boolean | null }> {
+  return request(`/api/v1/user-papers/questions/${qid}/reading-answer`, { method: 'POST', data: { chosen } })
 }
 
 // 长难句学习页交互素材:语法提问式选择 + 重点词卡片

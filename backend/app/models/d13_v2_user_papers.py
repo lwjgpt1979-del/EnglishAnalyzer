@@ -132,3 +132,21 @@ class ReadingQuestionStudied(Base):
     student_id = mapped_column(UUID(as_uuid=True), primary_key=True)
     question_id = mapped_column(UUID(as_uuid=True), primary_key=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class ReadingAnswerLog(Base):
+    """阅读理解精讲·学生主动作答留痕(P3)。作业阅读题 is_wrong 多为空(OCR 抓不到
+    卷面圈选),学生在精讲里作答一次即记 is_correct;留痕、可重做多次,读后小结优先取
+    每题最新一次(回落 is_wrong)。方案②:独立表,不覆盖 UserPaperQuestion 原 OCR 值。"""
+    __tablename__ = "reading_answer_log"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = mapped_column(UUID(as_uuid=True), nullable=False)
+    question_id = mapped_column(UUID(as_uuid=True), nullable=False)   # → user_paper_questions.id
+    chosen = mapped_column(sa.String(8), nullable=True)               # 选了哪项(A/B/C/D)
+    is_correct = mapped_column(sa.Boolean, nullable=True)             # 无 correct_answer 时 NULL
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_ral_student_question", "student_id", "question_id", "created_at"),
+    )

@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, get_rls_db
@@ -337,6 +337,18 @@ async def reading_summary_api(paper_id: uuid.UUID, db: DbDep, current_user: User
         db, student_id=current_user.id, paper_id=paper_id)
     if r is None:
         raise AppError(code=404, message="作业不存在或无权访问")
+    return make_ok(r)
+
+
+@router.post("/questions/{question_id}/reading-answer")
+async def reading_answer_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep,
+                             chosen: str = Body(..., embed=True, description="A/B/C/D")):
+    """P3 学生在精讲里主动作答某阅读题 → 记 is_correct(留痕,治 OCR 抓不到卷面圈选)。"""
+    from app.services import reading_intensive_service
+    r = await reading_intensive_service.record_reading_answer(
+        db, student_id=current_user.id, question_id=question_id, chosen=chosen)
+    if r is None:
+        raise AppError(code=404, message="题目不存在或无权访问")
     return make_ok(r)
 
 

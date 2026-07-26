@@ -37,6 +37,19 @@
             <text class="q-no">{{ q.no ? `第 ${q.no} 题` : '' }}</text>
           </view>
           <text class="q-stem">{{ q.stem || '（题干为空）' }}</text>
+
+          <!-- P3 主动作答:选项内嵌题干,点字母作答(治 OCR 抓不到卷面圈选) -->
+          <view class="ans-pick">
+            <text class="ap-lbl">作答</text>
+            <view v-for="L in ['A', 'B', 'C', 'D']" :key="L" class="ap-btn"
+                  :class="answered[q.id]?.chosen === L ? (answered[q.id]?.is_correct === false ? 'ap-bad' : 'ap-ok') : ''"
+                  @tap="answer(q, L)">{{ L }}</view>
+            <text v-if="answered[q.id]" class="ap-res"
+                  :class="answered[q.id].is_correct === false ? 'ap-rbad' : 'ap-rok'">
+              {{ answered[q.id].is_correct === null ? '已记录' : (answered[q.id].is_correct ? '答对' : '答错') }}
+            </text>
+          </view>
+
           <view class="q-ans">
             <view class="ans-chip" :class="q.is_wrong ? 'ac-bad' : 'ac-ok'">
               <text>你选 {{ q.student_answer || '未识别' }}</text>
@@ -92,7 +105,7 @@
         <view class="rs-hd">
           <view class="ic-clipboard rs-ic"></view>
           <text class="rs-tt">读后小结</text>
-          <text class="rs-meta">共 {{ summary.total }} 题 · 错 {{ summary.wrong }}</text>
+          <text class="rs-meta">已答 {{ summary.answered }}/{{ summary.total }} · 错 {{ summary.wrong }}</text>
         </view>
         <view v-for="(s, i) in summary.by_skill" :key="i" class="rs-row">
           <view class="rs-fill" :class="rateCls(s)" :style="{ width: ratePct(s) + '%' }"></view>
@@ -166,6 +179,7 @@ import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { rdHwPassages, type ReadingBlock } from '@/api/curriculum'
 import { getReadingAnalysis, readingPractice, recordPaperPractice, getPassageStudy, getReadingSummary,
+         recordReadingAnswer,
          type ReadingAnalysis, type SimilarQuestion, type StudyWord,
          type ReadingSummary, type ReadingSummarySkill } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
@@ -190,6 +204,17 @@ function markStudiedLocal(qid: string) {
 }
 
 function toggle(i: number) { collapsed.value = { ...collapsed.value, [i]: !collapsed.value[i] } }
+
+// P3 主动作答(治 OCR 抓不到卷面圈选):点 A/B/C/D → 记 is_correct → 刷新小结
+const answered = ref<Record<string, { chosen: string; is_correct: boolean | null }>>({})
+async function answer(q: any, letter: string) {
+  try {
+    const r = await recordReadingAnswer(q.id, letter)
+    answered.value = { ...answered.value, [q.id]: { chosen: r.chosen || letter, is_correct: r.is_correct } }
+    markStudiedLocal(q.id)
+    try { summary.value = await getReadingSummary(paperId.value) } catch { /* 小结刷新失败不影响作答 */ }
+  } catch (e: any) { uni.showToast({ title: e?.message || '记录失败', icon: 'none' }) }
+}
 
 // P2 读后小结·提问块(题型正确率 → 进度即底色 + 状态色)
 const summary = ref<ReadingSummary | null>(null)
@@ -358,6 +383,16 @@ onLoad(async (q: any) => {
 .st-ok { color: #1a9d63; background: #e8f6ef; }
 .q-no { margin-left: auto; font-size: 22rpx; color: #93a0b3; }
 .q-stem { display: block; font-size: 27rpx; font-weight: 600; line-height: 1.6; color: #1f2733; }
+
+/* P3 作答器:A/B/C/D 字母选择 */
+.ans-pick { display: flex; align-items: center; gap: 12rpx; margin-top: 14rpx; }
+.ap-lbl { font-size: 22rpx; color: #93a0b3; }
+.ap-btn { width: 56rpx; height: 56rpx; border-radius: 12rpx; border: 2rpx solid #d8e0ec; background: #f5f8fc; color: #2b3546; font-size: 26rpx; font-weight: 700; text-align: center; line-height: 56rpx; }
+.ap-ok { border-color: #2fa98a; background: #e8f6ef; color: #1a9d63; }
+.ap-bad { border-color: #dc4c4c; background: #fdecec; color: #dc4c4c; }
+.ap-res { font-size: 22rpx; font-weight: 700; margin-left: 4rpx; }
+.ap-rok { color: #1a9d63; }
+.ap-rbad { color: #dc4c4c; }
 .q-ans { margin-top: 14rpx; display: flex; flex-wrap: wrap; gap: 10rpx; }
 .ans-chip { display: inline-flex; align-items: center; gap: 6rpx; font-size: 23rpx; border-radius: 10rpx; padding: 6rpx 16rpx; }
 .ans-ic { width: 26rpx; height: 26rpx; flex-shrink: 0; }

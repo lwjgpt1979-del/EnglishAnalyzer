@@ -251,11 +251,42 @@ async def homework_passages(db: AsyncSession, *, student_id: uuid.UUID,
     return [blocks[k] for k in order]
 
 
+def _answer_letter(s: str | None) -> str | None:
+    """从作答/答案文本里取选项字母 A/B/C/D(取首个命中)。取不到 → None(无法判分)。"""
+    for ch in (s or "").upper():
+        if ch in "ABCD":
+            return ch
+    return None
+
+
+async def record_reading_answer(db: AsyncSession, *, student_id: uuid.UUID,
+                                question_id: uuid.UUID, chosen: str) -> dict | None:
+    """P3 学生在精讲里主动作答某阅读题 → 记 reading_answer_log(留痕,可重做多次)。
+    与 correct_answer 字母比对得 is_correct(取不到答案 → None)。非本人题 → None。"""
+    from app.models.d13_v2_user_papers import ReadingAnswerLog
+    q = await db.get(UserPaperQuestion, question_id)
+    if q is None:
+        return None
+    paper = await db.get(UserUploadedPaper, q.user_paper_id)
+    if paper is None or paper.student_id != student_id:
+        return None
+    pick = _answer_letter(chosen)
+    correct = _answer_letter(q.correct_answer)
+    is_correct = (pick == correct) if (pick and correct) else None
+    db.add(ReadingAnswerLog(student_id=student_id, question_id=question_id,
+                            chosen=pick or (chosen or "")[:8], is_correct=is_correct))
+    await db.commit()
+    return {"chosen": pick, "correct_answer": correct, "is_correct": is_correct}
+
+
 async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
                                 paper_id: uuid.UUID) -> dict | None:
-    """P2 单篇读后小结·提问块:该卷阅读题按「题型」聚合对错 + 一句话诊断。
-    题型先按需补标(查看即生成),对错用现成 is_wrong(不建表)。非本人卷 → None。"""
+    """单篇读后小结·提问块:该卷阅读题按「题型」聚合对错 + 一句话诊断。
+    题型先按需补标(P1,查看即生成)。对错口径:优先取学生「精讲里主动作答」的最新一次
+    (P3 reading_answer_log,治 OCR 抓不到卷面圈选),回落 OCR is_wrong;都没有 → 未作答。
+    非本人卷 → None。"""
     from collections import defaultdict
+    from app.models.d13_v2_user_papers import ReadingAnswerLog
     from app.services import reading_qtype_service as qsvc
 
     paper = await db.get(UserUploadedPaper, paper_id)
@@ -263,27 +294,47 @@ async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
         return None
     await qsvc.ensure_paper_tagged(db, paper_id=paper_id)   # 回填+少量补跑,零运营
     rows = (await db.execute(
-        select(UserPaperQuestion.reading_skill, UserPaperQuestion.is_wrong)
+        select(UserPaperQuestion.id, UserPaperQuestion.reading_skill,
+               UserPaperQuestion.is_wrong, UserPaperQuestion.student_answer)
         .join(UserPaperSection, UserPaperSection.id == UserPaperQuestion.section_id)
         .where(UserPaperSection.section_type == "reading",
                UserPaperQuestion.user_paper_id == paper_id))).all()
+    qids = [r.id for r in rows]
+    # 每题最新一次「已判」作答(升序遍历,后者即更新)
+    fresh: dict[uuid.UUID, bool] = {}
+    if qids:
+        logs = (await db.execute(
+            select(ReadingAnswerLog.question_id, ReadingAnswerLog.is_correct)
+            .where(ReadingAnswerLog.student_id == student_id,
+                   ReadingAnswerLog.question_id.in_(qids))
+            .order_by(ReadingAnswerLog.created_at))).all()
+        for qid, ic in logs:
+            if ic is not None:
+                fresh[qid] = bool(ic)
     agg: dict[str, dict] = defaultdict(lambda: {"total": 0, "wrong": 0})
-    total = wrong = 0
-    for sk, is_wrong in rows:
+    answered = wrong = 0
+    for qid, sk, is_wrong, stu_ans in rows:
+        if qid in fresh:                       # ① 主动作答(最优)
+            correct = fresh[qid]
+        elif stu_ans:                          # ② OCR 抓到的卷面作答
+            correct = not is_wrong
+        else:                                  # ③ 未作答 → 不计正确率
+            continue
         cell = agg[sk or "其他"]
         cell["total"] += 1
-        total += 1
-        if is_wrong:
+        answered += 1
+        if not correct:
             cell["wrong"] += 1
             wrong += 1
     by_skill = sorted(
         ({"skill": k, "total": v["total"], "wrong": v["wrong"]} for k, v in agg.items()),
         key=lambda x: (-x["wrong"], -x["total"]))
     worst = next((s for s in by_skill if s["wrong"] > 0), None)
-    if not total:
-        diagnosis = ""
+    if not answered:
+        diagnosis = "本篇还没作答,点题目下方 A/B/C/D 作答后即出小结。"
     elif worst:
         diagnosis = f"本篇薄弱题型:{worst['skill']}(错 {worst['wrong']}/{worst['total']})"
     else:
         diagnosis = "本篇全对,读得不错。"
-    return {"total": total, "wrong": wrong, "by_skill": by_skill, "diagnosis": diagnosis}
+    return {"total": len(rows), "answered": answered, "unanswered": len(rows) - answered,
+            "wrong": wrong, "by_skill": by_skill, "diagnosis": diagnosis}
