@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 import uuid
 
 from sqlalchemy import func, select
@@ -761,6 +762,61 @@ async def homework_progress(db: AsyncSession, *, student_id: uuid.UUID) -> list[
     return out
 
 
+_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\-]+")
+
+
+def _build_segments(text: str, words: list[dict], sentences: list[str]) -> list[dict]:
+    """把 words/sentences 定位回原文字符位置,合并成有序渲染分段(阅读精讲原文内联双高亮用)。
+    句内含重点词时,该词对应的 segment 同时带 word_idx 与 sentence_idx(前端据此叠加双下划线)。"""
+    word_idx_by_lower: dict[str, int] = {}
+    for i, w in enumerate(words):
+        lw = (w.get("word") or "").lower()
+        if lw and lw not in word_idx_by_lower:
+            word_idx_by_lower[lw] = i
+
+    word_spans: list[tuple[int, int, int]] = []
+    if word_idx_by_lower:
+        for m in _TOKEN_RE.finditer(text):
+            lw = m.group(0).lower().strip("'-")
+            wi = word_idx_by_lower.get(lw)
+            if wi is not None:
+                word_spans.append((m.start(), m.end(), wi))
+
+    sentence_spans: list[tuple[int, int, int]] = []
+    cursor = 0
+    for i, s in enumerate(sentences):
+        idx = text.find(s, cursor)
+        if idx < 0:
+            idx = text.find(s)          # 兜底:理论上不该走到(句子应是原文顺序子串)
+        if idx < 0:
+            continue
+        sentence_spans.append((idx, idx + len(s), i))
+        cursor = idx + len(s)
+
+    if not word_spans and not sentence_spans:
+        return [{"t": text, "word_idx": None, "sentence_idx": None}] if text else []
+
+    pts = sorted({0, len(text), *(a for a, _, _ in word_spans), *(b for _, b, _ in word_spans),
+                  *(a for a, _, _ in sentence_spans), *(b for _, b, _ in sentence_spans)})
+
+    def _find(spans: list[tuple[int, int, int]], a: int, b: int) -> int | None:
+        for s0, s1, sid in spans:
+            if s0 <= a and b <= s1:
+                return sid
+        return None
+
+    segments = []
+    for a, b in zip(pts, pts[1:]):
+        if a >= b:
+            continue
+        segments.append({
+            "t": text[a:b],
+            "word_idx": _find(word_spans, a, b),
+            "sentence_idx": _find(sentence_spans, a, b),
+        })
+    return segments
+
+
 async def passage_study(
     db: AsyncSession, *, passage: str, student_id: uuid.UUID,
 ) -> dict:
@@ -777,7 +833,7 @@ async def passage_study(
 
     text = (passage or "").strip()
     if not text:
-        return {"words": [], "sentences": []}
+        return {"words": [], "sentences": [], "segments": []}
 
     # ① 长难句:切句 + 长句判定(去重、限量)
     seen, sentences = set(), []
@@ -841,7 +897,9 @@ async def passage_study(
             db, level=level, word_ids=[w.get("word_id") for w in words if w.get("word_id")]) if level else {}
         for w in words:
             w["exam_tag"] = labels.get(str(w.get("word_id"))) if w.get("word_id") else None
-    return {"words": words, "sentences": sentences[:15]}
+    sentences = sentences[:15]
+    segments = _build_segments(text, words, sentences)
+    return {"words": words, "sentences": sentences, "segments": segments}
 
 
 async def analyze_paper_sentence(db: AsyncSession, sentence: str) -> dict:

@@ -59,9 +59,12 @@ export function getPaperLongSentences(paperId: string, sectionId?: string): Prom
   const qs = sectionId ? `?section_id=${sectionId}` : ''
   return request<{ sentences: string[] }>(`/api/v1/user-papers/${paperId}/long-sentences${qs}`, { method: 'GET' })
 }
-// 阅读精讲:按单篇短文取「本地生词(完整卡片媒体)+ 长难句」
-export function getPassageStudy(passage: string, paperId?: string): Promise<{ words: StudyWord[]; sentences: string[] }> {
-  return request<{ words: StudyWord[]; sentences: string[] }>(`/api/v1/user-papers/passage-study`, {
+// 阅读精讲:原文内联高亮分段——词/句定位回原文字符位置的有序片段;句内含重点词时
+// word_idx 与 sentence_idx 同时非空(嵌套),前端据此叠加双下划线
+export interface PassageSegment { t: string; word_idx: number | null; sentence_idx: number | null }
+// 阅读精讲:按单篇短文取「本地生词(完整卡片媒体)+ 长难句 + 原文内联分段」
+export function getPassageStudy(passage: string, paperId?: string): Promise<{ words: StudyWord[]; sentences: string[]; segments: PassageSegment[] }> {
+  return request<{ words: StudyWord[]; sentences: string[]; segments: PassageSegment[] }>(`/api/v1/user-papers/passage-study`, {
     method: 'POST', data: { passage, paper_id: paperId },
   })
 }

@@ -23,7 +23,13 @@
             <text class="passage-toggle">{{ collapsed[bi] ? '展开 ▾' : '收起 ▴' }}</text>
           </view>
           <view v-if="!collapsed[bi]" class="passage-text">
-            <text v-for="(seg, si) in passageSegs(bi, bk.passage)" :key="si" :class="{ 'ev-hl': seg.hl }">{{ seg.t }}</text>
+            <template v-for="(seg, si) in passageSegs(bi, bk.passage)" :key="si">
+              <!-- 高亮片段(词/长难句):catch 掉点击,不再冒泡触发原文收起/展开 -->
+              <text v-if="seg.word_idx != null || seg.sentence_idx != null"
+                    :class="{ 'ev-hl': seg.ev, 'seg-w': seg.word_idx != null, 'seg-s': seg.sentence_idx != null }"
+                    @tap.stop="segTap(bi, seg)">{{ seg.t }}</text>
+              <text v-else :class="{ 'ev-hl': seg.ev }">{{ seg.t }}</text>
+            </template>
           </view>
         </view>
 
@@ -168,8 +174,9 @@
       </view>
     </view>
 
-    <!-- 单词卡:根层渲染(在 sheet/scroll-view 外),避免被面板压住 -->
+    <!-- 单词卡 / 长难句卡:根层渲染(在 sheet/scroll-view 外),避免被面板压住 -->
     <WordCard :word="sheetCard" :paper-id="paperId" @close="sheetCard = null" />
+    <SentenceCard :text="sentenceCard" :paper-id="paperId" @close="sentenceCard = null" />
 
     <!-- 练同类(统一 PracticeQuiz) -->
     <PracticeQuiz
@@ -188,14 +195,16 @@ import { onLoad } from '@dcloudio/uni-app'
 import { rdHwPassages, type ReadingBlock } from '@/api/curriculum'
 import { getReadingAnalysis, readingPractice, recordPaperPractice, getPassageStudy, getReadingSummary,
          recordReadingAnswer,
-         type ReadingAnalysis, type SimilarQuestion, type StudyWord,
+         type ReadingAnalysis, type SimilarQuestion, type StudyWord, type PassageSegment,
          type ReadingSummary, type ReadingSummarySkill } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import KeyWordsList from '@/components/KeyWordsList.vue'
 import WordCard from '@/components/WordCard.vue'
+import SentenceCard from '@/components/SentenceCard.vue'
 
 const paperId = ref('')
 const sheetCard = ref<StudyWord | null>(null)   // 面板里点词 → 根层弹卡(避免困在 scroll-view)
+const sentenceCard = ref<string | null>(null)   // 原文里点长难句 → 根层弹「轻量精讲」卡
 const loading = ref(true)
 const blocks = ref<ReadingBlock[]>([])
 const collapsed = ref<Record<number, boolean>>({})
@@ -242,18 +251,44 @@ function typeCls(q: any): string {
   return 'tt-detail'
 }
 
-// 证据句在原文里高亮
-const activeEv = ref<Record<number, string>>({})
-function passageSegs(bi: number, passage: string): { t: string; hl: boolean }[] {
-  const ev = (activeEv.value[bi] || '').trim()
-  if (!ev || !passage) return [{ t: passage, hl: false }]
-  const idx = passage.toLowerCase().indexOf(ev.toLowerCase())
-  if (idx < 0) return [{ t: passage, hl: false }]
-  return [
-    { t: passage.slice(0, idx), hl: false },
-    { t: passage.slice(idx, idx + ev.length), hl: true },
-    { t: passage.slice(idx + ev.length), hl: false },
-  ].filter(s => s.t)
+// 原文内联双高亮:词(浅蓝点线,点开单词详解)+ 长难句(橙红点线,点开轻量精讲卡);
+// 句内含重点词时同一片段 word_idx/sentence_idx 同时非空(嵌套) —— 词优先响应点击,
+// 句子的下划线仍在该词前后的文字上连续延伸,互不遮挡。
+const activeEv = ref<Record<number, string>>({})     // 「回原文定位」答案证据句(蓝底,叠加在词/句高亮之上)
+const blockStudy = ref<Record<number, { words: StudyWord[]; sentences: string[]; segments: PassageSegment[] }>>({})
+
+type RenderSeg = PassageSegment & { ev: boolean }
+function withEvidence(segs: PassageSegment[], ev: string): RenderSeg[] {
+  if (!ev) return segs.map(s => ({ ...s, ev: false }))
+  const full = segs.map(s => s.t).join('')
+  const idx = full.toLowerCase().indexOf(ev.toLowerCase())
+  if (idx < 0) return segs.map(s => ({ ...s, ev: false }))
+  const evEnd = idx + ev.length
+  const out: RenderSeg[] = []
+  let pos = 0
+  for (const seg of segs) {
+    const segStart = pos, segEnd = pos + seg.t.length
+    pos = segEnd
+    if (segEnd <= idx || segStart >= evEnd) { out.push({ ...seg, ev: false }); continue }
+    const cutStart = Math.max(idx, segStart) - segStart
+    const cutEnd = Math.min(evEnd, segEnd) - segStart
+    if (cutStart > 0) out.push({ ...seg, t: seg.t.slice(0, cutStart), ev: false })
+    out.push({ ...seg, t: seg.t.slice(cutStart, cutEnd), ev: true })
+    if (cutEnd < seg.t.length) out.push({ ...seg, t: seg.t.slice(cutEnd), ev: false })
+  }
+  return out
+}
+function passageSegs(bi: number, passage: string): RenderSeg[] {
+  const sd = blockStudy.value[bi]
+  const base: PassageSegment[] = sd?.segments?.length ? sd.segments
+    : (passage ? [{ t: passage, word_idx: null, sentence_idx: null }] : [])
+  return withEvidence(base, (activeEv.value[bi] || '').trim())
+}
+function segTap(bi: number, seg: RenderSeg) {
+  const sd = blockStudy.value[bi]
+  if (!sd) return
+  if (seg.word_idx != null) { sheetCard.value = sd.words[seg.word_idx] ?? null; return }   // 句内词优先响应
+  if (seg.sentence_idx != null) sentenceCard.value = sd.sentences[seg.sentence_idx] ?? null
 }
 
 // 本篇精讲:整卷生词 + 长难句,汇总所有短文(零成本正则),供底部上拉面板
@@ -265,10 +300,11 @@ async function loadStudy() {
   const wordMap = new Map<string, StudyWord>()
   const sentSet = new Set<string>()
   const sents: string[] = []
-  for (const bk of blocks.value) {
+  for (const [bi, bk] of blocks.value.entries()) {
     if (!bk.passage) continue
     try {
       const r = await getPassageStudy(bk.passage, paperId.value || undefined)
+      blockStudy.value = { ...blockStudy.value, [bi]: { words: r.words, sentences: r.sentences, segments: r.segments } }
       for (const w of r.words) { const k = w.word_id || w.word; if (!wordMap.has(k)) wordMap.set(k, w) }
       for (const s of r.sentences) { if (s && !sentSet.has(s)) { sentSet.add(s); sents.push(s) } }
     } catch { /* 单篇失败不影响其它 */ }
@@ -356,6 +392,11 @@ onLoad(async (q: any) => {
 .passage-toggle { font-size: 22rpx; color: #93a0b3; }
 .passage-text { display: block; font-size: 26rpx; color: #3a4353; line-height: 1.8; margin-top: 14rpx; max-height: 40vh; overflow-y: auto; white-space: pre-wrap; }
 .ev-hl { background: #e4eeff; color: #1f4c8f; border-radius: 4rpx; padding: 0 2rpx; box-shadow: inset 0 -4rpx 0 #7ca9f5; }
+/* 原文内联双高亮:词(浅蓝点线)/ 长难句(橙红点线);句内词嵌套时词的下划线优先(点击目标更精确),
+   叠一层浅橙底色提示"这是长难句里的词"——句子的橙红下划线仍在词前后文字上连续延伸 */
+.seg-w { border-bottom: 3rpx dotted #3d8bf5; }
+.seg-s { border-bottom: 3rpx dotted #e08a4c; }
+.seg-w.seg-s { border-bottom-color: #3d8bf5; background: #fdf3ea; border-radius: 4rpx; }
 
 /* 卷头进度:进度即底色(背景填充式,全项目统一) */
 .rd-head { position: relative; overflow: hidden; display: flex; align-items: center; gap: 16rpx; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 18rpx 20rpx; margin-bottom: 18rpx; box-shadow: 0 6rpx 20rpx rgba(45, 80, 150, .06); }
