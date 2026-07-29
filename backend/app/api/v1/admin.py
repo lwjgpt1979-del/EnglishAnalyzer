@@ -317,16 +317,18 @@ async def knowledge_nodes_overview_api(
     db: DbDep, admin: AdminDep,
     axis: str | None = None, stage: str | None = None, status: str | None = None,
     q: str | None = None, linked: str | None = None, roots: str | None = None,
-    ai_lecture: bool = False, skip: int = 0, limit: int = 30,
+    ai_lecture: bool = False, title_pending: bool = False, skip: int = 0, limit: int = 30,
 ):
     """知识图谱总览(D1):节点分页 + 每节点完整度/引用计数。status 空=全部;
     linked: unit=已关联教材 / question=已关联真题 / both=两者同时关联;
     roots: 逗号分隔的根目录 id(多选),只出这些根子树下的节点;
-    ai_lecture=true:只出「有 AI 即时生成讲解(待采纳)」的节点。"""
+    ai_lecture=true:只出「有 AI 即时生成讲解(待采纳)」的节点;
+    title_pending=true:只出仍缺展示短标题的节点。"""
     root_ids = [r for r in (roots or "").split(",") if r.strip()] or None
     items, total = await kp_candidate_service.list_nodes_overview(
         db, axis=axis, stage=stage, status=status or None, q=q, linked=linked or None,
-        root_ids=root_ids, has_ai_lecture=ai_lecture, skip=skip, limit=limit)
+        root_ids=root_ids, has_ai_lecture=ai_lecture, title_pending=title_pending,
+        skip=skip, limit=limit)
     return make_ok(KpNodeOverviewOut(total=total, items=[KpNodeOverviewItem(**it) for it in items]))
 
 
@@ -431,6 +433,52 @@ async def update_knowledge_node_api(node_id: uuid.UUID, body: UpdateNodeIn, db: 
         applicable_stages=body.applicable_stages, description=body.description)
     await db.commit()
     return make_ok(KpNodeDetailOut(**(await kp_candidate_service.node_detail(db, node_id=node_id))))
+
+
+@router.post("/knowledge-nodes/title-rewrite/suggest", response_model=BaseResponse[dict])
+async def kp_title_rewrite_suggest_api(body: dict, db: DbDep, admin: AdminDep):
+    """AI 批量整理展示标题草稿(方案 B2):不改 name,只返回 suggested_title/detail。"""
+    from app.services import kp_title_rewrite_service as tr
+    ids = []
+    for x in (body.get("node_ids") or []):
+        try:
+            ids.append(uuid.UUID(str(x)))
+        except (ValueError, TypeError):
+            continue
+    items = await tr.suggest_batch(db, node_ids=ids)
+    await db.commit()  # 落缓存
+    return make_ok({"items": items, "total": len(items)})
+
+
+@router.post("/knowledge-nodes/title-rewrite/apply", response_model=BaseResponse[dict])
+async def kp_title_rewrite_apply_api(body: dict, db: DbDep, admin: AdminDep):
+    """确认写入 description(首行=短标题);匹配名 name 不动。"""
+    from app.services import kp_title_rewrite_service as tr
+    r = await tr.apply_batch(db, items=list(body.get("items") or []))
+    await db.commit()
+    return make_ok(r)
+
+
+@router.get("/knowledge-nodes/title-rewrite/pending-count", response_model=BaseResponse[dict])
+async def kp_title_rewrite_pending_count_api(
+    db: DbDep, admin: AdminDep, hard_only: bool = False,
+):
+    """仍缺合格展示标题的节点数(规则优先后 AI 补洞用)。"""
+    from app.services import kp_title_rewrite_service as tr
+    total = await tr.count_pending(db, hard_only=hard_only)
+    hard = await tr.count_pending(db, hard_only=True) if not hard_only else total
+    return make_ok({"pending": total, "hard_pending": hard})
+
+
+@router.post("/knowledge-nodes/title-rewrite/ai-pending", response_model=BaseResponse[dict])
+async def kp_title_rewrite_ai_pending_api(body: dict, db: DbDep, admin: AdminDep):
+    """规则优先 + AI 补洞:对仍缺展示标题的节点自动 suggest→apply(缓存命中不二次付费)。"""
+    from app.services import kp_title_rewrite_service as tr
+    hard_only = bool(body.get("hard_only"))
+    limit = body.get("limit")
+    limit_i = int(limit) if limit is not None else None
+    r = await tr.apply_ai_for_pending(db, hard_only=hard_only, limit=limit_i)
+    return make_ok(r)
 
 
 @router.post("/knowledge-nodes/{node_id}/retire", response_model=BaseResponse[dict])

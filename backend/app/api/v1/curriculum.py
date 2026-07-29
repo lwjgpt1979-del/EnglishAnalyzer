@@ -140,8 +140,9 @@ async def get_kp_mastery(
         )
     )).scalar_one_or_none()
 
+    from app.services.kp_title_rewrite_service import node_display_label
     if sk is None:
-        return make_ok({"kp_name": node.name, "correct_count": 0, "wrong_count": 0,
+        return make_ok({"kp_name": node_display_label(node), "correct_count": 0, "wrong_count": 0,
                         "total": 0, "accuracy": None, "mastery": None, "mastery_events": 0,
                         "fa_correct": 0, "fa_wrong": 0, "corrected_count": 0, "redo_wrong_count": 0,
                         "last_activity_at": None})
@@ -153,7 +154,7 @@ async def get_kp_mastery(
     mastery, events = g_over.get(node_id) or weighted_mastery(
         sk.fa_correct, sk.fa_wrong, sk.corrected_count, sk.redo_wrong_count)
     return make_ok({
-        "kp_name": node.name,
+        "kp_name": node_display_label(node),
         "correct_count": correct,
         "wrong_count": sk.wrong_count or 0,
         "total": total,
@@ -197,6 +198,7 @@ async def get_unit_mastery_summary(
     sk_map = {sk.node_id: sk for sk in sk_rows}
 
     from app.services.kp_mastery_service import weighted_mastery, grammar_overrides
+    from app.services.kp_title_rewrite_service import node_display_label
     # 语法类考点掌握度由四维派生(与详情一致);其余用加权口径
     g_over = await grammar_overrides(
         db, student_id=current_user.id, nodes_with_code=[(n.id, n.code) for n in nodes])
@@ -214,7 +216,7 @@ async def get_unit_mastery_summary(
             mastery, events = None, 0
         result.append({
             "kp_id": str(n.id),
-            "kp_name": n.name,
+            "kp_name": node_display_label(n),
             "kp_category": str(n.node_kind) if n.node_kind else None,
             "correct_count": correct,
             "wrong_count": (sk.wrong_count or 0) if sk else 0,
@@ -238,11 +240,12 @@ async def search_knowledge_points(
     R8 Phase5b:改搜 knowledge_nodes(单一真源);category 复用 node_kind。
     """
     from app.schemas.curriculum import KPSearchItem
+    from app.services.kp_title_rewrite_service import node_display_label
     nodes = await curriculum_service.search_kps(db, q=q, limit=limit)
     return make_ok([
         KPSearchItem(
             id=n.id,
-            name=n.name,
+            name=node_display_label(n),
             category=str(n.node_kind or ""),
             description=n.description,
         ).model_dump(mode="json")

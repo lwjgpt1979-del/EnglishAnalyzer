@@ -68,6 +68,7 @@
                 <view class="qbody">
                   <text class="qstem">{{ cardText(wq) }}</text>
                   <view class="qtags">
+                    <text v-if="sourceBadge(wq)" class="mini-tag" :class="sourceBadgeClass(wq)">{{ sourceBadge(wq) }}</text>
                     <text class="mini-tag" :class="kindClass(wq)">{{ kindLabel(wq) }}</text>
                     <text v-if="wq.kp_name" class="mini-tag mini-kp">{{ wq.kp_name }}</text>
                   </view>
@@ -249,6 +250,7 @@ import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import ShadowModal from '@/components/ShadowModal.vue'
 import Paywall from '@/components/Paywall.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useEntitlementsStore } from '@/stores/entitlements'
 import { playWordMedia } from '@/utils/wordPlay'
 
 const auth = useAuthStore()
@@ -369,6 +371,25 @@ function kindLabel(wq: WrongCenterItem): string { return wq.kp_kind === 'grammar
 function kindClass(wq: WrongCenterItem): string { return wq.kp_kind === 'grammar' ? 'k-gram' : wq.kp_kind === 'vocab' ? 'k-vocab' : 'k-none' }
 function statusClass(wq: WrongCenterItem): string { return wq.lifecycle === 'mastered' ? 's-done' : wq.lifecycle === 'reviewing' ? 's-review' : 's-pending' }
 
+/** 平台错题题级来源徽章文案(方案 A);非平台族不展示 */
+function sourceBadge(wq: WrongCenterItem): string {
+  const s = wq.source_label || ''
+  if (s === '课程精讲' || s === '语法精讲' || s === '课程练习' || s === '模拟考' || s === '课程闯关') return s
+  if (s === '平台') return '平台练习'
+  return ''
+}
+/** 来源徽章配色:绿=课程精讲 · 紫=语法精讲 · 青=课程练习 · 蓝=模拟考 · 橙=课程闯关/平台 */
+function sourceBadgeClass(wq: WrongCenterItem): string {
+  const s = wq.source_label || ''
+  if (s === '课程精讲') return 'src-course'
+  if (s === '语法精讲') return 'src-gram'
+  if (s === '课程练习') return 'src-prac'
+  if (s === '模拟考') return 'src-exam'
+  if (s === '课程闯关') return 'src-chal'
+  if (s === '平台') return 'src-plat'
+  return ''
+}
+
 // —— 来源 tab(纯按来源)+ 副筛选(语法/词汇)+ 视图(按考点/按批次) ——
 // 上传的一律是作业(已无真题上传;历史「整卷」已洗为「作业」)
 // 长难句薄弱(value=ls)= 探针练习衍生句卡;练习巩固(词)= 考点扩展练习衍生词卡
@@ -399,7 +420,7 @@ function groupsInBucket(b: string) { return groups.value.filter(g => (g.bucket |
 
 function groupKey(g: WrongGroup): string { return view.value === 'kp' ? (g.kp || '未分类') : (g.source_id || '') }
 function groupTitle(g: WrongGroup): string {
-  if (view.value === 'kp') return g.kp || '未分类'
+  if (view.value === 'kp') return g.kp_display || g.kp || '未分类'
   const d = g.last_at ? g.last_at.slice(5, 10).replace('-', '月') + '日' : ''
   return `${d} ${source.value === '作业' ? '作业卷' : source.value}`.trim()
 }
@@ -607,6 +628,13 @@ onMounted(async () => {
 .mini-tag.k-gram { background: #e8f1ff; color: #2f77e6; font-weight: 600; }
 .mini-tag.k-vocab { background: #fff0e4; color: #f0821e; font-weight: 600; }
 .mini-tag.k-none { background: var(--c-bg-soft); color: var(--c-text-second); }
+/* 平台错题 · 题级来源徽章(方案 A) */
+.mini-tag.src-course { background: #eef8f3; color: #2fa98a; font-weight: 700; }
+.mini-tag.src-gram { background: #f3eefc; color: #7c5cbf; font-weight: 700; }
+.mini-tag.src-prac { background: #e8f4ff; color: #2f77e6; font-weight: 700; }
+.mini-tag.src-exam { background: #eef0ff; color: #4f46e5; font-weight: 700; }
+.mini-tag.src-chal { background: #fff4e8; color: #d97706; font-weight: 700; }
+.mini-tag.src-plat { background: #fff4e8; color: #d97706; font-weight: 700; }
 /* 底部 */
 .wq-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 2rpx; }
 .prac-btn {
@@ -721,7 +749,7 @@ onMounted(async () => {
 .qdot.s-done { background: #18a058; }
 .qbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8rpx; }
 .qstem { font-size: 26rpx; color: var(--c-ink); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qtags { display: flex; gap: 8rpx; }
+.qtags { display: flex; flex-wrap: wrap; gap: 8rpx; }
 .qgo { flex-shrink: 0; font-size: 23rpx; font-weight: 700; color: var(--c-primary-deep); background: var(--c-primary-faint); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 20rpx; }
 .qgo.loading { opacity: 0.6; }
 

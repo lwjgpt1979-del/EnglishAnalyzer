@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d1_users import User
 from app.models.d4_knowledge import CurriculumUnit
 from app.models.d15_knowledge_graph import KnowledgeNode
+from app.services.kp_title_rewrite_service import display_label
 from app.models.d16_question_domain import StudentKp
 from app.models.d17_curriculum_kg import UnitNode
 from app.models.d27_student_grammar import StudentGrammarNode
@@ -134,12 +135,13 @@ async def _scoped_grammar_nodes(db: AsyncSession, *, student: User) -> list[dict
         return []
     rows = (await db.execute(
         select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
+               KnowledgeNode.description,
                CurriculumUnit.grade, CurriculumUnit.semester, CurriculumUnit.unit_no)
         .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
         .join(CurriculumUnit, CurriculumUnit.id == UnitNode.unit_id)
         .where(CurriculumUnit.textbook_version == student.preferred_textbook_version))).all()
     best: dict[uuid.UUID, dict] = {}
-    for nid, name, code, grade, sem, uno in rows:
+    for nid, name, code, desc, grade, sem, uno in rows:
         if not (code or "").lower().startswith(("cf", "jf")):   # 严格取语法轴(cf 词法 / jf 句法)
             continue
         r = unit_rank(grade, sem, uno)
@@ -147,7 +149,7 @@ async def _scoped_grammar_nodes(db: AsyncSession, *, student: User) -> list[dict
             continue
         prev = best.get(nid)
         if prev is None or r < prev["rank"]:
-            best[nid] = {"node_id": str(nid), "name": name, "code": code, "rank": r}
+            best[nid] = {"node_id": str(nid), "name": display_label(name, desc), "code": code, "rank": r}
     return list(best.values())
 
 
@@ -203,9 +205,12 @@ async def grammar_tree_grouped(db: AsyncSession, *, student_id: uuid.UUID) -> di
                 "roots": [], "personal": []}
 
     # code → 中文名(全量 cf/jf 节点,供分类表头;332 行,便宜)
-    name_by_code = dict((await db.execute(
-        select(KnowledgeNode.code, KnowledgeNode.name)
-        .where(KnowledgeNode.code.op("~")("^(cf|jf)")))).all())
+    name_by_code = {
+        code: display_label(name, desc)
+        for code, name, desc in (await db.execute(
+            select(KnowledgeNode.code, KnowledgeNode.name, KnowledgeNode.description)
+            .where(KnowledgeNode.code.op("~")("^(cf|jf)")))).all()
+    }
 
     def _cat_code(code: str) -> str:
         parts = (code or "").split("-")

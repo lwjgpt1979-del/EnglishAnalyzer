@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -9,11 +9,13 @@ import {
   getNodeLecture, upsertLectureSection, generateLectureSection, generateMissingLecture,
   setLectureSectionStatus, publishAllLecture, bulkGenerateLecture, bulkPublishLecture,
   listKnowledgeRoots,
-  type NodeHub, type KnowledgeRoot,
+  suggestKpTitleRewrite, applyKpTitleRewrite, aiRewritePendingTitles, getKpTitlePendingCount,
+  type NodeHub, type KnowledgeRoot, type TitleRewriteDraft,
 } from '../api/admin'
 import type { KpNodeOverviewItem, KpNodeDetail, NodeTreeItem, LectureSectionCell } from '../types'
 import { EditPen } from '@element-plus/icons-vue'
 import AppDialog from '../components/AppDialog.vue'
+import KpTitleCell from '../components/KpTitleCell.vue'
 
 const router = useRouter()
 const STAGE_OPTS = ['小', '初', '高']
@@ -54,6 +56,7 @@ async function load() {
       linked: (linked.value || undefined) as 'unit' | 'question' | 'both' | undefined,
       roots: roots.value.length ? roots.value : undefined,
       ai_lecture: aiLecture.value || undefined,
+      title_pending: onlyPendingTitle.value || undefined,
       skip: (page.value - 1) * pageSize, limit: pageSize,
     })
     rows.value = data.items
@@ -79,6 +82,155 @@ async function bulkGenLecture() {
     await load()
   } catch (e: any) { ElMessage.error(e?.message || '批量生成失败') }
   finally { bulkGenning.value = false }
+}
+
+// 方案 B2:AI 批量整理展示标题 → description 首行(不改 name)
+const titleDlg = ref(false)
+const titleBusy = ref(false)
+const titleApplying = ref(false)
+const titleDrafts = ref<(TitleRewriteDraft & { adopt: boolean; title: string; detail: string })[]>([])
+
+async function bulkRewriteTitles() {
+  if (!selected.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `将为勾选的 ${selected.value.length} 个考点 AI 生成「展示标题」草稿(写入 description 首行,匹配名 name 不动)。同内容命中缓存不重复计费。是否继续?`,
+      'AI 批量整理标题', { type: 'warning' })
+  } catch { return }
+  titleBusy.value = true
+  titleDlg.value = true
+  titleDrafts.value = []
+  try {
+    const r = await suggestKpTitleRewrite(selected.value.map(x => x.id))
+    titleDrafts.value = r.items.map(it => ({
+      ...it,
+      adopt: true,
+      title: it.suggested_title,
+      detail: it.suggested_detail || '',
+    }))
+    const cached = r.items.filter(i => i.cached).length
+    ElMessage.success(`已生成 ${r.items.length} 条草稿${cached ? `（缓存命中 ${cached}）` : ''}，请对照确认后发布`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '生成失败')
+    titleDlg.value = false
+  } finally { titleBusy.value = false }
+}
+
+async function applyTitleDrafts() {
+  const items = titleDrafts.value.filter(d => d.adopt && d.title.trim()).map(d => ({
+    id: d.id, title: d.title.trim(), detail: d.detail.trim() || undefined,
+  }))
+  if (!items.length) { ElMessage.warning('请至少勾选一条并填写标题'); return }
+  titleApplying.value = true
+  try {
+    const r = await applyKpTitleRewrite(items)
+    ElMessage.success(`已写入 ${r.updated} 条 description(学生端优先展示首行)`)
+    titleDlg.value = false
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '发布失败') }
+  finally { titleApplying.value = false }
+}
+
+const aiPendingBusy = ref(false)
+
+/** 规则优先后 AI 补洞:自动处理仍缺展示标题的节点 */
+async function aiRewritePending() {
+  let pending = 0
+  let hardPending = 0
+  try {
+    const c = await getKpTitlePendingCount()
+    pending = c.pending
+    hardPending = c.hard_pending
+  } catch { /* ignore */ }
+  if (!pending) { ElMessage.info('暂无需要 AI 补整理的节点'); return }
+  let hardOnly = false
+  try {
+    await ElMessageBox.confirm(
+      `仍有 ${pending} 个节点展示标题未达标(其中约 ${hardPending} 个偏长/中英混杂)。\n`
+      + '将自动 AI 生成并写入 description 首行(name 不动);命中缓存不重复计费。\n\n'
+      + '建议先跑「疑难 subset」;确定跑全部未达标吗?',
+      'AI 补整理(未达标)',
+      {
+        type: 'warning',
+        confirmButtonText: `跑全部(${pending})`,
+        cancelButtonText: hardPending ? `仅疑难(${hardPending})` : '取消',
+        distinguishCancelAndClose: true,
+      },
+    )
+  } catch (act) {
+    if (act === 'cancel' && hardPending) hardOnly = true
+    else return
+  }
+  aiPendingBusy.value = true
+  try {
+    const r = await aiRewritePendingTitles({ hard_only: hardOnly })
+    ElMessage.success(
+      `AI 补整理完成:处理 ${r.pending} 条,写入 ${r.updated} 条`
+      + (r.cached ? `(缓存 ${r.cached})` : '') + (r.llm ? `(LLM ${r.llm})` : ''),
+    )
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || 'AI 补整理失败') }
+  finally { aiPendingBusy.value = false }
+}
+
+/** 列表行 · 停用 */
+async function retireListRow(row: KpNodeOverviewItem) {
+  try {
+    await ElMessageBox.confirm(`停用「${row.name}」?(可恢复,学生不再新挂该点)`, '停用', { type: 'warning' })
+  } catch { return }
+  try {
+    await retireKnowledgeNode(row.id)
+    ElMessage.success('已停用')
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '停用失败') }
+}
+
+/** 列表行 · 硬删除 */
+async function deleteListRow(row: KpNodeOverviewItem) {
+  try {
+    await ElMessageBox.confirm(
+      `永久删除「${row.name}」?将连带删除挂边(教材/真题/别名/学生掌握等)。有子节点会被拒绝。不可恢复。`,
+      '删除节点',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+  } catch { return }
+  try {
+    await deleteKnowledgeNode(row.id)
+    selected.value = selected.value.filter(r => r.id !== row.id)
+    ElMessage.success('已删除')
+    await load()
+  } catch (e: any) { ElMessage.error(e?.message || '删除失败') }
+}
+
+/** 列表 · 批量硬删除勾选项 */
+const bulkDeleting = ref(false)
+async function bulkDeleteNodes() {
+  if (!selected.value.length) return
+  try {
+    await ElMessageBox.confirm(
+      `将永久删除勾选的 ${selected.value.length} 个节点(连带挂边)。有子节点的会跳过并提示。不可恢复。是否继续?`,
+      '批量删除',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+  } catch { return }
+  bulkDeleting.value = true
+  let ok = 0
+  const fails: string[] = []
+  try {
+    for (const row of [...selected.value]) {
+      try {
+        await deleteKnowledgeNode(row.id)
+        ok += 1
+      } catch (e: any) {
+        fails.push(`${row.name}:${e?.message || '失败'}`)
+      }
+    }
+    selected.value = []
+    await load()
+    if (fails.length) {
+      ElMessage.warning(`成功 ${ok} · 失败 ${fails.length}：${fails.slice(0, 3).join('；')}${fails.length > 3 ? '…' : ''}`)
+    } else {
+      ElMessage.success(`已删除 ${ok} 个节点`)
+    }
+  } finally { bulkDeleting.value = false }
 }
 
 // 批量发布讲解:把勾选考点的全部讲解环节整体发布(学生端可见);仅翻状态,不生成
@@ -127,6 +279,8 @@ async function doPublish(ids: string[], confirmMsg: string) {
 
 // ── 知识分类树(F:单树,去 3 轴)──
 const viewMode = ref<'tree' | 'list'>('tree')
+const showMatchName = ref(true)
+const onlyPendingTitle = ref(false)
 const treeData = ref<NodeTreeItem[]>([])
 const treeLoading = ref(false)
 const treeStage = ref('')      // 树视图按学段过滤(空=全部)
@@ -142,6 +296,26 @@ function switchView(m: 'tree' | 'list') {
   viewMode.value = m
   if (m === 'tree') loadTree(); else load()
 }
+
+/** 树 · 只看未整理标题时保留含 pending 子节点的父级 */
+function filterTreeNodes(nodes: NodeTreeItem[], onlyPending: boolean): NodeTreeItem[] {
+  if (!onlyPending) return nodes
+  const out: NodeTreeItem[] = []
+  for (const n of nodes) {
+    const kids = filterTreeNodes(n.children || [], true)
+    if (n.title_source === 'pending' || kids.length) {
+      out.push({ ...n, children: kids })
+    }
+  }
+  return out
+}
+
+const filteredTreeData = computed(() => filterTreeNodes(treeData.value, onlyPendingTitle.value))
+
+const detailDrawerTitle = computed(() => {
+  if (!detail.value) return '节点详情'
+  return detail.value.display_label || detail.value.name
+})
 async function addChild(parent: NodeTreeItem | null) {
   const { value } = await ElMessageBox.prompt(
     parent ? `在「${parent.name}」下新增子节点` : '新增顶层分类(词法/句法/篇章…)',
@@ -324,26 +498,37 @@ onMounted(() => { loadTree(); loadRootOptions() })
           <el-option v-for="s in STAGES" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
         <el-button style="margin-left:8px" @click="loadTree">刷新</el-button>
-        <span class="hint">知识分类树(词法/句法/篇章→考点)。学段过滤:只看某学段适用的考点(分类为通用脚手架,各学段共用)。拖拽可移动层级。点名称看详情。</span>
+        <el-checkbox v-model="showMatchName" style="margin-left:12px">显示匹配名</el-checkbox>
+        <el-checkbox v-model="onlyPendingTitle">只看未整理标题</el-checkbox>
+        <span class="hint">主文案=展示标题(description 首行);副行=匹配名 name。拖拽可移动层级。</span>
       </div>
-      <el-tree v-loading="treeLoading" :data="treeData" :props="treeProps" node-key="id"
+      <el-tree v-loading="treeLoading" :data="filteredTreeData" :props="treeProps" node-key="id"
         draggable :allow-drop="allowDrop" @node-drop="onNodeDrop"
-        :expand-on-click-node="false" default-expand-all style="max-width:900px">
+        :expand-on-click-node="false" default-expand-all style="max-width:960px">
         <template #default="{ data }">
-          <span class="tnode">
-            <el-link type="primary" @click.stop="openDetail(data.id)">{{ data.name }}</el-link>
-            <span v-if="data.source === 'manual'" class="cnt cnt-m" title="人工新建的考点"><el-icon style="vertical-align:-2px"><EditPen /></el-icon> 人工</span>
-            <span class="tmeta" v-if="data.node_kind">{{ data.node_kind }}</span>
-            <span v-if="data.applicable_stages && data.applicable_stages.length" class="cnt cnt-s"
-              title="适用学段">{{ data.applicable_stages.join('/') }}</span>
-            <span v-if="data.unit_refs" class="cnt cnt-u" title="教材单元挂载数(含子节点)">教 {{ data.unit_refs }}</span>
-            <span v-if="data.question_refs" class="cnt cnt-q" title="真题挂载数(含子节点)">真 {{ data.question_refs }}</span>
+          <div class="tnode">
+            <div class="t-body">
+              <KpTitleCell
+                :name="data.name"
+                :display-label="data.display_label || data.name"
+                :title-source="data.title_source"
+                :show-match="showMatchName"
+                link
+                @click="openDetail(data.id)"
+              />
+              <span v-if="data.source === 'manual'" class="cnt cnt-m" title="人工新建的考点"><el-icon style="vertical-align:-2px"><EditPen /></el-icon> 人工</span>
+              <span class="tmeta" v-if="data.node_kind">{{ data.node_kind }}</span>
+              <span v-if="data.applicable_stages && data.applicable_stages.length" class="cnt cnt-s"
+                title="适用学段">{{ data.applicable_stages.join('/') }}</span>
+              <span v-if="data.unit_refs" class="cnt cnt-u" title="教材单元挂载数(含子节点)">教 {{ data.unit_refs }}</span>
+              <span v-if="data.question_refs" class="cnt cnt-q" title="真题挂载数(含子节点)">真 {{ data.question_refs }}</span>
+            </div>
             <span class="tops">
               <el-button link size="small" type="primary" @click.stop="addChild(data)">+ 子节点</el-button>
               <el-button link size="small" type="warning" @click.stop="retireTreeNode(data)">停用</el-button>
               <el-button link size="small" type="danger" @click.stop="deleteTreeNode(data)">删除</el-button>
             </span>
-          </span>
+          </div>
         </template>
       </el-tree>
     </div>
@@ -371,12 +556,22 @@ onMounted(() => { loadTree(); loadRootOptions() })
       <el-checkbox v-model="aiLecture" style="margin-left:12px" @change="reload">
         AI 讲解待采纳
       </el-checkbox>
-      <el-input v-model="q" placeholder="搜知识点名" clearable style="width:200px;margin-left:12px"
+      <el-input v-model="q" placeholder="搜展示名/匹配名" clearable style="width:200px;margin-left:12px"
         @keyup.enter="reload" @clear="reload" />
+      <el-checkbox v-model="showMatchName" style="margin-left:12px">显示匹配名</el-checkbox>
+      <el-checkbox v-model="onlyPendingTitle" @change="reload">只看未整理标题</el-checkbox>
       <el-button type="primary" style="margin-left:8px" @click="reload">查询</el-button>
       <el-button type="success" :disabled="!selected.length" :loading="bulkGenning"
         style="margin-left:8px" @click="bulkGenLecture">
         AI 批量生成讲解{{ selected.length ? `(${selected.length})` : '' }}
+      </el-button>
+      <el-button type="warning" :disabled="!selected.length" :loading="titleBusy"
+        style="margin-left:8px" @click="bulkRewriteTitles">
+        AI 批量整理标题{{ selected.length ? `(${selected.length})` : '' }}
+      </el-button>
+      <el-button type="warning" plain :loading="aiPendingBusy"
+        style="margin-left:8px" @click="aiRewritePending">
+        AI 补整理(未达标)
       </el-button>
       <el-button type="primary" :disabled="!selected.length" :loading="bulkPublishing"
         style="margin-left:8px" @click="bulkPublish">
@@ -386,15 +581,26 @@ onMounted(() => { loadTree(); loadRootOptions() })
         style="margin-left:8px" @click="publishAllMatching">
         全选发布(全部 {{ total }})
       </el-button>
+      <el-button type="danger" plain :disabled="!selected.length" :loading="bulkDeleting"
+        style="margin-left:8px" @click="bulkDeleteNodes">
+        批量删除{{ selected.length ? `(${selected.length})` : '' }}
+      </el-button>
       <span class="hint">知识点骨架(knowledge_nodes)总览。共 {{ total }} 个节点。讲解完整度=该考点类型模板的教学环节已配几个。勾选考点可并发批量生成缺失讲解(草稿,需再发布);再「批量发布/全选发布」把讲解整体发布,学生端才可见。</span>
     </div>
 
     <el-table v-loading="loading" :data="rows" border style="width:100%" row-key="id"
               @selection-change="(rs: KpNodeOverviewItem[]) => selected = rs">
       <el-table-column type="selection" width="44" reserve-selection />
-      <el-table-column prop="name" label="知识点" min-width="220" show-overflow-tooltip>
+      <el-table-column label="知识点" min-width="280" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-link>
+          <KpTitleCell
+            :name="row.name"
+            :display-label="row.display_label || row.name"
+            :title-source="row.title_source"
+            :show-match="showMatchName"
+            link
+            @click="openDetail(row.id)"
+          />
           <span v-if="row.source === 'manual'" class="manual-tag" title="人工新建的考点"><el-icon style="vertical-align:-2px"><EditPen /></el-icon> 人工</span>
         </template>
       </el-table-column>
@@ -436,6 +642,14 @@ onMounted(() => { loadTree(); loadRootOptions() })
       <el-table-column prop="question_refs" label="引用真题" width="90" align="center" />
       <el-table-column prop="alias_count" label="别名" width="70" align="center" />
       <el-table-column prop="code" label="编码" min-width="140" show-overflow-tooltip />
+      <el-table-column label="操作" width="140" fixed="right" align="center">
+        <template #default="{ row }">
+          <el-button link type="warning" size="small"
+            :disabled="row.status === 'retired'"
+            @click="retireListRow(row)">停用</el-button>
+          <el-button link type="danger" size="small" @click="deleteListRow(row)">删除</el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
     <div class="pager">
@@ -445,13 +659,16 @@ onMounted(() => { loadTree(); loadRootOptions() })
     </div><!-- /列表视图 -->
 
     <!-- 节点详情 + 维护抽屉 -->
-    <el-drawer v-model="detailOpen" :title="detail ? detail.name : '节点详情'" size="50%" direction="rtl">
+    <el-drawer v-model="detailOpen" :title="detailDrawerTitle" size="50%" direction="rtl">
       <div v-loading="detailLoading">
         <template v-if="detail">
           <div class="d-head">
             <el-tag size="small" :type="detail.status === 'active' ? 'success' : 'info'">
               {{ detail.status === 'active' ? '启用' : (detail.status === 'retired' ? '停用' : detail.status) }}
             </el-tag>
+            <span v-if="detail.title_source" class="src-tag-drawer" :class="detail.title_source">
+              {{ { pending: '未整理', rule: '规则', ai: 'AI' }[detail.title_source] || detail.title_source }}
+            </span>
             <span class="d-code">{{ detail.code }}</span>
             <span class="d-src">来源 {{ detail.source }}</span>
             <el-button size="small" style="margin-left:auto"
@@ -461,15 +678,24 @@ onMounted(() => { loadTree(); loadRootOptions() })
             </el-button>
           </div>
 
+          <div v-if="detail.display_label && detail.display_label !== detail.name" class="d-display-preview">
+            <div class="d-display-title">{{ detail.display_label }}</div>
+            <div v-if="showMatchName" class="d-display-match"><b>匹配名</b> {{ detail.name }}</div>
+          </div>
+
           <el-form label-width="76px" class="d-form">
-            <el-form-item label="名称"><el-input v-model="edit.name" /></el-form-item>
+            <el-form-item label="匹配名"><el-input v-model="edit.name" /></el-form-item>
             <el-form-item label="子类型"><el-input v-model="edit.node_kind" placeholder="如 板块/专题/考点" /></el-form-item>
             <el-form-item label="适用学段">
               <el-checkbox-group v-model="edit.applicable_stages">
                 <el-checkbox v-for="s in STAGE_OPTS" :key="s" :value="s">{{ s }}</el-checkbox>
               </el-checkbox-group>
             </el-form-item>
-            <el-form-item label="描述"><el-input v-model="edit.description" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="描述">
+              <el-input v-model="edit.description" type="textarea" :rows="3"
+                placeholder="首行=学生端展示短标题(≤40字);换行后可写说明" />
+              <div class="hint" style="margin-top:4px">保存后列表/树主文案即更新为首行。</div>
+            </el-form-item>
             <el-form-item><el-button type="primary" :loading="detailBusy" @click="saveEdit">保存修改</el-button></el-form-item>
           </el-form>
 
@@ -553,6 +779,50 @@ onMounted(() => { loadTree(); loadRootOptions() })
       </div>
     </el-drawer>
 
+    <!-- 方案 B2:AI 批量整理标题对照 -->
+    <AppDialog v-model="titleDlg" title="AI 批量整理标题 · 对照确认" width="960px">
+      <div v-loading="titleBusy" style="min-height:120px">
+        <p class="hint" style="margin:0 0 12px">匹配名 name 不动；发布后把短标题写入 description 首行，学生端优先展示。</p>
+        <el-table :data="titleDrafts" border size="small" max-height="480">
+          <el-table-column width="56" align="center">
+            <template #header>
+              <el-checkbox
+                :model-value="titleDrafts.length > 0 && titleDrafts.every(d => d.adopt)"
+                :indeterminate="titleDrafts.some(d => d.adopt) && !titleDrafts.every(d => d.adopt)"
+                @change="(v: boolean) => titleDrafts.forEach(d => d.adopt = v)"
+              />
+            </template>
+            <template #default="{ row }">
+              <el-checkbox v-model="row.adopt" />
+            </template>
+          </el-table-column>
+          <el-table-column label="匹配名 name" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span style="color:#909399">{{ row.name }}</span>
+              <el-tag v-if="row.cached" size="small" type="info" style="margin-left:6px">缓存</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="建议展示标题" min-width="200">
+            <template #default="{ row }">
+              <el-input v-model="row.title" size="small" maxlength="40" />
+            </template>
+          </el-table-column>
+          <el-table-column label="说明(可选)" min-width="240">
+            <template #default="{ row }">
+              <el-input v-model="row.detail" size="small" />
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="titleDlg = false">取消</el-button>
+        <el-button type="primary" :loading="titleApplying" :disabled="titleBusy || !titleDrafts.some(d => d.adopt)"
+          @click="applyTitleDrafts">
+          发布为 description 首行
+        </el-button>
+      </template>
+    </AppDialog>
+
     <!-- 编辑讲解环节 -->
     <AppDialog v-model="editDlg" :title="editSection ? `编辑讲解 · ${editSection.title}` : '编辑讲解'" width="720px">
       <el-input v-model="editMd" type="textarea" :rows="16" placeholder="该环节讲解正文(Markdown)" />
@@ -580,7 +850,10 @@ onMounted(() => { loadTree(); loadRootOptions() })
 .hint { margin-left: 16px; color: #909399; font-size: 12px; }
 .pager { margin-top: 16px; display: flex; justify-content: flex-end; }
 .muted { color: #c0c4cc; font-size: 12px; }
-.tnode { display: flex; align-items: center; gap: 10px; flex: 1; padding-right: 8px; }
+.tnode { display: flex; align-items: flex-start; gap: 10px; flex: 1; padding: 4px 8px 4px 0; min-width: 0; }
+.t-body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+:deep(.el-tree-node__content) { height: auto; min-height: 32px; align-items: flex-start; padding-top: 4px; padding-bottom: 4px; }
+:deep(.el-tree-node__label) { flex: 1; min-width: 0; }
 .tmeta { font-size: 11px; color: #909399; background: #f4f4f5; padding: 0 6px; border-radius: 3px; }
 .cnt { font-size: 11px; padding: 0 6px; border-radius: 8px; }
 .cnt-u { color: #409eff; background: #ecf5ff; }
@@ -610,5 +883,15 @@ onMounted(() => { loadTree(); loadRootOptions() })
   border-radius: 6px; padding: 10px 12px; margin: 0 0 10px; max-height: 360px; overflow: auto; }
 .d-list { margin: 0; padding-left: 18px; font-size: 13px; color: #303133; }
 .d-list li { margin: 4px 0; }
+.d-display-preview {
+  margin: 0 0 14px; padding: 12px 14px; background: #f4f9ff; border-radius: 10px; border: 1px solid #dbeafe;
+}
+.d-display-title { font-size: 16px; font-weight: 800; color: var(--el-color-primary); }
+.d-display-match { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+.d-display-match b { color: #cbd5e1; }
+.src-tag-drawer { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px; }
+.src-tag-drawer.rule { background: #e0f2fe; color: #0ea5e9; }
+.src-tag-drawer.ai { background: #f3eefc; color: #7c5cbf; }
+.src-tag-drawer.pending { background: #f1f5f9; color: #94a3b8; }
 .rel-tag { cursor: pointer; }
 </style>

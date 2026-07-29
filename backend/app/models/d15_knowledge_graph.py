@@ -51,6 +51,19 @@ class KnowledgeNode(Base):
     )
 
 
+class KpTitleRewriteCache(Base):
+    """语法点展示标题 AI 整理缓存(方案 B2):按 name+description 输入 md5 全局复用。"""
+
+    __tablename__ = "kp_title_rewrite_cache"
+
+    input_md5 = mapped_column(sa.String(32), primary_key=True)
+    title = mapped_column(sa.String(120), nullable=False)
+    detail = mapped_column(sa.Text, nullable=True)
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
 class NodeAlias(Base):
     """节点别名归一（R0 §2.2）。alias_norm 全局唯一 → 一个写法只指一个节点，杜绝碎片化。"""
 

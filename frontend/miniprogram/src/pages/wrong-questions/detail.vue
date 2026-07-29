@@ -6,6 +6,7 @@
       <!-- 题干 -->
       <view class="stem-card">
         <view class="stem-label"><view class="ic ic-edit" style="width:26rpx;height:26rpx" /><text>题目</text></view>
+        <view v-if="sourceBadgeText" class="src-badge" :class="sourceBadgeCls">{{ sourceBadgeText }}</view>
         <text class="stem-text">{{ wq.question_text || wq.stem || '（本题无题干）' }}</text>
       </view>
 
@@ -99,6 +100,24 @@ onLoad((opts?: Record<string, string>) => {
 
 const wq = ref<WrongQuestionOut | null>(null)
 const letter = (i: number) => String.fromCharCode(65 + i)
+
+/** 平台族题级来源徽章 */
+const sourceBadgeText = computed(() => {
+  const s = wq.value?.source_label || ''
+  if (s === '课程精讲' || s === '语法精讲' || s === '课程练习' || s === '模拟考' || s === '课程闯关') return s
+  if (s === '平台') return '平台练习'
+  return ''
+})
+const sourceBadgeCls = computed(() => {
+  const s = wq.value?.source_label || ''
+  if (s === '课程精讲') return 'src-course'
+  if (s === '语法精讲') return 'src-gram'
+  if (s === '课程练习') return 'src-prac'
+  if (s === '模拟考') return 'src-exam'
+  if (s === '课程闯关' || s === '平台') return 'src-chal'
+  return ''
+})
+
 function isCorrectOption(opt: string): boolean {
   const ans = (wq.value?.correct_answer || '').trim()
   if (!ans) return false
@@ -178,6 +197,16 @@ async function tapMastered() {
   background: #f7f3e6; border: 2rpx solid #e0d6b8; border-radius: var(--r-lg);
   padding: 28rpx; margin-bottom: 20rpx;
 }
+.src-badge {
+  display: inline-block; font-size: 22rpx; font-weight: 700;
+  padding: 4rpx 14rpx; border-radius: 8rpx; margin: 8rpx 0 12rpx;
+}
+.src-badge.src-course { background: #eef8f3; color: #2fa98a; }
+.src-badge.src-gram { background: #f3eefc; color: #7c5cbf; }
+.src-badge.src-prac { background: #e8f4ff; color: #2f77e6; }
+.src-badge.src-exam { background: #eef0ff; color: #4f46e5; }
+.src-badge.src-chal { background: #fff4e8; color: #d97706; }
+.src-badge.src-plat { background: #fff4e8; color: #d97706; }
 .stem-label { display: inline-flex; align-items: center; gap: 6rpx; font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 14rpx; border-radius: var(--r-pill); }
 .stem-text { display: block; margin-top: 16rpx; font-size: 32rpx; color: var(--c-ink); font-weight: 600; line-height: 1.6; }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }

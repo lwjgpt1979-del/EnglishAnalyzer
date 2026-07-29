@@ -54,7 +54,8 @@ async def grammar_leaf_nodes(db: AsyncSession, *, stage: str | None = "初", lim
     # 全子树(不限 status)一次取,建 id→parent_id 内存映射 + 判叶子(子树内谁被当过父)
     rows = (await db.execute(
         sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.parent_id,
-                  KnowledgeNode.sort_order, KnowledgeNode.applicable_stages, KnowledgeNode.status)
+                  KnowledgeNode.sort_order, KnowledgeNode.applicable_stages, KnowledgeNode.status,
+                  KnowledgeNode.description)
         .where(KnowledgeNode.id.in_(sub)))).all()
     parent_map = {r[0]: r[2] for r in rows}
     has_child = {r[2] for r in rows if r[2] is not None}   # 有子节点者 = 非叶子
@@ -66,14 +67,16 @@ async def grammar_leaf_nodes(db: AsyncSession, *, stage: str | None = "初", lim
             guard += 1
         return cur
 
+    from app.services.kp_title_rewrite_service import display_label
+
     out = []
-    for nid, name, pid, so, stages, status in rows:
+    for nid, name, pid, so, stages, status, desc in rows:
         if status != "active" or nid in has_child:   # 非 active 或 非叶子(粗点)跳过
             continue
         if stage and not (stages and stage in stages):
             continue
-        out.append({"kp_id": str(nid), "name": name,
-                    "_rr": root_rank.get(_root_of(nid), 99), "_so": so or 0})
+        out.append({"kp_id": str(nid), "name": display_label(name, desc),
+                    "_rr": root_rank.get(_root_of(nid), 99), "_so": so or 0, "_nm": name})
     # 排序:词法<句法 → sort_order → 名称
-    out.sort(key=lambda d: (d["_rr"], d["_so"], d["name"]))
+    out.sort(key=lambda d: (d["_rr"], d["_so"], d["_nm"]))
     return [{"kp_id": d["kp_id"], "name": d["name"]} for d in out[:limit]]

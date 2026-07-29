@@ -210,13 +210,15 @@ async def serve_by_node(
             rows = await _fetch_sim(db, node_id, count, exclude_ids)
 
     passages = await _passages(db, rows)
+    from app.services.kp_title_rewrite_service import node_display_label
+    show = node_display_label(node)
     return [SimQuestionOut(
         id=pq.id,
         question_type="单选",   # serve 只出可点选单选,题型统一(前端渲染选项)
         stem=pq.stem,
         options=list(pq.options) if isinstance(pq.options, list) else None,
         difficulty=int(pq.difficulty or 3),
-        kp_name=node.name,
+        kp_name=show,
         passage=passages.get(pq.block_id) if pq.block_id else None,
     ) for pq in rows]
 
@@ -244,8 +246,18 @@ async def _judge_one(
         node_id=node_id, is_correct=correct, feature=feature)
     wq_id: uuid.UUID | None = None
     if not correct:
+        # 平台题库答错 →「平台错题」;题级来源按入口细分(课程练习/模拟考)
+        src = "模拟考" if feature == "exam" else ("课程练习" if feature == "practice" else "平台")
         wq_id = await wrong_center_service.record_wrong(
-            db, student_id=student_id, q_scope="platform", question_id=pq.id, node_id=node_id)
+            db, student_id=student_id, q_scope="platform", question_id=pq.id, node_id=node_id,
+            stem=(pq.stem or None),
+            student_answer=user_answer.strip()[:500] or None,
+            correct_answer=(pq.answer or "")[:500] or None,
+            explanation=(pq.explanation or None),
+            question_type=(pq.question_type or None),
+            kp_kind="grammar",
+            source_label=src,
+        )
     elif feature == "practice" and node_id is not None:
         # 「两者结合」:练习答对该 node → 顺带推进该 node 下今日到期的错题复习进度(不直接判掌握)
         from app.services import wrong_review_service

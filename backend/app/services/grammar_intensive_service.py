@@ -15,6 +15,7 @@ from app.models.d1_users import User
 from app.models.d4_knowledge import CurriculumUnit
 from app.models.d13_v2_user_papers import UserPaperQuestion, UserUploadedPaper
 from app.models.d15_knowledge_graph import KnowledgeNode
+from app.services.kp_title_rewrite_service import display_label
 from app.models.d17_curriculum_kg import UnitNode
 from app.models.d26_kp_target import StudentKpTarget
 
@@ -132,6 +133,7 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
     rows = (await db.execute(
         select(StudentKpTarget.id, StudentKpTarget.source_question_id,
                KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
+               KnowledgeNode.description,
                StudentGrammarMastery.id.isnot(None),
                StudentGrammarMastery.mastery_recognize, StudentGrammarMastery.mastery_detect,
                StudentGrammarMastery.mastery_produce, StudentGrammarMastery.transfer_ok)
@@ -146,29 +148,29 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
     out: list[dict] = []
     seen_q: set[str] = set()  # 避免存量回填与显式挂题重复
 
-    async def _emit_kp(nid, name, code, st, recog, det, prod, tr, q: UserPaperQuestion | None):
+    async def _emit_kp(nid, name, desc, code, st, recog, det, prod, tr, q: UserPaperQuestion | None):
         if q:
             key = f"n:{nid}:{q.id}"
             if key in seen_q:
                 return
             seen_q.add(key)
-        out.append({**_pt(nid, name, code), "studied": bool(st),
+        out.append({**_pt(nid, display_label(name, desc), code), "studied": bool(st),
                     "mastery": _mastery(st, recog, det, prod, tr),
                     "source_question_id": str(q.id) if q else None,
                     "question": await _q_payload(db, q, student_id=student_id)})
 
-    for _tid, sqid, nid, name, code, st, recog, det, prod, tr in rows:
+    for _tid, sqid, nid, name, code, desc, st, recog, det, prod, tr in rows:
         if sqid and sqid in q_by_id:
-            await _emit_kp(nid, name, code, st, recog, det, prod, tr, q_by_id[sqid])
+            await _emit_kp(nid, name, desc, code, st, recog, det, prod, tr, q_by_id[sqid])
         elif sqid is None:
             matched = qs_by_node.get(nid) or []
             if matched:
                 for q in matched:
-                    await _emit_kp(nid, name, code, st, recog, det, prod, tr, q)
+                    await _emit_kp(nid, name, desc, code, st, recog, det, prod, tr, q)
             else:
-                await _emit_kp(nid, name, code, st, recog, det, prod, tr, None)
+                await _emit_kp(nid, name, desc, code, st, recog, det, prod, tr, None)
         else:
-            await _emit_kp(nid, name, code, st, recog, det, prod, tr, None)
+            await _emit_kp(nid, name, desc, code, st, recog, det, prod, tr, None)
 
     pers = (await db.execute(
         select(StudentGrammarNode.id, StudentGrammarNode.name,
@@ -259,7 +261,8 @@ async def course_points(db: AsyncSession, *, unit_id: uuid.UUID,
                         student_id: uuid.UUID | None = None) -> list[dict]:
     """某教材单元的语法点;传 student_id 则每点带 studied(有无 student_grammar_mastery)。"""
     rows = (await db.execute(
-        select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code)
+        select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
+               KnowledgeNode.description)
         .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
         .where(UnitNode.unit_id == unit_id, _GRAMMAR)
         .order_by(KnowledgeNode.code).distinct())).all()
@@ -271,11 +274,11 @@ async def course_points(db: AsyncSession, *, unit_id: uuid.UUID,
                    StudentGrammarMastery.mastery_detect, StudentGrammarMastery.mastery_produce,
                    StudentGrammarMastery.transfer_ok).where(
                 StudentGrammarMastery.student_id == student_id,
-                StudentGrammarMastery.kp_id.in_([nid for nid, _, _ in rows])))).all()
+                StudentGrammarMastery.kp_id.in_([r[0] for r in rows])))).all()
         mastery_map = {str(k): (r, d, p, t) for k, r, d, p, t in mrows}
-    return [{**_pt(nid, name, code), "studied": str(nid) in mastery_map,
+    return [{**_pt(nid, display_label(name, desc), code), "studied": str(nid) in mastery_map,
              "mastery": _mastery(str(nid) in mastery_map, *mastery_map.get(str(nid), (None, None, None, None)))}
-            for nid, name, code in rows]
+            for nid, name, code, desc in rows]
 
 
 # ── 自建语法「练一练」痕迹:标记已学 + 最近成绩(无图谱 node、无四维,用此反馈)──────────

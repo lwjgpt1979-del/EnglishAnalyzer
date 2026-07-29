@@ -77,6 +77,7 @@ async def submit_answer(
         question_id=body.question_id,
         answer=body.answer,
         time_spent_sec=body.time_spent_sec,
+        source_channel=body.source_channel,
     )
     question = await practice_service.get_question(db, question_id=body.question_id)
     await db.commit()

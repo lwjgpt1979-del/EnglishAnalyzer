@@ -110,6 +110,7 @@ async def list_nodes_overview(
     db: AsyncSession, *, axis: str | None = None, stage: str | None = None,
     status: str | None = None, q: str | None = None, linked: str | None = None,
     root_ids: list | None = None, has_ai_lecture: bool = False,
+    title_pending: bool = False,
     skip: int = 0, limit: int = 20,
 ) -> tuple[list[dict], int]:
     """知识图谱总览(D1):节点分页 + 每节点摘要(讲解完整度/引用单元/引用真题/别名数)。
@@ -125,7 +126,11 @@ async def list_nodes_overview(
     if status:
         base = base.where(KnowledgeNode.status == status)
     if q:
-        base = base.where(KnowledgeNode.name.ilike(f"%{q}%"))
+        qpat = f"%{q}%"
+        base = base.where(sa.or_(
+            KnowledgeNode.name.ilike(qpat),
+            KnowledgeNode.description.ilike(qpat),
+        ))
     if root_ids:
         sub_ids = await _descendant_ids(db, root_ids)
         base = base.where(KnowledgeNode.id.in_(sub_ids))
@@ -145,6 +150,14 @@ async def list_nodes_overview(
             sa.select(KpLecture.node_id).where(
                 KpLecture.node_id == KnowledgeNode.id, KpLecture.source == "ai",
                 KpLecture.content_md.isnot(None), KpLecture.content_md != "").exists())
+    if title_pending:
+        desc = KnowledgeNode.description
+        first_line = sa.func.split_part(sa.func.btrim(desc), sa.literal("\n"), sa.literal(1))
+        base = base.where(sa.or_(
+            desc.is_(None), sa.func.btrim(desc) == "",
+            sa.func.length(first_line) > 40,
+            first_line == KnowledgeNode.name,
+        ))
     total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(
         base.order_by(KnowledgeNode.name).offset(skip).limit(limit))).scalars().all()
@@ -168,9 +181,11 @@ async def list_nodes_overview(
     aliases = await _counts(
         sa.select(NodeAlias.node_id, sa.func.count()).where(NodeAlias.node_id.in_(ids))
         .group_by(NodeAlias.node_id))
+    from app.services.kp_title_rewrite_service import kp_display_fields
     items = [{
         "id": r.id, "axis": r.axis, "node_kind": r.node_kind, "name": r.name, "code": r.code,
         "status": r.status, "applicable_stages": r.applicable_stages, "source": r.source,
+        **kp_display_fields(r.name, r.description),
         "lecture_filled": int(lec_filled.get(r.id, 0)), "lecture_total": len(kl.template_for(r.code)),
         "lecture_published": int(lec_published.get(r.id, 0)),
         "lecture_ai": int(lec_ai.get(r.id, 0)),
@@ -295,10 +310,14 @@ async def node_tree(db: AsyncSession, *, axis: str | None = None,
         conds += [KnowledgeNode.applicable_stages.op("@>")(sa.cast([s], JSONB)) for s in allowed]
         stmt = stmt.where(sa.or_(*conds))
     rows = (await db.execute(stmt.order_by(KnowledgeNode.sort_order, KnowledgeNode.name))).scalars().all()
-    nodes = {r.id: {"id": r.id, "name": r.name, "axis": r.axis, "node_kind": r.node_kind,
-                    "status": r.status, "code": r.code, "parent_id": r.parent_id,
-                    "applicable_stages": r.applicable_stages, "source": r.source, "children": []}
-             for r in rows}
+    from app.services.kp_title_rewrite_service import kp_display_fields
+    nodes = {r.id: {
+        "id": r.id, "name": r.name, "axis": r.axis, "node_kind": r.node_kind,
+        "status": r.status, "code": r.code, "parent_id": r.parent_id,
+        "applicable_stages": r.applicable_stages, "source": r.source,
+        **kp_display_fields(r.name, r.description),
+        "children": [],
+    } for r in rows}
 
     if with_counts:
         from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp
@@ -400,6 +419,7 @@ async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
     from app.models.d4_knowledge import CurriculumUnit
     from app.models.d16_question_domain import PlatformQuestion, PlatformQuestionKp, StudentKp
     from app.services import kp_lecture_service as kl
+    from app.services.kp_title_rewrite_service import kp_display_fields
 
     node = await db.get(KnowledgeNode, node_id)
     if node is None:
@@ -438,6 +458,7 @@ async def node_detail(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
         "id": node.id, "axis": node.axis, "node_kind": node.node_kind, "name": node.name,
         "code": node.code, "status": node.status, "applicable_stages": node.applicable_stages,
         "description": node.description, "source": node.source,
+        **kp_display_fields(node.name, node.description),
         "lecture": lecture, "aliases": aliases, "units": units,
         "question_real": int(qbtype.get("real", 0)), "question_sim": int(qbtype.get("sim", 0)),
         "mastery": mastery,
@@ -539,15 +560,26 @@ async def set_node_status(db: AsyncSession, *, node_id: uuid.UUID, status: str) 
 async def delete_node(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
     """硬删除一个知识节点(连带其各种挂边)。**有子节点则拒绝**(防误删整棵子树,需先删/移子节点)。
 
-    清理无 DB 级联的引用边(别名/关系/单元边/词汇边/长难句边/真题·上传题·学生 KP 边);
-    node_resource、unit_passage_kp 由 DB 级联删;unit_section.node_id 由 DB 置空;
+    清理无 DB 级联的引用边(别名/关系/单元边/词汇边/长难句边/真题·上传题·学生 KP 边;
+    可空 FK 置空:wrong_record / ai_questions / user_paper_questions / student_grammar_node.ref;
+    不可空依赖删行:student_kp_target)。
+    DB 已 CASCADE:unit_passage_kp / kp_lecture / student_grammar_mastery;
+    DB 已 SET NULL:curriculum_unit_section.node_id;
     answer_log.node_id 无 FK 约束(留存事件,不动)。删的是节点本身,不影响共享词汇/题目主表。
+
+    **新增指向 knowledge_nodes 的 FK 时必须同步本函数**(无 ON DELETE 的漏清会 500)。
     """
     from app.models.d15_knowledge_graph import NodeAlias, NodeRelation
     from app.models.d17_curriculum_kg import UnitNode
     from app.models.d18_vocab_kg import VocabNode
     from app.models.d20_long_sentence import LongSentenceNode
-    from app.models.d16_question_domain import PlatformQuestionKp, UploadedQuestionKp, StudentKp
+    from app.models.d16_question_domain import (
+        PlatformQuestionKp, UploadedQuestionKp, StudentKp, WrongRecord,
+    )
+    from app.models.d6_ai_questions import AiQuestion
+    from app.models.d13_v2_user_papers import UserPaperQuestion
+    from app.models.d26_kp_target import StudentKpTarget
+    from app.models.d27_student_grammar import StudentGrammarNode
 
     node = await db.get(KnowledgeNode, node_id)
     if node is None:
@@ -566,6 +598,16 @@ async def delete_node(db: AsyncSession, *, node_id: uuid.UUID) -> dict:
     await db.execute(sa.delete(PlatformQuestionKp).where(PlatformQuestionKp.node_id == node_id))
     await db.execute(sa.delete(UploadedQuestionKp).where(UploadedQuestionKp.node_id == node_id))
     await db.execute(sa.delete(StudentKp).where(StudentKp.node_id == node_id))
+    await db.execute(sa.delete(StudentKpTarget).where(StudentKpTarget.node_id == node_id))
+    # 可空 FK:摘掉 KP 指针,保留业务行(错题事件 / 题目 / 个人语法节点)
+    await db.execute(sa.update(WrongRecord).where(WrongRecord.node_id == node_id)
+                     .values(node_id=None))
+    await db.execute(sa.update(AiQuestion).where(AiQuestion.node_id == node_id)
+                     .values(node_id=None))
+    await db.execute(sa.update(UserPaperQuestion).where(UserPaperQuestion.node_id == node_id)
+                     .values(node_id=None))
+    await db.execute(sa.update(StudentGrammarNode).where(StudentGrammarNode.ref_node_id == node_id)
+                     .values(ref_node_id=None))
     await db.delete(node)
     await db.flush()
     invalidate_node_tree_cache()

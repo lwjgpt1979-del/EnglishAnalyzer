@@ -236,7 +236,7 @@ class WrongRecord(Base):
     question_type = mapped_column(sa.String(24), nullable=True)
     kp_kind = mapped_column(sa.String(12), nullable=True)     # grammar|vocab
     kp_name = mapped_column(sa.String(120), nullable=True)
-    source_label = mapped_column(sa.String(16), nullable=True)  # 整卷|平台|长难句|作业
+    source_label = mapped_column(sa.String(16), nullable=True)  # 作业|平台|课程精讲|语法精讲|长难句薄弱|练习巩固…
     source_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 来源实体id(卷/作业),供「回到错题来源」跳转
     vocab_word_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 词汇错题定位到的目标词(词力通闭环,P3)
     dim = mapped_column(sa.String(16), nullable=True)  # 练习衍生错题的考点维 key(synonym/collocation…);真实错题为空

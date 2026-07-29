@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>知识图谱 · AI 批量整理展示名 — 原型 (B1)</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-hint: #94a3b8;
+      --c-line: #e6ebf2;
+      --c-page: #f0f4fa;
+      --c-ok: #2fa98a;
+      --c-warn: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8, #f4f6fa 40%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top { max-width: 1280px; margin: 0 auto; padding: 22px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; font-size: 14px; color: var(--c-sub); line-height: 1.65; max-width: 900px; }
+    .bar {
+      max-width: 1280px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    }
+    .bar .lbl { font-size: 13px; font-weight: 700; color: var(--c-sub); }
+    .sch {
+      border: 1.5px solid #cfe0f5; background: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--c-ink);
+    }
+    .sch.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .sch .rec {
+      margin-left: 6px; font-size: 11px; background: #ffb020; color: #fff;
+      padding: 1px 6px; border-radius: 6px;
+    }
+    .sch.on .rec { background: rgba(255,255,255,.28); }
+
+    .stage {
+      max-width: 1280px; margin: 16px auto 48px; padding: 0 24px;
+      display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start;
+    }
+    @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #fff; border: 1px solid #d8e4f5; border-radius: 14px;
+      box-shadow: 0 10px 28px rgba(30,64,120,.06); overflow: hidden;
+    }
+    .panel-hd {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--c-line); background: #fafcfe;
+    }
+    .panel-hd h2 { margin: 0; font-size: 15px; font-weight: 800; }
+    .panel-hd .muted { font-size: 12px; color: var(--c-sub); font-weight: 600; }
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 12px 16px; border-bottom: 1px solid var(--c-line);
+    }
+    .btn {
+      border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700;
+      cursor: pointer; background: #eef5ff; color: var(--c-primary);
+    }
+    .btn.primary { background: var(--c-primary); color: #fff; }
+    .btn.ok { background: #e8f7f1; color: var(--c-ok); }
+    .btn.warn { background: #fff4e8; color: var(--c-warn); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .chip {
+      font-size: 12px; font-weight: 700; color: var(--c-sub);
+      background: #f1f5f9; padding: 6px 10px; border-radius: 8px;
+    }
+    .chip b { color: var(--c-ink); }
+
+    /* tree */
+    .tree-wrap { display: grid; grid-template-columns: 280px 1fr; min-height: 520px; }
+    @media (max-width: 860px) { .tree-wrap { grid-template-columns: 1fr; } }
+    .tree {
+      border-right: 1px solid var(--c-line); padding: 12px; background: #fbfcfe;
+      font-size: 13px; max-height: 560px; overflow: auto;
+    }
+    .t-node { padding: 4px 0 4px 0; }
+    .t-row {
+      display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px;
+      cursor: pointer; user-select: none;
+    }
+    .t-row:hover { background: #eef5ff; }
+    .t-row.on { background: #e0edff; }
+    .t-chev { width: 14px; color: var(--c-hint); font-size: 11px; }
+    .t-name { flex: 1; font-weight: 650; }
+    .t-tag {
+      font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px;
+      background: #f1f5f9; color: var(--c-sub);
+    }
+    .t-tag.man { background: #f3eefc; color: #7c5cbf; }
+    .t-kids { padding-left: 16px; }
+    .t-kids.hidden { display: none; }
+
+    .main { padding: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: top; }
+    th { background: #f8fafc; color: var(--c-sub); font-size: 12px; font-weight: 800; position: sticky; top: 0; }
+    tr:hover td { background: #fbfdff; }
+    .old { color: var(--c-sub); line-height: 1.45; max-width: 260px; }
+    .new input {
+      width: 100%; border: 1.5px solid #d5e4f5; border-radius: 8px;
+      padding: 7px 10px; font-size: 13px; font-weight: 700; color: var(--c-ink);
+    }
+    .new input:focus { outline: none; border-color: var(--c-primary); }
+    .desc { font-size: 12px; color: var(--c-sub); line-height: 1.5; margin-top: 4px; }
+    .st {
+      display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px;
+    }
+    .st.draft { background: #fff4e8; color: var(--c-warn); }
+    .st.ready { background: #e8f7f1; color: var(--c-ok); }
+    .st.skip { background: #f1f5f9; color: var(--c-hint); }
+    .ck { width: 16px; height: 16px; }
+
+    .side .panel { padding: 0; }
+    .side-body { padding: 14px 16px 18px; font-size: 13px; color: var(--c-sub); line-height: 1.7; }
+    .side-body h3 { margin: 14px 0 6px; font-size: 13px; color: var(--c-ink); font-weight: 800; }
+    .side-body h3:first-child { margin-top: 0; }
+    .side-body ul { margin: 0; padding-left: 18px; }
+    .side-body li { margin: 4px 0; }
+    .side-body b { color: var(--c-ink); }
+    .rule {
+      margin-top: 10px; padding: 10px 12px; background: #f8fafc; border-radius: 10px;
+      border: 1px solid var(--c-line); font-size: 12px;
+    }
+    .phone {
+      margin-top: 12px; background: var(--c-page); border-radius: 14px; padding: 12px;
+      border: 1px solid #d5e4f5;
+    }
+    .phone .cap { font-size: 11px; font-weight: 800; color: var(--c-hint); margin-bottom: 8px; }
+    .kp-row {
+      display: flex; align-items: center; gap: 8px; background: #fff;
+      border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; border: 1px solid #e8eef6;
+    }
+    .kp-row .idx { font-size: 12px; color: var(--c-hint); font-weight: 800; width: 16px; }
+    .kp-row .nm { flex: 1; font-size: 13px; font-weight: 800; }
+    .kp-row .bad { text-decoration: line-through; color: #b91c1c; font-weight: 600; font-size: 11px; display: block; margin-top: 2px; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+      background: rgba(31,41,55,.92); color: #fff; padding: 10px 16px; border-radius: 10px;
+      font-size: 13px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 30;
+    }
+    .toast.show { opacity: 1; }
+    .overlay {
+      display: none; position: fixed; inset: 0; background: rgba(15,23,42,.35);
+      z-index: 40; align-items: center; justify-content: center;
+    }
+    .overlay.show { display: flex; }
+    .dlg {
+      width: min(520px, 92vw); background: #fff; border-radius: 14px; padding: 18px 20px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.2);
+    }
+    .dlg h3 { margin: 0 0 8px; font-size: 16px; }
+    .dlg p { margin: 0 0 14px; font-size: 13px; color: var(--c-sub); line-height: 1.6; }
+    .dlg .acts { display: flex; justify-content: flex-end; gap: 8px; }
+    .prog {
+      height: 8px; background: #e8eef6; border-radius: 99px; overflow: hidden; margin: 12px 0 4px;
+    }
+    .prog > i { display: block; height: 100%; width: 0; background: var(--c-primary); transition: width .3s; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>知识图谱 · AI 批量整理展示名</h1>
+    <p>
+      方案 <b>B1</b> 原型：匹配真源 <code>name</code> 不动；新增学生可见的 <code>display_name</code>（+ 可选 description）。
+      运营在后台勾选叶子 → AI 生成草稿 → 对照表改/采纳 → 发布。下方可切「整理前 / 整理中 / 已发布」三态。
+    </p>
+  </header>
+
+  <div class="bar">
+    <span class="lbl">预览态</span>
+    <button type="button" class="sch on" data-phase="select">1 · 勾选待整理</button>
+    <button type="button" class="sch" data-phase="draft">2 · AI 草稿对照<span class="rec">核心</span></button>
+    <button type="button" class="sch" data-phase="done">3 · 已发布 · 学生端</button>
+  </div>
+
+  <div class="stage">
+    <div class="panel" id="mainPanel">
+      <div class="panel-hd">
+        <h2>Admin · 知识图谱</h2>
+        <span class="muted" id="hdMuted">词法 / 句法树 · 批量整理 display_name</span>
+      </div>
+      <div class="toolbar" id="toolbar"></div>
+      <div class="tree-wrap">
+        <div class="tree" id="tree"></div>
+        <div class="main" id="main"></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <div class="panel-hd"><h2>方案说明</h2></div>
+        <div class="side-body" id="sideBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="dlg">
+      <h3>AI 批量整理标题</h3>
+      <p id="dlgText">将对勾选的 4 个叶子生成展示名草稿。匹配名 name 不会被改写；结果写入草稿，确认后才发布为 display_name。</p>
+      <div class="prog"><i id="progBar"></i></div>
+      <div style="font-size:12px;color:#64748b" id="progTip">准备中…</div>
+      <div class="acts" style="margin-top:14px">
+        <button type="button" class="btn" id="dlgCancel">取消</button>
+        <button type="button" class="btn primary" id="dlgGo">开始生成</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const ROWS = [
+      {
+        id: "1", old: "主+助动词+动词原形: We will know the result.",
+        display: "陈述句 · 助动词结构",
+        desc: "主语 + will/can 等助动词 + 动词原形。例：We will know the result.",
+      },
+      {
+        id: "2", old: "主+实义动词: The sun rises in the east.",
+        display: "陈述句 · 实义动词作谓语",
+        desc: "主语 + 实义动词。例：The sun rises in the east.",
+      },
+      {
+        id: "3", old: "主+情态动词+动词原形: She can speak English well.",
+        display: "陈述句 · 情态动词结构",
+        desc: "主语 + can/must 等 + 动词原形。例：She can speak English well.",
+      },
+      {
+        id: "4", old: "主+系动词: These are his books.",
+        display: "陈述句 · 系表结构",
+        desc: "主语 + be/系动词 + 表语。例：These are his books.",
+      },
+      {
+        id: "5", old: "助动词否定: I don't know.",
+        display: "否定句 · 助动词否定",
+        desc: "用 don't/doesn't/didn't 等构成否定。例：I don't know.",
+      },
+      {
+        id: "6", old: "否定代词: Nobody knows the answer.",
+        display: "否定句 · 否定代词",
+        desc: "nobody/nothing 等本身含否定。例：Nobody knows the answer.",
+      },
+    ];
+
+    let phase = "select";
+    let selected = new Set(ROWS.slice(0, 4).map(r => r.id));
+    let drafts = {}; // id -> {display, desc, checked}
+    let published = false;
+
+    const TREE = [
+      { name: "句法", tag: "教 329", open: true, kids: [
+        { name: "句子种类", tag: "教 125", open: true, kids: [
+          { name: "情景交际用语", tag: "人工" },
+          { name: "插入语", tag: "人工" },
+        ]},
+        { name: "陈述句", tag: "教 1", open: true, active: true, kids: [
+          { name: "陈述句的肯定形式", tag: "初", open: true, kids: [
+            { name: "主+助动词+动词原形…", tag: "人工", leaf: true, id: "1" },
+            { name: "主+实义动词…", tag: "人工", leaf: true, id: "2" },
+            { name: "主+情态动词+动词原形…", tag: "人工", leaf: true, id: "3" },
+            { name: "主+系动词…", tag: "人工", leaf: true, id: "4" },
+          ]},
+          { name: "陈述句的否定形式", tag: "初", open: true, kids: [
+            { name: "助动词否定…", tag: "人工", leaf: true, id: "5" },
+            { name: "否定代词…", tag: "人工", leaf: true, id: "6" },
+          ]},
+        ]},
+      ]},
+    ];
+
+    function toast(msg) {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.classList.add("show");
+      clearTimeout(window.__tt);
+      window.__tt = setTimeout(() => t.classList.remove("show"), 1600);
+    }
+
+    function renderTree(nodes, depth = 0) {
+      return nodes.map(n => {
+        const hasKids = n.kids && n.kids.length;
+        const open = n.open !== false;
+        const leaf = !!n.leaf;
+        const checked = leaf && selected.has(n.id);
+        return `
+          <div class="t-node">
+            <div class="t-row ${n.active ? "on" : ""}" data-id="${n.id || ""}" data-leaf="${leaf ? 1 : 0}">
+              <span class="t-chev">${hasKids ? (open ? "▾" : "▸") : ""}</span>
+              ${leaf ? `<input class="ck leaf-ck" type="checkbox" data-id="${n.id}" ${checked ? "checked" : ""} ${phase === "done" ? "disabled" : ""} />` : ""}
+              <span class="t-name">${escapeHtml(n.name)}</span>
+              ${n.tag ? `<span class="t-tag ${n.tag === "人工" ? "man" : ""}">${n.tag}</span>` : ""}
+            </div>
+            ${hasKids ? `<div class="t-kids ${open ? "" : "hidden"}">${renderTree(n.kids, depth + 1)}</div>` : ""}
+          </div>`;
+      }).join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function toolbarHtml() {
+      if (phase === "select") {
+        return `
+          <span class="chip">已勾选 <b>${selected.size}</b> 个叶子</span>
+          <button type="button" class="btn" id="btnAll">全选当前子树</button>
+          <button type="button" class="btn primary" id="btnAi" ${selected.size ? "" : "disabled"}>AI 批量整理标题</button>
+          <span class="chip">name 不动 · 只生成 display_name 草稿</span>`;
+      }
+      if (phase === "draft") {
+        const n = Object.keys(drafts).length;
+        const on = Object.values(drafts).filter(d => d.checked).length;
+        return `
+          <span class="chip">草稿 <b>${n}</b> · 已勾选采纳 <b>${on}</b></span>
+          <button type="button" class="btn" id="btnAllAdopt">全选采纳</button>
+          <button type="button" class="btn ok" id="btnPublish" ${on ? "" : "disabled"}>发布为 display_name</button>
+          <button type="button" class="btn warn" id="btnBack">返回勾选</button>`;
+      }
+      return `
+        <span class="chip">已发布 · 学生端读 display_name</span>
+        <button type="button" class="btn" id="btnAgain">再整理一批</button>`;
+    }
+
+    function tableSelect() {
+      const leaves = ROWS;
+      return `
+        <table>
+          <thead><tr>
+            <th style="width:36px"></th>
+            <th>匹配名 name（不动）</th>
+            <th>当前 display_name</th>
+            <th>状态</th>
+          </tr></thead>
+          <tbody>
+            ${leaves.map(r => `
+              <tr>
+                <td><input class="ck leaf-ck" type="checkbox" data-id="${r.id}" ${selected.has(r.id) ? "checked" : ""} /></td>
+                <td class="old">${escapeHtml(r.old)}</td>
+                <td class="old" style="color:#94a3b8">（空 · 将回退显示 name）</td>
+                <td><span class="st skip">待整理</span></td>
+              </tr>`).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    function tableDraft() {
+      return `
+        <table>
+          <thead><tr>
+            <th style="width:36px">采纳</th>
+            <th>旧 name（匹配真源）</th>
+            <th>建议 display_name（可改）</th>
+            <th>状态</th>
+          </tr></thead>
+          <tbody>
+            ${Object.entries(drafts).map(([id, d]) => {
+              const row = ROWS.find(r => r.id === id);
+              return `
+              <tr>
+                <td><input class="ck adopt-ck" type="checkbox" data-id="${id}" ${d.checked ? "checked" : ""} /></td>
+                <td class="old">${escapeHtml(row.old)}</td>
+                <td class="new">
+                  <input data-id="${id}" class="disp-in" value="${escapeHtml(d.display)}" />
+                  <div class="desc">${escapeHtml(d.desc)}</div>
+                </td>
+                <td><span class="st draft">草稿</span></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    function tableDone() {
+      return `
+        <table>
+          <thead><tr>
+            <th>匹配名 name</th>
+            <th>已发布 display_name</th>
+            <th>状态</th>
+          </tr></thead>
+          <tbody>
+            ${ROWS.filter(r => drafts[r.id]?.checked || published).filter(r => drafts[r.id]).map(r => {
+              const d = drafts[r.id];
+              if (!d || !d.checked) return "";
+              return `
+              <tr>
+                <td class="old">${escapeHtml(r.old)}</td>
+                <td><b>${escapeHtml(d.display)}</b><div class="desc">${escapeHtml(d.desc)}</div></td>
+                <td><span class="st ready">已发布</span></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+        <div class="phone">
+          <div class="cap">学生端 · 语法精进「新点推进」预览</div>
+          ${ROWS.filter(r => drafts[r.id]?.checked).map((r, i) => `
+            <div class="kp-row">
+              <span class="idx">${i + 1}</span>
+              <div style="flex:1">
+                <div class="nm">${escapeHtml(drafts[r.id].display)}</div>
+                <span class="bad">${escapeHtml(r.old)}</span>
+              </div>
+            </div>`).join("") || "<div class='desc'>（尚未发布任何条目）</div>"}
+        </div>`;
+    }
+
+    function sideHtml() {
+      if (phase === "select") {
+        return `
+          <h3>步骤 1 · 勾选</h3>
+          <ul>
+            <li>在树或右侧表勾选<strong>叶子语法点</strong></li>
+            <li>可按子树「陈述句的肯定形式」批量勾选</li>
+            <li>点 <b>AI 批量整理标题</b></li>
+          </ul>
+          <div class="rule"><b>铁律</b>：AI 不改 <code>name</code>，只产 <code>display_name</code> + <code>description</code> 草稿；同输入指纹缓存，不重复付费。</div>`;
+      }
+      if (phase === "draft") {
+        return `
+          <h3>步骤 2 · 对照确认</h3>
+          <ul>
+            <li>左列旧 name（匹配/归类真源）</li>
+            <li>右列建议展示名，可手改</li>
+            <li>勾选「采纳」后点发布</li>
+          </ul>
+          <div class="rule"><b>命名规范（写进 Prompt）</b>：短标题 ≤16 字；「大类 · 要点」；例句进 description，不进标题。</div>`;
+      }
+      return `
+        <h3>步骤 3 · 已发布</h3>
+        <ul>
+          <li>学生端：<code>display_name || name</code></li>
+          <li>Admin 树可切换「显示展示名」</li>
+          <li>未采纳行保持原展示</li>
+        </ul>
+        <div class="rule">与现有「AI 批量生成讲解」并列：一个管讲解稿，一个管节点展示标题。</div>`;
+    }
+
+    function render() {
+      document.querySelectorAll(".sch").forEach(b => b.classList.toggle("on", b.dataset.phase === phase));
+      document.getElementById("toolbar").innerHTML = toolbarHtml();
+      document.getElementById("tree").innerHTML = renderTree(TREE);
+      document.getElementById("sideBody").innerHTML = sideHtml();
+      const main = document.getElementById("main");
+      if (phase === "select") main.innerHTML = tableSelect();
+      else if (phase === "draft") main.innerHTML = tableDraft();
+      else main.innerHTML = tableDone();
+      bind();
+    }
+
+    function bind() {
+      document.querySelectorAll(".leaf-ck").forEach(ck => {
+        ck.onchange = () => {
+          if (ck.checked) selected.add(ck.dataset.id);
+          else selected.delete(ck.dataset.id);
+          render();
+        };
+      });
+      document.getElementById("btnAi")?.addEventListener("click", () => {
+        document.getElementById("dlgText").textContent =
+          `将对勾选的 ${selected.size} 个叶子生成展示名草稿。匹配名 name 不会被改写；结果写入草稿，确认后才发布为 display_name。`;
+        document.getElementById("overlay").classList.add("show");
+        document.getElementById("progBar").style.width = "0%";
+        document.getElementById("progTip").textContent = "准备中…";
+      });
+      document.getElementById("btnAll")?.addEventListener("click", () => {
+        ROWS.forEach(r => selected.add(r.id));
+        render();
+        toast("已全选当前列表示例叶子");
+      });
+      document.getElementById("btnAllAdopt")?.addEventListener("click", () => {
+        Object.values(drafts).forEach(d => d.checked = true);
+        render();
+      });
+      document.getElementById("btnPublish")?.addEventListener("click", () => {
+        published = true;
+        phase = "done";
+        render();
+        toast("已发布为 display_name · 学生端立即生效");
+      });
+      document.getElementById("btnBack")?.addEventListener("click", () => {
+        phase = "select";
+        render();
+      });
+      document.getElementById("btnAgain")?.addEventListener("click", () => {
+        phase = "select";
+        published = false;
+        render();
+      });
+      document.querySelectorAll(".adopt-ck").forEach(ck => {
+        ck.onchange = () => {
+          drafts[ck.dataset.id].checked = ck.checked;
+          render();
+        };
+      });
+      document.querySelectorAll(".disp-in").forEach(inp => {
+        inp.onchange = () => { drafts[inp.dataset.id].display = inp.value.trim(); };
+      });
+    }
+
+    document.querySelectorAll(".sch").forEach(btn => {
+      btn.addEventListener("click", () => {
+        phase = btn.dataset.phase;
+        if (phase === "draft" && !Object.keys(drafts).length) {
+          // seed drafts from selection for preview jumping
+          selected.forEach(id => {
+            const r = ROWS.find(x => x.id === id);
+            if (r) drafts[id] = { display: r.display, desc: r.desc, checked: true };
+          });
+        }
+        render();
+      });
+    });
+
+    document.getElementById("dlgCancel").onclick = () => {
+      document.getElementById("overlay").classList.remove("show");
+    };
+    document.getElementById("dlgGo").onclick = () => {
+      const bar = document.getElementById("progBar");
+      const tip = document.getElementById("progTip");
+      let p = 0;
+      tip.textContent = "生成中（命中缓存跳过计费）…";
+      const timer = setInterval(() => {
+        p += 18;
+        bar.style.width = Math.min(p, 100) + "%";
+        if (p >= 100) {
+          clearInterval(timer);
+          drafts = {};
+          selected.forEach(id => {
+            const r = ROWS.find(x => x.id === id);
+            if (r) drafts[id] = { display: r.display, desc: r.desc, checked: true };
+          });
+          document.getElementById("overlay").classList.remove("show");
+          phase = "draft";
+          render();
+          toast("已生成 " + Object.keys(drafts).length + " 条草稿，请对照确认");
+        }
+      }, 180);
+    };
+
+    render();
+  </script>
+</body>
+</html>

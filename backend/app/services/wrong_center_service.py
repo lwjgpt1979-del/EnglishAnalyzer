@@ -17,13 +17,25 @@ from app.models.d16_question_domain import WrongRecord
 from app.models.d20_long_sentence import LsComponentError
 
 
+# 「平台错题」tab:统一入口 + 题级细分来源(列表徽章展示)
+_PLATFORM_TAB_LABELS = (
+    "平台", "课程精讲", "语法精讲",
+    "课程练习", "模拟考", "课程闯关",
+)
+
+
 def _source_cond(source_label: str | list[str] | None):
-    """来源过滤:支持单值 / 逗号分隔 / 列表(一个 tab 可合并多来源,如「作业错题」= 整卷 + 作业)。"""
+    """来源过滤:支持单值 / 逗号分隔 / 列表(一个 tab 可合并多来源,如「作业错题」= 整卷 + 作业)。
+
+    「平台」单值会展开为平台族(平台|课程精讲|语法精讲),与小程序「平台错题」tab 对齐。
+    """
     if not source_label:
         return None
     labels = source_label if isinstance(source_label, list) else [s for s in str(source_label).split(",") if s]
     if not labels:
         return None
+    if labels == ["平台"]:
+        labels = list(_PLATFORM_TAB_LABELS)
     return WrongRecord.source_label == labels[0] if len(labels) == 1 else WrongRecord.source_label.in_(labels)
 
 
@@ -476,12 +488,15 @@ async def list_center(
         base.order_by(mastered_flag.asc(), WrongRecord.created_at.desc())
         .offset(skip).limit(limit)
     )).scalars().all())
+    from app.services.kp_title_rewrite_service import display_labels_for_nodes
+    labels = await display_labels_for_nodes(db, [r.node_id for r in rows if r.node_id])
     items = [{
         "id": str(r.id), "question_id": str(r.question_id), "q_scope": r.q_scope,
         "node_id": str(r.node_id) if r.node_id else None,
         "stem": r.stem, "student_answer": r.student_answer,
         "correct_answer": r.correct_answer, "explanation": r.explanation,
-        "question_type": r.question_type, "kp_kind": r.kp_kind, "kp_name": r.kp_name,
+        "question_type": r.question_type, "kp_kind": r.kp_kind,
+        "kp_name": labels.get(str(r.node_id), r.kp_name) if r.node_id else r.kp_name,
         "source_label": r.source_label or "错题",
         "source_id": str(r.source_id) if r.source_id else None,
         "source_route": _source_route(r.source_label, r.source_id),
@@ -511,6 +526,7 @@ async def group_by_kp(
     """真实错题按考点(kp_name)聚合(A 视图):[{kp, count, mastered, rate, last_at, bucket}],错多的在前。
     status(pending/reviewing/mastered)按 SM-2 生命周期过滤组内错题。"""
     grp = sa.func.coalesce(WrongRecord.kp_name, "未分类")
+    node_id = sa.func.max(WrongRecord.node_id)
     mastered = sa.func.sum(sa.case((WrongRecord.status == "mastered", 1), else_=0))
     conds = [WrongRecord.student_id == student_id, WrongRecord.status != "skipped",
              WrongRecord.is_original.is_(True), *_status_filter(status)]
@@ -521,12 +537,20 @@ async def group_by_kp(
         conds.append(WrongRecord.kp_kind == kind)
     last_at = sa.func.max(WrongRecord.created_at)
     rows = (await db.execute(
-        sa.select(grp.label("kp"), sa.func.count().label("cnt"), mastered.label("m"), last_at.label("last_at"))
+        sa.select(grp.label("kp"), sa.func.count().label("cnt"), mastered.label("m"),
+                  last_at.label("last_at"), node_id.label("node_id"))
         .where(*conds).group_by(grp).order_by(last_at.desc()))).all()
-    return [{"kp": kp, "count": int(cnt), "mastered": int(m or 0),
+    from app.services.kp_title_rewrite_service import display_labels_for_nodes
+    labels = await display_labels_for_nodes(
+        db, [nid for _, _, _, _, nid in rows if nid])
+    out = []
+    for kp, cnt, m, la, nid in rows:
+        show = labels.get(str(nid), kp) if nid else kp
+        out.append({"kp": kp, "kp_display": show, "node_id": str(nid) if nid else None,
+                    "count": int(cnt), "mastered": int(m or 0),
              "rate": round((m or 0) / cnt, 2) if cnt else 0,
-             "last_at": la.isoformat() if la else None, "bucket": _time_bucket(la)}
-            for kp, cnt, m, la in rows]
+             "last_at": la.isoformat() if la else None, "bucket": _time_bucket(la)})
+    return out
 
 
 async def group_by_batch(
@@ -881,15 +905,21 @@ async def practice_for_wrong(
             db, question_id=wr.question_id, student_id=student_id,
             count=count, difficulty=difficulty)
     kp_name = wr.kp_name
-    if not kp_name and wr.node_id:
+    display_kp = kp_name
+    if wr.node_id:
         from app.models.d15_knowledge_graph import KnowledgeNode
-        kp_name = await db.scalar(
-            sa.select(KnowledgeNode.name).where(KnowledgeNode.id == wr.node_id))
+        from app.services.kp_title_rewrite_service import node_display_label
+        node = await db.get(KnowledgeNode, wr.node_id)
+        if node:
+            kp_name = node.name
+            display_kp = node_display_label(node)
+    elif not kp_name:
+        raise AppError(code=400, message="该题暂无关联知识点，无法生成同类练习")
     if not kp_name:
         raise AppError(code=400, message="该题暂无关联知识点，无法生成同类练习")
     questions = await practice_service.generate_practice_questions(
         db, student_id=student_id, knowledge_point=kp_name, count=count, difficulty=difficulty)
-    return {"knowledge_point": kp_name, "questions": questions}
+    return {"knowledge_point": display_kp or kp_name, "questions": questions}
 
 
 async def list_by_node(

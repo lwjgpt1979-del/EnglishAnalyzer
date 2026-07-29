@@ -21,10 +21,16 @@ export function submitAnswer(
   questionId: string,
   answer: string,
   timeSpentSec?: number,
+  sourceChannel?: string | null,
 ): Promise<SubmitAnswerResult> {
   return request<SubmitAnswerResult>('/api/v1/practice/submit', {
     method: 'POST',
-    data: { question_id: questionId, answer, time_spent_sec: timeSpentSec ?? null },
+    data: {
+      question_id: questionId,
+      answer,
+      time_spent_sec: timeSpentSec ?? null,
+      source_channel: sourceChannel ?? null,
+    },
   })
 }
 

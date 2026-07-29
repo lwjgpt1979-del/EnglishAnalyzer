@@ -276,6 +276,10 @@ async def get_question(
     return result.scalar_one_or_none()
 
 
+# 精讲练一练 →「平台错题」tab 的题级来源白名单(写入 wrong_record.source_label)
+_PRACTICE_PLATFORM_CHANNELS = frozenset({"课程精讲", "语法精讲"})
+
+
 async def submit_answer(
     db: AsyncSession,
     *,
@@ -283,8 +287,13 @@ async def submit_answer(
     question_id: uuid.UUID,
     answer: str,
     time_spent_sec: int | None = None,
+    source_channel: str | None = None,
 ) -> PracticeRecord:
-    """服务端判分并写入 practice_records。题不存在 → AppError(404)。"""
+    """服务端判分并写入 practice_records。题不存在 → AppError(404)。
+
+    source_channel ∈ {课程精讲, 语法精讲} 且答错时,同步写入 wrong_record(平台错题族),
+    题级来源用 source_label 标明(列表徽章展示)。
+    """
     question = await get_question(db, question_id=question_id)
     if question is None:
         raise AppError(code=404, message="题目不存在")
@@ -313,14 +322,13 @@ async def submit_answer(
     # R8 Phase6-前置/6c:node 优先取题上的 node_id(生成时已挂);无则按 content 里的知识点名过别名回退。
     # (旧 kp_id→KnowledgePoint 回退随 knowledge_points 退役一并删)
     node_id = question.node_id
-    if node_id is None:
-        kp_name = str(question.content.get("knowledge_point", "")) or None
-        if kp_name:
-            from app.models.d15_knowledge_graph import NodeAlias
-            from app.services.kp_match_service import normalize_kp_name
-            nn = normalize_kp_name(kp_name)
-            node_id = (await db.execute(
-                select(NodeAlias.node_id).where(NodeAlias.alias_norm == nn))).scalar_one_or_none() if nn else None
+    kp_name = str(question.content.get("knowledge_point", "") or "") or None
+    if node_id is None and kp_name:
+        from app.models.d15_knowledge_graph import NodeAlias
+        from app.services.kp_match_service import normalize_kp_name
+        nn = normalize_kp_name(kp_name)
+        node_id = (await db.execute(
+            select(NodeAlias.node_id).where(NodeAlias.alias_norm == nn))).scalar_one_or_none() if nn else None
     if node_id is not None:
         try:
             from app.services import mastery_judge_service
@@ -328,6 +336,26 @@ async def submit_answer(
                 db, student_id=student_id, q_scope="ai", question_id=question_id,
                 node_id=node_id, is_correct=is_correct, feature="practice")
         except Exception:  # noqa: BLE001 — 真值记录是旁路,绝不阻断刷题
+            pass
+
+    # 精讲练一练答错 → 平台错题本(题级来源=课程精讲/语法精讲)
+    channel = (source_channel or "").strip()
+    if (not is_correct) and channel in _PRACTICE_PLATFORM_CHANNELS:
+        try:
+            from app.services import wrong_center_service
+            wid = await wrong_center_service.record_wrong(
+                db, student_id=student_id, q_scope="ai", question_id=question_id,
+                node_id=node_id, is_original=True,
+                stem=str(question.content.get("stem") or "")[:2000] or None,
+                student_answer=answer.strip()[:500] or None,
+                correct_answer=correct_answer[:500] or None,
+                explanation=str(question.content.get("explanation") or "")[:2000] or None,
+                question_type=str(question.question_type or "单选")[:24] or None,
+                kp_kind="grammar", kp_name=kp_name, source_label=channel,
+            )
+            record.wrong_question_id = wid
+            await db.flush()
+        except Exception:  # noqa: BLE001 — 错题本旁路,不阻断刷题判分
             pass
 
     return record

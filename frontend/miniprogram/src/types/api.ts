@@ -67,6 +67,9 @@ export interface WrongQuestionOut {
   options: string[] | null
   explanation: string | null
   source: 'platform' | 'uploaded' | null
+  source_label?: string | null
+  source_route?: string | null
+  stem?: string | null
   is_mastered: boolean
   mastered_at: string | null
   created_at: string

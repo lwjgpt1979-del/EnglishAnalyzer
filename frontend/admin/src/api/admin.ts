@@ -643,12 +643,13 @@ export function rebuildExamFreq(body: { exam_type: string; list_name?: string })
 export function listKnowledgeNodes(params: {
   axis?: string; stage?: string; status?: string; q?: string
   linked?: 'unit' | 'question' | 'both'; roots?: string[]
-  ai_lecture?: boolean; skip?: number; limit?: number
+  ai_lecture?: boolean; title_pending?: boolean; skip?: number; limit?: number
 }): Promise<KpNodeOverviewOut> {
   const p: Record<string, unknown> = { ...params }
   if (params.roots?.length) p.roots = params.roots.join(',')   // 多选根目录 → 逗号分隔
   else delete p.roots
   if (!params.ai_lecture) delete p.ai_lecture
+  if (!params.title_pending) delete p.title_pending
   return unwrap<KpNodeOverviewOut>(request.get('/admin/knowledge-nodes', { params: p }))
 }
 // 根目录(顶层分类)选项——多选过滤下拉
@@ -780,6 +781,31 @@ export function updateKnowledgeNode(id: string, body: {
 }): Promise<KpNodeDetail> {
   return unwrap<KpNodeDetail>(request.patch(`/admin/knowledge-nodes/${id}`, body))
 }
+
+/** 方案 B2:AI 批量整理展示标题草稿(不改 name) */
+export interface TitleRewriteDraft {
+  id: string
+  name: string
+  description: string | null
+  suggested_title: string
+  suggested_detail: string
+  cached: boolean
+  current_label: string
+}
+export function suggestKpTitleRewrite(nodeIds: string[]): Promise<{ items: TitleRewriteDraft[]; total: number }> {
+  return unwrap(request.post('/admin/knowledge-nodes/title-rewrite/suggest', { node_ids: nodeIds }, { timeout: 180000 }))
+}
+export function applyKpTitleRewrite(items: { id: string; title: string; detail?: string }[]): Promise<{ updated: number }> {
+  return unwrap(request.post('/admin/knowledge-nodes/title-rewrite/apply', { items }))
+}
+export function getKpTitlePendingCount(hardOnly = false): Promise<{ pending: number; hard_pending: number }> {
+  return unwrap(request.get('/admin/knowledge-nodes/title-rewrite/pending-count', { params: { hard_only: hardOnly } }))
+}
+/** 规则优先后 AI 补洞:自动处理仍缺展示标题的节点 */
+export function aiRewritePendingTitles(opts?: { hard_only?: boolean; limit?: number }): Promise<{ pending: number; updated: number; cached: number; llm: number }> {
+  return unwrap(request.post('/admin/knowledge-nodes/title-rewrite/ai-pending', opts || {}, { timeout: 600000 }))
+}
+
 export function retireKnowledgeNode(id: string): Promise<{ id: string; status: string }> {
   return unwrap(request.post(`/admin/knowledge-nodes/${id}/retire`))
 }

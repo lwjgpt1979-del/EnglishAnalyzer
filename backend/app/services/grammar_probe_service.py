@@ -28,6 +28,28 @@ _log = logging.getLogger(__name__)
 
 RECOGNIZE_MASTERED = 0.85   # 识别维掌握阈
 DETECT_MASTERED = 0.85      # 纠错维掌握阈
+
+
+async def _record_challenge_wrong(
+    db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgeNode,
+    question_id: uuid.UUID, stem: str | None, student_answer: str | None,
+    correct_answer: str | None, explanation: str | None = None,
+) -> None:
+    """课程「继续闯关」答错 → 写入「平台错题」(题级来源=课程闯关)。旁路失败不阻断探针。"""
+    try:
+        from app.services import wrong_center_service
+        await wrong_center_service.record_wrong(
+            db, student_id=student_id, q_scope="platform", question_id=question_id,
+            node_id=kp.id, is_original=True,
+            stem=(stem or "")[:2000] or None,
+            student_answer=(student_answer or "")[:500] or None,
+            correct_answer=(correct_answer or "")[:500] or None,
+            explanation=(explanation or "")[:2000] or None,
+            question_type="单选", kp_kind="grammar", kp_name=kp.name,
+            source_label="课程闯关",
+        )
+    except Exception:  # noqa: BLE001
+        _log.exception("record challenge wrong failed kp=%s", kp.id)
 PRODUCE_MASTERED = 0.85     # 产出维掌握阈
 # 产出造句 rubric 维度(每维 0-2):用对结构 / 句子正确 / 表意通顺
 _PROD_DIMS = [("structure", "用对结构"), ("accuracy", "句子正确"), ("meaning", "表意通顺")]
@@ -190,9 +212,11 @@ async def comprehension_probes(db: AsyncSession, *, student_id: uuid.UUID, kp: K
     detect = float(m.mastery_detect) if m and m.mastery_detect is not None else 0.0
     produce = float(m.mastery_produce) if m and m.mastery_produce is not None else 0.0
     transfer_ok = bool(m.transfer_ok) if m else False
+    from app.services.kp_title_rewrite_service import node_display_label
+    show = node_display_label(kp)
     return {
-        "kp_id": str(kp.id), "kp_name": kp.name, "probes": probes,
-        "produce": {"key": "produce", "prompt": str(p.get("produce_hint") or f"用「{kp.name}」造一个句子")},
+        "kp_id": str(kp.id), "kp_name": show, "probes": probes,
+        "produce": {"key": "produce", "prompt": str(p.get("produce_hint") or f"用「{show}」造一个句子")},
         "has_transfer": bool(p.get("transfer_seed")),
         "recognize": recog, "detect": detect, "produce_score": produce, "transfer_ok": transfer_ok,
         "mastered": _axes_mastered(recog, detect, produce, transfer_ok),
@@ -253,6 +277,15 @@ async def submit_probe(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid.U
     await mastery_judge_service.log_answer(
         db, student_id=student_id, q_scope="platform", question_id=qid,
         node_id=None, is_correct=correct, feature="grammar_probe")
+    if not correct:
+        stem = str(item.get("stem") or item.get("sentence") or "")[:2000]
+        if kind == "detect" and item.get("sentence"):
+            stem = f"找出并改正错误:{item['sentence']}"
+        await _record_challenge_wrong(
+            db, student_id=student_id, kp=kp, question_id=qid, stem=stem,
+            student_answer=ans, correct_answer=correct_answer,
+            explanation=(misconception if isinstance(misconception, str) else None),
+        )
     await db.flush()
 
     recog = float(m.mastery_recognize) if m.mastery_recognize is not None else 0.0
@@ -330,6 +363,12 @@ async def submit_produce(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uuid
         await mastery_judge_service.log_answer(
             db, student_id=student_id, q_scope="platform", question_id=qid,
             node_id=None, is_correct=res["passed"], feature="grammar_produce")
+        if not res["passed"]:
+            await _record_challenge_wrong(
+                db, student_id=student_id, kp=kp, question_id=qid,
+                stem=f"用「{kp.name}」造句", student_answer=(sentence or "").strip()[:500],
+                correct_answer=None, explanation=str(res.get("feedback") or "")[:2000] or None,
+            )
     await db.flush()
     recog = float(m.mastery_recognize) if m.mastery_recognize is not None else 0.0
     detect = float(m.mastery_detect) if m.mastery_detect is not None else 0.0
@@ -424,6 +463,12 @@ async def submit_transfer(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uui
     await mastery_judge_service.log_answer(
         db, student_id=student_id, q_scope="platform", question_id=qid,
         node_id=None, is_correct=correct, feature="grammar_probe")
+    if not correct:
+        await _record_challenge_wrong(
+            db, student_id=student_id, kp=kp, question_id=qid,
+            stem=str(seeds[idx].get("stem") or "")[:2000] or None,
+            student_answer=(answer or "").strip(), correct_answer=correct_answer,
+        )
     await db.flush()
     recog = float(m.mastery_recognize) if m.mastery_recognize is not None else 0.0
     detect = float(m.mastery_detect) if m.mastery_detect is not None else 0.0
@@ -494,8 +539,15 @@ async def submit_group_mixed(db: AsyncSession, *, student_id: uuid.UUID, answers
         await mastery_judge_service.log_answer(
             db, student_id=student_id, q_scope="platform", question_id=qid,
             node_id=None, is_correct=correct, feature="grammar_group")
+        if not correct:
+            await _record_challenge_wrong(
+                db, student_id=student_id, kp=kp, question_id=qid,
+                stem=str(recog[0].get("stem") or "")[:2000] or None,
+                student_answer=(chosen or "").strip(), correct_answer=correct_answer,
+            )
+        from app.services.kp_title_rewrite_service import node_display_label
         results.append({
-            "kp_id": str(kp_id), "kp_name": kp.name, "correct": correct,
+            "kp_id": str(kp_id), "kp_name": node_display_label(kp), "correct": correct,
             "correct_answer": correct_answer,
             "recognize": round(float(m.mastery_recognize or 0), 4),
             "mastered": _axes_mastered(
@@ -532,15 +584,18 @@ def confirmed_mastered(m: StudentGrammarMastery | None) -> bool:
 async def due_retentions(db: AsyncSession, *, student_id: uuid.UUID, limit: int = 50) -> list[dict]:
     """到期待复测的语法点(四维已达、next_retain_at 到期)。"""
     now = datetime.now(timezone.utc)
+    from app.services.kp_title_rewrite_service import display_label
     rows = (await db.execute(
-        sa.select(StudentGrammarMastery, KnowledgeNode.name)
+        sa.select(StudentGrammarMastery, KnowledgeNode.name, KnowledgeNode.description)
         .join(KnowledgeNode, KnowledgeNode.id == StudentGrammarMastery.kp_id)
         .where(StudentGrammarMastery.student_id == student_id,
                StudentGrammarMastery.mastered_at.isnot(None),
                StudentGrammarMastery.next_retain_at <= now)
         .order_by(StudentGrammarMastery.next_retain_at).limit(limit))).all()
-    return [{"kp_id": str(m.kp_id), "kp_name": name, "retain_count": m.retain_count,
-             "due_at": m.next_retain_at.isoformat() if m.next_retain_at else None} for m, name in rows]
+    return [{"kp_id": str(m.kp_id), "kp_name": display_label(name, desc),
+             "retain_count": m.retain_count,
+             "due_at": m.next_retain_at.isoformat() if m.next_retain_at else None}
+            for m, name, desc in rows]
 
 
 async def retention_probe(db: AsyncSession, *, student_id: uuid.UUID, kp: KnowledgeNode) -> dict | None:
@@ -596,6 +651,12 @@ async def submit_retention(db: AsyncSession, *, student_id: uuid.UUID, kp_id: uu
     await mastery_judge_service.log_answer(
         db, student_id=student_id, q_scope="platform", question_id=qid,
         node_id=None, is_correct=correct, feature="grammar_retention")
+    if not correct:
+        await _record_challenge_wrong(
+            db, student_id=student_id, kp=kp, question_id=qid,
+            stem=str(seeds[idx].get("stem") or "")[:2000] or None,
+            student_answer=(answer or "").strip(), correct_answer=correct_answer,
+        )
     await db.flush()
     return {
         "correct": correct, "correct_answer": correct_answer,
@@ -641,17 +702,18 @@ def _status_label(m: StudentGrammarMastery | None) -> dict:
 
 async def coarse_rollup(db: AsyncSession, *, student_id: uuid.UUID, parent_kp_id: uuid.UUID) -> dict:
     """粗语法点的 rollup:掌握 = 其下所有子细点都 confirmed_mastered。无子点则退化为该点自身。"""
+    from app.services.kp_title_rewrite_service import display_label
     children = (await db.execute(
-        sa.select(KnowledgeNode.id, KnowledgeNode.name).where(
+        sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.description).where(
             KnowledgeNode.parent_id == parent_kp_id, KnowledgeNode.status == "active"))).all()
     if not children:
         m = await _get_mastery(db, student_id, parent_kp_id)
         return {"total": 0, "mastered": 0, "all_mastered": confirmed_mastered(m), "children": []}
     items, done = [], 0
-    for cid, cname in children:
+    for cid, cname, cdesc in children:
         ok = confirmed_mastered(await _get_mastery(db, student_id, cid))
         done += ok
-        items.append({"kp_id": str(cid), "name": cname, "mastered": ok})
+        items.append({"kp_id": str(cid), "name": display_label(cname, cdesc), "mastered": ok})
     return {"total": len(children), "mastered": done,
             "all_mastered": done == len(children), "children": items}
 

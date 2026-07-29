@@ -413,7 +413,9 @@ async function startPractice() {
 }
 
 async function quizJudge(q: PracticeQuestion, ans: ChosenAnswer) {
-  const r = await submitAnswer(q.id, ans.text || ans.input)
+  // 课程精讲 / 作业语法精讲答错 → 写入「平台错题」,题级来源徽章区分
+  const channel = mode.value === 'course' ? '课程精讲' : '语法精讲'
+  const r = await submitAnswer(q.id, ans.text || ans.input, undefined, channel)
   return { correct: r.is_correct, correct_answer: r.correct_answer, explanation: r.explanation }
 }
 

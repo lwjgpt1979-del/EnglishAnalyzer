@@ -166,6 +166,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "单词造句作答按维度打分", "why": "打分维度固定(_PROD_DIMS)", "locations": ["vocab_probe_service.py:298"], "cache": "none", "store": "无(仅掌握度落 mastery_prod)"},
     {"feature": "paper_q_explain", "mode": "chat", "surface": "小程序端", "module": "作业精讲·语法", "service": "grammar_intensive_service",
      "purpose": "语法原题单段解析(正确/错误同等,查看即生成)", "why": "规格明确的短解析抽取,关思考走快档", "locations": ["grammar_intensive_service.py:ensure_question_explanation"], "cache": "global", "store": "paper_q_explain_cache + user_paper_questions.explanation(按题面 md5)"},
+    {"feature": "kp_title_rewrite", "mode": "chat", "surface": "运营后台", "module": "知识图谱·标题整理", "service": "kp_title_rewrite_service",
+     "purpose": "语法点粗糙 name→短展示标题+一句说明(写入 description 首行,不改 name)", "why": "规格明确的改写抽取,快档即可", "locations": ["kp_title_rewrite_service.py:_suggest_one"], "cache": "global", "store": "kp_title_rewrite_cache(按 name|description md5)"},
 ]
 
 

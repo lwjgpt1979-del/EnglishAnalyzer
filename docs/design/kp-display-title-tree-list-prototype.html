@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>知识图谱 · 展示标题在树/列表呈现 — 原型 (B2)</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-hint: #94a3b8;
+      --c-line: #e6ebf2;
+      --c-page: #f0f4fa;
+      --c-ok: #2fa98a;
+      --c-warn: #d97706;
+      --c-ai: #7c5cbf;
+      --c-rule: #0ea5e9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8, #f4f6fa 40%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top { max-width: 1280px; margin: 0 auto; padding: 22px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; font-size: 14px; color: var(--c-sub); line-height: 1.65; max-width: 920px; }
+
+    .bar {
+      max-width: 1280px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    }
+    .bar .lbl { font-size: 13px; font-weight: 700; color: var(--c-sub); }
+    .sch {
+      border: 1.5px solid #cfe0f5; background: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--c-ink);
+    }
+    .sch.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .sch .rec {
+      margin-left: 6px; font-size: 11px; background: #ffb020; color: #fff;
+      padding: 1px 6px; border-radius: 6px;
+    }
+    .sch.on .rec { background: rgba(255,255,255,.28); }
+
+    .stage {
+      max-width: 1280px; margin: 16px auto 48px; padding: 0 24px;
+      display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start;
+    }
+    @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #fff; border: 1px solid #d8e4f5; border-radius: 14px;
+      box-shadow: 0 10px 28px rgba(30,64,120,.06); overflow: hidden;
+    }
+    .panel-hd {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--c-line); background: #fafcfe;
+    }
+    .panel-hd h2 { margin: 0; font-size: 15px; font-weight: 800; }
+    .panel-hd .muted { font-size: 12px; color: var(--c-sub); font-weight: 600; }
+
+    .view-tabs {
+      display: inline-flex; border: 1px solid #d5e4f5; border-radius: 8px; overflow: hidden;
+      margin-right: 12px;
+    }
+    .view-tabs button {
+      border: none; background: #fff; padding: 7px 14px; font-size: 13px; font-weight: 700;
+      cursor: pointer; color: var(--c-sub);
+    }
+    .view-tabs button.on { background: var(--c-primary); color: #fff; }
+
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 12px 16px; border-bottom: 1px solid var(--c-line);
+    }
+    .btn {
+      border: none; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 700;
+      cursor: pointer; background: #eef5ff; color: var(--c-primary);
+    }
+    .btn.primary { background: var(--c-primary); color: #fff; }
+    .btn.warn { background: #fff4e8; color: var(--c-warn); }
+    .btn.plain { background: #fff; border: 1px solid #d5e4f5; color: var(--c-sub); }
+    .chip { font-size: 12px; color: var(--c-sub); background: #f1f5f9; padding: 6px 10px; border-radius: 8px; }
+    .tog {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+      color: var(--c-sub); cursor: pointer; user-select: none;
+    }
+    .tog input { accent-color: var(--c-primary); }
+
+    /* ── 展示标题单元(树/列表共用) ── */
+    .kp-cell { min-width: 0; line-height: 1.35; }
+    .kp-cell .display {
+      font-size: 13px; font-weight: 700; color: var(--c-primary); cursor: pointer;
+      display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .kp-cell .display:hover { text-decoration: underline; }
+    .kp-cell .match {
+      font-size: 11px; color: var(--c-hint); margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .kp-cell .match.hidden { display: none; }
+    .kp-cell .match b { font-weight: 700; color: #cbd5e1; }
+    .kp-cell .only-name .display { color: var(--c-ink); font-weight: 650; }
+
+    .src-tag {
+      display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px;
+      border-radius: 5px; margin-left: 6px; vertical-align: 1px;
+    }
+    .src-tag.rule { background: #e0f2fe; color: var(--c-rule); }
+    .src-tag.ai { background: #f3eefc; color: var(--c-ai); }
+    .src-tag.pending { background: #f1f5f9; color: var(--c-hint); }
+
+    /* tree */
+    .tree-box { padding: 12px 16px 18px; max-width: 960px; }
+    .t-node { padding: 2px 0; }
+    .t-row {
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px;
+    }
+    .t-row:hover { background: #f4f9ff; }
+    .t-chev { width: 14px; color: var(--c-hint); font-size: 11px; cursor: pointer; flex-shrink: 0; }
+    .t-body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .t-meta { font-size: 11px; color: var(--c-sub); background: #f1f5f9; padding: 1px 6px; border-radius: 5px; }
+    .t-ops { display: flex; gap: 4px; opacity: .85; }
+    .t-ops button {
+      border: none; background: none; font-size: 11px; font-weight: 700; cursor: pointer; padding: 2px 4px;
+    }
+    .t-ops .w { color: var(--c-warn); }
+    .t-ops .d { color: #ef4444; }
+    .t-kids { padding-left: 18px; border-left: 1px dashed #e2e8f0; margin-left: 6px; }
+    .t-kids.hidden { display: none; }
+
+    /* list table */
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; text-align: left; vertical-align: middle; }
+    th { background: #f8fafc; color: var(--c-sub); font-size: 12px; font-weight: 800; position: sticky; top: 0; z-index: 1; }
+    tr:hover td { background: #fbfdff; }
+    .st {
+      display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px;
+    }
+    .st.on { background: #e8f7f1; color: var(--c-ok); }
+    .prog {
+      height: 12px; background: #eef2f7; border-radius: 99px; overflow: hidden; min-width: 80px;
+    }
+    .prog i { display: block; height: 100%; background: var(--c-primary); border-radius: 99px; }
+
+    /* side */
+    .side .panel { padding: 0; }
+    .side-body { padding: 14px 16px 18px; font-size: 13px; color: var(--c-sub); line-height: 1.7; }
+    .side-body h3 { margin: 14px 0 6px; font-size: 13px; color: var(--c-ink); font-weight: 800; }
+    .side-body h3:first-child { margin-top: 0; }
+    .side-body ul { margin: 0; padding-left: 18px; }
+    .side-body li { margin: 4px 0; }
+    .side-body b { color: var(--c-ink); }
+    .legend { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .legend .item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .mock-phone {
+      margin-top: 12px; background: var(--c-page); border-radius: 14px; padding: 12px; border: 1px solid #d5e4f5;
+    }
+    .mock-phone .cap { font-size: 11px; font-weight: 800; color: var(--c-hint); margin-bottom: 8px; }
+    .mock-row {
+      background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 6px;
+      border: 1px solid #e8eef6; font-size: 13px; font-weight: 800;
+    }
+
+    .compare {
+      margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .compare .box {
+      border: 1px solid var(--c-line); border-radius: 10px; padding: 10px; background: #fafcfe; font-size: 12px;
+    }
+    .compare .box h4 { margin: 0 0 6px; font-size: 12px; color: var(--c-hint); }
+    .compare .old { color: #b91c1c; text-decoration: line-through; opacity: .75; }
+    .compare .new { color: var(--c-ink); font-weight: 700; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>知识图谱 · 展示标题在树 / 列表呈现</h1>
+    <p>
+      方案 <b>B2</b> 落地后的 Admin 呈现原型：匹配真源 <code>name</code> 不动；<code>description</code> 首行(≤40字) 作为<b>展示标题</b>。
+      树视图与列表视图<b>统一</b>：主文案 = 展示标题；副文案(可收起) = 匹配名。
+      标签区分 <span class="src-tag rule">规则</span> / <span class="src-tag ai">AI</span> / <span class="src-tag pending">未整理</span>。
+    </p>
+  </header>
+
+  <div class="bar">
+    <span class="lbl">预览</span>
+    <button type="button" class="sch on" data-view="tree">树视图</button>
+    <button type="button" class="sch" data-view="list">列表视图</button>
+    <button type="button" class="sch" data-view="detail">详情抽屉</button>
+  </div>
+
+  <div class="stage">
+    <div class="panel" id="mainPanel">
+      <div class="panel-hd">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="view-tabs" id="viewTabs">
+            <button type="button" class="on" data-v="tree">树视图</button>
+            <button type="button" data-v="list">列表</button>
+          </div>
+          <h2>Admin · 知识图谱</h2>
+        </div>
+        <span class="muted">共 1820 · 已整理 1289</span>
+      </div>
+
+      <div class="toolbar">
+        <button type="button" class="btn primary">查询</button>
+        <button type="button" class="btn warn">AI 补整理(未达标)</button>
+        <label class="tog"><input type="checkbox" id="showMatch" checked /> 显示匹配名</label>
+        <label class="tog"><input type="checkbox" id="onlyPending" /> 只看未整理</label>
+        <span class="chip">搜索：<b>展示名 + 匹配名</b></span>
+      </div>
+
+      <!-- 树视图 -->
+      <div class="tree-box" id="paneTree"></div>
+
+      <!-- 列表视图 -->
+      <div class="table-wrap hidden" id="paneList">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px"><input type="checkbox" /></th>
+              <th style="min-width:280px">知识点</th>
+              <th style="width:72px">标题</th>
+              <th style="width:80px">状态</th>
+              <th style="width:120px">讲解完整度</th>
+              <th style="width:140px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="listBody"></tbody>
+        </table>
+      </div>
+
+      <!-- 详情抽屉 mock -->
+      <div class="tree-box hidden" id="paneDetail">
+        <div style="border:1px solid var(--c-line);border-radius:12px;padding:16px;max-width:520px;background:#fafcfe">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <span class="st on">启用</span>
+            <span style="font-size:12px;color:var(--c-hint)">KN-G-0123 · 来源 seed</span>
+          </div>
+          <div class="kp-cell" style="margin-bottom:14px">
+            <span class="display" style="font-size:18px">句式 · 时间花费句型</span>
+            <span class="match" id="detailMatch">匹配名 It takes sb. some time to do sth.:It takes me ten…</span>
+            <span class="src-tag ai">AI</span>
+          </div>
+          <div style="font-size:13px;color:var(--c-sub);line-height:1.6;margin-bottom:14px">
+            <b style="color:var(--c-ink)">说明(description)</b><br/>
+            表示做某事花费某人多少时间。例：It takes me ten minutes to walk to school.
+          </div>
+          <div style="font-size:12px;color:var(--c-hint);padding:10px;background:#fff;border-radius:8px;border:1px dashed #d5e4f5">
+            抽屉标题也用<b style="color:var(--c-ink)">展示标题</b>，不再用整段 name；编辑区仍分开维护「匹配名 name」与「description」。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side">
+      <div class="panel">
+        <div class="panel-hd"><h2>字段约定</h2></div>
+        <div class="side-body">
+          <h3>双行单元格 kp-cell</h3>
+          <ul>
+            <li><b>主行 display</b>：description 首行；无则回退 name</li>
+            <li><b>副行 match</b>：原始 name(仅当 ≠ 展示标题时显示)</li>
+            <li>树 / 列表 / 详情<b>同一组件</b></li>
+          </ul>
+          <div class="legend">
+            <div class="item"><span class="src-tag rule">规则</span> 规则脚本写入</div>
+            <div class="item"><span class="src-tag ai">AI</span> AI 补整理写入</div>
+            <div class="item"><span class="src-tag pending">未整理</span> 首行仍等于 name</div>
+          </div>
+          <h3>列表列调整</h3>
+          <ul>
+            <li>「知识点」列改为双行 kp-cell(不新增宽列)</li>
+            <li>可选窄列「标题」仅显示来源标签</li>
+            <li>搜索 q 同时匹配 name + display</li>
+          </ul>
+          <h3>学生端对齐</h3>
+          <div class="mock-phone">
+            <div class="cap">语法精进 · 列表</div>
+            <div class="mock-row">句式 · 时间花费句型</div>
+            <div class="mock-row">代词 · 两者中的另一个</div>
+            <div class="mock-row">状语从句 · because引导原因</div>
+          </div>
+          <div class="compare">
+            <div class="box">
+              <h4>改前(仅 name)</h4>
+              <div class="old">It takes sb. some time to do sth.:It takes me ten…</div>
+            </div>
+            <div class="box">
+              <h4>改后(展示标题)</h4>
+              <div class="new">句式 · 时间花费句型</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    /** @typedef {{ id:string, name:string, display:string, src:'rule'|'ai'|'pending', node_kind?:string, status:string, lecture:string, kids?:Node[] }} Node */
+
+    /** @type {Node[]} */
+    const TREE = [
+      {
+        id: 'g1', name: '句法', display: '句法', src: 'pending', node_kind: '分类', status: 'on', lecture: '—',
+        kids: [
+          {
+            id: 'g2', name: '基本句型', display: '基本句型', src: 'pending', status: 'on', lecture: '—',
+            kids: [
+              {
+                id: 'n1',
+                name: 'It takes sb. some time to do sth.:It takes me ten minutes to walk to school.',
+                display: '句式 · 时间花费句型',
+                src: 'ai', node_kind: '考点', status: 'on', lecture: '4/6',
+              },
+              {
+                id: 'n2',
+                name: '两者另一个:one...the other...:I have two pens. One is blue and the other is red.',
+                display: '代词 · 两者中的另一个',
+                src: 'ai', node_kind: '考点', status: 'on', lecture: '6/6',
+              },
+              {
+                id: 'n3',
+                name: '复合名词在末尾加\'s-a woman teacher\'s dress',
+                display: '复合名词在末尾加\'s',
+                src: 'rule', node_kind: '考点', status: 'on', lecture: '2/6',
+              },
+            ],
+          },
+          {
+            id: 'g3', name: '状语从句', display: '状语从句', src: 'pending', status: 'on', lecture: '—',
+            kids: [
+              {
+                id: 'n4',
+                name: 'because引导原因状语:She didn\'t follow the rule because she disliked it.',
+                display: '状语从句 · because引导原因',
+                src: 'ai', status: 'on', lecture: '5/6',
+              },
+              {
+                id: 'n5',
+                name: 'as if/though引导方式状语从句: He seemed unhappy as if someone bothered him.',
+                display: 'as if/though引导方式状语从句',
+                src: 'pending', status: 'on', lecture: '0/6',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'g4', name: '词法', display: '词法', src: 'pending', status: 'on', lecture: '—',
+        kids: [
+          { id: 'n6', name: '冠词', display: '冠词', src: 'pending', status: 'on', lecture: '6/6' },
+          {
+            id: 'n7',
+            name: 'too much, too many, much too 辨析',
+            display: 'too much, too many, much too 辨析',
+            src: 'pending', status: 'on', lecture: '1/6',
+          },
+        ],
+      },
+    ];
+
+    /** 列表用扁平数据 */
+    const LIST = flatten(TREE);
+
+    function flatten(nodes, out = []) {
+      nodes.forEach(n => {
+        out.push(n);
+        if (n.kids) flatten(n.kids, out);
+      });
+      return out.filter(n => !n.kids || n.display !== n.name || n.src !== 'pending' || n.id.startsWith('n'));
+    }
+
+    const srcLabel = { rule: '规则', ai: 'AI', pending: '未整理' };
+    const srcClass = { rule: 'rule', ai: 'ai', pending: 'pending' };
+
+    function kpCell(n, showMatch) {
+      const same = n.display === n.name || n.src === 'pending' && n.display.length <= 16;
+      const onlyName = n.src === 'pending' && n.display === n.name;
+      const matchHidden = !showMatch || n.display === n.name ? ' hidden' : '';
+      return `
+        <div class="kp-cell${onlyName ? ' only-name' : ''}">
+          <span class="display" title="${esc(n.display)}">${esc(n.display)}</span>
+          <span class="match${matchHidden}"><b>匹配名</b> ${esc(n.name)}</span>
+        </div>`;
+    }
+
+    function srcTag(n) {
+      return `<span class="src-tag ${srcClass[n.src]}" title="标题来源">${srcLabel[n.src]}</span>`;
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    }
+
+    function renderTree(nodes, showMatch, onlyPending, depth = 0) {
+      return nodes.map(n => {
+        if (onlyPending && n.src !== 'pending' && n.kids) {
+          const kids = renderTree(n.kids, showMatch, onlyPending, depth + 1);
+          if (!kids) return '';
+        } else if (onlyPending && n.src !== 'pending' && !n.kids) {
+          return '';
+        }
+        const hasKids = n.kids && n.kids.length;
+        const kidsHtml = hasKids
+          ? `<div class="t-kids" data-id="${n.id}">${renderTree(n.kids, showMatch, onlyPending, depth + 1)}</div>`
+          : '';
+        const chev = hasKids
+          ? `<span class="t-chev" data-toggle="${n.id}">▼</span>`
+          : `<span class="t-chev"></span>`;
+        const ops = !hasKids ? `
+          <span class="t-ops">
+            <button type="button" class="w">停用</button>
+            <button type="button" class="d">删除</button>
+          </span>` : '';
+        return `
+          <div class="t-node">
+            <div class="t-row">
+              ${chev}
+              <div class="t-body">
+                ${kpCell(n, showMatch)}
+                ${srcTag(n)}
+                ${n.node_kind ? `<span class="t-meta">${n.node_kind}</span>` : ''}
+                ${n.lecture !== '—' ? `<span class="t-meta">讲 ${n.lecture}</span>` : ''}
+                ${ops}
+              </div>
+            </div>
+            ${kidsHtml}
+          </div>`;
+      }).join('');
+    }
+
+    function renderList(showMatch, onlyPending) {
+      const rows = LIST.filter(n => !onlyPending || n.src === 'pending');
+      return rows.map(n => {
+        const pct = n.lecture.includes('/') ? Math.round(parseInt(n.lecture) / parseInt(n.lecture.split('/')[1]) * 100) : 0;
+        return `
+          <tr>
+            <td><input type="checkbox" /></td>
+            <td>${kpCell(n, showMatch)}</td>
+            <td>${srcTag(n)}</td>
+            <td><span class="st on">启用</span></td>
+            <td>
+              <div class="prog" title="${n.lecture}"><i style="width:${pct}%"></i></div>
+            </td>
+            <td>
+              <button type="button" class="btn plain" style="padding:4px 8px">停用</button>
+              <button type="button" class="btn plain" style="padding:4px 8px;color:#ef4444">删除</button>
+            </td>
+          </tr>`;
+      }).join('');
+    }
+
+    const paneTree = document.getElementById('paneTree');
+    const paneList = document.getElementById('paneList');
+    const paneDetail = document.getElementById('paneDetail');
+    const listBody = document.getElementById('listBody');
+    const showMatchEl = document.getElementById('showMatch');
+    const onlyPendingEl = document.getElementById('onlyPending');
+    const detailMatch = document.getElementById('detailMatch');
+
+    function refresh() {
+      const showMatch = showMatchEl.checked;
+      const onlyPending = onlyPendingEl.checked;
+      paneTree.innerHTML = renderTree(TREE, showMatch, onlyPending);
+      listBody.innerHTML = renderList(showMatch, onlyPending);
+      detailMatch.classList.toggle('hidden', !showMatch);
+      paneTree.querySelectorAll('[data-toggle]').forEach(el => {
+        el.onclick = () => {
+          const box = paneTree.querySelector(`.t-kids[data-id="${el.dataset.toggle}"]`);
+          if (!box) return;
+          const hide = !box.classList.toggle('hidden');
+          el.textContent = hide ? '▶' : '▼';
+        };
+      });
+    }
+
+    function setView(v) {
+      document.querySelectorAll('.bar .sch').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+      document.querySelectorAll('#viewTabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+      paneTree.classList.toggle('hidden', v !== 'tree');
+      paneList.classList.toggle('hidden', v !== 'list');
+      paneDetail.classList.toggle('hidden', v !== 'detail');
+      document.getElementById('viewTabs').classList.toggle('hidden', v === 'detail');
+    }
+
+    document.querySelectorAll('.bar .sch').forEach(btn => {
+      btn.onclick = () => setView(btn.dataset.view);
+    });
+    document.querySelectorAll('#viewTabs button').forEach(btn => {
+      btn.onclick = () => setView(btn.dataset.v);
+    });
+    showMatchEl.onchange = refresh;
+    onlyPendingEl.onchange = refresh;
+    refresh();
+  </script>
+</body>
+</html>

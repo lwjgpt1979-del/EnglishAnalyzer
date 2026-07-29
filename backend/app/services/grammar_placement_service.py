@@ -61,9 +61,11 @@ async def build_pool(db: AsyncSession, *, textbook: str | None, grade: str | Non
             except (ValueError, TypeError):
                 continue
         rows = (await db.execute(
-            sa.select(KnowledgeNode.id, KnowledgeNode.name).where(KnowledgeNode.id.in_(ids)))).all()
+            sa.select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.description)
+            .where(KnowledgeNode.id.in_(ids)))).all()
         order = {x: i for i, x in enumerate(ids)}
-        out = [{"kp_id": str(r[0]), "name": r[1]} for r in rows]
+        from app.services.kp_title_rewrite_service import display_label
+        out = [{"kp_id": str(r[0]), "name": display_label(r[1], r[2])} for r in rows]
         out.sort(key=lambda d: order.get(uuid.UUID(d["kp_id"]), 1e9))
         return out
 
@@ -102,16 +104,17 @@ async def _servable_item(db: AsyncSession, pool: list, lo: int, hi: int, asked_i
         cached[str(r[0])] = (r[1], r[2])
     for i in order:
         name, probes = cached.get(pool[i]["kp_id"], (None, None))
-        built = _build_recog_item(i, pool[i]["kp_id"], name, probes)
+        built = _build_recog_item(i, pool[i]["kp_id"], pool[i]["name"], probes)
         if built:
             return built
 
     # Pass 2:整段都没缓存 → 回退现场生成(最多生成到第一个能出题的点)
+    from app.services.kp_title_rewrite_service import node_display_label
     for i in order:
         kp = await db.get(KnowledgeNode, uuid.UUID(pool[i]["kp_id"]))
         if kp is None:
             continue
-        built = _build_recog_item(i, pool[i]["kp_id"], kp.name, await gp.ensure_probes(db, kp))
+        built = _build_recog_item(i, pool[i]["kp_id"], node_display_label(kp), await gp.ensure_probes(db, kp))
         if built:
             return built
     return None

@@ -72,6 +72,7 @@ declare module 'vue' {
     ElTreeSelect: typeof import('element-plus/es')['ElTreeSelect']
     ElUpload: typeof import('element-plus/es')['ElUpload']
     KpPromptEditor: typeof import('./src/components/KpPromptEditor.vue')['default']
+    KpTitleCell: typeof import('./src/components/KpTitleCell.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }

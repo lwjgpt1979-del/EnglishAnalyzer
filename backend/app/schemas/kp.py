@@ -42,6 +42,8 @@ class KpNodeOverviewItem(BaseModel):
     status: str
     applicable_stages: list[str] | None = None
     source: str | None = None     # seed/textbook/exam/manual(manual=人工新建)
+    display_label: str = ""       # 学生/列表展示短标题(description 首行)
+    title_source: str = "pending" # pending|rule|ai
     lecture_filled: int       # 讲解已填环节数
     lecture_total: int        # 该考点类型模板环节数(分母)
     lecture_published: int = 0 # 已发布(有正文)环节数
@@ -107,6 +109,8 @@ class KpNodeDetailOut(BaseModel):
     status: str
     applicable_stages: list[str] | None = None
     description: str | None = None
+    display_label: str = ""
+    title_source: str = "pending"
     source: str
     lecture: LectureOut
     aliases: list[NodeAliasItem]
@@ -127,6 +131,8 @@ class UpdateNodeIn(BaseModel):
 class NodeTreeItem(BaseModel):
     id: uuid.UUID
     name: str
+    display_label: str = ""
+    title_source: str = "pending"
     axis: str
     node_kind: str | None = None
     status: str

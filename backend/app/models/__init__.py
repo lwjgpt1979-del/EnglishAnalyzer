@@ -80,7 +80,7 @@ from .d14_v2_semesters import PurchasedSemester  # noqa: F401
 
 # 域15: 知识图谱骨架 (KP-First 重构 R0, 4 张表)
 from .d15_knowledge_graph import (  # noqa: F401
-    KnowledgeNode, NodeAlias, NodeRelation, KpCandidate,
+    KnowledgeNode, NodeAlias, NodeRelation, KpCandidate, KpTitleRewriteCache,
 )
 
 # 域16: 题分域 + 个人窄表骨架 (KP-First 重构 R0.5, 8 张表)

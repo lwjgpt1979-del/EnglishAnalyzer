@@ -32,6 +32,8 @@ class SubmitAnswerRequest(BaseModel):
     question_id: uuid.UUID
     answer: str = Field(..., min_length=1, max_length=2000)
     time_spent_sec: int | None = Field(None, ge=0)
+    # 精讲练一练答错写入「平台错题」时的题级来源:课程精讲|语法精讲;空则不写错题本
+    source_channel: str | None = Field(None, max_length=16)
 
 
 class SubmitAnswerResult(BaseModel):

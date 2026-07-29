@@ -215,6 +215,8 @@ export interface KpNodeOverviewItem {
   axis: string
   node_kind?: string | null
   name: string
+  display_label: string
+  title_source: 'pending' | 'rule' | 'ai' | string
   code: string
   status: string
   applicable_stages?: string[] | null
@@ -233,6 +235,8 @@ export interface KpNodeOverviewOut { total: number; items: KpNodeOverviewItem[] 
 export interface NodeTreeItem {
   id: string
   name: string
+  display_label: string
+  title_source: 'pending' | 'rule' | 'ai' | string
   axis: string
   node_kind?: string | null
   status: string
@@ -263,6 +267,8 @@ export interface KpNodeDetail {
   axis: string
   node_kind?: string | null
   name: string
+  display_label?: string
+  title_source?: string
   code: string
   status: string
   applicable_stages?: string[] | null
