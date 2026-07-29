@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>词卡 · 例句连读设置 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f6fc;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f0f6fc 40%, #f7f8fb 100%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1180px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 860px; }
+
+    .note {
+      max-width: 1180px; margin: 14px auto 0; padding: 0 24px;
+    }
+    .note-box {
+      background: #eef5ff; border: 2px solid #c5dbf8; border-radius: 14px;
+      padding: 12px 16px; font-size: 13px; line-height: 1.65; color: #2a5a9e;
+    }
+
+    .opts {
+      max-width: 1180px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 2px solid var(--c-line); background: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700; color: var(--c-sub); cursor: pointer;
+    }
+    .opt.on { background: #e8f2ff; border-color: #bcd8ff; color: var(--c-primary); }
+    .opt .tag { font-size: 11px; font-weight: 800; color: var(--c-ok); margin-left: 6px; }
+
+    .stage {
+      max-width: 1180px; margin: 18px auto 40px; padding: 0 24px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;
+    }
+    .col h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+    .col .desc { margin: 0 0 12px; font-size: 13px; color: var(--c-sub); line-height: 1.55; }
+
+    .phone {
+      width: 100%; max-width: var(--phone-w); margin: 0 auto;
+      background: var(--c-page); border: 2px solid #d7e0ec; border-radius: 28px;
+      box-shadow: 0 16px 40px rgba(45, 80, 150, .12); overflow: hidden;
+      min-height: 680px; position: relative;
+    }
+    .status {
+      height: 40px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; font-size: 12px; font-weight: 700; background: #fff;
+      border-bottom: 1px solid var(--c-line);
+    }
+    .nav {
+      height: 46px; display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 800; background: #fff; border-bottom: 1px solid var(--c-line);
+    }
+    .bg {
+      padding: 14px; opacity: .55;
+    }
+    .bg .rd {
+      background: #fff; border-radius: 12px; padding: 12px; border: 2px solid var(--c-line);
+      font-size: 13px; font-weight: 700; color: var(--c-sub);
+    }
+    .bg .cta {
+      margin-top: 12px; text-align: center; background: var(--c-primary); color: #fff;
+      border-radius: 999px; padding: 14px; font-weight: 800; font-size: 15px;
+    }
+
+    .mask {
+      position: absolute; inset: 0; background: rgba(15, 23, 42, .45);
+      display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 5;
+    }
+    .card {
+      width: 100%; background: #fff; border-radius: 18px; padding: 16px;
+      box-shadow: 0 12px 32px rgba(0,0,0,.18); max-height: 92%; overflow-y: auto;
+      position: relative;
+    }
+    .img {
+      width: 100%; height: 140px; border-radius: 12px;
+      background: linear-gradient(135deg, #dbeafe, #fce7f3 50%, #e0e7ff);
+      display: flex; align-items: center; justify-content: center;
+      color: #64748b; font-size: 12px; font-weight: 700;
+    }
+    .report {
+      margin-top: 8px; text-align: center; font-size: 12px; color: #93a0b3;
+    }
+    .head {
+      display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 8px;
+    }
+    .word { font-size: 26px; font-weight: 800; }
+    .play {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; color: var(--c-primary); border: 1.5px solid var(--c-primary);
+      border-radius: 999px; padding: 5px 12px; cursor: pointer; font-weight: 700; white-space: nowrap;
+    }
+    .play.on { color: var(--c-ok); border-color: var(--c-ok); }
+    .play svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .ph { display: block; font-size: 13px; color: #93a0b3; margin-top: 4px; }
+    .def { display: block; font-size: 14px; margin-top: 10px; line-height: 1.55; }
+    .ex {
+      margin-top: 10px; background: #eef5ff; border-radius: 10px; padding: 10px 12px;
+      position: relative;
+    }
+    .ex-en { display: block; font-size: 13px; line-height: 1.5; font-weight: 600; }
+    .ex-zh { display: block; font-size: 12px; color: var(--c-sub); margin-top: 4px; }
+    .ex.speaking { outline: 2px solid #85B7EB; }
+    .ex-play {
+      position: absolute; right: 8px; top: 8px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #fff; border: 1.5px solid #bcd8ff;
+      display: none; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .ex-play.show { display: flex; }
+    .ex-play svg { width: 14px; height: 14px; stroke: var(--c-primary); fill: none; stroke-width: 2; }
+
+    /* A: 词旁连读芯片 */
+    .seq-chip {
+      display: none; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 700; color: #93a0b3;
+      border: 1.5px solid var(--c-line); border-radius: 999px;
+      padding: 4px 10px; cursor: pointer; white-space: nowrap;
+    }
+    .seq-chip.show { display: inline-flex; }
+    .seq-chip.on { color: var(--c-primary); background: #e8f2ff; border-color: #bcd8ff; }
+    .seq-chip svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+    /* B: 卡顶设置齿轮 */
+    .gear {
+      display: none; position: absolute; right: 12px; top: 12px;
+      width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,.92);
+      border: 1.5px solid var(--c-line); align-items: center; justify-content: center; cursor: pointer;
+      z-index: 2;
+    }
+    .gear.show { display: flex; }
+    .gear svg { width: 16px; height: 16px; stroke: var(--c-primary); fill: none; stroke-width: 2; }
+
+    .sheet {
+      display: none; position: absolute; left: 12px; right: 12px; bottom: 12px;
+      background: #fff; border-radius: 16px; padding: 14px 16px;
+      border: 2px solid var(--c-line); box-shadow: 0 12px 28px rgba(0,0,0,.18); z-index: 8;
+    }
+    .sheet.show { display: block; }
+    .sheet h4 { margin: 0 0 10px; font-size: 14px; font-weight: 800; }
+    .row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-top: 1px solid #f1f5f9; font-size: 13px;
+    }
+    .row:first-of-type { border-top: none; }
+    .row .sub { display: block; font-size: 11px; color: #93a0b3; margin-top: 2px; }
+    .sw {
+      width: 42px; height: 24px; border-radius: 999px; background: #d5dde8;
+      position: relative; cursor: pointer; transition: .2s; flex: none;
+    }
+    .sw.on { background: var(--c-primary); }
+    .sw::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 18px; height: 18px; border-radius: 50%; background: #fff;
+      transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .sw.on::after { left: 21px; }
+
+    /* C: 例句行内开关 */
+    .ex-tog {
+      display: none; margin-top: 8px; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 700; color: var(--c-sub);
+    }
+    .ex-tog.show { display: flex; }
+    .mini-sw {
+      width: 34px; height: 18px; border-radius: 999px; background: #d5dde8;
+      position: relative; cursor: pointer; flex: none;
+    }
+    .mini-sw.on { background: var(--c-primary); }
+    .mini-sw::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: .2s;
+    }
+    .mini-sw.on::after { left: 18px; }
+
+    .wave {
+      display: none; margin-top: 10px; font-size: 11px; color: var(--c-primary);
+      background: #e8f2ff; border-radius: 8px; padding: 8px 10px; font-weight: 700;
+    }
+    .wave.show { display: block; }
+    .close {
+      margin-top: 14px; text-align: center; font-size: 14px; font-weight: 800;
+      color: var(--c-primary); cursor: pointer;
+    }
+
+    .compare {
+      max-width: 1180px; margin: 0 auto 48px; padding: 0 24px;
+    }
+    .compare table {
+      width: 100%; border-collapse: collapse; background: #fff;
+      border: 2px solid var(--c-line); border-radius: 14px; overflow: hidden; font-size: 13px;
+    }
+    .compare th, .compare td {
+      padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--c-line);
+      vertical-align: top; line-height: 1.55;
+    }
+    .compare th { background: #f8fafc; font-weight: 800; width: 18%; }
+    .compare tr:last-child td, .compare tr:last-child th { border-bottom: none; }
+    .rec { color: var(--c-ok); font-weight: 800; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>词卡 · 例句连读设置</h1>
+    <p>
+      现状：弹层词卡点「发音」只播单词。词力通学习页已有「连读」开关（单词 → 例句 → 短语，顺序播放）。
+      这里给弹层词卡补「例句一起播」的设置入口与交互原型。
+      <b>「同时」= 点发音时顺带播例句（顺序连读）</b>，不是两路音频叠在一起。
+    </p>
+  </header>
+
+  <div class="note">
+    <div class="note-box">
+      可复用词力通 <code>readSeq</code> 语义；建议本地持久化（如 <code>uni.setStorage</code>），
+      弹层词卡与词力通共用同一 key，避免两处各一套。
+    </div>
+  </div>
+
+  <div class="opts">
+    <button class="opt on" data-mode="a" type="button">方案 A · 词旁「连读」芯片 <span class="tag">推荐</span></button>
+    <button class="opt" data-mode="b" type="button">方案 B · 卡顶设置开关</button>
+    <button class="opt" data-mode="c" type="button">方案 C · 例句区开关 + 独播</button>
+    <button class="opt" data-mode="now" type="button">现状 · 仅单词</button>
+  </div>
+
+  <div class="stage">
+    <div class="col">
+      <h3 id="col-title">方案 A · 词旁「连读」芯片</h3>
+      <p class="desc" id="col-desc">对齐词力通：点芯片切换；开时点「发音」= 单词播完接例句。点芯片或发音试听。</p>
+      <div class="phone">
+        <div class="status"><span>21:32</span><span>▮▮▮</span></div>
+        <div class="nav">2026-07-28作业3</div>
+        <div class="bg">
+          <div class="rd">0/2 · 未学 0% · 共 2 词</div>
+          <div class="cta">开始学习</div>
+        </div>
+        <div class="mask">
+          <div class="card">
+            <div class="gear" id="gear" title="设置">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div class="img">配图 · hidden</div>
+            <div class="report">图不对 · 换一张</div>
+            <div class="head">
+              <span class="word">hidden</span>
+              <span class="seq-chip" id="seq-chip">
+                <svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+                连读
+              </span>
+              <span class="play" id="play-btn">
+                <svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                发音
+              </span>
+            </div>
+            <span class="ph">/ˈhɪdn/</span>
+            <span class="def">adj. 隐藏的；秘密的；隐蔽的；不易发现的</span>
+            <div class="ex" id="ex-box">
+              <span class="ex-play" id="ex-play" title="只播例句">
+                <svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+              </span>
+              <span class="ex-en">The toy car is hidden under the bed.</span>
+              <span class="ex-zh">玩具车藏在床底下。</span>
+              <div class="ex-tog" id="ex-tog">
+                <span class="mini-sw" id="mini-sw"></span>
+                <span>发音时连播例句</span>
+              </div>
+            </div>
+            <div class="wave" id="wave">♪ 播放：单词</div>
+            <div class="close">关闭</div>
+          </div>
+          <div class="sheet" id="sheet">
+            <h4>播放设置</h4>
+            <div class="row">
+              <div>
+                <div>例句连读</div>
+                <span class="sub">点「发音」时：单词播完 → 接播例句</span>
+              </div>
+              <div class="sw" id="sheet-sw"></div>
+            </div>
+            <div class="row">
+              <div>
+                <div>打开词卡自动播</div>
+                <span class="sub">本期不做，仅示意可扩展</span>
+              </div>
+              <div class="sw" style="opacity:.4"></div>
+            </div>
+            <div class="close" id="sheet-close" style="margin-top:8px">完成</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>对照说明</h3>
+      <p class="desc">点左侧「发音」可看波形文案如何随开关变化。</p>
+      <div style="background:#fff;border:2px solid var(--c-line);border-radius:16px;padding:16px;line-height:1.7;font-size:13px;">
+        <p style="margin:0 0 8px;"><b>现状</b>：只播 <code>hidden</code></p>
+        <p style="margin:0 0 8px;"><b>开连读</b>：<code>hidden</code> → <code>The toy car is hidden…</code>（顺序，非叠音）</p>
+        <p style="margin:0;"><b>关连读</b>：仍只播单词；方案 C 可另点例句角标独播</p>
+      </div>
+      <div style="margin-top:14px;background:#eef5ff;border-radius:14px;padding:14px;font-size:13px;line-height:1.65;color:#334155;">
+        <b>倾向</b>：<span class="rec">方案 A</span>——与词力通「连读」芯片同形，一眼可点、不挡配图；
+        状态写入本地存储，与词力通共用。若怕词头拥挤，再退到 B。
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <table>
+      <tr>
+        <th></th>
+        <td><b>A 词旁芯片</b> <span class="rec">推荐</span></td>
+        <td><b>B 卡顶设置</b></td>
+        <td><b>C 例句区开关</b></td>
+      </tr>
+      <tr>
+        <th>入口位置</th>
+        <td>词 +「连读」+「发音」同一行</td>
+        <td>配图右上齿轮 → 底栏开关</td>
+        <td>例句块内小开关 + 独播钮</td>
+      </tr>
+      <tr>
+        <th>对齐词力通</th>
+        <td>强（同「连读」文案）</td>
+        <td>中</td>
+        <td>弱</td>
+      </tr>
+      <tr>
+        <th>优点</th>
+        <td>一键可见、切换快</td>
+        <td>可扩「打开即播」等多项</td>
+        <td>语义贴例句；可只播句</td>
+      </tr>
+      <tr>
+        <th>缺点</th>
+        <td>词头略挤（长单词）</td>
+        <td>多一层点开</td>
+        <td>开关离「发音」远，易漏</td>
+      </tr>
+      <tr>
+        <th>改动</th>
+        <td><code>WordCard.vue</code> + storage</td>
+        <td>同上 + 小设置层</td>
+        <td>同上 + 例句独播</td>
+      </tr>
+    </table>
+  </div>
+
+  <script>
+    let mode = 'a'
+    let readSeq = true
+    let timer = null
+
+    const seqChip = document.getElementById('seq-chip')
+    const gear = document.getElementById('gear')
+    const sheet = document.getElementById('sheet')
+    const sheetSw = document.getElementById('sheet-sw')
+    const miniSw = document.getElementById('mini-sw')
+    const exTog = document.getElementById('ex-tog')
+    const exPlay = document.getElementById('ex-play')
+    const exBox = document.getElementById('ex-box')
+    const playBtn = document.getElementById('play-btn')
+    const wave = document.getElementById('wave')
+    const title = document.getElementById('col-title')
+    const desc = document.getElementById('col-desc')
+
+    function syncSwitches() {
+      seqChip.classList.toggle('on', readSeq)
+      sheetSw.classList.toggle('on', readSeq)
+      miniSw.classList.toggle('on', readSeq)
+    }
+
+    function applyMode() {
+      seqChip.classList.remove('show')
+      gear.classList.remove('show')
+      sheet.classList.remove('show')
+      exTog.classList.remove('show')
+      exPlay.classList.remove('show')
+      wave.classList.remove('show')
+      exBox.classList.remove('speaking')
+      playBtn.classList.remove('on')
+      playBtn.childNodes[playBtn.childNodes.length - 1].textContent = ' 发音'
+
+      if (mode === 'a') {
+        title.textContent = '方案 A · 词旁「连读」芯片'
+        desc.textContent = '对齐词力通：点芯片切换；开时点「发音」= 单词播完接例句。'
+        seqChip.classList.add('show')
+      } else if (mode === 'b') {
+        title.textContent = '方案 B · 卡顶设置开关'
+        desc.textContent = '点右上齿轮打开「播放设置」；开关持久化。可扩展自动播。'
+        gear.classList.add('show')
+      } else if (mode === 'c') {
+        title.textContent = '方案 C · 例句区开关 + 独播'
+        desc.textContent = '例句块内开关联播；角标可只播例句。'
+        exTog.classList.add('show')
+        exPlay.classList.add('show')
+      } else {
+        title.textContent = '现状 · 仅单词'
+        desc.textContent = '点发音只播单词，无连读入口。'
+      }
+      syncSwitches()
+    }
+
+    function showWave(steps) {
+      clearTimeout(timer)
+      wave.classList.add('show')
+      playBtn.classList.add('on')
+      let i = 0
+      const tick = () => {
+        if (i >= steps.length) {
+          wave.textContent = '✓ 播放结束'
+          playBtn.classList.remove('on')
+          exBox.classList.remove('speaking')
+          playBtn.childNodes[playBtn.childNodes.length - 1].textContent = ' 发音'
+          return
+        }
+        const s = steps[i++]
+        wave.textContent = s.text
+        exBox.classList.toggle('speaking', !!s.ex)
+        playBtn.childNodes[playBtn.childNodes.length - 1].textContent = ' 播放中'
+        timer = setTimeout(tick, s.ms)
+      }
+      tick()
+    }
+
+    playBtn.addEventListener('click', () => {
+      if (mode === 'now' || !readSeq) {
+        showWave([{ text: '♪ 播放：单词 hidden', ms: 900, ex: false }])
+      } else {
+        showWave([
+          { text: '♪ ① 单词 hidden', ms: 900, ex: false },
+          { text: '♪ ② 例句 The toy car is hidden…', ms: 1400, ex: true },
+        ])
+      }
+    })
+
+    seqChip.addEventListener('click', () => {
+      readSeq = !readSeq
+      syncSwitches()
+    })
+    sheetSw.addEventListener('click', () => {
+      readSeq = !readSeq
+      syncSwitches()
+    })
+    miniSw.addEventListener('click', () => {
+      readSeq = !readSeq
+      syncSwitches()
+    })
+    gear.addEventListener('click', () => sheet.classList.add('show'))
+    document.getElementById('sheet-close').addEventListener('click', () => sheet.classList.remove('show'))
+    exPlay.addEventListener('click', () => {
+      showWave([{ text: '♪ 只播例句 The toy car is hidden…', ms: 1400, ex: true }])
+    })
+
+    document.querySelectorAll('.opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.opt').forEach((b) => b.classList.remove('on'))
+        btn.classList.add('on')
+        mode = btn.getAttribute('data-mode') || 'a'
+        applyMode()
+      })
+    })
+
+    applyMode()
+  </script>
+</body>
+</html>

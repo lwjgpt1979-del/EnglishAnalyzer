@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>完形原文 · 展开压题优化 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-sent: #e08a4c;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f6fc;
+      --phone-w: 390px;
+      --pad: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f0f6fc 40%, #f7f8fb 100%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1200px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 900px; }
+
+    .bug {
+      max-width: 1200px; margin: 14px auto 0; padding: 0 24px;
+    }
+    .bug-box {
+      background: #fff8f0; border: 2px solid #f0d2b0; border-radius: 14px;
+      padding: 12px 16px; font-size: 13px; line-height: 1.65; color: #5c4030;
+    }
+    .bug-box b { color: #c45c1a; }
+
+    .opts {
+      max-width: 1200px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 2px solid var(--c-line); background: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700; color: var(--c-sub); cursor: pointer;
+    }
+    .opt.on { background: #e8f2ff; border-color: #bcd8ff; color: var(--c-primary); }
+    .opt .tag { font-size: 11px; font-weight: 800; color: var(--c-ok); margin-left: 6px; }
+
+    .stage {
+      max-width: 1200px; margin: 18px auto 48px; padding: 0 24px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 22px;
+    }
+    .col h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+    .col .desc { margin: 0 0 12px; font-size: 13px; color: var(--c-sub); line-height: 1.55; }
+
+    .phone {
+      width: 100%; max-width: var(--phone-w); margin: 0 auto;
+      background: var(--c-page); border: 2px solid #d7e0ec; border-radius: 28px;
+      box-shadow: 0 16px 40px rgba(45, 80, 150, .12); overflow: hidden;
+      height: 720px; display: flex; flex-direction: column; position: relative;
+    }
+    .status {
+      flex: none; height: 40px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; font-size: 12px; font-weight: 700; background: #fff;
+      border-bottom: 1px solid var(--c-line);
+    }
+    .nav {
+      flex: none; height: 46px; display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 800; background: #fff; border-bottom: 1px solid var(--c-line);
+      z-index: 20; position: relative;
+    }
+    .scroll {
+      flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding: 0 var(--pad) 90px;
+    }
+
+    .sticky-stack {
+      position: sticky; top: 0; z-index: 5;
+      background: var(--c-page);
+      padding: 12px 12px 8px;
+      margin: 0 calc(-1 * var(--pad));
+      box-shadow: 0 10px 18px -10px rgba(45, 80, 150, .18);
+    }
+    /* 方案 M:吸顶只留进度+标题条,原文本体不 sticky */
+    .sticky-stack.only-head .pass-wrap { position: static; }
+    .sticky-stack.only-head {
+      box-shadow: none; padding-bottom: 0;
+    }
+    .sticky-stack.only-head .rd-head { margin-bottom: 0; }
+    .pass-outer { padding: 0 var(--pad); margin-top: 10px; }
+
+    .rd-head {
+      position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px;
+      background: #fff; border: 2px solid var(--c-line); border-radius: 12px;
+      padding: 10px 12px; margin-bottom: 10px;
+    }
+    .rd-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 20%;
+      background: linear-gradient(90deg, #e8f2ff, #f4f9ff);
+    }
+    .rd-num { position: relative; font-size: 22px; font-weight: 800; color: var(--c-primary); }
+    .rd-num span { font-size: 13px; color: #b7c2d4; font-weight: 700; }
+    .rd-info { position: relative; }
+    .rd-st { font-size: 13px; font-weight: 800; color: var(--c-primary); }
+    .rd-sub { display: block; font-size: 11px; color: #93a0b3; margin-top: 2px; }
+
+    .pass {
+      background: #fff; border: 2px solid #e3e9f2; border-radius: 14px;
+      padding: 12px 14px; box-shadow: 0 4px 16px rgba(45, 80, 150, .06);
+    }
+    .pass-h { display: flex; justify-content: space-between; align-items: center; }
+    .pass-t { font-size: 12px; font-weight: 800; color: var(--c-primary); }
+    .pass-tog {
+      font-size: 11px; font-weight: 700; color: var(--c-primary);
+      padding: 4px 10px; border-radius: 8px; background: #e8f2ff; border: 1.5px solid #85B7EB;
+      cursor: pointer; user-select: none;
+    }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 6px 8px; margin: 8px 0 8px;
+      background: #f8fafc; border-radius: 8px; border: 1px dashed #d7e0ec;
+      font-size: 10px; color: var(--c-sub);
+    }
+    .lg-w { color: var(--c-primary); font-weight: 700; border-bottom: 1.5px dashed var(--c-primary); }
+    .lg-s { color: var(--c-sent); font-weight: 700; border-bottom: 1.5px dashed var(--c-sent); }
+    .lg-b {
+      color: #a32d2d; background: #fcebeb; border-radius: 4px; padding: 0 5px;
+      font-weight: 800; font-size: 10px;
+    }
+
+    .ptxt {
+      font-size: 13px; line-height: 2; color: #3a4353; white-space: pre-wrap;
+    }
+    /* 方案 R:限高 + 内滚(对齐阅读 42vh) */
+    .ptxt.cap {
+      max-height: 36vh; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      border-top: 1px dashed #e8eef6; padding-top: 6px;
+      mask-image: linear-gradient(#000 calc(100% - 18px), transparent);
+      -webkit-mask-image: linear-gradient(#000 calc(100% - 18px), transparent);
+    }
+    .ptxt.cap::-webkit-scrollbar { width: 3px; }
+    .ptxt.cap::-webkit-scrollbar-thumb { background: #c5d3e8; border-radius: 3px; }
+    .cap-hint {
+      display: none; margin-top: 6px; font-size: 10px; color: #93a0b3; text-align: center;
+    }
+    .cap-hint.show { display: block; }
+
+    .blank {
+      display: inline; font-size: 10px; font-weight: 800; padding: 1px 6px; margin: 0 2px;
+      border-radius: 5px; background: #fcebeb; color: #a32d2d; border: 1px solid #f0b6b6;
+    }
+    .seg-w { color: var(--c-primary); font-weight: 600; border-bottom: 1.5px dashed var(--c-primary); }
+    .seg-s { border-bottom: 1.5px dashed var(--c-sent); }
+
+    .q {
+      margin-top: 10px; background: #fff; border: 2px solid var(--c-line);
+      border-radius: 12px; padding: 12px 14px; border-left: 4px solid #e35d5d;
+    }
+    .q.ok { border-left-color: #2fa98a; }
+    .q-h { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .chip {
+      font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px;
+      background: #fcebeb; color: #a32d2d;
+    }
+    .chip.ok { background: #e9f6f1; color: #1f8a6e; }
+    .chip.g { background: #eef2f7; color: #64748b; }
+    .q-no { font-size: 12px; font-weight: 700; color: #64748b; margin-left: auto; }
+    .q-stem { font-size: 13px; line-height: 1.55; color: var(--c-ink); }
+    .q-opt {
+      margin-top: 6px; font-size: 12px; padding: 8px 10px; border-radius: 8px;
+      background: #f8fafc; border: 1px solid #e8eef6; color: #3a4353;
+    }
+    .q-opt.on { background: #e9f6f1; border-color: #b7e0d0; color: #1f8a6e; font-weight: 700; }
+    .q-foot {
+      margin-top: 8px; display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: #93a0b3;
+    }
+    .q-go { color: var(--c-primary); font-weight: 800; }
+
+    .bar {
+      position: absolute; left: 12px; right: 12px; bottom: 12px;
+      display: flex; align-items: center; gap: 8px; background: #fff;
+      border: 2px solid var(--c-line); border-radius: 14px; padding: 12px 14px;
+      box-shadow: 0 8px 20px rgba(45, 80, 150, .12); font-size: 13px;
+    }
+    .bar b { color: var(--c-primary); }
+
+    .callout {
+      margin: 8px 12px 0; padding: 8px 10px; border-radius: 10px;
+      font-size: 11px; line-height: 1.5; font-weight: 700;
+    }
+    .callout.bad { background: #fcebeb; color: #a32d2d; }
+    .callout.ok { background: #e9f6f1; color: #1f6a55; }
+    .callout.info { background: #eef5ff; color: #2a5a9e; }
+
+    .compare {
+      max-width: 1200px; margin: 0 auto 40px; padding: 0 24px;
+    }
+    .compare table {
+      width: 100%; border-collapse: collapse; background: #fff;
+      border: 2px solid var(--c-line); border-radius: 14px; overflow: hidden;
+      font-size: 13px;
+    }
+    .compare th, .compare td {
+      padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--c-line);
+      vertical-align: top; line-height: 1.55;
+    }
+    .compare th { background: #f8fafc; font-weight: 800; width: 22%; }
+    .compare tr:last-child td, .compare tr:last-child th { border-bottom: none; }
+    .rec { color: var(--c-ok); font-weight: 800; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>完形原文 · 展开压题优化</h1>
+    <p>
+      现状（方案 S）：进度 + 原文整块吸顶，展开后<strong>无高度上限</strong> → 吸顶壳几乎占满屏，
+      下层选择题被顶出视口。阅读精讲已有「原文 <code>max-height: 42vh</code> + 内滚」。
+      下面三套可点切换预览。
+    </p>
+  </header>
+
+  <div class="bug">
+    <div class="bug-box">
+      <b>根因</b>：<code>.sticky-stack</code> 含整段展开原文，无 <code>max-height</code>；
+      sticky 区域高度 ≈ 视口 → 题卡只能从底下滚上来，但屏幕上几乎看不见。
+      收起按钮能解，但默认展开时首屏体验差。
+    </div>
+  </div>
+
+  <div class="opts">
+    <button class="opt on" data-mode="now" type="button">现状 · 展开无上限</button>
+    <button class="opt" data-mode="r" type="button">方案 R · 限高内滚 <span class="tag">推荐</span></button>
+    <button class="opt" data-mode="d" type="button">方案 D · 默认收起 + 限高</button>
+    <button class="opt" data-mode="m" type="button">方案 M · 仅进度吸顶</button>
+  </div>
+
+  <div class="stage">
+    <div class="col">
+      <h3 id="col-title">现状 · 展开无上限</h3>
+      <p class="desc" id="col-desc">点右侧手机里的「收起/展开」试交互；默认已展开，请先往下滚看题卡是否露得出。</p>
+      <div class="phone" id="phone">
+        <div class="status"><span>21:16</span><span>▮▮▮</span></div>
+        <div class="nav">2026-07-28作业3</div>
+        <div class="callout bad" id="banner">⚠ 原文吸顶占满屏 · 题卡被压到下面</div>
+        <div class="scroll" id="scroll">
+          <div class="sticky-stack" id="stack">
+            <div class="rd-head">
+              <div class="rd-fill"></div>
+              <div class="rd-num">3<span>/15</span></div>
+              <div class="rd-info">
+                <div class="rd-st">学习中 20%</div>
+                <span class="rd-sub">已精讲 3 / 15 空</span>
+              </div>
+            </div>
+            <div class="pass pass-wrap" id="pass-in-stack">
+              <div class="pass-h">
+                <span class="pass-t">原文</span>
+                <span class="pass-tog" id="tog">收起 ▴</span>
+              </div>
+              <div id="pbody">
+                <div class="legend">
+                  <span><span class="lg-w">重点词</span>（点开词卡）</span>
+                  <span><span class="lg-s">长难句</span>（点开句卡）</span>
+                  <span><span class="lg-b">空号</span>（跳到题）</span>
+                </div>
+                <div class="ptxt" id="ptxt">While <span class="seg-w">around half</span> of his men were <span class="seg-w">busy</span> <span class="seg-w">outside</span> the <span class="seg-w">city</span>, riders arrived and reported, ‘Sima Yi is <span class="blank">2</span> with one hundred and fifty thousand men.’
+Zhuge Liang then <span class="blank">3</span> the city wall and saw dust clouds far away. Zhuge Liang ordered all the flags to be hidden and soldiers to <span class="blank">4</span> where they were and not to pass in or out of the city.
+He also ordered a few soldiers dressed up as <span class="blank">5</span> people to clean up the road.
+When Sima Yi’s soldiers arrived in Xicheng, they <span class="blank">6</span> the gates open wide and Zhuge Liang calmly playing the guqin on the city wall.
+Sima Yi’s soldiers <span class="blank">7</span> the city carefully, but they could find nothing. Sima Yi <span class="blank">8</span> his army and said, ‘Zhuge Liang is always careful. There must be an ambush.’
+So Sima Yi ordered his army to leave at once. When Zhuge Liang’s soldiers outside the city heard that Sima Yi had left, they came back. Zhuge Liang smiled and said, ‘Sima Yi thought I was laying a trap. That is why he left.’</div>
+                <div class="cap-hint" id="cap-hint">原文可内滚 · 下方题卡始终可见一截</div>
+              </div>
+            </div>
+          </div>
+          <div id="pass-out" class="pass-outer" hidden></div>
+
+          <div class="q">
+            <div class="q-h">
+              <span class="chip">错</span><span class="chip g">单选</span>
+              <span class="q-no">第 2 题</span>
+            </div>
+            <div class="q-stem">空 2 · Sima Yi is ____ with one hundred and fifty thousand men.</div>
+            <div class="q-opt">A. going</div>
+            <div class="q-opt on">B. coming ← 正确</div>
+            <div class="q-opt">C. leaving</div>
+            <div class="q-opt">D. staying</div>
+            <div class="q-foot"><span>你选 A · 正确 B</span><span class="q-go">本题详解 ›</span></div>
+          </div>
+          <div class="q ok">
+            <div class="q-h">
+              <span class="chip ok">对</span><span class="chip g">单选</span>
+              <span class="q-no">第 3 题</span>
+            </div>
+            <div class="q-stem">空 3 · Zhuge Liang then ____ the city wall …</div>
+            <div class="q-opt on">A. climbed</div>
+            <div class="q-opt">B. jumped</div>
+            <div class="q-foot"><span>你选 A · 正确 A</span><span class="q-go">本题详解 ›</span></div>
+          </div>
+          <div class="q">
+            <div class="q-h">
+              <span class="chip">错</span><span class="chip g">单选</span>
+              <span class="q-no">第 4 题</span>
+            </div>
+            <div class="q-stem">空 4 · soldiers to ____ where they were …</div>
+            <div class="q-opt">A. leave</div>
+            <div class="q-opt on">B. stay</div>
+            <div class="q-foot"><span>你选 A · 正确 B</span><span class="q-go">本题详解 ›</span></div>
+          </div>
+        </div>
+        <div class="bar">
+          <span>💡</span>
+          <span style="font-weight:800">本篇精讲</span>
+          <span style="margin-left:auto;color:#8a95a5">重点词 <b>12</b> · 长难句 <b>5</b></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>对照说明</h3>
+      <p class="desc">同一首屏，看「题卡是否露出」与「对照原文是否够用」。</p>
+      <div style="background:#fff;border:2px solid var(--c-line);border-radius:16px;padding:16px;line-height:1.7;font-size:13px;">
+        <p style="margin:0 0 10px;"><b>现状</b>：展开全文吸顶 → 几乎只看见原文，要猛滚或收起才见题。</p>
+        <p style="margin:0 0 10px;"><b>方案 R</b>：吸顶保留；正文 <code>max-height ≈ 36~42vh</code> 内滚（对齐阅读）。首屏必露题卡。</p>
+        <p style="margin:0 0 10px;"><b>方案 D</b>：进页默认收起（只留标题条）；展开时仍套 R 的限高，双保险。</p>
+        <p style="margin:0;"><b>方案 M</b>：只有进度环吸顶；原文随页滚走。展开再长也不挡题，但滚题时对照原文要往回滚。</p>
+      </div>
+      <div style="margin-top:14px;background:#eef5ff;border-radius:14px;padding:14px;font-size:13px;line-height:1.65;color:#334155;">
+        <b>倾向</b>：<span class="rec">方案 R</span>（改动小，对齐阅读已验证的 <code>passage-text</code> 限高）。
+        若仍怕首屏挤，可再加 D 的「默认收起」。
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <table>
+      <tr>
+        <th></th>
+        <td><b>现状</b></td>
+        <td><b>R 限高内滚</b> <span class="rec">推荐</span></td>
+        <td><b>D 默认收起</b></td>
+        <td><b>M 仅进度吸顶</b></td>
+      </tr>
+      <tr>
+        <th>首屏见题</th>
+        <td>几乎不能</td>
+        <td>能（露出 ≥1 题）</td>
+        <td>能（原文条很矮）</td>
+        <td>能</td>
+      </tr>
+      <tr>
+        <th>滚题时对照原文</th>
+        <td>有（但挡屏）</td>
+        <td>有（限高窗口内滚）</td>
+        <td>需展开后同 R</td>
+        <td>弱（原文已滚走）</td>
+      </tr>
+      <tr>
+        <th>改动范围</th>
+        <td>—</td>
+        <td>CSS 为主：<code>.passage-text</code> 限高</td>
+        <td>R + 默认 <code>collapsed=true</code></td>
+        <td>拆 sticky 结构</td>
+      </tr>
+      <tr>
+        <th>风险</th>
+        <td>压题</td>
+        <td>长文需在原文区内滚一下</td>
+        <td>多一次点展开</td>
+        <td>滚题丢对照</td>
+      </tr>
+    </table>
+  </div>
+
+  <script>
+    const PASSAGE_HTML = document.getElementById('ptxt').innerHTML
+    let mode = 'now'
+    let collapsed = false
+
+    const stack = document.getElementById('stack')
+    const pbody = document.getElementById('pbody')
+    const ptxt = document.getElementById('ptxt')
+    const tog = document.getElementById('tog')
+    const banner = document.getElementById('banner')
+    const capHint = document.getElementById('cap-hint')
+    const passIn = document.getElementById('pass-in-stack')
+    const passOut = document.getElementById('pass-out')
+    const title = document.getElementById('col-title')
+    const desc = document.getElementById('col-desc')
+    const scroll = document.getElementById('scroll')
+
+    function applyCollapse() {
+      pbody.style.display = collapsed ? 'none' : ''
+      tog.textContent = collapsed ? '展开 ▾' : '收起 ▴'
+    }
+
+    function applyMode() {
+      // reset structure: passage back into sticky
+      if (passOut.contains(passIn)) {
+        stack.appendChild(passIn)
+      }
+      passOut.hidden = true
+      stack.classList.remove('only-head')
+      ptxt.classList.remove('cap')
+      capHint.classList.remove('show')
+      collapsed = false
+
+      if (mode === 'now') {
+        title.textContent = '现状 · 展开无上限'
+        desc.textContent = '吸顶壳含全文，默认展开。往下滚：题卡被压在吸顶下方，首屏几乎只见原文。'
+        banner.className = 'callout bad'
+        banner.textContent = '⚠ 原文吸顶占满屏 · 题卡被压到下面'
+      } else if (mode === 'r') {
+        title.textContent = '方案 R · 限高内滚（推荐）'
+        desc.textContent = '整块仍吸顶，但正文限高约 36vh 可内滚；首屏下方必露题卡。对齐阅读精讲。'
+        banner.className = 'callout ok'
+        banner.textContent = '✓ 原文限高内滚 · 下方题卡可见'
+        ptxt.classList.add('cap')
+        capHint.classList.add('show')
+      } else if (mode === 'd') {
+        title.textContent = '方案 D · 默认收起 + 限高'
+        desc.textContent = '进页默认收起，只留进度+标题条；展开后仍限高。首屏题卡最多。'
+        banner.className = 'callout ok'
+        banner.textContent = '✓ 默认收起 · 展开也限高'
+        collapsed = true
+        ptxt.classList.add('cap')
+        capHint.classList.add('show')
+      } else {
+        title.textContent = '方案 M · 仅进度吸顶'
+        desc.textContent = '只有进度环吸顶；原文在流式布局里，滚题时原文离开视口。'
+        banner.className = 'callout info'
+        banner.textContent = 'ℹ 进度吸顶 · 原文随页滚动（滚题时无对照）'
+        stack.classList.add('only-head')
+        passOut.hidden = false
+        passOut.appendChild(passIn)
+      }
+      applyCollapse()
+      scroll.scrollTop = 0
+    }
+
+    tog.addEventListener('click', (e) => {
+      e.stopPropagation()
+      collapsed = !collapsed
+      applyCollapse()
+    })
+
+    document.querySelectorAll('.opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.opt').forEach((b) => b.classList.remove('on'))
+        btn.classList.add('on')
+        mode = btn.getAttribute('data-mode') || 'now'
+        applyMode()
+      })
+    })
+
+    applyMode()
+  </script>
+</body>
+</html>

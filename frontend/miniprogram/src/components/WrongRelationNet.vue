@@ -7,8 +7,8 @@
 
     <view v-if="loading" class="wrn-tip">整理关系网中…</view>
     <template v-else-if="net && net.word_id">
-      <!-- 多个正确点(多空):答案词 chip,点一个切到它的关系网 -->
-      <view v-if="answers.length > 1" class="wrn-ans">
+      <!-- 选项 chip:≥1 即展示(填空仅正确/错填也要对齐图1) -->
+      <view v-if="answers.length" class="wrn-ans">
         <text class="wrn-ans-lb">本题选项</text>
         <text v-for="a in answers" :key="a.word_id" class="wrn-ans-chip"
           :class="[a.kind, { on: a.word_id === net.word_id, off: a.switchable === false }]"
@@ -73,22 +73,42 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
-import { getWordNetOfRecord, getWordNet } from '@/api/wrongQuestions'
+import { getWordNetOfRecord, getWordNet, getWordNetBySeeds } from '@/api/wrongQuestions'
 import type { WordNet, WordNetErr, WordNetKpItem } from '@/api/wrongQuestions'
 import { getKpTest, swapKpMcq, reportRelation, recordKpPractice } from '@/api/vocabulary'
 import type { KpTestQuestion } from '@/api/vocabulary'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 
-const props = defineProps<{ wrongRecordId: string }>()
+/**
+ * 两种入口:
+ * - wrongRecordId: 从错题进网
+ * - seedCorrect(+seedWrong+seedOther): 无错题记录时按答案/选项建网(如语法全对)
+ */
+const props = withDefaults(defineProps<{
+  wrongRecordId?: string
+  seedCorrect?: string[]
+  seedWrong?: string[]
+  seedOther?: string[]
+}>(), {
+  wrongRecordId: '',
+  seedCorrect: () => [],
+  seedWrong: () => [],
+  seedOther: () => [],
+})
 
-// 报错某条考点(点旗标):report_count++,即时灰掉,待后台复核/低峰 AI 修正
+// 有凭证举报考点
 const kpReported = reactive<Record<string, boolean>>({})
 async function reportKp(it: WordNetKpItem) {
   if (!it.id || kpReported[it.id]) return
+  // 错题网暂用简表:原因=其它 + 说明默认句(组件未嵌完整表单时的兼容)
   kpReported[it.id] = true
   try {
-    await reportRelation(it.id)
-    uni.showToast({ title: '已反馈,待复核', icon: 'none' })
+    await reportRelation(it.id, {
+      reason: 'other',
+      detail: `错题网反馈:「${it.text}」可能有误`,
+      suggested: '',
+    })
+    uni.showToast({ title: '已反馈,待核实', icon: 'none' })
   } catch {
     kpReported[it.id] = false
     uni.showToast({ title: '反馈失败,请重试', icon: 'none' })
@@ -125,14 +145,39 @@ const testQs = ref<Array<{ id: string; stem: string; options: string[]; answer: 
 async function load() {
   loading.value = true
   try {
-    const r = centerId.value ? await getWordNet(centerId.value) : await getWordNetOfRecord(props.wrongRecordId)
+    let r: WordNet
+    if (centerId.value) {
+      r = await getWordNet(centerId.value)
+    } else if (props.wrongRecordId) {
+      r = await getWordNetOfRecord(props.wrongRecordId)
+    } else {
+      r = await getWordNetBySeeds(
+        props.seedCorrect || [],
+        props.seedWrong || [],
+        props.seedOther || [],
+      )
+    }
     net.value = r
-    if (r.answers && r.answers.length) answers.value = r.answers   // 仅错题入口带答案列表,切换中心不覆盖
+    if (r.answers && r.answers.length) answers.value = r.answers   // 入口带答案列表,切换中心不覆盖
     activeTab.value = 'main'
   } catch { net.value = null }
   finally { loading.value = false }
 }
-watch(() => props.wrongRecordId, (v) => { if (v) { centerId.value = null; answers.value = []; load() } }, { immediate: true })
+
+/** 入口指纹:换题/换种子时重置中心并重载 */
+const entryKey = computed(() => {
+  if (props.wrongRecordId) return `r:${props.wrongRecordId}`
+  const c = (props.seedCorrect || []).join('|')
+  const w = (props.seedWrong || []).join('|')
+  const o = (props.seedOther || []).join('|')
+  return c ? `s:${c}#${w}#${o}` : ''
+})
+watch(entryKey, (v) => {
+  if (!v) return
+  centerId.value = null
+  answers.value = []
+  load()
+}, { immediate: true })
 
 // 关系词(辐射图卫星):可链词维项(可切换中心)+ 固定搭配短语(2A,点跳搭配 tab);最多 6,优先有 word_id 的
 const satellites = computed(() => {
@@ -240,9 +285,9 @@ async function onKpDetail(results: Array<{ id: string; correct: boolean }>) {
 .wrn-node.link { background: #E6F1FB; border-color: #5B9BE8; }
 .wrn-word { font-size: 24rpx; font-weight: 600; color: #0C447C; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .wrn-gen { position: absolute; left: 0; width: 690rpx; text-align: center; font-size: 22rpx; color: #9aa3b0; }
-.wrn-center { position: absolute; width: 208rpx; box-sizing: border-box; height: 96rpx; border-radius: 20rpx; background: #E1F5EE; border: 3rpx solid #1D9E75; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6rpx 14rpx; }
-.wrn-cword { max-width: 180rpx; font-size: 30rpx; font-weight: 700; color: #0F6E56; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.wrn-czh { max-width: 180rpx; font-size: 20rpx; color: #0F6E56; margin-top: 2rpx; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wrn-center { position: absolute; width: 208rpx; box-sizing: border-box; height: 96rpx; border-radius: 20rpx; background: #e8f2ff; border: 3rpx solid #8eb8ef; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6rpx 14rpx; }
+.wrn-cword { max-width: 180rpx; font-size: 30rpx; font-weight: 700; color: #185fa5; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wrn-czh { max-width: 180rpx; font-size: 20rpx; color: #5a8fc4; margin-top: 2rpx; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .wrn-tabs { margin-top: 8rpx; padding-top: 12rpx; border-top: 1rpx solid #EEF2F7; }
 .wrn-tabrow { white-space: nowrap; }
 .wrn-tab { display: inline-block; font-size: 24rpx; padding: 10rpx 22rpx; margin-right: 12rpx; border-radius: 26rpx; border: 1rpx solid #E3E8EF; color: #6b7178; background: #F7F9FC; }
@@ -270,6 +315,6 @@ async function onKpDetail(results: Array<{ id: string; correct: boolean }>) {
 .kp-report.ic.done { opacity: .25; }
 .kp-low { font-size: 18rpx; color: #b0a99e; }
 .kp-zh { flex: 1; font-size: 24rpx; color: #4A6785; }
-.wrn-test { margin-top: 14rpx; background: var(--c-primary); color: #fff; font-size: 28rpx; font-weight: 700; border-radius: var(--r-pill); padding: 16rpx 0; }
+.wrn-test { margin-top: 14rpx; background: #eaf2ff; color: #185fa5; font-size: 28rpx; font-weight: 700; border-radius: 16rpx; padding: 16rpx 0; border: none; }
 .wrn-test.dis { opacity: .6; }
 </style>

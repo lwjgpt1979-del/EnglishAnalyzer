@@ -12,29 +12,37 @@
           <text class="rd-sub">已精讲 {{ readStudied }} / {{ readTotal }} 题</text>
         </view>
       </view>
-      <view v-for="(bk, bi) in blocks" :key="bi" class="block">
+
+      <!-- 方案 A:多短文顶栏分段 Tab,只渲染当前篇原文+题目 -->
+      <view v-if="blocks.length > 1" class="pass-tabs">
+        <view v-for="(bk, bi) in blocks" :key="bi" class="pass-tab" :class="{ on: activeBlock === bi }" @tap="selectBlock(bi)">
+          <text class="pt-t">短文 {{ bi + 1 }}</text>
+          <text class="pt-s">{{ tabSub(bk) }}</text>
+        </view>
+      </view>
+
+      <template v-if="curBlock">
         <!-- 原文:吸顶常驻,读写对照 -->
-        <view v-if="bk.passage" class="passage" @tap="toggle(bi)">
+        <view v-if="curBlock.passage" class="passage" @tap="toggle(activeBlock)">
           <view class="passage-head">
             <view class="passage-brand">
               <view class="ic-book"></view>
               <text class="passage-title">原文 · 常驻对照</text>
             </view>
-            <text class="passage-toggle">{{ collapsed[bi] ? '展开 ▾' : '收起 ▴' }}</text>
+            <text class="passage-toggle">{{ collapsed[activeBlock] ? '展开 ▾' : '收起 ▴' }}</text>
           </view>
-          <view v-if="!collapsed[bi]" class="passage-text">
-            <template v-for="(seg, si) in passageSegs(bi, bk.passage)" :key="si">
-              <!-- 高亮片段(词/长难句):catch 掉点击,不再冒泡触发原文收起/展开 -->
-              <text v-if="seg.word_idx != null || seg.sentence_idx != null"
-                    :class="{ 'ev-hl': seg.ev, 'seg-w': seg.word_idx != null, 'seg-s': seg.sentence_idx != null }"
-                    @tap.stop="segTap(bi, seg)">{{ seg.t }}</text>
-              <text v-else :class="{ 'ev-hl': seg.ev }">{{ seg.t }}</text>
-            </template>
+          <view v-if="!collapsed[activeBlock]" class="passage-body">
+            <view class="passage-legend">
+              <text class="lg-item"><text class="lg-sample lg-w">重点词</text><text class="lg-hint">（点开词卡）</text></text>
+              <text class="lg-item"><text class="lg-sample lg-s">长难句</text><text class="lg-hint">（点开句卡）</text></text>
+            </view>
+            <!-- 扁平节点(勿用 node.seg 嵌套):uni-app 会给每条分支都算 class 条件,嵌套会在 mark 上读 undefined.seg 整段渲染崩掉 -->
+            <view class="passage-text"><template v-for="(node, ni) in passageNodes(activeBlock, curBlock.passage)" :key="ni"><view v-if="node.kind === 'mark'" class="s-mark" @tap.stop="openSentenceIdx(activeBlock, node.sentence_idx!)"><view class="ic ic-list-orange s-mark-ic"></view></view><text v-else-if="node.word_idx != null || node.sentence_idx != null" :class="{ 'ev-hl': node.ev, 'seg-w': node.word_idx != null, 'seg-s': node.sentence_idx != null }" @tap.stop="segTap(activeBlock, node)">{{ node.t }}</text><text v-else :class="{ 'ev-hl': node.ev }">{{ node.t }}</text></template></view>
           </view>
         </view>
 
-        <!-- 讲义卡片:题型大标签 + 四件套 -->
-        <view v-for="(q, qi) in bk.questions" :key="qi" class="q-card">
+        <!-- 讲义卡片:题型大标签 + 四件套(仅当前短文) -->
+        <view v-for="(q, qi) in curBlock.questions" :key="qi" class="q-card">
           <view class="q-head">
             <view class="q-tick" :class="q.studied ? 'q-tick-done' : 'q-tick-todo'"></view>
             <text class="q-type" :class="typeCls(q)">{{ typeLabel(q) }}</text>
@@ -43,23 +51,30 @@
             <text class="q-no">{{ q.no ? `第 ${q.no} 题` : '' }}</text>
           </view>
           <text class="q-stem">{{ q.stem || '（题干为空）' }}</text>
-
-          <!-- P3 主动作答:选项内嵌题干,点字母作答(治 OCR 抓不到卷面圈选) -->
-          <view class="ans-pick">
+          <!-- P3:点完整选项作答(治 OCR 抓不到卷面圈选);无 options 时才退回字母条 -->
+          <view v-if="q.options && q.options.length" class="q-opts">
+            <view
+              v-for="(op, oi) in q.options" :key="oi"
+              class="q-opt"
+              :class="optPickCls(q, op, oi)"
+              @tap="pickOpt(q, op, oi)"
+            >{{ op }}</view>
+          </view>
+          <view v-else class="ans-pick">
             <text class="ap-lbl">作答</text>
             <view v-for="L in ['A', 'B', 'C', 'D']" :key="L" class="ap-btn"
                   :class="answered[q.id]?.chosen === L ? (answered[q.id]?.is_correct === false ? 'ap-bad' : 'ap-ok') : ''"
                   @tap="answer(q, L)">{{ L }}</view>
-            <text v-if="answered[q.id]" class="ap-res"
-                  :class="answered[q.id].is_correct === false ? 'ap-rbad' : 'ap-rok'">
-              {{ answered[q.id].is_correct === null ? '已记录' : (answered[q.id].is_correct ? '答对' : '答错') }}
-            </text>
           </view>
+          <text v-if="answered[q.id]" class="ap-res"
+                :class="answered[q.id].is_correct === false ? 'ap-rbad' : 'ap-rok'">
+            {{ answered[q.id].is_correct === null ? '已记录' : (answered[q.id].is_correct ? '✓ 答对' : '✗ 答错') }}
+          </text>
 
           <view class="q-ans">
-            <view class="ans-chip" :class="q.is_wrong ? 'ac-bad' : 'ac-ok'">
-              <text>你选 {{ q.student_answer || '未识别' }}</text>
-              <view class="ic ans-ic" :class="q.is_wrong ? 'ic-x-circle' : 'ic-check-circle'"></view>
+            <view class="ans-chip" :class="displayWrong(q) ? 'ac-bad' : 'ac-ok'">
+              <text>你选 {{ displayChosen(q) }}</text>
+              <view class="ic ans-ic" :class="displayWrong(q) ? 'ic-x-circle' : 'ic-check-circle'"></view>
             </view>
             <view class="ans-chip ac-ok">
               <text>正确 {{ q.correct_answer || '未提供' }}</text>
@@ -70,7 +85,7 @@
 
           <!-- 解题精讲 + 练同类 -->
           <view class="q-acts">
-            <view class="q-act" :class="{ on: anaOpen[q.id] }" @tap="toggleAna(q, bi)">
+            <view class="q-act" :class="{ on: anaOpen[q.id] }" @tap="toggleAna(q, activeBlock)">
               <text>{{ anaLoading[q.id] ? '解析中…' : (anaOpen[q.id] ? '收起解析' : '看解析') }}</text>
             </view>
             <view class="q-act q-act-sim" @tap="practice(q.id)">
@@ -104,7 +119,7 @@
             </template>
           </view>
         </view>
-      </view>
+      </template>
 
       <!-- P2 读后小结·提问块:该卷阅读题按题型对错 + 一句话诊断(进度即底色) -->
       <view v-if="summary && summary.total" class="rs-card">
@@ -135,11 +150,11 @@
       <view class="foot-pad"></view>
     </template>
 
-    <!-- 底部常驻:本篇精讲(生词 + 长难句)→ 点开上拉面板 -->
-    <view v-if="!loading && (allWords.length || allSentences.length)" class="study-bar" @tap="sheetOpen = true">
+    <!-- 底部常驻:本篇精讲(当前短文重点词 + 长难句)→ 点开上拉面板 -->
+    <view v-if="!loading && (curWords.length || curSentences.length)" class="study-bar" @tap="sheetOpen = true">
       <view class="ic ic-idea sb-ic"></view>
       <text class="sb-t">本篇精讲</text>
-      <text class="sb-cnt">生词 <text class="sb-n">{{ allWords.length }}</text> · 长难句 <text class="sb-n">{{ allSentences.length }}</text></text>
+      <text class="sb-cnt">重点词 <text class="sb-n">{{ curWords.length }}</text> · 长难句 <text class="sb-n">{{ curSentences.length }}</text></text>
       <view class="ic ic-chevrons-down sb-up"></view>
     </view>
 
@@ -153,18 +168,18 @@
           <view class="ic ic-close sh-x" @tap="sheetOpen = false"></view>
         </view>
         <view class="seg">
-          <text class="seg-i" :class="{ on: studyTab === 'word' }" @tap="studyTab = 'word'">生词 {{ allWords.length }}</text>
-          <text class="seg-i" :class="{ on: studyTab === 'ls' }" @tap="studyTab = 'ls'">长难句 {{ allSentences.length }}</text>
+          <text class="seg-i" :class="{ on: studyTab === 'word' }" @tap="studyTab = 'word'">重点词 {{ curWords.length }}</text>
+          <text class="seg-i" :class="{ on: studyTab === 'ls' }" @tap="studyTab = 'ls'">长难句 {{ curSentences.length }}</text>
         </view>
         <scroll-view scroll-y class="sheet-body">
           <template v-if="studyTab === 'word'">
-            <KeyWordsList v-if="allWords.length" :words="allWords" :paper-id="paperId" title="本篇生词" no-card @pick="sheetCard = $event" />
-            <view v-else class="tip">本篇没有生词</view>
+            <KeyWordsList v-if="curWords.length" :words="curWords" :paper-id="paperId" title="读懂本篇 · 重点词" no-card @pick="sheetCard = $event" />
+            <view v-else class="tip">本篇暂无重点词</view>
           </template>
           <template v-else>
-            <view v-if="!allSentences.length" class="tip">本篇没有长难句</view>
+            <view v-if="!curSentences.length" class="tip">本篇没有长难句</view>
             <view v-else class="ls-hint">点句子看逐句解析(结构 · 语法 · 重点词)</view>
-            <view v-for="(s, si) in allSentences" :key="si" class="ls-card" @tap="openSentence(s)">
+            <view v-for="(s, si) in curSentences" :key="si" class="ls-card" @tap="openSentence(s)">
               <text class="ls-no">{{ si + 1 }}</text>
               <text class="ls-text">{{ s }}</text>
               <text class="ls-go">拆解 ›</text>
@@ -208,6 +223,20 @@ const sentenceCard = ref<string | null>(null)   // 原文里点长难句 → 根
 const loading = ref(true)
 const blocks = ref<ReadingBlock[]>([])
 const collapsed = ref<Record<number, boolean>>({})
+/** 当前短文 Tab 下标(方案 A:多短文只显示一篇) */
+const activeBlock = ref(0)
+const curBlock = computed(() => blocks.value[activeBlock.value] || null)
+
+function tabSub(bk: ReadingBlock): string {
+  const n = bk.questions?.length || 0
+  const label = (bk.block_label || '').replace(/^[·\s]+/, '').trim()
+  return label ? `${label} · ${n} 题` : `${n} 题`
+}
+function selectBlock(bi: number) {
+  if (bi === activeBlock.value) return
+  activeBlock.value = bi
+  sheetOpen.value = false
+}
 
 // 卷头:整卷精讲进度(已看解析/练同类的题数)
 const allQs = computed(() => blocks.value.flatMap(b => b.questions))
@@ -222,8 +251,17 @@ function markStudiedLocal(qid: string) {
 
 function toggle(i: number) { collapsed.value = { ...collapsed.value, [i]: !collapsed.value[i] } }
 
-// P3 主动作答(治 OCR 抓不到卷面圈选):点 A/B/C/D → 记 is_correct → 刷新小结
+// P3 主动作答(治 OCR 抓不到卷面圈选):点完整选项 → 记 is_correct → 刷新小结
 const answered = ref<Record<string, { chosen: string; is_correct: boolean | null }>>({})
+
+/** 从选项文案取字母(A–D);无前缀则按下标 */
+function optLetter(op: string, oi: number): string {
+  const m = (op || '').match(/^\s*([A-Da-d])[.、)．]/)
+  return m ? m[1].toUpperCase() : String.fromCharCode(65 + oi)
+}
+async function pickOpt(q: any, op: string, oi: number) {
+  await answer(q, optLetter(op, oi))
+}
 async function answer(q: any, letter: string) {
   try {
     const r = await recordReadingAnswer(q.id, letter)
@@ -231,6 +269,24 @@ async function answer(q: any, letter: string) {
     markStudiedLocal(q.id)
     try { summary.value = await getReadingSummary(paperId.value) } catch { /* 小结刷新失败不影响作答 */ }
   } catch (e: any) { uni.showToast({ title: e?.message || '记录失败', icon: 'none' }) }
+}
+
+/** 选项高亮:正确项常亮绿;本轮点选错则红 */
+function optPickCls(q: any, op: string, oi: number): string {
+  const L = optLetter(op, oi)
+  const st = answered.value[q.id]
+  if (isCorrectOpt(q, op)) return 'q-opt-ok'
+  if (st && st.chosen === L && st.is_correct === false) return 'q-opt-bad'
+  if (st && st.chosen === L) return 'q-opt-ok'
+  return ''
+}
+function displayChosen(q: any): string {
+  return answered.value[q.id]?.chosen || q.student_answer || '未识别'
+}
+function displayWrong(q: any): boolean {
+  const st = answered.value[q.id]
+  if (st && st.is_correct !== null) return !st.is_correct
+  return !!q.is_wrong
 }
 
 // P2 读后小结·提问块(题型正确率 → 进度即底色 + 状态色)
@@ -241,6 +297,14 @@ function rateTxtCls(s: ReadingSummarySkill): string { const p = ratePct(s); retu
 
 // 题型大标签:中文题型名(优先解析出的 skill)+ 同系配色
 function typeLabel(q: any): string { return ana.value[q.id]?.skill || q.type || '阅读理解' }
+/** 选项是否为正确答案 */
+function isCorrectOpt(q: any, op: string): boolean {
+  const ans = (q.correct_answer || '').trim().toUpperCase()
+  if (!ans) return false
+  const letter = (op.match(/^([A-D])/i) || [])[1]
+  if (letter && ans === letter.toUpperCase()) return true
+  return ans === (op || '').trim().toUpperCase()
+}
 function typeCls(q: any): string {
   const s = typeLabel(q)
   if (s.includes('细节')) return 'tt-detail'
@@ -251,13 +315,28 @@ function typeCls(q: any): string {
   return 'tt-detail'
 }
 
-// 原文内联双高亮:词(浅蓝点线,点开单词详解)+ 长难句(橙红点线,点开轻量精讲卡);
-// 句内含重点词时同一片段 word_idx/sentence_idx 同时非空(嵌套) —— 词优先响应点击,
-// 句子的下划线仍在该词前后的文字上连续延伸,互不遮挡。
+// 原文内联双高亮:词(蓝字+蓝虚线→词卡)+ 长难句(橙虚线+句首列表标→浅蓝句卡);
+// 句内词嵌套时 word_idx/sentence_idx 同时非空 —— 词优先点击;橙虚线在词前后连续延伸。
 const activeEv = ref<Record<number, string>>({})     // 「回原文定位」答案证据句(蓝底,叠加在词/句高亮之上)
 const blockStudy = ref<Record<number, { words: StudyWord[]; sentences: string[]; segments: PassageSegment[] }>>({})
+/** 本篇精讲统计随当前短文 Tab 变化 */
+const curWords = computed(() => blockStudy.value[activeBlock.value]?.words || [])
+const curSentences = computed(() => blockStudy.value[activeBlock.value]?.sentences || [])
 
 type RenderSeg = PassageSegment & { ev: boolean }
+/**
+ * 扁平渲染节点(mark | 文本段字段打平)。
+ * 不能用 {kind:'mark'}|{kind:'seg', seg} 嵌套:uni-app 编译会在每条 v-for 记录上
+ * 都计算 `node.seg.xxx` 条件,遇到 mark 时读 undefined.seg → 整段原文渲染中断,只剩图例+纯文本。
+ */
+type PassageNode = {
+  kind: 'mark' | 'seg'
+  t?: string
+  ev?: boolean
+  word_idx?: number | null
+  sentence_idx?: number | null
+}
+
 function withEvidence(segs: PassageSegment[], ev: string): RenderSeg[] {
   if (!ev) return segs.map(s => ({ ...s, ev: false }))
   const full = segs.map(s => s.t).join('')
@@ -284,33 +363,48 @@ function passageSegs(bi: number, passage: string): RenderSeg[] {
     : (passage ? [{ t: passage, word_idx: null, sentence_idx: null }] : [])
   return withEvidence(base, (activeEv.value[bi] || '').trim())
 }
-function segTap(bi: number, seg: RenderSeg) {
+/** 在每个长难句首段前插入句首图标节点(inline,不拆成块级行) */
+function passageNodes(bi: number, passage: string): PassageNode[] {
+  const segs = passageSegs(bi, passage)
+  const out: PassageNode[] = []
+  let prevSi: number | null | undefined = undefined
+  for (const seg of segs) {
+    const si = seg.sentence_idx
+    if (si != null && si !== prevSi) out.push({ kind: 'mark', sentence_idx: si })
+    prevSi = si
+    out.push({
+      kind: 'seg',
+      t: seg.t,
+      ev: seg.ev,
+      word_idx: seg.word_idx,
+      sentence_idx: seg.sentence_idx,
+    })
+  }
+  return out
+}
+function segTap(bi: number, node: PassageNode) {
+  const sd = blockStudy.value[bi]
+  if (!sd || node.kind !== 'seg') return
+  if (node.word_idx != null) { sheetCard.value = sd.words[node.word_idx] ?? null; return }
+  if (node.sentence_idx != null) sentenceCard.value = sd.sentences[node.sentence_idx] ?? null
+}
+function openSentenceIdx(bi: number, sentenceIdx: number) {
   const sd = blockStudy.value[bi]
   if (!sd) return
-  if (seg.word_idx != null) { sheetCard.value = sd.words[seg.word_idx] ?? null; return }   // 句内词优先响应
-  if (seg.sentence_idx != null) sentenceCard.value = sd.sentences[seg.sentence_idx] ?? null
+  sentenceCard.value = sd.sentences[sentenceIdx] ?? null
 }
 
-// 本篇精讲:整卷生词 + 长难句,汇总所有短文(零成本正则),供底部上拉面板
-const allWords = ref<StudyWord[]>([])
-const allSentences = ref<string[]>([])
+// 本篇精讲:按短文缓存 words/sentences/segments;底部栏/面板读当前 Tab
 const sheetOpen = ref(false)
 const studyTab = ref<'word' | 'ls'>('word')
 async function loadStudy() {
-  const wordMap = new Map<string, StudyWord>()
-  const sentSet = new Set<string>()
-  const sents: string[] = []
   for (const [bi, bk] of blocks.value.entries()) {
     if (!bk.passage) continue
     try {
       const r = await getPassageStudy(bk.passage, paperId.value || undefined)
-      blockStudy.value = { ...blockStudy.value, [bi]: { words: r.words, sentences: r.sentences, segments: r.segments } }
-      for (const w of r.words) { const k = w.word_id || w.word; if (!wordMap.has(k)) wordMap.set(k, w) }
-      for (const s of r.sentences) { if (s && !sentSet.has(s)) { sentSet.add(s); sents.push(s) } }
+      blockStudy.value = { ...blockStudy.value, [bi]: { words: r.words, sentences: r.sentences, segments: r.segments || [] } }
     } catch { /* 单篇失败不影响其它 */ }
   }
-  allWords.value = [...wordMap.values()]
-  allSentences.value = sents
 }
 function openSentence(s: string) {
   uni.navigateTo({ url: `/pages/user-papers/sentence?text=${encodeURIComponent(s)}&paperId=${paperId.value}` })
@@ -368,9 +462,10 @@ onLoad(async (q: any) => {
   if (q.title) uni.setNavigationBarTitle({ title: decodeURIComponent(q.title) })
   try {
     blocks.value = (await rdHwPassages(paperId.value)).blocks
+    activeBlock.value = 0
   } catch (e: any) { uni.showToast({ title: e?.message || '加载失败', icon: 'none' }) }
-  finally { loading.value = false }   // 原文+题目就绪即渲染首屏,不等生词抽取
-  // 本篇精讲(72 生词/长难句抽取较重)异步加载,不阻塞首屏;study-bar 就绪后自动出现
+  finally { loading.value = false }   // 原文+题目就绪即渲染首屏,不等重点词抽取
+  // 本篇精讲(重点词/长难句抽取)异步加载,不阻塞首屏;study-bar 就绪后自动出现
   loadStudy()
   // 读后小结:题型按需补标 + 对错聚合(异步,失败静默)
   try { summary.value = await getReadingSummary(paperId.value) } catch { /* 小结失败不影响精讲 */ }
@@ -380,23 +475,55 @@ onLoad(async (q: any) => {
 <style scoped>
 .page { min-height: 100vh; background: #f4f6fa; padding: 24rpx; box-sizing: border-box; }
 .tip { text-align: center; color: #93a0b3; padding: 60rpx 0; }
-.block { margin-bottom: 8rpx; }
 .foot-pad { height: 120rpx; }
 
-/* 原文:吸顶常驻 */
-.passage { position: sticky; top: 0; z-index: 5; background: #fff; border: 2rpx solid #e3e9f2; border-radius: 18rpx; padding: 20rpx 22rpx; margin-bottom: 16rpx; box-shadow: 0 6rpx 22rpx rgba(45, 80, 150, .08); }
+/* 方案 A:多短文分段 Tab(选中浅蓝底) */
+.pass-tabs {
+  display: flex; gap: 8rpx; background: #fff; border: 2rpx solid #e6ebf2;
+  border-radius: 16rpx; padding: 8rpx; margin-bottom: 14rpx;
+  box-shadow: 0 4rpx 14rpx rgba(45, 80, 150, .05);
+}
+.pass-tab {
+  flex: 1; min-width: 0; text-align: center; padding: 14rpx 8rpx;
+  border-radius: 12rpx;
+}
+.pass-tab.on { background: #e8f2ff; }
+.pt-t { display: block; font-size: 26rpx; font-weight: 800; color: #64748b; }
+.pass-tab.on .pt-t { color: #3d8bf5; }
+.pt-s { display: block; font-size: 20rpx; color: #94a3b8; margin-top: 4rpx; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pass-tab.on .pt-s { color: #6b9de8; }
+
+/* 原文:吸顶常驻 · 中度疏朗(行高≈2.0) */
+.passage { position: sticky; top: 0; z-index: 5; background: #fff; border: 2rpx solid #e3e9f2; border-radius: 18rpx; padding: 22rpx 24rpx; margin-bottom: 16rpx; box-shadow: 0 6rpx 22rpx rgba(45, 80, 150, .08); }
 .passage-head { display: flex; align-items: center; justify-content: space-between; }
 .passage-brand { display: flex; align-items: center; gap: 10rpx; }
 .ic-book { width: 30rpx; height: 30rpx; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233d8bf5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 19.5A2.5 2.5 0 0 1 6.5 17H20'/%3E%3Cpath d='M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z'/%3E%3C/svg%3E"); background-size: contain; background-repeat: no-repeat; }
 .passage-title { font-size: 24rpx; font-weight: 700; color: #3d8bf5; letter-spacing: .5rpx; }
 .passage-toggle { font-size: 22rpx; color: #93a0b3; }
-.passage-text { display: block; font-size: 26rpx; color: #3a4353; line-height: 1.8; margin-top: 14rpx; max-height: 40vh; overflow-y: auto; white-space: pre-wrap; }
+.passage-body { margin-top: 14rpx; }
+.passage-legend {
+  display: flex; flex-wrap: wrap; gap: 16rpx 20rpx; align-items: center;
+  padding: 12rpx 14rpx; margin-bottom: 16rpx;
+  background: #f8fafc; border-radius: 10rpx; border: 1rpx dashed #d7e0ec;
+}
+.lg-item { font-size: 22rpx; color: #64748b; }
+.lg-sample { font-weight: 700; padding-bottom: 2rpx; }
+.lg-w { color: #3d8bf5; border-bottom: 2rpx dashed #3d8bf5; }
+.lg-s { color: #e08a4c; border-bottom: 2rpx dashed #e08a4c; }
+.lg-hint { color: #94a3b8; }
+/* 疏朗:字号略抬、行高≈2.0;pre-wrap 仅保留原文自带换行 */
+.passage-text { display: block; font-size: 28rpx; color: #3a4353; line-height: 2; max-height: 42vh; overflow-y: auto; white-space: pre-wrap; letter-spacing: 0.02em; }
 .ev-hl { background: #e4eeff; color: #1f4c8f; border-radius: 4rpx; padding: 0 2rpx; box-shadow: inset 0 -4rpx 0 #7ca9f5; }
-/* 原文内联双高亮:词(浅蓝点线)/ 长难句(橙红点线);句内词嵌套时词的下划线优先(点击目标更精确),
-   叠一层浅橙底色提示"这是长难句里的词"——句子的橙红下划线仍在词前后文字上连续延伸 */
-.seg-w { border-bottom: 3rpx dotted #3d8bf5; }
-.seg-s { border-bottom: 3rpx dotted #e08a4c; }
-.seg-w.seg-s { border-bottom-color: #3d8bf5; background: #fdf3ea; border-radius: 4rpx; }
+/* 词:蓝字+蓝虚线;长难句:橙虚线;嵌套时词样式优先、无浅橙底 */
+.seg-w { color: #3d8bf5; font-weight: 600; border-bottom: 2rpx dashed #3d8bf5; }
+.seg-s { border-bottom: 2rpx dashed #e08a4c; }
+.seg-w.seg-s { color: #3d8bf5; border-bottom-color: #3d8bf5; background: transparent; }
+.s-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28rpx; height: 28rpx; margin-right: 6rpx; vertical-align: text-top;
+  background: #fdf3ea; border-radius: 6rpx;
+}
+.s-mark-ic { width: 18rpx; height: 18rpx; }
 
 /* 卷头进度:进度即底色(背景填充式,全项目统一) */
 .rd-head { position: relative; overflow: hidden; display: flex; align-items: center; gap: 16rpx; background: #fff; border: 2rpx solid #e6ebf2; border-radius: 18rpx; padding: 18rpx 20rpx; margin-bottom: 18rpx; box-shadow: 0 6rpx 20rpx rgba(45, 80, 150, .06); }
@@ -433,14 +560,21 @@ onLoad(async (q: any) => {
 .st-ok { color: #1a9d63; background: #e8f6ef; }
 .q-no { margin-left: auto; font-size: 22rpx; color: #93a0b3; }
 .q-stem { display: block; font-size: 27rpx; font-weight: 600; line-height: 1.6; color: #1f2733; }
+.q-opts { display: flex; flex-direction: column; gap: 8rpx; margin: 12rpx 0 4rpx; }
+.q-opt {
+  display: block; font-size: 26rpx; font-weight: 500; color: #1f2733; line-height: 1.5;
+  padding: 14rpx 16rpx; background: #f7f9fc; border-radius: 12rpx; border: 2rpx solid #e8eef6;
+}
+.q-opt-ok { background: #eefaf4; border-color: #b8e6cf; color: #1f8a5b; font-weight: 600; }
+.q-opt-bad { background: #fdeeee; border-color: #f0c2c2; color: #c33; font-weight: 600; }
 
-/* P3 作答器:A/B/C/D 字母选择 */
+/* P3 兜底:无结构化 options 时仍用字母条 */
 .ans-pick { display: flex; align-items: center; gap: 12rpx; margin-top: 14rpx; }
 .ap-lbl { font-size: 22rpx; color: #93a0b3; }
 .ap-btn { width: 56rpx; height: 56rpx; border-radius: 12rpx; border: 2rpx solid #d8e0ec; background: #f5f8fc; color: #2b3546; font-size: 26rpx; font-weight: 700; text-align: center; line-height: 56rpx; }
 .ap-ok { border-color: #2fa98a; background: #e8f6ef; color: #1a9d63; }
 .ap-bad { border-color: #dc4c4c; background: #fdecec; color: #dc4c4c; }
-.ap-res { font-size: 22rpx; font-weight: 700; margin-left: 4rpx; }
+.ap-res { display: block; font-size: 22rpx; font-weight: 700; margin-top: 8rpx; }
 .ap-rok { color: #1a9d63; }
 .ap-rbad { color: #dc4c4c; }
 .q-ans { margin-top: 14rpx; display: flex; flex-wrap: wrap; gap: 10rpx; }

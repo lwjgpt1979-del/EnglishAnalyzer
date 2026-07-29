@@ -32,7 +32,7 @@ export function getWordFamily(wordId: string): Promise<WordFamily> {
 }
 
 // 单词/词组考点(动态维度按义项分组):senses 每义项 {sense_id,gloss,pos,dims},dims 每维 {key,label,relational,items}
-export interface KpItem { id?: string; text: string; zh: string; note: string; word_id: string | null; confidence?: 'high' | 'low' }
+export interface KpItem { id?: string; text: string; zh: string; note: string; word_id: string | null; confidence?: 'high' | 'low'; source?: string }
 export interface KpDim { key: string; label: string; relational: boolean; items: KpItem[] }
 export interface KpSense { sense_id: string | null; gloss: string; pos: string; dims: KpDim[] }
 export interface WordKp {
@@ -71,9 +71,12 @@ export function recordKpPractice(wordId: string, results: KpPracticeResult[]): P
 export function swapKpMcq(mcqId: string): Promise<KpTestQuestion | Record<string, never>> {
   return request(`/api/v1/vocabulary/kp-mcq/${mcqId}/swap`, { method: 'POST' })
 }
-// 报错某条考点(考点项右侧「报错」):report_count++,供后台复核 / 低峰 AI 修正
-export function reportRelation(relationId: string): Promise<{ reported: boolean; count?: number; threshold?: number; pending?: boolean }> {
-  return request(`/api/v1/vocabulary/word-relation/${relationId}/report`, { method: 'POST' })
+// 报错某条考点(有凭证):reason 必选; detail≥4字 或 suggested 至少一项
+export function reportRelation(
+  relationId: string,
+  body: { reason: string; detail?: string; suggested?: string },
+): Promise<{ reported: boolean; already?: boolean; count?: number; threshold?: number; pending?: boolean }> {
+  return request(`/api/v1/vocabulary/word-relation/${relationId}/report`, { method: 'POST', data: body })
 }
 
 // 测试题库:每词随机取一道 LLM 缓存选择题(未缓存返回 mcq=null,后台异步生成)

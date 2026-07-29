@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>语法精讲 · 列表 + 上下题 · 两套交互原型</title>
+  <style>
+    :root {
+      --primary: #3d8bf5; --ink: #1f2937; --sub: #5f6b7a;
+      --page: #f0f6fc; --line: #d5e4f5; --blue-soft: #e8f2ff;
+      --ok: #2fa98a; --bad: #e35d5d;
+      --warm: #f7f3e6; --warm-line: #e0d6b8;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8f1fb, #f3f7fc 50%);
+      color: var(--ink); min-height: 100vh;
+    }
+    header.top { max-width: 1100px; margin: 0 auto; padding: 20px 22px 6px; }
+    header.top h1 { margin: 0 0 6px; font-size: 21px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--sub); font-size: 14px; line-height: 1.65; max-width: 920px; }
+    .pick {
+      max-width: 1100px; margin: 14px auto 0; padding: 0 22px;
+      display: flex; flex-wrap: wrap; gap: 10px;
+    }
+    .pick-btn {
+      border: 2px solid #d8e4f5; background: #fff; color: #5f6b7a;
+      border-radius: 14px; padding: 12px 16px; cursor: pointer; text-align: left; min-width: 280px; max-width: 420px;
+    }
+    .pick-btn.on { border-color: #3d8bf5; background: #eaf2ff; box-shadow: 0 0 0 1px #bcd8ff; }
+    .pick-btn .n { display: block; font-size: 14px; font-weight: 800; color: #1f2937; margin-bottom: 3px; }
+    .pick-btn.on .n { color: #185fa5; }
+    .pick-btn .d { display: block; font-size: 12px; color: #64748b; line-height: 1.5; }
+    .stage { max-width: 1100px; margin: 0 auto; padding: 14px 22px 56px; }
+    .theme { display: none; }
+    .theme.on { display: block; }
+    .meta {
+      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 14px; font-size: 13px; line-height: 1.65; color: var(--sub);
+    }
+    .meta b { color: var(--ink); }
+    .cap { font-size: 12px; font-weight: 700; color: var(--sub); margin: 0 0 8px 4px; }
+    .phones { display: flex; flex-wrap: wrap; gap: 22px; }
+    .phone {
+      width: var(--phone-w); height: 780px; background: var(--page);
+      border-radius: 28px; border: 1px solid #c9daf0;
+      box-shadow: 0 16px 40px rgba(40, 90, 160, .12);
+      overflow: hidden; display: flex; flex-direction: column; position: relative;
+    }
+    .nav {
+      background: #fff; padding: 12px 14px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .nav .back { width: 20px; height: 20px; border-radius: 50%; background: #eef4fb; cursor: pointer; }
+    .nav .title { flex: 1; text-align: center; font-weight: 800; font-size: 15px; }
+    .nav .act {
+      font-size: 12px; font-weight: 700; color: var(--primary);
+      background: var(--blue-soft); padding: 5px 10px; border-radius: 999px; cursor: pointer;
+      white-space: nowrap;
+    }
+    .scroll { flex: 1; overflow-y: auto; padding: 10px 12px 18px; }
+    .foot {
+      display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line);
+      background: #fff; flex-shrink: 0;
+    }
+    .btn {
+      flex: 1; text-align: center; font-size: 13px; font-weight: 700; padding: 11px 0;
+      border-radius: 12px; border: 1.5px solid #c5daf5; background: #eaf2ff; color: var(--primary); cursor: pointer;
+    }
+    .btn.pri { background: linear-gradient(135deg,#4c97f7,#3d7bf0); color: #fff; border: none; }
+    .btn.ghost { background: #fff; color: var(--sub); }
+    .btn.dis { opacity: .4; pointer-events: none; }
+
+    /* 卷头进度 */
+    .hd {
+      position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--line);
+      background: #fff; padding: 12px 14px; margin-bottom: 10px;
+    }
+    .hd .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 33%;
+      background: linear-gradient(90deg,#e8f2ff,#f4f9ff);
+    }
+    .hd .inner { position: relative; display: flex; align-items: baseline; gap: 10px; }
+    .hd .num { font-size: 22px; font-weight: 800; color: var(--primary); }
+    .hd .num span { font-size: 13px; color: var(--sub); font-weight: 600; }
+    .hd .st { font-size: 12px; font-weight: 700; color: var(--primary); }
+    .cta {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      background: linear-gradient(135deg,#4c97f7,#3d7bf0); color: #fff;
+      border-radius: 12px; padding: 12px; font-size: 14px; font-weight: 800;
+      margin-bottom: 12px; cursor: pointer;
+    }
+    .list-h { font-size: 12px; font-weight: 700; color: var(--sub); margin: 4px 0 8px; }
+    .row {
+      display: flex; align-items: center; gap: 10px; background: #fff;
+      border: 1px solid var(--line); padding: 11px 12px; cursor: pointer;
+    }
+    .row.first { border-radius: 12px 12px 0 0; }
+    .row.last { border-radius: 0 0 12px 12px; }
+    .row + .row { border-top: none; }
+    .row.next { background: #f7fbff; box-shadow: inset 3px 0 0 var(--primary); }
+    .row.done .stem { color: #94a3b8; text-decoration: line-through; }
+    .tick {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid #c5d4e8; flex-shrink: 0;
+    }
+    .tick.done { background: var(--ok); border-color: var(--ok);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+      background-size: 12px; background-repeat: no-repeat; background-position: center;
+    }
+    .tick.next { border-color: var(--primary); box-shadow: 0 0 0 3px #d6e8ff; }
+    .row-body { flex: 1; min-width: 0; }
+    .row-meta { display: flex; gap: 6px; margin-bottom: 4px; }
+    .badge {
+      display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 6px;
+    }
+    .badge.bad { background: #f0e8d4; color: #b54a3a; }
+    .badge.ok { background: #e9f6f1; color: var(--ok); }
+    .badge.kp { background: var(--blue-soft); color: var(--primary); }
+    .stem {
+      font-size: 13px; font-weight: 650; line-height: 1.4;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .row-act { font-size: 12px; font-weight: 700; color: #94a3b8; flex-shrink: 0; }
+    .row-act.next { color: var(--primary); }
+
+    /* 详情卡 */
+    .card {
+      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .card.bad { background: var(--warm); border-color: var(--warm-line); }
+    .qbar { font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .dots { display: flex; gap: 5px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #c5d4e8; }
+    .dot.on { width: 16px; border-radius: 4px; background: var(--primary); }
+    .dot.done { background: var(--ok); }
+    .qstem { font-size: 14px; font-weight: 650; line-height: 1.55; margin: 8px 0; }
+    .ansline { font-size: 12px; margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
+    .ansline .x { color: var(--bad); font-weight: 700; }
+    .ansline .x.ok { color: var(--ok); }
+    .ansline .o { color: var(--ok); font-weight: 700; }
+    .explain { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+    .explain .body { font-size: 13px; line-height: 1.6; margin-top: 8px; }
+    .drill {
+      border: 1.5px solid #bcd8ff; background: #eaf2ff; border-radius: 12px;
+      padding: 12px 14px; margin-bottom: 10px; display: flex; align-items: center;
+    }
+    .drill .t { font-size: 14px; font-weight: 800; color: #185fa5; }
+    .drill .d { font-size: 12px; color: var(--sub); margin-top: 2px; }
+    .drill .go { margin-left: auto; color: #185fa5; font-weight: 800; }
+
+    /* 清单 sheet */
+    .mask {
+      display: none; position: absolute; inset: 0; background: rgba(30,60,110,.4);
+      z-index: 20; align-items: flex-end;
+    }
+    .mask.on { display: flex; }
+    .sheet {
+      width: 100%; max-height: 72%; background: #fff; border-radius: 20px 20px 0 0;
+      padding: 14px 14px 18px; overflow-y: auto;
+    }
+    .sheet-hd {
+      display: flex; align-items: center; margin-bottom: 10px;
+      font-weight: 800; font-size: 15px; color: var(--ink);
+    }
+    .sheet-hd .x { margin-left: auto; font-size: 13px; color: var(--sub); cursor: pointer; }
+
+    .view { display: none; height: 100%; flex-direction: column; }
+    .view.on { display: flex; }
+
+    .rule {
+      margin-top: 16px; background: #fff; border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px 14px; font-size: 12px; color: var(--sub); line-height: 1.7; max-width: 820px;
+    }
+    .rule b { color: var(--ink); }
+    .pros { color: var(--ok); font-weight: 700; }
+    .cons { color: #c45c2a; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>语法精讲 · 列表 + 上下题</h1>
+    <p>
+      对齐单词精讲「卷清单」能力，同时保留作业 D1 的「上一题 / 下一题」。
+      两套方案：<b>A 清单为家</b>（像单词）· <b>B 详情为家 + 清单抽屉</b>（像现在 + 可跳题）。
+    </p>
+  </header>
+
+  <div class="pick" id="themePick">
+    <button class="pick-btn on" data-theme="a">
+      <span class="n">A · 清单为家（推荐 · 近单词精讲）</span>
+      <span class="d">默认进本卷清单（进度+勾选）。点题 / CTA「开始·继续」→ 详情页（上一题/下一题）。详情顶栏「清单」回列表。</span>
+    </button>
+    <button class="pick-btn" data-theme="b">
+      <span class="n">B · 详情为家 + 清单抽屉</span>
+      <span class="d">默认就在详情（圆点+上下题，现状强化）。顶栏「清单」拉起底部题单跳转；学完仍回详情流。</span>
+    </button>
+  </div>
+
+  <div class="stage">
+    <!-- ========== A ========== -->
+    <div class="theme on" id="theme-a">
+      <div class="meta">
+        <b>A 路径：</b>批次 → <b>清单页</b> → 详情（可翻题）→ 回清单。<br />
+        <span class="pros">优点</span>：与单词精讲同构（PaperChecklist）；进度一眼清；适合「先扫一眼再挑题」。<br />
+        <span class="cons">代价</span>：多一层页面；想连续刷题要先 CTA 再进详情。
+      </div>
+      <div class="phones">
+        <div>
+          <div class="cap">A1 · 本卷清单（默认）</div>
+          <div class="phone" id="pa-list">
+            <div class="nav"><div class="back"></div><div class="title">2026-07-15作业 3</div><span style="width:40px"></span></div>
+            <div class="scroll">
+              <div class="hd">
+                <div class="fill"></div>
+                <div class="inner">
+                  <div class="num">1<span>/3</span></div>
+                  <div><div class="st">学习中 33%</div><div style="font-size:11px;color:#94a3b8;margin-top:2px">共 3 题</div></div>
+                </div>
+              </div>
+              <div class="cta" data-a-open="0">继续学习 · 从第 2 题</div>
+              <div class="list-h">本卷清单</div>
+              <div class="row first done" data-a-open="0">
+                <div class="tick done"></div>
+                <div class="row-body">
+                  <div class="row-meta"><span class="badge ok">对</span><span class="badge kp">填空</span><span class="badge kp">第 4 题</span></div>
+                  <div class="stem">Dan's parents are really ______ (发愁的)…</div>
+                </div>
+                <span class="row-act">复看 ›</span>
+              </div>
+              <div class="row next" data-a-open="1">
+                <div class="tick next"></div>
+                <div class="row-body">
+                  <div class="row-meta"><span class="badge bad">错</span><span class="badge kp">填空</span><span class="badge kp">第 3 题</span></div>
+                  <div class="stem">Though he seems ____ (cheer) today…</div>
+                </div>
+                <span class="row-act next">去学 ›</span>
+              </div>
+              <div class="row last" data-a-open="2">
+                <div class="tick"></div>
+                <div class="row-body">
+                  <div class="row-meta"><span class="badge bad">错</span><span class="badge kp">单选</span><span class="badge kp">第 1 题</span></div>
+                  <div class="stem">… A. nobody B. nothing C. everything…</div>
+                </div>
+                <span class="row-act">去学 ›</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="cap">A2 · 详情（可上下题 · 回清单）</div>
+          <div class="phone" id="pa-detail">
+            <div class="view on" data-view="detail">
+              <div class="nav">
+                <div class="back" id="a-back-list" title="回清单"></div>
+                <div class="title">本题详情</div>
+                <span class="act" id="a-to-list">清单</span>
+              </div>
+              <div class="scroll">
+                <div class="qbar">本题 <span id="a-qi">2</span>/3
+                  <div class="dots"><div class="dot done"></div><div class="dot on"></div><div class="dot"></div></div>
+                </div>
+                <div class="card bad" id="a-qcard">
+                  <span class="badge bad">错</span>
+                  <span class="badge kp">填空</span>
+                  <div class="qstem" id="a-stem">Though he seems ____ (cheer) today than yesterday…</div>
+                  <div class="ansline">
+                    <span class="x" id="a-stu">你填 cheering, fun</span>
+                    <span class="o" id="a-ok">正确 more cheerful, funnier</span>
+                  </div>
+                </div>
+                <div class="explain">
+                  <span class="badge kp">比较级</span>
+                  <div class="body" id="a-exp">than 提示比较级；cheer → more cheerful；fun → funnier。</div>
+                </div>
+                <div class="drill"><div><div class="t">本题巩固</div><div class="d">练同类单选</div></div><span class="go">›</span></div>
+                <div class="card" style="font-size:12px;color:#64748b">错题关系网（有 wrong_record 时挂载）…</div>
+              </div>
+              <div class="foot">
+                <div class="btn ghost" id="a-prev">‹ 上一题</div>
+                <div class="btn pri" id="a-next">下一题 ›</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== B ========== -->
+    <div class="theme" id="theme-b">
+      <div class="meta">
+        <b>B 路径：</b>批次 → <b>直接详情</b>（圆点+上下题）→ 随时点「清单」抽屉跳题。<br />
+        <span class="pros">优点</span>：改动小、连续刷题快；清单不丢。<br />
+        <span class="cons">代价</span>：不如 A 一眼扫完全卷；进度感弱于单词清单页。
+      </div>
+      <div class="phones">
+        <div>
+          <div class="cap">B · 详情为家（点「清单」）</div>
+          <div class="phone" id="pb-phone">
+            <div class="nav">
+              <div class="back"></div>
+              <div class="title">2026-07-15作业 3</div>
+              <span class="act" id="b-open-list">清单</span>
+            </div>
+            <div class="scroll">
+              <div class="qbar">本题 <span id="b-qi">1</span>/3
+                <div class="dots" id="b-dots">
+                  <div class="dot on"></div><div class="dot"></div><div class="dot"></div>
+                </div>
+              </div>
+              <div class="card" id="b-qcard">
+                <span class="badge ok" id="b-badge">对</span>
+                <span class="badge kp">填空</span>
+                <div class="qstem" id="b-stem">Dan's parents are really ______ (发愁的) because…</div>
+                <div class="ansline">
+                  <span class="x ok" id="b-stu">你填 worried</span>
+                  <span class="o" id="b-ok">正确 worried</span>
+                </div>
+              </div>
+              <div class="explain">
+                <span class="badge kp">形容词 · 发愁的</span>
+                <div class="body" id="b-exp">此处需填形容词，「发愁的」对应 worried。</div>
+              </div>
+              <div class="drill"><div><div class="t">本题巩固</div><div class="d">练同类单选</div></div><span class="go">›</span></div>
+            </div>
+            <div class="foot">
+              <div class="btn ghost dis" id="b-prev">‹ 上一题</div>
+              <div class="btn pri" id="b-next">下一题 ›</div>
+            </div>
+            <div class="mask" id="b-mask">
+              <div class="sheet">
+                <div class="sheet-hd">本卷清单 <span class="x" id="b-close">收起</span></div>
+                <div class="row first" data-b-jump="0">
+                  <div class="tick done"></div>
+                  <div class="row-body">
+                    <div class="row-meta"><span class="badge ok">对</span><span class="badge kp">第 4 题</span></div>
+                    <div class="stem">Dan's parents are really ______ …</div>
+                  </div>
+                  <span class="row-act">当前</span>
+                </div>
+                <div class="row" data-b-jump="1">
+                  <div class="tick next"></div>
+                  <div class="row-body">
+                    <div class="row-meta"><span class="badge bad">错</span><span class="badge kp">第 3 题</span></div>
+                    <div class="stem">Though he seems ____ (cheer)…</div>
+                  </div>
+                  <span class="row-act next">去学 ›</span>
+                </div>
+                <div class="row last" data-b-jump="2">
+                  <div class="tick"></div>
+                  <div class="row-body">
+                    <div class="row-meta"><span class="badge bad">错</span><span class="badge kp">第 1 题</span></div>
+                    <div class="stem">… nobody / nothing / everything…</div>
+                  </div>
+                  <span class="row-act">去学 ›</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule">
+      <b>对照单词精讲：</b>单词 = 清单 + 点词弹层预览 + CTA 进词力通（无卷内上一词）。语法题内容重，详情需整页（解析/巩固/关系网），故用「清单 ↔ 详情+上下题」而非弹层。<br />
+      回复 <b>选 A</b> / <b>选 B</b>（或微调）后再开发。
+    </div>
+  </div>
+
+  <script>
+    const QS = [
+      {
+        wrong: false, type: '填空', stem: "Dan's parents are really ______ (发愁的) because…",
+        stu: '你填 worried', ok: '正确 worried', exp: '此处需填形容词，「发愁的」对应 worried。',
+      },
+      {
+        wrong: true, type: '填空', stem: 'Though he seems ____ (cheer) today than yesterday…',
+        stu: '你填 cheering, fun', ok: '正确 more cheerful, funnier', exp: 'than 提示比较级；cheer → more cheerful；fun → funnier。',
+      },
+      {
+        wrong: true, type: '单选', stem: '… A. nobody B. nothing C. everything D. everybody',
+        stu: '你选 nothing', ok: '正确 everything', exp: '空缺指万物/一切 → everything；nothing 语义相反。',
+      },
+    ];
+
+    document.getElementById('themePick').addEventListener('click', (e) => {
+      const btn = e.target.closest('.pick-btn');
+      if (!btn) return;
+      document.querySelectorAll('.pick-btn').forEach(x => x.classList.remove('on'));
+      btn.classList.add('on');
+      document.querySelectorAll('.theme').forEach(x => x.classList.remove('on'));
+      document.getElementById('theme-' + btn.dataset.theme).classList.add('on');
+    });
+
+    // —— A ——
+    let aIdx = 1;
+    function showAList() {
+      document.getElementById('pa-list').style.display = '';
+      document.getElementById('pa-detail').style.opacity = '0.45';
+    }
+    function renderA() {
+      const q = QS[aIdx];
+      document.getElementById('a-qi').textContent = String(aIdx + 1);
+      document.getElementById('a-stem').textContent = q.stem;
+      document.getElementById('a-stu').textContent = q.stu;
+      document.getElementById('a-stu').className = 'x' + (q.wrong ? '' : ' ok');
+      document.getElementById('a-ok').textContent = q.ok;
+      document.getElementById('a-exp').textContent = q.exp;
+      const card = document.getElementById('a-qcard');
+      card.className = 'card' + (q.wrong ? ' bad' : '');
+      card.querySelector('.badge').className = 'badge ' + (q.wrong ? 'bad' : 'ok');
+      card.querySelector('.badge').textContent = q.wrong ? '错' : '对';
+      document.getElementById('a-prev').classList.toggle('dis', aIdx <= 0);
+      document.getElementById('a-next').textContent = aIdx < QS.length - 1 ? '下一题 ›' : '回清单';
+      const dots = document.querySelectorAll('#pa-detail .dots .dot');
+      dots.forEach((d, i) => {
+        d.className = 'dot' + (i === aIdx ? ' on' : (i < aIdx ? ' done' : ''));
+      });
+    }
+    function openA(i) {
+      aIdx = i;
+      renderA();
+      document.getElementById('pa-detail').style.opacity = '1';
+      document.getElementById('pa-list').style.opacity = '0.55';
+    }
+    document.querySelectorAll('[data-a-open]').forEach(el => {
+      el.addEventListener('click', () => openA(Number(el.dataset.aOpen)));
+    });
+    document.getElementById('a-to-list').addEventListener('click', () => {
+      document.getElementById('pa-list').style.opacity = '1';
+      document.getElementById('pa-detail').style.opacity = '0.45';
+    });
+    document.getElementById('a-back-list').addEventListener('click', () => {
+      document.getElementById('pa-list').style.opacity = '1';
+      document.getElementById('pa-detail').style.opacity = '0.45';
+    });
+    document.getElementById('a-prev').addEventListener('click', () => {
+      if (aIdx > 0) { aIdx--; renderA(); }
+    });
+    document.getElementById('a-next').addEventListener('click', () => {
+      if (aIdx < QS.length - 1) { aIdx++; renderA(); }
+      else {
+        document.getElementById('pa-list').style.opacity = '1';
+        document.getElementById('pa-detail').style.opacity = '0.45';
+      }
+    });
+    renderA();
+    document.getElementById('pa-detail').style.opacity = '0.45';
+
+    // —— B ——
+    let bIdx = 0;
+    function renderB() {
+      const q = QS[bIdx];
+      document.getElementById('b-qi').textContent = String(bIdx + 1);
+      document.getElementById('b-stem').textContent = q.stem;
+      document.getElementById('b-stu').textContent = q.stu;
+      document.getElementById('b-stu').className = 'x' + (q.wrong ? '' : ' ok');
+      document.getElementById('b-ok').textContent = q.ok;
+      document.getElementById('b-exp').textContent = q.exp;
+      const card = document.getElementById('b-qcard');
+      card.className = 'card' + (q.wrong ? ' bad' : '');
+      const badge = document.getElementById('b-badge');
+      badge.className = 'badge ' + (q.wrong ? 'bad' : 'ok');
+      badge.textContent = q.wrong ? '错' : '对';
+      document.getElementById('b-prev').classList.toggle('dis', bIdx <= 0);
+      document.getElementById('b-next').textContent = bIdx < QS.length - 1 ? '下一题 ›' : '完成本卷';
+      const dots = document.querySelectorAll('#b-dots .dot');
+      dots.forEach((d, i) => {
+        d.className = 'dot' + (i === bIdx ? ' on' : (i < bIdx ? ' done' : ''));
+      });
+    }
+    document.getElementById('b-open-list').addEventListener('click', () => {
+      document.getElementById('b-mask').classList.add('on');
+    });
+    document.getElementById('b-close').addEventListener('click', () => {
+      document.getElementById('b-mask').classList.remove('on');
+    });
+    document.getElementById('b-mask').addEventListener('click', (e) => {
+      if (e.target.id === 'b-mask') e.target.classList.remove('on');
+    });
+    document.querySelectorAll('[data-b-jump]').forEach(el => {
+      el.addEventListener('click', () => {
+        bIdx = Number(el.dataset.bJump);
+        renderB();
+        document.getElementById('b-mask').classList.remove('on');
+      });
+    });
+    document.getElementById('b-prev').addEventListener('click', () => {
+      if (bIdx > 0) { bIdx--; renderB(); }
+    });
+    document.getElementById('b-next').addEventListener('click', () => {
+      if (bIdx < QS.length - 1) { bIdx++; renderB(); }
+    });
+    renderB();
+  </script>
+</body>
+</html>

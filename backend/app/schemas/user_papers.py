@@ -19,6 +19,7 @@ class UserPaperQuestionOut(BaseModel):
     question_no: str | None
     question_type: str | None
     stem: str | None
+    options: list[str] | None = None  # 选择题选项["A. …","B. …"];无则 null
     student_answer: str | None
     correct_answer: str | None
     explanation: str | None
@@ -37,6 +38,7 @@ class UserPaperSectionOut(BaseModel):
     section_type: str | None = None
     is_suggested: bool = False       # True=AI 建议分类(原卷没识别到大题头),前端标「建议」、学生可改
     in_reading_intensive: bool = False  # 阅读理解:是否已手动加入作业精讲·阅读理解精讲
+    in_cloze_intensive: bool = False    # 完形填空:是否已手动加入作业精讲·完形填空精讲
     questions: list[UserPaperQuestionOut]
 
 
@@ -52,7 +54,7 @@ class AnalyzeSentenceIn(BaseModel):
 
 
 class PassageStudyIn(BaseModel):
-    """阅读精讲:按单篇短文出「生词 + 长难句」。"""
+    """阅读精讲:按单篇短文出「理解向难词 + 长难句」。"""
     passage: str = Field(..., min_length=1, max_length=8000)
     paper_id: uuid.UUID | None = None
 

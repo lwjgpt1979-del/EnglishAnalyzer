@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>完形卷页 · 吸顶夹缝修正 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-sent: #e08a4c;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f6fc;
+      --phone-w: 390px;
+      --pad: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f0f6fc 40%, #f7f8fb 100%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1200px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 920px; }
+
+    .bug {
+      max-width: 1200px; margin: 14px auto 0; padding: 0 24px;
+    }
+    .bug-box {
+      background: #fff8f0; border: 2px solid #f0d2b0; border-radius: 14px;
+      padding: 12px 16px; font-size: 13px; line-height: 1.65; color: #5c4030;
+    }
+    .bug-box b { color: #c45c1a; }
+
+    .opts {
+      max-width: 1200px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 2px solid var(--c-line); background: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700; color: var(--c-sub); cursor: pointer;
+    }
+    .opt.on { background: #e8f2ff; border-color: #bcd8ff; color: var(--c-primary); }
+    .opt .tag { font-size: 11px; font-weight: 800; color: var(--c-ok); margin-left: 6px; }
+
+    .stage {
+      max-width: 1200px; margin: 18px auto 48px; padding: 0 24px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 22px;
+    }
+    .col h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+    .col .desc { margin: 0 0 12px; font-size: 13px; color: var(--c-sub); line-height: 1.55; }
+
+    .phone {
+      width: 100%; max-width: var(--phone-w); margin: 0 auto;
+      background: var(--c-page); border: 2px solid #d7e0ec; border-radius: 28px;
+      box-shadow: 0 16px 40px rgba(45, 80, 150, .12); overflow: hidden;
+      height: 720px; display: flex; flex-direction: column; position: relative;
+    }
+    .status {
+      flex: none; height: 40px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; font-size: 12px; font-weight: 700; background: #fff;
+      border-bottom: 1px solid var(--c-line);
+    }
+    .nav {
+      flex: none; height: 46px; display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 800; background: #fff; border-bottom: 1px solid var(--c-line);
+      z-index: 20; position: relative;
+    }
+    .scroll {
+      flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      /* 推荐:水平 padding 留给内容;顶部 padding 收进 sticky 壳,避免夹缝 */
+      padding: 0 var(--pad) 90px;
+    }
+    .scroll.seam-bug {
+      /* 现状/错误吸顶:顶部有空白 padding → 题卡从夹缝钻出 */
+      padding: var(--pad) var(--pad) 90px;
+    }
+
+    /* ── 错误吸顶:只钉原文卡,上方留出页边距夹缝 ── */
+    .passage-only-sticky {
+      position: sticky; top: 0; z-index: 8;
+      background: #fff; border: 2px solid #e3e9f2; border-radius: 14px; padding: 12px 14px;
+      margin-bottom: 12px; box-shadow: 0 8px 22px rgba(45, 80, 150, .14);
+    }
+
+    /* ── 推荐:进度+原文整块吸顶,壳背景铺满顶到导航 ── */
+    .sticky-stack {
+      position: sticky; top: 0; z-index: 8;
+      background: var(--c-page);
+      padding-top: var(--pad);
+      padding-bottom: 4px;
+      margin: 0 calc(-1 * var(--pad)); /* 水平出血,盖住左右缝 */
+      padding-left: var(--pad); padding-right: var(--pad);
+      box-shadow: 0 10px 18px -8px rgba(45, 80, 150, .18);
+    }
+    .sticky-stack .head { margin-bottom: 10px; }
+    .sticky-stack .passage { margin-bottom: 0; }
+
+    .head {
+      position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px;
+      background: #fff; border: 2px solid var(--c-line); border-radius: 14px; padding: 12px 14px;
+    }
+    .head .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 20%;
+      background: linear-gradient(90deg, #e8f2ff, #f4f9ff);
+    }
+    .head .num { position: relative; font-size: 22px; font-weight: 800; color: var(--c-primary); }
+    .head .meta { position: relative; font-size: 12px; color: var(--c-sub); }
+    .head .meta b { color: var(--c-primary); }
+
+    .passage {
+      background: #fff; border: 2px solid #e3e9f2; border-radius: 14px; padding: 12px 14px;
+      margin-bottom: 12px; box-shadow: 0 4px 16px rgba(45, 80, 150, .06);
+    }
+    .passage-h { display: flex; justify-content: space-between; align-items: center; }
+    .passage-t { font-size: 12px; font-weight: 800; color: var(--c-primary); }
+    .toggle {
+      font-size: 12px; color: var(--c-sub); font-weight: 700; padding: 4px 8px;
+      border-radius: 8px; cursor: pointer; user-select: none; border: 1.5px solid #85B7EB;
+      background: #e8f2ff; color: var(--c-primary);
+    }
+
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 10px; margin: 10px 0;
+      background: #f8fafc; border-radius: 8px; border: 1px dashed #d7e0ec;
+      font-size: 11px; color: var(--c-sub);
+    }
+    .lg-w { color: var(--c-primary); font-weight: 700; border-bottom: 1.5px dashed var(--c-primary); }
+    .lg-s { color: var(--c-sent); font-weight: 700; border-bottom: 1.5px dashed var(--c-sent); }
+    .lg-b { color: #1f8a6e; background: #e9f6f1; border-radius: 4px; padding: 0 5px; font-weight: 800; font-size: 10px; }
+
+    .ptxt { font-size: 13.5px; line-height: 1.95; color: #3a4353; max-height: 150px; overflow-y: auto; }
+    .blank {
+      display: inline; font-size: 11px; font-weight: 800; padding: 1px 6px; margin: 0 2px;
+      border-radius: 5px; background: #fcebeb; color: #a32d2d; border: 1px solid #f0b6b6;
+      cursor: pointer;
+    }
+    .seg-w { color: var(--c-primary); font-weight: 600; border-bottom: 1.5px dashed var(--c-primary); }
+
+    .q {
+      background: #fff; border: 2px solid var(--c-line); border-radius: 12px;
+      padding: 12px; margin-bottom: 10px; border-left: 4px solid #b7e0d0;
+    }
+    .q.wrong { border-left-color: #e24b4a; background: #fffbfb; }
+    .q.on { outline: 2px solid var(--c-primary); }
+    .q-h { font-size: 12px; color: var(--c-sub); font-weight: 700; margin-bottom: 6px; }
+    .q-stem { font-size: 14px; font-weight: 600; line-height: 1.5; }
+    .q-go { margin-top: 8px; font-size: 12px; font-weight: 800; color: var(--c-primary); }
+
+    .seam-arrow {
+      position: absolute; left: 50%; top: 92px; transform: translateX(-50%);
+      z-index: 30; background: #e24b4a; color: #fff; font-size: 11px; font-weight: 800;
+      padding: 4px 10px; border-radius: 999px; display: none; pointer-events: none;
+      white-space: nowrap; box-shadow: 0 4px 12px rgba(226,75,74,.4);
+    }
+    .seam-arrow.show { display: block; }
+    .seam-arrow::after {
+      content: ''; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: #e24b4a;
+    }
+
+    .bar {
+      position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 9;
+      display: flex; align-items: center; gap: 8px; background: #fff;
+      border: 2px solid var(--c-line); border-radius: 14px; padding: 12px 14px;
+      box-shadow: 0 8px 20px rgba(45, 80, 150, .12); font-size: 13px;
+    }
+    .bar b { color: var(--c-primary); }
+
+    .callout {
+      background: #eef5ff; border-radius: 12px; padding: 12px 14px;
+      font-size: 13px; line-height: 1.7; color: #334155;
+    }
+    .callout code { background: #e8f2ff; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    .x { color: #e24b4a; font-weight: 800; }
+    .ok { color: var(--c-ok); font-weight: 800; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>吸顶夹缝露题 · 修正原型</h1>
+    <p>
+      你指出的问题：小题往上滑时，从<strong>导航标题</strong>和<strong>原文卡</strong>之间的缝里露出来。
+      根因是「只钉原文卡 + 列表顶部有 padding」，进度环滚走后留下透明夹缝。往下滚手机可对比。
+    </p>
+  </header>
+
+  <div class="bug">
+    <div class="bug-box">
+      <b>夹缝原因</b>：<code>position:sticky</code> 只加在「原文」白卡上 → 上方页边距/进度环滚空后变成透明带 → 题卡从导航与原文之间钻出。
+    </div>
+  </div>
+
+  <div class="opts">
+    <button class="opt on" type="button" data-mode="fix">方案 S · 进度+原文整块吸顶<span class="tag">推荐</span></button>
+    <button class="opt" type="button" data-mode="seam">错误吸顶 · 夹缝露题（复现截图）</button>
+  </div>
+
+  <div class="stage">
+    <div class="col">
+      <h3 id="phone-title">方案 S · 无夹缝</h3>
+      <p class="desc" id="phone-desc">往下滚：导航紧贴「进度+原文」壳，题卡只从原文<strong>下方</strong>钻，夹缝不再露题。</p>
+      <div class="phone">
+        <div class="status"><span>22:01</span><span>▮▮▮</span></div>
+        <div class="nav">2026-07-28作业3</div>
+        <div class="seam-arrow" id="seam-arrow">← 夹缝里露出小题</div>
+        <div class="scroll" id="scroller">
+          <!-- 推荐结构 -->
+          <div id="fix-stack" class="sticky-stack">
+            <div class="head">
+              <div class="fill"></div>
+              <div class="num">3<span style="font-size:12px;color:#b7c2d4">/15</span></div>
+              <div class="meta"><div><b>学习中</b> 20%</div><div>已精讲 3 / 15 空</div></div>
+            </div>
+            <div class="passage" id="passage-fix">
+              <div class="passage-h">
+                <span class="passage-t">原文</span>
+                <span class="toggle" id="toggle">收起 ▴</span>
+              </div>
+              <div id="pbody">
+                <div class="legend">
+                  <span><span class="lg-w">重点词</span>（点开词卡）</span>
+                  <span><span class="lg-s">长难句</span>（点开句卡）</span>
+                  <span><span class="lg-b">空号</span>（跳到题）</span>
+                </div>
+                <div class="ptxt">
+One day, Zhuge Liang was defending a small city with only five thousand soldiers.
+While <span class="seg-w">around half</span> of his men were busy outside the city, riders arrived and reported, ‘Sima Yi is <span class="blank">2</span> with one hundred and fifty thousand men.’
+Zhuge Liang then <span class="blank">3</span> the city wall… soldiers to <span class="blank">4</span> where they were…
+dressed up as <span class="blank">5</span> people… they <span class="blank">6</span> the gates… take a <span class="blank">7</span>… the <span class="blank">8</span> to the north.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 错误结构:进度可滚走,只钉原文 → 夹缝 -->
+          <div id="bad-head" class="head hidden" style="margin:0 0 10px">
+            <div class="fill"></div>
+            <div class="num">3<span style="font-size:12px;color:#b7c2d4">/15</span></div>
+            <div class="meta"><div><b>学习中</b> 20%</div><div>已精讲 3 / 15 空</div></div>
+          </div>
+          <div id="bad-passage" class="passage-only-sticky hidden">
+            <div class="passage-h">
+              <span class="passage-t">原文</span>
+              <span class="toggle">收起 ▴</span>
+            </div>
+            <div>
+              <div class="legend">
+                <span><span class="lg-w">重点词</span></span>
+                <span><span class="lg-s">长难句</span></span>
+                <span><span class="lg-b">空号</span></span>
+              </div>
+              <div class="ptxt">
+…Sima Yi is <span class="blank">2</span> with… Zhuge Liang then <span class="blank">3</span>… to <span class="blank">4</span>…
+as <span class="blank">5</span> people… they <span class="blank">6</span> the gates…
+              </div>
+            </div>
+          </div>
+
+          <div id="questions"></div>
+        </div>
+        <div class="bar">💡 <span style="font-weight:800">本篇精讲</span>
+          <span style="margin-left:auto;color:#8a95a5">重点词 <b>12</b> · 长难句 <b>5</b></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>怎么改才不露缝</h3>
+      <div class="callout">
+        <div><span class="x">错误</span>：只给「原文」白卡 <code>sticky; top:0</code>，列表仍有顶部 padding → 进度滚走后，导航与原文之间透明 → <b>小题从夹缝钻出</b>（即你截图）。</div>
+        <div style="margin-top:12px"><span class="ok">方案 S（推荐）</span>：
+          <ul style="margin:6px 0 0;padding-left:18px">
+            <li>把<strong>进度环 + 原文</strong>包进同一个 <code>.sticky-stack</code></li>
+            <li>壳背景用页底色 <code>#f0f6fc</code>，<code>padding-top</code> 吃掉原列表顶边距</li>
+            <li>水平出血盖住左右缝；题卡只从原文卡<strong>下沿</strong>往上钻</li>
+          </ul>
+        </div>
+        <div style="margin-top:12px">仍保留：标题只写「原文」、仅右上角收起、词/句/空 <code>stop</code> 不误折叠。</div>
+      </div>
+      <div class="callout" style="margin-top:12px;background:#f4fbf8">
+        切到「错误吸顶」后<strong>向下滑一点</strong>，红标会指着夹缝里露出的「第 2 题」——对齐你的截图。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = [
+      { no: 2, wrong: true, stem: 'Sima Yi is ______ with one hundred and fifty thousand men.' },
+      { no: 3, wrong: false, stem: 'Zhuge Liang then ______ the city wall…' },
+      { no: 4, wrong: true, stem: '…soldiers to ______ where they were…' },
+      { no: 5, wrong: false, stem: '…dressed up as ______ people…' },
+      { no: 6, wrong: true, stem: '…they ______ the gates open wide…' },
+      { no: 7, wrong: false, stem: '…take a ______ from a distance…' },
+      { no: 8, wrong: false, stem: '…toward the ______ to the north.' },
+      { no: 9, wrong: false, stem: '…（后续空，方便多滚一段）…' },
+      { no: 10, wrong: true, stem: '…（后续空）…' },
+    ]
+
+    let mode = 'fix'
+    let collapsed = false
+
+    function renderQs() {
+      document.getElementById('questions').innerHTML = qs.map((q) => `
+        <div class="q ${q.wrong ? 'wrong' : ''}" id="q-${q.no}">
+          <div class="q-h">${q.wrong ? '错 · ' : '对 · '}填空 · 第 ${q.no} 题</div>
+          <div class="q-stem">${q.stem}</div>
+          <div class="q-go">本题详解 ›</div>
+        </div>
+      `).join('')
+    }
+
+    function applyMode() {
+      const scroller = document.getElementById('scroller')
+      const fix = document.getElementById('fix-stack')
+      const badHead = document.getElementById('bad-head')
+      const badPass = document.getElementById('bad-passage')
+      const arrow = document.getElementById('seam-arrow')
+      const title = document.getElementById('phone-title')
+      const desc = document.getElementById('phone-desc')
+
+      if (mode === 'fix') {
+        title.textContent = '方案 S · 无夹缝'
+        desc.textContent = '往下滚：导航紧贴「进度+原文」壳，题卡只从原文下方钻，夹缝不再露题。'
+        fix.classList.remove('hidden')
+        badHead.classList.add('hidden')
+        badPass.classList.add('hidden')
+        scroller.classList.remove('seam-bug')
+        arrow.classList.remove('show')
+      } else {
+        title.textContent = '错误吸顶 · 夹缝露题'
+        desc.textContent = '向下滑一点：进度环滚走后，导航与原文之间会露出「第 2 题」——即你截图的问题。'
+        fix.classList.add('hidden')
+        badHead.classList.remove('hidden')
+        badPass.classList.remove('hidden')
+        scroller.classList.add('seam-bug')
+        // 自动滚一点露出夹缝
+        requestAnimationFrame(() => {
+          scroller.scrollTop = 70
+          arrow.classList.add('show')
+        })
+      }
+      collapsed = false
+      document.getElementById('pbody').style.display = 'block'
+      document.getElementById('toggle').textContent = '收起 ▴'
+      if (mode === 'fix') scroller.scrollTop = 0
+    }
+
+    document.querySelectorAll('.opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.opt').forEach((b) => b.classList.remove('on'))
+        btn.classList.add('on')
+        mode = btn.getAttribute('data-mode') || 'fix'
+        applyMode()
+      })
+    })
+
+    document.getElementById('toggle').addEventListener('click', (e) => {
+      e.stopPropagation()
+      collapsed = !collapsed
+      document.getElementById('pbody').style.display = collapsed ? 'none' : 'block'
+      e.currentTarget.textContent = collapsed ? '展开 ▾' : '收起 ▴'
+    })
+
+    document.getElementById('scroller').addEventListener('scroll', () => {
+      if (mode !== 'seam') return
+      const arrow = document.getElementById('seam-arrow')
+      arrow.classList.toggle('show', document.getElementById('scroller').scrollTop > 40)
+    })
+
+    renderQs()
+    applyMode()
+  </script>
+</body>
+</html>

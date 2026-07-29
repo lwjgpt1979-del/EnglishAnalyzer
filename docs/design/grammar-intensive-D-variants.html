@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>语法精讲 · 方案 D 优化版对比</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-bad: #e35d5d;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f4f6fa;
+      --c-warm: #ff8a3d;
+      --phone-w: 360px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f4f6fa 42%, #f7f8fb 100%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top { max-width: 1320px; margin: 0 auto; padding: 22px 22px 6px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 980px; }
+    .tabs {
+      max-width: 1320px; margin: 14px auto 0; padding: 0 22px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .tab {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 9px 15px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .tab.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .tab .rec { font-size: 10px; margin-left: 4px; opacity: .9; }
+    .stage { max-width: 1320px; margin: 0 auto; padding: 16px 22px 56px; }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    .meta {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.65; color: var(--c-sub);
+    }
+    .meta b { color: var(--c-ink); }
+    .pros { color: var(--c-ok); }
+    .cons { color: #c45c2a; }
+    .phones { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+    .phone-wrap { width: var(--phone-w); }
+    .phone-cap { font-size: 12px; font-weight: 700; color: var(--c-sub); margin: 0 0 8px 4px; }
+    .phone {
+      width: var(--phone-w); height: 740px; background: var(--c-page);
+      border-radius: 28px; border: 1px solid #d8dee8; box-shadow: 0 16px 40px rgba(30, 50, 90, .12);
+      overflow: hidden; display: flex; flex-direction: column; position: relative;
+    }
+    .nav {
+      background: #fff; padding: 14px 14px 10px; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .nav .back { width: 22px; height: 22px; border-radius: 50%; background: #eef3f9; }
+    .nav .title { font-size: 16px; font-weight: 800; flex: 1; text-align: center; margin-right: 22px; }
+    .scroll { flex: 1; overflow-y: auto; padding: 12px; }
+    .stepper { display: flex; gap: 4px; margin-bottom: 10px; }
+    .step {
+      flex: 1; text-align: center; font-size: 11px; font-weight: 700; color: var(--c-sub);
+      padding: 7px 0; border-radius: 8px; background: #eef2f7; cursor: pointer; user-select: none;
+    }
+    .step.on { background: #e8f2ff; color: var(--c-primary); }
+    .step.done { background: #e7f6f0; color: var(--c-ok); }
+    .step.lock { opacity: .45; cursor: not-allowed; }
+    .qbar {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; color: var(--c-sub); margin-bottom: 10px;
+    }
+    .qbar .n { font-weight: 800; color: var(--c-ink); }
+    .pill {
+      font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+      background: #eef5ff; color: var(--c-primary);
+    }
+    .card {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px; padding: 12px; margin-bottom: 10px;
+    }
+    .card.bad { border-color: #f3c7c7; }
+    .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
+    .badge.bad { background: #fde8e8; color: var(--c-bad); }
+    .badge.ok { background: #e7f6f0; color: var(--c-ok); }
+    .badge.kp { background: #eef5ff; color: var(--c-primary); }
+    .stem { font-size: 14px; font-weight: 650; line-height: 1.55; margin: 8px 0; }
+    .ans { background: #f5f8fc; border-radius: 10px; padding: 8px 10px; font-size: 12px; line-height: 1.5; }
+    .ans .x { color: var(--c-bad); }
+    .ans .o { color: var(--c-ok); }
+    .exp { margin-top: 8px; font-size: 12px; color: var(--c-sub); line-height: 1.5; }
+    .exp .k {
+      display: inline-block; font-size: 11px; font-weight: 800; color: var(--c-primary);
+      background: #eef5ff; border-radius: 6px; padding: 1px 6px; margin-right: 4px;
+    }
+    .acts { display: flex; gap: 6px; margin-top: 12px; }
+    .btn {
+      flex: 1; text-align: center; font-size: 12px; font-weight: 700; color: var(--c-primary);
+      border: 1.5px solid #d8e4f5; background: #f2f7fd; border-radius: 10px; padding: 10px 0; cursor: pointer;
+    }
+    .btn.pri { color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border-color: transparent; }
+    .btn.ghost { background: #fff; color: var(--c-sub); }
+    .sticky-q {
+      background: #f8fbff; border: 1px dashed #c9daf0; border-radius: 12px;
+      padding: 8px 10px; margin-bottom: 10px; font-size: 12px; line-height: 1.45; color: var(--c-sub);
+    }
+    .sticky-q b { color: var(--c-ink); }
+    .sticky-q .mini { color: var(--c-primary); font-weight: 700; cursor: pointer; float: right; }
+    .hl { background: #fff3c4; border-radius: 3px; padding: 0 2px; }
+    .opt {
+      display: block; width: 100%; text-align: left; margin-bottom: 6px;
+      font-size: 13px; font-weight: 600; color: var(--c-ink);
+      border: 1px solid var(--c-line); background: #f7f9fc; border-radius: 10px; padding: 10px 12px; cursor: pointer;
+    }
+    .opt.ok { background: #eefaf4; border-color: #b8e6cf; color: #1f8a5b; }
+    .opt.bad { background: #fdeeee; border-color: #f0c2c2; }
+    .toast {
+      position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%);
+      background: rgba(0,0,0,.78); color: #fff; font-size: 13px; padding: 10px 16px;
+      border-radius: 10px; display: none; z-index: 5; white-space: nowrap;
+    }
+    .toast.on { display: block; }
+    .dots { display: flex; gap: 6px; justify-content: center; margin: 4px 0 10px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #d0d7e2; }
+    .dot.on { background: var(--c-primary); width: 16px; border-radius: 4px; }
+    .compare {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;
+    }
+    .compare .box {
+      background: #f8fafc; border-radius: 10px; padding: 8px; font-size: 11px; line-height: 1.45; color: var(--c-sub);
+    }
+    .compare .box h4 { margin: 0 0 4px; font-size: 12px; color: var(--c-ink); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>方案 D 基础上的优化版</h1>
+    <p>共同保留「原题 → 讲解 → 练习」主轴，并保证<strong>原题始终可回看</strong>。四版分别解决：自由度、多题循环、原题常驻对照、首次引导。</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab on" data-tab="d0">D0 原版三步</button>
+    <button class="tab" data-tab="d1">D1 软步骤 + 原题条<span class="rec">稳</span></button>
+    <button class="tab" data-tab="d2">D2 多题轮转<span class="rec">推荐</span></button>
+    <button class="tab" data-tab="d3">D3 讲解对照原题</button>
+    <button class="tab" data-tab="d4">D4 首次强制 · 之后自由</button>
+  </div>
+
+  <div class="stage">
+    <!-- D0 -->
+    <section class="panel on" id="panel-d0">
+      <div class="meta">
+        <b>D0 · 原方案 D（对照基准）</b><br>
+        严格三步；步骤可点切换（演示）。多题用「2/2 题」表示，但练习完如何进下一题未设计清楚。<br>
+        <span class="cons">问题：自由度低；步骤 2/3 时原题离开视野；多题循环弱。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">可点步骤条</div>
+          <div class="phone"><div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll" id="d0-root"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- D1 -->
+    <section class="panel" id="panel-d1">
+      <div class="meta">
+        <b>D1 · 软步骤 + 顶部原题摘要条</b><br>
+        步骤可自由点；进入讲解/练习时顶部常驻「原题摘要」，一点展开回看完整原题。<br>
+        <span class="pros">优点：不困死顺序；原题不丢。</span>
+        <span class="cons">摘要占高；小屏略挤。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">点步骤 / 点「展开原题」</div>
+          <div class="phone"><div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll" id="d1-root"></div>
+            <div class="toast" id="d1-toast"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- D2 -->
+    <section class="panel" id="panel-d2">
+      <div class="meta">
+        <b>D2 · 多题轮转（推荐）</b><br>
+        外层「题 1/N」圆点切换；内层仍是三步。练完一组 →「下一题」自动回到该题的「1 原题」。<br>
+        <span class="pros">优点：解决多题循环；路径仍清晰。</span>
+        <span class="cons">信息架构两层，需教一次。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">圆点切题 · 步骤条切阶段</div>
+          <div class="phone"><div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll" id="d2-root"></div>
+            <div class="toast" id="d2-toast"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- D3 -->
+    <section class="panel" id="panel-d3">
+      <div class="meta">
+        <b>D3 · 讲解步「原题对照」</b><br>
+        步骤 2 左右/上下对照：左原题挖空句，右规则；高亮对应考点。练习步仍可回看摘要。<br>
+        <span class="pros">优点：讲解时不断开原题语境。</span>
+        <span class="cons">对照布局在窄屏要纵向堆叠。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">重点看「2 讲解」对照</div>
+          <div class="phone"><div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll" id="d3-root"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- D4 -->
+    <section class="panel" id="panel-d4">
+      <div class="meta">
+        <b>D4 · 首次强制顺序，回访自由</b><br>
+        每题第一次：只能 1→2→3 前进（未完成步骤锁定）。练过一次后，三步任意点。<br>
+        <span class="pros">优点：新手不被跳步；熟客可速复习。</span>
+        <span class="cons">状态「是否完成过」要记 studied。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">首次：点锁定步骤会提示</div>
+          <div class="phone"><div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll" id="d4-root"></div>
+            <div class="toast" id="d4-toast"></div>
+          </div>
+        </div>
+        <div class="phone-wrap">
+          <div class="phone-cap">回访：已学过可自由点</div>
+          <div class="phone"><div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll" id="d4b-root"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const Q = {
+      no: 3,
+      stem: "It's kind ____ you ____ (invite) me to your party.",
+      yours: "for, invite",
+      correct: "of; to invite",
+      exp: "It's kind of sb to do sth。",
+      kp: "kind of sb to do",
+    }
+    const Q2 = {
+      no: 1,
+      stem: "She feels like ____ (make) handicrafts…",
+      yours: "making, give",
+      correct: "making; to give",
+      exp: "feel like doing；would like to do。",
+      kp: "feel like doing",
+    }
+
+    document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'))
+      document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'))
+      t.classList.add('on')
+      document.getElementById('panel-' + t.dataset.tab).classList.add('on')
+    }))
+
+    function stepperHtml(id, step, { soft = true, locks = [] } = {}) {
+      return `<div class="stepper" id="${id}">
+        ${[1,2,3].map(i => {
+          const labels = ['1 原题', '2 讲解', '3 练习']
+          let cls = 'step'
+          if (i === step) cls += ' on'
+          else if (i < step) cls += ' done'
+          if (locks.includes(i)) cls += ' lock'
+          return `<div class="${cls}" data-step="${i}">${labels[i-1]}</div>`
+        }).join('')}
+      </div>`
+    }
+
+    function qCard(q, { nextLabel, onNext } = {}) {
+      return `<div class="card bad">
+        <div class="row">
+          <span style="font-weight:800">第 ${q.no} 题</span>
+          <span class="badge bad">错</span>
+        </div>
+        <div class="stem">${q.stem}</div>
+        <div class="ans"><span class="x">你的：${q.yours}</span><br><span class="o">正确：${q.correct}</span></div>
+        <div class="exp"><span class="k">解析</span>${q.exp}</div>
+        ${nextLabel ? `<div class="acts"><div class="btn pri" data-act="next">${nextLabel}</div></div>` : ''}
+      </div>`
+    }
+
+    /* ---- D0 ---- */
+    let d0 = 1
+    function renderD0() {
+      const root = document.getElementById('d0-root')
+      root.innerHTML = stepperHtml('d0-steps', d0) + `<div class="qbar"><span class="n">第 ${Q.no} 题</span><span>2/2 题</span></div>` + bodyD0()
+      root.querySelectorAll('.step').forEach(s => s.onclick = () => { d0 = +s.dataset.step; renderD0() })
+      const n = root.querySelector('[data-act="next"]')
+      if (n) n.onclick = () => { d0 = Math.min(3, d0 + 1); renderD0() }
+    }
+    function bodyD0() {
+      if (d0 === 1) return qCard(Q, { nextLabel: '下一步：学讲解 ›' })
+      if (d0 === 2) return `<div class="card"><span class="badge kp">${Q.kp}</span>
+        <div class="stem" style="font-weight:700">规则</div>
+        <div style="font-size:13px;line-height:1.6;color:var(--c-sub)">It's + adj + of sb + to do sth。<br>invite → <b>to invite</b>。</div>
+        <div class="acts"><div class="btn ghost" data-act="back">‹ 回原题</div><div class="btn pri" data-act="next">下一步：练同类 ›</div></div></div>`
+      return practiceBlock()
+    }
+    function practiceBlock(extra = '') {
+      return `<div class="card">${extra}
+        <div style="font-weight:800;margin-bottom:8px">练同类 · 1/5</div>
+        <div class="stem">It's friendly ____ him ____ help the old man.</div>
+        <button class="opt" data-opt="A">A. of; to</button>
+        <button class="opt">B. for; to</button>
+        <button class="opt">C. of; /</button>
+        <button class="opt">D. for; /</button>
+        <div class="acts"><div class="btn ghost" data-act="back">‹ 回讲解</div><div class="btn pri" data-act="done">完成本组</div></div>
+      </div>`
+    }
+    renderD0()
+    document.getElementById('d0-root').addEventListener('click', e => {
+      if (e.target.dataset.act === 'back') { d0 = Math.max(1, d0 - 1); renderD0() }
+      if (e.target.dataset.act === 'done') { alert('D0：本组结束（未设计下一题）'); }
+      if (e.target.classList.contains('opt')) {
+        document.querySelectorAll('#d0-root .opt').forEach(o => o.classList.remove('ok'))
+        e.target.classList.add('ok')
+      }
+    })
+
+    /* ---- D1 soft + sticky ---- */
+    let d1 = 1, d1Expand = false
+    function renderD1() {
+      const root = document.getElementById('d1-root')
+      let sticky = ''
+      if (d1 > 1) {
+        sticky = `<div class="sticky-q">
+          <span class="mini" id="d1-exp">${d1Expand ? '收起' : '展开原题'}</span>
+          <b>原题摘要</b> · 第 ${Q.no} 题错<br>
+          ${d1Expand ? `<div style="margin-top:6px;color:var(--c-ink)">${Q.stem}<div class="ans" style="margin-top:6px"><span class="o">正确：${Q.correct}</span></div></div>` : `<span style="color:var(--c-ink)">It's kind ____ you ____ (invite)…</span>`}
+        </div>`
+      }
+      root.innerHTML = stepperHtml('d1-steps', d1) + sticky + (d1 === 1 ? qCard(Q, { nextLabel: '去学讲解 ›' }) : d1 === 2 ? lectureD1() : practiceBlock())
+      root.querySelectorAll('.step').forEach(s => s.onclick = () => { d1 = +s.dataset.step; renderD1() })
+      const ex = document.getElementById('d1-exp')
+      if (ex) ex.onclick = () => { d1Expand = !d1Expand; renderD1() }
+      const n = root.querySelector('[data-act="next"]')
+      if (n) n.onclick = () => { d1 = 2; renderD1() }
+      root.querySelectorAll('[data-act="back"]').forEach(b => b.onclick = () => { d1 = d1 === 3 ? 2 : 1; renderD1() })
+      root.querySelectorAll('[data-act="done"]').forEach(b => b.onclick = () => toast('d1-toast', '已完成本题三步 ✓'))
+      root.querySelectorAll('.opt').forEach(o => o.onclick = () => { root.querySelectorAll('.opt').forEach(x => x.classList.remove('ok')); o.classList.add('ok') })
+    }
+    function lectureD1() {
+      return `<div class="card"><span class="badge kp">${Q.kp}</span>
+        <div style="font-size:13px;line-height:1.65;color:var(--c-sub);margin-top:8px">
+          <b style="color:var(--c-ink)">规则</b><br>It's + 形容人品质的 adj + of sb + to do sth。<br><br>
+          顶部可随时展开原题对照。
+        </div>
+        <div class="acts"><div class="btn ghost" data-act="back">‹ 回原题</div><div class="btn pri" onclick="d1=3;renderD1()">去练习 ›</div></div></div>`
+    }
+    renderD1()
+
+    /* ---- D2 multi question ---- */
+    let d2q = 0, d2s = 1
+    const QS = [Q2, Q]
+    function renderD2() {
+      const q = QS[d2q]
+      const root = document.getElementById('d2-root')
+      const dots = `<div class="dots">${QS.map((_, i) => `<div class="dot ${i === d2q ? 'on' : ''}" data-qi="${i}"></div>`).join('')}</div>`
+      root.innerHTML = `
+        <div class="qbar"><span class="n">本题 ${d2q + 1}/${QS.length}</span><span class="pill">${q.kp}</span></div>
+        ${dots}
+        ${stepperHtml('d2-steps', d2s)}
+        ${d2s === 1 ? qCard(q, { nextLabel: '下一步：学讲解 ›' }) : d2s === 2 ? lectureD2(q) : practiceD2(q)}`
+      root.querySelectorAll('.dot').forEach(d => d.onclick = () => { d2q = +d.dataset.qi; d2s = 1; renderD2() })
+      root.querySelectorAll('.step').forEach(s => s.onclick = () => { d2s = +s.dataset.step; renderD2() })
+      const n = root.querySelector('[data-act="next"]')
+      if (n) n.onclick = () => { d2s = Math.min(3, d2s + 1); renderD2() }
+      root.querySelectorAll('[data-act="back"]').forEach(b => b.onclick = () => { d2s = Math.max(1, d2s - 1); renderD2() })
+      root.querySelectorAll('[data-act="done"]').forEach(b => b.onclick = () => {
+        if (d2q < QS.length - 1) {
+          toast('d2-toast', '进入下一题原题')
+          d2q += 1; d2s = 1; renderD2()
+        } else toast('d2-toast', '本卷语法题已学完 ✓')
+      })
+      root.querySelectorAll('.opt').forEach(o => o.onclick = () => {
+        root.querySelectorAll('.opt').forEach(x => x.classList.remove('ok')); o.classList.add('ok')
+      })
+    }
+    function lectureD2(q) {
+      return `<div class="card"><span class="badge kp">${q.kp}</span>
+        <div class="sticky-q" style="margin-top:8px"><b>对照</b> ${q.stem}</div>
+        <div style="font-size:13px;line-height:1.6;color:var(--c-sub)">围绕本句讲清规则与易错点。</div>
+        <div class="acts"><div class="btn ghost" data-act="back">‹ 回原题</div><div class="btn pri" data-act="next">去练习 ›</div></div></div>`
+    }
+    function practiceD2(q) {
+      return `<div class="card">
+        <div style="font-weight:800;margin-bottom:8px">练同类 · ${q.kp}</div>
+        <div class="stem">仿真题（示意）…</div>
+        <button class="opt">A. …</button><button class="opt">B. …</button>
+        <button class="opt">C. …</button><button class="opt">D. …</button>
+        <div class="acts">
+          <div class="btn ghost" data-act="back">‹ 回讲解</div>
+          <div class="btn pri" data-act="done">${d2q < QS.length - 1 ? '下一题 ›' : '完成本卷'}</div>
+        </div></div>`
+    }
+    renderD2()
+
+    /* ---- D3 compare lecture ---- */
+    let d3 = 2
+    function renderD3() {
+      const root = document.getElementById('d3-root')
+      root.innerHTML = stepperHtml('d3-steps', d3) + bodyD3()
+      root.querySelectorAll('.step').forEach(s => s.onclick = () => { d3 = +s.dataset.step; renderD3() })
+      root.querySelectorAll('[data-act="next"]').forEach(b => b.onclick = () => { d3 = Math.min(3, d3 + 1); renderD3() })
+      root.querySelectorAll('[data-act="back"]').forEach(b => b.onclick = () => { d3 = Math.max(1, d3 - 1); renderD3() })
+      root.querySelectorAll('.opt').forEach(o => o.onclick = () => { root.querySelectorAll('.opt').forEach(x => x.classList.remove('ok')); o.classList.add('ok') })
+    }
+    function bodyD3() {
+      if (d3 === 1) return qCard(Q, { nextLabel: '去对照讲解 ›' })
+      if (d3 === 2) return `<div class="card">
+        <div class="row"><span class="badge kp">${Q.kp}</span><span style="font-size:11px;color:var(--c-sub)">讲解 · 原题对照</span></div>
+        <div class="compare">
+          <div class="box"><h4>原题</h4>It's kind <span class="hl">____</span> you <span class="hl">____ (invite)</span> me…</div>
+          <div class="box"><h4>填法</h4><span class="hl">of</span> sb<br><span class="hl">to invite</span></div>
+        </div>
+        <div style="font-size:13px;line-height:1.6;color:var(--c-sub);margin-top:10px">
+          <b style="color:var(--c-ink)">为什么</b><br>
+          kind 说的是「人的品质」→ 用 <b>of</b>；后面动作用不带 to 以外的？不定式 <b>to do</b>。
+        </div>
+        <div class="acts"><div class="btn ghost" data-act="back">‹ 回原题</div><div class="btn pri" data-act="next">去练习 ›</div></div>
+      </div>`
+      return practiceBlock(`<div class="sticky-q"><b>仍可对照</b> ${Q.stem}</div>`)
+    }
+    renderD3()
+
+    /* ---- D4 first lock / revisit free ---- */
+    let d4 = 1, d4Max = 1
+    function renderD4() {
+      const locks = [1, 2, 3].filter(i => i > d4Max)
+      const root = document.getElementById('d4-root')
+      root.innerHTML = `<div class="pill" style="display:inline-block;margin-bottom:8px">首次学习 · 请按顺序</div>` +
+        stepperHtml('d4-steps', d4, { locks }) + bodyD4()
+      root.querySelectorAll('.step').forEach(s => {
+        s.onclick = () => {
+          const i = +s.dataset.step
+          if (i > d4Max) { toast('d4-toast', '请先完成前面的步骤'); return }
+          d4 = i; renderD4()
+        }
+      })
+      bindD4Nav(root)
+    }
+    function bodyD4() {
+      if (d4 === 1) return qCard(Q, { nextLabel: '下一步：学讲解 ›' })
+      if (d4 === 2) return `<div class="card"><span class="badge kp">${Q.kp}</span>
+        <div style="font-size:13px;line-height:1.6;color:var(--c-sub);margin-top:8px">讲解内容…（首次必须看过才能练）</div>
+        <div class="acts"><div class="btn ghost" data-act="back">‹ 回原题</div><div class="btn pri" data-act="next">下一步：练习 ›</div></div></div>`
+      return practiceBlock()
+    }
+    function bindD4Nav(root) {
+      const n = root.querySelector('[data-act="next"]')
+      if (n) n.onclick = () => {
+        d4 = Math.min(3, d4 + 1)
+        d4Max = Math.max(d4Max, d4)
+        renderD4()
+      }
+      root.querySelectorAll('[data-act="back"]').forEach(b => b.onclick = () => { d4 = Math.max(1, d4 - 1); renderD4() })
+      root.querySelectorAll('[data-act="done"]').forEach(b => b.onclick = () => {
+        d4Max = 3
+        toast('d4-toast', '已学完 · 下次可自由点步骤')
+        renderD4b()
+      })
+      root.querySelectorAll('.opt').forEach(o => o.onclick = () => {
+        root.querySelectorAll('.opt').forEach(x => x.classList.remove('ok')); o.classList.add('ok')
+      })
+    }
+    renderD4()
+
+    let d4b = 2
+    function renderD4b() {
+      const root = document.getElementById('d4b-root')
+      root.innerHTML = `<div class="pill" style="display:inline-block;margin-bottom:8px;background:#e7f6f0;color:var(--c-ok)">回访 · 已学过</div>` +
+        stepperHtml('d4b-steps', d4b) + (d4b === 1 ? qCard(Q) : d4b === 2 ? `<div class="card"><span class="badge kp">${Q.kp}</span><div style="margin-top:8px;font-size:13px;color:var(--c-sub)">可直接跳进任意步骤复习。</div></div>` : practiceBlock())
+      root.querySelectorAll('.step').forEach(s => s.onclick = () => { d4b = +s.dataset.step; renderD4b() })
+    }
+    renderD4b()
+
+    function toast(id, msg) {
+      const t = document.getElementById(id)
+      if (!t) return
+      t.textContent = msg
+      t.classList.add('on')
+      setTimeout(() => t.classList.remove('on'), 1400)
+    }
+  </script>
+</body>
+</html>

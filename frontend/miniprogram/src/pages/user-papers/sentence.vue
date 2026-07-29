@@ -65,7 +65,7 @@
           <text class="kw-enter-go">开始 ›</text>
         </view>
         <view v-if="!words.length" class="tip sm">本句暂无重点词</view>
-        <KeyWordsList v-else :words="words" :paper-id="paperId" title="重点词汇" />
+        <KeyWordsList v-else :words="words" :paper-id="paperId" title="重点词汇" no-card @pick="sheetCard = $event" />
       </view>
 
       <!-- 快速看树:意思 + 结构一览 -->
@@ -99,6 +99,9 @@
     </template>
 
     <view v-else class="tip">解析失败,返回重试</view>
+
+    <!-- U1:重点词弹层统一 WordCard(根层,避免困在 tab 内) -->
+    <WordCard :word="sheetCard" :paper-id="paperId" @close="sheetCard = null" />
   </view>
 </template>
 
@@ -112,6 +115,7 @@ import {
 } from '@/api/userPapers'
 import { markSentenceProgress } from '@/api/curriculum'
 import KeyWordsList from '@/components/KeyWordsList.vue'
+import WordCard from '@/components/WordCard.vue'
 import SentenceIntensive from '@/components/SentenceIntensive.vue'
 
 const text = ref('')
@@ -121,6 +125,7 @@ const saved = ref(false)
 const paperId = ref('')
 const refOpen = ref(false)
 const view = ref<'intensive' | 'grammar' | 'word' | 'tree'>('intensive')   // 精读闯关 | 认语法 | 重点词 | 快速看树
+const sheetCard = ref<StudyWord | null>(null)
 
 const quiz = ref<GrammarQuizItem[]>([])
 const words = ref<StudyWord[]>([])

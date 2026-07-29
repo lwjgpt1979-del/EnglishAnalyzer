@@ -1,6 +1,13 @@
 import request, { unwrap } from './request'
 
-// 考点(vocab_word_relation)后台复核:被学生报错的考点,AI 修正 / 编辑 / 删除 + 审校记录
+/** 考点后台复核:有凭证举报 / 下架·恢复 / AI 修正 / 编辑删除 */
+export interface KpEvidence {
+  count?: number
+  latest_reason?: string
+  latest_reason_label?: string
+  latest_detail?: string
+  latest_suggested?: string
+}
 export interface KpRelationItem {
   id: string
   word_id: string
@@ -12,10 +19,25 @@ export interface KpRelationItem {
   text: string
   zh: string
   note: string
+  source?: string
   report_count: number
+  hidden?: boolean
+  hidden_at?: string | null
+  hide_note?: string
+  hide_origin?: 'ai_prehide' | 'manual' | ''
+  evidence?: KpEvidence
   created_at: string | null
 }
 export interface KpRelationList { items: KpRelationItem[]; total: number; threshold: number }
+export interface KpRelationReportItem {
+  id: string
+  reason: string
+  reason_label: string
+  detail: string
+  suggested: string
+  student_id: string
+  created_at: string | null
+}
 export interface KpReviewRecord {
   id: string
   before: Array<{ id: string; dim: string; text: string; zh: string | null; note: string | null; report_count?: number }> | null
@@ -23,8 +45,24 @@ export interface KpReviewRecord {
   created_at: string | null
 }
 
-export function listReportedKp(params: { min_report?: number; skip?: number; limit?: number }): Promise<KpRelationList> {
+export function listReportedKp(params: {
+  min_report?: number; skip?: number; limit?: number
+  hidden?: 'exclude' | 'only' | 'all'
+  hide_origin?: 'ai_prehide' | 'manual' | ''
+}): Promise<KpRelationList> {
   return unwrap<KpRelationList>(request.get('/admin/kp-relations', { params }))
+}
+export function listKpRelationReports(relationId: string): Promise<KpRelationReportItem[]> {
+  return unwrap<KpRelationReportItem[]>(request.get(`/admin/kp-relations/${relationId}/reports`))
+}
+export function hideKpRelation(id: string, note = ''): Promise<KpRelationItem> {
+  return unwrap<KpRelationItem>(request.post(`/admin/kp-relations/${id}/hide`, { note }))
+}
+export function unhideKpRelation(id: string): Promise<KpRelationItem> {
+  return unwrap<KpRelationItem>(request.post(`/admin/kp-relations/${id}/unhide`))
+}
+export function batchHideKpRelation(ids: string[], note = ''): Promise<{ hidden: number }> {
+  return unwrap<{ hidden: number }>(request.post('/admin/kp-relations/batch-hide', { ids, note }))
 }
 export function fixReportedKp(wordId: string): Promise<{ fixed: boolean; deleted?: number; fixed_n?: number; no_reported?: boolean }> {
   return unwrap(request.post(`/admin/kp-relations/${wordId}/fix`))

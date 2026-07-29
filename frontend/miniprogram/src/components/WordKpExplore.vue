@@ -14,7 +14,8 @@
         <view class="mind-center"><text class="mc-w">{{ centerText }}</text><text v-if="centerZh" class="mc-zh">{{ centerZh }}</text></view>
         <text v-for="lf in leaves" :key="'lb'+lf.slot" class="mind-lbl" :class="'dc-' + lf.cat" :style="lblPos(lf.slot)">{{ lf.dimShort }}</text>
         <view v-for="lf in leaves" :key="'lf'+lf.slot" class="mind-leaf"
-              :class="{ on: activeDim === lf.dimKey && activeItem === lf.itemKey }" :style="leafPos(lf.slot)"
+              :class="{ on: activeDim === lf.dimKey && activeItem === lf.itemKey, low: lf.item?.confidence === 'low' }"
+              :style="leafPos(lf.slot)"
               @tap="tapLeaf(lf)">
           <text>{{ lf.text }}</text>
         </view>
@@ -34,7 +35,7 @@
               <text class="kp-en">{{ it.text }}<text v-if="it.confidence === 'low'" class="kp-low"> 待核</text></text>
               <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
             </view>
-            <view v-if="it.id" class="ic ic-flag kp-report" :class="{ done: reported[it.id] }" @tap.stop="$emit('report', it)" />
+            <view v-if="it.id" class="ic ic-flag kp-report" :class="{ done: reported[it.id] }" @tap.stop="openReport(it)" />
           </view>
         </template>
         <template v-else>
@@ -43,7 +44,7 @@
               <text class="kp-en">{{ it.text }}</text>
               <text v-if="it.zh || it.note" class="kp-zh">{{ it.zh }}{{ it.note ? (it.zh ? ' · ' : '') + it.note : '' }}</text>
             </view>
-            <view v-if="it.id" class="ic ic-flag kp-report" :class="{ done: reported[it.id] }" @tap.stop="$emit('report', it)" />
+            <view v-if="it.id" class="ic ic-flag kp-report" :class="{ done: reported[it.id] }" @tap.stop="openReport(it)" />
           </view>
         </template>
       </view>
@@ -51,6 +52,24 @@
       <!-- 考点扩展测试(内嵌考点拓展)-->
       <view class="kp-test" @tap="$emit('test')">
         <view class="ic ic-target kp-test-ic" /><text>{{ testLoading ? '出题中…' : '考点扩展测试' }}</text>
+      </view>
+    </view>
+
+    <!-- 有凭证举报 -->
+    <view v-if="reportOpen" class="rp-mask" @tap="reportOpen = false">
+      <view class="rp-sheet" @tap.stop>
+        <text class="rp-title">举报考点</text>
+        <text class="rp-sub">「{{ reportItem?.text }}」· 请选原因，并填写说明或正确项</text>
+        <view class="rp-reasons">
+          <text v-for="r in REASONS" :key="r.v" class="rp-chip" :class="{ on: reportReason === r.v }"
+                @tap="reportReason = r.v">{{ r.l }}</text>
+        </view>
+        <textarea class="rp-ta" v-model="reportDetail" placeholder="说明问题（至少 4 字，或下方填正确项）" maxlength="200" />
+        <input class="rp-in" v-model="reportSuggested" placeholder="我认为正确的词/用法（可选）" maxlength="80" />
+        <view class="rp-acts">
+          <text class="rp-btn ghost" @tap="reportOpen = false">取消</text>
+          <text class="rp-btn pri" @tap="submitReport">提交</text>
+        </view>
       </view>
     </view>
   </view>
@@ -67,7 +86,48 @@ const props = defineProps<{
   reported?: Record<string, boolean>
   testLoading?: boolean
 }>()
-defineEmits<{ (e: 'report', it: KpItem): void; (e: 'test'): void }>()
+const emit = defineEmits<{
+  (e: 'report', payload: { item: KpItem; reason: string; detail: string; suggested: string }): void
+  (e: 'test'): void
+}>()
+
+const REASONS = [
+  { v: 'meaning_mismatch', l: '词义不符' },
+  { v: 'out_of_syllabus', l: '超纲' },
+  { v: 'confuse_wrong', l: '形近误导' },
+  { v: 'collocation_fake', l: '搭配不真实' },
+  { v: 'other', l: '其它' },
+]
+
+const reportOpen = ref(false)
+const reportItem = ref<KpItem | null>(null)
+const reportReason = ref('meaning_mismatch')
+const reportDetail = ref('')
+const reportSuggested = ref('')
+
+/** 打开有凭证举报表单 */
+function openReport(it: KpItem) {
+  if (!it.id || (props.reported || {})[it.id]) return
+  reportItem.value = it
+  reportReason.value = 'meaning_mismatch'
+  reportDetail.value = ''
+  reportSuggested.value = ''
+  reportOpen.value = true
+}
+
+/** 校验凭证后交给父组件提交 */
+function submitReport() {
+  const it = reportItem.value
+  if (!it?.id) return
+  const detail = reportDetail.value.trim()
+  const suggested = reportSuggested.value.trim()
+  if (detail.length < 4 && !suggested) {
+    uni.showToast({ title: '请填说明或正确项', icon: 'none' })
+    return
+  }
+  reportOpen.value = false
+  emit('report', { item: it, reason: reportReason.value, detail, suggested })
+}
 
 const open = ref(true)
 const reported = computed(() => props.reported || {})
@@ -97,20 +157,21 @@ function dimCat(label: string) {
   return 'other'
 }
 
-// 叶子:仅取关系维(items 是词)的代表项,展开成 (dim,item) 对,最多 6 个上 6 槽
+// 叶子:仅取关系维的代表项;高置信优先占槽,最多 6 个
 const SLOTS = 6
 const leaves = computed(() => {
   const out: any[] = []
   for (const d of dims.value) {
     if (!d.relational) continue
-    for (let i = 0; i < d.items.length && out.length < SLOTS; i++) {
+    const sorted = [...d.items].sort((a, b) =>
+      (a.confidence === 'low' ? 1 : 0) - (b.confidence === 'low' ? 1 : 0))
+    for (let i = 0; i < sorted.length && out.length < SLOTS; i++) {
       out.push({ dimKey: d.key, dimShort: dimShort(d.label), cat: dimCat(d.label),
-                 text: d.items[i].text || '', itemKey: itemKey(d.items[i], i), item: d.items[i] })
-      if (out.length >= SLOTS) break
+                 text: sorted[i].text || '', itemKey: itemKey(sorted[i], i), item: sorted[i] })
     }
     if (out.length >= SLOTS) break
   }
-  return out.map((x, idx) => ({ ...x, slot: idx }))
+  return out.slice(0, SLOTS).map((x, idx) => ({ ...x, slot: idx }))
 })
 
 function tapLeaf(lf: any) {
@@ -160,6 +221,10 @@ const spokesBg = computed(() => {
 .mind-leaf text { font-size: 24rpx; font-weight: 600; color: #185fa5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mind-leaf.on { background: #e6f0ff; border-color: #3d8bf5; border-width: 3rpx; }
 .mind-leaf.on text { color: #0c447c; }
+.mind-leaf.low { background: #f2f4f8; border-color: #dde3ea; }
+.mind-leaf.low text { color: #94a3b8; font-weight: 500; }
+.mind-leaf.low.on { background: #eef1f5; border-color: #9aa4b2; }
+.mind-leaf.low.on text { color: #5f6b7a; }
 .mind-lbl { position: absolute; transform: translate(-50%,-50%); font-size: 20rpx; padding: 0 6rpx; background: rgba(255,255,255,.85); border-radius: 5rpx; }
 .dc-syn { color: #3b8f5f; } .dc-ant { color: #b0651a; } .dc-conf { color: #c2711a; } .dc-deriv { color: #2b7fb0; } .dc-colloc { color: #3170c0; } .dc-other { color: #8a93a3; }
 /* Tab */
@@ -178,6 +243,22 @@ const spokesBg = computed(() => {
 .kp-report.done { opacity: 1; }
 .kp-line.reported { opacity: .55; }
 /* 测试 */
-.kp-test { display: flex; align-items: center; justify-content: center; gap: 8rpx; margin-top: 14rpx; background: #eaf2ff; color: #185fa5; border-radius: 14rpx; padding: 18rpx 0; font-size: 26rpx; font-weight: 600; }
-.kp-test-ic { width: 30rpx; height: 30rpx; }
+.kp-test { margin-top: 16rpx; display: flex; align-items: center; justify-content: center; gap: 8rpx;
+  padding: 18rpx; background: #eef5ff; border-radius: 14rpx; color: #185fa5; font-size: 26rpx; font-weight: 700; }
+.kp-test-ic { width: 28rpx; height: 28rpx; }
+/* 有凭证举报 */
+.rp-mask { position: fixed; left: 0; right: 0; top: 0; bottom: 0; background: rgba(15,23,42,.45); z-index: 1000;
+  display: flex; align-items: flex-end; }
+.rp-sheet { width: 100%; background: #fff; border-radius: 24rpx 24rpx 0 0; padding: 28rpx 28rpx calc(28rpx + env(safe-area-inset-bottom)); }
+.rp-title { display: block; font-size: 30rpx; font-weight: 800; color: #1f2733; }
+.rp-sub { display: block; font-size: 22rpx; color: #94a3b8; margin: 8rpx 0 16rpx; line-height: 1.45; }
+.rp-reasons { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 16rpx; }
+.rp-chip { font-size: 24rpx; padding: 10rpx 20rpx; border-radius: 999rpx; background: #f2f5f9; color: #5f6b7a; border: 2rpx solid #e6ebf1; }
+.rp-chip.on { background: #e8f2ff; color: #185fa5; border-color: #bcd8ff; font-weight: 700; }
+.rp-ta { width: 100%; min-height: 140rpx; background: #f7f9fc; border-radius: 12rpx; padding: 16rpx; font-size: 26rpx; box-sizing: border-box; margin-bottom: 12rpx; }
+.rp-in { width: 100%; background: #f7f9fc; border-radius: 12rpx; padding: 16rpx; font-size: 26rpx; box-sizing: border-box; margin-bottom: 20rpx; }
+.rp-acts { display: flex; gap: 16rpx; }
+.rp-btn { flex: 1; text-align: center; padding: 18rpx; border-radius: 12rpx; font-size: 28rpx; font-weight: 700; }
+.rp-btn.ghost { background: #f2f5f9; color: #5f6b7a; }
+.rp-btn.pri { background: #3d8bf5; color: #fff; }
 </style>

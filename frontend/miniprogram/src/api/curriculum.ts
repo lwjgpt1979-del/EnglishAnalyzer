@@ -100,10 +100,44 @@ export interface CourseUnitsResp {
 }
 export interface GrammarMastery { recognize: number; detect: number; produce: number; transfer: boolean }
 export interface GrammarPractice { correct: number; total: number }
-export interface GrammarPoint { node_id: string | null; name: string; code: string | null; personal?: boolean; sgn_id?: string; studied?: boolean; mastery?: GrammarMastery | null; practice?: GrammarPractice | null }
+/** 语法精讲挂靠的原题(作业 D1 合一页) */
+export interface GrammarSourceQuestion {
+  id: string
+  question_no: string | null
+  stem: string | null
+  options?: string[] | null
+  question_type?: string | null
+  student_answer: string | null
+  correct_answer: string | null
+  explanation: string | null
+  is_wrong: boolean
+  /** 对应 wrong_record,有则挂错题关系网 */
+  wrong_record_id?: string | null
+}
+export interface GrammarPoint {
+  node_id: string | null
+  name: string
+  code: string | null
+  personal?: boolean
+  sgn_id?: string
+  studied?: boolean
+  mastery?: GrammarMastery | null
+  practice?: GrammarPractice | null
+  source_question_id?: string | null
+  question?: GrammarSourceQuestion | null
+}
 // 自建语法「练一练」做完 → 标记该个人节点已学 + 记最近一轮成绩(无图谱 node、无四维掌握)
 export function markPersonalGrammarPracticed(sgnId: string, correct: number, total: number): Promise<{ studied: boolean; correct: number; total: number }> {
   return request('/api/v1/curriculum/intensive/grammar/personal/practiced', { method: 'POST', data: { sgn_id: sgnId, correct, total } })
+}
+
+/** 语法原题解析兜底:无 explanation 时查看即生成并落库(正确/错误同等) */
+export function ensureGrammarExplanation(questionId: string, kpName?: string): Promise<{ explanation: string; cached: boolean }> {
+  return request('/api/v1/curriculum/intensive/grammar/ensure-explanation', {
+    method: 'POST',
+    data: { question_id: questionId, kp_name: kpName || null },
+    timeout: 60000,
+  })
 }
 export interface GrammarLectureSection { section_key: string; title: string; content_md: string }
 // 个人语法(未入图谱)按语法名即时生成 AI 讲解(全局缓存,同名不二次付费)
@@ -138,13 +172,21 @@ export function seHwSentences(paperId: string): Promise<{ sentences: SentenceIte
   return request('/api/v1/curriculum/intensive/sentence/homework/sentences', { method: 'GET', data: { paper_id: paperId } })
 }
 // 阅读理解精讲(作业):按卷归组;每卷=短文+小题
-export interface ReadingQuestion { no: string | null; type: string | null; stem: string | null; student_answer: string | null; correct_answer: string | null; explanation: string | null; is_wrong: boolean; studied?: boolean; id?: string }
+export interface ReadingQuestion { no: string | null; type: string | null; stem: string | null; options?: string[] | null; student_answer: string | null; correct_answer: string | null; explanation: string | null; is_wrong: boolean; studied?: boolean; id?: string }
 export interface ReadingBlock { block_label: string; passage: string; questions: ReadingQuestion[] }
 export function rdHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
   return request('/api/v1/curriculum/intensive/reading/homework/batches', { method: 'GET' })
 }
 export function rdHwPassages(paperId: string): Promise<{ blocks: ReadingBlock[] }> {
   return request('/api/v1/curriculum/intensive/reading/homework/passages', { method: 'GET', data: { paper_id: paperId } })
+}
+/** 作业精讲·完形填空：已加入精讲的卷批次 */
+export function czHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
+  return request('/api/v1/curriculum/intensive/cloze/homework/batches', { method: 'GET' })
+}
+/** 某卷完形：按语篇分组 */
+export function czHwPassages(paperId: string): Promise<{ blocks: ReadingBlock[] }> {
+  return request('/api/v1/curriculum/intensive/cloze/homework/passages', { method: 'GET', data: { paper_id: paperId } })
 }
 export function seCourseUnits(grade?: string, semester?: string): Promise<CourseUnitsResp> {
   const data: Record<string, string> = {}

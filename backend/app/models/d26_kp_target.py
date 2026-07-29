@@ -22,9 +22,11 @@ class StudentKpTarget(Base):
     node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=False)
     source = mapped_column(sa.String(24), nullable=False, server_default="manual")  # paper_upload / manual
     source_paper_id = mapped_column(UUID(as_uuid=True), nullable=True)   # 来源卷(作业精讲按批次归组)
+    source_question_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 来源小题(D1 按原题切点)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (
-        sa.UniqueConstraint("student_id", "node_id", name="uix_student_kp_target"),
+        # 有/无来源题分两条部分唯一(见 m202);ORM 侧用 Index 声明便于文档对齐
         sa.Index("ix_student_kp_target_student", "student_id"),
+        sa.Index("ix_skt_source_q", "source_question_id"),
     )

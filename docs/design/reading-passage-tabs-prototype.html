@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>阅读精讲 · 多短文 Tabs + 疏朗原文 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-word: #3d8bf5;
+      --c-sent: #e08a4c;
+      --c-sent-bg: #fdf3ea;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f4f6fa;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f4f6fa 45%, #f7f8fb 100%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top { max-width: 1180px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; }
+    .opts {
+      max-width: 1180px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .opt.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .opt .tag { font-size: 11px; opacity: .85; font-weight: 600; margin-left: 4px; }
+    .stage { max-width: 1180px; margin: 0 auto; padding: 18px 24px 48px;
+      display: grid; grid-template-columns: var(--phone-w) 1fr; gap: 28px; align-items: start; }
+    @media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
+
+    .phone {
+      width: var(--phone-w); max-width: 100%;
+      background: var(--c-page); border-radius: 28px; border: 1px solid #dbe3ef;
+      box-shadow: 0 18px 50px rgba(45,80,150,.12); overflow: hidden;
+    }
+    .phone-bar {
+      height: 44px; background: #fff; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .phone-body { padding: 12px 12px 80px; min-height: 640px; position: relative; }
+    .rd-head {
+      position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 12px;
+    }
+    .rd-fill { position: absolute; inset: 0 auto 0 0; width: 35%;
+      background: linear-gradient(90deg,#e8f2ff,#f4f9ff); }
+    .rd-num { position: relative; font-size: 22px; font-weight: 800; color: var(--c-primary); }
+    .rd-num span { font-size: 13px; color: #b7c2d4; font-weight: 700; }
+    .rd-info { position: relative; font-size: 12px; color: var(--c-sub); }
+    .rd-info b { color: var(--c-primary); }
+
+    /* —— 方案差异由 body class 驱动 —— */
+    .panel { display: none; }
+    .panel.on { display: block; }
+
+    /* 短文 Tab */
+    .pass-tabs {
+      display: flex; gap: 6px; background: #fff; border: 1px solid var(--c-line);
+      border-radius: 14px; padding: 6px; margin-bottom: 10px;
+    }
+    .pass-tab {
+      flex: 1; text-align: center; padding: 10px 6px; border-radius: 10px;
+      font-size: 13px; font-weight: 700; color: var(--c-sub); cursor: pointer; border: none; background: transparent;
+    }
+    .pass-tab.on { background: #e8f2ff; color: var(--c-primary); }
+    .pass-tab .sub { display: block; font-size: 11px; font-weight: 600; color: #94a3b8; margin-top: 2px; }
+    .pass-tab.on .sub { color: #6b9de8; }
+
+    /* 方案 B: 胶囊顶栏 */
+    .body-b .pass-tabs { background: transparent; border: none; padding: 0; gap: 8px; }
+    .body-b .pass-tab { background: #fff; border: 1px solid var(--c-line); }
+    .body-b .pass-tab.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .body-b .pass-tab.on .sub { color: rgba(255,255,255,.85); }
+
+    /* 方案 C: 分段 + 进度点 */
+    .body-c .pass-tabs { align-items: stretch; }
+    .body-c .pass-tab { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: #d0d7e2; }
+    .pass-tab.on .dot { background: var(--c-primary); }
+
+    .passage {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px; margin-bottom: 10px;
+    }
+    .passage-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .passage-title { font-size: 13px; font-weight: 700; color: var(--c-primary); }
+    .passage-toggle { font-size: 12px; color: #93a0b3; }
+
+    .legend {
+      display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+      padding: 8px 10px; margin-bottom: 10px;
+      background: #f8fafc; border-radius: 10px; border: 1px dashed #d7e0ec;
+      font-size: 12px; color: var(--c-sub);
+    }
+    .lg-w { color: var(--c-word); border-bottom: 1.5px dashed var(--c-word); font-weight: 700; }
+    .lg-s { color: var(--c-sent); border-bottom: 1.5px dashed var(--c-sent); font-weight: 700; }
+
+    /* 疏朗原文 — 相对现状加大行距/字号/段距 */
+    .passage-text {
+      font-size: 15px; line-height: 2.05; color: #3a4353;
+      white-space: normal; letter-spacing: 0.01em;
+    }
+    .body-a .passage-text { font-size: 15px; line-height: 2.0; }
+    .body-b .passage-text { font-size: 15.5px; line-height: 2.15; }
+    .body-c .passage-text {
+      font-size: 15px; line-height: 2.2;
+      /* 句段更疏:每句后微空隙 */
+    }
+    .body-c .s-block { display: inline; }
+    .body-c .s-block::after { content: ""; display: block; height: 10px; }
+
+    .w { color: var(--c-word); border-bottom: 1.5px dashed var(--c-word); font-weight: 600; cursor: pointer; }
+    .s { border-bottom: 1.5px dashed var(--c-sent); cursor: pointer; }
+    .s-mark {
+      display: inline-flex; vertical-align: text-top; margin-right: 4px;
+      width: 18px; height: 18px; border-radius: 4px; background: var(--c-sent-bg);
+      align-items: center; justify-content: center; position: relative; top: 2px;
+    }
+    .s-mark svg { width: 11px; height: 11px; stroke: var(--c-sent); fill: none; stroke-width: 2; stroke-linecap: round; }
+
+    .zh { color: #94a3b8; font-size: 0.92em; } /* 文内中文注释稍淡,减密 */
+
+    .q-card {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px; margin-bottom: 10px;
+    }
+    .q-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+    .chip { padding: 2px 8px; border-radius: 6px; font-weight: 700; background: #e8f2ff; color: var(--c-primary); }
+    .chip.ok { background: #e9f6f1; color: #2fa98a; }
+    .q-stem { font-size: 14px; line-height: 1.65; margin-bottom: 10px; }
+    .acts { display: flex; gap: 8px; }
+    .act {
+      flex: 1; text-align: center; padding: 11px; border-radius: 12px; font-size: 14px; font-weight: 700;
+      border: 1.5px solid var(--c-primary); color: var(--c-primary); background: #fff; cursor: pointer;
+    }
+    .act.primary { background: var(--c-primary); color: #fff; }
+
+    .study-bar {
+      position: absolute; left: 12px; right: 12px; bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px; font-size: 13px; box-shadow: 0 8px 24px rgba(45,80,150,.1);
+    }
+    .study-bar b { color: var(--c-primary); }
+
+    .spec h2 { margin: 0 0 10px; font-size: 16px; }
+    .spec table {
+      width: 100%; border-collapse: collapse; background: #fff;
+      border-radius: 12px; overflow: hidden; border: 1px solid var(--c-line); font-size: 13px;
+    }
+    .spec th, .spec td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--c-line); vertical-align: top; }
+    .spec th { background: #f8fafc; color: var(--c-sub); width: 28%; font-weight: 700; }
+    .spec tr:last-child td, .spec tr:last-child th { border-bottom: none; }
+    .rec { display: inline-block; background: #e8f2ff; color: var(--c-primary);
+      font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+    .note { margin-top: 14px; padding: 12px 14px; background: #fffbeb; border: 1px solid #f59e0b;
+      border-radius: 12px; font-size: 13px; color: #92400e; line-height: 1.7; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>阅读精讲 · 多短文 Tabs + 疏朗原文</h1>
+    <p>现状：两篇短文纵向叠放 + 原文偏密。下面 3 套可点原型（切 Tab / 看疏朗度），选定后再开发。</p>
+  </header>
+
+  <div class="opts">
+    <button class="opt on" data-opt="a">方案 A · 推荐<span class="tag">顶栏分段 Tab + 中度疏朗</span></button>
+    <button class="opt" data-opt="b">方案 B<span class="tag">实心胶囊 Tab + 更疏</span></button>
+    <button class="opt" data-opt="c">方案 C<span class="tag">进度点 Tab + 句间留白</span></button>
+  </div>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="phone-bar">2026-07-15 作业 2</div>
+      <div class="phone-body body-a" id="phoneBody">
+        <div class="rd-head">
+          <div class="rd-fill"></div>
+          <div class="rd-num">2<span>/8</span></div>
+          <div class="rd-info"><b>学习中 35%</b><br/>已精讲 2 / 8 题</div>
+        </div>
+
+        <div class="pass-tabs" id="passTabs">
+          <button type="button" class="pass-tab on" data-i="0">
+            <span class="dot"></span>
+            短文 1
+            <span class="sub">北京行程 · 4 题</span>
+          </button>
+          <button type="button" class="pass-tab" data-i="1">
+            <span class="dot"></span>
+            短文 2
+            <span class="sub">思乡 · 4 题</span>
+          </button>
+        </div>
+
+        <!-- 短文 1 -->
+        <div class="panel on" data-panel="0">
+          <div class="passage">
+            <div class="passage-head">
+              <span class="passage-title">原文 · 常驻对照</span>
+              <span class="passage-toggle">收起 ▴</span>
+            </div>
+            <div class="legend">
+              <span><span class="lg-w">单词</span>（点开词卡）</span>
+              <span><span class="lg-s">长难句</span>（点开句卡）</span>
+            </div>
+            <div class="passage-text">
+              <span class="s-block"><span class="s-mark"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span class="s">Beijing is the </span><span class="w">capital</span><span class="s"> </span><span class="w">city</span><span class="s"> of China. One of the most </span><span class="w">popular</span><span class="s"> </span><span class="w">ways</span><span class="s"> to see it is to visit Tian'anmen Square and the Forbidden City.</span></span>
+              Meet at the hotel <span class="w">lobby</span> <span class="zh">(大堂)</span> at 8:00. Then walk through the <span class="w">palace</span> group <span class="zh">(皇家的)</span> and later the Temple of Heaven, where people used to <span class="w">pray</span> <span class="zh">(祈求)</span> for a good <span class="w">harvest</span> <span class="zh">(丰收)</span>.
+            </div>
+          </div>
+          <div class="q-card">
+            <div class="q-head"><span class="chip">细节</span><span class="chip ok">答对</span><span style="margin-left:auto;color:#94a3b8">第 1 题</span></div>
+            <div class="q-stem">Where do tourists meet before visiting the Forbidden City?</div>
+            <div class="acts">
+              <div class="act">看解析</div>
+              <div class="act primary">练同类</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 短文 2 -->
+        <div class="panel" data-panel="1">
+          <div class="passage">
+            <div class="passage-head">
+              <span class="passage-title">原文 · 常驻对照</span>
+              <span class="passage-toggle">收起 ▴</span>
+            </div>
+            <div class="legend">
+              <span><span class="lg-w">单词</span>（点开词卡）</span>
+              <span><span class="lg-s">长难句</span>（点开句卡）</span>
+            </div>
+            <div class="passage-text">
+              <span class="s-block"><span class="s-mark"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span class="s">When I feel </span><span class="w">homesick</span><span class="s">, I think of my </span><span class="w">hometown</span><span class="s"> and the </span><span class="w">suitcases</span><span class="s"> my parents packed for me.</span></span>
+              Their quiet <span class="w">worry</span> reminds me that love often hides in small things we only notice later.
+            </div>
+          </div>
+          <div class="q-card">
+            <div class="q-head"><span class="chip">推理</span><span class="chip ok">答对</span><span style="margin-left:auto;color:#94a3b8">第 5 题</span></div>
+            <div class="q-stem">What do the suitcases mainly show about the parents?</div>
+            <div class="acts">
+              <div class="act">看解析</div>
+              <div class="act primary">练同类</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="study-bar">
+          <span>💡</span>
+          <span style="font-weight:800">本篇精讲</span>
+          <span style="margin-left:auto;color:#64748b">生词 <b id="wc">36</b> · 长难句 <b id="sc">1</b></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="spec" id="spec">
+      <h2>方案 A · 顶栏分段 Tab + 中度疏朗 <span class="rec">推荐</span></h2>
+      <table>
+        <tr><th>短文切换</th><td>卷头下一条「短文 1 / 短文 2」分段控件；选中浅蓝底。只渲染当前短文的原文+题目。</td></tr>
+        <tr><th>原文疏朗</th><td>字号 ≈15px · 行高 ≈2.0 · 图例与正文间距加大；文内中文注释改淡灰减噪。</td></tr>
+        <tr><th>读写对照</th><td>原文仍吸顶；切 Tab 时题目跟着换，对照不乱。</td></tr>
+        <tr><th>本篇精讲</th><td>底部栏统计随当前短文变化（或仍汇总整卷，可另定）。</td></tr>
+        <tr><th>优点</th><td>改动小、符合现有分段控件习惯；一屏只看一篇，密感立刻下降。</td></tr>
+        <tr><th>成本</th><td>前端 reading-paper 为主；后端可不改。</td></tr>
+      </table>
+      <div class="note">左侧手机可点「短文 1 / 短文 2」切换。选定 A/B/C（或组合，如「Tab 用 A、疏朗用 B」）后再开发。</div>
+    </div>
+  </div>
+
+  <script>
+    const specs = {
+      a: {
+        title: '方案 A · 顶栏分段 Tab + 中度疏朗',
+        rec: true,
+        rows: [
+          ['短文切换', '卷头下一条「短文 1 / 短文 2」分段控件；选中浅蓝底。只渲染当前短文的原文+题目。'],
+          ['原文疏朗', '字号 ≈15px · 行高 ≈2.0 · 图例与正文间距加大；文内中文注释改淡灰减噪。'],
+          ['读写对照', '原文仍吸顶；切 Tab 时题目跟着换，对照不乱。'],
+          ['本篇精讲', '底部栏统计随当前短文变化（或仍汇总整卷，可另定）。'],
+          ['优点', '改动小、符合现有分段控件习惯；一屏只看一篇，密感立刻下降。'],
+          ['成本', '前端 reading-paper 为主；后端可不改。'],
+        ],
+      },
+      b: {
+        title: '方案 B · 实心胶囊 Tab + 更疏',
+        rec: false,
+        rows: [
+          ['短文切换', '独立胶囊按钮；选中填主色蓝，未选白底描边，辨识更强。'],
+          ['原文疏朗', '字号略大 · 行高 ≈2.15，阅读区更「透气」。'],
+          ['读写对照', '同 A：一 Tab 一文+题。'],
+          ['优点', 'Tab 状态更醒目；长文阅读更轻松。'],
+          ['缺点', '实心选中占视觉权重，可能抢过原文标题。'],
+          ['成本', '同 A，主要是样式差异。'],
+        ],
+      },
+      c: {
+        title: '方案 C · 进度点 Tab + 句间留白',
+        rec: false,
+        rows: [
+          ['短文切换', 'Tab 下带小圆点暗示「篇进度」；适合 2～N 篇。'],
+          ['原文疏朗', '行高 ≈2.2，且每个长难句块后加 10px 句间空隙（段落感）。'],
+          ['优点', '疏朗最明显；多短文时扩展性好。'],
+          ['缺点', '句间留白会拉高原文高度，吸顶区可能更占屏。'],
+          ['成本', '样式 + 轻微渲染结构（句块后空隙）。'],
+        ],
+      },
+    }
+
+    const counts = { 0: [36, 1], 1: [28, 1] }
+    const body = document.getElementById('phoneBody')
+    const specEl = document.getElementById('spec')
+
+    function renderSpec(key) {
+      const s = specs[key]
+      specEl.innerHTML = `<h2>${s.title}${s.rec ? ' <span class="rec">推荐</span>' : ''}</h2>
+        <table>${s.rows.map(([k,v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
+        <div class="note">左侧手机可点「短文 1 / 短文 2」切换。选定 A/B/C（或组合）后再开发；未选定前不改业务代码。</div>`
+    }
+
+    document.querySelectorAll('.opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.opt').forEach(x => x.classList.remove('on'))
+        btn.classList.add('on')
+        const key = btn.dataset.opt
+        body.className = 'phone-body body-' + key
+        renderSpec(key)
+      })
+    })
+
+    document.getElementById('passTabs').addEventListener('click', (e) => {
+      const tab = e.target.closest('.pass-tab')
+      if (!tab) return
+      const i = tab.dataset.i
+      document.querySelectorAll('.pass-tab').forEach(t => t.classList.toggle('on', t.dataset.i === i))
+      document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.dataset.panel === i))
+      const [w, s] = counts[i]
+      document.getElementById('wc').textContent = w
+      document.getElementById('sc').textContent = s
+    })
+  </script>
+</body>
+</html>

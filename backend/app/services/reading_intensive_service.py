@@ -241,10 +241,16 @@ async def homework_passages(db: AsyncSession, *, student_id: uuid.UUID,
             blocks[bk] = {"block_label": (f" · {qq.block_key}" if qq.block_key else ""),
                           "passage": qq.passage or "", "questions": []}
             order.append(bk)
+        stem, opts = qq.stem, (qq.options if isinstance(getattr(qq, "options", None), list) else None)
+        if not opts and stem:
+            from app.services.stem_options import parse_inline_options
+            clean, parsed = parse_inline_options(stem)
+            if parsed:
+                stem, opts = clean, parsed
         blocks[bk]["questions"].append({
             "id": str(qq.id),
-            "no": qq.question_no, "type": qq.question_type, "stem": qq.stem,
-            "options": qq.options if isinstance(getattr(qq, "options", None), list) else None,
+            "no": qq.question_no, "type": qq.question_type, "stem": stem,
+            "options": opts,
             "student_answer": qq.student_answer, "correct_answer": qq.correct_answer,
             "explanation": qq.explanation, "is_wrong": bool(qq.is_wrong),
             "studied": qq.id in studied_ids})
@@ -279,45 +285,31 @@ async def record_reading_answer(db: AsyncSession, *, student_id: uuid.UUID,
     return {"chosen": pick, "correct_answer": correct, "is_correct": is_correct}
 
 
-_EXAM_LABEL = {"junior": (1, "中考"), "senior": (2, "高考")}
-_FREQ_TIER = {3: "高频", 2: "中频", 1: "低频"}
-
-
 async def _paper_weak_exam_vocab(db: AsyncSession, *, student_id: uuid.UUID,
                                  paper_id: uuid.UUID) -> dict:
-    """P4 词汇探头:本卷短文里的「考纲薄弱词」= 命中词库 ∩ 接收度<0.6(复用 paper_vocab_candidates)
-    ∩ 属中考/高考已上架词库。带频档(高/中频)。"""
-    from app.models.d18_vocab_kg import VocabList, VocabListItem
-    from app.services import user_paper_service
-    cand = await user_paper_service.paper_vocab_candidates(
-        db, paper_id=paper_id, student_id=student_id)
-    words = (cand or {}).get("words") or []
-    if not words:
+    """P4 词汇探头:与阅读精讲原文高亮同一口径——理解向难词(F+E+A)。
+    逐短文抽 → 按 score 合并去重 → Top12。tag 带考纲/频档或「超纲·关键」。"""
+    from app.services import user_paper_service as ups
+    passages, stems = await ups._paper_texts(db, paper_id)
+    if not passages:
         return {"weak_count": 0, "weak": []}
-    ids = [uuid.UUID(w["word_id"]) for w in words]
-    rows = (await db.execute(
-        select(VocabListItem.word_id, VocabList.exam_level, VocabListItem.star)
-        .join(VocabList, VocabList.id == VocabListItem.list_id)
-        .where(VocabListItem.word_id.in_(ids),
-               VocabList.exam_level.in_(("junior", "senior")),
-               VocabList.status == "published"))).all()
-    best: dict = {}   # word_id → (学段权重, 学段名, star)
-    for wid, lvl, star in rows:
-        er, el = _EXAM_LABEL.get(lvl, (0, ""))
-        cur = best.get(wid)
-        if cur is None or er > cur[0] or (er == cur[0] and (star or 0) > cur[2]):
-            best[wid] = (er, el, star or 0)
-    weak = []
-    for w in words:
-        b = best.get(uuid.UUID(w["word_id"]))
-        if not b:
-            continue
-        tier = _FREQ_TIER.get(b[2])
-        weak.append({"word": w["word"], "tag": f"{b[1]}·{tier}" if tier else b[1], "_star": b[2]})
-    weak.sort(key=lambda x: -x["_star"])              # 真题高频档优先露出,不被 total/people 挤掉
+    stem_blob = " ".join(stems) if stems else None
+    best: dict[str, dict] = {}   # word → {word, tag, _score}
+    for i, p in enumerate(passages):
+        others = passages[:i] + passages[i + 1:]
+        picked = await ups.comprehension_hard_words(
+            db, text=p, student_id=student_id,
+            stem_text=stem_blob, other_passages=others, limit=ups._COMP_WORD_TOP)
+        for c in picked:
+            w = c["word"]
+            prev = best.get(w)
+            if prev is None or c["score"] > prev["_score"]:
+                best[w] = {"word": w, "tag": c.get("exam_tag") or "", "_score": c["score"]}
+    weak = sorted(best.values(), key=lambda x: -x["_score"])
     for x in weak:
-        x.pop("_star", None)
-    return {"weak_count": len(weak), "weak": weak[:12]}
+        x.pop("_score", None)
+    weak = weak[:12]
+    return {"weak_count": len(weak), "weak": weak}
 
 
 async def _paper_stuck_sentences(db: AsyncSession, *, student_id: uuid.UUID,
@@ -413,7 +405,7 @@ async def paper_reading_summary(db: AsyncSession, *, student_id: uuid.UUID,
 
 async def reading_analytics(db: AsyncSession, *, student_id: uuid.UUID,
                             days: int = 14, paper_cap: int = 20) -> dict:
-    """P5 阶段薄弱点:近 days 天(days<=0=全部)多卷聚合 → 高频薄弱考纲词 / 反复卡句法 /
+    """P5 阶段薄弱点:近 days 天(days<=0=全部)多卷聚合 → 多篇理解向重点词 / 反复卡句法 /
     弱题型正确率 + 一句话诊断。纯阈值判弱(可配)。全部复用现成信号,零新增采集。"""
     from datetime import datetime, timezone, timedelta
     from collections import Counter, defaultdict
@@ -469,7 +461,7 @@ async def reading_analytics(db: AsyncSession, *, student_id: uuid.UUID,
     weak_skills = [s for s in skills
                    if s["total"] >= th["skill_min_sample"] and s["rate"] < th["skill_weak_rate"]]
 
-    # ② 高频薄弱考纲词(出现 ≥N 卷;复用单篇词汇探头,paper_cap 兜住成本)
+    # ② 多篇理解向重点词(出现 ≥N 卷;复用单篇词汇探头,与原文高亮同口径 F+E+A)
     word_papers: dict = defaultdict(set)
     word_tag: dict = {}
     for pid in papers[:paper_cap]:
@@ -480,7 +472,7 @@ async def reading_analytics(db: AsyncSession, *, student_id: uuid.UUID,
     weak_words = sorted(
         ({"word": w, "tag": word_tag[w], "papers": len(ps)}
          for w, ps in word_papers.items() if len(ps) >= th["weak_word_min_papers"]),
-        key=lambda x: (-("频" in x["tag"]), -x["papers"]))[:12]   # 真题频档词优先,裸常见考纲词沉底
+        key=lambda x: (-("频" in (x["tag"] or "")), -x["papers"]))[:12]
 
     # ③ 反复卡的句法结构(卡 ≥K 次;卡口径同单篇:已起学但 did_gram=false)
     struct: Counter = Counter()
@@ -503,7 +495,7 @@ async def reading_analytics(db: AsyncSession, *, student_id: uuid.UUID,
     if weak_structures:
         bits.append(weak_structures[0]["name"])
     if weak_words:
-        bits.append(weak_words[0]["word"] + " 类考纲词")
+        bits.append(weak_words[0]["word"] + " 类重点词")
     diagnosis = ("近期薄弱:" + " + ".join(bits) + ",建议优先攻这几块。") if bits \
         else "近期没有明显薄弱点,继续保持。"
     return {"days": days, "papers": len(papers), "skills": skills,

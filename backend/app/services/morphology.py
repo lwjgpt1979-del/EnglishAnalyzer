@@ -110,9 +110,51 @@ def adj_forms(word: str) -> list[tuple[str, str]]:
     return _dedupe([(comp, "比较级"), (sup, "最高级")], w)
 
 
+# ECDICT exchange 码 → 标签(见 skywind3000/ECDICT README)
+_EX_VERB = (("p", "过去式"), ("d", "过去分词"), ("i", "现在分词"))
+_EX_NOUN = (("s", "复数"),)
+_EX_ADJ = (("r", "比较级"), ("t", "最高级"))
+
+
+def parse_exchange(exchange: str | None) -> dict[str, str]:
+    """解析 ECDICT exchange 串 → {码: 词形};同码多值取第一个。空/非法 → {}。"""
+    out: dict[str, str] = {}
+    for part in (exchange or "").split("/"):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        code, form = part.split(":", 1)
+        code, form = code.strip().lower(), form.strip().lower()
+        if code and form and code not in out:
+            out[code] = form
+    return out
+
+
+def forms_from_exchange(exchange: str | None, pos: str) -> tuple[str, list[tuple[str, str]]] | None:
+    """用 ECDICT exchange 按词性出 (dim_key, [(词形,标签)]);缺关键码则 None(回退 lemminflect)。"""
+    tags = parse_exchange(exchange)
+    if not tags:
+        return None
+    p = (pos or "").strip().lower()
+    if p.startswith("verb") or p in ("v", "v."):
+        pairs = [(tags[c], zh) for c, zh in _EX_VERB if c in tags]
+        return ("tense", _dedupe(pairs, "")) if pairs else None
+    if p.startswith("noun") or p in ("n", "n."):
+        pairs = [(tags[c], zh) for c, zh in _EX_NOUN if c in tags]
+        return ("plural", _dedupe(pairs, "")) if pairs else None
+    if p.startswith("adj") or p.startswith("adv") or p in ("a", "adj.", "adv."):
+        pairs = [(tags[c], zh) for c, zh in _EX_ADJ if c in tags]
+        return ("comparative", _dedupe(pairs, "")) if pairs else None
+    return None
+
+
 # pos(LLM 输出 verb/noun/adj/adv/…)→ 维度键 + 生成函数
-def forms_for_pos(word: str, pos: str) -> tuple[str, list[tuple[str, str]]] | None:
-    """按词性返回 (dim_key, [(词形,标签)]);不适用则 None。"""
+def forms_for_pos(word: str, pos: str, exchange: str | None = None
+                  ) -> tuple[str, list[tuple[str, str]]] | None:
+    """按词性返回 (dim_key, [(词形,标签)]);优先 ECDICT exchange,否则 lemminflect/规则。不适用则 None。"""
+    ex = forms_from_exchange(exchange, pos)
+    if ex and ex[1]:
+        return ex
     p = (pos or "").strip().lower()
     if p.startswith("verb") or p in ("v", "v."):
         return ("tense", verb_tenses(word))

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>阅读精讲 · 原文内联标注与弹卡 — 原型 / 互动</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-word: #3d8bf5;
+      --c-sent: #e08a4c;
+      --c-sent-bg: #fdf3ea;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f4f6fa;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #eef3fb 0%, #f7f8fb 40%, #f4f6fa 100%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top {
+      padding: 28px 24px 8px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.6; }
+    .tabs {
+      max-width: 1100px; margin: 16px auto 0; padding: 0 24px;
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .tab {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700;
+      cursor: pointer;
+    }
+    .tab.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .panel { display: none; max-width: 1100px; margin: 0 auto; padding: 20px 24px 48px; }
+    .panel.on { display: block; }
+
+    /* —— 原型图 —— */
+    .proto-grid {
+      display: grid;
+      grid-template-columns: var(--phone-w) 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+    @media (max-width: 860px) {
+      .proto-grid { grid-template-columns: 1fr; }
+    }
+    .phone {
+      width: var(--phone-w);
+      max-width: 100%;
+      background: var(--c-page);
+      border-radius: 28px;
+      border: 1px solid #dbe3ef;
+      box-shadow: 0 18px 50px rgba(45, 80, 150, .12);
+      overflow: hidden;
+      position: relative;
+    }
+    .phone-bar {
+      height: 44px; background: #fff; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .phone-body { padding: 14px; min-height: 560px; }
+    .passage {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px 14px 16px; box-shadow: 0 6px 18px rgba(45,80,150,.06);
+    }
+    .passage-head {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+    }
+    .passage-title { font-size: 13px; font-weight: 700; color: var(--c-primary); }
+    .passage-toggle { font-size: 12px; color: #93a0b3; }
+
+    .legend {
+      display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+      padding: 8px 10px; margin-bottom: 12px;
+      background: #f8fafc; border-radius: 10px; border: 1px dashed #d7e0ec;
+      font-size: 12px; color: var(--c-sub);
+    }
+    .lg-item { display: inline-flex; align-items: center; gap: 6px; }
+    .lg-sample {
+      display: inline-block; padding-bottom: 1px;
+      border-bottom: 1.5px dashed currentColor; font-weight: 700;
+    }
+    .lg-sample.word { color: var(--c-word); }
+    .lg-sample.sent { color: var(--c-sent); }
+
+    /* 不用 pre-wrap:源码缩进/换行会被当成空白行,造成句间巨大空隙 */
+    .passage-text {
+      font-size: 15px; line-height: 1.85; color: #3a4353;
+      white-space: normal;
+    }
+
+    /* 词标注 */
+    .w {
+      color: var(--c-word);
+      border-bottom: 1.5px dashed var(--c-word);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .w:hover { background: #eaf3ff; border-radius: 2px; }
+
+    /* 长难句块：句首图标 + 橙虚线 */
+    .s-block {
+      display: inline;
+    }
+    .s-mark {
+      display: inline-flex; vertical-align: text-top; margin-right: 4px;
+      width: 18px; height: 18px; border-radius: 4px;
+      background: var(--c-sent-bg); align-items: center; justify-content: center;
+      cursor: pointer; position: relative; top: 2px;
+    }
+    .s-mark svg { width: 11px; height: 11px; stroke: var(--c-sent); fill: none; stroke-width: 2; stroke-linecap: round; }
+    .s {
+      border-bottom: 1.5px dashed var(--c-sent);
+      cursor: pointer;
+    }
+    .s:hover { background: #fff7f0; }
+
+    .hint-box {
+      margin-top: 14px; padding: 12px 14px; background: #fff; border-radius: 12px;
+      border: 1px solid var(--c-line); font-size: 13px; color: var(--c-sub); line-height: 1.7;
+    }
+    .hint-box strong { color: var(--c-ink); }
+    .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+    .swatch.b { background: var(--c-word); }
+    .swatch.o { background: var(--c-sent); }
+
+    /* 弹层 */
+    .mask {
+      position: absolute; inset: 0; background: rgba(0,0,0,.45);
+      display: none; align-items: center; justify-content: center; padding: 20px; z-index: 20;
+    }
+    .mask.on { display: flex; }
+    .card {
+      width: 100%; background: #fff; border-radius: 16px; padding: 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.18); animation: pop .18s ease-out;
+    }
+    @keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .card.word { border-top: 4px solid var(--c-word); }
+    /* 句卡弹层:浅蓝色风格(与主色一致),和原文橙虚线标注区分——标注=橙,弹层=蓝 */
+    .card.sent { border-top: 4px solid var(--c-primary); }
+    .card-kicker {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 700; margin-bottom: 8px;
+    }
+    .card.word .card-kicker { color: var(--c-word); }
+    .card.sent .card-kicker { color: var(--c-primary); }
+    .card h3 { margin: 0; font-size: 22px; font-weight: 800; }
+    .card .ph { color: var(--c-sub); font-size: 13px; margin: 4px 0 10px; }
+    .card .body { font-size: 14px; line-height: 1.7; color: #3a4353; }
+    .card .ex { margin-top: 10px; padding: 10px; background: #f6f8fb; border-radius: 10px; font-size: 13px; }
+    .card .cta {
+      margin-top: 14px; text-align: center; background: var(--c-primary); color: #fff;
+      border-radius: 999px; padding: 11px; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    .card.sent .cta { background: var(--c-primary); }
+    .card.sent .ex { background: #eef5ff; color: #3a4353; }
+    .card .close {
+      float: right; width: 28px; height: 28px; border-radius: 50%; border: none;
+      background: #f1f5f9; color: #64748b; cursor: pointer; font-size: 16px;
+    }
+
+    .spec h2 { margin: 0 0 12px; font-size: 16px; }
+    .spec table {
+      width: 100%; border-collapse: collapse; background: #fff;
+      border-radius: 12px; overflow: hidden; border: 1px solid var(--c-line);
+      font-size: 13px;
+    }
+    .spec th, .spec td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--c-line); vertical-align: top; }
+    .spec th { background: #f8fafc; color: var(--c-sub); font-weight: 700; width: 28%; }
+    .spec tr:last-child td, .spec tr:last-child th { border-bottom: none; }
+
+    /* —— 互动图 —— */
+    .flow {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 16px;
+      padding: 24px 18px 10px; overflow-x: auto;
+    }
+    .flow svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+    .states {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px;
+    }
+    @media (max-width: 860px) { .states { grid-template-columns: 1fr; } }
+    .state {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px; padding: 14px;
+    }
+    .state h3 { margin: 0 0 8px; font-size: 14px; }
+    .state p { margin: 0; font-size: 12px; color: var(--c-sub); line-height: 1.6; }
+    .state .mini {
+      margin-top: 10px; padding: 10px; background: #f8fafc; border-radius: 10px;
+      font-size: 12px; line-height: 1.9; color: #3a4353;
+    }
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 999px; margin-bottom: 6px;
+    }
+    .badge.idle { background: #eef2f7; color: #64748b; }
+    .badge.word { background: #e8f2ff; color: var(--c-word); }
+    .badge.sent { background: #e8f2ff; color: var(--c-primary); }
+
+    .rules {
+      margin-top: 18px; background: #fff; border: 1px solid var(--c-line);
+      border-radius: 14px; padding: 16px 18px;
+    }
+    .rules h2 { margin: 0 0 10px; font-size: 15px; }
+    .rules ol { margin: 0; padding-left: 18px; color: var(--c-sub); font-size: 13px; line-height: 1.8; }
+    .rules li strong { color: var(--c-ink); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>阅读精讲 · 原文内联标注与弹卡</h1>
+    <p>方案 A 原型：蓝词点开词卡 · 橙句（含句首图标）点开句卡 · 句内词优先。右侧可对照规格；「互动图」看点击路径。</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab on" data-panel="proto">① 原型图（可点击）</button>
+    <button class="tab" data-panel="flow">② 互动图</button>
+  </div>
+
+  <!-- ========== 原型图 ========== -->
+  <section id="proto" class="panel on">
+    <div class="proto-grid">
+      <div class="phone" id="phone">
+        <div class="phone-bar">作业精讲 · 阅读原文</div>
+        <div class="phone-body">
+          <div class="passage">
+            <div class="passage-head">
+              <span class="passage-title">原文 · 常驻对照</span>
+              <span class="passage-toggle">收起 ▴</span>
+            </div>
+            <div class="legend">
+              <span class="lg-item"><span class="lg-sample word">单词</span><span>（点开词卡）</span></span>
+              <span class="lg-item"><span class="lg-sample sent">长难句</span><span>（点开句卡）</span></span>
+            </div>
+            <div class="passage-text" id="passage"><span class="s-block"><span class="s-mark" title="点开句卡" data-open="sent" data-text="The boy who is reading a book under the tree is my brother." aria-label="长难句"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span class="s" data-open="sent" data-text="The boy who is reading a book under the tree is my brother.">The boy who is </span><span class="w" data-open="word" data-word="reading" data-def="v. 阅读；朗读" data-ph="ˈriːdɪŋ">reading</span><span class="s" data-open="sent" data-text="The boy who is reading a book under the tree is my brother."> a book under the </span><span class="w" data-open="word" data-word="tree" data-def="n. 树" data-ph="triː">tree</span><span class="s" data-open="sent" data-text="The boy who is reading a book under the tree is my brother."> is my </span><span class="w" data-open="word" data-word="brother" data-def="n. 兄弟" data-ph="ˈbrʌðər">brother</span><span class="s" data-open="sent" data-text="The boy who is reading a book under the tree is my brother.">.</span></span> <span class="s-block"><span class="s-mark" data-open="sent" data-text="Although it was raining heavily, we decided to go for a walk in the park."><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span class="s" data-open="sent" data-text="Although it was raining heavily, we decided to go for a walk in the park.">Although it was raining </span><span class="w" data-open="word" data-word="heavily" data-def="adv. 猛烈地；大量地" data-ph="ˈhevɪli">heavily</span><span class="s" data-open="sent" data-text="Although it was raining heavily, we decided to go for a walk in the park.">, we </span><span class="w" data-open="word" data-word="decided" data-def="v. 决定" data-ph="dɪˈsaɪdɪd">decided</span><span class="s" data-open="sent" data-text="Although it was raining heavily, we decided to go for a walk in the park."> to go for a </span><span class="w" data-open="word" data-word="walk" data-def="n./v. 步行；散步" data-ph="wɔːk">walk</span><span class="s" data-open="sent" data-text="Although it was raining heavily, we decided to go for a walk in the park."> in the park.</span></span> He likes red <span class="w" data-open="word" data-word="apples" data-def="n. 苹果（复数）" data-ph="ˈæplz">apples</span> very much.</div>
+          </div>
+
+          <div class="hint-box">
+            <strong>试交互：</strong>点蓝色词 → 词卡；点橙色下划线区或句首图标 → 句卡。<br />
+            <span class="swatch b"></span>词优先：句内蓝词点词不开句卡。
+          </div>
+        </div>
+
+        <!-- 弹层 -->
+        <div class="mask" id="mask">
+          <div class="card" id="card">
+            <button class="close" id="closeBtn" type="button" aria-label="关闭">×</button>
+            <div class="card-kicker" id="cardKicker"></div>
+            <h3 id="cardTitle"></h3>
+            <div class="ph" id="cardPh"></div>
+            <div class="body" id="cardBody"></div>
+            <div class="ex" id="cardEx" hidden></div>
+            <div class="cta" id="cardCta"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="spec">
+        <h2>视觉规格（对齐设计图 · 方案 A）</h2>
+        <table>
+          <tr><th>图例</th><td>原文顶部：<code>单词（点开词卡）</code> 蓝虚线样例 + <code>长难句（点开句卡）</code> 橙虚线样例</td></tr>
+          <tr><th>单词</th><td>字色 <code>#3d8bf5</code> · 底部 <code>1.5px dashed</code> 同色 · 无浅橙底</td></tr>
+          <tr><th>长难句</th><td>底部橙虚线 <code>#e08a4c</code> · 句首 18×18 圆角浅橙底 + 三横线线性图标</td></tr>
+          <tr><th>嵌套</th><td>句内词保持蓝样式；橙虚线在词前后文字上连续延伸；点击词优先</td></tr>
+          <tr><th>普通句</th><td>无图标、无橙线；可有独立蓝词（如 apples）</td></tr>
+          <tr><th>弹层</th><td>WordCard / SentenceCard 均为浅蓝主色风格（顶条+按钮 <code>#3d8bf5</code>）；原文长难句标注仍用橙虚线，与弹层区分</td></tr>
+          <tr><th>证据句</th><td>「回原文定位」蓝底叠加仍保留（本原型未演示）</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 互动图 ========== -->
+  <section id="flow" class="panel">
+    <div class="flow">
+      <svg viewBox="0 0 920 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="点击互动流程图">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"/>
+          </marker>
+          <filter id="sh" x="-10%" y="-10%" width="120%" height="130%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity=".08"/>
+          </filter>
+        </defs>
+
+        <!-- 起点 -->
+        <rect x="40" y="170" width="140" height="56" rx="12" fill="#fff" stroke="#dbe3ef" filter="url(#sh)"/>
+        <text x="110" y="195" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">阅读原文</text>
+        <text x="110" y="213" text-anchor="middle" font-size="11" fill="#64748b">已加载 segments</text>
+
+        <line x1="180" y1="198" x2="230" y2="198" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- 判定 -->
+        <path d="M290,198 L340,158 L390,198 L340,238 Z" fill="#fff" stroke="#3d8bf5" stroke-width="1.5" filter="url(#sh)"/>
+        <text x="340" y="194" text-anchor="middle" font-size="12" font-weight="700" fill="#1f2937">点哪里？</text>
+        <text x="340" y="210" text-anchor="middle" font-size="10" fill="#64748b">hit-test</text>
+
+        <!-- 上：单词 -->
+        <line x1="340" y1="158" x2="340" y2="88" stroke="#94a3b8" stroke-width="1.5"/>
+        <line x1="340" y1="88" x2="470" y2="88" stroke="#3d8bf5" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="360" y="80" font-size="11" fill="#3d8bf5" font-weight="700">word_idx ≠ null</text>
+
+        <rect x="480" y="58" width="160" height="60" rx="12" fill="#e8f2ff" stroke="#3d8bf5" filter="url(#sh)"/>
+        <text x="560" y="84" text-anchor="middle" font-size="13" font-weight="700" fill="#3d8bf5">打开 WordCard</text>
+        <text x="560" y="102" text-anchor="middle" font-size="11" fill="#3a6fb0">图 / 音 / 义 / 例句</text>
+
+        <line x1="640" y1="88" x2="700" y2="88" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+        <rect x="710" y="58" width="160" height="60" rx="12" fill="#fff" stroke="#dbe3ef" filter="url(#sh)"/>
+        <text x="790" y="84" text-anchor="middle" font-size="12" font-weight="700" fill="#1f2937">遮罩点空白</text>
+        <text x="790" y="102" text-anchor="middle" font-size="11" fill="#64748b">关闭词卡</text>
+
+        <!-- 中：长难句 -->
+        <line x1="390" y1="198" x2="470" y2="198" stroke="#e08a4c" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="410" y="190" font-size="11" fill="#e08a4c" font-weight="700">sentence_idx</text>
+        <text x="410" y="220" font-size="10" fill="#e08a4c">（且非词）</text>
+
+        <rect x="480" y="168" width="160" height="60" rx="12" fill="#e8f2ff" stroke="#3d8bf5" filter="url(#sh)"/>
+        <text x="560" y="194" text-anchor="middle" font-size="13" font-weight="700" fill="#3d8bf5">打开 SentenceCard</text>
+        <text x="560" y="212" text-anchor="middle" font-size="11" fill="#3a6fb0">浅蓝弹层 + CTA</text>
+
+        <line x1="640" y1="198" x2="700" y2="198" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+        <rect x="710" y="158" width="160" height="80" rx="12" fill="#fff" stroke="#dbe3ef" filter="url(#sh)"/>
+        <text x="790" y="188" text-anchor="middle" font-size="12" font-weight="700" fill="#1f2937">查看完整精讲</text>
+        <text x="790" y="208" text-anchor="middle" font-size="11" fill="#64748b">→ sentence 页</text>
+        <text x="790" y="224" text-anchor="middle" font-size="10" fill="#94a3b8">或点遮罩关闭</text>
+
+        <!-- 下：空白 / 收起 -->
+        <line x1="340" y1="238" x2="340" y2="320" stroke="#94a3b8" stroke-width="1.5"/>
+        <line x1="340" y1="320" x2="470" y2="320" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="360" y="312" font-size="11" fill="#64748b" font-weight="700">普通文字 / 标题栏</text>
+
+        <rect x="480" y="290" width="160" height="60" rx="12" fill="#f8fafc" stroke="#cbd5e1" filter="url(#sh)"/>
+        <text x="560" y="316" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b">折叠原文 / 无弹层</text>
+        <text x="560" y="334" text-anchor="middle" font-size="11" fill="#94a3b8">@tap.stop 防冒泡</text>
+
+        <!-- 优先级注 -->
+        <rect x="40" y="320" width="220" height="70" rx="12" fill="#fffbeb" stroke="#f59e0b"/>
+        <text x="150" y="348" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">优先级（硬规则）</text>
+        <text x="150" y="368" text-anchor="middle" font-size="11" fill="#a16207">词 &gt; 句 &gt; 原文折叠</text>
+      </svg>
+    </div>
+
+    <div class="states">
+      <div class="state">
+        <span class="badge idle">状态 0</span>
+        <h3>默认 · 双高亮静默</h3>
+        <p>图例可见；蓝词 / 橙句（含图标）已标注；无弹层。</p>
+        <div class="mini">
+          <span class="w" style="cursor:default">reading</span>
+          ·
+          <span class="s" style="cursor:default">Although…</span>
+        </div>
+      </div>
+      <div class="state">
+        <span class="badge word">状态 1</span>
+        <h3>点词 → WordCard</h3>
+        <p>即使词在长难句内，也只开词卡；句橙线保留在词两侧。</p>
+        <div class="mini">遮罩 + 词卡（图/音/义）· 点空白关闭</div>
+      </div>
+      <div class="state">
+        <span class="badge sent">状态 2</span>
+        <h3>点句 / 句首标 → SentenceCard</h3>
+        <p>点橙线下的非词文字，或点句首列表图标。</p>
+        <div class="mini">轻量句卡 →「查看完整精讲」进闯关页</div>
+      </div>
+    </div>
+
+    <div class="rules">
+      <h2>事件与冒泡</h2>
+      <ol>
+        <li><strong>词 / 句片段</strong>：<code>@tap.stop</code>，不触发原文整块折叠。</li>
+        <li><strong>segTap</strong>：若 <code>word_idx != null</code> → 开词卡并 return；否则若 <code>sentence_idx != null</code> → 开句卡。</li>
+        <li><strong>句首图标</strong>：与该句同一 <code>sentence_idx</code>，行为等同点句。</li>
+        <li><strong>证据句高亮</strong>（解析「回原文定位」）：蓝底叠加在词/句之上，不改变点击目标。</li>
+        <li><strong>底部「本篇精讲」面板</strong>：列表点词仍开 WordCard；列表点句可直达完整精讲（现有行为可保留）。</li>
+      </ol>
+    </div>
+  </section>
+
+  <script>
+    const tabs = document.querySelectorAll('.tab')
+    const panels = { proto: document.getElementById('proto'), flow: document.getElementById('flow') }
+    tabs.forEach(t => t.addEventListener('click', () => {
+      tabs.forEach(x => x.classList.remove('on'))
+      t.classList.add('on')
+      Object.values(panels).forEach(p => p.classList.remove('on'))
+      panels[t.dataset.panel].classList.add('on')
+    }))
+
+    const mask = document.getElementById('mask')
+    const card = document.getElementById('card')
+    const kicker = document.getElementById('cardKicker')
+    const title = document.getElementById('cardTitle')
+    const ph = document.getElementById('cardPh')
+    const body = document.getElementById('cardBody')
+    const ex = document.getElementById('cardEx')
+    const cta = document.getElementById('cardCta')
+
+    function close() { mask.classList.remove('on') }
+    document.getElementById('closeBtn').onclick = (e) => { e.stopPropagation(); close() }
+    mask.addEventListener('click', (e) => { if (e.target === mask) close() })
+    card.addEventListener('click', (e) => e.stopPropagation())
+
+    function openWord(el) {
+      card.className = 'card word'
+      kicker.textContent = '单词 · 点开词卡'
+      title.textContent = el.dataset.word
+      ph.textContent = el.dataset.ph ? '/' + el.dataset.ph + '/' : ''
+      ph.hidden = !el.dataset.ph
+      body.textContent = el.dataset.def || ''
+      ex.hidden = false
+      ex.innerHTML = '<div>She is <b>reading</b> a story to her little brother.</div><div style="color:#64748b;margin-top:4px">她正在给弟弟读故事。</div>'
+      cta.textContent = '加入作业精讲·单词'
+      cta.onclick = () => alert('原型：加入作业精讲·单词（正式环境走 addHomeworkWords）')
+      mask.classList.add('on')
+    }
+
+    function openSent(el) {
+      const text = el.dataset.text || ''
+      card.className = 'card sent'
+      kicker.textContent = '长难句 · 点开句卡'
+      title.textContent = '长难句'
+      ph.hidden = true
+      body.textContent = text
+      ex.hidden = false
+      ex.textContent = '结构较复杂，可查看逐句精讲（结构 · 语法 · 重点词）'
+      cta.textContent = '查看完整精讲 ›'
+      cta.onclick = () => alert('原型：跳转 /pages/user-papers/sentence（正式环境 navigateTo）')
+      mask.classList.add('on')
+    }
+
+    document.getElementById('passage').addEventListener('click', (e) => {
+      const t = e.target.closest('[data-open]')
+      if (!t) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (t.dataset.open === 'word') openWord(t)
+      else openSent(t)
+    })
+  </script>
+</body>
+</html>

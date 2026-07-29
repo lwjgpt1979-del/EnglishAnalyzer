@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>错题卡 · 护眼色两版</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8f1fb, #f3f7fc 50%);
+      color: #1f2937; min-height: 100vh;
+      padding: 24px 20px 48px;
+    }
+    h1 { margin: 0 0 6px; font-size: 20px; font-weight: 800; }
+    .lead { margin: 0 0 18px; font-size: 14px; color: #64748b; line-height: 1.6; max-width: 720px; }
+    .row { display: flex; flex-wrap: wrap; gap: 20px; }
+    .col { width: 360px; }
+    .cap { font-size: 13px; font-weight: 800; margin: 0 0 8px; }
+    .cap .tag { font-weight: 600; color: #64748b; font-size: 12px; }
+    .phone-bg {
+      background: #f0f6fc; border-radius: 16px; padding: 14px;
+      border: 1px solid #d5e4f5;
+    }
+    .card {
+      border-radius: 14px; padding: 14px 14px 12px;
+      border: 1.5px solid;
+    }
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 8px; margin-right: 4px;
+    }
+    .badge.bad { background: #fde8e8; color: #e35d5d; }
+    .badge.kp { background: #eef5ff; color: #3d8bf5; }
+    .stem {
+      font-size: 15px; font-weight: 700; line-height: 1.55;
+      margin: 10px 0 8px; color: #1f2937;
+    }
+    .ansline { font-size: 13px; margin-top: 4px; }
+    .ansline .x { color: #e35d5d; font-weight: 700; }
+    .ansline .o { color: #2fa98a; font-weight: 700; }
+
+    /* 现状：浅红（对照） */
+    .v0 {
+      background: #fff8f8; border-color: #f0c8c8;
+    }
+
+    /* 方案1 · 豆沙绿纸（推荐护眼） */
+    .v1 {
+      background: #eef5e6;
+      border-color: #c5d9b0;
+    }
+    .v1 .badge.bad {
+      background: #e5efd8;
+      color: #b54a3a;
+    }
+
+    /* 方案2 · 暖米护眼 */
+    .v2 {
+      background: #f7f3e6;
+      border-color: #e0d6b8;
+    }
+    .v2 .badge.bad {
+      background: #f0e8d4;
+      color: #b54a3a;
+    }
+
+    .note {
+      margin-top: 10px; font-size: 12px; color: #64748b; line-height: 1.55;
+    }
+    .rule {
+      margin-top: 22px; max-width: 740px;
+      background: #fff; border: 1px solid #d8e4f5; border-radius: 12px;
+      padding: 12px 14px; font-size: 13px; color: #64748b; line-height: 1.7;
+    }
+    .rule b { color: #1f2937; }
+  </style>
+</head>
+<body>
+  <h1>原题错卡 · 护眼色</h1>
+  <p class="lead">
+    只改你圈的这一段（错题原题卡）底色：去掉粉红刺激感，改成护眼纸色。
+    「错 / 你填」仍用偏红字色，「正确」仍用青绿，语义不变。
+  </p>
+
+  <div class="row">
+    <div class="col">
+      <div class="cap">现状（粉） <span class="tag">对照</span></div>
+      <div class="phone-bg">
+        <div class="card v0">
+          <span class="badge bad">错</span>
+          <span class="badge kp">填空</span>
+          <div class="stem">Dan's parents are really _______ (发愁的) because…</div>
+          <div class="ansline"><span class="x">你填 worrying</span>　<span class="o">正确 worried</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="cap">方案1 · 豆沙绿纸 <span class="tag">推荐</span></div>
+      <div class="phone-bg">
+        <div class="card v1">
+          <span class="badge bad">错</span>
+          <span class="badge kp">填空</span>
+          <div class="stem">Dan's parents are really _______ (发愁的) because…</div>
+          <div class="ansline"><span class="x">你填 worrying</span>　<span class="o">正确 worried</span></div>
+        </div>
+        <div class="note">底 <code>#eef5e6</code> · 边 <code>#c5d9b0</code> · 经典护眼绿纸，长时间看不刺。</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="cap">方案2 · 暖米护眼</div>
+      <div class="phone-bg">
+        <div class="card v2">
+          <span class="badge bad">错</span>
+          <span class="badge kp">填空</span>
+          <div class="stem">Dan's parents are really _______ (发愁的) because…</div>
+          <div class="ansline"><span class="x">你填 worrying</span>　<span class="o">正确 worried</span></div>
+        </div>
+        <div class="note">底 <code>#f7f3e6</code> · 边 <code>#e0d6b8</code> · 米黄纸感，更暖；与浅蓝页底对比柔和。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule">
+    <b>取舍：</b>方案1 更「护眼」常见；方案2 更暖、和浅蓝页搭配更柔。<br />
+    回复 <b>选1</b> / <b>选2</b>，我会并进浅蓝主色原型（填空/多选错卡统一）。
+  </div>
+</body>
+</html>

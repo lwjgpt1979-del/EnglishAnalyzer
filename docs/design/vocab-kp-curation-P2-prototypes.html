@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>考点拓展 P2 · 三套策展原型对比</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-bad: #e35d5d;
+      --c-warm: #c45c2a;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f3f8;
+      --c-gold: #b8860b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8, #f4f6fa 45%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top { max-width: 1280px; margin: 0 auto; padding: 22px 22px 6px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 980px; }
+    .tabs {
+      max-width: 1280px; margin: 14px auto 0; padding: 0 22px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .tab {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .tab.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .tab .rec { font-size: 10px; margin-left: 4px; opacity: .95; font-weight: 600; }
+    .stage { max-width: 1280px; margin: 0 auto; padding: 16px 22px 64px; }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    .meta {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; color: var(--c-sub);
+    }
+    .meta b { color: var(--c-ink); }
+    .meta .pros { color: var(--c-ok); font-weight: 700; }
+    .meta .cons { color: var(--c-warm); font-weight: 700; }
+    .meta code {
+      font-size: 12px; background: #f2f5f9; padding: 1px 6px; border-radius: 6px; color: #334155;
+    }
+
+    /* Admin shell */
+    .desk {
+      display: grid; grid-template-columns: 280px 1fr; gap: 14px; min-height: 640px;
+    }
+    @media (max-width: 960px) { .desk { grid-template-columns: 1fr; } }
+    .side, .main {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+    .side-h, .main-h {
+      padding: 12px 14px; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .side-h h3, .main-h h3 { margin: 0; font-size: 15px; font-weight: 800; }
+    .pill {
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+      background: #eef5ff; color: var(--c-primary);
+    }
+    .pill.ok { background: #e7f6f0; color: var(--c-ok); }
+    .pill.warn { background: #fff4e5; color: #b86a00; }
+    .pill.muted { background: #f2f4f8; color: #94a3b8; }
+    .pill.gold { background: #fff8e6; color: var(--c-gold); }
+    .side-body, .main-body { flex: 1; overflow: auto; padding: 8px; }
+    .q-item {
+      padding: 10px 12px; border-radius: 10px; cursor: pointer; margin-bottom: 4px;
+      border: 1px solid transparent;
+    }
+    .q-item:hover { background: #f7f9fc; }
+    .q-item.on { background: #eef5ff; border-color: #c9ddf8; }
+    .q-item .w { font-weight: 800; font-size: 14px; }
+    .q-item .s { font-size: 11px; color: var(--c-sub); margin-top: 2px; }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .chip {
+      font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+      background: #f2f5f9; color: var(--c-sub); border: 1px solid var(--c-line); cursor: pointer;
+    }
+    .chip.on { background: #e8f2ff; color: var(--c-primary); border-color: #bcd8ff; }
+
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+    .btn {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-ink);
+      border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .btn.pri { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .btn.ok { background: var(--c-ok); color: #fff; border-color: var(--c-ok); }
+    .btn.ghost { background: #f7f9fc; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .word-head {
+      padding: 14px 16px; border-bottom: 1px solid var(--c-line); background: #fafbfd;
+    }
+    .word-head .en { font-size: 22px; font-weight: 800; }
+    .word-head .zh { font-size: 13px; color: var(--c-sub); margin-top: 2px; }
+    .word-head .meta-row { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+    .dim-tabs { display: flex; gap: 6px; padding: 10px 12px 0; flex-wrap: wrap; }
+    .dim-tab {
+      font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 8px;
+      background: #f2f5f9; color: var(--c-sub); cursor: pointer; border: 1px solid transparent;
+    }
+    .dim-tab.on { background: #e8f2ff; color: var(--c-primary); border-color: #c9ddf8; }
+    .dim-tab .n { opacity: .7; margin-left: 4px; }
+
+    .rows { padding: 10px 12px 16px; }
+    .row {
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start;
+      padding: 10px 12px; border: 1px solid var(--c-line); border-radius: 10px; margin-bottom: 8px;
+      background: #fff;
+    }
+    .row.curated { border-color: #e6d39a; background: #fffdf5; }
+    .row.llm { border-style: dashed; }
+    .row.gone { opacity: .35; text-decoration: line-through; }
+    .row .t { font-weight: 700; font-size: 14px; }
+    .row .z { font-size: 12px; color: var(--c-sub); margin-top: 2px; }
+    .row .acts { display: flex; gap: 4px; flex-wrap: wrap; }
+    .src {
+      display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 6px;
+      border-radius: 6px; margin-right: 4px; vertical-align: middle;
+    }
+    .src.curated { background: #fff8e6; color: var(--c-gold); }
+    .src.llm { background: #f2f4f8; color: #94a3b8; }
+    .src.wordnet { background: #e8f2ff; color: var(--c-primary); }
+    .src.morph { background: #e7f6f0; color: var(--c-ok); }
+    .src.corpus { background: #eef5ff; color: #3170c0; }
+    .src.draft { background: #fff4e5; color: #b86a00; }
+
+    .add-bar {
+      display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 12px; align-items: center;
+    }
+    .add-bar input {
+      border: 1px solid var(--c-line); border-radius: 8px; padding: 7px 10px; font-size: 13px;
+      min-width: 120px;
+    }
+
+    .split {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 12px 16px;
+    }
+    @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+    .pane {
+      border: 1px solid var(--c-line); border-radius: 12px; overflow: hidden; background: #fafbfd;
+    }
+    .pane-h {
+      padding: 8px 12px; font-size: 12px; font-weight: 800; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .pane .rows { padding: 8px; }
+
+    .toast {
+      position: fixed; right: 20px; bottom: 20px; background: rgba(31,41,55,.92); color: #fff;
+      padding: 10px 14px; border-radius: 10px; font-size: 13px; opacity: 0; pointer-events: none;
+      transition: .2s; z-index: 9; max-width: 360px; line-height: 1.45;
+    }
+    .toast.on { opacity: 1; }
+
+    .student {
+      margin-top: 14px; background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px;
+    }
+    .student h4 { margin: 0 0 8px; font-size: 13px; font-weight: 800; color: var(--c-sub); }
+    .mind {
+      display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap;
+      padding: 12px; background: #f7f9fc; border-radius: 12px;
+    }
+    .leaf {
+      padding: 6px 12px; border-radius: 10px; font-size: 13px; font-weight: 700;
+      border: 2px solid #bcd8ff; background: #eaf2ff; color: #185fa5;
+    }
+    .leaf.low { background: #f2f4f8; border-color: #dde3ea; color: #94a3b8; font-weight: 500; }
+    .leaf.curated { border-color: #e6d39a; background: #fffdf5; color: var(--c-gold); }
+    .center {
+      padding: 10px 16px; border-radius: 12px; border: 2px solid #8cc2a6; background: #e9f6f1;
+      font-weight: 800; color: #1f7a5e;
+    }
+    .note { font-size: 12px; color: var(--c-sub); margin-top: 8px; line-height: 1.55; }
+    .a12 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>考点拓展 P2 · 三套策展原型</h1>
+    <p>
+      Admin 侧「近义 / 易混」策展主路径对比。点 Tab 切换方案；右侧可点发布 / 采纳 / 编辑，底部看学生端脑图叶子如何变化。
+      队列统一示意：中考高频 Top 500（<code>star=3</code>）。
+    </p>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-p="a">方案 A · 词级 status<span class="rec">推荐</span></button>
+    <button class="tab" data-p="b">方案 B · 独立策展表</button>
+    <button class="tab" data-p="c">方案 C · 复核页最小改</button>
+  </div>
+
+  <div class="stage">
+    <!-- ===================== A ===================== -->
+    <section class="panel on" id="p-a">
+      <div class="meta">
+        <b>做法：</b><code>vocab_word_kp.status</code> = <code>auto</code>（学生触发 LLM，可见）/
+        <code>published</code>（策展锁定，<b>ensure 跳过 LLM</b>）。人工行 <code>source=curated</code>。
+        新页「考点策展」，队列 = 中考高频 500。<br />
+        <span class="pros">优点</span> 「已上架则跳过」语义干净，和词库上下架习惯一致。
+        <span class="cons">代价</span> 要迁移 + 新页；需约定发布时对非 curated 近义/易混怎么处理（下栏可切 A1/A2）。
+      </div>
+      <div class="desk">
+        <aside class="side">
+          <div class="side-h">
+            <h3>策展队列</h3>
+            <span class="pill">中考 · 高频 500</span>
+          </div>
+          <div class="side-body" id="a-queue"></div>
+        </aside>
+        <div class="main">
+          <div class="main-h">
+            <h3>考点策展</h3>
+            <span class="pill" id="a-status-pill">auto · 未上架</span>
+            <div class="toolbar">
+              <button class="btn ghost" onclick="aGen()">拉取 LLM 草稿</button>
+              <button class="btn ok" id="a-pub" onclick="aPublish()">发布上架</button>
+              <button class="btn" id="a-unpub" onclick="aUnpublish()" disabled>撤回</button>
+            </div>
+          </div>
+          <div class="word-head">
+            <div class="en" id="a-word">affect</div>
+            <div class="zh">影响；打动 · v.</div>
+            <div class="meta-row">
+              <span class="pill warn" id="a-progress">近义 1/3 curated · 易混 0/2</span>
+              <span class="pill muted">查看即生成仍可见 auto 内容</span>
+            </div>
+            <div class="a12">
+              <span style="font-size:12px;color:var(--c-sub);font-weight:700">发布策略：</span>
+              <button class="chip on" id="a1" onclick="setA12(1)">A1 只留 curated</button>
+              <button class="chip" id="a2" onclick="setA12(2)">A2 保留 LLM 降为低置信</button>
+            </div>
+          </div>
+          <div class="dim-tabs" id="a-dims">
+            <div class="dim-tab on" data-d="synonym">近义<span class="n" id="a-n-syn"></span></div>
+            <div class="dim-tab" data-d="confusion">易混<span class="n" id="a-n-conf"></span></div>
+            <div class="dim-tab" data-d="antonym">反义<span class="n" id="a-n-ant"></span></div>
+          </div>
+          <div class="rows" id="a-rows"></div>
+          <div class="add-bar">
+            <input id="a-en" placeholder="英文词" />
+            <input id="a-zh" placeholder="中文" />
+            <button class="btn pri" onclick="aAdd()">+ 策展加入</button>
+          </div>
+        </div>
+      </div>
+      <div class="student">
+        <h4>学生端脑图（同词 · 随状态变化）</h4>
+        <div class="mind" id="a-mind"></div>
+        <p class="note" id="a-note"></p>
+      </div>
+    </section>
+
+    <!-- ===================== B ===================== -->
+    <section class="panel" id="p-b">
+      <div class="meta">
+        <b>做法：</b>独立表 <code>vocab_kp_curated_edge</code>（draft/published），与 <code>vocab_word_relation</code> 并行。
+        读时策展 published <b>覆盖</b>同维 LLM；该维已有 published 策展则 ensure <b>不写该维</b>。<br />
+        <span class="pros">优点</span> 生成管线与策展分离，回滚不伤 morph/corpus。
+        <span class="cons">代价</span> 双源合并、两套 CRUD；运营心智「左策展 / 右 LLM」。
+      </div>
+      <div class="desk">
+        <aside class="side">
+          <div class="side-h">
+            <h3>策展队列</h3>
+            <span class="pill">中考 · 高频 500</span>
+          </div>
+          <div class="side-body" id="b-queue"></div>
+        </aside>
+        <div class="main">
+          <div class="main-h">
+            <h3>双栏对照 · affect</h3>
+            <span class="pill gold" id="b-edge-pill">策展边 · draft</span>
+            <div class="toolbar">
+              <button class="btn ok" onclick="bPublishDim()">发布本维策展</button>
+              <button class="btn" onclick="bRollback()">回滚策展维</button>
+            </div>
+          </div>
+          <div class="dim-tabs" id="b-dims">
+            <div class="dim-tab on" data-d="synonym">近义</div>
+            <div class="dim-tab" data-d="confusion">易混</div>
+          </div>
+          <div class="split">
+            <div class="pane">
+              <div class="pane-h">策展边 <span class="pill gold">真源（上架后覆盖）</span></div>
+              <div class="rows" id="b-curated"></div>
+              <div class="add-bar">
+                <input id="b-en" placeholder="策展词" />
+                <button class="btn pri" onclick="bAdd()">加入策展</button>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="pane-h">LLM 草稿 <span class="pill muted">relation 表 · 可采纳</span></div>
+              <div class="rows" id="b-llm"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="student">
+        <h4>学生端脑图（读时合并：published 策展优先）</h4>
+        <div class="mind" id="b-mind"></div>
+        <p class="note" id="b-note"></p>
+      </div>
+    </section>
+
+    <!-- ===================== C ===================== -->
+    <section class="panel" id="p-c">
+      <div class="meta">
+        <b>做法：</b>不改 status。扩展现有「考点复核」：加「中考高频 500 待编」队列；编辑/新增写 <code>source=curated</code>。
+        ensure 弱规则：近义+易混已有 ≥2 条 curated → 跳过 LLM。<br />
+        <span class="pros">优点</span> 最快、几乎无迁移。
+        <span class="cons">代价</span> 「上架」语义模糊；LLM 常已先跑；难严格验收「已上架则跳过」。
+      </div>
+      <div class="desk">
+        <aside class="side">
+          <div class="side-h">
+            <h3>考点复核</h3>
+          </div>
+          <div style="padding:8px 12px">
+            <div class="filters">
+              <span class="chip on" id="c-f1" onclick="cFilter('queue')">高频500待编</span>
+              <span class="chip" id="c-f2" onclick="cFilter('report')">报错 ≥1</span>
+            </div>
+          </div>
+          <div class="side-body" id="c-queue"></div>
+        </aside>
+        <div class="main">
+          <div class="main-h">
+            <h3>关系列表 · affect</h3>
+            <span class="pill warn">弱跳过：curated≥2 才跳 LLM</span>
+            <div class="toolbar">
+              <button class="btn pri" onclick="cMarkCurated()">当前维标为 curated</button>
+            </div>
+          </div>
+          <div class="dim-tabs" id="c-dims">
+            <div class="dim-tab on" data-d="synonym">近义</div>
+            <div class="dim-tab" data-d="confusion">易混</div>
+            <div class="dim-tab" data-d="all">全部报错</div>
+          </div>
+          <div class="rows" id="c-rows"></div>
+          <div class="add-bar">
+            <input id="c-en" placeholder="补一条近义/易混" />
+            <button class="btn pri" onclick="cAdd()">保存为 curated</button>
+          </div>
+        </div>
+      </div>
+      <div class="student">
+        <h4>学生端脑图（curated 高亮 · 其余 LLM 灰）</h4>
+        <div class="mind" id="c-mind"></div>
+        <p class="note" id="c-note"></p>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const QUEUE = [
+      { w: 'affect', s: '近义缺策展 · 易混 0', st: 'todo' },
+      { w: 'effect', s: '易混待核 · star3', st: 'todo' },
+      { w: 'accept', s: '近义 2 curated', st: 'part' },
+      { w: 'achieve', s: '已发布', st: 'done' },
+      { w: 'advise', s: '未生成', st: 'todo' },
+    ];
+
+    /** @type {{status:'auto'|'published', dim:string, a12:1|2, items:Record<string, Array<{en:string,zh:string,src:string,gone?:boolean}>>}} */
+    const A = {
+      status: 'auto', dim: 'synonym', a12: 1,
+      items: {
+        synonym: [
+          { en: 'influence', zh: '影响', src: 'curated' },
+          { en: 'impact', zh: '冲击/影响', src: 'llm' },
+          { en: 'sway', zh: '动摇', src: 'llm' },
+        ],
+        confusion: [
+          { en: 'effect', zh: '名词·结果', src: 'llm' },
+          { en: 'afford', zh: '负担得起', src: 'llm' },
+        ],
+        antonym: [
+          { en: 'unaffected', zh: '未受影响', src: 'wordnet' },
+        ],
+      },
+    };
+
+    /** @type {{dim:string, published:Record<string,boolean>, curated:Record<string,Array>, llm:Record<string,Array>}} */
+    const B = {
+      dim: 'synonym',
+      published: { synonym: false, confusion: false },
+      curated: {
+        synonym: [{ en: 'influence', zh: '影响', src: 'draft' }],
+        confusion: [],
+      },
+      llm: {
+        synonym: [
+          { en: 'impact', zh: '冲击', src: 'llm' },
+          { en: 'sway', zh: '动摇', src: 'llm' },
+          { en: 'influence', zh: '影响', src: 'wordnet' },
+        ],
+        confusion: [
+          { en: 'effect', zh: '结果', src: 'llm' },
+          { en: 'afford', zh: '负担得起', src: 'llm' },
+        ],
+      },
+    };
+
+    /** @type {{dim:string, filter:string, items:Array}} */
+    const C = {
+      dim: 'synonym', filter: 'queue',
+      items: [
+        { en: 'influence', zh: '影响', src: 'llm', dim: 'synonym' },
+        { en: 'impact', zh: '冲击', src: 'llm', dim: 'synonym' },
+        { en: 'effect', zh: '结果', src: 'llm', dim: 'confusion', report: 2 },
+        { en: 'afford', zh: '负担得起', src: 'llm', dim: 'confusion' },
+      ],
+    };
+
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('on');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove('on'), 2200);
+    }
+
+    function renderQueue(id, active) {
+      const box = document.getElementById(id);
+      box.innerHTML = QUEUE.map((q, i) => `
+        <div class="q-item ${i === 0 ? 'on' : ''}" onclick="toast('原型示意：打开 ${q.w}')">
+          <div class="w">${q.w}
+            ${q.st === 'done' ? '<span class="pill ok">已发布</span>' :
+              q.st === 'part' ? '<span class="pill warn">部分</span>' :
+              '<span class="pill muted">待编</span>'}
+          </div>
+          <div class="s">${q.s}</div>
+        </div>`).join('');
+    }
+
+    // —— A ——
+    function setA12(n) {
+      A.a12 = n;
+      document.getElementById('a1').classList.toggle('on', n === 1);
+      document.getElementById('a2').classList.toggle('on', n === 2);
+      if (A.status === 'published') aApplyPublishPolicy();
+      renderA();
+      toast(n === 1 ? 'A1：发布时删掉非 curated 近义/易混' : 'A2：发布时保留 LLM，展示为低置信');
+    }
+    function aApplyPublishPolicy() {
+      ['synonym', 'confusion'].forEach(d => {
+        A.items[d].forEach(it => {
+          if (it.src === 'curated') { it.gone = false; return; }
+          if (A.a12 === 1) it.gone = true;
+          else { it.gone = false; it._low = true; }
+        });
+      });
+    }
+    function aClearPublishPolicy() {
+      Object.values(A.items).flat().forEach(it => { it.gone = false; it._low = false; });
+    }
+    function renderA() {
+      const pub = A.status === 'published';
+      document.getElementById('a-status-pill').textContent = pub ? 'published · 已上架（跳过 LLM）' : 'auto · 未上架';
+      document.getElementById('a-status-pill').className = 'pill ' + (pub ? 'ok' : 'warn');
+      document.getElementById('a-pub').disabled = pub;
+      document.getElementById('a-unpub').disabled = !pub;
+      const cur = (d) => A.items[d].filter(x => x.src === 'curated' && !x.gone).length;
+      const tot = (d) => A.items[d].filter(x => !x.gone).length;
+      document.getElementById('a-progress').textContent =
+        `近义 ${cur('synonym')}/${tot('synonym')} curated · 易混 ${cur('confusion')}/${tot('confusion')}`;
+      document.getElementById('a-n-syn').textContent = `(${tot('synonym')})`;
+      document.getElementById('a-n-conf').textContent = `(${tot('confusion')})`;
+      document.getElementById('a-n-ant').textContent = `(${tot('antonym')})`;
+
+      const list = A.items[A.dim] || [];
+      document.getElementById('a-rows').innerHTML = list.map((it, i) => `
+        <div class="row ${it.src === 'curated' ? 'curated' : 'llm'} ${it.gone ? 'gone' : ''}">
+          <div>
+            <div class="t"><span class="src ${it.src}">${it.src}</span>${it.en}
+              ${it._low && !it.gone ? '<span class="pill muted">低置信</span>' : ''}</div>
+            <div class="z">${it.zh}</div>
+          </div>
+          <div class="acts">
+            ${it.src !== 'curated' && !it.gone ? `<button class="btn ghost" onclick="aAdopt(${i})">采纳</button>` : ''}
+            <button class="btn" onclick="aDel(${i})">删</button>
+          </div>
+        </div>`).join('') || '<div class="note" style="padding:8px">本维暂无条目</div>';
+
+      const leaves = [];
+      ['synonym', 'confusion'].forEach(d => {
+        A.items[d].forEach(it => {
+          if (it.gone) return;
+          leaves.push({ t: it.en, low: it.src === 'llm' || it._low, cur: it.src === 'curated' });
+        });
+      });
+      document.getElementById('a-mind').innerHTML =
+        `<div class="center">affect</div>` +
+        leaves.slice(0, 5).map(l =>
+          `<div class="leaf ${l.cur ? 'curated' : ''} ${l.low && !l.cur ? 'low' : ''}">${l.t}</div>`).join('');
+      document.getElementById('a-note').textContent = pub
+        ? (A.a12 === 1
+          ? '已发布：ensure_word_kp 整词跳过 LLM；学生只见 curated（及形态/搭配等非近义易混维）。'
+          : '已发布：跳过 LLM；近义/易混里 LLM 残留灰显「待核」，curated 金边高亮。')
+        : '未发布：学生仍可见 LLM 草稿（查看即生成）；运营可先采纳再发布。';
+    }
+    function aAdopt(i) {
+      A.items[A.dim][i].src = 'curated';
+      delete A.items[A.dim][i]._low;
+      renderA(); toast('已采纳为 curated');
+    }
+    function aDel(i) {
+      A.items[A.dim].splice(i, 1); renderA(); toast('已删除');
+    }
+    function aAdd() {
+      const en = document.getElementById('a-en').value.trim();
+      const zh = document.getElementById('a-zh').value.trim();
+      if (!en) return toast('请填英文词');
+      A.items[A.dim].push({ en, zh: zh || '—', src: 'curated' });
+      document.getElementById('a-en').value = '';
+      document.getElementById('a-zh').value = '';
+      renderA(); toast('已加入策展');
+    }
+    function aGen() {
+      if (A.status === 'published') return toast('已上架：跳过 LLM（不会调用）');
+      toast('模拟：拉取 LLM 草稿写入 auto（付费·有缓存）');
+    }
+    function aPublish() {
+      A.status = 'published';
+      aApplyPublishPolicy();
+      renderA();
+      toast('已发布：status=published，此后 ensure 跳过 LLM');
+    }
+    function aUnpublish() {
+      A.status = 'auto';
+      aClearPublishPolicy();
+      renderA();
+      toast('已撤回：恢复 auto，下次查看可再触发 LLM');
+    }
+
+    // —— B ——
+    function renderB() {
+      const pub = !!B.published[B.dim];
+      document.getElementById('b-edge-pill').textContent =
+        pub ? `策展边 · ${B.dim} published（覆盖 LLM）` : `策展边 · ${B.dim} draft`;
+      document.getElementById('b-edge-pill').className = 'pill ' + (pub ? 'ok' : 'gold');
+
+      document.getElementById('b-curated').innerHTML = (B.curated[B.dim] || []).map((it, i) => `
+        <div class="row curated">
+          <div><div class="t"><span class="src ${pub ? 'curated' : 'draft'}">${pub ? 'published' : 'draft'}</span>${it.en}</div>
+          <div class="z">${it.zh}</div></div>
+          <div class="acts"><button class="btn" onclick="bDel(${i})">删</button></div>
+        </div>`).join('') || '<div class="note" style="padding:8px">策展边为空 — 学生仍看右侧 LLM</div>';
+
+      document.getElementById('b-llm').innerHTML = (B.llm[B.dim] || []).map((it, i) => `
+        <div class="row llm">
+          <div><div class="t"><span class="src ${it.src}">${it.src}</span>${it.en}</div>
+          <div class="z">${it.zh}</div></div>
+          <div class="acts"><button class="btn ghost" onclick="bAdopt(${i})">→ 采纳到左</button></div>
+        </div>`).join('');
+
+      let leaves;
+      if (pub && B.curated[B.dim].length) {
+        leaves = B.curated[B.dim].map(it => ({ t: it.en, cur: true, low: false }));
+      } else {
+        leaves = [
+          ...B.curated[B.dim].map(it => ({ t: it.en, cur: true, low: false })),
+          ...B.llm[B.dim].map(it => ({ t: it.en, cur: false, low: it.src === 'llm' })),
+        ];
+      }
+      // dedupe by en preferring curated
+      const seen = new Set();
+      leaves = leaves.filter(l => (seen.has(l.t) ? false : (seen.add(l.t), true)));
+      document.getElementById('b-mind').innerHTML =
+        `<div class="center">affect</div>` +
+        leaves.slice(0, 5).map(l =>
+          `<div class="leaf ${l.cur ? 'curated' : ''} ${l.low ? 'low' : ''}">${l.t}</div>`).join('');
+      document.getElementById('b-note').textContent = pub
+        ? '本维策展已 published：学生只见左栏；ensure 不再为该维写 LLM。其它维仍可 LLM。'
+        : '策展仍为 draft：读时左右合并展示（策展优先），LLM 仍可能生成。';
+    }
+    function bAdopt(i) {
+      const it = B.llm[B.dim][i];
+      if (B.curated[B.dim].some(x => x.en === it.en)) return toast('策展边已有该词');
+      B.curated[B.dim].push({ en: it.en, zh: it.zh, src: 'draft' });
+      renderB(); toast('已采纳到策展边（仍为 draft）');
+    }
+    function bAdd() {
+      const en = document.getElementById('b-en').value.trim();
+      if (!en) return toast('请填策展词');
+      B.curated[B.dim].push({ en, zh: '—', src: 'draft' });
+      document.getElementById('b-en').value = '';
+      renderB(); toast('已写入策展边');
+    }
+    function bDel(i) { B.curated[B.dim].splice(i, 1); renderB(); }
+    function bPublishDim() {
+      if (!B.curated[B.dim].length) return toast('策展边为空，无法发布');
+      B.published[B.dim] = true;
+      renderB(); toast(`已发布 ${B.dim} 策展维 — 覆盖 LLM`);
+    }
+    function bRollback() {
+      B.published[B.dim] = false;
+      renderB(); toast('已回滚：学生重新合并 LLM 草稿');
+    }
+
+    // —— C ——
+    function cFilter(f) {
+      C.filter = f;
+      document.getElementById('c-f1').classList.toggle('on', f === 'queue');
+      document.getElementById('c-f2').classList.toggle('on', f === 'report');
+      toast(f === 'queue' ? '队列：中考高频 500 待编' : '队列：报错 ≥1（现有复核）');
+    }
+    function renderC() {
+      const list = C.items.filter(it => C.dim === 'all' ? true : it.dim === C.dim);
+      document.getElementById('c-rows').innerHTML = list.map((it, i) => {
+        const idx = C.items.indexOf(it);
+        return `
+        <div class="row ${it.src === 'curated' ? 'curated' : 'llm'}">
+          <div>
+            <div class="t"><span class="src ${it.src}">${it.src}</span>${it.en}
+              ${it.report ? `<span class="pill warn">报错 ${it.report}</span>` : ''}
+              <span class="pill muted">${it.dim}</span>
+            </div>
+            <div class="z">${it.zh}</div>
+          </div>
+          <div class="acts">
+            ${it.src !== 'curated' ? `<button class="btn ghost" onclick="cAdopt(${idx})">标 curated</button>` : ''}
+            <button class="btn" onclick="C.items.splice(${idx},1);renderC()">删</button>
+          </div>
+        </div>`;
+      }).join('');
+
+      const nCur = C.items.filter(x => x.src === 'curated' && (x.dim === 'synonym' || x.dim === 'confusion')).length;
+      const leaves = C.items
+        .filter(x => x.dim === 'synonym' || x.dim === 'confusion')
+        .map(x => ({ t: x.en, cur: x.src === 'curated', low: x.src === 'llm' }));
+      document.getElementById('c-mind').innerHTML =
+        `<div class="center">affect</div>` +
+        leaves.slice(0, 5).map(l =>
+          `<div class="leaf ${l.cur ? 'curated' : ''} ${l.low ? 'low' : ''}">${l.t}</div>`).join('');
+      document.getElementById('c-note').textContent =
+        `当前 synonym+confusion 的 curated = ${nCur}。弱规则：≥2 才跳过 LLM（现在 ${nCur >= 2 ? '会跳过' : '仍会调 LLM'}）。无正式上架态。`;
+    }
+    function cAdopt(i) {
+      C.items[i].src = 'curated';
+      renderC(); toast('source=curated（无 published 闸门）');
+    }
+    function cMarkCurated() {
+      C.items.forEach(it => {
+        if (C.dim === 'all' || it.dim === C.dim) it.src = 'curated';
+      });
+      renderC(); toast('本维全部标为 curated');
+    }
+    function cAdd() {
+      const en = document.getElementById('c-en').value.trim();
+      if (!en) return toast('请填词');
+      const dim = C.dim === 'all' ? 'synonym' : C.dim;
+      C.items.push({ en, zh: '—', src: 'curated', dim });
+      document.getElementById('c-en').value = '';
+      renderC(); toast('已保存为 curated');
+    }
+
+    // tabs + dim tabs
+    document.getElementById('tabs').addEventListener('click', (e) => {
+      const t = e.target.closest('.tab');
+      if (!t) return;
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+      t.classList.add('on');
+      document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+      document.getElementById('p-' + t.dataset.p).classList.add('on');
+    });
+    function bindDims(rootId, state, key, render) {
+      document.getElementById(rootId).addEventListener('click', (e) => {
+        const t = e.target.closest('.dim-tab');
+        if (!t) return;
+        document.querySelectorAll('#' + rootId + ' .dim-tab').forEach(x => x.classList.remove('on'));
+        t.classList.add('on');
+        state[key] = t.dataset.d;
+        render();
+      });
+    }
+    bindDims('a-dims', A, 'dim', renderA);
+    bindDims('b-dims', B, 'dim', renderB);
+    bindDims('c-dims', C, 'dim', renderC);
+
+    renderQueue('a-queue');
+    renderQueue('b-queue');
+    renderQueue('c-queue');
+    renderA();
+    renderB();
+    renderC();
+  </script>
+</body>
+</html>

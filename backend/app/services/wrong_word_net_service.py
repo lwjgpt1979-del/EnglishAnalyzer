@@ -76,14 +76,8 @@ async def _word_id_of(db: AsyncSession, text: str, *, create: bool) -> uuid.UUID
 
 
 async def index_wrong_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_record_id: uuid.UUID) -> None:
-    """把一道错题的选项按 主(答案)/次(干扰) 落 student_wrong_word。无 LLM。幂等(已有行即跳过)。
-    答案词未命中词库则入库;干扰项只链已有词(不为杂项造词条)。"""
-    done = (await db.execute(
-        sa.select(StudentWrongWord.id).where(
-            StudentWrongWord.wrong_record_id == wrong_record_id,
-            StudentWrongWord.student_id == student_id).limit(1))).first()
-    if done:
-        return
+    """把一道错题的选项按 主(答案)/次(干扰) 落 student_wrong_word。无 LLM。
+    幂等:on_conflict 跳过已有 (student, word, record);可补跑多空拆点。"""
     wr = await db.get(WrongRecord, wrong_record_id)
     if wr is None or wr.student_id != student_id:
         return
@@ -100,9 +94,14 @@ async def index_wrong_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_r
                          "wrong_record_id": wrong_record_id, "role": role})
 
     if not opts:
-        # 填空题:正确答案的每个「正确点」= 主(多空/多值各成一词,无干扰项)
-        for p in _split_points(wr.correct_answer or ""):
+        # 填空题:正确答案的每个「正确点」= 主;学生答案同样按分隔符拆成 distractor
+        ca_pts = _split_points(wr.correct_answer or "")
+        for p in ca_pts:
             await _add(p, "answer")
+        ca_l = {p.lower() for p in ca_pts}
+        for p in _split_points(wr.student_answer or ""):
+            if p.lower() not in ca_l:
+                await _add(p, "distractor")
     else:
         ai = _answer_index(opts, wr.correct_answer or "")
         # 先答案选项的各正确点(May; can't → May + can't,均 answer,优先占坑)
@@ -249,8 +248,11 @@ async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_
         for i, o in enumerate(opts):
             pts = _split_points(o)
             (correct_txts if i == ai else wrong_txts if i == si else other_txts).extend(pts)
-    else:   # 填空/手写题:只留正确答案=蓝;学生手写答案常是笔误(如 culturd),不可靠→不做红 chip
+    else:
+        # 填空:正确/学生答案均按分隔符拆点 → 多空各自独立 chip
         correct_txts = _split_points(ca)
+        ca_l = {t.lower() for t in correct_txts}
+        wrong_txts = [p for p in _split_points(stu) if p.lower() not in ca_l]
     seen: set = set()
     answers: list[dict] = []
 
@@ -274,5 +276,67 @@ async def word_net_for_record(db: AsyncSession, *, student_id: uuid.UUID, wrong_
                 StudentWrongWord.word_id.in_(aids)).distinct())).scalars().all())
         for a in answers:
             a["switchable"] = uuid.UUID(a["word_id"]) in has
+    net["answers"] = answers
+    return net
+
+
+def _seed_points(texts: list[str] | None) -> list[str]:
+    """种子文本 → 拆点列表(与 _split_points 同口径;单点不过滤时兜底 _norm_opt)。"""
+    out: list[str] = []
+    for t in texts or []:
+        pts = _split_points(t)
+        if pts:
+            out.extend(pts)
+        else:
+            n = _norm_opt(t)
+            if n and len(n) <= 40 and len(n.split()) <= 4:
+                out.append(n)
+    return out
+
+
+async def word_net_for_seeds(
+    db: AsyncSession, *, student_id: uuid.UUID,
+    correct: list[str], wrong: list[str] | None = None,
+    other: list[str] | None = None,
+) -> dict:
+    """无错题记录时(如全对语法题):按答案词建网。
+    chip: correct(蓝)/ wrong(红·学生错选)/ other(灰·其余选项);全可切;
+    中心=第一个正确点;主/次错题可空,考点 dims 查看即生成。"""
+    correct_txts = _seed_points(correct)
+    wrong_txts = _seed_points(wrong)
+    other_txts = _seed_points(other)
+    ca_l = {t.lower() for t in correct_txts}
+    wrong_txts = [t for t in wrong_txts if t.lower() not in ca_l]
+    wr_l = {t.lower() for t in wrong_txts}
+    other_txts = [t for t in other_txts if t.lower() not in ca_l and t.lower() not in wr_l]
+
+    seen: set = set()
+    answers: list[dict] = []
+    center: uuid.UUID | None = None
+
+    async def _cat(txts: list[str], kind: str):
+        nonlocal center
+        for t in txts:
+            wid = await _word_id_of(db, t, create=True)
+            if wid and wid not in seen:
+                seen.add(wid)
+                w = await db.get(VocabularyWord, wid)
+                answers.append({
+                    "word_id": str(wid), "word": w.word if w else t, "zh": _zh(w),
+                    "kind": kind, "switchable": True,
+                })
+                if center is None and kind == "correct":
+                    center = wid
+
+    await _cat(correct_txts, "correct")
+    await _cat(wrong_txts, "wrong")
+    await _cat(other_txts, "other")
+    if center is None and answers:
+        center = uuid.UUID(answers[0]["word_id"])
+    if center is None:
+        return {"word_id": None, "word": "", "zh": "", "is_phrase": False, "sense_id": None,
+                "gloss": "", "senses": [], "dims": [], "main": [], "secondary": [], "answers": []}
+    await db.commit()  # 落新建词条
+    net = await word_wrong_net(db, student_id=student_id, word_id=center)
     net["answers"] = answers
     return net

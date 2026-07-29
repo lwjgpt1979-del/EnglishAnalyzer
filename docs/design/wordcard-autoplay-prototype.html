@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>词卡 · 打开自动播 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f6fc;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f0f6fc 40%, #f7f8fb 100%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1180px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 880px; }
+
+    .note {
+      max-width: 1180px; margin: 14px auto 0; padding: 0 24px;
+    }
+    .note-box {
+      background: #fff8f0; border: 2px solid #f0d2b0; border-radius: 14px;
+      padding: 12px 16px; font-size: 13px; line-height: 1.65; color: #5c4030;
+    }
+    .note-box b { color: #c45c1a; }
+
+    .opts {
+      max-width: 1180px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 2px solid var(--c-line); background: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700; color: var(--c-sub); cursor: pointer;
+    }
+    .opt.on { background: #e8f2ff; border-color: #bcd8ff; color: var(--c-primary); }
+    .opt .tag { font-size: 11px; font-weight: 800; color: var(--c-ok); margin-left: 6px; }
+
+    .stage {
+      max-width: 1180px; margin: 18px auto 40px; padding: 0 24px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;
+    }
+    .col h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+    .col .desc { margin: 0 0 12px; font-size: 13px; color: var(--c-sub); line-height: 1.55; }
+
+    .phone {
+      width: 100%; max-width: var(--phone-w); margin: 0 auto;
+      background: var(--c-page); border: 2px solid #d7e0ec; border-radius: 28px;
+      box-shadow: 0 16px 40px rgba(45, 80, 150, .12); overflow: hidden;
+      min-height: 700px; position: relative;
+    }
+    .status {
+      height: 40px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; font-size: 12px; font-weight: 700; background: #fff;
+      border-bottom: 1px solid var(--c-line);
+    }
+    .nav {
+      height: 46px; display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 800; background: #fff; border-bottom: 1px solid var(--c-line);
+    }
+    .list {
+      padding: 14px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .wrow {
+      background: #fff; border: 2px solid var(--c-line); border-radius: 12px;
+      padding: 14px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer;
+    }
+    .wrow:active { background: #f8fafc; }
+    .wrow b { font-size: 16px; }
+    .wrow span { margin-left: auto; font-size: 12px; color: var(--c-primary); font-weight: 700; }
+
+    .mask {
+      position: absolute; inset: 0; background: rgba(15, 23, 42, .45);
+      display: none; align-items: center; justify-content: center; padding: 18px; z-index: 5;
+    }
+    .mask.show { display: flex; }
+    .card {
+      width: 100%; background: #fff; border-radius: 18px; padding: 16px;
+      box-shadow: 0 12px 32px rgba(0,0,0,.18); position: relative; max-height: 94%; overflow-y: auto;
+    }
+    .gear {
+      position: absolute; right: 12px; top: 12px; z-index: 2;
+      width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,.92);
+      border: 1.5px solid var(--c-line); display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .gear svg { width: 16px; height: 16px; stroke: var(--c-primary); fill: none; stroke-width: 2; }
+    .img {
+      width: 100%; height: 120px; border-radius: 12px;
+      background: linear-gradient(135deg, #dbeafe, #fce7f3 50%, #e0e7ff);
+      display: flex; align-items: center; justify-content: center;
+      color: #64748b; font-size: 12px; font-weight: 700;
+    }
+    .head {
+      display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 8px;
+    }
+    .word { font-size: 24px; font-weight: 800; }
+    .play {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12px; color: var(--c-primary); border: 1.5px solid var(--c-primary);
+      border-radius: 999px; padding: 5px 12px; cursor: pointer; font-weight: 700;
+    }
+    .play.on { color: var(--c-ok); border-color: var(--c-ok); }
+    .play svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .ph { display: block; font-size: 13px; color: #93a0b3; margin-top: 4px; }
+    .def { display: block; font-size: 14px; margin-top: 10px; line-height: 1.55; }
+    .ex {
+      margin-top: 10px; background: #eef5ff; border-radius: 10px; padding: 10px 12px;
+    }
+    .ex.speaking { outline: 2px solid #85B7EB; }
+    .ex-en { display: block; font-size: 13px; line-height: 1.5; font-weight: 600; }
+    .ex-zh { display: block; font-size: 12px; color: var(--c-sub); margin-top: 4px; }
+    .wave {
+      margin-top: 10px; font-size: 11px; color: var(--c-primary);
+      background: #e8f2ff; border-radius: 8px; padding: 8px 10px; font-weight: 700;
+      min-height: 34px;
+    }
+    .wave.muted { color: #93a0b3; background: #f1f5f9; font-weight: 600; }
+    .close {
+      margin-top: 14px; text-align: center; font-size: 14px; font-weight: 800;
+      color: var(--c-primary); cursor: pointer;
+    }
+
+    .sheet {
+      display: none; margin-top: 12px; background: #f8fafc; border: 2px solid var(--c-line);
+      border-radius: 14px; padding: 12px 14px;
+    }
+    .sheet.show { display: block; }
+    .sheet h4 { margin: 0 0 6px; font-size: 14px; font-weight: 800; display: flex; justify-content: space-between; align-items: center; }
+    .sheet h4 .x { font-size: 12px; color: #93a0b3; cursor: pointer; font-weight: 700; }
+    .row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 0; border-top: 1px solid #eef2f7; font-size: 13px;
+    }
+    .row:first-of-type { border-top: none; }
+    .row .sub { display: block; font-size: 11px; color: #93a0b3; margin-top: 2px; line-height: 1.4; }
+    .sw {
+      width: 42px; height: 24px; border-radius: 999px; background: #d5dde8;
+      position: relative; cursor: pointer; transition: .2s; flex: none;
+    }
+    .sw.on { background: var(--c-primary); }
+    .sw::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 18px; height: 18px; border-radius: 50%; background: #fff;
+      transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .sw.on::after { left: 21px; }
+
+    .matrix {
+      margin-top: 12px; background: #fff; border: 2px solid var(--c-line);
+      border-radius: 14px; overflow: hidden; font-size: 12px;
+    }
+    .matrix table { width: 100%; border-collapse: collapse; }
+    .matrix th, .matrix td {
+      padding: 8px 10px; border-bottom: 1px solid var(--c-line); text-align: left; line-height: 1.45;
+    }
+    .matrix th { background: #f8fafc; font-weight: 800; width: 28%; }
+    .matrix tr:last-child td, .matrix tr:last-child th { border-bottom: none; }
+    .pill {
+      display: inline-block; font-size: 10px; font-weight: 800; padding: 2px 7px;
+      border-radius: 999px; background: #e8f2ff; color: var(--c-primary);
+    }
+    .pill.off { background: #f1f5f9; color: #94a3b8; }
+
+    .compare {
+      max-width: 1180px; margin: 0 auto 48px; padding: 0 24px;
+    }
+    .compare table {
+      width: 100%; border-collapse: collapse; background: #fff;
+      border: 2px solid var(--c-line); border-radius: 14px; overflow: hidden; font-size: 13px;
+    }
+    .compare th, .compare td {
+      padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--c-line);
+      vertical-align: top; line-height: 1.55;
+    }
+    .compare th { background: #f8fafc; font-weight: 800; width: 18%; }
+    .compare tr:last-child td, .compare tr:last-child th { border-bottom: none; }
+    .rec { color: var(--c-ok); font-weight: 800; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>词卡 · 打开自动播 — 原型设计</h1>
+    <p>
+      补上「打开词卡自动播」这一项。已落地的是「例句连读」（点发音时单词→例句）。
+      自动播要回答：<b>打开弹层时播什么？</b>与连读开关如何组合？
+      点词条打开词卡可预览；齿轮里可改两个开关。
+    </p>
+  </header>
+
+  <div class="note">
+    <div class="note-box">
+      <b>为何上次没做</b>：方案 B 原型里该项标了「本期不做，仅示意」；落地只交了「例句连读」。
+      下面把自动播做成可交付设计，请选语义后再开发。
+    </div>
+  </div>
+
+  <div class="opts">
+    <button class="opt on" data-mode="2" type="button">方案 2 · 跟「发音」同一套 <span class="tag">推荐</span></button>
+    <button class="opt" data-mode="1" type="button">方案 1 · 打开只播单词</button>
+    <button class="opt" data-mode="off" type="button">对照 · 自动播关</button>
+  </div>
+
+  <div class="stage">
+    <div class="col">
+      <h3 id="col-title">方案 2 · 跟「发音」同一套</h3>
+      <p class="desc" id="col-desc">打开词卡 = 自动执行一次「发音」逻辑。连读开→词+句；连读关→只播词。</p>
+      <div class="phone">
+        <div class="status"><span>21:41</span><span>▮▮▮</span></div>
+        <div class="nav">本篇精讲 · 重点词</div>
+        <div class="list">
+          <div class="wrow" data-open="hidden">
+            <b>hidden</b><span>点开词卡 ›</span>
+          </div>
+          <div class="wrow" data-open="busy">
+            <b>busy</b><span>点开词卡 ›</span>
+          </div>
+          <div style="font-size:12px;color:#93a0b3;line-height:1.5;padding:4px 2px">
+            提示：先开齿轮调开关，再关卡重开，可对比「打开是否自动播」。
+          </div>
+        </div>
+
+        <div class="mask" id="mask">
+          <div class="card" id="card">
+            <div class="gear" id="gear" title="设置">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div class="img" id="card-img">配图</div>
+            <div class="head">
+              <span class="word" id="card-word">hidden</span>
+              <span class="play" id="play-btn">
+                <svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                发音
+              </span>
+            </div>
+            <span class="ph" id="card-ph">/ˈhɪdn/</span>
+            <span class="def" id="card-def">adj. 隐藏的；秘密的</span>
+            <div class="ex" id="ex-box">
+              <span class="ex-en" id="card-ex">The toy car is hidden under the bed.</span>
+              <span class="ex-zh" id="card-ex-zh">玩具车藏在床底下。</span>
+            </div>
+            <div class="wave muted" id="wave">等待打开…</div>
+
+            <div class="sheet" id="sheet">
+              <h4>播放设置 <span class="x" id="sheet-x">完成</span></h4>
+              <div class="row">
+                <div>
+                  <div>例句连读</div>
+                  <span class="sub">点「发音」时：单词播完 → 接播例句</span>
+                </div>
+                <div class="sw on" id="sw-seq"></div>
+              </div>
+              <div class="row">
+                <div>
+                  <div>打开词卡自动播</div>
+                  <span class="sub" id="auto-sub">打开即执行一次「发音」逻辑</span>
+                </div>
+                <div class="sw on" id="sw-auto"></div>
+              </div>
+            </div>
+
+            <div class="close" id="close-btn">关闭</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>组合矩阵（当前方案）</h3>
+      <p class="desc">两个开关组合后，打开词卡实际播什么。</p>
+      <div class="matrix">
+        <table id="matrix">
+          <tr><th>自动播 \ 连读</th><td><span class="pill">连读开</span></td><td><span class="pill off">连读关</span></td></tr>
+          <tr><th><span class="pill">自动播开</span></th><td id="m11">词 → 句</td><td id="m10">只播词</td></tr>
+          <tr><th><span class="pill off">自动播关</span></th><td id="m01">不自动播</td><td id="m00">不自动播</td></tr>
+        </table>
+      </div>
+      <div style="margin-top:14px;background:#eef5ff;border-radius:14px;padding:14px;font-size:13px;line-height:1.65;color:#334155;">
+        <b>方案 2</b>：打开 = 调一次「发音」→ 矩阵上半行跟连读走。<br/>
+        <b>方案 1</b>：打开只播单词，点「发音」才受连读影响（两套逻辑）。
+      </div>
+      <div style="margin-top:12px;background:#fff;border:2px solid var(--c-line);border-radius:14px;padding:14px;font-size:13px;line-height:1.65;">
+        <b>默认建议</b><br/>
+        · 例句连读：默认开（已有）<br/>
+        · 打开自动播：默认<strong>关</strong>（少打扰；要听再开）或开（跟词力通翻卡即播接近）——请一并拍板
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <table>
+      <tr>
+        <th></th>
+        <td><b>方案 2 · 跟发音同一套</b> <span class="rec">推荐</span></td>
+        <td><b>方案 1 · 打开只播单词</b></td>
+      </tr>
+      <tr>
+        <th>打开时</th>
+        <td>等同点一次「发音」（尊重连读）</td>
+        <td>永远只播单词（忽略连读）</td>
+      </tr>
+      <tr>
+        <th>再点「发音」</th>
+        <td>同样规则，可重听</td>
+        <td>连读开 → 词+句；关 → 只词</td>
+      </tr>
+      <tr>
+        <th>优点</th>
+        <td>一套逻辑、学生好懂；实现复用 playWord()</td>
+        <td>打开打扰更小；想听例句必须再点或开连读后点发音</td>
+      </tr>
+      <tr>
+        <th>缺点</th>
+        <td>连读开时打开会多听一句（可关自动播）</td>
+        <td>两套规则；「连读开但打开不播句」易困惑</td>
+      </tr>
+      <tr>
+        <th>改动</th>
+        <td>WordCard watch(word) → 若 autoPlay 则 playWord()；设置加一行；storage</td>
+        <td>同上，但自动播只播单词 URL</td>
+      </tr>
+    </table>
+  </div>
+
+  <script>
+    const WORDS = {
+      hidden: {
+        word: 'hidden', ph: '/ˈhɪdn/', def: 'adj. 隐藏的；秘密的',
+        ex: 'The toy car is hidden under the bed.', zh: '玩具车藏在床底下。',
+      },
+      busy: {
+        word: 'busy', ph: '/ˈbɪzi/', def: 'adj. 忙碌的',
+        ex: 'He was busy outside the city.', zh: '他在城外忙碌。',
+      },
+    }
+
+    let mode = '2' // '2' | '1' | 'off'
+    let readSeq = true
+    let autoPlay = true
+    let timer = null
+    let current = 'hidden'
+
+    const mask = document.getElementById('mask')
+    const sheet = document.getElementById('sheet')
+    const wave = document.getElementById('wave')
+    const playBtn = document.getElementById('play-btn')
+    const exBox = document.getElementById('ex-box')
+    const swSeq = document.getElementById('sw-seq')
+    const swAuto = document.getElementById('sw-auto')
+    const autoSub = document.getElementById('auto-sub')
+    const title = document.getElementById('col-title')
+    const desc = document.getElementById('col-desc')
+    const m11 = document.getElementById('m11')
+    const m10 = document.getElementById('m10')
+
+    function syncSw() {
+      swSeq.classList.toggle('on', readSeq)
+      swAuto.classList.toggle('on', autoPlay)
+    }
+
+    function updateMatrix() {
+      if (mode === '1') {
+        m11.textContent = '只播词（忽略连读）'
+        m10.textContent = '只播词'
+      } else if (mode === '2') {
+        m11.textContent = '词 → 句'
+        m10.textContent = '只播词'
+      } else {
+        m11.textContent = '不自动播（对照）'
+        m10.textContent = '不自动播（对照）'
+      }
+    }
+
+    function applyModeMeta() {
+      if (mode === '2') {
+        title.textContent = '方案 2 · 跟「发音」同一套'
+        desc.textContent = '打开词卡 = 自动执行一次「发音」。连读开→词+句；关→只词。'
+        autoSub.textContent = '打开即执行一次「发音」逻辑（尊重例句连读）'
+        autoPlay = true
+      } else if (mode === '1') {
+        title.textContent = '方案 1 · 打开只播单词'
+        desc.textContent = '打开永远只播单词；点「发音」才受连读影响。'
+        autoSub.textContent = '打开只播单词；点「发音」才可能连读例句'
+        autoPlay = true
+      } else {
+        title.textContent = '对照 · 自动播关'
+        desc.textContent = '打开不播；需手动点「发音」。可与另两方案对比。'
+        autoSub.textContent = '打开不自动播（当前线上行为）'
+        autoPlay = false
+      }
+      syncSw()
+      updateMatrix()
+    }
+
+    function showWave(steps) {
+      clearTimeout(timer)
+      playBtn.classList.add('on')
+      let i = 0
+      const tick = () => {
+        if (i >= steps.length) {
+          wave.textContent = '✓ 播放结束'
+          wave.classList.remove('muted')
+          playBtn.classList.remove('on')
+          playBtn.lastChild.textContent = ' 发音'
+          exBox.classList.remove('speaking')
+          return
+        }
+        const s = steps[i++]
+        wave.textContent = s.text
+        wave.classList.remove('muted')
+        exBox.classList.toggle('speaking', !!s.ex)
+        playBtn.lastChild.textContent = ' 播放中'
+        timer = setTimeout(tick, s.ms)
+      }
+      tick()
+    }
+
+    /** 点「发音」：始终尊重连读 */
+    function playManual() {
+      const w = WORDS[current]
+      if (readSeq) {
+        showWave([
+          { text: `♪ ① 单词 ${w.word}`, ms: 800, ex: false },
+          { text: `♪ ② 例句 ${w.ex}`, ms: 1200, ex: true },
+        ])
+      } else {
+        showWave([{ text: `♪ 单词 ${w.word}`, ms: 900, ex: false }])
+      }
+    }
+
+    /** 打开时的自动播 */
+    function playOnOpen() {
+      if (!autoPlay || mode === 'off') {
+        wave.textContent = '打开未自动播 · 可点「发音」'
+        wave.classList.add('muted')
+        return
+      }
+      const w = WORDS[current]
+      if (mode === '1') {
+        showWave([{ text: `♪ 自动播 · 仅单词 ${w.word}`, ms: 900, ex: false }])
+        return
+      }
+      // 方案 2 = 同发音
+      playManual()
+      wave.textContent = wave.textContent.replace('♪', '♪ 自动播')
+    }
+
+    function openCard(key) {
+      current = key
+      const w = WORDS[key]
+      document.getElementById('card-word').textContent = w.word
+      document.getElementById('card-ph').textContent = w.ph
+      document.getElementById('card-def').textContent = w.def
+      document.getElementById('card-ex').textContent = w.ex
+      document.getElementById('card-ex-zh').textContent = w.zh
+      document.getElementById('card-img').textContent = '配图 · ' + w.word
+      sheet.classList.remove('show')
+      mask.classList.add('show')
+      clearTimeout(timer)
+      playBtn.classList.remove('on')
+      playBtn.lastChild.textContent = ' 发音'
+      exBox.classList.remove('speaking')
+      // 稍延迟模拟打开后触发
+      setTimeout(playOnOpen, 280)
+    }
+
+    function closeCard() {
+      mask.classList.remove('show')
+      clearTimeout(timer)
+    }
+
+    document.querySelectorAll('[data-open]').forEach((el) => {
+      el.addEventListener('click', () => openCard(el.getAttribute('data-open')))
+    })
+    document.getElementById('close-btn').addEventListener('click', closeCard)
+    document.getElementById('gear').addEventListener('click', () => sheet.classList.toggle('show'))
+    document.getElementById('sheet-x').addEventListener('click', () => sheet.classList.remove('show'))
+    playBtn.addEventListener('click', playManual)
+    swSeq.addEventListener('click', () => { readSeq = !readSeq; syncSw() })
+    swAuto.addEventListener('click', () => {
+      autoPlay = !autoPlay
+      syncSw()
+      if (mode === 'off' && autoPlay) {
+        // 对照模式下手动打开自动播，临时按方案2语义演示
+        mode = '2'
+        document.querySelectorAll('.opt').forEach((b) => b.classList.toggle('on', b.getAttribute('data-mode') === '2'))
+        applyModeMeta()
+        autoPlay = true
+        syncSw()
+      }
+    })
+    mask.addEventListener('click', (e) => { if (e.target === mask) closeCard() })
+
+    document.querySelectorAll('.opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.opt').forEach((b) => b.classList.remove('on'))
+        btn.classList.add('on')
+        mode = btn.getAttribute('data-mode') || '2'
+        applyModeMeta()
+        closeCard()
+      })
+    })
+
+    applyModeMeta()
+  </script>
+</body>
+</html>

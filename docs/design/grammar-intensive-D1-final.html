@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>语法精讲 · D1 定稿（软步骤 + PracticeQuiz）</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-bad: #e35d5d;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f4f6fa;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8, #f4f6fa 50%);
+      color: var(--c-ink);
+    }
+    header.top { max-width: 1100px; margin: 0 auto; padding: 22px 22px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 860px; }
+    .meta {
+      max-width: 1100px; margin: 12px auto 0; padding: 0 22px;
+    }
+    .meta .box {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px 16px; font-size: 13px; line-height: 1.65; color: var(--c-sub);
+    }
+    .meta b { color: var(--c-ink); }
+    .ok { color: var(--c-ok); font-weight: 700; }
+    .stage { max-width: 1100px; margin: 0 auto; padding: 18px 22px 48px; display: flex; flex-wrap: wrap; gap: 24px; }
+    .phone {
+      width: var(--phone-w); height: 760px; background: var(--c-page);
+      border-radius: 28px; border: 1px solid #d8dee8; box-shadow: 0 16px 40px rgba(30,50,90,.12);
+      overflow: hidden; display: flex; flex-direction: column; position: relative;
+    }
+    .cap { font-size: 12px; font-weight: 700; color: var(--c-sub); margin-bottom: 8px; }
+    .nav {
+      background: #fff; padding: 14px; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .back { width: 22px; height: 22px; border-radius: 50%; background: #eef3f9; }
+    .title { flex: 1; text-align: center; font-weight: 800; font-size: 16px; margin-right: 22px; }
+    .scroll { flex: 1; overflow-y: auto; padding: 12px; }
+    .qswitch { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .qswitch .lab { font-size: 12px; font-weight: 800; }
+    .dots { display: flex; gap: 6px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #d0d7e2; cursor: pointer; }
+    .dot.on { background: var(--c-primary); width: 18px; border-radius: 4px; }
+    .dot.done { background: var(--c-ok); }
+    .stepper { display: flex; gap: 4px; margin-bottom: 10px; }
+    .step {
+      flex: 1; text-align: center; font-size: 11px; font-weight: 700; color: var(--c-sub);
+      padding: 8px 0; border-radius: 8px; background: #eef2f7; cursor: pointer;
+    }
+    .step.on { background: #e8f2ff; color: var(--c-primary); }
+    .step.done { background: #e7f6f0; color: var(--c-ok); }
+    .sticky {
+      background: #f8fbff; border: 1px dashed #c9daf0; border-radius: 12px;
+      padding: 8px 10px; margin-bottom: 10px; font-size: 12px; line-height: 1.45; color: var(--c-sub);
+    }
+    .sticky b { color: var(--c-ink); }
+    .sticky .ex { float: right; color: var(--c-primary); font-weight: 700; cursor: pointer; }
+    .card { background: #fff; border: 1px solid var(--c-line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+    .card.bad { border-color: #f3c7c7; }
+    .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
+    .badge.bad { background: #fde8e8; color: var(--c-bad); }
+    .badge.kp { background: #eef5ff; color: var(--c-primary); }
+    .stem { font-size: 14px; font-weight: 650; line-height: 1.55; margin: 8px 0; }
+    .ans { background: #f5f8fc; border-radius: 10px; padding: 8px 10px; font-size: 12px; line-height: 1.5; }
+    .ans .x { color: var(--c-bad); } .ans .o { color: var(--c-ok); }
+    .exp { margin-top: 8px; font-size: 12px; color: var(--c-sub); line-height: 1.5; }
+    .exp .k { display: inline-block; font-size: 11px; font-weight: 800; color: var(--c-primary); background: #eef5ff; border-radius: 6px; padding: 1px 6px; margin-right: 4px; }
+    .acts { display: flex; gap: 6px; margin-top: 12px; }
+    .btn {
+      flex: 1; text-align: center; font-size: 12px; font-weight: 700; color: var(--c-primary);
+      border: 1.5px solid #d8e4f5; background: #f2f7fd; border-radius: 10px; padding: 10px 0; cursor: pointer;
+    }
+    .btn.pri { color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border: none; }
+    .btn.ghost { background: #fff; color: var(--c-sub); }
+    .pq-inline {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px; overflow: hidden; margin-bottom: 10px;
+    }
+    .pq-hd { padding: 12px 14px; border-bottom: 1px solid var(--c-line); display: flex; align-items: center; }
+    .pq-hd .t { flex: 1; font-weight: 800; font-size: 14px; }
+    .pq-hd .x { cursor: pointer; color: var(--c-sub); font-size: 13px; font-weight: 700; }
+    .pq-top { padding: 10px 14px 0; display: flex; align-items: center; gap: 8px; }
+    .pq-idx { font-size: 12px; color: var(--c-sub); font-weight: 700; }
+    .pq-dots { display: flex; gap: 5px; flex: 1; }
+    .pq-dot { width: 8px; height: 8px; border-radius: 50%; background: #dde3ec; }
+    .pq-dot.cur { background: var(--c-primary); }
+    .pq-dot.ok { background: var(--c-ok); }
+    .pq-dot.no { background: var(--c-bad); }
+    .pq-body { padding: 12px 14px; }
+    .pq-stem { font-size: 15px; font-weight: 700; line-height: 1.5; margin-bottom: 12px; }
+    .pq-opt {
+      display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px;
+      border: 1.5px solid var(--c-line); border-radius: 12px; padding: 10px 12px; cursor: pointer; font-size: 13px;
+    }
+    .pq-opt .ob { width: 22px; height: 22px; border-radius: 50%; background: #eef3f9; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px; flex-shrink: 0; }
+    .pq-opt.pick-ok { background: #eefaf4; border-color: #b8e6cf; }
+    .pq-opt.pick-no { background: #fdeeee; border-color: #f0c2c2; }
+    .pq-fb { margin-top: 10px; font-size: 13px; line-height: 1.5; }
+    .pq-fb .ok { color: var(--c-ok); font-weight: 800; }
+    .pq-fb .no { color: var(--c-bad); font-weight: 800; }
+    .pq-expl { display: block; margin-top: 4px; color: var(--c-sub); font-size: 12px; }
+    .pq-ft { padding: 12px 14px; border-top: 1px solid var(--c-line); }
+    .pq-result { text-align: center; padding: 28px 16px; }
+    .pq-score { font-size: 36px; font-weight: 800; color: var(--c-primary); }
+    .pq-msg { display: block; margin-top: 8px; color: var(--c-sub); font-size: 14px; }
+    .note { max-width: 420px; font-size: 13px; color: var(--c-sub); line-height: 1.65; }
+    .note li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>D1 定稿 · 软步骤 + 原题条 + PracticeQuiz 练同类</h1>
+    <p>外层圆点切换原题；软步骤 原题→讲解→练习。点「开始练习」后，<b>PracticeQuiz 嵌在当前页步骤 3 区域内</b>（不弹遮罩层）：进度圆点 · 点选即时判分 · 结果页 · 仅单选。</p>
+  </header>
+  <div class="meta">
+    <div class="box">
+      <b>与项目规则对齐</b><br>
+      <span class="ok">✓</span> 多题练习仍用 PracticeQuiz（embedded / 页内嵌模式，无弹层）<br>
+      <span class="ok">✓</span> 系统出题仅单选；解析中文<br>
+      <span class="ok">✓</span> 练习时顶栏原题摘要仍在，可展开对照
+    </div>
+  </div>
+
+  <div class="stage">
+    <div>
+      <div class="cap">可点：切到「3 练习」→ 开始练习（页内展开，无弹窗）</div>
+      <div class="phone" id="phone">
+        <div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+        <div class="scroll" id="main"></div>
+      </div>
+    </div>
+    <div class="note">
+      <b style="color:var(--c-ink)">练习呈现（已改）</b>
+      <ol>
+        <li>点「开始练习 · 5 题」→ <b>同页替换</b>步骤 3 内容为练习区（不弹层）。</li>
+        <li>练习区 = PracticeQuiz 页内嵌：进度圆点、点选项即时判分、中文解析、下一题、结果页。</li>
+        <li>结果页：「下一题原题」或「完成本卷」；「结束练习」回到步骤 3 入口卡。</li>
+        <li>开发时：<code>PracticeQuiz</code> 增加 <code>embedded</code> prop，去掉遮罩/居中弹卡，铺在步骤 3 槽位。</li>
+      </ol>
+      <p>确认后回复「按 D1 定稿开发」。</p>
+    </div>
+  </div>
+
+  <script>
+    const QS = [
+      {
+        no: 1, wrong: true,
+        stem: "She feels like ____ (make) handicrafts and would like ____ (give) them to her friends.",
+        yours: "making, give", correct: "making; to give",
+        exp: "feel like doing sth；would like to do sth。",
+        kps: ["feel like doing", "would like to do"],
+        practiceKp: "feel like doing",
+      },
+      {
+        no: 3, wrong: true,
+        stem: "It's kind ____ you ____ (invite) me to your party.",
+        yours: "for, invite", correct: "of; to invite",
+        exp: "It's kind of sb to do sth。",
+        kps: ["kind of sb to do"],
+        practiceKp: "kind of sb to do",
+      },
+    ]
+    const MOCK_QUIZ = [
+      { id: "1", stem: "She feels like ____ a cup of tea.", options: ["A. drink", "B. drinking", "C. to drink", "D. drank"], answer: "B. drinking", explanation: "feel like 后接 doing，表示想要做某事。" },
+      { id: "2", stem: "I would like ____ you with the boxes.", options: ["A. help", "B. helping", "C. to help", "D. helped"], answer: "C. to help", explanation: "would like to do 表示想要做某事。" },
+      { id: "3", stem: "Do you feel like ____ out tonight?", options: ["A. go", "B. going", "C. to go", "D. went"], answer: "B. going", explanation: "feel like 后用动名词 going。" },
+      { id: "4", stem: "He would like ____ a new bike.", options: ["A. buy", "B. buying", "C. to buy", "D. bought"], answer: "C. to buy", explanation: "would like 后接 to do。" },
+      { id: "5", stem: "They feel like ____ football now.", options: ["A. play", "B. playing", "C. to play", "D. played"], answer: "B. playing", explanation: "feel like doing。" },
+    ]
+
+    let qi = 0, step = 1, expand = false
+    let quizOpen = false, quizIdx = 0, quizState = {}, quizDone = false
+
+    /**
+     * 渲染主页：切题 / 软步骤 / 步骤 3 页内嵌练习
+     */
+    function render() {
+      const q = QS[qi]
+      const main = document.getElementById("main")
+      const dots = QS.map((_, i) => `<div class="dot ${i === qi ? "on" : ""} ${i < qi ? "done" : ""}" data-qi="${i}"></div>`).join("")
+      const steps = [1, 2, 3].map(i => {
+        let cls = "step"
+        if (i === step) cls += " on"
+        else if (i < step) cls += " done"
+        return `<div class="${cls}" data-step="${i}">${["1 原题", "2 讲解", "3 练习"][i - 1]}</div>`
+      }).join("")
+
+      let sticky = ""
+      if (step > 1) {
+        sticky = `<div class="sticky">
+          <span class="ex" id="tog">${expand ? "收起" : "展开原题"}</span>
+          <b>原题</b> · 第 ${q.no} 题${q.wrong ? " · 错" : ""}<br>
+          ${expand
+            ? `<div style="margin-top:6px;color:var(--c-ink)">${q.stem}<div class="ans" style="margin-top:6px"><span class="x">你的：${q.yours}</span><br><span class="o">正确：${q.correct}</span></div></div>`
+            : `<span style="color:var(--c-ink)">${q.stem.slice(0, 42)}…</span>`}
+        </div>`
+      }
+
+      let body = ""
+      if (step === 1) {
+        body = `<div class="card bad">
+          <div class="row"><span style="font-weight:800">第 ${q.no} 题</span><span class="badge bad">错</span></div>
+          <div class="stem">${q.stem}</div>
+          <div class="ans"><span class="x">你的：${q.yours}</span><br><span class="o">正确：${q.correct}</span></div>
+          <div class="exp"><span class="k">解析</span>${q.exp}</div>
+          <div class="row" style="margin-top:8px">${q.kps.map(k => `<span class="badge kp">${k}</span>`).join("")}</div>
+          <div class="acts"><div class="btn pri" id="to2">下一步：学讲解 ›</div></div>
+        </div>`
+      } else if (step === 2) {
+        body = `<div class="card">
+          ${q.kps.map(k => `<span class="badge kp">${k}</span> `).join("")}
+          <div style="margin-top:10px;font-size:13px;line-height:1.65;color:var(--c-sub)">
+            <b style="color:var(--c-ink)">规则</b><br>${q.exp}<br><br>
+            顶栏可随时展开原题对照。
+          </div>
+          <div class="acts">
+            <div class="btn ghost" id="to1">‹ 原题</div>
+            <div class="btn pri" id="to3">去练习 ›</div>
+          </div>
+        </div>`
+      } else if (quizOpen) {
+        body = renderQuizHtml(q)
+      } else {
+        body = `<div class="card">
+          <div style="font-weight:800;margin-bottom:6px">练同类</div>
+          <div style="font-size:13px;color:var(--c-sub);line-height:1.55;margin-bottom:12px">
+            围绕「${q.practiceKp}」出 5 道单选仿真题。<br>
+            使用统一练习组件：点选项即时判分 · 顶部进度圆点 · 结果页。
+          </div>
+          <div class="acts"><div class="btn pri" id="startQuiz">开始练习 · 5 题</div></div>
+          <div class="acts"><div class="btn ghost" id="to2b">‹ 回讲解</div></div>
+        </div>`
+      }
+
+      main.innerHTML = `
+        <div class="qswitch"><span class="lab">本题 ${qi + 1}/${QS.length}</span><div class="dots">${dots}</div></div>
+        <div class="stepper">${steps}</div>
+        ${sticky}
+        ${body}`
+
+      main.querySelectorAll("[data-qi]").forEach(el => el.onclick = () => {
+        qi = +el.dataset.qi; step = 1; expand = false; closeQuiz(); render()
+      })
+      main.querySelectorAll("[data-step]").forEach(el => el.onclick = () => {
+        step = +el.dataset.step
+        if (step !== 3) closeQuiz()
+        render()
+      })
+      const tog = document.getElementById("tog")
+      if (tog) tog.onclick = () => { expand = !expand; render() }
+      const to2 = document.getElementById("to2"); if (to2) to2.onclick = () => { step = 2; closeQuiz(); render() }
+      const to2b = document.getElementById("to2b"); if (to2b) to2b.onclick = () => { step = 2; closeQuiz(); render() }
+      const to1 = document.getElementById("to1"); if (to1) to1.onclick = () => { step = 1; closeQuiz(); render() }
+      const to3 = document.getElementById("to3"); if (to3) to3.onclick = () => { step = 3; render() }
+      const start = document.getElementById("startQuiz"); if (start) start.onclick = openQuiz
+      bindQuizHandlers()
+    }
+
+    /** 开始页内练习 */
+    function openQuiz() {
+      quizOpen = true; quizIdx = 0; quizState = {}; quizDone = false
+      render()
+    }
+
+    /** 结束练习，回到步骤 3 入口卡 */
+    function closeQuiz() {
+      quizOpen = false
+      quizDone = false
+    }
+
+    /**
+     * 生成页内嵌 PracticeQuiz HTML
+     * @param {{ practiceKp: string }} q
+     */
+    function renderQuizHtml(q) {
+      if (quizDone) {
+        const ok = Object.values(quizState).filter(s => s.correct).length
+        const hasNext = qi < QS.length - 1
+        return `<div class="pq-inline">
+          <div class="pq-hd"><div class="t">同类练习 · ${q.practiceKp}</div><div class="x" id="pqx">结束练习</div></div>
+          <div class="pq-result">
+            <div class="pq-score">${ok}/${MOCK_QUIZ.length}</div>
+            <span class="pq-msg">已计入本题练习</span>
+          </div>
+          <div class="pq-ft">
+            <div class="btn pri" id="pqNext">${hasNext ? "下一题原题 ›" : "完成本卷"}</div>
+            <div class="acts" style="margin-top:8px"><div class="btn ghost" id="pqClose">结束练习</div></div>
+          </div>
+        </div>`
+      }
+      const cur = MOCK_QUIZ[quizIdx]
+      const st = quizState[cur.id]
+      const dots = MOCK_QUIZ.map((qq, i) => {
+        let cls = "pq-dot"
+        if (i === quizIdx) cls += " cur"
+        if (quizState[qq.id]?.correct === true) cls += " ok"
+        if (quizState[qq.id]?.correct === false) cls += " no"
+        return `<div class="${cls}"></div>`
+      }).join("")
+      return `<div class="pq-inline">
+        <div class="pq-hd"><div class="t">同类练习 · ${q.practiceKp}</div><div class="x" id="pqx">结束练习</div></div>
+        <div class="pq-top"><span class="pq-idx">第 ${quizIdx + 1} / ${MOCK_QUIZ.length} 题</span><div class="pq-dots">${dots}</div></div>
+        <div class="pq-body">
+          <div class="pq-stem">${cur.stem}</div>
+          ${cur.options.map((op, oi) => {
+            let cls = "pq-opt"
+            if (st) {
+              if (op === cur.answer) cls += " pick-ok"
+              else if (st.chosen === op && !st.correct) cls += " pick-no"
+            }
+            return `<div class="${cls}" data-op="${op}"><div class="ob">${"ABCD"[oi]}</div><div>${op.replace(/^[A-D]\.\s*/, "")}</div></div>`
+          }).join("")}
+          ${st ? `<div class="pq-fb"><span class="${st.correct ? "ok" : "no"}">${st.correct ? "✓ 答对" : "✗ 答错，正确：" + cur.answer}</span>
+            <span class="pq-expl">${cur.explanation}</span></div>` : ""}
+        </div>
+        <div class="pq-ft">
+          <div class="btn pri ${st ? "" : "ghost"}" id="pqGo" style="${st ? "" : "opacity:.45;pointer-events:none"}">${quizIdx === MOCK_QUIZ.length - 1 ? "查看结果" : "下一题 →"}</div>
+        </div>
+      </div>`
+    }
+
+    /** 绑定练习区事件（须在 main.innerHTML 之后） */
+    function bindQuizHandlers() {
+      if (!quizOpen) return
+      const pqx = document.getElementById("pqx")
+      if (pqx) pqx.onclick = () => { closeQuiz(); render() }
+      const pqClose = document.getElementById("pqClose")
+      if (pqClose) pqClose.onclick = () => { closeQuiz(); render() }
+      const pqNext = document.getElementById("pqNext")
+      if (pqNext) pqNext.onclick = () => {
+        const hasNext = qi < QS.length - 1
+        closeQuiz()
+        if (hasNext) { qi += 1; step = 1; expand = false; render() }
+        else { alert("本卷语法原题已学完（示意）"); render() }
+      }
+      if (quizDone) return
+      const cur = MOCK_QUIZ[quizIdx]
+      document.querySelectorAll("[data-op]").forEach(el => {
+        el.onclick = () => {
+          if (quizState[cur.id]) return
+          const chosen = el.dataset.op
+          quizState[cur.id] = { chosen, correct: chosen === cur.answer, explanation: cur.explanation }
+          render()
+        }
+      })
+      const go = document.getElementById("pqGo")
+      const st = quizState[cur.id]
+      if (go && st) go.onclick = () => {
+        if (quizIdx >= MOCK_QUIZ.length - 1) { quizDone = true; render() }
+        else { quizIdx += 1; render() }
+      }
+    }
+
+    render()
+  </script>
+</body>
+</html>

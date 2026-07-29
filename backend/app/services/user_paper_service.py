@@ -27,34 +27,32 @@ def _is_wrong(student_answer: str | None, correct_answer: str | None) -> bool:
 
 
 def _section_type(label: str | None) -> str | None:
-    """由原卷大题名推板块类型键(供前端图标/分组;识别不到留 None)。"""
-    l = label or ""
-    if "完形" in l or "完型" in l:
-        return "cloze"
-    if "阅读" in l or "任务型" in l:
-        return "reading"
-    if "单项" in l or "单选" in l or "选择" in l:
-        return "mcq"
-    if "书面" in l or "作文" in l or "写作" in l:
-        return "writing"
-    if "词汇" in l or "首字母" in l or "短文填空" in l or "填空" in l:
-        return "fill"
-    if "听力" in l:
-        return "listening"
-    return None
+    """由原卷大题名推规范题型键(paper_section_taxonomy);识别不到 → other。"""
+    from app.services.paper_section_taxonomy import resolve_section_type, KEY_OTHER
+    key = resolve_section_type(label)
+    return key if key else KEY_OTHER
 
 
-# 原卷没识别到大题头时,按「题型 + 有无短文」推一个建议大题名(前端标「建议」,学生可改)
+# 原卷没识别到大题头时,按题面特征推断(α);前端标「建议」,学生可改
 _SUGGEST_BY_TYPE = {
     "单选": "单项选择", "阅读": "阅读理解", "完型": "完形填空",
-    "填空": "词汇/短文填空", "写作": "书面表达", "判断": "判断", "连线": "连线",
+    "填空": "词汇运用", "写作": "书面表达", "判断": "判断", "连线": "连线",
 }
 
 
 def _suggest_section_label(question_type: str | None, has_passage: bool) -> str:
-    if has_passage:
-        return "阅读理解"                      # 有短文优先判阅读
-    return _SUGGEST_BY_TYPE.get(question_type or "", "其它")
+    from app.services.paper_section_taxonomy import suggest_label_and_type
+    label, _key, _sug = suggest_label_and_type(
+        question_type=question_type, has_passage=has_passage)
+    return label
+
+
+def _suggest_section_meta(question_type: str | None, has_passage: bool) -> tuple[str, str]:
+    """返回 (建议大题名, 规范 section_type)。"""
+    from app.services.paper_section_taxonomy import suggest_label_and_type
+    label, key, _ = suggest_label_and_type(
+        question_type=question_type, has_passage=has_passage)
+    return label, key
 
 
 def kp_kind_of(kp_key: str | None, node_code: str | None) -> str | None:
@@ -68,11 +66,17 @@ def kp_kind_of(kp_key: str | None, node_code: str | None) -> str | None:
 
 
 def _label_of(pq) -> tuple[str, bool]:
-    """返回(大题名, 是否 AI 建议)。原卷有大题名→用它(非建议);否则按题型推(建议)。"""
+    """返回(大题名, 是否规则建议)。原卷有大题名→用它(非建议);否则按题面推断(建议)。"""
     raw = (pq.section or "").strip()
     if raw:
         return raw, False
-    return _suggest_section_label(pq.question_type, bool(pq.passage or pq.block_key)), True
+    from app.services.paper_section_taxonomy import suggest_label_and_type
+    label, _key, sug = suggest_label_and_type(
+        question_type=getattr(pq, "question_type", None),
+        has_passage=bool(pq.passage or pq.block_key),
+        stem_blob=(getattr(pq, "stem", None) or "")[:500],
+    )
+    return label, sug
 
 
 async def _image_hashes(source_image_urls: list[str]) -> tuple[str | None, list[str]]:
@@ -320,6 +324,8 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
             # Step 3: 落库题目(带大题/语篇/顺序)+ 题目↔node 关联(KP-First)+ 补写掌握账
             for _i, pq in enumerate(parsed):
                 is_wrong = _is_wrong(pq.student_answer, pq.correct_answer)
+                from app.services.stem_options import split_stem_for_store
+                stem_clean, opts = split_stem_for_store(pq.stem)
                 q = UserPaperQuestion(
                     user_paper_id=paper.id,
                     section_id=sec_id_by_label.get(_label_of(pq)[0]),
@@ -328,7 +334,8 @@ async def run_paper_pipeline(paper_id: uuid.UUID) -> None:
                     sort_order=_i,
                     question_no=pq.question_no,
                     question_type=pq.question_type,
-                    stem=pq.stem,
+                    stem=stem_clean,
+                    options=opts,
                     student_answer=pq.student_answer,
                     correct_answer=pq.correct_answer,
                     explanation=pq.explanation,
@@ -458,8 +465,16 @@ async def get_paper_detail(
     )).scalars().all()
 
     def _q_out(q):
+        opts = list(q.options) if isinstance(getattr(q, "options", None), list) else None
+        stem = q.stem
+        if not opts and stem:
+            from app.services.stem_options import parse_inline_options
+            clean, parsed = parse_inline_options(stem)
+            if parsed:
+                stem, opts = clean, parsed
         return UserPaperQuestionOut(
-            id=q.id, question_no=q.question_no, question_type=q.question_type, stem=q.stem,
+            id=q.id, question_no=q.question_no, question_type=q.question_type, stem=stem,
+            options=opts,
             student_answer=q.student_answer, correct_answer=q.correct_answer,
             explanation=q.explanation, is_wrong=q.is_wrong,
             passage=q.passage, block_key=q.block_key,
@@ -486,9 +501,10 @@ async def get_paper_detail(
     for q in qs:
         by_sec.setdefault(q.section_id, []).append(q)
     sections = [
-        UserPaperSectionOut(id=s.id, label=s.label, section_type=s.section_type,
+        UserPaperSectionOut(id=s.id, label=s.label, section_type=_section_type(s.label) or s.section_type,
                             is_suggested=s.is_suggested,
                             in_reading_intensive=bool(getattr(s, "in_reading_intensive", False)),
+                            in_cloze_intensive=bool(getattr(s, "in_cloze_intensive", False)),
                             questions=[_q_out(q) for q in by_sec.get(s.id, [])])
         for s in secs
     ]
@@ -617,7 +633,14 @@ the and for are but not you all any can had her was one our out day get has him 
 old see two way who did its let put say she too use dad mom the this that these those with have from they
 will would could should about there their what when where which while your yours been being does were what
 into than then them been over more most some such only very much many just like also each here does
+people person years year time times things thing something anything everything nothing make made take took
+come came go going went know knew think thought want need look find give good well back after before
 """.split())
+
+# 阅读精讲·理解向难词:篇均 Top N / 硬顶(方案 F+E+A)
+_COMP_WORD_TOP = 12
+_COMP_WORD_CAP = 15
+_COMP_OOS_MAX = 2  # 超纲且突显极强最多留几条
 
 
 async def _paper_texts(
@@ -636,6 +659,170 @@ async def _paper_texts(
     stems = [s for (s,) in (await db.execute(
         select(UserPaperQuestion.stem).where(*scond))).all()]
     return passages, stems
+
+
+def _comp_hardness(*, star: int | None, difficulty: int | None, freq_rank: int | None) -> float:
+    """相对难度分(越大越难)。考纲真题频档优先:高频(3)易→低频(1)难;否则词库 difficulty;再否则词频排名。"""
+    if star in (1, 2, 3):
+        return float(4 - star)            # 3→1, 2→2, 1→3
+    if difficulty is not None and int(difficulty) > 0:
+        return float(min(5, max(1, int(difficulty))))
+    if freq_rank is not None and int(freq_rank) > 0:
+        r = int(freq_rank)
+        if r <= 500:
+            return 1.0
+        if r <= 2000:
+            return 2.0
+        if r <= 5000:
+            return 3.0
+        return 4.0
+    return 2.0                            # 未知 → 中档
+
+
+def _comp_salience(
+    token: str, *, tf: int, first_para_hit: bool, in_stem: bool, other_df: int, other_n: int,
+) -> float:
+    """F 篇章突显:本篇 tf(封顶) + 首段加权 − 题干降权 − 跨篇常见降权。"""
+    f = float(min(tf, 3))
+    if first_para_hit:
+        f *= 1.25
+    if in_stem:
+        f *= 0.55                         # 偏答题词,理解主轴降权(反 D)
+    if other_n > 0 and other_df > 0:
+        # 简单 IDF 感:其它短文里越常见,突显越低
+        f *= 1.0 / (1.0 + other_df / max(other_n, 1))
+    return f
+
+
+async def comprehension_hard_words(
+    db: AsyncSession, *, text: str, student_id: uuid.UUID,
+    stem_text: str | None = None, other_passages: list[str] | None = None,
+    limit: int = _COMP_WORD_TOP,
+) -> list[dict]:
+    """阅读精讲·理解向难词(F 突显 + E 相对难 + A 考纲闸),零 LLM。
+
+    返回按综合分降序的词条摘要(已掌握剔除;默认不含缺词占位):
+    [{word_id, word, score, hardness, salience, in_syllabus, exam_tag, star, recep}, ...]
+    硬顶 _COMP_WORD_CAP;超纲最多 _COMP_OOS_MAX。
+    """
+    from statistics import median
+
+    from app.models.d1_users import User
+    from app.models.d5_learning import VocabularyWord, VocabularyLearning
+    from app.models.d18_vocab_kg import VocabListItem
+    from app.services.vocab_pin_service import _words_from_text
+    from app.services import vocabulary_service as vsvc
+    from app.services import vocab_list_service as vls
+
+    text = (text or "").strip()
+    if not text:
+        return []
+    lim = max(1, min(int(limit or _COMP_WORD_TOP), _COMP_WORD_CAP))
+
+    tokens = [w for w in _words_from_text(text) if len(w) >= 3 and w not in _VOCAB_STOP]
+    if not tokens:
+        return []
+
+    # 本篇 tf + 首段集合(首段≈前 220 字或第一个空行前)
+    from collections import Counter
+    tf_map = Counter(tokens)
+    cut = text.find("\n\n")
+    head = text[:cut] if 0 < cut < 220 else text[:220]
+    first_toks = set(_words_from_text(head))
+    stem_toks = set(_words_from_text(stem_text or "")) if stem_text else set()
+    others = [p for p in (other_passages or []) if (p or "").strip()]
+    other_df: dict[str, int] = Counter()
+    for p in others:
+        for w in set(_words_from_text(p)):
+            if len(w) >= 3 and w not in _VOCAB_STOP:
+                other_df[w] += 1
+
+    uniq = list(dict.fromkeys(tokens))   # 保序去重
+    hit = {w.word.lower(): w for w in (await db.execute(
+        select(VocabularyWord).where(func.lower(VocabularyWord.word).in_(uniq)))).scalars().all()}
+    if not hit:
+        return []
+
+    ids = [w.id for w in hit.values()]
+    recep = {r.word_id: float(r.mastery_recep) for r in (await db.execute(
+        select(VocabularyLearning).where(
+            VocabularyLearning.student_id == student_id,
+            VocabularyLearning.word_id.in_(ids)))).scalars().all()
+        if r.mastery_recep is not None}
+
+    stu = await db.get(User, student_id)
+    level = vsvc.resolve_exam_target(stu) if stu else "junior"
+    list_id = await vls.resolve_word_list(db, exam_level=level)
+    syllabus_star: dict = {}            # word_id → star
+    if list_id:
+        for wid, star in (await db.execute(
+            select(VocabListItem.word_id, VocabListItem.star)
+            .where(VocabListItem.list_id == list_id, VocabListItem.word_id.in_(ids)))).all():
+            syllabus_star[wid] = int(star or 0)
+
+    # E 基线:已掌握词难度中位数;无掌握 → 学段默认(初中 1.0 / 高中 1.5),取「≥ 基线」侧
+    mastered_h = []
+    for vw in hit.values():
+        rc = recep.get(vw.id)
+        if rc is not None and rc >= 0.6:
+            mastered_h.append(_comp_hardness(
+                star=syllabus_star.get(vw.id), difficulty=vw.difficulty, freq_rank=vw.frequency))
+    if mastered_h:
+        baseline = float(median(mastered_h))
+    else:
+        baseline = 1.5 if level == "senior" else 1.0
+
+    level_label = {"junior": "中考", "senior": "高考"}.get(level, "")
+    freq_tier = {3: "高频", 2: "中频", 1: "低频"}
+
+    cands: list[dict] = []
+    for tok in uniq:
+        vw = hit.get(tok)
+        if vw is None:
+            continue
+        rc = recep.get(vw.id)
+        if rc is not None and rc >= 0.6:
+            continue
+        star = syllabus_star.get(vw.id)
+        in_syl = star is not None if list_id else True   # 无上架考纲库 → A 闸放开
+        hard = _comp_hardness(star=star, difficulty=vw.difficulty, freq_rank=vw.frequency)
+        if hard < baseline:               # E:相对学生水平偏低 → 不占理解向名额
+            continue
+        sal = _comp_salience(
+            tok, tf=tf_map[tok], first_para_hit=tok in first_toks,
+            in_stem=tok in stem_toks, other_df=other_df.get(tok, 0), other_n=len(others))
+        if not list_id:
+            a_bonus = 1.0
+        else:
+            a_bonus = 1.45 if in_syl else 0.42
+        score = sal * (1.0 + 0.35 * hard) * a_bonus
+        tag = None
+        if list_id and in_syl and level_label:
+            tier = freq_tier.get(star or 0)
+            tag = f"{level_label}·{tier}" if tier else level_label
+        elif list_id and not in_syl:
+            tag = "超纲·关键"
+        cands.append({
+            "word_id": str(vw.id), "word": vw.word, "vw": vw,
+            "score": score, "hardness": hard, "salience": sal,
+            "in_syllabus": in_syl, "exam_tag": tag, "star": star or 0,
+            "recep": rc,
+        })
+
+    cands.sort(key=lambda x: (-x["score"], -x["hardness"], -x["salience"]))
+
+    # A 闸:有上架考纲时超纲最多 _COMP_OOS_MAX;无考纲库则不限超纲
+    picked: list[dict] = []
+    oos = 0
+    for c in cands:
+        if len(picked) >= lim:
+            break
+        if list_id and not c["in_syllabus"]:
+            if oos >= _COMP_OOS_MAX:
+                continue
+            oos += 1
+        picked.append(c)
+    return picked
 
 
 async def paper_vocab_candidates(
@@ -711,16 +898,17 @@ async def paper_long_sentences(
     return {"sentences": out[:15]}
 
 
-_HW_MODULES = ("word", "grammar", "sentence", "reading")
+_HW_MODULES = ("word", "grammar", "sentence", "reading", "cloze")
 
 
 async def homework_progress(db: AsyncSession, *, student_id: uuid.UUID) -> list[dict]:
-    """「我的作业」列表(C-a):以本人所有上传卷为底,合并四模块(单词/语法/长难句/阅读)进度。
-    每卷返回:综合进度环 overall_pct + 状态 status(todo/doing/done)+ 四模块 {studied,total}。
+    """「我的作业」列表(C-a):以本人所有上传卷为底,合并五模块(单词/语法/长难句/阅读/完形)进度。
+    每卷返回:综合进度环 overall_pct + 状态 status(todo/doing/done)+ 五模块 {studied,total}。
     复用各模块 homework_batches(按 source_paper_id 归组),按 paper_id 合并;无内容的模块记 0/0。"""
     from app.services import (vocab_intensive_service as vi, grammar_intensive_service as gi,
-                              sentence_intensive_service as si, reading_intensive_service as ri)
-    svcs = {"word": vi, "grammar": gi, "sentence": si, "reading": ri}
+                              sentence_intensive_service as si, reading_intensive_service as ri,
+                              cloze_intensive_service as ci)
+    svcs = {"word": vi, "grammar": gi, "sentence": si, "reading": ri, "cloze": ci}
     mod_maps: dict[str, dict] = {}
     for kind, svc in svcs.items():
         try:
@@ -819,15 +1007,15 @@ def _build_segments(text: str, words: list[dict], sentences: list[str]) -> list[
 
 async def passage_study(
     db: AsyncSession, *, passage: str, student_id: uuid.UUID,
+    paper_id: uuid.UUID | None = None,
 ) -> dict:
     """阅读精讲·单篇短文的学习素材(一次给全):
-    - words:该短文里的『生词』(未学/接收度<0.6),带完整卡片媒体(配图/发音/例句/英文释义),
-      结构与长难句页「重点词汇」完全一致(前端同一组件渲染)。
+    - words:该短文「理解向难词」(F 突显 + E 相对难 + A 考纲闸),带完整卡片媒体;
+      Top 8～12(硬顶 15),结构与长难句页「重点词汇」一致。
     - sentences:该短文拆出的长难句(供逐句解析)。
-    抽词走正则(不调 LLM、零成本);缺词落审核队列(best-effort)。"""
-    from app.models.d5_learning import (
-        VocabularyWord, VocabularyLearning, StudentVocabCandidate)
-    from app.services.vocab_pin_service import _words_from_text
+    - segments:词/句定位回原文的有序片段(内联双高亮)。
+    抽词走规则(不调 LLM、零成本)。paper_id 可选:用于题干降权 + 同卷其它短文 IDF。"""
+    from app.models.d5_learning import StudentVocabCandidate
     from app.services import vocab_intensive_service as vis
     from app.services import long_sentence_service as ls
 
@@ -842,62 +1030,36 @@ async def passage_study(
         if key and key not in seen and ls.is_long_sentence(s):
             seen.add(key)
             sentences.append(key)
-
-    # ② 生词:正则抽词 → 词库命中 → 只留生词(接收度<0.6),出完整卡片媒体
-    tokens = [w for w in _words_from_text(text) if len(w) >= 3 and w not in _VOCAB_STOP]
-    words: list[dict] = []
-    if tokens:
-        hit = {w.word.lower(): w for w in (await db.execute(
-            select(VocabularyWord).where(func.lower(VocabularyWord.word).in_(tokens)))).scalars().all()}
-        missing = [w for w in tokens if w not in hit]
-        if hit:
-            ids = [w.id for w in hit.values()]
-            recep = {r.word_id: r.mastery_recep for r in (await db.execute(
-                select(VocabularyLearning).where(
-                    VocabularyLearning.student_id == student_id,
-                    VocabularyLearning.word_id.in_(ids)))).scalars().all()}
-            added_words = {str(x) for x in (await db.execute(
-                select(StudentVocabCandidate.word_id).where(
-                    StudentVocabCandidate.student_id == student_id,
-                    StudentVocabCandidate.word_id.in_(ids)))).scalars().all()}
-            picked: set = set()
-            for w in tokens:                                  # 保持短文出现顺序
-                vw = hit.get(w)
-                if vw is None or vw.id in picked:
-                    continue
-                rc = recep.get(vw.id)
-                if rc is not None and float(rc) >= 0.6:       # 接收度够 → 已掌握,不算生词
-                    continue
-                picked.add(vw.id)
-                item = vis._word_out(vw)
-                item["in_vocab"] = True
-                item["word_added"] = str(vw.id) in added_words
-                words.append(item)
-                if len(words) >= 40:
-                    break
-        # ③ 缺词占位卡:词库没有、但形态可信(免费正则粗筛)的词 → placeholder,点开触发
-        #    「查看即生成」:有效性闸门通过则即时入库可学,不通过落人工审核(方案 A)。
-        for w in missing:
-            if len(words) >= 40:
-                break
-            if vis._WORD_SHAPE.fullmatch(w):
-                words.append({
-                    "word_id": None, "word": w, "phonetic": None, "definitions": None,
-                    "image_url": None, "word_audio_url": None, "en_description": None,
-                    "example": None, "in_vocab": False, "word_added": False,
-                    "pending_create": True,
-                })
-    # P4:按学生学段给生词打考纲标(初中→中考 / 高中→高考;仅该学段已上架考纲词)
-    if words:
-        from app.models.d1_users import User
-        from app.services import vocabulary_service as vsvc
-        stu = await db.get(User, student_id)
-        level = vsvc.resolve_exam_target(stu) if stu else None
-        labels = await vsvc.exam_syllabus_labels(
-            db, level=level, word_ids=[w.get("word_id") for w in words if w.get("word_id")]) if level else {}
-        for w in words:
-            w["exam_tag"] = labels.get(str(w.get("word_id"))) if w.get("word_id") else None
     sentences = sentences[:15]
+
+    # ② 同卷上下文(方案 2):题干降权 + 其它短文 IDF
+    stem_text, other_passages = None, None
+    if paper_id is not None:
+        paper = await db.get(UserUploadedPaper, paper_id)
+        if paper is not None and paper.student_id == student_id:
+            passages, stems = await _paper_texts(db, paper_id)
+            stem_text = " ".join(stems) if stems else None
+            other_passages = [p for p in passages if (p or "").strip() != text]
+
+    picked = await comprehension_hard_words(
+        db, text=text, student_id=student_id,
+        stem_text=stem_text, other_passages=other_passages, limit=_COMP_WORD_TOP)
+
+    words: list[dict] = []
+    if picked:
+        ids = [uuid.UUID(c["word_id"]) for c in picked]
+        added_words = set((await db.execute(
+            select(StudentVocabCandidate.word_id).where(
+                StudentVocabCandidate.student_id == student_id,
+                StudentVocabCandidate.word_id.in_(ids)))).scalars().all())
+        for c in picked:
+            vw = c["vw"]
+            item = vis._word_out(vw)
+            item["in_vocab"] = True
+            item["word_added"] = vw.id in added_words
+            item["exam_tag"] = c.get("exam_tag")
+            words.append(item)
+
     segments = _build_segments(text, words, sentences)
     return {"words": words, "sentences": sentences, "segments": segments}
 
@@ -912,16 +1074,20 @@ async def update_section(
     db: AsyncSession, *, section_id: uuid.UUID, student_id: uuid.UUID, label: str
 ) -> bool:
     """学生修改大题分类:改 label + 重推 section_type + 置 is_suggested=false(已人工确认)。
-    校验该大题所属试卷属于本人;成功返回 True,越权/不存在返回 False。"""
+    label 必须在规范白名单内;校验该大题所属试卷属于本人;成功 True,越权/不存在/非法 False。"""
     from app.models.d13_v2_user_papers import UserPaperSection
+    from app.services.paper_section_taxonomy import whitelist_labels, resolve_section_type
     sec = await db.get(UserPaperSection, section_id)
     if sec is None:
         return False
     paper = await db.get(UserUploadedPaper, sec.user_paper_id)
     if paper is None or paper.student_id != student_id:
         return False
-    sec.label = label.strip()
-    sec.section_type = _section_type(sec.label)
+    lab = (label or "").strip()
+    if lab not in set(whitelist_labels()):
+        return False
+    sec.label = lab
+    sec.section_type = resolve_section_type(lab)
     sec.is_suggested = False
     await db.commit()
     return True
@@ -977,14 +1143,15 @@ async def add_question_grammar(db: AsyncSession, *, question_id: uuid.UUID,
         from app.services import learning_plan_service
         n = await learning_plan_service.add_targets(
             db, student_id=student_id, node_ids=[q.node_id],
-            source="paper_question", source_paper_id=q.user_paper_id)
+            source="paper_question", source_paper_id=q.user_paper_id,
+            source_question_id=q.id)
         await db.commit()
         return {"kind": "grammar", "added": n}
     if q.kp_key and _grammar_anchor(q.kp_key):       # 未入图谱的语法 → 个人语法树(按卷)
         from app.services import grammar_progress_service
         await grammar_progress_service.add_personal_if_grammar(
             db, student_id=student_id, name=q.kp_key, source="upload_paper",
-            source_paper_id=q.user_paper_id)
+            source_paper_id=q.user_paper_id, source_question_id=q.id)
         await db.commit()
         return {"kind": "grammar", "added": 1, "personal": True}
     return {"kind": "grammar", "added": 0}

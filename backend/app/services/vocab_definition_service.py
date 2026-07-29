@@ -57,16 +57,18 @@ def _lemma_candidates(word: str) -> list[str]:
 
 
 async def dict_lookup(db: AsyncSession, word: str) -> dict | None:
-    """查 dict_ecdict:精确 word_lower 优先,再按去屈折候选。返回 {phonetic, translation, tag} 或 None。"""
+    """查 dict_ecdict:精确 word_lower 优先,再按去屈折候选。
+    返回 {phonetic, translation, tag, exchange} 或 None(exchange 可能为空串)。"""
     cands = _lemma_candidates(word)
     row = (await db.execute(sa.text(
-        "SELECT phonetic, translation, tag FROM dict_ecdict "
+        "SELECT phonetic, translation, tag, exchange FROM dict_ecdict "
         "WHERE word_lower = ANY(:cands) AND translation IS NOT NULL "
         "ORDER BY array_position(:cands, word_lower) LIMIT 1"
     ), {"cands": cands})).first()
     if row is None:
         return None
-    return {"phonetic": row[0], "translation": row[1], "tag": row[2]}
+    return {"phonetic": row[0], "translation": row[1], "tag": row[2],
+            "exchange": (row[3] or "") if len(row) > 3 else ""}
 
 
 async def _gen_definition_llm(word: str) -> list[dict]:

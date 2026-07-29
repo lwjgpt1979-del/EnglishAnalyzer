@@ -502,7 +502,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import type { ShadowScoreResult, GroupRecepItem, GroupRecepResult, VocabPin, PinnableWord } from '@/api/vocabulary'
 import { uploadOneImage } from '@/composables/useUpload'
 import type { VocabStudentCalendar } from '@/types/api'
-import { resolveSpeakUrl } from '@/utils/tts'
+import { playWordMedia, stopWordPlay, getReadSeq, setReadSeq } from '@/utils/wordPlay'
 import { useAuthStore } from '@/stores/auth'
 import { updateProfile } from '@/api/auth'
 import { useEntitlementsStore } from '@/stores/entitlements'
@@ -536,7 +536,8 @@ function isActiveBand(b: { band: string }): boolean {
   const first = t.bands.find(x => x.total > 0 && x.studied < x.total)
   return !!first && first.band === b.band
 }
-const readSeq = ref(true)   // 词卡出现时连读 单词+例句+短语
+const readSeq = ref(getReadSeq())   // 词卡连读 单词+例句+短语(与弹层 WordCard 共用 storage)
+watch(readSeq, (v) => setReadSeq(!!v))
 const ent = useEntitlementsStore()
 const showPaywall = ref(false)    // 跟读会员引导弹窗
 // 学习设置（用户自定，不绑会员档位）
@@ -674,14 +675,17 @@ async function onKpDetail(results: Array<{ id: string; correct: boolean }>) {
     try { await recordKpPractice(kpTestWid.value, payload) } catch { /* 静默,不打断学习 */ }
   }
 }
-// 报错某条考点(点旗标 or 长按 chip):report_count++,即时灰掉,待后台复核/低峰 AI 修正
+// 有凭证举报考点 → 后台核实下架
 const kpReported = reactive<Record<string, boolean>>({})
-async function reportKp(it: KpItem) {
+async function reportKp(payload: { item: KpItem; reason: string; detail: string; suggested: string }) {
+  const it = payload.item
   if (!it.id || kpReported[it.id]) return
   kpReported[it.id] = true
   try {
-    await reportRelation(it.id)
-    uni.showToast({ title: '已反馈,待复核', icon: 'none' })
+    const r = await reportRelation(it.id, {
+      reason: payload.reason, detail: payload.detail, suggested: payload.suggested,
+    })
+    uni.showToast({ title: r?.already ? '已反馈过' : '已提交,待核实', icon: 'none' })
   } catch {
     kpReported[it.id] = false
     uni.showToast({ title: '反馈失败,请重试', icon: 'none' })
@@ -1168,52 +1172,38 @@ async function loadExamBand(type: 'word' | 'phrase', band: 'high' | 'mid' | 'low
   }
 }
 
+/** 非词卡 TTS(跟读示范等)仍走本地队列;词卡一律 playWordMedia */
 let _audioCtx: UniApp.InnerAudioContext | null = null
-let _queue: string[] = []
-function _ensureCtx() {
-  if (!_audioCtx) {
-    _audioCtx = uni.createInnerAudioContext()
-    _audioCtx.onEnded(() => {
-      _queue.shift()
-      if (_queue.length && _audioCtx) { _audioCtx.src = _queue[0]; _audioCtx.play() }
-    })
-    _audioCtx.onError(() => { _queue = [] })
-  }
-  return _audioCtx
-}
 function playAudio(src?: string | null) {
   if (!src) return
-  _queue = [src]
-  _ensureCtx()
-  _audioCtx!.src = src
-  _audioCtx!.play()
-}
-function _playUrls(urls: string[]) {
-  _queue = urls.filter(Boolean)
-  if (!_queue.length) return
-  _ensureCtx()
-  _audioCtx!.src = _queue[0]
-  _audioCtx!.play()
+  stopWordPlay()
+  if (!_audioCtx) {
+    _audioCtx = uni.createInnerAudioContext()
+    _audioCtx.onError(() => { /* ignore */ })
+  }
+  _audioCtx.src = src
+  _audioCtx.play()
 }
 
 /** 播放一段文本的火山 TTS 音频（优先 COS 持久化直链，否则流式）。 */
 async function playTTS(text?: string | null) {
   if (!text) return
+  const { resolveSpeakUrl } = await import('@/utils/tts')
   const url = await resolveSpeakUrl(text)
   playAudio(url)
 }
 
-/** 词卡发声：单词（开关开时连读例句/短语），优先预生成音频，缺失再 TTS。 */
+/** 词卡发声:公共播放器 + 全局连读偏好 */
 async function playCard(card?: VocabWordCard | null) {
   if (!card || !card.word) return
-  const urls: string[] = [card.word_audio_url || await resolveSpeakUrl(card.word)]
-  if (readSeq.value) {
-    const ex = firstExample(card)
-    const ph = firstPhrase(card)
-    if (ex?.en) urls.push(ex.audio || await resolveSpeakUrl(ex.en))
-    if (ph?.en) urls.push(ph.audio || await resolveSpeakUrl(ph.en))
-  }
-  _playUrls(urls)
+  const ex = firstExample(card)
+  const ph = firstPhrase(card)
+  await playWordMedia({
+    word: card.word,
+    wordAudio: card.word_audio_url,
+    example: ex ? { en: ex.en, audio: ex.audio } : null,
+    phrase: ph ? { en: ph.en, audio: ph.audio } : null,
+  }, { mode: 'tap' })
 }
 
 /** 播放某个单词的发音（优先该词预生成音频，缺失再 TTS）。 */
@@ -1223,8 +1213,10 @@ function cardByWord(w: string): VocabWordCard | null {
 async function playWordAudio(word?: string | null) {
   if (!word) return
   const c = cardByWord(word)
-  const url = (c && c.word_audio_url) || await resolveSpeakUrl(word)
-  playAudio(url)
+  await playWordMedia(
+    { word, wordAudio: c?.word_audio_url },
+    { mode: 'word' },
+  )
 }
 /** 看词选义 / 看图选词：题干是单词 → 出题即自动发音。 */
 function announceQuiz() {

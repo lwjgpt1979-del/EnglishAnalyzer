@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>作业详情 · 完形全量呈现 + 短文样式 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-bad: #e24b4a;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f6fc;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f0f6fc 40%, #f7f8fb 100%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top { max-width: 1240px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 820px; }
+    .opts {
+      max-width: 1240px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .opt.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .opt .tag { font-size: 11px; opacity: .9; font-weight: 600; margin-left: 4px; }
+    .stage {
+      max-width: 1240px; margin: 0 auto; padding: 18px 24px 56px;
+      display: grid; grid-template-columns: var(--phone-w) 1fr; gap: 28px; align-items: start;
+    }
+    @media (max-width: 920px) { .stage { grid-template-columns: 1fr; } }
+
+    .phone {
+      width: var(--phone-w); max-width: 100%;
+      background: var(--c-page); border-radius: 28px; border: 1px solid #dbe3ef;
+      box-shadow: 0 18px 50px rgba(45,80,150,.12); overflow: hidden;
+    }
+    .phone-bar {
+      height: 44px; background: #fff; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .phone-body { padding: 12px 12px 28px; min-height: 720px; }
+    .paper {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 10px;
+    }
+    .paper h3 { margin: 0 0 4px; font-size: 15px; }
+    .paper .meta { font-size: 12px; color: var(--c-sub); }
+    .sec-h {
+      display: flex; align-items: center; gap: 8px; margin: 14px 2px 8px;
+      font-size: 15px; font-weight: 800;
+    }
+    .sec-h::before {
+      content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--c-primary);
+    }
+    .filter {
+      display: flex; gap: 8px; margin-bottom: 10px;
+    }
+    .fbtn {
+      font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: 999px;
+      background: #eef2f7; color: var(--c-sub); border: none; cursor: pointer;
+    }
+    .fbtn.on { background: var(--c-primary); color: #fff; }
+
+    /* —— 短文方案共用 —— */
+    .pass { border-radius: 14px; margin-bottom: 10px; overflow: hidden; }
+    .pass-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px; font-size: 12px; font-weight: 700;
+    }
+    .pass-body { padding: 0 12px 14px; font-size: 14px; color: #243044; }
+    .blank {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 22px; height: 20px; margin: 0 2px; padding: 0 5px;
+      border-radius: 5px; font-size: 11px; font-weight: 800; vertical-align: baseline;
+    }
+    .blank.ok { background: #e9f6f1; color: #1f8a6e; border: 1px solid #b7e0d0; }
+    .blank.bad { background: #fcebeb; color: #a32d2d; border: 1px solid #f0b6b6; }
+    .blank.muted { background: #eef2f7; color: #64748b; border: 1px solid #d5dde8; }
+    .zh { color: #94a3b8; font-size: 12px; }
+
+    /* A 现状：浅蓝卡 + 纯文本空号 */
+    .a .pass { background: #e8f2ff; border: 1px solid #c9dffb; }
+    .a .pass-head { color: var(--c-primary); }
+    .a .pass-body { line-height: 1.7; white-space: pre-wrap; }
+
+    /* B 疏朗阅读卡：白底、更大行距、空位胶囊 */
+    .b .pass { background: #fff; border: 1px solid var(--c-line); }
+    .b .pass-head { color: var(--c-primary); border-bottom: 1px solid #f0f3f8; margin-bottom: 8px; }
+    .b .pass-body { line-height: 2.05; letter-spacing: .01em; }
+
+    /* C 内联对错：空位填入你填/正确，点击跳题 */
+    .c .pass { background: #fff; border: 1px solid var(--c-line); }
+    .c .pass-head { color: var(--c-primary); border-bottom: 1px solid #f0f3f8; margin-bottom: 8px; }
+    .c .pass-body { line-height: 2.05; }
+    .c .blank.fill {
+      min-width: auto; padding: 1px 8px; height: auto; font-size: 12px; font-weight: 700;
+    }
+    .c .blank.fill .n { opacity: .55; margin-right: 3px; font-size: 10px; }
+
+    /* D 双栏：短文固定顶 + 下方空题清单全量 */
+    .d .pass {
+      background: #fff; border: 1px solid var(--c-line);
+      max-height: 220px; overflow: auto;
+    }
+    .d .pass-head {
+      position: sticky; top: 0; background: #fff; z-index: 1;
+      color: var(--c-primary); border-bottom: 1px solid #f0f3f8;
+    }
+    .d .pass-body { line-height: 1.95; }
+
+    .q {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 12px;
+      padding: 10px 12px; margin-bottom: 8px;
+    }
+    .q.wrong { border-color: #f0c2c2; background: #fffbfb; }
+    .q.ok { border-color: #c5e6d8; }
+    .q-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .q-no { font-size: 12px; font-weight: 800; color: var(--c-sub); }
+    .flag {
+      font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+    }
+    .flag.bad { background: #fcebeb; color: #a32d2d; }
+    .flag.good { background: #e9f6f1; color: #1f8a6e; }
+    .q-stem { font-size: 13px; line-height: 1.5; }
+    .q-ans { margin-top: 6px; font-size: 12px; color: var(--c-sub); display: flex; gap: 10px; flex-wrap: wrap; }
+    .q-ans .x { color: var(--c-bad); }
+    .q-ans .o { color: var(--c-ok); }
+
+    /* 选择题完形 · 选项行(与填空共用 B 原文样式) */
+    .q-opts { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .q-opt {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 10px; border: 1px solid #e6ebf2;
+      font-size: 13px; background: #fafbfd; color: #334155;
+    }
+    .q-opt .let { font-weight: 800; color: #94a3b8; min-width: 16px; }
+    .q-opt.ok { background: #e9f6f1; border-color: #b7e0d0; color: #1f8a6e; font-weight: 700; }
+    .q-opt.bad { background: #fcebeb; border-color: #f0b6b6; color: #a32d2d; font-weight: 700; }
+    .q-opt .hint { margin-left: auto; font-size: 11px; font-weight: 800; opacity: .85; }
+    .type-pill {
+      font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px;
+      background: #e8f2ff; color: var(--c-primary);
+    }
+    .grp-lbl {
+      font-size: 11px; font-weight: 800; color: var(--c-sub);
+      margin: 12px 2px 6px; letter-spacing: .02em;
+    }
+
+    .aside {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 16px;
+      padding: 18px 20px; line-height: 1.7; font-size: 14px; color: #334155;
+    }
+    .aside h2 { margin: 0 0 8px; font-size: 16px; }
+    .aside h3 { margin: 16px 0 6px; font-size: 14px; color: var(--c-ink); }
+    .aside ul { margin: 0; padding-left: 18px; }
+    .aside li { margin: 4px 0; }
+    .aside .rec {
+      display: inline-block; margin-top: 10px; padding: 4px 10px; border-radius: 999px;
+      background: #e8f2ff; color: var(--c-primary); font-size: 12px; font-weight: 800;
+    }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    .hint { font-size: 11px; color: var(--c-sub); margin: -4px 0 8px 2px; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>作业详情 · 完形全量 + 短文样式原型</h1>
+    <p>
+      现状：完形有错时默认「错题」视图，答对空被滤掉；原文是浅蓝纯文本卡。
+      本页同时演示「默认全部呈现对+错」与 4 种短文样式。点上方切换方案。
+    </p>
+  </header>
+
+  <div class="opts" id="opts">
+    <button class="opt on" data-k="a">A 现状浅蓝<span class="tag">基线</span></button>
+    <button class="opt" data-k="b">B 疏朗白卡<span class="tag">推荐</span></button>
+    <button class="opt" data-k="c">C 空位内联对错</button>
+    <button class="opt" data-k="d">D 短文吸顶+全量空</button>
+  </div>
+
+  <div class="stage">
+    <div class="phone" id="phone">
+      <div class="phone-bar">作业详情</div>
+      <div class="phone-body">
+        <div class="paper">
+          <h3>2026-07-28作业3 <span style="font-size:11px;color:#2fa98a;background:#e9f6f1;padding:2px 8px;border-radius:999px">已完成</span></h3>
+          <div class="meta">1 张图片 · 15 道题</div>
+        </div>
+
+        <div class="sec-h">完形填空</div>
+        <div class="hint">过滤器默认「全部」(对+错都呈现)；仍可切到「错题」)</div>
+        <div class="filter">
+          <button class="fbtn on">全部 15</button>
+          <button class="fbtn">错题 8</button>
+        </div>
+
+        <!-- A -->
+        <div class="panel on a" data-p="a">
+          <div class="pass">
+            <div class="pass-head"><span>原文 · cloze1</span><span>收起 ▴</span></div>
+            <div class="pass-body">During the Three Kingdoms period, Zhuge Liang faced Sima Yi’s army(军队). Sima Yi is <b>2</b> with thousands of soldiers(士兵). Zhuge Liang then <b>3</b> the city wall and rubbed(搓) his hands. He opened the gates to show there was no trap(陷阱)…</div>
+          </div>
+          <div class="q ok"><div class="q-h"><span class="q-no">第 2 题</span><span class="flag good">对</span></div><div class="q-stem">Sima Yi is ______ with thousands of soldiers.</div><div class="q-ans"><span class="o">你填 coming · 正确 coming</span></div></div>
+          <div class="q wrong"><div class="q-h"><span class="q-no">第 3 题</span><span class="flag bad">错</span></div><div class="q-stem">Zhuge Liang then ______ the city wall…</div><div class="q-ans"><span class="x">你填 climbed</span><span class="o">正确 walked on</span></div></div>
+          <div class="q ok"><div class="q-h"><span class="q-no">第 4 题</span><span class="flag good">对</span></div><div class="q-stem">…</div><div class="q-ans"><span class="o">你填 smiled · 正确 smiled</span></div></div>
+        </div>
+
+        <!-- B：填空完形 + 选择完形 同一原文样式 -->
+        <div class="panel b" data-p="b">
+          <div class="pass">
+            <div class="pass-head"><span>原文 · cloze1</span><span>收起 ▴</span></div>
+            <div class="pass-body">During the Three Kingdoms period, Zhuge Liang faced Sima Yi’s army<span class="zh">(军队)</span>. Sima Yi is <span class="blank ok">2</span> with thousands of soldiers<span class="zh">(士兵)</span>. Zhuge Liang then <span class="blank bad">3</span> the city wall and rubbed<span class="zh">(搓)</span> his hands. He opened the gates to show there was no trap<span class="zh">(陷阱)</span>…</div>
+          </div>
+
+          <div class="grp-lbl">▼ 填空完形 · 题卡</div>
+          <div class="q ok">
+            <div class="q-h">
+              <span class="q-no">第 2 题</span>
+              <span class="flag good">对</span>
+              <span class="type-pill">填空</span>
+            </div>
+            <div class="q-stem">Sima Yi is ______ with thousands of soldiers.</div>
+            <div class="q-ans"><span class="o">你填 coming · 正确 coming</span></div>
+          </div>
+          <div class="q wrong">
+            <div class="q-h">
+              <span class="q-no">第 3 题</span>
+              <span class="flag bad">错</span>
+              <span class="type-pill">填空</span>
+            </div>
+            <div class="q-stem">Zhuge Liang then ______ the city wall…</div>
+            <div class="q-ans"><span class="x">你填 climbed</span><span class="o">正确 walked on</span></div>
+          </div>
+
+          <div class="grp-lbl">▼ 选择完形 · 题卡（同 B 原文；选项列对绿/错红）</div>
+          <div class="q ok">
+            <div class="q-h">
+              <span class="q-no">第 5 题</span>
+              <span class="flag good">对</span>
+              <span class="type-pill">单选</span>
+            </div>
+            <div class="q-stem">He opened the gates to ______ there was no trap.</div>
+            <div class="q-opts">
+              <div class="q-opt"><span class="let">A</span>prove</div>
+              <div class="q-opt ok"><span class="let">B</span>show<span class="hint">正确 · 你选</span></div>
+              <div class="q-opt"><span class="let">C</span>hide</div>
+              <div class="q-opt"><span class="let">D</span>build</div>
+            </div>
+          </div>
+          <div class="q wrong">
+            <div class="q-h">
+              <span class="q-no">第 6 题</span>
+              <span class="flag bad">错</span>
+              <span class="type-pill">单选</span>
+            </div>
+            <div class="q-stem">Sima Yi ______ away from the city.</div>
+            <div class="q-opts">
+              <div class="q-opt bad"><span class="let">A</span>ran<span class="hint">你选</span></div>
+              <div class="q-opt"><span class="let">B</span>walked</div>
+              <div class="q-opt ok"><span class="let">C</span>went<span class="hint">正确</span></div>
+              <div class="q-opt"><span class="let">D</span>stayed</div>
+            </div>
+            <div class="q-ans" style="margin-top:8px"><span class="x">你选 A</span><span class="o">正确 C</span></div>
+          </div>
+        </div>
+
+        <!-- C -->
+        <div class="panel c" data-p="c">
+          <div class="pass">
+            <div class="pass-head"><span>原文 · cloze1 · 点空可定位小题</span><span>收起 ▴</span></div>
+            <div class="pass-body">… Sima Yi is <span class="blank fill ok"><span class="n">2</span>coming</span> with thousands of soldiers. Zhuge Liang then <span class="blank fill bad"><span class="n">3</span>climbed</span> <span style="text-decoration:underline;color:#2fa98a;font-size:12px">→walked on</span> the city wall and rubbed his hands…</div>
+          </div>
+          <div class="q ok"><div class="q-h"><span class="q-no">第 2 题</span><span class="flag good">对</span></div><div class="q-stem">选项与解析展开区（与现卡一致）</div></div>
+          <div class="q wrong"><div class="q-h"><span class="q-no">第 3 题</span><span class="flag bad">错</span></div><div class="q-stem">选项与解析展开区</div><div class="q-ans"><span class="x">你填 climbed</span><span class="o">正确 walked on</span></div></div>
+        </div>
+
+        <!-- D -->
+        <div class="panel d" data-p="d">
+          <div class="pass">
+            <div class="pass-head"><span>原文 · cloze1（滚动吸顶）</span><span>15 空</span></div>
+            <div class="pass-body">During the Three Kingdoms… Sima Yi is <span class="blank ok">2</span> … Zhuge Liang then <span class="blank bad">3</span> the city wall… He opened the gates… Sima Yi thought it was a trap and <span class="blank muted">7</span> away…（长文可滚，头栏固定）</div>
+          </div>
+          <div class="hint" style="margin-top:4px">下方始终列出全部 15 空（对绿 / 错红），不因过滤器默认藏对题</div>
+          <div class="q ok"><div class="q-h"><span class="q-no">第 2 题</span><span class="flag good">对</span></div><div class="q-stem">…</div></div>
+          <div class="q wrong"><div class="q-h"><span class="q-no">第 3 题</span><span class="flag bad">错</span></div><div class="q-stem">…</div></div>
+          <div class="q ok"><div class="q-h"><span class="q-no">第 4 题</span><span class="flag good">对</span></div><div class="q-stem">…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="aside" id="aside">
+      <h2>方案说明</h2>
+      <div id="aside-body"></div>
+    </aside>
+  </div>
+
+  <script>
+    const copy = {
+      a: `<span class="rec">基线</span>
+        <h3>A · 现状浅蓝原文</h3>
+        <ul>
+          <li>浅蓝底 + 纯文本空号，行高偏紧</li>
+          <li>对/错只在下方题卡；默认若仍走「错题」会藏答对空</li>
+        </ul>
+        <h3>全量呈现（产品）</h3>
+        <ul><li>完形（及阅读）上传后默认切「全部」，对+错都列；过滤器保留</li></ul>`,
+      b: `<span class="rec">已锁定</span>
+        <h3>B · 填空 + 选择完形统一样式</h3>
+        <ul>
+          <li><b>原文</b>：白底疏朗、行高≈2.0；空号胶囊对绿/错红（填空与选择共用）</li>
+          <li><b>填空题卡</b>：题干 +「你填 / 正确」</li>
+          <li><b>选择题卡</b>：同卡；选项列正确绿底、你选错红底（可标「正确·你选」）</li>
+          <li><b>全量</b>：完形默认「全部」，对+错都呈现</li>
+        </ul>
+        <p style="margin:10px 0 0;font-size:13px;color:#64748b">确认后回复「按此开发」即可落地作业详情页。</p>`,
+      c: `<h3>C · 空位内联填入对错</h3>
+        <ul>
+          <li>原文空位直接显示学生填入；错空旁标正确项</li>
+          <li>点空可滚动定位到小题卡</li>
+          <li>信息密度高，错空更醒目；版面略挤，多空长篇要控字号</li>
+          <li>成本较高：需空号↔题目映射 + 富文本渲染</li>
+        </ul>`,
+      d: `<h3>D · 短文吸顶滚动 + 下方全量空</h3>
+        <ul>
+          <li>原文区限高滚动、头栏 sticky，对照空题时不丢语境</li>
+          <li>清单默认全量 15 空（对绿错红）</li>
+          <li>样式改动小，主要是布局；与 B 可叠加</li>
+        </ul>`,
+    }
+    const aside = document.getElementById('aside-body')
+    const panels = [...document.querySelectorAll('.panel')]
+    const opts = [...document.querySelectorAll('.opt')]
+    function show(k) {
+      opts.forEach(o => o.classList.toggle('on', o.dataset.k === k))
+      panels.forEach(p => p.classList.toggle('on', p.dataset.p === k))
+      aside.innerHTML = copy[k]
+    }
+    opts.forEach(o => o.addEventListener('click', () => show(o.dataset.k)))
+    show('b')
+  </script>
+</body>
+</html>

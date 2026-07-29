@@ -293,14 +293,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import {
   getSpeakScenarios, startSpeak, replySpeak, summarizeSpeak, getVocabCards,
   type SpeakScenario, type SpeakTurn, type SpeakSummary, type VocabCard,
   type MomCoach, type PronResult, type PronLogItem,
 } from '@/api/speaking'
 import { shadowScore, type ShadowScoreResult } from '@/api/vocabulary'
-import { resolveSpeakUrl } from '@/utils/tts'
+import { playWordMedia, stopWordPlay, getReadSeq, setReadSeq } from '@/utils/wordPlay'
 import { useEntitlementsStore } from '@/stores/entitlements'
 import Paywall from '@/components/Paywall.vue'
 
@@ -327,7 +327,8 @@ const thinking = ref(false)
 const scrollTop = ref(0)
 const recording = ref(false)
 const cancelZone = ref(false)
-const readSentences = ref(true)  // 词力通：词卡同时连播例句/短语
+const readSentences = ref(getReadSeq())  // 与全局「例句连读」同源
+watch(readSentences, (v) => setReadSeq(!!v))
 const momMode = ref(false)       // 妈妈陪练：每句英文回复做音频测评 + 互动点评
 const ent = useEntitlementsStore()
 const showPaywall = ref(false)
@@ -433,17 +434,13 @@ async function start(key: string) {
   }
 }
 
-// 顺序播放队列（词 →可选 例句 → 短语）
-function _playUrls(urls: string[]) {
-  _queue = urls.filter(Boolean)
-  ensureAudioCtx()
-  _cur = null
-  if (_queue.length && _ctx) { _ctx.src = _queue[0]; _ctx.play() }
-}
+// 顺序播放队列 → 公共词卡播放器(全局连读偏好)
 async function playWord(c?: VocabCard | null) {
   if (!c) return
-  const u = c.audio_url || await resolveSpeakUrl(c.word)
-  _playUrls([u])
+  await playWordMedia(
+    { word: c.word, wordAudio: c.audio_url },
+    { mode: 'word' },
+  )
 }
 // 单词导航：上一个 / 选词 / 下一个 → 选中即弹出该词卡开始练习（自动播放）
 function practiceWord(i: number) {
@@ -467,13 +464,13 @@ function syncPickToCard() {
 }
 async function playCard(c?: VocabCard | null) {
   if (!c) return
-  const urls: string[] = [c.audio_url || await resolveSpeakUrl(c.word)]
-  if (readSentences.value) {
-    // 优先用后台预生成的 COS 缓存音频，缺失再用 TTS 即时兜底
-    if (c.example && c.example.en) urls.push(c.example.audio || await resolveSpeakUrl(c.example.en))
-    if (c.phrase && c.phrase.en) urls.push(c.phrase.audio || await resolveSpeakUrl(c.phrase.en))
-  }
-  _playUrls(urls)
+  // 陪练词卡出现/点读:等同 tap(尊重全局连读);出现时强制播(学习流,不受 autoPlay 关影响)
+  await playWordMedia({
+    word: c.word,
+    wordAudio: c.audio_url,
+    example: c.example,
+    phrase: c.phrase,
+  }, { mode: 'tap' })
 }
 
 function pushAi(text: string, audio: string, translation = '', correction = '', card: VocabCard | null = null) {
@@ -571,6 +568,7 @@ function ensureAudioCtx() {
 }
 function playAudio(m: Msg) {
   if (!m.audio) { uni.showToast({ title: '暂无语音', icon: 'none' }); return }
+  stopWordPlay()
   ensureAudioCtx()
   if (_cur && _cur !== m) _cur.playing = false   // 切换播放对象：重设 src 自动中断上一段
   _cur = m

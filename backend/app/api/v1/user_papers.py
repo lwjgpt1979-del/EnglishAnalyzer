@@ -155,9 +155,9 @@ async def passage_study(
     db: DbDep,
     current_user: UserDep,
 ):
-    """阅读精讲:按单篇短文一次给出「生词(完整卡片媒体)+ 长难句」。抽词不调 LLM、零成本。"""
+    """阅读精讲:按单篇短文一次给出「理解向难词(完整卡片媒体)+ 长难句」。抽词不调 LLM、零成本。"""
     return make_ok(await user_paper_service.passage_study(
-        db, passage=body.passage, student_id=current_user.id))
+        db, passage=body.passage, student_id=current_user.id, paper_id=body.paper_id))
 
 
 @router.post("/save-sentence")
@@ -300,6 +300,43 @@ async def add_reading_intensive_api(section_id: uuid.UUID, db: DbDep, current_us
         db, student_id=current_user.id, section_id=section_id)
     if r is None:
         raise AppError(code=404, message="板块不存在或无权访问")
+    return make_ok(r)
+
+
+@router.post("/sections/{section_id}/add-cloze-intensive")
+async def add_cloze_intensive_api(section_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """手动把某作业的完形填空板块加入「作业精讲·完形填空精讲」(不自动加入)。"""
+    from app.services import cloze_intensive_service
+    r = await cloze_intensive_service.add_cloze_intensive(
+        db, student_id=current_user.id, section_id=section_id)
+    if r is None:
+        raise AppError(code=404, message="板块不存在或无权访问")
+    return make_ok(r)
+
+
+@router.get("/questions/{question_id}/cloze-analysis")
+async def cloze_analysis_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """完形精讲·双轴解析,缓存复用;看解析即算已精讲。"""
+    from app.services import cloze_intensive_service
+    r = await cloze_intensive_service.question_analysis(
+        db, student_id=current_user.id, question_id=question_id)
+    if r is None:
+        raise AppError(code=404, message="题目不存在或无权访问")
+    await cloze_intensive_service.mark_question_studied(
+        db, student_id=current_user.id, question_id=question_id)
+    return make_ok(r)
+
+
+@router.post("/questions/{question_id}/cloze-practice")
+async def cloze_practice_api(question_id: uuid.UUID, db: DbDep, current_user: UserDep):
+    """完形「本题巩固」:按线索类型出同类单选。"""
+    from app.services import cloze_intensive_service
+    r = await cloze_intensive_service.practice_similar(
+        db, student_id=current_user.id, question_id=question_id)
+    if r is None:
+        raise AppError(code=404, message="题目不存在或无权访问")
+    await cloze_intensive_service.mark_question_studied(
+        db, student_id=current_user.id, question_id=question_id)
     return make_ok(r)
 
 

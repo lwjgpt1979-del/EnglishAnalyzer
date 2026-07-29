@@ -40,6 +40,8 @@ class UserPaperSection(Base):
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     # 阅读理解:是否已由学生手动加入「作业精讲·阅读理解精讲」(默认否,不自动加入)
     in_reading_intensive = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    # 完形填空:是否已由学生手动加入「作业精讲·完形填空精讲」(默认否,不自动加入)
+    in_cloze_intensive = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
 
 
 class UserPaperQuestion(Base):
@@ -54,6 +56,8 @@ class UserPaperQuestion(Base):
     question_no = mapped_column(sa.String, nullable=True)
     question_type = mapped_column(ai_question_type_enum, nullable=True)
     stem = mapped_column(sa.Text, nullable=True)
+    # 选择题选项(结构化):["A. …","B. …",…];从 stem 内联拆出落库;填空/主观为 null
+    options = mapped_column(JSONB, nullable=True)
     student_answer = mapped_column(sa.Text, nullable=True)
     correct_answer = mapped_column(sa.Text, nullable=True)
     explanation = mapped_column(sa.Text, nullable=True)
@@ -115,6 +119,16 @@ class ReadingAnalysisCache(Base):
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
+class PaperQExplainCache(Base):
+    """作业小题单段解析(语法精讲等)LLM 暂存。按(题干+选项+正确答案+学生答案)md5 全局缓存;
+    命中写回 user_paper_questions.explanation,同内容不二次付费。"""
+    __tablename__ = "paper_q_explain_cache"
+
+    content_md5 = mapped_column(sa.String(32), primary_key=True)
+    explanation = mapped_column(sa.Text, nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
 class ReadingPracticeCache(Base):
     """阅读理解练同类:按本篇短文生成的「理解新题」LLM 结果暂存,按(短文+题型+数量)md5 全局缓存。"""
     __tablename__ = "reading_practice_cache"
@@ -128,6 +142,33 @@ class ReadingQuestionStudied(Base):
     """阅读理解精讲「已精讲」记录:学生看过某阅读题解析 / 练过其同类即算学过。
     作业精讲卷列表据此算 studied/未学·学习中·已学。(student, question) 唯一,幂等。"""
     __tablename__ = "reading_question_studied"
+
+    student_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    question_id = mapped_column(UUID(as_uuid=True), primary_key=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class ClozeAnalysisCache(Base):
+    """完形填空精讲·双轴解析 LLM 暂存。按(原文+题干+选项+答案)md5 全局缓存。"""
+    __tablename__ = "cloze_analysis_cache"
+
+    q_md5 = mapped_column(sa.String(32), primary_key=True)
+    analysis = mapped_column(JSONB, nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class ClozePracticeCache(Base):
+    """完形练同类:按线索类型/短文生成的选择题 LLM 暂存。"""
+    __tablename__ = "cloze_practice_cache"
+
+    cache_md5 = mapped_column(sa.String(32), primary_key=True)
+    questions = mapped_column(JSONB, nullable=False)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+
+class ClozeQuestionStudied(Base):
+    """完形精讲「已精讲」:(student, question) 看过双轴解析 / 本题巩固即算学过。"""
+    __tablename__ = "cloze_question_studied"
 
     student_id = mapped_column(UUID(as_uuid=True), primary_key=True)
     question_id = mapped_column(UUID(as_uuid=True), primary_key=True)

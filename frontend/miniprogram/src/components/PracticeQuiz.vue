@@ -1,10 +1,11 @@
-<!-- 多题练习·逐题作答判分(全项目练习作答统一组件;支持 选择/判断/填空) -->
+<!-- 多题练习·逐题作答判分(全项目练习作答统一组件;支持 选择/判断/填空)
+     embedded=true → 页内嵌(无遮罩弹层),铺在父容器槽位;false → 居中弹层 -->
 <template>
-  <view class="modal" @tap="close">
-    <view class="modal-card" @tap.stop>
+  <view :class="embedded ? 'pq-embed' : 'modal'" @tap="onMaskTap">
+    <view :class="embedded ? 'pq-embed-card' : 'modal-card'" @tap.stop>
       <view class="modal-head">
         <text class="modal-title">{{ kp ? '同类练习 · ' + kp : '练习' }}</text>
-        <view class="modal-x" @tap.stop="close"><text>✕</text></view>
+        <view class="modal-x" @tap.stop="close"><text>{{ embedded ? '结束练习' : '✕' }}</text></view>
       </view>
 
       <!-- 答题阶段 -->
@@ -77,8 +78,9 @@
           <text class="pr-score">{{ correctCount }}/{{ questions.length }}</text>
           <text class="pr-msg">{{ resultMsg }}</text>
         </view>
-        <view class="modal-actions">
-          <view class="modal-btn ghost" @tap.stop="close"><text>完成</text></view>
+        <view class="modal-actions col">
+          <view v-if="continueLabel" class="modal-btn primary" @tap.stop="onContinue"><text>{{ continueLabel }}</text></view>
+          <view class="modal-btn ghost" @tap.stop="close"><text>{{ embedded ? '结束练习' : '完成' }}</text></view>
         </view>
       </block>
     </view>
@@ -91,7 +93,7 @@ import type { PracticeQuestion } from '@/api/wrongQuestions'
 
 type JudgeResult = { correct: boolean; correct_answer: string; explanation?: string }
 export type ChosenAnswer = { index: number; letter: string; text: string; input: string }
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   kp: string
   questions: PracticeQuestion[]
   recorder?: (total: number, correct: number) => Promise<string>
@@ -102,12 +104,17 @@ const props = defineProps<{
   lastLabel?: string
   // 「换一题」钩子(如考点测试:报错该题+换同维度另一道);传则显示按钮,返回新题即就地替换。
   swapper?: (q: PracticeQuestion) => Promise<PracticeQuestion | null>
-}>()
+  /** 页内嵌模式:无遮罩/居中弹卡,铺在当前页槽位(语法精讲 D1 步骤 3) */
+  embedded?: boolean
+  /** 结果页主按钮文案(如「下一题原题」);点后 emit continue 再 close */
+  continueLabel?: string
+}>(), { embedded: false })
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'finish', total: number, correct: number): void
   // 逐题明细(供①③考点扩展测试回传每维对错):作答过的题 [{id, correct}]。只触发一次。
   (e: 'finishDetail', results: { id: string; correct: boolean }[]): void
+  (e: 'continue', total: number, correct: number): void
 }>()
 const detailEmitted = ref(false)
 function emitDetail() {
@@ -149,8 +156,18 @@ const isLast = computed(() => idx.value >= props.questions.length - 1)
 const answeredCount = computed(() => Object.keys(state).length)
 const correctCount = computed(() => Object.values(state).filter(s => s.correct).length)
 const lastLabel = computed(() => props.lastLabel || '查看结果')
+const continueLabel = computed(() => props.continueLabel || '')
 const letter = (i: number) => String.fromCharCode(65 + i)
 watch(idx, () => { fillInput.value = '' })
+
+/** 弹层遮罩点击关闭;页内嵌不响应 */
+function onMaskTap() {
+  if (!props.embedded) close()
+}
+async function onContinue() {
+  emit('continue', answeredCount.value, correctCount.value)
+  emit('close')
+}
 
 function hasOptions(q: PracticeQuestion): boolean { return !!(q.options && q.options.length) }
 function isJudge(q: PracticeQuestion): boolean {
@@ -247,9 +264,16 @@ async function close() {
 <style scoped>
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 40rpx; }
 .modal-card { width: 100%; max-width: 640rpx; max-height: 80vh; background: #fff; border-radius: 24rpx; padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column; }
+/* 页内嵌:无遮罩,铺满父槽位 */
+.pq-embed { display: block; width: 100%; }
+.pq-embed-card {
+  width: 100%; background: #fff; border: 2rpx solid var(--c-border, #e6ebf2); border-radius: 24rpx;
+  padding: 28rpx; box-sizing: border-box; display: flex; flex-direction: column;
+}
+.pq-embed-card .modal-body { max-height: 56vh; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
 .modal-title { font-size: 30rpx; font-weight: 800; color: var(--c-ink); }
-.modal-x { width: 56rpx; height: 56rpx; display: flex; align-items: center; justify-content: center; font-size: 30rpx; color: var(--c-text-hint); flex-shrink: 0; }
+.modal-x { min-width: 56rpx; height: 56rpx; padding: 0 8rpx; display: flex; align-items: center; justify-content: center; font-size: 26rpx; color: var(--c-text-hint); flex-shrink: 0; font-weight: 700; }
 .modal-body { flex: 1; margin: 16rpx 0; }
 .pr-top { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-top: 8rpx; }
 .pr-idx { font-size: 24rpx; color: var(--c-text-second); font-weight: 600; white-space: nowrap; }
@@ -281,6 +305,7 @@ async function close() {
 .pr-score { font-size: 72rpx; font-weight: 800; color: var(--c-primary); }
 .pr-msg { font-size: 27rpx; color: var(--c-text-second); text-align: center; padding: 0 24rpx; line-height: 1.6; }
 .modal-actions { display: flex; gap: 16rpx; }
+.modal-actions.col { flex-direction: column; }
 .modal-btn { flex: 1; text-align: center; font-size: 27rpx; font-weight: 700; border-radius: 999rpx; padding: 16rpx; }
 .modal-btn.ghost { background: var(--c-bg-soft); color: var(--c-text-second); }
 .modal-btn.primary { background: var(--c-primary); color: #fff; }

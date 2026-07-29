@@ -28,6 +28,7 @@ class StudentGrammarNode(Base):
     ref_node_id = mapped_column(UUID(as_uuid=True), sa.ForeignKey("knowledge_nodes.id"), nullable=True)  # 匹配上图谱则回填
     anchor_code = mapped_column(sa.String(32), nullable=True)              # 挂靠的图谱骨架 code(定位在树里的位置)
     source_paper_id = mapped_column(UUID(as_uuid=True), nullable=True)     # 来源上传作业(作业精讲·语法按卷归组用)
+    source_question_id = mapped_column(UUID(as_uuid=True), nullable=True)  # 来源小题(D1 按原题切点)
     source = mapped_column(sa.String(24), nullable=False, server_default="upload_paper")  # upload_paper / homework
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
     # 自建语法没有图谱 node、无 BKT 四维掌握;改用「练一练痕迹」记已学 + 最近一轮成绩(作业精讲·语法列表反馈用)
@@ -36,6 +37,6 @@ class StudentGrammarNode(Base):
     last_total = mapped_column(sa.Integer, nullable=True)                    # 最近一轮练习总题数
 
     __table_args__ = (
-        sa.UniqueConstraint("student_id", "name_norm", name="uix_student_grammar_node"),
         sa.Index("ix_student_grammar_node_student", "student_id"),
+        sa.Index("ix_sgn_source_q", "source_question_id"),
     )

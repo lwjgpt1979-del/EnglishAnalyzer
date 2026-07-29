@@ -195,6 +195,18 @@ export function getWordNetOfRecord(wrongRecordId: string): Promise<WordNet> {
 export function getWordNet(wordId: string): Promise<WordNet> {
   return request(`/api/v1/wrong-center/word-net/${wordId}`, { method: 'GET' })
 }
+/** 无错题记录时按答案词建网(语法全对等);other=其余选项(灰 chip) */
+export function getWordNetBySeeds(
+  correct: string[],
+  wrong: string[] = [],
+  other: string[] = [],
+): Promise<WordNet> {
+  return request('/api/v1/wrong-center/word-net-seeds', {
+    method: 'POST',
+    data: { correct, wrong, other },
+    timeout: 90000,
+  })
+}
 
 /** 复习队列：客观重做那道错题（答对推进 SM-2，答错归零重排） */
 export function submitReview(wqId: string, userAnswer: string): Promise<RedoResult> {

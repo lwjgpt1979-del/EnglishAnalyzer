@@ -209,7 +209,7 @@
           </view>
           <!-- 单词发音 + 跟读:同一行 -->
           <view class="wc-btns">
-            <view class="wc-btn" @tap="playVocabAudio" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>单词发音</text></view>
+            <view class="wc-btn" @tap="playVocabAudio('tap')" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-volume" style="width:30rpx;height:30rpx" /><text>单词发音</text></view>
             <view class="wc-btn primary" @tap="openVocabShadow" style="display:flex;align-items:center;justify-content:center;gap:8rpx"><view class="ic ic-mic" style="width:30rpx;height:30rpx;filter:brightness(0) invert(1)" /><text>跟读</text><view v-if="!ent.can('vocab.shadow')" class="ic ic-lock" style="width:28rpx;height:28rpx;filter:brightness(0) invert(1)" /></view>
           </view>
         </scroll-view>
@@ -249,7 +249,7 @@ import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import ShadowModal from '@/components/ShadowModal.vue'
 import Paywall from '@/components/Paywall.vue'
 import { useAuthStore } from '@/stores/auth'
-import { useEntitlementsStore } from '@/stores/entitlements'
+import { playWordMedia } from '@/utils/wordPlay'
 
 const auth = useAuthStore()
 const ent = useEntitlementsStore()
@@ -305,6 +305,7 @@ async function learnVocab(wq: WrongCenterItem) {
   try {
     vlSim.value = await getVocabSim(wq.id)   // 富卡(无媒体即时生成)+ 5 题(全局缓存复用)
     vlCardOpen.value = true
+    playVocabAudio('open')
   } catch (e: any) { uni.showToast({ title: e?.message || '打开失败', icon: 'none' }) }
   finally { vlLoading.value = '' }
 }
@@ -328,11 +329,18 @@ function onVocabQuizClose() {
   vlQuizOpen.value = false
   reload()
 }
-function playVocabAudio() {
-  const url = vlSim.value?.card.audio_url
-  if (!url) return
-  const ctx = uni.createInnerAudioContext()
-  ctx.src = url; ctx.play()
+/**
+ * @param mode tap=点「单词发音」;open=打开富卡自动播
+ */
+function playVocabAudio(mode: 'tap' | 'open' = 'tap') {
+  const c = vlSim.value?.card
+  if (!c?.word) return
+  playWordMedia({
+    word: c.word,
+    wordAudio: c.audio_url,
+    example: c.example ? { en: c.example } : null,
+    phrase: c.phrase,
+  }, { mode })
 }
 function openVocabShadow() {
   if (!ent.can('vocab.shadow')) { showPaywall.value = true; return }   // 跟读为会员专享

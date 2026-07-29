@@ -39,61 +39,109 @@
           <view class="sec-head">
             <text class="sec-bar" />
             <text class="sec-label">{{ sec.label }}</text>
-            <text v-if="sec.is_suggested" class="sec-sug">建议</text>
+            <text v-if="sec.is_suggested" class="sec-sug">建议·未拍到题型</text>
             <view style="flex:1" />
             <text v-if="sec.id !== 'all'" class="sec-edit" @tap="editSection(sec)">改题型</text>
           </view>
-          <!-- 本题型 全部|错题(默认错题;无错题默认全部) -->
+          <!-- 本题型 全部|错题(完形默认全部;其它有错→错题) -->
           <view class="sec-filter">
             <text class="fbtn" :class="{ on: !isWrongView(sec) }" @tap="setWrong(sec, false)">全部 {{ sec.total }}</text>
             <text class="fbtn" :class="{ on: isWrongView(sec) }" @tap="setWrong(sec, true)">错题 {{ sec.wrongCount }}</text>
           </view>
 
           <template v-for="grp in blocksFor(sec)" :key="grp.key">
-            <!-- 原文(阅读/完形语篇) -->
-            <view v-if="grp.passage" class="card passage-card" @tap="toggleBlock(grp.key)">
+            <!-- 原文:完形/阅读 · B 疏朗白卡 + 空号对错胶囊 -->
+            <view
+              v-if="grp.passage"
+              class="card passage-card"
+              :class="{ airy: sec.isCloze || sec.isReading }"
+              @tap="toggleBlock(grp.key)"
+            >
               <view class="passage-head">
                 <text class="passage-title">原文{{ grp.blockLabel }}</text>
                 <text class="passage-toggle">{{ collapsed[grp.key] ? '展开 ▾' : '收起 ▴' }}</text>
               </view>
-              <text v-if="!collapsed[grp.key]" class="passage-text">{{ grp.passage }}</text>
+              <view v-if="!collapsed[grp.key]" class="passage-text">
+                <template v-for="(node, ni) in passageNodes(sec, grp)" :key="ni">
+                  <text v-if="node.kind === 'text'">{{ node.t }}</text>
+                  <text
+                    v-else
+                    class="p-blank"
+                    :class="node.wrong ? 'bad' : 'ok'"
+                    @tap.stop="scrollToQ(node.no)"
+                  >{{ node.no }}</text>
+                </template>
+              </view>
             </view>
 
-            <view v-for="q in grp.questions" :key="q.id" class="card q-card" :class="{ wrong: q.is_wrong }">
+            <view
+              v-for="q in grp.questions"
+              :id="'pq-' + qidKey(q)"
+              :key="q.id"
+              class="card q-card"
+              :class="{ wrong: q.is_wrong, okborder: !q.is_wrong && isClozeSec(sec) }"
+            >
               <view class="q-head">
                 <text class="q-no">{{ q.question_no ? `第 ${q.question_no} 题` : '题目' }}</text>
+                <text v-if="isClozeSec(sec)" class="q-type-pill">{{ hasOpts(q) ? '单选' : '填空' }}</text>
                 <view v-if="q.is_wrong" class="q-flag"><view class="ic ic-x-circle" style="width:26rpx;height:26rpx" /><text>错</text></view>
                 <view v-else class="q-flag q-ok"><view class="ic ic-check-circle" style="width:26rpx;height:26rpx" /><text>对</text></view>
               </view>
               <text class="q-stem">{{ q.stem || '（题干识别为空）' }}</text>
-              <view class="q-ans">
-                <text class="ans-line" :class="{ 'ans-x': q.is_wrong }">你的答案：{{ q.student_answer || '（未识别）' }}</text>
-                <text class="ans-line ans-ok">正确答案：{{ q.correct_answer || '（未提供）' }}</text>
+              <!-- 选择完形:选项对绿/错红 -->
+              <view v-if="hasOpts(q)" class="q-opts">
+                <view
+                  v-for="(op, oi) in q.options"
+                  :key="oi"
+                  class="q-opt"
+                  :class="optCls(q, op, oi)"
+                >
+                  <text class="q-opt-t">{{ op }}</text>
+                  <text v-if="optHint(q, op, oi)" class="q-opt-h">{{ optHint(q, op, oi) }}</text>
+                </view>
               </view>
-              <text v-if="q.explanation" class="q-exp">{{ q.explanation }}</text>
-              <!-- 单题动作:语法/词汇考点 → 加入作业精讲学习 + 我的错题(错自动/对手动);错题 → 练同类 -->
-              <view v-if="q.kp_kind || q.is_wrong" class="q-acts">
-                <!-- 语法考点 -->
-                <template v-if="q.kp_kind === 'grammar'">
+              <!-- 填空:你填/正确;选择也保留一行摘要 -->
+              <view class="q-ans" :class="{ compact: hasOpts(q) }">
+                <text class="ans-line" :class="{ 'ans-x': q.is_wrong }">
+                  {{ hasOpts(q) ? '你选' : '你填' }} {{ q.student_answer || '（未识别）' }}
+                </text>
+                <text class="ans-line ans-ok">正确 {{ q.correct_answer || '（未提供）' }}</text>
+              </view>
+              <view v-if="q.explanation" class="q-exp">
+                <text class="q-exp-k">解析</text>
+                <text class="q-exp-t">{{ q.explanation }}</text>
+              </view>
+              <!-- 按题型路由动作:阅读小题整收;完形保留加单词(不加错题);其它按考点 -->
+              <view v-if="showActs(sec, q)" class="q-acts">
+                <template v-if="isClozeSec(sec)">
+                  <view class="q-act" :class="{ done: qVocab.has(q.id) }" @tap="addVocabQ(q)">
+                    <text>{{ qVocab.has(q.id) ? '已加入单词' : '加入单词学习' }}</text>
+                  </view>
+                </template>
+                <template v-else-if="isReadingSec(sec)">
+                  <!-- 阅读/任务型阅读:小题不出加单词·加错题 -->
+                </template>
+                <template v-else-if="q.kp_kind === 'grammar'">
                   <view class="q-act" :class="{ done: qGrammar.has(q.id) }" @tap="addGrammar(q)">
                     <text>{{ qGrammar.has(q.id) ? '已加入语法' : '加入语法学习' }}</text>
                   </view>
-                  <text v-if="q.is_wrong" class="q-tag q-tag-wrong">已进错题·语法</text>
-                  <view v-else class="q-act" :class="{ done: qWrong.has(q.id) }" @tap="addToWrong(q)">
+                  <view class="q-act" :class="{ done: qWrong.has(q.id) }" @tap="addToWrong(q)">
                     <text>{{ qWrong.has(q.id) ? '已加入错题' : '加入我的错题' }}</text>
                   </view>
                 </template>
-                <!-- 词汇考点 -->
                 <template v-else-if="q.kp_kind === 'vocab'">
                   <view class="q-act" :class="{ done: qVocab.has(q.id) }" @tap="addVocabQ(q)">
                     <text>{{ qVocab.has(q.id) ? '已加入单词' : '加入单词学习' }}</text>
                   </view>
-                  <text v-if="q.is_wrong" class="q-tag q-tag-wrong">已进错题·词汇</text>
-                  <view v-else class="q-act" :class="{ done: qWrong.has(q.id) }" @tap="addToWrong(q)">
+                  <view class="q-act" :class="{ done: qWrong.has(q.id) }" @tap="addToWrong(q)">
                     <text>{{ qWrong.has(q.id) ? '已加入错题' : '加入我的错题' }}</text>
                   </view>
                 </template>
-                <!-- 错题练同类 -->
+                <template v-else>
+                  <view class="q-act" :class="{ done: qWrong.has(q.id) }" @tap="addToWrong(q)">
+                    <text>{{ qWrong.has(q.id) ? '已加入错题' : '加入我的错题' }}</text>
+                  </view>
+                </template>
                 <view v-if="q.is_wrong" class="q-act q-act-sim" @tap="practiceSimilar(q.id)">
                   <text>{{ similarLoading ? '生成中…' : '练同类仿真题' }}</text>
                 </view>
@@ -113,14 +161,25 @@
             <text>{{ isReadingAdded(sec) ? '已加入阅读理解精讲' : '加入阅读理解精讲' }}</text>
           </view>
 
-          <!-- 底部功能:仅有原文的题型(阅读/完形)有 本题生词 + 长难句 -->
-          <view v-if="sec.hasPassage" class="sec-tools">
+          <!-- 完形填空:手动加入作业精讲·完形填空精讲 -->
+          <view
+            v-if="sec.isCloze"
+            class="reading-add"
+            :class="{ done: isClozeAdded(sec) }"
+            @tap="addCloze(sec)"
+          >
+            <view class="ic ic-layout" style="width:30rpx;height:30rpx" />
+            <text>{{ isClozeAdded(sec) ? '已加入完形填空精讲' : '加入完形填空精讲' }}</text>
+          </view>
+
+          <!-- 底部功能:有原文且非阅读/完形 → 本题生词 + 长难句(阅读/完形改走精讲页) -->
+          <view v-if="showPassageTools(sec)" class="sec-tools">
             <text class="tool-chip" :class="{ on: secVocabOpen[sec.id] }" @tap="toggleSecVocab(sec)">本题生词</text>
             <text class="tool-chip" @tap="openSecSentences(sec)">长难句</text>
           </view>
 
           <!-- 本题生词:懒加载该题型生词 -->
-          <view v-if="sec.hasPassage && secVocabOpen[sec.id]" class="card tool-panel">
+          <view v-if="showPassageTools(sec) && secVocabOpen[sec.id]" class="card tool-panel">
             <text v-if="secVocabLoading[sec.id]" class="muted">加载中…</text>
             <template v-else>
               <text v-if="!(secVocab[sec.id] || []).length" class="muted">本题型没有生词</text>
@@ -160,7 +219,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
-import { getUserPaper, updatePaperSection, getPaperVocab, practiceForQuestion, recordPaperPractice, renamePaper, addQuestionGrammar, addQuestionVocab, addQuestionToWrong, addReadingIntensive, type SimilarQuestion, type PaperVocabWord } from '@/api/userPapers'
+import { getUserPaper, updatePaperSection, getPaperVocab, practiceForQuestion, recordPaperPractice, renamePaper, addQuestionGrammar, addQuestionVocab, addQuestionToWrong, addReadingIntensive, addClozeIntensive, type SimilarQuestion, type PaperVocabWord } from '@/api/userPapers'
 import PracticeQuiz from '@/components/PracticeQuiz.vue'
 import { addHomeworkWords } from '@/api/vocabulary'
 import type { UserPaperDetailOut } from '@/types/api'
@@ -190,16 +249,43 @@ function toBlocks(qs: any[]) {
   return blocks
 }
 // 每题型一块:全量题 + 错题数(兼容无 sections 的旧数据)
+/** 短文挖空族(方案1):恒纳入键 / 有语篇才纳入键 / 标题别名 */
+const CLOZE_ST_ALWAYS = new Set(['cloze', 'passage_fill', 'reading_fill', 'fill'])
+const CLOZE_ST_IF_PASSAGE = new Set(['vocab_use', 'verb_fill'])
+const CLOZE_LABEL_RE = /完形|完型|短文填空|缺词填空|综合填空|首字母|选词填空|阅读填空|阅读填词/
+/** 「阅读填空」等不能当阅读理解精讲 */
+const READING_FILL_LABEL_RE = /阅读填[空词]|阅读与?填/
+
 const paperSections = computed(() => {
-  const build = (id: string, label: string, is_suggested: boolean, qs: any[], section_type?: string | null, inReading?: boolean) =>
-    ({ id, label, is_suggested, section_type: section_type || null, questions: qs, total: qs.length,
-       wrongCount: qs.filter((q: any) => q.is_wrong).length,
-       hasPassage: qs.some((q: any) => q.passage || q.block_key),
-       isReading: section_type === 'reading' || (label || '').includes('阅读'),
-       inReading: !!inReading })
+  const build = (id: string, label: string, is_suggested: boolean, qs: any[], section_type?: string | null, inReading?: boolean, inCloze?: boolean) => {
+    const st = section_type || null
+    const lb = label || ''
+    const hasPassage = qs.some((q: any) => q.passage || q.block_key)
+    const isCloze = CLOZE_ST_ALWAYS.has(st || '')
+      || (CLOZE_ST_IF_PASSAGE.has(st || '') && hasPassage)
+      || CLOZE_LABEL_RE.test(lb)
+    const isReadingFill = st === 'reading_fill' || READING_FILL_LABEL_RE.test(lb)
+    const isReading = !isReadingFill && !isCloze && (
+      st === 'reading' || st === 'task_reading' || lb.includes('阅读')
+    )
+    return {
+      id, label, is_suggested, section_type: st, questions: qs, total: qs.length,
+      wrongCount: qs.filter((q: any) => q.is_wrong).length,
+      hasPassage,
+      isReading,
+      isCloze,
+      inReading: !!inReading,
+      inCloze: !!inCloze,
+    }
+  }
   const out: any[] = []
   for (const sec of (paper.value?.sections || [])) {
-    if ((sec.questions || []).length) out.push(build(sec.id, sec.label, !!sec.is_suggested, sec.questions, sec.section_type, (sec as any).in_reading_intensive))
+    if ((sec.questions || []).length) {
+      out.push(build(
+        sec.id, sec.label, !!sec.is_suggested, sec.questions, sec.section_type,
+        (sec as any).in_reading_intensive, (sec as any).in_cloze_intensive,
+      ))
+    }
   }
   if (!out.length && (paper.value?.questions || []).length) out.push(build('all', '全部题目', false, paper.value!.questions))
   return out
@@ -219,14 +305,167 @@ async function addReading(sec: any) {
     }
   } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
 }
-// 本题型 全部|错题(默认:有错题→错题,无错题→全部)
+const clozeAdded = ref<Set<string>>(new Set())
+function isClozeAdded(sec: any): boolean { return sec.inCloze || clozeAdded.value.has(sec.id) }
+async function addCloze(sec: any) {
+  if (isClozeAdded(sec)) return
+  try {
+    const r = await addClozeIntensive(sec.id)
+    if (r.added) {
+      clozeAdded.value = new Set([...clozeAdded.value, sec.id])
+      uni.showToast({ title: '已加入完形填空精讲', icon: 'none' })
+    } else {
+      uni.showToast({ title: r.reason || '加入失败', icon: 'none' })
+    }
+  } catch (e: any) { uni.showToast({ title: e?.message || '加入失败', icon: 'none' }) }
+}
+// 本题型 全部|错题
+// 完形:默认「全部」(对+错都呈现);其它:有错题→错题,无错→全部
 const secWrong = ref<Record<string, boolean>>({})
 function isWrongView(sec: any): boolean {
-  return sec.id in secWrong.value ? secWrong.value[sec.id] : sec.wrongCount > 0
+  if (sec.id in secWrong.value) return secWrong.value[sec.id]
+  if (sec.isCloze) return false
+  return sec.wrongCount > 0
 }
 function setWrong(sec: any, v: boolean) { secWrong.value = { ...secWrong.value, [sec.id]: v } }
+/**
+ * 错题视图只滤小题卡;原文仍挂全量空号状态(对绿/错红)
+ */
 function blocksFor(sec: any) {
-  return toBlocks(isWrongView(sec) ? sec.questions.filter((q: any) => q.is_wrong) : sec.questions)
+  const all = toBlocks(sec.questions)
+  if (!isWrongView(sec)) return all
+  return all
+    .map((b: any) => ({ ...b, questions: b.questions.filter((q: any) => q.is_wrong) }))
+    .filter((b: any) => b.questions.length)
+}
+
+type PassNode = { kind: 'text'; t: string } | { kind: 'blank'; no: string; wrong: boolean }
+
+/** 题号归一成数字串(「第 3 题」/「3」→「3」) */
+function normNo(raw: any): string {
+  const m = String(raw ?? '').match(/\d+/)
+  return m ? m[0] : ''
+}
+function qidKey(q: any): string {
+  return normNo(q.question_no) || String(q.id || '')
+}
+/** 本 block 全量空号 → 是否错(不过滤视图) */
+function blankWrongMap(sec: any, grp: any): Record<string, boolean> {
+  const m: Record<string, boolean> = {}
+  const key = grp.key
+  for (const q of sec.questions || []) {
+    const bk = q.block_key || `__solo_${q.id}`
+    if (bk !== key) continue
+    const no = normNo(q.question_no)
+    if (no) m[no] = !!q.is_wrong
+  }
+  return m
+}
+/**
+ * 把语篇里的空号(下划线题号 / 括号题号 / 独立数字题号)换成对错胶囊节点
+ */
+function passageNodes(sec: any, grp: any): PassNode[] {
+  const text = grp.passage || ''
+  const map = blankWrongMap(sec, grp)
+  const nos = Object.keys(map)
+  if (!text || !nos.length) return [{ kind: 'text', t: text }]
+
+  type Hit = { start: number; end: number; no: string }
+  const hits: Hit[] = []
+  const covered = (s: number, e: number) => hits.some(h => s < h.end && e > h.start)
+
+  // 1) 显式空: ____3____ / __3 / （3）/ (3) / 【3】
+  const explicit = /_{2,}\s*(\d{1,2})\s*_{0,}|[（(【\[]\s*(\d{1,2})\s*[）)】\]]/g
+  for (const m of text.matchAll(explicit)) {
+    const no = m[1] || m[2]
+    if (!no || !(no in map) || m.index == null) continue
+    const start = m.index
+    const end = start + m[0].length
+    if (!covered(start, end)) hits.push({ start, end, no })
+  }
+  // 2) 独立题号数字(仅本篇空号集合;避免年份等 4 位)
+  for (const no of nos) {
+    if (no.length > 2) continue
+    const re = new RegExp(`(^|[^0-9])(${no})(?![0-9])`, 'g')
+    for (const m of text.matchAll(re)) {
+      if (m.index == null) continue
+      const lead = m[1] || ''
+      const start = m.index + lead.length
+      const end = start + no.length
+      if (!covered(start, end)) hits.push({ start, end, no })
+    }
+  }
+  hits.sort((a, b) => a.start - b.start || a.end - b.end)
+  const kept: Hit[] = []
+  for (const h of hits) {
+    if (kept.some(k => h.start < k.end && h.end > k.start)) continue
+    kept.push(h)
+  }
+
+  const nodes: PassNode[] = []
+  let cur = 0
+  for (const h of kept) {
+    if (h.start > cur) nodes.push({ kind: 'text', t: text.slice(cur, h.start) })
+    nodes.push({ kind: 'blank', no: h.no, wrong: !!map[h.no] })
+    cur = h.end
+  }
+  if (cur < text.length) nodes.push({ kind: 'text', t: text.slice(cur) })
+  return nodes.length ? nodes : [{ kind: 'text', t: text }]
+}
+
+function scrollToQ(no: string) {
+  if (!no) return
+  uni.pageScrollTo({
+    selector: `#pq-${no}`,
+    duration: 280,
+  })
+}
+
+function hasOpts(q: any): boolean {
+  return !!(q?.options && q.options.length)
+}
+function stripOptLetter(op: string): string {
+  return String(op || '').replace(/^[A-Da-d][.、)．]\s*/, '').trim()
+}
+function letterOf(i: number): string {
+  return String.fromCharCode(65 + i)
+}
+/** 选项是否为正确答案 */
+function isCorrectOpt(q: any, op: string, oi?: number): boolean {
+  const ans = (q.correct_answer || '').trim()
+  if (!ans) return false
+  const au = ans.toUpperCase()
+  if (typeof oi === 'number' && au === letterOf(oi)) return true
+  const letter = (op.match(/^([A-D])/i) || [])[1]
+  if (letter && au === letter.toUpperCase()) return true
+  const body = stripOptLetter(op)
+  return au === (op || '').trim().toUpperCase() || au === body.toUpperCase()
+}
+/** 选项是否为学生所选 */
+function isStudentOpt(q: any, op: string, oi?: number): boolean {
+  const stu = (q.student_answer || '').trim()
+  if (!stu) return false
+  const su = stu.toUpperCase()
+  if (typeof oi === 'number' && su === letterOf(oi)) return true
+  const letter = (op.match(/^([A-D])/i) || [])[1]
+  if (letter && su === letter.toUpperCase()) return true
+  const body = stripOptLetter(op)
+  return su === (op || '').trim().toUpperCase() || su === body.toUpperCase()
+}
+function optCls(q: any, op: string, oi: number): string {
+  const ok = isCorrectOpt(q, op, oi)
+  const stu = isStudentOpt(q, op, oi)
+  if (ok) return 'q-opt-ok'
+  if (stu && q.is_wrong) return 'q-opt-bad'
+  return ''
+}
+function optHint(q: any, op: string, oi: number): string {
+  const ok = isCorrectOpt(q, op, oi)
+  const stu = isStudentOpt(q, op, oi)
+  if (ok && stu) return '正确 · 你选'
+  if (ok) return '正确'
+  if (stu && q.is_wrong) return '你选'
+  return ''
 }
 
 // —— 底部功能(本题型级,仅有原文题型):生词 + 长难句 ——
@@ -272,8 +511,39 @@ const similarKp = ref('')
 const similarQid = ref('')
 const similarList = ref<SimilarQuestion[]>([])
 
-// 学生改大题的题型分类(AI 建议不准时)
-const SECTION_LABELS = ['单项选择', '完形填空', '阅读理解', '任务型阅读', '词汇运用', '短文填空', '书面表达', '听力理解', '其它']
+// 学生改大题的题型分类(与后端 paper_section_taxonomy.whitelist_labels 对齐)
+const SECTION_LABELS = [
+  '单项选择', '完形填空', '阅读理解', '任务型阅读', '选择填空',
+  '词汇运用', '动词填空', '短文填空', '完成句子', '阅读填空',
+  '阅读表达', '阅读回答问题', '书面表达', '听力理解', '信息还原',
+  '句子翻译', '单词拼写', '句型转换', '补全对话', '其它',
+]
+/** 阅读理解 / 任务型阅读(整篇阅读,非完形) */
+function isReadingSec(sec: any): boolean {
+  return !!sec?.isReading
+}
+/** 完形填空:小题保留加单词(不加错题) */
+function isClozeSec(sec: any): boolean {
+  return !!sec?.isCloze
+}
+/**
+ * 有语篇且非阅读/完形时,底部仍出「本题生词 / 长难句」
+ * (阅读/完形改走精讲页,作业详情不再放篇级词句入口)
+ */
+function showPassageTools(sec: any): boolean {
+  return !!sec?.hasPassage && !sec?.isReading && !sec?.isCloze
+}
+/**
+ * 是否出小题动作栏。
+ * 阅读:仅错题出栏(练同类)。完形:常驻(加单词)。其它:单选族或有考点/错题。
+ */
+function showActs(sec: any, q: any): boolean {
+  if (isReadingSec(sec)) return !!q.is_wrong
+  if (isClozeSec(sec)) return true
+  const st = sec?.section_type
+  if (st === 'mcq' || st === 'choice_fill' || st === 'info_restore') return true
+  return !!(q.kp_kind || q.is_wrong)
+}
 function editSection(sec: { id: string; label: string }) {
   uni.showActionSheet({
     itemList: SECTION_LABELS,
@@ -487,20 +757,58 @@ function editTitle() {
 .sec-edit { font-size: 22rpx; color: var(--c-primary); padding: 4rpx 14rpx; border: 2rpx solid var(--c-primary); border-radius: 999rpx; margin-right: 14rpx; }
 .sec-cnt { font-size: 22rpx; color: var(--c-text-hint); }
 .passage-card { background: var(--c-primary-faint); }
+.passage-card.airy {
+  background: #fff;
+  border: 2rpx solid #e3e9f2;
+  box-shadow: 0 4rpx 20rpx rgba(45, 80, 150, .06);
+}
 .passage-head { display: flex; align-items: center; justify-content: space-between; }
-.passage-title { font-size: 26rpx; font-weight: 700; color: var(--c-primary-deep); }
-.passage-toggle { font-size: 22rpx; color: var(--c-primary); }
-.passage-text { display: block; font-size: 26rpx; color: var(--c-text-body); line-height: 1.7; margin-top: 14rpx; white-space: pre-wrap; }
+.passage-title { font-size: 26rpx; font-weight: 700; color: var(--c-primary); }
+.passage-toggle { font-size: 22rpx; color: #93a0b3; }
+.passage-text {
+  display: block; font-size: 26rpx; color: var(--c-text-body);
+  line-height: 1.7; margin-top: 14rpx; white-space: pre-wrap;
+}
+.passage-card.airy .passage-text {
+  font-size: 28rpx; color: #3a4353; line-height: 2;
+  letter-spacing: 0.02em; margin-top: 12rpx;
+}
+.p-blank {
+  display: inline; font-size: 22rpx; font-weight: 800;
+  padding: 2rpx 10rpx; margin: 0 4rpx; border-radius: 8rpx;
+  vertical-align: baseline; line-height: 1.4;
+}
+.p-blank.ok { background: #e9f6f1; color: #1f8a6e; border: 1rpx solid #b7e0d0; }
+.p-blank.bad { background: #fcebeb; color: #a32d2d; border: 1rpx solid #f0b6b6; }
 .q-card { border-left: 6rpx solid transparent; }
-.q-card.wrong { border-left-color: var(--c-danger); }
-.q-head { display: flex; align-items: center; gap: 16rpx; margin-bottom: 12rpx; }
+.q-card.wrong { border-left-color: var(--c-danger); background: #fffbfb; }
+.q-card.okborder { border-left-color: #b7e0d0; }
+.q-head { display: flex; align-items: center; gap: 12rpx; margin-bottom: 12rpx; flex-wrap: wrap; }
 .q-no { font-size: 26rpx; font-weight: 700; color: var(--c-ink); }
 .q-type { font-size: 22rpx; color: var(--c-text-hint); }
+.q-type-pill {
+  font-size: 20rpx; font-weight: 800; padding: 2rpx 12rpx; border-radius: 999rpx;
+  background: #e8f2ff; color: var(--c-primary);
+}
 .q-flag { margin-left: auto; font-size: 24rpx; font-weight: 700; color: var(--c-danger); display: flex; align-items: center; gap: 4rpx; }
-.q-stem { display: block; font-size: 28rpx; color: var(--c-text-body); line-height: 1.6; margin-bottom: 16rpx; white-space: pre-wrap; }
+.q-stem { display: block; font-size: 28rpx; color: var(--c-text-body); line-height: 1.6; margin-bottom: 12rpx; white-space: pre-wrap; }
+.q-opts { display: flex; flex-direction: column; gap: 8rpx; margin-bottom: 12rpx; }
+.q-opt {
+  display: flex; align-items: center; gap: 12rpx;
+  font-size: 26rpx; color: var(--c-text-body); line-height: 1.5;
+  padding: 14rpx 16rpx; background: #fafbfd; border-radius: 12rpx;
+  border: 1rpx solid #e6ebf2;
+}
+.q-opt-t { flex: 1; }
+.q-opt-h { flex-shrink: 0; font-size: 22rpx; font-weight: 800; opacity: .9; }
+.q-opt-ok { background: #e9f6f1; border-color: #b7e0d0; color: #1f8a6e; font-weight: 700; }
+.q-opt-bad { background: #fcebeb; border-color: #f0b6b6; color: #a32d2d; font-weight: 700; }
 .q-ans { display: flex; flex-direction: column; gap: 6rpx; background: var(--c-bg-soft); border-radius: var(--r-md); padding: 16rpx; }
+.q-ans.compact { flex-direction: row; flex-wrap: wrap; gap: 16rpx; background: transparent; padding: 4rpx 0 0; }
 .ans-line { font-size: 24rpx; color: var(--c-text-body); }
-.q-exp { display: block; font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; margin-top: 12rpx; }
+.q-exp { display: flex; gap: 10rpx; align-items: flex-start; font-size: 24rpx; color: var(--c-text-second); line-height: 1.6; margin-top: 12rpx; }
+.q-exp-k { flex-shrink: 0; font-size: 22rpx; font-weight: 700; color: #2f74d6; background: #eef5ff; border-radius: 8rpx; padding: 2rpx 10rpx; margin-top: 2rpx; }
+.q-exp-t { flex: 1; }
 .kp-card { display: flex; flex-direction: column; gap: 10rpx; }
 .kp-title { font-size: 28rpx; font-weight: 800; color: var(--c-ink); margin-bottom: 6rpx; }
 .kp-row { display: flex; align-items: center; gap: 12rpx; }

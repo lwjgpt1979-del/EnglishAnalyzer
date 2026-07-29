@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>语法原题合一 · 单段解释 + 本题巩固 + 关系网对齐错题详情</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5; --c-ok: #2fa98a; --c-bad: #e35d5d;
+      --c-ink: #1f2937; --c-sub: #64748b; --c-line: #e6ebf2; --c-page: #f4f6fa;
+      --c-q: #b86a00; --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8, #f4f6fa 45%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1100px; margin: 0 auto; padding: 20px 22px 6px; }
+    header.top h1 { margin: 0 0 6px; font-size: 21px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 900px; }
+    .tabs {
+      max-width: 1100px; margin: 12px auto 0; padding: 0 22px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .tab {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .tab.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .stage { max-width: 1100px; margin: 0 auto; padding: 14px 22px 56px; }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    .meta {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 14px; font-size: 13px; line-height: 1.65; color: var(--c-sub);
+    }
+    .meta b { color: var(--c-ink); }
+    .phones { display: flex; flex-wrap: wrap; gap: 22px; }
+    .cap { font-size: 12px; font-weight: 700; color: var(--c-sub); margin: 0 0 8px 4px; }
+    .phone {
+      width: var(--phone-w); height: 780px; background: var(--c-page);
+      border-radius: 28px; border: 1px solid #d8dee8; box-shadow: 0 16px 40px rgba(30,50,90,.12);
+      overflow: hidden; display: flex; flex-direction: column; position: relative;
+    }
+    .nav {
+      background: #fff; padding: 12px 14px; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .nav .back { width: 20px; height: 20px; border-radius: 50%; background: #eef3f9; }
+    .nav .title { flex: 1; text-align: center; font-weight: 800; font-size: 15px; margin-right: 20px; }
+    .scroll { flex: 1; overflow-y: auto; padding: 10px 12px 18px; }
+    .qbar {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+      font-size: 12px; font-weight: 700; color: var(--c-sub);
+    }
+    .dots { display: flex; gap: 5px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #d0d7e2; }
+    .dot.on { width: 16px; border-radius: 4px; background: var(--c-primary); }
+
+    .card {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .card.bad { border-color: #f3c7c7; }
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
+    }
+    .badge.kp { background: #eef5ff; color: var(--c-primary); }
+    .badge.bad { background: #fde8e8; color: var(--c-bad); }
+    .badge.ok { background: #e7f6f0; color: var(--c-ok); }
+    .badge.q { background: #fff4e5; color: var(--c-q); }
+    .stem { font-size: 14px; font-weight: 650; line-height: 1.55; margin: 8px 0; }
+    .opt {
+      display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; margin-top: 6px;
+      border-radius: 10px; background: #f7f9fc; font-size: 13px; line-height: 1.4;
+    }
+    .opt.ok { background: #e9f6f1; border: 1px solid #b7e0cf; }
+    .opt.bad { background: #fdeeee; border: 1px solid #f3c7c7; }
+    .opt.mute { opacity: .75; }
+    .opt .lab { font-weight: 800; color: var(--c-sub); min-width: 18px; }
+    .opt.ok .lab { color: var(--c-ok); }
+    .opt.bad .lab { color: var(--c-bad); }
+    .ansline { font-size: 12px; color: var(--c-sub); margin-top: 6px; }
+    .ansline .x { color: var(--c-bad); font-weight: 700; }
+    .ansline .o { color: var(--c-ok); font-weight: 700; }
+
+    .explain {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 10px;
+    }
+    .explain .tag { margin-bottom: 8px; }
+    .explain .body { font-size: 14px; line-height: 1.65; color: var(--c-ink); }
+    .explain .body b { font-weight: 800; }
+    .explain .opt-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f2f4f8; }
+    .explain .oh {
+      font-size: 12px; font-weight: 800; margin-bottom: 4px;
+    }
+    .explain .oh.ok { color: var(--c-ok); }
+    .explain .oh.bad { color: var(--c-bad); }
+    .explain .oh.mute { color: var(--c-sub); }
+    .explain .ob { font-size: 13px; color: var(--c-sub); line-height: 1.5; }
+
+    /* 仅本题巩固，贴解释 */
+    .drill {
+      display: flex; align-items: center; gap: 10px;
+      border-radius: 12px; padding: 12px 14px; margin: -2px 0 12px; cursor: pointer;
+      border: 1.5px solid #f0d9a8; background: #fffaf0;
+    }
+    .drill .t { font-size: 14px; font-weight: 800; color: var(--c-q); }
+    .drill .d { font-size: 12px; color: var(--c-sub); margin-top: 2px; }
+    .drill .go { margin-left: auto; color: var(--c-q); font-weight: 800; font-size: 13px; }
+
+    /* 关系网 = 对齐错题详情 WrongRelationNet */
+    .wrn { background: #fff; border: 1px solid var(--c-line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+    .wrn-h {
+      font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 6px;
+    }
+    .wrn-h .ic {
+      width: 16px; height: 16px; border-radius: 3px;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6b7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='18' cy='5' r='3'/%3E%3Ccircle cx='6' cy='12' r='3'/%3E%3Ccircle cx='18' cy='19' r='3'/%3E%3Cline x1='8.59' y1='13.51' x2='15.42' y2='17.49'/%3E%3Cline x1='15.41' y1='6.51' x2='8.59' y2='10.49'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+    .wrn-sub { font-size: 11px; color: #94a3b8; margin: 2px 0 10px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .chip {
+      font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 8px;
+      background: #f5f1e8; color: #6b5f4a; cursor: pointer; border: 2px solid transparent;
+    }
+    .chip.ok { background: #eaf3de; color: #3b6d11; }
+    .chip.bad { background: #fcebeb; color: #a32d2d; }
+    .chip.on { border-color: var(--c-primary); box-shadow: 0 0 0 1px #bcd8ff; }
+    .mind {
+      position: relative; height: 220px; background: #f7f9fc; border-radius: 12px; margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .spoke {
+      position: absolute; left: 50%; top: 50%; width: 2px; height: 72px; background: #d5deea;
+      transform-origin: top center; z-index: 0;
+    }
+    .center {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+      background: #e9f6f1; border: 2px solid #8cc2a6; border-radius: 14px; padding: 10px 14px;
+      text-align: center; z-index: 2; min-width: 110px;
+    }
+    .center .w { display: block; font-size: 15px; font-weight: 800; color: #1f7a5e; }
+    .center .z { display: block; font-size: 11px; color: #5f9c86; margin-top: 2px; }
+    .leaf {
+      position: absolute; transform: translate(-50%,-50%); background: #eaf2ff; border: 1.5px solid #bcd8ff;
+      border-radius: 10px; padding: 6px 10px; font-size: 12px; font-weight: 700; color: #185fa5;
+      z-index: 2; max-width: 96px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .elbl {
+      position: absolute; transform: translate(-50%,-50%); font-size: 10px; font-weight: 700;
+      background: rgba(255,255,255,.92); padding: 1px 5px; border-radius: 4px; z-index: 1;
+    }
+    .t2row {
+      display: flex; gap: 6px; overflow-x: auto; margin-bottom: 8px; padding-bottom: 2px;
+    }
+    .t2 {
+      flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 6px 11px; border-radius: 999px;
+      background: #f2f5f9; color: #5f6b7a; cursor: pointer; border: 1.5px solid transparent;
+    }
+    .t2.on { background: #e8f2ff; color: var(--c-primary); border-color: #bcd8ff; }
+    .t2.main { background: #eaf3de; color: #3b6d11; }
+    .t2.main.on { border-color: #8cc2a6; }
+    .kp-line {
+      padding: 10px 4px; border-top: 1px solid #f2f4f8; font-size: 13px;
+    }
+    .kp-line .en { font-weight: 700; color: var(--c-ink); }
+    .kp-line .zh { display: block; font-size: 12px; color: var(--c-sub); margin-top: 2px; }
+    .wrn-test {
+      margin-top: 10px; text-align: center; padding: 12px; border-radius: 12px;
+      background: #eaf2ff; color: #185fa5; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+
+    .foot {
+      display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--c-line);
+      background: #fff; flex-shrink: 0;
+    }
+    .btn {
+      flex: 1; text-align: center; font-size: 13px; font-weight: 700; padding: 11px 0;
+      border-radius: 12px; border: 1.5px solid #d8e4f5; background: #f2f7fd; color: var(--c-primary); cursor: pointer;
+    }
+    .btn.pri { background: linear-gradient(135deg,#4c97f7,#3d7bf0); color: #fff; border: none; }
+    .btn.ghost { background: #fff; color: var(--c-sub); }
+
+    .mask {
+      display: none; position: absolute; inset: 0; background: rgba(15,23,42,.45); z-index: 20;
+      align-items: flex-end;
+    }
+    .mask.on { display: flex; }
+    .sheet {
+      width: 100%; max-height: 78%; background: #fff; border-radius: 20px 20px 0 0;
+      padding: 14px 14px 20px; overflow-y: auto;
+    }
+    .sheet-hd {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+      font-weight: 800; font-size: 15px; color: var(--c-q);
+    }
+    .sheet-hd .x { margin-left: auto; font-size: 13px; color: var(--c-sub); cursor: pointer; }
+    .pq-choice {
+      padding: 11px 12px; border-radius: 10px; background: #f7f9fc; margin-top: 6px;
+      font-size: 14px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent;
+    }
+    .pq-choice.right { background: #e9f6f1; border-color: #8cc2a6; color: #1f7a5e; }
+    .pq-choice.wrong { background: #fdeeee; border-color: #f0b4b4; color: #a32d2d; }
+    .pq-exp { margin-top: 10px; font-size: 12px; color: var(--c-sub); line-height: 1.5; display: none; }
+    .pq-exp.on { display: block; }
+    .rule {
+      margin-top: 12px; background: #fff; border: 1px solid var(--c-line); border-radius: 12px;
+      padding: 12px 14px; font-size: 12px; color: var(--c-sub); line-height: 1.65;
+    }
+    .rule b { color: var(--c-ink); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>原题合一 · 关系网对齐错题详情</h1>
+    <p>
+      图2（填空）/ 图3（多选）的<strong>错题关系网 = 图1 同款</strong>（选项 chip · 辐射图 · 主/次/考点 Tab · 考点扩展测试）。
+      <strong>去掉「单词巩固」</strong>入口；仅保留贴解释的「本题巩固」弹层。词练习走关系网里的「考点扩展测试」。
+    </p>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-p="fill">图2 · 填空</button>
+    <button class="tab" data-p="mcq">图3 · 多选</button>
+  </div>
+
+  <div class="stage">
+    <div class="meta">
+      <b>页序：</b>原题 → 单段解释 → <b>本题巩固</b>（仅此）→ <b>错题关系网（同图1）</b>。<br />
+      <b>词练习：</b>不在解释旁另开「单词巩固」；点关系网底部「考点扩展测试」（与错题详情一致）。
+    </div>
+
+    <!-- 图2 填空 -->
+    <section class="panel on" id="p-fill">
+      <div class="phones">
+        <div>
+          <div class="cap">填空 · 本题巩固 + 关系网同图1</div>
+          <div class="phone" id="phone-fill">
+            <div class="nav"><div class="back"></div><div class="title">2026-07-15作业 3</div></div>
+            <div class="scroll">
+              <div class="qbar">本题 1/3 <div class="dots"><div class="dot on"></div><div class="dot"></div><div class="dot"></div></div></div>
+
+              <div class="card bad">
+                <span class="badge bad">错</span>
+                <span class="badge kp">填空</span>
+                <div class="stem">Dan's parents are really <b>______</b> (发愁的) because…</div>
+                <div class="ansline"><span class="x">你填 worrying</span>　<span class="o">正确 worried</span></div>
+              </div>
+
+              <div class="explain">
+                <div class="tag"><span class="badge kp">形容词 · 发愁的</span></div>
+                <div class="body">
+                  <b>worried</b> = 感到发愁的（人作主语），常跟 <b>about</b>。
+                  本题主语是 parents（人）→ worried；你填的 worrying 是「令人发愁的」（事作主语）。
+                </div>
+              </div>
+
+              <div class="drill" data-sheet="sheet-q-fill">
+                <div>
+                  <div class="t">📝 本题巩固</div>
+                  <div class="d">同考点再练一道填空/变形</div>
+                </div>
+                <span class="go">›</span>
+              </div>
+
+              <!-- 关系网 = 图1 -->
+              <div class="wrn">
+                <div class="wrn-h"><span class="ic"></span>错题关系网 · worried</div>
+                <div class="wrn-sub">点词看关系 · 主/次错题</div>
+                <div class="chips">
+                  <span class="chip ok on">worried</span>
+                  <span class="chip bad">worrying</span>
+                  <span class="chip">worry</span>
+                  <span class="chip">anxious</span>
+                </div>
+                <div class="mind">
+                  <div class="center"><span class="w">worried</span><span class="z">发愁的</span></div>
+                  <div class="leaf" style="left:50%;top:12%">anxious</div>
+                  <div class="leaf" style="left:86%;top:38%">about</div>
+                  <div class="leaf" style="left:78%;top:78%">worrying</div>
+                  <div class="leaf" style="left:22%;top:78%">worry</div>
+                  <div class="leaf" style="left:14%;top:38%">worried about</div>
+                  <div class="elbl" style="left:50%;top:30%;color:#3b8f5f">近义</div>
+                  <div class="elbl" style="left:70%;top:42%;color:#3170c0">搭配</div>
+                  <div class="elbl" style="left:66%;top:64%;color:#b0651a">易混</div>
+                  <div class="elbl" style="left:34%;top:64%;color:#b0651a">易混</div>
+                  <div class="elbl" style="left:30%;top:42%;color:#3170c0">搭配</div>
+                </div>
+                <div class="t2row">
+                  <span class="t2 main on">主·考 worried (2)</span>
+                  <span class="t2">次·当干扰 (0)</span>
+                  <span class="t2">近义</span>
+                  <span class="t2">易混</span>
+                  <span class="t2">搭配</span>
+                </div>
+                <div class="kp-line">
+                  <span class="en">I'm ______ about my grades…</span>
+                  <span class="zh"><span style="color:var(--c-bad)">你选 worrying</span> · 正确 worried</span>
+                </div>
+                <div class="wrn-test">考点扩展测试</div>
+              </div>
+            </div>
+            <div class="foot">
+              <div class="btn ghost">‹ 上一题</div>
+              <div class="btn pri">下一题 ›</div>
+            </div>
+
+            <div class="mask" id="mask-fill">
+              <div class="sheet" id="sheet-q-fill" style="display:none">
+                <div class="sheet-hd"><span class="badge q">本题巩固</span> 同考点变形 <span class="x" data-close>收起</span></div>
+                <div class="stem">The news is really ______ (worry).</div>
+                <div class="pq-choice" data-ans="wrong">A. worried</div>
+                <div class="pq-choice" data-ans="right">B. worrying</div>
+                <div class="pq-choice" data-ans="wrong">C. worry</div>
+                <div class="pq-exp">主语是 news（事）→ worrying。本题考点巩固。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 图3 多选 -->
+    <section class="panel" id="p-mcq">
+      <div class="phones">
+        <div>
+          <div class="cap">多选 · 本题巩固 + 关系网同图1（无单词巩固）</div>
+          <div class="phone" id="phone-mcq">
+            <div class="nav"><div class="back"></div><div class="title">错题详情</div></div>
+            <div class="scroll">
+              <div class="card bad">
+                <span class="badge bad">错</span>
+                <span class="badge kp">单选</span>
+                <div class="stem">… A. nobody　B. nothing　C. everything　D. everybody</div>
+                <div class="opt bad"><span class="lab">B</span> nothing　你选</div>
+                <div class="opt ok"><span class="lab">C</span> everything　正确</div>
+                <div class="ansline"><span class="o">正确答案 C</span> · 春雨润万物 → everything</div>
+              </div>
+
+              <div class="explain">
+                <div class="tag"><span class="badge kp">复合不定代词</span></div>
+                <div class="body">空缺指「万物/一切」时用物称全称。</div>
+                <div class="opt-block">
+                  <div class="oh ok">✅ 正确 C · everything</div>
+                  <div class="ob"><b>everything</b> = 每件事、一切（物）。春雨润万物 → 选 everything。</div>
+                </div>
+                <div class="opt-block">
+                  <div class="oh bad">❌ 你选 B · nothing</div>
+                  <div class="ob"><b>nothing</b> = 没有什么。否定语义，与句意相反。</div>
+                </div>
+                <div class="opt-block">
+                  <div class="oh mute">⚪ 干扰 A · nobody / D · everybody</div>
+                  <div class="ob">人称复合词；空缺非人称，形近干扰。</div>
+                </div>
+              </div>
+
+              <div class="drill" data-sheet="sheet-q-mcq">
+                <div>
+                  <div class="t">📝 本题巩固</div>
+                  <div class="d">同类复合代词选择题</div>
+                </div>
+                <span class="go">›</span>
+              </div>
+
+              <div class="wrn">
+                <div class="wrn-h"><span class="ic"></span>错题关系网 · everything</div>
+                <div class="wrn-sub">点词看关系 · 主/次错题</div>
+                <div class="chips">
+                  <span class="chip ok on">everything</span>
+                  <span class="chip bad">nobody</span>
+                  <span class="chip">nothing</span>
+                  <span class="chip">everybody</span>
+                </div>
+                <div class="mind">
+                  <div class="center"><span class="w">everything</span><span class="z">每件事，一切</span></div>
+                  <div class="leaf" style="left:50%;top:11%">all</div>
+                  <div class="leaf" style="left:88%;top:40%">nothing</div>
+                  <div class="leaf" style="left:72%;top:82%">everyone</div>
+                  <div class="leaf" style="left:28%;top:82%">every day</div>
+                  <div class="leaf" style="left:12%;top:40%">everything…</div>
+                  <div class="elbl" style="left:50%;top:28%;color:#3b8f5f">近义</div>
+                  <div class="elbl" style="left:72%;top:44%;color:#c45c2a">反义</div>
+                  <div class="elbl" style="left:62%;top:66%;color:#b0651a">易混</div>
+                  <div class="elbl" style="left:38%;top:66%;color:#b0651a">易混</div>
+                  <div class="elbl" style="left:28%;top:44%;color:#3170c0">搭配</div>
+                </div>
+                <div class="t2row">
+                  <span class="t2 main">主·考 everything (1)</span>
+                  <span class="t2">次·当干扰 (0)</span>
+                  <span class="t2 on">近义</span>
+                  <span class="t2">反义</span>
+                  <span class="t2">易混</span>
+                  <span class="t2">搭配</span>
+                </div>
+                <div class="kp-line">
+                  <span class="en">all</span>
+                  <span class="zh">所有，可作代词和形容词</span>
+                </div>
+                <div class="wrn-test">考点扩展测试</div>
+              </div>
+            </div>
+            <div class="foot">
+              <div class="btn ghost">‹ 返回</div>
+              <div class="btn pri">下一题 ›</div>
+            </div>
+
+            <div class="mask" id="mask-mcq">
+              <div class="sheet" id="sheet-q-mcq" style="display:none">
+                <div class="sheet-hd"><span class="badge q">本题巩固</span> 同类单选 <span class="x" data-close>收起</span></div>
+                <div class="stem">______ is ready. We can start.</div>
+                <div class="pq-choice" data-ans="wrong">A. Everybody</div>
+                <div class="pq-choice" data-ans="right">B. Everything</div>
+                <div class="pq-choice" data-ans="wrong">C. Nobody</div>
+                <div class="pq-exp">「事情都准备好」→ Everything。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="rule">
+      <b>相对上一版：</b><br />
+      · 图2/图3 <b>去掉「单词巩固」</b>紫卡。<br />
+      · 关系网 UI <b>对齐图1</b>：chip 着色、辐射图+关系标签、主/次/考点 Tab、底部「考点扩展测试」。<br />
+      · 词练习只走关系网里的考点扩展测试（与错题详情同一路径）。
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('tabs').addEventListener('click', (e) => {
+      const t = e.target.closest('.tab');
+      if (!t) return;
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+      t.classList.add('on');
+      document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+      document.getElementById('p-' + t.dataset.p).classList.add('on');
+    });
+
+    function bindPhone(phone, maskId) {
+      const mask = phone.querySelector('#' + maskId);
+      function openSheet(id) {
+        mask.querySelectorAll('.sheet').forEach(s => { s.style.display = 'none'; });
+        const sh = mask.querySelector('#' + id);
+        if (!sh) return;
+        sh.style.display = '';
+        sh.querySelectorAll('.pq-choice').forEach(c => c.classList.remove('right', 'wrong'));
+        const exp = sh.querySelector('.pq-exp');
+        if (exp) exp.classList.remove('on');
+        delete sh.dataset.done;
+        mask.classList.add('on');
+      }
+      function close() {
+        mask.classList.remove('on');
+        mask.querySelectorAll('.sheet').forEach(s => { s.style.display = 'none'; });
+      }
+      phone.querySelectorAll('.drill').forEach(d => {
+        d.addEventListener('click', () => openSheet(d.dataset.sheet));
+      });
+      phone.querySelectorAll('.wrn-test').forEach(btn => {
+        btn.addEventListener('click', () => {
+          alert('原型：打开考点扩展测试（PracticeQuiz），与错题详情一致');
+        });
+      });
+      mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
+      mask.querySelectorAll('[data-close]').forEach(x => x.addEventListener('click', close));
+      mask.querySelectorAll('.pq-choice').forEach(ch => {
+        ch.addEventListener('click', () => {
+          const sh = ch.closest('.sheet');
+          if (!sh || sh.dataset.done) return;
+          sh.dataset.done = '1';
+          sh.querySelectorAll('.pq-choice').forEach(c => {
+            if (c.dataset.ans === 'right') c.classList.add('right');
+            else if (c === ch && c.dataset.ans === 'wrong') c.classList.add('wrong');
+          });
+          const exp = sh.querySelector('.pq-exp');
+          if (exp) exp.classList.add('on');
+        });
+      });
+    }
+    bindPhone(document.getElementById('phone-fill'), 'mask-fill');
+    bindPhone(document.getElementById('phone-mcq'), 'mask-mcq');
+  </script>
+</body>
+</html>

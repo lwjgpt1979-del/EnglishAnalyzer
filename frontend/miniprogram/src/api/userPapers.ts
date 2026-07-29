@@ -17,11 +17,14 @@ export function createUserPaper(
 }
 
 /** 列出本人整卷 */
-// 「我的作业」列表(C-a):每卷四模块聚合进度 + 综合环 + 状态
+// 「我的作业」列表(C-a):每卷五模块聚合进度 + 综合环 + 状态
 export interface HomeworkModule { studied: number; total: number }
 export interface HomeworkPaper {
   paper_id: string; title: string; date: string; ocr_status: string | null
-  modules: { word: HomeworkModule; grammar: HomeworkModule; sentence: HomeworkModule; reading: HomeworkModule }
+  modules: {
+    word: HomeworkModule; grammar: HomeworkModule; sentence: HomeworkModule
+    reading: HomeworkModule; cloze: HomeworkModule
+  }
   studied: number; total: number; overall_pct: number
   status: 'todo' | 'doing' | 'done'
 }
@@ -62,7 +65,7 @@ export function getPaperLongSentences(paperId: string, sectionId?: string): Prom
 // 阅读精讲:原文内联高亮分段——词/句定位回原文字符位置的有序片段;句内含重点词时
 // word_idx 与 sentence_idx 同时非空(嵌套),前端据此叠加双下划线
 export interface PassageSegment { t: string; word_idx: number | null; sentence_idx: number | null }
-// 阅读精讲:按单篇短文取「本地生词(完整卡片媒体)+ 长难句 + 原文内联分段」
+// 阅读精讲:按单篇短文取「理解向重点词(完整卡片媒体)+ 长难句 + 原文内联分段」
 export function getPassageStudy(passage: string, paperId?: string): Promise<{ words: StudyWord[]; sentences: string[]; segments: PassageSegment[] }> {
   return request<{ words: StudyWord[]; sentences: string[]; segments: PassageSegment[] }>(`/api/v1/user-papers/passage-study`, {
     method: 'POST', data: { passage, paper_id: paperId },
@@ -89,6 +92,27 @@ export function addQuestionToWrong(qid: string): Promise<{ added: boolean; kp_ki
 /** 手动把某作业阅读理解板块加入作业精讲·阅读理解精讲 */
 export function addReadingIntensive(sectionId: string): Promise<{ added: boolean; reason?: string }> {
   return request(`/api/v1/user-papers/sections/${sectionId}/add-reading-intensive`, { method: 'POST' })
+}
+/** 手动把某作业完形板块加入作业精讲·完形填空精讲 */
+export function addClozeIntensive(sectionId: string): Promise<{ added: boolean; reason?: string }> {
+  return request(`/api/v1/user-papers/sections/${sectionId}/add-cloze-intensive`, { method: 'POST' })
+}
+/** 完形精讲·双轴解析 */
+export interface ClozeAnalysis {
+  clue_type?: string
+  clue?: string
+  answer_reason?: string
+  distractor_why?: string
+  slot?: string
+  _warnings?: string[]
+  error?: string
+}
+export function getClozeAnalysis(qid: string): Promise<ClozeAnalysis> {
+  return request(`/api/v1/user-papers/questions/${qid}/cloze-analysis`, { method: 'GET', timeout: 90000 })
+}
+/** 完形本题巩固 */
+export function clozePractice(qid: string): Promise<{ questions: SimilarQuestion[]; clue_type?: string; error?: string }> {
+  return request(`/api/v1/user-papers/questions/${qid}/cloze-practice`, { method: 'POST', timeout: 90000 })
 }
 /** 阅读理解精讲·题目层解析(题型/定位句/为何对/干扰项),缓存复用 */
 export interface ReadingAnalysis {

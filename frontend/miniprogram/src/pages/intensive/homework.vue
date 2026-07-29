@@ -21,8 +21,11 @@ const modules = [
   { kind: 'grammar', title: '语法精讲', sub: '作业里的语法点,按批次学', ic: 'ic-grammar' },
   { kind: 'sentence', title: '长难句', sub: '作业里的长难句,按批次拆', ic: 'ic-sentence' },
   { kind: 'reading', title: '阅读理解', sub: '上传作业里的阅读理解,按卷复习', ic: 'ic-reading' },
+  { kind: 'cloze', title: '完形填空', sub: '上传作业里的完形,按卷精讲', ic: 'ic-layout' },
 ]
-const PAGE: Record<string, string> = { word: 'words', grammar: 'grammar', sentence: 'sentence', reading: 'reading' }
+const PAGE: Record<string, string> = {
+  word: 'words', grammar: 'grammar', sentence: 'sentence', reading: 'reading', cloze: 'cloze',
+}
 function go(m: { kind: string }) {
   uni.navigateTo({ url: `/pages/intensive/${PAGE[m.kind]}?mode=homework` })
 }

@@ -159,6 +159,28 @@ async def word_net(word_id: uuid.UUID, db: DbDep, current_user: UserDep):
     return make_ok(r)
 
 
+@router.post("/word-net-seeds", response_model=BaseResponse[dict])
+async def word_net_seeds(body: dict, db: DbDep, current_user: UserDep):
+    """无错题记录时按答案词建网(语法全对题等)。
+    body: {correct:[str], wrong?:[str], other?:[str]} — other=其余选项(灰 chip)。"""
+    from app.services import wrong_word_net_service
+
+    def _as_list(v) -> list[str]:
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            v = [v]
+        return [str(x) for x in v if str(x).strip()]
+
+    r = await wrong_word_net_service.word_net_for_seeds(
+        db, student_id=current_user.id,
+        correct=_as_list(body.get("correct")),
+        wrong=_as_list(body.get("wrong")),
+        other=_as_list(body.get("other")),
+    )
+    return make_ok(r)
+
+
 @router.get("/{wrong_record_id}/word-net", response_model=BaseResponse[dict])
 async def word_net_of_record(wrong_record_id: uuid.UUID, db: DbDep, current_user: UserDep):
     """从一道错题进入错题网:中心 = 该题正确答案词。返回该词考点 + 主/次错题。"""

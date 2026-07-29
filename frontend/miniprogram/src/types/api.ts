@@ -680,6 +680,7 @@ export interface UserPaperQuestionOut {
   question_no: string | null
   question_type: string | null
   stem: string | null
+  options?: string[] | null   // 选择题选项["A. …","B. …"];无则与题干内联旧数据兼容
   student_answer: string | null
   correct_answer: string | null
   explanation: string | null
@@ -698,6 +699,7 @@ export interface UserPaperSectionOut {
   section_type: string | null
   is_suggested?: boolean        // AI 建议分类(原卷没识别到大题头);前端标「建议」、学生可改
   in_reading_intensive?: boolean  // 阅读理解:是否已手动加入作业精讲·阅读理解精讲
+  in_cloze_intensive?: boolean    // 完形填空:是否已手动加入作业精讲·完形填空精讲
   questions: UserPaperQuestionOut[]
 }
 

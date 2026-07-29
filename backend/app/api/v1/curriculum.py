@@ -292,6 +292,18 @@ async def gr_personal_practiced(
     return make_ok(r)
 
 
+@router.post("/intensive/grammar/ensure-explanation")
+async def gr_ensure_explanation(
+    db: DbDep, current_user: UserDep,
+    question_id: uuid.UUID = Body(...),
+    kp_name: str | None = Body(None),
+):
+    """语法原题解析兜底:无 explanation 时查看即生成并落库(正确/错误同等)。"""
+    from app.services import grammar_intensive_service as gi
+    return make_ok(await gi.ensure_question_explanation(
+        db, student_id=current_user.id, question_id=question_id, kp_name=kp_name))
+
+
 @router.get("/intensive/sentence/homework/batches")
 async def se_hw_batches(db: DbDep, current_user: UserDep):
     from app.services import sentence_intensive_service as si
@@ -337,6 +349,18 @@ async def rd_hw_batches(db: DbDep, current_user: UserDep):
 async def rd_hw_passages(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
     from app.services import reading_intensive_service as ri
     return make_ok({"blocks": await ri.homework_passages(db, student_id=current_user.id, paper_id=paper_id)})
+
+
+@router.get("/intensive/cloze/homework/batches")
+async def cz_hw_batches(db: DbDep, current_user: UserDep):
+    from app.services import cloze_intensive_service as ci
+    return make_ok({"batches": await ci.homework_batches(db, student_id=current_user.id)})
+
+
+@router.get("/intensive/cloze/homework/passages")
+async def cz_hw_passages(db: DbDep, current_user: UserDep, paper_id: uuid.UUID = Query(...)):
+    from app.services import cloze_intensive_service as ci
+    return make_ok({"blocks": await ci.homework_passages(db, student_id=current_user.id, paper_id=paper_id)})
 
 
 @router.get("/intensive/sentence/course/units")

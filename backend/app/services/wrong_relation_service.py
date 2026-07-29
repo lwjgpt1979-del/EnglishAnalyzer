@@ -27,22 +27,16 @@ _MARK = re.compile(r'(?:(?<=\s)|^)([A-D])[.、)．]\s*')
 
 
 def _parse_inline_options(text: str) -> tuple[str, list[str]]:
-    """从题干文本内联解析「A. .. B. .. C. .. D. ..」式选项(uploaded 题选项常混在题干里)。
-    需至少 A/B/C 依序出现才认定,避免误判;返回 (去选项后的题干, 选项文本列表)。"""
-    if not text:
-        return "", []
-    ms = list(_MARK.finditer(text))
-    letters = [m.group(1) for m in ms]
-    if len(letters) < 3 or letters[:3] != ["A", "B", "C"]:
-        return text, []
-    stem = text[:ms[0].start()].strip()
-    opts: list[str] = []
-    for i, m in enumerate(ms):
-        end = ms[i + 1].start() if i + 1 < len(ms) else len(text)
-        opt = text[m.end():end].strip().rstrip(".;,、。")
-        if opt:
-            opts.append(opt)
-    return (stem or text), opts
+    """兼容旧调用:转调 stem_options.parse_inline_options。"""
+    from app.services.stem_options import parse_inline_options
+    stem, opts = parse_inline_options(text)
+    if not opts:
+        return text or "", []
+    # 错题网用纯文本块(去 A. 前缀)
+    bare = []
+    for o in opts:
+        bare.append(re.sub(r"^[A-D][.、)．]\s*", "", o).strip() or o)
+    return stem, bare
 
 
 async def _wrong_options(db: AsyncSession, wr: WrongRecord) -> tuple[str, list[str]]:

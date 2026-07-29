@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>作业精讲 · 完形填空模块 — 原型（对齐阅读理解）</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-bad: #e24b4a;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f6fc;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f0f6fc 40%, #f7f8fb 100%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1280px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 880px; }
+
+    .flow {
+      max-width: 1280px; margin: 12px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      font-size: 13px; color: var(--c-sub);
+    }
+    .flow b { color: var(--c-primary); }
+    .flow .arr { color: #94a3b8; }
+
+    .opts {
+      max-width: 1280px; margin: 14px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .opt.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .opt .tag { font-size: 11px; opacity: .9; font-weight: 600; margin-left: 4px; }
+
+    .stage {
+      max-width: 1280px; margin: 0 auto; padding: 18px 24px 56px;
+      display: grid; grid-template-columns: var(--phone-w) 1fr; gap: 28px; align-items: start;
+    }
+    @media (max-width: 920px) { .stage { grid-template-columns: 1fr; } }
+
+    .phone {
+      width: var(--phone-w); max-width: 100%;
+      background: var(--c-page); border-radius: 28px; border: 1px solid #dbe3ef;
+      box-shadow: 0 18px 50px rgba(45,80,150,.12); overflow: hidden;
+      position: relative;
+    }
+    .phone-bar {
+      height: 44px; background: #fff; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .phone-body { padding: 12px 12px 28px; min-height: 680px; position: relative; }
+    .screen { display: none; }
+    .screen.on { display: block; }
+
+    .hd-title { font-size: 20px; font-weight: 800; display: block; }
+    .hd-sub { font-size: 12px; color: var(--c-sub); margin: 4px 0 12px; line-height: 1.5; display: block; }
+
+    .mod {
+      display: flex; align-items: center; gap: 12px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px; margin-bottom: 10px;
+    }
+    .mod.new { border-color: #85B7EB; box-shadow: 0 0 0 2px #e8f2ff; }
+    .mod-ic {
+      width: 36px; height: 36px; border-radius: 10px; background: #e8f2ff;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .mod-ic svg { width: 20px; height: 20px; stroke: var(--c-primary); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .mod-t { font-size: 15px; font-weight: 800; }
+    .mod-s { font-size: 11px; color: var(--c-sub); }
+    .mod-arrow { margin-left: auto; color: #94a3b8; font-size: 18px; }
+    .badge-new {
+      font-size: 10px; font-weight: 800; color: #fff; background: var(--c-primary);
+      padding: 2px 7px; border-radius: 999px; margin-left: 6px;
+    }
+
+    .cta {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      margin: 12px 0 8px; padding: 12px; border-radius: 12px;
+      background: var(--c-primary); color: #fff; font-size: 14px; font-weight: 700;
+    }
+    .cta.done { background: #eef2f7; color: var(--c-sub); }
+
+    .ae {
+      display: flex; align-items: center; gap: 8px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 12px;
+      padding: 12px 14px; margin-bottom: 12px; font-size: 14px; font-weight: 700;
+    }
+    .ae span { margin-left: auto; color: var(--c-primary); font-size: 12px; }
+
+    .batch {
+      position: relative; overflow: hidden;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px; margin-bottom: 10px;
+    }
+    .batch .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 40%;
+      background: linear-gradient(90deg,#e8f2ff,#f4f9ff);
+    }
+    .batch .row { position: relative; display: flex; align-items: center; gap: 10px; }
+    .batch .tit { font-size: 14px; font-weight: 800; }
+    .batch .meta { font-size: 11px; color: var(--c-sub); margin-top: 4px; position: relative; }
+    .batch .pct { margin-left: auto; font-size: 13px; font-weight: 800; color: var(--c-primary); position: relative; }
+
+    .rd-head {
+      position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 10px;
+    }
+    .rd-fill { position: absolute; inset: 0 auto 0 0; width: 35%;
+      background: linear-gradient(90deg,#e8f2ff,#f4f9ff); }
+    .rd-num { position: relative; font-size: 22px; font-weight: 800; color: var(--c-primary); }
+    .rd-num span { font-size: 12px; color: #b7c2d4; font-weight: 700; }
+    .rd-info { position: relative; font-size: 12px; color: var(--c-sub); }
+    .rd-info b { color: var(--c-primary); }
+
+    .pass-tabs {
+      display: flex; gap: 6px; background: #fff; border: 1px solid var(--c-line);
+      border-radius: 14px; padding: 6px; margin-bottom: 10px;
+    }
+    .pass-tab {
+      flex: 1; text-align: center; padding: 10px 6px; border-radius: 10px;
+      font-size: 13px; font-weight: 700; color: var(--c-sub); background: transparent; border: none;
+    }
+    .pass-tab.on { background: #e8f2ff; color: var(--c-primary); }
+    .pass-tab .sub { display: block; font-size: 10px; font-weight: 600; color: #94a3b8; margin-top: 2px; }
+
+    .pass {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .pass-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: var(--c-primary); margin-bottom: 8px; }
+    .pass-body { font-size: 14px; line-height: 2.05; color: #3a4353; }
+    .blank {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 20px; padding: 0 6px; margin: 0 2px; border-radius: 5px;
+      font-size: 11px; font-weight: 800; vertical-align: baseline;
+    }
+    .blank.ok { background: #e9f6f1; color: #1f8a6e; border: 1px solid #b7e0d0; }
+    .blank.bad { background: #fcebeb; color: #a32d2d; border: 1px solid #f0b6b6; }
+    .blank.todo { background: #eef2f7; color: #64748b; border: 1px solid #d5dde8; }
+    .zh { color: #94a3b8; font-size: 12px; }
+    .clue-hl { background: #fff3cd; border-bottom: 2px solid #f0c36d; }
+
+    .q {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .q.wrong { border-color: #f0c2c2; background: #fffbfb; }
+    .q-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+    .chip { padding: 2px 8px; border-radius: 6px; font-weight: 700; background: #e8f2ff; color: var(--c-primary); }
+    .chip.ok { background: #e9f6f1; color: #2fa98a; }
+    .chip.bad { background: #fcebeb; color: #a32d2d; }
+    .ring {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid #c5d0df;
+      margin-left: auto;
+    }
+    .ring.on { border-color: #2fa98a; background: #e9f6f1; }
+    .q-stem { font-size: 14px; line-height: 1.55; margin-bottom: 8px; }
+    .opts-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .op {
+      padding: 8px 10px; border-radius: 10px; border: 1px solid #e6ebf2;
+      font-size: 13px; background: #fafbfd; display: flex; gap: 8px;
+    }
+    .op.ok { background: #e9f6f1; border-color: #b7e0d0; color: #1f8a6e; font-weight: 700; }
+    .op.bad { background: #fcebeb; border-color: #f0b6b6; color: #a32d2d; font-weight: 700; }
+    .acts { display: flex; gap: 8px; }
+    .act {
+      flex: 1; text-align: center; padding: 10px; border-radius: 12px; font-size: 13px; font-weight: 700;
+      border: 1.5px solid var(--c-primary); color: var(--c-primary); background: #fff;
+    }
+    .act.pri { background: var(--c-primary); color: #fff; }
+
+    .sheet {
+      margin-top: 8px; padding: 12px; border-radius: 12px; background: #f8fafc; border: 1px dashed #d7e0ec;
+      font-size: 12px; line-height: 1.65; color: #334155;
+    }
+    .sheet h4 { margin: 0 0 6px; font-size: 13px; color: var(--c-primary); }
+    .sheet .row { margin: 4px 0; }
+    .sheet .k { display: inline-block; min-width: 64px; color: var(--c-sub); font-weight: 700; }
+
+    .study-bar {
+      display: flex; align-items: center; gap: 8px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px 14px; font-size: 13px; margin-top: 8px;
+    }
+    .study-bar b { color: var(--c-primary); }
+
+    /* 对齐语法精讲 · 语法思路卡 */
+    .explain-card {
+      background: #fff; border: 1.5px solid #d5e4f5; border-radius: 14px;
+      padding: 12px 14px; margin-bottom: 8px;
+    }
+    .ex-tags { margin-bottom: 8px; }
+    .ex-body { font-size: 14px; line-height: 1.65; color: var(--c-ink); }
+    .drill {
+      display: flex; align-items: center; gap: 10px;
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+      border: 2px solid #bcd8ff; background: #eaf2ff;
+    }
+    .drill-t { font-size: 14px; font-weight: 800; color: #185fa5; }
+    .drill-d { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .drill-go { margin-left: auto; color: #185fa5; font-weight: 800; font-size: 18px; }
+    .sheet-fold {
+      margin: 4px 0 12px; font-size: 12px; color: var(--c-sub);
+    }
+    .sheet-fold.dual-fold {
+      background: #fff; border: 1.5px dashed #85B7EB; border-radius: 14px;
+      padding: 10px 12px; margin-bottom: 10px;
+    }
+    .sheet-fold.dual-fold summary { padding: 2px 0; }
+    .sheet-fold.dual-fold .dual { border: none; padding: 0; margin: 0; background: transparent; }
+
+    .q-foot {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      margin-top: 8px; font-size: 12px; color: var(--c-sub);
+    }
+    .q-foot .go { color: var(--c-primary); font-weight: 800; cursor: pointer; flex-shrink: 0; }
+    .modal {
+      position: absolute; inset: 0; background: rgba(15,23,42,.45);
+      display: flex; align-items: flex-end; z-index: 20;
+    }
+    .modal.hidden { display: none !important; }
+    .sheet-page {
+      width: 100%; max-height: 92%; overflow: auto;
+      background: var(--c-page); border-radius: 18px 18px 0 0;
+      padding: 12px 12px 20px;
+    }
+    .sheet-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 4px 10px; font-size: 14px; font-weight: 800;
+    }
+    .sheet-bar .x { color: var(--c-sub); font-size: 13px; font-weight: 700; cursor: pointer; }
+    .warm {
+      background: #f7f3e6; border: 1px solid #e0d6b8; border-radius: 14px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .wrn-mini {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .wrn-mini .t { font-size: 13px; font-weight: 800; margin-bottom: 8px; }
+    .wrn-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .wrn-chips span {
+      font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+      border: 1px solid #e3e8ef;
+    }
+    .wrn-chips .ok { background: #e6f1fb; border-color: #85B7EB; color: #185FA5; }
+    .wrn-chips .bad { background: #fcebeb; border-color: #e88; color: #a32d2d; }
+    .wrn-graph {
+      height: 90px; border-radius: 10px; background: #f8fafc; border: 1px dashed #d7e0ec;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; color: var(--c-sub);
+    }
+    .dual {
+      background: #fff; border: 1.5px dashed #85B7EB; border-radius: 14px;
+      padding: 12px; margin-bottom: 10px; font-size: 12px; line-height: 1.65; color: #334155;
+    }
+    .dual h4 { margin: 0 0 6px; font-size: 13px; color: var(--c-primary); }
+    .dual .row { margin: 4px 0; }
+    .dual .k { display: inline-block; min-width: 64px; color: var(--c-sub); font-weight: 700; }
+    .foot2 { display: flex; gap: 8px; margin-top: 4px; }
+    .foot2 .btn {
+      flex: 1; text-align: center; padding: 12px; border-radius: 12px;
+      font-size: 13px; font-weight: 700; border: 1px solid #e6ebf2; background: #fff; color: var(--c-sub);
+    }
+    .foot2 .btn.pri { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+
+    .navs {
+      display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .navs button {
+      font-size: 11px; font-weight: 700; padding: 6px 10px; border-radius: 999px;
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub); cursor: pointer;
+    }
+    .navs button.on { background: #1f2937; color: #fff; border-color: #1f2937; }
+
+    .aside {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 16px;
+      padding: 18px 20px; line-height: 1.7; font-size: 14px; color: #334155;
+    }
+    .aside h2 { margin: 0 0 8px; font-size: 16px; }
+    .aside h3 { margin: 16px 0 6px; font-size: 14px; }
+    .aside ul { margin: 0; padding-left: 18px; }
+    .aside li { margin: 4px 0; }
+    .rec {
+      display: inline-block; padding: 3px 10px; border-radius: 999px;
+      background: #e8f2ff; color: var(--c-primary); font-size: 12px; font-weight: 800;
+    }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+    .tbl th, .tbl td { border: 1px solid var(--c-line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    .tbl th { background: #f8fafc; width: 28%; color: var(--c-sub); }
+    .note {
+      margin-top: 12px; padding: 12px 14px; background: #fffbeb; border: 1px solid #f59e0b;
+      border-radius: 12px; font-size: 13px; color: #92400e;
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>作业精讲 · 完形填空模块（对齐阅读理解）</h1>
+    <p>
+      信息架构与阅读理解精讲平行：作业详情「加入」→ Hub 第五模块 → 卷批次列表 → 卷内精讲页 → 学情。
+      原文样式沿用已定的 <b>B 疏朗白卡</b>。下方可切「流程屏」与「卷内解析方案」。
+    </p>
+  </header>
+
+  <div class="flow">
+    <b>链路</b>
+    <span>上传作业</span><span class="arr">→</span>
+    <span>详情「加入完形填空精讲」</span><span class="arr">→</span>
+    <span>作业精讲 · 完形</span><span class="arr">→</span>
+    <span>cloze-paper 卷页</span><span class="arr">→</span>
+    <span>看解析 / 本题巩固</span>
+  </div>
+
+  <div class="opts" id="opts">
+    <button class="opt on" data-k="ia">① 信息架构<span class="tag">已修订</span></button>
+    <button class="opt" data-k="a">A 完形双轴 + 语法思路卡<span class="tag">推荐</span></button>
+    <button class="opt" data-k="b">B 点空定位增强</button>
+  </div>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="phone-bar" id="bar">作业精讲</div>
+      <div class="phone-body">
+        <div class="navs" id="navs"></div>
+
+        <!-- Hub -->
+        <div class="screen" data-s="hub">
+          <text class="hd-title">作业精讲</text>
+          <text class="hd-sub">来自你上传的作业，按批次学。</text>
+          <div class="mod"><div class="mod-ic"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div><div class="mod-t">单词</div><div class="mod-s">作业生词按批次背</div></div><div class="mod-arrow">›</div></div>
+          <div class="mod"><div class="mod-ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><div><div class="mod-t">语法精讲</div><div class="mod-s">语法点按批次学</div></div><div class="mod-arrow">›</div></div>
+          <div class="mod"><div class="mod-ic"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div><div><div class="mod-t">长难句</div><div class="mod-s">长难句按批次拆</div></div><div class="mod-arrow">›</div></div>
+          <div class="mod"><div class="mod-ic"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div><div><div class="mod-t">阅读理解</div><div class="mod-s">阅读按卷复习</div></div><div class="mod-arrow">›</div></div>
+          <div class="mod new"><div class="mod-ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h4M7 12h10M7 16h7"/></svg></div><div><div class="mod-t">完形填空 <span class="badge-new">新</span></div><div class="mod-s">完形按卷精讲 · 对齐阅读</div></div><div class="mod-arrow">›</div></div>
+        </div>
+
+        <!-- Detail CTA -->
+        <div class="screen" data-s="detail">
+          <text class="hd-title" style="font-size:16px">作业详情 · 完形块</text>
+          <text class="hd-sub">过滤器默认全部；原文 B 疏朗白卡（已落地）</text>
+          <div class="pass">
+            <div class="pass-head"><span>原文 · cloze1</span><span>收起 ▴</span></div>
+            <div class="pass-body">… Sima Yi is <span class="blank ok">2</span> with soldiers. Zhuge then <span class="blank bad">3</span> the wall…</div>
+          </div>
+          <div class="q"><div class="q-h"><span class="chip ok">对</span><span class="chip">填空</span><span>第 2 题</span></div><div class="q-stem">…</div></div>
+          <div class="cta">＋ 加入完形填空精讲</div>
+          <div style="font-size:11px;color:#94a3b8;text-align:center">对齐阅读：手动加入，不自动进精讲</div>
+        </div>
+
+        <!-- List：不要「完形学情」入口（图1 已否） -->
+        <div class="screen" data-s="list">
+          <text class="hd-title">作业精讲 · 完形填空</text>
+          <text class="hd-sub">上传作业里的完形，按卷复习：读语篇、抠空、看解析。</text>
+          <div class="batch">
+            <div class="fill"></div>
+            <div class="row"><div class="tit">2026-07-28作业3</div><div class="pct">6/15</div></div>
+            <div class="meta">学习中 · 15 空 · 07-28</div>
+          </div>
+          <div class="batch">
+            <div class="fill" style="width:100%;background:linear-gradient(90deg,#e9f6f1,#f4fbf8)"></div>
+            <div class="row"><div class="tit">期中卷 · 完形</div><div class="pct" style="color:#2fa98a">12/12</div></div>
+            <div class="meta">已学 · 12 空</div>
+          </div>
+        </div>
+
+        <!-- Paper：仅题卡（图2）· 点「本题详解」弹图1；图3内联讲解已去掉 -->
+        <div class="screen" data-s="paper-a">
+          <div class="rd-head">
+            <div class="rd-fill"></div>
+            <div class="rd-num">6<span>/15</span></div>
+            <div class="rd-info">学习中 · <b>完形精讲</b><br/>点「本题详解」进详情</div>
+          </div>
+          <div class="pass-tabs">
+            <button class="pass-tab on">cloze1<div class="sub">15 空 · 6 已学</div></button>
+          </div>
+          <div class="pass">
+            <div class="pass-head"><span>原文 · 常驻对照</span><span>收起 ▴</span></div>
+            <div class="pass-body">Sima Yi is <span class="blank ok">2</span> with thousands of soldiers<span class="zh">(士兵)</span>. Zhuge Liang then <span class="blank bad">3</span> the city wall…</div>
+          </div>
+
+          <div class="q">
+            <div class="q-h"><span class="chip ok">对</span><span class="chip">填空</span><span>第 2 题</span><span class="ring on"></span></div>
+            <div class="q-stem">Sima Yi is ______ with thousands of soldiers.</div>
+            <div class="q-foot">
+              <span style="color:#2fa98a;font-weight:700">你填 coming · 正确 coming</span>
+              <span class="go" data-open-detail>本题详解 ›</span>
+            </div>
+          </div>
+
+          <div class="q wrong">
+            <div class="q-h">
+              <span class="chip bad">错</span><span class="chip">单选</span><span>第 3 题</span>
+              <span class="ring"></span>
+            </div>
+            <div class="q-stem">Zhuge Liang then ______ the city wall…</div>
+            <div class="opts-list">
+              <div class="op bad">A climbed · 你选</div>
+              <div class="op">B jumped</div>
+              <div class="op ok">C walked on · 正确</div>
+              <div class="op">D sat on</div>
+            </div>
+            <div class="q-foot">
+              <span>你选 A · 正确 C</span>
+              <span class="go" data-open-detail>本题详解 ›</span>
+            </div>
+          </div>
+
+          <!-- 弹层 = 图1 本题详情（含完形双轴） -->
+          <div class="modal hidden" id="detailModal">
+            <div class="sheet-page" onclick="event.stopPropagation()">
+              <div class="sheet-bar">
+                <span>本题详情</span>
+                <span class="x" data-close-detail>关闭</span>
+              </div>
+              <div class="warm">
+                <div class="q-h" style="margin-bottom:8px">
+                  <span class="chip bad">错</span><span class="chip">单选</span><span>第 3 题</span>
+                </div>
+                <div class="q-stem" style="margin:0">Zhuge Liang then ______ the city wall…</div>
+                <div class="opts-list" style="margin-top:8px">
+                  <div class="op bad">A climbed · 你选</div>
+                  <div class="op">B jumped</div>
+                  <div class="op ok">C walked on · 正确</div>
+                  <div class="op">D sat on</div>
+                </div>
+                <div style="margin-top:8px;font-size:12px">
+                  <span style="color:#e24b4a;font-weight:700">你选 A</span>
+                  <span style="color:#2fa98a;font-weight:700;margin-left:12px">正确 C</span>
+                </div>
+              </div>
+
+              <!-- 完形双轴：折叠 · 在本题巩固上方 -->
+              <details class="sheet-fold dual-fold">
+                <summary>完形双轴解析</summary>
+                <div class="dual" style="margin-top:8px">
+                  <div class="row"><span class="k">线索类型</span>跨句逻辑关系</div>
+                  <div class="row"><span class="k">线索句</span>He opened the gates to show there was no trap…</div>
+                  <div class="row"><span class="k">为何对</span>空城语境 → 从容走动，非攀爬</div>
+                  <div class="row"><span class="k">干扰错因</span>A 张冠李戴</div>
+                  <div class="row"><span class="k">载体槽</span>动词短语</div>
+                </div>
+              </details>
+
+              <div class="drill">
+                <div><div class="drill-t">本题巩固</div><div class="drill-d">围绕「跨句逻辑」练同类单选</div></div>
+                <div class="drill-go">›</div>
+              </div>
+
+              <div class="wrn-mini">
+                <div class="t">错题关系网 · walked on</div>
+                <div class="wrn-chips">
+                  <span class="ok">walked on</span>
+                  <span class="bad">climbed</span>
+                  <span>jumped</span>
+                  <span>sat on</span>
+                </div>
+                <div class="wrn-graph">关系网示意（对齐语法精讲 WRN）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Paper B：点空定位；详解仍弹图1 -->
+        <div class="screen" data-s="paper-b">
+          <div class="rd-head">
+            <div class="rd-fill"></div>
+            <div class="rd-num">6<span>/15</span></div>
+            <div class="rd-info">点空跳题 · 详解仍弹详情页</div>
+          </div>
+          <div class="pass">
+            <div class="pass-head"><span>原文 · 点空定位</span><span>收起 ▴</span></div>
+            <div class="pass-body">… then <span class="blank bad">3</span> the city wall. He opened the gates…</div>
+          </div>
+          <div class="q wrong">
+            <div class="q-h"><span class="chip bad">错</span><span class="chip">单选</span><span>第 3 题</span><span class="ring on"></span></div>
+            <div class="q-stem">Zhuge Liang then ______ the city wall…</div>
+            <div class="q-foot">
+              <span>你选 A · 正确 C</span>
+              <span class="go" data-open-detail>本题详解 ›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="aside" id="aside"></aside>
+  </div>
+
+  <script>
+    const copy = {
+      ia: {
+        bar: '作业精讲',
+        screens: ['hub', 'detail', 'list'],
+        nav: [
+          ['hub', 'Hub 五模块'],
+          ['detail', '详情加入'],
+          ['list', '批次列表'],
+        ],
+        html: `
+          <span class="rec">已按反馈修订</span>
+          <h3>交互（本次）</h3>
+          <ul>
+            <li><b>图2</b>卷页题卡：只展示题干/选项/对错 +「本题详解」</li>
+            <li>点「本题详解」→ <b>弹出图1</b>（对齐语法「本题详情」）</li>
+            <li>图1内含：原题卡 · <b>完形双轴（折叠，在本题巩固上方）</b> · 本题巩固 · 错题关系网（无语法思路卡、无上下题）</li>
+            <li><b>图3</b>卷页内联讲解（思路卡+巩固+双轴折叠）→ <b>去掉</b></li>
+            <li>列表仍不要「完形学情」入口</li>
+          </ul>
+          <table class="tbl">
+            <tr><th>加入</th><td>详情「加入完形填空精讲」· 手动</td></tr>
+            <tr><th>Hub</th><td>第五卡「完形填空」</td></tr>
+            <tr><th>列表</th><td>仅批次列表</td></tr>
+            <tr><th>卷页</th><td>原文 + 题卡清单（图2）</td></tr>
+            <tr><th>详情</th><td>弹层/页 = 图1 + 完形双轴</td></tr>
+          </table>
+          <p style="margin:12px 0 0;font-size:13px;color:#64748b">在方案 A 手机里点「本题详解」可预览弹层。确认后回复 <b>按此开发</b>。</p>
+        `,
+      },
+      a: {
+        bar: '完形填空精讲',
+        screens: ['paper-a'],
+        nav: [['paper-a', '卷页→详解弹层']],
+        html: `
+          <span class="rec">推荐 · 已定交互</span>
+          <h3>A · 图2 清单 + 图1 弹层</h3>
+          <ul>
+            <li>卷页不堆讲解（无图3）</li>
+            <li>「本题详解」弹出：原题 · 完形双轴（折叠·在巩固上）· 本题巩固 · WRN</li>
+            <li>无「跨句逻辑」语法思路卡；无上下题</li>
+          </ul>
+        `,
+      },
+      b: {
+        bar: '完形填空精讲',
+        screens: ['paper-b'],
+        nav: [['paper-b', '点空 + 详解']],
+        html: `
+          <h3>B · 点空定位（可叠加）</h3>
+          <ul>
+            <li>点原文空号 → 滚到题卡</li>
+            <li>详解仍走图1弹层（同 A）</li>
+          </ul>
+        `,
+      },
+    }
+
+    const aside = document.getElementById('aside')
+    const bar = document.getElementById('bar')
+    const navs = document.getElementById('navs')
+    const screens = [...document.querySelectorAll('.screen')]
+    const opts = [...document.querySelectorAll('.opt')]
+    const modal = document.getElementById('detailModal')
+
+    function openDetail() {
+      if (!modal) return
+      // 确保在 paper-a 可见时弹
+      showScreen('paper-a')
+      modal.classList.remove('hidden')
+    }
+    function closeDetail() {
+      if (modal) modal.classList.add('hidden')
+    }
+    document.body.addEventListener('click', (e) => {
+      const t = e.target
+      if (!(t instanceof Element)) return
+      if (t.closest('[data-open-detail]')) { e.preventDefault(); openDetail() }
+      if (t.closest('[data-close-detail]')) { closeDetail() }
+      if (t === modal) closeDetail()
+    })
+
+    function showScreen(id) {
+      screens.forEach(s => s.classList.toggle('on', s.dataset.s === id))
+      ;[...navs.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.s === id))
+      if (id !== 'paper-a') closeDetail()
+    }
+    function show(k) {
+      const c = copy[k]
+      opts.forEach(o => o.classList.toggle('on', o.dataset.k === k))
+      bar.textContent = c.bar
+      aside.innerHTML = `<h2>方案说明</h2>` + c.html
+      navs.innerHTML = ''
+      c.nav.forEach(([id, label], i) => {
+        const b = document.createElement('button')
+        b.textContent = label
+        b.dataset.s = id
+        if (i === 0) b.classList.add('on')
+        b.onclick = () => showScreen(id)
+        navs.appendChild(b)
+      })
+      showScreen(c.screens[0])
+    }
+    opts.forEach(o => o.addEventListener('click', () => show(o.dataset.k)))
+    show('a')
+  </script>
+</body>
+</html>

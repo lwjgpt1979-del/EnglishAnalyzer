@@ -22,10 +22,10 @@
       </view>
       <text class="meta">近 {{ data.papers }} 卷</text>
 
-      <!-- 高频薄弱考纲词 -->
+      <!-- 多篇理解向重点词(与原文高亮同口径) -->
       <view v-if="data.weak_words.length" class="card">
         <view class="card-hd">
-          <text class="card-t">高频薄弱考纲词</text>
+          <text class="card-t">多篇理解重点词</text>
           <text class="card-cta" @tap="go('/pages/vocabulary/index')">去词力通补 ›</text>
         </view>
         <view class="chips">

@@ -78,19 +78,29 @@ async def update_daily_caps(db: AsyncSession, *, caps: dict, updated_by: uuid.UU
 
 async def add_targets(db: AsyncSession, *, student_id: uuid.UUID,
                       node_ids: list[uuid.UUID], source: str = "manual",
-                      source_paper_id: uuid.UUID | None = None) -> int:
+                      source_paper_id: uuid.UUID | None = None,
+                      source_question_id: uuid.UUID | None = None) -> int:
     """把一批考点加入学生的学习目标(幂等去重)。返回新增条数。供「上传试卷→一键加入计划」。
-    source_paper_id:来源卷(作业精讲按批次归组)。"""
+    source_paper_id:来源卷(作业精讲按批次归组)。
+    source_question_id:来源小题(语法精讲 D1 按原题切点;同 KP 多题可并存)。"""
+    from sqlalchemy import text
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from app.models.d26_kp_target import StudentKpTarget
     added = 0
     for nid in node_ids:
-        r = await db.execute(
-            pg_insert(StudentKpTarget)
-            .values(id=uuid.uuid4(), student_id=student_id, node_id=nid,
-                    source=source, source_paper_id=source_paper_id)
-            .on_conflict_do_nothing(index_elements=["student_id", "node_id"])
-            .returning(StudentKpTarget.id))
+        stmt = (pg_insert(StudentKpTarget)
+                .values(id=uuid.uuid4(), student_id=student_id, node_id=nid,
+                        source=source, source_paper_id=source_paper_id,
+                        source_question_id=source_question_id))
+        if source_question_id is not None:
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=["student_id", "node_id", "source_question_id"],
+                index_where=text("source_question_id IS NOT NULL"))
+        else:
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=["student_id", "node_id"],
+                index_where=text("source_question_id IS NULL"))
+        r = await db.execute(stmt.returning(StudentKpTarget.id))
         if r.first() is not None:      # RETURNING 只在真插入时有行(冲突跳过则无)
             added += 1
     await db.commit()

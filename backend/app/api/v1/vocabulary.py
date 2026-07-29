@@ -155,11 +155,15 @@ async def kp_mcq_swap(mcq_id: uuid.UUID, db: DbDep, current_user: UserDep):
 
 
 @router.post("/word-relation/{relation_id}/report", response_model=BaseResponse[dict])
-async def report_relation(relation_id: uuid.UUID, db: DbDep, current_user: UserDep):
-    """报错某条考点(考点项右侧「报错」):report_count++,供后台复核 / 低峰 AI 修正(不即时付费)。"""
+async def report_relation(relation_id: uuid.UUID, body: dict, db: DbDep, current_user: UserDep):
+    """有凭证举报考点:body={reason, detail?, suggested?}。原因必选;说明≥4字 或 建议正确项 至少一项。"""
     await get_rls_db(db, str(current_user.id))
     from app.services import word_kp_service
-    r = await word_kp_service.report_relation(db, relation_id=relation_id)
+    r = await word_kp_service.report_relation(
+        db, relation_id=relation_id, student_id=current_user.id,
+        reason=str(body.get("reason") or ""),
+        detail=str(body.get("detail") or "") or None,
+        suggested=str(body.get("suggested") or "") or None)
     return make_ok(r or {})
 
 

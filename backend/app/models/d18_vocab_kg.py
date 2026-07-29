@@ -52,6 +52,8 @@ class VocabWordKp(Base):
         UUID(as_uuid=True), sa.ForeignKey("vocabulary_words.id", ondelete="CASCADE"), primary_key=True)
     root = mapped_column(sa.String(64), nullable=True)          # 词根/词干(无则空)
     reviewed_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)  # AI 自审校时间(P5;空=未审→低峰 cron 扫)
+    # 二期 AI 预隐:已对近义/易混跑过预隐则置时(空=待扫;失败不置以便重试)
+    prehide_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
 
@@ -77,11 +79,36 @@ class VocabWordRelation(Base):
     related_zh = mapped_column(sa.Text, nullable=True)         # 中文
     note = mapped_column(sa.Text, nullable=True)              # 辨析要点/备注
     report_count = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))  # 学生报错数(P6;≥阈值→复核/AI修正)
+    # 方案1·自动上架+举报下架:hidden_at 非空 = 对学生隐藏(行保留,防 ensure 同 text 再插入)
+    hidden_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    hidden_by = mapped_column(UUID(as_uuid=True), nullable=True)   # 运营 admin user id
+    hide_note = mapped_column(sa.Text, nullable=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
 
     __table_args__ = (
         sa.Index("ix_vocab_word_relation_word", "word_id"),
         sa.UniqueConstraint("word_id", "relation", "related_text", name="uq_vocab_word_relation"),
+    )
+
+
+class VocabKpRelationReport(Base):
+    """考点有凭证举报(每生每条关系一行):原因标签 + 说明/建议正确项。加权进 report_count。"""
+
+    __tablename__ = "vocab_kp_relation_report"
+
+    id = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    relation_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("vocab_word_relation.id", ondelete="CASCADE"), nullable=False)
+    student_id = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    reason = mapped_column(sa.String(32), nullable=False)  # meaning_mismatch|out_of_syllabus|confuse_wrong|collocation_fake|other
+    detail = mapped_column(sa.Text, nullable=True)
+    suggested = mapped_column(sa.Text, nullable=True)      # 我认为正确的词/用法
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.UniqueConstraint("relation_id", "student_id", name="uq_vocab_kp_rel_report_student"),
+        sa.Index("ix_vocab_kp_rel_report_rel", "relation_id"),
     )
 
 

@@ -1,6 +1,5 @@
-"""考点(vocab_word_relation)后台复核 API:按 report_count 筛被学生报错的考点,
-按词 AI 修正(复用 P5 推理档审校)/ 人工编辑 / 删除 / 看审校记录(vocab_word_kp_review)+ 报错阈值配置。
-独立模块,避免与 admin.py / admin_kp_mcq.py 冲突。"""
+"""考点(vocab_word_relation)后台复核 API:有凭证举报列表 / 下架·恢复 / AI 修正 / 编辑删除。
+方案1:生成即对学生可见;运营核实举报后下架(hidden_at),行保留防 LLM 回写同 text。"""
 from __future__ import annotations
 
 import uuid
@@ -14,7 +13,7 @@ from app.core.database import get_db
 from app.core.security import require_role
 from app.models.d1_users import User
 from app.models.d5_learning import VocabularyWord
-from app.models.d18_vocab_kg import VocabWordKpReview, VocabWordRelation, VocabWordSense
+from app.models.d18_vocab_kg import VocabKpRelationReport, VocabWordKpReview, VocabWordRelation, VocabWordSense
 from app.schemas.base import BaseResponse, make_ok
 from app.services import word_kp_service
 
@@ -24,19 +23,64 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 AdminDep = Annotated[User, Depends(require_role("platform_admin"))]
 
 
-def _row(r: VocabWordRelation, word: str, gloss: str) -> dict:
+def _row(r: VocabWordRelation, word: str, gloss: str, *, evidence: dict | None = None) -> dict:
+    note = r.hide_note or ""
     return {"id": str(r.id), "word_id": str(r.word_id), "word": word,
             "sense_id": str(r.sense_id) if r.sense_id else None, "gloss": gloss,
             "dim": r.relation, "dim_label": r.dim_label or word_kp_service._dim_label(r.relation),
             "text": r.related_text, "zh": r.related_zh or "", "note": r.note or "",
+            "source": getattr(r, "source", "llm") or "llm",
             "report_count": r.report_count,
+            "hidden": r.hidden_at is not None,
+            "hidden_at": r.hidden_at.isoformat() if r.hidden_at else None,
+            "hide_note": note,
+            "hide_origin": "ai_prehide" if note == word_kp_service._HIDE_NOTE_AI else ("manual" if r.hidden_at else ""),
+            "evidence": evidence or {},
             "created_at": r.created_at.isoformat() if r.created_at else None}
 
 
+async def _evidence_map(db: AsyncSession, relation_ids: list) -> dict:
+    """每条关系取最新一条凭证摘要 + 举报条数。"""
+    if not relation_ids:
+        return {}
+    rows = (await db.execute(
+        sa.select(VocabKpRelationReport)
+        .where(VocabKpRelationReport.relation_id.in_(relation_ids))
+        .order_by(VocabKpRelationReport.created_at.desc()))).scalars().all()
+    out: dict = {}
+    for x in rows:
+        rid = x.relation_id
+        if rid not in out:
+            out[rid] = {"count": 0, "latest_reason": "", "latest_reason_label": "",
+                        "latest_detail": "", "latest_suggested": ""}
+        out[rid]["count"] += 1
+        if not out[rid]["latest_reason"]:
+            out[rid]["latest_reason"] = x.reason
+            out[rid]["latest_reason_label"] = word_kp_service._REPORT_REASONS.get(x.reason, x.reason)
+            out[rid]["latest_detail"] = x.detail or ""
+            out[rid]["latest_suggested"] = x.suggested or ""
+    return out
+
+
 @router.get("", response_model=BaseResponse[dict])
-async def list_reported(db: DbDep, admin: AdminDep, min_report: int = 1, skip: int = 0, limit: int = 20):
-    """复核列表(分页):默认只列被报错过(report_count≥min_report)的考点,按报错次数降序。"""
-    base = sa.select(VocabWordRelation).where(VocabWordRelation.report_count >= min_report)
+async def list_reported(db: DbDep, admin: AdminDep, min_report: int = 1, skip: int = 0, limit: int = 20,
+                        hidden: str | None = None, hide_origin: str | None = None):
+    """复核列表(分页)。hidden=only|exclude|all(默认 exclude)。
+    hide_origin=ai_prehide|manual:在已下架中按来源筛;ai_prehide 时不要求报错数(预隐可能 0 报错)。"""
+    if hide_origin == "ai_prehide":
+        base = sa.select(VocabWordRelation).where(
+            VocabWordRelation.hide_note == word_kp_service._HIDE_NOTE_AI,
+            VocabWordRelation.hidden_at.isnot(None))
+    else:
+        base = sa.select(VocabWordRelation).where(VocabWordRelation.report_count >= min_report)
+        if hidden == "only":
+            base = base.where(VocabWordRelation.hidden_at.isnot(None))
+        elif hidden != "all":
+            base = base.where(VocabWordRelation.hidden_at.is_(None))
+        if hide_origin == "manual":
+            base = base.where(VocabWordRelation.hidden_at.isnot(None),
+                              sa.or_(VocabWordRelation.hide_note.is_(None),
+                                     VocabWordRelation.hide_note != word_kp_service._HIDE_NOTE_AI))
     total = (await db.execute(sa.select(sa.func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(
         base.order_by(VocabWordRelation.report_count.desc(), VocabWordRelation.created_at.desc())
@@ -51,9 +95,40 @@ async def list_reported(db: DbDep, admin: AdminDep, min_report: int = 1, skip: i
             ss = (await db.execute(sa.select(VocabWordSense.id, VocabWordSense.gloss_zh)
                                    .where(VocabWordSense.id.in_(sids)))).all()
             gmap = {sid: g for sid, g in ss}
+    evid = await _evidence_map(db, [r.id for r in rows])
     threshold = await word_kp_service.get_kp_report_threshold(db)
-    return make_ok({"items": [_row(r, wmap.get(r.word_id, ""), gmap.get(r.sense_id, "")) for r in rows],
-                    "total": total, "threshold": threshold})
+    return make_ok({"items": [_row(r, wmap.get(r.word_id, ""), gmap.get(r.sense_id, ""),
+                                   evidence=evid.get(r.id)) for r in rows],
+                    "total": total, "threshold": threshold,
+                    "reason_options": [{"value": k, "label": v}
+                                       for k, v in word_kp_service._REPORT_REASONS.items()]})
+
+
+@router.get("/{relation_id}/reports", response_model=BaseResponse[list])
+async def relation_reports(relation_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """某条考点的全部有凭证举报明细。"""
+    return make_ok(await word_kp_service.list_relation_reports(db, relation_id=relation_id))
+
+
+@router.post("/{relation_id}/hide", response_model=BaseResponse[dict])
+async def hide_relation(relation_id: uuid.UUID, body: dict, db: DbDep, admin: AdminDep):
+    """核实后下架(对学生隐藏)。body: {note?}。"""
+    r = await word_kp_service.hide_relation(
+        db, relation_id=relation_id, admin_id=admin.id, note=str(body.get("note") or "") or None)
+    if r is None:
+        return make_ok({})
+    ws = await db.get(VocabularyWord, r.word_id)
+    return make_ok(_row(r, ws.word if ws else "", ""))
+
+
+@router.post("/{relation_id}/unhide", response_model=BaseResponse[dict])
+async def unhide_relation(relation_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """恢复上架。"""
+    r = await word_kp_service.unhide_relation(db, relation_id=relation_id)
+    if r is None:
+        return make_ok({})
+    ws = await db.get(VocabularyWord, r.word_id)
+    return make_ok(_row(r, ws.word if ws else "", ""))
 
 
 @router.post("/{word_id}/fix", response_model=BaseResponse[dict])
@@ -96,6 +171,19 @@ async def batch_delete(body: dict, db: DbDep, admin: AdminDep):
         await db.execute(sa.delete(VocabWordRelation).where(VocabWordRelation.id.in_(ids)))
         await db.commit()
     return make_ok({"deleted": len(ids)})
+
+
+@router.post("/batch-hide", response_model=BaseResponse[dict])
+async def batch_hide(body: dict, db: DbDep, admin: AdminDep):
+    """批量下架。body: {ids, note?}。"""
+    ids = [uuid.UUID(str(i)) for i in (body.get("ids") or [])]
+    note = str(body.get("note") or "") or None
+    n = 0
+    for rid in ids:
+        r = await word_kp_service.hide_relation(db, relation_id=rid, admin_id=admin.id, note=note)
+        if r:
+            n += 1
+    return make_ok({"hidden": n})
 
 
 @router.get("/{word_id}/reviews", response_model=BaseResponse[list])

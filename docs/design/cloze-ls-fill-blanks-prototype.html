@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>完形长难句 · 空号填入正确答案 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-sent: #e08a4c;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f0f6fc;
+      --phone-w: 390px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f0f6fc 45%, #f7f8fb 100%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1180px; margin: 0 auto; padding: 24px 24px 8px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 820px; }
+
+    .opts {
+      max-width: 1180px; margin: 16px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .opt {
+      border: 2px solid var(--c-line); background: #fff; border-radius: 999px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700; color: var(--c-sub); cursor: pointer;
+    }
+    .opt.on { background: #e8f2ff; border-color: #bcd8ff; color: var(--c-primary); }
+    .opt .tag { font-size: 11px; font-weight: 800; color: var(--c-ok); margin-left: 6px; }
+
+    .stage {
+      max-width: 1180px; margin: 18px auto 40px; padding: 0 24px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;
+    }
+    .col h3 { margin: 0 0 10px; font-size: 15px; font-weight: 800; }
+    .col .desc { margin: 0 0 12px; font-size: 13px; color: var(--c-sub); line-height: 1.55; }
+
+    .phone {
+      width: 100%; max-width: var(--phone-w); margin: 0 auto;
+      background: var(--c-page); border: 2px solid #d7e0ec; border-radius: 28px;
+      box-shadow: 0 16px 40px rgba(45, 80, 150, .12); overflow: hidden;
+      min-height: 640px; position: relative;
+    }
+    .status {
+      height: 44px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 18px; font-size: 12px; font-weight: 700; background: #fff;
+      border-bottom: 1px solid var(--c-line);
+    }
+    .nav {
+      height: 48px; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; background: #fff; border-bottom: 1px solid var(--c-line);
+    }
+    .body { padding: 14px 14px 88px; }
+
+    .pass {
+      background: #fff; border: 2px solid #e3e9f2; border-radius: 14px; padding: 14px;
+      box-shadow: 0 4px 16px rgba(45, 80, 150, .06);
+    }
+    .pass-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .pass-t { font-size: 12px; font-weight: 800; color: var(--c-primary); }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 10px; margin-bottom: 10px;
+      background: #f8fafc; border-radius: 8px; border: 1px dashed #d7e0ec; font-size: 11px; color: var(--c-sub);
+    }
+    .lg-w { color: var(--c-primary); font-weight: 700; border-bottom: 1.5px dashed var(--c-primary); }
+    .lg-s { color: var(--c-sent); font-weight: 700; border-bottom: 1.5px dashed var(--c-sent); }
+    .lg-b { color: #1f8a6e; background: #e9f6f1; border-radius: 4px; padding: 0 5px; font-weight: 800; font-size: 10px; }
+
+    .ptxt { font-size: 14px; line-height: 2; color: #3a4353; white-space: pre-wrap; }
+    .blank {
+      display: inline; font-size: 11px; font-weight: 800; padding: 1px 7px; margin: 0 2px;
+      border-radius: 6px; background: #eef2f7; color: #64748b; border: 1px solid #d5dde8;
+      cursor: default;
+    }
+    .blank.bad { background: #fcebeb; color: #a32d2d; border-color: #f0b6b6; }
+    .blank.ok { background: #e9f6f1; color: #1f8a6e; border-color: #b7e0d0; }
+    .seg-w { color: var(--c-primary); font-weight: 600; border-bottom: 1.5px dashed var(--c-primary); }
+    .s-mark {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; margin-right: 3px; vertical-align: text-top;
+      background: #fdf3ea; border-radius: 4px; cursor: pointer;
+    }
+    .s-mark svg { width: 10px; height: 10px; stroke: var(--c-sent); fill: none; stroke-width: 2; }
+    .sent-hit {
+      border-bottom: 1.5px dashed var(--c-sent); cursor: pointer;
+    }
+    .sent-hit.on { background: #fff4ea; }
+
+    .bar {
+      position: absolute; left: 12px; right: 12px; bottom: 12px;
+      display: flex; align-items: center; gap: 8px; background: #fff;
+      border: 2px solid var(--c-line); border-radius: 14px; padding: 12px 14px;
+      box-shadow: 0 8px 20px rgba(45, 80, 150, .12); font-size: 13px; cursor: pointer;
+    }
+    .bar b { color: var(--c-primary); }
+
+    /* 句卡 */
+    .mask {
+      position: absolute; inset: 0; background: rgba(15, 23, 42, .45);
+      display: none; align-items: center; justify-content: center; padding: 20px; z-index: 5;
+    }
+    .mask.show { display: flex; }
+    .card {
+      width: 100%; background: #fff; border-radius: 18px; padding: 18px;
+      border-top: 6px solid var(--c-primary);
+      box-shadow: 0 12px 32px rgba(0,0,0,.18);
+    }
+    .kick { font-size: 11px; font-weight: 800; color: var(--c-primary); margin-bottom: 6px; }
+    .ct { font-size: 15px; font-weight: 800; margin-bottom: 10px; }
+    .ctext { font-size: 14px; line-height: 1.75; color: var(--c-ink); }
+    .fill {
+      display: inline; font-weight: 800; color: #1f8a6e; background: #e9f6f1;
+      border-radius: 5px; padding: 0 5px; border-bottom: 2px solid #2fa98a;
+    }
+    .hole {
+      display: inline; font-weight: 800; color: #a32d2d; background: #fcebeb;
+      border-radius: 5px; padding: 0 5px;
+    }
+    .hint {
+      margin-top: 12px; font-size: 12px; line-height: 1.55; color: #3a4353;
+      background: #eef5ff; border-radius: 10px; padding: 10px 12px;
+    }
+    .go {
+      margin-top: 14px; text-align: center; font-size: 14px; font-weight: 800;
+      color: #fff; background: var(--c-primary); border-radius: 999px; padding: 12px;
+      cursor: pointer;
+    }
+    .note {
+      margin-top: 10px; font-size: 11px; color: var(--c-sub); line-height: 1.5;
+      padding: 0 2px;
+    }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .chip {
+      font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+      background: #eaf2fe; color: var(--c-primary);
+    }
+    .chip.ok { background: #e9f6f1; color: #1f8a6e; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>完形长难句 · 空号填入正确答案</h1>
+    <p>
+      卷面原文仍显示空号胶囊；点长难句进句卡 / 完整精讲时，把空
+      <b>2 / 4 / 6</b> 换成正确答案（如 coming / stay / saw），再去做结构解析。
+      点手机里的<strong>橙句标</strong>或底部「本篇精讲」可预览。
+    </p>
+  </header>
+
+  <div class="opts">
+    <button class="opt on" data-mode="a" type="button">方案 A · 打开时填空 <span class="tag">推荐</span></button>
+    <button class="opt" data-mode="now" type="button">现状 · 带着空号解析</button>
+    <button class="opt" data-mode="c" type="button">方案 C · 无答案降级</button>
+  </div>
+
+  <div class="stage">
+    <div class="col">
+      <h3 id="col-title">方案 A · 句卡里是满句</h3>
+      <p class="desc" id="col-desc">点橙句 → 空号变成绿色正确答案 → 再进完整精讲。卷面空号不变。</p>
+      <div class="phone" id="phone">
+        <div class="status"><span>22:16</span><span>▮▮▮</span></div>
+        <div class="nav">2026-07-28作业3</div>
+        <div class="body">
+          <div class="pass">
+            <div class="pass-h">
+              <span class="pass-t">原文 · cloze1</span>
+              <span style="font-size:11px;color:#93a0b3">收起 ▴</span>
+            </div>
+            <div class="legend">
+              <span><span class="lg-w">重点词</span>（点开词卡）</span>
+              <span><span class="lg-s">长难句</span>（点开句卡）</span>
+              <span><span class="lg-b">空号</span>（跳到题）</span>
+            </div>
+            <div class="ptxt" id="passage">
+While <span class="seg-w">around half</span> of his men were <span class="seg-w">busy outside</span> the <span class="seg-w">city</span>, riders arrived and reported, ‘Sima Yi is <span class="blank bad">2</span> with one hundred and fifty thousand men.’
+<span class="s-mark" data-sent="0" title="长难句"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></span><span class="sent-hit" data-sent="0">Zhuge Liang then <span class="blank">3</span> the city wall and saw dust clouds far away. Zhuge Liang ordered all the flags to be hidden and soldiers to <span class="blank bad">4</span> where they were and not to pass in or out of the city.</span>
+He also ordered a few soldiers dressed up as <span class="blank">5</span> people to clean up the road.
+<span class="s-mark" data-sent="1" title="长难句"><svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></span><span class="sent-hit" data-sent="1">When Sima Yi’s soldiers arrived in Xicheng, they <span class="blank bad">6</span> the gates open wide and Zhuge Liang calmly playing the guqin on the city wall.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bar" id="open-list">
+          <span>💡</span>
+          <span style="font-weight:800">本篇精讲</span>
+          <span style="margin-left:auto;color:#8a95a5">重点词 <b>12</b> · 长难句 <b>5</b></span>
+        </div>
+
+        <div class="mask" id="mask">
+          <div class="card">
+            <div class="kick" id="card-kick">长难句 · 点开句卡</div>
+            <div class="ct">长难句</div>
+            <div class="ctext" id="card-text"></div>
+            <div class="chip-row" id="card-chips"></div>
+            <div class="hint" id="card-hint"></div>
+            <div class="go" id="card-go">查看完整精讲</div>
+            <div class="note" id="card-note"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>对照说明</h3>
+      <p class="desc">同一句在三种模式下的句卡文案差异（右侧也可点左侧手机预览）。</p>
+      <div style="background:#fff;border:2px solid var(--c-line);border-radius:16px;padding:16px;line-height:1.7;font-size:13px;">
+        <p style="margin:0 0 8px;font-weight:800;">样句（含空 4）</p>
+        <p style="margin:0 0 12px;color:var(--c-sub);">Zhuge Liang ordered … soldiers to <b>4</b> where they were …</p>
+        <p style="margin:0 0 6px;"><b>现状</b>：… soldiers to <span class="hole">4</span> where they were … → 解析模型看到空壳</p>
+        <p style="margin:0 0 6px;"><b>方案 A</b>：… soldiers to <span class="fill">stay</span> where they were … → 用标准答填满</p>
+        <p style="margin:0;"><b>方案 C</b>：有标准答同 A；无标准答时保留 <span class="hole">(4)</span> 并提示「部分空未填」</p>
+      </div>
+      <div style="margin-top:14px;background:#eef5ff;border-radius:14px;padding:14px;font-size:13px;line-height:1.65;color:#334155;">
+        <b>交互不变</b>：卷面空号仍可点跳题；只有「句卡 / 完整精讲」用满句。<br/>
+        <b>填入来源</b>：该空 <code>correct_answer</code>（coming / stay / saw …）。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /** @type {Record<string, string>} */
+    const ANS = { '2': 'coming', '3': 'climbed', '4': 'stay', '5': 'ordinary', '6': 'saw' }
+    const SENTS_RAW = [
+      "While around half of his men were busy outside the city, riders arrived and reported, 'Sima Yi is 2 with one hundred and fifty thousand men.'",
+      "When Sima Yi's soldiers arrived in Xicheng, they 6 the gates open wide and Zhuge Liang calmly playing the guqin on the city wall.",
+    ]
+    // 原型里点的两句：用更贴近截图的第二段（含 3/4）与第三段（含 6）
+    const DEMO = [
+      {
+        raw: "Zhuge Liang then 3 the city wall and saw dust clouds far away. Zhuge Liang ordered all the flags to be hidden and soldiers to 4 where they were and not to pass in or out of the city.",
+        nos: ['3', '4'],
+      },
+      {
+        raw: "When Sima Yi's soldiers arrived in Xicheng, they 6 the gates open wide and Zhuge Liang calmly playing the guqin on the city wall.",
+        nos: ['6'],
+      },
+    ]
+
+    let mode = 'a'
+
+    /**
+     * @param {string} text
+     * @param {'a'|'now'|'c'} m
+     * @param {string[]} [missing]
+     */
+    function renderFilled(text, m, missing) {
+      return text.replace(/\b([2-9]|1[0-5])\b/g, (n) => {
+        const a = ANS[n]
+        if (m === 'now') return `<span class="hole">${n}</span>`
+        if (a) return `<span class="fill">${a}</span>`
+        if (m === 'c') {
+          missing && missing.push(n)
+          return `<span class="hole">(${n})</span>`
+        }
+        return `<span class="hole">${n}</span>`
+      })
+    }
+
+    /**
+     * @param {number} idx
+     */
+    function openCard(idx) {
+      const d = DEMO[idx]
+      if (!d) return
+      const missing = []
+      const html = renderFilled(d.raw, mode, missing)
+      const mask = document.getElementById('mask')
+      const textEl = document.getElementById('card-text')
+      const hint = document.getElementById('card-hint')
+      const note = document.getElementById('card-note')
+      const chips = document.getElementById('card-chips')
+      const kick = document.getElementById('card-kick')
+
+      textEl.innerHTML = html
+      chips.innerHTML = ''
+      d.nos.forEach((n) => {
+        const a = ANS[n]
+        const span = document.createElement('span')
+        span.className = 'chip' + (a && mode !== 'now' ? ' ok' : '')
+        span.textContent = mode === 'now' ? `空 ${n}` : (a ? `空${n} → ${a}` : `空${n} 未填`)
+        chips.appendChild(span)
+      })
+
+      if (mode === 'a') {
+        kick.textContent = '长难句 · 已填正确答案'
+        hint.textContent = '结构较复杂，点击查看逐句精讲（结构 · 语法 · 重点词）。精讲将基于上方满句，不再带着空号调 LLM。'
+        note.textContent = '卷面原文空号胶囊不变；仅句卡 / 完整精讲使用满句。'
+      } else if (mode === 'now') {
+        kick.textContent = '长难句 · 现状（带着空号）'
+        hint.textContent = '句中仍是空号 3 / 4 / 6，完整精讲会把挖空句送给解析模型，结构判断容易飘。'
+        note.textContent = '这是当前未改前的行为。'
+      } else {
+        kick.textContent = '长难句 · 方案 C（无答案降级）'
+        hint.textContent = missing.length
+          ? `部分空无标准答，已保留占位：(${missing.join(')(')})。有标准答的空已填绿。`
+          : '本句空均有标准答，表现与方案 A 相同。'
+        note.textContent = '无 correct_answer 时保留 (n)，并提示「部分空未填」。'
+      }
+
+      document.querySelectorAll('.sent-hit').forEach((el, i) => {
+        el.classList.toggle('on', i === idx)
+      })
+      mask.classList.add('show')
+    }
+
+    function closeCard() {
+      document.getElementById('mask').classList.remove('show')
+      document.querySelectorAll('.sent-hit').forEach((el) => el.classList.remove('on'))
+    }
+
+    document.querySelectorAll('.opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.opt').forEach((b) => b.classList.remove('on'))
+        btn.classList.add('on')
+        mode = btn.getAttribute('data-mode') || 'a'
+        const title = document.getElementById('col-title')
+        const desc = document.getElementById('col-desc')
+        if (mode === 'a') {
+          title.textContent = '方案 A · 句卡里是满句'
+          desc.textContent = '点橙句 → 空号变成绿色正确答案 → 再进完整精讲。卷面空号不变。'
+        } else if (mode === 'now') {
+          title.textContent = '现状 · 带着空号解析'
+          desc.textContent = '点橙句后句卡仍显示空号数字，完整精讲也吃挖空句。'
+        } else {
+          title.textContent = '方案 C · 无答案降级'
+          desc.textContent = '有标准答则填绿；没有则保留 (n) 并提示。'
+        }
+        closeCard()
+      })
+    })
+
+    document.querySelectorAll('[data-sent]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        openCard(Number(el.getAttribute('data-sent')))
+      })
+    })
+    document.getElementById('open-list').addEventListener('click', () => openCard(0))
+    document.getElementById('mask').addEventListener('click', (e) => {
+      if (e.target.id === 'mask') closeCard()
+    })
+    document.getElementById('card-go').addEventListener('click', () => {
+      alert(mode === 'now'
+        ? '将带着空号句进入 /sentence 精讲页（现状）'
+        : '将带着「已填正确答案」的满句进入 /sentence 精讲页')
+    })
+  </script>
+</body>
+</html>

@@ -46,6 +46,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "按知识点生成仿真练习题", "why": "结构化出题、规格明确,关思考走快档(开思考会截断致出题500)", "locations": ["practice_service.py:196"], "cache": "global", "store": "ai_question.content(按 knowledge_point,先查池够则不调)"},
     {"feature": "reading_qtype_classify", "mode": "chat", "surface": "小程序端", "module": "作业·阅读学情(题型按需,学情统计P1)", "service": "reading_qtype_service",
      "purpose": "把未精讲的作业阅读小题归类到固定题型(细节/主旨/推理/词义/态度/指代/图表/其他)", "why": "规格明确的单标签分类,快档即可,不占推理档;学生端学情页按需补标,非后台批量", "locations": ["reading_qtype_service.py:classify_missing"], "cache": "global", "store": "user_paper_questions.reading_skill(按题内容 md5 去重,同内容只调一次;回填优先)"},
+    {"feature": "section_type_classify", "mode": "chat", "surface": "小程序端", "module": "作业上传·大题题型识别(β预留)", "service": "paper_section_taxonomy",
+     "purpose": "无大题标题时对题面文本推断规范 section_type(P0 未接通,恒走规则 α)", "why": "规格明确的单标签分类,快档;按文本 md5 全局缓存", "locations": ["paper_section_taxonomy.py:classify_section_cached"], "cache": "global", "store": "section_type_cache(预留未建表);P0 classify_section_cached 返回 None"},
     {"feature": "kp_lecture", "mode": "reasoning", "surface": "运营后台", "module": "知识点·讲义", "service": "kp_lecture_service",
      "purpose": "生成知识点讲解小节(Markdown 讲义)", "why": "组织知识并推理表达生成教学内容", "locations": ["kp_lecture_service.py:253"], "cache": "global", "store": "grammar_lecture_cache.sections / kp_lecture.content_md"},
     {"feature": None, "mode": "reasoning", "surface": "运营后台", "module": "知识点·题目归类", "service": "kp_suggest_service",
@@ -74,6 +76,10 @@ LLM_FEATURES: list[dict] = [
      "purpose": "阅读练同类:按本篇短文出理解新题(细节/推断/主旨…,非语法题)", "why": "结构化生成选择题,规格明确,关思考走快档", "locations": ["reading_intensive_service.py:practice_similar"], "cache": "global", "store": "reading_practice_cache(按短文+数量 md5)"},
     {"feature": "cloze_analysis", "mode": "reasoning", "surface": "运营后台", "module": "真题·题目解析", "service": "question_analysis_service",
      "purpose": "完形填空解析(线索 clue/slot)", "why": "结合上下文推断选词线索", "locations": ["question_analysis_service.py:530"], "cache": "global", "store": "platform_question.meta.analysis_draft / meta.analysis"},
+    {"feature": "cloze_analysis", "mode": "chat", "surface": "小程序端", "module": "作业精讲·完形填空精讲", "service": "cloze_intensive_service",
+     "purpose": "上传作业完形空·双轴解析(线索类型/线索句/为何对/干扰错因/载体槽)", "why": "结构化抽取,关思考走快档", "locations": ["cloze_intensive_service.py:question_analysis"], "cache": "global", "store": "cloze_analysis_cache(按题 md5)"},
+    {"feature": "cloze_practice", "mode": "chat", "surface": "小程序端", "module": "作业精讲·完形填空精讲", "service": "cloze_intensive_service",
+     "purpose": "完形本题巩固:按线索类型出同类单选", "why": "结构化生成选择题,规格明确,关思考走快档", "locations": ["cloze_intensive_service.py:practice_similar"], "cache": "global", "store": "cloze_practice_cache(按语篇+线索类型+数量 md5)"},
     {"feature": "writing_analysis", "mode": "reasoning", "surface": "运营后台", "module": "真题·题目解析", "service": "question_analysis_service",
      "purpose": "写作题解析(含 model_essay 范文)", "why": "范文生成 + 解析,重推理", "locations": ["question_analysis_service.py:645"], "cache": "global", "store": "platform_question.meta.analysis_draft / meta.analysis"},
     {"feature": "grammar_mc_analysis", "mode": "reasoning", "surface": "运营后台", "module": "真题·题目解析", "service": "question_analysis_service",
@@ -134,6 +140,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "被学生「换一题」报错达阈值的考点题,AI 审校修正答案/解析/干扰项(保证答案唯一无歧义);低峰 cron 批量(自动)或后台手动触发", "why": "审校要多步判断答案唯一性/干扰项是否也成立→推理档;低峰调用省钱", "locations": ["word_kp_service.py:_gen_fix_mcq"], "cache": "none", "store": "更新 vocab_kp_mcq + 记 vocab_kp_mcq_revision(before/after);report_count 归 0"},
     {"feature": "vocab_kp_review", "mode": "reasoning", "surface": "运营后台", "module": "词力通·考点AI审校(自审+报错修正)", "service": "word_kp_service",
      "purpose": "P5 低峰巡检未审校词的『用法/考法类文本维』考点(及物性/语态/句型/可数性/所有格/-ed-ing/介词辨析/用法/语义侧重/考法)+ P6 修正被学生报错达阈值的考点:删明显错项、改表述不准", "why": "逐条判断考点正确性/义项归属→多步推理→推理档;可链维已 morph/wordnet/词库背书、搭配已语料印证不重审;低峰调用省钱", "locations": ["word_kp_service.py:_review_kp_rows"], "cache": "none", "store": "改/删 vocab_word_relation + 置 vocab_word_kp.reviewed_at(P5)/report_count 归 0(P6)+ 记 vocab_word_kp_review(before/after)"},
+    {"feature": "vocab_kp_prehide", "mode": "reasoning", "surface": "运营后台", "module": "词力通·考点AI预隐(二期)", "service": "word_kp_service",
+     "purpose": "低峰扫中考高频词的近义/易混:明显错误的纯 LLM(无词库命中)行预隐(hidden_at+ai_prehide),供运营抽检恢复;wordnet/词库命中仅作上下文不可隐", "why": "判断近义/易混是否明显错误需多步推理→推理档;低峰调用;范围收窄控成本", "locations": ["word_kp_service.py:_gen_prehide_ids"], "cache": "none", "store": "vocab_word_relation.hidden_at/hide_note=ai_prehide + vocab_word_kp.prehide_at + vocab_word_kp_review"},
     {"feature": "wrong_option_split", "mode": "chat", "surface": "小程序端", "module": "错题关系网·选项拆块", "service": "wrong_relation_service",
      "purpose": "把一道错题的各选项拆成独立语义块(词/词组),去编号去重,供建关系网", "why": "结构化抽取、规格明确、fast 档", "locations": ["wrong_relation_service.py:_extract_blocks"], "cache": "per-user", "store": "块归一进 vocabulary_words(source=wrong);关系落 student_wrong_relation(按 student+wrong_record,查看即生成)"},
     {"feature": "wrong_sense_match", "mode": "chat", "surface": "小程序端", "module": "错题关系网·义项匹配", "service": "wrong_word_net_service",
@@ -156,6 +164,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "生成单词探针题(干扰项/误区/搭配)+ 迁移例句", "why": "固定字段 + validate 校验", "locations": ["vocab_probe_service.py:85", "vocab_probe_service.py:375"], "cache": "global", "store": "vocabulary_words.probes_json(词级 10 题池,随机出 5,全学生共享)"},
     {"feature": "vocab_produce", "mode": "chat", "surface": "小程序端", "module": "词力通", "service": "vocab_probe_service",
      "purpose": "单词造句作答按维度打分", "why": "打分维度固定(_PROD_DIMS)", "locations": ["vocab_probe_service.py:298"], "cache": "none", "store": "无(仅掌握度落 mastery_prod)"},
+    {"feature": "paper_q_explain", "mode": "chat", "surface": "小程序端", "module": "作业精讲·语法", "service": "grammar_intensive_service",
+     "purpose": "语法原题单段解析(正确/错误同等,查看即生成)", "why": "规格明确的短解析抽取,关思考走快档", "locations": ["grammar_intensive_service.py:ensure_question_explanation"], "cache": "global", "store": "paper_q_explain_cache + user_paper_questions.explanation(按题面 md5)"},
 ]
 
 

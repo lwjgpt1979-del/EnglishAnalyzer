@@ -172,9 +172,12 @@ async function tapMastered() {
 </script>
 
 <style scoped>
-.detail-page { padding: 24rpx; background: var(--c-bg-page); min-height: 100vh; }
+.detail-page { padding: 24rpx; background: #f0f6fc; min-height: 100vh; }
 .center-tip { text-align: center; padding: 100rpx; color: var(--c-text-hint); }
-.stem-card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: 28rpx; margin-bottom: 20rpx; box-shadow: var(--shadow-sm); }
+.stem-card {
+  background: #f7f3e6; border: 2rpx solid #e0d6b8; border-radius: var(--r-lg);
+  padding: 28rpx; margin-bottom: 20rpx;
+}
 .stem-label { display: inline-flex; align-items: center; gap: 6rpx; font-size: 22rpx; color: var(--c-primary-deep); background: var(--c-primary-faint); padding: 4rpx 14rpx; border-radius: var(--r-pill); }
 .stem-text { display: block; margin-top: 16rpx; font-size: 32rpx; color: var(--c-ink); font-weight: 600; line-height: 1.6; }
 .card { background: var(--c-bg-card); border-radius: var(--r-lg); padding: var(--sp-4); margin-bottom: 20rpx; box-shadow: 0 4rpx 24rpx rgba(0, 0, 0, 0.04); }

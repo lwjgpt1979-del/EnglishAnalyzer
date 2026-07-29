@@ -50,7 +50,7 @@
       </block>
     </template>
 
-    <!-- ===== 按模块:2×2 宫格(进度环 + 份数 + 待学徽章)===== -->
+    <!-- ===== 按模块:2 列宫格(进度环 + 份数 + 待学徽章)===== -->
     <template v-else>
       <view class="grid">
         <view v-for="m in moduleAgg" :key="m.key" class="gc" @tap="goModule(m.key)">
@@ -71,10 +71,11 @@ import { onShow } from '@dcloudio/uni-app'
 import { getHomeworkProgress, type HomeworkPaper } from '@/api/userPapers'
 import { useAuthStore } from '@/stores/auth'
 
-type ModKey = 'word' | 'grammar' | 'sentence' | 'reading'
+type ModKey = 'word' | 'grammar' | 'sentence' | 'reading' | 'cloze'
 const MODS: { key: ModKey; label: string }[] = [
   { key: 'word', label: '词' }, { key: 'grammar', label: '语法' },
   { key: 'sentence', label: '句' }, { key: 'reading', label: '阅读' },
+  { key: 'cloze', label: '完形' },
 ]
 // 模块元信息(标题/单位/待学动词/色/跳转页)
 const MOD_META: Record<ModKey, { title: string; unit: string; verb: string; color: string; page: string }> = {
@@ -82,6 +83,7 @@ const MOD_META: Record<ModKey, { title: string; unit: string; verb: string; colo
   grammar: { title: '语法精讲', unit: '点', verb: '待学', color: '#7a5cd0', page: 'grammar' },
   sentence: { title: '长难句', unit: '句', verb: '待拆', color: '#3d8bf5', page: 'sentence' },
   reading: { title: '阅读理解', unit: '篇', verb: '待读', color: '#2fa98a', page: 'reading' },
+  cloze: { title: '完形填空', unit: '空', verb: '待学', color: '#0e8a9a', page: 'cloze' },
 }
 const TABS = [
   { key: 'all', label: '全部' }, { key: 'todo', label: '未学习' },
@@ -211,9 +213,10 @@ function goModule(k: ModKey) { uni.navigateTo({ url: `/pages/intensive/${MOD_MET
 .pc-chip.kc-grammar { color: #7a5cd0; background: #f4f0fb; }
 .pc-chip.kc-sentence { color: #3d8bf5; background: #eef4fd; }
 .pc-chip.kc-reading { color: #2fa98a; background: #eef8f4; }
+.pc-chip.kc-cloze { color: #0e8a9a; background: #e6f6f7; }
 .pc-act { font-size: 24rpx; color: var(--c-primary, #3d8bf5); flex-shrink: 0; }
 .pc-act.done { color: #2fa98a; }
-/* 按模块 2×2 宫格 */
+/* 按模块 2 列宫格 */
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18rpx; }
 .gc { background: #fff; border-radius: 20rpx; padding: 30rpx 20rpx; box-shadow: 0 4rpx 24rpx rgba(0,0,0,.04); display: flex; flex-direction: column; align-items: center; gap: 10rpx; }
 .gring { width: 108rpx; height: 108rpx; background-size: contain; background-repeat: no-repeat; background-position: center; display: flex; align-items: center; justify-content: center; }

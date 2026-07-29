@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>语法题 × 错题关系网 · 三套方案原型</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5; --c-ok: #2fa98a; --c-bad: #e35d5d;
+      --c-ink: #1f2937; --c-sub: #64748b; --c-line: #e6ebf2; --c-page: #f4f6fa;
+      --phone-w: 360px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8, #f4f6fa 40%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1280px; margin: 0 auto; padding: 22px 22px 6px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 960px; }
+    .tabs {
+      max-width: 1280px; margin: 14px auto 0; padding: 0 22px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .tab {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .tab.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .tab .rec { font-size: 10px; margin-left: 4px; opacity: .95; }
+    .stage { max-width: 1280px; margin: 0 auto; padding: 16px 22px 64px; }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    .meta {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; color: var(--c-sub);
+    }
+    .meta b { color: var(--c-ink); }
+    .meta .pros { color: var(--c-ok); font-weight: 700; }
+    .meta .cons { color: #c45c2a; font-weight: 700; }
+    .meta code { font-size: 12px; background: #f2f5f9; padding: 1px 6px; border-radius: 6px; }
+    .phones { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+    .cap { font-size: 12px; font-weight: 700; color: var(--c-sub); margin: 0 0 8px 4px; }
+    .phone {
+      width: var(--phone-w); height: 720px; background: var(--c-page);
+      border-radius: 28px; border: 1px solid #d8dee8; box-shadow: 0 16px 40px rgba(30,50,90,.12);
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+    .nav {
+      background: #fff; padding: 12px 14px; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .nav .back { width: 20px; height: 20px; border-radius: 50%; background: #eef3f9; }
+    .nav .title { flex: 1; text-align: center; font-weight: 800; font-size: 15px; margin-right: 20px; }
+    .scroll { flex: 1; overflow-y: auto; padding: 10px 12px 16px; }
+    .dots { display: flex; gap: 5px; margin-bottom: 8px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #d0d7e2; }
+    .dot.on { background: var(--c-primary); width: 16px; border-radius: 4px; }
+    .stepper { display: flex; gap: 4px; margin-bottom: 8px; }
+    .step {
+      flex: 1; text-align: center; font-size: 11px; font-weight: 700; color: var(--c-sub);
+      padding: 7px 0; border-radius: 8px; background: #eef2f7; cursor: pointer;
+    }
+    .step.on { background: #e8f2ff; color: var(--c-primary); }
+    .sticky {
+      background: #f8fbff; border: 1px dashed #c9daf0; border-radius: 10px;
+      padding: 7px 9px; margin-bottom: 8px; font-size: 11px; color: var(--c-sub); line-height: 1.4;
+    }
+    .sticky b { color: var(--c-ink); }
+    .card {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 12px;
+      padding: 10px 12px; margin-bottom: 8px;
+    }
+    .card.bad { border-color: #f3c7c7; }
+    .badge {
+      display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 7px;
+    }
+    .badge.kp { background: #eef5ff; color: var(--c-primary); }
+    .badge.bad { background: #fde8e8; color: var(--c-bad); }
+    .badge.ok { background: #e7f6f0; color: var(--c-ok); }
+    .stem { font-size: 13px; font-weight: 650; line-height: 1.5; margin: 6px 0; }
+    .acc {
+      border: 1px solid var(--c-line); border-radius: 10px; margin-bottom: 6px; overflow: hidden; background: #fff;
+    }
+    .acc-h {
+      padding: 9px 10px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px;
+      cursor: pointer; background: #fafbfd;
+    }
+    .acc-b { padding: 8px 10px 10px; font-size: 12px; color: var(--c-sub); line-height: 1.55; display: none; }
+    .acc.open .acc-b { display: block; }
+    .acc.open .acc-h { background: #eef5ff; color: #185fa5; }
+    .foot {
+      display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--c-line);
+      background: #fff; flex-shrink: 0;
+    }
+    .btn {
+      flex: 1; text-align: center; font-size: 12px; font-weight: 700; padding: 10px 0;
+      border-radius: 10px; border: 1.5px solid #d8e4f5; background: #f2f7fd; color: var(--c-primary); cursor: pointer;
+    }
+    .btn.pri { background: linear-gradient(135deg,#4c97f7,#3d7bf0); color: #fff; border: none; }
+    .btn.ghost { background: #fff; color: var(--c-sub); }
+
+    /* wrong net */
+    .wrn { background: #fff; border: 1px solid var(--c-line); border-radius: 12px; padding: 10px; margin-top: 8px; }
+    .wrn-h { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+    .wrn-sub { font-size: 10px; color: var(--c-sub); margin: 2px 0 8px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+    .chip {
+      font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 8px; background: #f2f4f8; color: #64748b;
+    }
+    .chip.ok { background: #e7f6f0; color: var(--c-ok); }
+    .chip.bad { background: #fde8e8; color: var(--c-bad); }
+    .chip.on { outline: 2px solid var(--c-primary); }
+    .mind {
+      position: relative; height: 200px; background: #f7f9fc; border-radius: 10px; margin-bottom: 8px;
+    }
+    .center {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+      background: #e9f6f1; border: 2px solid #8cc2a6; border-radius: 12px; padding: 6px 10px; text-align: center;
+      z-index: 2;
+    }
+    .center .w { display: block; font-size: 13px; font-weight: 800; color: #1f7a5e; }
+    .center .z { display: block; font-size: 10px; color: #5f9c86; }
+    .leaf {
+      position: absolute; transform: translate(-50%,-50%); background: #eaf2ff; border: 1.5px solid #bcd8ff;
+      border-radius: 8px; padding: 4px 8px; font-size: 11px; font-weight: 700; color: #185fa5; max-width: 88px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 2; cursor: pointer;
+    }
+    .leaf.gram { background: #f3eefc; border-color: #d4c4f5; color: #6b4bb5; }
+    .elbl {
+      position: absolute; transform: translate(-50%,-50%); font-size: 9px; font-weight: 700;
+      background: rgba(255,255,255,.9); padding: 0 3px; border-radius: 3px; z-index: 1;
+    }
+    .spoke {
+      position: absolute; left: 50%; top: 50%; width: 2px; background: #d5deea; transform-origin: top center; z-index: 0;
+    }
+    .tabs2 { display: flex; gap: 4px; overflow-x: auto; margin-bottom: 6px; }
+    .t2 {
+      flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 5px 9px; border-radius: 999px;
+      background: #f2f5f9; color: #5f6b7a; cursor: pointer;
+    }
+    .t2.on { background: #e8f2ff; color: var(--c-primary); }
+    .err {
+      border-top: 1px solid #f2f4f8; padding: 8px 2px; font-size: 12px; line-height: 1.4;
+    }
+    .err .m { font-size: 10px; color: var(--c-sub); margin-top: 2px; }
+    .note { font-size: 11px; color: var(--c-sub); line-height: 1.5; margin-top: 6px; }
+    .gap {
+      margin-top: 12px; background: #fff; border: 1px solid var(--c-line); border-radius: 12px;
+      padding: 12px 14px; font-size: 12px; color: var(--c-sub); line-height: 1.65;
+    }
+    .gap b { color: var(--c-ink); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>语法题 × 错题关系网 · 三套方案原型</h1>
+    <p>
+      目标：前端所有「语法相关题」消费点，都能走到关系网（类错题详情里的网），而不是只有错题详情页。
+      现状：<code>WrongRelationNet</code> 仅挂在 <code>wrong-questions/detail</code>，且建网依赖选择题选项；语法精讲 D1 / 填空变形题尚未接入。
+      点 Tab 切换方案；手机内可点步骤与节点。
+    </p>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-p="a">方案 A · 复用词网<span class="rec">推荐</span></button>
+    <button class="tab" data-p="b">方案 B · 语法点网</button>
+    <button class="tab" data-p="c">方案 C · 双轨自适应</button>
+  </div>
+
+  <div class="stage">
+    <!-- ========== A ========== -->
+    <section class="panel on" id="p-a">
+      <div class="meta">
+        <b>做法：</b>所有语法题面统一挂现有 <code>WrongRelationNet</code>（以<strong>答案词/目标词</strong>为中心）。
+        入口：① 语法精讲 D1「讲解」步（有 <code>source_question</code> / 错题时）；② 错题详情（已有）；③ 试卷详情答错后进讲解。
+        <b>填空无选项：</b>用答案词 +「别踩坑」易混词合成伪选项块再建网（或直接拉该词 <code>word_kp</code> 近义/易混作卫星）。
+        <br /><span class="pros">优点</span> 复用组件与后端；和现有错题网一致。
+        <span class="cons">代价</span> 纯语法结构题（时态规则、无关键词）网会弱/空，需降级文案。
+      </div>
+      <div class="phones">
+        <div>
+          <div class="cap">语法精讲 · 讲解步嵌入词网（填空：worried）</div>
+          <div class="phone" data-phone="a1">
+            <div class="nav"><div class="back"></div><div class="title">2026-07-15作业 3</div></div>
+            <div class="scroll">
+              <div class="dots"><div class="dot on"></div><div class="dot"></div><div class="dot"></div></div>
+              <div class="stepper">
+                <div class="step" data-s="0">1 原题</div>
+                <div class="step on" data-s="1">2 讲解</div>
+                <div class="step" data-s="2">3 练习</div>
+              </div>
+              <div class="sticky"><b>原题 · 第 4 题</b>　Dan's parents are really _______ (发愁的)…</div>
+              <div class="panel-step" data-step="0" style="display:none">
+                <div class="card bad">
+                  <span class="badge bad">错</span>
+                  <div class="stem">Dan's parents are really <b>______</b> (发愁的) because…</div>
+                  <div class="note">你的答案：worrying　正确：worried</div>
+                </div>
+              </div>
+              <div class="panel-step" data-step="1">
+                <div class="card">
+                  <span class="badge kp">形容词 · 发愁的</span>
+                  <div class="acc open"><div class="acc-h">💡 一句话搞懂</div><div class="acc-b">worried = 感到发愁的（人作主语）；常跟 <b>about</b>。</div></div>
+                  <div class="acc"><div class="acc-h">📖 看例句</div><div class="acc-b">I'm worried about the exam.</div></div>
+                  <div class="acc"><div class="acc-h">⚠️ 别踩坑</div><div class="acc-b">worrying = 令人发愁的（事作主语）；不要写成 worry / worries。</div></div>
+                </div>
+                <div class="wrn">
+                  <div class="wrn-h">🔗 错题关系网 · worried</div>
+                  <div class="wrn-sub">填空无 ABCD → 答案词 + 易混词作节点</div>
+                  <div class="chips">
+                    <span class="chip ok on">worried</span>
+                    <span class="chip bad">worrying</span>
+                    <span class="chip">worry</span>
+                    <span class="chip">anxious</span>
+                  </div>
+                  <div class="mind" id="mind-a">
+                    <div class="center"><span class="w">worried</span><span class="z">发愁的</span></div>
+                    <div class="leaf" style="left:22%;top:22%">worrying</div>
+                    <div class="leaf" style="left:78%;top:24%">anxious</div>
+                    <div class="leaf" style="left:18%;top:72%">worry</div>
+                    <div class="leaf" style="left:80%;top:70%">about</div>
+                    <div class="elbl" style="left:36%;top:36%;color:#b0651a">易混</div>
+                    <div class="elbl" style="left:64%;top:38%;color:#3b8f5f">近义</div>
+                    <div class="elbl" style="left:34%;top:62%;color:#b0651a">易混</div>
+                    <div class="elbl" style="left:66%;top:60%;color:#3170c0">搭配</div>
+                  </div>
+                  <div class="tabs2">
+                    <span class="t2 on">主·考 worried (2)</span>
+                    <span class="t2">次·干扰 (1)</span>
+                    <span class="t2">易混</span>
+                  </div>
+                  <div class="err">I'm ______ about my grades…<div class="m"><span style="color:var(--c-bad)">你选 worrying</span> · 正确 worried</div></div>
+                </div>
+              </div>
+              <div class="panel-step" data-step="2" style="display:none">
+                <div class="card"><div class="stem">练习：She looks ______ (worry) about the test.</div><div class="note">点选项 → PracticeQuiz 即时判分</div></div>
+              </div>
+            </div>
+            <div class="foot">
+              <div class="btn ghost">‹ 原题</div>
+              <div class="btn pri">去练习 ›</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="cap">选择题语法错题（已有能力，对齐错题详情）</div>
+          <div class="phone">
+            <div class="nav"><div class="back"></div><div class="title">错题详情</div></div>
+            <div class="scroll">
+              <div class="card">
+                <div class="stem">… A. nobody B. nothing C. everything D. everybody</div>
+                <div class="note"><span class="badge ok">正确 C</span> 解析：语境需要「一切」…</div>
+              </div>
+              <div class="wrn">
+                <div class="wrn-h">🔗 错题关系网 · everything</div>
+                <div class="chips">
+                  <span class="chip ok on">everything</span>
+                  <span class="chip bad">nobody</span>
+                  <span class="chip">nothing</span>
+                  <span class="chip">everybody</span>
+                </div>
+                <div class="mind">
+                  <div class="center"><span class="w">everything</span><span class="z">每件事</span></div>
+                  <div class="leaf" style="left:20%;top:28%">all</div>
+                  <div class="leaf" style="left:80%;top:26%">nothing</div>
+                  <div class="leaf" style="left:22%;top:74%">everyone</div>
+                  <div class="leaf" style="left:78%;top:72%">every day</div>
+                  <div class="elbl" style="left:35%;top:40%;color:#3b8f5f">近义</div>
+                  <div class="elbl" style="left:65%;top:38%;color:#c45c2a">反义</div>
+                  <div class="elbl" style="left:36%;top:62%;color:#b0651a">易混</div>
+                  <div class="elbl" style="left:64%;top:62%;color:#b0651a">易混</div>
+                </div>
+                <div class="note">与现网一致：选项块 → 词中心 → 主/次错题 + 考点维。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="gap">
+        <b>覆盖面：</b>grammar-paper 讲解 · wrong detail · 作业详情「练同类」结果后回看。
+        <b>后端：</b>填空路径新增「答案+易混合成块」或复用 <code>word_kp_out</code> 卫星，避免无 options 时空网。
+      </div>
+    </section>
+
+    <!-- ========== B ========== -->
+    <section class="panel" id="p-b">
+      <div class="meta">
+        <b>做法：</b>新建 <code>GrammarRelationNet</code>：中心是<strong>语法点</strong>（如「-ed/-ing 形容词」），叶子是相关语法点 / 代表词 / 易错变形；
+        下列表是「挂该语法点的错题」，不是词主/次。
+        <br /><span class="pros">优点</span> 贴合语法精讲心智；结构题不依赖选项词。
+        <span class="cons">代价</span> 新组件 + 语法点边表/查询；与词汇错题网两套 UI，学生要学两套。
+      </div>
+      <div class="phones">
+        <div>
+          <div class="cap">讲解步 · 语法点关系网</div>
+          <div class="phone" data-phone="b1">
+            <div class="nav"><div class="back"></div><div class="title">2026-07-15作业 3</div></div>
+            <div class="scroll">
+              <div class="stepper">
+                <div class="step">1 原题</div>
+                <div class="step on">2 讲解</div>
+                <div class="step">3 练习</div>
+              </div>
+              <div class="sticky"><b>考点</b>　-ed / -ing 形容词辨析</div>
+              <div class="card">
+                <span class="badge kp">形容词 (发愁的)</span>
+                <div class="acc open"><div class="acc-h">💡 一句话搞懂</div><div class="acc-b">人作主语用 -ed；事作主语用 -ing。</div></div>
+              </div>
+              <div class="wrn">
+                <div class="wrn-h">🧠 语法关系网 · -ed/-ing</div>
+                <div class="wrn-sub">中心=语法点，不是单词</div>
+                <div class="mind">
+                  <div class="center"><span class="w">-ed/-ing</span><span class="z">形近辨析</span></div>
+                  <div class="leaf gram" style="left:20%;top:24%">被动意义</div>
+                  <div class="leaf gram" style="left:80%;top:26%">现在分词</div>
+                  <div class="leaf" style="left:18%;top:72%">worried</div>
+                  <div class="leaf" style="left:82%;top:70%">interesting</div>
+                  <div class="elbl" style="left:35%;top:38%;color:#6b4bb5">相关点</div>
+                  <div class="elbl" style="left:65%;top:38%;color:#6b4bb5">相关点</div>
+                  <div class="elbl" style="left:34%;top:60%;color:#185fa5">例词</div>
+                  <div class="elbl" style="left:66%;top:60%;color:#185fa5">例词</div>
+                </div>
+                <div class="tabs2">
+                  <span class="t2 on">本点错题 (3)</span>
+                  <span class="t2">邻近点 (2)</span>
+                  <span class="t2">例词</span>
+                </div>
+                <div class="err">Dan's parents are really ______ …<div class="m">语法点：-ed/-ing · 未掌握</div></div>
+              </div>
+            </div>
+            <div class="foot"><div class="btn ghost">‹ 原题</div><div class="btn pri">去练习 ›</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="gap">
+        <b>数据：</b>需语法点邻接（教材树 / KP 边）或 LLM 生成邻点并缓存；例词可来自讲解卡。
+        <b>风险：</b>与词汇错题网产品叙事分裂。
+      </div>
+    </section>
+
+    <!-- ========== C ========== -->
+    <section class="panel" id="p-c">
+      <div class="meta">
+        <b>做法（折中）：</b>同一挂载位，按题型<strong>自适应</strong>：
+        有选项/可抽目标词 → <b>词网</b>（A）；纯结构、无可靠目标词 → <b>语法点网</b>（B 精简版）。
+        讲解卡底部统一模块标题「关系网」，内部切换。
+        <br /><span class="pros">优点</span> 覆盖最全；填空用词网、从句规则用语法网。
+        <span class="cons">代价</span> 分支多；要定义「何时算有目标词」的闸门。
+      </div>
+      <div class="phones">
+        <div>
+          <div class="cap">自适应：本例有目标词 → 走词网</div>
+          <div class="phone">
+            <div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll">
+              <div class="stepper"><div class="step">1 原题</div><div class="step on">2 讲解</div><div class="step">3 练习</div></div>
+              <div class="card"><span class="badge ok">闸门：目标词 = worried</span><div class="note">→ 渲染 WrongRelationNet</div></div>
+              <div class="wrn">
+                <div class="wrn-h">🔗 关系网 · worried <span class="badge kp">词网</span></div>
+                <div class="mind">
+                  <div class="center"><span class="w">worried</span><span class="z">发愁的</span></div>
+                  <div class="leaf" style="left:78%;top:28%">worrying</div>
+                  <div class="leaf" style="left:22%;top:70%">anxious</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="cap">自适应：无从属词 → 走语法点网</div>
+          <div class="phone">
+            <div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll">
+              <div class="stepper"><div class="step">1 原题</div><div class="step on">2 讲解</div><div class="step">3 练习</div></div>
+              <div class="card"><span class="badge bad">闸门：无目标词</span><div class="note">定语从句 that 省略 · 结构考点</div></div>
+              <div class="wrn">
+                <div class="wrn-h">🧠 关系网 · 定语从句 <span class="badge kp">语法网</span></div>
+                <div class="mind">
+                  <div class="center"><span class="w">定语从句</span><span class="z">that/which</span></div>
+                  <div class="leaf gram" style="left:78%;top:28%">宾语省略</div>
+                  <div class="leaf gram" style="left:22%;top:70%">关系代词</div>
+                </div>
+                <div class="err">The book ______ I bought…<div class="m">本点错题 · 你漏写 that</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="gap">
+        <b>闸门建议：</b>答案可归一到 <code>vocabulary_words</code> 或讲解卡有「目标词」→ 词网；否则 → 语法点网（中心用 <code>student_kp_target</code> / 节点名）。
+      </div>
+    </section>
+  </div>
+
+  <script>
+    document.getElementById('tabs').addEventListener('click', (e) => {
+      const t = e.target.closest('.tab');
+      if (!t) return;
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+      t.classList.add('on');
+      document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+      document.getElementById('p-' + t.dataset.p).classList.add('on');
+    });
+    document.querySelectorAll('[data-phone]').forEach(phone => {
+      phone.querySelectorAll('.step').forEach(s => {
+        s.addEventListener('click', () => {
+          const i = s.dataset.s;
+          if (i == null) return;
+          phone.querySelectorAll('.step').forEach(x => x.classList.toggle('on', x === s));
+          phone.querySelectorAll('.panel-step').forEach(p => {
+            p.style.display = p.dataset.step === i ? '' : 'none';
+          });
+        });
+      });
+      phone.querySelectorAll('.acc-h').forEach(h => {
+        h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+      });
+    });
+  </script>
+</body>
+</html>

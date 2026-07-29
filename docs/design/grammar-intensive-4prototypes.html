@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>语法精讲 · 四套原型交互对比</title>
+  <style>
+    :root {
+      --c-primary: #3d8bf5;
+      --c-ok: #2fa98a;
+      --c-bad: #e35d5d;
+      --c-ink: #1f2937;
+      --c-sub: #64748b;
+      --c-line: #e6ebf2;
+      --c-page: #f4f6fa;
+      --c-warm: #ff8a3d;
+      --phone-w: 360px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, #f4f6fa 40%, #f7f8fb 100%);
+      color: var(--c-ink);
+      min-height: 100vh;
+    }
+    header.top { max-width: 1280px; margin: 0 auto; padding: 22px 22px 6px; }
+    header.top h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; color: var(--c-sub); font-size: 14px; line-height: 1.65; max-width: 920px; }
+    .tabs {
+      max-width: 1280px; margin: 14px auto 0; padding: 0 22px;
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .tab {
+      border: 1px solid var(--c-line); background: #fff; color: var(--c-sub);
+      border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .tab.on { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+    .tab .rec { font-size: 10px; margin-left: 4px; opacity: .9; font-weight: 600; }
+    .stage { max-width: 1280px; margin: 0 auto; padding: 16px 22px 56px; }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    .meta {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 14px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.65; color: var(--c-sub);
+    }
+    .meta b { color: var(--c-ink); }
+    .meta .pros { color: var(--c-ok); }
+    .meta .cons { color: #c45c2a; }
+    .phones { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+    .phone-wrap { width: var(--phone-w); }
+    .phone-cap { font-size: 12px; font-weight: 700; color: var(--c-sub); margin: 0 0 8px 4px; }
+    .phone {
+      width: var(--phone-w); height: 720px; background: var(--c-page);
+      border-radius: 28px; border: 1px solid #d8dee8; box-shadow: 0 16px 40px rgba(30, 50, 90, .12);
+      overflow: hidden; display: flex; flex-direction: column; position: relative;
+    }
+    .nav {
+      background: #fff; padding: 14px 14px 10px; border-bottom: 1px solid var(--c-line);
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .nav .back { width: 22px; height: 22px; border-radius: 50%; background: #eef3f9; }
+    .nav .title { font-size: 16px; font-weight: 800; flex: 1; text-align: center; margin-right: 22px; }
+    .scroll { flex: 1; overflow-y: auto; padding: 12px; }
+    .hint {
+      position: absolute; left: 10px; right: 10px; bottom: 10px;
+      background: rgba(31,41,55,.88); color: #fff; font-size: 11px; line-height: 1.45;
+      padding: 8px 10px; border-radius: 10px; pointer-events: none; opacity: 0; transition: .2s;
+    }
+    .phone.show-hint .hint { opacity: 1; }
+    /* shared cards */
+    .head-card {
+      position: relative; overflow: hidden; background: #fff; border-radius: 14px;
+      border: 1px solid var(--c-line); padding: 12px 14px; margin-bottom: 12px;
+    }
+    .head-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 50%;
+      background: linear-gradient(90deg, #e8f2ff, #f4f9ff);
+    }
+    .head-card .inner { position: relative; }
+    .head-card .st { font-size: 13px; font-weight: 800; color: var(--c-primary); }
+    .head-card .sub { font-size: 12px; color: var(--c-sub); margin-top: 2px; }
+    .q-card, .pt-card, .batch {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 14px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .q-card.bad { border-color: #f3c7c7; }
+    .row { display: flex; align-items: center; gap: 6px; }
+    .badge {
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
+    }
+    .badge.bad { background: #fde8e8; color: var(--c-bad); }
+    .badge.ok { background: #e7f6f0; color: var(--c-ok); }
+    .badge.kp { background: #eef5ff; color: var(--c-primary); }
+    .stem { font-size: 14px; font-weight: 650; line-height: 1.55; margin: 8px 0; }
+    .ans { background: #f5f8fc; border-radius: 10px; padding: 8px 10px; font-size: 12px; line-height: 1.5; }
+    .ans .x { color: var(--c-bad); }
+    .ans .o { color: var(--c-ok); }
+    .exp { margin-top: 8px; font-size: 12px; color: var(--c-sub); line-height: 1.5; }
+    .exp .k {
+      display: inline-block; font-size: 11px; font-weight: 800; color: var(--c-primary);
+      background: #eef5ff; border-radius: 6px; padding: 1px 6px; margin-right: 4px;
+    }
+    .acts { display: flex; gap: 6px; margin-top: 10px; }
+    .btn {
+      flex: 1; text-align: center; font-size: 12px; font-weight: 700; color: var(--c-primary);
+      border: 1.5px solid #d8e4f5; background: #f2f7fd; border-radius: 10px; padding: 9px 0; cursor: pointer;
+    }
+    .btn.pri { color: #fff; background: linear-gradient(135deg, #4c97f7, #3d7bf0); border-color: transparent; }
+    .btn.ghost { background: #fff; color: var(--c-sub); }
+    .pt-name { font-size: 14px; font-weight: 800; }
+    .pt-sub { font-size: 11px; color: var(--c-sub); margin-top: 4px; }
+    .drawer {
+      margin-top: 8px; padding: 10px; background: #f8fafc; border-radius: 10px;
+      border: 1px dashed #d5deea; display: none;
+    }
+    .drawer.on { display: block; }
+    .tick {
+      width: 18px; height: 18px; border-radius: 50%; border: 2px solid #c5d0de; flex-shrink: 0;
+    }
+    .tick.on { background: var(--c-ok); border-color: var(--c-ok); }
+    .toast {
+      position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%);
+      background: rgba(0,0,0,.78); color: #fff; font-size: 13px; padding: 10px 16px;
+      border-radius: 10px; display: none; z-index: 5; white-space: nowrap;
+    }
+    .toast.on { display: block; }
+    .sheet {
+      position: absolute; left: 0; right: 0; bottom: 0; background: #fff;
+      border-radius: 18px 18px 0 0; box-shadow: 0 -8px 28px rgba(0,0,0,.12);
+      padding: 14px 14px 20px; display: none; z-index: 4; max-height: 62%;
+      overflow-y: auto;
+    }
+    .sheet.on { display: block; }
+    .sheet h3 { margin: 0 0 8px; font-size: 15px; }
+    .mask {
+      position: absolute; inset: 0; background: rgba(15,23,42,.35); display: none; z-index: 3;
+    }
+    .mask.on { display: block; }
+    .stepper { display: flex; gap: 4px; margin-bottom: 12px; }
+    .step {
+      flex: 1; text-align: center; font-size: 11px; font-weight: 700; color: var(--c-sub);
+      padding: 7px 0; border-radius: 8px; background: #eef2f7;
+    }
+    .step.on { background: #e8f2ff; color: var(--c-primary); }
+    .step.done { background: #e7f6f0; color: var(--c-ok); }
+    .batch .t { font-size: 14px; font-weight: 800; }
+    .batch .s { font-size: 12px; color: var(--c-sub); margin-top: 3px; }
+    .flow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .flow span {
+      font-size: 11px; background: #eef5ff; color: var(--c-primary); border-radius: 999px; padding: 4px 10px; font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>语法精讲 · 四套原型交互对比</h1>
+    <p>场景：作业详情点「加入语法学习」后，进入语法精讲。核心痛点是<strong>原题不出现</strong>。下面四套都可点击试交互；推荐方案标「推荐」。</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab on" data-tab="a">方案 A · 原题卡驱动<span class="rec">推荐</span></button>
+    <button class="tab" data-tab="b">方案 B · 点清单 + 原题抽屉</button>
+    <button class="tab" data-tab="c">方案 C · 回跳作业详情</button>
+    <button class="tab" data-tab="d">方案 D · 三步学习流</button>
+  </div>
+
+  <div class="stage">
+    <!-- ========== A ========== -->
+    <section class="panel on" id="panel-a">
+      <div class="meta">
+        <b>方案 A · 原题卡驱动（推荐）</b><br>
+        卷内以「加入过的作业原题」为卡片主单位；卡上带考点标签 + 学讲解 / 练同类。<br>
+        <span class="pros">优点：原题在场；心智=作业复盘；对齐阅读精讲。</span>
+        <span class="cons">代价：要挂 source_question_id，UI 重做。</span>
+        <div class="flow"><span>批次列表</span><span>→</span><span>原题卡列表</span><span>→</span><span>讲义抽屉</span><span>→</span><span>练同类</span></div>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">① 批次列表（副文案改「题」）</div>
+          <div class="phone" id="a1">
+            <div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll">
+              <div class="batch" style="background:linear-gradient(90deg,#e9f6f1,#f4fbf8)">
+                <div class="t">2026-07-19作业1</div>
+                <div class="s">已学 · 1/1 题 · 2 个语法点</div>
+              </div>
+              <div class="batch" style="background:linear-gradient(90deg,#e8f2ff,#f4f9ff);cursor:pointer" onclick="showA2()">
+                <div class="t">2026-07-15作业1 <span class="badge" style="background:#fff3e8;color:var(--c-warm)">超1周</span></div>
+                <div class="s">学习中 · 1/2 题 · 点击进入 ›</div>
+              </div>
+              <div class="batch">
+                <div class="t">2026-07-15作业2</div>
+                <div class="s">未学 · 1 题</div>
+              </div>
+            </div>
+            <div class="hint">点「2026-07-15作业1」进入原题卡列表</div>
+          </div>
+        </div>
+        <div class="phone-wrap">
+          <div class="phone-cap">② 卷内 · 原题卡（核心）</div>
+          <div class="phone" id="a2">
+            <div class="nav"><div class="back" onclick="showA1()" style="cursor:pointer"></div><div class="title">语法精讲</div></div>
+            <div class="scroll">
+              <div class="head-card">
+                <div class="head-fill"></div>
+                <div class="inner">
+                  <div class="st">学习中 50%</div>
+                  <div class="sub">2026-07-15作业1 · 已学 1/2 题</div>
+                </div>
+              </div>
+              <div class="q-card bad">
+                <div class="row">
+                  <div class="tick on"></div>
+                  <span style="font-weight:800;font-size:13px">第 1 题</span>
+                  <span class="badge bad">错</span>
+                  <span style="flex:1"></span>
+                  <span style="font-size:11px;color:var(--c-ok)">已学</span>
+                </div>
+                <div class="stem">She feels like ____ (make) handicrafts and would like ____ (give) them to her friends.</div>
+                <div class="ans"><span class="x">你的：making, give</span><br><span class="o">正确：making; to give</span></div>
+                <div class="exp"><span class="k">解析</span>feel like doing；would like to do。</div>
+                <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:4px">
+                  <span class="badge kp">feel like doing</span>
+                  <span class="badge kp">would like to do</span>
+                </div>
+              </div>
+              <div class="q-card bad" id="a-card2">
+                <div class="row">
+                  <div class="tick" id="a-tick2"></div>
+                  <span style="font-weight:800;font-size:13px">第 3 题</span>
+                  <span class="badge bad">错</span>
+                  <span style="flex:1"></span>
+                  <span style="font-size:11px;color:var(--c-sub)" id="a-st2">待学</span>
+                </div>
+                <div class="stem">It's kind ____ you ____ (invite) me to your party.</div>
+                <div class="ans"><span class="x">你的：for, invite</span><br><span class="o">正确：of; to invite</span></div>
+                <div class="exp"><span class="k">解析</span>It's kind of sb to do sth。</div>
+                <div class="row" style="margin-top:8px"><span class="badge kp">kind of sb to do</span></div>
+                <div class="acts">
+                  <div class="btn" onclick="openALecture()">学讲解</div>
+                  <div class="btn pri" onclick="openAQuiz()">练同类</div>
+                </div>
+              </div>
+            </div>
+            <div class="mask" id="a-mask" onclick="closeASheet()"></div>
+            <div class="sheet" id="a-sheet">
+              <h3>kind of sb to do</h3>
+              <div class="exp" style="margin:0 0 10px">结合本卷第 3 题讲解：It's kind of you to invite…</div>
+              <div style="font-size:13px;line-height:1.6;color:var(--c-sub)">
+                <b style="color:var(--c-ink)">规则</b><br>
+                It's + adj + of sb + to do sth，形容人的品质。<br><br>
+                <b style="color:var(--c-ink)">对照原题</b><br>
+                invite → to invite（不定式作真正主语）。
+              </div>
+              <div class="acts" style="margin-top:14px">
+                <div class="btn ghost" onclick="closeASheet()">收起</div>
+                <div class="btn pri" onclick="openAQuiz()">去练同类</div>
+              </div>
+            </div>
+            <div class="toast" id="a-toast">练同类 · 仿真 5 题（示意）</div>
+            <div class="hint">点「学讲解」出讲义抽屉；点「练同类」标记已学</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== B ========== -->
+    <section class="panel" id="panel-b">
+      <div class="meta">
+        <b>方案 B · 语法点清单 + 原题抽屉</b><br>
+        主列表仍是语法点（保留掌握度条）；每个点下可展开「来自第 N 题」原题。<br>
+        <span class="pros">优点：掌握度仍在点上；改动相对 A 小。</span>
+        <span class="cons">缺点：原题默认折叠，第一眼仍可能觉得「没原题」。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">卷内 · 按点（点开展开原题）</div>
+          <div class="phone" id="b1">
+            <div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll">
+              <div class="head-card">
+                <div class="head-fill" style="width:33%"></div>
+                <div class="inner"><div class="st">学习中 33%</div><div class="sub">已学 1/3 点</div></div>
+              </div>
+              <div class="pt-card">
+                <div class="row">
+                  <div class="tick on"></div>
+                  <div style="flex:1">
+                    <div class="pt-name">feel like doing</div>
+                    <div class="pt-sub">掌握 ▓▓▓░ · 来自第 1 题</div>
+                  </div>
+                </div>
+              </div>
+              <div class="pt-card" style="cursor:pointer" onclick="toggleB()">
+                <div class="row">
+                  <div class="tick" id="b-tick"></div>
+                  <div style="flex:1">
+                    <div class="pt-name">kind of sb to do</div>
+                    <div class="pt-sub">掌握 ░░░░ · 来自第 3 题 · 点击展开原题 ▾</div>
+                  </div>
+                </div>
+                <div class="drawer" id="b-drawer">
+                  <div class="stem" style="margin-top:0">It's kind ____ you ____ (invite) me to your party.</div>
+                  <div class="ans"><span class="x">你的：for, invite</span><br><span class="o">正确：of; to invite</span></div>
+                  <div class="exp"><span class="k">解析</span>It's kind of sb to do sth。</div>
+                  <div class="acts">
+                    <div class="btn" onclick="toastB('进入讲义')">看讲义</div>
+                    <div class="btn pri" onclick="toastB('练同类 5 题')">练同类</div>
+                  </div>
+                </div>
+              </div>
+              <div class="pt-card">
+                <div class="row">
+                  <div class="tick"></div>
+                  <div style="flex:1">
+                    <div class="pt-name">would like to do</div>
+                    <div class="pt-sub">未学 · 来自第 1 题</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="toast" id="b-toast"></div>
+            <div class="hint">点「kind of sb to do」展开原题抽屉</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== C ========== -->
+    <section class="panel" id="panel-c">
+      <div class="meta">
+        <b>方案 C · 精讲仍按点，原题回跳作业详情</b><br>
+        语法精讲保持点清单；每点提供「回看原题」跳到作业详情锚点。<br>
+        <span class="pros">优点：开发最快，复用详情页。</span>
+        <span class="cons">缺点：场景来回跳；精讲页本身仍空洞——不推荐主方案。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">① 语法精讲（仅点）</div>
+          <div class="phone" id="c1">
+            <div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll">
+              <div class="pt-card">
+                <div class="pt-name">kind of sb to do</div>
+                <div class="pt-sub">掌握 ░░░░</div>
+                <div class="acts">
+                  <div class="btn" onclick="toastC('讲义页')">学讲解</div>
+                  <div class="btn pri" onclick="showC2()">回看原题 ›</div>
+                </div>
+              </div>
+            </div>
+            <div class="toast" id="c-toast"></div>
+            <div class="hint">点「回看原题」跳到作业详情</div>
+          </div>
+        </div>
+        <div class="phone-wrap">
+          <div class="phone-cap">② 跳回 · 作业详情定位</div>
+          <div class="phone" id="c2">
+            <div class="nav"><div class="back" onclick="showC1()" style="cursor:pointer"></div><div class="title">作业详情</div></div>
+            <div class="scroll">
+              <div style="font-size:12px;color:var(--c-sub);margin-bottom:8px">已定位到第 3 题 · 来自语法精讲</div>
+              <div class="q-card bad" style="outline:2px solid var(--c-primary)">
+                <div class="row"><span style="font-weight:800">第 3 题</span><span class="badge bad">错</span></div>
+                <div class="stem">It's kind ____ you ____ (invite) me…</div>
+                <div class="ans"><span class="o">正确：of; to invite</span></div>
+                <div class="acts"><div class="btn ghost" onclick="showC1()">返回语法精讲</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== D ========== -->
+    <section class="panel" id="panel-d">
+      <div class="meta">
+        <b>方案 D · 三步学习流（原题 → 讲解 → 练习）</b><br>
+        进入一卷后，强制按步骤推进：先看原题，再学该题语法点，最后练同类；顶部步骤条可见。<br>
+        <span class="pros">优点：学习路径最清晰，适合中小学生。</span>
+        <span class="cons">缺点：自由度低；多题时要「下一题」循环。</span>
+      </div>
+      <div class="phones">
+        <div class="phone-wrap">
+          <div class="phone-cap">可点步骤条切换（演示）</div>
+          <div class="phone" id="d1">
+            <div class="nav"><div class="back"></div><div class="title">语法精讲</div></div>
+            <div class="scroll">
+              <div class="stepper">
+                <div class="step" id="d-s1" onclick="setD(1)">1 原题</div>
+                <div class="step" id="d-s2" onclick="setD(2)">2 讲解</div>
+                <div class="step" id="d-s3" onclick="setD(3)">3 练习</div>
+              </div>
+              <div id="d-body"></div>
+            </div>
+            <div class="hint">点击顶部「1 原题 / 2 讲解 / 3 练习」切换步骤</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const tabs = document.querySelectorAll('.tab')
+    const panels = document.querySelectorAll('.panel')
+    tabs.forEach(t => t.addEventListener('click', () => {
+      tabs.forEach(x => x.classList.remove('on'))
+      panels.forEach(x => x.classList.remove('on'))
+      t.classList.add('on')
+      document.getElementById('panel-' + t.dataset.tab).classList.add('on')
+      if (t.dataset.tab === 'd') setD(1)
+      flashHint()
+    }))
+
+    function flashHint() {
+      document.querySelectorAll('.phone').forEach(p => {
+        p.classList.add('show-hint')
+        setTimeout(() => p.classList.remove('show-hint'), 2200)
+      })
+    }
+    flashHint()
+
+    /* A */
+    function showA2() {
+      document.getElementById('a1').style.outline = 'none'
+      document.getElementById('a2').scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      document.getElementById('a2').classList.add('show-hint')
+    }
+    function showA1() {
+      document.getElementById('a1').scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+    function openALecture() {
+      document.getElementById('a-mask').classList.add('on')
+      document.getElementById('a-sheet').classList.add('on')
+    }
+    function closeASheet() {
+      document.getElementById('a-mask').classList.remove('on')
+      document.getElementById('a-sheet').classList.remove('on')
+    }
+    function openAQuiz() {
+      closeASheet()
+      const t = document.getElementById('a-toast')
+      t.classList.add('on')
+      document.getElementById('a-tick2').classList.add('on')
+      document.getElementById('a-st2').textContent = '已学'
+      document.getElementById('a-st2').style.color = 'var(--c-ok)'
+      setTimeout(() => t.classList.remove('on'), 1400)
+    }
+
+    /* B */
+    function toggleB() {
+      document.getElementById('b-drawer').classList.toggle('on')
+    }
+    function toastB(msg) {
+      const t = document.getElementById('b-toast')
+      t.textContent = msg
+      t.classList.add('on')
+      document.getElementById('b-tick').classList.add('on')
+      setTimeout(() => t.classList.remove('on'), 1200)
+    }
+
+    /* C */
+    function showC2() {
+      document.getElementById('c2').scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+    function showC1() {
+      document.getElementById('c1').scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+    function toastC(msg) {
+      const t = document.getElementById('c-toast')
+      t.textContent = msg
+      t.classList.add('on')
+      setTimeout(() => t.classList.remove('on'), 1000)
+    }
+
+    /* D */
+    function setD(n) {
+      ;[1,2,3].forEach(i => {
+        const el = document.getElementById('d-s' + i)
+        el.classList.remove('on', 'done')
+        if (i < n) el.classList.add('done')
+        if (i === n) el.classList.add('on')
+      })
+      const body = document.getElementById('d-body')
+      if (n === 1) {
+        body.innerHTML = `
+          <div class="q-card bad">
+            <div class="row"><span style="font-weight:800">第 3 题</span><span class="badge bad">错</span>
+              <span style="flex:1"></span><span style="font-size:11px;color:var(--c-sub)">2/2 题</span></div>
+            <div class="stem">It's kind ____ you ____ (invite) me to your party.</div>
+            <div class="ans"><span class="x">你的：for, invite</span><br><span class="o">正确：of; to invite</span></div>
+            <div class="exp"><span class="k">解析</span>It's kind of sb to do sth。</div>
+            <div class="acts"><div class="btn pri" onclick="setD(2)">下一步：学讲解 ›</div></div>
+          </div>`
+      } else if (n === 2) {
+        body.innerHTML = `
+          <div class="q-card">
+            <div class="badge kp">kind of sb to do</div>
+            <div class="stem" style="font-weight:700">规则</div>
+            <div style="font-size:13px;line-height:1.6;color:var(--c-sub)">
+              It's + 形容人品质的形容词 + of sb + to do sth。<br>
+              对照原题：invite → <b style="color:var(--c-ink)">to invite</b>。
+            </div>
+            <div class="acts">
+              <div class="btn ghost" onclick="setD(1)">‹ 回原题</div>
+              <div class="btn pri" onclick="setD(3)">下一步：练同类 ›</div>
+            </div>
+          </div>`
+      } else {
+        body.innerHTML = `
+          <div class="q-card">
+            <div style="font-weight:800;margin-bottom:8px">练同类 · 第 1/5 题</div>
+            <div class="stem">It's friendly ____ him ____ help the old man.</div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin:10px 0">
+              <div class="btn" style="text-align:left;padding-left:12px" onclick="this.style.background='#eefaf4'">A. of; to</div>
+              <div class="btn" style="text-align:left;padding-left:12px">B. for; to</div>
+              <div class="btn" style="text-align:left;padding-left:12px">C. of; /</div>
+              <div class="btn" style="text-align:left;padding-left:12px">D. for; /</div>
+            </div>
+            <div class="acts">
+              <div class="btn ghost" onclick="setD(2)">‹ 回讲解</div>
+              <div class="btn pri" onclick="alert('示意：完成本题组后进入下一道原题')">完成本题组</div>
+            </div>
+          </div>`
+      }
+    }
+    setD(1)
+  </script>
+</body>
+</html>

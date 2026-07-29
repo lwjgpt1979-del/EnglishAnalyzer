@@ -40,7 +40,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getWrongWords } from '@/api/vocabulary'
-import { resolveSpeakUrl } from '@/utils/tts'
+import { playWordMedia } from '@/utils/wordPlay'
 import { useAuthStore } from '@/stores/auth'
 import type { VocabWrongItem } from '@/types/api'
 
@@ -72,13 +72,11 @@ function levelLabel(lv: string): string {
   return lv === 'mastered' ? '已掌握' : lv === 'review' ? '待复习' : lv === 'learning' ? '在学' : '新学'
 }
 
-let _ctx: UniApp.InnerAudioContext | null = null
 async function playWord(it: VocabWrongItem) {
-  const url = it.word_audio_url || await resolveSpeakUrl(it.word)
-  if (!url) return
-  if (!_ctx) _ctx = uni.createInnerAudioContext()
-  _ctx.src = url
-  _ctx.play()
+  await playWordMedia(
+    { word: it.word, wordAudio: it.word_audio_url },
+    { mode: 'word' },
+  )
 }
 function goCoach() { uni.navigateTo({ url: '/pages/speaking/index' }) }
 
