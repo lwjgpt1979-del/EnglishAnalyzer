@@ -341,21 +341,6 @@ async def detach_node(db: AsyncSession, question_id: uuid.UUID, node_id: uuid.UU
     )
 
 
-async def attach_node_to_section(
-    db: AsyncSession, *, paper_id: uuid.UUID, section: str, node_id: uuid.UUID
-) -> int:
-    """把某试卷某大题下所有真题挂同一个知识点(幂等);返回该段题数。"""
-    qids = list((await db.execute(
-        sa.select(PlatformQuestion.id).where(
-            PlatformQuestion.paper_id == paper_id,
-            PlatformQuestion.type == "real",
-            PlatformQuestion.section == section)
-    )).scalars().all())
-    for qid in qids:
-        await attach_node(db, qid, node_id)
-    return len(qids)
-
-
 async def kps_of_questions(
     db: AsyncSession, question_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, list[tuple[uuid.UUID, str, str | None]]]:

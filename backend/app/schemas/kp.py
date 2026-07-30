@@ -331,11 +331,6 @@ class KpBulkAttachIn(BaseModel):
     pairs: list[KpBulkPair] = Field(..., min_length=1)
 
 
-class SectionKpIn(BaseModel):
-    section: str
-    node_id: uuid.UUID
-
-
 class KpProposal(BaseModel):
     """AI 发现考点缺口:目录里没有合适考点 → 建议新建一个并归到某分类(人工确认后创建)。"""
     name: str                              # 建议的新考点名

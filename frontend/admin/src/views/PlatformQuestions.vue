@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled, Warning, Document, Notebook } from '@element-plus/icons-vue'
+import { UploadFilled, Notebook } from '@element-plus/icons-vue'
 import AppDialog from '../components/AppDialog.vue'
+import PaperSectionWorkbench, { type WorkbenchKind } from '../components/PaperSectionWorkbench.vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
-  attachQuestionKp, detachQuestionKp, attachSectionKp, attachKpBulk, suggestPaperKp, getNodeTree, getKpPrompts,
+  attachQuestionKp, detachQuestionKp, attachKpBulk, suggestPaperKp, getNodeTree,
   createKnowledgeNode, genSimFromReal, suggestQuestionAnalysis, confirmQuestionAnalysis,
   confirmQuestionAnalysisBatch, getWritingRubric, updateWritingRubric,
   type QuestionAnalysis, type AnalysisSuggestItem, type WritingRubric,
-  type QuestionKpRef, type KpPrompt, type KpProposal,
+  type QuestionKpRef, type KpProposal,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions, batchUploadPapers, parsePaper, convertPaperDoc,
   listRegions, uploadImageViaPresign,
   type PlatformPaper, type PaperQuestion, type BatchUploadResult,
@@ -103,10 +104,36 @@ const paperSections = computed(() => {
 
 // 未挂知识点的题数(母题靠 KP 派生仿真,提醒别漏)
 const unmappedCount = computed(() => paperQuestions.value.filter(q => !(q.kps && q.kps.length)).length)
+const kpConfirmedCount = computed(() => paperQuestions.value.filter(q => q.kps?.length).length)
+
+// ── 方案 A:分题型 Tab 工作台 ──
+const activeSectionIdx = ref(0)
+watch(paperSections, () => { activeSectionIdx.value = 0 })
+const activeSection = computed(() => paperSections.value[activeSectionIdx.value] || null)
+
+/** 大题 → 工作台类型(对齐原型 A 的分 Tab) */
+function workbenchKind(secName: string, sampleType?: string | null): WorkbenchKind {
+  if (/完形|完型/.test(secName)) return 'cloze'
+  if (/阅读/.test(secName) || sampleType === '阅读') return 'reading'
+  if (/书面|写作/.test(secName) || sampleType === '写作') return 'writing'
+  if (/词汇|词语|动词|单词|适当形式|词形|单词检测|词汇检测/.test(secName)) return 'vocab'
+  if (/短文|缺词/.test(secName)) return 'passage_fill'
+  if (sampleType === '单选' && !/阅读|听力/.test(secName)) return 'grammar'
+  return 'generic'
+}
+function sectionKind(sec: { name: string; groups: { rows: PaperQuestion[] }[] }): WorkbenchKind {
+  const qt = sec.groups[0]?.rows[0]?.question_type
+  return workbenchKind(sec.name, qt)
+}
+function secPendingCount(sec: { groups: { rows: PaperQuestion[] }[] }): number {
+  return sec.groups.flatMap(g => g.rows).filter(q =>
+    !(q.kps?.length) && !(kpSuggest.value[q.id]?.length) && !(kpProposals.value[q.id]?.length)).length
+}
 
 async function openPaper(p: PlatformPaper) {
   paperDlg.value = true; paperLoading.value = true; curPaper.value = p
   paperQuestions.value = []; checkedIds.value = []; kpSuggest.value = {}; kpProposals.value = {}
+  activeSectionIdx.value = 0
   try {
     const d = await getPlatformPaper(p.id)
     curPaper.value = d.paper
@@ -147,7 +174,6 @@ const kpTree = ref<NodeTreeItem[]>([])
 const kpFilter = ref('')
 const kpTreeRef = ref()
 const kpTarget = ref<PaperQuestion | null>(null)       // 单题挂载目标
-const kpTargetSection = ref<string | null>(null)       // 按大题挂载目标(整段)
 const kpTreeProps = { label: 'name', children: 'children' }
 
 async function loadKpTree() {
@@ -156,12 +182,7 @@ async function loadKpTree() {
   catch (e: any) { ElMessage.error(e?.message || '加载知识点树失败') }
 }
 async function openKpPicker(q: PaperQuestion) {
-  kpTarget.value = q; kpTargetSection.value = null
-  kpFilter.value = ''; kpPickerDlg.value = true
-  await loadKpTree()
-}
-async function openSectionKpPicker(section: string) {
-  kpTarget.value = null; kpTargetSection.value = section
+  kpTarget.value = q
   kpFilter.value = ''; kpPickerDlg.value = true
   await loadKpTree()
 }
@@ -170,16 +191,10 @@ function filterKpNode(val: string, data: NodeTreeItem) {
 }
 async function onPickKp(node: NodeTreeItem) {
   try {
-    if (kpTargetSection.value && curPaper.value) {           // 按大题整段挂
-      const r = await attachSectionKp(curPaper.value.id, kpTargetSection.value, node.id)
-      const d = await getPlatformPaper(curPaper.value.id)    // 刷新整卷 KP
-      paperQuestions.value = d.questions
-      ElMessage.success(`「${kpTargetSection.value}」${r.attached} 题已挂「${node.name}」`)
-    } else if (kpTarget.value) {                             // 单题挂
-      if (kpTarget.value.kps?.some(k => k.node_id === node.id)) { ElMessage.info('已挂该知识点'); return }
-      kpTarget.value.kps = await attachQuestionKp(kpTarget.value.id, node.id)
-      ElMessage.success(`已挂「${node.name}」`)
-    }
+    if (!kpTarget.value) return
+    if (kpTarget.value.kps?.some(k => k.node_id === node.id)) { ElMessage.info('已挂该知识点'); return }
+    kpTarget.value.kps = await attachQuestionKp(kpTarget.value.id, node.id)
+    ElMessage.success(`已挂「${node.name}」`)
     kpPickerDlg.value = false
   } catch (e: any) { ElMessage.error(e?.message || '挂载失败') }
 }
@@ -192,7 +207,7 @@ async function onRemoveKp(q: PaperQuestion, nodeId: string) {
 const suggesting = ref(false)
 const kpSuggest = ref<Record<string, QuestionKpRef[]>>({})
 const kpProposals = ref<Record<string, KpProposal[]>>({})   // 缺口:AI 建议新建的考点(待人工确认)
-// 把 suggest 返回合并进 kpSuggest/kpProposals(过滤已挂);merge=true 仅并入(整段),false 整体替换(整卷)
+// 把 suggest 返回合并进 kpSuggest/kpProposals(过滤已挂);整卷匹配用整体替换
 function mergeSuggestions(items: { question_id: string; suggestions: QuestionKpRef[]; proposals?: KpProposal[] }[], merge: boolean) {
   const map: Record<string, QuestionKpRef[]> = merge ? { ...kpSuggest.value } : {}
   const pmap: Record<string, KpProposal[]> = merge ? { ...kpProposals.value } : {}
@@ -212,7 +227,7 @@ async function onSuggestKp() {
   if (!curPaper.value) return
   suggesting.value = true
   try {
-    // 整卷:跳过已挂考点的题,只补未挂的(避免重复匹配);单题型「一键挂」不传此项,可重跑
+    // 整卷:跳过已挂考点的题,只补未挂的(避免重复匹配)
     const r = await suggestPaperKp(curPaper.value.id, { skip_attached: true })
     const n = mergeSuggestions(r.items, false)
     ElMessage.success(n ? `整卷匹配:AI 为 ${n} 道未挂考点的题给出建议,点 ✓ 采纳` : '未挂考点的题都已建议(或无新建议)')
@@ -520,38 +535,7 @@ async function saveRubric() {
   finally { rubricSaving.value = false }
 }
 
-// ── 一键挂某大题:选该题型提示词 → AI 对该段每题建议 ──
-const secSuggestDlg = ref(false)
-const secSuggestName = ref('')
-const secSuggestType = ref('')
-const secPrompts = ref<KpPrompt[]>([])
-const secPromptId = ref('')
-const secSuggesting = ref(false)
-let allPrompts: KpPrompt[] = []
-async function openSectionSuggest(section: string) {
-  if (!curPaper.value) return
-  const q = paperQuestions.value.find(x => x.section === section)
-  secSuggestName.value = section
-  secSuggestType.value = section.includes('听力') ? '听力' : (q?.question_type || '单选')
-  if (!allPrompts.length) {
-    try { allPrompts = (await getKpPrompts()).prompts } catch { allPrompts = [] }
-  }
-  secPrompts.value = allPrompts.filter(p => p.question_type === secSuggestType.value)
-  secPromptId.value = (secPrompts.value.find(p => p.is_default) || secPrompts.value[0])?.id || ''
-  secSuggestDlg.value = true
-}
-async function runSectionSuggest() {
-  if (!curPaper.value) return
-  secSuggesting.value = true
-  try {
-    const r = await suggestPaperKp(curPaper.value.id, {
-      sections: [secSuggestName.value], prompt_id: secPromptId.value || undefined })
-    const n = mergeSuggestions(r.items, true)
-    ElMessage.success(n ? `「${secSuggestName.value}」AI 为 ${n} 题给出建议,点 ✓ 采纳` : '该大题 AI 未给出新建议')
-    secSuggestDlg.value = false
-  } catch (e: any) { ElMessage.error(e?.message || 'AI 建议失败') }
-  finally { secSuggesting.value = false }
-}
+// ── AI 建议考点:整卷匹配后逐题 ✓ 或「采纳全部」──
 async function acceptSuggest(q: PaperQuestion, s: QuestionKpRef) {
   try {
     q.kps = await attachQuestionKp(q.id, s.node_id)
@@ -638,15 +622,6 @@ async function onGenSimChecked() {
 // 题型级勾选:勾整个题型 = 把该 section 全部题加入 checkedIds(可多选题型后统一派生仿真)
 function sectionQuestionIds(sec: { groups: { rows: { id: string }[] }[] }): string[] {
   return sec.groups.flatMap(g => g.rows).map(q => q.id)
-}
-function secAllChecked(sec: any): boolean {
-  const ids = sectionQuestionIds(sec)
-  return ids.length > 0 && ids.every(id => checkedIds.value.includes(id))
-}
-function secSomeChecked(sec: any): boolean {
-  const ids = sectionQuestionIds(sec)
-  const n = ids.filter(id => checkedIds.value.includes(id)).length
-  return n > 0 && n < ids.length
 }
 function onToggleSec(sec: any, checked: boolean) {
   const ids = sectionQuestionIds(sec)
@@ -1074,13 +1049,15 @@ onMounted(load)
     </div>
 
     <!-- 试卷详情:整卷题(按大题分节、阅读题组折叠)+ 整卷发布 + 勾选派生仿真 -->
-    <AppDialog v-model="paperDlg" :title="curPaper ? curPaper.name : '试卷详情'" width="960px" :close-on-click-modal="false">
+    <AppDialog v-model="paperDlg" :title="curPaper ? curPaper.name : '试卷详情'" width="1100px" :close-on-click-modal="false">
       <div v-loading="paperLoading">
-        <div style="display:flex;align-items:center;margin-bottom:10px;gap:12px">
+        <!-- 整卷统计条 -->
+        <div class="paper-stats-bar">
           <el-tag :type="curPaper?.status === 'published' ? 'success' : 'info'" size="small">{{ curPaper?.status === 'published' ? '已发布' : '草稿' }}</el-tag>
-          <span style="color:#606266">共 {{ curPaper?.question_count }} 题,已发布 {{ curPaper?.published_count }}</span>
+          <span>共 <b>{{ curPaper?.question_count }}</b> 题</span>
+          <span>已挂 KP <b style="color:#67c23a">{{ kpConfirmedCount }}</b></span>
+          <span v-if="unmappedCount">待挂 KP <b style="color:#e6a23c">{{ unmappedCount }}</b></span>
           <span style="color:#909399;font-size:12px">已勾选 {{ checkedIds.length }} 题</span>
-          <el-tag v-if="unmappedCount" type="warning" size="small"><el-icon style="vertical-align:-2px;margin-right:4px"><Warning /></el-icon>{{ unmappedCount }} 题未挂知识点</el-tag>
           <div style="flex:1"></div>
           <template v-if="curPaper?.source_filename">
             <el-select v-model="reparseEngine" style="width:104px"
@@ -1099,61 +1076,40 @@ onMounted(load)
           <el-button text type="info" @click="openRubric" title="书面表达 AI 评分的满分与各维达标线(运营可配置,读后台配置)">写作评分量表</el-button>
           <span v-if="simGen.running" style="font-size:12px;color:#409eff">后台派生中 {{ simGen.done }}/{{ simGen.total || '…' }} 题位，已生成 {{ simGen.generated }} 道</span>
         </div>
-        <div style="max-height:520px;overflow:auto">
-          <!-- font-size:14px 复位:el-checkbox-group 默认 font-size:0 会让组内纯文本不可见 -->
-          <el-checkbox-group v-model="checkedIds" style="font-size:14px;line-height:1.5">
-            <div v-for="(sec, si) in paperSections" :key="si" style="margin-bottom:14px">
-              <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:6px;border-left:3px solid #409eff;padding-left:8px;display:flex;align-items:center;gap:8px">
-                <span>{{ sec.name }}</span>
-                <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openSectionSuggest(sec.name)">一键挂知识点(AI)</el-button>
-                <el-button v-if="analyzableSection(sec)" size="small" text type="warning" style="height:22px;padding:0 6px"
-                  :loading="anaBatchBusy" :disabled="anaBatchBusy"
-                  title="整段 AI 解析(完形双轴/阅读题目层)→ 一键采纳校验通过项,只逐个驳回异常"
-                  @click="openAnaBatch(sec)">{{ anaBatchBusy ? '解析中…' : '批量解析全段' }}</el-button>
-                <el-button size="small" text style="height:22px;padding:0 6px;color:#909399" @click="openSectionKpPicker(sec.name)">手动挂</el-button>
-                <el-button size="small" :type="secAllChecked(sec) ? 'primary' : 'default'" plain
-                  style="height:22px;padding:0 8px;margin-left:6px"
-                  title="选中整个题型(可多选题型累加),再点上方「勾选题派生仿真」"
-                  @click="onToggleSec(sec, !secAllChecked(sec))">
-                  {{ secAllChecked(sec) ? '☑' : (secSomeChecked(sec) ? '◪' : '☐') }} 全选本题型
-                </el-button>
-              </div>
-              <div v-for="(g, gi) in sec.groups" :key="gi" :style="g.key ? 'border:1px solid #ebeef5;border-radius:6px;padding:8px;margin-bottom:8px;background:#fafcff' : ''">
-                <div v-if="g.key" style="font-size:12px;color:#606266;margin-bottom:6px;white-space:pre-wrap;max-height:84px;overflow:auto"><el-icon style="vertical-align:-2px;margin-right:4px"><Document /></el-icon>{{ g.passage }}</div>
-                <div v-for="q in g.rows" :key="q.id" style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dashed #f0f0f0;font-size:13px">
-                  <el-checkbox :value="q.id" style="margin-top:2px" />
-                  <span style="color:#909399;width:30px;flex-shrink:0">{{ q.question_no }}</span>
-                  <div style="flex:1;min-width:0">
-                    <div style="white-space:pre-wrap">{{ q.stem }}</div>
-                    <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
-                      <el-tag v-for="k in q.kps" :key="k.node_id" size="small" closable @close="onRemoveKp(q, k.node_id)">{{ k.name }}</el-tag>
-                      <el-tag v-if="(!q.kps || !q.kps.length) && !(kpSuggest[q.id] && kpSuggest[q.id].length) && !(kpProposals[q.id] && kpProposals[q.id].length)" size="small" type="warning" effect="plain">未挂知识点</el-tag>
-                      <el-tag v-for="s in (kpSuggest[q.id] || [])" :key="'s' + s.node_id" size="small" type="primary" effect="plain" style="border-style:dashed">
-                        AI建议:{{ s.name }}
-                        <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptSuggest(q, s)">✓</span>
-                        <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissSuggest(q, s)">✕</span>
-                      </el-tag>
-                      <el-tag v-for="(p, pi) in (kpProposals[q.id] || [])" :key="'p' + pi" size="small" type="danger" effect="plain" style="border-style:dashed"
-                        :title="p.parent_node_id ? ('目录无对应考点 → 新建并归到「' + (p.parent_name || '?') + '」,点 ✓ 确认') : '未定分类:点 ✓ 人工选归属分类后再新建'">
-                        新建:{{ p.name }}<span style="color:#909399"> → {{ p.parent_name || '未定分类(点✓选)' }}</span>
-                        <span style="cursor:pointer;color:#67c23a;font-weight:700;margin-left:3px" @click="acceptProposal(q, p)">✓</span>
-                        <span style="cursor:pointer;color:#c0c4cc;margin-left:2px" @click="dismissProposal(q, p)">✕</span>
-                      </el-tag>
-                      <el-button size="small" text type="primary" style="height:22px;padding:0 6px" @click="openKpPicker(q)">+ 知识点</el-button>
-                      <el-button v-if="q.kps && q.kps.length" size="small" text type="success" style="height:22px;padding:0 6px"
-                        :loading="genBusy === q.id"
-                        :title="`从本题派生 ${simDeriveCount} 道同考点仿真(继承本题「${q.question_type}」题型与考点,落草稿待审)`"
-                        @click="onDeriveSim(q)">↻ 派生仿真</el-button>
-                      <el-button v-if="isAnalyzableQuestion(q, sec.name)" size="small" text type="warning" style="height:22px;padding:0 6px"
-                        title="AI 生成题目层解析(阅读:rc技能+定位句;完形:载体槽+线索类型),人工确认后才写库;线索句程序校验防幻觉"
-                        @click="openAnalysis(q)">解析</el-button>
-                    </div>
-                  </div>
-                  <el-tag size="small" :type="q.status === 'published' ? 'success' : 'info'" style="flex-shrink:0">{{ q.status === 'published' ? '已发布' : '草稿' }}</el-tag>
-                </div>
-              </div>
-            </div>
-          </el-checkbox-group>
+
+        <!-- 方案 A:分题型 Tab -->
+        <div v-if="paperSections.length" class="type-tabs">
+          <button v-for="(sec, si) in paperSections" :key="si" type="button"
+            :class="['type-tab', { on: activeSectionIdx === si }]"
+            @click="activeSectionIdx = si">
+            {{ sec.name }}
+            <span class="cnt">{{ sec.groups.flatMap(g => g.rows).length }}</span>
+            <span v-if="secPendingCount(sec)" class="bad">·{{ secPendingCount(sec) }}</span>
+          </button>
+        </div>
+
+        <div style="max-height:560px;overflow:auto;background:#f5f7fa;padding:12px;border-radius:8px">
+          <PaperSectionWorkbench v-if="activeSection"
+            :sec="activeSection"
+            :kind="sectionKind(activeSection)"
+            v-model:checked-ids="checkedIds"
+            :kp-suggest="kpSuggest"
+            :kp-proposals="kpProposals"
+            :gen-busy="genBusy"
+            :ana-batch-busy="anaBatchBusy"
+            :sim-derive-count="simDeriveCount"
+            :analyzable="analyzableSection(activeSection)"
+            @ana-batch="openAnaBatch(activeSection)"
+            @toggle-sec="onToggleSec(activeSection, $event)"
+            @accept-suggest="acceptSuggest"
+            @dismiss-suggest="dismissSuggest"
+            @accept-proposal="acceptProposal"
+            @dismiss-proposal="dismissProposal"
+            @open-kp="openKpPicker"
+            @remove-kp="onRemoveKp"
+            @derive-sim="onDeriveSim"
+            @open-analysis="openAnalysis"
+          />
         </div>
       </div>
     </AppDialog>
@@ -1371,10 +1327,10 @@ onMounted(load)
       </template>
     </AppDialog>
 
-    <!-- 受控知识点树选择器:给某题/某大题挂知识点(只能挑已建节点) -->
+    <!-- 受控知识点树选择器:给某题挂知识点(只能挑已建节点) -->
     <AppDialog v-model="kpPickerDlg" title="挂知识点(受控树)" width="460px" append-to-body>
       <div style="font-size:12px;color:#909399;margin-bottom:8px">
-        {{ kpTargetSection ? `为「${kpTargetSection}」整段挑知识点(挂到该大题所有小问)` : `为「${kpTarget?.question_no}」题挑知识点` }},点击节点即挂上
+        为「{{ kpTarget?.question_no }}」题挑知识点,点击节点即挂上
       </div>
       <el-input v-model="kpFilter" placeholder="搜索知识点名" clearable style="margin-bottom:8px" />
       <el-tree ref="kpTreeRef" :data="kpTree" :props="kpTreeProps" node-key="id"
@@ -1425,26 +1381,6 @@ onMounted(load)
         <el-button @click="rubricDlg = false">取消</el-button>
         <el-button type="primary" :loading="rubricSaving" @click="saveRubric">保存</el-button>
       </div>
-    </AppDialog>
-
-    <!-- 大题级 AI 建议:选该题型提示词 → AI 对整段每题建议考点 -->
-    <AppDialog v-model="secSuggestDlg" title="一键挂知识点(AI 建议)" width="560px" append-to-body>
-      <div style="font-size:13px;color:#606266;margin-bottom:10px">
-        大题「{{ secSuggestName }}」(题型:{{ secSuggestType }})—— 选一套提示词,AI 为该段每题建议考点(不自动挂,逐题 ✓ 采纳)。
-      </div>
-      <el-empty v-if="!secPrompts.length" description="该题型暂无提示词,请先到「知识点 AI 提示词」配置" :image-size="44" />
-      <el-radio-group v-else v-model="secPromptId" style="display:block">
-        <div v-for="p in secPrompts" :key="p.id || p.name" style="border:1px solid #ebeef5;border-radius:6px;padding:8px 10px;margin-bottom:8px">
-          <el-radio :value="p.id">
-            {{ p.name }}<span v-if="p.is_default" style="color:#67c23a;font-size:12px;margin-left:6px">默认</span>
-          </el-radio>
-          <div style="font-size:12px;color:#909399;white-space:pre-wrap;margin-top:4px">{{ p.text }}</div>
-        </div>
-      </el-radio-group>
-      <template #footer>
-        <el-button @click="secSuggestDlg = false">取消</el-button>
-        <el-button type="primary" :loading="secSuggesting" :disabled="!secPrompts.length" @click="runSectionSuggest">开始 AI 建议</el-button>
-      </template>
     </AppDialog>
 
     <!-- 批量上传真题:文件 → COS + 建草稿占位试卷(题目延后解析)-->
@@ -1611,4 +1547,21 @@ onMounted(load)
 .toolbar { margin-bottom: 16px; display: flex; align-items: center; flex-wrap: wrap; }
 .hint { margin-left: 16px; color: #909399; font-size: 12px; }
 .gen-loading { display: flex; flex-direction: column; align-items: center; padding: 40px 0; }
+.paper-stats-bar {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 10px 12px; margin-bottom: 12px;
+  background: #fdf6ec; border: 1px solid #faecd8; border-radius: 8px; font-size: 13px;
+}
+.type-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px;
+  background: #fff; border: 1px solid #ebeef5; border-radius: 8px; padding: 6px;
+}
+.type-tab {
+  padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700;
+  color: #606266; cursor: pointer; border: none; background: transparent;
+}
+.type-tab.on { background: #409eff; color: #fff; }
+.type-tab .cnt { opacity: .75; font-weight: 600; margin-left: 4px; }
+.type-tab .bad { color: #f56c6c; margin-left: 4px; }
+.type-tab.on .bad { color: #ffd6d6; }
 </style>

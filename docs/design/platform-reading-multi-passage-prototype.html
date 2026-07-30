@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>阅读理解 · 多篇短文工作台 — 原型</title>
+  <style>
+    :root {
+      --c-primary: #409eff;
+      --c-primary-deep: #337ecc;
+      --c-ink: #303133;
+      --c-sub: #606266;
+      --c-hint: #909399;
+      --c-line: #ebeef5;
+      --c-page: #f5f7fa;
+      --c-ok: #67c23a;
+      --c-warn: #e6a23c;
+      --c-danger: #f56c6c;
+      --c-rc: #0ea5e9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, var(--c-page) 35%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1280px; margin: 0 auto; padding: 22px 24px 10px; }
+    header.top h1 { margin: 0 0 8px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; font-size: 14px; color: var(--c-sub); line-height: 1.65; max-width: 960px; }
+
+    .scheme-bar {
+      max-width: 1280px; margin: 12px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    }
+    .scheme-btn {
+      border: 2px solid #cfe0f5; background: #fff; border-radius: 12px;
+      padding: 10px 18px; font-size: 14px; font-weight: 800; cursor: pointer; color: var(--c-sub);
+    }
+    .scheme-btn.on { border-color: var(--c-primary); background: #ecf5ff; color: var(--c-primary-deep); }
+    .scheme-btn .tag { font-size: 11px; font-weight: 700; margin-left: 8px; padding: 2px 8px; border-radius: 6px; background: #ffb020; color: #fff; }
+    .scheme-btn.on .tag { background: var(--c-primary); }
+    .scheme-btn.bad { border-color: #fbc4c4; }
+    .scheme-btn.bad.on { border-color: var(--c-danger); background: #fef0f0; color: #c45656; }
+
+    .stage {
+      max-width: 1280px; margin: 16px auto 48px; padding: 0 24px;
+      display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start;
+    }
+    @media (max-width: 1100px) { .stage { grid-template-columns: 1fr; } }
+
+    .mock { display: none; }
+    .mock.on { display: block; }
+
+    .dlg {
+      background: #fff; border: 1px solid #dcdfe6; border-radius: 8px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.12); overflow: hidden;
+    }
+    .dlg-hd {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 18px; border-bottom: 1px solid var(--c-line); background: #fafafa;
+    }
+    .dlg-hd h2 { margin: 0; font-size: 15px; font-weight: 700; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlg-ctrl { display: flex; gap: 6px; }
+    .dlg-ctrl span { width: 28px; height: 28px; border: 1px solid #dcdfe6; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--c-hint); }
+
+    .type-tabs {
+      display: flex; gap: 4px; flex-wrap: wrap; margin: 12px 18px 0;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 8px; padding: 6px;
+    }
+    .type-tab {
+      padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700;
+      color: var(--c-sub); cursor: pointer; border: none; background: transparent;
+    }
+    .type-tab.on { background: var(--c-primary); color: #fff; }
+    .type-tab .bad { color: var(--c-danger); margin-left: 4px; }
+    .type-tab.on .bad { color: #ffd6d6; }
+
+    .workbench { margin: 12px 18px 18px; border: 1px solid var(--c-line); border-radius: 8px; overflow: hidden; background: #fff; }
+    .wb-hd {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 12px 14px; border-bottom: 1px solid var(--c-line); background: #fafcfe;
+    }
+    .wb-hd .title { font-size: 14px; font-weight: 800; margin-right: auto; }
+    .wb-hd .sum { font-size: 12px; color: var(--c-hint); }
+    .btn {
+      border: none; border-radius: 4px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: default;
+    }
+    .btn-p { background: #ecf5ff; color: var(--c-primary); border: 1px solid #d9ecff; }
+    .btn-w { background: #fdf6ec; color: var(--c-warn); border: 1px solid #f5dab1; }
+    .btn-g { background: #f4f4f5; color: var(--c-sub); border: 1px solid #dcdfe6; }
+
+    /* ── 现状(问题) ── */
+    .problem-note {
+      margin: 0 18px 10px; padding: 10px 12px; background: #fef0f0; border: 1px solid #fde2e2;
+      border-radius: 8px; font-size: 12px; color: #c45656; line-height: 1.55;
+    }
+    .block-layout {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px;
+    }
+    @media (max-width: 800px) { .block-layout { grid-template-columns: 1fr; } }
+    .passage-box {
+      background: #fdf8ee; border: 1px solid #ebe6dc; border-radius: 8px;
+      padding: 14px; font-size: 12px; line-height: 1.75; color: #444;
+      font-family: Georgia, "Times New Roman", serif; max-height: 320px; overflow: auto;
+    }
+    .passage-box .meta { font-size: 11px; color: var(--c-hint); margin-bottom: 10px; font-family: inherit; font-weight: 700; }
+    .passage-box .hl { background: #fef08a; padding: 0 2px; border-radius: 2px; }
+    .slot-panel { max-height: 320px; overflow: auto; }
+    .slot-row {
+      display: grid; grid-template-columns: 28px 36px 1fr auto; gap: 8px; align-items: start;
+      padding: 8px 10px; background: #f9fafb; border-radius: 6px; font-size: 11px; margin-bottom: 8px;
+    }
+    .passage-inline {
+      font-size: 11px; color: #606266; margin: 8px 0; padding: 8px;
+      background: #f0f9ff; border-radius: 6px; border-left: 3px solid var(--c-rc);
+      max-height: 56px; overflow: hidden; opacity: .85;
+    }
+    .q-stem { font-size: 12px; line-height: 1.5; }
+    .kp-tag {
+      display: inline-flex; font-size: 11px; padding: 2px 8px; border-radius: 4px;
+      background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; margin-top: 4px;
+    }
+    .status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; }
+    .status.pending { background: #fdf6ec; color: var(--c-warn); }
+    .link { font-size: 11px; color: var(--c-primary); margin-right: 8px; }
+
+    /* ── 方案 A: 篇章子 Tab + 左文右题 ── */
+    .passage-tabs {
+      display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px 0;
+      border-bottom: 1px solid var(--c-line); background: #f8fafc;
+    }
+    .passage-tab {
+      padding: 8px 16px; border: none; border-radius: 8px 8px 0 0;
+      font-size: 12px; font-weight: 800; cursor: pointer; color: var(--c-sub);
+      background: transparent; border-bottom: 3px solid transparent; margin-bottom: -1px;
+    }
+    .passage-tab.on {
+      background: #fff; color: var(--c-rc); border-bottom-color: var(--c-rc);
+      box-shadow: 0 -2px 8px rgba(14,165,233,.08);
+    }
+    .passage-tab .cnt { font-weight: 600; opacity: .7; margin-left: 4px; }
+    .passage-tab .bad { color: var(--c-danger); margin-left: 4px; font-size: 10px; }
+    .passage-tab.on .bad { color: #f87171; }
+
+    .rc-layout { display: grid; grid-template-columns: 44% 1fr; min-height: 380px; }
+    @media (max-width: 900px) { .rc-layout { grid-template-columns: 1fr; } }
+    .rc-passage {
+      border-right: 1px solid var(--c-line); padding: 14px; background: #fdf8ee;
+      max-height: 420px; overflow: auto;
+    }
+    .rc-passage .label {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+      font-size: 12px; font-weight: 800; color: var(--c-rc);
+    }
+    .rc-passage .label span {
+      background: #e0f2fe; padding: 2px 10px; border-radius: 4px; font-size: 11px;
+    }
+    .rc-passage .text {
+      font-size: 12px; line-height: 1.8; color: #444; white-space: pre-wrap;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    .rc-questions { padding: 10px 12px; max-height: 420px; overflow: auto; background: #fafcff; }
+    table.rc-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.rc-tbl th {
+      text-align: left; padding: 8px 10px; background: #f5f7fa; color: var(--c-sub);
+      font-weight: 700; border-bottom: 1px solid var(--c-line); position: sticky; top: 0;
+    }
+    table.rc-tbl td { padding: 10px; border-bottom: 1px solid #f2f3f5; vertical-align: top; }
+    table.rc-tbl tr:hover td { background: #fff; }
+    .evidence { font-size: 11px; color: #0369a1; background: #f0f9ff; padding: 3px 6px; border-radius: 4px; display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .evidence.empty { color: var(--c-hint); background: #f4f4f5; font-style: italic; }
+    .conf { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: #dcfce7; color: #15803d; }
+    .status.ok { background: #f0f9eb; color: var(--c-ok); }
+
+    /* ── 方案 B: 纵向篇章卡片 ── */
+    .passage-stack { padding: 14px; display: flex; flex-direction: column; gap: 16px; max-height: 520px; overflow: auto; }
+    .passage-card {
+      border: 1px solid var(--c-line); border-radius: 10px; overflow: hidden; background: #fff;
+    }
+    .passage-card-hd {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+      background: linear-gradient(90deg, #e0f2fe, #f0f9ff); border-bottom: 1px solid #bae6fd;
+    }
+    .passage-card-hd .letter {
+      width: 28px; height: 28px; border-radius: 50%; background: var(--c-rc); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 13px;
+    }
+    .passage-card-hd .info { flex: 1; }
+    .passage-card-hd .info b { font-size: 13px; }
+    .passage-card-hd .info span { font-size: 11px; color: var(--c-hint); display: block; margin-top: 2px; }
+    .passage-card-body { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+    @media (max-width: 800px) { .passage-card-body { grid-template-columns: 1fr; } }
+    .passage-card-body .text-col {
+      padding: 12px 14px; font-size: 12px; line-height: 1.75; color: #444;
+      border-right: 1px solid var(--c-line); max-height: 200px; overflow: auto;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    .passage-card-body .q-col { padding: 8px; }
+
+    /* ── 右侧说明 ── */
+    .side .panel {
+      background: #fff; border: 1px solid #d8e4f5; border-radius: 14px;
+      padding: 16px 18px; box-shadow: 0 8px 24px rgba(30,64,120,.05);
+    }
+    .side h3 { margin: 0 0 10px; font-size: 14px; font-weight: 800; }
+    .side p, .side li { font-size: 13px; color: var(--c-sub); line-height: 1.65; }
+    .side ul { margin: 0; padding-left: 18px; }
+    .side li { margin: 6px 0; }
+    .side .pro { color: var(--c-ok); font-weight: 700; }
+    .side .con { color: var(--c-danger); font-weight: 700; }
+    .side .note {
+      margin-top: 14px; padding: 10px 12px; background: #f0f9ff; border-radius: 8px;
+      font-size: 12px; color: #0369a1; line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>阅读理解 · 多篇短文工作台 — 原型</h1>
+    <p>对照卷：江苏省无锡市 2025 中考 · 阅读理解 14 题 / 4 篇短文(A 日记、B 应用文×3、C 说明文、D 人物)。数据按 <code>block_id</code> 题组划分。点击按钮切换三种形态。</p>
+  </header>
+
+  <div class="scheme-bar">
+    <button type="button" class="scheme-btn bad" data-scheme="now">现状 · 左只显第一篇</button>
+    <button type="button" class="scheme-btn on" data-scheme="a">方案 A · 篇章子 Tab<span class="tag">推荐</span></button>
+    <button type="button" class="scheme-btn" data-scheme="b">方案 B · 纵向卡片</button>
+  </div>
+
+  <div class="stage">
+    <div class="main">
+
+      <!-- ═══ 现状(截图问题) ═══ -->
+      <div id="mock-now" class="mock">
+        <div class="dlg">
+          <div class="dlg-hd">
+            <h2>…2025年中考英语试题 · 试卷详情</h2>
+            <div class="dlg-ctrl"><span>□</span><span>↗</span><span>×</span></div>
+          </div>
+          <div class="type-tabs">
+            <button class="type-tab">单项选择</button>
+            <button class="type-tab">完形填空</button>
+            <button class="type-tab on">阅读理解 <span class="bad">·13</span></button>
+            <button class="type-tab">词汇运用</button>
+          </div>
+          <div class="problem-note">
+            ⚠ <b>现状问题</b>：左栏固定显示第一篇(A)，B/C/D 短文被压成右侧小蓝条，运营看不清语篇、难对照 evidence 高亮；14 题混在一个滚动区里，篇章边界不清晰。
+          </div>
+          <div class="workbench">
+            <div class="wb-hd">
+              <span class="title">阅读理解 · rc 技能 + 定位句</span>
+              <span class="sum">共 14 题 · 已挂 1 · 待处理 13</span>
+            </div>
+            <div class="block-layout">
+              <div class="passage-box">
+                <div class="meta">📄 短文（仅第一篇）</div>
+                A / May 22, 2025 | Cloudy / Thursday<br><br>
+                I got up at 6:30 this morning. I had milk and bread for breakfast…
+                <span class="hl">I got up at 6:30 this morning.</span> …
+              </div>
+              <div class="slot-panel">
+                <div class="slot-row"><input type="checkbox" /><b>9</b><div><div class="q-stem">What did the writer do first…?</div><span class="link">+KP</span><span class="link" style="color:#e6a23c">解析</span></div><span class="status pending">未挂</span></div>
+                <div class="slot-row"><input type="checkbox" /><b>25</b><div><div class="q-stem">What is the text above? A. A diary…</div></div><span class="status pending">未挂</span></div>
+                <div class="slot-row"><input type="checkbox" /><b>26</b><div><div class="q-stem">How was the weather…?</div></div><span class="status pending">未挂</span></div>
+                <div class="slot-row"><input type="checkbox" /><b>27</b><div><div class="q-stem">What did the writer have…?</div></div><span class="status pending">未挂</span></div>
+                <div class="passage-inline"><b>B</b> Short texts can be seen everywhere in our daily life. They are usually short and easy to read…（第二篇被挤在这里，看不清全文）</div>
+                <div class="slot-row"><input type="checkbox" /><b>28</b><div><div class="q-stem">Where can we probably see Text 1?</div></div><span class="status pending">未挂</span></div>
+                <div style="font-size:11px;color:#909399;text-align:center;padding:8px">… C、D 篇同理继续往下混排 …</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ 方案 A: 篇章子 Tab ═══ -->
+      <div id="mock-a" class="mock on">
+        <div class="dlg">
+          <div class="dlg-hd">
+            <h2>…2025年中考英语试题 · 试卷详情</h2>
+            <div class="dlg-ctrl"><span>□</span><span>↗</span><span>×</span></div>
+          </div>
+          <div class="type-tabs">
+            <button class="type-tab">单项选择</button>
+            <button class="type-tab">完形填空</button>
+            <button class="type-tab on">阅读理解 <span class="bad">·13</span></button>
+            <button class="type-tab">词汇运用</button>
+          </div>
+          <div class="workbench">
+            <div class="wb-hd">
+              <span class="title">阅读理解 · rc 技能 + 定位句 evidence</span>
+              <span class="sum">共 14 题 · 4 篇 · 已挂 1 · 待 13</span>
+              <button class="btn btn-p">本篇章 AI 匹配</button>
+              <button class="btn btn-w">批量解析本篇</button>
+              <button class="btn btn-g">全选本篇</button>
+            </div>
+
+            <!-- 篇章子 Tab：A / B / C / D -->
+            <div class="passage-tabs">
+              <button type="button" class="passage-tab on" data-pass="a">Passage A · 日记 <span class="cnt">4 题</span><span class="bad">·4</span></button>
+              <button type="button" class="passage-tab" data-pass="b">Passage B · 应用文 <span class="cnt">5 题</span><span class="bad">·5</span></button>
+              <button type="button" class="passage-tab" data-pass="c">Passage C · 说明文 <span class="cnt">3 题</span><span class="bad">·3</span></button>
+              <button type="button" class="passage-tab" data-pass="d">Passage D · 人物 <span class="cnt">2 题</span><span class="bad">·1</span></button>
+            </div>
+
+            <!-- Passage A 内容 -->
+            <div id="panel-a" class="rc-panel">
+              <div class="rc-layout">
+                <div class="rc-passage">
+                  <div class="label"><span>A</span> 记叙文 · 日记 · May 22, 2025</div>
+                  <div class="text">A
+May 22, 2025 | Cloudy | Thursday
+
+I got up at 6:30 this morning. I had milk and bread for breakfast. Then I went to school by bike. It was cloudy but not cold.
+
+After school I played basketball with my friends for an hour. In the evening I did my homework and watched TV for a while.
+
+What a busy day!</div>
+                </div>
+                <div class="rc-questions">
+                  <table class="rc-tbl">
+                    <thead>
+                      <tr>
+                        <th style="width:36px">题</th>
+                        <th>题干摘要</th>
+                        <th style="width:120px">rc 技能</th>
+                        <th style="width:140px">定位句 evidence</th>
+                        <th style="width:64px">状态</th>
+                        <th style="width:56px">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>25</td>
+                        <td>What is the text above? A. A diary. B. A letter…</td>
+                        <td><span class="kp-tag">rc-1-1 体裁识别</span></td>
+                        <td><span class="evidence">May 22, 2025 | Cloudy</span></td>
+                        <td><span class="status ok">已确认</span></td>
+                        <td><span class="link">改</span></td>
+                      </tr>
+                      <tr>
+                        <td>26</td>
+                        <td>How was the weather that day?</td>
+                        <td><span class="kp-tag" style="border-style:dashed">rc-2-1 细节 · 定位</span></td>
+                        <td><span class="evidence">It was cloudy but not cold</span></td>
+                        <td><span class="status pending">待确认</span></td>
+                        <td><span class="link">解析</span></td>
+                      </tr>
+                      <tr>
+                        <td>27</td>
+                        <td>What did the writer have for breakfast?</td>
+                        <td><span class="kp-tag" style="border-style:dashed;opacity:.7">AI: rc-2-1 <span class="conf">91%</span></span></td>
+                        <td><span class="evidence empty">(解析后高亮)</span></td>
+                        <td><span class="status pending">建议</span></td>
+                        <td><span class="link green">✓</span></td>
+                      </tr>
+                      <tr>
+                        <td>9</td>
+                        <td>What did the writer do first in the morning?</td>
+                        <td><span class="evidence empty">—</span></td>
+                        <td><span class="evidence empty">—</span></td>
+                        <td><span class="status pending">未挂</span></td>
+                        <td><span class="link">解析</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div style="text-align:right;padding:8px 4px;font-size:11px;color:#909399">
+                    点击 evidence 可在左侧短文高亮对应句（Phase 4）
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Passage B（默认隐藏，切 Tab 显示） -->
+            <div id="panel-b" class="rc-panel" style="display:none">
+              <div class="rc-layout">
+                <div class="rc-passage">
+                  <div class="label"><span>B</span> 应用文 · 三则短文本</div>
+                  <div class="text"><b>Text 1</b> (Notice)
+Students are required to wear school uniforms on weekdays…
+
+<b>Text 2</b> (Ad)
+Summer Camp 2025 — Join us for fun activities…
+
+<b>Text 3</b> (Sign)
+No smoking. Thank you for your cooperation.</div>
+                </div>
+                <div class="rc-questions">
+                  <table class="rc-tbl">
+                    <thead><tr><th>题</th><th>题干</th><th>rc</th><th>evidence</th><th>状态</th><th>操作</th></tr></thead>
+                    <tbody>
+                      <tr><td>28</td><td>Where can we probably see Text 1?</td><td><span class="kp-tag">rc-3-1 出处推断</span></td><td><span class="evidence">Students are required…</span></td><td><span class="status pending">未挂</span></td><td><span class="link">解析</span></td></tr>
+                      <tr><td>29</td><td>Who is Text 2 written for?</td><td>—</td><td>—</td><td><span class="status pending">未挂</span></td><td><span class="link">解析</span></td></tr>
+                      <tr><td>30</td><td>What does Text 3 tell us?</td><td>—</td><td>—</td><td><span class="status pending">未挂</span></td><td><span class="link">解析</span></td></tr>
+                      <tr><td>31</td><td>Which text is an advertisement?</td><td>—</td><td>—</td><td><span class="status pending">未挂</span></td><td><span class="link">解析</span></td></tr>
+                      <tr><td>32</td><td>The three texts are all ___.</td><td>—</td><td>—</td><td><span class="status pending">未挂</span></td><td><span class="link">解析</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div id="panel-c" class="rc-panel" style="display:none">
+              <div class="rc-layout">
+                <div class="rc-passage">
+                  <div class="label"><span>C</span> 说明文</div>
+                  <div class="text">Bees are very important to our environment. They help plants grow by spreading pollen…</div>
+                </div>
+                <div class="rc-questions">
+                  <p style="font-size:12px;color:#909399;padding:20px;text-align:center">本篇 3 题 · 表格结构同 A</p>
+                </div>
+              </div>
+            </div>
+            <div id="panel-d" class="rc-panel" style="display:none">
+              <div class="rc-layout">
+                <div class="rc-passage">
+                  <div class="label"><span>D</span> 人物传记</div>
+                  <div class="text">Tu Youyou is a famous Chinese scientist. She discovered artemisinin…</div>
+                </div>
+                <div class="rc-questions">
+                  <p style="font-size:12px;color:#909399;padding:20px;text-align:center">本篇 2 题 · 表格结构同 A</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ 方案 B: 纵向卡片 ═══ -->
+      <div id="mock-b" class="mock">
+        <div class="dlg">
+          <div class="dlg-hd">
+            <h2>…2025年中考英语试题 · 试卷详情</h2>
+            <div class="dlg-ctrl"><span>□</span><span>↗</span><span>×</span></div>
+          </div>
+          <div class="type-tabs">
+            <button class="type-tab on">阅读理解 <span class="bad">·13</span></button>
+          </div>
+          <div class="workbench">
+            <div class="wb-hd">
+              <span class="title">阅读理解 · 纵向篇章卡片</span>
+              <span class="sum">4 篇卡片 · 向下滚动浏览全卷阅读</span>
+              <button class="btn btn-w">批量解析全部篇章</button>
+            </div>
+            <div class="passage-stack">
+              <div class="passage-card">
+                <div class="passage-card-hd">
+                  <div class="letter">A</div>
+                  <div class="info"><b>Passage A · 日记</b><span>4 题 · 待处理 4 · 记叙文</span></div>
+                  <button class="btn btn-p">本篇 AI</button>
+                </div>
+                <div class="passage-card-body">
+                  <div class="text-col">May 22, 2025 | Cloudy | Thursday\n\nI got up at 6:30…</div>
+                  <div class="q-col">
+                    <table class="rc-tbl">
+                      <tr><td>25</td><td>What is the text above?</td><td><span class="status ok">已挂</span></td></tr>
+                      <tr><td>26</td><td>How was the weather…?</td><td><span class="status pending">未挂</span></td></tr>
+                      <tr><td>27</td><td>What did the writer have…?</td><td><span class="status pending">未挂</span></td></tr>
+                    </table>
+                  </div>
+                </div>
+              </div>
+              <div class="passage-card">
+                <div class="passage-card-hd">
+                  <div class="letter">B</div>
+                  <div class="info"><b>Passage B · 应用文(三则)</b><span>5 题 · 待处理 5</span></div>
+                  <button class="btn btn-p">本篇 AI</button>
+                </div>
+                <div class="passage-card-body">
+                  <div class="text-col">Text 1 (Notice)… Text 2 (Ad)… Text 3 (Sign)…</div>
+                  <div class="q-col"><p style="font-size:11px;color:#909399;padding:12px">5 题表格…</p></div>
+                </div>
+              </div>
+              <div class="passage-card" style="opacity:.7">
+                <div class="passage-card-hd">
+                  <div class="letter">C</div>
+                  <div class="info"><b>Passage C · 说明文</b><span>3 题 · 折叠态示意</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side">
+      <div class="panel" id="side-a">
+        <h3>方案 A · 篇章子 Tab（推荐）</h3>
+        <ul>
+          <li><span class="pro">✓</span> 左文右题始终 1:1 对照，语篇完整可读</li>
+          <li><span class="pro">✓</span> 按 <code>block_id</code> 自动拆 Passage A/B/C/D，待处理数 per 篇</li>
+          <li><span class="pro">✓</span> 「本篇章 AI / 批量解析」粒度正确，不重跑其它篇</li>
+          <li><span class="pro">✓</span> 表格列：rc 技能 + evidence + 状态，对齐科学解析</li>
+          <li><span class="con">△</span> 需多点一次篇章 Tab（4 篇卷可接受）</li>
+        </ul>
+        <div class="note">实现：阅读 <code>kind=reading</code> 时，<code>sec.groups</code> 每个有 <code>block_id</code> 的 group → 一个篇章 Tab；无 block 的独立题归「其它」。</div>
+      </div>
+      <div class="panel" id="side-b" style="display:none">
+        <h3>方案 B · 纵向卡片</h3>
+        <ul>
+          <li><span class="pro">✓</span> 一屏纵览 4 篇进度，不用切 Tab</li>
+          <li><span class="pro">✓</span> 适合篇章少(2–3 篇)的卷</li>
+          <li><span class="con">✗</span> 4+ 篇时滚动很长，左文右题区域被压扁</li>
+          <li><span class="con">✗</span> evidence 高亮跨卡片难联动</li>
+        </ul>
+        <div class="note">备选：篇章 ≤3 时可作折叠卡片；默认仍用方案 A。</div>
+      </div>
+      <div class="panel" id="side-now" style="display:none">
+        <h3>现状问题</h3>
+        <p>Phase 1 阅读工作台复用了完形「左一篇 + 右全量」布局，多篇时第二篇起只能看到 inline 摘要条，无法对照全文做 rc / evidence 标注。</p>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    document.querySelectorAll('.scheme-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = btn.dataset.scheme;
+        document.querySelectorAll('.scheme-btn').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        document.querySelectorAll('.mock').forEach(m => m.classList.remove('on'));
+        document.getElementById('mock-' + s).classList.add('on');
+        document.getElementById('side-a').style.display = s === 'a' ? 'block' : 'none';
+        document.getElementById('side-b').style.display = s === 'b' ? 'block' : 'none';
+        document.getElementById('side-now').style.display = s === 'now' ? 'block' : 'none';
+      });
+    });
+    document.querySelectorAll('.passage-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const p = tab.dataset.pass;
+        document.querySelectorAll('.passage-tab').forEach(t => t.classList.remove('on'));
+        tab.classList.add('on');
+        document.querySelectorAll('.rc-panel').forEach(el => el.style.display = 'none');
+        document.getElementById('panel-' + p).style.display = 'block';
+      });
+    });
+  </script>
+</body>
+</html>

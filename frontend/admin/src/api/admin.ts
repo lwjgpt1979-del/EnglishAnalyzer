@@ -1652,9 +1652,6 @@ export function attachQuestionKp(questionId: string, nodeId: string): Promise<Qu
 export function detachQuestionKp(questionId: string, nodeId: string): Promise<QuestionKpRef[]> {
   return unwrap(request.delete(`/admin/platform-questions/${questionId}/kp/${nodeId}`))
 }
-export function attachSectionKp(paperId: string, section: string, nodeId: string): Promise<{ attached: number }> {
-  return unwrap(request.post(`/admin/platform-papers/${paperId}/section-kp`, { section, node_id: nodeId }))
-}
 export function attachKpBulk(pairs: { question_id: string; node_id: string }[]): Promise<{ attached: number }> {
   return unwrap(request.post('/admin/platform-questions/kp-bulk', { pairs }))
 }

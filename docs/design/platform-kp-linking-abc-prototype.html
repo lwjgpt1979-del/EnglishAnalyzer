@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>平台真题 · 知识图谱挂接方案 A/B/C — 原型</title>
+  <style>
+    :root {
+      --c-primary: #409eff;
+      --c-primary-deep: #337ecc;
+      --c-ink: #303133;
+      --c-sub: #606266;
+      --c-hint: #909399;
+      --c-line: #ebeef5;
+      --c-page: #f5f7fa;
+      --c-ok: #67c23a;
+      --c-warn: #e6a23c;
+      --c-danger: #f56c6c;
+      --c-ai: #7c5cbf;
+      --c-rc: #0ea5e9;
+      --c-wr: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: linear-gradient(180deg, #e8eef8 0%, var(--c-page) 35%);
+      color: var(--c-ink); min-height: 100vh;
+    }
+    header.top { max-width: 1320px; margin: 0 auto; padding: 22px 24px 10px; }
+    header.top h1 { margin: 0 0 8px; font-size: 22px; font-weight: 800; }
+    header.top p { margin: 0; font-size: 14px; color: var(--c-sub); line-height: 1.65; max-width: 960px; }
+
+    .scheme-bar {
+      max-width: 1320px; margin: 12px auto 0; padding: 0 24px;
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    }
+    .scheme-btn {
+      border: 2px solid #cfe0f5; background: #fff; border-radius: 12px;
+      padding: 10px 18px; font-size: 14px; font-weight: 800; cursor: pointer; color: var(--c-sub);
+    }
+    .scheme-btn.on { border-color: var(--c-primary); background: #ecf5ff; color: var(--c-primary-deep); }
+    .scheme-btn .tag { font-size: 11px; font-weight: 700; margin-left: 8px; padding: 2px 8px; border-radius: 6px; background: #ffb020; color: #fff; }
+    .scheme-btn.on .tag { background: var(--c-primary); }
+
+    .stage {
+      max-width: 1320px; margin: 16px auto 48px; padding: 0 24px;
+      display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start;
+    }
+    @media (max-width: 1100px) { .stage { grid-template-columns: 1fr; } }
+
+    .mock { display: none; }
+    .mock.on { display: block; }
+
+    /* ── 模拟 Admin 弹框外壳 ── */
+    .dlg {
+      background: #fff; border: 1px solid #dcdfe6; border-radius: 8px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.12); overflow: hidden;
+    }
+    .dlg-hd {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 18px; border-bottom: 1px solid var(--c-line); background: #fafafa;
+    }
+    .dlg-hd h2 { margin: 0; font-size: 15px; font-weight: 700; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dlg-ctrl { display: flex; gap: 6px; }
+    .dlg-ctrl span { width: 28px; height: 28px; border: 1px solid #dcdfe6; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--c-hint); cursor: default; }
+
+    .dlg-stats {
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+      padding: 10px 18px; background: #fdf6ec; border-bottom: 1px solid #faecd8; font-size: 12px;
+    }
+    .dlg-stats.warn { color: #b88230; }
+    .dlg-stats b { color: var(--c-danger); }
+
+    .dlg-toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 12px 18px; border-bottom: 1px solid var(--c-line);
+    }
+    .btn {
+      border: none; border-radius: 4px; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: default;
+    }
+    .btn-p { background: var(--c-primary); color: #fff; }
+    .btn-s { background: #67c23a; color: #fff; }
+    .btn-w { background: #fdf6ec; color: #e6a23c; border: 1px solid #f5dab1; }
+    .btn-g { background: #f4f4f5; color: var(--c-sub); border: 1px solid #dcdfe6; }
+    .btn-ai { background: #f3eefc; color: var(--c-ai); border: 1px solid #ddd6fe; }
+
+    .dlg-body { padding: 16px 18px 24px; max-height: 640px; overflow-y: auto; background: var(--c-page); }
+
+    /* ── 通用组件 ── */
+    .kp-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; padding: 2px 8px; border-radius: 4px;
+      background: #ecf5ff; color: var(--c-primary); border: 1px solid #d9ecff;
+    }
+    .kp-tag.ai { border-style: dashed; background: #faf5ff; color: var(--c-ai); border-color: #ddd6fe; }
+    .kp-tag.rc { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+    .kp-tag.wr { background: #fff7ed; color: var(--c-wr); border-color: #fed7aa; }
+    .kp-tag .x { opacity: .5; font-size: 10px; }
+    .status { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; }
+    .status.ok { background: #f0f9eb; color: var(--c-ok); }
+    .status.pending { background: #fdf6ec; color: var(--c-warn); }
+    .status.auto { background: #eef2ff; color: #6366f1; }
+    .status.draft { background: #f4f4f5; color: var(--c-hint); }
+    .q-stem { font-size: 13px; line-height: 1.55; color: var(--c-ink); }
+    .q-opts { font-size: 12px; color: var(--c-sub); margin-top: 6px; line-height: 1.6; }
+    .hint { font-size: 11px; color: var(--c-hint); }
+    .link { font-size: 12px; color: var(--c-primary); cursor: default; }
+    .link.green { color: var(--c-ok); }
+    .link.orange { color: var(--c-warn); }
+
+    /* ══════════ 方案 A: 分题型 Tab 工作台 ══════════ */
+    .type-tabs {
+      display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 14px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 8px; padding: 6px;
+    }
+    .type-tab {
+      padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 700;
+      color: var(--c-sub); cursor: pointer; border: none; background: transparent;
+    }
+    .type-tab.on { background: var(--c-primary); color: #fff; }
+    .type-tab .cnt { opacity: .75; font-weight: 600; margin-left: 4px; }
+    .type-tab .bad { color: #f56c6c; margin-left: 4px; }
+    .type-tab.on .bad { color: #ffd6d6; }
+
+    .workbench {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 8px; overflow: hidden;
+    }
+    .wb-hd {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 12px 14px; border-bottom: 1px solid var(--c-line); background: #fafcfe;
+    }
+    .wb-hd .title { font-size: 14px; font-weight: 800; margin-right: auto; }
+
+    table.wb-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.wb-tbl th {
+      text-align: left; padding: 10px 12px; background: #f5f7fa; color: var(--c-sub);
+      font-weight: 700; border-bottom: 1px solid var(--c-line);
+    }
+    table.wb-tbl td { padding: 10px 12px; border-bottom: 1px solid #f2f3f5; vertical-align: top; }
+    table.wb-tbl tr:hover td { background: #fafcff; }
+    .clue { font-size: 11px; color: var(--c-wr); background: #fffbeb; padding: 2px 6px; border-radius: 4px; }
+    .conf { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
+    .conf.hi { background: #dcfce7; color: #15803d; }
+    .conf.mid { background: #fef9c3; color: #a16207; }
+
+    /* 完形 / 阅读 专用布局 */
+    .block-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px; }
+    @media (max-width: 800px) { .block-layout { grid-template-columns: 1fr; } }
+    .passage-box {
+      background: #fdf8ee; border: 1px solid #ebe6dc; border-radius: 8px;
+      padding: 14px; font-size: 12px; line-height: 1.75; color: #444;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    .passage-box .meta { font-size: 11px; color: var(--c-hint); margin-bottom: 10px; font-family: inherit; }
+    .passage-box .hl { background: #fef08a; padding: 0 2px; border-radius: 2px; }
+    .slot-list { display: flex; flex-direction: column; gap: 8px; }
+    .slot-row {
+      display: grid; grid-template-columns: 36px 1fr auto auto; gap: 8px; align-items: center;
+      padding: 8px 10px; background: #f9fafb; border-radius: 6px; font-size: 11px;
+    }
+
+    /* ══════════ 方案 B: Section 卡片聚合 ══════════ */
+    .sec-card {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 8px;
+      margin-bottom: 14px; overflow: hidden;
+    }
+    .sec-hd {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      padding: 12px 14px; background: #fafafa; border-bottom: 1px solid var(--c-line);
+    }
+    .sec-hd .name { font-size: 14px; font-weight: 800; margin-right: auto; }
+    .sec-hd .sum { font-size: 11px; color: var(--c-hint); }
+    .sec-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .q-compact {
+      display: grid; grid-template-columns: 28px 1fr auto auto; gap: 10px; align-items: start;
+      padding: 10px 14px; border-bottom: 1px solid #f2f3f5; font-size: 12px;
+    }
+    .q-compact:last-child { border-bottom: none; }
+    .q-compact .no { font-weight: 800; color: var(--c-hint); padding-top: 2px; }
+    .q-compact .kp-line { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
+    .q-compact .more { font-size: 16px; color: var(--c-hint); padding: 4px 8px; cursor: default; }
+    .q-compact.collapsed .q-detail { display: none; }
+    .passage-inline {
+      margin: 0 14px 10px; padding: 10px 12px; background: #f0f9ff; border-radius: 6px;
+      font-size: 11px; line-height: 1.6; color: #475569; border-left: 3px solid var(--c-rc);
+    }
+
+    /* ══════════ 方案 C: 流水线 + 异常队列 ══════════ */
+    .pipeline {
+      display: flex; align-items: center; gap: 0; margin-bottom: 16px;
+      background: #fff; border: 1px solid var(--c-line); border-radius: 8px; padding: 14px 16px;
+      overflow-x: auto;
+    }
+    .pipe-step {
+      flex: 1; min-width: 100px; text-align: center; position: relative;
+    }
+    .pipe-step:not(:last-child)::after {
+      content: "→"; position: absolute; right: -8px; top: 14px;
+      color: #c0c4cc; font-size: 14px; font-weight: 700;
+    }
+    .pipe-icon {
+      width: 36px; height: 36px; border-radius: 50%; margin: 0 auto 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800; color: #fff;
+    }
+    .pipe-step.done .pipe-icon { background: var(--c-ok); }
+    .pipe-step.run .pipe-icon { background: var(--c-primary); animation: pulse 1.2s infinite; }
+    .pipe-step.wait .pipe-icon { background: #dcdfe6; color: var(--c-hint); }
+    .pipe-label { font-size: 11px; font-weight: 700; color: var(--c-sub); }
+    .pipe-sub { font-size: 10px; color: var(--c-hint); margin-top: 2px; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
+
+    .queue-stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px;
+    }
+    .qstat {
+      background: #fff; border: 1px solid var(--c-line); border-radius: 8px;
+      padding: 12px; text-align: center;
+    }
+    .qstat .n { font-size: 24px; font-weight: 900; }
+    .qstat .l { font-size: 11px; color: var(--c-hint); margin-top: 4px; }
+    .qstat.green .n { color: var(--c-ok); }
+    .qstat.orange .n { color: var(--c-warn); }
+    .qstat.red .n { color: var(--c-danger); }
+    .qstat.gray .n { color: var(--c-hint); }
+
+    .except-list { background: #fff; border: 1px solid var(--c-line); border-radius: 8px; }
+    .except-hd { padding: 12px 14px; border-bottom: 1px solid var(--c-line); font-size: 13px; font-weight: 800; }
+    .except-row {
+      display: grid; grid-template-columns: 60px 80px 1fr auto; gap: 10px; align-items: center;
+      padding: 10px 14px; border-bottom: 1px solid #f2f3f5; font-size: 12px;
+    }
+    .except-row:last-child { border-bottom: none; }
+    .reason { font-size: 11px; color: var(--c-danger); background: #fef0f0; padding: 2px 8px; border-radius: 4px; }
+
+    /* ── 右侧说明 ── */
+    .side .panel {
+      background: #fff; border: 1px solid #d8e4f5; border-radius: 14px;
+      padding: 16px 18px; box-shadow: 0 8px 24px rgba(30,64,120,.05);
+    }
+    .side h3 { margin: 0 0 10px; font-size: 14px; font-weight: 800; }
+    .side p, .side li { font-size: 13px; color: var(--c-sub); line-height: 1.65; }
+    .side ul { margin: 0; padding-left: 18px; }
+    .side li { margin: 6px 0; }
+    .side .pro { color: var(--c-ok); font-weight: 700; }
+    .side .con { color: var(--c-danger); font-weight: 700; }
+    .side .note {
+      margin-top: 14px; padding: 10px 12px; background: #f0f9ff; border-radius: 8px;
+      font-size: 12px; color: #0369a1; line-height: 1.55;
+    }
+    .compare-tbl { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 10px; }
+    .compare-tbl th, .compare-tbl td { border: 1px solid var(--c-line); padding: 6px 8px; text-align: center; }
+    .compare-tbl th { background: #f5f7fa; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>平台真题 · 知识图谱挂接 — 方案 A / B / C 原型</h1>
+    <p>对照卷：江苏省无锡市 2025 年中考英语真题。下方模拟 Admin「试卷详情弹框」三种交互形态；点击方案按钮切换。</p>
+  </header>
+
+  <div class="scheme-bar">
+    <button type="button" class="scheme-btn on" data-scheme="a">方案 A · 分题型工作台<span class="tag">推荐</span></button>
+    <button type="button" class="scheme-btn" data-scheme="b">方案 B · Section 卡片聚合</button>
+    <button type="button" class="scheme-btn" data-scheme="c">方案 C · 流水线自动化</button>
+  </div>
+
+  <div class="stage">
+    <div class="main">
+
+      <!-- ═══ A ═══ -->
+      <div id="mock-a" class="mock on">
+        <div class="dlg">
+          <div class="dlg-hd">
+            <h2>江苏省无锡市2025年中考英语试题(原卷版)</h2>
+            <div class="dlg-ctrl"><span>□</span><span>↗</span><span>×</span></div>
+          </div>
+          <div class="dlg-stats">共 <b>64</b> 题 · 已确认 KP <b style="color:#67c23a">18</b> · 待确认 <b>46</b> · 草稿</div>
+          <div class="dlg-toolbar">
+            <button class="btn btn-s">发布成为母题</button>
+            <button class="btn btn-p">勾选题派生仿真</button>
+            <span class="hint">整卷级操作保留；KP 工作在下方分题型 Tab 内完成</span>
+          </div>
+          <div class="dlg-body">
+            <div class="type-tabs">
+              <button type="button" class="type-tab on">单项选择 <span class="cnt">10</span><span class="bad">·3</span></button>
+              <button type="button" class="type-tab">完形填空 <span class="cnt">15</span><span class="bad">·15</span></button>
+              <button type="button" class="type-tab">阅读理解 <span class="cnt">20</span><span class="bad">·8</span></button>
+              <button type="button" class="type-tab">词汇运用 <span class="cnt">8</span></button>
+              <button type="button" class="type-tab">书面表达 <span class="cnt">1</span><span class="bad">·1</span></button>
+              <button type="button" class="type-tab">听力 <span class="cnt">10</span></button>
+            </div>
+
+            <div class="workbench">
+              <div class="wb-hd">
+                <span class="title">单项选择 · 语法/词法考点</span>
+                <button class="btn btn-ai">本题型 AI 匹配</button>
+                <button class="btn btn-p">采纳高置信(≥85%)</button>
+                <button class="btn btn-g">批量挂同一 KP…</button>
+              </div>
+              <table class="wb-tbl">
+                <thead>
+                  <tr>
+                    <th style="width:40px">题</th>
+                    <th>题干摘要</th>
+                    <th style="width:100px">判定线索</th>
+                    <th style="width:160px">考点(展示名)</th>
+                    <th style="width:70px">置信</th>
+                    <th style="width:72px">状态</th>
+                    <th style="width:56px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>1</td>
+                    <td><div class="q-stem">Hey, Julie. I've had a problem recently. ___ you help me?</div></td>
+                    <td><span class="clue">help me?</span></td>
+                    <td><span class="kp-tag">情态动词 · 表请求</span></td>
+                    <td><span class="conf hi">92%</span></td>
+                    <td><span class="status ok">已确认</span></td>
+                    <td><span class="link">改</span></td>
+                  </tr>
+                  <tr>
+                    <td>2</td>
+                    <td><div class="q-stem">The story is ___ and we all feel ___.</div></td>
+                    <td><span class="clue">feel ___</span></td>
+                    <td><span class="kp-tag ai">-ing/-ed 形容词 <span class="x">✓</span></span></td>
+                    <td><span class="conf hi">88%</span></td>
+                    <td><span class="status pending">待确认</span></td>
+                    <td><span class="link">确认</span></td>
+                  </tr>
+                  <tr>
+                    <td>3</td>
+                    <td><div class="q-stem">My uncle ___ in this factory since 2010.</div></td>
+                    <td><span class="clue">since 2010</span></td>
+                    <td><span class="kp-tag ai">现在完成时 · 标志词 <span class="x">✓</span></span></td>
+                    <td><span class="conf mid">76%</span></td>
+                    <td><span class="status pending">待确认</span></td>
+                    <td><span class="link">确认</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p class="hint" style="margin:14px 0 8px">切换 Tab 后布局随题型变化（示意）：</p>
+
+            <div class="workbench" style="opacity:.92">
+              <div class="wb-hd"><span class="title">完形填空 · 篇章 + 每空 slot（一次确认写 analysis + KP）</span></div>
+              <div class="block-layout">
+                <div>
+                  <div class="passage-box">
+                    <div class="meta">篇章层 · 说明文 · 约 186 词</div>
+                    While around half of his men were busy outside the city, riders arrived and reported… Zhuge Liang then climbed up the city wall and saw dust clouds far away…
+                  </div>
+                </div>
+                <div class="slot-list">
+                  <div class="slot-row"><b>36</b><span>…men were busy ___ the city</span><span class="clue">outside</span><span class="kp-tag">介词 · 地点</span></div>
+                  <div class="slot-row"><b>37</b><span>…reported, "Sima Yi ___ coming"</span><span class="clue">is</span><span class="kp-tag">进行时</span></div>
+                  <div class="slot-row"><b>38</b><span>…army ___ forward</span><span class="clue">moved</span><span class="kp-tag ai">一般过去 <span class="x">✓</span></span></div>
+                  <div style="text-align:right"><span class="link">确认本篇章全部 (12/15)</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="workbench" style="margin-top:12px;opacity:.92">
+              <div class="wb-hd"><span class="title">阅读理解 · rc 技能 + 定位句 evidence</span></div>
+              <div class="block-layout">
+                <div class="passage-box">
+                  <div class="meta">Passage A · 记叙文</div>
+                  He runs for half an hour and then has breakfast. <span class="hl">He runs for half an hour and then has breakfast.</span> After that he goes to school…
+                </div>
+                <div>
+                  <table class="wb-tbl">
+                    <tr><th>题</th><th>rc 技能</th><th>状态</th></tr>
+                    <tr><td>21</td><td><span class="kp-tag rc">细节理解 · 定位</span></td><td><span class="status ok">已确认</span></td></tr>
+                    <tr><td>22</td><td><span class="kp-tag rc ai">推理判断 <span class="x">✓</span></span></td><td><span class="status pending">待确认</span></td></tr>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ B ═══ -->
+      <div id="mock-b" class="mock">
+        <div class="dlg">
+          <div class="dlg-hd">
+            <h2>江苏省无锡市2025年中考英语试题(原卷版)</h2>
+            <div class="dlg-ctrl"><span>□</span><span>↗</span><span>×</span></div>
+          </div>
+          <div class="dlg-stats warn">⚠ 未挂 KP：<b>语法 3</b> · 完形 15 · 阅读 8（阅读允许空 rc 的不计入）</div>
+          <div class="dlg-toolbar">
+            <button class="btn btn-ai">AI 整卷匹配(补未挂)</button>
+            <button class="btn btn-w">采纳全部建议</button>
+            <button class="btn btn-s">发布成为母题</button>
+            <button class="btn btn-p">派生仿真</button>
+          </div>
+          <div class="dlg-body">
+
+            <div class="sec-card">
+              <div class="sec-hd">
+                <span class="name">一、单项选择</span>
+                <span class="sum">10 题 · 已挂 7 · 待 3</span>
+                <div class="sec-actions">
+                  <button class="btn btn-ai">一键挂 KP(AI)</button>
+                  <button class="btn btn-g">手动挂整段</button>
+                  <label class="hint"><input type="checkbox" /> 全选本节</label>
+                </div>
+              </div>
+              <div class="q-compact">
+                <span class="no">1</span>
+                <div>
+                  <div class="q-stem">Hey, Julie. ___ you help me?</div>
+                  <div class="kp-line"><span class="kp-tag">情态动词 · 表请求</span></div>
+                </div>
+                <span class="status ok">已挂</span>
+                <span class="more">⋯</span>
+              </div>
+              <div class="q-compact">
+                <span class="no">2</span>
+                <div>
+                  <div class="q-stem">The story is ___ and we all feel ___.</div>
+                  <div class="kp-line"><span class="kp-tag ai">-ing/-ed 形容词 <span class="x">✓</span></span> <span class="link">+ KP</span></div>
+                </div>
+                <span class="status pending">建议</span>
+                <span class="more">⋯</span>
+              </div>
+              <div class="q-compact collapsed">
+                <span class="no">3</span>
+                <div><div class="q-stem">My uncle ___ in this factory since 2010. <span class="hint">（选项折叠，仅显示摘要行）</span></div></div>
+                <span class="status draft">未挂</span>
+                <span class="more">⋯</span>
+              </div>
+            </div>
+
+            <div class="sec-card">
+              <div class="sec-hd">
+                <span class="name">二、完形填空</span>
+                <span class="sum">15 空 · 1 篇</span>
+                <div class="sec-actions">
+                  <button class="btn btn-ai">一键挂 KP</button>
+                  <button class="btn btn-g">批量解析</button>
+                  <span class="link orange">展开语篇 ▾</span>
+                </div>
+              </div>
+              <div class="passage-inline">While around half of his men were busy outside the city, riders arrived…（语篇折叠区，点击展开全文）</div>
+              <div class="q-compact collapsed">
+                <span class="no">36</span>
+                <div><div class="q-stem">…busy ___ the city</div><div class="kp-line"><span class="kp-tag">介词</span></div></div>
+                <span class="status ok">已挂</span>
+                <span class="more">⋯</span>
+              </div>
+              <div class="q-compact collapsed">
+                <span class="no">37-50</span>
+                <div><div class="hint">其余 14 空折叠为一行摘要 · 主 KP 标签 · ⋯ 菜单（解析/派生/+KP）</div></div>
+                <span class="status pending">14 待</span>
+                <span class="more">⋯</span>
+              </div>
+            </div>
+
+            <div class="sec-card">
+              <div class="sec-hd">
+                <span class="name">三、阅读理解</span>
+                <span class="sum">20 题 · 4 篇 · rc 预标 12</span>
+                <div class="sec-actions">
+                  <button class="btn btn-ai">一键挂 KP</button>
+                  <button class="btn btn-g">批量解析</button>
+                </div>
+              </div>
+              <div class="passage-inline">Passage A（折叠）· 每题只显示 1 个主 rc 标签，详情进侧栏 ⋯</div>
+              <div class="q-compact collapsed">
+                <span class="no">21</span>
+                <div><div class="kp-line"><span class="kp-tag rc">细节理解</span></div></div>
+                <span class="status ok">rc</span>
+                <span class="more">⋯</span>
+              </div>
+            </div>
+
+            <p class="hint" style="padding:0 4px">⋯ 菜单内收拢：+ 知识点 · 解析 · 派生仿真（不再每题横排 3 个链接）</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ C ═══ -->
+      <div id="mock-c" class="mock">
+        <div class="dlg">
+          <div class="dlg-hd">
+            <h2>江苏省无锡市2025年中考英语试题(原卷版)</h2>
+            <div class="dlg-ctrl"><span>□</span><span>↗</span><span>×</span></div>
+          </div>
+          <div class="dlg-stats" style="background:#f0f9eb;border-color:#e1f3d8;color:#529b2e">
+            流水线已完成 · 自动挂接 <b>58/64</b> · 待人工抽检 <b>6</b> · <span class="link green">可发布 ✓</span>
+          </div>
+          <div class="dlg-toolbar">
+            <button class="btn btn-g">重新跑流水线</button>
+            <button class="btn btn-s">发布成为母题</button>
+            <button class="btn btn-p">派生仿真</button>
+            <span class="hint">运营主界面 = 异常队列，不是全题列表</span>
+          </div>
+          <div class="dlg-body">
+
+            <div class="pipeline">
+              <div class="pipe-step done"><div class="pipe-icon">1</div><div class="pipe-label">拆题入库</div><div class="pipe-sub">64 题</div></div>
+              <div class="pipe-step done"><div class="pipe-icon">2</div><div class="pipe-label">规则预标</div><div class="pipe-sub">rc 12 · 词形 8</div></div>
+              <div class="pipe-step done"><div class="pipe-icon">3</div><div class="pipe-label">AI 匹配</div><div class="pipe-sub">缓存命中 41</div></div>
+              <div class="pipe-step done"><div class="pipe-icon">4</div><div class="pipe-label">高置信落库</div><div class="pipe-sub">≥85% 自动 attach</div></div>
+              <div class="pipe-step run"><div class="pipe-icon">5</div><div class="pipe-label">人工抽检</div><div class="pipe-sub">6 条异常</div></div>
+            </div>
+
+            <div class="queue-stats">
+              <div class="qstat green"><div class="n">58</div><div class="l">自动已挂</div></div>
+              <div class="qstat orange"><div class="n">4</div><div class="l">低置信待审</div></div>
+              <div class="qstat red"><div class="n">2</div><div class="l">校验失败</div></div>
+              <div class="qstat gray"><div class="n">0</div><div class="l">缺口新建</div></div>
+            </div>
+
+            <div class="except-list">
+              <div class="except-hd">异常队列（只显示需人工处理的题）</div>
+              <div class="except-row">
+                <span class="status pending">待审</span>
+                <span>单选·3</span>
+                <span><div class="q-stem">My uncle ___ since 2010.</div><span class="kp-tag ai">现在完成时 · 76%</span></div>
+                <span class="link">确认 / 改</span>
+              </div>
+              <div class="except-row">
+                <span class="reason">校验失败</span>
+                <span>阅读·22</span>
+                <span><div class="q-stem">evidence 不在原文</div><span class="hint">定位句: "He run half hour…" ✗</span></div>
+                <span class="link orange">修正解析</span>
+              </div>
+              <div class="except-row">
+                <span class="reason">校验失败</span>
+                <span>完形·38</span>
+                <span><div class="q-stem">clue 非题干子串</div><span class="hint">clue="army forward" ✗</span></div>
+                <span class="link orange">修正</span>
+              </div>
+              <div class="except-row">
+                <span class="status pending">待审</span>
+                <span>写作·1</span>
+                <span><span class="kp-tag wr">书信 · 建议信</span> <span class="hint">要点清单待确认</span></span>
+                <span class="link">确认</span>
+              </div>
+            </div>
+
+            <p class="hint" style="margin-top:14px">全量 64 题列表默认折叠 · 点击「查看全部题目(只读)」展开 · 正常题不再逐题 ✓</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧说明（随方案切换） -->
+    <aside class="side">
+      <div class="panel" id="side-a">
+        <h3>方案 A · 分题型工作台</h3>
+        <ul>
+          <li>按 <b>section → 题型 Tab</b> 切换，每种题型独立布局</li>
+          <li><b>确认 = 解析 + 挂 KP</b> 一步完成，消灭双轨</li>
+          <li>表格批量处理语法题；完形/阅读用 passage + 子表</li>
+          <li>高置信可「本题型一键采纳」</li>
+        </ul>
+        <p><span class="pro">优点</span>：题型语义清晰、与仿真/学生端同构</p>
+        <p><span class="con">成本</span>：前端改造大（2–3 周）</p>
+        <div class="note">终态推荐。阅读看 evidence 高亮，完形看空位表格，写作看体裁+要点。</div>
+      </div>
+      <div class="panel" id="side-b" style="display:none">
+        <h3>方案 B · Section 卡片聚合</h3>
+        <ul>
+          <li>保留纵向列表，但按<b>大题 Section 卡片</b>分组</li>
+          <li>头部集中操作；小题只留<b>摘要 + 主 KP + ⋯</b></li>
+          <li>阅读/完形语篇折叠；选项默认收起</li>
+          <li>未挂统计按题型分桶，减少误报</li>
+        </ul>
+        <p><span class="pro">优点</span>：1 周内可落地，立刻减乱</p>
+        <p><span class="con">缺点</span>：AI 标签 vs 解析双轨仍在</p>
+        <div class="note">适合先止血。对应当前 PlatformQuestions.vue 的渐进改版。</div>
+      </div>
+      <div class="panel" id="side-c" style="display:none">
+        <h3>方案 C · 流水线自动化</h3>
+        <ul>
+          <li>上传后自动：预标 → AI → <b>高置信 attach</b></li>
+          <li>Admin 主界面 = <b>异常队列</b>（低置信 / 校验失败 / 缺口）</li>
+          <li>卷级门禁：语法 100% + 阅读 rc 100% 才可发布</li>
+          <li>suggest 全量缓存，避免重复付费</li>
+        </ul>
+        <p><span class="pro">优点</span>：吞吐最高，46 题未挂可 overnight 清零</p>
+        <p><span class="con">缺点</span>：需置信度校准 + 抽检机制</p>
+        <div class="note">依赖 A 的 confirm 模型稳定后再开闸。适合卷库规模化。</div>
+      </div>
+
+      <div class="panel" style="margin-top:14px">
+        <h3>三方案对比</h3>
+        <table class="compare-tbl">
+          <tr><th></th><th>A</th><th>B</th><th>C</th></tr>
+          <tr><td>减乱程度</td><td>★★★★★</td><td>★★★</td><td>★★★</td></tr>
+          <tr><td>题型适配</td><td>★★★★★</td><td>★★★</td><td>★★★★</td></tr>
+          <tr><td>开发成本</td><td>高</td><td>低</td><td>中</td></tr>
+          <tr><td>上线周期</td><td>2–3 周</td><td>~1 周</td><td>后端为主</td></tr>
+        </table>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    document.querySelectorAll('.scheme-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = btn.dataset.scheme;
+        document.querySelectorAll('.scheme-btn').forEach(b => b.classList.toggle('on', b === btn));
+        document.querySelectorAll('.mock').forEach(m => m.classList.toggle('on', m.id === 'mock-' + s));
+        ['a','b','c'].forEach(k => {
+          document.getElementById('side-' + k).style.display = k === s ? 'block' : 'none';
+        });
+      });
+    });
+  </script>
+</body>
+</html>
