@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.core.exceptions import AppError
 from app.core.security import create_access_token, create_refresh_token, require_role
 from app.models.d1_users import User
@@ -48,7 +48,7 @@ from app.schemas.institution import (
     InstitutionCodePricing,
     InstitutionCodePricingUpdate,
 )
-from app.schemas.kp import OptionVocabChips, (
+from app.schemas.kp import (
     ApproveCandidateRequest,
     KpCandidateItem,
     KpCandidateListOut,
@@ -1509,18 +1509,34 @@ async def _unit_structured_out(db, unit_id: uuid.UUID) -> dict:
         if s.kind == "writing":
             out["writing"] = {"id": str(s.id), "requirement": s.requirement, "body_text": s.body_text}
             continue
+        sents = sent_map.get(s.id, [])
+        by_text = {x["text"]: x for x in sents}
+        facets_out: list = []
+        raw_facets = getattr(s, "facets", None) or []
+        if isinstance(raw_facets, list):
+            for f in raw_facets:
+                if not isinstance(f, dict):
+                    continue
+                fname = (f.get("name") or "").strip()
+                ftexts = f.get("sentences") or []
+                if not fname:
+                    continue
+                facets_out.append({
+                    "name": fname,
+                    "sentences": [
+                        by_text.get(t) or {
+                            "id": "", "text": t, "difficulty": None, "syntax_points": []}
+                        for t in ftexts if isinstance(t, str) and t.strip()
+                    ],
+                })
         out.setdefault(s.kind, []).append({
             "id": str(s.id), "point_name": s.point_name,
             "node_id": str(s.node_id) if s.node_id else None, "node_code": s.node_code,
             "node_name": name_map.get(s.node_id) if s.node_id else None,
-            "sentences": sent_map.get(s.id, [])})
+            "extract_source": getattr(s, "extract_source", None),
+            "facets": facets_out,
+            "sentences": sents})
     return out
-
-
-@router.get("/curriculum/units/{unit_id}/structured", response_model=BaseResponse[dict])
-async def get_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
-    """单元结构化解析:语法点+分级句 / 听力考点+句组 / 作文要求+正文。"""
-    return make_ok(await _unit_structured_out(db, unit_id))
 
 
 @router.get("/curriculum/units/{unit_id}/course-text", response_model=BaseResponse[dict])
@@ -1604,6 +1620,95 @@ async def delete_unit_understand_ls_api(
     return make_ok(await uls.delete_unit_understand_ls(
         db, unit_id=unit_id, item_id=item_id))
 
+
+class LinkBySourceIn(BaseModel):
+    source: str = Field("pdf", description="pdf | paste | merge")
+
+
+@router.post("/curriculum/units/{unit_id}/structured/link-by-source", response_model=BaseResponse[dict])
+async def link_unit_structured_by_source_api(
+    unit_id: uuid.UUID, body: LinkBySourceIn, db: DbDep, admin: AdminDep,
+):
+    """按来源选项:缺结构则先抽取(PDF/粘贴/合并),再一键关联知识图谱。
+
+    - pdf: 无结构→从 PDF 抽并覆盖落库;有结构→跳过抽
+    - paste: 须已保存 course_text → 按文本抽并合并(保留已挂点)
+    - merge: 保证 PDF 侧有结果 + 粘贴合并 → 再挂
+    """
+    from app.models.d4_knowledge import CurriculumUnit
+    src = (body.source or "pdf").strip().lower()
+    if src not in ("pdf", "paste", "merge"):
+        raise AppError(code=400, message="source 须为 pdf / paste / merge")
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+
+    steps: list[str] = []
+    extract_counts: dict = {}
+    has = await curriculum_service.unit_has_structured(db, unit_id)
+
+    if src == "pdf":
+        if not has:
+            text = await _resolve_unit_source_text(db, unit)
+            steps.append("从单元 PDF 抽取结构化")
+            parsed = await curriculum_service.parse_unit_structured_cached(db, text)
+            extract_counts = await curriculum_service.persist_unit_structured(
+                db, unit_id=unit_id, parsed=parsed, extract_source="pdf", replace=True)
+        else:
+            steps.append("已有结构化结果,跳过 PDF 抽取")
+    elif src == "paste":
+        ct = (getattr(unit, "course_text", None) or "").strip()
+        if not ct:
+            raise AppError(code=400, message="请先在「粘贴原文」保存课文后再关联")
+        steps.append("按粘贴原文抽取并合并")
+        parsed = await curriculum_service.parse_unit_structured_cached(db, ct)
+        extract_counts = await curriculum_service.persist_unit_structured(
+            db, unit_id=unit_id, parsed=parsed, extract_source="paste", replace=False)
+    else:  # merge
+        if not has:
+            try:
+                text = await _resolve_unit_source_text(db, unit)
+            except AppError:
+                text = ""
+            if text:
+                steps.append("补齐 PDF 侧结构化")
+                parsed = await curriculum_service.parse_unit_structured_cached(db, text)
+                extract_counts = await curriculum_service.persist_unit_structured(
+                    db, unit_id=unit_id, parsed=parsed, extract_source="pdf", replace=True)
+                has = True
+        else:
+            steps.append("PDF 侧已有结构,跳过抽取")
+        ct = (getattr(unit, "course_text", None) or "").strip()
+        if not ct:
+            if not has:
+                raise AppError(code=400, message="合并模式需要 PDF 或已保存的粘贴原文至少一方")
+            steps.append("无粘贴原文,仅使用已有结构")
+        else:
+            steps.append("合并粘贴原文抽取结果")
+            parsed = await curriculum_service.parse_unit_structured_cached(db, ct)
+            paste_counts = await curriculum_service.persist_unit_structured(
+                db, unit_id=unit_id, parsed=parsed, extract_source="paste", replace=False)
+            extract_counts = {**extract_counts, "paste": paste_counts}
+
+    steps.append("一键关联未挂点")
+    link_counts = await curriculum_service.link_unit_sections(
+        db, unit_id=unit_id, only_unlinked=True)
+    await db.commit()
+    out = await _unit_structured_out(db, unit_id)
+    out["link_counts"] = link_counts
+    out["extract_counts"] = extract_counts
+    out["steps"] = steps
+    out["source"] = src
+    return make_ok(out)
+
+
+@router.get("/curriculum/units/{unit_id}/structured", response_model=BaseResponse[dict])
+async def get_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """单元结构化解析:语法点+分级句 / 听力考点+句组 / 作文要求+正文。"""
+    return make_ok(await _unit_structured_out(db, unit_id))
+
+
 @router.post("/curriculum/units/{unit_id}/structured/generate", response_model=BaseResponse[dict])
 async def generate_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """从单元原文 LLM 解析出结构化(语法点+分级句/听力考点+句组/作文要求+正文),整体覆盖。
@@ -1611,14 +1716,14 @@ async def generate_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: Adm
     句子均为原文逐字、每句算 0–100 难度。语法点/听力考点 node_id 第二步「关联知识图谱」再填。
     """
     from app.models.d4_knowledge import CurriculumUnit
-    from app.services import curriculum_ai_service
     unit = (await db.execute(
         select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
     if unit is None:
         raise AppError(code=404, message="单元不存在")
     src = await _resolve_unit_source_text(db, unit)
-    parsed = await curriculum_ai_service.parse_unit_structured(src)
-    counts = await curriculum_service.persist_unit_structured(db, unit_id=unit_id, parsed=parsed)
+    parsed = await curriculum_service.parse_unit_structured_cached(db, src)
+    counts = await curriculum_service.persist_unit_structured(
+        db, unit_id=unit_id, parsed=parsed, extract_source="pdf", replace=True)
     await db.commit()
     out = await _unit_structured_out(db, unit_id)
     out["counts"] = counts
@@ -1637,6 +1742,21 @@ async def link_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDe
     await db.commit()
     out = await _unit_structured_out(db, unit_id)
     out["link_counts"] = counts
+    return make_ok(out)
+
+
+@router.post("/curriculum/units/{unit_id}/structured/clear-grammar", response_model=BaseResponse[dict])
+async def clear_unit_grammar_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """清除本单元全部语法板块(含句子)及其图谱关联;不动听力/作文/图谱节点本体。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+    counts = await curriculum_service.clear_unit_grammar(db, unit_id=unit_id)
+    await db.commit()
+    out = await _unit_structured_out(db, unit_id)
+    out["clear_counts"] = counts
     return make_ok(out)
 
 

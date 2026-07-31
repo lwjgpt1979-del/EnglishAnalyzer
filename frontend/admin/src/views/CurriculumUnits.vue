@@ -9,7 +9,7 @@ import {
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
   fetchUnitPdfBlob, getUnitStructured, generateUnitStructured, linkUnitStructured,
-  getUnitCourseText, saveUnitCourseText,
+  linkUnitStructuredBySource, clearUnitGrammar, getUnitCourseText, saveUnitCourseText,
   linkSectionNode, unlinkSectionNode, newNodeForSection, getNodeTree, getUnitLinkedNodes,
   getUnitWords, saveUnitWords, deleteUnitWord, ocrUnitWords, parseUnitWordsText,
   listUnitUnderstandLs, generateUnitUnderstandLs, updateUnitUnderstandLs, deleteUnitUnderstandLs,
@@ -568,8 +568,7 @@ async function onLinkKg() {
   passLinking.value = true
   linkSteps.value = []
   try {
-    // 本提交仅落地 course-text + 理解向长难句;图谱关联暂走原一键挂靠
-    const r = await linkUnitStructured(passUnit.value.unit_id)
+    const r = await linkUnitStructuredBySource(passUnit.value.unit_id, linkSource.value)
     structured.value = r
     linkSteps.value = r.steps || []
     const c = r.link_counts
@@ -674,7 +673,21 @@ async function onUnlink(sec: { id: string; node_id: string | null; node_code: st
 const clearingGrammar = ref(false)
 /** 清除本单元全部语法点(含句子)及其图谱关联;听力/作文保留 */
 async function onClearGrammar() {
-  ElMessage.info('清除语法点接口未包含在本次提交，请另开任务落地')
+  if (!passUnit.value) return
+  try {
+    await ElMessageBox.confirm(
+      '清除本单元全部语法解析点？已挂图谱关联会一并解除(可再重新抽取/关联)。',
+      '清除全部语法', { type: 'warning' })
+  } catch { return }
+  clearingGrammar.value = true
+  try {
+    const r = await clearUnitGrammar(passUnit.value.unit_id)
+    const d = r.clear_counts?.deleted ?? 0
+    structured.value = await getUnitStructured(passUnit.value.unit_id)
+    ElMessage.success(`已清除 ${d} 个语法点`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '清除失败')
+  } finally { clearingGrammar.value = false }
 }
 
 // 句子难度色(0–100)

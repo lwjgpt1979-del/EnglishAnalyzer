@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>单元语法抽取丰富度 · 多方案原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --c-danger: #e85d5d;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1280px; margin: 0 auto; padding: 22px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 980px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .cmp {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  @media (max-width: 900px) { .cmp { grid-template-columns: 1fr 1fr; } }
+  .cmp-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .cmp-card h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-card .v { font-size: 20px; font-weight: 700; color: var(--text); }
+  .cmp-card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .mask { background: rgba(15,23,42,.06); border-radius: 14px; padding: 12px; }
+  .dlg {
+    background: #fff; border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 16px 48px rgba(15,23,42,.12); overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { font-size: 15px; margin: 0; flex: 1; }
+  .icon-btn {
+    width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px;
+    background: #fff; color: var(--muted); font-size: 12px;
+  }
+  .body { display: grid; grid-template-columns: 36% 64%; min-height: 620px; }
+  @media (max-width: 960px) { .body { grid-template-columns: 1fr; } }
+  .pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .pane:last-child { border-right: 0; }
+  .pane-hd {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fafcff;
+    font-size: 13px; font-weight: 600;
+  }
+  .pane-bd { flex: 1; overflow: auto; padding: 12px; background: #f8fafc; }
+  .right-bd { background: #fff; }
+  .tabs {
+    display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff;
+  }
+  .tab {
+    border: 0; background: transparent; padding: 5px 12px; font-size: 12px;
+    cursor: pointer; color: var(--muted); border-right: 1px solid var(--line);
+  }
+  .tab:last-child { border-right: 0; }
+  .tab.on { background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+  .paste {
+    width: 100%; min-height: 280px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; font-family: inherit; resize: vertical;
+    background: #fff; color: #334155; white-space: pre-wrap;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fff;
+  }
+  .btn {
+    height: 30px; border-radius: 6px; border: 1px solid var(--line);
+    padding: 0 12px; font-size: 12px; background: #fff; cursor: pointer; color: var(--text);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn.primary { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
+  .btn.ok { border-color: #b7e4d4; color: var(--c-ok); background: #f3fbf8; }
+  .btn.ok.solid { background: var(--c-ok); border-color: var(--c-ok); color: #fff; }
+  .btn.danger { border-color: #fecaca; color: var(--c-danger); background: #fff5f5; }
+  .btn.ghost { color: var(--muted); }
+  .stat { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; font-size: 12px; }
+  .pill {
+    background: #f1f5f9; border-radius: 999px; padding: 3px 9px; color: var(--muted);
+  }
+  .pill em { font-style: normal; font-weight: 700; color: var(--text); }
+  .pill.warn { background: #fff7e8; color: #9a6700; }
+  .pill.ok { background: #e9f6f1; color: #1f7a61; }
+  .flow {
+    margin: 0 12px 10px; padding: 8px 10px; border: 1px dashed #bfdbfe; border-radius: 8px;
+    background: #f8fbff; font-size: 12px; color: #475569;
+  }
+  .flow b { color: #0f2f55; }
+  .sec-h {
+    font-size: 13px; font-weight: 700; margin: 0 0 8px; padding: 0 0 0 8px;
+    border-left: 3px solid var(--c-primary);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .sec-h .muted { font-weight: 400; color: var(--muted); }
+  .card {
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #fff;
+  }
+  .card.unlinked { border-color: #f3d19e; background: #fffdf8; }
+  .card-hd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+  .tag {
+    font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 4px;
+    border: 1px solid #b7e4d4; background: #e9f6f1; color: #1f7a61;
+  }
+  .tag.wait { border-color: #f3d19e; background: #fff8eb; color: #9a6700; }
+  .tag.sub { border-color: #ddd6fe; background: #f5f3ff; color: #5b21b6; }
+  .tag.cnt { border-color: #e2e8f0; background: #f8fafc; color: var(--muted); }
+  .link-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  .fake-select {
+    height: 28px; min-width: 200px; border: 1px solid var(--line); border-radius: 6px;
+    padding: 0 8px; font-size: 12px; color: var(--muted); background: #fff;
+  }
+  .sent { display: flex; gap: 8px; font-size: 12px; margin-top: 4px; color: #334155; align-items: flex-start; }
+  .badge {
+    flex-shrink: 0; min-width: 22px; height: 18px; border-radius: 9px; padding: 0 5px;
+    background: var(--c-ok); color: #fff; font-size: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .badge.warn { background: var(--c-warn); }
+  .sub-block {
+    margin: 8px 0 0; padding: 8px 10px; border-radius: 6px; background: #f8fafc; border: 1px solid var(--line);
+  }
+  .sub-h { font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 4px; }
+  .export-bar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #faf5ff; border: 1px solid #e9d5ff;
+    font-size: 12px; color: #6b21a8;
+  }
+  .table-wrap { overflow: auto; margin-top: 14px; }
+  table.matrix {
+    width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden;
+    font-size: 12px; border: 1px solid var(--line);
+  }
+  table.matrix th, table.matrix td {
+    border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.matrix th { background: #f8fafc; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  table.matrix tr:last-child td { border-bottom: 0; }
+  .ok-cell { color: #166534; }
+  .mid-cell { color: #9a6700; }
+  .bad-cell { color: #b91c1c; }
+  .foot {
+    margin-top: 14px; font-size: 12px; color: var(--muted);
+  }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  .hidden { display: none !important; }
+  .sent-chip-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip {
+    font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #e8f2ff; color: #1d4ed8;
+  }
+  details.more { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  details.more summary { cursor: pointer; color: var(--c-primary); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>单元语法抽取丰富度 · 多方案原型</h1>
+  <p class="lead">
+    对照你整理的 Unit 1「细类 + 多例句」清单：当前程序是<strong>粗点 + 每点 1 句</strong>（方便挂知识图谱），并非 API 故障。
+    下面 7 个方案可切换预览右侧 UI；底部有取舍矩阵。选定前不改代码。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="A">A 粗点多句 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="D">D 双层（挂靠点 + 细目）</button>
+    <button class="scheme" data-k="F">F 两段式扩句</button>
+    <button class="scheme" data-k="G">G 先对图谱再挂句</button>
+    <button class="scheme" data-k="E">E 句优先多标签</button>
+    <button class="scheme" data-k="B">B 细拆子类</button>
+    <button class="scheme" data-k="C">C 另导出教学清单</button>
+    <button class="scheme" data-k="NOW">现状（对照）</button>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="cmp" id="cmp"></div>
+
+  <div class="mask">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>单元短文 · 人教版 初中7年级 上 U1</h2>
+        <button class="icon-btn" title="最大化">▢</button>
+        <button class="icon-btn" title="关闭">✕</button>
+      </div>
+      <div class="body">
+        <div class="pane">
+          <div class="pane-hd">
+            <div class="tabs">
+              <button class="tab">单元 PDF</button>
+              <button class="tab on">粘贴原文</button>
+            </div>
+          </div>
+          <div class="pane-bd">
+            <div class="paste">My name is Song Meimei.
+I’m Song Meimei. I am 12 years old. I’m from London.
+Are you Peter? — Yes, I am. / No, I’m not.
+He’s from the US. She is from Sydney, Australia.
+Where are you from? What’s your last name? It’s Miller.
+I live in Singapore with my big family.
+He lives in Beijing with his parents.
+Do you want to be my friend? Don’t be shy!
+May I have your name? Would you like to be my friend?
+…（含 Reading Plus 全单元）</div>
+            <div class="hint">已保存 · 可作关联源 · 左侧内容各方案共用</div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="toolbar">
+            <span>单元解析</span>
+            <div class="stat" id="stat"></div>
+            <button class="btn ok solid" id="mainCta">关联知识图谱</button>
+          </div>
+          <div class="flow" id="flow"></div>
+          <div class="pane-bd right-bd" id="right"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>方案</th>
+          <th>语法点粒度</th>
+          <th>例句</th>
+          <th>挂图谱</th>
+          <th>贴近人工清单</th>
+          <th>成本 / 风险</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>A 粗点多句</b>（推荐）</td>
+          <td>维持粗点（be=1）</td>
+          <td class="ok-cell">每点 3–8 句原句编号</td>
+          <td class="ok-cell">不变</td>
+          <td class="mid-cell">中（多句齐）</td>
+          <td class="ok-cell">低；改 prompt + 解析</td>
+        </tr>
+        <tr>
+          <td><b>D 双层</b></td>
+          <td>粗点挂靠 + 细目折叠</td>
+          <td class="ok-cell">细目下多句</td>
+          <td class="ok-cell">仍按粗点挂</td>
+          <td class="ok-cell">高</td>
+          <td class="mid-cell">中；需存 sub_points JSON</td>
+        </tr>
+        <tr>
+          <td><b>F 两段式</b></td>
+          <td>粗点（现有）</td>
+          <td class="ok-cell">第二段只补编号句</td>
+          <td class="ok-cell">不变</td>
+          <td class="mid-cell">中</td>
+          <td class="ok-cell">可控；两段各缓存</td>
+        </tr>
+        <tr>
+          <td><b>G 先对图谱</b></td>
+          <td>对齐 cf/jf 节点名</td>
+          <td class="ok-cell">节点下挂多句</td>
+          <td class="ok-cell">自动命中率更高</td>
+          <td class="mid-cell">中（受目录约束）</td>
+          <td class="mid-cell">中；要喂节点目录</td>
+        </tr>
+        <tr>
+          <td><b>E 句优先</b></td>
+          <td>一句多标签</td>
+          <td class="ok-cell">句全覆盖</td>
+          <td class="mid-cell">需聚合后再挂</td>
+          <td class="ok-cell">高（覆盖面）</td>
+          <td class="bad-cell">高；模型与 UI 大改</td>
+        </tr>
+        <tr>
+          <td><b>B 细拆子类</b></td>
+          <td>肯定/否定/疑问…</td>
+          <td class="ok-cell">每子类多句</td>
+          <td class="bad-cell">点爆炸，难对齐</td>
+          <td class="ok-cell">最高</td>
+          <td class="bad-cell">改挂负担大</td>
+        </tr>
+        <tr>
+          <td><b>C 另导出</b></td>
+          <td>挂靠流不动</td>
+          <td class="ok-cell">独立 Markdown/表</td>
+          <td class="ok-cell">零影响</td>
+          <td class="ok-cell">可做得很细</td>
+          <td class="mid-cell">多一次付费调用+缓存</td>
+        </tr>
+        <tr>
+          <td>现状</td>
+          <td>粗点</td>
+          <td class="bad-cell">每点 1 句</td>
+          <td class="ok-cell">简单</td>
+          <td class="bad-cell">低</td>
+          <td class="ok-cell">已上线</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="foot">
+    原型文件：<code>docs/design/unit-grammar-extract-richness-prototype.html</code> ·
+    现实现：<code>curriculum_ai_service.parse_unit_structured</code>（fast + 每点 <code>sent</code> 单句 + 缓存 md5）
+  </p>
+</div>
+
+<script>
+const META = {
+  NOW: {
+    note: '<b>现状（对照）</b>：粗语法点 + <b>每点仅 1 句</b>；提示「通常 10–18 个点」；禁交际功能。截图里「16 点 · 每点 1 句」即此规格。',
+    cmp: [
+      ['语法点数', '16', '粗合并'],
+      ['例句/点', '1', '写死在 prompt'],
+      ['挂图谱', '直接挂粗点', '改挂成本低'],
+      ['贴近人工表', '低', '缺细类与多句'],
+    ],
+    flow: '流水线：<b>粘贴抽</b> → grammar[{point, sent×1}] → <b>挂图谱</b>（分词打分）',
+    stat: '语法 <em>16</em> · 听力 7 · 作文 1',
+    pills: [['未挂 7', 'warn'], ['已挂 9', 'ok']],
+    cta: '关联知识图谱',
+  },
+  A: {
+    note: '<b>方案 A（推荐）</b>：挂靠粒度不变（be 仍 1 点），但每点改为 <b>多句原句编号</b>（如 3–8 句，覆盖肯定/否定/疑问典型）。禁止自造句。改动最小、立刻缓解「只有一句」的观感。',
+    cmp: [
+      ['语法点数', '~16', '与现状同粗'],
+      ['例句/点', '3–8', '原句编号'],
+      ['挂图谱', '不变', 'node 仍挂粗点'],
+      ['成本', '低', '输出略增'],
+    ],
+    flow: '流水线：编号原文 → LLM 回 <b>sents:[19,3,7…]</b> → 服务端映射原文 → 挂图谱（仍按粗点）',
+    stat: '语法 <em>16</em> · 听力 7 · 作文 1',
+    pills: [['未挂 7', 'warn'], ['已挂 9', 'ok'], ['例句 86', '']],
+    cta: '关联知识图谱',
+  },
+  D: {
+    note: '<b>方案 D</b>：UI/数据双层——上层 <b>挂靠点</b>（对图谱），下层可折叠 <b>细目</b>（肯定句 / 否定句 / 一般疑问…）+ 各细目例句。运营挂点不炸量，教案级细度也能看。',
+    cmp: [
+      ['挂靠点数', '~16', '粗'],
+      ['细目数', '~40', '仅展示'],
+      ['例句', '细目下多句', ''],
+      ['存储', 'sub_points JSON', '或子表'],
+    ],
+    flow: 'LLM 出 <b>point + facets[{name,sents}]</b> → 只对 point 挂图谱；细目只读/可导出',
+    stat: '挂靠点 <em>16</em> · 细目 38 · 例句 92',
+    pills: [['未挂 7', 'warn'], ['已挂 9', 'ok']],
+    cta: '关联知识图谱',
+  },
+  F: {
+    note: '<b>方案 F</b>：两段付费调用——①现有粗点+1 句（快）②对每个点只补「原句编号列表」（更小输出、独立缓存）。适合先保留现状挂靠，再异步/按钮「补全例句」。',
+    cmp: [
+      ['段①', '现状抽取', '可复用缓存'],
+      ['段②', '只扩 sents', '按点 md5 缓存'],
+      ['挂图谱', '可先挂后补句', ''],
+      ['失败', '段②失败仍有 1 句', '稳'],
+    ],
+    flow: '①抽点 → 可挂图谱 → 点「补全例句」→ ②扩句缓存 → 刷新列表',
+    stat: '语法 <em>16</em>（例句待补 12）',
+    pills: [['未挂 7', 'warn'], ['已挂 9', 'ok']],
+    cta: '关联知识图谱',
+    extraCta: '补全例句',
+  },
+  G: {
+    note: '<b>方案 G</b>：把 cf/jf 目录（或本年级常用节点）喂给模型，优先输出 <b>已有节点名/编码</b>，再挂多句。减少「动词be」vs「be动词」对不齐；未命中再落候选。',
+    cmp: [
+      ['点名来源', '图谱目录优先', ''],
+      ['自动挂中', '更高', '少改挂'],
+      ['自由度', '受目录约束', '目录外→候选'],
+      ['成本', '中', 'prompt 更长'],
+    ],
+    flow: '喂节点短表 → LLM 选 node_code + sents → 直接写 node_id（可跳过分词打分）',
+    stat: '命中目录 <em>12</em> · 候选 4 · 例句 78',
+    pills: [['待审候选 4', 'warn'], ['已挂 12', 'ok']],
+    cta: '对齐目录并关联',
+  },
+  E: {
+    note: '<b>方案 E</b>：句优先——对编号句打 0–N 个语法标签，再聚合为「点→句列表」。覆盖全、适合精读；挂图谱前要聚合，UI 偏重。',
+    cmp: [
+      ['主对象', '句子', '每句 chips'],
+      ['聚合点', '二次汇总', ''],
+      ['覆盖', '最高', ''],
+      ['工程量', '大', 'UI/模型双改'],
+    ],
+    flow: '句 → tags[] → 聚合 point→sents →（可选）挂图谱',
+    stat: '已标注句 <em>96</em> / 120 · 聚合点 18',
+    pills: [['未挂聚合点 8', 'warn'], ['已挂 10', 'ok']],
+    cta: '聚合后关联图谱',
+  },
+  B: {
+    note: '<b>方案 B</b>：细拆子类（be-肯定 / be-否定 / be-一般疑问…）+ 多句。最贴近你的 Markdown 表；但挂靠点暴涨，和现有词法/句法叶子一对多，运营改挂成本高。',
+    cmp: [
+      ['点数', '40–60', '细拆'],
+      ['例句', '每子类多句', ''],
+      ['挂图谱', '难对齐', '多对一'],
+      ['建议', '仅教案用', '或配合 D'],
+    ],
+    flow: '细类直接当 section → 挂靠时大量「改挂/合并」',
+    stat: '语法细类 <em>48</em> · 例句 110',
+    pills: [['未挂 31', 'warn'], ['已挂 17', 'ok']],
+    cta: '关联知识图谱',
+  },
+  C: {
+    note: '<b>方案 C</b>：挂靠流完全不动；另开「导出教学语法清单」（Markdown/表格，可含交际句型）。运营对照人工表；学生/图谱仍用粗点。',
+    cmp: [
+      ['挂靠流', '零改动', ''],
+      ['清单', '独立 LLM+缓存', ''],
+      ['用途', '教研/质检', ''],
+      ['与 A', '可叠加', 'A+C 很稳'],
+    ],
+    flow: '现状挂靠 UI 不变 + 顶栏「导出教学清单」→ 新缓存表',
+    stat: '语法 <em>16</em>（挂靠）· 清单另存',
+    pills: [['未挂 7', 'warn'], ['已挂 9', 'ok']],
+    cta: '关联知识图谱',
+    extraCta: '导出教学清单',
+  },
+};
+
+function sent(n, t, warn) {
+  return `<div class="sent"><span class="badge${warn ? ' warn' : ''}">${n}</span><span>${t}</span></div>`;
+}
+
+const VIEWS = {
+  NOW() {
+    return `
+      <div class="sec-h"><span>语法部分 <span class="muted">（16 个语法点 · 每点 1 句）</span></span>
+        <button class="btn danger">清除全部语法</button></div>
+      <div class="card unlinked">
+        <div class="card-hd">动词be (am/is/are)
+          <span class="tag wait">未关联</span><span class="tag cnt">1 句</span></div>
+        <div class="link-row">
+          <div class="fake-select">选词法/句法目录节点…</div>
+          <button class="btn">挂靠</button>
+          <button class="btn primary" style="opacity:.85">目录没有→新建</button>
+        </div>
+        ${sent(19, "I'm Song Meimei.")}
+      </div>
+      <div class="card unlinked">
+        <div class="card-hd">人称代词 <span class="tag wait">未关联</span><span class="tag cnt">1 句</span></div>
+        ${sent(18, "I'm from London.")}
+      </div>
+      <div class="card">
+        <div class="card-hd">物主代词 <span class="tag">已关联 物主代词</span><span class="tag cnt">1 句</span></div>
+        ${sent(20, "May I have your name?")}
+      </div>`;
+  },
+  A() {
+    return `
+      <div class="sec-h"><span>语法部分 <span class="muted">（16 个挂靠点 · 多句原句）</span></span>
+        <button class="btn danger">清除全部语法</button></div>
+      <div class="card unlinked">
+        <div class="card-hd">be 动词（am/is/are）
+          <span class="tag wait">未关联</span><span class="tag cnt">6 句</span></div>
+        <div class="link-row">
+          <div class="fake-select">选词法/句法目录节点…</div>
+          <button class="btn">挂靠</button>
+          <button class="btn primary" style="opacity:.85">目录没有→新建</button>
+        </div>
+        ${sent(19, "I'm Song Meimei.")}
+        ${sent(3, "I am 12 years old.")}
+        ${sent(7, "Are you Peter?")}
+        ${sent(8, "No, I'm not.")}
+        ${sent(12, "He's from the US.")}
+        ${sent(15, "We're in the same class.")}
+        <details class="more"><summary>还有肯定/否定/疑问典型句说明…</summary>
+          同一粗点下用多句覆盖人称与句式；不拆成多个挂靠点。</details>
+      </div>
+      <div class="card unlinked">
+        <div class="card-hd">一般现在时（实义动词）
+          <span class="tag wait">未关联</span><span class="tag cnt">5 句</span></div>
+        ${sent(41, "I live in Singapore with my big family.")}
+        ${sent(42, "He lives in Beijing with his parents.")}
+        ${sent(45, "She likes Chinese food a lot.")}
+        ${sent(50, "Do you want to be my friend?")}
+        ${sent(52, "Don't forget to share!")}
+      </div>
+      <div class="card">
+        <div class="card-hd">特殊疑问句（含 be）
+          <span class="tag">已关联 特殊疑问句</span><span class="tag cnt">4 句</span></div>
+        ${sent(22, "Where are you from?")}
+        ${sent(23, "What's your last name?")}
+        ${sent(24, "Who's your class teacher?")}
+        ${sent(25, "How old are you?")}
+      </div>`;
+  },
+  D() {
+    return `
+      <div class="sec-h"><span>语法部分 <span class="muted">（16 挂靠点 · 38 细目）</span></span>
+        <button class="btn danger">清除全部语法</button></div>
+      <div class="card unlinked">
+        <div class="card-hd">be 动词
+          <span class="tag wait">未关联</span>
+          <span class="tag sub">3 细目</span>
+          <span class="tag cnt">挂靠用此层</span></div>
+        <div class="link-row">
+          <div class="fake-select">选词法/句法目录节点…</div>
+          <button class="btn">挂靠</button>
+        </div>
+        <div class="sub-block">
+          <div class="sub-h">细目 · 肯定句（主谓一致）</div>
+          ${sent(19, "I'm Song Meimei.")}
+          ${sent(3, "I am 12 years old.")}
+          ${sent(12, "He's from the US.")}
+        </div>
+        <div class="sub-block">
+          <div class="sub-h">细目 · 否定句</div>
+          ${sent(8, "No, I'm not.")}
+          ${sent(9, "No, they aren't.")}
+        </div>
+        <div class="sub-block">
+          <div class="sub-h">细目 · 一般疑问句及回答</div>
+          ${sent(7, "Are you Peter?")}
+          ${sent(10, "Yes, I am.")}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hd">情态动词
+          <span class="tag">已关联 情态动词</span>
+          <span class="tag sub">may / can / would…</span></div>
+        <div class="sub-block">
+          <div class="sub-h">细目 · may（请求许可）</div>
+          ${sent(20, "May I have your name?")}
+        </div>
+        <div class="sub-block">
+          <div class="sub-h">细目 · would（礼貌询问）</div>
+          ${sent(55, "Would you like to be my friend?")}
+        </div>
+      </div>`;
+  },
+  F() {
+    return `
+      <div class="export-bar">段②「补全例句」可按点缓存；已挂图谱的点也会原地变多句，无需重挂。</div>
+      <div class="sec-h"><span>语法部分 <span class="muted">（先挂点，再扩句）</span></span>
+        <button class="btn danger">清除全部语法</button></div>
+      <div class="card">
+        <div class="card-hd">be 动词
+          <span class="tag">已关联 be动词</span>
+          <span class="tag cnt">已扩 6 句</span></div>
+        ${sent(19, "I'm Song Meimei.")}
+        ${sent(3, "I am 12 years old.")}
+        ${sent(7, "Are you Peter?")}
+        ${sent(8, "No, I'm not.")}
+        ${sent(12, "He's from the US.")}
+        ${sent(15, "We're in the same class.")}
+      </div>
+      <div class="card unlinked">
+        <div class="card-hd">人称代词
+          <span class="tag wait">未关联</span>
+          <span class="tag wait">仅种子句 · 待补全</span></div>
+        ${sent(18, "I'm from London.", true)}
+        <div class="hint" style="margin-top:6px">点顶栏「补全例句」后变为多句编号列表</div>
+      </div>`;
+  },
+  G() {
+    return `
+      <div class="sec-h"><span>语法部分 <span class="muted">（优先对齐目录节点）</span></span>
+        <button class="btn danger">清除全部语法</button></div>
+      <div class="card">
+        <div class="card-hd">be 动词
+          <span class="tag">已关联 be动词 · cf-xxx</span>
+          <span class="tag cnt">5 句</span></div>
+        <div class="hint" style="margin-bottom:6px">模型直接选目录节点，跳过模糊打分</div>
+        ${sent(19, "I'm Song Meimei.")}
+        ${sent(7, "Are you Peter?")}
+        ${sent(12, "He's from the US.")}
+        ${sent(22, "Where are you from?")}
+        ${sent(3, "I am 12 years old.")}
+      </div>
+      <div class="card unlinked">
+        <div class="card-hd">名词所有格（'s）
+          <span class="tag wait">目录未命中 → 候选</span>
+          <span class="tag cnt">2 句</span></div>
+        <div class="link-row">
+          <button class="btn">打开候选审核</button>
+          <button class="btn">手动挂靠</button>
+        </div>
+        ${sent(60, "Lin Hai's favourite colour is green.")}
+        ${sent(61, "Lisa's pet cat is very cute.")}
+      </div>`;
+  },
+  E() {
+    return `
+      <div class="sec-h"><span>按句标注 <span class="muted">（再聚合为挂靠点）</span></span>
+        <button class="btn ghost">切换：聚合点视图</button></div>
+      <div class="card">
+        <div class="card-hd"><span class="badge">19</span> I'm Song Meimei.</div>
+        <div class="sent-chip-row">
+          <span class="chip">be 动词</span>
+          <span class="chip">人称代词 I</span>
+          <span class="chip">缩略 I'm</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hd"><span class="badge">7</span> Are you Peter?</div>
+        <div class="sent-chip-row">
+          <span class="chip">be 动词</span>
+          <span class="chip">一般疑问句</span>
+          <span class="chip">人称代词 you</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hd"><span class="badge">41</span> I live in Singapore with my big family.</div>
+        <div class="sent-chip-row">
+          <span class="chip">一般现在时</span>
+          <span class="chip">介词 with/in</span>
+        </div>
+      </div>
+      <div class="hint">顶栏「聚合后关联图谱」按 chip 汇总成粗点再挂</div>`;
+  },
+  B() {
+    return `
+      <div class="sec-h"><span>语法细类 <span class="muted">（48 项 · 接近人工表）</span></span>
+        <button class="btn danger">清除全部语法</button></div>
+      <div class="card unlinked">
+        <div class="card-hd">be 动词 · 肯定句（主谓一致）
+          <span class="tag wait">未关联</span></div>
+        ${sent(19, "I'm Song Meimei.")}
+        ${sent(3, "I am 12 years old.")}
+        ${sent(12, "He's from the US.")}
+      </div>
+      <div class="card unlinked">
+        <div class="card-hd">be 动词 · 否定句 <span class="tag wait">未关联</span></div>
+        ${sent(8, "No, I'm not.")}
+        ${sent(9, "No, they aren't.")}
+      </div>
+      <div class="card unlinked">
+        <div class="card-hd">be 动词 · 一般疑问句及回答 <span class="tag wait">未关联</span></div>
+        ${sent(7, "Are you Peter?")}
+        ${sent(10, "Yes, I am.")}
+      </div>
+      <div class="card unlinked">
+        <div class="card-hd">特殊疑问句 · Where/What/Who/How <span class="tag wait">未关联</span></div>
+        ${sent(22, "Where are you from?")}
+        ${sent(23, "What's your last name?")}
+      </div>
+      <div class="hint">细类过多时，同一图谱节点会被多个细类重复挂靠——需合并策略</div>`;
+  },
+  C() {
+    return `
+      <div class="export-bar">
+        <span>挂靠流保持现状（每点 1 句）。教研用清单走独立导出，可含交际句型与细类表。</span>
+        <button class="btn primary">预览 Markdown</button>
+      </div>
+      <div class="sec-h"><span>语法部分（挂靠用 · 现状）</span>
+        <button class="btn danger">清除全部语法</button></div>
+      <div class="card unlinked">
+        <div class="card-hd">动词be (am/is/are) <span class="tag wait">未关联</span><span class="tag cnt">1 句</span></div>
+        ${sent(19, "I'm Song Meimei.")}
+      </div>
+      <div class="card" style="background:#faf5ff;border-color:#e9d5ff">
+        <div class="card-hd" style="color:#6b21a8">导出预览 · 教学清单（不进挂靠）</div>
+        <div class="hint">## 一、be 动词<br>### 1. 肯定句 …（多句表）<br>### 2. 否定句 …<br>## 十二、日常交际句型 …</div>
+      </div>`;
+  },
+};
+
+function render(k) {
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('cmp').innerHTML = m.cmp.map(([h, v, s]) =>
+    `<div class="cmp-card"><h3>${h}</h3><div class="v">${v}</div><div class="s">${s || ''}</div></div>`
+  ).join('');
+  document.getElementById('flow').innerHTML = m.flow;
+  const pills = (m.pills || []).map(([t, c]) => `<span class="pill ${c || ''}">${t}</span>`).join('');
+  document.getElementById('stat').innerHTML =
+    `<span class="pill">${m.stat}</span>${pills}`;
+  const cta = document.getElementById('mainCta');
+  cta.textContent = m.cta;
+  // secondary button
+  let bar = cta.parentElement;
+  bar.querySelectorAll('[data-extra]').forEach((el) => el.remove());
+  if (m.extraCta) {
+    const b = document.createElement('button');
+    b.className = 'btn primary';
+    b.dataset.extra = '1';
+    b.textContent = m.extraCta;
+    cta.insertAdjacentElement('afterend', b);
+  }
+  document.getElementById('right').innerHTML = VIEWS[k]();
+  document.querySelectorAll('.scheme').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.k === k);
+  });
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (!btn) return;
+  render(btn.dataset.k);
+});
+
+render('A');
+</script>
+</body>
+</html>

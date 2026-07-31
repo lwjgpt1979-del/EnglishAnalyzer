@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>单元短文 · 课程内容 Tab · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #eef3f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 920px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .note {
+    background: #fff8eb; border: 1px solid #f3d19e; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #8a5a00; margin-bottom: 14px;
+  }
+  .note b { color: #6b4500; }
+  .mask {
+    background: rgba(15, 23, 42, .06); border-radius: 14px; padding: 14px;
+  }
+  .dlg {
+    background: #fff; border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 12px 40px rgba(15,23,42,.1); overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { font-size: 15px; margin: 0; flex: 1; }
+  .icon-btn {
+    width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px;
+    background: #fff; color: var(--muted); font-size: 12px;
+  }
+  .body { display: grid; grid-template-columns: 1fr 1fr; min-height: 560px; }
+  @media (max-width: 900px) { .body { grid-template-columns: 1fr; } }
+  .pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .pane:last-child { border-right: 0; }
+  .pane-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fafcff;
+    font-size: 13px; font-weight: 600;
+  }
+  .pane-head .muted { font-weight: 400; color: var(--muted); }
+  .pane-bd { flex: 1; overflow: auto; padding: 12px; background: #f8fafc; }
+  .right-bd { background: #fff; }
+
+  .tabs {
+    display: inline-flex; gap: 0; border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden; background: #fff; font-weight: 500;
+  }
+  .tab {
+    border: 0; background: transparent; padding: 5px 12px; font-size: 12px;
+    cursor: pointer; color: var(--muted); border-right: 1px solid var(--line);
+  }
+  .tab:last-child { border-right: 0; }
+  .tab.on { background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+
+  .btn {
+    height: 30px; border-radius: 6px; border: 1px solid var(--line);
+    padding: 0 12px; font-size: 12px; background: #fff; cursor: pointer; color: var(--text);
+  }
+  .btn.primary { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
+  .btn.ok { background: #fff; border-color: #b7e4d4; color: var(--c-ok); }
+  .btn.ghost { color: var(--muted); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .link { border: 0; background: none; color: var(--c-primary); font-size: 12px; cursor: pointer; padding: 0; }
+
+  .pdf-fake {
+    height: 420px; border: 1px solid var(--line); border-radius: 8px; background: #fff;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .pdf-bar {
+    display: flex; gap: 8px; align-items: center; padding: 6px 10px;
+    border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); background: #f1f5f9;
+  }
+  .pdf-page {
+    flex: 1; padding: 16px 18px; font-size: 12px; color: #334155; overflow: auto;
+    background: linear-gradient(180deg, #fff, #f8fafc);
+  }
+  .pdf-page h4 { margin: 0 0 8px; font-size: 13px; }
+  .pdf-page p { margin: 0 0 6px; }
+
+  .content-box { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+  .hint { font-size: 12px; color: var(--muted); }
+  textarea {
+    width: 100%; min-height: 180px; resize: vertical; border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; font-size: 13px; font-family: inherit;
+    line-height: 1.55; color: var(--text);
+  }
+  textarea:focus { outline: 2px solid #bfdbfe; border-color: var(--c-primary); }
+  .row-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: #eef2f7; color: var(--muted);
+  }
+  .chip.warn { background: #fff7e8; color: #9a6700; }
+  .chip.ok { background: #e9f6f1; color: #1f7a61; }
+
+  .extract {
+    border: 1px solid var(--line); border-radius: 8px; background: #fff; overflow: hidden;
+  }
+  .extract-hd {
+    padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; background: #fafcff;
+  }
+  .point {
+    padding: 10px 12px; border-bottom: 1px solid #eef2f7; font-size: 13px;
+  }
+  .point:last-child { border-bottom: 0; }
+  .point-name { font-weight: 600; margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tag {
+    font-size: 11px; padding: 1px 7px; border-radius: 4px;
+    border: 1px solid #b7e4d4; background: #e9f6f1; color: #1f7a61; font-weight: 500;
+  }
+  .tag.pending { border-color: #f3d19e; background: #fff8eb; color: #9a6700; }
+  .link-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+  .fake-select {
+    height: 28px; border: 1px solid var(--line); border-radius: 6px; padding: 0 8px;
+    font-size: 12px; color: var(--muted); background: #fff; min-width: 200px;
+  }
+  .sent { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; margin-top: 4px; color: #334155; }
+  .badge {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--c-ok); color: #fff; font-size: 10px; display: inline-flex;
+    align-items: center; justify-content: center; margin-top: 1px;
+  }
+
+  .sec-head {
+    font-size: 13px; font-weight: 700; margin: 4px 0 10px; padding-left: 8px;
+    border-left: 3px solid var(--c-primary);
+  }
+  .sec-head.listen { border-left-color: #8b5cf6; }
+  .src-pill {
+    font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 4px;
+    background: #e8f2ff; color: var(--c-primary); margin-left: 6px;
+  }
+  .src-pill.pdf { background: #f1f5f9; color: var(--muted); }
+  .src-pill.text { background: #fff7e8; color: #9a6700; }
+
+  .dlg-ft {
+    padding: 10px 16px; border-top: 1px solid var(--line);
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
+  .panel { display: none; }
+  .panel.on { display: block; }
+  .legend {
+    margin-top: 16px; background: #fff; border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--muted);
+  }
+  .legend h3 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+  .legend ul { margin: 0; padding-left: 18px; }
+  .legend li { margin-bottom: 4px; }
+  .left-tab-pane { display: none; height: 100%; }
+  .left-tab-pane.on { display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>单元短文弹窗 · 左侧加「课程内容」Tab</h1>
+  <p class="lead">
+    在现有「单元 PDF | 单元解析」双栏里，左侧标题旁增加 Tab：
+    <b>单元 PDF</b> / <b>课程内容</b>。课程内容 = 粘贴课文/教辅文字 → LLM 解析语法点（及可选句）→ 可挂知识图谱。
+    与现有右侧「从 PDF 解析」并存；也与列表里「单元长难句」能力相近，但嵌进本弹窗对照 PDF。
+  </p>
+
+  <div class="schemes">
+    <button type="button" class="scheme on" data-s="a">方案 A（推荐）· 解析结果并入右侧单元解析</button>
+    <button type="button" class="scheme" data-s="b">方案 B · 解析结果留在左侧课程内容区</button>
+  </div>
+
+  <div class="note" id="noteA">
+    <b>方案 A：</b>左侧 Tab 只负责「输入 + 触发解析」；抽出的语法点/句子
+    <b>写入同一份单元结构化解析</b>，在右侧用现有挂靠 UI 关联知识图谱。
+    点用来源徽章区分「PDF 解析 / 课程内容」。一份单元、一套挂靠流程。
+  </div>
+  <div class="note" id="noteB" hidden>
+    <b>方案 B：</b>左侧 Tab 内自带「输入 → 解析列表 → 挂靠/新建节点」，
+    交互对齐「单元长难句」弹窗；右侧仍只显示 PDF 产出的单元解析。两边数据分轨，不混源。
+  </div>
+
+  <div class="mask">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>单元短文 · 译林版 七年级上 U1</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+
+      <div class="body">
+        <!-- LEFT -->
+        <div class="pane">
+          <div class="pane-head">
+            <div class="tabs" id="leftTabs">
+              <button type="button" class="tab on" data-left="pdf">单元 PDF</button>
+              <button type="button" class="tab" data-left="content">课程内容</button>
+            </div>
+            <span class="spacer" style="flex:1"></span>
+            <button type="button" class="link" id="pdfOpenLink">新标签打开 ↗</button>
+          </div>
+          <div class="pane-bd">
+            <!-- PDF tab -->
+            <div class="left-tab-pane on" data-pane="pdf">
+              <div class="pdf-fake">
+                <div class="pdf-bar">
+                  <span>8 / 8</span>
+                  <span>−</span><span>+</span>
+                  <span style="margin-left:auto">对照原文 · 按需加载</span>
+                </div>
+                <div class="pdf-page">
+                  <h4>UNIT 1 · Reflecting</h4>
+                  <p>1. I can introduce myself.</p>
+                  <p>2. Are you Peter? — Yes, I am.</p>
+                  <p>3. This is my friend…</p>
+                  <p style="color:var(--muted);margin-top:16px">（现网 PDF iframe 预览，本原型示意）</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Content tab -->
+            <div class="left-tab-pane" data-pane="content">
+              <div class="content-box">
+                <div class="hint">
+                  粘贴本单元课文 / 教辅原文（可无 PDF 时用）。解析会抽语法点 + 例句；
+                  <span class="panel on" data-for="a">结果进入右侧「单元解析」，再关联知识图谱。</span>
+                  <span class="panel" data-for="b">结果在下方列表挂靠知识图谱（不改右侧 PDF 解析）。</span>
+                </div>
+                <textarea id="courseText" placeholder="例如：&#10;Hello! My name is Millie. I am 12 years old. Are you Peter? This is my friend…">Hello! My name is Millie. I am 12 years old.
+Are you Peter? Yes, I am.
+This is my friend Tom. His father is a teacher.</textarea>
+                <div class="row-acts">
+                  <button type="button" class="btn primary" id="btnParse">LLM 解析课程内容</button>
+                  <button type="button" class="btn ghost">清空</button>
+                  <span class="chip">约 48 词</span>
+                  <span class="chip warn" id="parseHint">未解析</span>
+                </div>
+
+                <!-- B-only: inline extract + KG -->
+                <div class="panel" data-for="b">
+                  <div class="extract" style="margin-top:4px">
+                    <div class="extract-hd">
+                      本批解析 · 语法点 3
+                      <span class="chip ok">已挂 1</span>
+                      <button type="button" class="btn ok" style="margin-left:auto;height:26px">一键关联知识图谱</button>
+                    </div>
+                    <div class="point">
+                      <div class="point-name">
+                        be动词 (am/is/are)
+                        <span class="tag">已关联 be动词 cf-1-x</span>
+                      </div>
+                      <div class="sent"><span class="badge">16</span> I am 12 years old.</div>
+                      <div class="sent"><span class="badge">24</span> Are you Peter?</div>
+                    </div>
+                    <div class="point">
+                      <div class="point-name">
+                        人称代词
+                        <span class="tag pending">未关联</span>
+                      </div>
+                      <div class="link-row">
+                        <select class="fake-select"><option>选语法/句法目录节点…</option></select>
+                        <button type="button" class="btn">挂靠</button>
+                        <button type="button" class="btn primary">目录没有→新建</button>
+                      </div>
+                      <div class="sent"><span class="badge">12</span> My name is Millie.</div>
+                    </div>
+                    <div class="point">
+                      <div class="point-name">
+                        物主代词
+                        <span class="tag pending">未关联</span>
+                      </div>
+                      <div class="link-row">
+                        <select class="fake-select"><option>选语法/句法目录节点…</option></select>
+                        <button type="button" class="btn">挂靠</button>
+                        <button type="button" class="btn primary">目录没有→新建</button>
+                      </div>
+                      <div class="sent"><span class="badge">8</span> His father is a teacher.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT -->
+        <div class="pane">
+          <div class="pane-head">
+            <span>单元解析 <span class="muted" id="rightCount">（语法 15 · 听力 3 · 作文 0）</span></span>
+            <span style="flex:1"></span>
+            <button type="button" class="btn ok">关联知识图谱</button>
+            <button type="button" class="btn primary">重新生成</button>
+          </div>
+          <div class="pane-bd right-bd">
+            <div class="sec-head">语法部分 <span class="muted">（示意）</span></div>
+
+            <div class="point" style="border:1px solid var(--line);border-radius:8px;margin-bottom:10px">
+              <div class="point-name">
+                be动词 (am/is/are)
+                <span class="tag">已关联 be动词</span>
+                <span class="src-pill pdf">PDF</span>
+              </div>
+              <div class="sent"><span class="badge">16</span> Are you Peter?</div>
+              <div class="sent"><span class="badge">24</span> I am 12 years old.</div>
+            </div>
+
+            <div class="point" style="border:1px solid var(--line);border-radius:8px;margin-bottom:10px">
+              <div class="point-name">
+                人称代词
+                <span class="tag pending">未关联</span>
+                <span class="src-pill pdf">PDF</span>
+              </div>
+              <div class="link-row">
+                <select class="fake-select"><option>选语法/句法目录节点(可输入名称/编码搜索)</option></select>
+                <button type="button" class="btn">挂靠</button>
+                <button type="button" class="btn primary">目录没有→新建</button>
+              </div>
+              <div class="sent"><span class="badge">12</span> My name is Millie.</div>
+            </div>
+
+            <!-- A-only: merged from course content -->
+            <div class="panel on" data-for="a">
+              <div class="point" style="border:1px solid #f3d19e;border-radius:8px;margin-bottom:10px;background:#fffdf8">
+                <div class="point-name">
+                  物主代词（课程内容新抽）
+                  <span class="tag pending">未关联</span>
+                  <span class="src-pill text">课程内容</span>
+                </div>
+                <div class="link-row">
+                  <select class="fake-select"><option>选语法/句法目录节点…</option></select>
+                  <button type="button" class="btn">挂靠</button>
+                  <button type="button" class="btn primary">目录没有→新建</button>
+                </div>
+                <div class="sent"><span class="badge">8</span> His father is a teacher.</div>
+                <div class="hint" style="margin-top:6px">← 从左侧「课程内容」解析并入；挂靠方式与 PDF 点相同</div>
+              </div>
+            </div>
+
+            <div class="panel" data-for="b">
+              <div class="hint" style="padding:8px 0;color:var(--muted)">
+                方案 B：右侧只保留 PDF 解析结果；课程内容挂靠在左侧 Tab 内完成。
+              </div>
+            </div>
+
+            <div class="sec-head listen">听力部分 <span class="muted">（3）</span></div>
+            <div class="point" style="border:1px solid var(--line);border-radius:8px">
+              <div class="point-name">听辨个人信息 <span class="src-pill pdf">PDF</span></div>
+              <div class="sent"><span class="badge">—</span> 听力句组示意…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dlg-ft">
+        <button type="button" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>取舍对照</h3>
+    <ul>
+      <li><b>A 并入右侧</b>：挂靠 UI 只维护一套；单元考点统计自然含课程内容点；需打 <code>source=pdf|course_text</code>，去重合并同名点。</li>
+      <li><b>B 留在左侧</b>：与「单元长难句」一致、改动小；PDF 解析与粘贴内容分轨，运营要两边分别挂。</li>
+      <li>两端共同：左侧 Tab 切换不丢 PDF blob；无 PDF 时仍可用课程内容解析；LLM 结果按内容 md5 暂存（付费铁律）。</li>
+      <li>与现有「单元长难句」入口关系：A 可逐步收敛进本 Tab；B 可复用长难句 API，本 Tab 当快捷入口。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  const schemes = document.querySelectorAll('.scheme');
+  const leftTabs = document.querySelectorAll('#leftTabs .tab');
+  const leftPanes = document.querySelectorAll('.left-tab-pane');
+  const pdfOpenLink = document.getElementById('pdfOpenLink');
+  const noteA = document.getElementById('noteA');
+  const noteB = document.getElementById('noteB');
+  const parseHint = document.getElementById('parseHint');
+  const rightCount = document.getElementById('rightCount');
+
+  function setScheme(s) {
+    schemes.forEach(b => b.classList.toggle('on', b.dataset.s === s));
+    document.querySelectorAll('.panel[data-for]').forEach(el => {
+      el.classList.toggle('on', el.dataset.for === s);
+    });
+    // hint spans inside content tip
+    document.querySelectorAll('.hint .panel[data-for]').forEach(el => {
+      el.classList.toggle('on', el.dataset.for === s);
+      el.hidden = el.dataset.for !== s;
+    });
+    noteA.hidden = s !== 'a';
+    noteB.hidden = s !== 'b';
+    rightCount.textContent = s === 'a'
+      ? '（语法 16 · 听力 3 · 作文 0 · 含课程内容）'
+      : '（语法 15 · 听力 3 · 作文 0）';
+  }
+
+  schemes.forEach(b => b.addEventListener('click', () => setScheme(b.dataset.s)));
+
+  leftTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      leftTabs.forEach(t => t.classList.toggle('on', t === tab));
+      const key = tab.dataset.left;
+      leftPanes.forEach(p => p.classList.toggle('on', p.dataset.pane === key));
+      pdfOpenLink.style.visibility = key === 'pdf' ? 'visible' : 'hidden';
+    });
+  });
+
+  document.getElementById('btnParse').addEventListener('click', () => {
+    parseHint.textContent = '已解析 · 语法点 +3';
+    parseHint.className = 'chip ok';
+  });
+
+  setScheme('a');
+</script>
+</body>
+</html>

@@ -1,7 +1,8 @@
 """域22: 单元结构化解析(「重新生成短文」第一步产物)。
 
 LLM 解析单元原文 → 结构化板块:
-  - 语法部分:每个**语法点**下挂从原文抽出的句子,每句带 0–100 难度分。
+  - 语法部分:每个**挂靠点**(粗语法点)可带双层细目 facets + 原文例句;
+    挂知识图谱只认挂靠点,细目仅展示/教案用。
   - 听力部分:每个**听力考点**下挂一组句子。
   - 作文部分:**作文要求**(教材指令)+ **正文**(书本原文)。
 
@@ -39,6 +40,9 @@ class UnitSection(Base):
     node_code = mapped_column(sa.String(64), nullable=True)        # 关联后的考点编码(冗余,便于展示)
     requirement = mapped_column(sa.Text, nullable=True)            # 听力/作文 的教材指令「要求」
     body_text = mapped_column(sa.Text, nullable=True)             # 作文「正文(书本原文)」
+    extract_source = mapped_column(sa.String(16), nullable=True)  # pdf|paste — 关联时内容来源
+    # 语法双层细目:[{name, sentences:[原文句...]}];挂靠仍用本行 point_name/node_id
+    facets = mapped_column(JSONB, nullable=True)
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     created_at = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
@@ -63,3 +67,14 @@ class UnitSectionSentence(Base):
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
 
     __table_args__ = (sa.Index("ix_unit_section_sentence_section", "section_id"),)
+
+
+class UnitStructuredParseCache(Base):
+    """单元结构化 LLM 解析缓存(按原文 md5,同输入不二次付费)。"""
+
+    __tablename__ = "unit_structured_parse_cache"
+
+    content_md5 = mapped_column(sa.String(32), primary_key=True)
+    result = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())

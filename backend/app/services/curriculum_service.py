@@ -51,17 +51,32 @@ async def persist_unit_passages(db: AsyncSession, *, unit_id: uuid.UUID, passage
     return n
 
 
-async def persist_unit_structured(db: AsyncSession, *, unit_id: uuid.UUID, parsed: dict) -> dict:
-    """落库单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)。整体覆盖该单元(幂等)。
+async def persist_unit_structured(
+    db: AsyncSession, *, unit_id: uuid.UUID, parsed: dict,
+    extract_source: str | None = None, replace: bool = True,
+) -> dict:
+    """落库单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)。
 
-    每句用 long_sentence_service.syntactic_complexity 算 0–100 难度。node_id 留空,第二步关联图谱再填。
-    返回各块计数。
+    replace=True:整体覆盖该单元(幂等)。
+    replace=False:按 kind+point_name 合并,已有点(含已挂图谱)保留,只追加新点。
+    extract_source: pdf|paste,写入新增板块。
     """
-    from sqlalchemy import delete
+    from sqlalchemy import delete, select
     from app.models.d22_unit_structured import UnitSection, UnitSectionSentence
     from app.services.long_sentence_service import syntactic_complexity, detect_syntax_points
+    from app.services.kp_normalize import normalize_kp_name
 
-    await db.execute(delete(UnitSection).where(UnitSection.unit_id == unit_id))  # 级联删句子
+    if replace:
+        await db.execute(delete(UnitSection).where(UnitSection.unit_id == unit_id))
+
+    existing: dict[tuple[str, str], UnitSection] = {}
+    if not replace:
+        rows = list((await db.execute(
+            select(UnitSection).where(UnitSection.unit_id == unit_id))).scalars().all())
+        for s in rows:
+            key = (s.kind, normalize_kp_name(s.point_name or "") or (s.point_name or "").strip().lower())
+            if key[1]:
+                existing[key] = s
 
     def _add_sentences(section_id: uuid.UUID, sents: list) -> int:
         n = 0
@@ -80,15 +95,37 @@ async def persist_unit_structured(db: AsyncSession, *, unit_id: uuid.UUID, parse
             n += 1
         return n
 
-    counts = {"grammar": 0, "listening": 0, "writing": 0, "sentences": 0}
+    counts = {"grammar": 0, "listening": 0, "writing": 0, "sentences": 0, "skipped": 0}
     order = 0
+    if not replace and existing:
+        order = max((s.sort_order or 0) for s in existing.values()) + 1
+
     for kind, key in (("grammar", "grammar"), ("listening", "listening")):
         for blk in (parsed.get(key) or []):
             name = (blk.get("point") or "").strip() if isinstance(blk, dict) else ""
             if not name:
                 continue
-            sec = UnitSection(id=uuid.uuid4(), unit_id=unit_id, kind=kind,
-                              point_name=name[:200], sort_order=order)
+            nk = normalize_kp_name(name) or name.lower()
+            if not replace and (kind, nk) in existing:
+                counts["skipped"] += 1
+                continue
+            facets_in = blk.get("facets") if isinstance(blk, dict) else None
+            facets_store = None
+            if kind == "grammar" and isinstance(facets_in, list) and facets_in:
+                cleaned = []
+                for f in facets_in:
+                    if not isinstance(f, dict):
+                        continue
+                    fn = (f.get("name") or "").strip()
+                    fs = [t.strip() for t in (f.get("sentences") or [])
+                          if isinstance(t, str) and t.strip()]
+                    if fn and fs:
+                        cleaned.append({"name": fn[:80], "sentences": fs})
+                facets_store = cleaned or None
+            sec = UnitSection(
+                id=uuid.uuid4(), unit_id=unit_id, kind=kind,
+                point_name=name[:200], sort_order=order,
+                extract_source=extract_source, facets=facets_store)
             db.add(sec)
             await db.flush()
             counts["sentences"] += _add_sentences(sec.id, blk.get("sentences"))
@@ -97,14 +134,51 @@ async def persist_unit_structured(db: AsyncSession, *, unit_id: uuid.UUID, parse
 
     w = parsed.get("writing")
     if isinstance(w, dict) and ((w.get("requirement") or "").strip() or (w.get("text") or "").strip()):
-        db.add(UnitSection(
-            id=uuid.uuid4(), unit_id=unit_id, kind="writing",
-            requirement=(w.get("requirement") or None), body_text=(w.get("text") or None),
-            sort_order=order))
-        counts["writing"] = 1
+        has_writing = any(s.kind == "writing" for s in existing.values()) if not replace else False
+        if not (not replace and has_writing):
+            db.add(UnitSection(
+                id=uuid.uuid4(), unit_id=unit_id, kind="writing",
+                requirement=(w.get("requirement") or None), body_text=(w.get("text") or None),
+                sort_order=order, extract_source=extract_source))
+            counts["writing"] = 1
 
     await db.flush()
     return counts
+
+
+async def parse_unit_structured_cached(db: AsyncSession, unit_text: str) -> dict:
+    """按「解析版本 + 原文」md5 缓存 LLM 结构化解析;命中直接返回。
+
+    版本前缀随 grammar 双层(facets)规格变更而变,避免旧「每点 1 句」缓存毒化新结果。
+    """
+    import hashlib
+    from sqlalchemy import select
+    from app.models.d22_unit_structured import UnitStructuredParseCache
+    from app.services import curriculum_ai_service
+
+    raw = (unit_text or "").strip()
+    if not raw:
+        return {"grammar": [], "listening": [], "writing": None}
+    ver = getattr(curriculum_ai_service, "_STRUCTURED_CACHE_VER", "v1")
+    md5 = hashlib.md5(f"{ver}|{raw}".encode("utf-8")).hexdigest()
+    row = (await db.execute(
+        select(UnitStructuredParseCache).where(UnitStructuredParseCache.content_md5 == md5)
+    )).scalar_one_or_none()
+    if row is not None and isinstance(row.result, dict):
+        return row.result
+    parsed = await curriculum_ai_service.parse_unit_structured(raw)
+    db.add(UnitStructuredParseCache(content_md5=md5, result=parsed))
+    await db.flush()
+    return parsed
+
+
+async def unit_has_structured(db: AsyncSession, unit_id: uuid.UUID) -> bool:
+    from sqlalchemy import select, func
+    from app.models.d22_unit_structured import UnitSection
+    n = (await db.execute(
+        select(func.count()).select_from(UnitSection).where(UnitSection.unit_id == unit_id)
+    )).scalar_one()
+    return int(n or 0) > 0
 
 
 # ── 分词打分匹配(关联知识图谱,不走 LLM)────────────────────────────────
@@ -340,6 +414,35 @@ async def unlink_section(db: AsyncSession, *, section_id: uuid.UUID) -> dict:
         await db.execute(_sa.delete(UnitNode).where(
             UnitNode.unit_id == sec.unit_id, UnitNode.node_id == old_node_id))
     return {"section_id": str(section_id), "unlinked": True}
+
+
+async def clear_unit_grammar(db: AsyncSession, *, unit_id: uuid.UUID) -> dict:
+    """清除本单元全部语法板块(含句子)及其图谱关联;不动听力/作文/图谱节点本体。
+
+    先收集已挂 node_id → 删 kind=grammar 的 section(句子 CASCADE) →
+    对每个 node:若本单元已无其它板块挂靠则删 unit_node 聚合边。
+    """
+    import sqlalchemy as _sa
+    from app.models.d22_unit_structured import UnitSection
+    from app.models.d17_curriculum_kg import UnitNode
+
+    rows = list((await db.execute(_sa.select(UnitSection).where(
+        UnitSection.unit_id == unit_id, UnitSection.kind == "grammar"))).scalars().all())
+    if not rows:
+        return {"deleted": 0, "unlinked_nodes": 0}
+    linked_node_ids = {s.node_id for s in rows if s.node_id is not None}
+    await db.execute(_sa.delete(UnitSection).where(
+        UnitSection.unit_id == unit_id, UnitSection.kind == "grammar"))
+    await db.flush()
+    unlinked = 0
+    for nid in linked_node_ids:
+        still = (await db.execute(_sa.select(_sa.func.count()).select_from(UnitSection).where(
+            UnitSection.unit_id == unit_id, UnitSection.node_id == nid))).scalar() or 0
+        if still == 0:
+            await db.execute(_sa.delete(UnitNode).where(
+                UnitNode.unit_id == unit_id, UnitNode.node_id == nid))
+            unlinked += 1
+    return {"deleted": len(rows), "unlinked_nodes": unlinked}
 
 
 async def new_node_for_section(db: AsyncSession, *, section_id: uuid.UUID,

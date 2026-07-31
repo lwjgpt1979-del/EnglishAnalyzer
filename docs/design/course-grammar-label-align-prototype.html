@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>课程语法清单命名 · 与后台挂靠点对齐 · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 22px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 920px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .cmp {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  @media (max-width: 900px) { .cmp { grid-template-columns: 1fr 1fr; } }
+  .cmp-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .cmp-card h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-card .v { font-size: 18px; font-weight: 700; }
+  .cmp-card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .stage {
+    display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start;
+  }
+  @media (max-width: 960px) { .stage { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; }
+  .flow {
+    font-size: 12px; color: #475569; background: #f8fbff; border: 1px dashed #bfdbfe;
+    border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
+  }
+  .flow b { color: #0f2f55; }
+  table.mx {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+  }
+  table.mx th, table.mx td {
+    border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top;
+  }
+  table.mx th { color: var(--muted); font-weight: 600; background: #f8fafc; }
+  .ok { color: #166534; }
+  .mid { color: #9a6700; }
+  .bad { color: #b91c1c; }
+  .tag {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    background: #f1f5f9; color: var(--muted); margin-left: 4px;
+  }
+  .tag.a { background: #e8f2ff; color: #1d4ed8; }
+  .tag.b { background: #e9f6f1; color: #1f7a61; }
+
+  /* phone */
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone-cap { font-size: 12px; color: var(--muted); }
+  .phone {
+    width: 320px; border-radius: 28px; border: 8px solid #1e293b; background: #f4f7fb;
+    box-shadow: 0 16px 40px rgba(15,23,42,.18); overflow: hidden;
+  }
+  .status {
+    height: 28px; background: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #94a3b8;
+  }
+  .hero {
+    margin: 10px 12px; border-radius: 14px; padding: 14px 14px 12px; color: #fff;
+    background: linear-gradient(135deg, #5b8def, #3d8bf5 55%, #2f6fd4);
+  }
+  .hero .t { font-size: 20px; font-weight: 700; }
+  .hero .s { font-size: 12px; opacity: .9; margin-top: 2px; }
+  .hero .cta {
+    margin-top: 10px; background: #fff; color: var(--c-primary); border-radius: 10px;
+    text-align: center; padding: 9px; font-size: 13px; font-weight: 600;
+  }
+  .list-h {
+    margin: 4px 14px 6px; font-size: 13px; font-weight: 700; color: #334155;
+  }
+  .item {
+    margin: 0 10px 8px; border-radius: 12px; background: #fff; border: 1px solid var(--line);
+    padding: 10px 12px; position: relative; overflow: hidden;
+  }
+  .item .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 70%;
+    background: linear-gradient(90deg, #e9f6f1, #f4fbf8); z-index: 0;
+  }
+  .item .fill.partial { width: 35%; background: linear-gradient(90deg, #e8f2ff, #f4f9ff); }
+  .item .fill.none { width: 0; }
+  .item .body { position: relative; z-index: 1; display: flex; gap: 10px; align-items: flex-start; }
+  .chk {
+    width: 20px; height: 20px; border-radius: 50%; border: 2px solid #cbd5e1;
+    flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #fff;
+  }
+  .chk.on { background: var(--c-ok); border-color: var(--c-ok); }
+  .chk.next { border-color: var(--c-primary); box-shadow: 0 0 0 2px #dbeafe; }
+  .nm { font-size: 14px; font-weight: 600; color: #1e293b; }
+  .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .go { margin-left: auto; font-size: 12px; color: var(--c-primary); flex-shrink: 0; padding-top: 2px; }
+  .mst {
+    margin-top: 6px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted);
+  }
+  .bars { display: flex; gap: 3px; }
+  .bar { width: 28px; height: 4px; border-radius: 2px; background: #e2e8f0; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--c-ok); }
+  .bar i.mid { background: var(--c-primary); width: 50%; }
+  .bar i.low { background: #94a3b8; width: 25%; }
+
+  .admin {
+    margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+    background: #fafcff; font-size: 12px;
+  }
+  .admin .h { font-weight: 700; margin-bottom: 6px; color: #334155; }
+  .admin .row { padding: 3px 0; color: #475569; }
+  .admin .row b { color: #0f2f55; }
+
+  .foot { margin-top: 14px; font-size: 12px; color: var(--muted); }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>课程语法清单命名 · 与后台挂靠点对齐</h1>
+  <p class="lead">
+    现状：学生端读 <code>unit_node → knowledge_nodes</code>，用图谱 <code>display_label</code>（描述首行），
+    所以出现「冠词 · 种类与用法」；后台挂靠点是 <code>unit_section.point_name</code>（如「一般现在时（实义动词）」）。
+    目标：<b>学生清单主名称与后台挂靠点一致</b>。细目仍仅后台展示。选定前不改代码。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="A">A 主名=挂靠点 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="B">B 双行（挂靠点 + 图谱名）</button>
+    <button class="scheme" data-k="C">C 按挂靠点分行（不去重）</button>
+    <button class="scheme" data-k="D">A + 放宽 m-* 节点</button>
+    <button class="scheme" data-k="NOW">现状（对照）</button>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="cmp" id="cmp"></div>
+
+  <div class="stage">
+    <div class="panel">
+      <h2>取数与规则</h2>
+      <div class="flow" id="flow"></div>
+      <table class="mx">
+        <thead>
+          <tr>
+            <th>后台挂靠点</th>
+            <th>图谱节点</th>
+            <th>学生清单（本方案）</th>
+          </tr>
+        </thead>
+        <tbody id="mapBody"></tbody>
+      </table>
+      <div class="admin">
+        <div class="h">后台单元解析（对照）</div>
+        <div class="row"><b>一般现在时（实义动词）</b> → 已关联 jf-3-1 · 4 细目</div>
+        <div class="row"><b>人称代词（主格）</b> → 已关联 cf-3-1 · 6 细目</div>
+        <div class="row"><b>be动词（to be）</b> → 已关联 m-c31b…（非 cf/jf）</div>
+        <div class="row"><b>冠词</b> → 已关联 cf-2 · 2 细目</div>
+      </div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-cap" id="phoneCap">学生端 · 课程语法 · This is me!</div>
+      <div class="phone">
+        <div class="status">9:41</div>
+        <div class="hero">
+          <div class="t" id="heroT">7/10</div>
+          <div class="s" id="heroS">学习中 · 第1单元 · 共 10 点</div>
+          <div class="cta">继续学习 · 从下一未学点</div>
+        </div>
+        <div class="list-h">本卷清单</div>
+        <div id="list"></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="mx" style="margin-top:16px;background:#fff;border-radius:10px;overflow:hidden;border:1px solid var(--line)">
+    <thead>
+      <tr>
+        <th>方案</th>
+        <th>主名称来源</th>
+        <th>列表粒度</th>
+        <th>be动词(m-*)</th>
+        <th>改动范围</th>
+        <th>风险</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>A（推荐）</b></td>
+        <td class="ok">unit_section.point_name</td>
+        <td>仍按 node 去重</td>
+        <td class="mid">仍被过滤，不出现</td>
+        <td class="ok">course_points 一处</td>
+        <td class="ok">低；同 node 多挂靠点取主名</td>
+      </tr>
+      <tr>
+        <td><b>B</b></td>
+        <td class="ok">挂靠点 + 副行图谱名</td>
+        <td>按 node 去重</td>
+        <td class="mid">仍过滤</td>
+        <td class="ok">接口 + 清单 item 模板</td>
+        <td class="ok">低；信息更全</td>
+      </tr>
+      <tr>
+        <td><b>C</b></td>
+        <td class="ok">每个挂靠点一行</td>
+        <td class="mid">不去重</td>
+        <td class="mid">仍过滤</td>
+        <td class="mid">列表/掌握度语义变</td>
+        <td class="mid">同 node 多行共享掌握度</td>
+      </tr>
+      <tr>
+        <td><b>D = A + m-*</b></td>
+        <td class="ok">挂靠点名</td>
+        <td>按 node 去重</td>
+        <td class="ok">出现（用挂靠点名）</td>
+        <td class="mid">过滤器 + 命名</td>
+        <td class="mid">m 节点质量参差</td>
+      </tr>
+      <tr>
+        <td>现状</td>
+        <td class="bad">图谱 display_label</td>
+        <td>node 去重</td>
+        <td class="bad">不出现</td>
+        <td>—</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    原型：<code>docs/design/course-grammar-label-align-prototype.html</code> ·
+    现状接口：<code>grammar_intensive_service.course_points</code>（<code>display_label(name, description)</code>）
+  </p>
+</div>
+
+<script>
+const ADMIN = [
+  { point: '冠词', code: 'cf-2', kg: '冠词 · 种类与用法', m: false, done: true },
+  { point: '人称代词（主格）', code: 'cf-3-1', kg: '代词 · 人称代词', m: false, done: false },
+  { point: '物主代词（形容词性）', code: 'cf-3-2-1', kg: '物主代词的定义', m: false, done: true },
+  { point: '情态动词can', code: 'cf-4-3', kg: '情态动词 · 基本用法', m: false, done: true },
+  { point: '介词', code: 'cf-7', kg: '词类 · 介词', m: false, done: true },
+  { point: '并列连词', code: 'cf-8-1-2', kg: '并列连词的用法', m: false, done: true },
+  { point: '一般疑问句（实义动词）', code: 'jf-1-2-2', kg: '疑问句 · 一般疑问句', m: false, done: true },
+  { point: '特殊疑问句', code: 'jf-1-2-3', kg: '特殊疑问句', m: false, done: true },
+  { point: '祈使句', code: 'jf-1-3', kg: '祈使句 · 基本形式', m: false, done: false },
+  { point: '一般现在时（实义动词）', code: 'jf-3-1', kg: '时态 · 一般现在时', m: false, done: false },
+  { point: 'be动词（to be）', code: 'm-c31b…', kg: '系动词 · be动词', m: true, done: false },
+  { point: '名词复数', code: 'm-a550…', kg: '名词 · 复数形式', m: true, done: false },
+];
+
+const META = {
+  NOW: {
+    note: '<b>现状</b>：学生只列 cf/jf 的 <code>unit_node</code>，名称用图谱 <code>display_label</code>（描述首行）。与后台挂靠点文案不一致；be动词因挂在 m-* 被过滤。',
+    cmp: [
+      ['主名', '图谱标题', 'description 首行'],
+      ['与后台一致', '否', ''],
+      ['列表条数', '10', '仅 cf/jf'],
+      ['改动', '无', '对照'],
+    ],
+    flow: 'unit_node ⋈ knowledge_nodes(cf|jf) → <b>display_label(name, description)</b> → 清单',
+  },
+  A: {
+    note: '<b>方案 A（推荐）</b>：课程清单主名改为该单元下挂到此节点的 <b>unit_section.point_name</b>（多个挂靠点同节点时取 sort_order 最小 / 首次挂靠）。掌握度仍按 node_id。细目不进学生端。',
+    cmp: [
+      ['主名', '挂靠点', 'point_name'],
+      ['与后台一致', '是', ''],
+      ['列表条数', '10', '仍按 node 去重'],
+      ['改动', '小', 'course_points'],
+    ],
+    flow: 'unit_node → 反查本单元 grammar section.node_id → <b>point_name</b>（缺则回退 display_label）',
+  },
+  B: {
+    note: '<b>方案 B</b>：主行挂靠点名，副行灰色显示图谱标准名（便于对目录）。接口多返回 <code>kg_label</code>，清单模板加一行。',
+    cmp: [
+      ['主名', '挂靠点', ''],
+      ['副名', '图谱标题', '可选'],
+      ['一致感', '高', '又能溯源目录'],
+      ['改动', '小-中', '接口+模板'],
+    ],
+    flow: '同 A，额外带 <b>kg_label=display_label</b>；UI 双行',
+  },
+  C: {
+    note: '<b>方案 C</b>：列表改为「每个已挂靠的 grammar section 一行」，不再按 node 去重。名称=point_name。若两节挂同一节点，出现两行、共享同一掌握度（需文案说明）。',
+    cmp: [
+      ['粒度', '挂靠点', '可 > 节点数'],
+      ['一致', '完全', '一行对应后台一点'],
+      ['掌握度', '按 node 共享', 'UI 要小心'],
+      ['改动', '中', '列表语义变'],
+    ],
+    flow: 'select unit_section(kind=grammar, node_id not null) → 每行 point_name + node_id',
+  },
+  D: {
+    note: '<b>方案 D</b>：在 A 基础上，课程语法清单 <b>纳入本单元已挂靠的 m-* 节点</b>（至少被 grammar section 挂上的）。be动词、名词复数会出现，名称用挂靠点。听力功能类 m 节点若不挂在 grammar section 则仍不进清单。',
+    cmp: [
+      ['主名', '挂靠点', ''],
+      ['be动词', '出现', 'm-*'],
+      ['条数', '~12', '视挂靠'],
+      ['风险', '中', 'm 节点质量'],
+    ],
+    flow: 'A 的命名 + 过滤器改为「本单元 grammar section 已挂 node」（不限 cf/jf 前缀）',
+  },
+};
+
+function rowsFor(k) {
+  if (k === 'NOW') {
+    return ADMIN.filter(x => !x.m).map(x => ({
+      main: x.kg, sub: null, done: x.done, next: false, code: x.code,
+    }));
+  }
+  if (k === 'C') {
+    // same as A visually for this sample (1:1); mark as section rows
+    return ADMIN.filter(x => !x.m).map(x => ({
+      main: x.point, sub: null, done: x.done, next: false, code: x.code,
+    }));
+  }
+  if (k === 'D') {
+    return ADMIN.map(x => ({
+      main: x.point, sub: null, done: x.done, next: false, code: x.code,
+    }));
+  }
+  if (k === 'B') {
+    return ADMIN.filter(x => !x.m).map(x => ({
+      main: x.point, sub: x.kg, done: x.done, next: false, code: x.code,
+    }));
+  }
+  // A
+  return ADMIN.filter(x => !x.m).map(x => ({
+    main: x.point, sub: null, done: x.done, next: false, code: x.code,
+  }));
+}
+
+function mapRows(k) {
+  return ADMIN.map(x => {
+    let student;
+    if (k === 'NOW') student = x.m ? '<span class="bad">不展示（m-*）</span>' : x.kg;
+    else if (k === 'D') student = `<b>${x.point}</b>`;
+    else if (k === 'B') student = x.m
+      ? '<span class="bad">不展示（m-*）</span>'
+      : `<b>${x.point}</b><br><span style="color:#94a3b8">${x.kg}</span>`;
+    else student = x.m
+      ? '<span class="bad">不展示（m-*）</span>'
+      : `<b>${x.point}</b>`;
+    return `<tr>
+      <td>${x.point}</td>
+      <td>${x.code}<br><span style="color:#94a3b8">${x.kg}</span></td>
+      <td>${student}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderList(k) {
+  const items = rowsFor(k);
+  // mark first not-done as next
+  const ix = items.findIndex(i => !i.done);
+  if (ix >= 0) items[ix].next = true;
+  const studied = items.filter(i => i.done).length;
+  const total = items.length;
+  document.getElementById('heroT').textContent = `${studied}/${total}`;
+  document.getElementById('heroS').textContent =
+    `学习中 · 第1单元 · 共 ${total} 点`;
+  document.getElementById('list').innerHTML = items.map((it) => {
+    const fillCls = it.done ? '' : (it.next ? 'partial' : 'none');
+    const chk = it.done ? 'on' : (it.next ? 'next' : '');
+    const mark = it.done ? '✓' : '';
+    const go = it.done ? '' : '<span class="go">去学</span>';
+    const sub = it.sub ? `<div class="sub">${it.sub}</div>` : '';
+    return `<div class="item">
+      <div class="fill ${fillCls}"></div>
+      <div class="body">
+        <div class="chk ${chk}">${mark}</div>
+        <div style="flex:1;min-width:0">
+          <div class="nm">${it.main}</div>
+          ${sub}
+          <div class="mst">
+            <span>掌握</span>
+            <div class="bars">
+              <div class="bar"><i style="width:${it.done ? 100 : 40}%"></i></div>
+              <div class="bar"><i class="${it.done ? '' : 'mid'}" style="width:${it.done ? 100 : 50}%"></i></div>
+              <div class="bar"><i class="${it.done ? '' : 'low'}"></i></div>
+              <div class="bar"><i class="low"></i></div>
+            </div>
+            <span>${it.done ? '已掌握' : (it.next ? '学习中' : '未学')}</span>
+          </div>
+        </div>
+        ${go}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function render(k) {
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('cmp').innerHTML = m.cmp.map(([h, v, s]) =>
+    `<div class="cmp-card"><h3>${h}</h3><div class="v">${v}</div><div class="s">${s || ''}</div></div>`
+  ).join('');
+  document.getElementById('flow').innerHTML = m.flow;
+  document.getElementById('mapBody').innerHTML = mapRows(k);
+  document.getElementById('phoneCap').textContent =
+    `学生端预览 · ${k === 'NOW' ? '现状' : '方案 ' + k}`;
+  renderList(k);
+  document.querySelectorAll('.scheme').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.k === k);
+  });
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (!btn) return;
+  render(btn.dataset.k);
+});
+
+render('A');
+</script>
+</body>
+</html>

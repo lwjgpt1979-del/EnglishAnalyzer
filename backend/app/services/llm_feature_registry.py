@@ -102,6 +102,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "依据解析/范文逐点批改作文", "why": "判分 + 逐点反馈需多维推理", "locations": ["writing_grade_service.py:130"], "cache": "none", "store": "无(仅 log_answer 喂 BKT)"},
 
     # ── 对话(chat / 快档,规格明确无需重推理)────────────────────────────────
+    {"feature": "unit_structured", "mode": "chat", "surface": "运营后台", "module": "教材·单元结构化", "service": "curriculum_ai_service",
+     "purpose": "单元原文→语法挂靠点+细目(多句)/听力考点/作文", "why": "规格明确的抽取;走 fast 避免主模型耗预算返空", "locations": ["curriculum_ai_service.py:parse_unit_structured"], "cache": "global", "store": "unit_structured_parse_cache(版本+原文 md5)+ curriculum_unit_section.facets"},
     {"feature": None, "mode": "chat", "surface": "运营后台", "module": "教材·课程生成", "service": "curriculum_ai_service",
      "purpose": "单元文本解析为结构化字段(挑索引)", "why": "输出小、规格明确;走 fast 避免主模型耗预算返空", "locations": ["curriculum_ai_service.py:107"], "cache": "none", "store": "无"},
     {"feature": None, "mode": "chat", "surface": "运营后台", "module": "教材·单词", "service": "curriculum_vocab_service",

@@ -55,31 +55,31 @@ async def extract_unit_passages(unit_text: str) -> list[AIUnitPassage]:
     return out
 
 
+# 方案 D:挂靠点(粗) + 细目 facets(多句编号)。缓存键须带版本,避免旧「每点 1 句」命中。
+_STRUCTURED_CACHE_VER = "v2-facets"
+
 _STRUCTURED_SYS = (
-    "你是译林版初中英语教材分析专家。给你一份**按句编号的单元原文**,请解析成三块:\n"
-    "1) grammar(语法部分):拆出本单元涉及的**所有不同语法点**(尽量全、宁多勿漏),"
-    "**但同一语法点不要按词形/单词再细分**——be 动词算 **1 个点**(不要 am/is/are 拆三个)、"
-    "人称代词 **1 个点**(不要 I/you/he 各一个)、物主代词 1 个、指示代词 1 个;"
-    "时态、一般疑问句、特殊疑问句、祈使句、冠词、名词单复数、形容词作表语/定语、介词、"
-    "固定搭配(be good at 类可合为「be+形容词+介词 固定搭配」1 个点)、情态动词、并列连词 等**各算 1 个点**;"
-    "**只收真正的语法点(词法/句法)**。**严禁把「交际功能/话题功能/功能句型」当语法点输出**——"
-    "如 自我介绍、打招呼、介绍他人、询问信息、询问爱好、表达观点、谈论天气… 这类**一律不要出现在 grammar 里**"
-    "(它们是话题功能,不是语法;留给听力/作文板块即可)。通常 **10–18 个点**。\n"
-    "  每个语法点给**一句例句(字段 sent)**:**优先用原文原句**(逐字);原文没有合适原句的,"
-    "就**按课本该点语境自造一句简洁地道、贴合本单元主题的例句**。\n"
-    "2) listening(听力部分):若材料含对话/听力脚本,**务必**按听力考点(如 问候与介绍、询问个人信息、"
-    "谈论爱好 等)归出几条,各列**对话原文句子编号(sents)**;听力句也可同时作语法例句。\n"
-    "3) writing(作文部分):写作板块的**要求**(题目指令,直接给原文文本)+ **正文原文句子编号(sents)**。\n"
+    "你是初中英语教材分析专家。给你一份**按句编号的单元原文**,请解析成三块:\n"
+    "1) grammar(语法部分·双层):\n"
+    "  · **挂靠点 point**(粗粒度,通常 10–18 个):同一语法点不要按词形再拆——"
+    "be 动词算 1 个点(不要 am/is/are 拆三个)、人称代词 1 个、物主代词 1 个;"
+    "时态、一般疑问句、特殊疑问句、祈使句、冠词、名词单复数、介词、情态动词、并列连词、从句 等各算 1 个挂靠点。"
+    "**只收真正的语法点(词法/句法)**;严禁把交际功能/话题功能(自我介绍、打招呼、询问信息…)当挂靠点。\n"
+    "  · **细目 facets**(挂靠点下的教学细分,2–6 条为宜):如 be 动词可拆「肯定句」「否定句」「一般疑问句及回答」;"
+    "一般现在时可拆「陈述句(三单)」「do/does 疑问」「否定/祈使」等。细目名用中文短名。\n"
+    "  · 每个细目给 **sents:原文句子编号数组**(2–8 个典型句,宁缺毋滥;必须来自编号列表,禁止自造/改写)。"
+    "同一原句可出现在多个挂靠点/细目下。\n"
+    "2) listening(听力部分):若材料含对话/听力脚本,**务必**按听力考点归出几条,各列**对话原文句子编号(sents)**。\n"
+    "3) writing(作文部分):写作板块的**要求**(原文指令文本)+ **正文原文句子编号(sents)**。\n"
     "语法点名用中文(可附英文)。找不到的块就给空。严格输出 JSON,不要解释。"
 )
 
 
 async def parse_unit_structured(unit_text: str) -> dict:
-    """单元原文 → 结构化:{grammar:[{point,sentences[]}], listening:[{point,sentences[]}],
-    writing:{requirement,text}}。
+    """单元原文 → 结构化:{grammar:[{point,facets,sentences}], listening:[…], writing:{…}}。
 
-    **句子按编号引用**(LLM 只回编号、服务端映射回原文):输出体积小→快、不撞 token 上限、
-    且句子必为原文(不可能改写/编造)。dev-mock 返回空结构。
+    语法为双层:挂靠点 point + 细目 facets[{name,sentences}];sentences 为细目原文句去重扁平,
+    供落库 UnitSectionSentence。句子一律按编号映射,禁止模型改写。
     """
     empty = {"grammar": [], "listening": [], "writing": None}
     if not (unit_text or "").strip() or is_llm_dev_mode():
@@ -87,26 +87,26 @@ async def parse_unit_structured(unit_text: str) -> dict:
     from app.services.long_sentence_service import split_sentences
     from app.services.llm_provider import fast_model
     raw = [s.strip() for s in split_sentences(unit_text[:16000]) if s and s.strip()]
-    # 保留有意义的句子(英文词 ≥ 2,含听力短对话句),最多 120 句:够听力/作文引用编号,又不至于太长
+    # 保留有意义的句子(英文词 ≥ 2,含听力短对话句),最多 120 句
     sents = [s for s in raw if len(re.findall(r"[A-Za-z]+", s)) >= 2][:120]
     if not sents:
         return empty
     numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(sents))
     user = (
         '请解析。返回 JSON:'
-        '{"grammar":[{"point":"语法点名","sent":"一句例句(原文原句优先;没有就按课本语境自造一句)"}],'
-        '"listening":[{"point":"听力考点名","sents":[原文句号,...]}],'
-        '"writing":{"requirement":"作文要求(原文指令文本)","sents":[正文原文句号,...]}}。\n'
-        "**grammar 只放真正的语法点(词法/句法),不要放交际功能/功能句型(自我介绍、询问信息、表达观点…一律不要);"
-        "每个点只给 1 句例句(sent 为句子文本)**。"
-        "listening / writing 的 sents 只填下面列表里的**句子编号(整数)**、不要抄原文。"
-        "某块没有就给空数组 / writing 给 null。\n\n【按句编号的单元原文】\n" + numbered
+        '{"grammar":[{"point":"挂靠点名","facets":[{"name":"细目名","sents":[句号,...]}]}],'
+        '"listening":[{"point":"听力考点名","sents":[句号,...]}],'
+        '"writing":{"requirement":"作文要求(原文指令)","sents":[正文句号,...]}}。\n'
+        "**grammar:挂靠点粗粒度;细目只作教学细分,不升格为挂靠点。"
+        "不要放交际功能/功能句型。facets[].sents / listening / writing 的 sents 只填下面列表的**整数编号**,"
+        "不要抄原文、不要自造句。某块没有就给空数组 / writing 给 null。\n\n"
+        "【按句编号的单元原文】\n" + numbered
     )
     try:
-        # 用 fast 模型:本任务输出小,fast 更快;主模型重推理易把 token 预算耗光返空
         resp = await chat_completion(system_prompt=_STRUCTURED_SYS, user_prompt=user,
                                      model=fast_model(), max_tokens=16384,
-                                     response_format={"type": "json_object"})
+                                     response_format={"type": "json_object"},
+                                     feature="unit_structured")
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception:  # noqa: BLE001
         return empty
@@ -114,20 +114,53 @@ async def parse_unit_structured(unit_text: str) -> dict:
         return empty
 
     def _pick(idxs) -> list[str]:
-        return [sents[i - 1] for i in (idxs or [])
-                if isinstance(i, int) and 1 <= i <= len(sents)]
+        out: list[str] = []
+        seen: set[str] = set()
+        for i in (idxs or []):
+            if not isinstance(i, int) or not (1 <= i <= len(sents)):
+                continue
+            t = sents[i - 1]
+            if t in seen:
+                continue
+            seen.add(t)
+            out.append(t)
+        return out
 
-    # grammar:每点 1 句例句(文本,原句或自造)
     grammar = []
     for b in (data.get("grammar") or []):
         if not isinstance(b, dict):
             continue
         point = (b.get("point") or "").strip()
-        sent = (b.get("sent") or "").strip()
-        if point and sent:
-            grammar.append({"point": point, "sentences": [sent]})
+        if not point:
+            continue
+        facets: list[dict] = []
+        for f in (b.get("facets") or []):
+            if not isinstance(f, dict):
+                continue
+            fname = (f.get("name") or "").strip()
+            ss = _pick(f.get("sents"))
+            if fname and ss:
+                facets.append({"name": fname[:80], "sentences": ss})
+        # 兼容旧缓存/旧模型:sent 单句或顶层 sents
+        if not facets:
+            legacy = (b.get("sent") or "").strip()
+            if legacy:
+                facets = [{"name": "例句", "sentences": [legacy]}]
+            else:
+                ss = _pick(b.get("sents"))
+                if ss:
+                    facets = [{"name": "例句", "sentences": ss}]
+        if not facets:
+            continue
+        flat: list[str] = []
+        seen_f: set[str] = set()
+        for f in facets:
+            for t in f["sentences"]:
+                if t not in seen_f:
+                    seen_f.add(t)
+                    flat.append(t)
+        grammar.append({"point": point, "facets": facets, "sentences": flat})
 
-    # listening:按编号取原句
     listening = []
     for b in (data.get("listening") or []):
         if not isinstance(b, dict):

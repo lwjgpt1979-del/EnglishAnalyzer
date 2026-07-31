@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>单元短文 · 关联知识图谱（按来源选项）· 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1200px; margin: 0 auto; padding: 22px 16px 56px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 12px; max-width: 920px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .mask { background: rgba(15,23,42,.06); border-radius: 14px; padding: 12px; }
+  .dlg {
+    background: #fff; border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 16px 48px rgba(15,23,42,.12); overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { font-size: 15px; margin: 0; flex: 1; }
+  .icon-btn {
+    width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px;
+    background: #fff; color: var(--muted); font-size: 12px;
+  }
+  .body { display: grid; grid-template-columns: 42% 58%; min-height: 560px; }
+  @media (max-width: 900px) { .body { grid-template-columns: 1fr; } }
+  .pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .pane:last-child { border-right: 0; }
+  .pane-hd {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fafcff;
+    font-size: 13px; font-weight: 600;
+  }
+  .pane-bd { flex: 1; overflow: auto; padding: 12px; background: #f8fafc; }
+  .right-bd { background: #fff; }
+  .tabs {
+    display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff;
+  }
+  .tab {
+    border: 0; background: transparent; padding: 5px 12px; font-size: 12px;
+    cursor: pointer; color: var(--muted); border-right: 1px solid var(--line);
+  }
+  .tab:last-child { border-right: 0; }
+  .tab.on { background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+  .btn {
+    height: 30px; border-radius: 6px; border: 1px solid var(--line);
+    padding: 0 12px; font-size: 12px; background: #fff; cursor: pointer; color: var(--text);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn.primary { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
+  .btn.ok { border-color: #b7e4d4; color: var(--c-ok); background: #f3fbf8; }
+  .btn.ok.solid { background: var(--c-ok); border-color: var(--c-ok); color: #fff; }
+  .btn.ghost { color: var(--muted); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .ic {
+    width: 14px; height: 14px; display: inline-block; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Crect x='7' y='7' width='10' height='10' rx='1'/%3E%3Cpath d='M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Crect x='7' y='7' width='10' height='10' rx='1'/%3E%3Cpath d='M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  .pdf-fake {
+    min-height: 380px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .pdf-bar {
+    display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line);
+    font-size: 11px; color: var(--muted); background: #f1f5f9;
+  }
+  .pdf-page { flex: 1; padding: 16px; font-size: 12px; }
+  textarea {
+    width: 100%; min-height: 200px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font-size: 13px; font-family: inherit; resize: vertical;
+  }
+  .hint { font-size: 12px; color: var(--muted); }
+  .toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fff;
+  }
+  .stat { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; font-size: 12px; }
+  .pill {
+    background: #f1f5f9; border-radius: 999px; padding: 3px 9px; color: var(--muted);
+  }
+  .pill em { font-style: normal; font-weight: 700; color: var(--text); }
+  .pill.warn { background: #fff7e8; color: #9a6700; }
+  .pill.ok { background: #e9f6f1; color: #1f7a61; }
+
+  .opt-panel {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: #fafcff; margin-bottom: 10px;
+  }
+  .opt-panel h4 {
+    margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .src-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .radio {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+    padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
+    background: #fff; cursor: pointer; user-select: none;
+  }
+  .radio.on { border-color: #bfdbfe; background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+  .radio input { margin: 0; accent-color: var(--c-primary); }
+  .tip {
+    width: 15px; height: 15px; border-radius: 50%; border: 1px solid #94a3b8;
+    color: #64748b; font-size: 10px; font-weight: 700; font-style: normal;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: help; flex-shrink: 0; position: relative; background: #fff;
+  }
+  .radio.on .tip { border-color: var(--c-primary); color: var(--c-primary); }
+  .tip:hover::after, .tip:focus::after {
+    content: attr(data-tip);
+    position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+    width: 260px; white-space: normal; text-align: left;
+    background: #1e293b; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.45;
+    padding: 8px 10px; border-radius: 8px; z-index: 30;
+    box-shadow: 0 8px 24px rgba(15,23,42,.22); pointer-events: none;
+  }
+  .tip:hover::before, .tip:focus::before {
+    content: ""; position: absolute; left: 50%; bottom: calc(100% + 2px);
+    transform: translateX(-50%); border: 6px solid transparent; border-top-color: #1e293b; z-index: 31;
+  }
+  .logic-one {
+    margin-top: 6px; font-size: 12px; color: var(--muted);
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .logic-one b { color: #475569; font-weight: 600; }
+
+  .card {
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #fff;
+  }
+  .card.unlinked { border-color: #f3d19e; background: #fffdf8; }
+  .card-hd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+  .tag {
+    font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 4px;
+    border: 1px solid #b7e4d4; background: #e9f6f1; color: #1f7a61;
+  }
+  .tag.wait { border-color: #f3d19e; background: #fff8eb; color: #9a6700; }
+  .src {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: var(--muted);
+  }
+  .src.text { background: #fff7e8; color: #9a6700; }
+  .link-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  .fake-select {
+    height: 28px; min-width: 200px; border: 1px solid var(--line); border-radius: 6px;
+    padding: 0 8px; font-size: 12px; color: var(--muted); background: #fff;
+  }
+  .sent { display: flex; gap: 8px; font-size: 12px; margin-top: 4px; color: #334155; }
+  .badge {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; background: var(--c-ok);
+    color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .sec-h {
+    font-size: 13px; font-weight: 700; margin: 0 0 8px; padding-left: 8px;
+    border-left: 3px solid var(--c-primary);
+  }
+  .run-log {
+    max-height: 120px; overflow: auto; margin-top: 10px; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: #fafcff;
+    font-size: 12px; color: var(--muted);
+  }
+  .run-log .ok { color: var(--c-ok); }
+  .run-log .run { color: var(--c-primary); }
+  .run-log .warn { color: #9a6700; }
+  .dlg-ft {
+    padding: 10px 16px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .legend {
+    margin-top: 16px; background: #fff; border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--muted);
+  }
+  .legend h3 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+  .legend ul { margin: 0; padding-left: 18px; }
+  .legend li { margin-bottom: 4px; }
+  .view { display: none; }
+  .view.on { display: block; }
+  .left-pane { display: none; }
+  .left-pane.on { display: block; }
+  .filter-row {
+    display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px;
+    border-bottom: 1px solid var(--line); background: #fafcff;
+  }
+  .chip-btn {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer; color: var(--muted);
+  }
+  .chip-btn.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>单元短文 · 只留「关联知识图谱」</h1>
+  <p class="lead">
+    去掉「课程内容提取」按钮。唯一主动作是 <b>关联知识图谱</b>；
+    其流水线由下方 <b>来源选项</b> 决定（缺结构则先按该源抽取，再挂图谱）。
+  </p>
+
+  <div class="schemes">
+    <button type="button" class="scheme on" data-s="a">方案 A（推荐）· 选项 = 本次关联的数据源</button>
+    <button type="button" class="scheme" data-s="b">方案 B · 选项 = 仅挂靠范围（不自动抽）</button>
+  </div>
+  <div class="note" id="note"></div>
+
+  <!-- ===== A ===== -->
+  <div class="mask view on" data-view="a">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>单元短文 · 译林版 七年级上 U1</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+      <div class="body">
+        <div class="pane">
+          <div class="pane-hd">
+            <div class="tabs" id="srcTabsA">
+              <button type="button" class="tab on" data-src="pdf">单元 PDF</button>
+              <button type="button" class="tab" data-src="text">粘贴原文</button>
+            </div>
+            <span style="flex:1"></span>
+            <button type="button" class="btn ghost" style="height:26px;font-size:11px">新标签打开 ↗</button>
+          </div>
+          <div class="pane-bd">
+            <div class="left-pane on" data-src="pdf">
+              <div class="pdf-fake">
+                <div class="pdf-bar"><span>8 / 8</span><span style="margin-left:auto">对照</span></div>
+                <div class="pdf-page"><b>UNIT 1</b><p>Are you Peter? …</p></div>
+              </div>
+            </div>
+            <div class="left-pane" data-src="text">
+              <p class="hint" style="margin:0 0 8px">粘贴教辅/课文；须先「保存原文」，选项「左侧粘贴原文」才可跑关联。</p>
+              <textarea id="taA">Hello! My name is Millie. I am 12 years old.
+Are you Peter? Yes, I am.
+This is my friend Tom. His father is a teacher.</textarea>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="saveTextA">保存原文</button>
+                <button type="button" class="btn ghost">清空</button>
+                <span class="hint" id="saveHintA">已保存 · 可作关联源</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="toolbar">
+            <button type="button" class="btn ok solid" id="linkBtnA">
+              <span class="ic"></span>关联知识图谱
+            </button>
+            <div class="stat">
+              <span class="pill">语法 <em>15</em></span>
+              <span class="pill warn">未挂 <em>4</em></span>
+              <span class="pill ok">已挂 <em>14</em></span>
+            </div>
+          </div>
+          <div class="pane-bd right-bd">
+            <div class="opt-panel">
+              <h4>
+                关联内容来源
+                <i class="tip" tabindex="0" data-tip="点「关联知识图谱」时按所选来源：缺结构则先抽取，再一键挂未挂点。悬停各选项旁 ⓘ 看细则。">?</i>
+              </h4>
+              <div class="src-opts" id="optsA">
+                <label class="radio on" data-opt="pdf">
+                  <input type="radio" name="optA" checked>
+                  单元 PDF
+                  <i class="tip" tabindex="0" data-tip="无结构化结果 → 先从 PDF 文本层抽取语法/听力/作文，再挂图谱；已有结果则直接挂未挂点。">?</i>
+                </label>
+                <label class="radio" data-opt="paste">
+                  <input type="radio" name="optA">
+                  左侧粘贴原文
+                  <i class="tip" tabindex="0" data-tip="须已「保存原文」。按粘贴文本抽取（md5 暂存）→ 合并进单元解析 → 挂未挂点。未保存会提示先保存。">?</i>
+                </label>
+                <label class="radio" data-opt="merge">
+                  <input type="radio" name="optA">
+                  PDF + 粘贴合并
+                  <i class="tip" tabindex="0" data-tip="两边都抽（或缺哪边补哪边），按考点名去重合并后再挂。适合 PDF 缺页、粘贴补全。">?</i>
+                </label>
+              </div>
+              <div class="logic-one" id="logicA">
+                <b>将执行：</b>
+                <span id="logicBriefA"></span>
+                <i class="tip" id="logicTipA" tabindex="0" data-tip="">?</i>
+              </div>
+            </div>
+
+            <div class="run-log" id="logA" hidden></div>
+
+            <div class="sec-h" style="margin-top:12px">解析 / 挂靠结果</div>
+            <div class="card">
+              <div class="card-hd">be动词 (am/is/are) <span class="tag">已关联</span> <span class="src">PDF</span></div>
+              <div class="sent"><span class="badge">16</span> Are you Peter?</div>
+            </div>
+            <div class="card unlinked">
+              <div class="card-hd">物主代词 <span class="tag wait">未关联</span> <span class="src text">粘贴</span></div>
+              <div class="link-row">
+                <select class="fake-select"><option>选语法/句法目录节点…</option></select>
+                <button type="button" class="btn">挂靠</button>
+                <button type="button" class="btn primary">目录没有→新建</button>
+              </div>
+              <div class="sent"><span class="badge">8</span> His father is a teacher.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-ft">
+        <span class="hint" style="margin-right:auto">无「课程内容提取」按钮；抽+挂由「关联知识图谱」按选项一次完成（可中断后只挂剩余）。</span>
+        <button type="button" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== B ===== -->
+  <div class="mask view" data-view="b">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>单元短文 · 译林版 七年级上 U1</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+      <div class="body">
+        <div class="pane">
+          <div class="pane-hd">
+            <div class="tabs" id="srcTabsB">
+              <button type="button" class="tab on" data-src="pdf">单元 PDF</button>
+              <button type="button" class="tab" data-src="text">粘贴原文</button>
+            </div>
+          </div>
+          <div class="pane-bd">
+            <div class="left-pane on" data-src="pdf">
+              <div class="pdf-fake"><div class="pdf-bar">PDF</div><div class="pdf-page">对照</div></div>
+            </div>
+            <div class="left-pane" data-src="text">
+              <textarea style="min-height:240px">粘贴原文…</textarea>
+              <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+                <button type="button" class="btn primary" id="saveTextB">保存原文</button>
+                <span class="hint" id="saveHintB">未保存</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="toolbar">
+            <button type="button" class="btn ok solid" id="linkBtnB">
+              <span class="ic"></span>关联知识图谱
+            </button>
+            <span class="hint">只挂已有结构化点，不自动抽取</span>
+          </div>
+          <div class="pane-bd right-bd">
+            <div class="opt-panel">
+              <h4>
+                挂靠范围
+                <i class="tip" tabindex="0" data-tip="方案 B：只挂已有结构化点，不自动抽取。悬停选项 ⓘ 看范围说明。">?</i>
+              </h4>
+              <div class="src-opts" id="optsB">
+                <label class="radio on" data-opt="all">
+                  <input type="radio" name="optB" checked>
+                  全部未挂
+                  <i class="tip" tabindex="0" data-tip="语法+听力+作文中尚未关联的点，一键分词打分挂靠。">?</i>
+                </label>
+                <label class="radio" data-opt="grammar">
+                  <input type="radio" name="optB">
+                  仅语法
+                  <i class="tip" tabindex="0" data-tip="只处理词法/句法未挂点。">?</i>
+                </label>
+                <label class="radio" data-opt="listen">
+                  <input type="radio" name="optB">
+                  仅听力
+                  <i class="tip" tabindex="0" data-tip="只处理听力考点未挂点。">?</i>
+                </label>
+                <label class="radio" data-opt="from_paste">
+                  <input type="radio" name="optB">
+                  仅粘贴来源
+                  <i class="tip" tabindex="0" data-tip="只挂 source=粘贴 的未挂点；需事先已有这些点。">?</i>
+                </label>
+              </div>
+            </div>
+            </div>
+            <div class="filter-row">
+              <button type="button" class="chip-btn on">只看未挂</button>
+              <button type="button" class="chip-btn">全部</button>
+            </div>
+            <div class="card unlinked" style="margin-top:10px">
+              <div class="card-hd">人称代词 <span class="tag wait">未关联</span></div>
+              <div class="link-row">
+                <select class="fake-select"><option>选目录节点…</option></select>
+                <button type="button" class="btn">挂靠</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-ft">
+        <span class="hint" style="margin-right:auto">方案 B 更轻，但缺「无结果时怎么来」——一般不如 A。</span>
+        <button type="button" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>方案 A 按钮逻辑（按选项）</h3>
+    <ul>
+      <li><b>单元 PDF</b>：无结构 → PDF 抽取(缓存) → 一键挂未挂；有结构 → 跳过抽，只挂。</li>
+      <li><b>左侧粘贴原文</b>：校验已保存 → 按文本 md5 抽取/命中缓存 → 合并点 → 挂未挂。</li>
+      <li><b>PDF + 粘贴合并</b>：PDF 与粘贴各保证有结果 → 去重合并 → 挂未挂。</li>
+      <li>工具栏只有一个主按钮「关联知识图谱」；不再出现「课程内容提取 / 重新生成」。</li>
+      <li>逐点「挂靠 / 新建」仍保留，作自动关联后的人工补漏。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  const notes = {
+    a: '<b>方案 A（推荐）：</b>去掉「课程内容提取」。下方三选一决定「关联知识图谱」流水线：PDF / 粘贴 / 合并 →（按需抽取）→ 挂图谱。切换选项时右侧逻辑说明同步更新。',
+    b: '<b>方案 B：</b>同样只有「关联知识图谱」，但选项只过滤挂靠范围，不自动抽取。更简单，无结果时要另找入口补数据。',
+  };
+  const noteEl = document.getElementById('note');
+  noteEl.innerHTML = notes.a;
+
+  const logicMap = {
+    pdf: [
+      '检查本单元是否已有结构化解析',
+      '若无 → 从单元 PDF 文本层 LLM 抽取（md5 暂存）',
+      '若有 → 跳过抽取',
+      '对未挂点执行一键关联知识图谱',
+      '未命中的留在列表，可手选挂靠 / 新建',
+    ],
+    paste: [
+      '校验左侧「粘贴原文」已保存（未保存则中止并提示）',
+      '按保存文本 md5 查缓存；未命中则 LLM 抽取',
+      '结果合并进本单元解析（来源标记=粘贴）',
+      '对未挂点一键关联知识图谱',
+    ],
+    merge: [
+      '保证 PDF 侧有结构化结果（无则抽 PDF）',
+      '保证粘贴侧已保存且有结果（无则抽粘贴）',
+      '按考点名去重合并两侧结果',
+      '对合并后的未挂点一键关联知识图谱',
+    ],
+  };
+
+  const briefMap = {
+    pdf: 'PDF 抽（若需）→ 挂未挂点',
+    paste: '校验已保存 → 粘贴抽 → 合并 → 挂',
+    merge: '补齐 PDF+粘贴 → 去重合并 → 挂',
+  };
+  function renderLogicA(opt) {
+    const brief = document.getElementById('logicBriefA');
+    const tip = document.getElementById('logicTipA');
+    brief.textContent = briefMap[opt] || '';
+    tip.setAttribute('data-tip', (logicMap[opt] || []).map((t, i) => `${i + 1}. ${t}`).join(' '));
+  }
+  renderLogicA('pdf');
+
+  document.querySelectorAll('.scheme').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.scheme').forEach(b => b.classList.toggle('on', b === btn));
+      const s = btn.dataset.s;
+      document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.dataset.view === s));
+      noteEl.innerHTML = notes[s];
+    });
+  });
+
+  function wireSrcTabs(tabsId, rootSel) {
+    document.querySelectorAll(`#${tabsId} .tab`).forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll(`#${tabsId} .tab`).forEach(t => t.classList.toggle('on', t === tab));
+        const key = tab.dataset.src;
+        document.querySelectorAll(`${rootSel} .left-pane`).forEach(p => {
+          p.classList.toggle('on', p.dataset.src === key);
+        });
+      });
+    });
+  }
+  wireSrcTabs('srcTabsA', '[data-view="a"]');
+  wireSrcTabs('srcTabsB', '[data-view="b"]');
+
+  document.querySelectorAll('.tip').forEach(t => {
+    t.addEventListener('click', e => e.preventDefault());
+    t.addEventListener('mousedown', e => e.preventDefault());
+  });
+  document.querySelectorAll('#optsA .radio').forEach(r => {
+    r.addEventListener('click', () => {
+      document.querySelectorAll('#optsA .radio').forEach(x => x.classList.remove('on'));
+      r.classList.add('on');
+      r.querySelector('input').checked = true;
+      renderLogicA(r.dataset.opt);
+    });
+  });
+
+  document.querySelectorAll('#optsB .radio').forEach(r => {
+    r.addEventListener('click', () => {
+      document.querySelectorAll('#optsB .radio').forEach(x => x.classList.remove('on'));
+      r.classList.add('on');
+      r.querySelector('input').checked = true;
+    });
+  });
+
+  function wireSave(btnId, hintId, savedText) {
+    const btn = document.getElementById(btnId);
+    const hint = document.getElementById(hintId);
+    btn?.addEventListener('click', () => {
+      hint.textContent = savedText || '已保存';
+      hint.style.color = '#1f7a61';
+    });
+  }
+  wireSave('saveTextA', 'saveHintA', '已保存 · 可作关联源');
+  wireSave('saveTextB', 'saveHintB', '已保存');
+
+  document.getElementById('linkBtnA')?.addEventListener('click', () => {
+    const opt = document.querySelector('#optsA .radio.on')?.dataset.opt || 'pdf';
+    const log = document.getElementById('logA');
+    log.hidden = false;
+    const steps = logicMap[opt] || [];
+    log.innerHTML = `<div class="run">开始 · 来源=${opt}</div>` +
+      steps.map((s, i) => `<div class="ok">${i + 1}. ${s} ✓</div>`).join('') +
+      `<div class="warn">完成：新挂 3 · 仍未挂 1（可下方手补）</div>`;
+  });
+
+  document.getElementById('linkBtnB')?.addEventListener('click', () => {
+    alert('方案 B：按所选范围一键挂未挂点（不抽取）');
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>单元短文 · 整页交互重设计 · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --c-bad: #e85d5d;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1220px; margin: 0 auto; padding: 22px 16px 56px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 12px; max-width: 960px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .mask { background: rgba(15,23,42,.06); border-radius: 14px; padding: 12px; }
+  .dlg {
+    background: #fff; border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 16px 48px rgba(15,23,42,.12); overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { font-size: 15px; margin: 0; flex: 1; }
+  .icon-btn {
+    width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px;
+    background: #fff; color: var(--muted); font-size: 12px;
+  }
+
+  /* stepper */
+  .steps {
+    display: flex; gap: 0; padding: 0 16px; border-bottom: 1px solid var(--line);
+    background: #fafcff;
+  }
+  .step {
+    flex: 1; padding: 12px 10px; text-align: center; cursor: pointer;
+    border-bottom: 2px solid transparent; color: var(--muted); font-size: 13px;
+    position: relative;
+  }
+  .step .n {
+    display: inline-flex; width: 20px; height: 20px; border-radius: 50%;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+    background: #e2e8f0; color: #64748b; margin-right: 6px; vertical-align: middle;
+  }
+  .step.on { color: var(--c-primary); border-bottom-color: var(--c-primary); font-weight: 600; }
+  .step.on .n { background: var(--c-primary); color: #fff; }
+  .step.done .n { background: var(--c-ok); color: #fff; }
+  .step .sub { display: block; font-size: 11px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+
+  .body { display: grid; grid-template-columns: 42% 58%; min-height: 580px; }
+  @media (max-width: 900px) { .body { grid-template-columns: 1fr; } }
+  .pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .pane:last-child { border-right: 0; }
+  .pane-hd {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fafcff;
+    font-size: 13px; font-weight: 600;
+  }
+  .pane-bd { flex: 1; overflow: auto; padding: 12px; background: #f8fafc; }
+  .right-bd { background: #fff; }
+
+  .tabs {
+    display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff;
+  }
+  .tab {
+    border: 0; background: transparent; padding: 5px 12px; font-size: 12px;
+    cursor: pointer; color: var(--muted); border-right: 1px solid var(--line);
+  }
+  .tab:last-child { border-right: 0; }
+  .tab.on { background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+
+  .btn {
+    height: 30px; border-radius: 6px; border: 1px solid var(--line);
+    padding: 0 12px; font-size: 12px; background: #fff; cursor: pointer; color: var(--text);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn.primary { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
+  .btn.ok { border-color: #b7e4d4; color: var(--c-ok); background: #f3fbf8; }
+  .btn.ok.solid { background: var(--c-ok); border-color: var(--c-ok); color: #fff; }
+  .btn.ghost { color: var(--muted); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .ic {
+    width: 14px; height: 14px; display: inline-block;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Cpath d='M9 9h6M9 12h6M9 15h4'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Cpath d='M9 9h6M9 12h6M9 15h4'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  .ic.cpu {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Crect x='7' y='7' width='10' height='10' rx='1'/%3E%3Cpath d='M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Crect x='7' y='7' width='10' height='10' rx='1'/%3E%3Cpath d='M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  .pdf-fake {
+    height: 100%; min-height: 420px; border: 1px solid var(--line); border-radius: 8px;
+    background: #fff; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .pdf-bar {
+    display: flex; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line);
+    font-size: 11px; color: var(--muted); background: #f1f5f9;
+  }
+  .pdf-page { flex: 1; padding: 16px; font-size: 12px; overflow: auto; }
+  textarea {
+    width: 100%; min-height: 220px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font-size: 13px; font-family: inherit; resize: vertical;
+  }
+  .hint { font-size: 12px; color: var(--muted); }
+  .muted { color: var(--muted); font-weight: 400; }
+
+  .toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fff;
+  }
+  .stat {
+    display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; font-size: 12px;
+  }
+  .pill {
+    background: #f1f5f9; border-radius: 999px; padding: 3px 9px; color: var(--muted);
+  }
+  .pill em { font-style: normal; font-weight: 700; color: var(--text); }
+  .pill.warn { background: #fff7e8; color: #9a6700; }
+  .pill.ok { background: #e9f6f1; color: #1f7a61; }
+
+  .filter-row {
+    display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line);
+    background: #fafcff;
+  }
+  .chip-btn {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer; color: var(--muted);
+  }
+  .chip-btn.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+
+  .sec { margin-bottom: 14px; }
+  .sec-h {
+    font-size: 13px; font-weight: 700; margin: 0 0 8px; padding-left: 8px;
+    border-left: 3px solid var(--c-primary);
+  }
+  .sec-h.listen { border-left-color: #8b5cf6; }
+  .card {
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #fff;
+  }
+  .card.unlinked { border-color: #f3d19e; background: #fffdf8; }
+  .card.linked { border-color: #ccebd9; }
+  .card-hd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+  .tag {
+    font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 4px;
+    border: 1px solid #b7e4d4; background: #e9f6f1; color: #1f7a61;
+  }
+  .tag.wait { border-color: #f3d19e; background: #fff8eb; color: #9a6700; }
+  .src {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: var(--muted);
+  }
+  .src.text { background: #fff7e8; color: #9a6700; }
+  .link-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  .fake-select {
+    height: 28px; min-width: 220px; border: 1px solid var(--line); border-radius: 6px;
+    padding: 0 8px; font-size: 12px; color: var(--muted); background: #fff;
+  }
+  .sent { display: flex; gap: 8px; font-size: 12px; margin-top: 4px; color: #334155; }
+  .badge {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; background: var(--c-ok);
+    color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center;
+  }
+
+  .extract-panel {
+    border: 1px dashed #bfdbfe; border-radius: 10px; padding: 12px; background: #f5f9ff; margin-bottom: 12px;
+  }
+  .extract-panel h4 { margin: 0 0 8px; font-size: 13px; color: #1e4a7a; }
+  .src-opts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .radio {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer;
+  }
+  .radio.on { border-color: #bfdbfe; background: #e8f2ff; color: var(--c-primary); }
+
+  .empty {
+    text-align: center; padding: 48px 16px; color: var(--muted); font-size: 13px;
+  }
+  .empty .cta { margin-top: 12px; }
+
+  .dlg-ft {
+    padding: 10px 16px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .legend {
+    margin-top: 16px; background: #fff; border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; font-size: 13px; color: var(--muted);
+  }
+  .legend h3 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+  .legend ul { margin: 0; padding-left: 18px; }
+  .legend li { margin-bottom: 4px; }
+  .view { display: none; }
+  .view.on { display: block; }
+  .left-pane { display: none; height: 100%; }
+  .left-pane.on { display: block; }
+  .phase { display: none; }
+  .phase.on { display: block; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>单元短文 · 整页交互重设计</h1>
+  <p class="lead">
+    去掉含糊的「重新生成」：主动作改为 <b>课程内容提取</b>（从 PDF / 粘贴原文抽出语法·听力·作文结构）。
+    「关联知识图谱」从角落按钮升为<strong>明确阶段</strong>：先提取、再挂靠，并支持未挂筛选与一键关联。
+  </p>
+
+  <div class="schemes">
+    <button type="button" class="scheme on" data-s="a">方案 A（推荐）· 顶栏三步：对照 → 提取 → 挂靠</button>
+    <button type="button" class="scheme" data-s="b">方案 B · 双栏保留，右侧子 Tab：提取结果 / 挂靠台</button>
+  </div>
+
+  <div class="note" id="note">
+    <b>方案 A：</b>顶栏 Stepper 驱动整页。Step1 只看原文（PDF/粘贴）；Step2 配置来源并点「课程内容提取」；
+    Step3 进入挂靠台（未挂优先 + 一键关联 + 逐点改挂）。右侧在 Step2/3 展示结果。
+  </div>
+
+  <!-- ========== 方案 A ========== -->
+  <div class="mask view on" data-view="a">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>单元短文 · 译林版 七年级上 U1</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+
+      <div class="steps" id="stepsA">
+        <div class="step done" data-step="1">
+          <span class="n">1</span>对照原文
+          <span class="sub">PDF / 粘贴课文</span>
+        </div>
+        <div class="step on" data-step="2">
+          <span class="n">2</span>课程内容提取
+          <span class="sub">LLM 抽语法·听力·作文</span>
+        </div>
+        <div class="step" data-step="3">
+          <span class="n">3</span>关联知识图谱
+          <span class="sub">未挂 4 · 已挂 14</span>
+        </div>
+      </div>
+
+      <div class="body">
+        <div class="pane">
+          <div class="pane-hd">
+            <div class="tabs" id="srcTabsA">
+              <button type="button" class="tab on" data-src="pdf">单元 PDF</button>
+              <button type="button" class="tab" data-src="text">粘贴原文</button>
+            </div>
+            <span style="flex:1"></span>
+            <button type="button" class="btn ghost" style="height:26px;font-size:11px">新标签打开 ↗</button>
+          </div>
+          <div class="pane-bd">
+            <div class="left-pane on" data-src="pdf">
+              <div class="pdf-fake">
+                <div class="pdf-bar"><span>8 / 8</span><span style="margin-left:auto">对照用</span></div>
+                <div class="pdf-page">
+                  <b>UNIT 1</b>
+                  <p>Hello! My name is Millie…</p>
+                  <p>Are you Peter? Yes, I am.</p>
+                </div>
+              </div>
+            </div>
+            <div class="left-pane" data-src="text">
+              <p class="hint" style="margin:0 0 8px">无 PDF 或 PDF 抽不准时，粘贴教辅/课文原文作为提取源。保存后下次打开本单元仍在。</p>
+              <textarea>Hello! My name is Millie. I am 12 years old.
+Are you Peter? Yes, I am.
+This is my friend Tom. His father is a teacher.</textarea>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="saveTextA">保存原文</button>
+                <button type="button" class="btn ghost">清空</button>
+                <span class="hint" id="saveHintA">未保存 · 约 48 词</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pane">
+          <!-- Phase 2 extract -->
+          <div class="phase on" data-phase="2">
+            <div class="toolbar">
+              <button type="button" class="btn primary" id="extractBtnA">
+                <span class="ic cpu"></span>课程内容提取
+              </button>
+              <button type="button" class="btn ok" disabled title="先提取再挂靠">
+                <span class="ic cpu"></span>关联知识图谱
+              </button>
+              <div class="stat">
+                <span class="pill">语法 <em>15</em></span>
+                <span class="pill">听力 <em>3</em></span>
+                <span class="pill warn">未挂 <em>4</em></span>
+                <span class="pill ok">已挂 <em>14</em></span>
+              </div>
+            </div>
+            <div class="pane-bd right-bd">
+              <div class="extract-panel">
+                <h4>提取来源</h4>
+                <div class="src-opts">
+                  <label class="radio on"><input type="radio" name="srcA" checked> 单元 PDF 文本层</label>
+                  <label class="radio"><input type="radio" name="srcA"> 左侧粘贴原文</label>
+                  <label class="radio"><input type="radio" name="srcA"> PDF + 粘贴合并</label>
+                </div>
+                <p class="hint" style="margin:0">点「课程内容提取」覆盖/合并本单元结构化结果（按内容 md5 暂存，同输入不二次付费）。不再叫「重新生成」。</p>
+              </div>
+
+              <div class="sec">
+                <div class="sec-h">语法部分 · 预览</div>
+                <div class="card linked">
+                  <div class="card-hd">be动词 (am/is/are) <span class="tag">已关联</span> <span class="src">PDF</span></div>
+                  <div class="sent"><span class="badge">16</span> Are you Peter?</div>
+                </div>
+                <div class="card unlinked">
+                  <div class="card-hd">物主代词 <span class="tag wait">未关联</span> <span class="src text">粘贴</span></div>
+                  <div class="sent"><span class="badge">8</span> His father is a teacher.</div>
+                </div>
+              </div>
+              <p class="hint">提取完成后，顶栏点「3 · 关联知识图谱」，或点工具栏按钮进入挂靠台。</p>
+            </div>
+          </div>
+
+          <!-- Phase 3 link -->
+          <div class="phase" data-phase="3">
+            <div class="toolbar">
+              <button type="button" class="btn ghost">← 回提取</button>
+              <button type="button" class="btn ok solid">
+                <span class="ic cpu"></span>一键关联未挂点
+              </button>
+              <button type="button" class="btn primary">
+                <span class="ic cpu"></span>课程内容提取
+              </button>
+              <div class="stat">
+                <span class="pill warn">待挂 <em>4</em></span>
+                <span class="pill ok">已挂 <em>14</em></span>
+              </div>
+            </div>
+            <div class="filter-row">
+              <button type="button" class="chip-btn on">只看未挂</button>
+              <button type="button" class="chip-btn">全部</button>
+              <button type="button" class="chip-btn">语法</button>
+              <button type="button" class="chip-btn">听力</button>
+              <button type="button" class="chip-btn">作文</button>
+            </div>
+            <div class="pane-bd right-bd">
+              <div class="sec">
+                <div class="sec-h">待挂靠 · 语法</div>
+                <div class="card unlinked">
+                  <div class="card-hd">人称代词 <span class="tag wait">未关联</span> <span class="src">PDF</span></div>
+                  <div class="link-row">
+                    <select class="fake-select"><option>选语法/句法目录节点…</option></select>
+                    <button type="button" class="btn">挂靠</button>
+                    <button type="button" class="btn primary">目录没有→新建</button>
+                  </div>
+                  <div class="sent"><span class="badge">12</span> My name is Millie.</div>
+                </div>
+                <div class="card unlinked">
+                  <div class="card-hd">物主代词 <span class="tag wait">未关联</span> <span class="src text">粘贴</span></div>
+                  <div class="link-row">
+                    <select class="fake-select"><option>选语法/句法目录节点…</option></select>
+                    <button type="button" class="btn">挂靠</button>
+                    <button type="button" class="btn primary">目录没有→新建</button>
+                  </div>
+                  <div class="sent"><span class="badge">8</span> His father is a teacher.</div>
+                </div>
+              </div>
+              <div class="sec">
+                <div class="sec-h listen">待挂靠 · 听力</div>
+                <div class="card unlinked">
+                  <div class="card-hd">听辨个人信息 <span class="tag wait">未关联</span></div>
+                  <div class="link-row">
+                    <select class="fake-select"><option>选听力(lt)目录节点…</option></select>
+                    <button type="button" class="btn">挂靠</button>
+                    <button type="button" class="btn primary">目录没有→新建</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dlg-ft">
+        <span class="hint" style="margin-right:auto">流程：对照原文 → 课程内容提取 → 关联知识图谱。关窗保留进度。</span>
+        <button type="button" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 方案 B ========== -->
+  <div class="mask view" data-view="b">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>单元短文 · 译林版 七年级上 U1</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+      <div class="body">
+        <div class="pane">
+          <div class="pane-hd">
+            <div class="tabs" id="srcTabsB">
+              <button type="button" class="tab on" data-src="pdf">单元 PDF</button>
+              <button type="button" class="tab" data-src="text">粘贴原文</button>
+            </div>
+          </div>
+          <div class="pane-bd">
+            <div class="pdf-fake" id="pdfPaneB">
+              <div class="pdf-bar">8 / 8</div>
+              <div class="pdf-page">左侧始终对照原文（同方案 A）</div>
+            </div>
+            <div id="textPaneB" hidden>
+              <p class="hint" style="margin:0 0 8px">粘贴教辅/课文原文；点保存写入本单元，供「课程内容提取」使用。</p>
+              <textarea style="min-height:280px">Hello! My name is Millie…</textarea>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+                <button type="button" class="btn primary" id="saveTextB">保存原文</button>
+                <button type="button" class="btn ghost">清空</button>
+                <span class="hint" id="saveHintB">未保存</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="pane-hd">
+            <div class="tabs" id="rightTabsB">
+              <button type="button" class="tab on" data-rt="extract">提取结果</button>
+              <button type="button" class="tab" data-rt="link">挂靠台</button>
+            </div>
+            <span style="flex:1"></span>
+            <button type="button" class="btn primary"><span class="ic cpu"></span>课程内容提取</button>
+            <button type="button" class="btn ok"><span class="ic cpu"></span>关联知识图谱</button>
+          </div>
+          <div class="pane-bd right-bd">
+            <div class="phase on" data-b="extract">
+              <div class="empty">
+                <div>暂无提取结果</div>
+                <div class="cta"><button type="button" class="btn primary"><span class="ic cpu"></span>课程内容提取</button></div>
+                <p class="hint" style="margin-top:10px">从 PDF 或粘贴原文抽出语法 / 听力 / 作文结构</p>
+              </div>
+            </div>
+            <div class="phase" data-b="link">
+              <div class="filter-row" style="margin:-12px -12px 12px;border:0;border-bottom:1px solid var(--line)">
+                <button type="button" class="chip-btn on">只看未挂</button>
+                <button type="button" class="chip-btn">全部</button>
+                <button type="button" class="btn ok solid" style="margin-left:auto">一键关联未挂点</button>
+              </div>
+              <div class="card unlinked">
+                <div class="card-hd">人称代词 <span class="tag wait">未关联</span></div>
+                <div class="link-row">
+                  <select class="fake-select"><option>选目录节点…</option></select>
+                  <button type="button" class="btn">挂靠</button>
+                </div>
+              </div>
+              <p class="hint">「关联知识图谱」= 切到本 Tab + 可选自动跑一键关联。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-ft">
+        <span class="hint" style="margin-right:auto">方案 B：无顶栏 Stepper，右侧用子 Tab 拆「提取 / 挂靠」；主按钮文案与 A 一致。</span>
+        <button type="button" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>相对现网的变化</h3>
+    <ul>
+      <li><b>重新生成 / LLM 解析单元</b> → 统一为 <b>课程内容提取</b>（可选自 PDF / 粘贴 / 合并）。</li>
+      <li><b>关联知识图谱</b> → 独立阶段或「挂靠台」Tab：默认「只看未挂」+「一键关联未挂点」+ 逐点挂靠/新建。</li>
+      <li>左侧：<b>单元 PDF | 粘贴原文</b> 仅作对照与提取源；粘贴区有 <b>保存原文</b>（落库本单元，下次打开仍在）。</li>
+      <li>空态：无结果时大按钮引导提取，而不是灰掉的「重新生成」。</li>
+      <li>付费：提取按输入内容 md5 暂存；同输入不二次调 LLM。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  const notes = {
+    a: '<b>方案 A（推荐）：</b>顶栏三步驱动。Step1 对照原文；Step2「课程内容提取」；Step3「关联知识图谱」挂靠台（未挂优先）。工具栏按钮与 Step 同步。',
+    b: '<b>方案 B：</b>保留左右双栏。右侧子 Tab「提取结果 / 挂靠台」。主按钮「课程内容提取」；「关联知识图谱」切到挂靠台并可触发一键关联。改动面小于 A。',
+  };
+  const noteEl = document.getElementById('note');
+
+  document.querySelectorAll('.scheme').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.scheme').forEach(b => b.classList.toggle('on', b === btn));
+      const s = btn.dataset.s;
+      document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.dataset.view === s));
+      noteEl.innerHTML = notes[s];
+    });
+  });
+
+  // A: source tabs
+  document.querySelectorAll('#srcTabsA .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#srcTabsA .tab').forEach(t => t.classList.toggle('on', t === tab));
+      const key = tab.dataset.src;
+      document.querySelectorAll('[data-view="a"] .left-pane').forEach(p => {
+        p.classList.toggle('on', p.dataset.src === key);
+      });
+    });
+  });
+
+  // A: steps
+  function setStepA(n) {
+    document.querySelectorAll('#stepsA .step').forEach(s => {
+      const sn = Number(s.dataset.step);
+      s.classList.toggle('on', sn === n);
+      s.classList.toggle('done', sn < n);
+    });
+    document.querySelectorAll('[data-view="a"] .phase').forEach(p => {
+      p.classList.toggle('on', Number(p.dataset.phase) === n || (n === 1 && Number(p.dataset.phase) === 2));
+    });
+    // step1 still shows extract preview on right lightly — show phase 2 for step1/2, phase 3 for 3
+    document.querySelectorAll('[data-view="a"] .phase').forEach(p => {
+      const ph = Number(p.dataset.phase);
+      if (n === 3) p.classList.toggle('on', ph === 3);
+      else p.classList.toggle('on', ph === 2);
+    });
+  }
+  document.querySelectorAll('#stepsA .step').forEach(s => {
+    s.addEventListener('click', () => setStepA(Number(s.dataset.step)));
+  });
+  document.getElementById('extractBtnA')?.addEventListener('click', () => {
+    setStepA(3);
+  });
+
+  // B: right tabs
+  document.querySelectorAll('#rightTabsB .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#rightTabsB .tab').forEach(t => t.classList.toggle('on', t === tab));
+      const key = tab.dataset.rt;
+      document.querySelectorAll('[data-view="b"] .phase').forEach(p => {
+        p.classList.toggle('on', p.dataset.b === key);
+      });
+    });
+  });
+
+  document.querySelectorAll('.src-opts .radio').forEach(r => {
+    r.addEventListener('click', () => {
+      r.parentElement.querySelectorAll('.radio').forEach(x => x.classList.remove('on'));
+      r.classList.add('on');
+    });
+  });
+
+  // B: source tabs + save
+  document.querySelectorAll('#srcTabsB .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#srcTabsB .tab').forEach(t => t.classList.toggle('on', t === tab));
+      const isText = tab.dataset.src === 'text';
+      document.getElementById('pdfPaneB').hidden = isText;
+      document.getElementById('textPaneB').hidden = !isText;
+    });
+  });
+
+  function wireSave(btnId, hintId) {
+    const btn = document.getElementById(btnId);
+    const hint = document.getElementById(hintId);
+    if (!btn || !hint) return;
+    btn.addEventListener('click', () => {
+      const now = new Date();
+      const t = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      hint.textContent = `已保存 · ${t}`;
+      hint.style.color = '#1f7a61';
+      btn.textContent = '已保存';
+      setTimeout(() => { btn.textContent = '保存原文'; }, 1200);
+    });
+  }
+  wireSave('saveTextA', 'saveHintA');
+  wireSave('saveTextB', 'saveHintB');
+</script>
+</body>
+</html>
