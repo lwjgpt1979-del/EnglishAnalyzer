@@ -9,10 +9,11 @@ import {
   uploadCurriculumPdf, generateFromPdf, getGenJob, listGenJobs,
   startPdfOcr, getPdfOcrStatus, retryGenJob,
   fetchUnitPdfBlob, getUnitStructured, generateUnitStructured, linkUnitStructured,
+  getUnitCourseText, saveUnitCourseText,
   linkSectionNode, unlinkSectionNode, newNodeForSection, getNodeTree, getUnitLinkedNodes,
   getUnitWords, saveUnitWords, deleteUnitWord, ocrUnitWords, parseUnitWordsText,
-  uploadParseLs, listUploadedLs, linkUploadedLsNode, newUploadedLsNode, deleteUploadedLs, autoLinkUnitLs,
-  type UnitLinkedNode, type UploadedLsItem,
+  listUnitUnderstandLs, generateUnitUnderstandLs, updateUnitUnderstandLs, deleteUnitUnderstandLs,
+  type UnitLinkedNode, type UnitUnderstandLsItem,
   type UnitSegment, type GenJob, type UnitStructured, type UnitWordItem,
 } from '../api/admin'
 import type { AdminCurriculumUnit, NodeTreeItem } from '../types'
@@ -335,81 +336,107 @@ async function batchRemoveLinked() {
   else ElMessage.success(`已移除 ${ok} 个`)
 }
 
-// ── 单元长难句(粘贴文字 → LLM 语法点 → 关联知识图谱)──
+// ── 单元长难句·理解向(S1: 原文抽尽 / 无则合成;不挂图谱)──
 const lsDlg = ref(false)
 const lsUnit = ref<AdminCurriculumUnit | null>(null)
 const lsTitle = ref('')
 const lsLoading = ref(false)
-const lsText = ref('')
-const lsParsing = ref(false)
-const lsItems = ref<UploadedLsItem[]>([])
+const lsGenerating = ref(false)
+const lsItems = ref<UnitUnderstandLsItem[]>([])
+const lsMeta = ref({ extract_count: 0, synth_count: 0, grade: '', cached: false })
+const lsEditId = ref<string | null>(null)
+const lsEditForm = ref({ text: '', translation: '', why: '' })
+const lsSavingEdit = ref(false)
+
+const lsExtractCount = computed(() => lsItems.value.filter(x => x.src === 'extract').length)
+const lsSynthCount = computed(() => lsItems.value.filter(x => x.src === 'synth').length)
+
+async function loadUnderstandLs(unitId: string) {
+  const r = await listUnitUnderstandLs(unitId)
+  lsItems.value = r.items || []
+  lsMeta.value = {
+    extract_count: r.extract_count || 0,
+    synth_count: r.synth_count || 0,
+    grade: r.grade || lsUnit.value?.grade || '',
+    cached: !!r.cached,
+  }
+}
 
 async function onViewLs(row: AdminCurriculumUnit) {
   lsUnit.value = row
   lsTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
   lsDlg.value = true
   lsLoading.value = true
-  lsText.value = ''
   lsItems.value = []
-  try { lsItems.value = (await listUploadedLs(100, row.unit_id)).items }
+  lsEditId.value = null
+  try { await loadUnderstandLs(row.unit_id) }
   catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { lsLoading.value = false }
 }
-async function runLsParse() {
-  if (!lsUnit.value || !lsText.value.trim()) { ElMessage.warning('请先粘贴文字'); return }
-  lsParsing.value = true
+
+/** 从图1「粘贴原文」或图2「重新跑」触发:须已保存原文 */
+async function runUnderstandLs(opts?: { force?: boolean; openDlg?: boolean }) {
+  /** 短文弹框打开时优先当前粘贴单元,否则用长难句弹框单元 */
+  const unit = (passDlg.value && passUnit.value) ? passUnit.value : (lsUnit.value || passUnit.value)
+  if (!unit) return
+  if (passDlg.value && passUnit.value?.unit_id === unit.unit_id
+    && (!courseTextSaved.value || !courseText.value.trim() || courseTextDirty.value)) {
+    ElMessage.warning('请先在「粘贴原文」保存课文')
+    passLeftTab.value = 'text'
+    return
+  }
+  if (opts?.openDlg !== false) {
+    lsUnit.value = unit
+    lsTitle.value = `${unit.textbook_version} ${unit.grade} ${unit.semester} U${unit.unit_no}`
+    lsDlg.value = true
+  }
+  lsGenerating.value = true
   try {
-    const r = await uploadParseLs(lsText.value, lsUnit.value.unit_id)
-    lsItems.value = [...r.items, ...lsItems.value]
-    ElMessage.success(`解析到 ${r.items.length} 个语法点,可逐个关联知识图谱`)
-    if (r.items.length) lsText.value = ''
-  } catch (e: any) { ElMessage.error(e?.message || 'LLM 解析失败') }
-  finally { lsParsing.value = false }
+    const r = await generateUnitUnderstandLs(unit.unit_id, !!opts?.force)
+    lsItems.value = r.items || []
+    lsMeta.value = {
+      extract_count: r.extract_count || 0,
+      synth_count: r.synth_count || 0,
+      grade: r.grade || unit.grade || '',
+      cached: !!r.cached,
+    }
+    const tip = r.cached
+      ? `命中缓存 · 共 ${r.total} 句`
+      : (r.synth_count && !r.extract_count
+        ? `原文未检出 · 已合成 ${r.synth_count} 句`
+        : `已从原文找出 ${r.extract_count} 句长难句`)
+    ElMessage.success(tip)
+  } catch (e: any) { ElMessage.error(e?.message || '找出/合成失败') }
+  finally { lsGenerating.value = false }
 }
-const lsAutoLinking = ref(false)
-async function onAutoLinkLs() {
+
+function startEditLs(it: UnitUnderstandLsItem) {
+  lsEditId.value = it.id
+  lsEditForm.value = {
+    text: it.text || '',
+    translation: it.translation || '',
+    why: it.why || '',
+  }
+}
+function cancelEditLs() { lsEditId.value = null }
+async function saveEditLs(it: UnitUnderstandLsItem) {
   if (!lsUnit.value) return
-  lsAutoLinking.value = true
+  lsSavingEdit.value = true
   try {
-    const r = await autoLinkUnitLs(lsUnit.value.unit_id)
-    lsItems.value = r.items
-    ElMessage.success(`分词打分关联完成:命中 ${r.counts.linked} 个、未命中 ${r.counts.unmatched} 个(已挂的跳过 ${r.counts.skipped})`)
-  } catch (e: any) { ElMessage.error(e?.message || '关联失败') }
-  finally { lsAutoLinking.value = false }
+    const r = await updateUnitUnderstandLs(lsUnit.value.unit_id, it.id, { ...lsEditForm.value })
+    Object.assign(it, r)
+    lsEditId.value = null
+    ElMessage.success('已保存')
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+  finally { lsSavingEdit.value = false }
 }
-async function onLinkLs(it: UploadedLsItem) {
-  const nid = pickNode.value[it.id]
-  if (!nid) { ElMessage.warning('请先在目录里选一个节点'); return }
+async function removeUnderstandLs(it: UnitUnderstandLsItem) {
+  if (!lsUnit.value) return
   try {
-    const r = await linkUploadedLsNode(it.id, nid)
-    it.node_code = r.node_code; it.node_name = r.name; it.node_id = r.node_id
-    pickNode.value[it.id] = ''; relinkOpen.value[it.id] = false
-    ElMessage.success(`已挂靠到「${r.name}」(${r.node_code})`)
-  } catch (e: any) { ElMessage.error(e?.message || '挂靠失败') }
-}
-async function onNewNodeLs(it: UploadedLsItem) {
-  const parent = pickNode.value[it.id]
-  if (!parent) { ElMessage.warning('请先选一个父分类(在其下新建)'); return }
+    await ElMessageBox.confirm(`删除该长难句？\n${it.text.slice(0, 80)}`, '删除', { type: 'warning' })
+  } catch { return }
   try {
-    const { value } = await ElMessageBox.prompt(
-      '在所选父分类下新建知识图谱节点(手工标签),节点名:', '新建节点',
-      { inputValue: it.point || '', confirmButtonText: '新建并挂靠', cancelButtonText: '取消' })
-    const r = await newUploadedLsNode(it.id, parent, (value || '').trim())
-    it.node_code = r.node_code; it.node_name = r.name; it.node_id = r.node_id
-    pickNode.value[it.id] = ''; relinkOpen.value[it.id] = false
-    reloadKgTree()   // 树多了新节点,立即重拉
-    ElMessage.success(`已新建并挂靠「${r.name}」(${r.node_code})`)
-  } catch { /* 取消 */ }
-}
-function onRelinkLs(it: UploadedLsItem) {
-  pickNode.value[it.id] = it.node_id || ''
-  relinkOpen.value[it.id] = true
-}
-async function removeLs(it: UploadedLsItem) {
-  try { await ElMessageBox.confirm(`删除该长难句「${it.point}」?`, '删除', { type: 'warning' }) }
-  catch { return }
-  try {
-    await deleteUploadedLs(it.id)
+    await deleteUnitUnderstandLs(lsUnit.value.unit_id, it.id)
     lsItems.value = lsItems.value.filter(x => x.id !== it.id)
     ElMessage.success('已删除')
   } catch (e: any) { ElMessage.error(e?.message || '删除失败') }
@@ -447,54 +474,110 @@ const hasStructured = computed(() => !!(structured.value.grammar.length
 function openUnitPdf(row: AdminCurriculumUnit) {
   if (row.unit_pdf_url) window.open(row.unit_pdf_url, '_blank')
 }
+const passLeftTab = ref<'pdf' | 'text'>('pdf')
+const courseText = ref('')
+const courseTextSaved = ref(false)
+const courseTextDirty = ref(false)
+const courseSaving = ref(false)
+const linkSource = ref<'pdf' | 'paste' | 'merge'>('pdf')
+const passLinking = ref(false)
+const linkSteps = ref<string[]>([])
+
+const LINK_SOURCE_TIPS: Record<string, string> = {
+  pdf: '无结构化结果 → 先从 PDF 文本层抽取语法/听力/作文，再挂图谱；已有结果则直接挂未挂点。',
+  paste: '须已「保存原文」。按粘贴文本抽取（md5 暂存）→ 合并进单元解析 → 挂未挂点。未保存会提示先保存。',
+  merge: '两边都抽（或缺哪边补哪边），按考点名去重合并后再挂。适合 PDF 缺页、粘贴补全。',
+}
+const LINK_SOURCE_BRIEF: Record<string, string> = {
+  pdf: 'PDF 抽（若需）→ 挂未挂点',
+  paste: '校验已保存 → 粘贴抽 → 合并 → 挂',
+  merge: '补齐 PDF+粘贴 → 去重合并 → 挂',
+}
+const unlinkedCount = computed(() =>
+  structured.value.grammar.filter(g => !g.node_code).length
+  + structured.value.listening.filter(g => !g.node_code).length)
+const linkedCount = computed(() =>
+  structured.value.grammar.filter(g => !!g.node_code).length
+  + structured.value.listening.filter(g => !!g.node_code).length)
+/** 语法细目总数(方案 D 双层展示) */
+const grammarFacetTotal = computed(() =>
+  structured.value.grammar.reduce((n, g) => n + (g.facets?.length || 0), 0))
+function extractSourceLabel(src?: string | null) {
+  if (src === 'paste') return '粘贴'
+  if (src === 'pdf') return 'PDF'
+  return ''
+}
+
 async function onViewPassages(row: AdminCurriculumUnit) {
   passTitle.value = `${row.textbook_version} ${row.grade} ${row.semester} U${row.unit_no}`
   passUnit.value = row
-  pdfSrc.value = ''                 // 等 @opened 再设,避免动画期 iframe 白屏
+  pdfSrc.value = ''
+  passLeftTab.value = 'pdf'
+  linkSource.value = 'pdf'
+  courseText.value = ''
+  courseTextSaved.value = false
+  courseTextDirty.value = false
+  linkSteps.value = []
   passDlg.value = true
   passLoading.value = true
   structured.value = { grammar: [], listening: [], writing: null }
   pickNode.value = {}
-  // 知识图谱树改为懒加载:第一次点开「挂靠」下拉时才拉(见 onKgDropdown),不在开弹框时拖慢
-  try { structured.value = await getUnitStructured(row.unit_id) }
-  catch (e: any) { ElMessage.error(e?.message || '加载失败') }
+  try {
+    const [st, ct] = await Promise.all([
+      getUnitStructured(row.unit_id),
+      getUnitCourseText(row.unit_id).catch(() => ({ course_text: '', saved: false })),
+    ])
+    structured.value = st
+    courseText.value = ct.course_text || ''
+    courseTextSaved.value = !!ct.saved
+  } catch (e: any) { ElMessage.error(e?.message || '加载失败') }
   finally { passLoading.value = false }
 }
 
-async function onRegenerate() {
+async function saveCourseText() {
   if (!passUnit.value) return
-  if (hasStructured.value) {
-    try {
-      await ElMessageBox.confirm(
-        '将用单元原文(PDF)重新 LLM 解析,覆盖当前的「语法点 / 听力 / 作文」结构。是否继续？',
-        '重新生成', { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' })
-    } catch { return }
-  }
-  passGenerating.value = true
+  courseSaving.value = true
   try {
-    const r = await generateUnitStructured(passUnit.value.unit_id)
-    structured.value = r
-    const c = r.counts
-    if (c && (c.grammar + c.listening + c.writing) > 0)
-      ElMessage.success(`已解析:语法 ${c.grammar} 点 / 听力 ${c.listening} 点 / 作文 ${c.writing} · 共 ${c.sentences} 句`)
-    else ElMessage.info('未解析出结构(可能原文为空或为 dev 模式)')
-  } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
-  } finally {
-    passGenerating.value = false
-  }
+    const r = await saveUnitCourseText(passUnit.value.unit_id, courseText.value)
+    courseText.value = r.course_text || ''
+    courseTextSaved.value = r.saved
+    courseTextDirty.value = false
+    ElMessage.success(r.saved ? '原文已保存' : '已清空保存的原文')
+  } catch (e: any) { ElMessage.error(e?.message || '保存失败') }
+  finally { courseSaving.value = false }
+}
+function clearCourseText() {
+  courseText.value = ''
+  courseTextDirty.value = true
 }
 
-// 第二步:关联知识图谱(语法点→词法/句法、听力考点→听力)
-const passLinking = ref(false)
+/** 按来源选项:缺结构则抽,再关联知识图谱(方案 A) */
 async function onLinkKg() {
-  if (!passUnit.value || !hasStructured.value) return
+  if (!passUnit.value) return
+  if (linkSource.value === 'paste' || linkSource.value === 'merge') {
+    if (!courseTextSaved.value || !courseText.value.trim()) {
+      ElMessage.warning('请先在「粘贴原文」保存课文后再用该来源关联')
+      passLeftTab.value = 'text'
+      return
+    }
+  }
+  if (linkSource.value === 'pdf' && !passUnit.value.unit_pdf_url && !hasStructured.value) {
+    ElMessage.warning('该单元暂无 PDF,请改用「粘贴原文」或先拆出单元 PDF')
+    return
+  }
   passLinking.value = true
+  linkSteps.value = []
   try {
+    // 本提交仅落地 course-text + 理解向长难句;图谱关联暂走原一键挂靠
     const r = await linkUnitStructured(passUnit.value.unit_id)
     structured.value = r
+    linkSteps.value = r.steps || []
     const c = r.link_counts
-    if (c) ElMessage.success(`已关联 ${c.linked} 个;${c.candidate} 个目录暂无→已落候选(去「候选审核」通过后再关联)`)
+    if (c) ElMessage.success(
+      `关联完成 · 新挂 ${c.linked ?? 0}`
+      + (c.unmatched ? ` · 未命中 ${c.unmatched}` : '')
+      + (c.candidate ? ` · 候选 ${c.candidate}` : ''))
+    else ElMessage.success('关联流程已完成')
   } catch (e: any) {
     ElMessage.error(e?.message || '关联失败')
   } finally {
@@ -586,6 +669,12 @@ async function onUnlink(sec: { id: string; node_id: string | null; node_code: st
     pickNode.value[sec.id] = ''
     ElMessage.success('已取消关联')
   } catch (e: any) { ElMessage.error(e?.message || '取消关联失败') }
+}
+
+const clearingGrammar = ref(false)
+/** 清除本单元全部语法点(含句子)及其图谱关联;听力/作文保留 */
+async function onClearGrammar() {
+  ElMessage.info('清除语法点接口未包含在本次提交，请另开任务落地')
 }
 
 // 句子难度色(0–100)
@@ -935,52 +1024,67 @@ onMounted(load)
       </template>
     </AppDialog>
 
-    <!-- ── 单元长难句(粘贴文字 → LLM 语法点 → 关联知识图谱)Dialog ── -->
-    <AppDialog v-model="lsDlg" :title="`单元长难句 · ${lsTitle}`" width="940px" top="6vh">
-      <div v-loading="lsLoading">
-        <div class="words-ocr">
-          <div class="pane-head"><span>① 粘贴长难句文字 → LLM 抽语法点</span></div>
-          <el-input v-model="lsText" type="textarea" :rows="4" resize="vertical"
-            placeholder="把含长难句的英文文字粘到这里(可整段),点解析自动抽出语法点 + 例句" />
-          <el-button type="primary" :loading="lsParsing" :disabled="!lsText.trim()" style="margin-top:8px" @click="runLsParse">
-            <el-icon style="margin-right:4px"><Cpu /></el-icon>LLM 解析语法点
+    <!-- ── 单元长难句·理解向(接收/呈现;不挂图谱)Dialog ── -->
+    <AppDialog v-model="lsDlg" :title="`单元长难句 · ${lsTitle}`" width="860px" top="6vh">
+      <div v-loading="lsLoading || lsGenerating" :element-loading-text="lsGenerating ? '正在找出/合成…' : '加载中…'">
+        <div class="uls-head">
+          <div>
+            <div class="uls-title">本单元长难句 · 理解练习用</div>
+            <div class="muted" style="font-size:12px;margin-top:2px">
+              词尽量简单 · 练「看懂结构」· 不关联知识图谱
+            </div>
+          </div>
+          <el-button size="small" :loading="lsGenerating" @click="runUnderstandLs({ force: true, openDlg: false })">
+            <el-icon style="margin-right:4px"><Refresh /></el-icon>重新跑
           </el-button>
-          <span class="muted" style="margin-left:8px">解析结果进下方列表,逐个「挂靠」到知识图谱</span>
+        </div>
+        <div class="uls-stats">
+          <span class="uls-chip">共 {{ lsItems.length }} 句</span>
+          <span class="uls-chip ex">原文抽取 {{ lsExtractCount }}</span>
+          <span class="uls-chip syn">AI 合成 {{ lsSynthCount }}</span>
+          <span class="uls-chip" v-if="lsMeta.grade || lsUnit?.grade">年级锚点：{{ lsMeta.grade || lsUnit?.grade }}</span>
+          <span class="uls-chip" v-if="lsMeta.cached">缓存命中</span>
         </div>
 
-        <div class="pane-head" style="margin-top:14px">
-          <span>② 本单元长难句({{ lsItems.length }})· 关联知识图谱</span>
-          <el-button size="small" type="success" plain :loading="lsAutoLinking" :disabled="!lsItems.length"
-            @click="onAutoLinkLs">
-            <el-icon style="margin-right:4px"><Cpu /></el-icon>一键关联知识图谱
-          </el-button>
-        </div>
-        <div v-for="it in lsItems" :key="it.id" class="sec-point">
-          <div class="point-name">
-            {{ it.point }}
-            <el-tag v-if="it.difficulty != null" size="small" :style="{ background: diffColor(it.difficulty), color: '#fff', border: 'none' }">{{ it.difficulty }}</el-tag>
-            <el-tag v-if="it.node_code" size="small" type="success" effect="plain" style="margin-left:6px">
-              已关联 {{ it.node_name || it.node_code }} <span class="muted">{{ it.node_code }}</span>
+        <div v-for="(it, idx) in lsItems" :key="it.id" class="uls-card">
+          <div class="uls-meta">
+            <span class="uls-no">{{ idx + 1 }}</span>
+            <el-tag size="small" :type="it.src === 'synth' ? 'warning' : 'primary'" effect="plain">
+              {{ it.src === 'synth' ? 'AI 合成' : '原文抽取' }}
             </el-tag>
-            <el-button v-if="it.node_code && !relinkOpen[it.id]" size="small" link type="primary" style="margin-left:2px" @click="onRelinkLs(it)">改挂</el-button>
-            <el-button size="small" link type="danger" style="margin-left:auto" @click="removeLs(it)"><el-icon><Delete /></el-icon></el-button>
+            <el-tag v-if="it.difficulty != null" size="small"
+              :style="{ background: diffColor(it.difficulty), color: '#fff', border: 'none' }">
+              {{ it.difficulty }}
+            </el-tag>
+            <el-button size="small" link type="danger" style="margin-left:auto" @click="removeUnderstandLs(it)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
           </div>
-          <div class="sent-row"><span class="sent-text">{{ it.text }}</span></div>
-          <div v-if="!it.node_code || relinkOpen[it.id]" class="link-row">
-            <el-select v-model="pickNode[it.id]" filterable clearable :loading="kgLoading" size="small"
-              @visible-change="onKgDropdown" style="width:280px" placeholder="选词法/句法目录节点(可输入名称/编码搜索)">
-              <el-option v-for="o in grammarFlat" :key="o.value" :value="o.value" :label="`${o.name} ${o.code}`">
-                <span :style="{ paddingLeft: o.depth * 12 + 'px' }">{{ o.name }} <span class="muted">{{ o.code }}</span></span>
-              </el-option>
-            </el-select>
-            <el-button size="small" @click="onLinkLs(it)">{{ relinkOpen[it.id] ? '覆盖挂靠' : '挂靠' }}</el-button>
-            <el-button size="small" type="primary" plain @click="onNewNodeLs(it)">目录没有→新建</el-button>
-            <el-button v-if="relinkOpen[it.id]" size="small" link @click="cancelRelink(it)">取消</el-button>
-          </div>
+          <template v-if="lsEditId === it.id">
+            <el-input v-model="lsEditForm.text" type="textarea" :rows="2" style="margin-bottom:6px" />
+            <el-input v-model="lsEditForm.translation" placeholder="中文译文" style="margin-bottom:6px" />
+            <el-input v-model="lsEditForm.why" placeholder="为何算长难句" style="margin-bottom:6px" />
+            <div style="display:flex;gap:8px">
+              <el-button size="small" type="primary" :loading="lsSavingEdit" @click="saveEditLs(it)">保存</el-button>
+              <el-button size="small" @click="cancelEditLs">取消</el-button>
+            </div>
+          </template>
+          <template v-else>
+            <div class="uls-en">{{ it.text }}</div>
+            <div class="uls-zh" v-if="it.translation">{{ it.translation }}</div>
+            <div class="uls-why" v-if="it.why">为何算长难句：{{ it.why }}</div>
+            <div class="uls-acts">
+              <el-button size="small" link type="primary" @click="startEditLs(it)">编辑</el-button>
+            </div>
+          </template>
         </div>
-        <el-empty v-if="!lsLoading && !lsItems.length" description="本单元暂无长难句,粘贴文字后点「LLM 解析语法点」" :image-size="50" />
+        <el-empty v-if="!lsLoading && !lsGenerating && !lsItems.length"
+          description="尚无长难句。请在「单元短文 → 粘贴原文」保存后点「找出/合成长难句」"
+          :image-size="50" />
       </div>
-      <template #footer><el-button @click="lsDlg = false">关闭</el-button></template>
+      <template #footer>
+        <el-button @click="lsDlg = false">关闭</el-button>
+      </template>
     </AppDialog>
 
     <!-- ── 单元重点单词(挂词力通)Dialog ── -->
@@ -1078,51 +1182,108 @@ onMounted(load)
     <AppDialog v-model="passDlg" :title="`单元短文 · ${passTitle}`" width="1120px" top="5vh"
                @closed="revokePdf(); pdfSrc = ''">
       <div class="pass-wrap">
-        <!-- 左:单元 PDF 预览(同源 blob,对照原文;按需点击加载,避免开弹框就整份下载拖慢) -->
+        <!-- 左: PDF / 粘贴原文 Tab -->
         <div class="pass-pdf" v-loading="pdfLoading" element-loading-text="加载 PDF…">
           <div class="pane-head">
-            <span>单元 PDF</span>
-            <el-link v-if="passUnit?.unit_pdf_url" type="primary" :href="passUnit.unit_pdf_url"
-              target="_blank" :underline="false" style="font-size:13px">新标签打开 ↗</el-link>
+            <div class="src-tabs">
+              <button type="button" class="src-tab" :class="{ on: passLeftTab === 'pdf' }" @click="passLeftTab = 'pdf'">单元 PDF</button>
+              <button type="button" class="src-tab" :class="{ on: passLeftTab === 'text' }" @click="passLeftTab = 'text'">粘贴原文</button>
+            </div>
+            <el-link v-if="passLeftTab === 'pdf' && passUnit?.unit_pdf_url" type="primary" :href="passUnit.unit_pdf_url"
+              target="_blank" :underline="false" style="font-size:13px;margin-left:auto">新标签打开 ↗</el-link>
           </div>
-          <iframe v-if="passUnit?.unit_pdf_url && pdfSrc" :src="pdfSrc" class="pdf-frame" />
-          <div v-else-if="passUnit?.unit_pdf_url" class="pdf-load-hint">
-            <el-button type="primary" plain :loading="pdfLoading" @click="loadUnitPdf">
-              <el-icon style="margin-right:4px"><Document /></el-icon>加载 PDF 预览
-            </el-button>
-            <div class="muted" style="margin-top:8px">PDF 较大、按需加载;也可点右上「新标签打开」</div>
+          <template v-if="passLeftTab === 'pdf'">
+            <iframe v-if="passUnit?.unit_pdf_url && pdfSrc" :src="pdfSrc" class="pdf-frame" />
+            <div v-else-if="passUnit?.unit_pdf_url" class="pdf-load-hint">
+              <el-button type="primary" plain :loading="pdfLoading" @click="loadUnitPdf">
+                <el-icon style="margin-right:4px"><Document /></el-icon>加载 PDF 预览
+              </el-button>
+              <div class="muted" style="margin-top:8px">PDF 较大、按需加载;也可点右上「新标签打开」</div>
+            </div>
+            <el-empty v-else description="该单元暂无 PDF（请先在批量上传里拆出该单元 PDF）" :image-size="60" />
+          </template>
+          <div v-else class="course-text-pane">
+            <div class="muted" style="margin-bottom:8px;font-size:12px">粘贴教辅/课文；须先「保存原文」。保存后可「找出/合成长难句」，或选「左侧粘贴原文」跑关联图谱。</div>
+            <el-input v-model="courseText" type="textarea" :rows="16" placeholder="粘贴本单元课文 / 教辅原文…"
+              @input="courseTextDirty = true" />
+            <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+              <el-button type="primary" :loading="courseSaving" @click="saveCourseText">保存原文</el-button>
+              <el-button @click="clearCourseText">清空</el-button>
+              <el-button type="warning" plain :loading="lsGenerating"
+                :disabled="!courseTextSaved || !courseText.trim() || courseTextDirty"
+                @click="runUnderstandLs({ force: false })">
+                <el-icon style="margin-right:4px"><Search /></el-icon>找出/合成长难句
+              </el-button>
+              <span class="muted" style="font-size:12px">
+                {{ courseTextSaved && !courseTextDirty ? '已保存 · 可作关联源' : (courseTextDirty ? '未保存的修改' : '未保存') }}
+              </span>
+            </div>
           </div>
-          <el-empty v-else description="该单元暂无 PDF（请先在批量上传里拆出该单元 PDF）" :image-size="60" />
         </div>
 
         <!-- 右:结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)-->
         <div class="pass-list" v-loading="passLoading">
           <div class="pane-head">
             <span>单元解析<span class="muted" v-if="hasStructured">（语法 {{ structured.grammar.length }} · 听力 {{ structured.listening.length }} · 作文 {{ structured.writing ? 1 : 0 }}）</span></span>
-            <div style="display:flex;gap:8px;align-items:center">
-              <el-button v-if="hasStructured" size="small" type="success" plain
-                :loading="passLinking" @click="onLinkKg">
+            <div style="display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap">
+              <span class="stat-pill warn" v-if="hasStructured">未挂 {{ unlinkedCount }}</span>
+              <span class="stat-pill ok" v-if="hasStructured">已挂 {{ linkedCount }}</span>
+              <el-button size="small" type="success" :loading="passLinking" @click="onLinkKg">
                 <el-icon style="margin-right:4px"><Cpu /></el-icon>关联知识图谱
-              </el-button>
-              <el-button size="small" type="primary" :loading="passGenerating"
-                :disabled="!passUnit?.unit_pdf_url && !hasStructured" @click="onRegenerate">
-                <el-icon style="margin-right:4px"><Cpu /></el-icon>{{ hasStructured ? '重新生成' : 'LLM 解析单元' }}
               </el-button>
             </div>
           </div>
 
+          <div class="link-source-bar">
+            <div class="lsb-title">
+              关联内容来源
+              <el-tooltip content="点「关联知识图谱」时按所选来源：缺结构则先抽取，再一键挂未挂点。悬停各选项旁问号看细则。" placement="top">
+                <span class="tip-q">?</span>
+              </el-tooltip>
+            </div>
+            <div class="lsb-opts">
+              <label class="lsb-opt" :class="{ on: linkSource === 'pdf' }">
+                <input type="radio" v-model="linkSource" value="pdf" />
+                单元 PDF
+                <el-tooltip :content="LINK_SOURCE_TIPS.pdf" placement="top"><span class="tip-q">?</span></el-tooltip>
+              </label>
+              <label class="lsb-opt" :class="{ on: linkSource === 'paste' }">
+                <input type="radio" v-model="linkSource" value="paste" />
+                左侧粘贴原文
+                <el-tooltip :content="LINK_SOURCE_TIPS.paste" placement="top"><span class="tip-q">?</span></el-tooltip>
+              </label>
+              <label class="lsb-opt" :class="{ on: linkSource === 'merge' }">
+                <input type="radio" v-model="linkSource" value="merge" />
+                PDF + 粘贴合并
+                <el-tooltip :content="LINK_SOURCE_TIPS.merge" placement="top"><span class="tip-q">?</span></el-tooltip>
+              </label>
+            </div>
+            <div class="lsb-brief">
+              <b>将执行：</b>{{ LINK_SOURCE_BRIEF[linkSource] }}
+              <el-tooltip :content="LINK_SOURCE_TIPS[linkSource]" placement="top"><span class="tip-q">?</span></el-tooltip>
+            </div>
+          </div>
+          <div v-if="linkSteps.length" class="link-steps muted">
+            <div v-for="(s, i) in linkSteps" :key="i">{{ i + 1 }}. {{ s }}</div>
+          </div>
+
           <el-empty v-if="!passLoading && !hasStructured" :image-size="60"
-            description="该单元暂无解析结果,点右上「LLM 解析单元」从 PDF 原文解析" />
+            description="暂无解析结果。选好来源后点「关联知识图谱」即可抽取并挂靠" />
           <template v-else>
             <!-- 语法部分 -->
             <div v-if="structured.grammar.length" class="sec-group">
-              <div class="sec-head sec-grammar">语法部分<span class="muted">（{{ structured.grammar.length }} 个语法点）</span></div>
+              <div class="sec-head sec-grammar">
+                <span>语法部分<span class="muted">（{{ structured.grammar.length }} 个挂靠点<span v-if="grammarFacetTotal"> · {{ grammarFacetTotal }} 细目</span>）</span></span>
+                <el-button size="small" type="danger" plain :icon="Delete" :loading="clearingGrammar" @click="onClearGrammar">清除全部语法</el-button>
+              </div>
               <div v-for="g in structured.grammar" :key="g.id" class="sec-point">
                 <div class="point-name">
                   {{ g.point_name }}
+                  <el-tag v-if="extractSourceLabel(g.extract_source)" size="small" effect="plain" style="margin-left:6px">{{ extractSourceLabel(g.extract_source) }}</el-tag>
                   <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">
                     已关联 {{ g.node_name || g.node_code }} <span class="muted">{{ g.node_code }}</span>
                   </el-tag>
+                  <el-tag v-if="g.facets?.length" size="small" effect="plain" type="info" style="margin-left:6px">{{ g.facets.length }} 细目</el-tag>
                   <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="primary" style="margin-left:2px" @click="onRelink(g)">改挂</el-button>
                   <el-button v-if="g.node_code && !relinkOpen[g.id]" size="small" link type="danger" style="margin-left:2px" @click="onUnlink(g)">取消关联</el-button>
                   <span class="muted" style="margin-left:6px">{{ g.sentences.length }} 句</span>
@@ -1139,10 +1300,22 @@ onMounted(load)
                   <el-button size="small" type="primary" plain @click="onNewNode('grammar', g)">目录没有→新建</el-button>
                   <el-button v-if="relinkOpen[g.id]" size="small" link @click="cancelRelink(g)">取消</el-button>
                 </div>
-                <div v-for="s in g.sentences" :key="s.id" class="sent-row">
-                  <span class="diff-badge" :style="{ background: diffColor(s.difficulty) }">{{ s.difficulty ?? '—' }}</span>
-                  <span class="sent-text">{{ s.text }}</span>
-                </div>
+                <!-- 方案 D:细目折叠展示;无细目时回退扁平句子(旧数据) -->
+                <template v-if="g.facets?.length">
+                  <div v-for="(fc, fi) in g.facets" :key="`${g.id}-f-${fi}`" class="facet-block">
+                    <div class="facet-h">细目 · {{ fc.name }}<span class="muted">（{{ fc.sentences.length }} 句）</span></div>
+                    <div v-for="(s, si) in fc.sentences" :key="s.id || `${g.id}-f-${fi}-${si}`" class="sent-row">
+                      <span class="diff-badge" :style="{ background: diffColor(s.difficulty) }">{{ s.difficulty ?? '—' }}</span>
+                      <span class="sent-text">{{ s.text }}</span>
+                    </div>
+                  </div>
+                </template>
+                <template v-else>
+                  <div v-for="s in g.sentences" :key="s.id" class="sent-row">
+                    <span class="diff-badge" :style="{ background: diffColor(s.difficulty) }">{{ s.difficulty ?? '—' }}</span>
+                    <span class="sent-text">{{ s.text }}</span>
+                  </div>
+                </template>
               </div>
             </div>
             <!-- 听力部分 -->
@@ -1151,6 +1324,7 @@ onMounted(load)
               <div v-for="g in structured.listening" :key="g.id" class="sec-point">
                 <div class="point-name">
                   {{ g.point_name }}
+                  <el-tag v-if="extractSourceLabel(g.extract_source)" size="small" effect="plain" style="margin-left:6px">{{ extractSourceLabel(g.extract_source) }}</el-tag>
                   <el-tag v-if="g.node_code" size="small" type="success" effect="plain" style="margin-left:6px">
                     已关联 {{ g.node_name || g.node_code }} <span class="muted">{{ g.node_code }}</span>
                   </el-tag>
@@ -1432,12 +1606,32 @@ onMounted(load)
   padding: 6px 10px; border-radius: 4px; margin-bottom: 10px; }
 .printed-hint { color: #2563eb; font-size: 11px; margin-top: 2px; }
 /* 单元短文弹窗:左 PDF / 右短文,等高对照 */
+
+.src-tabs { display: inline-flex; border: 1px solid #e8edf3; border-radius: 8px; overflow: hidden; }
+.src-tab { border: 0; background: #fff; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #64748b; border-right: 1px solid #e8edf3; }
+.src-tab:last-child { border-right: 0; }
+.src-tab.on { background: #e8f2ff; color: #3d8bf5; font-weight: 600; }
+.course-text-pane { flex: 1; padding: 12px; overflow: auto; background: #f8fafc; }
+.link-source-bar { margin: 0 0 10px; padding: 8px 10px; border: 1px solid #e8edf3; border-radius: 8px; background: #fafcff; }
+.lsb-title { font-size: 12px; color: #64748b; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.lsb-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.lsb-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 5px 10px; border: 1px solid #e8edf3; border-radius: 999px; background: #fff; cursor: pointer; user-select: none; }
+.lsb-opt.on { border-color: #bfdbfe; background: #e8f2ff; color: #3d8bf5; font-weight: 600; }
+.lsb-opt input { margin: 0; accent-color: #3d8bf5; }
+.lsb-brief { margin-top: 6px; font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lsb-brief b { color: #475569; }
+.tip-q { display: inline-flex; width: 15px; height: 15px; border-radius: 50%; border: 1px solid #94a3b8; color: #64748b; font-size: 10px; font-weight: 700; align-items: center; justify-content: center; cursor: help; background: #fff; line-height: 1; }
+.stat-pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: #64748b; }
+.stat-pill.warn { background: #fff7e8; color: #9a6700; }
+.stat-pill.ok { background: #e9f6f1; color: #1f7a61; }
+.link-steps { font-size: 12px; padding: 6px 10px; margin-bottom: 8px; background: #f8fafc; border-radius: 6px; border: 1px solid #eef2f7; }
 .pass-wrap { display: flex; gap: 16px; height: 76vh; }
 .pass-pdf { flex: 1; min-width: 0; display: flex; flex-direction: column;
   border: 1px solid #ebeef5; border-radius: 8px; overflow: hidden; }
 .sec-group { margin-bottom: 16px; }
 .sec-head { font-weight: 700; font-size: 15px; color: #303133; padding: 6px 0 6px 10px;
-  border-left: 4px solid #409eff; margin-bottom: 8px; }
+  border-left: 4px solid #409eff; margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sec-head .muted { font-weight: 400; }
 .sec-grammar { border-left-color: #409eff; }
 .sec-listen { border-left-color: #67c23a; }
@@ -1446,6 +1640,12 @@ onMounted(load)
   border: 1px solid #eef2f8; border-radius: 6px; }
 .point-name { font-weight: 600; font-size: 13px; color: #303133; margin-bottom: 6px; }
 .link-row { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; flex-wrap: wrap; }
+.facet-block {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: 6px;
+  background: #f8fafc; border: 1px solid #e8edf3;
+}
+.facet-h { font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 4px; }
+.facet-h .muted { font-weight: 400; color: #94a3b8; }
 .sent-row { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; }
 .diff-badge { flex-shrink: 0; min-width: 26px; text-align: center; color: #fff;
   font-size: 11px; line-height: 18px; border-radius: 9px; padding: 0 6px; margin-top: 1px; }
@@ -1485,4 +1685,18 @@ onMounted(load)
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   color: #909399; font-size: 12px; cursor: pointer; gap: 2px; }
 .ocr-add:hover { border-color: var(--c-primary, #3d8bf5); color: var(--c-primary, #3d8bf5); }
+.uls-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.uls-title { font-size: 14px; font-weight: 700; color: #1e293b; }
+.uls-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.uls-chip { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #f1f5f9; color: #475569; font-weight: 600; }
+.uls-chip.ex { background: #e8f2ff; color: #3d8bf5; }
+.uls-chip.syn { background: #fff3d6; color: #9a6700; }
+.uls-card { border: 1px solid #e8edf3; border-radius: 10px; padding: 12px; margin-bottom: 8px; background: #fff; }
+.uls-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.uls-no { width: 22px; height: 22px; border-radius: 6px; background: #e8f2ff; color: #3d8bf5;
+  font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.uls-en { font-size: 14px; font-weight: 600; color: #1e293b; line-height: 1.45; }
+.uls-zh { font-size: 12px; color: #64748b; margin-top: 4px; }
+.uls-why { font-size: 11px; color: #64748b; margin-top: 6px; background: #f8fafc; border-radius: 6px; padding: 6px 8px; }
+.uls-acts { margin-top: 4px; }
 </style>

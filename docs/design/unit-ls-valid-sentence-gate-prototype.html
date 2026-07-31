@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>长难句合理性闸门 · 方案</title>
+<style>
+  :root { --c:#3d8bf5; --ok:#2fa98a; --bad:#e11d48; --line:#e8edf3; --muted:#64748b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif; background:#eef2f7; color:#1e293b; }
+  .page { max-width:980px; margin:0 auto; padding:22px 16px 60px; }
+  h1 { font-size:20px; margin:0 0 8px; }
+  .lead { font-size:13px; color:var(--muted); margin:0 0 14px; }
+  .schemes { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .scheme {
+    border:1px solid var(--line); background:#fff; border-radius:999px;
+    padding:8px 14px; font-size:13px; cursor:pointer; color:var(--muted);
+  }
+  .scheme.on { background:#e8f2ff; border-color:#bfdbfe; color:var(--c); font-weight:600; }
+  .scheme .rec { margin-left:4px; font-size:10px; padding:1px 6px; border-radius:999px; background:#dcfce7; color:#166534; font-weight:700; }
+  .note { background:#eef6ff; border:1px solid #bfdbfe; border-radius:10px; padding:10px 12px; font-size:13px; color:#1e4a7a; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:800px){ .grid { grid-template-columns:1fr; } }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .panel h2 { margin:0 0 8px; font-size:14px; }
+  .bad { border-left:3px solid var(--bad); padding:8px 10px; background:#fff1f2; border-radius:0 8px 8px 0; margin-bottom:8px; font-size:12px; }
+  .good { border-left:3px solid var(--ok); padding:8px 10px; background:#f0fdf8; border-radius:0 8px 8px 0; margin-bottom:8px; font-size:12px; }
+  .tag { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:999px; margin-right:4px; }
+  .tag.x { background:#ffe4e6; color:#be123c; }
+  .tag.o { background:#d1fae5; color:#047857; }
+  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:14px; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#f8fafc; color:var(--muted); }
+  .ok { color:#166534; } .mid { color:#9a6700; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>长难句合理性闸门 · 方案对比</h1>
+  <p class="lead">
+    现状：切句后只看词数/难度，会把语法表、对照式、讲解碎片当成「长难句」。
+    目标：找出的与合成的都必须是<strong>合理、有效的自然英文句</strong>。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="A">A 规则拒识 + 抽空则合成 <span class="rec">推荐·省钱</span></button>
+    <button class="scheme" data-k="B">B 规则粗筛 + LLM 验真</button>
+    <button class="scheme" data-k="C">C LLM 直接抽合法句</button>
+  </div>
+  <div class="note" id="note"></div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>应拒（现状反例）</h2>
+      <div class="bad"><span class="tag x">拒</span>He/She/It likes I/You/We/Theydo not like sport.</div>
+      <div class="bad"><span class="tag x">拒</span>do not = don’t does not = doesn’t We ask and answer… Do I/you/we/they likesport?</div>
+      <div class="bad"><span class="tag x">拒</span>I / You / We / They like…（斜杠范式、非完整叙述）</div>
+    </div>
+    <div class="panel">
+      <h2>应收（合法句）</h2>
+      <div class="good"><span class="tag o">收</span>Let’s meet some of the students and teachers at Sunshine Middle School, and learn about their school lives.</div>
+      <div class="good"><span class="tag o">收</span>Although Millie is quiet, she often helps her classmates with English after school.（合成亦可）</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th></th><th>做法</th><th>准不准</th><th>付费</th><th>拒识图中垃圾</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>A 推荐</b></td>
+        <td>规则拒：斜杠多选主语、含 <code>=</code> 对照、粘连词(Theydo/likesport)、讲解套话、无标点完整句感等 → 过滤后再难度筛；滤光则走合成（合成 prompt 已要求合法句，再加规则二次闸）</td>
+        <td class="ok">对课本语法页够用</td>
+        <td class="ok">几乎不增</td>
+        <td class="ok">可拦图中两类</td>
+      </tr>
+      <tr>
+        <td><b>B</b></td>
+        <td>规则粗筛后，一批 LLM 只做「keep/drop」验真；过才入库</td>
+        <td class="ok">更高</td>
+        <td class="mid">多一次 enrich 级调用</td>
+        <td class="ok">强</td>
+      </tr>
+      <tr>
+        <td><b>C</b></td>
+        <td>不做规则抽句；LLM 从原文只摘「完整自然句」；0 句再合成</td>
+        <td class="ok">最高</td>
+        <td class="mid">每次生成必调</td>
+        <td class="ok">强</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="lead" style="margin-top:12px" id="flow"></p>
+</div>
+<script>
+const META = {
+  A: {
+    note: '<b>A（推荐）· 规则合理性闸门</b>：在难度判定前/后加 <code>is_valid_natural_sentence</code>。命中斜杠范式、等号对照、单词粘连、语法讲解口吻等 → 丢弃。滤完为 0 → 走已有合成。合成结果再过同一闸门。',
+    flow: '流水线：切句 → 合理性闸 → 难度闸 → 译文；0 句 → 合成 → 合理性闸 → 落库。缓存键升版 v2（旧脏缓存作废）。',
+  },
+  B: {
+    note: '<b>B · 规则 + LLM 验真</b>：规则先扔掉明显垃圾，剩余候选交给 LLM 判定 keep。适合规则漏网的边角。',
+    flow: '切句 → 规则粗拒 → LLM keep/drop → 译文；0 → 合成。feature=unit_ls_validate，进同一 md5 缓存。',
+  },
+  C: {
+    note: '<b>C · LLM 直接抽合法句</b>：放弃 spaCy 规则抽句，一次 LLM 从原文摘全部合法长难句。课本讲解页最稳，但每次都付费（有缓存）。',
+    flow: 'LLM extract(合法句) → 若空 synth → 落库。feature=unit_ls_extract。',
+  },
+};
+function render(k) {
+  document.querySelectorAll('.scheme').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+  document.getElementById('note').innerHTML = META[k].note;
+  document.getElementById('flow').innerHTML = META[k].flow;
+}
+document.getElementById('schemes').onclick = e => {
+  const b = e.target.closest('.scheme'); if (b) render(b.dataset.k);
+};
+render('A');
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 """长难句精讲(作业精讲/课程精讲 的「长难句」模块)取数。
 
 - 作业:学生「加入待学习」的长难句(student_long_sentence,带 source_paper_id)→ 按【卷=批次】归组;
-- 课程:教材长难句(long_sentence source_kind=textbook,按学生教材版本 + 单元)→ 按【年级→册→单元】归组;
+- 课程:单元理解向长难句(unit_understand_ls,后台 L1 抽尽/合成)→ 按【年级→册→单元】归组;
 - 每句「详解」= 长难句解析页(前端点进传 text)。
 """
 from __future__ import annotations
@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.d1_users import User
 from app.models.d4_knowledge import CurriculumUnit
 from app.models.d13_v2_user_papers import UserUploadedPaper
-from app.models.d20_long_sentence import LongSentence, StudentLongSentence
+from app.models.d20_long_sentence import StudentLongSentence
+from app.models.d29_unit_ls_understand import UnitUnderstandLs
 
 
 # ── 作业精讲 · 长难句:按卷(批次)──────────────────────────────────────────────
@@ -59,11 +60,12 @@ async def homework_sentences(db: AsyncSession, *, student_id: uuid.UUID,
             for t, _, st, c, g, w in rows]
 
 
-# ── 课程精讲 · 长难句:按教材单元 ──────────────────────────────────────────────
+# ── 课程精讲 · 长难句:按教材单元(真源 unit_understand_ls)─────────────────────
 async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
                        grade: str | None = None, semester: str | None = None) -> dict:
     """学生当前教材某学期的长难句单元(默认聚焦 preferred 当前学期)+ 每单元句数/已学数,
-    含闯关顺序解锁 + 本学期通关 + 下学期。教材长难句 = long_sentence(source_kind=textbook,有 unit_id)。"""
+    含闯关顺序解锁 + 本学期通关 + 下学期。
+    数据真源:unit_understand_ls(后台「找出/合成长难句」);已学=该生对该句文本有过解析。"""
     from app.services.course_intensive_util import decorate_units, next_semester, resolve_semester
     student = await db.get(User, student_id)
     tv = student.preferred_textbook_version if student else None
@@ -74,17 +76,14 @@ async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
     rows = (await db.execute(
         select(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                CurriculumUnit.unit_no, CurriculumUnit.unit_title,
-               func.count(func.distinct(LongSentence.id)),
-               # 已学句数 = 该生对该句文本有过解析(student_long_sentence.analysis_json 非空)
+               func.count(func.distinct(UnitUnderstandLs.id)),
                func.count(func.distinct(case(
-                   (StudentLongSentence.analysis_json.isnot(None), LongSentence.id)))))
-        .join(LongSentence, LongSentence.unit_id == CurriculumUnit.id)
+                   (StudentLongSentence.analysis_json.isnot(None), UnitUnderstandLs.id)))))
+        .join(UnitUnderstandLs, UnitUnderstandLs.unit_id == CurriculumUnit.id)
         .outerjoin(StudentLongSentence,
-                   (StudentLongSentence.text == LongSentence.text)
+                   (StudentLongSentence.text == UnitUnderstandLs.text)
                    & (StudentLongSentence.owner_id == student_id))
         .where(CurriculumUnit.textbook_version == tv,
-               LongSentence.source_kind == "textbook",
-               LongSentence.status == "published",
                CurriculumUnit.grade == g, CurriculumUnit.semester == s)
         .group_by(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                   CurriculumUnit.unit_no, CurriculumUnit.unit_title)
@@ -101,11 +100,12 @@ async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
 
 async def course_sentences(db: AsyncSession, *, unit_id: uuid.UUID,
                           student_id: uuid.UUID | None = None) -> list[dict]:
-    """某教材单元的长难句;传 student_id 则每句带 studied(该生对该句文本有过解析)。"""
+    """某教材单元的理解向长难句;传 student_id 则每句带 studied(该生对该句文本有过解析)。"""
     rows = (await db.execute(
-        select(LongSentence.text).where(
-            LongSentence.unit_id == unit_id, LongSentence.source_kind == "textbook",
-            LongSentence.status == "published").order_by(LongSentence.difficulty.desc()))).scalars().all()
+        select(UnitUnderstandLs.text)
+        .where(UnitUnderstandLs.unit_id == unit_id)
+        .order_by(UnitUnderstandLs.sort_order, UnitUnderstandLs.created_at)
+    )).scalars().all()
     studied_texts: set = set()
     ring_map: dict = {}
     if student_id is not None and rows:
@@ -123,6 +123,39 @@ async def course_sentences(db: AsyncSession, *, unit_id: uuid.UUID,
                 studied_texts.add(t)
             ring_map[t] = int(bool(c)) + int(bool(g)) + int(bool(w))
     return [{"text": t, "studied": t in studied_texts, "ring": ring_map.get(t, 0)} for t in rows]
+
+
+async def touch_sentence_studied(
+    db: AsyncSession, *, student_id: uuid.UUID, text: str,
+    analysis: dict | None = None, paper_id: uuid.UUID | None = None,
+) -> None:
+    """打开解析时:确保有 student_long_sentence 行并写入 analysis_json(看过即 studied)。
+
+    无行时新建(可带 source_paper_id)。已有行只补空 analysis_json。best-effort,调用方 commit。
+    """
+    text = (text or "").strip()
+    if not text:
+        return
+    rows = list((await db.execute(
+        select(StudentLongSentence).where(
+            StudentLongSentence.owner_id == student_id,
+            StudentLongSentence.text == text,
+        )
+    )).scalars().all())
+    payload = analysis if isinstance(analysis, dict) and analysis else {"viewed": True}
+    if rows:
+        for r in rows:
+            if r.analysis_json is None:
+                r.analysis_json = payload
+        return
+    db.add(StudentLongSentence(
+        id=uuid.uuid4(),
+        owner_id=student_id,
+        text=text,
+        analysis_json=payload,
+        status="published",
+        source_paper_id=paper_id,
+    ))
 
 
 async def mark_sentence_progress(db: AsyncSession, *, student_id: uuid.UUID,

@@ -539,6 +539,51 @@ export interface UnitStructured {
 export function getUnitStructured(unitId: string): Promise<UnitStructured> {
   return unwrap(request.get(`/admin/curriculum/units/${unitId}/structured`))
 }
+export function getUnitCourseText(unitId: string): Promise<{ course_text: string; saved: boolean }> {
+  return unwrap(request.get(`/admin/curriculum/units/${unitId}/course-text`))
+}
+export function saveUnitCourseText(unitId: string, courseText: string): Promise<{ course_text: string; saved: boolean }> {
+  return unwrap(request.put(`/admin/curriculum/units/${unitId}/course-text`, { course_text: courseText }))
+}
+
+/** 单元长难句·理解向(抽尽/无则合成;不挂图谱) */
+export interface UnitUnderstandLsItem {
+  id: string
+  text: string
+  translation: string
+  why: string
+  src: 'extract' | 'synth' | string
+  difficulty?: number | null
+  sort_order?: number
+}
+export interface UnitUnderstandLsResult {
+  items: UnitUnderstandLsItem[]
+  total: number
+  extract_count: number
+  synth_count: number
+  mode?: string
+  cached?: boolean
+  grade?: string
+  grammar_scope?: string[]
+}
+export function listUnitUnderstandLs(unitId: string): Promise<UnitUnderstandLsResult> {
+  return unwrap(request.get(`/admin/curriculum/units/${unitId}/understand-ls`))
+}
+export function generateUnitUnderstandLs(
+  unitId: string, force = false,
+): Promise<UnitUnderstandLsResult> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/understand-ls/generate`, { force }, { timeout: 120000 }))
+}
+export function updateUnitUnderstandLs(
+  unitId: string, itemId: string,
+  body: { text?: string; translation?: string; why?: string },
+): Promise<UnitUnderstandLsItem> {
+  return unwrap(request.patch(`/admin/curriculum/units/${unitId}/understand-ls/${itemId}`, body))
+}
+export function deleteUnitUnderstandLs(unitId: string, itemId: string): Promise<{ id: string; deleted: boolean }> {
+  return unwrap(request.delete(`/admin/curriculum/units/${unitId}/understand-ls/${itemId}`))
+}
+
 export function generateUnitStructured(unitId: string): Promise<UnitStructured> {
   return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/generate`, {}, { timeout: 180000 }))
 }

@@ -1333,6 +1333,15 @@ async def sentence_study_aids(db: AsyncSession, *, text: str, student_id: uuid.U
     except Exception:  # noqa: BLE001  解析失败降级为空(前端提示重试),不炸整页
         return empty
 
+    # 看过解析即 studied:补/建学生句行(课程无 paper_id;作业可带)
+    try:
+        from app.services import sentence_intensive_service as _sis
+        await _sis.touch_sentence_studied(
+            db, student_id=student_id, text=text, analysis=analysis, paper_id=paper_id)
+        await db.commit()
+    except Exception:  # noqa: BLE001
+        await db.rollback()
+
     # 是否已加入待学习(本人,同句)
     sentence_added = (await db.execute(sa.select(StudentLongSentence.id).where(
         StudentLongSentence.owner_id == student_id,

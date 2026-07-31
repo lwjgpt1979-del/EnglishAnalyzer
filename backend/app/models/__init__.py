@@ -121,5 +121,8 @@ from .d26_kp_target import StudentKpTarget  # noqa: F401
 from .d27_student_grammar import StudentGrammarNode  # noqa: F401
 from .d28_vocab_review import VocabReview  # noqa: F401
 from .d26_sensitive_approval import SensitiveApproval  # noqa: F401
+from .d29_unit_ls_understand import (  # noqa: F401
+    UnitUnderstandLs, UnitLsUnderstandCache,
+)
 
 __all__ = ["Base"]

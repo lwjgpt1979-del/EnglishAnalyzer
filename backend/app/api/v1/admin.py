@@ -1523,6 +1523,87 @@ async def get_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep
     return make_ok(await _unit_structured_out(db, unit_id))
 
 
+@router.get("/curriculum/units/{unit_id}/course-text", response_model=BaseResponse[dict])
+async def get_unit_course_text_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """读运营粘贴的单元课文/教辅原文。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+    text = (getattr(unit, "course_text", None) or "")
+    return make_ok({"course_text": text, "saved": bool(text.strip())})
+
+
+class UnitCourseTextIn(BaseModel):
+    course_text: str = ""
+
+
+@router.put("/curriculum/units/{unit_id}/course-text", response_model=BaseResponse[dict])
+async def put_unit_course_text_api(unit_id: uuid.UUID, body: UnitCourseTextIn, db: DbDep, admin: AdminDep):
+    """保存粘贴原文(关联知识图谱「粘贴/合并」源)。"""
+    from app.models.d4_knowledge import CurriculumUnit
+    unit = (await db.execute(
+        select(CurriculumUnit).where(CurriculumUnit.id == unit_id))).scalar_one_or_none()
+    if unit is None:
+        raise AppError(code=404, message="单元不存在")
+    unit.course_text = (body.course_text or "").strip() or None
+    await db.commit()
+    return make_ok({"course_text": unit.course_text or "", "saved": bool(unit.course_text)})
+
+
+@router.get("/curriculum/units/{unit_id}/understand-ls", response_model=BaseResponse[dict])
+async def list_unit_understand_ls_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
+    """单元长难句·理解向清单(只呈现,不挂图谱)。"""
+    from app.services import unit_ls_understand_service as uls
+    return make_ok(await uls.list_unit_understand_ls(db, unit_id=unit_id))
+
+
+class UnderstandLsGenerateIn(BaseModel):
+    force: bool = Field(False, description="True 时忽略缓存重跑抽/合成")
+
+
+@router.post("/curriculum/units/{unit_id}/understand-ls/generate", response_model=BaseResponse[dict])
+async def generate_unit_understand_ls_api(
+    unit_id: uuid.UUID, body: UnderstandLsGenerateIn, db: DbDep, admin: AdminDep,
+):
+    """S1: 从已保存原文抽尽长难句;0 句则合成 5–10(用词≤年级)。"""
+    from app.services import unit_ls_understand_service as uls
+    return make_ok(await uls.generate_unit_understand_ls(
+        db, unit_id=unit_id, force=bool(body.force)))
+
+
+class UnderstandLsUpdateIn(BaseModel):
+    text: str | None = None
+    translation: str | None = None
+    why: str | None = None
+
+
+@router.patch(
+    "/curriculum/units/{unit_id}/understand-ls/{item_id}",
+    response_model=BaseResponse[dict],
+)
+async def update_unit_understand_ls_api(
+    unit_id: uuid.UUID, item_id: uuid.UUID, body: UnderstandLsUpdateIn,
+    db: DbDep, admin: AdminDep,
+):
+    from app.services import unit_ls_understand_service as uls
+    return make_ok(await uls.update_unit_understand_ls(
+        db, unit_id=unit_id, item_id=item_id,
+        text=body.text, translation=body.translation, why=body.why))
+
+
+@router.delete(
+    "/curriculum/units/{unit_id}/understand-ls/{item_id}",
+    response_model=BaseResponse[dict],
+)
+async def delete_unit_understand_ls_api(
+    unit_id: uuid.UUID, item_id: uuid.UUID, db: DbDep, admin: AdminDep,
+):
+    from app.services import unit_ls_understand_service as uls
+    return make_ok(await uls.delete_unit_understand_ls(
+        db, unit_id=unit_id, item_id=item_id))
+
 @router.post("/curriculum/units/{unit_id}/structured/generate", response_model=BaseResponse[dict])
 async def generate_unit_structured_api(unit_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """从单元原文 LLM 解析出结构化(语法点+分级句/听力考点+句组/作文要求+正文),整体覆盖。

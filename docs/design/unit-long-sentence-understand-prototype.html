@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>单元长难句·理解向 · 方案与原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #eef2f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 22px 16px 80px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 960px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .cmp {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px;
+  }
+  @media (max-width: 900px) { .cmp { grid-template-columns: 1fr 1fr; } }
+  .cmp-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .cmp-card h3 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-card .v { font-size: 15px; font-weight: 700; }
+  .cmp-card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .stage { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+  .panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(15,23,42,.06); overflow: hidden;
+    display: flex; flex-direction: column; min-height: 560px;
+  }
+  .ph {
+    padding: 12px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .ph h2 { margin: 0; font-size: 14px; }
+  .ph .cap { font-size: 11px; color: var(--muted); }
+  .pb { padding: 12px 14px 16px; flex: 1; overflow: auto; }
+  .tabs { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 10px; width: fit-content; }
+  .tab {
+    padding: 7px 14px; font-size: 12px; background: #f8fafc; color: var(--muted); cursor: default;
+  }
+  .tab.on { background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+  .hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .ta {
+    width: 100%; min-height: 220px; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; color: #334155; resize: vertical;
+    font-family: inherit; background: #fafbfc;
+  }
+  .bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px;
+  }
+  .btn {
+    height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; color: #475569;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn.pri { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
+  .btn.ok { background: var(--c-ok); border-color: var(--c-ok); color: #fff; }
+  .btn.ghost { background: #f1f5f9; }
+  .btn.warn {
+    background: #fff8eb; border-color: #f3d19e; color: #9a6700;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .ok-tag { font-size: 12px; color: var(--c-ok); font-weight: 600; }
+  .flow {
+    margin-top: 12px; font-size: 12px; color: #1e4a7a; background: #f8fbff;
+    border: 1px dashed #bfdbfe; border-radius: 8px; padding: 10px 12px;
+  }
+
+  .ls-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    margin-bottom: 10px;
+  }
+  .ls-head .t { font-size: 14px; font-weight: 700; }
+  .ls-head .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .stats {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .chip {
+    font-size: 11px; padding: 4px 10px; border-radius: 999px;
+    background: #f1f5f9; color: #475569; font-weight: 600;
+  }
+  .chip.ex { background: #e8f2ff; color: var(--c-primary); }
+  .chip.syn { background: #fff3d6; color: #9a6700; }
+
+  .card {
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    margin-bottom: 8px; background: #fff;
+  }
+  .card .meta {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .no {
+    width: 22px; height: 22px; border-radius: 6px; background: #e8f2ff; color: var(--c-primary);
+    font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  }
+  .badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 700;
+  }
+  .badge.ex { background: #e8f2ff; color: var(--c-primary); }
+  .badge.syn { background: #fff3d6; color: #9a6700; }
+  .en { font-size: 14px; font-weight: 600; color: #1e293b; line-height: 1.45; }
+  .zh { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .why { font-size: 11px; color: #64748b; margin-top: 6px; background: #f8fafc; border-radius: 6px; padding: 6px 8px; }
+  .acts { display: flex; gap: 6px; margin-top: 8px; }
+  .acts .mini {
+    font-size: 11px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);
+    background: #fff; color: #475569; cursor: pointer;
+  }
+  .empty {
+    text-align: center; color: #94a3b8; padding: 40px 16px; font-size: 13px;
+    border: 1px dashed var(--line); border-radius: 10px;
+  }
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+    background: rgba(30,41,59,.9); color: #fff; font-size: 13px;
+    padding: 10px 16px; border-radius: 8px; display: none; z-index: 20;
+  }
+  .toast.on { display: block; }
+  .foot { margin-top: 16px; font-size: 12px; color: var(--muted); }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table.mx {
+    width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 16px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  table.mx th, table.mx td {
+    border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.mx th { background: #f8fafc; color: var(--muted); }
+  .ok { color: #166534; }
+  .mid { color: #9a6700; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>单元长难句（理解向）· 方案与原型</h1>
+  <p class="lead">
+    依据「粘贴原文」难度 + 本单元语法范围难度：优先从原文<b>找出全部长难句</b>；找不到则<b>合成 5–10 句</b>
+   （用词相对简单，服务「如何理解长难句」）。图1加按钮；图2只接收与呈现，<b>不做 LLM 关联语法</b>。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="S1">S1 先抽尽再补合成 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="S2">S2 抽取后凑满目标数</button>
+    <button class="scheme" data-k="S3">S3 两步预览确认</button>
+  </div>
+  <div class="note" id="note"></div>
+  <div class="cmp" id="cmp"></div>
+
+  <div class="stage">
+    <!-- 图1 -->
+    <div class="panel">
+      <div class="ph">
+        <div>
+          <h2>图1 · 粘贴原文（加按钮）</h2>
+          <div class="cap">单元短文 · 译林版 初中7年级 上 U1</div>
+        </div>
+      </div>
+      <div class="pb">
+        <div class="tabs">
+          <div class="tab">单元 PDF</div>
+          <div class="tab on">粘贴原文</div>
+        </div>
+        <div class="hint">粘贴教辅/课文；须先「保存原文」。新按钮用已保存原文作输入指纹（付费结果全局缓存）。</div>
+        <textarea class="ta" id="ta" readonly>Here are all the original English sentences from Unit 1 of the 2024 Yilin Edition English 7A textbook.
+
+Let’s meet some of the students and teachers at Sunshine Middle School, and learn about their school lives.
+
+Good morning, class. Welcome to Sunshine Middle School!
+
+Hello, my name is Chen Dan, and Daniel is my English name. I’m in Class 1, Grade 7.
+
+Hi, I’m Sandy. My Chinese name is Li Shanshan. I like playing the piano.
+
+Simon is a tall boy. He likes sport and often plays football after school. He is always full of energy.
+
+Millie has short hair. She loves reading, and she often visits the school library after class.</textarea>
+        <div class="bar">
+          <button class="btn pri" type="button">保存原文</button>
+          <button class="btn" type="button">清空</button>
+          <button class="btn warn" type="button" id="btnGen">找出/合成长难句</button>
+          <span class="ok-tag">已保存 · 可作关联源</span>
+        </div>
+        <div class="flow" id="flow1"></div>
+      </div>
+    </div>
+
+    <!-- 图2 -->
+    <div class="panel">
+      <div class="ph">
+        <div>
+          <h2>图2 · 长难句清单（理解向·重设计）</h2>
+          <div class="cap">不再「LLM 抽语法点 / 挂靠图谱」</div>
+        </div>
+        <button class="btn ghost" type="button" id="btnRefresh" style="height:30px;font-size:12px">重新跑</button>
+      </div>
+      <div class="pb" id="fig2"></div>
+    </div>
+  </div>
+
+  <table class="mx">
+    <thead>
+      <tr>
+        <th></th>
+        <th>原文有句时</th>
+        <th>原文抽不出时</th>
+        <th>图2能力</th>
+        <th>LLM / 缓存</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>S1 推荐</b></td>
+        <td class="ok">全部符合难度的句都入库</td>
+        <td>合成 5–10 句（用词简单）</td>
+        <td>列表·来源标·删/听/保存</td>
+        <td>抽句 chat；合成 chat；按原文 md5+年级缓存</td>
+      </tr>
+      <tr>
+        <td><b>S2</b></td>
+        <td>先抽，不足补到 8 句左右</td>
+        <td>合成凑满</td>
+        <td>同左</td>
+        <td>同上；数量更稳</td>
+      </tr>
+      <tr>
+        <td><b>S3</b></td>
+        <td colspan="2">先预览候选 → 运营勾选确认再落库</td>
+        <td>+勾选确认步</td>
+        <td>多一步交互；落库更可控</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    原型：<code>docs/design/unit-long-sentence-understand-prototype.html</code>
+    · 与现网「单元长难句·关联知识图谱」分流：本流只服务「理解长难句」。
+  </p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SAMPLE_EXTRACT = [
+  {
+    en: "Let’s meet some of the students and teachers at Sunshine Middle School, and learn about their school lives.",
+    zh: "让我们认识阳光中学的一些师生，了解他们的校园生活。",
+    why: "并列结构较长 · and 连接两个动词短语",
+    src: "extract",
+  },
+  {
+    en: "Hello, my name is Chen Dan, and Daniel is my English name.",
+    zh: "你好，我叫陈丹，英文名是 Daniel。",
+    why: "并列介绍 · and 连接两个系表",
+    src: "extract",
+  },
+  {
+    en: "Simon is a tall boy who likes sport and often plays football after school.",
+    zh: "Simon 是个高个子男孩，喜欢运动，放学后常踢足球。",
+    why: "（示意）定语从句拉长信息链",
+    src: "extract",
+  },
+];
+
+const SAMPLE_SYNTH = [
+  {
+    en: "When the bell rings in the morning, students walk into the classroom and put their books on the desks.",
+    zh: "早上铃声响起时，学生们走进教室，把书放在桌上。",
+    why: "时间状语从句 + 并列谓语 · 用词常见",
+    src: "synth",
+  },
+  {
+    en: "Although Millie is quiet, she often helps her classmates with English after school.",
+    zh: "虽然 Millie 很文静，但她放学后常帮同学学英语。",
+    why: "让步状语从句 · 词汇控制在初一",
+    src: "synth",
+  },
+  {
+    en: "The library is the place where many students like to read stories on rainy days.",
+    zh: "图书馆是许多学生喜欢在雨天读故事的地方。",
+    why: "where 定语从句 · 场景具象",
+    src: "synth",
+  },
+  {
+    en: "If you finish your homework early, you can join the school band and practice with friends.",
+    zh: "如果你很早做完作业，就可以加入校乐队和朋友一起练习。",
+    why: "条件从句 + 并列 · 服务「读懂结构」",
+    src: "synth",
+  },
+  {
+    en: "Sandy says that playing the piano every day helps her feel calm before a test.",
+    zh: "Sandy 说每天弹钢琴能让她在考试前感到平静。",
+    why: "宾语从句 · 词简单",
+    src: "synth",
+  },
+];
+
+const META = {
+  S1: {
+    note: '<b>S1（推荐）· 先抽尽再补合成</b>：按年级/单元语法难度从已保存原文抽出<b>全部</b>合格长难句；若 0 句，再 LLM 合成 5–10 句（用词≤年级）。图2只列表呈现。',
+    cmp: [
+      ['准不准', '贴原文', '有则全留'],
+      ['数量稳', '中', '无句才合成'],
+      ['运营负担', '低', '图2无挂图谱'],
+      ['付费', '可控', 'md5 缓存'],
+    ],
+    flow1: '保存原文 → 点「找出/合成长难句」→ 规则+LLM 判定难度 → 有则全出；无则合成 5–10 → 打开图2',
+    mode: 'extract_or_synth',
+  },
+  S2: {
+    note: '<b>S2 · 抽取后凑满目标数</b>：先抽原文；若不足目标（默认 8），用合成补齐到 5–10。适合原文偏短、想保证练习量。',
+    cmp: [
+      ['准不准', '中', '含合成'],
+      ['数量稳', '高', '凑满 8'],
+      ['运营负担', '低', ''],
+      ['付费', '略高', '可能多合成'],
+    ],
+    flow1: '保存原文 → 抽取 → 不足则合成补齐 → 图2 混合列表（抽取/合成标签）',
+    mode: 'fill_to_n',
+  },
+  S3: {
+    note: '<b>S3 · 两步预览确认</b>：跑完后先出候选勾选页，运营确认再写入图2清单。最稳，多一步。',
+    cmp: [
+      ['准不准', '最高', '人审'],
+      ['数量稳', '中', ''],
+      ['运营负担', '中', '多一步'],
+      ['付费', '同 S1', ''],
+    ],
+    flow1: '保存 → 生成候选 → 勾选确认 → 图2 落库列表',
+    mode: 'preview',
+  },
+};
+
+let curK = 'S1';
+let items = [];
+let previewing = false;
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('on'), 1600);
+}
+
+function runPipeline(k) {
+  const m = META[k];
+  previewing = false;
+  if (m.mode === 'extract_or_synth') {
+    // 演示：假定原文能抽出 3 句
+    items = SAMPLE_EXTRACT.map((x) => ({ ...x }));
+    toast(`已从原文找出 ${items.length} 句长难句`);
+  } else if (m.mode === 'fill_to_n') {
+    items = [...SAMPLE_EXTRACT, ...SAMPLE_SYNTH.slice(0, 5)].map((x) => ({ ...x }));
+    toast(`抽取 ${SAMPLE_EXTRACT.length} + 合成补齐 → 共 ${items.length} 句`);
+  } else {
+    previewing = true;
+    items = [...SAMPLE_EXTRACT, ...SAMPLE_SYNTH.slice(0, 3)].map((x, i) => ({
+      ...x, checked: i < 4,
+    }));
+    toast('已生成候选，请在图2勾选后确认入库');
+  }
+  renderFig2();
+}
+
+function renderFig2() {
+  const box = document.getElementById('fig2');
+  if (!items.length) {
+    box.innerHTML = `<div class="empty">尚无长难句。请在左侧保存原文后点「找出/合成长难句」。</div>`;
+    return;
+  }
+  const nEx = items.filter((x) => x.src === 'extract').length;
+  const nSyn = items.filter((x) => x.src === 'synth').length;
+  const head = `
+    <div class="ls-head">
+      <div>
+        <div class="t">本单元长难句 · 理解练习用</div>
+        <div class="s">词尽量简单 · 练的是「看懂结构」· 不关联知识图谱</div>
+      </div>
+    </div>
+    <div class="stats">
+      <span class="chip">共 ${items.length} 句</span>
+      <span class="chip ex">原文抽取 ${nEx}</span>
+      <span class="chip syn">AI 合成 ${nSyn}</span>
+      <span class="chip">年级锚点：初中7上</span>
+    </div>`;
+
+  if (previewing) {
+    box.innerHTML = head + `
+      <div class="hint" style="margin-bottom:10px;color:#9a6700">S3 预览：勾选要保留的句子，再点确认入库。</div>
+      ${items.map((it, i) => cardHtml(it, i, true)).join('')}
+      <div class="bar" style="margin-top:12px">
+        <button class="btn ok" type="button" id="btnConfirm">确认入库到清单</button>
+        <button class="btn" type="button" id="btnCancelPrev">取消</button>
+      </div>`;
+    document.getElementById('btnConfirm').onclick = () => {
+      items = items.filter((x) => x.checked);
+      previewing = false;
+      toast(`已入库 ${items.length} 句`);
+      renderFig2();
+    };
+    document.getElementById('btnCancelPrev').onclick = () => {
+      items = [];
+      previewing = false;
+      renderFig2();
+    };
+    box.querySelectorAll('input[type=checkbox]').forEach((cb) => {
+      cb.onchange = () => {
+        const i = Number(cb.dataset.i);
+        items[i].checked = cb.checked;
+      };
+    });
+    return;
+  }
+
+  box.innerHTML = head + items.map((it, i) => cardHtml(it, i, false)).join('') + `
+    <div class="bar" style="margin-top:12px">
+      <button class="btn pri" type="button">保存到本单元</button>
+      <button class="btn" type="button">导出文本</button>
+    </div>
+    <div class="flow" style="margin-top:10px">学生端消费：课程精讲·长难句清单 → 结构解析（查看即生成，走既有 sentence_analysis_cache）。</div>`;
+}
+
+function cardHtml(it, i, selectable) {
+  const badge = it.src === 'extract'
+    ? '<span class="badge ex">原文抽取</span>'
+    : '<span class="badge syn">AI 合成</span>';
+  const check = selectable
+    ? `<input type="checkbox" data-i="${i}" ${it.checked ? 'checked' : ''} style="margin-right:6px" />`
+    : '';
+  return `
+    <div class="card">
+      <div class="meta">
+        ${check}
+        <div class="no">${i + 1}</div>
+        ${badge}
+      </div>
+      <div class="en">${it.en}</div>
+      <div class="zh">${it.zh}</div>
+      <div class="why">为何算长难句：${it.why}</div>
+      ${selectable ? '' : `
+      <div class="acts">
+        <button class="mini" type="button">听原句</button>
+        <button class="mini" type="button">编辑</button>
+        <button class="mini" type="button">删除</button>
+      </div>`}
+    </div>`;
+}
+
+function render(k) {
+  curK = k;
+  document.querySelectorAll('.scheme').forEach((b) => b.classList.toggle('on', b.dataset.k === k));
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('cmp').innerHTML = m.cmp.map(([h, v, s]) =>
+    `<div class="cmp-card"><h3>${h}</h3><div class="v">${v}</div><div class="s">${s || ''}</div></div>`
+  ).join('');
+  document.getElementById('flow1').innerHTML = `<b>本方案流水线：</b>${m.flow1}`;
+  items = [];
+  previewing = false;
+  renderFig2();
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (btn) render(btn.dataset.k);
+});
+document.getElementById('btnGen').addEventListener('click', () => runPipeline(curK));
+document.getElementById('btnRefresh').addEventListener('click', () => runPipeline(curK));
+
+render('S1');
+</script>
+</body>
+</html>

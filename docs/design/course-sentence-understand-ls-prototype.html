@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>课程长难句 · 接 unit_understand_ls · 方案</title>
+<style>
+  :root { --c:#3d8bf5; --ok:#2fa98a; --line:#e8edf3; --muted:#64748b; --bg:#eef2f7; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif; background:var(--bg); color:#1e293b; }
+  .page { max-width:1100px; margin:0 auto; padding:20px 14px 60px; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  .lead { font-size:13px; color:var(--muted); margin:0 0 12px; max-width:920px; }
+  .schemes { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .scheme {
+    border:1px solid var(--line); background:#fff; border-radius:999px;
+    padding:8px 14px; font-size:13px; cursor:pointer; color:var(--muted);
+  }
+  .scheme.on { background:#e8f2ff; border-color:#bfdbfe; color:var(--c); font-weight:600; }
+  .scheme .rec { margin-left:4px; font-size:10px; padding:1px 6px; border-radius:999px; background:#dcfce7; color:#166534; font-weight:700; }
+  .note { background:#eef6ff; border:1px solid #bfdbfe; border-radius:10px; padding:10px 12px; font-size:13px; color:#1e4a7a; margin-bottom:12px; }
+  .phones { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  @media (max-width:900px){ .phones { grid-template-columns:1fr 1fr; } }
+  .phone {
+    background:#fff; border:1px solid var(--line); border-radius:16px; overflow:hidden;
+    min-height:420px; display:flex; flex-direction:column;
+    box-shadow:0 8px 20px rgba(15,23,42,.06);
+  }
+  .ph { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px; font-weight:700; }
+  .ph .s { font-weight:400; color:var(--muted); font-size:11px; margin-top:2px; }
+  .pb { padding:12px; flex:1; font-size:12px; }
+  .title { font-size:15px; font-weight:800; }
+  .sub { color:var(--muted); font-size:11px; margin:2px 0 10px; }
+  .prog { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .bar { flex:1; height:8px; background:#e8f2ff; border-radius:99px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:25%; background:linear-gradient(90deg,#3d8bf5,#7eb6ff); }
+  .map { position:relative; padding:8px 0 16px; }
+  .node {
+    display:flex; align-items:center; gap:10px; margin:14px 0;
+  }
+  .node:nth-child(odd) { padding-left:8px; }
+  .node:nth-child(even) { padding-left:48px; }
+  .dot {
+    width:36px; height:36px; border-radius:50%; background:#3d8bf5; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
+  }
+  .dot.dim { background:#cfe4ff; color:#3d8bf5; }
+  .u-t { font-weight:700; font-size:13px; }
+  .u-s { color:var(--c); font-size:11px; margin-top:2px; }
+  .empty { text-align:center; color:#94a3b8; padding:60px 10px; }
+  .head-card {
+    background:linear-gradient(90deg,#e8f2ff,#f4f9ff); border-radius:10px; padding:12px; margin-bottom:10px;
+  }
+  .head-card .n { font-size:22px; font-weight:800; color:var(--c); }
+  .cta {
+    display:block; text-align:center; background:var(--c); color:#fff; border-radius:10px;
+    padding:10px; font-weight:700; margin-bottom:12px;
+  }
+  .card {
+    border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:8px;
+    display:flex; gap:8px; align-items:flex-start;
+  }
+  .ring {
+    width:28px; height:28px; border-radius:50%; border:2px solid #cbd5e1; color:#94a3b8;
+    display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0;
+  }
+  .ring.on { border-color:var(--ok); color:var(--ok); background:#e9f6f1; }
+  .en { font-size:12px; line-height:1.45; font-weight:600; flex:1; }
+  .go { color:#94a3b8; font-size:11px; flex-shrink:0; }
+  .seg {
+    line-height:1.7; font-size:13px; margin-bottom:8px;
+  }
+  .seg b { font-weight:700; border-bottom:1px dashed #f59e0b; color:#c2410c; }
+  .seg .m { color:#3d8bf5; border-bottom:1px dashed #3d8bf5; }
+  .zh { background:#f8fafc; border-radius:8px; padding:8px; color:var(--muted); margin-bottom:8px; }
+  .tabs { display:flex; gap:4px; border-top:1px solid var(--line); padding-top:8px; margin-top:8px; }
+  .tab { flex:1; text-align:center; font-size:10px; padding:6px 2px; border-radius:6px; background:#f1f5f9; color:var(--muted); }
+  .tab.on { background:#e8f2ff; color:var(--c); font-weight:700; }
+  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:14px; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th,td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#f8fafc; color:var(--muted); }
+  .ok { color:#166534; } .mid { color:#9a6700; }
+  .foot { margin-top:12px; font-size:12px; color:var(--muted); }
+  code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>课程精讲 · 长难句（接后台理解向清单）</h1>
+  <p class="lead">
+    目标：图1 样式对齐语法精讲路线图；点单元 → 图3 作业式清单（数据 = 本单元 <code>unit_understand_ls</code>）；
+    点句 → 图4 复用作业长难句解析交互（<code>sentence?text=</code>）。
+    现状空态因课程侧仍读 <code>long_sentence(textbook)</code>，未读后台已生成的理解向表。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="A">A 后端改取数 · 前端零改 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="B">B 生成时双写 long_sentence</button>
+    <button class="scheme" data-k="C">C 新学生 API + 前端改调</button>
+  </div>
+  <div class="note" id="note"></div>
+
+  <div class="phones">
+    <!-- 图1 -->
+    <div class="phone">
+      <div class="ph">图1 · 路线图<div class="s">对齐语法精讲 UnitLevelMap</div></div>
+      <div class="pb">
+        <div class="title">课程精讲 · 长难句</div>
+        <div class="sub">按 年级 → 册 → 单元</div>
+        <div class="prog"><span>初中7年级上册</span><div class="bar"><i></i></div><span>2/8</span></div>
+        <div class="map">
+          <div class="node"><div class="dot">▶</div><div><div class="u-t">U1 · This is me!</div><div class="u-s">3/8 句</div></div></div>
+          <div class="node"><div class="dot dim">▶</div><div><div class="u-t">U2 · Hobbies</div><div class="u-s">0/6 句</div></div></div>
+          <div class="node"><div class="dot dim">▶</div><div><div class="u-t">U3 · Welcome…</div><div class="u-s">0/5 句</div></div></div>
+        </div>
+      </div>
+    </div>
+    <!-- 图2 对照 -->
+    <div class="phone">
+      <div class="ph">图2 · 语法精讲对照<div class="s">同组件 · 已有实现</div></div>
+      <div class="pb">
+        <div class="title">课程精讲 · 语法精讲</div>
+        <div class="sub">按 年级 → 册 → 单元</div>
+        <div class="prog"><span>初中7年级上册</span><div class="bar"><i style="width:0%"></i></div><span>0/8</span></div>
+        <div class="map">
+          <div class="node"><div class="dot">▶</div><div><div class="u-t">U1 · This is me!</div><div class="u-s">7/13 点</div></div></div>
+          <div class="node"><div class="dot dim">▶</div><div><div class="u-t">U2 · Hobbies</div><div class="u-s">9/16 点</div></div></div>
+        </div>
+        <div class="sub" style="margin-top:20px">长难句页已用同一 UnitLevelMap；差的是有句数据。</div>
+      </div>
+    </div>
+    <!-- 图3 -->
+    <div class="phone">
+      <div class="ph">图3 · 单元清单<div class="s">PaperChecklist · 本单元句</div></div>
+      <div class="pb">
+        <div class="head-card">
+          <div class="n">0/8</div>
+          <div style="color:var(--muted)">U1 · 共 8 句 · 未学</div>
+        </div>
+        <div class="cta">开始学习</div>
+        <div class="card">
+          <div class="ring">0</div>
+          <div class="en">Let’s meet some of the students and teachers at Sunshine Middle School…</div>
+          <div class="go">去学 ›</div>
+        </div>
+        <div class="card">
+          <div class="ring">0</div>
+          <div class="en">Although Millie is quiet, she often helps her classmates…</div>
+          <div class="go">去学 ›</div>
+        </div>
+        <div class="sub">数据：unit_understand_ls（原文抽取 / AI 合成）</div>
+      </div>
+    </div>
+    <!-- 图4 -->
+    <div class="phone">
+      <div class="ph">图4 · 解析学习<div class="s">直接套用作业长难句页</div></div>
+      <div class="pb">
+        <div class="seg"><b>While</b> students <span class="m">walk into</span> the classroom, they put books on the desks.</div>
+        <div class="zh">当学生们走进教室时，他们把书放在桌上。</div>
+        <div class="tabs">
+          <div class="tab on">精读闯关</div>
+          <div class="tab">快速看树</div>
+          <div class="tab">认语法</div>
+          <div class="tab">重点词</div>
+        </div>
+        <div class="sub" style="margin-top:10px">路由：<code>/pages/user-papers/sentence?text=…</code><br>解析缓存：sentence_analysis_cache</div>
+      </div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th></th><th>改动</th><th>数据真源</th><th>图4</th><th>studied</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>A 推荐</b></td>
+        <td class="ok">只改 sentence_intensive_service.course_units / course_sentences</td>
+        <td>unit_understand_ls</td>
+        <td class="ok">现页零改</td>
+        <td>打开解析可选 upsert student_long_sentence（看过即学）</td>
+      </tr>
+      <tr>
+        <td><b>B</b></td>
+        <td>admin 生成时同步写 long_sentence(published)</td>
+        <td>双表</td>
+        <td class="ok">零改</td>
+        <td>沿用旧口径</td>
+      </tr>
+      <tr>
+        <td><b>C</b></td>
+        <td>新 API + 前端改 seCourse*</td>
+        <td>unit_understand_ls</td>
+        <td class="ok">零改</td>
+        <td>同 A</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="foot" id="flow"></p>
+</div>
+<script>
+const META = {
+  A: {
+    note: '<b>A（推荐）</b>：页面结构已齐（UnitLevelMap → PaperChecklist → sentence.vue）。只把课程取数从 <code>long_sentence(textbook)</code> 改为 <code>unit_understand_ls</code>。有句的单元上路线图；无句单元可隐藏或显示 0 句灰态（建议：count=0 不展示或标「未配置」）。',
+    flow: '流水线：后台 L1 生成 → unit_understand_ls → GET course/units & course/sentences → 点句 text → study-aids（按句 md5 缓存）。可选：解析打开时 touch 学生句行，使清单勾选生效。',
+  },
+  B: {
+    note: '<b>B</b>：生成理解向清单时同步 upsert <code>long_sentence(source_kind=textbook|unit_understand, published)</code>。课程旧接口不用改，但双表易漂移，不推荐。',
+    flow: 'generate → unit_understand_ls + long_sentence → 现有 course_* 自动有数据。',
+  },
+  C: {
+    note: '<b>C</b>：新增学生只读 API，前端改调。能力同 A，改动面更大，无额外收益。',
+    flow: '新 GET /curriculum/.../understand-ls → 前端 seCourse* 换接口。',
+  },
+};
+function render(k){
+  document.querySelectorAll('.scheme').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
+  document.getElementById('note').innerHTML = META[k].note;
+  document.getElementById('flow').innerHTML = META[k].flow;
+}
+document.getElementById('schemes').onclick = e => {
+  const b = e.target.closest('.scheme'); if (b) render(b.dataset.k);
+};
+render('A');
+</script>
+</body>
+</html>

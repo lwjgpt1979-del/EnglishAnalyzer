@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>长难句 · LLM 找出/生成 · 方案</title>
+<style>
+  :root { --c:#3d8bf5; --line:#e8edf3; --muted:#64748b; }
+  body { margin:0; font-family:"PingFang SC","Noto Sans SC",system-ui,sans-serif; background:#eef2f7; color:#1e293b; }
+  .page { max-width:920px; margin:0 auto; padding:22px 16px 50px; }
+  h1 { font-size:20px; margin:0 0 8px; }
+  .lead { font-size:13px; color:var(--muted); margin:0 0 12px; }
+  .schemes { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .scheme { border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 14px; font-size:13px; cursor:pointer; color:var(--muted); }
+  .scheme.on { background:#e8f2ff; border-color:#bfdbfe; color:var(--c); font-weight:600; }
+  .scheme .rec { margin-left:4px; font-size:10px; padding:1px 6px; border-radius:999px; background:#dcfce7; color:#166534; font-weight:700; }
+  .note { background:#eef6ff; border:1px solid #bfdbfe; border-radius:10px; padding:10px 12px; font-size:13px; color:#1e4a7a; margin-bottom:12px; }
+  .bad { background:#fff1f2; border-left:3px solid #e11d48; padding:8px 10px; border-radius:0 8px 8px 0; font-size:12px; margin-bottom:8px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th,td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#f8fafc; color:var(--muted); }
+  .ok { color:#166534; } .mid { color:#9a6700; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>长难句 · 改由 LLM 找出 / 生成</h1>
+  <p class="lead">规则难度会把语法说明句当成「长难句」。目标：只收<strong>合理、完整、可练理解</strong>的自然长难句；没有则合成。</p>
+  <div class="bad">应拒：We use __________ (am, are, is) with you, we and they.</div>
+  <div class="bad">应拒：填空/选项列举/语法规则叙述（We use… with…）</div>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="L1">L1 一次 LLM：抽尽或合成 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="L2">L2 先 LLM 抽，空则再合成</button>
+    <button class="scheme" data-k="L3">L3 规则候选 + LLM 验真/改写</button>
+  </div>
+  <div class="note" id="note"></div>
+  <table>
+    <thead><tr><th></th><th>LLM 次数</th><th>拒语法说明句</th><th>缓存</th><th>风险</th></tr></thead>
+    <tbody>
+      <tr><td><b>L1 推荐</b></td><td class="ok">通常 1 次</td><td class="ok">强（prompt 钉死）</td><td class="ok">md5 全局</td><td>单次输出要校验条数/合法性</td></tr>
+      <tr><td><b>L2</b></td><td class="mid">0–2 次</td><td class="ok">强</td><td class="ok">同左</td><td>多一次往返</td></tr>
+      <tr><td><b>L3</b></td><td class="mid">1 次验真</td><td class="mid">依赖候选质量</td><td class="ok">同左</td><td>规则仍可能漏/噪</td></tr>
+    </tbody>
+  </table>
+  <p class="lead" style="margin-top:12px" id="flow"></p>
+</div>
+<script>
+const META = {
+  L1: {
+    note: '<b>L1（推荐）</b>：一次 LLM——从原文<strong>只摘合法完整长难句（全部）</strong>；若没有合格句，同一响应内直接给 5–10 句合成（用词简单）。规则闸仅作入库前二次保险。feature=<code>unit_ls_extract_or_synth</code>，缓存升 v3。',
+    flow: 'course_text → LLM(抽尽|合成) → 规则闸 → 落库。图2 来源标 extract/synth 仍由模型标注。',
+  },
+  L2: {
+    note: '<b>L2</b>：先 LLM 只抽；返回空再调合成（现有 unit_ls_synth）。两次调用边界清晰，未命中缓存时更贵一点。',
+    flow: 'LLM extract → 空? → LLM synth → 规则闸 → 落库。',
+  },
+  L3: {
+    note: '<b>L3</b>：保留规则粗候选，LLM 只做 keep/drop（可轻改写为完整句）。仍吃规则噪声，对「We use ___」要靠验真 prompt 丢掉。',
+    flow: '规则候选 → LLM validate → 空则 synth → 落库。',
+  },
+};
+function render(k){
+  document.querySelectorAll('.scheme').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
+  document.getElementById('note').innerHTML=META[k].note;
+  document.getElementById('flow').innerHTML=META[k].flow;
+}
+document.getElementById('schemes').onclick=e=>{const b=e.target.closest('.scheme'); if(b) render(b.dataset.k);};
+render('L1');
+</script>
+</body>
+</html>

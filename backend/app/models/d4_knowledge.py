@@ -37,6 +37,7 @@ class CurriculumUnit(Base):
     unit_title = mapped_column(sa.String, nullable=False)
     source_text = mapped_column(sa.Text, nullable=True)   # PDF 生成时的单元原文(供重生成/析短文)
     unit_pdf_url = mapped_column(sa.String, nullable=True)  # 拆出的单元独立 PDF(COS 直链)
+    course_text = mapped_column(sa.Text, nullable=True)  # 运营粘贴的课文/教辅原文(关联图谱可选源)
     # 发布闸门:draft=整理中(学生不可见)/ published=已发布(学生可见)。新建默认 draft,整理好再发布。
     status = mapped_column(sa.String, nullable=False, server_default="draft")
 
