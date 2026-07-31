@@ -2,7 +2,7 @@
   <view class="page">
     <view class="card src-card">
       <text class="src-label">长难句</text>
-      <text class="src-text">{{ text }}</text>
+      <SentenceStructBlock :analysis="a" :plain="text" />
       <view class="src-add" :class="{ done: saved }" @tap="save">
         <text>{{ saved ? '已加入待学习' : '加入待学习' }}</text>
       </view>
@@ -117,6 +117,7 @@ import { markSentenceProgress } from '@/api/curriculum'
 import KeyWordsList from '@/components/KeyWordsList.vue'
 import WordCard from '@/components/WordCard.vue'
 import SentenceIntensive from '@/components/SentenceIntensive.vue'
+import SentenceStructBlock from '@/components/SentenceStructBlock.vue'
 
 const text = ref('')
 const a = ref<any>(null)
@@ -225,7 +226,6 @@ onLoad(async (q: any) => {
 .tip { text-align: center; color: var(--c-text-hint); padding: 60rpx 0; }
 .src-card { display: flex; flex-direction: column; gap: 14rpx; }
 .src-label { font-size: 22rpx; color: var(--c-primary); }
-.src-text { font-size: 30rpx; line-height: 1.7; color: var(--c-ink); }
 .src-add { align-self: flex-start; font-size: 24rpx; color: var(--c-primary); border: 2rpx solid var(--c-primary); border-radius: 999rpx; padding: 8rpx 28rpx; }
 .src-add.done { color: #2ecc71; border-color: #2ecc71; }
 .sec-t { display: block; font-size: 24rpx; font-weight: 700; color: var(--c-text-second); margin-bottom: 6rpx; }
