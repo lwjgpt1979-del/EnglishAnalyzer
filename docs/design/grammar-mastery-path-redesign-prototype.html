@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>语法学习路径优化 · 多方案原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1240px; margin: 0 auto; padding: 22px 16px 72px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 960px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .cmp {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  @media (max-width: 900px) { .cmp { grid-template-columns: 1fr 1fr; } }
+  .cmp-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .cmp-card h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-card .v { font-size: 16px; font-weight: 700; }
+  .cmp-card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .stage {
+    display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start;
+  }
+  @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+  .panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; }
+  .flow {
+    font-size: 12px; color: #475569; background: #f8fbff; border: 1px dashed #bfdbfe;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.65;
+  }
+  .flow b { color: #0f2f55; }
+  .steps { display: grid; gap: 8px; }
+  .step {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fafcff;
+  }
+  .step .n {
+    display: inline-flex; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--c-primary); color: #fff; font-size: 11px; font-weight: 700;
+    align-items: center; justify-content: center; margin-right: 6px;
+  }
+  .step .t { font-size: 13px; font-weight: 700; }
+  .step .d { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .pain {
+    margin-top: 12px; font-size: 12px; color: #9a6700; background: #fff8eb;
+    border: 1px solid #f3d19e; border-radius: 8px; padding: 8px 10px;
+  }
+
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone-cap { font-size: 12px; color: var(--muted); }
+  .phone-nav { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .phone-nav button {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--muted);
+  }
+  .phone-nav button.on { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; font-weight: 600; }
+
+  .phone {
+    width: 320px; height: 640px; border-radius: 28px; border: 8px solid #1e293b;
+    background: #f4f7fb; box-shadow: 0 16px 40px rgba(15,23,42,.18);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .status {
+    height: 26px; background: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #94a3b8; flex-shrink: 0;
+  }
+  .ph-hd {
+    background: #fff; padding: 8px 12px 0; border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  .ph-title { text-align: center; font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .tabs { display: flex; gap: 0; }
+  .tab {
+    flex: 1; text-align: center; font-size: 12px; color: var(--muted); padding: 8px 0;
+    border-bottom: 2px solid transparent;
+  }
+  .tab.on { color: var(--c-primary); font-weight: 600; border-bottom-color: var(--c-primary); }
+  .ph-bd { flex: 1; overflow: auto; padding: 10px 12px 12px; }
+  .ph-ft {
+    flex-shrink: 0; display: flex; gap: 8px; padding: 10px 12px;
+    background: #fff; border-top: 1px solid var(--line);
+  }
+  .btn {
+    flex: 1; height: 40px; border-radius: 10px; border: 0; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; cursor: default;
+  }
+  .btn.pri { background: var(--c-primary); color: #fff; }
+  .btn.sec { background: #e8f2ff; color: var(--c-primary); }
+  .btn.ok { background: var(--c-ok); color: #fff; }
+  .btn.ghost { background: #f1f5f9; color: #475569; }
+
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+  }
+  .g4-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .st { font-size: 12px; font-weight: 700; color: #64748b; }
+  .st.warn { color: #9a6700; }
+  .st.ok { color: #1f7a61; }
+  .mini { font-size: 11px; padding: 4px 10px; border-radius: 8px; background: var(--c-primary); color: #fff; }
+  .dims { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .dim {
+    position: relative; overflow: hidden; border-radius: 8px; background: #f8fafc;
+    border: 1px solid var(--line); padding: 6px 8px; font-size: 11px;
+  }
+  .dim .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg,#e8f2ff,#f4f9ff);
+  }
+  .dim .fill.ok { background: linear-gradient(90deg,#e9f6f1,#f4fbf8); }
+  .dim span { position: relative; }
+  .dim .v { float: right; font-weight: 700; color: #334155; }
+
+  .path {
+    display: flex; gap: 4px; margin: 0 0 10px; overflow-x: auto; padding-bottom: 2px;
+  }
+  .path .p {
+    flex-shrink: 0; font-size: 10px; padding: 4px 8px; border-radius: 999px;
+    background: #f1f5f9; color: var(--muted);
+  }
+  .path .p.on { background: #e8f2ff; color: var(--c-primary); font-weight: 700; }
+  .path .p.done { background: #e9f6f1; color: #1f7a61; }
+
+  .facet {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fff;
+  }
+  .facet.done { border-color: #b7e4d4; background: #f3fbf8; }
+  .facet.cur { border-color: #bfdbfe; background: #f8fbff; box-shadow: 0 0 0 2px #dbeafe; }
+  .facet .h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+  .facet .chk {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid #cbd5e1;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff;
+  }
+  .facet.done .chk { background: var(--c-ok); border-color: var(--c-ok); }
+  .facet.cur .chk { border-color: var(--c-primary); }
+  .facet .meta { font-size: 11px; color: var(--muted); margin: 4px 0 0 26px; }
+  .sent {
+    margin: 6px 0 0 26px; font-size: 12px; color: #334155;
+    padding: 6px 8px; background: #f8fafc; border-radius: 6px;
+  }
+  .sent b { color: var(--c-primary); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .quiz-q { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .opt {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 6px;
+    font-size: 13px; background: #fff;
+  }
+  .opt.on { border-color: var(--c-primary); background: #e8f2ff; }
+  .opt.ok { border-color: #b7e4d4; background: #f3fbf8; }
+  .opt.bad { border-color: #fecaca; background: #fff5f5; }
+  .fb {
+    font-size: 12px; color: #1e4a7a; background: #eef6ff; border-radius: 8px;
+    padding: 8px 10px; margin-top: 6px;
+  }
+  .rule {
+    background: #e8f2ff; border-radius: 12px; padding: 12px; font-size: 13px; color: #1e4a7a;
+    margin-bottom: 8px;
+  }
+  table.mx {
+    width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  table.mx th, table.mx td {
+    border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.mx th { background: #f8fafc; color: var(--muted); }
+  .ok { color: #166534; }
+  .mid { color: #9a6700; }
+  .bad { color: #b91c1c; }
+  .foot { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>语法学习路径优化 · 如何准确掌握</h1>
+  <p class="lead">
+    现状（截图）：「一句话搞懂」类比讲解 + 四维卡 + 练习/模拟考，和本单元<strong>细目/教材原句</strong>脱节；
+    容易「看懂类比、测不过、不知哪一层不会」。下面 4 个方案可切换预览；选定前不改代码。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="A">A 细目闯关 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="B">B 先诊后学</button>
+    <button class="scheme" data-k="C">C 四维串行门禁</button>
+    <button class="scheme" data-k="D">D 间隔复测闭环</button>
+    <button class="scheme" data-k="NOW">现状对照</button>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="cmp" id="cmp"></div>
+
+  <div class="stage">
+    <div class="panel">
+      <h2 id="panelTitle">学习闭环</h2>
+      <div class="flow" id="flow"></div>
+      <div class="steps" id="steps"></div>
+      <div class="pain" id="pain"></div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-cap" id="phoneCap">学生端预览 · be动词</div>
+      <div class="phone-nav" id="phoneNav"></div>
+      <div class="phone">
+        <div class="status">9:41</div>
+        <div class="ph-hd">
+          <div class="ph-title">be动词（to be）</div>
+          <div class="tabs">
+            <div class="tab on">学路径</div>
+            <div class="tab">仿真题</div>
+            <div class="tab">错题</div>
+          </div>
+        </div>
+        <div class="ph-bd" id="screen"></div>
+        <div class="ph-ft" id="footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="mx">
+    <thead>
+      <tr>
+        <th>方案</th>
+        <th>核心抓手</th>
+        <th>用上细目/教材句</th>
+        <th>准确掌握怎么验</th>
+        <th>成本</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>A 细目闯关</b></td>
+        <td>挂靠点 → 细目清单 → 每细目「看句→微测」</td>
+        <td class="ok">强（后台 26 细目进学习）</td>
+        <td class="ok">细目全过 + 综合四维/迁移</td>
+        <td class="ok">中；复用 unit_section.facets</td>
+      </tr>
+      <tr>
+        <td><b>B 先诊后学</b></td>
+        <td>入口摸底 → 只攻薄弱细目</td>
+        <td class="ok">强</td>
+        <td class="ok">诊后复测对比</td>
+        <td class="mid">中；多一次摸底</td>
+      </tr>
+      <tr>
+        <td><b>C 四维串行</b></td>
+        <td>识别→纠错→产出→迁移 必须顺过</td>
+        <td class="mid">例句作载体</td>
+        <td class="ok">维门禁严</td>
+        <td class="ok">偏改造交互</td>
+      </tr>
+      <tr>
+        <td><b>D 间隔复测</b></td>
+        <td>达标后按间隔召回，错了回细目</td>
+        <td class="mid">复测用新句</td>
+        <td class="ok">防假掌握</td>
+        <td class="mid">中；已有 retain 可接</td>
+      </tr>
+      <tr>
+        <td>现状</td>
+        <td>类比讲解 + 自由测练</td>
+        <td class="bad">弱（例句 tab 可选）</td>
+        <td class="mid">四维存在但路径松</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    原型：<code>docs/design/grammar-mastery-path-redesign-prototype.html</code> ·
+    可叠用：推荐 <b>A + D</b>（细目学透 + 隔期真会）
+  </p>
+</div>
+
+<script>
+const META = {
+  NOW: {
+    note: '<b>现状问题</b>：讲解偏类比（「三个小分身」），和本单元细目（肯定/否定/疑问）脱节；底部练习/模拟考不绑定薄弱面；学生不知「哪一层不会」。',
+    cmp: [
+      ['路径', '看讲→随意练', '松'],
+      ['细目', '几乎不用', ''],
+      ['验真', '四维分散', '易假会'],
+      ['推荐', '否', '对照'],
+    ],
+    flow: '一句话搞懂 →（可选看例句）→ 测一测 / 练习5 / 模拟考10 · <b>无细目门禁</b>',
+    pain: '痛点：懂类比 ≠ 会选 am/is/are；肯定句过了否定句仍错，系统却显示「练过」。',
+    steps: [
+      ['读讲解', 'AI 环节文（一句话/例句/别踩坑）'],
+      ['自由检测', '四维探针或练习题，不强制顺序'],
+      ['掌握卡更新', '按作答刷 BKT，无细目维度'],
+    ],
+  },
+  A: {
+    note: '<b>方案 A（推荐）· 细目闯关</b>：把后台「挂靠点 + 细目 + 教材句」变成学生路径。每个细目：看 1–2 句教材原句 → 点破规则 → 2～3 道微测过关；细目全过后再综合四维/迁移。',
+    cmp: [
+      ['路径', '细目串行', '清晰'],
+      ['细目', '主线', '复用 facets'],
+      ['验真', '细目微测+综合', '准'],
+      ['成本', '中', '前端路径+微测'],
+    ],
+    flow: '挂靠点页 → <b>细目清单</b> → 细目学（教材句+规则）→ 微测过关 → 全部细目 ✓ → 综合测/迁移',
+    pain: '解决：准确掌握 =「本单元该点下每个细目都会」，不是只听懂一个比喻。',
+    steps: [
+      ['细目地图', '肯定句 / 否定句 / 一般疑问… 进度勾选'],
+      ['学：教材原句', '高亮 be 形态，一句话规则贴本细目'],
+      ['验：微测 2–3 题', '错则回看句+规则，对则勾细目'],
+      ['综合', '细目全过后开四维/迁移，防只会一角'],
+    ],
+  },
+  B: {
+    note: '<b>方案 B· 先诊后学</b>：进点先做 6～8 题摸底（按细目出题），标红薄弱细目；学习只展开薄弱项，复测对比前后。适合「会一点但漏很多」的学生。',
+    cmp: [
+      ['路径', '诊→攻弱', '省时间'],
+      ['细目', '诊后聚焦', ''],
+      ['验真', '前后测对比', '准'],
+      ['成本', '中', '多一次摸底'],
+    ],
+    flow: '进入 → <b>摸底卷</b>（覆盖细目）→ 薄弱清单 → 只学红项 → 复测同一细目',
+    pain: '解决：不强行重学已会的肯定句，把时间砸在否定/疑问上。',
+    steps: [
+      ['摸底', '每细目 1–2 题，出薄弱画像'],
+      ['攻弱', '只开红细目的学+微测'],
+      ['复测', '薄弱细目再测，绿了才算'],
+      ['综合', '无红项后开迁移'],
+    ],
+  },
+  C: {
+    note: '<b>方案 C· 四维串行门禁</b>：保留识别/纠错/产出/迁移，但必须顺过：识别未达标不能进纠错。每维用教材句做载体。路径硬、心智负担高。',
+    cmp: [
+      ['路径', '四维锁链', '严'],
+      ['细目', '作例句池', '弱于 A'],
+      ['验真', '维门禁', '偏技能'],
+      ['成本', '低-中', '改交互'],
+    ],
+    flow: '识别门 → 纠错门 → 产出门 → 迁移门 · 锁未开不可跳',
+    pain: '解决：乱点练习导致「产出 0、识别刷很高」的假进度；但细目覆盖仍可能不全。',
+    steps: [
+      ['识别', '选对 am/is/are（教材挖空）'],
+      ['纠错', '改错句'],
+      ['产出', '按提示造句'],
+      ['迁移', '新语境题，通过才算掌握'],
+    ],
+  },
+  D: {
+    note: '<b>方案 D· 间隔复测闭环</b>：在 A/C 达标后，按间隔召回（已有 retain 思路）。复测错 → 打回对应细目。防「当天会、隔天不会」。',
+    cmp: [
+      ['路径', '达标后召回', ''],
+      ['细目', '错因回细目', ''],
+      ['验真', '时间维', '真会'],
+      ['成本', '中', '接 retain'],
+    ],
+    flow: '细目/四维达标 → 日程复测 → 过则拉长间隔 / 错则回细目',
+    pain: '解决：准确掌握含「过几天还对」；单独用不够，建议 A+D。',
+    steps: [
+      ['达标入库', '细目全过或四维门槛'],
+      ['到期推送', '今日待复测'],
+      ['复测卷', '新句、同考点'],
+      ['错因回流', '定位细目再闯'],
+    ],
+  },
+};
+
+const SCREENS = {
+  NOW: {
+    nav: [['home', '首页']],
+    default: 'home',
+    views: {
+      home() {
+        return {
+          body: `
+            <div class="card">
+              <div class="g4-head"><span class="st">未开始</span><span class="mini">测一测</span></div>
+              <div class="dims">
+                <div class="dim"><span>识别</span><span class="v">0%</span></div>
+                <div class="dim"><span>纠错</span><span class="v">0%</span></div>
+                <div class="dim"><span>产出</span><span class="v">0%</span></div>
+                <div class="dim"><span>迁移</span><span class="v">未通过</span></div>
+              </div>
+            </div>
+            <div class="card">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:6px">一句话搞懂</div>
+              <div class="rule">be 动词就是英语里的「是」和「在」，它有三个小分身：am、is、are…</div>
+              <div class="hint">与本单元细目（否定/疑问）未对齐</div>
+            </div>`,
+          foot: `
+            <div class="btn sec">练习（5 题）</div>
+            <div class="btn pri">模拟考（10 题）</div>`,
+        };
+      },
+    },
+  },
+  A: {
+    nav: [['map', '细目地图'], ['learn', '学·肯定句'], ['quiz', '微测'], ['done', '综合']],
+    default: 'map',
+    views: {
+      map() {
+        return {
+          body: `
+            <div class="path">
+              <span class="p done">1 地图</span><span class="p">2 学细目</span>
+              <span class="p">3 微测</span><span class="p">4 综合</span>
+            </div>
+            <div class="card">
+              <div class="g4-head"><span class="st warn">细目闯关中 1/3</span><span class="mini">继续</span></div>
+              <div class="hint">本单元 3 个细目 · 全部过关后再开迁移</div>
+            </div>
+            <div class="facet done">
+              <div class="h"><span class="chk">✓</span>肯定句（主谓一致）</div>
+              <div class="meta">已过 · 3 句教材</div>
+            </div>
+            <div class="facet cur">
+              <div class="h"><span class="chk"></span>否定句</div>
+              <div class="meta">进行中 · 下步：看句 → 微测</div>
+            </div>
+            <div class="facet">
+              <div class="h"><span class="chk"></span>一般疑问句及回答</div>
+              <div class="meta">锁定 · 先完成上一细目</div>
+            </div>`,
+          foot: `<div class="btn pri" style="flex:1">学当前细目 · 否定句</div>`,
+        };
+      },
+      learn() {
+        return {
+          body: `
+            <div class="path">
+              <span class="p done">地图</span><span class="p on">学·否定句</span>
+              <span class="p">微测</span><span class="p">综合</span>
+            </div>
+            <div class="rule"><b>本细目规则：</b>否定在 be 后加 <b>not</b>；口语常用 <b>isn’t / aren’t / I’m not</b>。</div>
+            <div class="card">
+              <div style="font-size:12px;font-weight:700;margin-bottom:6px">教材原句</div>
+              <div class="sent">He <b>is not</b> tall.</div>
+              <div class="sent">No, I’<b>m not</b>.</div>
+              <div class="sent">No, they <b>aren’t</b>.</div>
+            </div>
+            <div class="hint">高亮来自本单元解析细目，非通用例句库</div>`,
+          foot: `
+            <div class="btn ghost">上一步</div>
+            <div class="btn pri">去做微测</div>`,
+        };
+      },
+      quiz() {
+        return {
+          body: `
+            <div class="path">
+              <span class="p done">学</span><span class="p on">微测 2/3</span>
+              <span class="p">综合</span>
+            </div>
+            <div class="quiz-q">选正确的否定句</div>
+            <div class="opt bad">A. He not is tall.</div>
+            <div class="opt ok">B. He is not tall.</div>
+            <div class="opt">C. He isn’t tall not.</div>
+            <div class="fb">对：否定在 be 后加 not。对照教材句「He is not tall.」</div>`,
+          foot: `<div class="btn ok" style="flex:1">下一题 · 过关勾细目</div>`,
+        };
+      },
+      done() {
+        return {
+          body: `
+            <div class="path">
+              <span class="p done">细目全过</span><span class="p on">综合</span>
+            </div>
+            <div class="card">
+              <div class="g4-head"><span class="st ok">细目 3/3 ✓</span></div>
+              <div class="dims">
+                <div class="dim"><div class="fill ok" style="width:80%"></div><span>识别</span><span class="v">80%</span></div>
+                <div class="dim"><div class="fill ok" style="width:70%"></div><span>纠错</span><span class="v">70%</span></div>
+                <div class="dim"><div class="fill" style="width:40%"></div><span>产出</span><span class="v">40%</span></div>
+                <div class="dim"><span>迁移</span><span class="v">待测</span></div>
+              </div>
+            </div>
+            <div class="hint">细目过关 ≠ 最终掌握；还需产出/迁移把门</div>`,
+          foot: `
+            <div class="btn sec">产出造句</div>
+            <div class="btn pri">迁移测</div>`,
+        };
+      },
+    },
+  },
+  B: {
+    nav: [['diag', '摸底'], ['weak', '薄弱'], ['fix', '攻弱']],
+    default: 'diag',
+    views: {
+      diag() {
+        return {
+          body: `
+            <div class="card">
+              <div class="g4-head"><span class="st warn">摸底中 3/8</span></div>
+              <div class="hint">覆盖本点全部细目，约 2 分钟</div>
+            </div>
+            <div class="quiz-q">— Are you Peter?<br>— ______.</div>
+            <div class="opt on">A. Yes, I am.</div>
+            <div class="opt">B. Yes, I are.</div>
+            <div class="opt">C. Yes, I’m.</div>`,
+          foot: `<div class="btn pri" style="flex:1">下一题</div>`,
+        };
+      },
+      weak() {
+        return {
+          body: `
+            <div class="card">
+              <div class="g4-head"><span class="st warn">摸底结果</span></div>
+              <div class="hint">只学红色薄弱细目，已会的先跳过</div>
+            </div>
+            <div class="facet done">
+              <div class="h"><span class="chk">✓</span>肯定句</div>
+              <div class="meta">摸底全对 · 可跳过</div>
+            </div>
+            <div class="facet cur">
+              <div class="h"><span class="chk"></span>否定句</div>
+              <div class="meta">错 2/2 · 优先学</div>
+            </div>
+            <div class="facet cur">
+              <div class="h"><span class="chk"></span>一般疑问句及回答</div>
+              <div class="meta">错 1/2 · 优先学</div>
+            </div>`,
+          foot: `<div class="btn pri" style="flex:1">先攻 · 否定句</div>`,
+        };
+      },
+      fix() {
+        return {
+          body: `
+            <div class="rule">针对薄弱：否定句 · 对照教材句后再测 1 题</div>
+            <div class="sent">No, they <b>aren’t</b>.</div>
+            <div class="quiz-q" style="margin-top:10px">改错：They not are twins.</div>
+            <div class="opt">They are not twins. / They aren’t twins.</div>
+            <div class="fb">复测对 → 薄弱清绿</div>`,
+          foot: `<div class="btn ok" style="flex:1">提交并更新画像</div>`,
+        };
+      },
+    },
+  },
+  C: {
+    nav: [['gate', '门禁']],
+    default: 'gate',
+    views: {
+      gate() {
+        return {
+          body: `
+            <div class="path">
+              <span class="p done">识别 ✓</span>
+              <span class="p on">纠错</span>
+              <span class="p">产出 🔒</span>
+              <span class="p">迁移 🔒</span>
+            </div>
+            <div class="card">
+              <div class="g4-head"><span class="st warn">纠错门 · 未达标</span></div>
+              <div class="dims">
+                <div class="dim"><div class="fill ok" style="width:85%"></div><span>识别</span><span class="v">85%</span></div>
+                <div class="dim"><div class="fill" style="width:30%"></div><span>纠错</span><span class="v">30%</span></div>
+                <div class="dim"><span>产出</span><span class="v">锁定</span></div>
+                <div class="dim"><span>迁移</span><span class="v">锁定</span></div>
+              </div>
+            </div>
+            <div class="hint">未过纠错门，不能跳去模拟考刷题</div>
+            <div class="sent">载体句：He is not tall.（教材）</div>`,
+          foot: `<div class="btn pri" style="flex:1">继续纠错探针</div>`,
+        };
+      },
+    },
+  },
+  D: {
+    nav: [['retain', '复测']],
+    default: 'retain',
+    views: {
+      retain() {
+        return {
+          body: `
+            <div class="card">
+              <div class="g4-head"><span class="st ok">曾达标</span><span class="mini">到期复测</span></div>
+              <div class="hint">距上次掌握 3 天 · 用新句验「还是否会」</div>
+            </div>
+            <div class="quiz-q">Where ______ you from?</div>
+            <div class="opt">A. is</div>
+            <div class="opt on">B. are</div>
+            <div class="opt">C. am</div>
+            <div class="fb">若错 → 打回细目「特殊疑问句（含 be）」再闯，不直接标未掌握全部。</div>`,
+          foot: `
+            <div class="btn ghost">稍后</div>
+            <div class="btn pri">提交复测</div>`,
+        };
+      },
+    },
+  },
+};
+
+let curK = 'A';
+let curView = 'map';
+
+function renderMeta(k) {
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('cmp').innerHTML = m.cmp.map(([h, v, s]) =>
+    `<div class="cmp-card"><h3>${h}</h3><div class="v">${v}</div><div class="s">${s || ''}</div></div>`
+  ).join('');
+  document.getElementById('flow').innerHTML = m.flow;
+  document.getElementById('pain').textContent = m.pain;
+  document.getElementById('steps').innerHTML = m.steps.map((s, i) =>
+    `<div class="step"><div class="t"><span class="n">${i + 1}</span>${s[0]}</div><div class="d">${s[1]}</div></div>`
+  ).join('');
+  document.getElementById('panelTitle').textContent =
+    k === 'NOW' ? '现状路径' : `方案 ${k} · 学习闭环`;
+}
+
+function renderPhone(k, viewKey) {
+  const pack = SCREENS[k];
+  const key = viewKey || pack.default;
+  curView = key;
+  const nav = document.getElementById('phoneNav');
+  nav.innerHTML = pack.nav.map(([id, label]) =>
+    `<button type="button" data-v="${id}" class="${id === key ? 'on' : ''}">${label}</button>`
+  ).join('');
+  const view = pack.views[key]();
+  document.getElementById('screen').innerHTML = view.body;
+  document.getElementById('footer').innerHTML = view.foot;
+  document.getElementById('phoneCap').textContent =
+    `预览 · ${k === 'NOW' ? '现状' : '方案 ' + k} · ${pack.nav.find(x => x[0] === key)?.[1] || ''}`;
+}
+
+function render(k) {
+  curK = k;
+  document.querySelectorAll('.scheme').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.k === k);
+  });
+  renderMeta(k);
+  renderPhone(k, SCREENS[k].default);
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (!btn) return;
+  render(btn.dataset.k);
+});
+document.getElementById('phoneNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-v]');
+  if (!btn) return;
+  renderPhone(curK, btn.dataset.v);
+});
+
+render('A');
+</script>
+</body>
+</html>

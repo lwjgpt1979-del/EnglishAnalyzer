@@ -9,8 +9,8 @@
       >{{ t.label }}</view>
     </view>
 
-    <!-- 语法类 KP:R10 四维掌握卡(识别/纠错/产出/迁移 + 诚实标签 + 直达检测) -->
-    <view class="g4-card" v-if="isGrammar && gStatus">
+    <!-- 语法类 KP:R10 四维掌握卡;课程精讲带 unit 时不展示(方案 A,改走细目闯关) -->
+    <view class="g4-card" v-if="isGrammar && gStatus && !unitId">
       <view class="g4-head">
         <text class="g4-label" :class="'st-' + gStatus.status">{{ gStatus.label }}</text>
         <view class="g4-btn" @tap="goGrammar">{{ gActionText }}</view>
@@ -269,7 +269,8 @@ const G_DIMS = [
 ] as const
 
 async function loadGrammarStatus() {
-  if (!isGrammar.value) return
+  // 课程单元上下文不拉四维,避免课程链再进检测
+  if (!isGrammar.value || unitId.value) return
   try { gStatus.value = await getKpStatus(kpId.value) } catch { /* 静默:退回旧台账 */ }
 }
 

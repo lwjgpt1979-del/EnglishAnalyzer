@@ -8,13 +8,8 @@
       <template #item="{ item }">
         <view class="pt-main"><text class="pt-name">{{ item.name }}</text></view>
         <view class="mst">
-          <text class="mst-cap">掌握</text>
-          <view class="mst-bars">
-            <view v-for="(seg, i) in masteryBars(item)" :key="i" class="mst-seg">
-              <view class="mst-fill" :class="seg.cls" :style="{ width: seg.w }"></view>
-            </view>
-          </view>
-          <text class="mst-word" :class="masteryStatus(item).cls">{{ masteryStatus(item).label }}</text>
+          <text class="mst-cap">细目</text>
+          <text class="mst-word" :class="facetStatus(item).cls">{{ facetStatus(item).label }}</text>
         </view>
       </template>
       <template #empty>该单元没有语法点</template>
@@ -367,28 +362,31 @@ function nextQ() {
   }
 }
 
-const DIM_KEYS = ['recognize', 'detect', 'produce'] as const
-function masteryBars(p: GrammarPoint): { w: string; cls: string }[] {
-  const m = p.mastery
-  const segs = DIM_KEYS.map((k) => {
-    const v = m ? Number((m as any)[k] || 0) : 0
-    const cv = Math.min(1, Math.max(0, v))
-    return { w: Math.round(cv * 100) + '%', cls: v >= 0.85 ? 'ok' : (v > 0 ? 'on' : '') }
-  })
-  segs.push({ w: m && m.transfer ? '100%' : '0%', cls: m && m.transfer ? 'ok' : '' })
-  return segs
-}
-function masteryStatus(p: GrammarPoint): { label: string; cls: string } {
-  const m = p.mastery
-  if (!m) return { label: '未学', cls: 'st-todo' }
-  const done = m.recognize >= 0.85 && m.detect >= 0.85 && m.produce >= 0.85 && m.transfer
-  return done ? { label: '已掌握', cls: 'st-done' } : { label: '学习中', cls: 'st-doing' }
+/**
+ * 课程清单进度:细目闯关过关数(方案 A,不展示四维条)
+ * @param {GrammarPoint} p
+ */
+function facetStatus(p: GrammarPoint): { label: string; cls: string } {
+  const t = Number(p.facet_total || 0)
+  const d = Number(p.facet_passed || 0)
+  if (t > 0 && d >= t) return { label: '细目已过', cls: 'st-done' }
+  if (d > 0 && t > 0) return { label: `${d}/${t} 细目`, cls: 'st-doing' }
+  if (p.studied) return { label: '细目已过', cls: 'st-done' }
+  return { label: '未学', cls: 'st-todo' }
 }
 
 function goCourse(p: GrammarPoint) {
   if (!p.node_id) return
+  // 课程模式：只进细目闯关,不进讲解/四维页
+  const name = encodeURIComponent(p.name || '')
+  if (mode.value === 'course' && groupId.value) {
+    uni.navigateTo({
+      url: `/pages/grammar/facet-quest?unit=${groupId.value}&node=${p.node_id}&name=${name}`,
+    })
+    return
+  }
   uni.navigateTo({
-    url: `/pages/curriculum/kp-content?id=${p.node_id}&name=${encodeURIComponent(p.name)}&cat=grammar`,
+    url: `/pages/curriculum/kp-content?id=${p.node_id}&name=${name}&cat=grammar`,
   })
 }
 

@@ -280,6 +280,50 @@ async def gr_course_points(db: DbDep, current_user: UserDep, unit_id: uuid.UUID 
     return make_ok({"points": await gi.course_points(db, unit_id=unit_id, student_id=current_user.id)})
 
 
+@router.get("/intensive/grammar/course/facet-quest")
+async def gr_facet_quest(
+    db: DbDep, current_user: UserDep,
+    unit_id: uuid.UUID = Query(...),
+    node_id: uuid.UUID = Query(...),
+):
+    """课程语法细目闯关(Q+):进页只读教材句+示范句物理缓存;缺则异步预热不阻塞。"""
+    from app.services import grammar_facet_quest_service as gfq
+    return make_ok(await gfq.get_facet_quest(
+        db, student_id=current_user.id, unit_id=unit_id, node_id=node_id,
+        warmup=True))
+
+
+@router.post("/intensive/grammar/course/facet-quest/ensure-demo")
+async def gr_facet_quest_ensure_demo(
+    db: DbDep, current_user: UserDep,
+    unit_id: Annotated[uuid.UUID, Body(..., embed=True)],
+    node_id: Annotated[uuid.UUID, Body(..., embed=True)],
+    facet_name: Annotated[str, Body(..., embed=True)],
+):
+    """点进缺句细目时同步 ensure 示范句(命中缓存不付费),落库后返回最新闯关态。"""
+    from app.services import grammar_facet_quest_service as gfq
+    r = await gfq.ensure_facet_quest_demo(
+        db, student_id=current_user.id, unit_id=unit_id,
+        node_id=node_id, facet_name=facet_name)
+    return make_ok(r)
+
+
+@router.post("/intensive/grammar/course/facet-quest/pass")
+async def gr_facet_quest_pass(
+    db: DbDep, current_user: UserDep,
+    unit_id: Annotated[uuid.UUID, Body(..., embed=True)],
+    node_id: Annotated[uuid.UUID, Body(..., embed=True)],
+    facet_name: Annotated[str, Body(..., embed=True)],
+):
+    """细目一句三练全部答对后标记过关(幂等),返回最新闯关态。"""
+    from app.services import grammar_facet_quest_service as gfq
+    r = await gfq.mark_facet_passed(
+        db, student_id=current_user.id, unit_id=unit_id,
+        node_id=node_id, facet_name=facet_name)
+    await db.commit()
+    return make_ok(r)
+
+
 @router.post("/intensive/grammar/personal/practiced")
 async def gr_personal_practiced(
     db: DbDep, current_user: UserDep,

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>细目三练 · 原句折叠 + 进题听原句 · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 22px 16px 72px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 880px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 14px;
+  }
+  .stage {
+    display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start;
+  }
+  @media (max-width: 920px) { .stage { grid-template-columns: 1fr; } }
+  .panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .panel h2 { margin: 0 0 10px; font-size: 14px; }
+  .rules { margin: 0; padding-left: 18px; font-size: 13px; color: #475569; }
+  .rules li { margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+  th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; color: var(--muted); }
+
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone-cap { font-size: 12px; color: var(--muted); }
+  .phone-nav { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .phone-nav button {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--muted);
+  }
+  .phone-nav button.on { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; font-weight: 600; }
+
+  .phone {
+    width: 320px; height: 680px; border-radius: 28px; border: 8px solid #1e293b;
+    background: #f0f6fc; box-shadow: 0 16px 40px rgba(15,23,42,.18);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .status {
+    height: 26px; background: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #94a3b8; flex-shrink: 0;
+  }
+  .ph-hd {
+    background: #fff; padding: 10px 12px; border-bottom: 1px solid var(--line);
+    text-align: center; flex-shrink: 0;
+  }
+  .ph-title { font-size: 15px; font-weight: 700; }
+  .ph-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ph-bd { flex: 1; overflow: auto; padding: 10px 12px; }
+  .ph-ft {
+    flex-shrink: 0; display: flex; gap: 8px; padding: 10px 12px;
+    background: #fff; border-top: 1px solid var(--line);
+  }
+  .btn {
+    flex: 1; height: 40px; border-radius: 10px; border: 0; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .btn.pri { background: var(--c-primary); color: #fff; }
+  .btn.ghost { background: #f1f5f9; color: #475569; }
+
+  .toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px; padding: 8px 10px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  }
+  .toolbar .lab { font-size: 12px; color: #475569; font-weight: 600; }
+  .sw {
+    width: 42px; height: 24px; border-radius: 999px; background: #cbd5e1;
+    position: relative; cursor: pointer; flex-shrink: 0; transition: background .2s;
+  }
+  .sw.on { background: var(--c-primary); }
+  .sw::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; transition: left .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  }
+  .sw.on::after { left: 21px; }
+
+  .triple {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;
+  }
+  .triple .t {
+    text-align: center; font-size: 11px; padding: 8px 4px; border-radius: 10px;
+    background: #f1f5f9; color: var(--muted);
+  }
+  .triple .t.on { background: #e8f2ff; color: var(--c-primary); font-weight: 700; }
+  .triple .t.done { background: #e9f6f1; color: #1f7a61; }
+  .triple .t .n { display: block; font-size: 14px; font-weight: 800; }
+
+  .src {
+    background: #fff8eb; border: 1px solid #f3d19e; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 10px;
+  }
+  .src.demo { background: #fff8eb; }
+  .src-top {
+    display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  }
+  .src-l { font-size: 11px; color: #9a6700; font-weight: 600; }
+  .src-en { display: block; margin-top: 6px; font-size: 14px; font-weight: 700; color: #1e293b; }
+  .src.fold .src-en { display: none; }
+  .src.fold { padding: 8px 10px; }
+  .ic-btn {
+    width: 28px; height: 28px; border-radius: 8px; border: 1px solid #f3d19e;
+    background: #fff; display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+  }
+  .ic-btn svg { width: 16px; height: 16px; stroke: var(--c-primary); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ic-btn.playing { background: #e8f2ff; border-color: #bfdbfe; }
+  .fold-btn {
+    font-size: 11px; color: var(--c-primary); font-weight: 600; cursor: pointer;
+    border: 0; background: transparent; padding: 0;
+  }
+  .wave {
+    font-size: 11px; color: var(--c-primary); margin-top: 6px; display: none;
+  }
+  .wave.on { display: block; }
+
+  .tag {
+    display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    background: #e8f2ff; color: var(--c-primary); font-weight: 600; margin-bottom: 6px;
+  }
+  .quiz-q { font-size: 14px; font-weight: 700; margin: 8px 0 12px; line-height: 1.45; white-space: pre-wrap; }
+  .opt {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 6px;
+    font-size: 13px; background: #fff;
+  }
+  .opt.ok { border-color: #b7e4d4; background: #f3fbf8; }
+  .settings-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 4px 0; margin-top: 8px;
+  }
+  .set-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 14px 12px; border-bottom: 1px solid var(--line);
+  }
+  .set-row:last-child { border-bottom: 0; }
+  .set-t { font-size: 14px; font-weight: 600; }
+  .set-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .toast {
+    position: absolute; left: 50%; bottom: 88px; transform: translateX(-50%);
+    background: rgba(30,41,59,.88); color: #fff; font-size: 12px;
+    padding: 8px 12px; border-radius: 8px; white-space: nowrap; display: none;
+  }
+  .toast.on { display: block; }
+  .phone { position: relative; }
+  .foot { margin-top: 14px; font-size: 12px; color: var(--muted); }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>细目三练 · 原句折叠 + 进题听原句</h1>
+  <p class="lead">
+    挖空：原句展开。改错 / 选用：原句默认折叠，可点开。
+    每题进入可自动播原句 TTS；是否播放由开关控制（本地记忆）。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="A">A 闯关页内开关 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="B">B 仅「我的·设置」</button>
+    <button class="scheme" data-k="C">C 双入口同源</button>
+  </div>
+  <div class="note" id="note"></div>
+
+  <div class="stage">
+    <div class="panel">
+      <h2>交互规则</h2>
+      <ul class="rules" id="rules"></ul>
+      <table>
+        <thead>
+          <tr><th>题型</th><th>原句</th><th>进题语音</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>挖空</td><td><b>展开</b></td><td rowspan="3">开则播；关则静默（可点喇叭）</td></tr>
+          <tr><td>改错</td><td><b>折叠</b>，可展开</td></tr>
+          <tr><td>选用</td><td><b>折叠</b>，可展开</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-cap" id="phoneCap">学生端预览</div>
+      <div class="phone-nav" id="phoneNav"></div>
+      <div class="phone">
+        <div class="status">9:41</div>
+        <div class="ph-hd">
+          <div class="ph-title">一般现在时（实义动词）</div>
+          <div class="ph-sub" id="phSub">一句三练</div>
+        </div>
+        <div class="ph-bd" id="screen"></div>
+        <div class="ph-ft" id="footer"></div>
+        <div class="toast" id="toast">♪ 播放原句…</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    原型：<code>docs/design/grammar-facet-quest-speak-fold-prototype.html</code>
+  </p>
+</div>
+
+<script>
+const META = {
+  A: {
+    note: '<b>方案 A（推荐）</b>：三练页顶栏开关「进题听原句」，本地记忆。做题中可随时关开。',
+    rules: [
+      '挖空：原句条始终展开 + 喇叭',
+      '改错 / 选用：默认折叠「原句 ›」；点条或「展开」看全文',
+      '每题进入（含切到下一练）：开关开 → 自动 TTS；关 → 不播',
+      '喇叭始终可手动点播；切题先停上一段',
+      '开关状态存 grammar_facet_auto_speak，默认开',
+    ],
+  },
+  B: {
+    note: '<b>方案 B</b>：开关只在「我的 → 设置」。闯关页无开关，只读偏好播语音。',
+    rules: [
+      '原句展开/折叠规则同 A',
+      '闯关页只保留喇叭，无顶栏开关',
+      '去设置页改「细目闯关·进题听原句」',
+    ],
+  },
+  C: {
+    note: '<b>方案 C</b>：闯关页快捷开关 + 设置页同一 key，双入口。',
+    rules: [
+      '原句规则同 A',
+      '闯关顶栏开关 ↔ 设置页开关同源',
+      '任一处修改立即生效',
+    ],
+  },
+};
+
+const STEPS = [
+  {
+    id: 'cloze',
+    kind: '挖空',
+    fold: false,
+    stem: 'He ______ homework every day.',
+    opts: ['A. don\'t', 'B. does', 'C. do', 'D. did'],
+    ok: 1,
+  },
+  {
+    id: 'err',
+    kind: '改错',
+    fold: true,
+    stem: '哪句正确？',
+    opts: [
+      'A. He does homework every day.',
+      'B. He do homework every day.',
+      'C. He does homework every day not.',
+      'D. He did homework every day.',
+    ],
+    ok: 0,
+  },
+  {
+    id: 'choose',
+    kind: '选用',
+    fold: true,
+    stem: '中文意思：他每天做作业。\n选完整正确句',
+    opts: [
+      'A. He do homework every day.',
+      'B. He does homework every day.',
+      'C. He does homework every day not.',
+      'D. He did homework every day.',
+    ],
+    ok: 1,
+  },
+];
+
+const SENT = 'He does homework every day.';
+let curK = 'A';
+let stepIdx = 0;
+let autoSpeak = true;
+let srcExpanded = {}; // per step override when user toggles fold
+let playing = false;
+
+function iconVol() {
+  return `<svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+}
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.classList.remove('on'), 1200);
+}
+
+function playSpeak(manual) {
+  if (!manual && !autoSpeak) return;
+  playing = true;
+  renderPhone(curK, stepIdx);
+  showToast(manual ? '♪ 手动播放原句' : '♪ 进题自动播放原句');
+  clearTimeout(playSpeak._t);
+  playSpeak._t = setTimeout(() => {
+    playing = false;
+    renderPhone(curK, stepIdx);
+  }, 1400);
+}
+
+function isFolded(step) {
+  if (!step.fold) return false;
+  if (srcExpanded[step.id] === true) return false;
+  if (srcExpanded[step.id] === false) return true;
+  return true; // default fold for err/choose
+}
+
+function renderSrc(step) {
+  const folded = isFolded(step);
+  const demo = true;
+  return `
+    <div class="src ${demo ? 'demo' : ''} ${folded ? 'fold' : ''}">
+      <div class="src-top">
+        <span class="src-l">${folded
+          ? (demo ? '示范句（已折叠）' : '教材原句（已折叠）')
+          : (demo ? '本句示范句（钉住）' : '本句教材原句（钉住）')}</span>
+        <span style="display:flex;gap:6px;align-items:center">
+          ${step.fold ? `<button type="button" class="fold-btn" data-act="toggle-fold">${folded ? '展开 ›' : '收起'}</button>` : ''}
+          <button type="button" class="ic-btn ${playing ? 'playing' : ''}" data-act="speak" title="播放原句">${iconVol()}</button>
+        </span>
+      </div>
+      <span class="src-en">${SENT}</span>
+      <div class="wave ${playing ? 'on' : ''}">正在朗读原句…</div>
+    </div>`;
+}
+
+function renderQuiz(step, showToolbar) {
+  const opts = step.opts.map((o, i) =>
+    `<div class="opt ${i === step.ok ? 'ok' : ''}">${o}</div>`
+  ).join('');
+  const toolbar = showToolbar ? `
+    <div class="toolbar">
+      <div>
+        <div class="lab">进题听原句</div>
+        <div style="font-size:10px;color:#94a3b8">关则静默，仍可点喇叭</div>
+      </div>
+      <div class="sw ${autoSpeak ? 'on' : ''}" data-act="toggle-speak"></div>
+    </div>` : '';
+  return `
+    ${toolbar}
+    <div class="triple">
+      <div class="t ${stepIdx > 0 ? 'done' : ''} ${stepIdx === 0 ? 'on' : ''}"><span class="n">1</span>挖空</div>
+      <div class="t ${stepIdx > 1 ? 'done' : ''} ${stepIdx === 1 ? 'on' : ''}"><span class="n">2</span>改错</div>
+      <div class="t ${stepIdx === 2 ? 'on' : ''}"><span class="n">3</span>选用</div>
+    </div>
+    ${renderSrc(step)}
+    <span class="tag">${step.kind} · 第 ${stepIdx + 1}/6 题</span>
+    <div class="quiz-q">${step.stem}</div>
+    ${opts}`;
+}
+
+function renderSettings() {
+  return `
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px">我的 · 设置</div>
+    <div class="settings-card">
+      <div class="set-row">
+        <div>
+          <div class="set-t">细目闯关 · 进题听原句</div>
+          <div class="set-s">挖空/改错/选用进入时自动朗读原句</div>
+        </div>
+        <div class="sw ${autoSpeak ? 'on' : ''}" data-act="toggle-speak"></div>
+      </div>
+      <div class="set-row">
+        <div>
+          <div class="set-t">用户协议</div>
+          <div class="set-s">示例其它设置项</div>
+        </div>
+        <span style="color:#94a3b8">›</span>
+      </div>
+    </div>`;
+}
+
+function renderPhone(k, idx) {
+  const step = STEPS[idx];
+  document.getElementById('phSub').textContent =
+    k === 'B' && document.querySelector('#phoneNav .on')?.dataset.v === 'settings'
+      ? '设置'
+      : `Q+ · ${step.kind}`;
+
+  const navView = document.querySelector('#phoneNav .on')?.dataset.v || 'quiz';
+  let body = '';
+  let foot = '';
+
+  if (navView === 'settings') {
+    body = renderSettings();
+    foot = `<div class="btn ghost" data-act="back-quiz">回三练</div>`;
+  } else {
+    const showTb = k === 'A' || k === 'C';
+    body = renderQuiz(step, showTb);
+    const nextLabel = idx === 0 ? '下一练 · 改错' : idx === 1 ? '下一练 · 选用' : '本句完成';
+    foot = `<div class="btn ghost" data-act="prev">上一题</div><div class="btn pri" data-act="next">${nextLabel}</div>`;
+  }
+
+  document.getElementById('screen').innerHTML = body;
+  document.getElementById('footer').innerHTML = foot;
+  document.getElementById('phoneCap').textContent =
+    `预览 · 方案${k} · ${navView === 'settings' ? '设置' : step.kind}`;
+}
+
+function goStep(i, withSpeak) {
+  stepIdx = Math.max(0, Math.min(STEPS.length - 1, i));
+  playing = false;
+  renderPhone(curK, stepIdx);
+  if (withSpeak) playSpeak(false);
+}
+
+function render(k) {
+  curK = k;
+  document.querySelectorAll('.scheme').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.k === k);
+  });
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('rules').innerHTML = m.rules.map((r) => `<li>${r}</li>`).join('');
+
+  const nav = [['quiz', '三练']];
+  if (k === 'B' || k === 'C') nav.push(['settings', '设置页']);
+  document.getElementById('phoneNav').innerHTML = nav.map(([id, label], i) =>
+    `<button type="button" data-v="${id}" class="${i === 0 ? 'on' : ''}">${label}</button>`
+  ).join('');
+
+  srcExpanded = {};
+  goStep(0, true);
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (!btn) return;
+  render(btn.dataset.k);
+});
+
+document.getElementById('phoneNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-v]');
+  if (!btn) return;
+  document.querySelectorAll('#phoneNav button').forEach((b) => b.classList.toggle('on', b === btn));
+  renderPhone(curK, stepIdx);
+});
+
+document.querySelector('.phone').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (!act) return;
+  const step = STEPS[stepIdx];
+  if (act === 'toggle-speak') {
+    autoSpeak = !autoSpeak;
+    showToast(autoSpeak ? '已开启进题听原句' : '已关闭进题听原句');
+    renderPhone(curK, stepIdx);
+  } else if (act === 'toggle-fold') {
+    const nowFolded = isFolded(step);
+    srcExpanded[step.id] = nowFolded; // if folded, expand
+    renderPhone(curK, stepIdx);
+  } else if (act === 'speak') {
+    playSpeak(true);
+  } else if (act === 'next') {
+    if (stepIdx < STEPS.length - 1) goStep(stepIdx + 1, true);
+    else showToast('本句三练完成');
+  } else if (act === 'prev') {
+    if (stepIdx > 0) goStep(stepIdx - 1, true);
+  } else if (act === 'back-quiz') {
+    document.querySelectorAll('#phoneNav button').forEach((b) => {
+      b.classList.toggle('on', b.dataset.v === 'quiz');
+    });
+    renderPhone(curK, stepIdx);
+  }
+});
+
+render('A');
+</script>
+</body>
+</html>

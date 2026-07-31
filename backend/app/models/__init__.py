@@ -119,6 +119,9 @@ from .d24_reach import UserSegment, ReachCampaign, ReachLog  # noqa: F401
 from .d25_kp_lecture import KpLecture  # noqa: F401
 from .d26_kp_target import StudentKpTarget  # noqa: F401
 from .d27_student_grammar import StudentGrammarNode  # noqa: F401
+from .d28_grammar_facet_quest import (  # noqa: F401
+    StudentGrammarFacetPass, GrammarFacetDemoCache,
+)
 from .d28_vocab_review import VocabReview  # noqa: F401
 from .d26_sensitive_approval import SensitiveApproval  # noqa: F401
 from .d29_unit_ls_understand import (  # noqa: F401

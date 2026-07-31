@@ -1,7 +1,8 @@
 """语法精讲(作业精讲/课程精讲 的「语法精讲」模块)取数。
 
 - 作业:学生「加入待学习」的语法点(student_kp_target,带 source_paper_id)→ 按【卷=批次】归组;
-- 课程:学生当前教材单元里的语法点(unit_node→knowledge_nodes cf/jf)→ 按【年级→册→单元】归组;
+- 课程:本单元已挂靠的 grammar section(含 cf/jf/m-*)→ 按【年级→册→单元】归组;
+  清单主名优先用挂靠点 point_name(与后台一致),缺则回退图谱 display_label;未挂不进清单;
 - 作业 D1:目标可挂 source_question_id,points 带回原题 stem/作答/解析,按原题切点学习。
 """
 from __future__ import annotations
@@ -221,8 +222,12 @@ async def homework_points(db: AsyncSession, *, student_id: uuid.UUID,
 async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
                        grade: str | None = None, semester: str | None = None) -> dict:
     """学生当前教材某学期的单元(默认聚焦 preferred 当前学期)+ 每单元语法点数/已学数,
-    含闯关顺序解锁 + 本学期通关 + 下学期。"""
+    含闯关顺序解锁 + 本学期通关 + 下学期。
+
+    点数口径(D1):本单元 grammar 已挂靠节点(含 m-*),与 course_points 一致。
+    """
     from app.models.d4_knowledge import StudentGrammarMastery
+    from app.models.d22_unit_structured import UnitSection
     from app.services.course_intensive_util import decorate_units, next_semester, resolve_semester
     student = await db.get(User, student_id)
     tv = student.preferred_textbook_version if student else None
@@ -233,16 +238,16 @@ async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
     rows = (await db.execute(
         select(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                CurriculumUnit.unit_no, CurriculumUnit.unit_title,
-               func.count(func.distinct(UnitNode.node_id)),
-               # 已学点数 = 该生该点有 student_grammar_mastery 行
+               func.count(func.distinct(UnitSection.node_id)),
                func.count(func.distinct(case(
-                   (StudentGrammarMastery.id.isnot(None), UnitNode.node_id)))))
-        .join(UnitNode, UnitNode.unit_id == CurriculumUnit.id)
-        .join(KnowledgeNode, KnowledgeNode.id == UnitNode.node_id)
+                   (StudentGrammarMastery.id.isnot(None), UnitSection.node_id)))))
+        .join(UnitSection, (UnitSection.unit_id == CurriculumUnit.id)
+              & (UnitSection.kind == "grammar")
+              & (UnitSection.node_id.isnot(None)))
         .outerjoin(StudentGrammarMastery,
-                   (StudentGrammarMastery.kp_id == UnitNode.node_id)
+                   (StudentGrammarMastery.kp_id == UnitSection.node_id)
                    & (StudentGrammarMastery.student_id == student_id))
-        .where(CurriculumUnit.textbook_version == tv, _GRAMMAR,
+        .where(CurriculumUnit.textbook_version == tv,
                CurriculumUnit.grade == g, CurriculumUnit.semester == s)
         .group_by(CurriculumUnit.id, CurriculumUnit.grade, CurriculumUnit.semester,
                   CurriculumUnit.unit_no, CurriculumUnit.unit_title)
@@ -257,28 +262,86 @@ async def course_units(db: AsyncSession, *, student_id: uuid.UUID,
             "next_semester": await next_semester(db, tv, g, s) if done else None}
 
 
+def _facet_total_from_json(facets: object) -> int:
+    """挂靠点细目条数;无细目名时返回 0。"""
+    if not isinstance(facets, list):
+        return 0
+    return sum(
+        1 for f in facets
+        if isinstance(f, dict) and (f.get("name") or "").strip()
+    )
+
+
 async def course_points(db: AsyncSession, *, unit_id: uuid.UUID,
                         student_id: uuid.UUID | None = None) -> list[dict]:
-    """某教材单元的语法点;传 student_id 则每点带 studied(有无 student_grammar_mastery)。"""
-    rows = (await db.execute(
-        select(KnowledgeNode.id, KnowledgeNode.name, KnowledgeNode.code,
-               KnowledgeNode.description)
-        .join(UnitNode, UnitNode.node_id == KnowledgeNode.id)
-        .where(UnitNode.unit_id == unit_id, _GRAMMAR)
-        .order_by(KnowledgeNode.code).distinct())).all()
-    mastery_map: dict = {}   # kp_id → (recognize, detect, produce, transfer)
-    if student_id is not None and rows:
-        from app.models.d4_knowledge import StudentGrammarMastery
-        mrows = (await db.execute(
-            select(StudentGrammarMastery.kp_id, StudentGrammarMastery.mastery_recognize,
-                   StudentGrammarMastery.mastery_detect, StudentGrammarMastery.mastery_produce,
-                   StudentGrammarMastery.transfer_ok).where(
-                StudentGrammarMastery.student_id == student_id,
-                StudentGrammarMastery.kp_id.in_([r[0] for r in rows])))).all()
-        mastery_map = {str(k): (r, d, p, t) for k, r, d, p, t in mrows}
-    return [{**_pt(nid, display_label(name, desc), code), "studied": str(nid) in mastery_map,
-             "mastery": _mastery(str(nid) in mastery_map, *mastery_map.get(str(nid), (None, None, None, None)))}
-            for nid, name, code, desc in rows]
+    """某教材单元的语法点;传 student_id 则按细目闯关过关计 studied(方案 A,不用四维)。
+
+    D1:数据源=本单元已挂靠的 grammar section(含 m-*,不限 cf/jf);未挂不进清单。
+    主名=point_name;同节点多挂靠点取 sort_order 最小者;缺名回退图谱 display_label。
+    """
+    from app.models.d22_unit_structured import UnitSection
+
+    sec_rows = (await db.execute(
+        select(
+            UnitSection.node_id, UnitSection.point_name, UnitSection.sort_order,
+            UnitSection.facets,
+            KnowledgeNode.name, KnowledgeNode.code, KnowledgeNode.description,
+        )
+        .join(KnowledgeNode, KnowledgeNode.id == UnitSection.node_id)
+        .where(
+            UnitSection.unit_id == unit_id,
+            UnitSection.kind == "grammar",
+            UnitSection.node_id.isnot(None),
+        )
+        .order_by(UnitSection.sort_order, UnitSection.point_name)
+    )).all()
+    # node 去重:保留首次出现(最小 sort_order)的挂靠点名与节点信息
+    ordered: list[tuple] = []
+    seen: set[uuid.UUID] = set()
+    point_name_by_node: dict[uuid.UUID, str] = {}
+    facet_total_by_node: dict[uuid.UUID, int] = {}
+    for nid, pname, _ord, facets, kn_name, code, desc in sec_rows:
+        if nid is None or nid in seen:
+            continue
+        seen.add(nid)
+        nm = (pname or "").strip()
+        if nm:
+            point_name_by_node[nid] = nm
+        facet_total_by_node[nid] = _facet_total_from_json(facets)
+        ordered.append((nid, kn_name, code, desc))
+
+    pass_map: dict[str, int] = {}
+    if student_id is not None and ordered:
+        from app.models.d28_grammar_facet_quest import StudentGrammarFacetPass
+        prows = (await db.execute(
+            select(
+                StudentGrammarFacetPass.node_id,
+                func.count(StudentGrammarFacetPass.id),
+            ).where(
+                StudentGrammarFacetPass.student_id == student_id,
+                StudentGrammarFacetPass.unit_id == unit_id,
+                StudentGrammarFacetPass.node_id.in_([r[0] for r in ordered]),
+            ).group_by(StudentGrammarFacetPass.node_id)
+        )).all()
+        pass_map = {str(nid): int(c) for nid, c in prows}
+
+    out = []
+    for nid, name, code, desc in ordered:
+        label = point_name_by_node.get(nid) or display_label(name, desc)
+        total = facet_total_by_node.get(nid, 0)
+        passed = pass_map.get(str(nid), 0)
+        if total > 0:
+            passed = min(passed, total)
+        all_done = total > 0 and passed >= total
+        out.append({
+            **_pt(nid, label, code),
+            "studied": all_done,
+            "facet_passed": passed,
+            "facet_total": total,
+            # 课程清单不再展示四维;字段保留兼容旧前端
+            "mastery": None,
+        })
+    return out
 
 
 # ── 自建语法「练一练」痕迹:标记已学 + 最近成绩(无图谱 node、无四维,用此反馈)──────────

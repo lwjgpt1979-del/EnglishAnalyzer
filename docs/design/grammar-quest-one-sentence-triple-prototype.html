@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>出题方案 · Q+ 一句三练 · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1200px; margin: 0 auto; padding: 22px 16px 72px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 920px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .cmp {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  @media (max-width: 900px) { .cmp { grid-template-columns: 1fr 1fr; } }
+  .cmp-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .cmp-card h3 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-card .v { font-size: 15px; font-weight: 700; }
+  .cmp-card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .stage {
+    display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start;
+  }
+  @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+  .panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; }
+  .flow {
+    font-size: 13px; font-weight: 600; color: #0f2f55; background: #f8fbff;
+    border: 1px dashed #bfdbfe; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;
+  }
+  .table-mini { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 10px; }
+  .table-mini th, .table-mini td {
+    border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top;
+  }
+  .table-mini th { background: #f8fafc; color: var(--muted); }
+  .bullets { margin: 0; padding-left: 18px; font-size: 12px; color: #475569; }
+  .bullets li { margin: 4px 0; }
+
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone-cap { font-size: 12px; color: var(--muted); }
+  .phone-nav { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 320px; }
+  .phone-nav button {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--muted);
+  }
+  .phone-nav button.on { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; font-weight: 600; }
+
+  .phone {
+    width: 320px; height: 660px; border-radius: 28px; border: 8px solid #1e293b;
+    background: #f4f7fb; box-shadow: 0 16px 40px rgba(15,23,42,.18);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .status {
+    height: 26px; background: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #94a3b8; flex-shrink: 0;
+  }
+  .ph-hd {
+    background: #fff; padding: 10px 12px; border-bottom: 1px solid var(--line);
+    text-align: center; flex-shrink: 0;
+  }
+  .ph-title { font-size: 15px; font-weight: 700; }
+  .ph-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ph-bd { flex: 1; overflow: auto; padding: 10px 12px; }
+  .ph-ft {
+    flex-shrink: 0; display: flex; gap: 8px; padding: 10px 12px;
+    background: #fff; border-top: 1px solid var(--line);
+  }
+  .btn {
+    flex: 1; height: 40px; border-radius: 10px; border: 0; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .btn.pri { background: var(--c-primary); color: #fff; }
+  .btn.ok { background: var(--c-ok); color: #fff; }
+  .btn.ghost { background: #f1f5f9; color: #475569; }
+
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 8px;
+  }
+  .triple {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;
+  }
+  .triple .t {
+    text-align: center; font-size: 11px; padding: 8px 4px; border-radius: 10px;
+    background: #f1f5f9; color: var(--muted);
+  }
+  .triple .t.on { background: #e8f2ff; color: var(--c-primary); font-weight: 700; }
+  .triple .t.done { background: #e9f6f1; color: #1f7a61; }
+  .triple .t .n { display: block; font-size: 14px; font-weight: 800; }
+
+  .src {
+    background: #fff8eb; border: 1px solid #f3d19e; border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; color: #9a6700; margin-bottom: 10px;
+  }
+  .src b { color: #7a5200; }
+  .src .en { display: block; margin-top: 4px; font-size: 14px; font-weight: 700; color: #1e293b; }
+  .rule {
+    background: #e8f2ff; border-radius: 12px; padding: 10px 12px;
+    font-size: 12px; color: #1e4a7a; margin-bottom: 8px;
+  }
+  .quiz-q { font-size: 14px; font-weight: 700; margin: 8px 0; color: #1e293b; line-height: 1.45; }
+  .tag {
+    display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    background: #e8f2ff; color: var(--c-primary); font-weight: 600; margin-bottom: 6px;
+  }
+  .opt {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 6px;
+    font-size: 13px; background: #fff;
+  }
+  .opt.ok { border-color: #b7e4d4; background: #f3fbf8; }
+  .opt.bad { border-color: #fecaca; background: #fff5f5; }
+  .fb {
+    font-size: 12px; color: #1e4a7a; background: #eef6ff; border-radius: 8px;
+    padding: 8px 10px; margin-top: 6px;
+  }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .path3 {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;
+  }
+  .path3 .p {
+    text-align: center; font-size: 11px; padding: 8px 4px; border-radius: 10px;
+    background: #f1f5f9; color: var(--muted);
+  }
+  .path3 .p.on { background: #e8f2ff; color: var(--c-primary); font-weight: 700; }
+  .path3 .p.done { background: #e9f6f1; color: #1f7a61; }
+  .facet {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fff;
+  }
+  .facet.cur { border-color: #bfdbfe; background: #f8fbff; box-shadow: 0 0 0 2px #dbeafe; }
+  .facet.done { border-color: #b7e4d4; background: #f3fbf8; }
+  .chk {
+    display: inline-flex; width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid #cbd5e1; align-items: center; justify-content: center;
+    font-size: 10px; color: #fff; margin-right: 6px; vertical-align: middle;
+  }
+  .facet.done .chk { background: var(--c-ok); border-color: var(--c-ok); }
+  .foot { margin-top: 14px; font-size: 12px; color: var(--muted); }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  table.mx {
+    width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  table.mx th, table.mx td {
+    border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.mx th { background: #f8fafc; color: var(--muted); }
+  .ok { color: #166534; }
+  .mid { color: #9a6700; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>出题方案原型 · Q+ 一句三练</h1>
+  <p class="lead">
+    挂在 U1「学→验→会」上：学细目时，<b>同一句教材原句连做三道题</b>（挖空→改错→选用），再换下一句。
+    可与「只挖空」方案对照预览。选定前不改代码。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="QPLUS">Q+ 一句三练 <span class="rec">优化</span></button>
+    <button class="scheme" data-k="Q0">对照：只挖空</button>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="cmp" id="cmp"></div>
+
+  <div class="stage">
+    <div class="panel">
+      <h2 id="panelTitle">出题规则</h2>
+      <div class="flow" id="flow"></div>
+      <table class="table-mini" id="ruleTable"></table>
+      <ul class="bullets" id="bullets"></ul>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-cap" id="phoneCap">学生端预览</div>
+      <div class="phone-nav" id="phoneNav"></div>
+      <div class="phone">
+        <div class="status">9:41</div>
+        <div class="ph-hd">
+          <div class="ph-title">be动词 · 否定句</div>
+          <div class="ph-sub" id="phSub">出题预览</div>
+        </div>
+        <div class="ph-bd" id="screen"></div>
+        <div class="ph-ft" id="footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="mx">
+    <thead>
+      <tr>
+        <th></th>
+        <th>学细目出题</th>
+        <th>验一验</th>
+        <th>会了</th>
+        <th>LLM</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>只挖空</b></td>
+        <td>原句挖空 ×2～4</td>
+        <td>混合挖空/改错 3～5</td>
+        <td>迁移 1～2</td>
+        <td class="ok">学/验无</td>
+      </tr>
+      <tr>
+        <td><b>Q+ 一句三练</b></td>
+        <td>每句：挖空→改错→选用；2 句/细目</td>
+        <td>跨细目混合 4 题</td>
+        <td>迁移 1 题</td>
+        <td class="ok">学/验无</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    原型：<code>docs/design/grammar-quest-one-sentence-triple-prototype.html</code>
+  </p>
+</div>
+
+<script>
+const META = {
+  QPLUS: {
+    note: '<b>Q+ 一句三练</b>：钉住一句教材原句，连续做挖空 / 改错 / 选用三道，吃透再换句。细目抽 2 句（约 6 题）过关。',
+    cmp: [
+      ['准不准', '更高', '三层证据'],
+      ['简单吗', '一条线', '步骤多一点'],
+      ['成本', '低', '规则出题'],
+      ['题量/细目', '~6', '2句×3练'],
+    ],
+    flow: '看原句 → 练1挖空 → 练2改错 → 练3选用 →（下一句同样）→ 细目过关',
+    rows: [
+      ['练1 挖空', 'He ______ tall.', 'is not / not is / isn’t not', '认得形态'],
+      ['练2 改错', 'They not are twins. → 选正确句', 'They are not twins.', '能纠错'],
+      ['练3 选用', '中文：他不高。选完整句', 'He is not tall.', '能在语境用'],
+    ],
+    bullets: [
+      '三练共用同一 source_sentence，界面始终挂着原句',
+      '练2 错句 = 规则打乱（not 前移等），选项仍是完整正确/干扰句',
+      '练3 仍是单选（符合前端出题铁律），不是自由填空',
+      '验一验 / 会了：沿用 U1（混合 4 题 + 迁移 1 题）',
+    ],
+  },
+  Q0: {
+    note: '<b>对照：只挖空</b>：学细目时每句只做一道挖空。更短，但少纠错/选用证据。',
+    cmp: [
+      ['准不准', '中', ''],
+      ['简单吗', '更短', ''],
+      ['成本', '最低', ''],
+      ['题量/细目', '2～4', ''],
+    ],
+    flow: '看原句 → 挖空 → 下一句挖空 → 细目过关',
+    rows: [
+      ['挖空', 'He ______ tall.', 'is not / …', '认得形态'],
+      ['—', '无改错层', '—', '—'],
+      ['—', '无选用层', '—', '—'],
+    ],
+    bullets: [
+      '实现已有（facet-quest 规则挖空）',
+      '假会风险：会选空，不会改错句',
+    ],
+  },
+};
+
+const SCREENS = {
+  QPLUS: {
+    nav: [['map', '细目'], ['s1', '练1挖空'], ['s2', '练2改错'], ['s3', '练3选用'], ['pass', '过关']],
+    default: 's1',
+    sub: 'Q+ · 一句三练',
+    views: {
+      map: () => ({
+        body: `
+          <div class="path3">
+            <div class="p done">学细目</div>
+            <div class="p">验一验</div>
+            <div class="p">会了</div>
+          </div>
+          <div class="facet done"><span class="chk">✓</span><b>肯定句</b><div class="hint" style="margin-left:26px">2 句 × 三练已过</div></div>
+          <div class="facet cur"><span class="chk"></span><b>否定句</b><div class="hint" style="margin-left:26px">进行中 · 第 1 句三练</div></div>
+          <div class="facet"><span class="chk"></span><b>一般疑问句</b><div class="hint" style="margin-left:26px">锁定</div></div>`,
+        foot: `<div class="btn pri">继续三练</div>`,
+      }),
+      s1: () => ({
+        body: `
+          <div class="triple">
+            <div class="t on"><span class="n">1</span>挖空</div>
+            <div class="t"><span class="n">2</span>改错</div>
+            <div class="t"><span class="n">3</span>选用</div>
+          </div>
+          <div class="src">
+            <b>本句教材原句（钉住）</b>
+            <span class="en">He is not tall.</span>
+          </div>
+          <span class="tag">练 1 / 3 · 挖空</span>
+          <div class="quiz-q">He ______ tall.</div>
+          <div class="opt bad">A. not is</div>
+          <div class="opt ok">B. is not</div>
+          <div class="opt">C. isn’t not</div>
+          <div class="fb">对：否定在 be 后。下一练仍用这句。</div>`,
+        foot: `<div class="btn ghost">看原句</div><div class="btn pri">下一练 · 改错</div>`,
+      }),
+      s2: () => ({
+        body: `
+          <div class="triple">
+            <div class="t done"><span class="n">1</span>挖空</div>
+            <div class="t on"><span class="n">2</span>改错</div>
+            <div class="t"><span class="n">3</span>选用</div>
+          </div>
+          <div class="src">
+            <b>仍是同一句</b>
+            <span class="en">He is not tall.</span>
+          </div>
+          <span class="tag">练 2 / 3 · 改错</span>
+          <div class="quiz-q">哪句正确？</div>
+          <div class="opt bad">A. He not is tall.</div>
+          <div class="opt ok">B. He is not tall.</div>
+          <div class="opt">C. He isn’t tall not.</div>
+          <div class="fb">错句由规则把 not 挪到 be 前生成。</div>`,
+        foot: `<div class="btn pri">下一练 · 选用</div>`,
+      }),
+      s3: () => ({
+        body: `
+          <div class="triple">
+            <div class="t done"><span class="n">1</span>挖空</div>
+            <div class="t done"><span class="n">2</span>改错</div>
+            <div class="t on"><span class="n">3</span>选用</div>
+          </div>
+          <div class="src">
+            <b>仍是同一句意思</b>
+            <span class="en">He is not tall.</span>
+          </div>
+          <span class="tag">练 3 / 3 · 选用（单选）</span>
+          <div class="rule">中文提示：他不高。</div>
+          <div class="quiz-q">选完整正确句</div>
+          <div class="opt">A. He not tall.</div>
+          <div class="opt ok">B. He is not tall.</div>
+          <div class="opt">C. He are not tall.</div>
+          <div class="hint">仍是选择题，可自动判分；不是自由造句。</div>`,
+        foot: `<div class="btn ok">本句三练完成 · 下一句</div>`,
+      }),
+      pass: () => ({
+        body: `
+          <div class="card" style="text-align:center;padding:20px">
+            <div style="font-size:28px;color:var(--c-ok)">✓</div>
+            <div style="font-weight:700;margin:8px 0">否定句 · 细目过关</div>
+            <div class="hint">2 句 × 三练 · 共 6 题达标</div>
+          </div>
+          <div class="path3">
+            <div class="p done">学细目 ✓</div>
+            <div class="p on">验一验</div>
+            <div class="p">会了</div>
+          </div>
+          <div class="hint">下一句三练清完后进「验一验」混合卷</div>`,
+        foot: `<div class="btn pri">下一细目 / 去验一验</div>`,
+      }),
+    },
+  },
+  Q0: {
+    nav: [['cloze', '只挖空']],
+    default: 'cloze',
+    sub: '对照 · 只挖空',
+    views: {
+      cloze: () => ({
+        body: `
+          <div class="src">
+            <b>教材原句</b>
+            <span class="en">He is not tall.</span>
+          </div>
+          <span class="tag">挖空 · 仅此一层</span>
+          <div class="quiz-q">He ______ tall.</div>
+          <div class="opt ok">is not</div>
+          <div class="opt">not is</div>
+          <div class="hint">对完即下一句；无改错、无选用。</div>`,
+        foot: `<div class="btn pri">下一句挖空</div>`,
+      }),
+    },
+  },
+};
+
+let curK = 'QPLUS';
+
+function renderMeta(k) {
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('cmp').innerHTML = m.cmp.map(([h, v, s]) =>
+    `<div class="cmp-card"><h3>${h}</h3><div class="v">${v}</div><div class="s">${s || ''}</div></div>`
+  ).join('');
+  document.getElementById('flow').innerHTML = m.flow;
+  document.getElementById('ruleTable').innerHTML =
+    `<tr><th>练次</th><th>题面示例</th><th>答案/选项</th><th>测什么</th></tr>` +
+    m.rows.map((r) => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('');
+  document.getElementById('bullets').innerHTML = m.bullets.map((b) => `<li>${b}</li>`).join('');
+  document.getElementById('panelTitle').textContent = k === 'QPLUS' ? 'Q+ 出题规则' : '只挖空规则';
+}
+
+function renderPhone(k, viewKey) {
+  const pack = SCREENS[k];
+  const key = viewKey || pack.default;
+  document.getElementById('phSub').textContent = pack.sub;
+  document.getElementById('phoneNav').innerHTML = pack.nav.map(([id, label]) =>
+    `<button type="button" data-v="${id}" class="${id === key ? 'on' : ''}">${label}</button>`
+  ).join('');
+  const view = pack.views[key]();
+  document.getElementById('screen').innerHTML = view.body;
+  document.getElementById('footer').innerHTML = view.foot;
+  document.getElementById('phoneCap').textContent =
+    `预览 · ${k === 'QPLUS' ? 'Q+' : '只挖空'} · ${pack.nav.find((x) => x[0] === key)?.[1] || ''}`;
+}
+
+function render(k) {
+  curK = k;
+  document.querySelectorAll('.scheme').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.k === k);
+  });
+  renderMeta(k);
+  renderPhone(k, SCREENS[k].default);
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (!btn) return;
+  render(btn.dataset.k);
+});
+document.getElementById('phoneNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-v]');
+  if (!btn) return;
+  renderPhone(curK, btn.dataset.v);
+});
+
+render('QPLUS');
+</script>
+</body>
+</html>

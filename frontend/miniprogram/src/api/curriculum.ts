@@ -121,6 +121,9 @@ export interface GrammarPoint {
   personal?: boolean
   sgn_id?: string
   studied?: boolean
+  /** 课程精讲:细目闯关进度(方案 A,替代四维条) */
+  facet_passed?: number
+  facet_total?: number
   mastery?: GrammarMastery | null
   practice?: GrammarPractice | null
   source_question_id?: string | null
@@ -164,6 +167,74 @@ export function grCourseUnits(grade?: string, semester?: string): Promise<Course
 }
 export function grCoursePoints(unitId: string): Promise<{ points: GrammarPoint[] }> {
   return request('/api/v1/curriculum/intensive/grammar/course/points', { method: 'GET', data: { unit_id: unitId } })
+}
+
+/** 课程语法细目闯关(Q+):同句挖空→改错→选用;缺句为 ai_demo */
+export type FacetSentenceSource = 'textbook' | 'ai_demo'
+export type FacetStepKind = 'cloze' | 'error_fix' | 'choose'
+export interface FacetClozeItem {
+  id: string
+  stem: string
+  options: string[]
+  answer: string
+  explanation: string
+  source_sentence: string
+  kind?: FacetStepKind
+  source?: FacetSentenceSource
+  zh_hint?: string | null
+}
+export interface FacetSentenceItem {
+  text: string
+  source: FacetSentenceSource
+  zh_hint?: string | null
+}
+export interface FacetTriple {
+  source_sentence: string
+  source: FacetSentenceSource
+  zh_hint?: string | null
+  steps: FacetClozeItem[]
+}
+export interface FacetQuestItem {
+  name: string
+  sentences: string[]
+  sentence_items?: FacetSentenceItem[]
+  source?: FacetSentenceSource
+  /** 缺教材句且缓存未命中,需 ensure/异步预热 */
+  need_demo?: boolean
+  triples?: FacetTriple[]
+  questions?: FacetClozeItem[]
+  cloze: FacetClozeItem[]
+  passed: boolean
+  locked: boolean
+}
+export interface FacetQuest {
+  unit_id: string
+  node_id: string
+  point_name: string
+  facets: FacetQuestItem[]
+  passed_count: number
+  total: number
+  all_passed: boolean
+}
+export function grFacetQuest(unitId: string, nodeId: string): Promise<FacetQuest> {
+  return request('/api/v1/curriculum/intensive/grammar/course/facet-quest', {
+    method: 'GET', data: { unit_id: unitId, node_id: nodeId },
+  })
+}
+/** 缺句细目点进时同步 ensure 示范句(全局缓存,同 point+facet 不二次付费) */
+export function grFacetQuestEnsureDemo(
+  unitId: string, nodeId: string, facetName: string,
+): Promise<FacetQuest> {
+  return request('/api/v1/curriculum/intensive/grammar/course/facet-quest/ensure-demo', {
+    method: 'POST',
+    data: { unit_id: unitId, node_id: nodeId, facet_name: facetName },
+  })
+}
+export function grFacetQuestPass(unitId: string, nodeId: string, facetName: string): Promise<FacetQuest> {
+  return request('/api/v1/curriculum/intensive/grammar/course/facet-quest/pass', {
+    method: 'POST',
+    data: { unit_id: unitId, node_id: nodeId, facet_name: facetName },
+  })
 }
 export function seHwBatches(): Promise<{ batches: IntensiveBatch[] }> {
   return request('/api/v1/curriculum/intensive/sentence/homework/batches', { method: 'GET' })

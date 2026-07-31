@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>语法学习统一路径 · 细目 + 四维 · 方案原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1220px; margin: 0 auto; padding: 22px 16px 72px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 960px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .cmp {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  @media (max-width: 900px) { .cmp { grid-template-columns: 1fr 1fr; } }
+  .cmp-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .cmp-card h3 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-card .v { font-size: 15px; font-weight: 700; }
+  .cmp-card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .stage {
+    display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start;
+  }
+  @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+  .panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; }
+  .flow {
+    font-size: 13px; color: #0f2f55; background: #f8fbff; border: 1px dashed #bfdbfe;
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; font-weight: 600;
+  }
+  .steps { display: grid; gap: 8px; margin-bottom: 10px; }
+  .step {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fafcff;
+  }
+  .step .n {
+    display: inline-flex; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--c-primary); color: #fff; font-size: 12px; font-weight: 700;
+    align-items: center; justify-content: center; margin-right: 6px;
+  }
+  .step .t { font-size: 13px; font-weight: 700; }
+  .step .d { font-size: 12px; color: var(--muted); margin-top: 4px; padding-left: 28px; }
+  .why {
+    font-size: 12px; color: #9a6700; background: #fff8eb; border: 1px solid #f3d19e;
+    border-radius: 8px; padding: 8px 10px;
+  }
+
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone-cap { font-size: 12px; color: var(--muted); }
+  .phone-nav { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 320px; }
+  .phone-nav button {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--muted);
+  }
+  .phone-nav button.on { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; font-weight: 600; }
+
+  .phone {
+    width: 320px; height: 640px; border-radius: 28px; border: 8px solid #1e293b;
+    background: #f4f7fb; box-shadow: 0 16px 40px rgba(15,23,42,.18);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .status {
+    height: 26px; background: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #94a3b8; flex-shrink: 0;
+  }
+  .ph-hd {
+    background: #fff; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0;
+    text-align: center;
+  }
+  .ph-title { font-size: 15px; font-weight: 700; }
+  .ph-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ph-bd { flex: 1; overflow: auto; padding: 10px 12px; }
+  .ph-ft {
+    flex-shrink: 0; display: flex; gap: 8px; padding: 10px 12px;
+    background: #fff; border-top: 1px solid var(--line);
+  }
+  .btn {
+    flex: 1; height: 40px; border-radius: 10px; border: 0; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .btn.pri { background: var(--c-primary); color: #fff; }
+  .btn.ok { background: var(--c-ok); color: #fff; }
+  .btn.ghost { background: #f1f5f9; color: #475569; }
+
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 8px;
+  }
+  .path3 {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;
+  }
+  .path3 .p {
+    text-align: center; font-size: 11px; padding: 8px 4px; border-radius: 10px;
+    background: #f1f5f9; color: var(--muted); border: 1px solid transparent;
+  }
+  .path3 .p.on { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; font-weight: 700; }
+  .path3 .p.done { background: #e9f6f1; color: #1f7a61; }
+  .path3 .p .n { display: block; font-size: 16px; font-weight: 800; margin-bottom: 2px; }
+
+  .facet {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fff;
+  }
+  .facet.done { border-color: #b7e4d4; background: #f3fbf8; }
+  .facet.cur { border-color: #bfdbfe; background: #f8fbff; box-shadow: 0 0 0 2px #dbeafe; }
+  .facet .h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+  .chk {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid #cbd5e1;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff;
+  }
+  .facet.done .chk { background: var(--c-ok); border-color: var(--c-ok); }
+  .facet.cur .chk { border-color: var(--c-primary); }
+  .meta { font-size: 11px; color: var(--muted); margin: 4px 0 0 26px; }
+  .rule {
+    background: #e8f2ff; border-radius: 12px; padding: 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 8px;
+  }
+  .sent {
+    margin-top: 6px; font-size: 12px; padding: 8px 10px; background: #fff;
+    border-radius: 8px; border: 1px solid var(--line); color: #334155;
+  }
+  .sent b { color: var(--c-primary); }
+  .quiz-q { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .opt {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 6px;
+    font-size: 13px; background: #fff;
+  }
+  .opt.ok { border-color: #b7e4d4; background: #f3fbf8; }
+  .dims { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .dim {
+    border-radius: 8px; border: 1px solid var(--line); padding: 8px; font-size: 11px; background: #f8fafc;
+  }
+  .dim b { display: block; font-size: 14px; margin-top: 2px; }
+  .dim.ok { background: #f3fbf8; border-color: #b7e4d4; }
+  .big {
+    text-align: center; padding: 18px 12px; border-radius: 12px;
+    background: linear-gradient(135deg, #5b8def, #3d8bf5); color: #fff; margin-bottom: 10px;
+  }
+  .big .t { font-size: 22px; font-weight: 800; }
+  .big .s { font-size: 12px; opacity: .92; margin-top: 4px; }
+
+  table.mx {
+    width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  table.mx th, table.mx td {
+    border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.mx th { background: #f8fafc; color: var(--muted); }
+  .ok { color: #166534; }
+  .mid { color: #9a6700; }
+  .foot { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>语法学习统一路径 · 细目 + 四维</h1>
+  <p class="lead">
+    学生目标只有一句：<b>学会这个语法点及其细目</b>。
+    现状把「细目闯关」和「四维测一测」拆成两套入口，容易懵。
+    下面把它们收成<strong>一条路、三步走</strong>；右侧可切换预览。选定前不改代码。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="U1">U1 学→验→会 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="U2">U2 先摸底再学</button>
+    <button class="scheme" data-k="U3">U3 极简两步</button>
+    <button class="scheme" data-k="NOW">现状对照</button>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="cmp" id="cmp"></div>
+
+  <div class="stage">
+    <div class="panel">
+      <h2 id="panelTitle">学习闭环</h2>
+      <div class="flow" id="flow"></div>
+      <div class="steps" id="steps"></div>
+      <div class="why" id="why"></div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-cap" id="phoneCap">学生端预览</div>
+      <div class="phone-nav" id="phoneNav"></div>
+      <div class="phone">
+        <div class="status">9:41</div>
+        <div class="ph-hd">
+          <div class="ph-title">be动词（to be）</div>
+          <div class="ph-sub" id="phSub">学会这个语法</div>
+        </div>
+        <div class="ph-bd" id="screen"></div>
+        <div class="ph-ft" id="footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="mx">
+    <thead>
+      <tr>
+        <th>方案</th>
+        <th>学生看到什么</th>
+        <th>细目怎么用</th>
+        <th>四维怎么用</th>
+        <th>何时算「会了」</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>U1（推荐）</b></td>
+        <td>一页三步：学细目 → 验一验 → 会了</td>
+        <td class="ok">主线（挖空过关）</td>
+        <td class="ok">收尾综合，不提前吓人</td>
+        <td>细目全过 + 综合过关</td>
+      </tr>
+      <tr>
+        <td><b>U2</b></td>
+        <td>先进摸底，再只学不会的细目</td>
+        <td class="ok">按薄弱学</td>
+        <td class="mid">摸底可兼识别题</td>
+        <td>薄弱清零 + 综合</td>
+      </tr>
+      <tr>
+        <td><b>U3</b></td>
+        <td>只有「学」和「测」两步</td>
+        <td class="ok">学里含细目</td>
+        <td class="mid">测=挖空+少量综合</td>
+        <td>测通过即可</td>
+      </tr>
+      <tr>
+        <td>现状</td>
+        <td>讲解页四维卡 + 另有细目页</td>
+        <td class="mid">另入口</td>
+        <td class="mid">一进就四维</td>
+        <td>口径分裂</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    原型：<code>docs/design/grammar-learn-path-unified-prototype.html</code> ·
+    原则：<b>一个入口、一条路径、一个「会了」标准</b>；四维不再当首页主 UI。
+  </p>
+</div>
+
+<script>
+const META = {
+  NOW: {
+    note: '<b>现状问题</b>：同一语法点两套入口——①课本内容+识别/纠错/产出/迁移；②细目闯关挖空。学生不知道先做哪个，也不知道做到哪算会。',
+    cmp: [
+      ['入口', '2 套', '分裂'],
+      ['主线', '不清晰', ''],
+      ['细目', '可选', ''],
+      ['四维', '一进就见', '吓人'],
+    ],
+    flow: '清单 → 讲解页（四维卡） / 或 → 细目闯关 · 两套互不统属',
+    why: '科学上：细目是「会什么内容」，四维是「会到什么程度」。应先内容后程度，不要并排抢戏。',
+    steps: [
+      ['分裂入口', '学生懵'],
+      ['四维过早', '还没学细目就测产出/迁移'],
+      ['无统一「会了」', '细目过了 ≠ 四维过了'],
+    ],
+  },
+  U1: {
+    note: '<b>U1（推荐）· 学 → 验 → 会</b>：一个入口、三步走。①按细目学（看句+挖空）；②验一验（短综合，对应识别/纠错）；③会了（产出或迁移二选一，过关即掌握）。四维藏在第 2、3 步，不在首页摊开。',
+    cmp: [
+      ['入口', '1 个', ''],
+      ['主线', '三步', '简单'],
+      ['细目', '必学', ''],
+      ['四维', '收尾用', '不吓人'],
+    ],
+    flow: '清单点开 → 【①学细目】→【②验一验】→【③会了】→ 标已掌握',
+    why: '符合「先会内容、再验程度」：细目保证覆盖（肯定/否定/疑问都过），综合保证不是死记当前关。',
+    steps: [
+      ['① 学细目', '串行：教材句 → 挖空；一关一关勾'],
+      ['② 验一验', '3～5 题混合细目（识别/纠错），错打回细目'],
+      ['③ 会了', '造一句或迁移题 1～2 道；过则「已掌握」'],
+    ],
+  },
+  U2: {
+    note: '<b>U2· 先摸底再学</b>：进点先 6 题摸底（按细目出），只会的细目可跳过；专攻红项后再验、再会。适合「会一点」的学生，稍多一步。',
+    cmp: [
+      ['入口', '1 个', ''],
+      ['主线', '摸底→攻弱→验→会', ''],
+      ['细目', '按需', '省时'],
+      ['四维', '验/会', ''],
+    ],
+    flow: '清单 → 摸底画像 → 只学红细目 → 验一验 → 会了',
+    why: '科学点在「诊断后干预」；代价是多一次摸底，低年级可能嫌长。',
+    steps: [
+      ['摸底', '覆盖各细目 1～2 题'],
+      ['攻弱', '只开红色细目挖空'],
+      ['验 / 会', '同 U1 后两步'],
+    ],
+  },
+  U3: {
+    note: '<b>U3· 极简两步</b>：只保留「学」和「测」。学=细目挖空；测=挖空复测+2 道综合。四维不对学生露名称，后台仍可记识别分。最简单，验真略弱。',
+    cmp: [
+      ['入口', '1 个', ''],
+      ['主线', '学 / 测', '最简'],
+      ['细目', '在学里', ''],
+      ['四维', '隐式', ''],
+    ],
+    flow: '清单 → 学（细目）→ 测（过关=会了）',
+    why: '认知负担最低；缺独立产出/迁移门，假会风险略高。',
+    steps: [
+      ['学', '细目地图+挖空'],
+      ['测', '混合卷，全过即掌握'],
+      ['—', '不单独做「会了」第三步'],
+    ],
+  },
+};
+
+const SCREENS = {
+  NOW: {
+    nav: [['home', '讲解页']],
+    default: 'home',
+    sub: '现状 · 两套入口',
+    views: {
+      home: () => ({
+        body: `
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <span style="font-size:12px;color:#64748b;font-weight:700">未开始</span>
+              <span style="font-size:11px;background:#3d8bf5;color:#fff;padding:4px 10px;border-radius:8px">测一测</span>
+            </div>
+            <div class="dims">
+              <div class="dim">识别<b>0%</b></div>
+              <div class="dim">纠错<b>0%</b></div>
+              <div class="dim">产出<b>0%</b></div>
+              <div class="dim">迁移<b>未通过</b></div>
+            </div>
+          </div>
+          <div class="rule">一句话搞懂：三个小分身 am / is / are…</div>
+          <div class="meta" style="margin:0;color:#b91c1c">细目闯关在另一入口 · 学生易迷路</div>`,
+        foot: `<div class="btn ghost">练习5</div><div class="btn pri">模拟考10</div>`,
+      }),
+    },
+  },
+  U1: {
+    nav: [['home', '总览'], ['learn', '①学'], ['check', '②验'], ['master', '③会']],
+    default: 'home',
+    sub: 'U1 · 一条路三步走',
+    views: {
+      home: () => ({
+        body: `
+          <div class="path3">
+            <div class="p on"><span class="n">1</span>学细目</div>
+            <div class="p"><span class="n">2</span>验一验</div>
+            <div class="p"><span class="n">3</span>会了</div>
+          </div>
+          <div class="big">
+            <div class="t">1 / 3</div>
+            <div class="s">先把本单元细目学完，再验、再会</div>
+          </div>
+          <div class="facet done"><div class="h"><span class="chk">✓</span>肯定句</div><div class="meta">已过 · 挖空</div></div>
+          <div class="facet cur"><div class="h"><span class="chk"></span>否定句</div><div class="meta">当前 · 去学</div></div>
+          <div class="facet"><div class="h"><span class="chk"></span>一般疑问句</div><div class="meta">锁定</div></div>
+          <div class="meta" style="margin:8px 0 0;text-align:center">不展示四维百分比，避免干扰</div>`,
+        foot: `<div class="btn pri">继续学 · 否定句</div>`,
+      }),
+      learn: () => ({
+        body: `
+          <div class="path3">
+            <div class="p on"><span class="n">1</span>学</div>
+            <div class="p"><span class="n">2</span>验</div>
+            <div class="p"><span class="n">3</span>会</div>
+          </div>
+          <div class="rule"><b>否定句</b>：be 后面加 not（isn’t / aren’t / I’m not）</div>
+          <div class="sent">He <b>is not</b> tall.</div>
+          <div class="sent">No, I’<b>m not</b>.</div>
+          <div class="quiz-q" style="margin-top:10px">挖空：He ______ tall.</div>
+          <div class="opt ok">is not</div>
+          <div class="opt">not is</div>`,
+        foot: `<div class="btn ghost">看句</div><div class="btn pri">下一空</div>`,
+      }),
+      check: () => ({
+        body: `
+          <div class="path3">
+            <div class="p done"><span class="n">1</span>学✓</div>
+            <div class="p on"><span class="n">2</span>验</div>
+            <div class="p"><span class="n">3</span>会</div>
+          </div>
+          <div class="card">
+            <div style="font-weight:700;font-size:13px">验一验 · 3 题</div>
+            <div class="meta" style="margin:4px 0 0">混合刚学过的细目（识别+纠错）</div>
+          </div>
+          <div class="quiz-q">改错：They not are twins.</div>
+          <div class="opt ok">They are not twins.</div>
+          <div class="opt">They not are twins.</div>
+          <div class="meta" style="margin:8px 0 0">错了 → 打回对应细目再学，不直接判「不会整个点」</div>`,
+        foot: `<div class="btn pri">提交 · 进入「会了」</div>`,
+      }),
+      master: () => ({
+        body: `
+          <div class="path3">
+            <div class="p done"><span class="n">1</span>学✓</div>
+            <div class="p done"><span class="n">2</span>验✓</div>
+            <div class="p on"><span class="n">3</span>会</div>
+          </div>
+          <div class="big" style="background:linear-gradient(135deg,#2fa98a,#3d8bf5)">
+            <div class="t">最后一关</div>
+            <div class="s">用一句自己的话证明你会了</div>
+          </div>
+          <div class="rule">提示：用 be 动词写一句否定句（可以说自己或同学）。</div>
+          <div class="sent" style="min-height:48px;color:#94a3b8">在此输入英文句子…</div>
+          <div class="dims" style="margin-top:10px">
+            <div class="dim ok">细目<b>3/3</b></div>
+            <div class="dim ok">验一验<b>过</b></div>
+            <div class="dim">产出<b>进行中</b></div>
+            <div class="dim">迁移<b>—</b></div>
+          </div>`,
+        foot: `<div class="btn ok">提交 · 标已掌握</div>`,
+      }),
+    },
+  },
+  U2: {
+    nav: [['diag', '摸底'], ['weak', '攻弱']],
+    default: 'diag',
+    sub: 'U2 · 先诊后学',
+    views: {
+      diag: () => ({
+        body: `
+          <div class="card">
+            <div style="font-weight:700">先摸底 · 约 2 分钟</div>
+            <div class="meta" style="margin:4px 0 0">看你会哪些细目，只会的可跳过</div>
+          </div>
+          <div class="quiz-q">3/6 · Are you Peter? — ______.</div>
+          <div class="opt">Yes, I am.</div>
+          <div class="opt">Yes, I are.</div>`,
+        foot: `<div class="btn pri">下一题</div>`,
+      }),
+      weak: () => ({
+        body: `
+          <div class="card">
+            <div style="font-weight:700">摸底结果</div>
+            <div class="meta" style="margin:4px 0 0">只学红色薄弱细目</div>
+          </div>
+          <div class="facet done"><div class="h"><span class="chk">✓</span>肯定句</div><div class="meta">摸底全对 · 跳过</div></div>
+          <div class="facet cur"><div class="h"><span class="chk"></span>否定句</div><div class="meta">薄弱 · 优先学</div></div>
+          <div class="facet cur"><div class="h"><span class="chk"></span>一般疑问句</div><div class="meta">薄弱 · 优先学</div></div>`,
+        foot: `<div class="btn pri">先攻 · 否定句</div>`,
+      }),
+    },
+  },
+  U3: {
+    nav: [['learn', '学'], ['test', '测']],
+    default: 'learn',
+    sub: 'U3 · 极简两步',
+    views: {
+      learn: () => ({
+        body: `
+          <div class="path3" style="grid-template-columns:1fr 1fr">
+            <div class="p on"><span class="n">1</span>学</div>
+            <div class="p"><span class="n">2</span>测</div>
+          </div>
+          <div class="facet cur"><div class="h"><span class="chk"></span>否定句</div><div class="meta">看句 + 挖空</div></div>
+          <div class="sent">He <b>is not</b> tall.</div>
+          <div class="quiz-q">He ______ tall.</div>
+          <div class="opt ok">is not</div>`,
+        foot: `<div class="btn pri">学完去测</div>`,
+      }),
+      test: () => ({
+        body: `
+          <div class="path3" style="grid-template-columns:1fr 1fr">
+            <div class="p done"><span class="n">1</span>学✓</div>
+            <div class="p on"><span class="n">2</span>测</div>
+          </div>
+          <div class="card">
+            <div style="font-weight:700">过关测 · 5 题</div>
+            <div class="meta" style="margin:4px 0 0">全对（或 ≥4 对）= 会了</div>
+          </div>
+          <div class="quiz-q">1/5 · Which class ______ you in?</div>
+          <div class="opt">are</div>
+          <div class="opt">is</div>`,
+        foot: `<div class="btn ok">提交判定</div>`,
+      }),
+    },
+  },
+};
+
+let curK = 'U1';
+
+function renderMeta(k) {
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('cmp').innerHTML = m.cmp.map(([h, v, s]) =>
+    `<div class="cmp-card"><h3>${h}</h3><div class="v">${v}</div><div class="s">${s || ''}</div></div>`
+  ).join('');
+  document.getElementById('flow').innerHTML = m.flow;
+  document.getElementById('why').textContent = m.why;
+  document.getElementById('steps').innerHTML = m.steps.map((s, i) =>
+    `<div class="step"><div class="t"><span class="n">${i + 1}</span>${s[0]}</div><div class="d">${s[1]}</div></div>`
+  ).join('');
+  document.getElementById('panelTitle').textContent = k === 'NOW' ? '现状' : `${k} · 说明`;
+}
+
+function renderPhone(k, viewKey) {
+  const pack = SCREENS[k];
+  const key = viewKey || pack.default;
+  document.getElementById('phSub').textContent = pack.sub;
+  document.getElementById('phoneNav').innerHTML = pack.nav.map(([id, label]) =>
+    `<button type="button" data-v="${id}" class="${id === key ? 'on' : ''}">${label}</button>`
+  ).join('');
+  const view = pack.views[key]();
+  document.getElementById('screen').innerHTML = view.body;
+  document.getElementById('footer').innerHTML = view.foot;
+  document.getElementById('phoneCap').textContent =
+    `预览 · ${k === 'NOW' ? '现状' : k} · ${pack.nav.find((x) => x[0] === key)?.[1] || ''}`;
+}
+
+function render(k) {
+  curK = k;
+  document.querySelectorAll('.scheme').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.k === k);
+  });
+  renderMeta(k);
+  renderPhone(k, SCREENS[k].default);
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (!btn) return;
+  render(btn.dataset.k);
+});
+document.getElementById('phoneNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-v]');
+  if (!btn) return;
+  renderPhone(curK, btn.dataset.v);
+});
+
+render('U1');
+</script>
+</body>
+</html>

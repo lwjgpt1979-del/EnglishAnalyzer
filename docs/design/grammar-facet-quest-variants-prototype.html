@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>细目闯关 A · 优化变体原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --line: #e8edf3;
+    --muted: #64748b;
+    --text: #1e293b;
+    --bg: #e8eef6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1260px; margin: 0 auto; padding: 22px 16px 72px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 14px; max-width: 980px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scheme .rec {
+    margin-left: 4px; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+    background: #dcfce7; color: #166534; font-weight: 700;
+  }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 10px 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 12px;
+  }
+  .note b { color: #0f2f55; }
+  .cmp {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  @media (max-width: 900px) { .cmp { grid-template-columns: 1fr 1fr; } }
+  .cmp-card {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .cmp-card h3 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-card .v { font-size: 15px; font-weight: 700; }
+  .cmp-card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .stage {
+    display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start;
+  }
+  @media (max-width: 980px) { .stage { grid-template-columns: 1fr; } }
+  .panel {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; }
+  .flow {
+    font-size: 12px; color: #475569; background: #f8fbff; border: 1px dashed #bfdbfe;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; line-height: 1.65;
+  }
+  .flow b { color: #0f2f55; }
+  .bullets { margin: 0; padding-left: 18px; font-size: 12px; color: #475569; }
+  .bullets li { margin: 4px 0; }
+  .trade {
+    margin-top: 12px; font-size: 12px; padding: 8px 10px; border-radius: 8px;
+    background: #fff8eb; border: 1px solid #f3d19e; color: #9a6700;
+  }
+
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone-cap { font-size: 12px; color: var(--muted); }
+  .phone-nav { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 320px; }
+  .phone-nav button {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 11px; cursor: pointer; color: var(--muted);
+  }
+  .phone-nav button.on { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; font-weight: 600; }
+
+  .phone {
+    width: 320px; height: 660px; border-radius: 28px; border: 8px solid #1e293b;
+    background: #f4f7fb; box-shadow: 0 16px 40px rgba(15,23,42,.18);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .status {
+    height: 26px; background: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #94a3b8; flex-shrink: 0;
+  }
+  .ph-hd {
+    background: #fff; padding: 8px 12px 10px; border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  .ph-title { text-align: center; font-size: 15px; font-weight: 700; }
+  .ph-sub { text-align: center; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .ph-bd { flex: 1; overflow: auto; padding: 10px 12px; }
+  .ph-ft {
+    flex-shrink: 0; display: flex; gap: 8px; padding: 10px 12px;
+    background: #fff; border-top: 1px solid var(--line);
+  }
+  .btn {
+    flex: 1; height: 40px; border-radius: 10px; border: 0; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .btn.pri { background: var(--c-primary); color: #fff; }
+  .btn.sec { background: #e8f2ff; color: var(--c-primary); }
+  .btn.ok { background: var(--c-ok); color: #fff; }
+  .btn.ghost { background: #f1f5f9; color: #475569; }
+
+  .card {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; margin-bottom: 8px;
+  }
+  .prog {
+    height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; margin: 8px 0 4px;
+  }
+  .prog i { display: block; height: 100%; background: linear-gradient(90deg,#3d8bf5,#6aa8f8); }
+  .facet {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fff;
+  }
+  .facet.done { border-color: #b7e4d4; background: #f3fbf8; }
+  .facet.cur { border-color: #bfdbfe; background: #f8fbff; box-shadow: 0 0 0 2px #dbeafe; }
+  .facet.lock { opacity: .55; }
+  .facet .h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+  .chk {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid #cbd5e1; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff;
+  }
+  .facet.done .chk { background: var(--c-ok); border-color: var(--c-ok); }
+  .facet.cur .chk { border-color: var(--c-primary); }
+  .meta { font-size: 11px; color: var(--muted); margin: 4px 0 0 26px; }
+  .stars { color: #ffb020; letter-spacing: 1px; }
+  .rule {
+    background: #e8f2ff; border-radius: 12px; padding: 12px; font-size: 13px; color: #1e4a7a; margin-bottom: 8px;
+  }
+  .sent {
+    margin-top: 6px; font-size: 12px; color: #334155;
+    padding: 8px 10px; background: #f8fafc; border-radius: 8px; border: 1px solid var(--line);
+  }
+  .sent b { color: var(--c-primary); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .chip {
+    font-size: 11px; padding: 4px 8px; border-radius: 999px; background: #f1f5f9; color: #475569;
+  }
+  .chip.on { background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+  .chip.bad { background: #fff5f5; color: #b91c1c; }
+  .chip.ok { background: #e9f6f1; color: #1f7a61; }
+  .quiz-q { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .opt {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 6px;
+    font-size: 13px; background: #fff;
+  }
+  .opt.ok { border-color: #b7e4d4; background: #f3fbf8; }
+  .opt.bad { border-color: #fecaca; background: #fff5f5; }
+  .fb {
+    font-size: 12px; color: #1e4a7a; background: #eef6ff; border-radius: 8px;
+    padding: 8px 10px; margin-top: 6px;
+  }
+  .dual {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px;
+  }
+  .dual .box {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 11px; background: #fafcff;
+  }
+  .dual .box b { display: block; margin-bottom: 4px; color: #334155; }
+  .timeline { display: flex; gap: 4px; margin-bottom: 10px; overflow-x: auto; }
+  .timeline span {
+    flex-shrink: 0; font-size: 10px; padding: 4px 8px; border-radius: 999px; background: #f1f5f9; color: var(--muted);
+  }
+  .timeline span.on { background: #e8f2ff; color: var(--c-primary); font-weight: 700; }
+  .timeline span.done { background: #e9f6f1; color: #1f7a61; }
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .compare .c {
+    border-radius: 8px; padding: 8px; font-size: 11px; border: 1px solid var(--line);
+  }
+  .compare .c.bad { background: #fff5f5; border-color: #fecaca; }
+  .compare .c.ok { background: #f3fbf8; border-color: #b7e4d4; }
+  table.mx {
+    width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  table.mx th, table.mx td {
+    border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.mx th { background: #f8fafc; color: var(--muted); }
+  .ok { color: #166534; }
+  .mid { color: #9a6700; }
+  .bad { color: #b91c1c; }
+  .foot { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .foot code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>细目闯关（A）· 优化变体</h1>
+  <p class="lead">
+    在已选定的「挂靠点 → 细目 → 教材句 → 微测 → 综合」主线上，再给 5 种交互/节奏优化。
+    右侧可切换屏幕预览；选定前不改代码。可与间隔复测（D）后续叠加。
+  </p>
+
+  <div class="schemes" id="schemes">
+    <button class="scheme on" data-k="A0">A0 基线细目闯关</button>
+    <button class="scheme" data-k="A1">A1 句中挖空 <span class="rec">推荐</span></button>
+    <button class="scheme" data-k="A2">A2 三星过关</button>
+    <button class="scheme" data-k="A3">A3 对照卡+即时纠</button>
+    <button class="scheme" data-k="A4">A4 可跳过串行</button>
+    <button class="scheme" data-k="A5">A5 细目小综合</button>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="cmp" id="cmp"></div>
+
+  <div class="stage">
+    <div class="panel">
+      <h2 id="panelTitle">变体说明</h2>
+      <div class="flow" id="flow"></div>
+      <ul class="bullets" id="bullets"></ul>
+      <div class="trade" id="trade"></div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone-cap" id="phoneCap">预览</div>
+      <div class="phone-nav" id="phoneNav"></div>
+      <div class="phone">
+        <div class="status">9:41</div>
+        <div class="ph-hd">
+          <div class="ph-title">be动词（to be）</div>
+          <div class="ph-sub" id="phSub">细目闯关</div>
+        </div>
+        <div class="ph-bd" id="screen"></div>
+        <div class="ph-ft" id="footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="mx">
+    <thead>
+      <tr>
+        <th>变体</th>
+        <th>相对 A0 多了什么</th>
+        <th>更准在哪</th>
+        <th>风险</th>
+        <th>工程量</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>A0</b></td>
+        <td>串行细目 + 看句 + 微测</td>
+        <td>覆盖细目</td>
+        <td>微测若太泛仍假会</td>
+        <td>基准</td>
+      </tr>
+      <tr>
+        <td><b>A1 句中挖空</b>（推荐）</td>
+        <td>微测优先用本细目教材句挖空</td>
+        <td class="ok">练的就是刚看的句</td>
+        <td class="ok">低</td>
+        <td class="ok">小</td>
+      </tr>
+      <tr>
+        <td><b>A2 三星</b></td>
+        <td>每细目 1★看懂 / 2★微测 / 3★改错或产出</td>
+        <td class="ok">多层证据</td>
+        <td class="mid">步骤变长</td>
+        <td class="mid">中</td>
+      </tr>
+      <tr>
+        <td><b>A3 对照卡</b></td>
+        <td>错题并排「错句|正句|规则」</td>
+        <td class="ok">纠错更准</td>
+        <td class="ok">低</td>
+        <td class="ok">小</td>
+      </tr>
+      <tr>
+        <td><b>A4 可跳过</b></td>
+        <td>允许跳细目，末尾强制补测跳过项</td>
+        <td class="mid">体验轻</td>
+        <td class="mid">易跳着玩</td>
+        <td class="ok">小</td>
+      </tr>
+      <tr>
+        <td><b>A5 细目小综合</b></td>
+        <td>每过 2～3 细目插一组混合题</td>
+        <td class="ok">防只会当前细目</td>
+        <td class="mid">打断节奏</td>
+        <td class="mid">中</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    原型：<code>docs/design/grammar-facet-quest-variants-prototype.html</code> ·
+    倾向组合：<b>A1 + A3</b>（挖空练原句 + 错题对照）；要更严再加 A2 或 A5。
+  </p>
+</div>
+
+<script>
+const META = {
+  A0: {
+    note: '<b>A0 基线</b>：上一版推荐的细目闯关本体——细目地图串行，每细目「规则 + 教材句 → 选择题微测 → 勾选过关」，全过再综合。',
+    cmp: [['节奏', '一细目一段', ''], ['验真', '微测过关', ''], ['原句绑定', '看得到', '测未必用'], ['推荐作', '底座', '']],
+    flow: '地图 → 学细目（句+规则）→ 通用微测 → 勾选 → … → 综合/迁移',
+    bullets: ['细目来自 unit_section.facets', '未过细目可锁下一关', '综合门仍用四维/迁移'],
+    trade: '取舍：路径清晰，但微测若随机出题，可能和刚看的教材句脱节。',
+  },
+  A1: {
+    note: '<b>A1 句中挖空（推荐优化）</b>：微测题干优先取本细目教材原句，挖掉 am/is/are/not 等考点再选。学什么练什么，假会空间最小。',
+    cmp: [['节奏', '同 A0', ''], ['验真', '原句挖空', '最贴教材'], ['原句绑定', '强', ''], ['工程', '小', '规则挖空+备选']],
+    flow: '看句 → <b>同一句挖空作答</b> → 错则回高亮句 → 对则过关',
+    bullets: ['题干 = 细目 sentences 原文', '选项为形态干扰（is/are/am、isn’t…）', '无足够句时才回退通用探针'],
+    trade: '取舍：最推荐先做；挖空规则要对齐考点（be/do/情态…需按细目类型配置）。',
+  },
+  A2: {
+    note: '<b>A2 三星过关</b>：每细目三层证据——1★读懂规则与句、2★选择微测、3★改错或半开放产出。星不满不算过关。',
+    cmp: [['节奏', '更慢更稳', ''], ['验真', '三层', ''], ['原句绑定', '中-强', ''], ['工程', '中', '多一步产出']],
+    flow: '细目：读句★ → 选择★ → 改错/造句★ → 三星亮起才解锁下一细目',
+    bullets: ['进度条按星显示', '可先拿 2★，3★稍后补', '产出用中文提示+目标结构'],
+    trade: '取舍：掌握更准，单点耗时变长；初中低年级可能嫌烦。',
+  },
+  A3: {
+    note: '<b>A3 对照卡 + 即时纠</b>：微测答错不直接下一题，弹出「你的答案 | 正确句 | 本细目规则」三栏对照，必须点「懂了」才继续。',
+    cmp: [['节奏', '错题变慢', ''], ['验真', '纠错闭环', ''], ['原句绑定', '强', ''], ['工程', '小', '纯前端+解析']],
+    flow: '作答 → 错 → <b>对照卡</b> → 确认 → 同细目再来一题（或同一句变式）',
+    bullets: ['减少蒙对溜走', '解析强制中文（已有铁律）', '可与 A1 叠加'],
+    trade: '取舍：几乎无副作用，强烈建议与 A1 一起上。',
+  },
+  A4: {
+    note: '<b>A4 可跳过串行</b>：默认仍推荐顺序学，但允许「暂时跳过」细目；进入综合前必须补测所有跳过项，否则不能标掌握。',
+    cmp: [['节奏', '更自由', ''], ['验真', '末尾补测', ''], ['原句绑定', '同底座', ''], ['工程', '小', '状态机']],
+    flow: '细目可 Skip → 学完其它 → <b>补测队列</b> 清零 → 才开综合',
+    bullets: ['跳过项在地图标灰「待补」', '补测失败打回该细目学', '适合已会部分的学生'],
+    trade: '取舍：体验轻，但要防一直跳；综合门必须卡死。',
+  },
+  A5: {
+    note: '<b>A5 细目小综合</b>：每通过 2～3 个细目，插入一组「混合细目」题（刚学过的搅在一起），防止只会做当前关。',
+    cmp: [['节奏', '关卡间插测', ''], ['验真', '迁移雏形', ''], ['原句绑定', '中', ''], ['工程', '中', '组卷逻辑']],
+    flow: '细目1✓ 细目2✓ → <b>小综合 3 题</b> → 细目3… → 大综合/迁移',
+    bullets: ['小综合错 → 标回对应细目', '大综合仍保留', '与 A1 题型可复用'],
+    trade: '取舍：抗「关卡记忆」好，但会打断心流；细目很少（≤2）时可自动跳过。',
+  },
+};
+
+const SCREENS = {
+  A0: {
+    nav: [['map', '地图'], ['learn', '学'], ['quiz', '微测']],
+    default: 'map',
+    sub: 'A0 · 基线细目闯关',
+    views: {
+      map: () => ({
+        body: `
+          <div class="card">
+            <div style="font-size:12px;font-weight:700">细目进度 1/3</div>
+            <div class="prog"><i style="width:33%"></i></div>
+            <div class="meta" style="margin:0">串行 · 过关解锁下一细目</div>
+          </div>
+          <div class="facet done"><div class="h"><span class="chk">✓</span>肯定句</div><div class="meta">已过关</div></div>
+          <div class="facet cur"><div class="h"><span class="chk"></span>否定句</div><div class="meta">当前</div></div>
+          <div class="facet lock"><div class="h"><span class="chk"></span>一般疑问句</div><div class="meta">锁定</div></div>`,
+        foot: `<div class="btn pri">学 · 否定句</div>`,
+      }),
+      learn: () => ({
+        body: `
+          <div class="rule"><b>否定：</b>在 be 后加 not（isn’t / aren’t / I’m not）。</div>
+          <div class="sent">He <b>is not</b> tall.</div>
+          <div class="sent">No, I’<b>m not</b>.</div>`,
+        foot: `<div class="btn ghost">返回</div><div class="btn pri">去微测</div>`,
+      }),
+      quiz: () => ({
+        body: `
+          <div class="quiz-q">哪句是否定句？</div>
+          <div class="opt">A. He is tall.</div>
+          <div class="opt ok">B. He is not tall.</div>
+          <div class="opt">C. Is he tall?</div>
+          <div class="fb">通用选项题 · 未必来自刚看的教材句</div>`,
+        foot: `<div class="btn ok">过关</div>`,
+      }),
+    },
+  },
+  A1: {
+    nav: [['learn', '看句'], ['cloze', '挖空'], ['pass', '过关']],
+    default: 'cloze',
+    sub: 'A1 · 教材句挖空',
+    views: {
+      learn: () => ({
+        body: `
+          <div class="rule">本细目：否定句 · 先看原句再挖空</div>
+          <div class="sent">He <b>is not</b> tall.</div>
+          <div class="sent">No, they <b>aren’t</b>.</div>
+          <div class="chip-row"><span class="chip on">教材原句</span><span class="chip">非题库句</span></div>`,
+        foot: `<div class="btn pri">同一句挖空练</div>`,
+      }),
+      cloze: () => ({
+        body: `
+          <div class="timeline"><span class="done">看句</span><span class="on">挖空</span><span>过关</span></div>
+          <div class="quiz-q">He ______ tall.（教材原句）</div>
+          <div class="opt bad">A. not is</div>
+          <div class="opt ok">B. is not</div>
+          <div class="opt">C. isn’t not</div>
+          <div class="fb">练的就是上一屏原句 · 错因：否定在 be 后</div>`,
+        foot: `<div class="btn ghost">再看句</div><div class="btn pri">下一空</div>`,
+      }),
+      pass: () => ({
+        body: `
+          <div class="card" style="text-align:center;padding:20px">
+            <div style="font-size:28px;color:var(--c-ok)">✓</div>
+            <div style="font-weight:700;margin:6px 0">否定句 · 挖空过关</div>
+            <div class="meta" style="margin:0">2/2 原句挖空正确</div>
+          </div>
+          <div class="sent">解锁下一细目：一般疑问句及回答</div>`,
+        foot: `<div class="btn pri">下一细目</div>`,
+      }),
+    },
+  },
+  A2: {
+    nav: [['stars', '三星'], ['s3', '第3星']],
+    default: 'stars',
+    sub: 'A2 · 三星过关',
+    views: {
+      stars: () => ({
+        body: `
+          <div class="facet cur">
+            <div class="h"><span class="chk"></span>否定句</div>
+            <div class="meta"><span class="stars">★★☆</span> · 差 1 星过关</div>
+          </div>
+          <div class="card">
+            <div style="font-size:12px;font-weight:700;margin-bottom:6px">本细目星级</div>
+            <div class="chip-row">
+              <span class="chip ok">★1 读懂句+规则</span>
+              <span class="chip ok">★2 选择微测</span>
+              <span class="chip on">★3 改错/产出</span>
+            </div>
+            <div class="hint" style="font-size:11px;color:var(--muted)">三星齐亮才算细目过关</div>
+          </div>`,
+        foot: `<div class="btn pri">去做第 3 星</div>`,
+      }),
+      s3: () => ({
+        body: `
+          <div class="rule">★3 改错：把句子改成正确否定句</div>
+          <div class="sent">原句：They not are twins.</div>
+          <div class="opt ok">They are not twins. / They aren’t twins.</div>
+          <div class="fb">结构用对 + 句意正确 → 亮第三星</div>`,
+        foot: `<div class="btn ok">点亮 ★★★</div>`,
+      }),
+    },
+  },
+  A3: {
+    nav: [['wrong', '对照卡']],
+    default: 'wrong',
+    sub: 'A3 · 错题对照',
+    views: {
+      wrong: () => ({
+        body: `
+          <div class="quiz-q">选否定句</div>
+          <div class="opt bad">你选：He not is tall.</div>
+          <div class="compare" style="margin-top:8px">
+            <div class="c bad"><b>你的答案</b>He not is tall.</div>
+            <div class="c ok"><b>正确</b>He is not tall.</div>
+          </div>
+          <div class="rule" style="margin-top:8px"><b>规则</b>：not 跟在 be 后面，不能放在 be 前。</div>
+          <div class="sent">对照教材：He <b>is not</b> tall.</div>`,
+        foot: `<div class="btn ghost">再看规则</div><div class="btn pri">懂了，再来一题</div>`,
+      }),
+    },
+  },
+  A4: {
+    nav: [['map', '可跳过'], ['gap', '补测队列']],
+    default: 'map',
+    sub: 'A4 · 可跳过 + 末尾补测',
+    views: {
+      map: () => ({
+        body: `
+          <div class="facet done"><div class="h"><span class="chk">✓</span>肯定句</div><div class="meta">已过</div></div>
+          <div class="facet" style="border-style:dashed">
+            <div class="h"><span class="chk"></span>否定句</div>
+            <div class="meta">已跳过 · 综合前必补测</div>
+            <div class="chip-row" style="margin-left:26px"><span class="chip bad">待补</span></div>
+          </div>
+          <div class="facet cur"><div class="h"><span class="chk"></span>一般疑问句</div><div class="meta">当前可学</div></div>`,
+        foot: `<div class="btn ghost">跳过当前</div><div class="btn pri">学疑问句</div>`,
+      }),
+      gap: () => ({
+        body: `
+          <div class="card">
+            <div style="font-weight:700">补测队列 · 1 项</div>
+            <div class="meta" style="margin:4px 0 0">未清完不能开综合/迁移</div>
+          </div>
+          <div class="facet cur">
+            <div class="h"><span class="chk"></span>否定句 · 补测</div>
+            <div class="meta">跳过项强制验真</div>
+          </div>
+          <div class="quiz-q">No, I ______.</div>
+          <div class="opt">A. am not</div>
+          <div class="opt">B. not am</div>`,
+        foot: `<div class="btn pri">提交补测</div>`,
+      }),
+    },
+  },
+  A5: {
+    nav: [['mix', '小综合'], ['back', '打回']],
+    default: 'mix',
+    sub: 'A5 · 细目间小综合',
+    views: {
+      mix: () => ({
+        body: `
+          <div class="timeline">
+            <span class="done">肯定✓</span><span class="done">否定✓</span>
+            <span class="on">小综合</span><span>疑问</span>
+          </div>
+          <div class="card">
+            <div style="font-weight:700">混合练 · 3 题</div>
+            <div class="meta" style="margin:4px 0 0">搅在一起，防只会刚刷的那一关</div>
+          </div>
+          <div class="chip-row">
+            <span class="chip ok">肯定</span>
+            <span class="chip on">否定</span>
+            <span class="chip">疑问(未学不考)</span>
+          </div>
+          <div class="quiz-q">1/3 · They ______ twins.（肯定/否定？）</div>
+          <div class="opt">A. is</div>
+          <div class="opt ok">B. are</div>`,
+        foot: `<div class="btn pri">下一题</div>`,
+      }),
+      back: () => ({
+        body: `
+          <div class="card">
+            <div style="font-weight:700;color:#b91c1c">小综合暴露缺口</div>
+            <div class="meta" style="margin:4px 0 0">否定句再闯一次</div>
+          </div>
+          <div class="facet cur">
+            <div class="h"><span class="chk"></span>否定句</div>
+            <div class="meta">由小综合打回 · 进度星清空至 1★</div>
+          </div>
+          <div class="dual">
+            <div class="box"><b>错题</b>They not are…</div>
+            <div class="box"><b>应属细目</b>否定句</div>
+          </div>`,
+        foot: `<div class="btn pri">回细目重学</div>`,
+      }),
+    },
+  },
+};
+
+let curK = 'A1';
+let curView = 'cloze';
+
+function renderMeta(k) {
+  const m = META[k];
+  document.getElementById('note').innerHTML = m.note;
+  document.getElementById('cmp').innerHTML = m.cmp.map(([h, v, s]) =>
+    `<div class="cmp-card"><h3>${h}</h3><div class="v">${v}</div><div class="s">${s || ''}</div></div>`
+  ).join('');
+  document.getElementById('flow').innerHTML = m.flow;
+  document.getElementById('bullets').innerHTML = m.bullets.map((b) => `<li>${b}</li>`).join('');
+  document.getElementById('trade').textContent = m.trade;
+  document.getElementById('panelTitle').textContent = `${k} · 说明`;
+}
+
+function renderPhone(k, viewKey) {
+  const pack = SCREENS[k];
+  const key = viewKey || pack.default;
+  curView = key;
+  document.getElementById('phSub').textContent = pack.sub;
+  document.getElementById('phoneNav').innerHTML = pack.nav.map(([id, label]) =>
+    `<button type="button" data-v="${id}" class="${id === key ? 'on' : ''}">${label}</button>`
+  ).join('');
+  const view = pack.views[key]();
+  document.getElementById('screen').innerHTML = view.body;
+  document.getElementById('footer').innerHTML = view.foot;
+  document.getElementById('phoneCap').textContent = `预览 · ${k} · ${pack.nav.find((x) => x[0] === key)?.[1] || ''}`;
+}
+
+function render(k) {
+  curK = k;
+  document.querySelectorAll('.scheme').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.k === k);
+  });
+  renderMeta(k);
+  renderPhone(k, SCREENS[k].default);
+}
+
+document.getElementById('schemes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.scheme');
+  if (!btn) return;
+  render(btn.dataset.k);
+});
+document.getElementById('phoneNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-v]');
+  if (!btn) return;
+  renderPhone(curK, btn.dataset.v);
+});
+
+render('A1');
+</script>
+</body>
+</html>

@@ -170,6 +170,8 @@ LLM_FEATURES: list[dict] = [
      "purpose": "语法原题单段解析(正确/错误同等,查看即生成)", "why": "规格明确的短解析抽取,关思考走快档", "locations": ["grammar_intensive_service.py:ensure_question_explanation"], "cache": "global", "store": "paper_q_explain_cache + user_paper_questions.explanation(按题面 md5)"},
     {"feature": "kp_title_rewrite", "mode": "chat", "surface": "运营后台", "module": "知识图谱·标题整理", "service": "kp_title_rewrite_service",
      "purpose": "语法点粗糙 name→短展示标题+一句说明(写入 description 首行,不改 name)", "why": "规格明确的改写抽取,快档即可", "locations": ["kp_title_rewrite_service.py:_suggest_one"], "cache": "global", "store": "kp_title_rewrite_cache(按 name|description md5)"},
+    {"feature": "grammar_facet_demo", "mode": "chat", "surface": "小程序端", "module": "课程语法·细目闯关", "service": "grammar_facet_quest_service",
+     "purpose": "细目缺可用教材句时补 2 条教学示范句(+中文提示);进页异步预热/点进 ensure,失败模板兜底", "why": "规格明确的短句生成,快档即可", "locations": ["grammar_facet_quest_service.py:ensure_facet_demo_sentences", "grammar_facet_quest_service.py:schedule_demo_warmups"], "cache": "global", "store": "grammar_facet_demo_cache(按 point|facet md5)"},
     {"feature": "unit_ls_extract_or_synth", "mode": "chat", "surface": "运营后台", "module": "教材·单元长难句理解向", "service": "unit_ls_understand_service",
      "purpose": "限量≤8句抽取或5-8句合成;贴本单元语法(gp)+tier梯度;截断不升档;只出en", "why": "规格明确的抽取/可控生成,快档即可;限量防截断超时", "locations": ["unit_ls_understand_service.py:_llm_extract_or_synth"], "cache": "global", "store": "unit_ls_understand_cache(v6原文md5+年级+语法范围)+unit_understand_ls"},
     {"feature": "unit_ls_enrich", "mode": "chat", "surface": "运营后台", "module": "教材·单元长难句理解向", "service": "unit_ls_understand_service",
