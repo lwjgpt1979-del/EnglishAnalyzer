@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>按地区·年份 · 批量解析并采纳入统计 · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --c-bad: #f56c6c;
+    --bg: #f4f7fb;
+    --card: #fff;
+    --line: #e8edf3;
+    --text: #1e293b;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .schemes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .scheme {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scheme.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .note {
+    background: #fff8eb; border: 1px solid #f3d19e; border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; color: #8a5a00; margin-bottom: 16px;
+  }
+  .note b { color: #6b4500; }
+  .fake-toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 14px;
+  }
+  .fake-select, .fake-btn {
+    height: 32px; border-radius: 6px; border: 1px solid var(--line);
+    padding: 0 12px; font-size: 13px; background: #fff; color: var(--text);
+  }
+  .fake-btn.primary { background: var(--c-primary); border-color: var(--c-primary); color: #fff; cursor: pointer; }
+  .fake-btn.ghost { cursor: pointer; }
+  .fake-btn.ok { background: var(--c-ok); border-color: var(--c-ok); color: #fff; cursor: pointer; }
+
+  /* dialog shell */
+  .mask {
+    position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+    display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 20;
+  }
+  .mask.hidden { display: none; }
+  .dlg {
+    width: min(980px, 100%); max-height: min(88vh, 860px);
+    background: #fff; border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 24px 64px rgba(15,23,42,.18);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { font-size: 16px; margin: 0; flex: 1; }
+  .dlg-tools { display: flex; gap: 6px; }
+  .icon-btn {
+    width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px;
+    background: #fff; cursor: pointer; color: var(--muted); font-size: 12px;
+  }
+  .dlg-bd { padding: 16px 18px; overflow: auto; flex: 1; }
+  .dlg-ft {
+    padding: 12px 18px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .hint { font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1; }
+
+  .filters {
+    display: grid; grid-template-columns: 1fr 1fr 120px auto; gap: 10px;
+    margin-bottom: 14px;
+  }
+  @media (max-width: 720px) {
+    .filters { grid-template-columns: 1fr 1fr; }
+  }
+  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  label.field select, label.field input {
+    height: 34px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px;
+    font-size: 13px; color: var(--text); background: #fff;
+  }
+  .types {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+    padding: 10px 12px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;
+  }
+  .types .title { width: 100%; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .chk {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: #fff; cursor: pointer; user-select: none;
+  }
+  .chk input { accent-color: var(--c-primary); }
+  .chk.on { border-color: #bfdbfe; background: #e8f2ff; color: var(--c-primary); }
+
+  .summary {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; font-size: 13px;
+  }
+  .pill {
+    background: #f1f5f9; border-radius: 999px; padding: 4px 10px; color: var(--muted);
+  }
+  .pill em { font-style: normal; color: var(--text); font-weight: 700; }
+  .pill.warn { background: #fff7e8; color: #9a6700; }
+  .pill.ok { background: #e9f6f1; color: #1f7a61; }
+
+  .papers { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .papers table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .papers th, .papers td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+  .papers th { background: #f8fafc; color: var(--muted); font-weight: 600; font-size: 12px; }
+  .papers tr:last-child td { border-bottom: 0; }
+  .papers tr:hover td { background: #fafcff; }
+  .papers .name { font-weight: 600; }
+  .papers .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .tag {
+    display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    margin-right: 4px; border: 1px solid var(--line); background: #fff;
+  }
+  .tag.pending { color: #9a6700; border-color: #f3d19e; background: #fff8eb; }
+  .tag.done { color: #1f7a61; border-color: #b7e4d4; background: #e9f6f1; }
+  .num { font-variant-numeric: tabular-nums; }
+  .num.hot { color: var(--c-warn); font-weight: 700; }
+
+  .run-box {
+    margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    background: #fafcff;
+  }
+  .run-box h3 { margin: 0 0 8px; font-size: 14px; }
+  .progress {
+    height: 10px; background: #e8edf3; border-radius: 999px; overflow: hidden; margin: 8px 0;
+  }
+  .progress > i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, #3d8bf5, #2fa98a);
+    transition: width .25s;
+  }
+  .log {
+    max-height: 160px; overflow: auto; font-size: 12px; color: var(--muted);
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  }
+  .log .ok { color: var(--c-ok); }
+  .log .bad { color: var(--c-bad); }
+  .log .run { color: var(--c-primary); }
+
+  .panel { display: none; }
+  .panel.on { display: block; }
+
+  .steps {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  @media (max-width: 720px) { .steps { grid-template-columns: 1fr 1fr; } }
+  .step {
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; font-size: 12px;
+  }
+  .step .n { color: var(--c-primary); font-weight: 700; margin-bottom: 4px; }
+  .step.on { border-color: #bfdbfe; background: #f0f7ff; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>按省 / 市 / 年份 · 批量解析并采纳入统计</h1>
+  <p class="lead">
+    原型：筛地区与年份 → 列出卷 → 勾选题型 → 只跑「尚未进入选项词统计」的题 → 多线程解析 + 一键采纳写库。
+    入口建议放在「平台真题」列表工具栏。
+  </p>
+
+  <div class="schemes">
+    <button type="button" class="scheme on" data-scheme="a">方案 A（推荐）· 一屏：筛选项 + 卷列表 + 跑批</button>
+    <button type="button" class="scheme" data-scheme="b">方案 B · 向导：先选范围，再确认题型与并发</button>
+  </div>
+
+  <div class="note">
+    <b>入统计口径（与现网一致）：</b>
+    题型 ∈ 可选项；已「一键采纳」且 <code>option_vocab_ready=true</code>（解析通过 + 主考词挂边成功）。
+    「未进统计」= 尚无确认解析 / 有草稿未采纳 / 已确认但 ready≠true。
+    跑批流程：<b>批量解析（suggest）→ 硬校验通过项自动一键采纳（confirm）</b>；不另写统计表。
+  </div>
+
+  <div class="fake-toolbar">
+    <select class="fake-select"><option>教材</option></select>
+    <select class="fake-select"><option>学段</option></select>
+    <select class="fake-select"><option>地区</option></select>
+    <select class="fake-select"><option>考试</option></select>
+    <select class="fake-select"><option>年份</option></select>
+    <select class="fake-select"><option>状态</option></select>
+    <button type="button" class="fake-btn ghost">重置</button>
+    <button type="button" class="fake-btn primary">+ 上传真题</button>
+    <button type="button" class="fake-btn ok" id="openDlg">按地区批量入统计…</button>
+    <span class="hint">← 新入口（原型）</span>
+  </div>
+
+  <p class="hint">下方为弹窗预览。也可点工具栏按钮重新打开。</p>
+</div>
+
+<!-- ========== 方案 A ========== -->
+<div class="mask" id="dlgA">
+  <div class="dlg">
+    <div class="dlg-hd">
+      <h2>按地区 · 批量解析并采纳入统计</h2>
+      <div class="dlg-tools">
+        <button type="button" class="icon-btn" title="最大化">▢</button>
+        <button type="button" class="icon-btn" title="关闭" data-close>✕</button>
+      </div>
+    </div>
+    <div class="dlg-bd">
+      <div class="filters">
+        <label class="field">省
+          <select id="prov">
+            <option value="32">江苏省</option>
+            <option value="33">浙江省</option>
+            <option value="37">山东省</option>
+          </select>
+        </label>
+        <label class="field">市
+          <select id="city">
+            <option value="3206">南通市</option>
+            <option value="3201">南京市</option>
+            <option value="3202">无锡市</option>
+            <option value="3205">苏州市</option>
+          </select>
+        </label>
+        <label class="field">年份
+          <select id="year">
+            <option>2025</option>
+            <option>2024</option>
+            <option>2023</option>
+            <option value="">全部年份</option>
+          </select>
+        </label>
+        <label class="field">&nbsp;
+          <button type="button" class="fake-btn primary" id="scanBtn" style="height:34px">扫描待跑题</button>
+        </label>
+      </div>
+
+      <div class="types" id="typesA">
+        <div class="title">题型（可多选）· 仅下列会进入选项词统计池</div>
+        <label class="chk on"><input type="checkbox" checked data-t="单项选择">单项选择</label>
+        <label class="chk on"><input type="checkbox" checked data-t="完形填空">完形填空</label>
+        <label class="chk on"><input type="checkbox" checked data-t="短文填空">短文填空</label>
+        <label class="chk on"><input type="checkbox" checked data-t="词汇运用">词汇运用</label>
+        <label class="chk on"><input type="checkbox" checked data-t="动词填空">动词填空</label>
+        <label class="chk"><input type="checkbox" data-t="全部">全选/清空</label>
+      </div>
+
+      <div class="summary" id="sumA">
+        <span class="pill">范围 <em>江苏省南通市 · 2025</em></span>
+        <span class="pill">卷 <em>3</em></span>
+        <span class="pill warn">待入统计题 <em>86</em></span>
+        <span class="pill ok">已在统计 <em>8</em></span>
+        <span class="pill">并发 <em id="concLabel">6</em></span>
+      </div>
+
+      <div class="papers">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px"><input type="checkbox" id="checkAll" checked></th>
+              <th>试卷</th>
+              <th>待跑（按题型）</th>
+              <th>已在统计</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="paperBody">
+            <tr data-pending="48">
+              <td><input type="checkbox" class="pchk" checked></td>
+              <td>
+                <div class="name">江苏省南通市2025年中考英语真题（原卷版）</div>
+                <div class="meta">2025 · 译林版 · 江苏省南通市 · 中考 · 草稿</div>
+              </td>
+              <td class="num">
+                单选 2 · 完形 15 · 短文 10 · 词汇 10 · 动词 10
+                <div class="meta"><span class="num hot">共 47 题待跑</span></div>
+              </td>
+              <td class="num">8</td>
+              <td><span class="tag pending">部分未入统计</span></td>
+            </tr>
+            <tr data-pending="28">
+              <td><input type="checkbox" class="pchk" checked></td>
+              <td>
+                <div class="name">江苏省南通市2025年中考英语模拟卷（A）</div>
+                <div class="meta">2025 · 江苏省南通市 · 模拟 · 草稿</div>
+              </td>
+              <td class="num">
+                单选 10 · 完形 15 · 短文 0 · 词汇 0 · 动词 0
+                <div class="meta"><span class="num hot">共 25 题待跑</span></div>
+              </td>
+              <td class="num">0</td>
+              <td><span class="tag pending">未入统计</span></td>
+            </tr>
+            <tr data-pending="0">
+              <td><input type="checkbox" class="pchk"></td>
+              <td>
+                <div class="name">示例：已全部入统计的卷（默认不勾）</div>
+                <div class="meta">2025 · 江苏省南通市</div>
+              </td>
+              <td class="num">0</td>
+              <td class="num">22</td>
+              <td><span class="tag done">已齐</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="run-box">
+        <h3>跑批设置</h3>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:13px">
+          <label>并发线程
+            <input id="conc" type="range" min="2" max="12" value="6" style="vertical-align:middle;width:120px">
+          </label>
+          <label><input type="checkbox" id="autoAdopt" checked> 解析通过后自动一键采纳（写 ready）</label>
+          <label><input type="checkbox" id="skipFailed" checked> 单题失败不中断整批</label>
+        </div>
+        <div class="progress"><i id="barA"></i></div>
+        <div class="hint" id="progText">就绪 · 勾选卷后点「开始跑批」</div>
+        <div class="log" id="logA" hidden></div>
+      </div>
+    </div>
+    <div class="dlg-ft">
+      <span class="hint">只处理勾选卷 × 勾选题型中「未进统计」的题；已 ready 的跳过，不重复付费。</span>
+      <span class="spacer"></span>
+      <button type="button" class="fake-btn ghost" data-close>关闭</button>
+      <button type="button" class="fake-btn primary" id="runA">开始跑批</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 方案 B ========== -->
+<div class="mask hidden" id="dlgB">
+  <div class="dlg">
+    <div class="dlg-hd">
+      <h2>按地区入统计 · 向导</h2>
+      <div class="dlg-tools">
+        <button type="button" class="icon-btn" data-close>✕</button>
+      </div>
+    </div>
+    <div class="dlg-bd">
+      <div class="steps">
+        <div class="step on"><div class="n">1. 选范围</div>省 / 市 / 年份</div>
+        <div class="step"><div class="n">2. 选题型</div>单选·完形·填空类</div>
+        <div class="step"><div class="n">3. 确认卷</div>预览待跑量</div>
+        <div class="step"><div class="n">4. 跑批</div>多线程解析+采纳</div>
+      </div>
+      <div class="filters" style="grid-template-columns:1fr 1fr 1fr">
+        <label class="field">省<select><option>江苏省</option></select></label>
+        <label class="field">市<select><option>南通市</option></select></label>
+        <label class="field">年份<select><option>2025</option></select></label>
+      </div>
+      <p class="hint">方案 B 把步骤拆开，适合运营不熟口径时；代价是多点两次「下一步」。推荐正式做方案 A 一屏完成。</p>
+      <div class="summary">
+        <span class="pill warn">预估待跑 <em>86</em> 题 · 约 2 波 × 并发 6</span>
+      </div>
+    </div>
+    <div class="dlg-ft">
+      <span class="spacer"></span>
+      <button type="button" class="fake-btn ghost" data-close>取消</button>
+      <button type="button" class="fake-btn primary">下一步 · 选题型</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const dlgA = document.getElementById('dlgA')
+  const dlgB = document.getElementById('dlgB')
+  const schemes = document.querySelectorAll('.scheme')
+
+  function show(which) {
+    dlgA.classList.toggle('hidden', which !== 'a')
+    dlgB.classList.toggle('hidden', which !== 'b')
+    schemes.forEach(s => s.classList.toggle('on', s.dataset.scheme === which))
+  }
+  schemes.forEach(s => s.addEventListener('click', () => show(s.dataset.scheme)))
+  document.getElementById('openDlg').addEventListener('click', () => {
+    const on = document.querySelector('.scheme.on')
+    show(on ? on.dataset.scheme : 'a')
+  })
+  document.querySelectorAll('[data-close]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      dlgA.classList.add('hidden')
+      dlgB.classList.add('hidden')
+    })
+  })
+
+  // types toggle
+  document.querySelectorAll('#typesA .chk').forEach(lab => {
+    const inp = lab.querySelector('input')
+    lab.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT') return
+      inp.checked = !inp.checked
+      lab.classList.toggle('on', inp.checked)
+      if (inp.dataset.t === '全部') {
+        const on = inp.checked
+        document.querySelectorAll('#typesA .chk input[data-t]:not([data-t="全部"])').forEach(x => {
+          x.checked = on
+          x.closest('.chk').classList.toggle('on', on)
+        })
+      }
+    })
+    inp.addEventListener('change', () => lab.classList.toggle('on', inp.checked))
+  })
+
+  document.getElementById('checkAll').addEventListener('change', (e) => {
+    document.querySelectorAll('.pchk').forEach(c => { c.checked = e.target.checked })
+  })
+
+  const conc = document.getElementById('conc')
+  const concLabel = document.getElementById('concLabel')
+  conc.addEventListener('input', () => { concLabel.textContent = conc.value })
+
+  document.getElementById('scanBtn').addEventListener('click', () => {
+    const city = document.getElementById('city').selectedOptions[0].text
+    const year = document.getElementById('year').value || '全部年份'
+    document.getElementById('sumA').innerHTML =
+      `<span class="pill">范围 <em>江苏省${city} · ${year}</em></span>` +
+      `<span class="pill">卷 <em>3</em></span>` +
+      `<span class="pill warn">待入统计题 <em>86</em></span>` +
+      `<span class="pill ok">已在统计 <em>8</em></span>` +
+      `<span class="pill">并发 <em id="concLabel">${conc.value}</em></span>`
+  })
+
+  // fake run
+  document.getElementById('runA').addEventListener('click', async () => {
+    const log = document.getElementById('logA')
+    const bar = document.getElementById('barA')
+    const text = document.getElementById('progText')
+    const auto = document.getElementById('autoAdopt').checked
+    log.hidden = false
+    log.innerHTML = ''
+    const n = 12
+    const threads = Number(conc.value)
+    text.textContent = `跑批中 · 并发 ${threads} · ${auto ? '解析后自动采纳' : '仅解析不采纳'}`
+    for (let i = 1; i <= n; i++) {
+      await new Promise(r => setTimeout(r, 180))
+      bar.style.width = `${(i / n) * 100}%`
+      const ok = i !== 7
+      const line = document.createElement('div')
+      line.className = ok ? 'ok' : 'bad'
+      line.textContent = ok
+        ? `[${i}/${n}] 南通2025 · 完形 #${10 + i} suggest✓${auto ? ' → confirm✓ ready=true' : ''}`
+        : `[${i}/${n}] 南通2025 · 完形 #17 线索非子串 → 跳过采纳`
+      log.appendChild(line)
+      log.scrollTop = log.scrollHeight
+    }
+    text.textContent = auto
+      ? '完成 · 11 题已采纳入统计 · 1 题需改（未写 ready）'
+      : '完成 · 仅解析暂存 · 未采纳则统计仍不变'
+  })
+})()
+</script>
+</body>
+</html>

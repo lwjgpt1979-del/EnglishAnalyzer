@@ -529,15 +529,57 @@ export function fetchUnitPdfBlob(unitId: string): Promise<Blob> {
 
 // ── 单元结构化解析(语法点+分级句 / 听力考点+句组 / 作文要求+正文)──
 export interface UnitSentence { id: string; text: string; difficulty: number | null; syntax_points: string[] }
-export interface UnitSectionItem { id: string; point_name: string | null; node_id: string | null; node_code: string | null; node_name?: string | null; sentences: UnitSentence[] }
+/** 语法挂靠点下的教学细目(方案 D);挂图谱仍用外层点 */
+export interface UnitGrammarFacet {
+  name: string
+  sentences: UnitSentence[]
+}
+export interface UnitSectionItem {
+  id: string
+  point_name: string | null
+  node_id: string | null
+  node_code: string | null
+  node_name?: string | null
+  extract_source?: string | null
+  facets?: UnitGrammarFacet[]
+  sentences: UnitSentence[]
+}
 export interface UnitStructured {
   grammar: UnitSectionItem[]
   listening: UnitSectionItem[]
   writing: { id: string; requirement: string | null; body_text: string | null } | null
   counts?: { grammar: number; listening: number; writing: number; sentences: number }
+  link_counts?: { linked?: number; candidate?: number; unmatched?: number; skipped?: number }
+  extract_counts?: Record<string, unknown>
+  steps?: string[]
+  source?: string
 }
 export function getUnitStructured(unitId: string): Promise<UnitStructured> {
   return unwrap(request.get(`/admin/curriculum/units/${unitId}/structured`))
+}
+export function generateUnitStructured(unitId: string): Promise<UnitStructured> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/generate`, {}, { timeout: 180000 }))
+}
+// 第二步:语法点→词法/句法、听力考点→听力,一键关联(命中关联,未命中留待人工)
+export function linkUnitStructured(unitId: string): Promise<UnitStructured & { link_counts?: { linked?: number; candidate?: number; unmatched?: number; skipped?: number } }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/link`, {}, { timeout: 120000 }))
+}
+/** 按来源(pdf|paste|merge)缺则抽、再挂图谱 */
+export function linkUnitStructuredBySource(
+  unitId: string,
+  source: 'pdf' | 'paste' | 'merge',
+): Promise<UnitStructured> {
+  return unwrap(request.post(
+    `/admin/curriculum/units/${unitId}/structured/link-by-source`,
+    { source },
+    { timeout: 300000 },
+  ))
+}
+/** 清除本单元全部语法板块(含句子)及其图谱关联;不动听力/作文 */
+export function clearUnitGrammar(
+  unitId: string,
+): Promise<UnitStructured & { clear_counts?: { deleted?: number; unlinked_nodes?: number } }> {
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/clear-grammar`, {}))
 }
 export function getUnitCourseText(unitId: string): Promise<{ course_text: string; saved: boolean }> {
   return unwrap(request.get(`/admin/curriculum/units/${unitId}/course-text`))
@@ -586,14 +628,6 @@ export function updateUnitUnderstandLs(
 }
 export function deleteUnitUnderstandLs(unitId: string, itemId: string): Promise<{ id: string; deleted: boolean }> {
   return unwrap(request.delete(`/admin/curriculum/units/${unitId}/understand-ls/${itemId}`))
-}
-
-export function generateUnitStructured(unitId: string): Promise<UnitStructured> {
-  return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/generate`, {}, { timeout: 180000 }))
-}
-// 第二步:语法点→词法/句法、听力考点→听力,一键关联(命中关联,未命中留待人工)
-export function linkUnitStructured(unitId: string): Promise<UnitStructured & { link_counts?: { linked?: number; candidate?: number; unmatched?: number; skipped?: number } }> {
-  return unwrap(request.post(`/admin/curriculum/units/${unitId}/structured/link`, {}, { timeout: 120000 }))
 }
 // 人工挂靠:把某板块关联到图谱里已存在的节点
 export function linkSectionNode(sectionId: string, nodeId: string): Promise<{ node_id: string; node_code: string; name: string }> {
@@ -775,6 +809,73 @@ export function getKpExamStats(f: ExamStatFilter = {}): Promise<ExamStats> {
   const params: Record<string, string> = {}
   for (const [k, v] of Object.entries(f)) if (v) params[k] = v
   return unwrap(request.get('/admin/kp-exam-stats', { params }))
+}
+
+// 中考 · 选项词主考/干扰统计
+export interface VocabOptionRoleWordRow {
+  word_id: string
+  word: string
+  correct_count: number
+  distractor_count: number
+  question_count: number
+  region_code?: string
+  region_name?: string
+}
+export interface VocabOptionRoleRegionRow {
+  region_code: string
+  region_name?: string
+  question_count: number
+  word_count: number
+  correct_link_count: number
+  distractor_link_count: number
+}
+export interface VocabOptionRoleStats {
+  total: number
+  items: VocabOptionRoleWordRow[] | VocabOptionRoleRegionRow[]
+  pool?: string
+  exam_type?: string
+  group_by?: string
+  region_level?: string
+  region_code?: string
+  unknown_question_count?: number
+}
+export interface VocabOptionRoleStatsFilter {
+  q?: string
+  pool?: string
+  exam_type?: string
+  group_by?: 'word' | 'region'
+  region_level?: 'province' | 'city'
+  region_code?: string
+  sort?: string
+  skip?: number
+  limit?: number
+}
+export function getVocabOptionRoleStats(f: VocabOptionRoleStatsFilter = {}): Promise<VocabOptionRoleStats> {
+  const params: Record<string, string | number> = {}
+  for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== '') params[k] = v
+  return unwrap(request.get('/admin/vocab/option-role-stats', { params }))
+}
+
+export interface WordPlatformQuestionRow {
+  question_id: string
+  paper_id?: string | null
+  question_no?: string | null
+  section?: string | null
+  stem?: string
+  link_kind?: string
+  option_key?: string | null
+  analysis_kind?: string | null
+  region_code?: string | null
+  region_name?: string | null
+  exam_type?: string | null
+  option_vocab?: OptionVocabChips
+  logic_display?: LogicDisplay | null
+}
+export function listWordPlatformQuestions(
+  wordId: string,
+  params: { role?: 'correct' | 'distractor' | 'any'; pool?: string; exam_type?: string; region_code?: string; skip?: number; limit?: number } = {},
+): Promise<{ items: WordPlatformQuestionRow[]; total: number; word?: string; role: string }> {
+  return unwrap(request.get(`/admin/vocab/${wordId}/platform-questions`, { params }))
 }
 
 // 节点详情 / 维护(D2)
@@ -1657,6 +1758,12 @@ export interface PlatformPaper {
   created_at?: string | null
 }
 export interface QuestionKpRef { node_id: string; name: string; code?: string | null }
+/** 真题选项词挂边只读 chip */
+export interface OptionVocabChips {
+  correct: string[]
+  distractor: string[]
+  unresolved?: boolean
+}
 export interface PaperQuestion {
   id: string
   question_no?: string | null
@@ -1669,6 +1776,8 @@ export interface PaperQuestion {
   block_id?: string | null
   passage?: string | null
   kps?: QuestionKpRef[]
+  /** 考点后展示:主·考 / 次·干扰 */
+  option_vocab?: OptionVocabChips | null
 }
 export interface PaperDetail { paper: PlatformPaper; questions: PaperQuestion[] }
 
@@ -1807,6 +1916,8 @@ export interface QuestionAnalysis {
   slot?: string | null
   clue_type?: string
   clue?: string
+  logic_stem?: string       // 单独逻辑题挖空句(完形/短文可按原文改写;缺则程序回填)
+  logic_stem_source?: 'llm' | 'compose' | string
   kp_codes?: string[]
   answer_letter?: string
   // 干扰项=原义/义项+干扰机制(完形与阅读同构);distractor_types 为历史枚举字段,仅兼容旧数据读取
@@ -1835,8 +1946,20 @@ export interface QuestionAnalysis {
   answer?: string
   validation_skipped?: string[]
   kind?: string
+  option_vocab_ready?: boolean
+  logic_display?: LogicDisplay
   confirmed_by?: string
   confirmed_at?: string
+}
+
+export interface LogicDisplay {
+  ready?: boolean
+  logic_type?: 'mcq' | 'fill' | string
+  logic_stem?: string
+  logic_options?: string[]
+  logic_options_line?: string
+  logic_answer?: string | null
+  logic_answer_text?: string | null
 }
 export interface AnalysisSuggestItem {
   question_id: string
@@ -1844,6 +1967,9 @@ export interface AnalysisSuggestItem {
   errors: string[]
   existing?: QuestionAnalysis | null
   staged?: boolean       // true=来自暂存(未重跑 LLM)
+  /** 程序预览:主考/干扰词(确认采纳才落库) */
+  option_vocab?: OptionVocabChips
+  logic_display?: LogicDisplay
 }
 export function suggestQuestionAnalysis(questionIds: string[], force = false): Promise<AnalysisSuggestItem[]> {
   return unwrap(request.post('/admin/question-analysis/suggest',
@@ -1870,6 +1996,77 @@ export function confirmQuestionAnalysisBatch(
   items: { question_id: string; analysis: QuestionAnalysis }[],
 ): Promise<{ confirmed: string[]; failed: { question_id: string; error: string }[] }> {
   return unwrap(request.post('/admin/question-analysis/confirm-batch', { items }))
+}
+
+/** 按地区·年份批量解析并采纳入选项词统计 */
+export interface PipelinePaperRow {
+  paper_id: string
+  name: string
+  year?: number | null
+  region_code?: string | null
+  region_name?: string | null
+  exam_type?: string | null
+  status?: string
+  pending_count: number
+  ready_count: number
+  pending_by_type: Record<string, number>
+  ready_by_type: Record<string, number>
+}
+export interface PipelineScanOut {
+  region_code: string
+  year?: number | null
+  types: string[]
+  paper_count: number
+  pending_total: number
+  ready_total: number
+  papers: PipelinePaperRow[]
+}
+export interface PipelineJobOut {
+  job_id: string
+  status: string
+  total: number
+  done: number
+  failed: number
+  adopted: number
+  suggested: number
+  error?: string
+  logs?: string[]
+  concurrency?: number
+  auto_adopt?: boolean
+  force_suggest?: boolean
+  region_code?: string | null
+  region_name?: string | null
+  year?: number | null
+  types?: string[]
+  paper_ids?: string[]
+  created_at?: string | null
+  updated_at?: string | null
+  finished_at?: string | null
+}
+export function scanOptionVocabPipeline(body: {
+  region_code: string
+  year?: number | null
+  types: string[]
+}): Promise<PipelineScanOut> {
+  return unwrap(request.post('/admin/option-vocab-pipeline/scan', body))
+}
+export function runOptionVocabPipeline(body: {
+  paper_ids: string[]
+  types: string[]
+  concurrency?: number
+  auto_adopt?: boolean
+  force_suggest?: boolean
+  region_code?: string | null
+  region_name?: string | null
+  year?: number | null
+}): Promise<{ job_id: string }> {
+  return unwrap(request.post('/admin/option-vocab-pipeline/run', body, { timeout: 60000 }))
+}
+export function getOptionVocabPipelineJob(jobId: string): Promise<PipelineJobOut> {
+  return unwrap(request.get(`/admin/option-vocab-pipeline/jobs/${jobId}`))
+}
+export function listOptionVocabPipelineJobs(limit = 20): Promise<{ items: PipelineJobOut[]; total: number }> {
+  return unwrap(request.get('/admin/option-vocab-pipeline/jobs', { params: { limit } }))
 }
 
 // P0:按考点「反向生成」仿真(dimension: verb_fill 动词填空 / vocab_form 词汇运用 / dictation / grammar)

@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>中考 · 选项词统计 · Admin 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-bad: #e85d5d;
+    --bg: #eef3f9;
+    --card: #fff;
+    --line: #e5ebf2;
+    --text: #1e293b;
+    --muted: #64748b;
+    --sidebar: #1e293b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  /* ── 外壳：模拟 admin 布局 ── */
+  .shell { display: flex; min-height: 100vh; }
+  .side {
+    width: 200px; background: var(--sidebar); color: #cbd5e1; padding: 20px 0; flex-shrink: 0;
+  }
+  .side .logo { padding: 0 16px 20px; font-size: 14px; font-weight: 700; color: #fff; }
+  .side nav a {
+    display: block; padding: 9px 16px; font-size: 13px; color: #94a3b8; text-decoration: none;
+  }
+  .side nav a.on { background: rgba(61,139,245,.15); color: #93c5fd; border-right: 2px solid var(--c-primary); }
+  .main { flex: 1; padding: 20px 24px 48px; overflow: auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 16px; }
+
+  /* ── 筛选栏 ── */
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 14px;
+  }
+  .tag {
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+    background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;
+  }
+  .tag.pool { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; }
+  .fld {
+    display: flex; align-items: center; gap: 6px; font-size: 12px;
+  }
+  .fld label { color: var(--muted); white-space: nowrap; }
+  .fld select, .fld input {
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px;
+    background: #fff; min-width: 100px;
+  }
+  .fld input { min-width: 140px; }
+  .btn-sm {
+    border: 1px solid var(--line); background: #fff; border-radius: 6px;
+    padding: 5px 12px; font-size: 12px; cursor: pointer;
+  }
+  .btn-sm.primary { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+
+  /* ── Tab ── */
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab {
+    border: 1px solid var(--line); background: #fff; border-radius: 8px 8px 0 0;
+    padding: 8px 16px; font-size: 13px; cursor: pointer; color: var(--muted);
+    border-bottom: none; position: relative; top: 1px;
+  }
+  .tab.on { background: var(--card); color: var(--c-primary); font-weight: 600; border-color: var(--line); }
+
+  /* ── 面包屑 ── */
+  .crumb {
+    font-size: 12px; color: var(--muted); margin-bottom: 10px; display: flex; gap: 4px; align-items: center;
+  }
+  .crumb a { color: var(--c-primary); cursor: pointer; text-decoration: none; }
+  .crumb a:hover { text-decoration: underline; }
+  .crumb .sep { color: #cbd5e1; }
+
+  /* ── 卡片 / 表 ── */
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 0 10px 10px 10px;
+    overflow: hidden;
+  }
+  .card-hd {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fafbfc;
+  }
+  .card-hd h2 { margin: 0; font-size: 14px; }
+  .card-hd .hint { font-size: 11px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { background: #f8fafc; font-weight: 600; font-size: 12px; color: #475569; }
+  tr:hover td { background: #f8fafc; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: #e8f2ff; }
+  tr.sel td { background: #e8f2ff; }
+  .num { font-variant-numeric: tabular-nums; }
+  .num.ok { color: var(--c-ok); font-weight: 600; }
+  .num.bad { color: var(--c-bad); font-weight: 600; }
+  .link {
+    border: 0; background: none; color: var(--c-primary); font-size: 12px;
+    cursor: pointer; padding: 0;
+  }
+  .link:hover { text-decoration: underline; }
+  .pager {
+    display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+    padding: 10px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line);
+  }
+  .pager b { color: var(--text); }
+
+  /* ── chip ── */
+  .chip {
+    display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid;
+  }
+  .chip.main { background: #e9f6f1; border-color: #b7e4d4; color: #1f7a61; }
+  .chip.sec { background: #fef0f0; border-color: #f5c2c2; color: #c45656; }
+
+  /* ── 弹层：反查原题 ── */
+  .overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.35);
+    z-index: 100; align-items: center; justify-content: center; padding: 20px;
+  }
+  .overlay.on { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; width: min(720px, 100%); max-height: 85vh;
+    display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(15,23,42,.12);
+  }
+  .modal-hd {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .modal-hd h3 { margin: 0; font-size: 15px; }
+  .modal-hd .ctrl { display: flex; gap: 10px; color: #94a3b8; font-size: 14px; }
+  .modal-bd { padding: 12px 16px; overflow: auto; flex: 1; }
+  .q-item {
+    padding: 10px 0; border-bottom: 1px dashed var(--line);
+  }
+  .q-item:last-child { border-bottom: 0; }
+  .q-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .q-stem { font-size: 13px; margin-bottom: 6px; }
+  .q-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+  /* ── 说明侧栏 ── */
+  .layout { display: grid; grid-template-columns: 1fr 280px; gap: 14px; align-items: start; }
+  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .side { display: none; } }
+  .note {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+    font-size: 12px; color: #475569;
+  }
+  .note h4 { margin: 0 0 8px; font-size: 13px; color: var(--text); }
+  .note ul { margin: 0; padding-left: 18px; }
+  .note li { margin-bottom: 4px; }
+  .note .api {
+    margin-top: 10px; padding: 8px; background: #0f172a; color: #e2e8f0;
+    border-radius: 6px; font-family: ui-monospace, monospace; font-size: 10px;
+    word-break: break-all;
+  }
+  .warn {
+    margin-top: 10px; padding: 8px 10px; background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 6px; font-size: 11px; color: #92400e;
+  }
+  .panel { display: none; }
+  .panel.on { display: block; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="logo">engGramer Admin</div>
+    <nav>
+      <a href="#">真题管理</a>
+      <a href="#">考点统计</a>
+      <a class="on" href="#">选项词统计</a>
+      <a href="#">词库</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <h1>中考 · 选项词角色统计</h1>
+    <p class="lead">
+      池：<strong>独立词项单选</strong>（grammar_mc）· 排除阅读/完形/填空 · 按<strong>省</strong>或<strong>市</strong>聚合，点次数反查原题。
+    </p>
+
+    <div class="toolbar">
+      <span class="tag">exam_type = 中考</span>
+      <span class="tag pool">pool = standalone_word_mcq</span>
+      <div class="fld">
+        <label>省</label>
+        <select id="sel-prov">
+          <option value="">全国</option>
+          <option value="32" selected>江苏省</option>
+          <option value="33">浙江省</option>
+          <option value="44">广东省</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label>市</label>
+        <select id="sel-city">
+          <option value="">全部</option>
+          <option value="3202">无锡市</option>
+          <option value="3201">南京市</option>
+          <option value="3205">苏州市</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label>搜词</label>
+        <input type="text" placeholder="如 worse / Can" id="q-input" />
+      </div>
+      <button class="btn-sm primary" type="button">查询</button>
+      <button class="btn-sm" type="button" id="btn-reset">重置</button>
+    </div>
+
+    <div class="layout">
+      <div>
+        <div class="tabs">
+          <button class="tab on" data-view="region-prov">按省汇总</button>
+          <button class="tab" data-view="region-city">按市汇总</button>
+          <button class="tab" data-view="word-region">词 × 地区</button>
+        </div>
+
+        <!-- 按省 -->
+        <div class="panel on" id="view-region-prov">
+          <div class="crumb" id="crumb-prov">
+            <a data-go="all">全国</a>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <h2>各省 · 中考语法单选 · 选项词覆盖</h2>
+              <span class="hint">group_by=region · region_level=province</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>省</th>
+                  <th>原题数</th>
+                  <th>挂边词数</th>
+                  <th>主·考链</th>
+                  <th>次·干扰链</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tb-prov">
+                <tr class="clickable" data-prov="32">
+                  <td><strong>江苏省</strong></td>
+                  <td class="num">86</td>
+                  <td class="num">412</td>
+                  <td class="num ok">520</td>
+                  <td class="num bad">980</td>
+                  <td><button class="link" data-drill="32">下钻各市 →</button></td>
+                </tr>
+                <tr class="clickable" data-prov="33">
+                  <td><strong>浙江省</strong></td>
+                  <td class="num">72</td>
+                  <td class="num">368</td>
+                  <td class="num ok">445</td>
+                  <td class="num bad">812</td>
+                  <td><button class="link" data-drill="33">下钻各市 →</button></td>
+                </tr>
+                <tr class="clickable" data-prov="44">
+                  <td><strong>广东省</strong></td>
+                  <td class="num">64</td>
+                  <td class="num">301</td>
+                  <td class="num ok">388</td>
+                  <td class="num bad">705</td>
+                  <td><button class="link" data-drill="44">下钻各市 →</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pager">共 <b>28</b> 省 · 第 1 / 3 页 · 缺地区 <b>12</b> 题</div>
+          </div>
+        </div>
+
+        <!-- 按市（江苏省下钻示例） -->
+        <div class="panel" id="view-region-city">
+          <div class="crumb">
+            <a data-go="all">全国</a><span class="sep">/</span>
+            <span>江苏省</span>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <h2>江苏省 · 各市汇总</h2>
+              <span class="hint">region_code=32 · region_level=city</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>市</th>
+                  <th>原题数</th>
+                  <th>挂边词数</th>
+                  <th>主·考链</th>
+                  <th>次·干扰链</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="clickable sel">
+                  <td><strong>无锡市</strong></td>
+                  <td class="num">14</td>
+                  <td class="num">68</td>
+                  <td class="num ok">82</td>
+                  <td class="num bad">156</td>
+                  <td><button class="link" data-open-word="3202">看词表 →</button></td>
+                </tr>
+                <tr class="clickable">
+                  <td><strong>南京市</strong></td>
+                  <td class="num">18</td>
+                  <td class="num">91</td>
+                  <td class="num ok">108</td>
+                  <td class="num bad">198</td>
+                  <td><button class="link" data-open-word="3201">看词表 →</button></td>
+                </tr>
+                <tr class="clickable">
+                  <td><strong>苏州市</strong></td>
+                  <td class="num">16</td>
+                  <td class="num">77</td>
+                  <td class="num ok">95</td>
+                  <td class="num bad">172</td>
+                  <td><button class="link" data-open-word="3205">看词表 →</button></td>
+                </tr>
+                <tr>
+                  <td><strong>常州市</strong></td>
+                  <td class="num">12</td>
+                  <td class="num">54</td>
+                  <td class="num ok">61</td>
+                  <td class="num bad">118</td>
+                  <td><button class="link">看词表 →</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pager">共 <b>13</b> 市 · 第 1 / 2 页</div>
+          </div>
+        </div>
+
+        <!-- 词 × 地区 -->
+        <div class="panel" id="view-word-region">
+          <div class="crumb">
+            <a data-go="all">全国</a><span class="sep">/</span>
+            <a data-go="prov">江苏省</a><span class="sep">/</span>
+            <span>无锡市</span>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <h2>词 × 地区 · 主考 / 干扰次数</h2>
+              <span class="hint">group_by=word · region_code=3202</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>词</th>
+                  <th>地区</th>
+                  <th>主·考（题数）</th>
+                  <th>次·干扰（题数）</th>
+                  <th>合计题</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Can</strong></td>
+                  <td>无锡市</td>
+                  <td class="num ok"><button class="link" data-modal="Can-correct">3</button></td>
+                  <td class="num bad"><button class="link" data-modal="Can-dist">1</button></td>
+                  <td class="num">4</td>
+                  <td><button class="link" data-modal="Can-any">全部原题</button></td>
+                </tr>
+                <tr>
+                  <td><strong>worse</strong></td>
+                  <td>无锡市</td>
+                  <td class="num ok"><button class="link" data-modal="worse-correct">2</button></td>
+                  <td class="num bad"><button class="link" data-modal="worse-dist">1</button></td>
+                  <td class="num">3</td>
+                  <td><button class="link" data-modal="worse-any">全部原题</button></td>
+                </tr>
+                <tr>
+                  <td><strong>bored</strong></td>
+                  <td>无锡市</td>
+                  <td class="num ok"><button class="link">2</button></td>
+                  <td class="num bad"><button class="link">0</button></td>
+                  <td class="num">2</td>
+                  <td><button class="link">全部原题</button></td>
+                </tr>
+                <tr>
+                  <td><strong>must</strong></td>
+                  <td>无锡市</td>
+                  <td class="num ok"><button class="link">0</button></td>
+                  <td class="num bad"><button class="link">3</button></td>
+                  <td class="num">3</td>
+                  <td><button class="link">全部原题</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pager">共 <b>68</b> 词 · 第 1 / 2 页</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="note">
+        <h4>交互说明</h4>
+        <ul>
+          <li><strong>按省</strong>：全国各省排行；点「下钻」→ 按市 Tab + 省筛选</li>
+          <li><strong>按市</strong>：需先选省；点「看词表」→ 词×地区 Tab</li>
+          <li><strong>词×地区</strong>：点绿色/粉色数字 → 反查原题弹窗</li>
+          <li>顶部「搜词」在任意 Tab 过滤词表</li>
+        </ul>
+        <div class="api" id="api-hint">GET /admin/vocab/option-role-stats?exam_type=中考&group_by=region&region_level=province</div>
+        <div class="warn">
+          缺 <code>region_code</code> 的题不进省/市分组，汇总页底部展示 unknown 计数，便于运营补元数据。
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<!-- 反查原题弹窗 -->
+<div class="overlay" id="modal">
+  <div class="modal">
+    <div class="modal-hd">
+      <h3 id="modal-title">worse · 主·考 · 无锡市 · 中考</h3>
+      <div class="ctrl"><span title="最大化">⛶</span><span title="关闭" id="modal-close" style="cursor:pointer">✕</span></div>
+    </div>
+    <div class="modal-bd" id="modal-body">
+      <div class="q-item">
+        <div class="q-meta">2025 · 江苏省无锡市中考 · 单项选择 · 第 4 题</div>
+        <div class="q-stem">But it only gets ______ when you compare yourself with others.</div>
+        <div class="q-chips">
+          <span class="chip main">主·考 worse</span>
+          <span class="chip sec">次·干扰 good</span>
+          <span class="chip sec">次·干扰 better</span>
+          <span class="chip sec">次·干扰 bad</span>
+        </div>
+      </div>
+      <div class="q-item">
+        <div class="q-meta">2024 · 江苏省无锡市中考 · 单项选择 · 第 6 题</div>
+        <div class="q-stem">Things got even ______ after the heavy rain.</div>
+        <div class="q-chips">
+          <span class="chip main">主·考 worse</span>
+          <span class="chip sec">次·干扰 worst</span>
+          <span class="chip sec">次·干扰 bad</span>
+          <span class="chip sec">次·干扰 well</span>
+        </div>
+      </div>
+    </div>
+    <div class="pager" style="border-top:1px solid var(--line)">共 <b>2</b> 题 · 第 1 / 1 页</div>
+  </div>
+</div>
+
+<script>
+/** @type {Record<string, string>} */
+const API = {
+  'region-prov': 'GET /admin/vocab/option-role-stats?exam_type=中考&group_by=region&region_level=province&pool=standalone_word_mcq',
+  'region-city': 'GET /admin/vocab/option-role-stats?exam_type=中考&group_by=region&region_level=city&region_code=32&pool=standalone_word_mcq',
+  'word-region': 'GET /admin/vocab/option-role-stats?exam_type=中考&group_by=word&region_code=3202&pool=standalone_word_mcq',
+};
+
+const modalTitles = {
+  'Can-correct': 'Can · 主·考 · 无锡市 · 中考',
+  'Can-dist': 'Can · 次·干扰 · 无锡市 · 中考',
+  'worse-correct': 'worse · 主·考 · 无锡市 · 中考',
+  'worse-dist': 'worse · 次·干扰 · 无锡市 · 中考',
+  'worse-any': 'worse · 全部角色 · 无锡市 · 中考',
+  'Can-any': 'Can · 全部角色 · 无锡市 · 中考',
+};
+
+/** Tab 切换 */
+document.querySelectorAll('.tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('on'));
+    btn.classList.add('on');
+    const id = 'view-' + btn.dataset.view;
+    document.getElementById(id).classList.add('on');
+    document.getElementById('api-hint').textContent = API[btn.dataset.view] || '';
+  });
+});
+
+/** 省表下钻 → 按市 */
+document.querySelectorAll('[data-drill]').forEach((el) => {
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelector('.tab[data-view="region-city"]').click();
+    document.getElementById('sel-prov').value = el.dataset.drill;
+  });
+});
+
+/** 市表 → 词×地区 */
+document.querySelectorAll('[data-open-word]').forEach((el) => {
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelector('.tab[data-view="word-region"]').click();
+    document.getElementById('sel-city').value = el.dataset.openWord;
+  });
+});
+
+/** 反查弹窗 */
+const modal = document.getElementById('modal');
+document.querySelectorAll('[data-modal]').forEach((el) => {
+  el.addEventListener('click', () => {
+    document.getElementById('modal-title').textContent =
+      modalTitles[el.dataset.modal] || '原题列表';
+    modal.classList.add('on');
+  });
+});
+document.getElementById('modal-close').onclick = () => modal.classList.remove('on');
+modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('on'); });
+
+/** 重置 */
+document.getElementById('btn-reset').onclick = () => {
+  document.getElementById('sel-prov').value = '';
+  document.getElementById('sel-city').value = '';
+  document.getElementById('q-input').value = '';
+  document.querySelector('.tab[data-view="region-prov"]').click();
+};
+</script>
+</body>
+</html>

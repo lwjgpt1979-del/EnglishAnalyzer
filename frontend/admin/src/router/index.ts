@@ -31,6 +31,7 @@ const router = createRouter({
         { path: 'admin-accounts', name: 'admin-accounts', component: () => import('../views/AdminAccounts.vue') },
         { path: 'task-runs', name: 'task-runs', component: () => import('../views/TaskRuns.vue') },
         { path: 'textbook-word-stats', name: 'textbook-word-stats', component: () => import('../views/TextbookWordStats.vue') },
+        { path: 'vocab-option-role-stats', name: 'vocab-option-role-stats', component: () => import('../views/VocabOptionRoleStats.vue') },
         { path: 'long-sentences', name: 'long-sentences', component: () => import('../views/LongSentences.vue') },
         { path: 'platform-questions', name: 'platform-questions', component: () => import('../views/PlatformQuestions.vue') },
         { path: 'regions', name: 'regions', component: () => import('../views/RegionAdmin.vue') },

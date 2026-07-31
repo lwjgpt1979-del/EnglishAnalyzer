@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>词 × 正确项/干扰项 统计 · 后端原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-bad: #e85d5d;
+    --bg: #eef3f9;
+    --card: #fff;
+    --line: #e5ebf2;
+    --text: #1e293b;
+    --muted: #64748b;
+    --code: #0f172a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.55;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 28px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; border-left: 3px solid var(--c-primary); padding-left: 10px; }
+  h3 { font-size: 14px; margin: 18px 0 8px; color: #334155; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 14px;
+  }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+    border-radius: 999px; background: #e8f2ff; color: var(--c-primary); margin-bottom: 6px;
+  }
+  .badge.rec { background: #e9f6f1; color: var(--c-ok); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 600; }
+  code, pre {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  }
+  pre {
+    background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px;
+    overflow: auto; margin: 8px 0;
+  }
+  .ok { color: var(--c-ok); font-weight: 600; }
+  .bad { color: var(--c-bad); font-weight: 600; }
+  .muted { color: var(--muted); font-size: 12px; }
+  ul { margin: 8px 0; padding-left: 20px; }
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px;
+    margin: 10px 0;
+  }
+  .flow span {
+    background: #f1f5f9; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px;
+  }
+  .flow .arr { background: none; border: none; color: var(--muted); padding: 0 2px; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>词 × 正确项 / 干扰项 · 统计与反查原题</h1>
+  <p class="lead">
+    目标：按<strong>单词</strong>统计「在多少道<strong>独立词项单选</strong>真题里当过主考 / 干扰」，
+    并能分页拉出对应<strong>原题</strong>（real，非仿真）。
+    在此基础上，<strong>中考</strong>卷限定下支持按<strong>省</strong>或<strong>市</strong>两个维度聚合/筛选。
+    明确<strong>不要</strong>：阅读理解短文选择题、缺词填空、变词/动词填空。
+  </p>
+
+  <h2>1. 现成数据（不用新表也能原型）</h2>
+  <div class="card">
+    <table>
+      <tr><th>表</th><th>用途</th></tr>
+      <tr>
+        <td><code>vocab_question</code></td>
+        <td>
+          PK (<code>word_id</code>, <code>q_scope</code>, <code>question_id</code>)；
+          <code>link_kind</code> ∈ <code>correct</code> | <code>distractor</code> | occur；
+          <code>option_key</code> = A–D（可空）
+        </td>
+      </tr>
+      <tr>
+        <td><code>platform_question</code></td>
+        <td>
+          原题；<code>type='real'</code>；<code>meta.analysis.kind</code> 区分题型解析形态；
+          <code>exam_type</code>（中考|高考|普通）、<code>region_code</code>（省2位/市4位，与 <code>region</code> 表同源）
+        </td>
+      </tr>
+      <tr>
+        <td><code>region</code> + <code>region_service</code></td>
+        <td>
+          地区唯一真源；<code>region_breakdowns(codes)</code> 批量解析省/市名；
+          筛选前缀 <code>region_code LIKE '{code}%'</code>（与 <code>kp_exam_stats</code> 一致）
+        </td>
+      </tr>
+      <tr>
+        <td><code>vocabulary_words</code></td>
+        <td>词文本、释义等</td>
+      </tr>
+    </table>
+    <p class="muted" style="margin:10px 0 0">
+      已有 <code>GET /admin/vocab/{word_id}/platform-questions?role=correct|distractor</code>，
+      但<strong>未过滤</strong>「独立词项单选」池，需加 <code>pool</code> 参数（见下）。
+    </p>
+  </div>
+
+  <h2>2. 统计池定义：<code>standalone_word_mcq</code></h2>
+  <div class="card">
+    <p><strong>纳入</strong>（单独逻辑的原题 · 四选一 · 词/短语作选项）：</p>
+    <ul>
+      <li><code>meta.analysis.kind = 'grammar_mc'</code>（语法/词法/句法单选，已确认解析）</li>
+      <li>或兜底：<code>question_type='单选'</code> + 段名<strong>不</strong>含 阅读/完形/缺词/短文/动词/词形/词汇运用 + 题干能拆出 ≥2 个 A–D 选项</li>
+    </ul>
+    <p><strong>排除</strong>：</p>
+    <table>
+      <tr><th>类型</th><th>判定</th></tr>
+      <tr><td>阅读理解</td><td><code>kind=reading</code> / <code>rc_code</code> / 段名含「阅读」</td></tr>
+      <tr><td>完形（短文多选）</td><td><code>kind=cloze</code> / 段名含「完形|完型」/ <code>block_id</code>+完形段</td></tr>
+      <tr><td>缺词填空</td><td><code>kind=passage_fill</code> / 段名含「缺词|短文填空」</td></tr>
+      <tr><td>变词/动词填空</td><td><code>kind=word_fill</code> / 题干 <code>(work)</code> 所给词 / 段名含「动词填空|词形|词汇运用」</td></tr>
+      <tr><td>仿真题</td><td><code>platform_question.type != 'real'</code></td></tr>
+    </table>
+    <div class="flow">
+      <span>vocab_question</span><span class="arr">→</span>
+      <span>JOIN platform_question</span><span class="arr">→</span>
+      <span>filter pool</span><span class="arr">→</span>
+      <span>GROUP BY word_id, link_kind</span>
+    </div>
+  </div>
+
+  <h2>3. 方案对比（请择一后开发）</h2>
+  <div class="compare">
+    <div class="card">
+      <span class="badge rec">推荐 · A</span>
+      <h3>实时聚合 Service + 2 个 API</h3>
+      <ul>
+        <li>新建 <code>option_vocab_stats_service.py</code></li>
+        <li>统计 / 反查均走 SQL 聚合 + 池过滤（题量 &lt; 10w 足够快）</li>
+        <li>挂边变更后<strong>无</strong>额外维护</li>
+      </ul>
+      <p class="muted">改动面小，与现有 <code>vocab_question</code> 完全复用。</p>
+    </div>
+    <div class="card">
+      <span class="badge">B</span>
+      <h3>汇总表 <code>vocab_word_role_stats</code></h3>
+      <ul>
+        <li>confirm / attach 时增量更新 <code>(word_id, correct_n, distractor_n)</code></li>
+        <li>列表秒开；需迁移 + 回填任务 + 与 attach 同事务</li>
+      </ul>
+      <p class="muted">题量极大或 admin 词表要秒级全量排序时再上。</p>
+    </div>
+  </div>
+
+  <h2>4. 中考 × 省/市维度（新增需求）</h2>
+  <div class="card">
+    <p><strong>范围</strong>：仅 <code>exam_type='中考'</code> + 池 <code>standalone_word_mcq</code>。</p>
+    <p><strong>地区桶</strong>（与 <code>region</code> 码前缀一致，复用 <code>region_service.region_breakdowns</code> 展示名）：</p>
+    <table>
+      <tr><th>维度</th><th>分组键</th><th>说明</th></tr>
+      <tr>
+        <td><code>region_level=province</code></td>
+        <td><code>LEFT(pq.region_code, 2)</code></td>
+        <td>一省一行；如 <code>32</code> → 江苏省</td>
+      </tr>
+      <tr>
+        <td><code>region_level=city</code></td>
+        <td><code>LEFT(pq.region_code, 4)</code></td>
+        <td>一市一行；如 <code>3202</code> → 无锡市；<code>region_code</code> 不足 4 位的不进市维度（或单列「仅省级码」）</td>
+      </tr>
+    </table>
+    <p><strong>筛选</strong>：<code>region_code</code> 前缀（选省后看其下各市：<code>region_code=32&region_level=city</code>）。</p>
+    <p><strong>缺地区</strong>：<code>region_code</code> 为空的原题不进省/市分组；地区汇总接口单独返回 <code>unknown_question_count</code> 供运营补元数据。</p>
+  </div>
+
+  <h3>4.0 地区维度 · 方案对比（请择一）</h3>
+  <div class="compare">
+    <div class="card">
+      <span class="badge rec">推荐 · A′</span>
+      <h3>同一 Service · 两种 group_by</h3>
+      <ul>
+        <li><code>group_by=word</code>（默认）：词表；传 <code>region_level</code> 时每行带 <code>region_code/name</code>（词×地区）</li>
+        <li><code>group_by=region</code>：地区汇总表（题数、挂边词数、主考/干扰链次数）</li>
+        <li>反查原题接口加 <code>exam_type</code> + <code>region_code</code> 前缀筛</li>
+      </ul>
+      <p class="muted">一个 service、参数组合覆盖「全国词表 / 某省词表 / 各省排行 / 某省下各市排行」。</p>
+    </div>
+    <div class="card">
+      <span class="badge">C</span>
+      <h3>独立路由 <code>/by-region</code></h3>
+      <ul>
+        <li>词统计与原 <code>option-role-stats</code> 不变，仅加 <code>region_code</code> 过滤</li>
+        <li>地区排行单独 <code>GET .../option-role-stats/by-region</code></li>
+      </ul>
+      <p class="muted">路由语义更清晰，但两套参数要同步维护。</p>
+    </div>
+  </div>
+
+  <h2>5. 推荐方案 A · API 契约</h2>
+
+  <h3>5.1 词表统计（带次数 · 可含地区）</h3>
+  <div class="card">
+    <pre>GET /admin/vocab/option-role-stats
+  ?q=wor
+  ?pool=standalone_word_mcq      # 默认
+  ?exam_type=中考                # 地区统计场景建议固定；省略=不限考试类型
+  ?group_by=word                 # word | region
+  ?region_level=province|city    # group_by=word 且需「词×地区」时必填；group_by=region 时必填
+  ?region_code=32                # 可选，前缀筛（省码看全省各市：32 + region_level=city）
+  ?min_correct=1
+  ?sort=correct_count_desc
+  ?skip=0&limit=50
+
+# group_by=word，无 region_level → 全国一词一行（与原设计相同）
+# group_by=word + region_level=province + exam_type=中考 → 一词一行 per 省
+Response 200 (词×省):
+{
+  "total": 240,
+  "exam_type": "中考",
+  "region_level": "province",
+  "items": [
+    {
+      "word_id": "uuid",
+      "word": "worse",
+      "region_code": "32",
+      "region_name": "江苏省",
+      "correct_count": 3,
+      "distractor_count": 1,
+      "question_count": 4
+    }
+  ]
+}
+
+# group_by=region + region_level=province + exam_type=中考 → 一省一行（地区为主视图）
+Response 200 (省汇总):
+{
+  "total": 28,
+  "exam_type": "中考",
+  "region_level": "province",
+  "unknown_question_count": 12,
+  "items": [
+    {
+      "region_code": "32",
+      "region_name": "江苏省",
+      "question_count": 86,          // 池内 distinct 原题数（该省）
+      "word_count": 412,             // 至少挂过一条边的 distinct word_id
+      "correct_link_count": 520,     // correct 边 distinct (word, question) — 运营向
+      "distractor_link_count": 980
+    }
+  ]
+}</pre>
+    <p class="muted">
+      计数口径：<strong>按 question_id 去重</strong>计题；词表行内 <code>correct_count</code>/<code>distractor_count</code> 仍按词×题×角色。
+      地区名批量用 <code>region_breakdowns</code>，禁止写死城市清单。
+    </p>
+  </div>
+
+  <h3>5.2 按词反查原题（池内 · 可筛中考+地区）</h3>
+  <div class="card">
+    <pre>GET /admin/vocab/{word_id}/platform-questions
+  ?role=correct|distractor|any
+  ?pool=standalone_word_mcq
+  ?exam_type=中考                 # 新增
+  ?region_code=3202               # 新增，前缀匹配（市码精确到市）
+  ?paper_id=...&year=...
+  ?skip=0&limit=50
+
+Response 200:
+{
+  "word": "worse",
+  "role": "correct",
+  "pool": "standalone_word_mcq",
+  "exam_type": "中考",
+  "region_code": "3202",
+  "total": 2,
+  "items": [
+    {
+      "question_id": "uuid",
+      "paper_id": "uuid",
+      "question_no": "4",
+      "section": "单项选择",
+      "region_code": "3202",
+      "region_name": "无锡市",
+      "exam_type": "中考",
+      "stem": "But it only gets ______...",
+      "link_kind": "correct",
+      "option_key": "D",
+      "analysis_kind": "grammar_mc"
+    }
+  ]
+}</pre>
+    <p class="muted">在现有路由上扩展 <code>pool</code> / <code>role=any</code> / <code>exam_type</code> / <code>region_code</code>。</p>
+  </div>
+
+  <h3>5.3 Admin 页交互草图（中考地区）</h3>
+  <div class="card">
+    <div class="flow">
+      <span>固定 exam_type=中考</span><span class="arr">→</span>
+      <span>Tab：按省 | 按市</span><span class="arr">→</span>
+      <span>region 级联（listRegions）</span><span class="arr">→</span>
+      <span>地区表 或 词×地区表</span><span class="arr">→</span>
+      <span>点次数反查原题</span>
+    </div>
+    <ul>
+      <li><strong>按省</strong>：<code>group_by=region&region_level=province</code>，列：省名、题数、词数、主考/干扰链；点省 → 下钻 <code>region_code=xx&region_level=city</code></li>
+      <li><strong>按市</strong>：同上 <code>region_level=city</code>；可选先选省再列该市</li>
+      <li><strong>词表</strong>：在选定省/市后 <code>group_by=word</code> + 对应 <code>region_code</code> 前缀</li>
+    </ul>
+  </div>
+
+  <h3>5.4 按题反查（运营抽查）</h3>
+  <div class="card">
+    <pre>GET /admin/platform-questions/{question_id}/option-vocab
+  → { "correct": ["Can"], "distractor": ["Must","Should","May"], "in_pool": true }</pre>
+    <p class="muted">可选；复用 <code>preview_option_vocab</code> + 池判定。</p>
+  </div>
+
+  <h2>6. 核心 SQL 原型（standalone_word_mcq + 中考地区）</h2>
+  <div class="card">
+    <h3>6.1 池过滤（SQL 片段，落 service 时可改 Python 判定复用 option_vocab_service）</h3>
+    <pre>-- 简化版：kind=grammar_mc 的真题
+SELECT vq.word_id, vq.link_kind, COUNT(DISTINCT vq.question_id) AS n
+FROM vocab_question vq
+JOIN platform_question pq ON pq.id = vq.question_id
+WHERE vq.q_scope = 'platform'
+  AND vq.link_kind IN ('correct', 'distractor')
+  AND pq.type = 'real'
+  AND pq.meta->'analysis'->>'kind' = 'grammar_mc'
+GROUP BY vq.word_id, vq.link_kind;</pre>
+
+    <h3>6.2 一词两列透视（全国 · 不限地区）</h3>
+    <pre>SELECT w.word,
+  COUNT(DISTINCT vq.question_id) FILTER (WHERE vq.link_kind = 'correct') AS correct_n,
+  COUNT(DISTINCT vq.question_id) FILTER (WHERE vq.link_kind = 'distractor') AS distractor_n
+FROM vocabulary_words w
+JOIN vocab_question vq ON vq.word_id = w.id AND vq.q_scope = 'platform'
+JOIN platform_question pq ON pq.id = vq.question_id AND pq.type = 'real'
+  AND pq.meta->'analysis'->>'kind' = 'grammar_mc'
+GROUP BY w.id, w.word
+ORDER BY correct_n DESC
+LIMIT 50;</pre>
+
+    <h3>6.3 中考 · 词 × 省</h3>
+    <pre>SELECT w.id AS word_id, w.word,
+  LEFT(pq.region_code, 2) AS region_code,
+  COUNT(DISTINCT vq.question_id) FILTER (WHERE vq.link_kind = 'correct') AS correct_n,
+  COUNT(DISTINCT vq.question_id) FILTER (WHERE vq.link_kind = 'distractor') AS distractor_n
+FROM vocabulary_words w
+JOIN vocab_question vq ON vq.word_id = w.id AND vq.q_scope = 'platform'
+  AND vq.link_kind IN ('correct', 'distractor')
+JOIN platform_question pq ON pq.id = vq.question_id
+  AND pq.type = 'real'
+  AND pq.exam_type = '中考'
+  AND pq.meta->'analysis'->>'kind' = 'grammar_mc'
+  AND pq.region_code IS NOT NULL AND LENGTH(pq.region_code) >= 2
+GROUP BY w.id, w.word, LEFT(pq.region_code, 2)
+ORDER BY correct_n DESC;</pre>
+
+    <h3>6.4 中考 · 各省汇总（group_by=region）</h3>
+    <pre>SELECT LEFT(pq.region_code, 2) AS region_code,
+  COUNT(DISTINCT pq.id) AS question_count,
+  COUNT(DISTINCT vq.word_id) AS word_count,
+  COUNT(DISTINCT (vq.word_id, vq.question_id))
+    FILTER (WHERE vq.link_kind = 'correct') AS correct_link_count,
+  COUNT(DISTINCT (vq.word_id, vq.question_id))
+    FILTER (WHERE vq.link_kind = 'distractor') AS distractor_link_count
+FROM platform_question pq
+JOIN vocab_question vq ON vq.question_id = pq.id AND vq.q_scope = 'platform'
+  AND vq.link_kind IN ('correct', 'distractor')
+WHERE pq.type = 'real'
+  AND pq.exam_type = '中考'
+  AND pq.meta->'analysis'->>'kind' = 'grammar_mc'
+  AND pq.region_code IS NOT NULL AND LENGTH(pq.region_code) >= 2
+GROUP BY LEFT(pq.region_code, 2)
+ORDER BY question_count DESC;</pre>
+    <p class="muted">市维度把 <code>LEFT(..., 2)</code> 改为 <code>LEFT(..., 4)</code> 且 <code>LENGTH >= 4</code>；<code>region_code=32</code> 筛选加 <code>pq.region_code LIKE '32%'</code>。</p>
+  </div>
+
+  <h2>7. Service 结构（方案 A）</h2>
+  <div class="card">
+<pre>option_vocab_stats_service.py
+├── POOL_STANDALONE_WORD_MCQ = "standalone_word_mcq"
+├── is_standalone_word_mcq(q: PlatformQuestion) -> bool
+│     # 与 option_vocab_service 挂词池对齐；单测覆盖 阅读/完形/动词填空/语法单选
+├── async def word_role_stats(db, *, pool, exam_type, group_by, region_level,
+│       region_code, q, sort, skip, limit) -> (items, total, meta)
+├── async def list_word_questions_in_pool(db, word_id, *, pool, role,
+│       exam_type, region_code, ...)
+│     # 扩展 list_platform_questions_for_word
+├── _region_bucket(code, level) -> str | None   # province=[:2] city=[:4]
+└── async def stats_for_word(db, word_id, pool, **filters) -> counts</pre>
+  </div>
+
+  <h2>8. 验收标准</h2>
+  <div class="card">
+    <ul>
+      <li>词 <code>Can</code>：<code>correct_count</code> 只含语法单选原题，<strong>不含</strong>阅读/完形/动词填空</li>
+      <li>反查列表 <code>analysis_kind</code> 均为 <code>grammar_mc</code>（或池兜底判定通过）</li>
+      <li>未挂边 / 未确认解析的题<strong>不进</strong>统计（无 vocab_question 边即无数据）</li>
+      <li>分页：列表页强制 skip/limit + total（admin 铁律）</li>
+      <li class="ok">中考 + <code>region_level=province</code>：无锡卷题计入 <code>32</code> 江苏省，不与其它省混</li>
+      <li class="ok">选 <code>region_code=32&region_level=city</code>：仅江苏省下各市分行，点市反查仅该市原题</li>
+      <li>地区名来自 <code>region</code> 表 / <code>region_breakdowns</code>，非写死清单</li>
+    </ul>
+  </div>
+
+  <h2>9. 后续可选（非原型范围）</h2>
+  <div class="card">
+    <ul>
+      <li>C 端学生错题网 <code>student_wrong_word</code> 是私有池，<strong>不</strong>与平台 <code>vocab_question</code> 混统计</li>
+      <li>存量未挂边 → 继续用 <code>backfill_option_vocab</code> + 仅 grammar_mc 卷段</li>
+      <li>方案 B 汇总表：当 <code>option-role-stats</code> P95 &gt; 500ms 再评估</li>
+    </ul>
+  </div>
+
+  <p class="muted" style="margin-top:24px">
+    文件：<code>docs/design/vocab-option-role-stats-prototype.html</code>（API/ SQL 契约）·
+    <a href="vocab-option-role-stats-ui-prototype.html" style="color:var(--c-primary)">完整 Admin 原型 →</a> ·
+    <a href="vocab-option-role-stats-word-tab-prototype.html" style="color:var(--c-primary)">方式二 · 直接切 Tab 看词表 →</a> ·
+    请确认：① 汇总方案 A 或 B；② 地区方案 A′（<code>group_by</code>）或 C（独立 <code>/by-region</code>）——再落代码。
+  </p>
+</div>
+</body>
+</html>

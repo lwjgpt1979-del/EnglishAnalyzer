@@ -304,6 +304,13 @@ class QuestionKpRef(BaseModel):
     code: str | None = None
 
 
+class OptionVocabChips(BaseModel):
+    """真题选项词挂边只读 chip(主考/干扰)。"""
+    correct: list[str] = []
+    distractor: list[str] = []
+    unresolved: bool = False
+
+
 class PaperQuestionItem(BaseModel):
     id: uuid.UUID
     question_no: str | None = None
@@ -316,6 +323,7 @@ class PaperQuestionItem(BaseModel):
     block_id: uuid.UUID | None = None
     passage: str | None = None
     kps: list[QuestionKpRef] = []        # 该题关联的受控知识点(母题派生仿真依据)
+    option_vocab: OptionVocabChips | None = None  # 考点后展示:主·考 / 次·干扰
 
 
 class AttachKpIn(BaseModel):

@@ -259,7 +259,14 @@ class VocabNode(Base):
 
 
 class VocabQuestion(Base):
-    """词 ↔ 题(平台/上传)。词在题里出现 → 建边(背词溯源/真题频率增强)。"""
+    """词 ↔ 题(平台/上传)。
+
+    link_kind:
+      occur — 题干/选项出现(旧溯源);
+      correct — 正确项词/短语(主·考);
+      distractor — 干扰项词/短语(次·干扰)。
+    option_key: 卷面选项字母 A-D 或空位序(可空)。
+    """
 
     __tablename__ = "vocab_question"
 
@@ -269,7 +276,14 @@ class VocabQuestion(Base):
     q_scope = mapped_column(sa.String(12), primary_key=True)        # platform|uploaded
     question_id = mapped_column(UUID(as_uuid=True), primary_key=True)
     source = mapped_column(sa.String(16), nullable=True)            # stem|option|explanation
+    link_kind = mapped_column(sa.String(16), nullable=False, server_default=sa.text("'occur'"))
+    option_key = mapped_column(sa.String(8), nullable=True)
     created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+
+    __table_args__ = (
+        sa.Index("ix_vocab_question_word_kind", "word_id", "q_scope", "link_kind"),
+        sa.Index("ix_vocab_question_q_kind", "q_scope", "question_id", "link_kind"),
+    )
 
 
 class VocabWrong(Base):

@@ -30,7 +30,8 @@ async def attach_question(
     db: AsyncSession, *, word_id: uuid.UUID, q_scope: str, question_id: uuid.UUID, source: str | None = None
 ) -> bool:
     stmt = (pg_insert(VocabQuestion)
-            .values(word_id=word_id, q_scope=q_scope, question_id=question_id, source=source)
+            .values(word_id=word_id, q_scope=q_scope, question_id=question_id, source=source,
+                    link_kind="occur")
             .on_conflict_do_nothing(index_elements=["word_id", "q_scope", "question_id"])
             .returning(VocabQuestion.word_id))
     return (await db.execute(stmt)).scalar_one_or_none() is not None

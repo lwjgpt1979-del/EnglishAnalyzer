@@ -41,6 +41,22 @@ def _exam_cols_from_meta(meta: dict | None) -> dict:
     return out
 
 
+def _meta_for_paper_import(paper: PlatformPaper) -> dict:
+    """拆题入库用 meta:卷表列(地区/考试类型等)优先,避免 meta 内残留旧 city_code。"""
+    m = dict(paper.meta or {})
+    if paper.region_code:
+        m["region_code"] = paper.region_code
+        m["city_code"] = paper.region_code
+        m.pop("province_code", None)
+    if paper.region_name:
+        m["region_name"] = paper.region_name
+    for col in _EXAM_COLS:
+        val = getattr(paper, col, None)
+        if val:
+            m[col] = val
+    return m
+
+
 @dataclass
 class ImportResult:
     question_id: uuid.UUID
@@ -530,7 +546,7 @@ async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID,
     paper = (await db.execute(sa.select(PlatformPaper).where(PlatformPaper.id == paper_id))).scalar_one_or_none()
     if paper is None:
         raise AppError(code=404, message="试卷不存在")
-    m = paper.meta or {}
+    m = _meta_for_paper_import(paper)
     file_id, source = m.get("file_id"), m.get("source")
     # 修正历史脏数据:原始文件是 .doc 却被旧逻辑标成 docx/pdf → 作废,按 .doc 重新下载路由
     if (paper.source_filename or "").lower().endswith(".doc") and source != "doc":
@@ -612,6 +628,10 @@ async def parse_paper_questions(db: AsyncSession, *, paper_id: uuid.UUID,
             new_meta["parse_warnings"] = [warn]
             _log.warning("解析护栏(paper=%s):%s", paper.id, warn)
         paper.meta = new_meta
+        # 同步卷 meta 地区(与列一致),避免下次重解析又写错
+        if paper.region_code:
+            paper.meta = {**(paper.meta or {}), "region_code": paper.region_code,
+                          "city_code": paper.region_code, "region_name": paper.region_name}
         await db.flush()
         return {"imported": imported, "status": "parsed", "warnings": [warn] if warn else []}
     except Exception as exc:  # noqa: BLE001

@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>空位题进选项词统计 · 全流程原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-bad: #e85d5d;
+    --c-warn: #f59e0b;
+    --bg: #eef3f9;
+    --card: #fff;
+    --line: #e5ebf2;
+    --text: #1e293b;
+    --muted: #64748b;
+    --sidebar: #1e293b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 18px; max-width: 920px; }
+
+  /* 顶栏场景 Tab */
+  .scene-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .scene-tab {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .scene-tab.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .scene { display: none; }
+  .scene.on { display: block; }
+
+  /* 流程图 */
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    font-size: 12px; margin-bottom: 16px;
+  }
+  .flow span {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px;
+  }
+  .flow .arr { background: none; border: none; color: var(--muted); padding: 0 2px; }
+  .flow .hi { border-color: #bfdbfe; background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+
+  /* admin 外壳 */
+  .shell { display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; min-height: 520px; }
+  .side {
+    width: 188px; background: var(--sidebar); color: #94a3b8; padding: 16px 0; flex-shrink: 0;
+  }
+  .side .logo { padding: 0 14px 16px; font-size: 13px; font-weight: 700; color: #fff; }
+  .side nav a {
+    display: block; padding: 8px 14px; font-size: 12px; color: #94a3b8; text-decoration: none;
+  }
+  .side nav a.on { background: rgba(61,139,245,.18); color: #93c5fd; border-right: 2px solid var(--c-primary); }
+  .main { flex: 1; padding: 16px 18px 24px; background: var(--bg); overflow: auto; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    margin-bottom: 12px; overflow: hidden;
+  }
+  .card-hd {
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fafbfc;
+  }
+  .card-hd h2 { margin: 0; font-size: 14px; }
+  .card-bd { padding: 12px 14px; }
+
+  /* 工作台 */
+  .wb-layout { display: grid; grid-template-columns: 1fr 1.1fr; gap: 12px; }
+  @media (max-width: 860px) { .wb-layout { grid-template-columns: 1fr; } }
+  .passage {
+    font-size: 12px; line-height: 1.65; color: #334155; background: #f8fafc;
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; max-height: 220px; overflow: auto;
+  }
+  .passage .blank { border-bottom: 2px solid var(--c-primary); padding: 0 2px; color: var(--c-primary); font-weight: 600; }
+  .q-row {
+    display: grid; grid-template-columns: 22px 36px 1fr auto; gap: 8px; align-items: start;
+    padding: 10px 0; border-top: 1px dashed var(--line);
+  }
+  .q-row:first-child { border-top: 0; }
+  .q-no { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .q-stem { font-size: 12px; line-height: 1.45; }
+  .tag-sm {
+    font-size: 10px; padding: 2px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap;
+  }
+  .tag-sm.gray { background: #f1f5f9; border-color: #e2e8f0; color: #64748b; }
+  .tag-sm.green { background: #e9f6f1; border-color: #b7e4d4; color: #1f7a61; }
+  .tag-sm.blue { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); }
+  .tag-sm.orange { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip {
+    font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid;
+  }
+  .chip.main { background: #e9f6f1; border-color: #b7e4d4; color: #1f7a61; }
+  .chip.sec { background: #fef0f0; border-color: #f5c2c2; color: #c45656; }
+  .chip.kind { background: #f8fafc; border-color: var(--line); color: var(--muted); }
+
+  .btn {
+    border: 1px solid var(--line); background: #fff; border-radius: 6px;
+    padding: 5px 12px; font-size: 12px; cursor: pointer;
+  }
+  .btn.primary { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+  .btn.warn { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* 统计页 */
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 12px;
+  }
+  .tag {
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+    background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;
+  }
+  .fld { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .fld label { color: var(--muted); }
+  .fld select, .fld input {
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px; background: #fff;
+  }
+  .tabs { display: flex; gap: 4px; margin-bottom: 0; }
+  .tab {
+    border: 1px solid var(--line); background: #fff; border-radius: 8px 8px 0 0;
+    padding: 7px 14px; font-size: 12px; cursor: pointer; color: var(--muted); border-bottom: none;
+  }
+  .tab.on { color: var(--c-primary); font-weight: 600; }
+  .crumb { font-size: 11px; color: var(--muted); margin: 10px 0 8px; }
+  .crumb b { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { background: #f8fafc; font-weight: 600; color: #475569; font-size: 11px; }
+  tr:hover td { background: #f8fafc; }
+  .num.ok { color: var(--c-ok); font-weight: 600; cursor: pointer; }
+  .num.bad { color: var(--c-bad); font-weight: 600; cursor: pointer; }
+  .num.ok:hover, .num.bad:hover { text-decoration: underline; }
+  .pager { display: flex; justify-content: flex-end; padding: 10px; font-size: 11px; color: var(--muted); gap: 8px; }
+
+  /* 弹层 */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,.35); display: none;
+    align-items: center; justify-content: center; z-index: 99; padding: 16px;
+  }
+  .overlay.on { display: flex; }
+  .dlg {
+    background: #fff; border-radius: 12px; width: min(680px, 100%); max-height: 85vh;
+    overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(15,23,42,.15);
+  }
+  .dlg-hd {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h3 { margin: 0; font-size: 14px; }
+  .dlg-hd .win-ctrl { display: flex; gap: 6px; }
+  .dlg-hd .win-ctrl button {
+    border: 1px solid var(--line); background: #fff; border-radius: 4px; width: 26px; height: 26px; cursor: pointer; font-size: 11px;
+  }
+  .dlg-bd { padding: 12px 16px; overflow: auto; flex: 1; }
+  .q-item { padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  .q-item:last-child { border-bottom: 0; }
+  .q-meta { font-size: 10px; color: var(--muted); margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+  /* 口径表 */
+  .spec table { font-size: 12px; }
+  .spec .yes { color: var(--c-ok); font-weight: 600; }
+  .spec .no { color: var(--muted); }
+  .note {
+    font-size: 11px; color: var(--muted); background: #f8fafc; border: 1px dashed var(--line);
+    border-radius: 8px; padding: 10px 12px; margin-top: 12px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .step-ctrl { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .step-dot {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;
+    padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff;
+  }
+  .step-dot.on { border-color: #bfdbfe; background: #e8f2ff; color: var(--c-primary); font-weight: 600; }
+  .step-dot.done .dot { background: var(--c-ok); border-color: var(--c-ok); color: #fff; }
+  .dot {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line);
+    display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+  }
+  .fade { opacity: .45; pointer-events: none; }
+  .pulse { animation: pulse 1.2s ease infinite; }
+  @keyframes pulse { 0%,100%{ box-shadow: 0 0 0 0 rgba(61,139,245,.4); } 50%{ box-shadow: 0 0 0 6px rgba(61,139,245,0); } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>空位题 → 选项词角色统计 · 全流程原型</h1>
+  <p class="lead">
+    方案 A：完形 / 词形填空 / 开放缺词等「一空一题」在<strong>批量解析全段 → 一键采纳</strong>后自动挂边，
+    进入【中考 · 选项词角色统计】（默认池 <code>option_vocab_slot</code>），并可反查到具体那一空。
+    阅读 / 书面表达不进池。
+  </p>
+
+  <div class="scene-tabs">
+    <button type="button" class="scene-tab on" data-scene="flow">① 全流程演示</button>
+    <button type="button" class="scene-tab" data-scene="stats">② 统计页</button>
+    <button type="button" class="scene-tab" data-scene="lookup">③ 反查原题</button>
+    <button type="button" class="scene-tab" data-scene="spec">④ 池口径</button>
+  </div>
+
+  <!-- ═══ ① 全流程 ═══ -->
+  <section class="scene on" id="scene-flow">
+    <div class="flow">
+      <span>真题卷 · 完形段</span><span class="arr">→</span>
+      <span class="hi">批量解析全段</span><span class="arr">→</span>
+      <span>AI suggest 暂存</span><span class="arr">→</span>
+      <span class="hi">一键采纳</span><span class="arr">→</span>
+      <span>confirm + attach 挂边</span><span class="arr">→</span>
+      <span class="hi">统计页可见</span><span class="arr">→</span>
+      <span>点次数反查</span>
+    </div>
+
+    <div class="step-ctrl" id="flowSteps">
+      <div class="step-dot on" data-step="1"><span class="dot">1</span>解析前</div>
+      <div class="step-dot" data-step="2"><span class="dot">2</span>批量解析中</div>
+      <div class="step-dot" data-step="3"><span class="dot">3</span>采纳后·chip 已挂</div>
+      <div class="step-dot" data-step="4"><span class="dot">4</span>进统计页</div>
+    </div>
+
+    <div class="shell">
+      <aside class="side">
+        <div class="logo">engGramer Admin</div>
+        <nav>
+          <a href="#">真题管理</a>
+          <a href="#" class="on">平台真题</a>
+          <a href="#">中考选项词统计</a>
+        </nav>
+      </aside>
+      <div class="main">
+        <div class="card" id="wbCard">
+          <div class="card-hd">
+            <div>
+              <h2>完形填空 · 完形填空 · 载体槽 + 线索轴</h2>
+              <span style="font-size:11px;color:var(--muted)" id="wbSum">共 15 题 · 已挂 KP <b>0</b> · 待处理 15 · 词边 <b>0</b></span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn warn" id="btnBatch">批量解析全段</button>
+              <button type="button" class="btn" disabled>全选本题型</button>
+            </div>
+          </div>
+          <div class="card-bd">
+            <div class="wb-layout">
+              <div>
+                <div style="font-size:11px;color:var(--muted);margin-bottom:6px">短文</div>
+                <div class="passage">
+                  …When I was young, I always did my homework <span class="blank">11</span> and my mother was angry with me.
+                  Later I learned to work <span class="blank">12</span> …
+                </div>
+              </div>
+              <div>
+                <div class="q-row" id="q11">
+                  <input type="checkbox" checked disabled />
+                  <span class="q-no">11</span>
+                  <div>
+                    <div class="q-stem">A. carefully &nbsp; B. happily &nbsp; C. carelessly &nbsp; D. quietly</div>
+                    <div class="chips" id="chips11"></div>
+                  </div>
+                  <span class="tag-sm gray" id="st11">未挂 KP</span>
+                </div>
+                <div class="q-row" id="q12">
+                  <input type="checkbox" checked disabled />
+                  <span class="q-no">12</span>
+                  <div>
+                    <div class="q-stem">A. hard &nbsp; B. hardly &nbsp; C. harder &nbsp; D. hardest</div>
+                    <div class="chips" id="chips12"></div>
+                  </div>
+                  <span class="tag-sm gray" id="st12">未挂 KP</span>
+                </div>
+                <div class="note" id="wbNote">
+                  「已挂 KP」与「词边 chip」分开：KP 挂考点图谱；词边在解析采纳后由程序从 distractors 轴抽取。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card fade" id="batchDlg">
+          <div class="card-hd">
+            <h2>批量解析: 完形填空</h2>
+            <button type="button" class="btn" id="btnCloseBatch">关闭</button>
+          </div>
+          <div class="card-bd">
+            <p style="font-size:12px;margin:0 0 10px" id="batchSum">AI 批量解析中…</p>
+            <div class="q-row">
+              <span></span><span class="q-no">11</span>
+              <div>
+                <div class="q-stem">校验通过 · clue_type=语义衔接 · slot=副词槽</div>
+                <div class="chips">
+                  <span class="chip main">主·考 carefully</span>
+                  <span class="chip sec">次·干扰 carelessly</span>
+                  <span class="chip sec">次·干扰 happily</span>
+                  <span class="chip sec">次·干扰 quietly</span>
+                </div>
+              </div>
+              <span class="tag-sm green">可采纳</span>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px">
+              <button type="button" class="btn primary" id="btnAdopt">一键采纳 15 道通过项</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ ② 统计页 ═══ -->
+  <section class="scene" id="scene-stats">
+    <div class="shell">
+      <aside class="side">
+        <div class="logo">engGramer Admin</div>
+        <nav>
+          <a href="#">真题管理</a>
+          <a href="#">平台真题</a>
+          <a href="#" class="on">中考选项词统计</a>
+        </nav>
+      </aside>
+      <div class="main">
+        <h1 style="font-size:16px;margin:0 0 4px">中考 · 选项词角色统计</h1>
+        <p style="font-size:11px;color:var(--muted);margin:0 0 12px">空位逻辑题(单选+完形+填空) · 主·考 / 次·干扰</p>
+
+        <div class="toolbar">
+          <span class="tag">中考</span>
+          <div class="fld">
+            <label>统计池</label>
+            <select id="poolSel">
+              <option value="option_vocab_slot" selected>全部空位题(单选+完形+填空)</option>
+              <option value="option_mcq">四选一(语法单选+完形)</option>
+              <option value="option_fill">填空(词形+开放)</option>
+              <option value="standalone_word_mcq">仅语法单选</option>
+            </select>
+          </div>
+          <div class="fld">
+            <label>省</label>
+            <select><option>江苏省</option><option>全国</option></select>
+          </div>
+          <div class="fld">
+            <label>市</label>
+            <select><option>无锡市</option><option>全部</option></select>
+          </div>
+          <div class="fld">
+            <label>搜词</label>
+            <input type="text" placeholder="carefully" value="" />
+          </div>
+          <button type="button" class="btn primary">查询</button>
+        </div>
+
+        <div class="tabs">
+          <button type="button" class="tab">按省汇总</button>
+          <button type="button" class="tab">按市汇总</button>
+          <button type="button" class="tab on">词 × 地区</button>
+        </div>
+        <div class="crumb">全国 / <b>江苏省</b> / <b>无锡市</b></div>
+
+        <div class="card" style="border-radius:0 10px 10px 10px">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>词</th><th>主·考(题数)</th><th>次·干扰(题数)</th><th>合计题</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td><td><b>carefully</b></td>
+                <td><span class="num ok" data-open="carefully-correct">3</span></td>
+                <td><span class="num bad">1</span></td>
+                <td>3</td>
+                <td><button type="button" class="btn" style="padding:2px 8px;font-size:11px" data-open="carefully-any">全部原题</button></td>
+              </tr>
+              <tr>
+                <td>2</td><td><b>carelessly</b></td>
+                <td><span class="num ok">0</span></td>
+                <td><span class="num bad" data-open="carelessly-distractor">5</span></td>
+                <td>5</td>
+                <td><button type="button" class="btn" style="padding:2px 8px;font-size:11px">全部原题</button></td>
+              </tr>
+              <tr>
+                <td>3</td><td><b>divide</b> <span class="chip kind">word_fill 原形干扰</span></td>
+                <td><span class="num ok">2</span></td>
+                <td><span class="num bad">2</span></td>
+                <td>2</td>
+                <td><button type="button" class="btn" style="padding:2px 8px;font-size:11px">全部原题</button></td>
+              </tr>
+              <tr>
+                <td>4</td><td><b>environment</b> <span class="chip kind">passage_fill 仅主考</span></td>
+                <td><span class="num ok">1</span></td>
+                <td><span class="num bad" style="color:#94a3b8;font-weight:400">0</span></td>
+                <td>1</td>
+                <td><button type="button" class="btn" style="padding:2px 8px;font-size:11px">全部原题</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="pager">共 <b>258</b> 词 · 第 1/6 页</div>
+        </div>
+        <div class="note">
+          切换「仅语法单选」池 → 回到 125 词(不含完形/填空)。默认池为全部空位题。
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ ③ 反查（静态展示 + 可点） ═══ -->
+  <section class="scene" id="scene-lookup">
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">从词表点击「主·考 3」→ 弹出原题列表(含 kind / section / chip)</p>
+    <button type="button" class="btn primary" id="demoLookup">演示：carefully · 主·考 · 无锡</button>
+  </section>
+
+  <!-- ═══ ④ 口径 ═══ -->
+  <section class="scene spec" id="scene-spec">
+    <div class="card">
+      <div class="card-hd"><h2>统计池 · kind 纳入规则</h2></div>
+      <div class="card-bd">
+        <table>
+          <thead>
+            <tr><th>pool</th><th>含 kind</th><th>主·考来源</th><th>次·干扰来源</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>option_vocab_slot</code> ★默认</td>
+              <td>grammar_mc + cloze + word_fill + passage_fill</td>
+              <td>正确项 / target_form / answer_word</td>
+              <td>distractors 轴 / given 原形 / 无(开放填空)</td>
+            </tr>
+            <tr>
+              <td><code>option_mcq</code></td>
+              <td>grammar_mc + cloze</td>
+              <td colspan="2">四选一 distractors 轴</td>
+            </tr>
+            <tr>
+              <td><code>option_fill</code></td>
+              <td>word_fill + passage_fill</td>
+              <td colspan="2">词形 / 开放缺词</td>
+            </tr>
+            <tr>
+              <td><code>standalone_word_mcq</code></td>
+              <td>grammar_mc</td>
+              <td colspan="2">旧口径,与首版一致</td>
+            </tr>
+          </tbody>
+        </table>
+        <table style="margin-top:16px">
+          <thead><tr><th>题型</th><th>解析 kind</th><th>进池</th><th>触发挂边</th></tr></thead>
+          <tbody>
+            <tr><td>语法单选</td><td>grammar_mc</td><td class="yes">✓</td><td>confirm_analysis</td></tr>
+            <tr><td>完形四选一</td><td>cloze</td><td class="yes">✓</td><td>批量采纳后</td></tr>
+            <tr><td>动词/词形填空</td><td>word_fill</td><td class="yes">✓</td><td>批量采纳后</td></tr>
+            <tr><td>开放缺词/首字母</td><td>passage_fill</td><td class="yes">✓</td><td>answer_word → 仅主考</td></tr>
+            <tr><td>选词填空(A–D)</td><td>passage_fill</td><td class="yes">✓</td><td>卷面有选项 → MCQ 轴</td></tr>
+            <tr><td>阅读理解</td><td>reading</td><td class="no">✗</td><td>—</td></tr>
+            <tr><td>书面表达</td><td>writing</td><td class="no">✗</td><td>—</td></tr>
+          </tbody>
+        </table>
+        <div class="legend">
+          <span>计数：按 question_id 去重</span>
+          <span>地区：小题 region_code · 省2位/市4位</span>
+          <span>反查：GET /admin/vocab/{word_id}/platform-questions?pool=…&role=…</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- 反查弹层 -->
+<div class="overlay" id="lookupOverlay">
+  <div class="dlg">
+    <div class="dlg-hd">
+      <h3 id="dlgTitle">carefully · 主·考 · 无锡市 · 中考</h3>
+      <div class="win-ctrl">
+        <button type="button" title="最大化">⛶</button>
+        <button type="button" title="关闭" id="dlgClose">×</button>
+      </div>
+    </div>
+    <div class="dlg-bd">
+      <div class="q-item">
+        <div class="q-meta">
+          中考 · 无锡市 · 完形填空 · 第 11 题
+          <span class="chip kind">cloze</span>
+          <span class="chip main">主·考</span>
+        </div>
+        <div class="q-stem" style="font-size:13px">A. carefully &nbsp; B. happily &nbsp; C. carelessly &nbsp; D. quietly</div>
+        <div class="chips">
+          <span class="chip main">主·考 carefully</span>
+          <span class="chip sec">次·干扰 carelessly</span>
+          <span class="chip sec">次·干扰 happily</span>
+          <span class="chip sec">次·干扰 quietly</span>
+        </div>
+      </div>
+      <div class="q-item">
+        <div class="q-meta">
+          中考 · 常州市 · 单项选择 · 第 3 题
+          <span class="chip kind">grammar_mc</span>
+          <span class="chip main">主·考</span>
+        </div>
+        <div class="q-stem" style="font-size:13px">You should drive more ___ on rainy days.</div>
+        <div class="chips">
+          <span class="chip main">主·考 carefully</span>
+          <span class="chip sec">次·干扰 careless</span>
+        </div>
+      </div>
+      <div class="q-item">
+        <div class="q-meta">
+          中考 · 无锡市 · 完形填空 · 第 8 题
+          <span class="chip kind">cloze</span>
+          <span class="chip main">主·考</span>
+        </div>
+        <div class="q-stem" style="font-size:13px">A. careful &nbsp; B. carefully &nbsp; C. care &nbsp; D. cared</div>
+        <div class="chips">
+          <span class="chip main">主·考 carefully</span>
+          <span class="chip sec">次·干扰 careful</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/** 场景 Tab */
+document.querySelectorAll('.scene-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.scene-tab').forEach(b => b.classList.remove('on'));
+    document.querySelectorAll('.scene').forEach(s => s.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById('scene-' + btn.dataset.scene).classList.add('on');
+  });
+});
+
+/** 全流程步骤演示 */
+const chips11 = '<span class="chip main">主·考 carefully</span><span class="chip sec">次·干扰 carelessly</span><span class="chip sec">次·干扰 happily</span><span class="chip sec">次·干扰 quietly</span>';
+const chips12 = '<span class="chip main">主·考 hard</span><span class="chip sec">次·干扰 hardly</span><span class="chip sec">次·干扰 harder</span><span class="chip sec">次·干扰 hardest</span>';
+
+function setFlowStep(n) {
+  document.querySelectorAll('.step-dot').forEach(d => {
+    const s = +d.dataset.step;
+    d.classList.toggle('on', s === n);
+    d.classList.toggle('done', s < n);
+  });
+  const batch = document.getElementById('batchDlg');
+  const btn = document.getElementById('btnBatch');
+  const sum = document.getElementById('wbSum');
+  const note = document.getElementById('wbNote');
+  document.getElementById('chips11').innerHTML = '';
+  document.getElementById('chips12').innerHTML = '';
+  document.getElementById('st11').className = 'tag-sm gray';
+  document.getElementById('st11').textContent = '未挂 KP';
+  document.getElementById('st12').className = 'tag-sm gray';
+  document.getElementById('st12').textContent = '未挂 KP';
+
+  if (n === 1) {
+    batch.classList.add('fade');
+    btn.textContent = '批量解析全段';
+    btn.classList.remove('pulse');
+    btn.disabled = false;
+    sum.innerHTML = '共 15 题 · 已挂 KP <b>0</b> · 待处理 15 · 词边 <b>0</b>';
+  } else if (n === 2) {
+    batch.classList.remove('fade');
+    btn.textContent = '解析中…';
+    btn.classList.add('pulse');
+    btn.disabled = true;
+    document.getElementById('batchSum').textContent = '共 15 题；15 道通过硬校验可直接采纳。';
+    sum.innerHTML = '共 15 题 · 解析中…';
+  } else if (n === 3) {
+    batch.classList.add('fade');
+    btn.textContent = '批量解析全段';
+    btn.classList.remove('pulse');
+    document.getElementById('chips11').innerHTML = chips11;
+    document.getElementById('chips12').innerHTML = chips12;
+    document.getElementById('st11').className = 'tag-sm blue';
+    document.getElementById('st11').textContent = '词边已挂';
+    document.getElementById('st12').className = 'tag-sm blue';
+    document.getElementById('st12').textContent = '词边已挂';
+    sum.innerHTML = '共 15 题 · 已挂 KP <b>0</b> · 词边 <b>15</b> · 可进统计';
+    note.textContent = '采纳完成：meta.analysis.kind=cloze 已写库，attach 写入 vocab_question。KP 可后续单独挂。';
+  } else if (n === 4) {
+    document.querySelector('.scene-tab[data-scene="stats"]').click();
+    return;
+  }
+}
+
+document.querySelectorAll('.step-dot').forEach(d => {
+  d.addEventListener('click', () => setFlowStep(+d.dataset.step));
+});
+document.getElementById('btnBatch').addEventListener('click', () => setFlowStep(2));
+document.getElementById('btnAdopt').addEventListener('click', () => setFlowStep(3));
+document.getElementById('btnCloseBatch').addEventListener('click', () => setFlowStep(1));
+
+/** 反查弹层 */
+const overlay = document.getElementById('lookupOverlay');
+function openLookup(title) {
+  if (title) document.getElementById('dlgTitle').textContent = title;
+  overlay.classList.add('on');
+}
+document.getElementById('dlgClose').addEventListener('click', () => overlay.classList.remove('on'));
+overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('on'); });
+document.getElementById('demoLookup').addEventListener('click', () => openLookup('carefully · 主·考 · 无锡市 · 中考'));
+document.querySelectorAll('[data-open]').forEach(el => {
+  el.addEventListener('click', () => {
+    const k = el.dataset.open;
+    if (k === 'carefully-correct') openLookup('carefully · 主·考 · 无锡市 · 中考');
+    else if (k === 'carefully-any') openLookup('carefully · 全部 · 无锡市 · 中考');
+    else if (k === 'carelessly-distractor') openLookup('carelessly · 次·干扰 · 无锡市 · 中考');
+  });
+});
+</script>
+</body>
+</html>

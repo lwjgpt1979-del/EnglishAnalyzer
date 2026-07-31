@@ -6,6 +6,7 @@
 import { computed, ref, watch } from 'vue'
 import { Document } from '@element-plus/icons-vue'
 import type { PaperQuestion, QuestionKpRef, KpProposal } from '../api/admin'
+import OptionVocabChipRow from './OptionVocabChipRow.vue'
 
 export type WorkbenchKind = 'grammar' | 'cloze' | 'reading' | 'writing' | 'vocab' | 'passage_fill' | 'generic'
 
@@ -185,7 +186,7 @@ const primaryPassage = computed(() => {
             <div class="stem-cell">{{ stemBrief(row.stem) }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="考点" min-width="160">
+        <el-table-column label="考点" min-width="200">
           <template #default="{ row }">
             <div class="kp-line">
               <el-tag v-for="k in row.kps" :key="k.node_id" size="small" closable
@@ -203,6 +204,7 @@ const primaryPassage = computed(() => {
                 <span class="act-x" @click="emit('dismiss-proposal', row, p)">✕</span>
               </el-tag>
             </div>
+            <OptionVocabChipRow :vocab="row.option_vocab" />
           </template>
         </el-table-column>
         <el-table-column label="状态" width="88" align="center">
@@ -268,7 +270,7 @@ const primaryPassage = computed(() => {
                   <div class="stem-cell">{{ stemBrief(row.stem, 120) }}</div>
                 </template>
               </el-table-column>
-              <el-table-column label="rc / 考点" min-width="140">
+              <el-table-column label="rc / 考点" min-width="160">
                 <template #default="{ row }">
                   <div class="kp-line">
                     <el-tag v-for="k in row.kps" :key="k.node_id" size="small" closable
@@ -280,6 +282,7 @@ const primaryPassage = computed(() => {
                       <span class="act-x" @click="emit('dismiss-suggest', row, s)">✕</span>
                     </el-tag>
                   </div>
+                  <OptionVocabChipRow v-if="kind !== 'reading'" :vocab="row.option_vocab" />
                 </template>
               </el-table-column>
               <el-table-column label="状态" width="80" align="center">
@@ -333,6 +336,7 @@ const primaryPassage = computed(() => {
               <el-button size="small" text type="primary" @click="emit('open-kp', q)">+ 知识点</el-button>
               <el-button v-if="analyzable" size="small" text type="warning" @click="emit('open-analysis', q)">解析</el-button>
             </div>
+            <OptionVocabChipRow :vocab="q.option_vocab" />
           </div>
           <el-tag size="small" :type="q.status === 'published' ? 'success' : 'info'">
             {{ q.status === 'published' ? '已发布' : '草稿' }}
@@ -368,6 +372,7 @@ const primaryPassage = computed(() => {
                   <el-button size="small" text type="primary" @click="emit('open-kp', q)">+KP</el-button>
                   <el-button size="small" text type="warning" @click="emit('open-analysis', q)">解析</el-button>
                 </div>
+                <OptionVocabChipRow :vocab="q.option_vocab" />
               </div>
               <el-tag size="small" :type="qStatus(q).type">{{ qStatus(q).label }}</el-tag>
             </div>
@@ -429,6 +434,7 @@ const primaryPassage = computed(() => {
                 @click="emit('derive-sim', q)">↻ 派生仿真</el-button>
               <el-button v-if="analyzable" size="small" text type="warning" @click="emit('open-analysis', q)">解析</el-button>
             </div>
+            <OptionVocabChipRow :vocab="q.option_vocab" />
           </div>
           <el-tag size="small" :type="q.status === 'published' ? 'success' : 'info'">
             {{ q.status === 'published' ? '已发布' : '草稿' }}

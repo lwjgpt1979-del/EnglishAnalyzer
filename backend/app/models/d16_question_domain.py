@@ -280,3 +280,37 @@ class RealExtractJob(Base):
                               server_default=sa.func.now(), onupdate=sa.func.now())
 
     __table_args__ = (sa.Index("ix_real_extract_job_status", "status"),)
+
+
+class OptionVocabPipelineJob(Base):
+    """按地区批量解析并采纳入选项词统计的跑批任务(可查历史 / 断点靠 pending 续跑)。"""
+
+    __tablename__ = "option_vocab_pipeline_job"
+
+    id = mapped_column(sa.String(32), primary_key=True)  # uuid4.hex
+    status = mapped_column(sa.String(16), nullable=False, server_default=sa.text("'pending'"))
+    region_code = mapped_column(sa.String(12), nullable=True)
+    region_name = mapped_column(sa.String(64), nullable=True)
+    year = mapped_column(sa.Integer, nullable=True)
+    types = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    paper_ids = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    total = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    done = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    failed = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    adopted = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    suggested = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    concurrency = mapped_column(sa.Integer, nullable=False, server_default=sa.text("6"))
+    auto_adopt = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("true"))
+    force_suggest = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    error = mapped_column(sa.Text, nullable=True)
+    logs = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    admin_id = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False,
+                              server_default=sa.func.now(), onupdate=sa.func.now())
+    finished_at = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+
+    __table_args__ = (
+        sa.Index("ix_option_vocab_pipeline_job_created", "created_at"),
+        sa.Index("ix_option_vocab_pipeline_job_status", "status"),
+    )

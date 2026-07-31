@@ -73,6 +73,52 @@ async def confirm_analysis_batch_api(body: ConfirmBatchIn, db: DbDep, admin: Adm
     return make_ok(res)
 
 
+@router.get("/vocab/option-role-stats", response_model=BaseResponse[dict])
+async def vocab_option_role_stats_api(
+    db: DbDep, admin: AdminDep,
+    q: str | None = None,
+    pool: str = "option_vocab_slot",
+    exam_type: str | None = "中考",
+    group_by: str = "word",
+    region_level: str | None = None,
+    region_code: str | None = None,
+    min_correct: int = 0,
+    min_distractor: int = 0,
+    sort: str = "correct_count_desc",
+    skip: int = 0,
+    limit: int = 50,
+):
+    """词 × 主考/干扰统计,或按省/市汇总(group_by=region)。"""
+    from app.services import option_vocab_stats_service as ovs
+    data = await ovs.word_role_stats(
+        db, pool=pool, exam_type=exam_type or None, group_by=group_by,
+        region_level=region_level, region_code=region_code, q=q,
+        min_correct=min_correct, min_distractor=min_distractor,
+        sort=sort, skip=skip, limit=min(limit, 100))
+    return make_ok(data)
+
+
+@router.get("/vocab/{word_id}/platform-questions", response_model=BaseResponse[dict])
+async def list_word_platform_questions_api(
+    word_id: uuid.UUID, db: DbDep, admin: AdminDep,
+    role: str = "correct", pool: str = "option_vocab_slot",
+    exam_type: str | None = None, region_code: str | None = None,
+    skip: int = 0, limit: int = 50,
+):
+    """按词反查真题:role=correct|distractor|any;pool/exam_type/region_code 筛选。"""
+    from app.services import option_vocab_service as ovs
+    if role not in ("correct", "distractor", "any"):
+        role = "correct"
+    items, total, word = await ovs.list_platform_questions_for_word(
+        db, word_id=word_id, role=role, pool=pool or None,
+        exam_type=exam_type, region_code=region_code,
+        skip=skip, limit=min(limit, 100))
+    return make_ok({
+        "items": items, "total": total, "role": role, "word": word,
+        "pool": pool, "exam_type": exam_type, "region_code": region_code,
+    })
+
+
 class WritingRubricUpdate(BaseModel):
     full_score: int | None = Field(None, ge=1, le=100)
     accuracy_pass_ratio: float | None = Field(None, ge=0, le=1)
@@ -93,3 +139,67 @@ async def update_writing_rubric_api(body: WritingRubricUpdate, db: DbDep, admin:
         db, rubric=body.model_dump(exclude_none=True), updated_by=admin.id)
     await db.commit()
     return make_ok(saved)
+
+
+# ── 按地区·年份批量解析并采纳入选项词统计 ─────────────────────────────
+
+class PipelineScanIn(BaseModel):
+    region_code: str = Field(..., min_length=2, max_length=12)
+    year: int | None = None
+    types: list[str] = Field(default_factory=list)
+
+
+class PipelineRunIn(BaseModel):
+    paper_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=80)
+    types: list[str] = Field(default_factory=list)
+    concurrency: int = Field(6, ge=2, le=12)
+    auto_adopt: bool = True
+    force_suggest: bool = False
+    region_code: str | None = None
+    region_name: str | None = None
+    year: int | None = None
+
+
+@router.post("/option-vocab-pipeline/scan", response_model=BaseResponse[dict])
+async def option_vocab_pipeline_scan_api(body: PipelineScanIn, db: DbDep, admin: AdminDep):
+    """扫描省/市/年份下各卷:勾选题型中尚未 option_vocab_ready 的待跑题。"""
+    from app.services import option_vocab_pipeline_service as pipe
+    return make_ok(await pipe.scan(
+        db, region_code=body.region_code, year=body.year, types=body.types))
+
+
+@router.post("/option-vocab-pipeline/run", response_model=BaseResponse[dict])
+async def option_vocab_pipeline_run_api(body: PipelineRunIn, db: DbDep, admin: AdminDep):
+    """启动后台跑批:suggest(多线程)→通过项 confirm 写 ready。返回 job_id 供轮询。"""
+    from app.services import option_vocab_pipeline_service as pipe
+    job_id = await pipe.start_run(
+        paper_ids=body.paper_ids,
+        types=body.types,
+        concurrency=body.concurrency,
+        auto_adopt=body.auto_adopt,
+        force_suggest=body.force_suggest,
+        admin_id=admin.id,
+        region_code=body.region_code,
+        region_name=body.region_name,
+        year=body.year,
+    )
+    return make_ok({"job_id": job_id})
+
+
+@router.get("/option-vocab-pipeline/jobs", response_model=BaseResponse[dict])
+async def option_vocab_pipeline_jobs_api(admin: AdminDep, limit: int = 20):
+    """最近跑批列表(落库,含进行中实时进度)。"""
+    from app.services import option_vocab_pipeline_service as pipe
+    items = await pipe.list_jobs(limit=limit)
+    return make_ok({"items": items, "total": len(items)})
+
+
+@router.get("/option-vocab-pipeline/jobs/{job_id}", response_model=BaseResponse[dict])
+async def option_vocab_pipeline_job_api(job_id: str, admin: AdminDep):
+    """轮询跑批进度(内存优先,否则读库)。"""
+    from app.services import option_vocab_pipeline_service as pipe
+    from app.core.exceptions import AppError
+    job = await pipe.get_job(job_id)
+    if job is None:
+        raise AppError(code=404, message="任务不存在或已过期")
+    return make_ok(job)

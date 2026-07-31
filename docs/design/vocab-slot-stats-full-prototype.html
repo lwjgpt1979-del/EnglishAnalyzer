@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>空位题 → 选项词统计 · 方案 + 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-bad: #e85d5d;
+    --c-warn: #e6a23c;
+    --bg: #eef3f9;
+    --card: #fff;
+    --line: #e5ebf2;
+    --text: #1e293b;
+    --muted: #64748b;
+    --sidebar: #1e293b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 22px 16px 56px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 16px; max-width: 900px; }
+
+  /* 顶 Tab */
+  .top-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .top-tab {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .top-tab.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .panel { display: none; }
+  .panel.on { display: block; }
+
+  /* 方案卡 */
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 780px) { .plans { grid-template-columns: 1fr; } }
+  .plan {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  }
+  .plan.rec { border-color: #93c5fd; box-shadow: 0 0 0 3px #e8f2ff; }
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px;
+    border-radius: 999px; margin-bottom: 6px;
+  }
+  .badge.rec { background: #e9f6f1; color: var(--c-ok); }
+  .badge.alt { background: #f1f5f9; color: var(--muted); }
+  .plan h3 { margin: 0 0 8px; font-size: 14px; }
+  .plan ul { margin: 0; padding-left: 18px; font-size: 12px; color: #334155; }
+  .trade { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+  /* 弹窗 mock（对齐截图） */
+  .mock-overlay {
+    background: rgba(15,23,42,.08); border-radius: 12px; padding: 20px 12px;
+  }
+  .dlg {
+    background: #fff; border-radius: 8px; border: 1px solid var(--line);
+    box-shadow: 0 12px 40px rgba(15,23,42,.12); max-width: 820px; margin: 0 auto; overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .win-ctrl { display: flex; gap: 4px; color: #94a3b8; font-size: 14px; }
+  .dlg-bd { padding: 12px 18px; max-height: 420px; overflow: auto; }
+  .sum { font-size: 12px; color: #606266; margin-bottom: 12px; line-height: 1.6; }
+  .sum b.ok { color: var(--c-ok); }
+
+  .ana-row {
+    display: grid; grid-template-columns: 56px 1fr auto; gap: 10px;
+    padding: 14px 0; border-top: 1px solid #f0f2f5; align-items: start;
+  }
+  .ana-row:first-child { border-top: 0; }
+  .pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500;
+    display: inline-block; margin-bottom: 4px;
+  }
+  .pill.pass { background: #e9f6f1; color: var(--c-ok); }
+  .pill.warn { background: #fdf6ec; color: var(--c-warn); }
+  .qno { font-size: 13px; color: var(--text); font-weight: 600; }
+  .stem { font-size: 13px; line-height: 1.5; color: #303133; }
+  .meta { font-size: 12px; color: #909399; margin-top: 4px; }
+  .logic {
+    margin-top: 8px; padding: 8px 10px; background: #f8fafc;
+    border: 1px solid #e8edf4; border-radius: 6px; border-left: 3px solid var(--c-primary);
+  }
+  .logic-label {
+    font-size: 10px; font-weight: 700; color: var(--c-primary); letter-spacing: .02em;
+    margin-bottom: 4px;
+  }
+  .logic-stem { font-size: 13px; line-height: 1.55; color: #1e293b; }
+  .logic-stem .blank { border-bottom: 2px solid var(--c-primary); padding: 0 14px; color: var(--c-primary); }
+  .logic-opts { font-size: 12px; color: #475569; margin-top: 6px; }
+  .logic-ans { font-size: 11px; color: var(--c-ok); margin-top: 4px; font-weight: 600; }
+  .err { font-size: 12px; color: var(--c-warn); margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    font-size: 12px; padding: 2px 10px; border-radius: 4px; border: 1px solid;
+  }
+  .chip.main { background: #e9f6f1; border-color: #b7e4d4; color: #1f7a61; }
+  .chip.sec { background: #fef0f0; border-color: #fab6b6; color: #f56c6c; }
+  .acts { display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+  .link { border: 0; background: none; color: var(--c-primary); font-size: 13px; cursor: pointer; text-align: right; padding: 2px 0; }
+  .dlg-ft {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+    padding: 12px 18px; border-top: 1px solid var(--line); background: #fafbfc;
+  }
+  .hint { font-size: 12px; color: #a0a4ab; flex: 1; min-width: 200px; }
+  .btn {
+    border: 1px solid #dcdfe6; background: #fff; border-radius: 4px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: #606266;
+  }
+  .btn.primary { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+
+  /* 统计页 mock */
+  .shell { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; min-height: 460px; }
+  .side { width: 180px; background: var(--sidebar); padding: 14px 0; flex-shrink: 0; }
+  .side .logo { color: #fff; font-size: 12px; font-weight: 700; padding: 0 12px 12px; }
+  .side a { display: block; padding: 7px 12px; font-size: 12px; color: #94a3b8; text-decoration: none; }
+  .side a.on { background: rgba(61,139,245,.15); color: #93c5fd; }
+  .main { flex: 1; padding: 14px 16px; background: var(--bg); }
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+  }
+  .tag-exam { font-size: 11px; padding: 3px 10px; border-radius: 999px; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; font-weight: 600; }
+  select, input { border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { background: #f8fafc; color: #475569; font-size: 11px; }
+  .n-ok { color: var(--c-ok); font-weight: 600; cursor: pointer; }
+  .n-bad { color: var(--c-bad); font-weight: 600; cursor: pointer; }
+
+  /* 流程 */
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; margin: 12px 0;
+  }
+  .flow i { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-style: normal; }
+  .flow i.hi { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .flow span { color: #cbd5e1; }
+
+  /* 口径表 */
+  .spec-table { width: 100%; font-size: 12px; background: #fff; border: 1px solid var(--line); border-radius: 8px; border-collapse: collapse; }
+  .spec-table th, .spec-table td { padding: 8px 10px; border: 1px solid var(--line); }
+  .spec-table th { background: #f8fafc; }
+  .y { color: var(--c-ok); font-weight: 600; }
+  .n { color: var(--muted); }
+
+  .callout {
+    background: #fff; border: 1px dashed #bfdbfe; border-radius: 8px; padding: 10px 12px;
+    font-size: 12px; color: #334155; margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>空位逻辑题 → 中考 · 选项词角色统计</h1>
+  <p class="lead">
+    完形 / 缺词填空 / 选词 / 首字母等：拆题入库已是「一空一题」(<code>platform_question</code>)。
+    <strong>批量解析全段 → 一键采纳</strong> 后程序挂 主·考/次·干扰，再进入统计页聚合与反查。
+  </p>
+
+  <div class="top-tabs">
+    <button type="button" class="top-tab on" data-p="plan">方案对比</button>
+    <button type="button" class="top-tab" data-p="batch">原型 · 批量解析(完形)</button>
+    <button type="button" class="top-tab" data-p="stats">原型 · 统计页</button>
+    <button type="button" class="top-tab" data-p="lookup">原型 · 反查原题</button>
+    <button type="button" class="top-tab" data-p="spec">纳入口径</button>
+  </div>
+
+  <!-- ══ 方案 ══ -->
+  <section class="panel on" id="p-plan">
+    <div class="plans">
+      <div class="plan rec">
+        <span class="badge rec">推荐 · 方案 A</span>
+        <h3>扩统计池 + 确认时挂边（无新表）</h3>
+        <ul>
+          <li>沿用 <code>confirm_analysis</code> 末尾 <code>attach_platform_option_vocab</code></li>
+          <li>新增池 <code>option_vocab_slot</code>（默认）：grammar_mc + cloze + word_fill + passage_fill</li>
+          <li>统计 / 反查 SQL 按 <code>meta.analysis.kind</code> 过滤</li>
+          <li>批量弹窗 chip 预览与落库同一套 extract（已有）</li>
+        </ul>
+        <div class="trade">✅ 改动最小，与截图 UI 一致 · ⚠️ 开放填空仅主考、干扰为 0 需产品接受</div>
+      </div>
+      <div class="plan">
+        <span class="badge alt">方案 B</span>
+        <h3>可统计闸门 <code>option_vocab_ready</code></h3>
+        <ul>
+          <li>在方案 A 基础上，挂边成功(≥1 主考)写 <code>meta.analysis.option_vocab_ready=true</code></li>
+          <li>统计只计 ready 题，半解析不污染</li>
+          <li>backfill 补历史 ready 标记</li>
+        </ul>
+        <div class="trade">✅ 口径更严 · ⚠️ 多字段维护 + 回填成本</div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <i>一空一题 platform_question</i><span>→</span>
+      <i class="hi">批量解析全段</i><span>→</span>
+      <i>suggest + chip 预览</i><span>→</span>
+      <i class="hi">一键采纳</i><span>→</span>
+      <i>kind + vocab_question 边</i><span>→</span>
+      <i class="hi">option_vocab_slot 聚合</i><span>→</span>
+      <i>点次数反查</i>
+    </div>
+
+    <table class="spec-table">
+      <thead><tr><th>题型示例</th><th>kind</th><th>单独逻辑题</th><th>主·考</th><th>次·干扰</th></tr></thead>
+      <tbody>
+        <tr><td>语法单选</td><td>grammar_mc</td><td>题干即逻辑题(已有)</td><td>distractors 推出正确项</td><td>其余 A–D</td></tr>
+        <tr><td>完形四选一</td><td>cloze</td><td>线索句挖空 + 四选项 + 答案</td><td>同左</td><td>同左</td></tr>
+        <tr><td>动词/词形填空</td><td>word_fill</td><td>原句 + (given) → ____</td><td>target_form</td><td>given 原形</td></tr>
+        <tr><td>开放缺词/首字母</td><td>passage_fill</td><td>线索句挖空(无选项)</td><td>answer_word</td><td>—</td></tr>
+        <tr><td>选词填空(A–D)</td><td>passage_fill</td><td>语境句 + 四选项</td><td>MCQ 轴</td><td>MCQ 轴</td></tr>
+        <tr><td>阅读理解</td><td>reading</td><td>—</td><td class="n">不进统计</td><td class="n">—</td></tr>
+      </tbody>
+    </table>
+
+    <div class="plans" style="margin-top:14px">
+      <div class="plan rec">
+        <span class="badge rec">推荐 · A′ 程序合成 logic_display</span>
+        <h3>批量弹窗 / 反查 / 统计均展示同一对象</h3>
+        <ul>
+          <li><b>完形</b>：取 <code>analysis.clue</code>，将正确词替换为 <code>____</code> → 拼选项行 → 拼答案字母</li>
+          <li><b>词形填空</b>：题干已有 <code>(given)</code>，目标空即逻辑填空句</li>
+          <li><b>开放缺词</b>：clue 挖空 + 显示 answer_word（无 A–D）</li>
+          <li>后端 <code>compose_logic_display(q, analysis, passage)</code> 返回统一结构；suggest 响应附带，前端只读展示</li>
+        </ul>
+        <div class="trade">✅ 无 LLM 增量成本 · 与线索句校验同源 · ⚠️ clue 未含答案词时需 fallback 用短文编号空位</div>
+      </div>
+      <div class="plan">
+        <span class="badge alt">方案 B · LLM 输出 logic_stem</span>
+        <h3>解析 JSON 增字段</h3>
+        <ul>
+          <li>完形/填空 prompt 要求额外输出 <code>logic_stem</code></li>
+          <li>校验：logic_stem 须含 <code>____</code> 且为 passage 子串变体</li>
+        </ul>
+        <div class="trade">✅ 句式更自然 · ❌ 多一次生成/校验 · ❌ 与「同输入不二次付费」冲突风险</div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>统计闸门（强制）：</strong>仅「硬校验通过 + 人工确认写库 + 程序挂边成功(≥1 主·考)」的题进池。<br>
+      <strong>明确排除：</strong>批量弹窗标「需改」的题（如线索句非原文子串）、chip 主考未抽出、<code>validation_skipped</code> 强制写库项。<br>
+      <strong>待拍板：</strong>① 方案 A / A′+闸门？② 统计默认池？③ 存量 backfill？
+    </div>
+  </section>
+
+  <!-- ══ 批量解析原型（对齐截图） ══ -->
+  <section class="panel" id="p-batch">
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px">对应现有 <code>PlatformQuestions.vue</code> 批量弹窗 · 题卡分层 · 采纳后写库+挂边</p>
+    <div class="mock-overlay">
+      <div class="dlg">
+        <div class="dlg-hd">
+          <h2>批量解析: 完形填空</h2>
+          <div class="win-ctrl"><span>⛶</span><span>×</span></div>
+        </div>
+        <div class="dlg-bd">
+          <div class="sum">
+            共 15 题; <b class="ok">13</b> 道通过硬校验可直接采纳。采纳时程序自动挂「主·考 / 次·干扰」词边(无额外 AI)。
+          </div>
+
+          <div class="ana-row">
+            <div>
+              <span class="pill pass">通过</span>
+              <div class="qno">11</div>
+            </div>
+            <div>
+              <div class="stem">11. A. carefully &nbsp; B. happily &nbsp; C. carelessly &nbsp; D. quietly</div>
+              <div class="logic">
+                <div class="logic-label">单独逻辑题 · 四选一</div>
+                <div class="logic-stem">When I was young, I always did my homework <span class="blank">____</span> and my mother was angry with me.</div>
+                <div class="logic-opts">A. carefully &nbsp; B. happily &nbsp; C. carelessly &nbsp; D. quietly</div>
+                <div class="logic-ans">答案：A · carefully</div>
+              </div>
+              <div class="meta">解析 · 副词槽 · 跨句词汇复现</div>
+              <div class="chips">
+                <span class="chip main">主·考 carefully</span>
+                <span class="chip sec">次·干扰 happily</span>
+                <span class="chip sec">次·干扰 carelessly</span>
+                <span class="chip sec">次·干扰 quietly</span>
+              </div>
+            </div>
+            <div class="acts">
+              <button type="button" class="link">查看</button>
+              <button type="button" class="link">改</button>
+            </div>
+          </div>
+
+          <div class="ana-row">
+            <div>
+              <span class="pill pass">通过</span>
+              <div class="qno">12</div>
+            </div>
+            <div>
+              <div class="stem">12. A. hard &nbsp; B. hardly &nbsp; C. harder &nbsp; D. hardest</div>
+              <div class="logic">
+                <div class="logic-label">单独逻辑题 · 四选一</div>
+                <div class="logic-stem">You must work <span class="blank">____</span> if you want to pass the exam.</div>
+                <div class="logic-opts">A. hard &nbsp; B. hardly &nbsp; C. harder &nbsp; D. hardest</div>
+                <div class="logic-ans">答案：A · hard</div>
+              </div>
+              <div class="meta">解析 · 副词槽 · 语义衔接</div>
+              <div class="chips">
+                <span class="chip main">主·考 hard</span>
+                <span class="chip sec">次·干扰 hardly</span>
+                <span class="chip sec">次·干扰 harder</span>
+                <span class="chip sec">次·干扰 hardest</span>
+              </div>
+            </div>
+            <div class="acts">
+              <button type="button" class="link">查看</button>
+              <button type="button" class="link">改</button>
+            </div>
+          </div>
+
+          <div class="ana-row">
+            <div>
+              <span class="pill pass">通过</span>
+              <div class="qno">13</div>
+            </div>
+            <div>
+              <div class="stem">13. A. interest &nbsp; B. interests &nbsp; C. interested &nbsp; D. interesting</div>
+              <div class="meta">解析 · 形容词槽 · 词形变化</div>
+              <div class="chips">
+                <span class="chip main">主·考 interested</span>
+                <span class="chip sec">次·干扰 interest</span>
+                <span class="chip sec">次·干扰 interests</span>
+                <span class="chip sec">次·干扰 interesting</span>
+              </div>
+            </div>
+            <div class="acts">
+              <button type="button" class="link">查看</button>
+              <button type="button" class="link">改</button>
+            </div>
+          </div>
+
+          <div class="ana-row">
+            <div>
+              <span class="pill warn">需改</span>
+              <div class="qno">14</div>
+            </div>
+            <div>
+              <div class="stem">14. A. … B. … C. … D. …</div>
+              <div class="err">线索句不是原文子串(疑似幻觉)</div>
+              <div class="chips">
+                <span class="chip main">主·考 …</span>
+              </div>
+              <div class="logic" style="opacity:.45;border-left-color:#e6a23c">
+                <div class="logic-label" style="color:#e6a23c">单独逻辑题 · 未生成</div>
+                <div class="logic-stem" style="color:#94a3b8;font-size:12px">校验未通过,无法合成可靠逻辑题</div>
+              </div>
+            </div>
+            <div class="acts">
+              <button type="button" class="link">查看</button>
+              <button type="button" class="link">改</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#e6a23c;background:#fdf6ec;border:1px solid #faecd8;border-radius:6px;padding:8px 10px;margin-top:8px">
+            ⛔ <strong>需改 / 校验失败</strong> 的题：不可一键采纳 · <strong>不进</strong>【中考 · 选项词角色统计】· 不挂词边落库(除非人工改对后重新确认)
+          </div>
+        </div>
+        <div class="dlg-ft">
+          <span class="hint">解析+挂词均在「一键采纳/人工确认」后写库;挂词抽不出不挡采纳</span>
+          <button type="button" class="btn">重新解析</button>
+          <button type="button" class="btn">关闭</button>
+          <button type="button" class="btn primary">一键采纳 13 道通过项</button>
+        </div>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:14px">
+      <strong>新增一行「单独逻辑题」：</strong>把短文语境 + 空位 + 选项 + 答案合成可独立作答的单选/填空，便于运营核对「这一空到底在考什么词」。采纳后进统计 / 反查均按此逻辑题计。<br>
+      生成规则见「方案对比」Tab · 推荐方案 A′（程序合成，无额外 LLM）。
+    </div>
+  </section>
+
+  <!-- ══ 统计页 ══ -->
+  <section class="panel" id="p-stats">
+    <div class="shell">
+      <aside class="side">
+        <div class="logo">engGramer Admin</div>
+        <a href="#">平台真题</a>
+        <a href="#" class="on">中考选项词统计</a>
+      </aside>
+      <div class="main">
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">中考 · 选项词角色统计</div>
+        <div class="toolbar">
+          <span class="tag-exam">中考</span>
+          <label style="font-size:12px;color:var(--muted)">统计池</label>
+          <select>
+            <option selected>全部空位题(单选+完形+填空)</option>
+            <option>四选一(语法单选+完形)</option>
+            <option>填空(词形+开放)</option>
+            <option>仅语法单选</option>
+          </select>
+          <label style="font-size:12px;color:var(--muted)">省</label><select><option>江苏省</option></select>
+          <label style="font-size:12px;color:var(--muted)">市</label><select><option>无锡市</option></select>
+          <input type="text" placeholder="搜词" />
+          <button type="button" class="btn primary" style="padding:6px 12px">查询</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">全国 / 江苏省 / 无锡市 · Tab: 词 × 地区</div>
+        <table>
+          <thead>
+            <tr><th>词</th><th>主·考(题数)</th><th>次·干扰(题数)</th><th>合计</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>carefully</b></td>
+              <td><span class="n-ok" onclick="showLookup()">3</span></td>
+              <td><span class="n-bad">1</span></td><td>3</td>
+              <td><button type="button" class="link">全部原题</button></td>
+            </tr>
+            <tr>
+              <td><b>carelessly</b></td>
+              <td>0</td>
+              <td><span class="n-bad">5</span></td><td>5</td>
+              <td><button type="button" class="link">全部原题</button></td>
+            </tr>
+            <tr>
+              <td><b>hardly</b> <small style="color:var(--muted)">cloze 干扰</small></td>
+              <td>0</td>
+              <td><span class="n-bad">2</span></td><td>2</td>
+              <td><button type="button" class="link">全部原题</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 反查 ══ -->
+  <section class="panel" id="p-lookup">
+    <p style="font-size:12px;color:var(--muted)">点击统计页「主·考 3」→ 弹出原题(含 kind / section / 第几空)</p>
+    <div class="dlg" style="max-width:680px;margin:12px auto">
+      <div class="dlg-hd">
+        <h2 style="font-size:14px">carefully · 主·考 · 无锡市 · 中考</h2>
+        <div class="win-ctrl"><span>⛶</span><span>×</span></div>
+      </div>
+      <div class="dlg-bd">
+        <div class="ana-row">
+          <div></div>
+          <div>
+            <div class="meta">中考 · 无锡市 · 完形填空 · 第 <b>11</b> 题 · <span class="chip main" style="font-size:10px">cloze</span></div>
+            <div class="logic" style="margin:6px 0">
+              <div class="logic-label">单独逻辑题</div>
+              <div class="logic-stem">…did my homework <span class="blank">____</span> and my mother was angry…</div>
+              <div class="logic-opts">A. carefully B. happily C. carelessly D. quietly</div>
+              <div class="logic-ans">答案：A · carefully</div>
+            </div>
+            <div class="stem" style="font-size:11px;color:#909399">卷面选项行 · A. carefully …</div>
+            <div class="chips">
+              <span class="chip main">主·考 carefully</span>
+              <span class="chip sec">次·干扰 carelessly</span>
+              <span class="chip sec">次·干扰 happily</span>
+              <span class="chip sec">次·干扰 quietly</span>
+            </div>
+          </div>
+        </div>
+        <div class="ana-row">
+          <div></div>
+          <div>
+            <div class="meta">中考 · 常州市 · 单项选择 · 第 3 题 · <span class="chip main" style="font-size:10px">grammar_mc</span></div>
+            <div class="stem">You should drive more ___ on rainy days.</div>
+            <div class="chips">
+              <span class="chip main">主·考 carefully</span>
+              <span class="chip sec">次·干扰 careless</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <pre style="font-size:11px;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:8px;margin-top:12px;overflow:auto">GET /admin/vocab/{word_id}/platform-questions
+  ?pool=option_vocab_slot&role=correct&exam_type=中考&region_code=3202</pre>
+  </section>
+
+  <!-- ══ 口径 ══ -->
+  <section class="panel" id="p-spec">
+    <table class="spec-table">
+      <thead><tr><th>pool</th><th>含 kind</th><th>默认?</th></tr></thead>
+      <tbody>
+        <tr><td><code>option_vocab_slot</code></td><td>grammar_mc + cloze + word_fill + passage_fill</td><td class="y">★</td></tr>
+        <tr><td><code>option_mcq</code></td><td>grammar_mc + cloze</td><td></td></tr>
+        <tr><td><code>option_fill</code></td><td>word_fill + passage_fill</td><td></td></tr>
+        <tr><td><code>standalone_word_mcq</code></td><td>grammar_mc only</td><td>旧口径</td></tr>
+      </tbody>
+    </table>
+    <table class="spec-table" style="margin-top:14px">
+      <thead><tr><th>状态</th><th>一键采纳</th><th>挂词边</th><th>进统计</th></tr></thead>
+      <tbody>
+        <tr><td>通过 + 采纳</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+        <tr><td>需改(如线索句非原文)</td><td class="n">✗</td><td class="n">✗</td><td class="n">✗</td></tr>
+        <tr><td>通过但主考未抽出</td><td class="y">可采纳</td><td class="n">无 correct</td><td class="n">✗</td></tr>
+        <tr><td>force 忽略校验写库</td><td>—</td><td>可能有</td><td class="n">✗</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <strong>统计闸门：</strong>仅硬校验通过 + 确认写库 + 挂边成功(≥1 主·考) · SQL 过滤 <code>option_vocab_ready=true</code><br>
+      开发：扩池 + logic_display + confirm 写 ready + 统计/反查加闸门 + backfill
+    </div>
+  </section>
+</div>
+
+<script>
+document.querySelectorAll('.top-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.top-tab').forEach(b => b.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById('p-' + btn.dataset.p).classList.add('on');
+  });
+});
+function showLookup() {
+  document.querySelector('[data-p="lookup"]').click();
+}
+</script>
+</body>
+</html>

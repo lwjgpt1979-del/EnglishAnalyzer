@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, Notebook } from '@element-plus/icons-vue'
 import AppDialog from '../components/AppDialog.vue'
 import PaperSectionWorkbench, { type WorkbenchKind } from '../components/PaperSectionWorkbench.vue'
+import OptionVocabChipRow from '../components/OptionVocabChipRow.vue'
+import LogicDisplayBlock from '../components/LogicDisplayBlock.vue'
 import {
   listPlatformPapers, getPlatformPaper, publishPlatformPaper, deletePlatformPapers, genSimBulk, getSimGenJob,
   attachQuestionKp, detachQuestionKp, attachKpBulk, suggestPaperKp, getNodeTree,
   createKnowledgeNode, genSimFromReal, suggestQuestionAnalysis, confirmQuestionAnalysis,
   confirmQuestionAnalysisBatch, getWritingRubric, updateWritingRubric,
   type QuestionAnalysis, type AnalysisSuggestItem, type WritingRubric,
-  type QuestionKpRef, type KpProposal,
+  type QuestionKpRef, type KpProposal, type OptionVocabChips,
   extractRealQuestions, getExtractJob, bulkImportRealQuestions, batchUploadPapers, parsePaper, convertPaperDoc,
   listRegions, uploadImageViaPresign,
+  scanOptionVocabPipeline, runOptionVocabPipeline, getOptionVocabPipelineJob, listOptionVocabPipelineJobs,
   type PlatformPaper, type PaperQuestion, type BatchUploadResult,
+  type PipelinePaperRow, type PipelineJobOut,
 } from '../api/admin'
 import type { NodeTreeItem } from '../types'
 
@@ -142,6 +146,16 @@ async function openPaper(p: PlatformPaper) {
   finally { paperLoading.value = false }
 }
 
+/** 刷新当前卷题目(含 option_vocab 挂边) */
+async function refreshPaperQuestions() {
+  if (!curPaper.value) return
+  try {
+    const d = await getPlatformPaper(curPaper.value.id)
+    curPaper.value = d.paper
+    paperQuestions.value = d.questions
+  } catch { /* 忽略刷新失败,不影响主流程 */ }
+}
+
 // 试卷重新生成:清掉旧题、按原卷重新拆题入库(幂等)。引擎二选一——基础版=规则,AI 版(mode='llm')=LLM 整卷解析(排版复杂/规则漏题时用)
 const reparsing = ref(false)
 const reparseEngine = ref<'rule' | 'llm'>('rule')   // 拆题引擎:基础版 / AI 版
@@ -259,8 +273,18 @@ const anaTarget = ref<PaperQuestion | null>(null)
 const anaErrors = ref<string[]>([])
 const anaConfirmed = ref(false)   // 已有人工确认过的解析
 const anaIgnore = ref(false)      // 人工判定校验误报 → 忽略校验强制写库
+/** 单题弹窗只读挂词(与批量 suggest 同源) */
+const anaOptionVocab = ref<OptionVocabChips | null>(null)
 const anaIsCloze = computed(() => anaTarget.value?.question_type === '完型')
 const anaIsWriting = computed(() => anaTarget.value?.question_type === '写作')
+/** 阅读理解:不展示主考/干扰 chip */
+const anaIsReading = computed(() => {
+  const q = anaTarget.value
+  if (!q) return false
+  if (q.question_type === '阅读') return true
+  const sec = q.section || ''
+  return /阅读/.test(sec) && !/完形|完型/.test(sec)
+})
 // 语法单选:单选且非阅读理解单选、非听力单选(词法/句法)
 const anaIsGrammar = computed(() => anaTarget.value?.question_type === '单选'
   && !/阅读|听力/.test(anaTarget.value?.section || ''))
@@ -341,12 +365,14 @@ async function openAnalysis(q: PaperQuestion) {
   anaErrors.value = []
   anaConfirmed.value = false
   anaIgnore.value = false
+  anaOptionVocab.value = q.option_vocab || null
   _resetAnaForm()
   try {
     const [item] = await suggestQuestionAnalysis([q.id])
     anaConfirmed.value = !!item?.existing?.confirmed_at
     anaErrors.value = item?.existing ? [] : (item?.errors || [])
     _fillAnaForm(item?.existing || item?.analysis)   // 已确认过的优先展示
+    if (item?.option_vocab) anaOptionVocab.value = item.option_vocab
   } catch (e: any) { ElMessage.error(e?.message || 'AI 解析建议失败') }
   finally { anaBusy.value = false }
 }
@@ -360,6 +386,7 @@ async function reanalyzeAnalysis() {
     anaErrors.value = item?.errors || []
     anaIgnore.value = false
     _fillAnaForm(item?.analysis)
+    if (item?.option_vocab) anaOptionVocab.value = item.option_vocab
   } catch (e: any) { ElMessage.error(e?.message || 'AI 重新解析失败') }
   finally { anaBusy.value = false }
 }
@@ -372,6 +399,7 @@ function viewAnaBatchItem(it: AnalysisSuggestItem) {
   anaConfirmed.value = false
   anaBusy.value = false
   anaIgnore.value = false
+  anaOptionVocab.value = it.option_vocab || q.option_vocab || null
   _fillAnaForm(it.analysis)
   anaDlg.value = true            // 批量弹窗保留在底层,详情叠加于上
 }
@@ -436,6 +464,7 @@ async function saveAnalysis() {
     // 若从批量「查看」进来:确认后从待办列表移除该行,保持列表与库一致
     anaBatchItems.value = anaBatchItems.value.filter(it => it.question_id !== anaTarget.value!.id)
     anaDlg.value = false
+    await refreshPaperQuestions()
   } catch (e: any) { ElMessage.error(e?.message || '确认失败(未通过校验?)') }
   finally { anaSaving.value = false }
 }
@@ -453,12 +482,15 @@ function analyzableSection(sec: { name: string }): boolean {
 }
 // 单题是否可做题目层解析:类型即完型/阅读/写作;语法单选(单选·非阅读/听力段);
 // 填空词形类(填空·词形段);或阅读理解题机械形式常为「单选/填空」但段名表明是阅读/完形。
-function isAnalyzableQuestion(q: { question_type?: string | null }, sectionName: string): boolean {
+function isAnalyzableQuestion(q: { question_type?: string | null; stem?: string | null }, sectionName: string): boolean {
   const sec = sectionName || ''
+  const stem = q.stem || ''
+  const wordFillSec = /词汇|词语|动词|单词|所给|适当形式|词形/.test(sec) && !/短文|完成句子|翻译|句型转换|缺词/.test(sec)
+  const wordFillStem = /\([A-Za-z][^)]{0,40}\)/.test(stem) && !/\b[A-DＡ-Ｄ][.、．)]\s*\S/.test(stem)
+  if (wordFillSec || wordFillStem) return true   // 动词填空/词形(含题型误标为单选)
   if (q.question_type === '完型' || q.question_type === '阅读' || q.question_type === '写作') return true
   if (q.question_type === '单选' && !/阅读|听力/.test(sec)) return true   // 语法单选
-  if (q.question_type === '填空' && /词汇|词语|动词|单词|所给|适当形式|词形/.test(sec)
-    && !/短文|完成句子|翻译|句型转换|缺词/.test(sec)) return true          // 填空词形类
+  if (q.question_type === '填空' && wordFillSec) return true
   if (q.question_type === '填空' && /短文|缺词/.test(sec)) return true      // 短文填空(开放填空)
   if (q.question_type === '填空' && /完成句子|翻译|句型转换/.test(sec)) return true   // 完成句子(句法)
   return /完形|完型|阅读/.test(sec) && (q.question_type === '单选' || q.question_type === '填空')
@@ -467,7 +499,32 @@ function anaSummary(it: AnalysisSuggestItem): string {
   const a = it.analysis
   if (!a) return '(无建议)'
   if (a.clue_type) return `${a.slot || '—'} · ${a.clue_type} · ${(a.kp_codes || []).join(',')}`
-  return `${a.rc_code || '—'} · ${(a.evidence || '').slice(0, 24)}`
+  if (a.rc_code) return `${a.rc_code} · ${(a.evidence || '').slice(0, 24)}`
+  if (a.change_type) return `${(a.kp_codes || []).join(',') || '—'} · ${a.change_type}${a.target_form ? ` → ${a.target_form}` : ''}`
+  // 语法单选等:考点码 + 答案依据
+  const kp = (a.kp_codes || []).join(',')
+  const reason = (a.answer_reason || a.change_type || a.target_structure || a.genre || '').slice(0, 40)
+  if (kp || reason) return [kp || '—', reason].filter(Boolean).join(' · ')
+  return '—'
+}
+/** 批量题卡:题干优先(不再用空 rc 冒充摘要) */
+function batchStemBrief(it: AnalysisSuggestItem): string {
+  const q = anaBatchQmap.value[it.question_id]
+  const s = (q?.stem || '').replace(/\s+/g, ' ').trim()
+  return s ? (s.length > 96 ? s.slice(0, 96) + '…' : s) : '(无题干)'
+}
+/**
+ * 是否展示「单独逻辑题」块。
+ * 语法单选题干本身已自足,再抄一遍无信息增量;仅完形/短文填空/词形填空需要。
+ */
+function needsLogicDisplay(it: AnalysisSuggestItem): boolean {
+  const a = it.analysis || (it.existing && typeof it.existing === 'object' ? it.existing : null)
+  if (!a) return false
+  const kind = (a.kind || '').trim()
+  if (kind === 'grammar_mc' || kind === 'reading' || kind === 'writing' || kind === 'sentence') return false
+  if (kind === 'cloze' || kind === 'word_fill' || kind === 'passage_fill') return true
+  // suggest 草稿尚未写 kind:有线索/词形才需要合成展示
+  return !!(a.clue_type || a.change_type)
 }
 const anaBatchStaged = computed(() => anaBatchItems.value.some(it => it.staged))
 async function _runAnaBatch(force: boolean) {
@@ -506,9 +563,25 @@ async function adoptAnaBatch() {
     const r = await confirmQuestionAnalysisBatch(
       pass.map(it => ({ question_id: it.question_id, analysis: it.analysis as QuestionAnalysis })))
     ElMessage.success(`已采纳 ${r.confirmed.length} 道${r.failed.length ? `,失败 ${r.failed.length}` : ''}`)
+    if (r.failed.length) {
+      const sample = r.failed.slice(0, 3).map(f => f.error || '').filter(Boolean)
+      ElMessage.warning({
+        duration: 8000,
+        message: `失败原因示例: ${sample.join('；') || '见后端日志'}${r.failed.length > 3 ? '…' : ''}`,
+      })
+    }
     // 采纳后从列表移除已写库项;剩报错项留给人工逐个改
     const done = new Set(r.confirmed)
     anaBatchItems.value = anaBatchItems.value.filter(it => !done.has(it.question_id))
+    // 失败项挂上原因,列表可见
+    const errMap = Object.fromEntries(r.failed.map(f => [f.question_id, f.error]))
+    for (const it of anaBatchItems.value) {
+      if (errMap[it.question_id]) {
+        const msg = errMap[it.question_id]
+        if (!it.errors.includes(msg)) it.errors = [...it.errors, msg]
+      }
+    }
+    await refreshPaperQuestions()
   } catch (e: any) { ElMessage.error(e?.message || '批量采纳失败') }
   finally { anaBatchSaving.value = false }
 }
@@ -765,6 +838,280 @@ function openBatchDlg() {
   batchAutofilled.value = false
   batchDlg.value = true
 }
+
+// ── 按地区·年份批量解析并采纳入选项词统计(续跑呈现 + job 历史)──
+const PIPE_TYPE_OPTS = [
+  { key: 'grammar_mc', label: '单项选择' },
+  { key: 'cloze', label: '完形填空' },
+  { key: 'passage_fill', label: '短文填空' },
+  { key: 'vocab_use', label: '词汇运用' },
+  { key: 'verb_fill', label: '动词填空' },
+] as const
+const PIPE_JOB_KEY = 'option_vocab_pipeline_job_id'
+const pipeDlg = ref(false)
+const pipeRegionPath = ref<string[]>([])
+const pipeYear = ref<number | ''>(new Date().getFullYear())
+const pipeTypes = ref<string[]>(PIPE_TYPE_OPTS.map(t => t.key))
+const pipeScanning = ref(false)
+const pipeScan = ref<{ pending_total: number; ready_total: number; paper_count: number; papers: PipelinePaperRow[] } | null>(null)
+const pipeChecked = ref<string[]>([])
+const pipeConc = ref(6)
+const pipeAutoAdopt = ref(true)
+const pipeForce = ref(false)
+const pipeRunning = ref(false)
+const pipeJob = ref<PipelineJobOut | null>(null)
+const pipeJobs = ref<PipelineJobOut[]>([])
+const pipeViewingHistory = ref(false)
+const pipeBanner = ref<{ kind: 'running' | 'done' | 'error'; text: string } | null>(null)
+const pipeTableRef = ref<{ clearSelection: () => void; toggleRowSelection: (row: PipelinePaperRow, selected?: boolean) => void } | null>(null)
+let pipePollTimer: ReturnType<typeof setInterval> | null = null
+
+function stopPipePoll() {
+  if (pipePollTimer) { clearInterval(pipePollTimer); pipePollTimer = null }
+}
+function pipeIsActive(j?: PipelineJobOut | null) {
+  return !!j && (j.status === 'pending' || j.status === 'running')
+}
+function pipeRegionCode(): string {
+  const p = pipeRegionPath.value
+  return p.length ? p[p.length - 1] : ''
+}
+function pipeRegionLabel(): string {
+  const papers = pipeScan.value?.papers || []
+  const hit = papers.find(p => p.region_name)
+  if (hit?.region_name) return hit.region_name
+  if (pipeJob.value?.region_name) return pipeJob.value.region_name
+  return pipeRegionCode() || '—'
+}
+function formatPipeByType(m: Record<string, number> | undefined): string {
+  if (!m || !Object.keys(m).length) return '—'
+  return Object.entries(m).map(([k, v]) => `${k} ${v}`).join(' · ')
+}
+function formatPipeJobScope(j: PipelineJobOut): string {
+  const parts = [
+    j.region_name || j.region_code || '',
+    j.year != null ? String(j.year) : '',
+  ].filter(Boolean)
+  return parts.join(' · ') || '未标范围'
+}
+function formatPipeJobTime(j: PipelineJobOut): string {
+  const raw = j.finished_at || j.updated_at || j.created_at
+  if (!raw) return ''
+  try {
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return raw
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  } catch {
+    return raw
+  }
+}
+function onPipeSelectionChange(rows: PipelinePaperRow[]) {
+  pipeChecked.value = rows.map(r => r.paper_id)
+}
+function pipeRowSelectable(row: PipelinePaperRow) {
+  return row.pending_count > 0 && !pipeRunning.value
+}
+async function loadPipeJobs() {
+  try {
+    const r = await listOptionVocabPipelineJobs(20)
+    pipeJobs.value = r.items || []
+  } catch {
+    pipeJobs.value = []
+  }
+}
+function applyPipeBannerFromJob(j: PipelineJobOut | null) {
+  if (!j) { pipeBanner.value = null; return }
+  if (pipeIsActive(j)) {
+    pipeBanner.value = {
+      kind: 'running',
+      text: `已恢复进行中任务 · ${formatPipeJobScope(j)} · 进度 ${j.done}/${j.total}`,
+    }
+  } else if (j.status === 'done') {
+    pipeBanner.value = {
+      kind: 'done',
+      text: `上次跑批已结束 · ${formatPipeJobScope(j)} · 采纳 ${j.adopted} · 失败 ${j.failed}。剩余待跑可「继续跑批」。`,
+    }
+  } else if (j.status === 'error') {
+    pipeBanner.value = {
+      kind: 'error',
+      text: `上次任务中断/失败 · ${formatPipeJobScope(j)} · ${j.error || '请同范围扫描后继续跑批'}`,
+    }
+  } else {
+    pipeBanner.value = null
+  }
+}
+function startPipePoll(job_id: string) {
+  stopPipePoll()
+  pipePollTimer = setInterval(async () => {
+    try {
+      const j = await getOptionVocabPipelineJob(job_id)
+      pipeJob.value = j
+      applyPipeBannerFromJob(j)
+      if (j.status === 'done' || j.status === 'error') {
+        stopPipePoll()
+        pipeRunning.value = false
+        pipeViewingHistory.value = false
+        await loadPipeJobs()
+        if (j.status === 'done') {
+          ElMessage.success(`跑批完成 · 采纳 ${j.adopted} · 失败 ${j.failed}`)
+          await scanPipe({ quiet: true })
+        } else {
+          ElMessage.error(j.error || '跑批失败')
+        }
+      }
+    } catch (e: any) {
+      stopPipePoll()
+      pipeRunning.value = false
+      ElMessage.error(e?.message || '轮询失败')
+    }
+  }, 1500)
+}
+async function resumePipeJob(job_id: string, opts?: { history?: boolean }) {
+  try {
+    const j = await getOptionVocabPipelineJob(job_id)
+    pipeJob.value = j
+    sessionStorage.setItem(PIPE_JOB_KEY, job_id)
+    applyPipeBannerFromJob(j)
+    if (pipeIsActive(j)) {
+      pipeRunning.value = true
+      pipeViewingHistory.value = false
+      startPipePoll(job_id)
+    } else {
+      pipeRunning.value = false
+      pipeViewingHistory.value = !!opts?.history
+    }
+  } catch {
+    sessionStorage.removeItem(PIPE_JOB_KEY)
+  }
+}
+async function openPipeDlg() {
+  pipeRegionPath.value = filRegionPath.value.length ? [...filRegionPath.value] : []
+  pipeYear.value = filYear.value || new Date().getFullYear()
+  pipeTypes.value = PIPE_TYPE_OPTS.map(t => t.key)
+  pipeScan.value = null
+  pipeChecked.value = []
+  pipeViewingHistory.value = false
+  pipeDlg.value = true
+  await loadPipeJobs()
+  const saved = sessionStorage.getItem(PIPE_JOB_KEY)
+  const running = pipeJobs.value.find(j => pipeIsActive(j))
+  if (running) {
+    await resumePipeJob(running.job_id)
+  } else if (saved) {
+    await resumePipeJob(saved)
+  } else if (pipeJobs.value[0]) {
+    pipeRunning.value = false
+    applyPipeBannerFromJob(pipeJobs.value[0])
+    pipeJob.value = null
+  } else {
+    pipeRunning.value = false
+    pipeJob.value = null
+    pipeBanner.value = null
+  }
+}
+async function scanPipe(opts?: { quiet?: boolean }) {
+  const rc = pipeRegionCode()
+  if (!rc) { ElMessage.warning('请先选择省/市'); return }
+  if (!pipeTypes.value.length) { ElMessage.warning('请至少勾选一种题型'); return }
+  if (pipeRunning.value) { ElMessage.warning('跑批进行中，请等待完成后再扫描'); return }
+  pipeScanning.value = true
+  if (!opts?.quiet) pipeViewingHistory.value = false
+  try {
+    const r = await scanOptionVocabPipeline({
+      region_code: rc,
+      year: pipeYear.value === '' ? null : Number(pipeYear.value),
+      types: pipeTypes.value,
+    })
+    pipeScan.value = r
+    pipeChecked.value = r.papers.filter(p => p.pending_count > 0).map(p => p.paper_id)
+    await nextTick()
+    pipeTableRef.value?.clearSelection()
+    for (const p of r.papers) {
+      if (p.pending_count > 0) pipeTableRef.value?.toggleRowSelection(p, true)
+    }
+    if (!opts?.quiet) {
+      ElMessage.success(`扫描到 ${r.paper_count} 卷 · 待入统计 ${r.pending_total} 题`)
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '扫描失败')
+  } finally {
+    pipeScanning.value = false
+  }
+}
+const pipePendingSelected = computed(() => {
+  if (!pipeScan.value) return 0
+  return pipeScan.value.papers
+    .filter(p => pipeChecked.value.includes(p.paper_id))
+    .reduce((s, p) => s + (p.pending_count || 0), 0)
+})
+const pipeRunBtnLabel = computed(() => {
+  const n = pipePendingSelected.value
+  if (pipeRunning.value) return '跑批中…'
+  if (pipeScan.value && (pipeScan.value.ready_total > 0 || pipeJobs.value.length)) {
+    return n ? `继续跑批 (${n})` : '继续跑批'
+  }
+  return n ? `开始跑批 (${n})` : '开始跑批'
+})
+async function startPipeRun() {
+  if (pipeRunning.value) return
+  if (!pipeChecked.value.length) { ElMessage.warning('请勾选要跑的试卷'); return }
+  if (!pipeTypes.value.length) { ElMessage.warning('请勾选题型'); return }
+  pipeRunning.value = true
+  pipeViewingHistory.value = false
+  stopPipePoll()
+  try {
+    const { job_id } = await runOptionVocabPipeline({
+      paper_ids: pipeChecked.value,
+      types: pipeTypes.value,
+      concurrency: pipeConc.value,
+      auto_adopt: pipeAutoAdopt.value,
+      force_suggest: pipeForce.value,
+      region_code: pipeRegionCode() || null,
+      region_name: pipeRegionLabel(),
+      year: pipeYear.value === '' ? null : Number(pipeYear.value),
+    })
+    sessionStorage.setItem(PIPE_JOB_KEY, job_id)
+    pipeJob.value = {
+      job_id, status: 'pending', total: pipePendingSelected.value,
+      done: 0, failed: 0, adopted: 0, suggested: 0, logs: [],
+      region_code: pipeRegionCode(), region_name: pipeRegionLabel(),
+      year: pipeYear.value === '' ? null : Number(pipeYear.value),
+    }
+    applyPipeBannerFromJob(pipeJob.value)
+    await loadPipeJobs()
+    startPipePoll(job_id)
+  } catch (e: any) {
+    pipeRunning.value = false
+    ElMessage.error(e?.message || '启动跑批失败')
+  }
+}
+async function viewPipeHistory(j: PipelineJobOut) {
+  await resumePipeJob(j.job_id, { history: !pipeIsActive(j) })
+}
+async function resumePipeSameScope(j: PipelineJobOut) {
+  if (pipeRunning.value) { ElMessage.warning('请先等待当前跑批结束'); return }
+  if (j.region_code) {
+    pipeRegionPath.value = [j.region_code]
+    if (j.region_code.length >= 4) {
+      pipeRegionPath.value = [j.region_code.slice(0, 2), j.region_code]
+    }
+  }
+  pipeYear.value = j.year == null ? '' : j.year
+  if (j.types?.length) pipeTypes.value = [...j.types]
+  pipeViewingHistory.value = false
+  pipeBanner.value = {
+    kind: 'done',
+    text: `已填入历史范围 ${formatPipeJobScope(j)}，扫描后点「继续跑批」开新任务（不复活旧 job）。`,
+  }
+  await scanPipe()
+}
+const pipeProgPct = computed(() => {
+  const j = pipeJob.value
+  if (!j || !j.total) return 0
+  return Math.min(100, Math.round((j.done / j.total) * 100))
+})
+onUnmounted(() => stopPipePoll())
+
 function onBatchFiles(_f: any, fileList: any[]) {
   batchFiles.value = (fileList || []).map(x => x.raw as File).filter(Boolean)
   // 用第一个文件名自动命中 教材/学段/年级/上下册/考试/地区(只填一次,不覆盖后续手改)
@@ -979,6 +1326,7 @@ onMounted(load)
       <el-button @click="resetFilters">重置</el-button>
       <el-button type="primary" @click="openDlg">+ 上传真题</el-button>
       <el-button type="success" plain @click="openBatchDlg"><el-icon style="margin-right:4px"><UploadFilled /></el-icon>批量上传真题</el-button>
+      <el-button type="primary" plain @click="openPipeDlg">按地区批量入统计…</el-button>
       <el-button type="warning" plain :disabled="!selectedPapers.length || parsing" :loading="parsing" @click="onBatchParse">
         {{ parsing ? `解析中 ${parseProg.done}/${parseProg.total}` : '批量解析原题目' }}
       </el-button>
@@ -1119,7 +1467,8 @@ onMounted(load)
       <div v-if="anaBusy" style="text-align:center;color:#909399;padding:24px">AI 生成解析建议中…</div>
       <template v-else>
         <div style="font-size:12px;color:#909399;margin-bottom:10px;white-space:pre-wrap">{{ anaTarget?.stem }}</div>
-        <el-alert v-if="anaConfirmed" type="success" :closable="false" style="margin-bottom:10px"
+        <OptionVocabChipRow v-if="!anaIsReading" :vocab="anaOptionVocab" />
+        <el-alert v-if="anaConfirmed" type="success" :closable="false" style="margin-bottom:10px;margin-top:8px"
           title="本题已有人工确认的解析(下方为已存内容,可修改后重新确认)" />
         <el-alert v-if="anaErrors.length" type="warning" :closable="false" style="margin-bottom:10px"
           :title="'AI 建议未通过程序校验,请人工修正:' + anaErrors.join(';')" />
@@ -1290,32 +1639,38 @@ onMounted(load)
       </template>
     </AppDialog>
 
-    <!-- 批量解析:整段 AI 建议 → 一键采纳校验通过项;报错项逐个「改」走单题弹窗 -->
-    <AppDialog v-model="anaBatchDlg" :title="`批量解析:${anaBatchSection}`" width="720px" append-to-body>
+    <!-- 批量解析 · 方案 A 题卡分层:题干 → 解析一行 → 主考/干扰 chip -->
+    <AppDialog v-model="anaBatchDlg" :title="`批量解析:${anaBatchSection}`" width="760px" append-to-body>
       <div v-if="anaBatchBusy" style="text-align:center;color:#909399;padding:24px">AI 批量解析中…(整段并发,已暂存的秒读)</div>
       <template v-else>
         <div style="font-size:12px;color:#606266;margin-bottom:8px">
-          共 {{ anaBatchItems.length }} 题;<b style="color:#67c23a">{{ anaBatchPassCount }}</b> 道通过硬校验(线索句子串/枚举/图谱编码)可直接采纳,其余需人工修。
+          共 {{ anaBatchItems.length }} 题;<b style="color:#67c23a">{{ anaBatchPassCount }}</b> 道通过硬校验可直接采纳。
+          采纳时程序自动挂「主·考 / 次·干扰」词边(无额外 AI)。
           <el-tag v-if="anaBatchStaged" size="small" type="info" effect="plain" style="margin-left:6px">已暂存·再开不重跑</el-tag>
         </div>
-        <div style="max-height:52vh;overflow:auto">
-          <div v-for="it in anaBatchItems" :key="it.question_id"
-            style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px dashed #f0f0f0;font-size:12px">
-            <el-tag size="small" :type="it.analysis && !it.errors.length ? 'success' : 'warning'" style="flex-shrink:0">
-              {{ it.analysis && !it.errors.length ? '通过' : '需改' }}
-            </el-tag>
-            <span style="width:30px;color:#909399;flex-shrink:0">{{ (anaBatchQmap[it.question_id] || {}).question_no }}</span>
-            <div style="flex:1;min-width:0">
-              <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#303133">{{ anaSummary(it) }}</div>
-              <div v-if="it.errors.length" style="color:#e6a23c">{{ it.errors.join(';') }}</div>
+        <div style="max-height:56vh;overflow:auto">
+          <div v-for="it in anaBatchItems" :key="it.question_id" class="ana-card">
+            <div class="ana-card-status">
+              <el-tag size="small" :type="it.analysis && !it.errors.length ? 'success' : 'warning'">
+                {{ it.analysis && !it.errors.length ? '通过' : '需改' }}
+              </el-tag>
+              <span class="ana-card-no">{{ (anaBatchQmap[it.question_id] || {}).question_no }}</span>
             </div>
-            <el-button size="small" text type="primary" style="height:20px;padding:0 6px;flex-shrink:0"
-              :disabled="!it.analysis" @click="viewAnaBatchItem(it)">查看</el-button>
-            <el-button size="small" text type="primary" style="height:20px;padding:0 6px;flex-shrink:0" @click="editAnaBatchItem(it)">改</el-button>
+            <div class="ana-card-body">
+              <div class="ana-card-stem">{{ batchStemBrief(it) }}</div>
+              <LogicDisplayBlock v-if="needsLogicDisplay(it)" :logic="it.logic_display" />
+              <div class="ana-card-meta">解析 · {{ anaSummary(it) }}</div>
+              <div v-if="it.errors.length" class="ana-card-err">{{ it.errors.join(';') }}</div>
+              <OptionVocabChipRow :vocab="it.option_vocab" />
+            </div>
+            <div class="ana-card-acts">
+              <el-button size="small" text type="primary" :disabled="!it.analysis" @click="viewAnaBatchItem(it)">查看</el-button>
+              <el-button size="small" text type="primary" @click="editAnaBatchItem(it)">改</el-button>
+            </div>
           </div>
         </div>
         <div style="display:flex;align-items:center;margin-top:12px">
-          <span style="font-size:12px;color:#a0a4ab">解析结果已暂存,「一键采纳/人工确认」才正式写库</span>
+          <span style="font-size:12px;color:#a0a4ab">解析+挂词均在「一键采纳/人工确认」后写库;挂词抽不出不挡采纳</span>
           <div style="margin-left:auto">
             <el-button @click="reparseAnaBatch">重新解析</el-button>
             <el-button @click="anaBatchDlg = false">关闭</el-button>
@@ -1437,6 +1792,158 @@ onMounted(load)
         <el-button @click="batchDlg = false">关闭</el-button>
         <el-button type="primary" :loading="batchUploading" :disabled="!batchFiles.length" @click="submitBatch">
           上传{{ batchFiles.length ? `（${batchFiles.length} 份）` : '' }}
+        </el-button>
+      </template>
+    </AppDialog>
+
+    <AppDialog v-model="pipeDlg" title="按地区 · 批量解析并采纳入统计" width="960px" :close-on-click-modal="false" append-to-body @closed="stopPipePoll">
+      <div
+        v-if="pipeBanner"
+        :style="{
+          display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '12px', padding: '10px 12px',
+          borderRadius: '8px', fontSize: '13px',
+          background: pipeBanner.kind === 'running' ? '#eef6ff' : pipeBanner.kind === 'done' ? '#e9f6f1' : '#fff1f0',
+          border: pipeBanner.kind === 'running' ? '1px solid #bfdbfe' : pipeBanner.kind === 'done' ? '1px solid #b7e4d4' : '1px solid #f5c2c0',
+          color: pipeBanner.kind === 'running' ? '#1e4a7a' : pipeBanner.kind === 'done' ? '#1f7a61' : '#a33',
+        }"
+      >
+        <span>{{ pipeBanner.text }}</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-size:12px;color:#909399;margin-bottom:4px">省 / 市</div>
+          <el-cascader v-model="pipeRegionPath" :props="regionProps" clearable placeholder="选省→市" style="width:100%" :disabled="pipeRunning" />
+        </div>
+        <div>
+          <div style="font-size:12px;color:#909399;margin-bottom:4px">年份</div>
+          <el-select v-model="pipeYear" clearable filterable placeholder="年份" style="width:100%" :disabled="pipeRunning">
+            <el-option label="全部年份" :value="''" />
+            <el-option v-for="y in YEAR_OPTS" :key="y" :label="y + '年'" :value="y" />
+          </el-select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <el-button type="primary" :loading="pipeScanning" :disabled="pipeRunning" @click="scanPipe()">扫描待跑题</el-button>
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:#909399;margin-bottom:12px;padding:8px 10px;background:#f8fafc;border:1px dashed #e8edf3;border-radius:8px">
+        <b style="color:#606266">如何续跑：</b>
+        已 <code style="background:#eef2f7;padding:1px 5px;border-radius:4px">ready</code> 的题自动跳过。
+        同一省/市/年再「扫描」→「开始/继续跑批」= 从断点续跑，不重复付费。关弹窗不停任务。
+      </div>
+
+      <div style="border:1px solid #e8edf3;border-radius:8px;margin-bottom:12px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e8edf3;font-size:13px;font-weight:600">
+          最近跑批
+          <span style="font-weight:400;color:#909399;font-size:12px">· 落库最近 20 条 · 进程重启可查</span>
+          <el-button link type="primary" style="margin-left:auto" @click="loadPipeJobs">刷新</el-button>
+        </div>
+        <div v-if="!pipeJobs.length" style="padding:10px 12px;font-size:12px;color:#909399">暂无历史。跑过一批后会出现在这里。</div>
+        <div
+          v-for="j in pipeJobs"
+          :key="j.job_id"
+          :style="{
+            display: 'flex', gap: '10px', alignItems: 'flex-start', justifyContent: 'space-between',
+            padding: '10px 12px', borderBottom: '1px solid #eef2f7', fontSize: '13px',
+            background: pipeJob?.job_id === j.job_id ? '#f0f7ff' : undefined,
+          }"
+        >
+          <div style="min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <el-tag
+                size="small"
+                :type="pipeIsActive(j) ? '' : j.status === 'done' ? 'success' : j.status === 'error' ? 'danger' : 'info'"
+                effect="plain"
+              >{{ j.status }}</el-tag>
+              <b>{{ formatPipeJobScope(j) }}</b>
+              <span style="color:#909399;font-size:12px">{{ formatPipeJobTime(j) }}</span>
+            </div>
+            <div style="color:#909399;font-size:12px;margin-top:2px">
+              进度 {{ j.done }}/{{ j.total }} · 采纳 {{ j.adopted }} · 失败 {{ j.failed }}
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <el-button link type="primary" @click="viewPipeHistory(j)">{{ pipeIsActive(j) ? '查看进度' : '恢复查看' }}</el-button>
+            <el-button link type="primary" :disabled="pipeRunning" @click="resumePipeSameScope(j)">同范围续跑</el-button>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:10px 12px;background:#f8fafc;border:1px solid #e8edf3;border-radius:8px;margin-bottom:12px">
+        <div style="font-size:12px;color:#909399;margin-bottom:6px">题型（可多选）· 仅下列会进入选项词统计池</div>
+        <el-checkbox-group v-model="pipeTypes" :disabled="pipeRunning">
+          <el-checkbox v-for="t in PIPE_TYPE_OPTS" :key="t.key" :label="t.key" style="margin-right:12px">{{ t.label }}</el-checkbox>
+        </el-checkbox-group>
+      </div>
+
+      <div v-if="pipeScan" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:13px">
+        <el-tag effect="plain">卷 {{ pipeScan.paper_count }}</el-tag>
+        <el-tag type="warning" effect="plain">待入统计 {{ pipeScan.pending_total }}</el-tag>
+        <el-tag type="success" effect="plain">已在统计 {{ pipeScan.ready_total }}</el-tag>
+        <el-tag effect="plain">已勾选待跑 {{ pipePendingSelected }}</el-tag>
+      </div>
+
+      <el-table
+        v-if="pipeScan"
+        :data="pipeScan.papers"
+        border
+        size="small"
+        max-height="280"
+        row-key="paper_id"
+        ref="pipeTableRef"
+        @selection-change="onPipeSelectionChange"
+      >
+        <el-table-column type="selection" width="44" :selectable="pipeRowSelectable" />
+        <el-table-column label="试卷" min-width="220">
+          <template #default="{ row }">
+            <div style="font-weight:600">{{ row.name }}</div>
+            <div style="font-size:12px;color:#909399">
+              {{ [row.year ? row.year + '年' : '', row.region_name, row.exam_type, row.status === 'published' ? '已发布' : '草稿'].filter(Boolean).join(' · ') }}
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="待跑（按题型）" min-width="200">
+          <template #default="{ row }">
+            <div>{{ formatPipeByType(row.pending_by_type) }}</div>
+            <div v-if="row.pending_count" style="font-size:12px;color:#e6a23c;font-weight:600">共 {{ row.pending_count }} 题待跑</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="已在统计" width="88" prop="ready_count" />
+        <el-table-column label="状态" width="110">
+          <template #default="{ row }">
+            <el-tag v-if="row.pending_count" size="small" type="warning" effect="plain">部分未入统计</el-tag>
+            <el-tag v-else size="small" type="success" effect="plain">已齐</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="选择省/市与年份后点「扫描待跑题」" :image-size="64" />
+
+      <div style="margin-top:14px;padding:12px;border:1px solid #e8edf3;border-radius:8px;background:#fafcff">
+        <div style="font-weight:600;margin-bottom:8px">{{ pipeViewingHistory ? '历史日志（只读）' : '跑批设置' }}</div>
+        <div v-if="!pipeViewingHistory" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px">
+          <span>并发 {{ pipeConc }}</span>
+          <el-slider v-model="pipeConc" :min="2" :max="12" :step="1" style="width:160px;margin:0" :disabled="pipeRunning" />
+          <el-checkbox v-model="pipeAutoAdopt" :disabled="pipeRunning">解析通过后自动一键采纳（写 ready）</el-checkbox>
+          <el-checkbox v-model="pipeForce" :disabled="pipeRunning">强制重跑 LLM（忽略暂存）</el-checkbox>
+        </div>
+        <el-progress v-if="pipeJob" :percentage="pipeProgPct" :status="pipeJob.status === 'error' ? 'exception' : (pipeJob.status === 'done' ? 'success' : undefined)" style="margin-top:10px" />
+        <div v-if="pipeJob" style="font-size:12px;color:#606266;margin-top:4px">
+          {{ pipeJob.status }} · 进度 {{ pipeJob.done }}/{{ pipeJob.total }} · 采纳 {{ pipeJob.adopted }} · 失败 {{ pipeJob.failed }}
+          <span v-if="pipeViewingHistory" style="color:#909399"> · 只读历史，续跑请点「同范围续跑」</span>
+        </div>
+        <div v-if="pipeJob?.logs?.length" style="max-height:140px;overflow:auto;margin-top:8px;font-size:12px;color:#909399;background:#fff;border:1px solid #e8edf3;border-radius:6px;padding:8px">
+          <div v-for="(line, i) in pipeJob.logs.slice(-80)" :key="i">{{ line }}</div>
+        </div>
+      </div>
+
+      <template #footer>
+        <span style="font-size:12px;color:#a0a4ab;margin-right:auto">
+          {{ pipeRunning ? '任务在后台继续；关闭仅隐藏界面' : '只处理勾选卷 × 勾选题型中未进统计的题；已 ready 跳过' }}
+        </span>
+        <el-button @click="pipeDlg = false">{{ pipeRunning ? '关闭（不停跑）' : '关闭' }}</el-button>
+        <el-button type="primary" :loading="pipeRunning" :disabled="!pipePendingSelected || pipeScanning || pipeRunning" @click="startPipeRun">
+          {{ pipeRunBtnLabel }}
         </el-button>
       </template>
     </AppDialog>
@@ -1564,4 +2071,20 @@ onMounted(load)
 .type-tab .cnt { opacity: .75; font-weight: 600; margin-left: 4px; }
 .type-tab .bad { color: #f56c6c; margin-left: 4px; }
 .type-tab.on .bad { color: #ffd6d6; }
+.ana-card {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px dashed #e5ebf2;
+  align-items: start;
+  font-size: 12px;
+}
+.ana-card:last-child { border-bottom: 0; }
+.ana-card-status { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.ana-card-no { font-size: 12px; color: #909399; }
+.ana-card-stem { font-size: 13px; line-height: 1.45; color: #303133; }
+.ana-card-meta { font-size: 11px; color: #909399; margin-top: 4px; }
+.ana-card-err { color: #e6a23c; margin-top: 4px; }
+.ana-card-acts { display: flex; flex-direction: column; gap: 2px; }
 </style>

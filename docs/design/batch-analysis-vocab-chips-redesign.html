@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>批量解析 × 主考/干扰 · 重设计原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-bad: #e85d5d;
+    --bg: #eef3f9;
+    --card: #fff;
+    --line: #e5ebf2;
+    --text: #1e293b;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 24px 16px 56px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tab {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 7px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .tab.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .panel { display: none; }
+  .panel.on { display: block; }
+  .dlg {
+    background: var(--card); border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .06); overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { margin: 0; font-size: 15px; }
+  .dlg-bd { padding: 12px 16px; }
+  .sum { font-size: 12px; color: #475569; margin-bottom: 10px; }
+  .sum b { color: var(--c-ok); }
+  .row {
+    display: grid; grid-template-columns: 52px 1fr auto; gap: 10px;
+    padding: 12px 0; border-top: 1px dashed var(--line); align-items: start;
+  }
+  .row:first-of-type { border-top: 0; }
+  .status { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+  }
+  .pill.ok { background: #e9f6f1; color: var(--c-ok); }
+  .qno { font-size: 12px; color: var(--muted); }
+  .stem { font-size: 13px; line-height: 1.45; color: #0f172a; }
+  .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .chip {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid;
+  }
+  .chip.main { background: #e9f6f1; border-color: #b7e4d4; color: #1f7a61; }
+  .chip.sec { background: #fef0f0; border-color: #f5c2c2; color: #c45656; }
+  .chip.muted { background: #f8fafc; border-color: var(--line); color: var(--muted); }
+  .acts { display: flex; gap: 6px; }
+  .link {
+    border: 0; background: transparent; color: var(--c-primary);
+    font-size: 12px; cursor: pointer; padding: 2px 4px;
+  }
+  .ft {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 16px; border-top: 1px solid var(--line); background: #fafbfc;
+  }
+  .hint { font-size: 11px; color: #94a3b8; flex: 1; }
+  .btn {
+    border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; border: 1px solid var(--line);
+    background: #fff;
+  }
+  .btn.primary { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 860px) {
+    .compare { grid-template-columns: 1fr; }
+    .row { grid-template-columns: 48px 1fr; }
+    .acts { grid-column: 2; }
+  }
+  .path {
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .path.rec { border-color: #93c5fd; box-shadow: 0 0 0 3px #e8f2ff; }
+  .path h3 { margin: 0 0 6px; font-size: 14px; }
+  .badge {
+    display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: #e8f2ff; color: var(--c-primary); font-weight: 600; margin-bottom: 6px;
+  }
+  .path ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: #334155; }
+  .trade { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .single {
+    display: grid; grid-template-columns: 1.1fr .9fr; gap: 14px;
+  }
+  @media (max-width: 860px) { .single { grid-template-columns: 1fr; } }
+  .box { background: #f8fafc; border-radius: 10px; padding: 12px; border: 1px solid var(--line); }
+  .box h4 { margin: 0 0 8px; font-size: 13px; }
+  .field { margin-bottom: 8px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .field .val {
+    background: #fff; border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 9px; font-size: 12px;
+  }
+  .opt-grid { display: grid; gap: 8px; }
+  .opt {
+    display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start;
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+  }
+  .opt.ok { border-color: #b7e4d4; background: #f4fbf8; }
+  .letter { font-weight: 700; font-size: 12px; color: var(--muted); padding-top: 2px; }
+  .opt.ok .letter { color: var(--c-ok); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>批量解析 · 主考/干扰 重设计</h1>
+  <p class="lead">
+    解决：摘要变成「— .」、只见粉红干扰 chip、主考缺失。
+    原则不变：AI 解析照旧、采纳时程序挂词、人工尽量 0。
+  </p>
+
+  <div class="tabs">
+    <button class="tab on" data-p="o">三方案总览</button>
+    <button class="tab" data-p="a">推荐 A · 题卡分层</button>
+    <button class="tab" data-p="b">方案 B · 双列紧凑表</button>
+    <button class="tab" data-p="c">单题弹窗联动</button>
+  </div>
+
+  <div class="panel on" id="o">
+    <div class="compare">
+      <div class="path rec">
+        <span class="badge">推荐 · A</span>
+        <h3>题卡分层</h3>
+        <ul>
+          <li>上行：题号 + 题干摘要（优先 stem，不再靠 rc_code）</li>
+          <li>中行：解析一行（考点码 / 答案依据截断）</li>
+          <li>下行：<b style="color:#1f7a61">主·考</b> 绿 chip → <b style="color:#c45656">次·干扰</b> 粉 chip</li>
+          <li>无主考时灰字「主考未抽出」，不把正确项误标干扰</li>
+        </ul>
+        <div class="trade">改动面小，一眼能审挂词质量；适合运营扫一眼就采纳。</div>
+      </div>
+      <div class="path">
+        <span class="badge">B</span>
+        <h3>双列紧凑表</h3>
+        <ul>
+          <li>列：题 | 题干 | 主考 | 干扰 | 操作</li>
+          <li>主考/干扰分列，密度高</li>
+        </ul>
+        <div class="trade">适合大批量对照；窄屏易挤。</div>
+      </div>
+    </div>
+    <div class="path" style="margin-top:12px">
+      <span class="badge">同步修 · 抽词</span>
+      <h3>展示与落库同一规则</h3>
+      <ul>
+        <li>答案字母 / 文本对齐到选项 → 主考；其余 → 干扰</li>
+        <li>对不齐：只显示「主考未抽出」+ 全部作干扰预览，或干扰也隐藏，避免「全是次·干扰」误导</li>
+        <li>单题「查看/改」底部增加只读挂词条（与批量一致）</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- A -->
+  <div class="panel" id="a">
+    <div class="dlg">
+      <div class="dlg-hd"><h2>批量解析：单项选择</h2><span style="color:#94a3b8">⛶ ✕</span></div>
+      <div class="dlg-bd">
+        <div class="sum">共 14 题；<b>14</b> 道通过硬校验。采纳时程序挂「主·考 / 次·干扰」（无额外 AI）。</div>
+
+        <div class="row">
+          <div class="status">
+            <span class="pill ok">通过</span>
+            <span class="qno">1</span>
+          </div>
+          <div>
+            <div class="stem">Hey, Julie. I've had a problem recently. ______ you help me?</div>
+            <div class="meta">解析 · cf-4-3-3 · Can 用于请求帮助</div>
+            <div class="chips">
+              <span class="chip main">主·考 Can</span>
+              <span class="chip sec">次·干扰 Must</span>
+              <span class="chip sec">次·干扰 Should</span>
+              <span class="chip sec">次·干扰 May</span>
+            </div>
+          </div>
+          <div class="acts"><button class="link">查看</button><button class="link">改</button></div>
+        </div>
+
+        <div class="row">
+          <div class="status">
+            <span class="pill ok">通过</span>
+            <span class="qno">2</span>
+          </div>
+          <div>
+            <div class="stem">I'm ______ of doing the same work day after day.</div>
+            <div class="meta">解析 · cf-* · -ed/-ing 形容词</div>
+            <div class="chips">
+              <span class="chip main">主·考 bored</span>
+              <span class="chip sec">次·干扰 boring</span>
+              <span class="chip sec">次·干扰 tired</span>
+              <span class="chip sec">次·干扰 tiring</span>
+            </div>
+          </div>
+          <div class="acts"><button class="link">查看</button><button class="link">改</button></div>
+        </div>
+
+        <div class="row">
+          <div class="status">
+            <span class="pill ok">通过</span>
+            <span class="qno">3</span>
+          </div>
+          <div>
+            <div class="stem">（答案字段异常，程序对不齐正确项）</div>
+            <div class="meta">解析 · jf-* · …</div>
+            <div class="chips">
+              <span class="chip muted">主考未抽出</span>
+              <span class="chip sec">次·干扰 wake</span>
+              <span class="chip sec">次·干扰 awake</span>
+            </div>
+          </div>
+          <div class="acts"><button class="link">查看</button><button class="link">改</button></div>
+        </div>
+      </div>
+      <div class="ft">
+        <span class="hint">挂词抽不出不挡采纳；「改」仅逃生，非必经</span>
+        <button class="btn">重新解析</button>
+        <button class="btn">关闭</button>
+        <button class="btn primary">一键采纳 14 道通过项</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="panel" id="b">
+    <div class="dlg">
+      <div class="dlg-hd"><h2>方案 B · 表格式</h2><span style="color:#94a3b8">✕</span></div>
+      <div class="dlg-bd" style="overflow:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="text-align:left;color:#64748b">
+              <th style="padding:6px">题</th>
+              <th>题干</th>
+              <th>主·考</th>
+              <th>次·干扰</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-top:1px solid var(--line)">
+              <td style="padding:8px 6px;vertical-align:top"><span class="pill ok">1</span></td>
+              <td style="padding:8px 6px;max-width:280px">______ you help me?</td>
+              <td style="padding:8px 6px"><span class="chip main">Can</span></td>
+              <td style="padding:8px 6px"><span class="chip sec">Must</span> <span class="chip sec">Should</span> <span class="chip sec">May</span></td>
+              <td style="padding:8px 6px"><button class="link">查看</button></td>
+            </tr>
+            <tr style="border-top:1px solid var(--line)">
+              <td style="padding:8px 6px;vertical-align:top"><span class="pill ok">2</span></td>
+              <td style="padding:8px 6px">I'm ______ of doing…</td>
+              <td style="padding:8px 6px"><span class="chip main">bored</span></td>
+              <td style="padding:8px 6px"><span class="chip sec">boring</span> <span class="chip sec">tired</span></td>
+              <td style="padding:8px 6px"><button class="link">查看</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- C single -->
+  <div class="panel" id="c">
+    <div class="dlg">
+      <div class="dlg-hd"><h2>题目层解析（人工确认后写库）</h2><span style="color:#94a3b8">✕</span></div>
+      <div class="dlg-bd">
+        <div class="single">
+          <div>
+            <div class="box" style="margin-bottom:10px">
+              <div class="stem">1. Hey, Julie. I've had a problem recently. ______ you help me?</div>
+              <div class="chips" style="margin-top:8px">
+                <span class="chip main">A. Can</span>
+                <span class="chip sec">B. Must</span>
+                <span class="chip sec">C. Should</span>
+                <span class="chip sec">D. May</span>
+              </div>
+            </div>
+            <div class="field"><label>考点编码</label><div class="val">cf-4-3-3</div></div>
+            <div class="field"><label>答案依据</label><div class="val">Can 用于请求帮助，表示「能/可以」，符合非正式请求语境。</div></div>
+          </div>
+          <div>
+            <div class="box">
+              <h4>程序挂词预览（只读 · 确认时写入）</h4>
+              <div class="chips">
+                <span class="chip main">主·考 Can</span>
+                <span class="chip sec">次·干扰 Must</span>
+                <span class="chip sec">次·干扰 Should</span>
+                <span class="chip sec">次·干扰 May</span>
+              </div>
+              <div class="meta" style="margin-top:8px">与批量列表同一套抽取；不增加运营填写项。</div>
+            </div>
+            <div class="box" style="margin-top:10px">
+              <h4>干扰项解析（已有）</h4>
+              <div class="opt-grid">
+                <div class="opt ok"><div class="letter">A</div><div><div class="meta">正确项 · 挂词主考</div><div style="font-size:12px">Can</div></div></div>
+                <div class="opt"><div class="letter">B</div><div><div style="font-size:12px">必须 · Must 表义务，不用于请求</div></div></div>
+                <div class="opt"><div class="letter">C</div><div><div style="font-size:12px">应该 · Should 表建议</div></div></div>
+                <div class="opt"><div class="letter">D</div><div><div style="font-size:12px">May · 许可/可能，结构不宜直接请求</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ft">
+        <button class="link">↻ AI 重新解析</button>
+        <span style="flex:1"></span>
+        <button class="btn">取消</button>
+        <button class="btn primary">人工确认并写库</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  document.getElementById(t.dataset.p).classList.add('on');
+}));
+</script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>批量解析全段 · 选项挂词（主考/干扰）原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --c-bad: #f56c6c;
+    --bg: #f4f7fb;
+    --card: #fff;
+    --line: #e8edf3;
+    --text: #1e293b;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 64px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 22px; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .tab {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .tab.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+  .panel { display: none; }
+  .panel.on { display: block; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 14px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 10px; }
+  .meta { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .row {
+    display: grid; grid-template-columns: 48px 1fr 220px; gap: 10px;
+    align-items: start; padding: 12px 0; border-top: 1px solid var(--line);
+  }
+  .row:first-of-type { border-top: 0; }
+  .qno { color: var(--muted); font-size: 13px; padding-top: 4px; }
+  .stem { font-size: 14px; }
+  .opts { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
+    background: #f8fafc;
+  }
+  .chip.ok { background: #e9f6f1; border-color: #b7e4d4; color: #1f7a61; }
+  .chip.bad { background: #fef0f0; border-color: #f9c2c2; color: #c45656; }
+  .chip.dash { border-style: dashed; color: var(--c-primary); background: #f0f7ff; }
+  .side { font-size: 12px; }
+  .tag {
+    display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    margin-right: 4px;
+  }
+  .tag.pass { background: #e9f6f1; color: #2fa98a; }
+  .tag.fail { background: #fef0f0; color: #f56c6c; }
+  .tag.info { background: #e8f2ff; color: var(--c-primary); }
+  .foot {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .btn {
+    border: 0; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer;
+  }
+  .btn.primary { background: var(--c-primary); color: #fff; }
+  .btn.ghost { background: #fff; border: 1px solid var(--line); color: var(--text); }
+  .btn.warn { background: #fff7e6; border: 1px solid #f5d9a8; color: #b8821a; }
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+  }
+  @media (max-width: 900px) { .compare { grid-template-columns: 1fr; } .row { grid-template-columns: 36px 1fr; } .side { grid-column: 2; } }
+  .path {
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: #fff;
+  }
+  .path.rec { border-color: #93c5fd; box-shadow: 0 0 0 3px #e8f2ff; }
+  .path h3 { margin: 0 0 6px; font-size: 14px; }
+  .path .badge {
+    font-size: 11px; color: var(--c-primary); background: #e8f2ff; padding: 2px 8px;
+    border-radius: 999px; font-weight: 600;
+  }
+  .path ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: #334155; }
+  .path .trade { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .flow {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; margin: 10px 0 0;
+  }
+  .flow span {
+    background: #f1f5f9; padding: 6px 10px; border-radius: 8px;
+  }
+  .flow .arr { background: transparent; color: var(--muted); padding: 0; }
+  .note {
+    font-size: 12px; color: var(--muted); background: #f8fafc; border-radius: 8px;
+    padding: 10px 12px; margin-top: 12px;
+  }
+  .detail-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
+  @media (max-width: 800px) { .detail-grid { grid-template-columns: 1fr; } }
+  .kv { font-size: 13px; margin: 6px 0; }
+  .kv b { color: var(--muted); font-weight: 500; margin-right: 6px; }
+  .mini-title { font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>批量解析全段 × 选项挂词（主考 / 干扰）</h1>
+  <p class="lead">
+    在现有「批量解析全段」上落地公共题面选项挂词：确认解析时同步写出
+    <b>correct / distractor → vocabulary_words</b>，后期可按词反查「它当正确项的所有真题 / 它当干扰的所有真题」。
+    文案与学生错题网对齐：主·考 / 次·当干扰。
+  </p>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-p="p0">总览 · 三路径</button>
+    <button class="tab" data-p="p1">推荐 · 确认时程序挂词</button>
+    <button class="tab" data-p="p2">备选 · 解析弹窗内审词</button>
+    <button class="tab" data-p="p3">备选 · 解析 LLM 兼出词</button>
+  </div>
+
+  <!-- 总览 -->
+  <div class="panel on" id="p0">
+    <div class="card">
+      <h2>现有管线（已上线）</h2>
+      <div class="flow">
+        <span>批量解析全段</span><span class="arr">→</span>
+        <span>AI 建议 analysis（线索 / KP / distractors 文案）</span><span class="arr">→</span>
+        <span>硬校验</span><span class="arr">→</span>
+        <span>一键采纳 → meta.analysis</span>
+      </div>
+      <div class="note">当前 <b>不</b>写词表边。目标：采纳（或同屏确认）时补写公共 <code>vocab_question.role=correct|distractor</code>。</div>
+    </div>
+    <div class="compare">
+      <div class="path rec">
+        <span class="badge">推荐 · 路径 1</span>
+        <h3>确认时程序挂词</h3>
+        <ul>
+          <li>不改 AI prompt；采纳瞬间从 options+answer 抽词</li>
+          <li>零额外 LLM；可批回填历史已解析题</li>
+          <li>弹窗多一行「主考/干扰 chip」只读预览</li>
+        </ul>
+        <div class="trade">优点：省钱稳。缺点：复杂选项/双空需规则拆点，难例人工改。</div>
+      </div>
+      <div class="path">
+        <span class="badge">路径 2</span>
+        <h3>解析弹窗内审词</h3>
+        <ul>
+          <li>建议阶段就出挂词草案，运营可改 chip</li>
+          <li>确认时连 analysis + 词边一起落库</li>
+        </ul>
+        <div class="trade">优点：可控。缺点：多一步交互；批量采纳要带编辑态。</div>
+      </div>
+      <div class="path">
+        <span class="badge">路径 3</span>
+        <h3>解析 LLM 兼出词</h3>
+        <ul>
+          <li>analysis JSON 增 correct_words / distractor_words</li>
+          <li>适合非标选项（短语嵌套、双空）</li>
+        </ul>
+        <div class="trade">优点：理解力强。缺点：贵；与程序结果要对齐、要缓存。</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>适用题型（白名单）</h2>
+      <div class="opts">
+        <span class="chip ok">单项选择</span>
+        <span class="chip ok">完形填空</span>
+        <span class="chip ok">词汇运用</span>
+        <span class="chip ok">动词填空 / 词形</span>
+        <span class="chip ok">短文填空</span>
+        <span class="chip">阅读理解（可选：仅短选项）</span>
+        <span class="chip">写作（本期不做）</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 路径1 UI -->
+  <div class="panel" id="p1">
+    <div class="card">
+      <h2>批量解析：单项选择 · 词汇运用</h2>
+      <div class="meta">
+        共 6 题 · <b style="color:var(--c-ok)">5</b> 道校验通过可采纳 ·
+        <span class="tag info">挂词预览 · 程序抽出</span>
+        <span class="tag pass">已暂存·再开不重跑</span>
+      </div>
+
+      <div class="row">
+        <div class="qno">21</div>
+        <div>
+          <div class="stem">Though he seems ____ today than yesterday, his jokes are still much ____.</div>
+          <div class="mini-title">题面选项 → 挂词预览（确认后写入公共边）</div>
+          <div class="opts">
+            <span class="chip ok">主·考 more cheerful</span>
+            <span class="chip ok">主·考 funnier</span>
+            <span class="chip bad">次·干扰 cheering</span>
+            <span class="chip bad">次·干扰 fun</span>
+          </div>
+        </div>
+        <div class="side">
+          <span class="tag pass">校验通过</span><br/>
+          <span style="color:var(--muted)">jf-* · 比较级</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="qno">22</div>
+        <div>
+          <div class="stem">She looks ____ after a good sleep.</div>
+          <div class="opts">
+            <span class="chip ok">主·考 fresh</span>
+            <span class="chip bad">次·干扰 freshly</span>
+            <span class="chip bad">次·干扰 freshness</span>
+            <span class="chip bad">次·干扰 fresher</span>
+          </div>
+        </div>
+        <div class="side">
+          <span class="tag pass">校验通过</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="qno">23</div>
+        <div>
+          <div class="stem">（选项结构异常，程序只抽出部分）</div>
+          <div class="opts">
+            <span class="chip ok">主·考 give up</span>
+            <span class="chip dash">次·干扰 ? 需人工</span>
+          </div>
+        </div>
+        <div class="side">
+          <span class="tag fail">挂词不完整</span><br/>
+          <button class="btn warn" style="margin-top:6px">改 · 补词</button>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span style="font-size:12px;color:var(--muted)">解析结果已暂存；「一键采纳」写 meta.analysis + vocab_question 边</span>
+        <div>
+          <button class="btn ghost">关闭</button>
+          <button class="btn primary">一键采纳 5 道通过项（含挂词）</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>确认后 · 单题行内（工作台）</h2>
+      <div class="detail-grid">
+        <div>
+          <div class="kv"><b>题干</b>She looks ____ after a good sleep.</div>
+          <div class="mini-title">已挂词（公共）</div>
+          <div class="opts">
+            <span class="chip ok">主·考 fresh</span>
+            <span class="chip bad">次·干扰 freshly</span>
+            <span class="chip bad">次·干扰 freshness</span>
+            <span class="chip bad">次·干扰 fresher</span>
+          </div>
+        </div>
+        <div>
+          <div class="mini-title">后期反查 API（示意）</div>
+          <div class="note">
+            GET /admin/vocab/{id}/platform-questions?role=correct<br/>
+            → 所有「fresh 作正确项」的真题<br/><br/>
+            ?role=distractor<br/>
+            → 所有「fresh 作干扰」的真题
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 路径2 -->
+  <div class="panel" id="p2">
+    <div class="card">
+      <h2>路径 2 · 建议阶段可编辑 chip</h2>
+      <div class="meta">运营在采纳前可删/改挂词；适合双空、短语选项。</div>
+      <div class="row">
+        <div class="qno">21</div>
+        <div>
+          <div class="stem">… seems ____ (cheer) … still much ____ (fun).</div>
+          <div class="mini-title">主·考（可点 × 移除 / + 添加）</div>
+          <div class="opts">
+            <span class="chip ok">more cheerful ×</span>
+            <span class="chip ok">funnier ×</span>
+            <span class="chip dash">+ 添加主考</span>
+          </div>
+          <div class="mini-title">次·干扰</div>
+          <div class="opts">
+            <span class="chip bad">cheering ×</span>
+            <span class="chip bad">fun ×</span>
+            <span class="chip dash">+ 添加干扰</span>
+          </div>
+        </div>
+        <div class="side">
+          <button class="btn primary">确认本题</button>
+        </div>
+      </div>
+      <div class="note">批量「一键采纳」仍只收校验通过且挂词齐全的题；不齐全进「改」。</div>
+    </div>
+  </div>
+
+  <!-- 路径3 -->
+  <div class="panel" id="p3">
+    <div class="card">
+      <h2>路径 3 · analysis JSON 增字段</h2>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:10px;font-size:12px;overflow:auto">{
+  "kp_codes": ["jf-3-2"],
+  "answer_reason": "…",
+  "distractors": { "A": { "meaning": "…", "why_wrong": "…" }, … },
+  "option_vocab": {
+    "correct":  [{ "key": "B", "text": "fresh" }],
+    "distractor": [
+      { "key": "A", "text": "freshly" },
+      { "key": "C", "text": "freshness" },
+      { "key": "D", "text": "fresher" }
+    ]
+  }
+}</pre>
+      <div class="note">
+        与现有 distractors（义项/错因文案）并存：一个管「讲什么」，一个管「挂哪个词条」。
+        程序可先抽一版，LLM 只修难例；同输入 md5 进 suggest 缓存，不二次付费。
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  const tabs = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('.panel');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('on'));
+    panels.forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById(t.dataset.p).classList.add('on');
+  }));
+</script>
+</body>
+</html>

@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>批量入统计 · 续跑呈现 + Job 历史 · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-warn: #e6a23c;
+    --c-bad: #f56c6c;
+    --bg: #f4f7fb;
+    --line: #e8edf3;
+    --text: #1e293b;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .note {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; color: #1e4a7a; margin-bottom: 14px;
+  }
+  .note b { color: #0f2f55; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tab {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted);
+  }
+  .tab.on { background: #e8f2ff; border-color: #bfdbfe; color: var(--c-primary); font-weight: 600; }
+
+  .mask {
+    position: relative; background: rgba(15, 23, 42, .08);
+    border-radius: 14px; padding: 18px; margin-bottom: 18px;
+  }
+  .dlg {
+    width: 100%; max-width: 960px; margin: 0 auto;
+    background: #fff; border-radius: 12px; border: 1px solid var(--line);
+    box-shadow: 0 12px 40px rgba(15,23,42,.12);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .dlg-hd {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+  }
+  .dlg-hd h2 { font-size: 16px; margin: 0; flex: 1; }
+  .icon-btn {
+    width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px;
+    background: #fff; color: var(--muted); font-size: 12px;
+  }
+  .dlg-bd { padding: 16px 18px; }
+  .dlg-ft {
+    padding: 12px 18px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .hint { font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1; }
+
+  .btn {
+    height: 32px; border-radius: 6px; border: 1px solid var(--line);
+    padding: 0 14px; font-size: 13px; background: #fff; color: var(--text); cursor: pointer;
+  }
+  .btn.primary { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
+  .btn.ghost { background: #fff; }
+  .btn.link { border: 0; color: var(--c-primary); padding: 0 6px; height: auto; background: transparent; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .filters {
+    display: grid; grid-template-columns: 1fr 1fr 120px auto; gap: 10px; margin-bottom: 10px;
+  }
+  @media (max-width: 720px) { .filters { grid-template-columns: 1fr 1fr; } }
+  label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  label.field select {
+    height: 34px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px;
+    font-size: 13px; color: var(--text); background: #fff;
+  }
+
+  .resume-banner {
+    display: none; align-items: flex-start; gap: 10px;
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px;
+  }
+  .resume-banner.show { display: flex; }
+  .resume-banner.running {
+    background: #eef6ff; border: 1px solid #bfdbfe; color: #1e4a7a;
+  }
+  .resume-banner.done {
+    background: #e9f6f1; border: 1px solid #b7e4d4; color: #1f7a61;
+  }
+  .resume-banner.error {
+    background: #fff1f0; border: 1px solid #f5c2c0; color: #a33;
+  }
+  .resume-banner .dot {
+    width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0;
+    background: var(--c-primary);
+  }
+  .resume-banner.done .dot { background: var(--c-ok); }
+  .resume-banner.error .dot { background: var(--c-bad); }
+  .resume-banner .act { margin-left: auto; white-space: nowrap; }
+
+  .resume-tip {
+    font-size: 12px; color: var(--muted); margin: 0 0 12px;
+    padding: 8px 10px; background: #f8fafc; border: 1px dashed var(--line); border-radius: 8px;
+  }
+  .resume-tip code { font-size: 11px; background: #eef2f7; padding: 1px 5px; border-radius: 4px; }
+
+  .types {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+    padding: 10px 12px; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;
+  }
+  .types .title { width: 100%; font-size: 12px; color: var(--muted); }
+  .chk {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: #fff;
+  }
+  .chk.on { border-color: #bfdbfe; background: #e8f2ff; color: var(--c-primary); }
+
+  .summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+  .pill {
+    background: #f1f5f9; border-radius: 999px; padding: 4px 10px; color: var(--muted);
+  }
+  .pill em { font-style: normal; color: var(--text); font-weight: 700; }
+  .pill.warn { background: #fff7e8; color: #9a6700; }
+  .pill.ok { background: #e9f6f1; color: #1f7a61; }
+
+  .papers { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+  .papers table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .papers th, .papers td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+  .papers th { background: #f8fafc; color: var(--muted); font-weight: 600; font-size: 12px; }
+  .papers tr:last-child td { border-bottom: 0; }
+  .name { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .hot { color: var(--c-warn); font-weight: 700; }
+  .tag {
+    display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    border: 1px solid #f3d19e; background: #fff8eb; color: #9a6700;
+  }
+
+  .job-hist {
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; overflow: hidden;
+  }
+  .job-hist-hd {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 12px; background: #f8fafc; border-bottom: 1px solid var(--line);
+    font-size: 13px; font-weight: 600;
+  }
+  .job-hist-hd .sub { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .job-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 8px;
+    padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px;
+  }
+  .job-row:last-child { border-bottom: 0; }
+  .job-row .title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .st {
+    font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line);
+  }
+  .st.run { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; }
+  .st.ok { background: #e9f6f1; color: #1f7a61; border-color: #b7e4d4; }
+  .st.err { background: #fff1f0; color: #c45656; border-color: #f5c2c0; }
+  .job-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+  .run-box {
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: #fafcff;
+  }
+  .run-box h3 { margin: 0 0 8px; font-size: 14px; }
+  .progress {
+    height: 10px; background: #e8edf3; border-radius: 999px; overflow: hidden; margin: 8px 0;
+  }
+  .progress > i {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, #3d8bf5, #2fa98a);
+  }
+  .log {
+    max-height: 120px; overflow: auto; font-size: 12px; color: var(--muted);
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px;
+  }
+  .log .ok { color: var(--c-ok); }
+  .log .bad { color: var(--c-bad); }
+  .log .run { color: var(--c-primary); }
+
+  .legend {
+    margin-top: 18px; font-size: 13px; color: var(--muted);
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+  }
+  .legend h3 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+  .legend ul { margin: 0; padding-left: 18px; }
+  .legend li { margin-bottom: 4px; }
+  .view { display: none; }
+  .view.on { display: block; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>批量入统计 · 续跑呈现 + Job 历史</h1>
+  <p class="lead">
+    组合方案：<b>A</b> 会话恢复 / 文案讲清「扫描即续跑」+ <b>B 轻量</b> job 落库、弹窗内可查最近跑批并「恢复查看 / 同范围续跑」。
+  </p>
+
+  <div class="note">
+    <b>口径不变：</b>只跑未 <code>option_vocab_ready</code> 的题；已 ready 跳过。Job 历史只负责「看得见上次 / 能接上进度条」，不另建统计表。
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button type="button" class="tab on" data-v="fresh">① 首次 / 无历史</button>
+    <button type="button" class="tab" data-v="running">② 关窗再开 · 恢复进行中</button>
+    <button type="button" class="tab" data-v="resume">③ 断点后续跑（有待跑）</button>
+    <button type="button" class="tab" data-v="hist">④ 点历史 · 恢复查看</button>
+  </div>
+
+  <!-- ===== ① 首次 ===== -->
+  <div class="mask view on" data-view="fresh">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>按地区 · 批量解析并采纳入统计</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+      <div class="dlg-bd">
+        <div class="filters">
+          <label class="field">省/市
+            <select><option>江苏省 / 南通市</option></select>
+          </label>
+          <label class="field">年份
+            <select><option>2025</option></select>
+          </label>
+          <label class="field">&nbsp;<span></span></label>
+          <label class="field">&nbsp;
+            <button type="button" class="btn primary" style="height:34px;width:100%">扫描待跑题</button>
+          </label>
+        </div>
+
+        <p class="resume-tip">
+          <b>如何续跑：</b>已 <code>ready</code> 的题自动跳过。同一省/市/年再「扫描」→「开始/继续跑批」= 从断点续跑，不重复付费。
+        </p>
+
+        <div class="job-hist">
+          <div class="job-hist-hd">
+            最近跑批
+            <span class="sub">· 落库最近 20 条 · 进程重启可查</span>
+          </div>
+          <div class="job-row">
+            <div class="meta" style="padding:4px 0">暂无历史。跑过一批后会出现在这里。</div>
+            <div></div>
+          </div>
+        </div>
+
+        <div class="types">
+          <div class="title">题型 · 仅下列进选项词统计池</div>
+          <span class="chk on">单项选择</span>
+          <span class="chk on">完形填空</span>
+          <span class="chk on">短文填空</span>
+          <span class="chk on">词汇运用</span>
+          <span class="chk on">动词填空</span>
+        </div>
+
+        <div style="text-align:center;padding:36px 12px;color:var(--muted);font-size:13px">
+          选择省/市与年份后点「扫描待跑题」
+        </div>
+      </div>
+      <div class="dlg-ft">
+        <span class="hint">只处理勾选卷 × 勾选题型中未进统计的题；已 ready 跳过</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost">关闭</button>
+        <button type="button" class="btn primary" disabled>开始跑批</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ② 恢复进行中 ===== -->
+  <div class="mask view" data-view="running">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>按地区 · 批量解析并采纳入统计</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+      <div class="dlg-bd">
+        <div class="resume-banner show running">
+          <span class="dot"></span>
+          <div>
+            <b>已恢复进行中任务</b>
+            <div class="meta" style="margin-top:2px">南通市 · 2025 · job <code>a3f2…</code> · 开始于 04:12 · 进度 42/86</div>
+          </div>
+          <div class="act">
+            <button type="button" class="btn link">定位到进度</button>
+          </div>
+        </div>
+
+        <div class="filters">
+          <label class="field">省/市
+            <select disabled><option>江苏省 / 南通市</option></select>
+          </label>
+          <label class="field">年份
+            <select disabled><option>2025</option></select>
+          </label>
+          <label class="field">&nbsp;<span></span></label>
+          <label class="field">&nbsp;
+            <button type="button" class="btn primary" style="height:34px;width:100%" disabled>扫描待跑题</button>
+          </label>
+        </div>
+
+        <p class="resume-tip">
+          跑批进行中时勿改范围。关弹窗不会停任务；再次打开会自动接上进度条与日志。
+        </p>
+
+        <div class="job-hist">
+          <div class="job-hist-hd">
+            最近跑批
+            <span class="sub">· 当前高亮为进行中</span>
+          </div>
+          <div class="job-row" style="background:#f0f7ff">
+            <div>
+              <div class="title-line">
+                <span class="st run">running</span>
+                <b>南通市 · 2025</b>
+                <span class="meta">单选·完形·短文·词汇·动词</span>
+              </div>
+              <div class="meta">04:12 开始 · 采纳 38 · 失败 4 · 进度 42/86</div>
+            </div>
+            <div class="job-actions">
+              <button type="button" class="btn link">查看进度</button>
+            </div>
+          </div>
+          <div class="job-row">
+            <div>
+              <div class="title-line">
+                <span class="st ok">done</span>
+                <b>扬州市 · 2025</b>
+              </div>
+              <div class="meta">昨天 22:08 · 采纳 120 · 失败 3</div>
+            </div>
+            <div class="job-actions">
+              <button type="button" class="btn link">恢复查看</button>
+              <button type="button" class="btn link">同范围续跑</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary">
+          <span class="pill">范围 <em>南通市 · 2025</em></span>
+          <span class="pill warn">本批目标 <em>86</em></span>
+          <span class="pill ok">已采纳 <em>38</em></span>
+        </div>
+
+        <div class="run-box">
+          <h3>跑批进度（恢复轮询中）</h3>
+          <div class="progress"><i style="width:49%"></i></div>
+          <div class="hint">running · 进度 42/86 · 采纳 38 · 失败 4 · 并发 6</div>
+          <div class="log">
+            <div class="run">04:18 解析块 3/5 · suggest 30 题</div>
+            <div class="ok">04:19 采纳 Q12 → ready</div>
+            <div class="bad">04:19 解析未过 Q18: 主考词未挂边</div>
+            <div class="ok">04:20 再采纳 Q5 → ready 回写</div>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-ft">
+        <span class="hint">任务在后台继续；关闭仅隐藏界面</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost">关闭（不停跑）</button>
+        <button type="button" class="btn primary" disabled>跑批中…</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ③ 断点续跑 ===== -->
+  <div class="mask view" data-view="resume">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>按地区 · 批量解析并采纳入统计</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+      <div class="dlg-bd">
+        <div class="resume-banner show done">
+          <span class="dot"></span>
+          <div>
+            <b>上次跑批已结束</b>
+            <div class="meta" style="margin-top:2px">南通市 · 2025 · 采纳 72 · 失败 6 · 04:28 完成。剩余待跑可直接「继续跑批」。</div>
+          </div>
+          <div class="act"><button type="button" class="btn link">查看上次日志</button></div>
+        </div>
+
+        <div class="filters">
+          <label class="field">省/市
+            <select><option>江苏省 / 南通市</option></select>
+          </label>
+          <label class="field">年份
+            <select><option>2025</option></select>
+          </label>
+          <label class="field">&nbsp;<span></span></label>
+          <label class="field">&nbsp;
+            <button type="button" class="btn primary" style="height:34px;width:100%">扫描待跑题</button>
+          </label>
+        </div>
+
+        <p class="resume-tip">
+          <b>断点续跑：</b>扫描结果里「待入统计」= 上次未 ready 的题。点「继续跑批」只处理这些题；不必勾「强制重跑」。
+        </p>
+
+        <div class="job-hist">
+          <div class="job-hist-hd">最近跑批 <span class="sub">· 点「同范围续跑」会填地区/年并扫描</span></div>
+          <div class="job-row">
+            <div>
+              <div class="title-line">
+                <span class="st ok">done</span>
+                <b>南通市 · 2025</b>
+              </div>
+              <div class="meta">今天 04:12–04:28 · 采纳 72 · 失败 6 · 目标 86（中途关过窗）</div>
+            </div>
+            <div class="job-actions">
+              <button type="button" class="btn link">恢复查看</button>
+              <button type="button" class="btn link">同范围续跑</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="types">
+          <div class="title">题型</div>
+          <span class="chk on">单项选择</span>
+          <span class="chk on">完形填空</span>
+          <span class="chk on">短文填空</span>
+          <span class="chk on">词汇运用</span>
+          <span class="chk on">动词填空</span>
+        </div>
+
+        <div class="summary">
+          <span class="pill">卷 <em>2</em></span>
+          <span class="pill warn">待入统计 <em>14</em></span>
+          <span class="pill ok">已在统计 <em>72</em></span>
+        </div>
+
+        <div class="papers">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px"><input type="checkbox" checked></th>
+                <th>试卷</th>
+                <th>待跑</th>
+                <th>已在统计</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td>
+                  <div class="name">江苏省南通市2025年中考英语真题</div>
+                  <div class="meta">上次已入 40 · 本次剩余多为失败重试/未采纳</div>
+                </td>
+                <td><span class="hot">8</span></td>
+                <td>40</td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td>
+                  <div class="name">南通市2025模拟卷（A）</div>
+                </td>
+                <td><span class="hot">6</span></td>
+                <td>32</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="run-box">
+          <h3>跑批设置</h3>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px;align-items:center">
+            <label>并发 <input type="range" min="2" max="12" value="6" style="width:100px;vertical-align:middle"></label>
+            <label><input type="checkbox" checked> 解析通过后自动一键采纳</label>
+            <label><input type="checkbox"> 强制重跑 LLM（忽略暂存）</label>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-ft">
+        <span class="hint">已 ready 跳过 · 本次将处理勾选卷中待入统计 14 题</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost">关闭</button>
+        <button type="button" class="btn primary">继续跑批 (14)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ④ 历史恢复查看 ===== -->
+  <div class="mask view" data-view="hist">
+    <div class="dlg">
+      <div class="dlg-hd">
+        <h2>按地区 · 批量解析并采纳入统计</h2>
+        <button type="button" class="icon-btn">▢</button>
+        <button type="button" class="icon-btn">✕</button>
+      </div>
+      <div class="dlg-bd">
+        <div class="resume-banner show done">
+          <span class="dot"></span>
+          <div>
+            <b>正在查看历史 job</b>
+            <div class="meta" style="margin-top:2px">扬州市 · 2025 · job <code>b91c…</code> · 只读日志；要续跑请点「同范围续跑」重新扫描 pending。</div>
+          </div>
+          <div class="act"><button type="button" class="btn link">退出查看</button></div>
+        </div>
+
+        <div class="job-hist">
+          <div class="job-hist-hd">最近跑批</div>
+          <div class="job-row">
+            <div>
+              <div class="title-line"><span class="st ok">done</span> <b>南通市 · 2025</b></div>
+              <div class="meta">今天 04:28 · 采纳 72 · 失败 6</div>
+            </div>
+            <div class="job-actions">
+              <button type="button" class="btn link">恢复查看</button>
+              <button type="button" class="btn link">同范围续跑</button>
+            </div>
+          </div>
+          <div class="job-row" style="background:#f0f7ff">
+            <div>
+              <div class="title-line"><span class="st ok">done</span> <b>扬州市 · 2025</b> <span class="meta">· 当前查看</span></div>
+              <div class="meta">昨天 22:08 · 采纳 120 · 失败 3</div>
+            </div>
+            <div class="job-actions">
+              <button type="button" class="btn link">恢复查看</button>
+              <button type="button" class="btn link">同范围续跑</button>
+            </div>
+          </div>
+          <div class="job-row">
+            <div>
+              <div class="title-line"><span class="st err">error</span> <b>无锡市 · 2024</b></div>
+              <div class="meta">前天 · 进程中断 · done 12/40</div>
+            </div>
+            <div class="job-actions">
+              <button type="button" class="btn link">恢复查看</button>
+              <button type="button" class="btn link">同范围续跑</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="run-box">
+          <h3>历史日志（只读）</h3>
+          <div class="progress"><i style="width:100%;background:var(--c-ok)"></i></div>
+          <div class="hint">done · 120/123 · 采纳 120 · 失败 3</div>
+          <div class="log">
+            <div>昨天 22:01 待处理 123 题 · 并发≈6 · 自动采纳=true</div>
+            <div class="ok">昨天 22:05 采纳块完成 +30</div>
+            <div class="bad">昨天 22:06 解析未过 …</div>
+            <div class="ok">昨天 22:08 跑批完成</div>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-ft">
+        <span class="hint">历史 job 不可「接着同一 job_id 跑」；续跑 = 同范围扫描 pending 后开新 job</span>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost">关闭</button>
+        <button type="button" class="btn primary">同范围续跑 · 去扫描</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>要实现的能力清单（对照本原型）</h3>
+    <ul>
+      <li><b>A1</b> 固定「如何续跑」提示：ready 跳过；再扫再跑 = 断点续。</li>
+      <li><b>A2</b> 打开弹窗：若有进行中 job → 自动恢复进度条与轮询；关窗不停跑。</li>
+      <li><b>A3</b> 有 pending 时主按钮文案「继续跑批 (N)」；跑批中禁用扫描/改范围。</li>
+      <li><b>B1</b> job 落库（id / 范围 / 进度 / status / logs 摘要）；<code>GET …/jobs?limit=20</code>。</li>
+      <li><b>B2</b> 「最近跑批」：恢复查看（只读）/ 同范围续跑（填筛选并扫描）。</li>
+      <li><b>B3</b> 不复活旧 job 进程；中断后续跑一律开新 job，靠 pending 去重。</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  const tabs = document.getElementById('tabs');
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    tabs.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t === btn));
+    const v = btn.dataset.v;
+    document.querySelectorAll('.view').forEach(el => {
+      el.classList.toggle('on', el.dataset.view === v);
+    });
+  });
+</script>
+</body>
+</html>

@@ -73,6 +73,8 @@ declare module 'vue' {
     ElUpload: typeof import('element-plus/es')['ElUpload']
     KpPromptEditor: typeof import('./src/components/KpPromptEditor.vue')['default']
     KpTitleCell: typeof import('./src/components/KpTitleCell.vue')['default']
+    LogicDisplayBlock: typeof import('./src/components/LogicDisplayBlock.vue')['default']
+    OptionVocabChipRow: typeof import('./src/components/OptionVocabChipRow.vue')['default']
     PaperSectionWorkbench: typeof import('./src/components/PaperSectionWorkbench.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

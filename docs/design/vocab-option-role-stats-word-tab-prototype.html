@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>方式二 · 直接切 Tab 看词表 · 原型</title>
+<style>
+  :root {
+    --c-primary: #3d8bf5;
+    --c-ok: #2fa98a;
+    --c-bad: #e85d5d;
+    --bg: #eef3f9;
+    --card: #fff;
+    --line: #e5ebf2;
+    --text: #1e293b;
+    --muted: #64748b;
+    --step: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 24px 16px 56px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
+
+  /* ── 步骤条 ── */
+  .steps {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px;
+  }
+  .step {
+    display: flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 14px 6px 8px; font-size: 12px;
+  }
+  .step.on { border-color: #fcd34d; background: #fffbeb; box-shadow: 0 0 0 3px #fef3c7; }
+  .step.done { border-color: #b7e4d4; background: #f4fbf8; }
+  .step-n {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--step); color: #fff;
+    font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .step.done .step-n { background: var(--c-ok); }
+  .step.on .step-n { background: #d97706; }
+
+  /* ── 场景切换 ── */
+  .scenes { display: flex; gap: 8px; margin-bottom: 14px; }
+  .scene-btn {
+    border: 1px solid var(--line); background: #fff; border-radius: 8px;
+    padding: 7px 14px; font-size: 12px; cursor: pointer; color: var(--muted);
+  }
+  .scene-btn.on { background: #e8f2ff; border-color: #93c5fd; color: var(--c-primary); font-weight: 600; }
+
+  /* ── 主界面 mock ── */
+  .mock-wrap { position: relative; }
+  .mock {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(15,23,42,.06); overflow: visible;
+  }
+  .mock-inner { padding: 16px 18px 0; }
+  .mock-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: #fafbfc; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 14px; position: relative;
+  }
+  .tag {
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+    background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;
+  }
+  .tag.pool { background: #e8f2ff; color: var(--c-primary); border-color: #bfdbfe; }
+  .fld { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .fld label { color: var(--muted); }
+  .fld select, .fld input {
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px; background: #fff;
+  }
+  .btn-sm {
+    border: 1px solid var(--line); background: #fff; border-radius: 6px;
+    padding: 5px 12px; font-size: 12px; cursor: pointer;
+  }
+  .btn-sm.primary { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+
+  .tabs { display: flex; gap: 0; margin-bottom: 0; position: relative; }
+  .tab {
+    border: 1px solid var(--line); background: #f8fafc; border-radius: 8px 8px 0 0;
+    padding: 9px 18px; font-size: 13px; color: var(--muted); border-bottom: none;
+    margin-right: 4px;
+  }
+  .tab.dim { opacity: .55; }
+  .tab.on {
+    background: var(--card); color: var(--c-primary); font-weight: 700;
+    border-color: var(--line); box-shadow: 0 0 0 3px #fef3c7, 0 -2px 0 #f59e0b inset;
+    position: relative; z-index: 2;
+  }
+
+  .card {
+    border: 1px solid var(--line); border-radius: 0 10px 10px 10px;
+    border-top: none; margin-top: -1px;
+  }
+  .card-hd {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fafbfc;
+  }
+  .card-hd h2 { margin: 0; font-size: 14px; }
+  .hint { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .crumb { font-size: 12px; color: var(--muted); padding: 8px 14px 0; }
+  .crumb b { color: var(--text); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { background: #f8fafc; font-weight: 600; font-size: 12px; color: #475569; }
+  tr:hover td { background: #f8fafc; }
+  .num { font-variant-numeric: tabular-nums; }
+  .num.ok { color: var(--c-ok); font-weight: 600; }
+  .num.bad { color: var(--c-bad); font-weight: 600; }
+  .link {
+    border: 0; background: none; color: var(--c-primary); font-size: 12px;
+    cursor: pointer; padding: 0; text-decoration: underline;
+  }
+  .pager {
+    padding: 10px 14px; font-size: 12px; color: var(--muted); text-align: right;
+    border-top: 1px solid var(--line);
+  }
+  .pager b { color: var(--text); }
+
+  /* ── 标注气泡 ── */
+  .callout {
+    position: absolute; z-index: 10; max-width: 220px;
+    background: #1e293b; color: #f8fafc; font-size: 12px; line-height: 1.45;
+    padding: 10px 12px; border-radius: 10px; box-shadow: 0 8px 24px rgba(15,23,42,.2);
+  }
+  .callout::after {
+    content: ""; position: absolute; width: 10px; height: 10px; background: #1e293b;
+    transform: rotate(45deg);
+  }
+  .callout .c-n {
+    display: inline-block; background: var(--step); color: #fff; font-size: 10px;
+    font-weight: 700; width: 18px; height: 18px; border-radius: 50%; text-align: center;
+    line-height: 18px; margin-right: 6px;
+  }
+  .c-tab { top: 118px; right: 24px; }
+  .c-tab::after { bottom: -5px; right: 48px; }
+  .c-filter { top: 52px; left: 280px; }
+  .c-filter::after { bottom: -5px; left: 24px; }
+  .c-table { bottom: 80px; right: 20px; }
+  .c-table::after { top: -5px; right: 40px; }
+  .c-click { bottom: 140px; left: 420px; }
+  .c-click::after { top: -5px; left: 30px; }
+
+  .hl-ring {
+    outline: 3px solid #fef3c7; outline-offset: 2px; border-radius: 8px;
+  }
+
+  /* ── 底部说明 ── */
+  .foot {
+    margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  @media (max-width: 720px) { .foot { grid-template-columns: 1fr; } .callout { display: none; } }
+  .box {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+    font-size: 13px;
+  }
+  .box h3 { margin: 0 0 8px; font-size: 14px; }
+  .box ul { margin: 0; padding-left: 18px; color: #475569; }
+  .api {
+    margin-top: 10px; padding: 10px; background: #0f172a; color: #e2e8f0;
+    border-radius: 8px; font-family: ui-monospace, monospace; font-size: 11px;
+    word-break: break-all;
+  }
+  .panel { display: none; }
+  .panel.on { display: block; }
+
+  /* 弹窗 */
+  .overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.4);
+    z-index: 100; align-items: center; justify-content: center; padding: 20px;
+  }
+  .overlay.on { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; width: min(640px, 100%);
+    box-shadow: 0 16px 48px rgba(15,23,42,.15);
+  }
+  .modal-hd {
+    display: flex; justify-content: space-between; padding: 12px 16px;
+    border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 600;
+  }
+  .modal-bd { padding: 14px 16px; font-size: 13px; }
+  .chip {
+    display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid;
+    margin-right: 4px;
+  }
+  .chip.main { background: #e9f6f1; border-color: #b7e4d4; color: #1f7a61; }
+  .chip.sec { background: #fef0f0; border-color: #f5c2c2; color: #c45656; }
+  .q-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>方式二 · 直接切 Tab 看词表</h1>
+  <p class="lead">不经「下钻各市」，直接点 <strong>词 × 地区</strong>，再用顶部省/市筛选缩小范围；点次数反查原题。</p>
+
+  <div class="steps" id="steps">
+    <div class="step on" data-s="1"><span class="step-n">1</span>点 Tab「词 × 地区」</div>
+    <div class="step" data-s="2"><span class="step-n">2</span>选省 / 市（或留空=全国）</div>
+    <div class="step" data-s="3"><span class="step-n">3</span>可选搜词 · 点查询</div>
+    <div class="step" data-s="4"><span class="step-n">4</span>点主考/干扰数字 · 反查原题</div>
+  </div>
+
+  <div class="scenes">
+    <button class="scene-btn on" data-scene="national">场景 A · 全国词表</button>
+    <button class="scene-btn" data-scene="city">场景 B · 筛选到无锡市</button>
+  </div>
+
+  <div class="mock-wrap">
+    <!-- ① Tab 标注 -->
+    <div class="callout c-tab" id="co-tab">
+      <span class="c-n">1</span>直接点第三个 Tab，<strong>无需</strong>先下钻省/市汇总
+    </div>
+
+    <div class="mock">
+      <div class="mock-inner">
+        <div class="mock-title">中考 · 选项词角色统计</div>
+
+        <div class="toolbar" id="toolbar">
+          <span class="tag">exam_type = 中考</span>
+          <span class="tag pool">standalone_word_mcq</span>
+          <div class="fld hl-ring" id="fld-region">
+            <label>省</label>
+            <select id="sel-prov">
+              <option value="">全国</option>
+              <option value="32">江苏省</option>
+              <option value="33">浙江省</option>
+            </select>
+          </div>
+          <div class="fld" id="fld-city">
+            <label>市</label>
+            <select id="sel-city">
+              <option value="">全部</option>
+              <option value="3202">无锡市</option>
+              <option value="3201">南京市</option>
+            </select>
+          </div>
+          <div class="fld">
+            <label>搜词</label>
+            <input type="text" placeholder="worse / Can" />
+          </div>
+          <button class="btn-sm primary">查询</button>
+        </div>
+
+        <div class="callout c-filter" id="co-filter" style="display:none">
+          <span class="c-n">2</span>省留空=全国一词一行；选省/市则词表带<strong>地区列</strong>
+        </div>
+
+        <div class="tabs">
+          <div class="tab dim">按省汇总</div>
+          <div class="tab dim">按市汇总</div>
+          <div class="tab on" id="tab-word">词 × 地区</div>
+        </div>
+      </div>
+
+      <!-- 场景 A：全国 -->
+      <div class="panel on" id="scene-national">
+        <div class="crumb">范围：<b>全国</b> · 中考 · 语法单选</div>
+        <div class="card">
+          <div class="card-hd">
+            <h2>词表 · 主考 / 干扰次数</h2>
+            <span class="hint">group_by=word</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>词</th>
+                <th>主·考（题数）</th>
+                <th>次·干扰（题数）</th>
+                <th>合计题</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Can</strong></td>
+                <td class="num ok"><button class="link" data-modal>48</button></td>
+                <td class="num bad"><button class="link">12</button></td>
+                <td class="num">58</td>
+                <td><button class="link" data-modal>全部原题</button></td>
+              </tr>
+              <tr>
+                <td><strong>worse</strong></td>
+                <td class="num ok"><button class="link" data-modal>31</button></td>
+                <td class="num bad"><button class="link">18</button></td>
+                <td class="num">47</td>
+                <td><button class="link">全部原题</button></td>
+              </tr>
+              <tr>
+                <td><strong>bored</strong></td>
+                <td class="num ok"><button class="link">27</button></td>
+                <td class="num bad"><button class="link">9</button></td>
+                <td class="num">34</td>
+                <td><button class="link">全部原题</button></td>
+              </tr>
+              <tr>
+                <td><strong>must</strong></td>
+                <td class="num ok"><button class="link">5</button></td>
+                <td class="num bad"><button class="link">42</button></td>
+                <td class="num">45</td>
+                <td><button class="link">全部原题</button></td>
+              </tr>
+              <tr>
+                <td><strong>should</strong></td>
+                <td class="num ok"><button class="link">3</button></td>
+                <td class="num bad"><button class="link">38</button></td>
+                <td class="num">40</td>
+                <td><button class="link">全部原题</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="pager">共 <b>1,842</b> 词 · 第 1 / 37 页 · 按主考题数降序</div>
+        </div>
+      </div>
+
+      <!-- 场景 B：无锡市 -->
+      <div class="panel" id="scene-city">
+        <div class="crumb">范围：<b>江苏省 · 无锡市</b></div>
+        <div class="card">
+          <div class="card-hd">
+            <h2>词 × 地区 · 主考 / 干扰次数</h2>
+            <span class="hint">group_by=word · region_code=3202</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>词</th>
+                <th>地区</th>
+                <th>主·考（题数）</th>
+                <th>次·干扰（题数）</th>
+                <th>合计题</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Can</strong></td>
+                <td>无锡市</td>
+                <td class="num ok"><button class="link" data-modal>3</button></td>
+                <td class="num bad"><button class="link">1</button></td>
+                <td class="num">4</td>
+                <td><button class="link" data-modal>全部原题</button></td>
+              </tr>
+              <tr>
+                <td><strong>worse</strong></td>
+                <td>无锡市</td>
+                <td class="num ok"><button class="link" data-modal>2</button></td>
+                <td class="num bad"><button class="link">1</button></td>
+                <td class="num">3</td>
+                <td><button class="link" data-modal>全部原题</button></td>
+              </tr>
+              <tr>
+                <td><strong>bored</strong></td>
+                <td>无锡市</td>
+                <td class="num ok"><button class="link">2</button></td>
+                <td class="num bad"><button class="link">0</button></td>
+                <td class="num">2</td>
+                <td><button class="link">全部原题</button></td>
+              </tr>
+              <tr>
+                <td><strong>must</strong></td>
+                <td>无锡市</td>
+                <td class="num ok"><button class="link">0</button></td>
+                <td class="num bad"><button class="link">3</button></td>
+                <td class="num">3</td>
+                <td><button class="link">全部原题</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="pager">共 <b>68</b> 词 · 第 1 / 2 页</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout c-click" id="co-click">
+      <span class="c-n">4</span>点绿色=主考原题 · 粉色=干扰原题 · 「全部原题」=两角色合并
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="box">
+      <h3>与方式一的区别</h3>
+      <ul>
+        <li><strong>方式一</strong>：按省 → 下钻各市 → 看词表（地区导向）</li>
+        <li><strong>方式二</strong>：直接词表 Tab，用筛选器定范围（词导向）</li>
+        <li>全国时不展示「地区」列；选定市后每行带地区名</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>对应 API</h3>
+      <div class="api" id="api-box">GET /admin/vocab/option-role-stats?exam_type=中考&group_by=word&pool=standalone_word_mcq&sort=correct_count_desc&skip=0&limit=50</div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="modal">
+  <div class="modal">
+    <div class="modal-hd">
+      <span>Can · 主·考 · 全国 · 中考</span>
+      <span style="cursor:pointer" id="modal-x">✕</span>
+    </div>
+    <div class="modal-bd">
+      <div class="q-meta">2025 · 江苏省无锡市中考 · 单项选择 · 第 1 题</div>
+      <div style="margin-bottom:8px">Hey, Julie. ______ you help me?</div>
+      <span class="chip main">主·考 Can</span>
+      <span class="chip sec">次·干扰 Must</span>
+      <span class="chip sec">次·干扰 Should</span>
+      <span class="chip sec">次·干扰 May</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = {
+  national: 'GET /admin/vocab/option-role-stats?exam_type=中考&group_by=word&pool=standalone_word_mcq&sort=correct_count_desc&skip=0&limit=50',
+  city: 'GET /admin/vocab/option-role-stats?exam_type=中考&group_by=word&region_code=3202&pool=standalone_word_mcq&skip=0&limit=50',
+};
+
+/** @param {number} n */
+function setStep(n) {
+  document.querySelectorAll('.step').forEach((s) => {
+    const sn = +s.dataset.s;
+    s.classList.toggle('on', sn === n);
+    s.classList.toggle('done', sn < n);
+  });
+  document.getElementById('co-tab').style.display = n === 1 ? 'block' : 'none';
+  const cityScene = !document.getElementById('scene-national').classList.contains('on');
+  document.getElementById('co-filter').style.display = (n === 2 || (n === 1 && cityScene)) ? 'block' : 'none';
+  document.getElementById('co-click').style.display = n >= 4 ? 'block' : 'none';
+}
+
+/** 场景切换 */
+document.querySelectorAll('.scene-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.scene-btn').forEach((b) => b.classList.remove('on'));
+    btn.classList.add('on');
+    const nat = btn.dataset.scene === 'national';
+    document.getElementById('scene-national').classList.toggle('on', nat);
+    document.getElementById('scene-city').classList.toggle('on', !nat);
+    document.getElementById('sel-prov').value = nat ? '' : '32';
+    document.getElementById('sel-city').value = nat ? '' : '3202';
+    document.getElementById('fld-region').classList.toggle('hl-ring', !nat);
+    document.getElementById('fld-city').classList.toggle('hl-ring', !nat);
+    document.getElementById('api-box').textContent = API[btn.dataset.scene];
+    setStep(nat ? 1 : 2);
+  });
+});
+
+document.querySelectorAll('.step').forEach((s) => {
+  s.addEventListener('click', () => setStep(+s.dataset.s));
+});
+
+document.querySelectorAll('[data-modal]').forEach((el) => {
+  el.addEventListener('click', () => {
+    document.getElementById('modal').classList.add('on');
+    setStep(4);
+  });
+});
+document.getElementById('modal-x').onclick = () => document.getElementById('modal').classList.remove('on');
+</script>
+</body>
+</html>

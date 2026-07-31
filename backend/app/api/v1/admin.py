@@ -48,7 +48,7 @@ from app.schemas.institution import (
     InstitutionCodePricing,
     InstitutionCodePricingUpdate,
 )
-from app.schemas.kp import (
+from app.schemas.kp import OptionVocabChips, (
     ApproveCandidateRequest,
     KpCandidateItem,
     KpCandidateListOut,
@@ -1980,11 +1980,14 @@ async def list_platform_papers_api(
 async def get_platform_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep):
     """试卷详情:整卷全部真题(按题号,带大题名/题组短文)。"""
     from app.services import platform_question_service as pqs
+    from app.services.option_vocab_service import option_vocab_for_questions
+    from app.schemas.kp import OptionVocabChips
     paper, qs, pmap = await pqs.paper_questions(db, paper_id)
     if paper is None:
         raise AppError(code=404, message="试卷不存在")
     pub = sum(1 for q in qs if q.status == "published")
     kpmap = await pqs.kps_of_questions(db, [q.id for q in qs])
+    ovmap = await option_vocab_for_questions(db, qs)
     items = [PaperQuestionItem(
         id=q.id, question_no=q.question_no, section=q.section,
         question_type=q.question_type, stem=q.stem, answer=q.answer,
@@ -1992,6 +1995,7 @@ async def get_platform_paper_api(paper_id: uuid.UUID, db: DbDep, admin: AdminDep
         passage=pmap.get(q.block_id) if q.block_id else None,
         kps=[QuestionKpRef(node_id=nid, name=name, code=code)
              for nid, name, code in kpmap.get(q.id, [])],
+        option_vocab=OptionVocabChips(**ovmap.get(q.id, {})),
     ) for q in qs]
     return make_ok(PaperDetailOut(paper=_to_paper_item(paper, len(qs), pub), questions=items))
 
