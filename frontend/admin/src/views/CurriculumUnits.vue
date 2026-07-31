@@ -685,6 +685,14 @@ function diffColor(d: number | null): string {
   return '#67C23A'
 }
 
+/** 易/中/难档位标签色 */
+function tierTagType(tier?: number | null): 'success' | 'warning' | 'danger' | 'info' {
+  if (tier === 1) return 'success'
+  if (tier === 3) return 'danger'
+  if (tier === 2) return 'warning'
+  return 'info'
+}
+
 // ── PDF 上传 Dialog ──────────────────────────────────────────────────────────
 
 const VERSIONS     = ['译林版', '人教版', '外研版', '北师大版']
@@ -1031,7 +1039,7 @@ onMounted(load)
           <div>
             <div class="uls-title">本单元长难句 · 理解练习用</div>
             <div class="muted" style="font-size:12px;margin-top:2px">
-              词尽量简单 · 练「看懂结构」· 不关联知识图谱
+              贴本单元语法 · 易→难梯度 · 练「看懂结构」· 不关联知识图谱
             </div>
           </div>
           <el-button size="small" :loading="lsGenerating" @click="runUnderstandLs({ force: true, openDlg: false })">
@@ -1051,6 +1059,12 @@ onMounted(load)
             <span class="uls-no">{{ idx + 1 }}</span>
             <el-tag size="small" :type="it.src === 'synth' ? 'warning' : 'primary'" effect="plain">
               {{ it.src === 'synth' ? 'AI 合成' : '原文抽取' }}
+            </el-tag>
+            <el-tag v-if="it.tier_label || it.tier" size="small" :type="tierTagType(it.tier)" effect="dark">
+              {{ it.tier_label || ({ 1: '易', 2: '中', 3: '难' }[it.tier!] || '中') }}
+            </el-tag>
+            <el-tag v-if="it.grammar_point" size="small" type="info" effect="plain">
+              {{ it.grammar_point }}
             </el-tag>
             <el-tag v-if="it.difficulty != null" size="small"
               :style="{ background: diffColor(it.difficulty), color: '#fff', border: 'none' }">

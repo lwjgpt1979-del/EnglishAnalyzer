@@ -169,11 +169,11 @@ LLM_FEATURES: list[dict] = [
     {"feature": "kp_title_rewrite", "mode": "chat", "surface": "运营后台", "module": "知识图谱·标题整理", "service": "kp_title_rewrite_service",
      "purpose": "语法点粗糙 name→短展示标题+一句说明(写入 description 首行,不改 name)", "why": "规格明确的改写抽取,快档即可", "locations": ["kp_title_rewrite_service.py:_suggest_one"], "cache": "global", "store": "kp_title_rewrite_cache(按 name|description md5)"},
     {"feature": "unit_ls_extract_or_synth", "mode": "chat", "surface": "运营后台", "module": "教材·单元长难句理解向", "service": "unit_ls_understand_service",
-     "purpose": "L1一次调用:从原文抽尽合法完整长难句;没有则同响应合成5-10句;只出英文en不补译文", "why": "规格明确的抽取/可控生成,快档即可;短输出防截断", "locations": ["unit_ls_understand_service.py:_llm_extract_or_synth"], "cache": "global", "store": "unit_ls_understand_cache(v4原文md5+年级+语法范围)+unit_understand_ls"},
+     "purpose": "限量≤8句抽取或5-8句合成;贴本单元语法(gp)+tier梯度;截断不升档;只出en", "why": "规格明确的抽取/可控生成,快档即可;限量防截断超时", "locations": ["unit_ls_understand_service.py:_llm_extract_or_synth"], "cache": "global", "store": "unit_ls_understand_cache(v6原文md5+年级+语法范围)+unit_understand_ls"},
     {"feature": "unit_ls_enrich", "mode": "chat", "surface": "运营后台", "module": "教材·单元长难句理解向", "service": "unit_ls_understand_service",
      "purpose": "(遗留)批量为抽取句补中文译文;L1主路径不走", "why": "规格明确的短译文,快档即可", "locations": ["unit_ls_understand_service.py:_enrich_translations"], "cache": "global", "store": "unit_ls_understand_cache+unit_understand_ls"},
     {"feature": "unit_ls_synth", "mode": "chat", "surface": "运营后台", "module": "教材·单元长难句理解向", "service": "unit_ls_understand_service",
-     "purpose": "L1空结果兜底:单独合成5-10句(只出en,不补译文)", "why": "规格明确的可控生成,快档即可", "locations": ["unit_ls_understand_service.py:_synth_sentences"], "cache": "global", "store": "unit_ls_understand_cache+unit_understand_ls"},
+     "purpose": "空结果兜底:限量合成5-8句(gp+tier;截断不升档;只出en)", "why": "规格明确的可控生成,快档即可", "locations": ["unit_ls_understand_service.py:_synth_sentences"], "cache": "global", "store": "unit_ls_understand_cache+unit_understand_ls"},
 ]
 
 

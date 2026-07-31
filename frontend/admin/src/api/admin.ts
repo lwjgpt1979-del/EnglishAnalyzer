@@ -554,6 +554,10 @@ export interface UnitUnderstandLsItem {
   why: string
   src: 'extract' | 'synth' | string
   difficulty?: number | null
+  /** 1易|2中|3难 */
+  tier?: number | null
+  tier_label?: string
+  grammar_point?: string
   sort_order?: number
 }
 export interface UnitUnderstandLsResult {
@@ -572,7 +576,7 @@ export function listUnitUnderstandLs(unitId: string): Promise<UnitUnderstandLsRe
 export function generateUnitUnderstandLs(
   unitId: string, force = false,
 ): Promise<UnitUnderstandLsResult> {
-  return unwrap(request.post(`/admin/curriculum/units/${unitId}/understand-ls/generate`, { force }, { timeout: 120000 }))
+  return unwrap(request.post(`/admin/curriculum/units/${unitId}/understand-ls/generate`, { force }, { timeout: 180000 }))
 }
 export function updateUnitUnderstandLs(
   unitId: string, itemId: string,

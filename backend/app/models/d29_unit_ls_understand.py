@@ -21,7 +21,9 @@ class UnitUnderstandLs(Base):
     translation = mapped_column(sa.Text, nullable=True)
     why = mapped_column(sa.Text, nullable=True)
     src = mapped_column(sa.String(12), nullable=False)  # extract | synth
-    difficulty = mapped_column(sa.Integer, nullable=True)
+    difficulty = mapped_column(sa.Integer, nullable=True)  # spaCy 0–100
+    tier = mapped_column(sa.Integer, nullable=True)  # 1易|2中|3难(LLM 梯度档)
+    grammar_point = mapped_column(sa.String(120), nullable=True)  # 本单元语法点
     sort_order = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     course_text_md5 = mapped_column(sa.String(32), nullable=True)
     created_at = mapped_column(

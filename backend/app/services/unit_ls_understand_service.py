@@ -1,7 +1,8 @@
-"""单元长难句·理解向(L1):一次 LLM 从 course_text 抽尽合法完整长难句;没有则同响应合成 5–10 句。
+"""单元长难句·理解向(D1+A):一次 LLM 抽取或合成≤8 句。
 
-目的:练「如何理解长难句」,用词相对简单。不挂知识图谱。
-规则闸仅作入库二次保险。付费结果按「原文 md5 + 年级 + 语法范围」全局缓存(v3)。
+贴本单元语法(gp)+tier(易/中/难)梯度;用词相对简单;不挂知识图谱。
+规则闸入库二次保险。付费结果按「原文 md5 + 年级 + 语法范围」全局缓存(v6)。
+截断(length)不升档重试,立刻走限量合成兜底。
 """
 from __future__ import annotations
 
@@ -20,9 +21,44 @@ from app.core.exceptions import AppError
 _log = logging.getLogger(__name__)
 
 _SYNTH_MIN = 5
-_SYNTH_MAX = 10
-# v4: LLM 只出英文句列表(不补译文),缩短输出避免截断 502
-_CACHE_VER = "v4"
+_SYNTH_MAX = 8
+_EXTRACT_MAX = 8
+# v6: 方案A 限量≤8句 + 截断不升档;仍不补译文
+_CACHE_VER = "v6"
+
+_TIER_LABEL = {1: "易", 2: "中", 3: "难"}
+
+
+def _clamp_tier(v: Any) -> int:
+    try:
+        t = int(v)
+    except (TypeError, ValueError):
+        return 2
+    return 1 if t < 1 else (3 if t > 3 else t)
+
+
+def _match_grammar_point(gp: str, grammar_names: list[str]) -> str:
+    """把模型给的语法点收敛到本单元名单(子串互含);名单空则原样截断。"""
+    g = (gp or "").strip()
+    if not grammar_names:
+        return g[:120]
+    if not g:
+        return (grammar_names[0] or "")[:120]
+    for name in grammar_names:
+        n = (name or "").strip()
+        if not n:
+            continue
+        if n == g or n in g or g in n:
+            return n[:120]
+    return g[:120]
+
+
+def _sort_by_gradient(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 tier 升序,同档按 spaCy difficulty 升序 → 易→难梯度。"""
+    return sorted(
+        items,
+        key=lambda x: (int(x.get("tier") or 2), int(x.get("difficulty") or 0), x.get("text") or ""),
+    )
 
 # 语法讲解/练习指令口吻(非整句叙述)
 _META_RE = re.compile(
@@ -127,6 +163,7 @@ def _input_key(course_text: str, grade: str | None, grammar_names: list[str]) ->
 
 
 def _row_out(r) -> dict[str, Any]:
+    tier = getattr(r, "tier", None)
     return {
         "id": str(r.id),
         "text": r.text,
@@ -134,6 +171,9 @@ def _row_out(r) -> dict[str, Any]:
         "why": r.why or "",
         "src": r.src,
         "difficulty": r.difficulty,
+        "tier": tier,
+        "tier_label": _TIER_LABEL.get(int(tier), "") if tier is not None else "",
+        "grammar_point": getattr(r, "grammar_point", None) or "",
         "sort_order": r.sort_order,
     }
 
@@ -189,8 +229,10 @@ def _extract_candidates(
     return out
 
 
-def _normalize_item(row: dict[str, Any], *, default_src: str) -> dict[str, Any] | None:
-    """解析 LLM 一行 → 过规则闸 → 带难度分;非法返回 None。"""
+def _normalize_item(
+    row: dict[str, Any], *, default_src: str, grammar_names: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """解析 LLM 一行 → 过规则闸 → tier/gp + spaCy 难度;非法返回 None。"""
     from app.services.long_sentence_service import syntactic_complexity
     en = (row.get("en") or row.get("text") or "").strip()
     if not en or not is_valid_natural_sentence(en):
@@ -198,20 +240,30 @@ def _normalize_item(row: dict[str, Any], *, default_src: str) -> dict[str, Any] 
     src = (row.get("src") or default_src).strip().lower()
     if src not in ("extract", "synth"):
         src = default_src
+    tier = _clamp_tier(row.get("tier") or row.get("diff_tier"))
+    gp = _match_grammar_point(
+        str(row.get("gp") or row.get("grammar_point") or ""),
+        grammar_names or [],
+    )
     diff = None
     try:
         diff = syntactic_complexity(en).get("difficulty")
     except Exception:  # noqa: BLE001
         diff = None
+    label = _TIER_LABEL.get(tier, "中")
+    why = (row.get("why") or "").strip()
+    if not why:
+        why = f"{gp or '结构复合'} · {label}" if gp else (
+            f"原文抽取 · {label}" if src == "extract" else f"合成句 · {label}"
+        )
     return {
         "text": en,
-        # 译文不在 LLM 主路径生成(防截断);展示可空,学生解析页会走 analysis 缓存出译文
         "translation": (row.get("zh") or row.get("translation") or "").strip(),
-        "why": (row.get("why") or "").strip() or (
-            "原文抽取 · 结构复合" if src == "extract" else "合成句 · 练结构理解"
-        ),
+        "why": why,
         "src": src,
         "difficulty": diff,
+        "tier": tier,
+        "grammar_point": gp,
     }
 
 
@@ -219,16 +271,15 @@ async def _llm_extract_or_synth(
     *, grade: str | None, stage: str | None, grammar_names: list[str],
     course_text: str,
 ) -> list[dict[str, Any]]:
-    """L1: 一次 LLM——从原文抽尽合法完整长难句;没有则同响应内合成 5–10 句。
+    """一次 LLM——抽取最多 8 句;没有则合成 5–8 句。
 
-    只输出英文句列表(不补 zh/why),压缩 token 避免 JSON 截断。
+    约束:贴本单元语法;tier 梯度;不补译文。截断不升档,空结果立刻限量合成。
     """
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
 
     g_label = (grade or stage or "初中") or "初中"
     gscope = "、".join(grammar_names[:12]) if grammar_names else "本年级常见复合句/并列句"
-    # 原文过长会挤占输出预算;截到约 3500 字足够抽句
-    body = (course_text or "").strip()[:3500]
+    body = (course_text or "").strip()[:3000]
 
     if is_llm_dev_mode():
         return await _synth_sentences(
@@ -237,49 +288,56 @@ async def _llm_extract_or_synth(
         )
 
     system = (
-        "你是中学英语教材编辑。从单元原文找出适合该年级练习「理解长难句」的句子;"
-        "找不到合格句时再合成。\n"
-        "【优先·抽取】抽出**全部**合格英文句:\n"
+        "你是中学英语教材编辑。按下列规则处理单元原文长难句(理解练习用)。\n"
+        f"【1·抽取】从原文挑出最多 {_EXTRACT_MAX} 句合格长难句(宁少勿滥,勿贪多):\n"
         "- 完整、合法、可独立理解的自然叙述句(有标点)。\n"
-        "- 有一定信息链/结构复合(并列、从句等)。\n"
+        "- 信息链/结构有一定复合(并列、从句等)。\n"
+        "- **每句必须体现本单元语法范围中的某一点**(见用户消息名单),在 gp 填写该点名。\n"
         "- **严禁**:语法说明(We use…with…)、填空、选项列举、斜杠范式、等号对照、练习指令、目录行、残缺碎片。\n"
-        f"【若一条都没有】合成 {_SYNTH_MIN}–{_SYNTH_MAX} 句:"
-        f"锚定 {g_label};用词简单;结构复合;同样严禁非法形式。\n"
-        "**不要输出中文译文、不要 why**。每项只要英文原文 en。\n"
+        f"【2·合成】若一条都抽不到:合成恰好 {_SYNTH_MIN}–{_SYNTH_MAX} 句(不得超过 {_SYNTH_MAX})。"
+        f"难度锚定年级 {g_label} 与本单元;用词简单;结构复合;每句 gp 必须选自本单元语法名单;"
+        "同样严禁非法形式。\n"
+        "【3·难度梯度】每句标 tier:1=易、2=中、3=难。"
+        "整份结果须覆盖梯度(至少含易与难);"
+        "合成时按易→难排列,且 1/2/3 都尽量出现。\n"
+        "【4·输出】不要中文译文。sentences 数组长度绝对不超过 "
+        f"{_EXTRACT_MAX}。\n"
         "mode=extract 全是抽取;mode=synth 全是合成(勿混用)。\n"
-        '只输出 JSON:{"mode":"extract"|"synth","sentences":[{"en":"..."}]}'
+        '只输出 JSON:{"mode":"extract"|"synth","sentences":[{"en":"...","tier":1,"gp":"语法点名"}]}'
     )
     user = (
-        f"年级:{g_label}\n本单元语法范围:{gscope}\n"
+        f"年级:{g_label}\n本单元语法范围(gp 必须选自以下,勿编造名单外考点):\n{gscope}\n"
         f"单元原文:\n{body or '(空)'}\nJSON:"
     )
+    # 限量≤8 句足够;截断不升档(escalate_ceiling=None),避免白烧第二次长调用
     data = await complete_json(
-        system_prompt=system, user_prompt=user, max_tokens=2500,
+        system_prompt=system, user_prompt=user, max_tokens=1600,
         model=fast_model(), feature="unit_ls_extract_or_synth",
-        escalate_ceiling=4500,
+        escalate_ceiling=None,
         validate=lambda x: isinstance(x, dict) and isinstance(x.get("sentences"), list),
     ) or {}
 
     mode = (data.get("mode") or "").strip().lower()
     default_src = "synth" if mode == "synth" else "extract"
     out: list[dict[str, Any]] = []
+    cap = _SYNTH_MAX if mode == "synth" else _EXTRACT_MAX
     for row in data.get("sentences") or []:
         if not isinstance(row, dict):
             continue
-        it = _normalize_item(row, default_src=default_src)
+        it = _normalize_item(row, default_src=default_src, grammar_names=grammar_names)
         if it is None:
             continue
         if mode == "synth":
             it["src"] = "synth"
         out.append(it)
-        if mode == "synth" and len(out) >= _SYNTH_MAX:
+        if len(out) >= cap:
             break
 
     if mode != "synth" and out:
-        return out
+        return _sort_by_gradient(out[:_EXTRACT_MAX])
 
     if mode == "synth" and len(out) >= _SYNTH_MIN:
-        return out[:_SYNTH_MAX]
+        return _sort_by_gradient(out[:_SYNTH_MAX])
 
     _log.warning("unit_ls L1 empty after gate (mode=%s n=%d), fallback synth", mode, len(out))
     return await _synth_sentences(
@@ -330,68 +388,66 @@ async def _synth_sentences(
     *, grade: str | None, stage: str | None, grammar_names: list[str],
     course_text: str,
 ) -> list[dict[str, Any]]:
-    """原文抽不出时:合成 5–10 句,用词≤年级,服务理解结构。"""
-    from app.services.long_sentence_service import syntactic_complexity
+    """原文抽不出时:合成 5–8 句;贴本单元语法 + tier 梯度。截断不升档。"""
     from app.services.llm_provider import complete_json, fast_model, is_llm_dev_mode
 
     g_label = (grade or stage or "初中") or "初中"
     gscope = "、".join(grammar_names[:12]) if grammar_names else "本年级常见复合句/并列句"
-    snippet = (course_text or "").strip()[:800]
+    gp0 = (grammar_names[0] if grammar_names else "复合句") or "复合句"
+    snippet = (course_text or "").strip()[:600]
 
     if is_llm_dev_mode():
         demo = [
             {
-                "text": "When the bell rings, students walk into the classroom and put their books on the desks.",
-                "translation": "铃声响起时，学生们走进教室，把书放在桌上。",
-                "why": "时间状语从句 + 并列谓语 · 用词常见",
+                "en": "When the bell rings, students walk into the classroom and put their books on the desks.",
+                "tier": 1, "gp": gp0,
             },
             {
-                "text": "Although Millie is quiet, she often helps her classmates with English after school.",
-                "translation": "虽然 Millie 很文静，但她放学后常帮同学学英语。",
-                "why": "让步状语从句 · 词汇控制在年级内",
+                "en": "Although Millie is quiet, she often helps her classmates with English after school.",
+                "tier": 2, "gp": gp0,
             },
             {
-                "text": "The library is the place where many students like to read stories on rainy days.",
-                "translation": "图书馆是许多学生喜欢在雨天读故事的地方。",
-                "why": "where 定语从句 · 场景具象",
+                "en": "The library is the place where many students like to read stories on rainy days.",
+                "tier": 2, "gp": gp0,
             },
             {
-                "text": "If you finish your homework early, you can join the school band and practice with friends.",
-                "translation": "如果你很早做完作业，就可以加入校乐队和朋友一起练习。",
-                "why": "条件从句 + 并列 · 服务读懂结构",
+                "en": "If you finish your homework early, you can join the school band and practice with friends.",
+                "tier": 3, "gp": gp0,
             },
             {
-                "text": "Sandy says that playing the piano every day helps her feel calm before a test.",
-                "translation": "Sandy 说每天弹钢琴能让她在考试前感到平静。",
-                "why": "宾语从句 · 词简单",
+                "en": "Sandy says that playing the piano every day helps her feel calm before a test.",
+                "tier": 3, "gp": gp0,
             },
         ]
         out = []
         for d in demo:
-            diff = syntactic_complexity(d["text"]).get("difficulty")
-            out.append({**d, "src": "synth", "difficulty": diff})
-        return out
+            it = _normalize_item(d, default_src="synth", grammar_names=grammar_names)
+            if it:
+                out.append(it)
+        return _sort_by_gradient(out)
 
     system = (
         "你是中学英语教材编者。原文中找不到适合本年级的长难句时,"
-        f"请合成 {_SYNTH_MIN}–{_SYNTH_MAX} 句英文长难句,供学生练习「如何理解长难句」。\n"
+        f"请合成恰好 {_SYNTH_MIN}–{_SYNTH_MAX} 句英文长难句(不得超过 {_SYNTH_MAX}),"
+        "供学生练习「如何理解长难句」。\n"
         "硬性要求:\n"
-        f"1. 难度锚定:{g_label};句法可含并列、状语从句、宾语从句、简单定语从句等,贴合本单元语法范围。\n"
+        f"1. 难度锚定:{g_label};每句 gp 必须选自本单元语法名单,句子结构必须体现该点。\n"
         "2. **除结构词外,实词必须简单常见**,不高于该年级课本用词;不要生僻词。\n"
         "3. 每句必须是**完整、合法、可独立理解的自然英文句**(有标点);"
         "严禁斜杠范式(He/She/It)、等号对照(do not = don't)、单词粘连、语法讲解/练习指令。\n"
-        "4. 每句信息链要够长(宜 ≥12 词)。\n"
-        "5. **不要输出中文译文、不要 why**;每项只要英文 en。\n"
-        f'只输出 JSON:{{"sentences":[{{"en":"..."}}]}}'
+        "4. 每句信息链要够长(宜 ≥12 词);en 一句一行短写,勿冗长。\n"
+        "5. 标 tier:1=易、2=中、3=难;须有易→难梯度,1/2/3 都尽量出现,并按易→难排列。\n"
+        "6. **不要输出中文译文、不要 why**。\n"
+        f'只输出 JSON:{{"sentences":[{{"en":"...","tier":1,"gp":"语法点名"}}]}}'
     )
     user = (
-        f"年级:{g_label}\n本单元语法范围:{gscope}\n"
+        f"年级:{g_label}\n本单元语法范围(gp 必须选自以下):\n{gscope}\n"
         f"原文片段(供话题/人名参考,勿照抄生僻词):\n{snippet or '(无)'}\nJSON:"
     )
     data = await complete_json(
-        system_prompt=system, user_prompt=user, max_tokens=1600,
+        system_prompt=system, user_prompt=user, max_tokens=1400,
         model=fast_model(), feature="unit_ls_synth",
-        escalate_ceiling=2800,
+        escalate_ceiling=None,
         validate=lambda x: isinstance(x, dict)
         and isinstance(x.get("sentences"), list)
         and len([s for s in (x.get("sentences") or []) if isinstance(s, dict) and str(s.get("en") or "").strip()]) >= _SYNTH_MIN,
@@ -400,14 +456,14 @@ async def _synth_sentences(
     for row in (data.get("sentences") or [])[:_SYNTH_MAX]:
         if not isinstance(row, dict):
             continue
-        it = _normalize_item(row, default_src="synth")
+        it = _normalize_item(row, default_src="synth", grammar_names=grammar_names)
         if it is None:
             continue
         it["src"] = "synth"
         out.append(it)
     if len(out) < _SYNTH_MIN:
         raise AppError(code=502, message="合成长难句失败,请重试")
-    return out
+    return _sort_by_gradient(out)
 
 
 async def _cache_get(db: AsyncSession, key: str) -> list[dict[str, Any]] | None:
@@ -419,11 +475,16 @@ async def _cache_get(db: AsyncSession, key: str) -> list[dict[str, Any]] | None:
     if not isinstance(items, list) or not items:
         return None
     # 二次闸门:缓存里若混入非法句则丢弃该缓存(当未命中)
-    kept = [
-        it for it in items
-        if isinstance(it, dict) and is_valid_natural_sentence(str(it.get("text") or ""))
-    ]
-    return kept if kept else None
+    kept = []
+    for it in items:
+        if not isinstance(it, dict) or not is_valid_natural_sentence(str(it.get("text") or "")):
+            continue
+        kept.append({
+            **it,
+            "tier": _clamp_tier(it.get("tier")),
+            "grammar_point": (it.get("grammar_point") or "")[:120],
+        })
+    return _sort_by_gradient(kept) if kept else None
 
 
 async def _cache_put(
@@ -439,6 +500,8 @@ async def _cache_put(
                 "why": it.get("why") or "",
                 "src": it.get("src") or "extract",
                 "difficulty": it.get("difficulty"),
+                "tier": _clamp_tier(it.get("tier")),
+                "grammar_point": (it.get("grammar_point") or "")[:120],
             }
             for it in items
         ]
@@ -468,6 +531,8 @@ async def _replace_unit_rows(
             why=(it.get("why") or None),
             src=it.get("src") or "extract",
             difficulty=it.get("difficulty"),
+            tier=_clamp_tier(it.get("tier")),
+            grammar_point=(it.get("grammar_point") or None) or None,
             sort_order=i,
             course_text_md5=course_md5,
         )
@@ -501,7 +566,7 @@ async def list_unit_understand_ls(db: AsyncSession, *, unit_id: uuid.UUID) -> di
 async def generate_unit_understand_ls(
     db: AsyncSession, *, unit_id: uuid.UUID, force: bool = False,
 ) -> dict[str, Any]:
-    """L1: 一次 LLM 抽尽合法完整长难句;没有则同响应合成 5–10。须已保存 course_text。"""
+    """一次 LLM 抽取≤8 句或合成 5–8 句。须已保存 course_text。截断不升档。"""
     from app.models.d4_knowledge import CurriculumUnit
     from app.services.long_sentence_service import _stage_from_grade
 
@@ -531,6 +596,7 @@ async def generate_unit_understand_ls(
             course_text=course_text,
         )
         mode = "llm"
+        items = _sort_by_gradient(items)
         await _cache_put(db, key=key, unit_id=unit_id, grade=grade, items=items)
         _log.info(
             "unit_ls_understand generate unit=%s mode=%s n=%d cache_write",
@@ -538,6 +604,7 @@ async def generate_unit_understand_ls(
         )
     else:
         mode = "cache"
+        items = _sort_by_gradient(items)
         _log.info("unit_ls_understand cache hit unit=%s n=%d", unit_id, len(items))
 
     rows = await _replace_unit_rows(
