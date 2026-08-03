@@ -46,6 +46,7 @@ PIPELINE_TYPE_LABELS = {
 
 _jobs: dict[str, dict] = {}
 _tasks: set[asyncio.Task] = set()
+_start_lock = asyncio.Lock()
 
 _SUGGEST_CHUNK = 30
 _PERSIST_EVERY = 5  # 每累计 N 次进度变更刷一次库
@@ -210,6 +211,69 @@ def _mark_progress(job: dict) -> None:
 async def _maybe_persist(job_id: str, job: dict, *, force: bool = False) -> None:
     if force or int(job.get("_persist_n") or 0) >= _PERSIST_EVERY:
         await _persist_job(job_id, job, force=True)
+
+
+def _job_is_active(job: dict) -> bool:
+    return (job.get("status") or "") in ("pending", "running")
+
+
+def _scope_conflicts(
+    job: dict,
+    *,
+    region_code: str | None,
+    year: int | None,
+    paper_ids: list[uuid.UUID],
+) -> bool:
+    """同范围:region_code+year 一致,或勾选卷与进行中 job 有交集。"""
+    rc = (region_code or "").strip()
+    jr = (job.get("region_code") or "").strip()
+    if rc and jr and rc == jr and job.get("year") == year:
+        return True
+    if paper_ids:
+        existing = {str(x) for x in (job.get("paper_ids") or [])}
+        incoming = {str(x) for x in paper_ids}
+        if existing & incoming:
+            return True
+    return False
+
+
+def _find_active_scope_job(
+    *,
+    region_code: str | None,
+    year: int | None,
+    paper_ids: list[uuid.UUID],
+) -> str | None:
+    """进程内进行中任务;同范围只允一条。"""
+    for jid, job in _jobs.items():
+        if not _job_is_active(job):
+            continue
+        if _scope_conflicts(job, region_code=region_code, year=year, paper_ids=paper_ids):
+            return jid
+    return None
+
+
+async def _reconcile_stale_running_jobs() -> None:
+    """库里 running/pending 但不在内存 → 标进程中断(与 get_job/list_jobs 一致)。"""
+    async with _async_session_factory() as db:
+        rows = list((await db.execute(
+            sa.select(OptionVocabPipelineJob).where(
+                OptionVocabPipelineJob.status.in_(("pending", "running")),
+            )
+        )).scalars().all())
+        dirty = False
+        for row in rows:
+            if row.id in _jobs:
+                continue
+            row.status = "error"
+            row.error = (row.error or "") or "进程中断(服务重启后任务未继续)"
+            row.finished_at = datetime.now(timezone.utc)
+            logs = list(row.logs or []) if isinstance(row.logs, list) else []
+            logs.append("任务异常: 进程中断 — 请同范围扫描后继续跑批")
+            row.logs = logs[-400:]
+            flag_modified(row, "logs")
+            dirty = True
+        if dirty:
+            await db.commit()
 
 
 async def scan(
@@ -524,44 +588,58 @@ async def start_run(
     region_code: str | None = None,
     region_name: str | None = None,
     year: int | None = None,
-) -> str:
-    job_id = uuid.uuid4().hex
-    type_list = [t for t in types if t in PIPELINE_TYPE_KEYS] or list(PIPELINE_TYPE_KEYS)
-    now = datetime.now(timezone.utc).isoformat()
-    _jobs[job_id] = {
-        "status": "pending",
-        "total": 0,
-        "done": 0,
-        "failed": 0,
-        "adopted": 0,
-        "suggested": 0,
-        "error": "",
-        "logs": [],
-        "concurrency": concurrency,
-        "auto_adopt": auto_adopt,
-        "force_suggest": force_suggest,
-        "region_code": region_code,
-        "region_name": region_name,
-        "year": year,
-        "types": type_list,
-        "paper_ids": [str(x) for x in paper_ids],
-        "admin_id": str(admin_id),
-        "created_at": now,
-        "updated_at": now,
-        "finished_at": None,
-        "_dirty": True,
-        "_persist_n": 0,
-    }
-    await _persist_job(job_id, _jobs[job_id], force=True)
-    t = asyncio.create_task(_run_job(
-        job_id,
-        paper_ids=paper_ids,
-        types=type_list,
-        concurrency=concurrency,
-        auto_adopt=auto_adopt,
-        force_suggest=force_suggest,
-        admin_id=admin_id,
-    ))
-    _tasks.add(t)
-    t.add_done_callback(_tasks.discard)
-    return job_id
+) -> dict:
+    """启动跑批;同范围已有进行中任务则复用 job_id,不重复开任务。"""
+    async with _start_lock:
+        await _reconcile_stale_running_jobs()
+        existing = _find_active_scope_job(
+            region_code=region_code, year=year, paper_ids=paper_ids,
+        )
+        if existing:
+            _append_log(
+                _jobs[existing],
+                "拒绝重复开跑:同范围已有进行中任务,已接续该 job",
+            )
+            await _persist_job(existing, _jobs[existing], force=True)
+            return {"job_id": existing, "reused": True}
+
+        job_id = uuid.uuid4().hex
+        type_list = [t for t in types if t in PIPELINE_TYPE_KEYS] or list(PIPELINE_TYPE_KEYS)
+        now = datetime.now(timezone.utc).isoformat()
+        _jobs[job_id] = {
+            "status": "pending",
+            "total": 0,
+            "done": 0,
+            "failed": 0,
+            "adopted": 0,
+            "suggested": 0,
+            "error": "",
+            "logs": [],
+            "concurrency": concurrency,
+            "auto_adopt": auto_adopt,
+            "force_suggest": force_suggest,
+            "region_code": region_code,
+            "region_name": region_name,
+            "year": year,
+            "types": type_list,
+            "paper_ids": [str(x) for x in paper_ids],
+            "admin_id": str(admin_id),
+            "created_at": now,
+            "updated_at": now,
+            "finished_at": None,
+            "_dirty": True,
+            "_persist_n": 0,
+        }
+        await _persist_job(job_id, _jobs[job_id], force=True)
+        t = asyncio.create_task(_run_job(
+            job_id,
+            paper_ids=paper_ids,
+            types=type_list,
+            concurrency=concurrency,
+            auto_adopt=auto_adopt,
+            force_suggest=force_suggest,
+            admin_id=admin_id,
+        ))
+        _tasks.add(t)
+        t.add_done_callback(_tasks.discard)
+        return {"job_id": job_id, "reused": False}

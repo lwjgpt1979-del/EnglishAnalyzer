@@ -172,7 +172,7 @@ async def option_vocab_pipeline_scan_api(body: PipelineScanIn, db: DbDep, admin:
 async def option_vocab_pipeline_run_api(body: PipelineRunIn, db: DbDep, admin: AdminDep):
     """启动后台跑批:suggest(多线程)→通过项 confirm 写 ready。返回 job_id 供轮询。"""
     from app.services import option_vocab_pipeline_service as pipe
-    job_id = await pipe.start_run(
+    out = await pipe.start_run(
         paper_ids=body.paper_ids,
         types=body.types,
         concurrency=body.concurrency,
@@ -183,7 +183,10 @@ async def option_vocab_pipeline_run_api(body: PipelineRunIn, db: DbDep, admin: A
         region_name=body.region_name,
         year=body.year,
     )
-    return make_ok({"job_id": job_id})
+    msg = "ok"
+    if out.get("reused"):
+        msg = "同范围已有跑批进行中,已接续该任务"
+    return make_ok(out, message=msg)
 
 
 @router.get("/option-vocab-pipeline/jobs", response_model=BaseResponse[dict])

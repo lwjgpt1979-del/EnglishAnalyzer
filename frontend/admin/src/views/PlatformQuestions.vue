@@ -1060,7 +1060,7 @@ async function startPipeRun() {
   pipeViewingHistory.value = false
   stopPipePoll()
   try {
-    const { job_id } = await runOptionVocabPipeline({
+    const { job_id, reused } = await runOptionVocabPipeline({
       paper_ids: pipeChecked.value,
       types: pipeTypes.value,
       concurrency: pipeConc.value,
@@ -1070,6 +1070,12 @@ async function startPipeRun() {
       region_name: pipeRegionLabel(),
       year: pipeYear.value === '' ? null : Number(pipeYear.value),
     })
+    if (reused) {
+      ElMessage.warning('该范围已有跑批进行中，已切换到该任务')
+      await resumePipeJob(job_id)
+      await loadPipeJobs()
+      return
+    }
     sessionStorage.setItem(PIPE_JOB_KEY, job_id)
     pipeJob.value = {
       job_id, status: 'pending', total: pipePendingSelected.value,
